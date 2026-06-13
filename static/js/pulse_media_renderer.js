@@ -10,6 +10,22 @@
   const REELS_SOUND_KEY = "pulseReelsSoundEnabled";
   const metadataCache = new Map();
   const processingPolls = new Map();
+  const predictiveMediaCache = new Map();
+  const preloadControllers = new WeakMap();
+  const PRELOAD_WINDOW = Object.freeze({ previous: 1, next: 2 });
+  const PRELOAD_MAX_CACHE = 72;
+  const PRELOAD_ROOT_SELECTOR = [
+    ".reels-immersive",
+    "[data-status-viewer]",
+    "[data-status-story-media]",
+    "[data-status-strip]",
+    ".videos-grid",
+    "#videosGrid",
+    ".feed",
+    "[data-feed]",
+    ".messages-list",
+    "main",
+  ].join(",");
   let hlsLoaderPromise = null;
   let activeHlsVideo = null;
   let lastScrollAt = 0;
@@ -143,6 +159,17 @@
       if (connection?.saveData) return true;
     } catch (_) {}
     return false;
+  }
+
+  function connectionConstrained() {
+    try {
+      const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      if (!connection) return false;
+      if (connection.saveData) return true;
+      return /(^|-)2g$/i.test(String(connection.effectiveType || ""));
+    } catch (_) {
+      return false;
+    }
   }
 
   function setSoundEnabled(enabled) {
@@ -540,16 +567,7 @@
 
   function preloadNextVideo(video) {
     const wrap = mediaVideoWrap(video);
-    const scope = wrap?.closest?.(".feed,.reels-immersive,[data-status-viewer],main,body") || document;
-    const videos = Array.from(scope.querySelectorAll(".pulse-media-wrap video, [data-status-viewer] video, .reel-card video"));
-    const index = videos.indexOf(video);
-    const next = index >= 0 ? videos[index + 1] : null;
-    if (!next || next.dataset.pulseLightPreloaded === "1") return;
-    next.dataset.pulseLightPreloaded = "1";
-    next.preload = "metadata";
-    try {
-      if (next.readyState === 0) next.load();
-    } catch (_) {}
+    if (wrap) schedulePredictivePreload(wrap, "playback");
   }
 
   function scheduleVisiblePlayback(entry) {
@@ -701,6 +719,171 @@
         video.load();
       } catch (_) {}
     }
+  }
+
+
+  function preloadKey(wrap, media) {
+    const source = mediaSource(media) || mediaUrl(wrap) || wrap?.dataset.mediaPoster || wrap?.dataset.mediaThumb || "";
+    return `${wrap?.dataset.mediaType || media?.tagName || "media"}:${source}`;
+  }
+
+  function rememberPreloaded(key, value = {}) {
+    if (!key) return;
+    predictiveMediaCache.set(key, { ...value, at: Date.now() });
+    if (predictiveMediaCache.size <= PRELOAD_MAX_CACHE) return;
+    const oldest = [...predictiveMediaCache.entries()].sort((a, b) => (a[1].at || 0) - (b[1].at || 0)).slice(0, predictiveMediaCache.size - PRELOAD_MAX_CACHE);
+    oldest.forEach(([cacheKey]) => predictiveMediaCache.delete(cacheKey));
+  }
+
+  function warmImage(url, key, signal) {
+    if (!url || predictiveMediaCache.has(key) || signal?.aborted) return;
+    const img = new Image();
+    img.decoding = "async";
+    img.loading = "eager";
+    img.onload = () => rememberPreloaded(key, { type: "image", url });
+    img.onerror = () => rememberPreloaded(key, { type: "image-error", url });
+    if (signal) {
+      signal.addEventListener("abort", () => {
+        img.onload = null;
+        img.onerror = null;
+        img.src = "";
+      }, { once: true });
+    }
+    img.src = url;
+  }
+
+  function warmVideo(wrap, video, priority = "nearby") {
+    if (!video || !wrap) return;
+    const key = preloadKey(wrap, video);
+    if (predictiveMediaCache.has(key) && priority !== "current") return;
+    video.preload = connectionConstrained() && priority !== "current" ? "metadata" : "auto";
+    if (priority === "current") video.dataset.pulsePreloadPriority = "current";
+    else video.dataset.pulsePreloadPriority = "nearby";
+    try {
+      if (video.readyState === 0 || priority === "current") video.load();
+    } catch (_) {}
+    rememberPreloaded(key, {
+      type: "video",
+      url: videoSource(video) || mediaUrl(wrap),
+      priority,
+      readyState: video.readyState || 0,
+    });
+  }
+
+  function warmMediaWrap(wrap, priority = "nearby", signal) {
+    if (!wrap || signal?.aborted) return;
+    const isWrapper = wrap.classList?.contains("pulse-media-wrap");
+    if (isWrapper) hydrateWrap(wrap);
+    const media = isWrapper ? wrap.querySelector("img,video,audio") : wrap;
+    const poster = wrap.dataset?.mediaPoster || wrap.dataset?.mediaThumb || wrap.dataset?.mediaBackdrop || wrap.getAttribute?.("poster") || "";
+    const source = mediaSource(media) || (isWrapper ? mediaUrl(wrap) : media?.src || "");
+    if (poster) warmImage(poster, `poster:${poster}`, signal);
+    if (!media) return;
+    if (media.tagName === "VIDEO") {
+      warmVideo(wrap, media, priority);
+      return;
+    }
+    if (media.tagName === "IMG") {
+      const full = media.dataset.fullSrc || source || media.currentSrc || media.src || poster;
+      warmImage(full, preloadKey(wrap, media), signal);
+      return;
+    }
+    if (media.tagName === "AUDIO") {
+      media.preload = connectionConstrained() ? "metadata" : "auto";
+      try {
+        if (media.readyState === 0) media.load();
+      } catch (_) {}
+      rememberPreloaded(preloadKey(wrap, media), { type: "audio", url: source, priority });
+    }
+  }
+
+  function mediaPreloadScope(wrap) {
+    return wrap?.closest?.(PRELOAD_ROOT_SELECTOR) || document;
+  }
+
+  function mediaPreloadItems(scope) {
+    return Array.from((scope || document).querySelectorAll(".pulse-media-wrap, [data-status-home-video], .reel-card video.reel-media"))
+      .map(node => node.closest?.(".pulse-media-wrap") || node)
+      .filter(Boolean)
+      .filter((node, index, list) => list.indexOf(node) === index);
+  }
+
+  function cancelStalePreloads(scope, keep) {
+    if (!scope) return;
+    const active = preloadControllers.get(scope);
+    if (!active) return;
+    active.forEach((controller, node) => {
+      if (keep.has(node)) return;
+      try {
+        controller.abort();
+      } catch (_) {}
+      active.delete(node);
+      if (node.tagName === "VIDEO" && node !== activeVideo && !node.matches(".is-active-media video")) {
+        node.preload = "metadata";
+      } else {
+        const video = node.querySelector?.("video");
+        if (video && video !== activeVideo && !video.closest?.(".is-active-media")) video.preload = "metadata";
+      }
+    });
+  }
+
+  function schedulePredictivePreload(activeNode, reason = "visible") {
+    const activeWrap = activeNode?.closest?.(".pulse-media-wrap") || activeNode;
+    if (!activeWrap) return;
+    const scope = mediaPreloadScope(activeWrap);
+    const items = mediaPreloadItems(scope);
+    const index = items.indexOf(activeWrap);
+    if (index < 0) return;
+    const start = Math.max(0, index - PRELOAD_WINDOW.previous);
+    const end = Math.min(items.length - 1, index + PRELOAD_WINDOW.next);
+    const keep = new Set(items.slice(start, end + 1));
+    cancelStalePreloads(scope, keep);
+    let activeControllers = preloadControllers.get(scope);
+    if (!activeControllers) {
+      activeControllers = new Map();
+      preloadControllers.set(scope, activeControllers);
+    }
+    const run = () => {
+      items.slice(start, end + 1).forEach((item, itemIndex) => {
+        if (!document.documentElement.contains(item)) return;
+        const absoluteIndex = start + itemIndex;
+        const priority = absoluteIndex === index ? "current" : "nearby";
+        let controller = activeControllers.get(item);
+        if (!controller || controller.signal.aborted) {
+          controller = new AbortController();
+          activeControllers.set(item, controller);
+        }
+        item.dataset.pulsePredictivePreload = priority;
+        item.dataset.pulsePreloadReason = reason;
+        warmMediaWrap(item, priority, controller.signal);
+      });
+    };
+    if ("requestIdleCallback" in window && reason !== "playback") {
+      window.requestIdleCallback(run, { timeout: 550 });
+    } else {
+      setTimeout(run, 0);
+    }
+  }
+
+  let predictiveObserver = null;
+  function observePredictivePreload(wraps) {
+    if (!("IntersectionObserver" in window)) {
+      wraps.forEach(wrap => schedulePredictivePreload(wrap, "fallback"));
+      return;
+    }
+    if (!predictiveObserver) {
+      predictiveObserver = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          if (!entry.isIntersecting) return;
+          if (entry.intersectionRatio < .2) return;
+          schedulePredictivePreload(entry.target, "intersection");
+        });
+      }, {
+        threshold: [0, .2, .55, 1],
+        rootMargin: mobilePerformanceMode() ? "260px 0px" : "520px 0px",
+      });
+    }
+    wraps.forEach(wrap => predictiveObserver.observe(wrap));
   }
 
   async function attachHlsPlayback(wrap, video) {
@@ -1000,6 +1183,7 @@
       const video = wrap.querySelector("video");
       if (video) bindAutoplayVideo(wrap, video);
     });
+    observePredictivePreload(wraps);
   }
 
   document.addEventListener("click", event => {
@@ -1049,6 +1233,7 @@
 
   window.addEventListener("pagehide", () => {
     document.querySelectorAll("video").forEach(video => destroyHls(video));
+    predictiveMediaCache.clear();
   });
 
   if ("MutationObserver" in window) {
@@ -1061,7 +1246,7 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => hydrate(document));
-  const PulseVideo = { hydrate, retry, normalizeMedia, renderMedia, renderInto, playVisibleVideo, setSoundEnabled, setVideoMuted, soundEnabled, nativeHlsSupported };
+  const PulseVideo = { hydrate, retry, normalizeMedia, renderMedia, renderInto, playVisibleVideo, setSoundEnabled, setVideoMuted, soundEnabled, nativeHlsSupported, schedulePredictivePreload };
   window.PulseVideo = PulseVideo;
   window.PulseMediaRenderer = PulseVideo;
 })();
