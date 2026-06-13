@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""Audit PulseSoc chat-vs-alert badge separation."""
+
+from __future__ import annotations
+
+import sqlite3
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+
+def read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+def require(name: str, condition: bool, failures: list[str]) -> None:
+    print(f"{'PASS' if condition else 'FAIL'}: {name}")
+    if not condition:
+        failures.append(name)
+
+
+def main() -> int:
+    failures: list[str] = []
+    notifications_js = read("static/notifications.js")
+    service = read("services/notification_service.py")
+    bot = read("bot.py")
+    app_template = read("templates/app.html")
+    dashboard = read("templates/dashboard.html")
+
+    require("frontend alert count uses alert_unread_count only", "alert: Number(payload.alert_unread_count || 0)" in notifications_js, failures)
+    require("frontend chat count uses chat_unread_count only", "chat: Number(payload.chat_unread_count || 0)" in notifications_js, failures)
+    require("live chat events ignore generic unread_count", "payload?.chat_unread_count || 0" in notifications_js and "payload?.chat_unread_count || payload?.unread_count" not in notifications_js, failures)
+    require("live alert events ignore generic unread_count", "payload?.alert_unread_count || 0" in notifications_js and "payload?.alert_unread_count || payload?.unread_count" not in notifications_js, failures)
+    require("backend excludes message notifications from alert count", "AND NOT ({_message_notification_where_clause()})" in service, failures)
+    require("backend sums conversation unread for chat count", "COALESCE(SUM(CASE WHEN COALESCE(unread_count,0) > 0 THEN unread_count ELSE 0 END),0)" in service, failures)
+    require("desktop header has separate chat and alert badges", "data-chat-unread hidden" in bot and "data-alert-unread data-notification-unread hidden" in bot, failures)
+    require("mobile topbar has separate chat and alert badges", 'href="/pulse/notifications"' in bot and 'href="/pulse/messages"' in bot and "data-chat-unread hidden" in bot, failures)
+    require("bottom nav has separate chat and alert badges", "data-alert-unread data-notification-unread hidden" in bot and "data-chat-unread hidden" in bot and "mobile_bottom_html" in bot, failures)
+    require("badges are red in Pulse shell", "background:#ff335d" in bot and "background:#ff335d" in app_template and "background:#ff335d" in dashboard, failures)
+
+    conn = sqlite3.connect(ROOT / "coinpilotx.db")
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    user_id = 991337777
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+    cur.execute(
+        "INSERT OR IGNORE INTO users (user_id, username, display_name, email, account_status, signup_time, onboarding_complete) VALUES (?, ?, ?, ?, 'active', ?, 1)",
+        (user_id, "badge_audit_user", "Badge Audit User", "badge-audit@example.test", now),
+    )
+    cur.execute("DELETE FROM pulse_notifications WHERE user_id=?", (user_id,))
+    cur.execute("DELETE FROM pulse_conversation_participants WHERE user_id=?", (user_id,))
+    cur.execute(
+        "INSERT INTO pulse_notifications (user_id, type, title, body, deep_link, is_read, created_at) VALUES (?, 'like', 'Like', 'Someone liked your post.', '/pulse/post/1', 0, ?)",
+        (user_id, now),
+    )
+    cur.execute(
+        "INSERT INTO pulse_notifications (user_id, type, title, body, deep_link, is_read, created_at) VALUES (?, 'chat_message', 'Message', 'New chat.', '/pulse/messages/123', 0, ?)",
+        (user_id, now),
+    )
+    cur.execute(
+        "INSERT INTO pulse_conversation_participants (conversation_id, user_id, role, joined_at, unread_count) VALUES (123456, ?, 'member', ?, 3)",
+        (user_id, now),
+    )
+    conn.commit()
+    conn.close()
+
+    from services import notification_service
+
+    counts = notification_service.pulse_badge_counts(user_id)
+    require("backend count fixture separates alert from chat", counts.get("alert_unread_count") == 1 and counts.get("chat_unread_count") == 3, failures)
+    require("legacy count aliases remain alert-only", counts.get("count") == counts.get("alert_unread_count") and counts.get("unread_count") == counts.get("alert_unread_count"), failures)
+
+    conn = sqlite3.connect(ROOT / "coinpilotx.db")
+    cur = conn.cursor()
+    cur.execute("DELETE FROM pulse_notifications WHERE user_id=?", (user_id,))
+    cur.execute("DELETE FROM pulse_conversation_participants WHERE user_id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
+    if failures:
+        print("\nBadge separation audit failed:")
+        for failure in failures:
+            print(f"- {failure}")
+        return 1
+    print("\nBadge separation audit passed.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

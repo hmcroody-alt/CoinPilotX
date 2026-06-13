@@ -1,7 +1,8 @@
 (function () {
   const STATE = {
     prefs: null,
-    lastUnread: null,
+    lastAlertUnread: null,
+    lastChatUnread: null,
     lastAlertAt: 0,
     interacted: false,
     pollTimer: null,
@@ -106,19 +107,36 @@
     STATE.lastAlertAt = Date.now();
   }
 
-  async function unreadCount() {
-    const response = await fetch("/api/pulse/notifications/unread-count", { cache: "no-store", credentials: "same-origin" });
+  async function badgeCounts() {
+    const response = await fetch("/api/pulse/badge-counts", { cache: "no-store", credentials: "same-origin" });
     if (!response.ok) return null;
     const payload = await response.json();
-    return Number(payload.unread_count || payload.count || 0);
+    return {
+      alert: Number(payload.alert_unread_count || 0),
+      chat: Number(payload.chat_unread_count || 0),
+      total: Number(payload.total_unread_count || 0)
+    };
   }
 
-  function setBadges(count) {
-    document.querySelectorAll("[data-notification-unread]").forEach(node => {
-      node.textContent = count;
-      node.hidden = count <= 0;
+  function displayCount(count) {
+    const value = Number(count || 0);
+    return value > 99 ? "99+" : String(value);
+  }
+
+  function setBadgeNodes(selector, count) {
+    const value = Number(count || 0);
+    document.querySelectorAll(selector).forEach(node => {
+      node.textContent = displayCount(value);
+      node.hidden = value <= 0;
     });
-    document.title = count > 0 && !/^\(\d+\)/.test(document.title) ? `(${count}) ${document.title}` : document.title.replace(/^\(\d+\)\s+/, count > 0 ? `(${count}) ` : "");
+  }
+
+  function setBadges(counts) {
+    const alertCount = Number(typeof counts === "number" ? counts : counts?.alert || 0);
+    const chatCount = Number(typeof counts === "number" ? 0 : counts?.chat || 0);
+    setBadgeNodes("[data-alert-unread], [data-notification-unread]", alertCount);
+    setBadgeNodes("[data-chat-unread]", chatCount);
+    document.title = alertCount > 0 && !/^\(\d+\)/.test(document.title) ? `(${alertCount}) ${document.title}` : document.title.replace(/^\(\d+\)\s+/, alertCount > 0 ? `(${alertCount}) ` : "");
   }
 
   function noteUrl(note) {
@@ -182,11 +200,21 @@
   }
 
   async function handleLiveNotification(payload) {
-    const count = Number(payload?.unread_count || 0);
+    const isChat = ["message_notification", "message_created", "chat_message", "group_message", "room_message"].includes(String(payload?._event_type || payload?.event_type || payload?.type || payload?.notification_type || ""));
+    if (isChat) {
+      const count = Number(payload?.chat_unread_count || 0);
+      if (count || count === 0) {
+        STATE.lastChatUnread = count;
+        setBadges({ alert: STATE.lastAlertUnread || 0, chat: count });
+      }
+      broadcastRefresh("chat-event");
+      return;
+    }
+    const count = Number(payload?.alert_unread_count || 0);
     if (count || count === 0) {
-      if (STATE.lastUnread !== null && count > STATE.lastUnread) alertUser(payload);
-      STATE.lastUnread = count;
-      setBadges(count);
+      if (STATE.lastAlertUnread !== null && count > STATE.lastAlertUnread) alertUser(payload);
+      STATE.lastAlertUnread = count;
+      setBadges({ alert: count, chat: STATE.lastChatUnread || 0 });
     }
     await refreshNotificationList().catch(() => {});
     broadcastRefresh("live-event");
@@ -199,11 +227,12 @@
         return;
       }
       if (!STATE.prefs) await loadPreferences();
-      const count = await unreadCount();
-      if (count === null) return;
-      if (STATE.lastUnread !== null && count > STATE.lastUnread) alertUser({ title: "PulseSoc", body: "New PulseSoc activity.", url: "/pulse/notifications" });
-      STATE.lastUnread = count;
-      setBadges(count);
+      const counts = await badgeCounts();
+      if (counts === null) return;
+      if (STATE.lastAlertUnread !== null && counts.alert > STATE.lastAlertUnread) alertUser({ title: "PulseSoc", body: "New PulseSoc activity.", url: "/pulse/notifications" });
+      STATE.lastAlertUnread = counts.alert;
+      STATE.lastChatUnread = counts.chat;
+      setBadges(counts);
       if (options.refreshList || !STATE.listLoaded) await refreshNotificationList().catch(() => {});
     } catch (_) {}
   }
@@ -219,8 +248,8 @@
   function bindRealtime() {
     if (STATE.realtimeBound || !window.PulseRealtime) return;
     STATE.realtimeBound = true;
-    window.PulseRealtime.on("notification_created", (event) => handleLiveNotification(event.payload || event));
-    window.PulseRealtime.on("message_notification", (event) => handleLiveNotification(event.payload || event));
+    window.PulseRealtime.on("notification_created", (event) => handleLiveNotification({ ...(event.payload || event), _event_type: event.event_type || event.type || "notification_created" }));
+    window.PulseRealtime.on("message_notification", (event) => handleLiveNotification({ ...(event.payload || event), _event_type: event.event_type || event.type || "message_notification" }));
     window.PulseRealtime.connect();
   }
 
