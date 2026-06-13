@@ -37,7 +37,7 @@
     const link = document.createElement("link");
     link.id = PORTAL_CSS_ID;
     link.rel = "stylesheet";
-    link.href = "/static/css/pulse_cinematic_media.css?v=global-media-ui-20260613b";
+    link.href = "/static/css/pulse_cinematic_media.css?v=global-media-ui-20260613c";
     document.head.appendChild(link);
   }
 
@@ -168,10 +168,6 @@
     if (controlsObserver || !("MutationObserver" in window)) return;
     controlsObserver = new MutationObserver(records => {
       records.forEach(record => {
-        if (record.type === "attributes") {
-          stripNativeVideoControls(record.target);
-          return;
-        }
         record.addedNodes?.forEach(node => {
           if (node.nodeType === 1) sanitizeNativeVideoControls(node);
         });
@@ -180,8 +176,6 @@
     controlsObserver.observe(document.documentElement, {
       childList: true,
       subtree: true,
-      attributes: true,
-      attributeFilter: ["controls"],
     });
   }
 
@@ -809,7 +803,12 @@
 
   function showTapIcon(wrap, label) {
     if (!wrap) return;
-    let icon = wrap.querySelector(":scope > .pulse-media-tap-icon");
+    let icon = null;
+    try {
+      icon = wrap.querySelector(":scope > .pulse-media-tap-icon");
+    } catch (_) {
+      icon = Array.from(wrap.children || []).find(child => child.classList?.contains("pulse-media-tap-icon")) || null;
+    }
     if (!icon) {
       icon = document.createElement("span");
       icon.className = "pulse-media-tap-icon";
@@ -1317,10 +1316,14 @@
 
   let observer = null;
   function hydrate(root) {
-    ensurePortalStyles();
-    ensureControlGuardStyles();
-    sanitizeNativeVideoControls(root || document);
-    observeNativeVideoControls();
+    try {
+      ensurePortalStyles();
+      ensureControlGuardStyles();
+      sanitizeNativeVideoControls(root || document);
+      observeNativeVideoControls();
+    } catch (error) {
+      console.warn("PulseSoc media control guard skipped", error);
+    }
     const scope = root || document;
     const wraps = Array.from(scope.querySelectorAll(".pulse-media-wrap"));
     if ("IntersectionObserver" in window) {

@@ -29,7 +29,14 @@ def main() -> int:
     reels_css = read("static/css/pulse_reels_experience.css")
 
     check("function stripNativeVideoControls" in media, "global video control sanitizer exists", failures)
-    check("observeNativeVideoControls" in media and "attributeFilter: [\"controls\"]" in media, "control attribute observer is active", failures)
+    check(
+        "observeNativeVideoControls" in media
+        and "MutationObserver" in media
+        and "attributeFilter: [\"controls\"]" not in media,
+        "control observer watches added videos without attribute churn",
+        failures,
+    )
+    check("PulseSoc media control guard skipped" in media, "control guard cannot block shell boot", failures)
     check("showTapIcon" in media and "pulse-media-tap-icon" in cinematic_css, "small temporary tap icon is available", failures)
     check("data-pulse-video-player${loop}" in media and "data-pulse-video-player${controls}" not in media, "shared renderer does not emit native controls", failures)
     check(".reel-card.show-controls .reel-center-play" in media and "display: none !important" in media, "runtime guard suppresses Reels center overlay", failures)
