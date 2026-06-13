@@ -303,6 +303,10 @@
 
   function trackDiagnostics(stream) {
     const tracks = stream ? stream.getTracks() : [];
+    const maskDeviceId = value => {
+      const raw = String(value || "");
+      return raw ? (raw.length <= 8 ? "masked" : `${raw.slice(0, 4)}...${raw.slice(-4)}`) : "";
+    };
     return tracks.map((track) => ({
       kind: track.kind,
       id: track.id,
@@ -310,6 +314,16 @@
       readyState: track.readyState,
       enabled: track.enabled,
       muted: track.muted,
+      settings: (() => {
+        const settings = track.getSettings?.() || {};
+        return {
+          width: Number(settings.width || 0),
+          height: Number(settings.height || 0),
+          frameRate: Number(settings.frameRate || 0),
+          facingMode: settings.facingMode || "",
+          deviceId: maskDeviceId(settings.deviceId),
+        };
+      })(),
     }));
   }
 
@@ -813,12 +827,26 @@
       showCameraState(root, kind === "screen_share" ? "Requesting screen share permission..." : "Requesting camera/microphone permission...");
       let trackOptions;
       try {
-        trackOptions = kind === "screen_share"
-          ? await LK.createLocalScreenTracks({ audio: true, video: true })
-          : await LK.createLocalTracks({
-              audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-              video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 60 } },
-            });
+        if (kind === "screen_share") {
+          trackOptions = await LK.createLocalScreenTracks({ audio: true, video: true });
+        } else {
+          const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+          const videoProfiles = [
+            { facingMode: "user", width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 60 } },
+            { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 60 } },
+          ];
+          let lastCaptureError = null;
+          for (const videoConstraints of videoProfiles) {
+            try {
+              trackOptions = await LK.createLocalTracks({ audio, video: videoConstraints });
+              break;
+            } catch (profileError) {
+              lastCaptureError = profileError;
+              trackOptions = null;
+            }
+          }
+          if (!trackOptions) throw lastCaptureError || new Error("Camera capture failed");
+        }
       } catch (error) {
         error.pulseStage = "media-capture";
         throw error;

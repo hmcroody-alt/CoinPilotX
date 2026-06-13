@@ -7,14 +7,20 @@ text = (Path(__file__).resolve().parents[1] / "bot.py").read_text(encoding="utf-
 for token in [
     '@webhook_app.route("/pulse/videos"',
     '@webhook_app.route("/api/pulse/videos"',
-    "All Videos",
+    "data-video-tab='{key}'",
+    "For You",
     "Following",
     "Trending",
-    "Live",
-    "Replays",
-    "My Videos",
-    "Saved Videos",
+    "New Creators",
+    "AI Picks",
+    "Local",
     "videos-grid",
+    "data-videos-drawer-open",
+    "data-videos-mobile-drawer",
+    "videos-drawer-nav",
+    "setVideosDrawer",
+    "Creator Studio",
+    "Marketplace",
 ]:
     assert token in text, f"missing {token}"
     print(f"PASS: {token}")

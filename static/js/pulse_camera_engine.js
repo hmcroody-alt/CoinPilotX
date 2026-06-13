@@ -94,6 +94,78 @@
     return Boolean(window.Banuba || window.BanubaSDK || window.BanubaPlayer);
   }
 
+  function maskDeviceId(value) {
+    const raw = String(value || "");
+    if (!raw) return "";
+    return raw.length <= 8 ? "masked" : `${raw.slice(0, 4)}...${raw.slice(-4)}`;
+  }
+
+  function safeTrackSettings(track) {
+    const settings = track?.getSettings?.() || {};
+    return {
+      width: Number(settings.width || 0),
+      height: Number(settings.height || 0),
+      frameRate: Number(settings.frameRate || 0),
+      facingMode: settings.facingMode || facingMode,
+      deviceId: maskDeviceId(settings.deviceId),
+    };
+  }
+
+  function cameraConstraintProfiles() {
+    const audio = activeMode === "photo" ? false : {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    };
+    return [
+      {
+        label: "1080p",
+        constraints: {
+          video: {
+            facingMode,
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            frameRate: { ideal: 30, max: 60 },
+          },
+          audio,
+        },
+      },
+      {
+        label: "720p",
+        constraints: {
+          video: {
+            facingMode,
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30, max: 60 },
+          },
+          audio,
+        },
+      },
+    ];
+  }
+
+  function setCameraRuntimeStatus(track, profileLabel) {
+    const settings = safeTrackSettings(track);
+    const sdkReady = banubaSdkReady();
+    const banubaEnabled = Boolean(config.banuba?.enabled);
+    const hdActive = settings.width >= 1280 && settings.height >= 720;
+    root.dataset.cameraActualWidth = String(settings.width || "");
+    root.dataset.cameraActualHeight = String(settings.height || "");
+    root.dataset.cameraActualFps = String(settings.frameRate || "");
+    root.dataset.cameraQuality = hdActive ? "hd-active" : "fallback";
+    root.dataset.cameraConstraintProfile = profileLabel || "";
+    root.dataset.banubaRuntime = banubaEnabled && sdkReady ? "active" : banubaEnabled ? "failed-native-camera" : "native-camera";
+    root.dataset.filterRuntime = activeLens || activeBeauty ? "active" : "none";
+    console.info("PulseSoc camera settings", settings);
+    const statusParts = [
+      hdActive ? "Camera HD Active" : "Camera fallback active",
+      banubaEnabled && sdkReady ? "Banuba Active" : banubaEnabled ? "Banuba Failed / Using Native Camera" : "Using Native Camera",
+      activeLens || activeBeauty ? "Filter Active" : "Filter Ready",
+    ];
+    setStatus(statusParts.join(" · "));
+  }
+
   function setPreviewStatus(message) {
     if (previewStatus) previewStatus.textContent = message || "";
   }
@@ -126,22 +198,6 @@
     }
   }
 
-  function mediaConstraints() {
-    return {
-      video: {
-        facingMode,
-        width: { ideal: 1080 },
-        height: { ideal: 1920 },
-        frameRate: { ideal: 30, max: 60 },
-      },
-      audio: activeMode === "photo" ? false : {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    };
-  }
-
   async function startCamera() {
     if (config.banuba?.enabled && !banubaSdkReady()) {
       activateFallbackPicker("Camera effects are unavailable here. Native camera and gallery are ready.");
@@ -153,13 +209,28 @@
     try {
       stopStream();
       setStatus("Opening camera...");
-      stream = await navigator.mediaDevices.getUserMedia(mediaConstraints());
+      let lastError = null;
+      let profileUsed = "";
+      for (const profile of cameraConstraintProfiles()) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(profile.constraints);
+          profileUsed = profile.label;
+          break;
+        } catch (error) {
+          lastError = error;
+          stream = null;
+        }
+      }
+      if (!stream) throw lastError || new Error("Camera unavailable");
       video.srcObject = stream;
+      video.playsInline = true;
+      video.autoplay = true;
+      video.style.objectFit = "cover";
       root.classList.toggle("is-front", facingMode === "user");
       permissionTip?.classList.add("is-hidden");
       startIntelligenceLoop();
-      setStatus("Ready");
-      setTimeout(() => setStatus(""), 800);
+      setCameraRuntimeStatus(stream.getVideoTracks?.()[0], profileUsed);
+      setTimeout(() => setStatus(""), 1800);
     } catch (error) {
       activateFallbackPicker("Camera permission blocked. Upload from gallery is ready.");
     }

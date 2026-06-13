@@ -26,8 +26,8 @@ def main() -> None:
         "statusViewerMediaHtml",
         "PulseMediaRenderer.renderMedia",
         "PulseMediaRenderer?.hydrate(viewer)",
-        "PulseMediaRenderer?.playVisibleVideo",
-        "controls autoplay playsinline webkit-playsinline preload=\"metadata\"",
+        "status-viewer-autoplay",
+        "status-media-tap",
     ]:
         expect(token in bot, f"Status viewer includes {token}")
 
@@ -35,7 +35,10 @@ def main() -> None:
     expect("pulse-status-card-media" in bot, "photo/video status cards still render previews")
     expect("pulse-status-card-text" in bot and "text-story" in bot, "text status remains readable")
     expect("nativeHlsSupported(video)" in renderer, "Status videos inherit native mobile HLS")
-    expect("setVideoMuted(video, !shouldTrySound, \"autoplay\")" in renderer, "Status autoplay can fall back to muted playback")
+    expect("window.PulseMediaRenderer?.soundEnabled?.()!==false" in bot, "Status viewer follows saved sound preference when actively opened")
+    expect("video.defaultMuted=false" in bot and "video.removeAttribute('muted')" in bot, "Status viewer clears muted default before active playback")
+    expect("player.defaultMuted=true" in bot and "player.muted=true" in bot, "Status card video previews stay muted")
+    expect("setVideoMuted(video, !shouldTrySound, \"autoplay\")" in renderer, "General media preserves browser autoplay fallback")
 
 
 if __name__ == "__main__":

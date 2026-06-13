@@ -1,0 +1,22 @@
+name: PulseSoc Protection
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  protection:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile backend and audits
+        run: |
+          python -m py_compile bot.py scripts/protection/run_protection_suite.py
+      - name: Run protection suite
+        run: |
+          python scripts/protection/run_protection_suite.py
