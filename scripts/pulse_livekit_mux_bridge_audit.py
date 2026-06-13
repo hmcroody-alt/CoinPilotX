@@ -36,6 +36,7 @@ def main():
     require("connectLiveKitRoom" in JS and "publishToLiveKit" in JS, "Studio publishes browser tracks to LiveKit")
     require("createLocalTracks" in JS, "Studio uses LiveKit local camera/mic tracks")
     require("Browser Live is publishing through LiveKit and forwarding to Mux" in BOT + JS, "Studio copy reflects real bridge")
+    require("Camera remains local until forwarding recovers" not in JS, "Studio never regresses to local-only egress failure copy")
     require("Camera preview ready" not in BOT, "old face-covering camera overlay copy removed")
     require(".is-camera-active .live-preview-stage .live-ready-state" in CSS, "active camera hides ready overlay")
     require("data-secret-live-value" in BOT, "stream key is masked by default in Studio")

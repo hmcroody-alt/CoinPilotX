@@ -116,9 +116,14 @@
     setText(root, "[data-live-pulse]", pulse.label || "ready");
     if (data.mux?.live_status) setText(root, "[data-mux-live-status]", `Status ${data.mux.live_status}`);
     if (data.livekit?.egress_error) {
-      const direct = data.direct_mode || data.mux?.quota_exhausted;
-      setText(root, "[data-live-egress-message]", direct ? "LiveKit direct mode is active. Mux replay resumes when egress minutes are available." : "Mux bridge needs attention. Camera remains local until forwarding recovers.");
-      setText(root, "[data-live-transport-summary]", direct ? "LiveKit direct playback is active. Mux metrics resume when egress quota is available." : "Mux bridge needs attention. LiveKit publishing remains available.");
+      const publishState = String(data.publish_state || "").toLowerCase();
+      const egressStatus = String(data.livekit?.egress_status || "").toLowerCase();
+      const hasDirectRoom = Boolean(data.playback?.webrtc_room_id || data.livekit?.room);
+      const direct = data.direct_mode || data.mux?.quota_exhausted || ["egress_quota_exhausted", "livekit_direct"].includes(muxStatus) || ["browser_live_livekit_direct", "livekit_direct"].includes(publishState) || ["quota_exhausted", "livekit_direct"].includes(egressStatus);
+      const directCopy = "LiveKit direct mode is active. Mux replay resumes when egress minutes are available.";
+      const fallbackCopy = hasDirectRoom ? "LiveKit publishing is active. Mux replay needs attention, but viewers can stay connected through LiveKit." : "Mux replay needs attention. Start Camera again to reconnect LiveKit publishing.";
+      setText(root, "[data-live-egress-message]", direct ? directCopy : fallbackCopy);
+      setText(root, "[data-live-transport-summary]", direct || hasDirectRoom ? "LiveKit playback is available while Mux egress recovers." : "Mux bridge needs attention. LiveKit publishing can reconnect from Start Camera.");
     }
     const score = qs(root, ".live-health-score");
     if (score) score.style.setProperty("--score", Math.max(0, Math.min(100, Number(health.score || 0))));
