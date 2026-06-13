@@ -75,7 +75,7 @@ def main() -> int:
     require("PulseSoc" in html and "pulse_media_renderer.js" in html, "/pulse includes PulseSoc shell scripts")
     require("Traceback" not in html and "Internal Server Error" not in html, "/pulse contains no server traceback")
     require("global-media-ui-20260613d" in html, "/pulse references the current media renderer cache key")
-    require("status-global-ui-20260613c" in html, "/pulse references the current status viewer cache key")
+    require("status-global-ui-20260613d" in html, "/pulse references the current status viewer cache key")
     require("pulseBootTask" in html, "/pulse defers initial client boot work")
     require("pulseTimeoutSignal" in html and "AbortController" in html, "/pulse API calls have timeout protection")
     require("data-pulse-feed-fallback" in html and "data-retry-pulse-feed" in html, "/pulse has a retryable feed fallback")
