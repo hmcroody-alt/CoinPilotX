@@ -1,0 +1,186 @@
+[
+  {
+    "label": "1920x1080",
+    "file": "/Users/hmcherie/Desktop/CoinPilotX/reports/pulse_reels_desktop_after_1920x1080.png",
+    "metrics": {
+      "actionCount": 5,
+      "actionRail": {
+        "h": 362,
+        "w": 62,
+        "x": 1401,
+        "y": 381
+      },
+      "feed": {
+        "h": 1080,
+        "w": 1248,
+        "x": 250,
+        "y": 0
+      },
+      "infoPanel": {
+        "h": 669,
+        "w": 380,
+        "x": 1506,
+        "y": 18
+      },
+      "infoText": "PPhase Two Tester Member · verified creatorFollowAI trust score 100 · Testing th",
+      "placeholderThumbs": 0,
+      "share": 0.65,
+      "stage": {
+        "h": 994,
+        "w": 1248,
+        "x": 250,
+        "y": 65
+      },
+      "upNext": {
+        "h": 361,
+        "w": 380,
+        "x": 1506,
+        "y": 701
+      },
+      "upNextImages": 10,
+      "upNextItems": 10,
+      "viewport": {
+        "h": 1080,
+        "w": 1920
+      }
+    }
+  },
+  {
+    "label": "2560x1440",
+    "file": "/Users/hmcherie/Desktop/CoinPilotX/reports/pulse_reels_desktop_after_2560x1440.png",
+    "metrics": {
+      "actionCount": 5,
+      "actionRail": {
+        "h": 362,
+        "w": 62,
+        "x": 2002,
+        "y": 557
+      },
+      "feed": {
+        "h": 1440,
+        "w": 1792,
+        "x": 307,
+        "y": 0
+      },
+      "infoPanel": {
+        "h": 900,
+        "w": 400,
+        "x": 2126,
+        "y": 18
+      },
+      "infoText": "PPhase Two Tester Member · verified creatorFollowAI trust score 100 · Testing th",
+      "placeholderThumbs": 0,
+      "share": 0.7,
+      "stage": {
+        "h": 1040,
+        "w": 1792,
+        "x": 307,
+        "y": 218
+      },
+      "upNext": {
+        "h": 490,
+        "w": 400,
+        "x": 2126,
+        "y": 932
+      },
+      "upNextImages": 10,
+      "upNextItems": 10,
+      "viewport": {
+        "h": 1440,
+        "w": 2560
+      }
+    }
+  },
+  {
+    "label": "laptop_1366x768",
+    "file": "/Users/hmcherie/Desktop/CoinPilotX/reports/pulse_reels_desktop_after_laptop_1366x768.png",
+    "metrics": {
+      "actionCount": 5,
+      "actionRail": {
+        "h": 362,
+        "w": 62,
+        "x": 916,
+        "y": 215
+      },
+      "feed": {
+        "h": 768,
+        "w": 796,
+        "x": 210,
+        "y": 0
+      },
+      "infoPanel": {
+        "h": 470,
+        "w": 318,
+        "x": 1021,
+        "y": 18
+      },
+      "infoText": "PPhase Two Tester Member · verified creatorFollowAI trust score 100 · Testing th",
+      "placeholderThumbs": 0,
+      "share": 0.583,
+      "stage": {
+        "h": 698,
+        "w": 796,
+        "x": 210,
+        "y": 47
+      },
+      "upNext": {
+        "h": 248,
+        "w": 318,
+        "x": 1021,
+        "y": 502
+      },
+      "upNextImages": 10,
+      "upNextItems": 10,
+      "viewport": {
+        "h": 768,
+        "w": 1366
+      }
+    }
+  },
+  {
+    "label": "ultrawide_3440x1440",
+    "file": "/Users/hmcherie/Desktop/CoinPilotX/reports/pulse_reels_desktop_after_ultrawide_3440x1440.png",
+    "metrics": {
+      "actionCount": 5,
+      "actionRail": {
+        "h": 362,
+        "w": 62,
+        "x": 2843,
+        "y": 557
+      },
+      "feed": {
+        "h": 1440,
+        "w": 2610,
+        "x": 330,
+        "y": 0
+      },
+      "infoPanel": {
+        "h": 900,
+        "w": 400,
+        "x": 3006,
+        "y": 18
+      },
+      "infoText": "PPhase Two Tester Member · verified creatorFollowAI trust score 100 · Testing th",
+      "placeholderThumbs": 0,
+      "share": 0.759,
+      "stage": {
+        "h": 1040,
+        "w": 2610,
+        "x": 330,
+        "y": 218
+      },
+      "upNext": {
+        "h": 490,
+        "w": 400,
+        "x": 3006,
+        "y": 932
+      },
+      "upNextImages": 10,
+      "upNextItems": 10,
+      "viewport": {
+        "h": 1440,
+        "w": 3440
+      }
+    }
+  }
+]
