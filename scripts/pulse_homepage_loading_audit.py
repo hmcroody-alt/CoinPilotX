@@ -74,7 +74,11 @@ def main() -> int:
     require(len(html) > 20000, "/pulse HTML is not blank", f"length={len(html)}")
     require("PulseSoc" in html and "pulse_media_renderer.js" in html, "/pulse includes PulseSoc shell scripts")
     require("Traceback" not in html and "Internal Server Error" not in html, "/pulse contains no server traceback")
-    require("global-media-ui-20260613c" in html, "/pulse references the current media renderer cache key")
+    require("global-media-ui-20260613d" in html, "/pulse references the current media renderer cache key")
+    require("pulseBootTask" in html, "/pulse defers initial client boot work")
+    require("pulseTimeoutSignal" in html and "AbortController" in html, "/pulse API calls have timeout protection")
+    require("data-pulse-feed-fallback" in html and "data-retry-pulse-feed" in html, "/pulse has a retryable feed fallback")
+    require("load(true).then(startLive)" not in html, "/pulse initial feed does not block realtime startup")
 
     refs = same_origin_static_refs(html)
     require(bool(refs), "/pulse exposes static JS/CSS asset references")
@@ -83,6 +87,11 @@ def main() -> int:
         body = asset.get_data()
         require(asset.status_code == 200, f"asset loads {url}", str(asset.status_code))
         require(len(body) > 0, f"asset is non-empty {url}")
+        if "pulse_media_renderer.js" in url:
+            text = body.decode("utf-8", errors="replace")
+            require("HYDRATE_INITIAL_LIMIT" in text, "media renderer bounds initial hydration")
+            require("processInChunks" in text, "media renderer chunks hydration work")
+            require("DOMContentLoaded\", () => runIdle(() => hydrate(document)" in text, "media renderer defers global DOMContentLoaded hydration")
 
     if FAILURES:
         print("\nFAILURES:")

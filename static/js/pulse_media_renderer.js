@@ -31,14 +31,58 @@
   let activeHlsVideo = null;
   let lastScrollAt = 0;
   let controlsObserver = null;
+  const HYDRATE_INITIAL_LIMIT = 10;
+  const HYDRATE_CHUNK_SIZE = 8;
 
   function ensurePortalStyles() {
     if (document.getElementById(PORTAL_CSS_ID)) return;
     const link = document.createElement("link");
     link.id = PORTAL_CSS_ID;
     link.rel = "stylesheet";
-    link.href = "/static/css/pulse_cinematic_media.css?v=global-media-ui-20260613c";
+    link.href = "/static/css/pulse_cinematic_media.css?v=global-media-ui-20260613d";
     document.head.appendChild(link);
+  }
+
+  function runIdle(fn, timeout = 700) {
+    if (typeof fn !== "function") return;
+    if ("requestIdleCallback" in window) {
+      window.requestIdleCallback(() => {
+        try {
+          fn();
+        } catch (error) {
+          console.warn("PulseSoc media idle task skipped", error);
+        }
+      }, { timeout });
+      return;
+    }
+    setTimeout(() => {
+      try {
+        fn();
+      } catch (error) {
+        console.warn("PulseSoc media idle task skipped", error);
+      }
+    }, 0);
+  }
+
+  function processInChunks(items, worker, chunkSize = HYDRATE_CHUNK_SIZE, done) {
+    const list = Array.from(items || []);
+    let index = 0;
+    const step = () => {
+      const end = Math.min(list.length, index + chunkSize);
+      for (; index < end; index += 1) {
+        try {
+          worker(list[index], index);
+        } catch (error) {
+          console.warn("PulseSoc media hydration item skipped", error);
+        }
+      }
+      if (index < list.length) {
+        runIdle(step, 900);
+      } else if (typeof done === "function") {
+        done();
+      }
+    };
+    step();
   }
 
   function ensureControlGuardStyles() {
@@ -1316,16 +1360,20 @@
 
   let observer = null;
   function hydrate(root) {
+    const scope = root || document;
     try {
       ensurePortalStyles();
       ensureControlGuardStyles();
-      sanitizeNativeVideoControls(root || document);
       observeNativeVideoControls();
+      runIdle(() => sanitizeNativeVideoControls(scope), 500);
     } catch (error) {
       console.warn("PulseSoc media control guard skipped", error);
     }
-    const scope = root || document;
     const wraps = Array.from(scope.querySelectorAll(".pulse-media-wrap"));
+    if (!wraps.length) {
+      runIdle(() => enhanceMobileReels(scope), 900);
+      return;
+    }
     if ("IntersectionObserver" in window) {
       if (!observer) {
         observer = new IntersectionObserver(entries => {
@@ -1338,14 +1386,21 @@
       }
       wraps.forEach(wrap => observer.observe(wrap));
     } else {
-      wraps.forEach(hydrateWrap);
+      processInChunks(wraps, hydrateWrap);
     }
-    wraps.forEach(wrap => {
+    const visibleWraps = wraps.slice(0, HYDRATE_INITIAL_LIMIT);
+    processInChunks(visibleWraps, wrap => {
       const video = wrap.querySelector("video");
       if (video) bindAutoplayVideo(wrap, video);
     });
-    observePredictivePreload(wraps);
-    enhanceMobileReels(scope);
+    if (wraps.length > HYDRATE_INITIAL_LIMIT) {
+      runIdle(() => processInChunks(wraps.slice(HYDRATE_INITIAL_LIMIT), wrap => {
+        const video = wrap.querySelector("video");
+        if (video) bindAutoplayVideo(wrap, video);
+      }), 1200);
+    }
+    runIdle(() => observePredictivePreload(wraps), 1000);
+    runIdle(() => enhanceMobileReels(scope), 1100);
   }
 
   const mobileReelsQuery = window.matchMedia?.("(max-width: 900px)");
@@ -1573,7 +1628,7 @@
     cleanupObserver.observe(document.documentElement, { childList: true, subtree: true });
   }
 
-  document.addEventListener("DOMContentLoaded", () => hydrate(document));
+  document.addEventListener("DOMContentLoaded", () => runIdle(() => hydrate(document), 900));
   const PulseVideo = { hydrate, retry, normalizeMedia, renderMedia, renderInto, playVisibleVideo, setSoundEnabled, setVideoMuted, soundEnabled, nativeHlsSupported, schedulePredictivePreload };
   window.PulseVideo = PulseVideo;
   window.PulseMediaRenderer = PulseVideo;

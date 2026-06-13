@@ -37,6 +37,8 @@ def main() -> int:
         failures,
     )
     check("PulseSoc media control guard skipped" in media, "control guard cannot block shell boot", failures)
+    check("HYDRATE_INITIAL_LIMIT" in media and "processInChunks" in media, "media hydration is bounded and chunked", failures)
+    check("DOMContentLoaded\", () => runIdle(() => hydrate(document)" in media, "global media hydration is idle-scheduled", failures)
     check("showTapIcon" in media and "pulse-media-tap-icon" in cinematic_css, "small temporary tap icon is available", failures)
     check("data-pulse-video-player${loop}" in media and "data-pulse-video-player${controls}" not in media, "shared renderer does not emit native controls", failures)
     check(".reel-card.show-controls .reel-center-play" in media and "display: none !important" in media, "runtime guard suppresses Reels center overlay", failures)
