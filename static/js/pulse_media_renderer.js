@@ -6,6 +6,7 @@
   const LOADING = "is-loading";
   const BROKEN = "is-broken";
   const PORTAL_CSS_ID = "pulse-cinematic-media-css";
+  const CONTROL_GUARD_CSS_ID = "pulse-global-video-control-guard";
   const SOUND_KEY = "pulseMediaSoundEnabled";
   const REELS_SOUND_KEY = "pulseReelsSoundEnabled";
   const metadataCache = new Map();
@@ -29,14 +30,61 @@
   let hlsLoaderPromise = null;
   let activeHlsVideo = null;
   let lastScrollAt = 0;
+  let controlsObserver = null;
 
   function ensurePortalStyles() {
     if (document.getElementById(PORTAL_CSS_ID)) return;
     const link = document.createElement("link");
     link.id = PORTAL_CSS_ID;
     link.rel = "stylesheet";
-    link.href = "/static/css/pulse_cinematic_media.css?v=video-stage-size-20260605";
+    link.href = "/static/css/pulse_cinematic_media.css?v=global-media-ui-20260613b";
     document.head.appendChild(link);
+  }
+
+  function ensureControlGuardStyles() {
+    if (document.getElementById(CONTROL_GUARD_CSS_ID)) return;
+    const style = document.createElement("style");
+    style.id = CONTROL_GUARD_CSS_ID;
+    style.textContent = `
+      .reel-center-play,
+      .reel-card.show-controls .reel-center-play,
+      .reel-center-play:focus-visible {
+        display: none !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+      .reel-action .reel-action-label {
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        overflow: hidden !important;
+        clip: rect(0 0 0 0) !important;
+        clip-path: inset(50%) !important;
+        white-space: nowrap !important;
+      }
+      #pulseStatusStoryViewer .pulse-status-story-close,
+      .pulse-status-story-viewer .pulse-status-story-close {
+        z-index: 10090 !important;
+        width: 56px !important;
+        height: 56px !important;
+        min-height: 56px !important;
+        pointer-events: auto !important;
+        touch-action: manipulation !important;
+      }
+      .pulse-media-wrap video::-webkit-media-controls,
+      .pulse-status-story-media video::-webkit-media-controls,
+      .pulse-media-lightbox-stage video::-webkit-media-controls,
+      .video-detail-player video::-webkit-media-controls,
+      .reels-media-stage video::-webkit-media-controls,
+      .profile-post video::-webkit-media-controls,
+      .group-media-frame video::-webkit-media-controls,
+      .message-media::-webkit-media-controls {
+        display: none !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+    `;
+    document.head.appendChild(style);
   }
 
   function mediaUrl(wrap) {
@@ -69,6 +117,72 @@
     } catch (_) {
       return false;
     }
+  }
+
+  function controlSurfaceFor(video) {
+    return video?.closest?.([
+      ".pulse-media-wrap",
+      ".pulse-status-story-media",
+      ".pulse-media-lightbox-stage",
+      ".pulse-status-preview",
+      ".pulse-status2-media-preview",
+      ".pulse-selected-media",
+      ".video-detail-player",
+      ".reels-media-stage",
+      ".profile-post",
+      ".group-media-frame",
+      ".message-media",
+    ].join(","));
+  }
+
+  function stripNativeVideoControls(video) {
+    if (!video || video.tagName !== "VIDEO") return;
+    video.controls = false;
+    video.removeAttribute("controls");
+    video.setAttribute("controlsList", "nodownload noplaybackrate noremoteplayback");
+    video.setAttribute("disablepictureinpicture", "");
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
+    if (video.dataset.pulseControlSanitized === "1") return;
+    video.dataset.pulseControlSanitized = "1";
+    video.addEventListener("loadedmetadata", () => {
+      video.controls = false;
+      video.removeAttribute("controls");
+    }, { passive: true });
+    video.addEventListener("click", event => {
+      if (event.defaultPrevented || event.target.closest?.("button,a,input,textarea,select")) return;
+      if (video.closest?.(".reel-card,[data-status-viewer-player]")) return;
+      const surface = controlSurfaceFor(video);
+      if (!surface) return;
+      showTapIcon(surface, video.paused ? "▶" : (video.muted || Number(video.volume || 0) === 0 ? "🔇" : "🔊"));
+    }, { passive: true });
+  }
+
+  function sanitizeNativeVideoControls(root = document) {
+    if (!root) return;
+    if (root.tagName === "VIDEO") stripNativeVideoControls(root);
+    root.querySelectorAll?.("video")?.forEach(stripNativeVideoControls);
+  }
+
+  function observeNativeVideoControls() {
+    if (controlsObserver || !("MutationObserver" in window)) return;
+    controlsObserver = new MutationObserver(records => {
+      records.forEach(record => {
+        if (record.type === "attributes") {
+          stripNativeVideoControls(record.target);
+          return;
+        }
+        record.addedNodes?.forEach(node => {
+          if (node.nodeType === 1) sanitizeNativeVideoControls(node);
+        });
+      });
+    });
+    controlsObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["controls"],
+    });
   }
 
   function isHlsUrl(url) {
@@ -341,10 +455,8 @@
     if (media.type === "video") {
       const poster = media.poster ? ` poster="${esc(media.poster)}"` : "";
       const type = media.mime ? ` type="${esc(media.mime)}"` : "";
-      const cleanSurface = ["reels", "video-detail"].includes(String(surface || "").toLowerCase());
-      const controls = options.controls === false || cleanSurface ? "" : " controls";
       const loop = options.loop ? " loop" : "";
-      return `<div class="${shellClass}" data-fit="smart" data-open-media-lightbox ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<video data-pulse-video-player${controls}${loop} playsinline webkit-playsinline x-webkit-airplay="allow" preload="metadata"${poster}><source src="${esc(media.playback_url || media.valid_url || media.url)}"${type}></video><button class="pulse-media-sound-unlock" type="button" data-pulse-media-sound hidden>Tap for sound</button>${fallback}</div>`;
+      return `<div class="${shellClass}" data-fit="smart" data-open-media-lightbox ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<video data-pulse-video-player${loop} playsinline webkit-playsinline x-webkit-airplay="allow" preload="metadata" controlsList="nodownload noplaybackrate noremoteplayback" disablepictureinpicture${poster}><source src="${esc(media.playback_url || media.valid_url || media.url)}"${type}></video><button class="pulse-media-sound-unlock" type="button" data-pulse-media-sound hidden>Tap for sound</button>${fallback}</div>`;
     }
     if (media.type === "audio") {
       return `<div class="${shellClass} media-kind-audio" data-fit="smart" ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<audio controls preload="metadata" src="${esc(media.valid_url || media.url)}"></audio>${fallback}</div>`;
@@ -617,12 +729,10 @@
   function bindAutoplayVideo(wrap, video) {
     if (!wrap || !video || video.dataset.pulseAutoplayBound === "1") return;
     video.dataset.pulseAutoplayBound = "1";
-    if (["reels", "video-detail"].includes(String(wrap.dataset.mediaSurface || "").toLowerCase()) || wrap.closest?.(".reel-card,.video-detail-player")) {
-      video.controls = false;
-      video.removeAttribute("controls");
-      video.setAttribute("disablepictureinpicture", "");
-      video.setAttribute("controlsList", "nodownload noplaybackrate noremoteplayback");
-    }
+    video.controls = false;
+    video.removeAttribute("controls");
+    video.setAttribute("disablepictureinpicture", "");
+    video.setAttribute("controlsList", "nodownload noplaybackrate noremoteplayback");
     ensureSoundButton(wrap);
     const isReelSurface = isManagedReelVideo(video);
     if (isReelSurface || video.dataset.reelsManaged === "1") {
@@ -653,6 +763,7 @@
       const nextMuted = !(video.muted || Number(video.volume || 0) === 0);
       setVideoMuted(video, nextMuted, "user-toggle");
       setSoundEnabled(!nextMuted);
+      showTapIcon(wrap, nextMuted ? "🔇" : "🔊");
       if (!nextMuted) {
         video.volume = Number(video.dataset.pulsePreferredVolume || 1) || 1;
         video.play().catch(() => showSoundPrompt(wrap, true, true));
@@ -694,6 +805,23 @@
       }, { threshold: [0, .25, .58, .75, 1], rootMargin: "0px" });
     }
     playbackObserver.observe(video);
+  }
+
+  function showTapIcon(wrap, label) {
+    if (!wrap) return;
+    let icon = wrap.querySelector(":scope > .pulse-media-tap-icon");
+    if (!icon) {
+      icon = document.createElement("span");
+      icon.className = "pulse-media-tap-icon";
+      icon.setAttribute("aria-hidden", "true");
+      wrap.appendChild(icon);
+    }
+    icon.textContent = label || "•";
+    icon.classList.remove("show");
+    void icon.offsetWidth;
+    icon.classList.add("show");
+    clearTimeout(icon._pulseTapTimer);
+    icon._pulseTapTimer = setTimeout(() => icon.classList.remove("show"), 1000);
   }
 
   function retryUrl(url, count) {
@@ -1190,6 +1318,9 @@
   let observer = null;
   function hydrate(root) {
     ensurePortalStyles();
+    ensureControlGuardStyles();
+    sanitizeNativeVideoControls(root || document);
+    observeNativeVideoControls();
     const scope = root || document;
     const wraps = Array.from(scope.querySelectorAll(".pulse-media-wrap"));
     if ("IntersectionObserver" in window) {

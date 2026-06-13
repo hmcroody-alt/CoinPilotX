@@ -914,6 +914,78 @@ article.card > .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels
   object-fit: cover !important;
 }
 
+.pulse-media-wrap video,
+.pulse-status-story-media video,
+.pulse-media-lightbox-stage video,
+.video-detail-player video,
+.reels-media-stage video,
+.profile-post video,
+.group-media-frame video,
+.message-media {
+  -webkit-tap-highlight-color: transparent !important;
+}
+
+.pulse-media-wrap video::-webkit-media-controls,
+.pulse-media-wrap video::-webkit-media-controls-enclosure,
+.pulse-media-wrap video::-webkit-media-controls-panel,
+.pulse-media-wrap video::-webkit-media-controls-start-playback-button,
+.pulse-status-story-media video::-webkit-media-controls,
+.pulse-status-story-media video::-webkit-media-controls-enclosure,
+.pulse-status-story-media video::-webkit-media-controls-panel,
+.pulse-status-story-media video::-webkit-media-controls-start-playback-button,
+.pulse-media-lightbox-stage video::-webkit-media-controls,
+.pulse-media-lightbox-stage video::-webkit-media-controls-enclosure,
+.pulse-media-lightbox-stage video::-webkit-media-controls-panel,
+.pulse-media-lightbox-stage video::-webkit-media-controls-start-playback-button,
+.video-detail-player video::-webkit-media-controls,
+.video-detail-player video::-webkit-media-controls-enclosure,
+.video-detail-player video::-webkit-media-controls-panel,
+.video-detail-player video::-webkit-media-controls-start-playback-button,
+.reels-media-stage video::-webkit-media-controls,
+.reels-media-stage video::-webkit-media-controls-enclosure,
+.reels-media-stage video::-webkit-media-controls-panel,
+.reels-media-stage video::-webkit-media-controls-start-playback-button,
+.profile-post video::-webkit-media-controls,
+.profile-post video::-webkit-media-controls-enclosure,
+.profile-post video::-webkit-media-controls-panel,
+.profile-post video::-webkit-media-controls-start-playback-button,
+.group-media-frame video::-webkit-media-controls,
+.group-media-frame video::-webkit-media-controls-enclosure,
+.group-media-frame video::-webkit-media-controls-panel,
+.group-media-frame video::-webkit-media-controls-start-playback-button {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.pulse-media-tap-icon {
+  position: absolute;
+  z-index: 18;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(2, 8, 14, .58);
+  border: 1px solid rgba(255, 255, 255, .18);
+  color: #fff;
+  font-size: 21px;
+  line-height: 1;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, .34);
+  backdrop-filter: blur(14px);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(.82);
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.pulse-media-tap-icon.show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
 .video-detail-player.pulse-media-wrap.media-kind-video {
   width: 100% !important;
   max-width: 100% !important;

@@ -1124,6 +1124,15 @@ line-height: 1 !important;
 color: #fff !important;
 text-shadow: 0 2px 10px rgba(0,0,0,.9);
 }
+.reel-action .reel-action-label {
+position: absolute !important;
+width: 1px !important;
+height: 1px !important;
+overflow: hidden !important;
+clip: rect(0 0 0 0) !important;
+clip-path: inset(50%) !important;
+white-space: nowrap !important;
+}
 
 .reel-action-avatar {
 position: relative;
@@ -1437,18 +1446,21 @@ animation: reelReactionGlow .72s ease-out;
 pointer-events: none;
 }
 .reel-center-play {
+display: none !important;
 opacity: 0 !important;
 pointer-events: none !important;
 transform: translate(-50%, -50%) scale(.94) !important;
-transition: opacity .16s ease, transform .16s ease !important;
+transition: none !important;
 }
 .reel-card.show-controls .reel-center-play,
 .reel-center-play:focus-visible {
-opacity: 1 !important;
-pointer-events: auto !important;
-transform: translate(-50%, -50%) scale(1) !important;
+display: none !important;
+opacity: 0 !important;
+pointer-events: none !important;
+transform: translate(-50%, -50%) scale(.94) !important;
 }
 .reel-card.is-playing:not(.show-controls) .reel-center-play {
+display: none !important;
 opacity: 0 !important;
 pointer-events: none !important;
 }

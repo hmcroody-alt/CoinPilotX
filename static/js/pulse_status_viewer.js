@@ -99,5 +99,126 @@
     return `<div class="pulse-status-story-text style-${esc(item.status_style?.card_style || item.status_tools?.status_style?.card_style || "soft")}" style="${esc(styleFor(item))}"><strong>${text}</strong></div>`;
   }
 
-  window.PulseStatusViewer = { render, styleFor, kindFor };
+  const statusActionMeta = {
+    love: ["❤️", "0"],
+    comment: ["💬", "Comment"],
+    share: ["↗️", "Share"],
+    save: ["🔖", "Save"],
+    more: ["•••", "More"],
+    mute: ["🔇", "Sound"],
+  };
+
+  function decorateActionButton(button, key) {
+    if (!button || button.dataset.statusActionDecorated === "1") return;
+    const [icon, label] = statusActionMeta[key] || ["•", button.textContent.trim() || "Action"];
+    const count = button.matches("[data-status-story-react]")
+      ? (button.querySelector("[data-status-story-reaction-count]")?.textContent || "0")
+      : label;
+    button.classList.add("pulse-status-action");
+    if (key === "love") button.classList.add("pulse-status-react");
+    button.innerHTML = `<span class="pulse-status-action-icon" aria-hidden="true">${icon}</span><small ${key === "love" ? 'data-status-story-reaction-count' : ""}>${count}</small>`;
+    button.dataset.statusActionDecorated = "1";
+    if (key === "love" && !button.hasAttribute("aria-pressed")) button.setAttribute("aria-pressed", "false");
+  }
+
+  function hardenStatusCloseButton(button) {
+    if (!button) return;
+    button.style.zIndex = "10090";
+    button.style.width = "56px";
+    button.style.height = "56px";
+    button.style.minHeight = "56px";
+    button.style.pointerEvents = "auto";
+    button.style.touchAction = "manipulation";
+  }
+
+  function decorateStatusActions(root = document) {
+    const scope = root?.querySelectorAll ? root : document;
+    scope.querySelectorAll?.("[data-status-story-react]").forEach(button => decorateActionButton(button, "love"));
+    scope.querySelectorAll?.("[data-status-story-comment]").forEach(button => decorateActionButton(button, "comment"));
+    scope.querySelectorAll?.("[data-status-story-share]").forEach(button => decorateActionButton(button, "share"));
+    scope.querySelectorAll?.("[data-status-story-save]").forEach(button => decorateActionButton(button, "save"));
+    scope.querySelectorAll?.("[data-status-story-more]").forEach(button => decorateActionButton(button, "more"));
+    scope.querySelectorAll?.("[data-status-story-mute]").forEach(button => decorateActionButton(button, "mute"));
+    scope.querySelectorAll?.("[data-status-story-close]").forEach(hardenStatusCloseButton);
+  }
+
+  function closeStatusViewerNow(event) {
+    const closeButton = event.target?.closest?.("[data-status-story-close]");
+    if (!closeButton) return;
+    hardenStatusCloseButton(closeButton);
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const viewer = closeButton.closest("#pulseStatusStoryViewer,.pulse-status-story-viewer");
+    viewer?.querySelectorAll("video").forEach(video => {
+      try { video.pause(); } catch (_) {}
+    });
+    viewer?.classList.remove("open");
+    viewer?.setAttribute("aria-hidden", "true");
+  }
+
+  function parseCount(value) {
+    const match = String(value || "").replace(/,/g, "").match(/\d+(?:\.\d+)?/);
+    return match ? Number(match[0]) || 0 : 0;
+  }
+
+  function syncStatusReactionButton(viewer) {
+    const root = viewer || document.querySelector("#pulseStatusStoryViewer,.pulse-status-story-viewer");
+    const button = root?.querySelector?.("[data-status-story-react]");
+    const count = button?.querySelector?.("[data-status-story-reaction-count]");
+    if (!button || !count) return;
+    const footerText = root.querySelector?.("[data-status-story-count],[data-status-viewer-count]")?.textContent || "";
+    const reactionMatch = footerText.replace(/,/g, "").match(/(\d+)\s+reactions?/i);
+    if (reactionMatch) count.textContent = reactionMatch[1];
+    button.classList.toggle("active", button.getAttribute("aria-pressed") === "true" || button.classList.contains("active"));
+  }
+
+  function optimisticStatusReaction(event) {
+    const button = event.target?.closest?.("[data-status-story-react]");
+    if (!button || button.dataset.statusUiPending === "1") return;
+    decorateActionButton(button, "love");
+    const count = button.querySelector("[data-status-story-reaction-count]");
+    const previous = count?.textContent || "0";
+    button.dataset.statusUiPending = "1";
+    button.dataset.statusPreviousCount = previous;
+    button.classList.remove("is-popping");
+    void button.offsetWidth;
+    button.classList.add("active", "is-popping");
+    button.setAttribute("aria-pressed", "true");
+    if (count) count.textContent = String(parseCount(previous) + 1);
+    setTimeout(() => button.classList.remove("is-popping"), 360);
+    setTimeout(() => {
+      delete button.dataset.statusUiPending;
+      syncStatusReactionButton(button.closest("#pulseStatusStoryViewer,.pulse-status-story-viewer"));
+    }, 1400);
+  }
+
+  document.addEventListener("pointerdown", closeStatusViewerNow, true);
+  document.addEventListener("touchstart", closeStatusViewerNow, { capture: true, passive: false });
+  document.addEventListener("click", event => {
+    const closeButton = event.target?.closest?.("[data-status-story-close]");
+    if (closeButton) hardenStatusCloseButton(closeButton);
+  }, true);
+  document.addEventListener("click", optimisticStatusReaction, true);
+  document.addEventListener("DOMContentLoaded", () => {
+    decorateStatusActions(document);
+    requestAnimationFrame(() => decorateStatusActions(document));
+    setTimeout(() => decorateStatusActions(document), 500);
+  });
+  if ("MutationObserver" in window) {
+    const statusObserver = new MutationObserver(records => {
+      records.forEach(record => {
+        if (record.target?.matches?.("[data-status-story-mute]")) {
+          delete record.target.dataset.statusActionDecorated;
+          decorateActionButton(record.target, "mute");
+        }
+        if (record.target?.matches?.("[data-status-story-close]")) hardenStatusCloseButton(record.target);
+        record.addedNodes?.forEach(node => {
+          if (node.nodeType === 1) decorateStatusActions(node);
+        });
+      });
+    });
+    statusObserver.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
+  }
+
+  window.PulseStatusViewer = { render, styleFor, kindFor, decorateStatusActions };
 })();
