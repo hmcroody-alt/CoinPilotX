@@ -1,0 +1,46 @@
+[
+  {
+    "name": "mobile-iphone: Home feed immersive video route card",
+    "status": "PASS",
+    "href": "/pulse/videos/231",
+    "frame": "372x574",
+    "card": "374x820"
+  },
+  {
+    "name": "mobile-iphone: video click opens detail without offline fallback",
+    "status": "PASS",
+    "url": "http://127.0.0.1:5088/pulse/videos/231",
+    "consoleErrors": 0,
+    "badResponses": 0,
+    "ignoredAborts": 10
+  },
+  {
+    "name": "desktop: Home feed immersive video route card",
+    "status": "PASS",
+    "href": "/pulse/videos/231",
+    "frame": "758x720",
+    "card": "760x985"
+  },
+  {
+    "name": "desktop: video click opens detail without offline fallback",
+    "status": "PASS",
+    "url": "http://127.0.0.1:5088/pulse/videos/231",
+    "consoleErrors": 0,
+    "badResponses": 0,
+    "ignoredAborts": 10
+  },
+  {
+    "name": "mobile: Videos page video link opens without offline fallback",
+    "status": "PASS",
+    "href": "/pulse/videos/233",
+    "url": "http://127.0.0.1:5088/pulse/videos/233",
+    "badResponses": 0
+  },
+  {
+    "name": "mobile: profile/my-posts video opens detail without offline fallback",
+    "status": "PASS",
+    "href": "/pulse/videos/231",
+    "url": "http://127.0.0.1:5088/pulse/videos/231",
+    "badResponses": 0
+  }
+]

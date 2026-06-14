@@ -2323,6 +2323,8 @@ width: 100% !important;
 margin: 6px 0 0 !important;
 }
 .feed > .post-card-modern .post-card-media-frame {
+position: relative;
+display: block;
 width: 100%;
 border-radius: 18px;
 border: 0;
@@ -2330,6 +2332,7 @@ background: #020817;
 box-shadow: none;
 overflow: hidden;
 cursor: pointer;
+text-decoration: none;
 }
 .feed > .post-card-modern .post-card-media-frame img,
 .feed > .post-card-modern .post-card-media-frame video {
@@ -2380,6 +2383,115 @@ backdrop-filter: blur(12px);
 }
 .feed > .post-card-modern .post-video-sound {
 display: none !important;
+}
+.feed > .post-card-modern.post-card-video {
+padding: 0 !important;
+gap: 0 !important;
+overflow: hidden !important;
+border-color: rgba(110, 223, 246, .24) !important;
+background: linear-gradient(180deg, rgba(3, 9, 17, .98), rgba(6, 15, 27, .98)) !important;
+box-shadow: 0 30px 96px rgba(0, 0, 0, .48), 0 0 42px rgba(110, 223, 246, .08) !important;
+}
+.feed > .post-card-modern.post-card-video > .post-card-media {
+order: -2;
+margin: 0 !important;
+width: 100% !important;
+}
+.feed > .post-card-modern.post-card-video .post-card-media-frame.is-video {
+width: 100%;
+height: clamp(500px, 72vh, 760px);
+min-height: 500px;
+aspect-ratio: auto;
+border-radius: 0;
+background: #02050b;
+box-shadow: inset 0 -110px 100px rgba(0, 0, 0, .32);
+}
+.feed > .post-card-modern.post-card-video .post-card-media-frame.is-video video,
+.feed > .post-card-modern.post-card-video .post-card-media-frame.is-video img {
+width: 100% !important;
+height: 100% !important;
+max-height: none !important;
+object-fit: cover !important;
+object-position: center !important;
+filter: saturate(1.04) contrast(1.02);
+}
+.feed > .post-card-modern.post-card-video .post-card-header,
+.feed > .post-card-modern.post-card-video .post-caption,
+.feed > .post-card-modern.post-card-video .post-action-row,
+.feed > .post-card-modern.post-card-video .post-comment-composer {
+margin-inline: 18px;
+}
+.feed > .post-card-modern.post-card-video .post-card-header {
+padding-top: 15px;
+}
+.feed > .post-card-modern.post-card-video .post-caption {
+padding-bottom: 10px;
+}
+.feed > .post-card-modern.post-card-video .post-card-creator {
+grid-template-columns: 46px minmax(0, 1fr);
+gap: 10px;
+align-items: center;
+}
+.feed > .post-card-modern.post-card-video .post-card-avatar {
+width: 46px !important;
+height: 46px !important;
+}
+.feed > .post-card-modern.post-card-video .post-card-name {
+font-size: 16px;
+}
+.feed > .post-card-modern.post-card-video .post-card-creator-line {
+font-size: 13px;
+}
+.feed > .post-card-modern.post-card-video .post-card-meta {
+font-size: 12px;
+}
+.feed > .post-card-modern.post-card-video .post-caption h2 {
+font-size: clamp(20px, 2vw, 27px) !important;
+}
+.feed > .post-card-modern.post-card-video .post-caption p {
+font-size: clamp(15px, 1.5vw, 18px) !important;
+}
+.feed > .post-card-modern.post-card-video > .post-engagement-summary {
+display: none;
+}
+.feed > .post-card-modern .post-media-engagement {
+position: absolute;
+z-index: 6;
+left: 14px;
+right: 14px;
+bottom: 14px;
+display: flex;
+align-items: center;
+justify-content: space-between;
+gap: 12px;
+pointer-events: none;
+color: #fff;
+font-size: 14px;
+font-weight: 900;
+text-shadow: 0 2px 12px rgba(0, 0, 0, .8);
+}
+.feed > .post-card-modern .post-media-reactions,
+.feed > .post-card-modern .post-media-views {
+display: inline-flex;
+align-items: center;
+min-height: 32px;
+padding: 5px 10px;
+border: 1px solid rgba(255, 255, 255, .15);
+border-radius: 999px;
+background: rgba(2, 7, 14, .58);
+backdrop-filter: blur(14px);
+box-shadow: 0 8px 28px rgba(0, 0, 0, .28);
+}
+.feed > .post-card-modern.post-card-video .post-video-play {
+left: 50%;
+top: 50%;
+bottom: auto;
+width: 58px;
+height: 58px;
+transform: translate(-50%, -50%);
+font-size: 20px;
+border: 1px solid rgba(110, 223, 246, .5);
+box-shadow: 0 0 30px rgba(54, 229, 143, .2);
 }
 .tabs [data-feed="trending"],
 .post-card-tags .tag[href*="trending"],
@@ -2525,6 +2637,47 @@ max-width: 100% !important;
 padding: 14px !important;
 border-radius: 18px !important;
 gap: 11px !important;
+}
+.feed > .post-card-modern.post-card-video {
+padding: 0 !important;
+border-radius: 18px !important;
+}
+.feed > .post-card-modern.post-card-video .post-card-media-frame.is-video {
+height: clamp(480px, 68dvh, 640px);
+min-height: 480px;
+border-radius: 0;
+}
+.feed > .post-card-modern.post-card-video .post-card-header,
+.feed > .post-card-modern.post-card-video .post-caption,
+.feed > .post-card-modern.post-card-video .post-action-row,
+.feed > .post-card-modern.post-card-video .post-comment-composer {
+margin-inline: 12px;
+}
+.feed > .post-card-modern.post-card-video .post-card-header {
+padding-top: 12px;
+}
+.feed > .post-card-modern.post-card-video .post-card-follow {
+min-height: 34px;
+padding-inline: 12px;
+}
+.feed > .post-card-modern.post-card-video .post-card-menu-button {
+width: 34px;
+height: 34px;
+min-height: 34px;
+}
+.feed > .post-card-modern.post-card-video .post-video-play {
+width: 52px !important;
+height: 52px !important;
+left: 50%;
+top: 50%;
+bottom: auto;
+transform: translate(-50%, -50%);
+}
+.feed > .post-card-modern .post-media-engagement {
+left: 10px;
+right: 10px;
+bottom: 10px;
+font-size: 12px;
 }
 .feed > .post-card-modern .post-card-creator {
 grid-template-columns: 52px minmax(0, 1fr);

@@ -1,4 +1,4 @@
-const CACHE_NAME = "coinpilotx-cache-v15-pulse-shell";
+const CACHE_NAME = "coinpilotx-cache-v16-video-routing";
 const STATIC_ASSETS = [
   "/manifest.json",
   "/static/analytics.js",
@@ -62,6 +62,18 @@ function offlineResponse() {
   ));
 }
 
+function onlineNavigationError(pathname) {
+  const videoRoute = pathname.startsWith("/pulse/videos/");
+  const title = videoRoute ? "Video temporarily unavailable" : "PulseSoc could not open this page";
+  const body = videoRoute
+    ? "The video page could not be loaded. Your connection is online; retry or return to Videos."
+    : "This page could not be loaded. Retry without leaving PulseSoc.";
+  return new Response(
+    `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><main style="min-height:100vh;display:grid;place-items:center;padding:24px;background:#020812;color:#f2fbff;font-family:system-ui"><section style="max-width:520px;border:1px solid rgba(110,223,246,.28);border-radius:20px;padding:24px;background:#071321"><h1>${title}</h1><p style="color:#a8bbc9;line-height:1.5">${body}</p><p><button onclick="location.reload()" style="min-height:44px;border:0;border-radius:12px;padding:10px 16px;background:#36e58f;color:#041019;font-weight:900">Retry</button> <a href="/pulse/videos" style="margin-left:10px;color:#6edff6">Open Videos</a></p></section></main>`,
+    { status: 503, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } }
+  );
+}
+
 self.addEventListener("install", (event) => {
   console.log("[CoinPilotXAI SW] service worker installed", CACHE_NAME);
   event.waitUntil(
@@ -102,8 +114,9 @@ self.addEventListener("fetch", (event) => {
           return response;
         })
         .catch((error) => {
-          console.log("[CoinPilotXAI SW] navigation fallback to offline used", url.pathname, error && error.message ? error.message : error);
-          return offlineResponse();
+          const offline = self.navigator && self.navigator.onLine === false;
+          console.log("[CoinPilotXAI SW] navigation fetch failed", url.pathname, offline ? "offline" : "online", error && error.message ? error.message : error);
+          return offline ? offlineResponse() : onlineNavigationError(url.pathname);
         })
     );
     return;

@@ -75,6 +75,13 @@
     return post?.permalink || `/pulse/post/${post?.id || ""}`;
   }
 
+  function videoDetailUrl(post, item) {
+    const candidates = [item?.video_permalink, post?.video_permalink];
+    const directId = Number(item?.video_id || post?.video_id || 0);
+    if (directId > 0) candidates.push(`/pulse/videos/${directId}`);
+    return candidates.find(value => /^\/pulse\/videos\/\d+$/.test(String(value || ""))) || "";
+  }
+
   function mediaUrl(item) {
     return item?.playback_url || item?.media_url || item?.url || item?.source_url || item?.cdn_url || item?.valid_url || "";
   }
@@ -254,8 +261,14 @@
       const url = mediaUrl(item);
       if (!url) return;
       const video = isVideoMedia(item, url);
-      const frame = element("button", `post-card-media-frame ${video ? "is-video" : "is-image"}`);
-      frame.type = "button";
+      const frame = element(video ? "a" : "button", `post-card-media-frame ${video ? "is-video" : "is-image"}`);
+      if (video) {
+        const detailUrl = videoDetailUrl(post, item);
+        frame.href = detailUrl || "/pulse/videos";
+        frame.dataset.openVideoDetail = detailUrl;
+      } else {
+        frame.type = "button";
+      }
       frame.dataset.openMediaLightbox = "1";
       frame.dataset.mediaSrc = url;
       frame.dataset.mediaType = video ? "video" : "image";
@@ -279,6 +292,12 @@
         frame.appendChild(media);
         const play = element("span", "post-video-play", "▶");
         frame.appendChild(play);
+        const overlay = element("span", "post-media-engagement", "");
+        overlay.append(
+          element("span", "post-media-reactions", `❤️ ${compactNumber(reactionTotal(post))}   🔥 ${compactNumber(post.reaction_counts?.fire || 0)}`),
+          element("span", "post-media-views", `👁 ${compactNumber(post.view_count || post.views_count)}`)
+        );
+        frame.appendChild(overlay);
       } else {
         const image = document.createElement("img");
         image.src = url;
@@ -363,6 +382,8 @@
     card.dataset.postType = post.post_type || kind;
     card.dataset.mediaKind = kind;
 
+    const media = renderMedia(post, mediaItems);
+    if (kind === "video" && media) card.appendChild(media);
     renderCreatorHeader(card, post, author, authorName, label);
     renderMenu(card, post, author);
     renderCaption(card, post);
@@ -371,8 +392,7 @@
       live.href = post.live.live_url;
       card.appendChild(live);
     }
-    const media = renderMedia(post, mediaItems);
-    if (media) card.appendChild(media);
+    if (kind !== "video" && media) card.appendChild(media);
     renderEngagement(card, post);
     renderActions(card, post);
     renderComposer(card, post);
@@ -635,6 +655,15 @@
     const mediaOpen = event.target.closest("[data-open-media-lightbox]");
     if (mediaOpen) {
       event.preventDefault();
+      if (mediaOpen.dataset.mediaType === "video") {
+        const route = mediaOpen.dataset.openVideoDetail || mediaOpen.getAttribute("href") || "";
+        if (/^\/pulse\/videos\/\d+$/.test(route)) {
+          window.location.assign(route);
+        } else {
+          toast("This video is not available yet. Open Videos to continue.");
+        }
+        return;
+      }
       const postId = mediaOpen.dataset.doubleTapLike;
       const now = Date.now();
       if (postId && now - Number(mediaOpen.dataset.lastTap || 0) < 320) {
