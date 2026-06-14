@@ -28,10 +28,12 @@
         "privacyChoicesUrl": "https://pulsesoc.com/privacy-center",
         "screenshots": {
           "APP_IPHONE_65": [
-            "store/apple/screenshot/en-US/APP_IPHONE_65/iphone-65-welcome-1284x2778.png",
-            "store/apple/screenshot/en-US/APP_IPHONE_65/iphone-65-premium-inside-1284x2778.png",
-            "store/apple/screenshot/en-US/APP_IPHONE_65/iphone-65-feed-inside-1284x2778.png",
-            "store/apple/screenshot/en-US/APP_IPHONE_65/iphone-65-videos-inside-1284x2778.png"
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iphone-65-06-welcome.png",
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iphone-65-04-home-feed.png",
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iphone-65-03-videos-menu.png",
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iphone-65-02-menu-primary.png",
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iphone-65-01-menu-utility.png",
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iphone-65-05-login.png"
           ],
           "APP_IPAD_PRO_3GEN_129": [
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/ipad-13-welcome-2048x2732.png",
