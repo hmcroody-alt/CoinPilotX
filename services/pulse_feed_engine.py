@@ -311,7 +311,15 @@ def _comment_counts(cur, post_ids):
     return {int(row["post_id"]): int(row["total"] or 0) for row in cur.fetchall()}
 
 
-def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=None, viewer_user_id=None):
+def _view_counts(cur, post_ids):
+    if not post_ids:
+        return {}
+    placeholders = ",".join(["?"] * len(post_ids))
+    cur.execute(f"SELECT post_id, COUNT(*) AS total FROM pulse_post_views WHERE post_id IN ({placeholders}) GROUP BY post_id", post_ids)
+    return {int(row["post_id"]): int(row["total"] or 0) for row in cur.fetchall()}
+
+
+def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=None, viewer_user_id=None, views=0):
     item = dict(row)
     author = _public_author(item)
     repost_original = item.get("_repost_original") or None
@@ -367,6 +375,8 @@ def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=No
         "reactions_count": reaction_total,
         "comment_count": comments,
         "comments_count": comments,
+        "view_count": int(views or 0),
+        "views_count": int(views or 0),
         "viewer_reaction": viewer_reaction,
         "can_delete": can_delete,
         "live": live_payload,
@@ -407,6 +417,7 @@ def _repost_originals(cur, rows, viewer_user_id=None):
     hydrated_ids = [int(row["id"]) for row in originals]
     reactions = _reaction_counts(cur, hydrated_ids)
     comments = _comment_counts(cur, hydrated_ids)
+    views = _view_counts(cur, hydrated_ids)
     viewer_reactions = {}
     if viewer_user_id and hydrated_ids:
         reaction_placeholders = ",".join(["?"] * len(hydrated_ids))
@@ -421,6 +432,7 @@ def _repost_originals(cur, rows, viewer_user_id=None):
             comments.get(int(row["id"]), 0),
             viewer_reactions.get(int(row["id"])),
             viewer_user_id,
+            views.get(int(row["id"]), 0),
         )
         for row in originals
     }
@@ -614,6 +626,7 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
     post_ids = [int(post_id)]
     reactions = _reaction_counts(cur, post_ids)
     comments = _comment_counts(cur, post_ids)
+    views = _view_counts(cur, post_ids)
     viewer_reaction = None
     if viewer_user_id:
         cur.execute("SELECT reaction_type FROM pulse_reactions WHERE post_id=? AND user_id=? LIMIT 1", (int(post_id), int(viewer_user_id)))
@@ -623,7 +636,7 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
         row["_repost_original"] = repost_originals.get(int(row.get("repost_of_post_id") or 0))
     conn.close()
     media = _media_for_posts(post_ids)
-    return _public_post(row, media.get(int(post_id), []), reactions.get(int(post_id), {}), comments.get(int(post_id), 0), viewer_reaction, viewer_user_id)
+    return _public_post(row, media.get(int(post_id), []), reactions.get(int(post_id), {}), comments.get(int(post_id), 0), viewer_reaction, viewer_user_id, views.get(int(post_id), 0))
 
 
 def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_player_id="", limit=20, offset=0):
@@ -694,6 +707,7 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     post_ids = [int(row["id"]) for row in rows]
     reactions = _reaction_counts(cur, post_ids)
     comments = _comment_counts(cur, post_ids)
+    views = _view_counts(cur, post_ids)
     viewer_reactions = {}
     if viewer_user_id and post_ids:
         placeholders = ",".join(["?"] * len(post_ids))
@@ -706,7 +720,7 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
             row["_repost_original"] = repost_originals.get(original_id)
     conn.close()
     media = _media_for_posts(post_ids)
-    posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id) for row in rows]
+    posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id, views.get(int(row["id"]), 0)) for row in rows]
     try:
         if feed == "trending" or (feed == "for_you" and (topic or profile_public_player_id)):
             posts = pulse_feed_ranking_engine.rank_posts(posts, {"viewer_user_id": viewer_user_id})
@@ -747,6 +761,7 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
     post_ids = [int(row["id"]) for row in rows]
     reactions = _reaction_counts(cur, post_ids)
     comments = _comment_counts(cur, post_ids)
+    views = _view_counts(cur, post_ids)
     viewer_reactions = {}
     if viewer_user_id and post_ids:
         placeholders = ",".join(["?"] * len(post_ids))
@@ -759,7 +774,7 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
             row["_repost_original"] = repost_originals.get(original_id)
     conn.close()
     media = _media_for_posts(post_ids)
-    posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id) for row in rows]
+    posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id, views.get(int(row["id"]), 0)) for row in rows]
     return {"ok": True, "feed": "my_posts", "topic": "", "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": safe_intelligence_panel("")}
 
 
