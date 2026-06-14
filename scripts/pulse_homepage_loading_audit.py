@@ -89,6 +89,17 @@ def main() -> int:
     require("data-pulse-feed-fallback" in html and "data-retry-pulse-feed" in html, "/pulse has a retryable feed fallback")
     require("load(true).then(startLive)" not in html, "/pulse initial feed does not block realtime startup")
 
+    for profile, absent_asset in (
+        ("status_off", "pulse_status_viewer.js"),
+        ("media_off", "pulse_media_renderer.js"),
+        ("notifications_off", "static/notifications.js"),
+    ):
+        profiled = client.get(f"/pulse?boot_profile={profile}")
+        profiled_html = profiled.get_data(as_text=True)
+        require(profiled.status_code == 200, f"diagnostic boot profile loads {profile}")
+        require(f'data-pulse-boot-profile="{profile}"' in profiled_html, f"diagnostic boot profile is labeled {profile}")
+        require(absent_asset not in profiled_html, f"diagnostic boot profile suppresses {absent_asset}")
+
     refs = same_origin_static_refs(html)
     require(bool(refs), "/pulse exposes static JS/CSS asset references")
     for url in refs:
