@@ -27,7 +27,7 @@ def main() -> None:
         "data-pulse-video-player",
         "data-pulse-video-player controls playsinline webkit-playsinline preload",
         "window.PulseMediaRenderer?.hydrate(document)",
-        "pulse_media_renderer.js?v=video-stage-size-20260605",
+        "pulse_media_renderer.js?v=global-media-ui-",
     ]:
         expect(token in bot, f"feed page includes {token}")
 

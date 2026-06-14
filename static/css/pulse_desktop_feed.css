@@ -1641,6 +1641,36 @@ font-size: 13px;
 .pulse-media-lightbox {
 display: none !important;
 }
+.pulse-media-lightbox.open {
+display: grid !important;
+position: fixed !important;
+inset: 0 !important;
+z-index: 2000 !important;
+padding: max(14px, env(safe-area-inset-top)) 12px max(14px, env(safe-area-inset-bottom));
+background: rgba(1, 6, 14, .92) !important;
+backdrop-filter: blur(12px);
+}
+.pulse-media-lightbox .pulse-media-lightbox-stage {
+width: 100%;
+max-height: calc(100dvh - 28px);
+}
+.pulse-media-lightbox .pulse-media-lightbox-stage img,
+.pulse-media-lightbox .pulse-media-lightbox-stage video {
+max-height: calc(100dvh - 28px);
+border-radius: 14px;
+}
+.pulse-media-lightbox .pulse-media-lightbox-close {
+position: fixed !important;
+top: max(12px, env(safe-area-inset-top)) !important;
+right: 12px !important;
+z-index: 2;
+display: inline-grid !important;
+width: 42px !important;
+min-width: 42px !important;
+height: 42px !important;
+min-height: 42px !important;
+padding: 0 !important;
+}
 .desktop-feed-intel-card {
 display: none !important;
 }
@@ -2320,16 +2350,22 @@ height: 100% !important;
 object-fit: cover !important;
 }
 .feed > .post-card-modern .post-video-play {
-left: 50%;
-top: 50%;
-bottom: auto;
-width: 58px;
-height: 58px;
-transform: translate(-50%, -50%);
-font-size: 22px;
+left: 14px;
+top: auto;
+bottom: 14px;
+width: 42px;
+height: 42px;
+transform: none;
+font-size: 16px;
 background: rgba(4, 10, 19, .58);
 }
+.feed > .post-card-modern .post-card-media-frame.is-playing .post-video-play {
+opacity: 0;
+transform: scale(.92);
+pointer-events: none;
+}
 .feed > .post-card-modern .post-video-chip {
+display: none !important;
 position: absolute;
 left: 14px;
 bottom: 14px;
@@ -2344,6 +2380,44 @@ backdrop-filter: blur(12px);
 }
 .feed > .post-card-modern .post-video-sound {
 display: none !important;
+}
+.tabs [data-feed="trending"],
+.post-card-tags .tag[href*="trending"],
+.post-card-tags .tag[href*="fire"] {
+border-color: rgba(255, 148, 77, .28) !important;
+color: #ffb067 !important;
+}
+.post-card-tags .tag[href*="crypto"],
+.post-card-tags .tag[href*="wallet"],
+.post-card-tags .tag[href*="bitcoin"] {
+border-color: rgba(255, 209, 102, .3) !important;
+color: #ffd166 !important;
+}
+.post-card-tags .tag[href*="music"],
+.post-card-tags .tag[href*="sound"] {
+border-color: rgba(255, 93, 197, .28) !important;
+color: #ff77d9 !important;
+}
+.post-card-tags .tag[href*="sports"],
+.post-card-tags .tag[href*="football"],
+.post-card-tags .tag[href*="soccer"] {
+border-color: rgba(47, 140, 255, .3) !important;
+color: #62a8ff !important;
+}
+.post-card-tags .tag[href*="ai"],
+.post-card-tags .tag[href*="artificial"] {
+border-color: rgba(155, 92, 255, .32) !important;
+color: #b996ff !important;
+}
+.post-card-tags .tag[href*="education"],
+.post-card-tags .tag[href*="learn"] {
+border-color: rgba(110, 223, 246, .32) !important;
+color: #6edff6 !important;
+}
+.tabs [data-feed="following"],
+.post-card-tags .tag[href*="following"] {
+border-color: rgba(54, 229, 143, .3) !important;
+color: #36e58f !important;
 }
 .feed > .post-card-modern .post-engagement-summary {
 display: grid;
@@ -2492,7 +2566,19 @@ line-height: 1.28 !important;
 font-size: 16px;
 }
 .feed > .post-card-modern .post-card-media-frame {
+position: relative !important;
 border-radius: 14px;
+}
+.feed > .post-card-modern .post-video-play {
+position: absolute !important;
+display: inline-grid !important;
+width: 38px !important;
+min-width: 38px !important;
+max-width: 38px !important;
+height: 38px !important;
+font-size: 14px;
+left: 10px;
+bottom: 10px;
 }
 .feed > .post-card-modern .post-engagement-summary {
 grid-template-columns: minmax(66px, 1fr) repeat(4, max-content);

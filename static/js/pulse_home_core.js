@@ -18,6 +18,9 @@
 
   const viewedPosts = new Set();
   let viewObserver = null;
+  let feedVideoObserver = null;
+  let longPressTimer = 0;
+  let longPressStart = null;
 
   function toast(message) {
     if (!toastNode) return;
@@ -257,31 +260,25 @@
       frame.dataset.mediaSrc = url;
       frame.dataset.mediaType = video ? "video" : "image";
       frame.dataset.mediaPoster = item.thumbnail_url || item.poster_url || "";
-      if (video) frame.dataset.openPostUrl = postUrl(post);
       frame.dataset.doubleTapLike = post.id;
       frame.setAttribute("aria-label", video ? "Open video" : "Open image");
       if (video) {
         const poster = item.thumbnail_url || item.poster_url || item.mux_thumbnail_url || item.preview_url || "";
-        if (poster) {
-          const image = document.createElement("img");
-          image.src = poster;
-          image.alt = item.alt_text || "PulseSoc video preview";
-          image.loading = index === 0 ? "eager" : "lazy";
-          image.decoding = "async";
-          frame.appendChild(image);
-        } else {
-          const media = document.createElement("video");
-          media.src = url;
-          media.preload = "metadata";
-          media.playsInline = true;
-          media.muted = true;
-          media.controls = false;
-          media.tabIndex = -1;
-          frame.appendChild(media);
-        }
+        const media = document.createElement("video");
+        media.src = url;
+        media.preload = index === 0 ? "metadata" : "none";
+        media.playsInline = true;
+        media.muted = true;
+        media.controls = false;
+        media.loop = true;
+        media.tabIndex = -1;
+        media.dataset.feedVideoPreview = "1";
+        if (poster) media.poster = poster;
+        media.addEventListener("play", () => frame.classList.add("is-playing"));
+        media.addEventListener("pause", () => frame.classList.remove("is-playing"));
+        frame.appendChild(media);
         const play = element("span", "post-video-play", "▶");
         frame.appendChild(play);
-        frame.appendChild(element("span", "post-video-chip", "Video"));
       } else {
         const image = document.createElement("img");
         image.src = url;
@@ -384,6 +381,7 @@
 
   function observePost(card) {
     const postId = card?.dataset?.postId;
+    observeFeedVideos(card);
     if (!postId || viewedPosts.has(postId)) return;
     if (typeof IntersectionObserver === "undefined") {
       recordView(card);
@@ -400,6 +398,33 @@
       }, { threshold: [0.55], rootMargin: "160px 0px" });
     }
     viewObserver.observe(card);
+  }
+
+  function observeFeedVideos(scope) {
+    const videos = [...(scope?.querySelectorAll?.("[data-feed-video-preview]") || [])];
+    if (!videos.length) return;
+    if (typeof IntersectionObserver === "undefined") {
+      videos.slice(0, 1).forEach(video => video.play().catch(() => {}));
+      return;
+    }
+    if (!feedVideoObserver) {
+      feedVideoObserver = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          const video = entry.target;
+          const frame = video.closest(".post-card-media-frame");
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.62) {
+            video.preload = "metadata";
+            video.muted = true;
+            video.play().then(() => frame?.classList.add("is-playing")).catch(() => frame?.classList.remove("is-playing"));
+          } else {
+            video.pause();
+            frame?.classList.remove("is-playing");
+            if (!entry.isIntersecting) video.preload = "none";
+          }
+        });
+      }, { threshold: [0, 0.62], rootMargin: "320px 0px" });
+    }
+    videos.forEach(video => feedVideoObserver.observe(video));
   }
 
   async function recordView(card) {
@@ -610,10 +635,6 @@
     const mediaOpen = event.target.closest("[data-open-media-lightbox]");
     if (mediaOpen) {
       event.preventDefault();
-      if (mediaOpen.dataset.mediaType === "video") {
-        window.location.href = mediaOpen.dataset.openPostUrl || postUrl({ id: mediaOpen.dataset.doubleTapLike });
-        return;
-      }
       const postId = mediaOpen.dataset.doubleTapLike;
       const now = Date.now();
       if (postId && now - Number(mediaOpen.dataset.lastTap || 0) < 320) {
@@ -733,6 +754,31 @@
     }
     if (event.key === "Escape") closeLightbox();
   });
+
+  document.addEventListener("pointerdown", event => {
+    const media = event.target.closest("[data-open-media-lightbox]");
+    if (!media) return;
+    longPressStart = { x: event.clientX, y: event.clientY, postId: media.dataset.doubleTapLike };
+    clearTimeout(longPressTimer);
+    longPressTimer = setTimeout(() => {
+      if (!longPressStart?.postId) return;
+      document.querySelector(`[data-post-sheet="${longPressStart.postId}"]`)?.classList.add("open");
+      longPressStart = null;
+    }, 620);
+  }, { passive: true });
+
+  document.addEventListener("pointermove", event => {
+    if (!longPressStart) return;
+    if (Math.abs(event.clientX - longPressStart.x) > 12 || Math.abs(event.clientY - longPressStart.y) > 12) {
+      clearTimeout(longPressTimer);
+      longPressStart = null;
+    }
+  }, { passive: true });
+
+  document.addEventListener("pointerup", () => {
+    clearTimeout(longPressTimer);
+    longPressStart = null;
+  }, { passive: true });
 
   const publish = document.getElementById("publishBtn");
   publish?.addEventListener("click", async () => {
