@@ -87,7 +87,7 @@ def main() -> None:
     detail = client.get(route)
     html = detail.get_data(as_text=True)
     require(detail.status_code == 200, "generated video detail route returns 200")
-    require("pulse-video-detail-page" in html and "Related videos" in html, "watch page includes player and related videos")
+    require("pulse-video-detail-page" in html and ("Related videos" in html or "Up Next" in html), "watch page includes player and related videos")
     require("PulseSoc is offline" not in html and "You are offline" not in html, "online watch response never renders offline fallback")
 
     root_sw = (ROOT / "static" / "sw.js").read_text(encoding="utf-8")

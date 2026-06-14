@@ -1,0 +1,18 @@
+[
+  {
+    "name": "mobile-iphone: redesigned video watch page",
+    "status": "PASS",
+    "url": "http://127.0.0.1:5088/pulse/videos/231?watch_redesign=1781460682802",
+    "player": "366x574",
+    "badResponses": 0,
+    "consoleErrors": 0
+  },
+  {
+    "name": "desktop-1440: redesigned video watch page",
+    "status": "PASS",
+    "url": "http://127.0.0.1:5088/pulse/videos/231?watch_redesign=1781460685863",
+    "player": "740x720",
+    "badResponses": 0,
+    "consoleErrors": 0
+  }
+]
