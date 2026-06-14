@@ -141,6 +141,8 @@ def _ensure_columns(bot, cur, conn) -> None:
         ("joined_at", "TEXT"),
         ("left_at", "TEXT"),
         ("muted_until", "TEXT"),
+        ("pinned_at", "TEXT"),
+        ("pinned_rank", "INTEGER DEFAULT 0"),
         ("notifications_level", "TEXT DEFAULT 'all'"),
         ("last_seen_at", "TEXT"),
         ("last_read_message_id", "INTEGER DEFAULT 0"),
@@ -472,7 +474,7 @@ def _add_participant(cur, conversation_id: int, user_id: int, role: str = "membe
 def _conversation_payload(cur, conversation: dict, viewer_user_id: int) -> dict:
     conversation_id = int(conversation.get("id") or 0)
     cur.execute(
-        "SELECT unread_count, last_read_message_id, role FROM comm_v2_participants WHERE conversation_id=? AND user_id=? LIMIT 1",
+        "SELECT unread_count, last_read_message_id, role, muted_until, pinned_at, pinned_rank FROM comm_v2_participants WHERE conversation_id=? AND user_id=? LIMIT 1",
         (conversation_id, int(viewer_user_id)),
     )
     mine = _row(cur.fetchone())
@@ -492,12 +494,14 @@ def _conversation_payload(cur, conversation: dict, viewer_user_id: int) -> dict:
         others = [m for m in members if int(m.get("user_id") or 0) != int(viewer_user_id)]
         if others:
             title = others[0].get("display_name") or title
+    avatar_url = next((m.get("avatar_url") or "" for m in members if int(m.get("user_id") or 0) != int(viewer_user_id)), "")
     return {
         "id": conversation_id,
         "conversation_id": conversation_id,
         "public_id": conversation.get("public_id") or "",
         "conversation_type": conversation.get("conversation_type") or "direct",
         "title": title or "Untitled chat",
+        "avatar_url": avatar_url,
         "description": conversation.get("description") or "",
         "privacy": conversation.get("privacy") or "private",
         "visibility": conversation.get("visibility") or "members",
@@ -508,6 +512,8 @@ def _conversation_payload(cur, conversation: dict, viewer_user_id: int) -> dict:
         "unread_count": int(mine.get("unread_count") or 0),
         "last_read_message_id": int(mine.get("last_read_message_id") or 0),
         "role": mine.get("role") or ("viewer" if conversation.get("privacy") == "public" else ""),
+        "pinned": bool(mine.get("pinned_at")),
+        "muted": bool(mine.get("muted_until") and str(mine.get("muted_until")) > _now()),
         "participants_preview": members,
     }
 
@@ -522,7 +528,7 @@ def _conversation_payloads(cur, conversations: list[dict], viewer_user_id: int) 
     if conversation_ids:
         cur.execute(
             f"""
-            SELECT conversation_id, unread_count, last_read_message_id, role
+            SELECT conversation_id, unread_count, last_read_message_id, role, muted_until, pinned_at, pinned_rank
             FROM comm_v2_participants
             WHERE user_id=? AND conversation_id IN ({placeholders})
             """,
@@ -551,32 +557,48 @@ def _conversation_payloads(cur, conversations: list[dict], viewer_user_id: int) 
                     "display_name": row["display_name"] or "Pulse member",
                     "avatar_url": row["avatar_url"] or "",
                 })
+    latest_by_conversation: dict[int, dict] = {}
+    last_message_ids = [int(item.get("last_message_id") or 0) for item in conversations if int(item.get("last_message_id") or 0)]
+    if last_message_ids:
+        message_placeholders = ",".join(["?"] * len(last_message_ids))
+        cur.execute(
+            f"SELECT id, conversation_id, message_type, body FROM comm_v2_messages WHERE id IN ({message_placeholders})",
+            tuple(last_message_ids),
+        )
+        latest_by_conversation = {int(row["conversation_id"]): dict(row) for row in cur.fetchall()}
     out = []
     for conversation in conversations:
         conversation_id = int(conversation.get("id") or 0)
         mine = mine_by_conversation.get(conversation_id, {})
         members = preview_by_conversation.get(conversation_id, [])
+        latest = latest_by_conversation.get(conversation_id, {})
         title = conversation.get("title") or ""
         if conversation.get("conversation_type") == "direct":
             others = [m for m in members if int(m.get("user_id") or 0) != int(viewer_user_id)]
             if others:
                 title = others[0].get("display_name") or title
+        avatar_url = next((m.get("avatar_url") or "" for m in members if int(m.get("user_id") or 0) != int(viewer_user_id)), "")
         out.append({
             "id": conversation_id,
             "conversation_id": conversation_id,
             "public_id": conversation.get("public_id") or "",
             "conversation_type": conversation.get("conversation_type") or "direct",
             "title": title or "Untitled chat",
+            "avatar_url": avatar_url,
             "description": conversation.get("description") or "",
             "privacy": conversation.get("privacy") or "private",
             "visibility": conversation.get("visibility") or "members",
             "member_count": int(conversation.get("member_count") or len(members) or 0),
             "last_message_id": int(conversation.get("last_message_id") or 0),
             "last_message_at": conversation.get("last_message_at") or "",
+            "last_message": latest.get("body") or "",
+            "last_message_type": latest.get("message_type") or "text",
             "last_activity_at": conversation.get("last_activity_at") or conversation.get("updated_at") or conversation.get("created_at") or "",
             "unread_count": int(mine.get("unread_count") or 0),
             "last_read_message_id": int(mine.get("last_read_message_id") or 0),
             "role": mine.get("role") or ("viewer" if conversation.get("privacy") == "public" else ""),
+            "pinned": bool(mine.get("pinned_at")),
+            "muted": bool(mine.get("muted_until") and str(mine.get("muted_until")) > _now()),
             "participants_preview": members,
         })
     return out
@@ -697,7 +719,8 @@ def list_conversations(user_id: int, filters: dict | None = None) -> dict:
             WHERE COALESCE(c.deleted_at,'')='' AND c.status='active'
               AND (p.id IS NOT NULL OR (c.conversation_type='room' AND c.privacy='public' AND c.is_discoverable=1))
               {type_clause}
-            ORDER BY COALESCE(c.last_activity_at,c.updated_at,c.created_at) DESC, c.id DESC
+            ORDER BY CASE WHEN COALESCE(p.pinned_at,'')!='' THEN 0 ELSE 1 END,
+                     COALESCE(p.pinned_at,c.last_activity_at,c.updated_at,c.created_at) DESC, c.id DESC
             LIMIT 120
             """,
             tuple(params),
@@ -1636,6 +1659,52 @@ def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, com
     finally:
         if own_conn:
             conn.close()
+
+
+def toggle_pin(user_id: int, conversation_ref: int | str) -> dict:
+    disabled = _disabled("toggle_pin")
+    if disabled:
+        return disabled
+    conn, cur = _open_db()
+    try:
+        conversation, access = _conversation_access(cur, user_id, conversation_ref)
+        if access != "ok":
+            return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403)
+        conversation_id = int(conversation["id"])
+        cur.execute("SELECT pinned_at FROM comm_v2_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, int(user_id)))
+        pinned = not bool(_row(cur.fetchone()).get("pinned_at"))
+        now = _now()
+        cur.execute(
+            "UPDATE comm_v2_participants SET pinned_at=?, pinned_rank=?, updated_at=? WHERE conversation_id=? AND user_id=?",
+            (now if pinned else "", 1 if pinned else 0, now, conversation_id, int(user_id)),
+        )
+        conn.commit()
+        return _ok({"conversation_id": conversation_id, "pinned": pinned, "message": "Chat pinned." if pinned else "Chat unpinned."})
+    finally:
+        conn.close()
+
+
+def mark_unread(user_id: int, conversation_ref: int | str) -> dict:
+    disabled = _disabled("mark_unread")
+    if disabled:
+        return disabled
+    conn, cur = _open_db()
+    try:
+        conversation, access = _conversation_access(cur, user_id, conversation_ref)
+        if access != "ok":
+            return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403)
+        conversation_id = int(conversation["id"])
+        cur.execute("SELECT COALESCE(MAX(id),0) AS max_id FROM comm_v2_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')=''", (conversation_id,))
+        latest_message_id = int(_row(cur.fetchone()).get("max_id") or 0)
+        now = _now()
+        cur.execute(
+            "UPDATE comm_v2_participants SET unread_count=MAX(COALESCE(unread_count,0),1), last_read_message_id=MAX(0,?-1), updated_at=? WHERE conversation_id=? AND user_id=?",
+            (latest_message_id, now, conversation_id, int(user_id)),
+        )
+        conn.commit()
+        return _ok({"conversation_id": conversation_id, "unread_count": 1, "message": "Chat marked unread."})
+    finally:
+        conn.close()
 
 
 def heartbeat(user_id: int, status: str = "online") -> dict:

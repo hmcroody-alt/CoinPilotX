@@ -26,6 +26,7 @@
     actionPending: false,
     mobileMode: "list",
     conversationSearch: "",
+    actionConversationId: 0,
     attachmentQueue: [],
     attachmentSeq: 0,
     attachmentSheetOpen: false,
@@ -120,6 +121,8 @@
 
   function sortConversations() {
     state.conversations.sort((a, b) => {
+      const pinDelta = Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
+      if (pinDelta) return pinDelta;
       const ad = new Date(a.last_activity_at || a.last_message_at || a.updated_at || a.created_at || 0).getTime() || 0;
       const bd = new Date(b.last_activity_at || b.last_message_at || b.updated_at || b.created_at || 0).getTime() || 0;
       return bd - ad || Number(b.conversation_id || 0) - Number(a.conversation_id || 0);
@@ -168,15 +171,44 @@
   }
 
   function conversationPreview(item) {
-    return item.last_message_preview || item.last_message_body || item.last_message_text || item.description || `${item.conversation_type || "Conversation"} / ${Number(item.member_count || 0)} members`;
+    const type = String(item.last_message_type || item.latest_message_type || "").toLowerCase();
+    const mediaLabel = type === "voice" ? "Voice message" : type === "video" ? "Video" : type === "image" ? "Photo" : type && type !== "text" ? "Attachment" : "";
+    return item.last_message_preview || item.last_message_body || item.last_message_text || item.last_message || item.latest_message || mediaLabel || item.description || `${item.conversation_type || "Conversation"} / ${Number(item.member_count || 0)} members`;
+  }
+
+  function avatarHtml(item, className = "avatar") {
+    const url = item?.avatar_url || item?.avatar_thumbnail_url || "";
+    return `<span class="${className}">${url ? `<img src="${escapeAttr(url)}" alt="">` : escapeHtml(initials(item?.title))}</span>`;
+  }
+
+  function filteredConversations() {
+    const query = state.conversationSearch.trim().toLowerCase();
+    return state.conversations.filter((item) => {
+      const matchesQuery = !query || `${item.title || ""} ${item.conversation_type || ""} ${conversationPreview(item)}`.toLowerCase().includes(query);
+      const matchesFilter = state.filter === "all" || (state.filter === "unread" ? Number(item.unread_count || 0) > 0 : item.conversation_type === state.filter);
+      return matchesQuery && matchesFilter;
+    });
+  }
+
+  function renderPinnedConversations() {
+    const section = el("[data-pinned-section]");
+    const rail = el("[data-pinned-conversations]");
+    if (!section || !rail) return;
+    const pinned = state.conversations.filter((item) => item.pinned).slice(0, 8);
+    section.hidden = !pinned.length;
+    rail.innerHTML = pinned.map((item) => `
+      <button class="pinned-card" type="button" data-conversation-id="${item.conversation_id}">
+        ${avatarHtml(item, "pinned-avatar")}
+        <strong>${escapeHtml(item.title || "Chat")}</strong>
+        <small>${escapeHtml(conversationPreview(item))}</small>
+        ${Number(item.unread_count || 0) ? `<span class="badge">${Number(item.unread_count)}</span>` : `<span class="pin-mark" aria-label="Pinned">&#9679;</span>`}
+      </button>`).join("");
   }
 
   function renderConversations() {
     if (!list) return;
-    const filtered = state.conversations.filter((item) => {
-      const query = state.conversationSearch.toLowerCase();
-      return !query || `${item.title || ""} ${item.conversation_type || ""}`.toLowerCase().includes(query);
-    });
+    const filtered = filteredConversations();
+    renderPinnedConversations();
     if (!filtered.length) {
       list.innerHTML = `<div class="empty-state">No conversations yet. Start a DM, create a group, or open a room.</div>`;
       return;
@@ -188,15 +220,63 @@
         : [];
       const preview = typingNames.length ? typingSummary(typingNames) : conversationPreview(item);
       return `
-      <button class="conversation ${state.active && Number(state.active.conversation_id) === Number(item.conversation_id) ? "is-active" : ""}" type="button" data-conversation-id="${item.conversation_id}">
-        <span class="avatar presence-${presenceClass(presence)}">${initials(item.title)}</span>
+      <article class="conversation ${Number(item.unread_count || 0) ? "is-unread" : ""} ${state.active && Number(state.active.conversation_id) === Number(item.conversation_id) ? "is-active" : ""}" data-conversation-row="${item.conversation_id}">
+        <button class="conversation-open" type="button" data-conversation-id="${item.conversation_id}" aria-label="Open ${escapeAttr(item.title || "chat")}"></button>
+        ${avatarHtml(item, `avatar presence-${presenceClass(presence)}`)}
         <span class="conversation-main">
-          <strong>${escapeHtml(item.title || "Untitled chat")}</strong>
+          <strong>${escapeHtml(item.title || "Untitled chat")}${item.pinned ? ` <span class="pin-mark" title="Pinned">&#9679;</span>` : ""}</strong>
           <small class="${typingNames.length ? "is-typing" : ""}">${escapeHtml(preview)}</small>
+          <span class="conversation-state">${escapeHtml(presenceLabel(presence))}${item.muted ? " / Muted" : ""}</span>
         </span>
-        <span class="conversation-meta"><time>${escapeHtml(shortTime(item.last_message_at || item.last_activity_at || item.updated_at || item.created_at))}</time>${Number(item.unread_count || 0) ? `<span class="badge">${Number(item.unread_count)}</span>` : ""}</span>
-      </button>
+        <span class="conversation-meta"><time>${escapeHtml(shortTime(item.last_message_at || item.last_activity_at || item.updated_at || item.created_at))}</time>${Number(item.unread_count || 0) ? `<span class="badge">${Number(item.unread_count)}</span>` : `<span class="delivery-mark" aria-label="Read">&#10003;</span>`}</span>
+        <span class="conversation-quick-actions">
+          <button type="button" data-quick-call="voice" data-call-conversation="${item.conversation_id}" aria-label="Voice call ${escapeAttr(item.title || "chat")}">&#9742;</button>
+          <button type="button" data-quick-call="video" data-call-conversation="${item.conversation_id}" aria-label="Video call ${escapeAttr(item.title || "chat")}">&#9655;</button>
+          <button type="button" data-open-conversation-actions="${item.conversation_id}" aria-label="More actions for ${escapeAttr(item.title || "chat")}">&#8942;</button>
+        </span>
+      </article>
     `; }).join("");
+  }
+
+  function openConversationActions(conversationId) {
+    state.actionConversationId = Number(conversationId || 0);
+    const sheet = el("[data-conversation-action-sheet]");
+    const item = state.conversationCache.get(state.actionConversationId);
+    const pin = sheet?.querySelector('[data-conversation-action="pin"]');
+    if (pin) pin.textContent = item?.pinned ? "Unpin chat" : "Pin chat";
+    if (sheet) sheet.hidden = false;
+  }
+
+  function closeConversationActions() {
+    state.actionConversationId = 0;
+    const sheet = el("[data-conversation-action-sheet]");
+    if (sheet) sheet.hidden = true;
+  }
+
+  async function updateConversationPreference(action) {
+    const id = state.actionConversationId;
+    if (!id) return;
+    const item = state.conversationCache.get(id);
+    if (!item) return;
+    if (action === "pin") {
+      item.pinned = !item.pinned;
+      renderConversations();
+      try {
+        const data = await api(`/conversations/${id}/pin`, { method: "POST", body: "{}" }, "pin_conversation");
+        item.pinned = Boolean(data.pinned);
+      } catch (error) {
+        item.pinned = !item.pinned;
+        throw error;
+      } finally {
+        sortConversations();
+        renderConversations();
+      }
+    } else if (action === "unread") {
+      const data = await api(`/conversations/${id}/unread`, { method: "POST", body: "{}" }, "mark_unread");
+      item.unread_count = Number(data.unread_count || 1);
+      renderConversations();
+    }
+    closeConversationActions();
   }
 
   function renderMessages() {
@@ -363,8 +443,7 @@
 
   async function loadConversations({ selectFirst = !isMobile() } = {}) {
     try {
-      const query = state.filter === "all" ? "" : `?type=${encodeURIComponent(state.filter)}`;
-      const data = await api(`/conversations${query}`, {}, "conversations_list");
+      const data = await api("/conversations", {}, "conversations_list");
       state.conversations = (data.items || data.conversations || []).map(rememberConversation);
       sortConversations();
       if (selectFirst && !state.active && state.conversations.length) {
@@ -1003,18 +1082,46 @@
       const target = event.target instanceof Element ? event.target : event.target?.parentElement;
       if (!target) return;
       try {
+        const quickCall = target.closest("[data-quick-call]");
+        if (quickCall) {
+          setStatus(`${quickCall.dataset.quickCall === "video" ? "Video" : "Voice"} calling is not enabled on this deployment yet.`, "info");
+          return;
+        }
+        if (target.closest("[data-call-hub]")) {
+          setStatus("Calling is not enabled on this deployment yet.", "info");
+          return;
+        }
+        const actionTrigger = target.closest("[data-open-conversation-actions]");
+        if (actionTrigger) return openConversationActions(actionTrigger.dataset.openConversationActions);
+        if (target.closest("[data-close-conversation-actions]")) return closeConversationActions();
+        const conversationAction = target.closest("[data-conversation-action]");
+        if (conversationAction && !conversationAction.disabled) return await updateConversationPreference(conversationAction.dataset.conversationAction);
+        if (target.closest("[data-toggle-filters]")) {
+          const filterBar = el(".comm-filter");
+          const toggle = el("[data-toggle-filters]");
+          const open = !filterBar?.classList.contains("is-mobile-open");
+          filterBar?.classList.toggle("is-mobile-open", open);
+          toggle?.setAttribute("aria-expanded", open ? "true" : "false");
+          return;
+        }
+        if (target.closest("[data-manage-pins]")) {
+          const firstPinned = state.conversations.find((item) => item.pinned);
+          if (firstPinned) openConversationActions(firstPinned.conversation_id);
+          return;
+        }
         const conversation = target.closest("[data-conversation-id]");
         if (conversation) {
           const id = Number(conversation.dataset.conversationId || 0);
           if (state.active && Number(state.active.conversation_id) === id) return;
           state.active = rememberConversation(state.conversationCache.get(id) || state.conversations.find((item) => Number(item.conversation_id) === id));
+          if (state.active) state.active.unread_count = 0;
           state.messages = [];
           state.members = [];
           state.hasOlder = false;
           renderMessages();
           renderMembers();
-          await loadMessages(id);
           setMobileMode("thread");
+          await loadMessages(id);
           el("[data-message-input]")?.focus();
           return;
         }
@@ -1026,7 +1133,7 @@
           state.members = [];
           state.initialThreadLoaded = false;
           document.querySelectorAll("[data-filter]").forEach((btn) => btn.classList.toggle("is-active", btn === filter));
-          await loadConversations();
+          renderConversations();
           return;
         }
         if (target.closest("[data-open-new-chat]")) return openModal("new-chat");
@@ -1109,6 +1216,16 @@
       state.conversationSearch = event.target.value || "";
       renderConversations();
     });
+    let pressTimer = 0;
+    document.addEventListener("pointerdown", (event) => {
+      const row = event.target instanceof Element ? event.target.closest("[data-conversation-row]") : null;
+      if (!row || event.target.closest("button")) return;
+      pressTimer = window.setTimeout(() => openConversationActions(row.dataset.conversationRow), 520);
+    });
+    ["pointerup", "pointercancel", "pointermove"].forEach((type) => document.addEventListener(type, () => {
+      window.clearTimeout(pressTimer);
+      pressTimer = 0;
+    }, { passive: true }));
     document.addEventListener("change", (event) => {
       const target = event.target instanceof Element ? event.target : null;
       const speed = target?.closest("[data-voice-speed]");

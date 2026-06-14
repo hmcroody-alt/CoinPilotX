@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
   <title>PulseSoc Messages v2 | PulseSoc</title>
-  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=comm-v2-mobile-focus-20260604">
+  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=messages-premium-phase3-20260614c">
 </head>
 <body data-comm-v2-enabled="{{ 'true' if enabled else 'false' }}">
   <main class="comm-shell" data-current-user-id="{{ current_user.user_id }}">
@@ -13,26 +13,52 @@
       <header class="comm-toolbar">
         <a class="icon-btn" href="/pulse" title="Back to PulseSoc" aria-label="Back to PulseSoc">&lt;</a>
         <h1>Messages</h1>
+        <span class="comm-toolbar-spacer"></span>
+        <button class="icon-btn" type="button" data-call-hub title="Calls" aria-label="Open calls">&#9742;</button>
+        <button class="icon-btn" type="button" data-open-new-chat title="Compose" aria-label="Compose a new message">&#9998;</button>
       </header>
-      <label class="comm-search">
-        <span class="sr-only">Search conversations</span>
-        <input data-conversation-search autocomplete="off" placeholder="Search messages">
-      </label>
+      <div class="comm-search-row">
+        <label class="comm-search">
+          <span aria-hidden="true" class="search-icon">&#9906;</span>
+          <span class="sr-only">Search conversations</span>
+          <input data-conversation-search autocomplete="off" placeholder="Search messages">
+        </label>
+        <button class="icon-btn filter-toggle" type="button" data-toggle-filters aria-label="Show message filters" aria-expanded="false">&#9881;</button>
+      </div>
       <div class="comm-actions" aria-label="Create chats">
-        <button class="primary" type="button" data-open-new-chat>New Chat</button>
-        <button type="button" data-open-new-group>Create Group</button>
+        <button class="comm-action-card primary" type="button" data-open-new-chat><span class="action-icon">+</span><span><strong>New Chat</strong><small>Start a new conversation</small></span></button>
+        <button class="comm-action-card" type="button" data-open-new-group><span class="action-icon">&#9737;</span><span><strong>Create Group</strong><small>Chat with multiple people</small></span></button>
         <button class="desktop-only" type="button" data-open-new-room>New Room</button>
       </div>
+      <a class="pulse-ai-card" href="/pulse/assistant" data-pulse-ai>
+        <span class="pulse-ai-avatar" aria-hidden="true">AI</span>
+        <span><strong>Pulse AI <em>AI Assistant</em></strong><small>Ask, plan, discover, or get help</small></span>
+        <span class="ai-online">Online</span>
+      </a>
+      <section class="pinned-section" data-pinned-section hidden>
+        <header><strong>Pinned</strong><button type="button" data-manage-pins>Manage</button></header>
+        <div class="pinned-rail" data-pinned-conversations></div>
+      </section>
       <div class="comm-filter" role="tablist" aria-label="Conversation type">
-        <button class="is-active" type="button" data-filter="all">All</button>
-        <button type="button" data-filter="direct">DM</button>
+        <button class="is-active" type="button" data-filter="all">All Chats</button>
+        <button type="button" data-filter="direct">Direct</button>
         <button type="button" data-filter="group">Groups</button>
         <button type="button" data-filter="room">Rooms</button>
+        <button type="button" data-filter="unread">Unread</button>
       </div>
       <section class="comm-items" data-conversations>
         <div class="empty-state">PulseSoc Communications 2.0 is loading your conversations.</div>
       </section>
     </aside>
+
+    <div class="conversation-action-sheet" data-conversation-action-sheet hidden>
+      <button type="button" data-conversation-action="pin">Pin chat</button>
+      <button type="button" data-conversation-action="unread">Mark unread</button>
+      <button type="button" data-conversation-action="mute" disabled title="Backend support pending">Mute <small>Coming soon</small></button>
+      <button type="button" data-conversation-action="archive" disabled title="Backend support pending">Archive <small>Coming soon</small></button>
+      <button class="danger" type="button" data-conversation-action="delete" disabled title="Backend support pending">Delete <small>Coming soon</small></button>
+      <button type="button" data-close-conversation-actions>Cancel</button>
+    </div>
 
     <section class="comm-thread" aria-label="Message thread">
       <header class="thread-head">
@@ -195,6 +221,6 @@
   <script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260613b"></script>
   <script src="/static/js/pulse_realtime.js" defer></script>
   <script src="/static/notifications.js?v=message-live-20260606" defer></script>
-  <script src="/static/js/pulse_messages_v2.js?v=comm-v2-mobile-focus-20260604" defer></script>
+  <script src="/static/js/pulse_messages_v2.js?v=messages-premium-phase3-20260614b" defer></script>
 </body>
 </html>

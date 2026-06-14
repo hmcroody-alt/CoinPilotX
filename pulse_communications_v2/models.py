@@ -64,6 +64,8 @@ COMM_V2_TABLES: tuple[TableSpec, ...] = (
             joined_at TEXT,
             left_at TEXT,
             muted_until TEXT,
+            pinned_at TEXT,
+            pinned_rank INTEGER DEFAULT 0,
             notifications_level TEXT DEFAULT 'all',
             last_seen_at TEXT,
             last_read_message_id INTEGER DEFAULT 0,

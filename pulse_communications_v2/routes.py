@@ -270,6 +270,22 @@ def read_state(conversation_ref):
     return _timed_json("read_receipt", lambda: service.mark_read(user["user_id"], conversation_ref))
 
 
+@comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/pin")
+def pin_conversation(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("pin_conversation", lambda: service.toggle_pin(user["user_id"], conversation_ref))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/unread")
+def unread_conversation(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("mark_unread", lambda: service.mark_unread(user["user_id"], conversation_ref))
+
+
 @comm_v2_blueprint.post(f"{API_PREFIX}/presence/heartbeat")
 def presence_heartbeat():
     user, denied = _require_user()
