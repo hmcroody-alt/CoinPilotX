@@ -52,7 +52,7 @@ def main():
     client = bot.webhook_app.test_client()
     with client.session_transaction() as sess:
         sess["account_user_id"] = user_id
-    response = client.get("/pulse")
+    response = client.get("/pulse?boot_profile=normal")
     html = response.get_data(as_text=True)
     require(response.status_code == 200, "Pulse homepage renders")
 

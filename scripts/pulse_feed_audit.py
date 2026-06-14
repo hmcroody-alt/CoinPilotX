@@ -45,7 +45,9 @@ def main():
     payload = response.get_json() or {}
     expect(response.status_code == 200 and payload.get("ok") is True, "feed API returns ok", response.get_data(as_text=True)[:300])
     expect("intelligence" in payload, "feed API returns intelligence panel")
-    html = client.get("/pulse").get_data(as_text=True)
+    core_html = client.get("/pulse").get_data(as_text=True)
+    expect("pulse_home_core.js" in core_html, "default feed uses the compact core controller")
+    html = client.get("/pulse?boot_profile=normal").get_data(as_text=True)
     for token in ["newPulsesBanner", "visiblePosts", "rememberDeletedPost", "pulse-status-rail", "postHtml"]:
         expect(token in html, f"feed client contains {token}")
     print("pulse feed audit ok")
@@ -53,4 +55,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
