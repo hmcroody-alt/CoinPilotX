@@ -23,20 +23,25 @@ def main() -> None:
 
     for token in [
         "pulse_status_rail_html",
+        "pulse_status_active_rows",
+        "pulse_status_items_for_lane",
+        "pulse_status_home_card_html",
         "pulse-status-tray-only",
         "href='/pulse/status'",
         "pulse-status-mini-rail",
         "data-status-strip",
+        "/api/pulse/status/rail?lane=for_you",
         "id=\"pulseStatusStoryViewer\"",
         "data-status-story-media",
         "openStatusViewerFeed('global'",
         "data-open-status-id",
+        "author_avatar_url",
     ]:
         expect(token in source, f"Home Status rail includes {token}")
 
     for forbidden in ["Stories from your Pulse world.", "Trending Status", "View Status</a>", "Quick updates, creator moments"]:
         expect(forbidden not in source, f"Home Status tray removed marketing text: {forbidden}")
-    for token in ["pulse-status-tray-only", "overflow-x: auto", "grid-auto-columns: 92px", ".pulse-status-card-media", "-webkit-line-clamp: 3"]:
+    for token in ["pulse-status-tray-only", "overflow-x: auto", "grid-auto-columns: 92px", ".pulse-status-card-media", "-webkit-line-clamp: 3", ".pulse-status-avatar-ring img"]:
         expect(token in status_css, f"Home Status tray layout includes {token}")
     expect(".pulse-status-story-viewer" in status_css and ".pulse-status-story-actions" in status_css, "Homepage status viewer uses full-screen story CSS")
     expect("@media(prefers-reduced-motion:reduce)" in compact or "@media(prefers-reduced-motion:reduce)" in compact, "Reduced motion guard exists")

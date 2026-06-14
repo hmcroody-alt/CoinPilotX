@@ -1667,6 +1667,13 @@ object-fit: cover;
 z-index: 0;
 opacity: .82;
 }
+.pulse-status-tray-only .pulse-status-avatar-ring img {
+width: 100%;
+height: 100%;
+object-fit: cover;
+border-radius: inherit;
+display: block;
+}
 .pulse-status-tray-only .pulse-status-home-preview strong,
 .pulse-status-tray-only .pulse-status2-create strong {
 position: relative;
