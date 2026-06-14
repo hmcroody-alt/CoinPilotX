@@ -150,7 +150,7 @@
     });
     const iconNode = element("span", "post-action-icon", icon);
     iconNode.setAttribute("aria-hidden", "true");
-    button.append(iconNode, element("span", "", label));
+    button.append(iconNode, document.createTextNode(" "), element("span", "", label));
     return button;
   }
 
@@ -172,7 +172,8 @@
     const meta = element("div", "post-card-meta");
     const link = element("a", "", formatTime(post.created_at));
     link.href = postUrl(post);
-    meta.append(link, element("span", "", "•"), element("span", "post-visibility-icon", visibilityIcon(post)));
+    const visibility = String(post.visibility || "public").replace(/_/g, " ");
+    meta.append(link, element("span", "", "•"), element("span", "post-visibility-icon", `${visibilityIcon(post)} ${visibility}`));
     identity.appendChild(meta);
 
     const controls = element("div", "post-card-controls");
@@ -256,23 +257,31 @@
       frame.dataset.mediaSrc = url;
       frame.dataset.mediaType = video ? "video" : "image";
       frame.dataset.mediaPoster = item.thumbnail_url || item.poster_url || "";
+      if (video) frame.dataset.openPostUrl = postUrl(post);
       frame.dataset.doubleTapLike = post.id;
       frame.setAttribute("aria-label", video ? "Open video" : "Open image");
       if (video) {
-        const media = document.createElement("video");
-        media.src = url;
-        media.preload = index === 0 ? "metadata" : "none";
-        media.playsInline = true;
-        media.muted = true;
-        media.loop = false;
-        if (item.thumbnail_url || item.poster_url) media.poster = item.thumbnail_url || item.poster_url;
-        frame.appendChild(media);
+        const poster = item.thumbnail_url || item.poster_url || item.mux_thumbnail_url || item.preview_url || "";
+        if (poster) {
+          const image = document.createElement("img");
+          image.src = poster;
+          image.alt = item.alt_text || "PulseSoc video preview";
+          image.loading = index === 0 ? "eager" : "lazy";
+          image.decoding = "async";
+          frame.appendChild(image);
+        } else {
+          const media = document.createElement("video");
+          media.src = url;
+          media.preload = "metadata";
+          media.playsInline = true;
+          media.muted = true;
+          media.controls = false;
+          media.tabIndex = -1;
+          frame.appendChild(media);
+        }
         const play = element("span", "post-video-play", "▶");
-        play.dataset.videoToggle = "1";
         frame.appendChild(play);
-        const sound = element("span", "post-video-sound", "Muted");
-        sound.dataset.videoSound = "1";
-        frame.appendChild(sound);
+        frame.appendChild(element("span", "post-video-chip", "Video"));
       } else {
         const image = document.createElement("img");
         image.src = url;
@@ -288,19 +297,30 @@
 
   function renderEngagement(card, post) {
     const row = element("div", "post-engagement-summary");
-    row.appendChild(element("span", "post-reaction-emojis", `${reactionEmojis(post)} ${compactNumber(reactionTotal(post))}`));
+    row.setAttribute(
+      "aria-label",
+      `${reactionEmojis(post)} ${compactNumber(reactionTotal(post))}, ${compactNumber(post.comments_count || post.comment_count)} comments, ${compactNumber(post.repost_count || post.reposts_count)} reposts, ${compactNumber(post.share_count || post.shares_count)} shares, ${compactNumber(post.view_count)} views`
+    );
+    const reactions = element("span", "post-reaction-emojis", "");
+    reactions.append(
+      element("span", "post-reaction-icons", reactionEmojis(post)),
+      document.createTextNode(" "),
+      element("span", "post-reaction-total", compactNumber(reactionTotal(post)))
+    );
+    row.appendChild(reactions);
     const metrics = [
-      ["comments", post.comments_count || post.comment_count, "comments"],
-      ["reposts", post.repost_count || post.reposts_count, "reposts"],
-      ["shares", post.share_count || post.shares_count, "shares"],
-      ["views", post.view_count, "views"],
+      ["comments", post.comments_count || post.comment_count, "Comment", "Comments"],
+      ["reposts", post.repost_count || post.reposts_count, "Repost", "Reposts"],
+      ["shares", post.share_count || post.shares_count, "Share", "Shares"],
+      ["views", post.view_count, "View", "Views"],
     ];
-    metrics.forEach(([key, value, label]) => {
+    metrics.forEach(([key, value, singular, plural]) => {
       const item = element("span", "post-summary-metric", "");
-      const number = element("span", "", compactNumber(value));
+      const number = element("span", "post-summary-number", compactNumber(value));
       number.dataset[`summary${key[0].toUpperCase()}${key.slice(1)}`] = post.id;
       if (key === "views") number.dataset.postViewCount = post.id;
-      item.append(number, document.createTextNode(` ${label}`));
+      item.append(number, document.createTextNode(` ${count(value) === 1 ? singular : plural}`));
+      row.appendChild(document.createTextNode("    "));
       row.appendChild(item);
     });
     card.appendChild(row);
@@ -587,31 +607,13 @@
       document.querySelectorAll(".post-sheet.open").forEach(sheet => sheet.classList.remove("open"));
     }
 
-    const videoToggle = event.target.closest("[data-video-toggle]");
-    if (videoToggle) {
-      event.preventDefault();
-      const video = videoToggle.closest(".post-card-media-frame")?.querySelector("video");
-      if (video) {
-        if (video.paused) video.play().catch(() => {});
-        else video.pause();
-        videoToggle.closest(".post-card-media-frame")?.classList.toggle("is-playing", !video.paused);
-      }
-      return;
-    }
-    const videoSound = event.target.closest("[data-video-sound]");
-    if (videoSound) {
-      event.preventDefault();
-      const video = videoSound.closest(".post-card-media-frame")?.querySelector("video");
-      if (video) {
-        video.muted = !video.muted;
-        videoSound.textContent = video.muted ? "Muted" : "Sound";
-      }
-      return;
-    }
-
     const mediaOpen = event.target.closest("[data-open-media-lightbox]");
-    if (mediaOpen && !event.target.closest("[data-video-toggle],[data-video-sound]")) {
+    if (mediaOpen) {
       event.preventDefault();
+      if (mediaOpen.dataset.mediaType === "video") {
+        window.location.href = mediaOpen.dataset.openPostUrl || postUrl({ id: mediaOpen.dataset.doubleTapLike });
+        return;
+      }
       const postId = mediaOpen.dataset.doubleTapLike;
       const now = Date.now();
       if (postId && now - Number(mediaOpen.dataset.lastTap || 0) < 320) {
