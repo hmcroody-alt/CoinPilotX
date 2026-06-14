@@ -69,6 +69,9 @@ def main() -> int:
     response = client.get("/pulse", headers={"User-Agent": "PulseSocHomepageAudit/1.0"})
     html = response.get_data(as_text=True)
     require(response.status_code == 200, "authenticated /pulse returns HTTP 200", html[:240])
+    cache_control = response.headers.get("Cache-Control", "")
+    require("no-store" in cache_control and "max-age=0" in cache_control, "/pulse HTML is not cacheable", cache_control)
+    require(response.headers.get("Pragma") == "no-cache", "/pulse HTML sends legacy no-cache header")
     require("<!doctype html>" in html.lower(), "/pulse returns valid HTML document")
     require("</body>" in html.lower() and "</html>" in html.lower(), "/pulse HTML is complete")
     require(len(html) > 20000, "/pulse HTML is not blank", f"length={len(html)}")
@@ -102,6 +105,13 @@ def main() -> int:
             text = body.decode("utf-8", errors="replace")
             require("statusCloseHardened" in text, "status close hardening is idempotent")
             require("attributeFilter" not in text, "status viewer observer cannot self-trigger on style attributes")
+
+    for worker_url in ("/sw.js", "/static/service-worker.js"):
+        worker = client.get(worker_url)
+        worker_text = worker.get_data(as_text=True)
+        require(worker.status_code == 200, f"service worker loads {worker_url}", str(worker.status_code))
+        require("coinpilotx-cache-v15-pulse-shell" in worker_text, f"service worker cache version is current {worker_url}")
+        require("no-store" in worker.headers.get("Cache-Control", ""), f"service worker is not cacheable {worker_url}")
 
     if FAILURES:
         print("\nFAILURES:")
