@@ -1246,6 +1246,13 @@ background: #f8fafc;
 color: #06101b;
 font-weight: 950;
 }
+.pulse-status-story-avatar img {
+width: 100%;
+height: 100%;
+object-fit: cover;
+border-radius: inherit;
+display: block;
+}
 .pulse-status-story-footer div {
 min-width: 0;
 display: grid;
@@ -1635,6 +1642,20 @@ linear-gradient(180deg, rgba(5, 11, 20, .04), rgba(5, 11, 20, .86)),
 linear-gradient(145deg, #12314a, #071321);
 border: 1px solid rgba(110, 223, 246, .24);
 box-shadow: 0 10px 28px rgba(0, 0, 0, .22);
+cursor: pointer;
+touch-action: manipulation;
+user-select: none;
+will-change: transform, filter;
+transition: transform .14s ease, filter .14s ease, border-color .14s ease;
+pointer-events: auto;
+}
+.pulse-status-tray-only .pulse-status2-create:active,
+.pulse-status-tray-only .pulse-status-card:active,
+.pulse-status-tray-only .pulse-status2-create.pulse-instant-pressed,
+.pulse-status-tray-only .pulse-status-card.pulse-instant-pressed {
+transform: scale(.96);
+filter: brightness(1.14);
+border-color: rgba(54, 229, 143, .58);
 }
 .pulse-status-tray-only .pulse-status2-create {
 background:
@@ -1666,6 +1687,7 @@ height: 100%;
 object-fit: cover;
 z-index: 0;
 opacity: .82;
+pointer-events: none;
 }
 .pulse-status-tray-only .pulse-status-avatar-ring img {
 width: 100%;
@@ -1832,6 +1854,45 @@ width: min(100% - 32px, 680px);
 top: 43%;
 right: 16px;
 transform: translateY(-50%);
+}
+#pulseStatusStoryViewer .pulse-status-story-close {
+min-width: 52px;
+min-height: 52px;
+z-index: 250;
+touch-action: manipulation;
+will-change: transform, filter;
+}
+#pulseStatusStoryViewer .pulse-status-story-close:active,
+#pulseStatusStoryViewer .pulse-status-story-close.pulse-instant-pressed {
+transform: scale(.92);
+filter: brightness(1.18);
+}
+#pulseStatusStoryViewer [data-status-story-react],
+.mobile-bottom-nav a,
+.mobile-topbar a,
+.mobile-topbar button,
+.pulse-nav-link,
+button,
+.button {
+touch-action: manipulation;
+}
+#pulseStatusStoryViewer [data-status-story-react].pulse-instant-pressed,
+#pulseStatusStoryViewer [data-status-story-react]:active,
+.mobile-bottom-nav a.pulse-instant-pressed,
+.mobile-bottom-nav a:active,
+.mobile-topbar a.pulse-instant-pressed,
+.mobile-topbar button.pulse-instant-pressed,
+.pulse-nav-link.pulse-instant-pressed,
+button.pulse-instant-pressed,
+.button.pulse-instant-pressed {
+transform: scale(.96);
+filter: brightness(1.1);
+}
+.mobile-bottom-nav {
+z-index: 120 !important;
+transform: translateZ(0);
+will-change: transform;
+contain: layout paint;
 }
 #pulseStatusStoryViewer .pulse-status-story-nav {
 top: calc(43% - 42px);

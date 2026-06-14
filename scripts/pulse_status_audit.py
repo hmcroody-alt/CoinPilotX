@@ -110,6 +110,14 @@ def main():
         "pulse-status-tray-only",
         "href='/pulse/status'",
         "<strong>Create</strong><small>Status</small>",
+        "data-pulse-instant-core",
+        "tap_received",
+        "visual_feedback_shown",
+        "route_transition_started",
+        "route_content_visible",
+        "pointerdown",
+        "pulse-instant-pressed",
+        "__pulseInstantMarks",
     ]:
         expect(token in html, f"homepage Status entry contains {token}")
     for token in ["Stories from your Pulse world.", "Trending Status", "Quick updates, creator moments"]:
@@ -124,6 +132,9 @@ def main():
     ]:
         expect(token not in html, f"homepage does not contain inline Status composer token {token}")
     expect(f'data-open-status-id="{status_id}"' in html or f"data-open-status-id='{status_id}'" in html, "homepage server-renders created status in rail")
+    expect(f'data-status-id="{status_id}"' in html or f"data-status-id='{status_id}'" in html, "homepage status rail exposes status id")
+    expect(f'data-status-open-url="/pulse/status?status={status_id}"' in html or f"data-status-open-url='/pulse/status?status={status_id}'" in html, "homepage status rail exposes open url")
+    expect("aria-label='Open" in html or 'aria-label="Open' in html, "homepage status rail cards expose accessible labels")
     expect("data-status-empty hidden" in html or "data-status-empty hidden=" in html, "homepage hides empty state when statuses exist")
     expect("pulse-status-avatar-ring" in html and ("<img src=" in html or "Pulse Status Audit" in html), "homepage status rail renders avatar ring")
     status_html = client.get("/pulse/status").get_data(as_text=True)

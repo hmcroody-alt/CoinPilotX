@@ -207,19 +207,24 @@
     setTimeout(() => decorateStatusActions(document), 500);
   });
   if ("MutationObserver" in window) {
-    const statusObserver = new MutationObserver(records => {
-      records.forEach(record => {
-        if (record.target?.matches?.("[data-status-story-mute]")) {
-          delete record.target.dataset.statusActionDecorated;
-          decorateActionButton(record.target, "mute");
-        }
-        if (record.target?.matches?.("[data-status-story-close]")) hardenStatusCloseButton(record.target);
-        record.addedNodes?.forEach(node => {
-          if (node.nodeType === 1) decorateStatusActions(node);
+    const observerRoot = document.documentElement || document.body;
+    if (!observerRoot || typeof observerRoot.nodeType !== "number") {
+      document.addEventListener("DOMContentLoaded", () => window.PulseStatusViewer?.decorateStatusActions?.(document), { once: true });
+    } else {
+      const statusObserver = new MutationObserver(records => {
+        records.forEach(record => {
+          if (record.target?.matches?.("[data-status-story-mute]")) {
+            delete record.target.dataset.statusActionDecorated;
+            decorateActionButton(record.target, "mute");
+          }
+          if (record.target?.matches?.("[data-status-story-close]")) hardenStatusCloseButton(record.target);
+          record.addedNodes?.forEach(node => {
+            if (node.nodeType === 1) decorateStatusActions(node);
+          });
         });
       });
-    });
-    statusObserver.observe(document.documentElement, { childList: true, subtree: true });
+      statusObserver.observe(observerRoot, { childList: true, subtree: true });
+    }
   }
 
   window.PulseStatusViewer = { render, styleFor, kindFor, decorateStatusActions };

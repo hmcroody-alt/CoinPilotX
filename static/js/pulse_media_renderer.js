@@ -210,6 +210,11 @@
 
   function observeNativeVideoControls() {
     if (controlsObserver || !("MutationObserver" in window)) return;
+    const root = document.documentElement || document.body;
+    if (!root || typeof root.nodeType !== "number") {
+      document.addEventListener("DOMContentLoaded", observeNativeVideoControls, { once: true });
+      return;
+    }
     controlsObserver = new MutationObserver(records => {
       records.forEach(record => {
         record.addedNodes?.forEach(node => {
@@ -217,7 +222,7 @@
         });
       });
     });
-    controlsObserver.observe(document.documentElement, {
+    controlsObserver.observe(root, {
       childList: true,
       subtree: true,
     });
@@ -842,7 +847,7 @@
         });
       }, { threshold: [0, .25, .58, .75, 1], rootMargin: "0px" });
     }
-    playbackObserver.observe(video);
+    if (video && typeof video.nodeType === "number") playbackObserver.observe(video);
   }
 
   function showTapIcon(wrap, label) {
@@ -1081,7 +1086,9 @@
         rootMargin: mobilePerformanceMode() ? "260px 0px" : "520px 0px",
       });
     }
-    wraps.forEach(wrap => predictiveObserver.observe(wrap));
+    wraps.forEach(wrap => {
+      if (wrap && typeof wrap.nodeType === "number") predictiveObserver.observe(wrap);
+    });
   }
 
   async function attachHlsPlayback(wrap, video) {
@@ -1384,7 +1391,9 @@
           });
         }, { rootMargin: mobilePerformanceMode() ? "220px 0px" : "420px 0px" });
       }
-      wraps.forEach(wrap => observer.observe(wrap));
+      wraps.forEach(wrap => {
+        if (wrap && typeof wrap.nodeType === "number") observer.observe(wrap);
+      });
     } else {
       processInChunks(wraps, hydrateWrap);
     }
@@ -1620,12 +1629,15 @@
   });
 
   if ("MutationObserver" in window) {
-    const cleanupObserver = new MutationObserver(() => {
-      if (activeHlsVideo && !document.documentElement.contains(activeHlsVideo)) {
-        destroyHls(activeHlsVideo);
-      }
-    });
-    cleanupObserver.observe(document.documentElement, { childList: true, subtree: true });
+    const cleanupRoot = document.documentElement || document.body;
+    if (cleanupRoot && typeof cleanupRoot.nodeType === "number") {
+      const cleanupObserver = new MutationObserver(() => {
+        if (activeHlsVideo && !cleanupRoot.contains(activeHlsVideo)) {
+          destroyHls(activeHlsVideo);
+        }
+      });
+      cleanupObserver.observe(cleanupRoot, { childList: true, subtree: true });
+    }
   }
 
   document.addEventListener("DOMContentLoaded", () => runIdle(() => hydrate(document), 900));
