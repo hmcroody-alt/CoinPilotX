@@ -8,6 +8,7 @@ from . import user_context
 from . import email_service
 from . import push_service
 from . import sms_service
+from . import db as db_service
 
 
 def _now():
@@ -563,7 +564,14 @@ def _message_notification_params():
 
 
 def _table_exists(cur, table_name):
-    cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1", (str(table_name or ""),))
+    table_name = str(table_name or "")
+    if db_service.ENGINE_NAME == "postgresql":
+        cur.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=? LIMIT 1",
+            (table_name,),
+        )
+    else:
+        cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1", (table_name,))
     return bool(cur.fetchone())
 
 

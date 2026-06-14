@@ -70,6 +70,26 @@ def main() -> int:
 
     from services import notification_service
 
+    class PostgresTableCursor:
+        def __init__(self):
+            self.sql = ""
+
+        def execute(self, sql, params=()):
+            self.sql = sql
+
+        def fetchone(self):
+            return (1,)
+
+    postgres_cursor = PostgresTableCursor()
+    original_engine = notification_service.db_service.ENGINE_NAME
+    notification_service.db_service.ENGINE_NAME = "postgresql"
+    try:
+        table_found = notification_service._table_exists(postgres_cursor, "pulse_conversation_participants")
+    finally:
+        notification_service.db_service.ENGINE_NAME = original_engine
+    require("PostgreSQL table check succeeds", table_found, failures)
+    require("PostgreSQL table check avoids sqlite_master", "information_schema.tables" in postgres_cursor.sql and "sqlite_master" not in postgres_cursor.sql, failures)
+
     counts = notification_service.pulse_badge_counts(user_id)
     require("backend count fixture separates alert from chat", counts.get("alert_unread_count") == 1 and counts.get("chat_unread_count") == 3, failures)
     require("legacy count aliases remain alert-only", counts.get("count") == counts.get("alert_unread_count") and counts.get("unread_count") == counts.get("alert_unread_count"), failures)
