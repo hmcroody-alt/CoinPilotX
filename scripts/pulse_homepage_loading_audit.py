@@ -99,6 +99,11 @@ def main() -> int:
         require(profiled.status_code == 200, f"diagnostic boot profile loads {profile}")
         require(f'data-pulse-boot-profile="{profile}"' in profiled_html, f"diagnostic boot profile is labeled {profile}")
         require(absent_asset not in profiled_html, f"diagnostic boot profile suppresses {absent_asset}")
+    shell_only = client.get("/pulse?boot_profile=shell_only")
+    shell_only_html = shell_only.get_data(as_text=True)
+    require(shell_only.status_code == 200, "diagnostic shell-only profile loads")
+    require('data-pulse-boot-profile="shell_only"' in shell_only_html, "diagnostic shell-only profile is labeled")
+    require("data-pulse-shell-runtime" not in shell_only_html, "diagnostic shell-only profile suppresses inline runtime")
 
     refs = same_origin_static_refs(html)
     require(bool(refs), "/pulse exposes static JS/CSS asset references")
