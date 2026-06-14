@@ -1,18 +1,44 @@
 [
   {
-    "name": "mobile-iphone: redesigned video watch page",
+    "name": "mobile-iPhone: PulseSoc video watch page",
     "status": "PASS",
-    "url": "http://127.0.0.1:5088/pulse/videos/231?watch_redesign=1781460682802",
-    "player": "366x574",
-    "badResponses": 0,
-    "consoleErrors": 0
+    "url": "http://127.0.0.1:5088/pulse/videos/229?qa_final_mobile=1",
+    "evidence": {
+      "screenshot": "reports/pulse-video-watch-redesign/mobile-watch-after.png",
+      "realVideoScreenshot": "reports/pulse-video-watch-redesign/mobile-watch-real-video-after.png",
+      "miniPlayerScreenshot": "reports/pulse-video-watch-redesign/mobile-mini-player-after.png",
+      "offlineFallback": false,
+      "systemIssue": false,
+      "leakedFeedVideoLabel": false,
+      "relatedCount": 3,
+      "miniPlayerVisibleAfterScroll": true
+    }
   },
   {
-    "name": "desktop-1440: redesigned video watch page",
+    "name": "desktop-1440: PulseSoc video watch page",
     "status": "PASS",
-    "url": "http://127.0.0.1:5088/pulse/videos/231?watch_redesign=1781460685863",
-    "player": "740x720",
-    "badResponses": 0,
-    "consoleErrors": 0
+    "url": "http://127.0.0.1:5088/pulse/videos/229?qa_final_desktop=1",
+    "evidence": {
+      "screenshot": "reports/pulse-video-watch-redesign/desktop-watch-after.png",
+      "desktopBarVisible": true,
+      "leftRailVisible": true,
+      "upNextVisible": true,
+      "offlineFallback": false,
+      "systemIssue": false,
+      "leakedFeedVideoLabel": false,
+      "relatedCount": 3
+    }
+  },
+  {
+    "name": "related video navigation",
+    "status": "PASS",
+    "url": "http://127.0.0.1:5088/pulse/videos/231",
+    "evidence": {
+      "clickedHref": "/pulse/videos/231",
+      "offlineFallback": false,
+      "systemIssue": false,
+      "playerVisible": true,
+      "consoleErrors": 0
+    }
   }
 ]
