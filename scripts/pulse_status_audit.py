@@ -49,9 +49,10 @@ def main():
     client = bot.webhook_app.test_client()
     with client.session_transaction() as sess:
         sess["account_user_id"] = user_id
-    response = client.get("/api/pulse/status/rail")
+    response = client.get("/api/pulse/status/rail?lane=for_you")
     payload = response.get_json() or {}
     expect(response.status_code == 200 and payload.get("ok") is True, "status rail API returns ok", response.get_data(as_text=True)[:300])
+    expect(payload.get("lanes") == ["for_you", "following", "trending", "global"], "status rail exposes mobile discovery lanes")
     empty_text = client.post("/api/pulse/status", json={"status_type": "text", "body": "   "})
     empty_text_payload = empty_text.get_json() or {}
     expect(empty_text.status_code == 400 and empty_text_payload.get("ok") is False, "empty text status validation works", empty_text.get_data(as_text=True)[:300])
@@ -59,8 +60,14 @@ def main():
     data = created.get_json() or {}
     expect(created.status_code == 200 and data.get("ok") is True and data.get("status_id"), "status create API works", created.get_data(as_text=True)[:300])
     status_id = int(data["status_id"])
-    expect((client.post(f"/api/pulse/status/{status_id}/view").get_json() or {}).get("ok") is True, "status view API works")
-    expect((client.post(f"/api/pulse/status/{status_id}/react", json={"reaction_type": "fire"}).get_json() or {}).get("ok") is True, "status reaction API works")
+    first_view = client.post(f"/api/pulse/status/{status_id}/view").get_json() or {}
+    second_view = client.post(f"/api/pulse/status/{status_id}/view").get_json() or {}
+    expect(first_view.get("ok") is True and second_view.get("ok") is True, "status view API works")
+    expect(first_view.get("view_count") == second_view.get("view_count"), "status view API deduplicates repeat viewer")
+    first_reaction = client.post(f"/api/pulse/status/{status_id}/react", json={"reaction_type": "fire"}).get_json() or {}
+    second_reaction = client.post(f"/api/pulse/status/{status_id}/react", json={"reaction_type": "love"}).get_json() or {}
+    expect(first_reaction.get("ok") is True and second_reaction.get("ok") is True, "status reaction API works")
+    expect(second_reaction.get("reaction_count") == first_reaction.get("reaction_count"), "status reaction API changes reaction without duplicate count")
     reply_payload = client.post(f"/api/pulse/status/{status_id}/reply", json={"body": "Reply from audit"}).get_json() or {}
     expect(reply_payload.get("ok") is True and reply_payload.get("reply", {}).get("id"), "status reply API works")
     html = client.get("/pulse").get_data(as_text=True)
@@ -87,8 +94,15 @@ def main():
         expect(token not in html, f"homepage does not contain inline Status composer token {token}")
     status_html = client.get("/pulse/status").get_data(as_text=True)
     for token in [
-        "Pulse Status",
-        "Create and view stories from your Pulse world.",
+        "PulseSoc Status",
+        "pulse-status-story-row",
+        "data-status-open-create",
+        "pulse-status-create-sheet",
+        "pulse-status-floating-create",
+        "data-status-full-tab='for_you'",
+        "data-status-full-tab='following'",
+        "data-status-full-tab='trending'",
+        "data-status-full-tab='global'",
         "data-status2-form",
         "data-status-create-form='dedicated'",
         "data-status2-preview",
@@ -99,8 +113,30 @@ def main():
         "Post Status",
         "/api/pulse/status",
         "/api/pulse/media/upload",
+        "author_avatar_url",
+        "view_count",
+        "reaction_count",
+        "reply_count",
+        "data-status-viewer-react",
+        "pulse-status-action-icon",
+        "pointerdown",
+        "touchstart",
     ]:
         expect(token in status_html, f"dedicated Status page contains {token}")
+    for token in [
+        "PulseSoc Social Ecosystem",
+        "Create and view stories from your Pulse world.",
+        "data-status-full-tab='ai_picks'",
+        "data-status-full-tab='music'",
+        "data-status-full-tab='live'",
+        "10-second",
+        "rewind",
+    ]:
+        expect(token not in status_html, f"dedicated mobile Status page omits {token}")
+    rail_after = client.get("/api/pulse/status/rail?lane=for_you").get_json() or {}
+    status_item = next((item for item in rail_after.get("items", []) if int(item.get("id") or 0) == status_id), {})
+    for field in ["author_avatar_url", "view_count", "reaction_count", "reply_count"]:
+        expect(field in status_item, f"status rail item includes {field}")
     print("pulse status audit ok")
 
 
