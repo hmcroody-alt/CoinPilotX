@@ -829,6 +829,57 @@ transform: rotate(1turn);
 position: relative;
 transition: transform .14s ease, background .14s ease, border-color .14s ease, box-shadow .14s ease, filter .14s ease;
 }
+.pulse-status-story-progress {
+display: flex !important;
+gap: 5px;
+align-items: center;
+height: 4px;
+padding: 0;
+background: transparent !important;
+}
+.pulse-status-story-segment {
+flex: 1 1 0;
+height: 4px;
+border-radius: 999px;
+overflow: hidden;
+background: rgba(255, 255, 255, .22);
+box-shadow: 0 0 0 1px rgba(255, 255, 255, .05) inset;
+}
+.pulse-status-story-segment i {
+display: block;
+width: 100%;
+height: 100%;
+border-radius: inherit;
+transform: scaleX(0);
+transform-origin: left center;
+background: linear-gradient(90deg, #36e58f, #6edff6);
+box-shadow: 0 0 18px rgba(54, 229, 143, .46);
+transition: transform .1s linear;
+}
+.pulse-status-story-segment.is-complete i {
+transform: scaleX(1);
+}
+.pulse-status-story-viewer.is-paused .pulse-status-story-segment.is-current i,
+[data-status-viewer].is-paused .pulse-status-story-segment.is-current i {
+filter: grayscale(.15) brightness(.8);
+}
+.pulse-status-story-viewer.is-paused .pulse-status-story-shell::after,
+[data-status-viewer].is-paused .pulse-status-story-shell::after {
+content: "Paused";
+position: absolute;
+top: 66px;
+left: 50%;
+z-index: 34;
+transform: translateX(-50%);
+border: 1px solid rgba(255, 255, 255, .16);
+border-radius: 999px;
+padding: 6px 10px;
+background: rgba(3, 7, 18, .64);
+color: #f8fafc;
+font-size: 12px;
+font-weight: 900;
+pointer-events: none;
+}
 .pulse-status-story-actions button:active,
 [data-status-viewer] button[data-status-viewer-react]:active,
 [data-status-story-react]:active {
