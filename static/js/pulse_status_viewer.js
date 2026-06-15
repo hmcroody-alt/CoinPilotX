@@ -75,7 +75,7 @@
       }, {
         surface: "status",
         className: "pulse-status-viewer-player",
-        loop: kind === "video",
+        loop: false,
         attrs: 'data-status-viewer-player="1"',
       });
       return `${rendered}${item.body ? `<p>${text}</p>` : ""}`;
@@ -110,7 +110,14 @@
 
   function decorateActionButton(button, key) {
     if (!button || button.dataset.statusActionDecorated === "1") return;
-    const [icon, label] = statusActionMeta[key] || ["•", button.textContent.trim() || "Action"];
+    let [icon, label] = statusActionMeta[key] || ["•", button.textContent.trim() || "Action"];
+    if (key === "mute" && /tap/i.test(button.textContent || "")) {
+      icon = "🔇";
+      label = "Tap for sound";
+    } else if (key === "mute" && /sound/i.test(button.textContent || "")) {
+      icon = "🔊";
+      label = "Sound";
+    }
     const count = button.matches("[data-status-story-react]")
       ? (button.querySelector("[data-status-story-reaction-count]")?.textContent || "0")
       : label;
@@ -121,14 +128,31 @@
     if (key === "love" && !button.hasAttribute("aria-pressed")) button.setAttribute("aria-pressed", "false");
   }
 
+  const storyRuntime = {
+    viewer: null,
+    timer: 0,
+    progressTimer: 0,
+    startedAt: 0,
+    durationMs: 5000,
+    paused: false,
+    pauseStartedAt: 0,
+    elapsedBeforePause: 0,
+    pointer: null,
+    closePointer: null,
+    closeAt: 0,
+    pressTimer: 0,
+    longPress: false,
+    signature: "",
+  };
+
   function hardenStatusCloseButton(button) {
     if (!button) return;
     if (button.dataset.statusCloseHardened === "1") return;
     button.dataset.statusCloseHardened = "1";
     button.style.zIndex = "10090";
-    button.style.width = "56px";
-    button.style.height = "56px";
-    button.style.minHeight = "56px";
+    button.style.width = "52px";
+    button.style.height = "52px";
+    button.style.minHeight = "52px";
     button.style.pointerEvents = "auto";
     button.style.touchAction = "manipulation";
   }
@@ -144,18 +168,268 @@
     scope.querySelectorAll?.("[data-status-story-close]").forEach(hardenStatusCloseButton);
   }
 
-  function closeStatusViewerNow(event) {
-    const closeButton = event.target?.closest?.("[data-status-story-close]");
+  function viewerRootFrom(node) {
+    return node?.closest?.("#pulseStatusStoryViewer,.pulse-status-story-viewer,[data-status-viewer]");
+  }
+
+  function closeViewer(viewer) {
+    const root = viewer || storyRuntime.viewer || document.querySelector("#pulseStatusStoryViewer,.pulse-status-story-viewer.open,[data-status-viewer].open");
+    if (!root) return;
+    clearStoryTimers();
+    root.querySelectorAll("video,audio").forEach(media => {
+      try { media.pause(); } catch (_) {}
+    });
+    root.classList.remove("open");
+    root.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("status-viewer-open");
+    document.body.classList.remove("pulse-status-viewer-open");
+    storyRuntime.viewer = null;
+  }
+
+  function closeStatusViewerIntentional(event) {
+    const closeButton = event.target?.closest?.("[data-status-story-close],[data-status-viewer-close]");
     if (!closeButton) return;
     hardenStatusCloseButton(closeButton);
     event.preventDefault();
     event.stopImmediatePropagation();
-    const viewer = closeButton.closest("#pulseStatusStoryViewer,.pulse-status-story-viewer");
-    viewer?.querySelectorAll("video").forEach(video => {
+    closeViewer(viewerRootFrom(closeButton));
+  }
+
+  function clearStoryTimers() {
+    window.clearTimeout(storyRuntime.timer);
+    window.clearTimeout(storyRuntime.pressTimer);
+    window.clearInterval(storyRuntime.progressTimer);
+    storyRuntime.timer = 0;
+    storyRuntime.pressTimer = 0;
+    storyRuntime.progressTimer = 0;
+  }
+
+  function activeViewer() {
+    return document.querySelector("#pulseStatusStoryViewer.open,.pulse-status-story-viewer.open,[data-status-viewer].open");
+  }
+
+  function isInteractiveTarget(target) {
+    return !!target?.closest?.("button,a,input,textarea,select,label,[role='button'],[data-status-story-actions],.pulse-status-story-actions,[data-status-viewer-mute],[data-status-story-mute]");
+  }
+
+  function actionSelector(kind) {
+    if (kind === "next") return "[data-status-story-next],[data-status-viewer-next]";
+    if (kind === "prev") return "[data-status-story-prev],[data-status-viewer-prev]";
+    return "";
+  }
+
+  function navigateStory(direction) {
+    const viewer = activeViewer();
+    if (!viewer) return;
+    const button = viewer.querySelector(actionSelector(direction > 0 ? "next" : "prev"));
+    if (button && !button.disabled) {
+      button.click();
+      window.setTimeout(() => scheduleStoryProgress(viewer), 80);
+      return;
+    }
+    if (direction > 0) {
+      closeViewer(viewer);
+    }
+  }
+
+  function updateViewerSoundButton(viewer, video) {
+    const button = viewer?.querySelector?.("[data-status-story-mute],[data-status-viewer-mute]");
+    if (!button || !video) return;
+    button.hidden = false;
+    if (button.matches("[data-status-story-mute]")) {
+      delete button.dataset.statusActionDecorated;
+      button.textContent = video.muted || Number(video.volume || 0) === 0 ? "Tap for sound" : "Sound";
+      decorateActionButton(button, "mute");
+      return;
+    }
+    button.innerHTML = `<span class="pulse-status-action-icon" aria-hidden="true">${video.muted || Number(video.volume || 0) === 0 ? "🔇" : "🔊"}</span><small>${video.muted || Number(video.volume || 0) === 0 ? "Tap sound" : "Sound"}</small>`;
+  }
+
+  function unmuteViewerVideo(viewer = activeViewer()) {
+    const video = viewer?.querySelector?.("video");
+    if (!video) return false;
+    video.defaultMuted = false;
+    video.removeAttribute("muted");
+    video.volume = Number(video.dataset.pulsePreferredVolume || video.volume || 1) || 1;
+    if (window.PulseMediaRenderer?.setVideoMuted) window.PulseMediaRenderer.setVideoMuted(video, false, "status-user-unmute");
+    else video.muted = false;
+    window.PulseMediaRenderer?.setSoundEnabled?.(true);
+    video.play?.().catch(() => {});
+    updateViewerSoundButton(viewer, video);
+    return true;
+  }
+
+  function storyDuration(viewer) {
+    const video = viewer?.querySelector?.("video");
+    if (video) {
+      const seconds = Number(video.duration || video.dataset.durationSeconds || video.getAttribute("duration") || 0);
+      if (Number.isFinite(seconds) && seconds > 1) return Math.max(2500, Math.min(seconds * 1000, 30000));
+      return 30000;
+    }
+    const media = viewer?.querySelector?.("[data-status-story-media],[data-status-viewer-media]");
+    const custom = Number(media?.dataset.durationMs || media?.dataset.duration || viewer?.dataset.statusDurationMs || 0);
+    if (Number.isFinite(custom) && custom > 0) return custom > 100 ? custom : custom * 1000;
+    return 5000;
+  }
+
+  function storySignature(viewer) {
+    if (!viewer) return "";
+    const media = viewer.querySelector("[data-status-story-media],[data-status-viewer-media]");
+    const count = viewer.querySelector("[data-status-viewer-count],[data-status-story-count]")?.textContent || "";
+    return [
+      viewer.dataset.statusStoryIndex || "0",
+      viewer.dataset.statusStoryCount || "1",
+      count,
+      media?.innerHTML?.length || 0,
+    ].join(":");
+  }
+
+  function ensureProgressSegments(viewer) {
+    const holder = viewer?.querySelector?.("[data-story-progress],.pulse-status-story-progress");
+    if (!holder) return [];
+    const countText = viewer.querySelector("[data-status-viewer-count],[data-status-story-count]")?.textContent || "";
+    const match = countText.match(/(\d+)\s*\/\s*(\d+)/);
+    const total = match ? Math.max(1, Math.min(Number(match[2]) || 1, 30)) : Math.max(1, Number(viewer.dataset.statusStoryCount || 1));
+    const current = match ? Math.max(0, (Number(match[1]) || 1) - 1) : Number(viewer.dataset.statusStoryIndex || 0);
+    if (holder.dataset.segmentCount !== String(total)) {
+      holder.innerHTML = Array.from({ length: total }, (_, index) => `<span class="pulse-status-story-segment" data-story-segment="${index}"><i></i></span>`).join("");
+      holder.dataset.segmentCount = String(total);
+    }
+    const segments = Array.from(holder.querySelectorAll("[data-story-segment]"));
+    segments.forEach((segment, index) => {
+      segment.classList.toggle("is-complete", index < current);
+      segment.classList.toggle("is-current", index === current);
+      const fill = segment.querySelector("i");
+      if (fill && index < current) fill.style.transform = "scaleX(1)";
+      if (fill && index > current) fill.style.transform = "scaleX(0)";
+    });
+    return segments;
+  }
+
+  function setProgress(viewer, ratio) {
+    const segments = ensureProgressSegments(viewer);
+    const current = segments.find(segment => segment.classList.contains("is-current")) || segments[0];
+    const fill = current?.querySelector("i");
+    if (fill) fill.style.transform = `scaleX(${Math.max(0, Math.min(1, ratio))})`;
+    viewer?.classList.toggle("is-paused", !!storyRuntime.paused);
+  }
+
+  function scheduleStoryProgress(viewer = activeViewer()) {
+    if (!viewer) return;
+    clearStoryTimers();
+    storyRuntime.viewer = viewer;
+    storyRuntime.signature = storySignature(viewer);
+    storyRuntime.paused = false;
+    storyRuntime.elapsedBeforePause = 0;
+    storyRuntime.startedAt = Date.now();
+    storyRuntime.durationMs = storyDuration(viewer);
+    ensureProgressSegments(viewer);
+    setProgress(viewer, 0);
+    const video = viewer.querySelector("video");
+    if (video) {
+      video.loop = false;
+      video.addEventListener("ended", () => navigateStory(1), { once: true });
+      video.play?.().catch(() => {});
+    } else {
+      storyRuntime.timer = window.setTimeout(() => navigateStory(1), storyRuntime.durationMs);
+    }
+    storyRuntime.progressTimer = window.setInterval(() => {
+      if (!activeViewer() || storyRuntime.paused) return;
+      const elapsed = storyRuntime.elapsedBeforePause + Date.now() - storyRuntime.startedAt;
+      setProgress(viewer, elapsed / Math.max(1, storyRuntime.durationMs));
+      if (!video && elapsed >= storyRuntime.durationMs) navigateStory(1);
+    }, 100);
+  }
+
+  function pauseStory() {
+    const viewer = activeViewer();
+    if (!viewer || storyRuntime.paused) return;
+    storyRuntime.paused = true;
+    storyRuntime.pauseStartedAt = Date.now();
+    storyRuntime.elapsedBeforePause += Date.now() - storyRuntime.startedAt;
+    window.clearTimeout(storyRuntime.timer);
+    viewer.querySelectorAll("video").forEach(video => {
       try { video.pause(); } catch (_) {}
     });
-    viewer?.classList.remove("open");
-    viewer?.setAttribute("aria-hidden", "true");
+    viewer.classList.add("is-paused");
+  }
+
+  function resumeStory() {
+    const viewer = activeViewer();
+    if (!viewer || !storyRuntime.paused) return;
+    storyRuntime.paused = false;
+    storyRuntime.startedAt = Date.now();
+    viewer.querySelectorAll("video").forEach(video => video.play?.().catch(() => {}));
+    viewer.classList.remove("is-paused");
+    if (!viewer.querySelector("video")) {
+      const remaining = Math.max(250, storyRuntime.durationMs - storyRuntime.elapsedBeforePause);
+      storyRuntime.timer = window.setTimeout(() => navigateStory(1), remaining);
+    }
+  }
+
+  function bindStoryTouchControls() {
+    document.addEventListener("pointerdown", event => {
+      const viewer = activeViewer();
+      if (!viewer) return;
+      const close = event.target?.closest?.("[data-status-story-close],[data-status-viewer-close]");
+      if (close) {
+        hardenStatusCloseButton(close);
+        storyRuntime.closePointer = { x: event.clientX, y: event.clientY, at: Date.now(), id: event.pointerId };
+        return;
+      }
+      if (!viewer.contains(event.target) || isInteractiveTarget(event.target)) return;
+      storyRuntime.pointer = { x: event.clientX, y: event.clientY, at: Date.now(), id: event.pointerId };
+      storyRuntime.longPress = false;
+      storyRuntime.pressTimer = window.setTimeout(() => {
+        storyRuntime.longPress = true;
+        pauseStory();
+      }, 420);
+    }, true);
+    document.addEventListener("pointerup", event => {
+      const viewer = activeViewer();
+      const close = event.target?.closest?.("[data-status-story-close],[data-status-viewer-close]");
+      if (close && storyRuntime.closePointer) {
+        const dx = Math.abs(event.clientX - storyRuntime.closePointer.x);
+        const dy = Math.abs(event.clientY - storyRuntime.closePointer.y);
+        const now = Date.now();
+        if (dx <= 10 && dy <= 10 && now - storyRuntime.closeAt > 250) {
+          storyRuntime.closeAt = now;
+          closeStatusViewerIntentional(event);
+        }
+        storyRuntime.closePointer = null;
+        return;
+      }
+      if (!viewer || !storyRuntime.pointer) return;
+      window.clearTimeout(storyRuntime.pressTimer);
+      const dx = event.clientX - storyRuntime.pointer.x;
+      const dy = event.clientY - storyRuntime.pointer.y;
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+      if (storyRuntime.longPress) {
+        resumeStory();
+      } else if (absX >= 52 && absX > absY * 1.18) {
+        navigateStory(dx < 0 ? 1 : -1);
+      } else if (absX < 10 && absY < 10 && !isInteractiveTarget(event.target)) {
+        const video = viewer.querySelector("video");
+        if (video && (video.muted || Number(video.volume || 0) === 0)) {
+          unmuteViewerVideo(viewer);
+          storyRuntime.pointer = null;
+          storyRuntime.longPress = false;
+          return;
+        }
+        const rect = viewer.getBoundingClientRect();
+        navigateStory(event.clientX > rect.left + rect.width / 2 ? 1 : -1);
+      }
+      storyRuntime.pointer = null;
+      storyRuntime.longPress = false;
+    }, true);
+    document.addEventListener("pointercancel", () => {
+      window.clearTimeout(storyRuntime.pressTimer);
+      if (storyRuntime.longPress) resumeStory();
+      storyRuntime.pointer = null;
+      storyRuntime.closePointer = null;
+      storyRuntime.longPress = false;
+    }, true);
   }
 
   function parseCount(value) {
@@ -194,11 +468,13 @@
     }, 1400);
   }
 
-  document.addEventListener("pointerdown", closeStatusViewerNow, true);
-  document.addEventListener("touchstart", closeStatusViewerNow, { capture: true, passive: false });
+  bindStoryTouchControls();
   document.addEventListener("click", event => {
-    const closeButton = event.target?.closest?.("[data-status-story-close]");
-    if (closeButton) hardenStatusCloseButton(closeButton);
+    const closeButton = event.target?.closest?.("[data-status-story-close],[data-status-viewer-close]");
+    if (closeButton) {
+      hardenStatusCloseButton(closeButton);
+      closeStatusViewerIntentional(event);
+    }
   }, true);
   document.addEventListener("click", optimisticStatusReaction, true);
   document.addEventListener("DOMContentLoaded", () => {
@@ -211,21 +487,39 @@
     if (!observerRoot || typeof observerRoot.nodeType !== "number") {
       document.addEventListener("DOMContentLoaded", () => window.PulseStatusViewer?.decorateStatusActions?.(document), { once: true });
     } else {
+      let statusProgressFrame = 0;
+      const scheduleActiveViewerOnce = () => {
+        if (statusProgressFrame) return;
+        statusProgressFrame = requestAnimationFrame(() => {
+          statusProgressFrame = 0;
+          const viewer = activeViewer();
+          if (!viewer) return;
+          const signature = storySignature(viewer);
+          if (viewer !== storyRuntime.viewer || signature !== storyRuntime.signature) scheduleStoryProgress(viewer);
+        });
+      };
       const statusObserver = new MutationObserver(records => {
+        let shouldCheckViewer = false;
         records.forEach(record => {
-          if (record.target?.matches?.("[data-status-story-mute]")) {
-            delete record.target.dataset.statusActionDecorated;
-            decorateActionButton(record.target, "mute");
-          }
-          if (record.target?.matches?.("[data-status-story-close]")) hardenStatusCloseButton(record.target);
           record.addedNodes?.forEach(node => {
-            if (node.nodeType === 1) decorateStatusActions(node);
+            if (node.nodeType !== 1) return;
+            decorateStatusActions(node);
+            if (
+              node.matches?.("#pulseStatusStoryViewer,.pulse-status-story-viewer,[data-status-viewer]") ||
+              node.querySelector?.("#pulseStatusStoryViewer,.pulse-status-story-viewer,[data-status-viewer]")
+            ) {
+              shouldCheckViewer = true;
+            }
           });
         });
+        if (shouldCheckViewer) scheduleActiveViewerOnce();
       });
-      statusObserver.observe(observerRoot, { childList: true, subtree: true });
+      statusObserver.observe(observerRoot, {
+        childList: true,
+        subtree: true,
+      });
     }
   }
 
-  window.PulseStatusViewer = { render, styleFor, kindFor, decorateStatusActions };
+  window.PulseStatusViewer = { render, styleFor, kindFor, decorateStatusActions, scheduleStoryProgress, pauseStory, resumeStory, navigateStory, unmuteViewerVideo, updateViewerSoundButton };
 })();

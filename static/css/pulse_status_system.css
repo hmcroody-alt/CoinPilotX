@@ -1030,6 +1030,7 @@ position: fixed;
 inset: 0;
 z-index: 10120;
 display: none;
+pointer-events: none;
 place-items: center;
 padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom));
 background:
@@ -1040,7 +1041,16 @@ backdrop-filter: blur(18px);
 }
 .pulse-status-story-viewer.open {
 display: grid;
+pointer-events: auto;
 }
+body:not(.status-viewer-open):not(.pulse-status-viewer-open) .pulse-status-story-viewer:not(.open),
+body:not(.status-viewer-open):not(.pulse-status-viewer-open) #pulseStatusStoryViewer:not(.open),
+[data-status-viewer][aria-hidden="true"]:not(.open) {
+display: none !important;
+pointer-events: none !important;
+visibility: hidden !important;
+}
+body.status-viewer-open,
 body.pulse-status-viewer-open {
 overflow: hidden;
 }

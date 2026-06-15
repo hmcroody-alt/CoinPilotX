@@ -54,6 +54,7 @@ position: fixed;
 inset: 0;
 z-index: 10060;
 display: none;
+pointer-events: none;
 align-items: flex-start;
 justify-content: center;
 padding: max(72px, calc(22px + env(safe-area-inset-top))) 16px max(18px, env(safe-area-inset-bottom));
@@ -65,6 +66,7 @@ backdrop-filter: blur(18px);
 }
 .pulse-search-overlay.open {
 display: flex;
+pointer-events: auto;
 }
 .pulse-search-panel {
 width: min(100%, 880px);
@@ -1438,6 +1440,7 @@ position: fixed;
 inset: 0;
 z-index: 90;
 display: none;
+pointer-events: none;
 place-items: center;
 padding: 24px;
 background: rgba(1, 6, 14, .86);
@@ -1445,6 +1448,7 @@ backdrop-filter: blur(12px);
 }
 .pulse-media-lightbox.open {
 display: grid;
+pointer-events: auto;
 }
 .pulse-media-lightbox-stage {
 width: min(96vw, 1280px);

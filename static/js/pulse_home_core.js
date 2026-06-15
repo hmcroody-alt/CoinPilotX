@@ -837,6 +837,37 @@
   document.getElementById("drawerOpen")?.addEventListener("click", () => document.body.classList.add("drawer-open"));
   document.getElementById("drawerClose")?.addEventListener("click", () => document.body.classList.remove("drawer-open"));
   document.getElementById("drawerBackdrop")?.addEventListener("click", () => document.body.classList.remove("drawer-open"));
+
+  function bindTouchDiagnostics() {
+    const enabled = new URLSearchParams(location.search).get("touch_debug") === "1" || localStorage.getItem("pulseTouchDebug") === "1";
+    if (!enabled || window.__pulseTouchDiagnosticsBound) return;
+    window.__pulseTouchDiagnosticsBound = true;
+    const inspectPoint = (label, x, y) => {
+      const target = document.elementFromPoint(x, y);
+      console.warn("[PulseTouchDebug]", label, { x, y, target, tag: target?.tagName, id: target?.id, className: target?.className });
+    };
+    const warnLargeBlockingOverlays = () => {
+      const width = window.innerWidth || document.documentElement.clientWidth || 0;
+      const height = window.innerHeight || document.documentElement.clientHeight || 0;
+      document.querySelectorAll("body *").forEach(node => {
+        const style = getComputedStyle(node);
+        if (!["fixed", "absolute"].includes(style.position) || style.pointerEvents === "none" || style.display === "none" || style.visibility === "hidden") return;
+        const rect = node.getBoundingClientRect();
+        const coversViewport = rect.width >= width * 0.8 && rect.height >= height * 0.8;
+        const invisible = Number(style.opacity || 1) < 0.05 || node.getAttribute("aria-hidden") === "true";
+        if (coversViewport && invisible) console.warn("[PulseTouchDebug] Large invisible interactive overlay", node, { rect, zIndex: style.zIndex, pointerEvents: style.pointerEvents, opacity: style.opacity });
+      });
+    };
+    window.addEventListener("touchstart", event => {
+      const touch = event.touches?.[0];
+      if (touch) inspectPoint("touchstart", touch.clientX, touch.clientY);
+    }, { passive: true });
+    window.addEventListener("click", event => inspectPoint("click", event.clientX, event.clientY), true);
+    window.addEventListener("load", warnLargeBlockingOverlays);
+    window.setTimeout(warnLargeBlockingOverlays, 1200);
+  }
+
+  bindTouchDiagnostics();
   document.getElementById("pulseFab")?.addEventListener("click", event => {
     const sheet = document.getElementById("createSheet");
     if (!sheet) return;
