@@ -1450,6 +1450,11 @@ backdrop-filter: blur(12px);
 display: grid;
 pointer-events: auto;
 }
+.pulse-media-lightbox[aria-hidden="true"]:not(.open) {
+display: none !important;
+pointer-events: none !important;
+visibility: hidden !important;
+}
 .pulse-media-lightbox-stage {
 width: min(96vw, 1280px);
 max-height: 88dvh;
@@ -1644,15 +1649,22 @@ font-size: 13px;
 }
 .pulse-media-lightbox {
 display: none !important;
+pointer-events: none !important;
 }
 .pulse-media-lightbox.open {
 display: grid !important;
+pointer-events: auto !important;
 position: fixed !important;
 inset: 0 !important;
 z-index: 2000 !important;
 padding: max(14px, env(safe-area-inset-top)) 12px max(14px, env(safe-area-inset-bottom));
 background: rgba(1, 6, 14, .92) !important;
 backdrop-filter: blur(12px);
+}
+.pulse-media-lightbox[aria-hidden="true"]:not(.open) {
+display: none !important;
+pointer-events: none !important;
+visibility: hidden !important;
 }
 .pulse-media-lightbox .pulse-media-lightbox-stage {
 width: 100%;
