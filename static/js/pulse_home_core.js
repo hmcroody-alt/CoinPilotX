@@ -838,6 +838,47 @@
   document.getElementById("drawerClose")?.addEventListener("click", () => document.body.classList.remove("drawer-open"));
   document.getElementById("drawerBackdrop")?.addEventListener("click", () => document.body.classList.remove("drawer-open"));
 
+  const pulseSearchOverlay = document.getElementById("pulseSearchOverlay");
+  const pulseSearchInput = document.getElementById("pulseSearchOverlayInput");
+  const pulseSearchResults = document.querySelector("[data-pulse-search-results]");
+  const pulseSearchMobileButton = document.getElementById("pulseMobileSearch");
+
+  function openCorePulseSearch(query = "") {
+    if (!pulseSearchOverlay) {
+      window.location.assign("/pulse/search");
+      return;
+    }
+    pulseSearchOverlay.classList.add("open");
+    pulseSearchOverlay.setAttribute("aria-hidden", "false");
+    document.body.classList.add("pulse-search-open");
+    if (pulseSearchInput) {
+      pulseSearchInput.value = String(query || "");
+      setTimeout(() => pulseSearchInput.focus(), 30);
+    }
+    if (pulseSearchResults && !pulseSearchResults.textContent.trim()) {
+      pulseSearchResults.innerHTML = '<p class="muted">Search across public PulseSoc posts, creators, reels, groups, rooms, and comments.</p>';
+    }
+  }
+
+  function closeCorePulseSearch() {
+    pulseSearchOverlay?.classList.remove("open");
+    pulseSearchOverlay?.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("pulse-search-open");
+  }
+
+  pulseSearchMobileButton?.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    openCorePulseSearch("");
+  });
+  document.querySelector("[data-close-pulse-search]")?.addEventListener("click", event => {
+    event.preventDefault();
+    closeCorePulseSearch();
+  });
+  pulseSearchOverlay?.addEventListener("click", event => {
+    if (event.target === pulseSearchOverlay) closeCorePulseSearch();
+  });
+
   function bindTouchDiagnostics() {
     const enabled = new URLSearchParams(location.search).get("touch_debug") === "1" || localStorage.getItem("pulseTouchDebug") === "1";
     if (!enabled || window.__pulseTouchDiagnosticsBound) return;

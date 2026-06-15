@@ -1953,3 +1953,11 @@ right: 10px;
 top: 50%;
 }
 }
+
+body:not(.status-viewer-open):not(.pulse-status-viewer-open) #pulseStatusStoryViewer[aria-hidden="true"]:not(.open),
+body:not(.status-viewer-open):not(.pulse-status-viewer-open) .pulse-status-story-viewer[aria-hidden="true"]:not(.open),
+[data-status-viewer][aria-hidden="true"]:not(.open) {
+display: none !important;
+pointer-events: none !important;
+visibility: hidden !important;
+}
