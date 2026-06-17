@@ -627,12 +627,256 @@
   });
   loadMore?.addEventListener("click", () => load(false));
 
+  const composer = document.getElementById("pulseComposer");
+  const postType = document.getElementById("postType");
+  const postMedia = document.getElementById("postMedia");
+  const postMediaPreview = document.getElementById("postMediaPreview");
+  const composeMsg = document.getElementById("composeMsg");
+  const composerAudience = document.getElementById("postAudience");
+  const composerProgress = document.querySelector("#pulseComposer [data-upload-progress]");
+  let composerFiles = [];
+  let composerObjectUrls = [];
+  let composerMusicTrackId = "";
+  let composerMusicLabel = "";
+  try {
+    const storedMusicTrack = sessionStorage.getItem("pulseComposerMusicTrackId");
+    if (storedMusicTrack) {
+      composerMusicTrackId = storedMusicTrack;
+      composerMusicLabel = "Selected PulseSoc music";
+      sessionStorage.removeItem("pulseComposerMusicTrackId");
+    }
+  } catch (_) {}
+
+  function composerFileIsVideo(file) {
+    return /^video\//i.test(file?.type || "") || /\.(mp4|mov|webm|m4v)$/i.test(file?.name || "");
+  }
+
+  function composerHasVideo() {
+    return (composerFiles.length ? composerFiles : Array.from(postMedia?.files || [])).some(composerFileIsVideo);
+  }
+
+  function updateComposerMusicVisibility() {
+    const selectedType = postType?.value || "text";
+    const show = selectedType === "video" || composerHasVideo();
+    document.querySelectorAll("#pulseComposer [data-composer-music]").forEach(button => {
+      button.hidden = !show;
+      button.setAttribute("aria-hidden", show ? "false" : "true");
+    });
+  }
+
+  function setComposerType(type) {
+    const next = type || postType?.value || "text";
+    if (postType) postType.value = next;
+    document.querySelectorAll("#pulseComposer [data-type]").forEach(button => {
+      const active = button.dataset.type === next;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    document.querySelectorAll("#pulseComposer [data-composer-row-reel]").forEach(button => {
+      const active = next === "video";
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    composer?.classList.add("is-expanded");
+    updateComposerMusicVisibility();
+    if (composeMsg) {
+      composeMsg.textContent = composerMusicLabel
+        ? `Music attached: ${composerMusicLabel}`
+        : next === "video"
+          ? "Reel mode selected. Choose a video to preview it before publishing."
+          : next === "poll"
+            ? "Write the question you want the community to answer."
+            : next === "scam_report"
+              ? "Add the who, what, where, and why so the warning is useful."
+              : "Ready to publish.";
+    }
+  }
+
+  function clearComposerObjectUrls() {
+    composerObjectUrls.forEach(url => URL.revokeObjectURL(url));
+    composerObjectUrls = [];
+  }
+
+  function renderComposerPreview() {
+    if (!postMediaPreview) return;
+    clearComposerObjectUrls();
+    if (!composerFiles.length) {
+      postMediaPreview.innerHTML = "";
+      updateComposerMusicVisibility();
+      window.PulseUploadManager?.render(composerProgress, { stage: "idle", percent: 0, message: "Ready to publish." });
+      return;
+    }
+    postMediaPreview.innerHTML = composerFiles.map((file, index) => {
+      const url = URL.createObjectURL(file);
+      composerObjectUrls.push(url);
+      const isVideo = composerFileIsVideo(file);
+      const media = isVideo
+        ? `<video src="${url}" controls playsinline webkit-playsinline preload="metadata"></video>`
+        : `<img src="${url}" alt="${esc(file.name || "Selected media preview")}" loading="eager" decoding="async">`;
+      return `<span class="pulse-selected-media ${isVideo ? "is-video" : "is-image"}" data-selected-media="${index}">${media}<footer><span><strong>${esc(file.name || "PulseSoc media")}</strong><small>${isVideo ? "Video" : "Image"} ready</small></span><button type="button" data-remove-composer-media="${index}">Remove</button></footer></span>`;
+    }).join("");
+    updateComposerMusicVisibility();
+    window.PulseUploadManager?.render(composerProgress, { stage: "complete", percent: 100, message: `${composerFiles.length} media item${composerFiles.length === 1 ? "" : "s"} ready to publish.` });
+  }
+
+  function openComposerPicker(type = "") {
+    if (!postMedia) {
+      toast("Media picker is not available. Refresh and try again.");
+      return;
+    }
+    const next = type || (postType?.value === "video" ? "video" : "");
+    if (next) setComposerType(next);
+    const accept = next === "video"
+      ? "video/mp4,video/webm,video/quicktime,.mp4,.mov,.webm"
+      : "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.jpg,.jpeg,.png,.webp,.gif,.mp4,.mov,.webm";
+    postMedia.setAttribute("accept", accept);
+    postMedia.click();
+  }
+
+  postMedia?.addEventListener("change", event => {
+    composerFiles = Array.from(event.target.files || []).slice(0, 4);
+    const hasVideo = composerFiles.some(composerFileIsVideo);
+    if (composerFiles.length) {
+      setComposerType(hasVideo ? "video" : (postType?.value === "video" ? "video" : "text"));
+      renderComposerPreview();
+      toast(`${composerFiles.length} media item${composerFiles.length === 1 ? "" : "s"} attached.`);
+    } else {
+      renderComposerPreview();
+    }
+  });
+
+  function validateComposerFiles(files) {
+    const allowed = /^(image\/(jpeg|png|webp|gif)|video\/(mp4|webm|quicktime))$/i;
+    for (const file of files) {
+      const name = file.name || "media";
+      const isImage = /^image\//i.test(file.type || "") || /\.(jpg|jpeg|png|webp|gif)$/i.test(name);
+      const isVideo = composerFileIsVideo(file);
+      if (!isImage && !isVideo) return `Choose a supported image or video file: ${name}`;
+      if (file.type && !allowed.test(file.type) && !/\.(jpg|jpeg|png|webp|gif|mp4|mov|webm|m4v)$/i.test(name)) return `Unsupported media type for ${name}.`;
+      const limit = isVideo ? 512 * 1024 * 1024 : 25 * 1024 * 1024;
+      if (Number(file.size || 0) > limit) return `${name} is too large. Use ${isVideo ? "a video under 512 MB" : "an image under 25 MB"}.`;
+    }
+    return "";
+  }
+
+  function enhanceComposer(action = "improve") {
+    const titleInput = document.getElementById("postTitle");
+    const bodyInput = document.getElementById("postBody");
+    if (!bodyInput || !titleInput) return;
+    const type = postType?.value || "text";
+    const body = (bodyInput.value || "").trim();
+    if (action === "title") {
+      titleInput.value = titleInput.value.trim() || (type === "scam_report" ? "Scam Alert: " : type === "poll" ? "Question for PulseSoc" : type === "video" ? "PulseSoc Reel" : "PulseSoc Update");
+    } else if (action === "hashtags") {
+      const tags = type === "scam_report" ? "#ScamAlert #CryptoSafety #PulseSoc" : type === "poll" ? "#Question #PulseSoc" : type === "video" ? "#Reel #PulseSoc #Creator" : "#PulseSoc";
+      bodyInput.value = body ? `${body}\n\n${tags}` : tags;
+    } else if (type === "scam_report") {
+      titleInput.value = titleInput.value.trim() || "Scam Alert: ";
+      bodyInput.value = body || "Warning:\nWhere it happened:\nWhat they asked for:\nWhy it looks suspicious:\nHow others can stay safe:";
+    } else if (type === "poll") {
+      bodyInput.value = body ? (body.endsWith("?") ? body : `${body}?`) : "What do you think about this?";
+    } else if (type === "video") {
+      titleInput.value = titleInput.value.trim() || "PulseSoc Reel";
+      bodyInput.value = body || "New reel on PulseSoc.\n\n#Reel #PulseSoc";
+    } else {
+      bodyInput.value = body ? body.charAt(0).toUpperCase() + body.slice(1) : "What is on your mind?";
+    }
+    bodyInput.focus();
+    toast("Composer enhanced. Review before publishing.");
+  }
+
+  function ensureComposerMusicPicker() {
+    let modal = document.getElementById("pulseMusicPicker");
+    if (modal) return modal;
+    modal = document.createElement("section");
+    modal.id = "pulseMusicPicker";
+    modal.className = "reels-modal";
+    modal.innerHTML = `<div class="reels-sheet"><h2>Find approved music</h2><p class="muted">Only admin-approved tracks with verified commercial and edit rights appear here.</p><form data-composer-music-search><input name="topic" placeholder="Video topic"><div class="grid two"><input name="mood" placeholder="Mood"><input name="genre" placeholder="Genre"></div><input name="length" type="number" min="5" max="600" placeholder="Length in seconds"><div class="actions"><button class="primary" type="submit">Suggest tracks</button><button type="button" data-close-composer-music>Close</button></div></form><div class="sound-list" data-composer-music-results><p class="muted">Describe the mood, genre, or topic to get safe suggestions.</p></div></div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener("click", event => {
+      if (event.target === modal || event.target.closest("[data-close-composer-music]")) modal.classList.remove("open");
+      const selected = event.target.closest("[data-select-composer-track]");
+      if (selected) {
+        composerMusicTrackId = selected.dataset.selectComposerTrack || "";
+        composerMusicLabel = selected.dataset.trackLabel || "Approved PulseSoc music";
+        modal.classList.remove("open");
+        setComposerType(postType?.value || "text");
+        toast("Approved music attached.");
+      }
+      const preview = event.target.closest("[data-preview-composer-track]");
+      if (preview) {
+        const url = preview.dataset.previewComposerTrack || "";
+        if (!url) return toast("Preview is not available for this licensed track.");
+        new Audio(url).play().catch(() => toast("Preview could not play."));
+      }
+    });
+    modal.querySelector("[data-composer-music-search]")?.addEventListener("submit", async event => {
+      event.preventDefault();
+      const form = event.target;
+      const box = modal.querySelector("[data-composer-music-results]");
+      box.innerHTML = '<p class="muted">Checking approved catalog...</p>';
+      try {
+        const data = await api("/api/pulse/music/ai-suggest", { method: "POST", body: JSON.stringify({ topic: form.topic.value, mood: form.mood.value, genre: form.genre.value, length: form.length.value }) });
+        box.innerHTML = (data.items || []).map(track => `<article class="sound-row"><button class="sound-preview" type="button" data-preview-composer-track="${esc(track.preview_url || "")}">▶</button><div><strong>${esc(track.title || "Approved track")}</strong><p class="muted">${esc(track.artist || "PulseSoc")} · ${esc(track.mood || "approved")} · ${Math.round(track.duration_seconds || 0)}s</p><small>${esc(track.license_type || track.license || "approved")} · proof verified</small></div><div class="actions"><button class="primary" type="button" data-select-composer-track="${esc(track.id)}" data-track-label="${esc(`${track.title || "Approved track"} · ${track.artist || "PulseSoc"}`)}">Select</button></div></article>`).join("") || '<p class="muted">No approved tracks matched. Try another mood or topic.</p>';
+      } catch (error) {
+        box.innerHTML = `<p class="muted">${esc(error.message || "Music search failed.")}</p>`;
+      }
+    });
+    return modal;
+  }
+
   document.addEventListener("click", async event => {
     const mediaTrigger = event.target.closest("[data-pulse-media-trigger]");
-    const mediaType = event.target.closest("[data-type='image'], [data-type='video']");
-    if (mediaTrigger || mediaType) {
+    if (mediaTrigger) {
       event.preventDefault();
-      window.location.href = "/pulse/create";
+      openComposerPicker("");
+      return;
+    }
+    const reelTrigger = event.target.closest("[data-composer-reel]");
+    if (reelTrigger) {
+      event.preventDefault();
+      setComposerType("video");
+      toast("Reel mode selected. Choose Media will open video files.");
+      return;
+    }
+    const audienceTrigger = event.target.closest("[data-composer-audience]");
+    if (audienceTrigger) {
+      event.preventDefault();
+      const panel = document.querySelector("#pulseComposer [data-composer-audience-panel]");
+      if (panel) panel.hidden = !panel.hidden;
+      composerAudience?.focus();
+      toast(`Audience: ${composerAudience?.selectedOptions?.[0]?.textContent || "Public"}`);
+      return;
+    }
+    const enhanceTrigger = event.target.closest("[data-composer-enhance]");
+    if (enhanceTrigger) {
+      event.preventDefault();
+      const panel = document.querySelector("#pulseComposer [data-composer-enhance-panel]");
+      if (panel) panel.hidden = !panel.hidden;
+      enhanceComposer("improve");
+      return;
+    }
+    const enhanceAction = event.target.closest("[data-enhance-action]");
+    if (enhanceAction) {
+      event.preventDefault();
+      enhanceComposer(enhanceAction.dataset.enhanceAction || "improve");
+      return;
+    }
+    const musicTrigger = event.target.closest("[data-composer-music]");
+    if (musicTrigger) {
+      event.preventDefault();
+      if (musicTrigger.hidden || !(postType?.value === "video" || composerHasVideo())) return toast("Add Music is available for Reel or video posts.");
+      ensureComposerMusicPicker().classList.add("open");
+      toast("Choose an approved track for this video.");
+      return;
+    }
+    const removeComposerMedia = event.target.closest("[data-remove-composer-media]");
+    if (removeComposerMedia) {
+      const index = Number(removeComposerMedia.dataset.removeComposerMedia || -1);
+      composerFiles = composerFiles.filter((_, itemIndex) => itemIndex !== index);
+      if (postMedia && !composerFiles.length) postMedia.value = "";
+      renderComposerPreview();
+      toast(composerFiles.length ? "Media removed." : "Media cleared.");
       return;
     }
     const retry = event.target.closest("[data-retry-pulse-feed]");
@@ -811,20 +1055,61 @@
 
   const publish = document.getElementById("publishBtn");
   publish?.addEventListener("click", async () => {
-    const title = document.getElementById("postTitle")?.value || "";
-    const body = document.getElementById("postBody")?.value || "";
-    const files = document.getElementById("postMedia")?.files || [];
-    if (files.length) {
-      toast("For media posts, use the full Create page.");
-      window.location.href = "/pulse/create";
-      return;
+    const titleInput = document.getElementById("postTitle");
+    const bodyInput = document.getElementById("postBody");
+    const title = titleInput?.value || "";
+    let body = bodyInput?.value || "";
+    const files = composerFiles.length ? composerFiles : Array.from(document.getElementById("postMedia")?.files || []);
+    if (!title.trim() && !body.trim() && !files.length) return toast("Write something or attach media before publishing.");
+    const selectedType = postType?.value || "text";
+    if (selectedType === "poll" && body.trim() && !body.trim().endsWith("?")) {
+      body = `${body.trim()}?`;
+      if (bodyInput) bodyInput.value = body;
     }
-    if (!title.trim() && !body.trim()) return toast("Write something before publishing.");
+    if (selectedType === "scam_report" && body.trim().length < 24) {
+      bodyInput?.focus();
+      return toast("Add useful scam warning details before publishing.");
+    }
+    const fileError = validateComposerFiles(files);
+    if (fileError) return toast(fileError);
     publish.disabled = true;
     try {
-      await api("/api/pulse/posts", { method: "POST", body: JSON.stringify({ title, body, post_type: "text", media_ids: [] }) });
+      const mediaIds = [];
+      for (const file of files.slice(0, 4)) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("context_type", "pulse");
+        formData.append("context_id", "draft");
+        const isVideo = composerFileIsVideo(file);
+        toast(isVideo ? "Uploading video..." : "Uploading media...");
+        const uploaded = window.PulseUploadManager
+          ? await window.PulseUploadManager.upload({ url: "/api/pulse/media/upload", formData, file, button: publish, progressTarget: composerProgress, lockKey: `pulse-feed-upload-${file.name}`, onProgress: step => toast(step.message) })
+          : await api("/api/pulse/media/upload", { method: "POST", body: formData, timeoutMs: isVideo ? 120000 : 60000 });
+        const mediaId = uploaded.media?.id || uploaded.media_id || uploaded.id;
+        if (mediaId) mediaIds.push(mediaId);
+      }
+      const hasVideo = files.some(composerFileIsVideo);
+      if (files.length && mediaIds.length !== files.slice(0, 4).length) throw new Error("Upload completed but media did not attach. Please retry.");
+      window.PulseUploadManager?.render(composerProgress, { stage: hasVideo ? "processing" : "publishing", percent: hasVideo ? 90 : 96, message: hasVideo ? "Preparing video playback..." : "Publishing..." });
+      await api("/api/pulse/posts", {
+        method: "POST",
+        body: JSON.stringify({
+          title,
+          body,
+          post_type: hasVideo ? "video" : mediaIds.length ? "image" : selectedType,
+          media_ids: mediaIds,
+          visibility: composerAudience?.value || "public",
+          music_track_id: composerMusicTrackId,
+        }),
+      });
       document.getElementById("postTitle").value = "";
       document.getElementById("postBody").value = "";
+      if (postMedia) postMedia.value = "";
+      composerFiles = [];
+      composerMusicTrackId = "";
+      composerMusicLabel = "";
+      renderComposerPreview();
+      setComposerType("text");
       toast("Posted successfully.");
       await load(true);
     } catch (error) {
