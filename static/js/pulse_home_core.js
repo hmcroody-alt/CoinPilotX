@@ -60,6 +60,16 @@
     return node;
   }
 
+  function esc(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    }[char]));
+  }
+
   function count(value) {
     return Math.max(0, Number(value || 0));
   }
@@ -634,8 +644,12 @@
   const composeMsg = document.getElementById("composeMsg");
   const composerAudience = document.getElementById("postAudience");
   const composerProgress = document.querySelector("#pulseComposer [data-upload-progress]");
+  const publish = document.getElementById("publishBtn");
   let composerFiles = [];
-  let composerObjectUrls = [];
+  let composerUploadItems = [];
+  let composerUploadBatch = 0;
+  let composerUploadSerial = 0;
+  let composerPublishing = false;
   let composerMusicTrackId = "";
   let composerMusicLabel = "";
   try {
@@ -652,7 +666,48 @@
   }
 
   function composerHasVideo() {
-    return (composerFiles.length ? composerFiles : Array.from(postMedia?.files || [])).some(composerFileIsVideo);
+    return (composerUploadItems.length ? composerUploadItems.map(item => item.file) : (composerFiles.length ? composerFiles : Array.from(postMedia?.files || []))).some(composerFileIsVideo);
+  }
+
+  function formatComposerSize(file) {
+    const size = Number(file?.size || 0);
+    if (!size) return "Size pending";
+    if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(size > 20 * 1024 * 1024 ? 0 : 1)} MB`;
+    return `${Math.max(1, Math.round(size / 1024))} KB`;
+  }
+
+  function formatComposerDuration(seconds) {
+    const value = Math.round(Number(seconds || 0));
+    if (!Number.isFinite(value) || value <= 0) return "--:--";
+    return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
+  }
+
+  function composerStageLabel(stage) {
+    return {
+      preparing: "Preparing",
+      uploading: "Uploading",
+      processing: "Processing",
+      complete: "Ready to publish",
+      success: "Ready to publish",
+      failed: "Failed",
+      idle: "Preparing",
+    }[stage] || "Preparing";
+  }
+
+  function composerUploadBusy() {
+    return composerUploadItems.some(item => ["preparing", "uploading", "processing", "idle"].includes(item.stage));
+  }
+
+  function composerUploadFailed() {
+    return composerUploadItems.some(item => item.stage === "failed");
+  }
+
+  function composerReadyVideoSelected() {
+    return composerUploadItems.some(item => item.isVideo && item.mediaId && item.stage !== "failed");
+  }
+
+  function syncComposerFiles() {
+    composerFiles = composerUploadItems.map(item => item.file).filter(Boolean);
   }
 
   function updateComposerMusicVisibility() {
@@ -683,40 +738,220 @@
       composeMsg.textContent = composerMusicLabel
         ? `Music attached: ${composerMusicLabel}`
         : next === "video"
-          ? "Reel mode selected. Choose a video to preview it before publishing."
+          ? "Choose or record a video to create your Reel."
           : next === "poll"
             ? "Write the question you want the community to answer."
             : next === "scam_report"
               ? "Add the who, what, where, and why so the warning is useful."
               : "Ready to publish.";
     }
+    updateComposerPublishState();
   }
 
-  function clearComposerObjectUrls() {
-    composerObjectUrls.forEach(url => URL.revokeObjectURL(url));
-    composerObjectUrls = [];
+  function clearComposerUploads() {
+    composerUploadBatch += 1;
+    composerUploadItems.forEach(item => {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    });
+    composerUploadItems = [];
+    composerFiles = [];
+  }
+
+  function composerOverallProgress() {
+    if (!composerUploadItems.length) return { stage: "idle", percent: 0, message: "Ready to publish." };
+    const failed = composerUploadItems.find(item => item.stage === "failed");
+    if (failed) return { stage: "failed", percent: failed.percent || 0, message: failed.error || "Upload failed. Retry or remove the media." };
+    const busy = composerUploadItems.find(item => ["preparing", "uploading", "processing", "idle"].includes(item.stage));
+    const percent = Math.round(composerUploadItems.reduce((sum, item) => sum + Number(item.percent || 0), 0) / composerUploadItems.length);
+    if (busy) return { stage: busy.stage || "uploading", percent, message: busy.message || `${composerStageLabel(busy.stage)}...` };
+    return { stage: "complete", percent: 100, message: `${composerUploadItems.length} media item${composerUploadItems.length === 1 ? "" : "s"} ready to publish.` };
+  }
+
+  function renderComposerOverallProgress() {
+    const progress = composerOverallProgress();
+    window.PulseUploadManager?.render(composerProgress, progress);
+    if (composerProgress) {
+      composerProgress.setAttribute("aria-valuemin", "0");
+      composerProgress.setAttribute("aria-valuemax", "100");
+      composerProgress.setAttribute("aria-valuenow", String(Math.max(0, Math.min(100, Number(progress.percent || 0)))));
+    }
+  }
+
+  function updateComposerUploadItemDom(item) {
+    const card = postMediaPreview?.querySelector(`[data-selected-media="${CSS.escape(String(item.id))}"]`);
+    if (!card) return;
+    card.dataset.uploadStage = item.stage || "idle";
+    card.classList.toggle("is-uploading", ["preparing", "uploading", "processing", "idle"].includes(item.stage));
+    card.classList.toggle("is-ready", !!item.mediaId && item.stage !== "failed");
+    card.classList.toggle("is-failed", item.stage === "failed");
+    const bar = card.querySelector("[data-composer-item-bar]");
+    if (bar) bar.style.width = `${Math.max(0, Math.min(100, Number(item.percent || 0)))}%`;
+    const ring = card.querySelector("[data-composer-upload-ring]");
+    if (ring) ring.style.setProperty("--upload-progress", String(Math.max(0, Math.min(100, Number(item.percent || 0)))));
+    const percent = card.querySelector("[data-composer-percent]");
+    if (percent) percent.textContent = `${Math.max(0, Math.min(100, Math.round(Number(item.percent || 0))))}%`;
+    const state = card.querySelector("[data-composer-media-state]");
+    if (state) state.textContent = item.error || item.message || composerStageLabel(item.stage);
+    const stage = card.querySelector("[data-composer-stage]");
+    if (stage) stage.textContent = composerStageLabel(item.stage);
+    const retry = card.querySelector("[data-retry-composer-upload]");
+    if (retry) retry.hidden = item.stage !== "failed";
+    renderComposerOverallProgress();
+    updateComposerPublishState();
   }
 
   function renderComposerPreview() {
     if (!postMediaPreview) return;
-    clearComposerObjectUrls();
-    if (!composerFiles.length) {
+    if (!composerUploadItems.length) {
       postMediaPreview.innerHTML = "";
       updateComposerMusicVisibility();
-      window.PulseUploadManager?.render(composerProgress, { stage: "idle", percent: 0, message: "Ready to publish." });
+      renderComposerOverallProgress();
+      updateComposerPublishState();
       return;
     }
-    postMediaPreview.innerHTML = composerFiles.map((file, index) => {
-      const url = URL.createObjectURL(file);
-      composerObjectUrls.push(url);
-      const isVideo = composerFileIsVideo(file);
+    postMediaPreview.innerHTML = composerUploadItems.map(item => {
+      const file = item.file;
+      const isVideo = item.isVideo;
+      const name = file.name || "PulseSoc media";
       const media = isVideo
-        ? `<video src="${url}" controls playsinline webkit-playsinline preload="metadata"></video>`
-        : `<img src="${url}" alt="${esc(file.name || "Selected media preview")}" loading="eager" decoding="async">`;
-      return `<span class="pulse-selected-media ${isVideo ? "is-video" : "is-image"}" data-selected-media="${index}">${media}<footer><span><strong>${esc(file.name || "PulseSoc media")}</strong><small>${isVideo ? "Video" : "Image"} ready</small></span><button type="button" data-remove-composer-media="${index}">Remove</button></footer></span>`;
+        ? `<div class="composer-video-frame"><video src="${esc(item.previewUrl)}" controls muted playsinline webkit-playsinline preload="metadata" aria-label="${esc(name)} preview" data-composer-preview-video="${esc(item.id)}"></video><div class="composer-video-fallback" data-composer-video-fallback hidden><strong>Preview could not load.</strong><span>Reselect or remove this video.</span></div><div class="composer-video-controls"><button type="button" data-composer-video-toggle="${esc(item.id)}">Play</button><button type="button" data-composer-video-mute="${esc(item.id)}">Muted</button><span data-composer-video-duration="${esc(item.id)}">--:--</span></div></div>`
+        : `<img src="${esc(item.previewUrl)}" alt="${esc(name)}" loading="eager" decoding="async">`;
+      return `<article class="pulse-selected-media ${isVideo ? "is-video" : "is-image"} ${item.stage === "failed" ? "is-failed" : item.mediaId ? "is-ready" : "is-uploading"}" data-selected-media="${esc(item.id)}" data-upload-stage="${esc(item.stage)}">${media}<footer><div class="composer-media-copy"><strong>${esc(name)}</strong><small data-composer-media-state>${esc(item.message || composerStageLabel(item.stage))}</small><span>${esc(isVideo ? "Video" : "Image")} · ${esc(file.type || "media")} · ${esc(formatComposerSize(file))}</span></div><div class="composer-upload-panel"><span class="composer-upload-ring" data-composer-upload-ring style="--upload-progress:${Math.max(0, Math.min(100, Number(item.percent || 0)))}"><b data-composer-percent>${Math.max(0, Math.min(100, Math.round(Number(item.percent || 0))))}%</b></span><div><span class="composer-stage-chip" data-composer-stage>${esc(composerStageLabel(item.stage))}</span><div class="composer-item-progress"><span data-composer-item-bar style="width:${Math.max(0, Math.min(100, Number(item.percent || 0)))}%"></span></div></div></div><div class="composer-preview-actions"><button type="button" data-retry-composer-upload="${esc(item.id)}" ${item.stage === "failed" ? "" : "hidden"}>Retry</button><button type="button" data-remove-composer-media="${esc(item.id)}">Remove</button></div></footer></article>`;
     }).join("");
     updateComposerMusicVisibility();
-    window.PulseUploadManager?.render(composerProgress, { stage: "complete", percent: 100, message: `${composerFiles.length} media item${composerFiles.length === 1 ? "" : "s"} ready to publish.` });
+    hydrateComposerPreview();
+    renderComposerOverallProgress();
+    updateComposerPublishState();
+  }
+
+  function hydrateComposerPreview() {
+    postMediaPreview?.querySelectorAll("[data-composer-preview-video]").forEach(video => {
+      if (video.dataset.composerPreviewBound === "1") return;
+      video.dataset.composerPreviewBound = "1";
+      video.addEventListener("loadedmetadata", () => {
+        const duration = postMediaPreview.querySelector(`[data-composer-video-duration="${CSS.escape(video.dataset.composerPreviewVideo || "")}"]`);
+        if (duration) duration.textContent = formatComposerDuration(video.duration);
+      }, { once: true });
+      video.addEventListener("play", () => {
+        const button = postMediaPreview.querySelector(`[data-composer-video-toggle="${CSS.escape(video.dataset.composerPreviewVideo || "")}"]`);
+        if (button) button.textContent = "Pause";
+      });
+      video.addEventListener("pause", () => {
+        const button = postMediaPreview.querySelector(`[data-composer-video-toggle="${CSS.escape(video.dataset.composerPreviewVideo || "")}"]`);
+        if (button) button.textContent = "Play";
+      });
+      video.addEventListener("volumechange", () => {
+        const button = postMediaPreview.querySelector(`[data-composer-video-mute="${CSS.escape(video.dataset.composerPreviewVideo || "")}"]`);
+        if (button) button.textContent = video.muted ? "Muted" : "Sound";
+      });
+      video.addEventListener("error", () => {
+        const card = video.closest("[data-selected-media]");
+        card?.classList.add("is-preview-failed");
+        const fallback = card?.querySelector("[data-composer-video-fallback]");
+        if (fallback) fallback.hidden = false;
+      });
+    });
+  }
+
+  function updateComposerPublishState() {
+    if (!publish) return;
+    if (composerPublishing) {
+      publish.disabled = true;
+      publish.textContent = "Publishing...";
+      return;
+    }
+    const selectedType = postType?.value || "text";
+    const blocked = composerUploadBusy() || composerUploadFailed() || (selectedType === "video" && !composerReadyVideoSelected());
+    publish.disabled = blocked;
+    publish.textContent = composerUploadBusy()
+      ? "Uploading..."
+      : composerUploadFailed()
+        ? "Fix Upload"
+        : selectedType === "video" && !composerReadyVideoSelected()
+          ? "Add Video"
+          : "Publish";
+  }
+
+  async function startComposerUpload(item, batch) {
+    if (!item?.file || batch !== composerUploadBatch) return;
+    item.stage = "preparing";
+    item.percent = Math.max(1, item.percent || 1);
+    item.message = item.isVideo ? "Preparing video upload..." : "Preparing media upload...";
+    updateComposerUploadItemDom(item);
+    const formData = new FormData();
+    formData.append("file", item.file);
+    formData.append("context_type", "pulse");
+    formData.append("context_id", "draft");
+    try {
+      const uploaded = window.PulseUploadManager
+        ? await window.PulseUploadManager.upload({
+          url: "/api/pulse/media/upload",
+          formData,
+          file: item.file,
+          progressTarget: composerProgress,
+          lockKey: `pulse-composer-upload-${item.id}-${item.file.name || "media"}`,
+          onProgress: step => {
+            if (batch !== composerUploadBatch) return;
+            item.stage = step.stage || item.stage;
+            item.percent = Number(step.percent ?? item.percent ?? 0);
+            item.message = step.message || item.message;
+            updateComposerUploadItemDom(item);
+          },
+        })
+        : await api("/api/pulse/media/upload", { method: "POST", body: formData, timeoutMs: item.isVideo ? 120000 : 60000 });
+      if (batch !== composerUploadBatch) return;
+      const mediaId = uploaded?.media?.id || uploaded?.media_id || uploaded?.id;
+      if (!mediaId) throw new Error("Upload completed but media did not attach. Please retry.");
+      item.mediaId = mediaId;
+      item.stage = "complete";
+      item.percent = 100;
+      item.error = "";
+      item.message = item.isVideo ? "Upload complete. Video is ready to publish." : "Upload complete. Ready to publish.";
+      updateComposerUploadItemDom(item);
+    } catch (error) {
+      if (batch !== composerUploadBatch) return;
+      item.stage = "failed";
+      item.percent = 0;
+      item.error = error?.message || "Upload failed. Retry or remove the media.";
+      item.message = item.error;
+      updateComposerUploadItemDom(item);
+      toast(item.error);
+    }
+  }
+
+  async function startComposerUploadQueue(batch) {
+    for (const item of composerUploadItems) {
+      if (batch !== composerUploadBatch) return;
+      await startComposerUpload(item, batch);
+    }
+  }
+
+  function prepareComposerUploads(files) {
+    clearComposerUploads();
+    const selected = files.slice(0, 4);
+    const fileError = validateComposerFiles(selected);
+    if (fileError) {
+      if (postMedia) postMedia.value = "";
+      toast(fileError);
+      window.PulseUploadManager?.render(composerProgress, { stage: "failed", percent: 0, message: fileError });
+      updateComposerPublishState();
+      return;
+    }
+    composerUploadItems = selected.map(file => ({
+      id: `media-${Date.now()}-${++composerUploadSerial}`,
+      file,
+      previewUrl: URL.createObjectURL(file),
+      isVideo: composerFileIsVideo(file),
+      stage: "preparing",
+      percent: 1,
+      mediaId: null,
+      message: composerFileIsVideo(file) ? "Preparing video upload..." : "Preparing media upload...",
+      error: "",
+    }));
+    syncComposerFiles();
+    const batch = composerUploadBatch;
+    renderComposerPreview();
+    if (composerUploadItems.length) startComposerUploadQueue(batch);
   }
 
   function openComposerPicker(type = "") {
@@ -734,13 +969,14 @@
   }
 
   postMedia?.addEventListener("change", event => {
-    composerFiles = Array.from(event.target.files || []).slice(0, 4);
-    const hasVideo = composerFiles.some(composerFileIsVideo);
-    if (composerFiles.length) {
+    const selected = Array.from(event.target.files || []).slice(0, 4);
+    const hasVideo = selected.some(composerFileIsVideo);
+    if (selected.length) {
       setComposerType(hasVideo ? "video" : (postType?.value === "video" ? "video" : "text"));
-      renderComposerPreview();
-      toast(`${composerFiles.length} media item${composerFiles.length === 1 ? "" : "s"} attached.`);
+      prepareComposerUploads(selected);
+      toast(`${selected.length} media item${selected.length === 1 ? "" : "s"} selected. Upload started.`);
     } else {
+      clearComposerUploads();
       renderComposerPreview();
     }
   });
@@ -872,11 +1108,39 @@
     }
     const removeComposerMedia = event.target.closest("[data-remove-composer-media]");
     if (removeComposerMedia) {
-      const index = Number(removeComposerMedia.dataset.removeComposerMedia || -1);
-      composerFiles = composerFiles.filter((_, itemIndex) => itemIndex !== index);
-      if (postMedia && !composerFiles.length) postMedia.value = "";
+      const id = removeComposerMedia.dataset.removeComposerMedia || "";
+      const item = composerUploadItems.find(candidate => candidate.id === id);
+      if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      composerUploadItems = composerUploadItems.filter(candidate => candidate.id !== id);
+      syncComposerFiles();
+      if (postMedia && !composerUploadItems.length) postMedia.value = "";
       renderComposerPreview();
-      toast(composerFiles.length ? "Media removed." : "Media cleared.");
+      toast(composerUploadItems.length ? "Media removed." : "Media cleared.");
+      return;
+    }
+    const retryComposerMedia = event.target.closest("[data-retry-composer-upload]");
+    if (retryComposerMedia) {
+      const item = composerUploadItems.find(candidate => candidate.id === (retryComposerMedia.dataset.retryComposerUpload || ""));
+      if (item) {
+        item.error = "";
+        item.mediaId = null;
+        startComposerUpload(item, composerUploadBatch);
+      }
+      return;
+    }
+    const videoToggle = event.target.closest("[data-composer-video-toggle]");
+    if (videoToggle) {
+      const video = postMediaPreview?.querySelector(`[data-composer-preview-video="${CSS.escape(videoToggle.dataset.composerVideoToggle || "")}"]`);
+      if (video) {
+        if (video.paused) video.play().catch(() => toast("Preview could not play."));
+        else video.pause();
+      }
+      return;
+    }
+    const videoMute = event.target.closest("[data-composer-video-mute]");
+    if (videoMute) {
+      const video = postMediaPreview?.querySelector(`[data-composer-preview-video="${CSS.escape(videoMute.dataset.composerVideoMute || "")}"]`);
+      if (video) video.muted = !video.muted;
       return;
     }
     const retry = event.target.closest("[data-retry-pulse-feed]");
@@ -1053,15 +1317,18 @@
     longPressStart = null;
   }, { passive: true });
 
-  const publish = document.getElementById("publishBtn");
   publish?.addEventListener("click", async () => {
     const titleInput = document.getElementById("postTitle");
     const bodyInput = document.getElementById("postBody");
     const title = titleInput?.value || "";
     let body = bodyInput?.value || "";
     const files = composerFiles.length ? composerFiles : Array.from(document.getElementById("postMedia")?.files || []);
+    const mediaIds = composerUploadItems.map(item => item.mediaId).filter(Boolean);
     if (!title.trim() && !body.trim() && !files.length) return toast("Write something or attach media before publishing.");
     const selectedType = postType?.value || "text";
+    if (selectedType === "video" && !composerReadyVideoSelected()) return toast("Choose or record a video to create your Reel.");
+    if (composerUploadBusy()) return toast("Wait for the upload to finish before publishing.");
+    if (composerUploadFailed()) return toast("Retry or remove failed media before publishing.");
     if (selectedType === "poll" && body.trim() && !body.trim().endsWith("?")) {
       body = `${body.trim()}?`;
       if (bodyInput) bodyInput.value = body;
@@ -1072,24 +1339,11 @@
     }
     const fileError = validateComposerFiles(files);
     if (fileError) return toast(fileError);
-    publish.disabled = true;
+    if (files.length && mediaIds.length !== composerUploadItems.length) return toast("Wait for every media item to finish uploading.");
+    composerPublishing = true;
+    updateComposerPublishState();
     try {
-      const mediaIds = [];
-      for (const file of files.slice(0, 4)) {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("context_type", "pulse");
-        formData.append("context_id", "draft");
-        const isVideo = composerFileIsVideo(file);
-        toast(isVideo ? "Uploading video..." : "Uploading media...");
-        const uploaded = window.PulseUploadManager
-          ? await window.PulseUploadManager.upload({ url: "/api/pulse/media/upload", formData, file, button: publish, progressTarget: composerProgress, lockKey: `pulse-feed-upload-${file.name}`, onProgress: step => toast(step.message) })
-          : await api("/api/pulse/media/upload", { method: "POST", body: formData, timeoutMs: isVideo ? 120000 : 60000 });
-        const mediaId = uploaded.media?.id || uploaded.media_id || uploaded.id;
-        if (mediaId) mediaIds.push(mediaId);
-      }
       const hasVideo = files.some(composerFileIsVideo);
-      if (files.length && mediaIds.length !== files.slice(0, 4).length) throw new Error("Upload completed but media did not attach. Please retry.");
       window.PulseUploadManager?.render(composerProgress, { stage: hasVideo ? "processing" : "publishing", percent: hasVideo ? 90 : 96, message: hasVideo ? "Preparing video playback..." : "Publishing..." });
       await api("/api/pulse/posts", {
         method: "POST",
@@ -1105,7 +1359,7 @@
       document.getElementById("postTitle").value = "";
       document.getElementById("postBody").value = "";
       if (postMedia) postMedia.value = "";
-      composerFiles = [];
+      clearComposerUploads();
       composerMusicTrackId = "";
       composerMusicLabel = "";
       renderComposerPreview();
@@ -1115,9 +1369,14 @@
     } catch (error) {
       toast(error.message);
     } finally {
-      publish.disabled = false;
+      composerPublishing = false;
+      updateComposerPublishState();
     }
   });
+
+  document.getElementById("postTitle")?.addEventListener("input", updateComposerPublishState);
+  document.getElementById("postBody")?.addEventListener("input", updateComposerPublishState);
+  updateComposerPublishState();
 
   document.getElementById("drawerOpen")?.addEventListener("click", () => document.body.classList.add("drawer-open"));
   document.getElementById("drawerClose")?.addEventListener("click", () => document.body.classList.remove("drawer-open"));

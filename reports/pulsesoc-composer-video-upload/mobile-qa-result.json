@@ -1,0 +1,23 @@
+{
+  "early": {
+    "ok": true,
+    "progress": "Upload starting...",
+    "publish": "Uploading...",
+    "disabled": true,
+    "video": true,
+    "addMusicVisible": true
+  },
+  "ready": {
+    "ok": true,
+    "progress": "1 media item ready to publish.",
+    "state": "Upload complete. Video is ready to publish.",
+    "stage": "Ready to publish",
+    "percent": "100%",
+    "publish": "Publish",
+    "disabled": false,
+    "video": true,
+    "addMusicVisible": true
+  },
+  "shot": "/Users/hmcherie/Desktop/CoinPilotX/reports/pulsesoc-composer-video-upload/mobile-composer-video-upload-ready.png",
+  "file": "/tmp/pulsesoc-mobile-qa-reel.webm"
+}
