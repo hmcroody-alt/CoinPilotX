@@ -1010,10 +1010,10 @@ article.card > .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels
 }
 
 body:has(.pulse-video-detail-page) .video-detail-player.pulse-media-wrap.media-kind-video {
-  aspect-ratio: 16 / 9 !important;
+  aspect-ratio: var(--video-aspect, 1.777778) !important;
   height: auto !important;
   min-height: 0 !important;
-  max-height: none !important;
+  max-height: min(76dvh, 860px) !important;
 }
 
 body:has(.pulse-video-detail-page) .video-detail-player.pulse-media-wrap.media-kind-video video {
@@ -1021,6 +1021,10 @@ body:has(.pulse-video-detail-page) .video-detail-player.pulse-media-wrap.media-k
   inset: 0 !important;
   width: 100% !important;
   height: 100% !important;
+  object-fit: contain !important;
+}
+
+body:has(.pulse-video-detail-page) .video-detail-player.pulse-media-wrap.media-kind-video.is-fill video {
   object-fit: cover !important;
 }
 
@@ -1031,9 +1035,24 @@ body:has(.pulse-video-detail-page) .video-detail-player.pulse-media-wrap.media-k
     max-width: calc(100vw - 20px) !important;
     margin-left: 10px !important;
     margin-right: 10px !important;
-    aspect-ratio: 16 / 9 !important;
+    aspect-ratio: var(--video-aspect, 1.777778) !important;
     height: auto !important;
     min-height: 0 !important;
-    max-height: none !important;
+    max-height: min(72dvh, 760px) !important;
   }
+}
+
+/* Pulse all-video full-width contract */
+.post .pulse-media-wrap.media-kind-video,
+.post.is-video .pulse-media-wrap.media-kind-video,
+.post.has-media .pulse-media-wrap.media-kind-video,
+article.card > .pulse-media-wrap.media-kind-video,
+.video-thumb .pulse-media-wrap.media-kind-video,
+.video-detail-player.pulse-media-wrap.media-kind-video,
+.profile-post .pulse-media-wrap.media-kind-video,
+.saved-post .pulse-media-wrap.media-kind-video,
+.creator-studio-preview .pulse-media-wrap.media-kind-video,
+.live-replay-card .pulse-media-wrap.media-kind-video {
+  width: 100% !important;
+  max-width: none !important;
 }

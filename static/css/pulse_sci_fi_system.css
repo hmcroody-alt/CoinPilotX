@@ -119,6 +119,17 @@
   aspect-ratio: 1 / 1;
 }
 
+.feed .pulse-media-wrap.media-kind-video video,
+.feed > .post-card-modern.post-card-video .post-card-media-frame.is-video video,
+.post.is-video .pulse-media-wrap.media-kind-video video {
+  object-fit: contain !important;
+}
+
+.feed .pulse-media-wrap.media-kind-video[data-fit="fill"] video,
+.post.is-video .pulse-media-wrap.media-kind-video[data-fit="fill"] video {
+  object-fit: cover !important;
+}
+
 .post-action-row,
 .quick-actions,
 .reaction-strip {

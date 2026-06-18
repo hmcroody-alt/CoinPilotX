@@ -14,9 +14,12 @@ for token in [
     "https://stream.mux.com/{video.get('mux_playback_id')}.m3u8",
     "Preparing video...",
     "Video processing failed",
-    "Related videos",
-    "height:clamp(650px,72vh,800px)",
-    "height:clamp(60vh,68vh,75vh)",
+    "Up Next",
+    "--video-aspect",
+    "data-video-fit-toggle",
+    "data-video-fullscreen",
+    "video-creator-drawer-head",
+    "data-video-private-insights",
     "object-fit:contain",
 ]:
     assert token in bot, f"missing video detail route token: {token}"
