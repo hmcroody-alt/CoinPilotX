@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BOT = ROOT / "bot.py"
+CORE_JS = ROOT / "static/js/pulse_home_core.js"
 
 
 def expect(ok: bool, label: str) -> None:
@@ -16,7 +17,7 @@ def expect(ok: bool, label: str) -> None:
 
 
 def main() -> None:
-    source = BOT.read_text(encoding="utf-8")
+    source = BOT.read_text(encoding="utf-8") + "\n" + CORE_JS.read_text(encoding="utf-8")
     required_links = [
         "/pulse/status",
         "/pulse/status?lane=trending",
@@ -29,11 +30,13 @@ def main() -> None:
         expect(token in source, f"visible Pulse link exists: {token}")
 
     required_handlers = [
-        "data-open-media",
+        "data-open-composer-picker",
         "data-composer-reel",
+        "data-composer-live",
         "data-composer-music",
+        "data-composer-ai",
+        "data-composer-rail",
         "data-composer-audience",
-        "id=\"aiBtn\"",
         "id=\"publishBtn\"",
         "data-status2-pick-media",
         "data-status-viewer-close",
@@ -48,10 +51,11 @@ def main() -> None:
     for token in required_handlers:
         expect(token in source, f"visible Pulse control has active wiring: {token}")
 
-    expect("toast('Audience is public for this composer" in source, "Audience button has a clear user-facing state")
-    expect("toast('Music tools are available" in source, "Music button has a clear user-facing state")
+    expect("Audience:" in source, "Audience button has a clear user-facing state")
+    expect("Add Music is available for Reel or video posts." in source, "Music button has a clear user-facing state")
+    expect("Start typing or select media to unlock contextual AI." in source, "AI rail has a clear user-facing state")
     expect("Write something or attach media before publishing." in source, "Publish button reports missing content clearly")
-    expect("Choose a video before publishing your Reel." in source, "Reel publish button is guarded until video is selected")
+    expect("Choose or record a video to create your Reel." in source, "Reel publish button is guarded until video is selected")
     expect("Status opened." not in source, "Status buttons do not use toast-only open behavior")
 
 

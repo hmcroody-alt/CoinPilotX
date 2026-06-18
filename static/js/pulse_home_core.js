@@ -179,8 +179,9 @@
     const identity = element("div", "post-card-identity");
     const nameRow = element("div", "post-card-name-row");
     const profile = author?.public_player_id ? `/pulse/profile/${encodeURIComponent(author.public_player_id)}` : "/pulse/profile";
-    const nameLink = element("a", "post-card-name", authorName);
-    nameLink.href = profile;
+    const nameLink = element("button", "post-card-name post-card-creator-trigger", authorName);
+    nameLink.type = "button";
+    nameLink.dataset.creatorDrawerOpen = post.id;
     nameRow.appendChild(nameLink);
     if (author?.premium_mark || author?.verified || author?.premium_verified) {
       const badge = element("span", "post-verified", "✓");
@@ -210,9 +211,36 @@
     controls.appendChild(menuButton);
 
     const main = element("div", "post-card-creator");
-    main.append(avatarNode(author, authorName), identity);
+    const avatarButton = element("button", "post-card-avatar-trigger", "");
+    avatarButton.type = "button";
+    avatarButton.dataset.creatorDrawerOpen = post.id;
+    avatarButton.appendChild(avatarNode(author, authorName));
+    main.append(avatarButton, identity);
     header.append(main, controls);
     card.appendChild(header);
+  }
+
+  function renderCreatorDrawer(card, post, author, authorName, label) {
+    const drawer = element("section", "post-creator-drawer");
+    drawer.dataset.creatorDrawer = post.id;
+    drawer.setAttribute("aria-hidden", "true");
+    const publicId = author?.public_player_id ? `@${author.public_player_id}` : "";
+    const bio = author?.bio || author?.about || "No creator bio yet.";
+    drawer.append(
+      avatarNode(author, authorName),
+      element("div", "post-creator-drawer-copy", "")
+    );
+    const copy = drawer.querySelector(".post-creator-drawer-copy");
+    copy.append(
+      element("strong", "", authorName),
+      element("small", "", [label || "PulseSoc member", publicId].filter(Boolean).join(" · ")),
+      element("p", "", bio)
+    );
+    const close = element("button", "post-creator-drawer-close", "Close");
+    close.type = "button";
+    close.dataset.creatorDrawerClose = post.id;
+    drawer.appendChild(close);
+    card.appendChild(drawer);
   }
 
   function renderMenu(card, post, author) {
@@ -302,12 +330,6 @@
         frame.appendChild(media);
         const play = element("span", "post-video-play", "▶");
         frame.appendChild(play);
-        const overlay = element("span", "post-media-engagement", "");
-        overlay.append(
-          element("span", "post-media-reactions", `❤️ ${compactNumber(reactionTotal(post))}   🔥 ${compactNumber(post.reaction_counts?.fire || 0)}`),
-          element("span", "post-media-views", `👁 ${compactNumber(post.view_count || post.views_count)}`)
-        );
-        frame.appendChild(overlay);
       } else {
         const image = document.createElement("img");
         image.src = url;
@@ -384,7 +406,7 @@
   function renderPost(post) {
     const author = post.author || {};
     const authorName = author.display_name || post.author_public_name || "PulseSoc creator";
-    const label = author.primary_label || author.bio || author.rank || (author.badges || ["Member"])[0] || "PulseSoc member";
+    const label = author.primary_label || author.rank || (author.badges || ["Member"])[0] || "PulseSoc member";
     const mediaItems = post.media || [];
     const kind = mediaTypeLabel(post, mediaItems);
     const card = element("article", `card post post-card-modern post-card-${kind}`);
@@ -393,18 +415,28 @@
     card.dataset.mediaKind = kind;
 
     const media = renderMedia(post, mediaItems);
-    if (kind === "video" && media) card.appendChild(media);
-    renderCreatorHeader(card, post, author, authorName, label);
-    renderMenu(card, post, author);
-    renderCaption(card, post);
-    if (post.live?.live_url) {
-      const live = element("a", "button primary", "Join live");
-      live.href = post.live.live_url;
-      card.appendChild(live);
+    if (kind === "video" && media) {
+      card.appendChild(media);
+      renderEngagement(card, post);
+      renderActions(card, post);
+      renderCreatorHeader(card, post, author, authorName, label);
+      renderCreatorDrawer(card, post, author, authorName, label);
+      renderMenu(card, post, author);
+      renderCaption(card, post);
+    } else {
+      renderCreatorHeader(card, post, author, authorName, label);
+      renderCreatorDrawer(card, post, author, authorName, label);
+      renderMenu(card, post, author);
+      renderCaption(card, post);
+      if (post.live?.live_url) {
+        const live = element("a", "button primary", "Join live");
+        live.href = post.live.live_url;
+        card.appendChild(live);
+      }
+      if (media) card.appendChild(media);
+      renderEngagement(card, post);
+      renderActions(card, post);
     }
-    if (kind !== "video" && media) card.appendChild(media);
-    renderEngagement(card, post);
-    renderActions(card, post);
     renderComposer(card, post);
     return card;
   }
@@ -646,6 +678,7 @@
   const composerProgress = document.querySelector("#pulseComposer [data-upload-progress]");
   const composerSuggestions = document.querySelector("#pulseComposer [data-composer-ai-suggestions]");
   const publish = document.getElementById("publishBtn");
+  const composerCharCounter = document.querySelector("#pulseComposer [data-composer-char-counter]");
   let composerFiles = [];
   let composerUploadItems = [];
   let composerUploadBatch = 0;
@@ -654,10 +687,11 @@
   let composerMusicTrackId = "";
   let composerMusicLabel = "";
   const composerPrompts = {
-    text: "Share something with the PulseSoc community...",
-    poll: "What would you like to ask?",
-    scam_report: "Describe the scam, warning, or suspicious activity...",
+    text: "What’s happening in your world?",
+    poll: "Ask the PulseSoc community…",
+    scam_report: "Warn the community about suspicious activity…",
     video: "Add a caption for your Reel...",
+    live: "Describe your live session...",
   };
   try {
     const storedMusicTrack = sessionStorage.getItem("pulseComposerMusicTrackId");
@@ -772,6 +806,12 @@
     updateComposerPublishState();
   }
 
+  function updateComposerCounter() {
+    if (!composerCharCounter) return;
+    const value = document.getElementById("postBody")?.value || "";
+    composerCharCounter.textContent = `${value.length}/3000`;
+  }
+
   function insertComposerText(text, { prefix = "", suffix = "" } = {}) {
     const bodyInput = document.getElementById("postBody");
     if (!bodyInput) return;
@@ -791,10 +831,11 @@
     if (!composerSuggestions || !composer) return;
     const body = (document.getElementById("postBody")?.value || "").trim();
     const type = postType?.value || "text";
-    composer.classList.toggle("is-ai-awake", body.length > 0);
+    const awake = body.length > 0 || composerUploadItems.length > 0;
+    composer.classList.toggle("is-ai-awake", awake);
     composerSuggestions.querySelectorAll("[data-ai-suggestion]").forEach(button => {
       const action = button.dataset.aiSuggestion || "";
-      const visible = body.length > 0 || action === "caption" || action === "question";
+      const visible = awake || action === "caption" || action === "question";
       button.hidden = !visible;
       if (action === "scam") button.hidden = !(type === "scam_report" || /scam|fraud|wallet|suspicious|warning/i.test(body));
       if (action === "question") button.hidden = !(type === "poll" || /\?$|ask|question|why|how|what/i.test(body));
@@ -880,6 +921,7 @@
       return `<article class="pulse-selected-media ${isVideo ? "is-video" : "is-image"} ${item.stage === "failed" ? "is-failed" : item.mediaId ? "is-ready" : "is-uploading"}" data-selected-media="${esc(item.id)}" data-upload-stage="${esc(item.stage)}">${media}<footer><div class="composer-media-copy"><strong>${esc(name)}</strong><small data-composer-media-state>${esc(item.message || composerStageLabel(item.stage))}</small><span>${esc(isVideo ? "Video" : "Image")} · ${esc(file.type || "media")} · ${esc(formatComposerSize(file))}</span><div class="composer-media-specs"><span data-composer-resolution="${esc(item.id)}">${isVideo ? "Resolution pending" : "Image"}</span><span data-composer-duration-chip="${esc(item.id)}">${isVideo ? "--:--" : esc(formatComposerSize(file))}</span><span>${esc(formatComposerSize(file))}</span></div></div><div class="composer-upload-panel"><span class="composer-upload-ring" data-composer-upload-ring style="--upload-progress:${Math.max(0, Math.min(100, Number(item.percent || 0)))}"><b data-composer-percent>${Math.max(0, Math.min(100, Math.round(Number(item.percent || 0))))}%</b></span><div><span class="composer-stage-chip" data-composer-stage>${esc(composerStageLabel(item.stage))}</span><div class="composer-item-progress"><span data-composer-item-bar style="width:${Math.max(0, Math.min(100, Number(item.percent || 0)))}%"></span></div><small data-composer-upload-meta>${esc([item.speedLabel, item.etaLabel].filter(Boolean).join(" · "))}</small></div></div><div class="composer-preview-actions"><button type="button" data-retry-composer-upload="${esc(item.id)}" ${item.stage === "failed" ? "" : "hidden"}>Retry</button><button type="button" data-open-composer-picker="${esc(item.isVideo ? "video" : "")}">Replace</button><button type="button" data-remove-composer-media="${esc(item.id)}">Remove</button></div></footer></article>`;
     }).join("");
     updateComposerMusicVisibility();
+    syncComposerIntelligence();
     hydrateComposerPreview();
     renderComposerOverallProgress();
     updateComposerPublishState();
@@ -928,6 +970,8 @@
     }
     const selectedType = postType?.value || "text";
     const blocked = composerUploadBusy() || composerUploadFailed() || (selectedType === "video" && !composerReadyVideoSelected());
+    const bodyReady = !!(document.getElementById("postBody")?.value || "").trim();
+    const mediaReady = composerUploadItems.some(item => item.mediaId && item.stage !== "failed");
     publish.disabled = blocked;
     publish.textContent = composerUploadBusy()
       ? "Uploading..."
@@ -935,7 +979,9 @@
         ? "Fix Upload"
         : selectedType === "video" && !composerReadyVideoSelected()
           ? "Add Video"
-          : "Ready to Publish";
+          : bodyReady || mediaReady
+            ? "Ready to Publish"
+            : "Publish Signal";
   }
 
   async function startComposerUpload(item, batch) {
@@ -1039,10 +1085,12 @@
       toast("Media picker is not available. Refresh and try again.");
       return;
     }
-    const next = type || (postType?.value === "video" ? "video" : "");
-    if (next) setComposerType(next);
-    const accept = next === "video"
+    const pickerMode = type || (postType?.value === "video" ? "video" : "");
+    if (pickerMode === "video") setComposerType("video");
+    const accept = pickerMode === "video"
       ? "video/mp4,video/webm,video/quicktime,.mp4,.mov,.webm"
+      : pickerMode === "image"
+        ? "image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
       : "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.jpg,.jpeg,.png,.webp,.gif,.mp4,.mov,.webm";
     postMedia.setAttribute("accept", accept);
     postMedia.click();
@@ -1176,6 +1224,12 @@
       toast("Reel mode selected. Choose Media will open video files.");
       return;
     }
+    const liveTrigger = event.target.closest("#pulseComposer [data-composer-live]");
+    if (liveTrigger) {
+      event.preventDefault();
+      window.location.assign(liveTrigger.getAttribute("href") || "/pulse/live");
+      return;
+    }
     const audienceTrigger = event.target.closest("[data-composer-audience]");
     if (audienceTrigger) {
       event.preventDefault();
@@ -1189,6 +1243,19 @@
     if (aiSuggestion) {
       event.preventDefault();
       enhanceComposer(aiSuggestion.dataset.aiSuggestion || "clarity");
+      return;
+    }
+    const aiRail = event.target.closest("[data-composer-ai]");
+    if (aiRail) {
+      event.preventDefault();
+      const bodyInput = document.getElementById("postBody");
+      if ((bodyInput?.value || "").trim() || composerUploadItems.length) {
+        composer?.classList.add("is-ai-awake");
+        composerSuggestions?.querySelector("[data-ai-suggestion]:not([hidden])")?.focus();
+      } else {
+        bodyInput?.focus();
+        toast("Start typing or select media to unlock contextual AI.");
+      }
       return;
     }
     const musicTrigger = event.target.closest("[data-composer-music]");
@@ -1205,14 +1272,14 @@
       openComposerPicker(replaceComposerMedia.dataset.openComposerPicker || "");
       return;
     }
-    const chip = event.target.closest("[data-composer-chip]");
+    const chip = event.target.closest("[data-composer-chip],[data-composer-rail]");
     if (chip) {
       event.preventDefault();
-      const chipType = chip.dataset.composerChip || "";
+      const chipType = chip.dataset.composerChip || chip.dataset.composerRail || "";
       const snippets = {
         topic: "#Topic",
         mention: "@",
-        location: "📍 ",
+        location: "Location: ",
         feeling: "Feeling: ",
       };
       insertComposerText(snippets[chipType] || "");
@@ -1270,6 +1337,25 @@
     }
     if (!event.target.closest(".post-sheet,.post-menu-btn")) {
       document.querySelectorAll(".post-sheet.open").forEach(sheet => sheet.classList.remove("open"));
+    }
+
+    const creatorOpen = event.target.closest("[data-creator-drawer-open]");
+    if (creatorOpen) {
+      event.preventDefault();
+      const id = creatorOpen.dataset.creatorDrawerOpen || "";
+      document.querySelectorAll("[data-creator-drawer]").forEach(drawer => {
+        const open = drawer.dataset.creatorDrawer === id && !drawer.classList.contains("open");
+        drawer.classList.toggle("open", open);
+        drawer.setAttribute("aria-hidden", open ? "false" : "true");
+      });
+      return;
+    }
+    const creatorClose = event.target.closest("[data-creator-drawer-close]");
+    if (creatorClose) {
+      const drawer = creatorClose.closest("[data-creator-drawer]");
+      drawer?.classList.remove("open");
+      drawer?.setAttribute("aria-hidden", "true");
+      return;
     }
 
     const mediaOpen = event.target.closest("[data-open-media-lightbox]");
@@ -1477,6 +1563,7 @@
       renderComposerPreview();
       setComposerType("text");
       toast("Posted successfully.");
+      publish.textContent = "Published ✓";
       await load(true);
     } catch (error) {
       toast(error.message);
@@ -1488,10 +1575,12 @@
 
   document.getElementById("postTitle")?.addEventListener("input", updateComposerPublishState);
   document.getElementById("postBody")?.addEventListener("input", () => {
+    updateComposerCounter();
     syncComposerIntelligence();
     updateComposerPublishState();
   });
   syncComposerIntelligence();
+  updateComposerCounter();
   updateComposerPublishState();
 
   document.getElementById("drawerOpen")?.addEventListener("click", () => document.body.classList.add("drawer-open"));
