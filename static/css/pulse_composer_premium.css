@@ -159,23 +159,54 @@
 
 .pulse-smart-field textarea {
   min-height: 118px !important;
-  padding: 16px 118px 16px 16px !important;
+  padding: 16px !important;
   border-radius: 20px !important;
   background:
     linear-gradient(180deg, rgba(6, 16, 29, .92), rgba(4, 11, 22, .96)) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06);
 }
 
-.pulse-smart-field [data-composer-enhance] {
-  position: absolute;
-  right: 10px;
-  top: 10px;
-  min-height: 36px;
+.pulse-ai-native-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+  opacity: .72;
+  transform: translateY(-2px);
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.pulse-composer-command.is-ai-awake .pulse-ai-native-suggestions,
+.pulse-smart-field:focus-within .pulse-ai-native-suggestions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.pulse-ai-native-suggestions span,
+.pulse-ai-native-suggestions button {
+  min-height: 32px;
   border-radius: 999px;
-  padding: 7px 10px;
-  background: rgba(110, 223, 246, .12);
-  border-color: rgba(110, 223, 246, .28);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.pulse-ai-native-suggestions span {
+  display: inline-flex;
+  align-items: center;
+  color: #06101b;
+  background: linear-gradient(135deg, #36e58f, #6edff6);
+  box-shadow: 0 0 20px rgba(110, 223, 246, .22);
+}
+
+.pulse-ai-native-suggestions button {
+  border-color: rgba(110, 223, 246, .22);
   color: #dffcff;
+  background: rgba(110, 223, 246, .08);
+}
+
+.pulse-ai-native-suggestions button[hidden] {
+  display: none !important;
 }
 
 .pulse-composer-chips {
@@ -242,11 +273,6 @@
   color: rgba(223, 246, 255, .62);
   font-size: 11px;
   line-height: 1.15;
-}
-
-.composer-enhance-panel .actions {
-  display: grid !important;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .pulse-upload-stage-track {
@@ -343,16 +369,7 @@
 
   .pulse-smart-field textarea {
     min-height: 104px !important;
-    padding: 48px 12px 12px !important;
-  }
-
-  .pulse-smart-field [data-composer-enhance] {
-    left: 10px;
-    right: auto;
-  }
-
-  .composer-enhance-panel .actions {
-    grid-template-columns: 1fr;
+    padding: 12px !important;
   }
 }
 

@@ -20,7 +20,12 @@ def playback_manifest(session=None):
         or (session.get("stream_health") or "").lower() in {"livekit_direct", "egress_quota_exhausted"}
     )
     explicit_hls = mux_url or session.get("playback_url") or session.get("hls_url") or ""
-    hls_url = explicit_hls if mux_public_live else ""
+    direct_hls_ready = bool(explicit_hls) and (
+        direct_mode
+        or publish_state in {"live", "active", "started"}
+        or not mux_status
+    )
+    hls_url = explicit_hls if mux_public_live or direct_hls_ready else ""
     stream_uuid = session.get("stream_uuid") or ""
     if not hls_url and stream_uuid and mux_public_live:
         base = os.getenv("PULSE_HLS_PLAYBACK_URL", "https://live.coinpilotxai.app/hls").rstrip("/")

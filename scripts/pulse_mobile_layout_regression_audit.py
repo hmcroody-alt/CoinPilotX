@@ -26,7 +26,7 @@ def main() -> None:
     media_css = MEDIA_CSS.read_text(encoding="utf-8")
 
     expect("window.PulseVideo = PulseVideo" in renderer, "shared PulseVideo component is exported")
-    expect("pulse_reels_experience.css?v=mobile-lock-20260603" in bot, "Reels mobile guard stylesheet loads after inline shell CSS")
+    expect("pulse_reels_experience.css?v=reels-global-ui-20260613b" in bot, "Reels mobile guard stylesheet loads after inline shell CSS")
     expect("canonicalMuxHlsUrl || muxHlsUrlValue || item.playback_url || directUrl" in renderer, "shared PulseVideo blocks raw upload preference when Mux exists")
     expect("const muxHls=m.mux_playback_id?`https://stream.mux.com/${m.mux_playback_id}.m3u8`" in bot, "Feed helper blocks raw media when Mux exists")
     expect("muxHls=media.mux_playback_id?`https://stream.mux.com/${media.mux_playback_id}.m3u8`" in bot, "Reels helper blocks raw media when Mux exists")

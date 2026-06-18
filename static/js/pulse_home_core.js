@@ -644,6 +644,7 @@
   const composeMsg = document.getElementById("composeMsg");
   const composerAudience = document.getElementById("postAudience");
   const composerProgress = document.querySelector("#pulseComposer [data-upload-progress]");
+  const composerSuggestions = document.querySelector("#pulseComposer [data-composer-ai-suggestions]");
   const publish = document.getElementById("publishBtn");
   let composerFiles = [];
   let composerUploadItems = [];
@@ -767,7 +768,38 @@
               ? "Add the who, what, where, and why so the warning is useful."
               : "Ready to publish.";
     }
+    syncComposerIntelligence();
     updateComposerPublishState();
+  }
+
+  function insertComposerText(text, { prefix = "", suffix = "" } = {}) {
+    const bodyInput = document.getElementById("postBody");
+    if (!bodyInput) return;
+    const current = bodyInput.value || "";
+    const start = Number(bodyInput.selectionStart ?? current.length);
+    const end = Number(bodyInput.selectionEnd ?? current.length);
+    const spacer = current && !/\s$/.test(current.slice(0, start)) ? " " : "";
+    const next = `${current.slice(0, start)}${prefix}${spacer}${text}${suffix}${current.slice(end)}`;
+    bodyInput.value = next.replace(/[ \t]+\n/g, "\n");
+    const caret = Math.min(next.length, start + prefix.length + spacer.length + text.length + suffix.length);
+    bodyInput.focus();
+    bodyInput.setSelectionRange?.(caret, caret);
+    bodyInput.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function syncComposerIntelligence() {
+    if (!composerSuggestions || !composer) return;
+    const body = (document.getElementById("postBody")?.value || "").trim();
+    const type = postType?.value || "text";
+    composer.classList.toggle("is-ai-awake", body.length > 0);
+    composerSuggestions.querySelectorAll("[data-ai-suggestion]").forEach(button => {
+      const action = button.dataset.aiSuggestion || "";
+      const visible = body.length > 0 || action === "caption" || action === "question";
+      button.hidden = !visible;
+      if (action === "scam") button.hidden = !(type === "scam_report" || /scam|fraud|wallet|suspicious|warning/i.test(body));
+      if (action === "question") button.hidden = !(type === "poll" || /\?$|ask|question|why|how|what/i.test(body));
+      if (action === "caption") button.hidden = !(type === "video" || composerHasVideo());
+    });
   }
 
   function clearComposerUploads() {
@@ -1066,6 +1098,8 @@
     } else if (action === "caption") {
       titleInput.value = titleInput.value.trim() || (type === "video" ? "PulseSoc Reel" : "PulseSoc Update");
       bodyInput.value = body || (type === "video" ? "New reel on PulseSoc.\n\n#Reel #PulseSoc" : "New PulseSoc update.\n\n#PulseSoc");
+    } else if (action === "question") {
+      bodyInput.value = body ? (body.endsWith("?") ? body : `${body}?`) : "What should the PulseSoc community help answer?";
     } else if (type === "scam_report") {
       titleInput.value = titleInput.value.trim() || "Scam Alert: ";
       bodyInput.value = body || "Warning:\nWhere it happened:\nWhat they asked for:\nWhy it looks suspicious:\nHow others can stay safe:";
@@ -1078,7 +1112,8 @@
       bodyInput.value = body ? body.charAt(0).toUpperCase() + body.slice(1) : "What is on your mind?";
     }
     bodyInput.focus();
-    toast("Composer enhanced. Review before publishing.");
+    syncComposerIntelligence();
+    updateComposerPublishState();
   }
 
   function ensureComposerMusicPicker() {
@@ -1150,18 +1185,10 @@
       toast(`Audience: ${composerAudience?.selectedOptions?.[0]?.textContent || "Public"}`);
       return;
     }
-    const enhanceTrigger = event.target.closest("[data-composer-enhance]");
-    if (enhanceTrigger) {
+    const aiSuggestion = event.target.closest("[data-ai-suggestion]");
+    if (aiSuggestion) {
       event.preventDefault();
-      const panel = document.querySelector("#pulseComposer [data-composer-enhance-panel]");
-      if (panel) panel.hidden = !panel.hidden;
-      enhanceComposer("improve");
-      return;
-    }
-    const enhanceAction = event.target.closest("[data-enhance-action]");
-    if (enhanceAction) {
-      event.preventDefault();
-      enhanceComposer(enhanceAction.dataset.enhanceAction || "improve");
+      enhanceComposer(aiSuggestion.dataset.aiSuggestion || "clarity");
       return;
     }
     const musicTrigger = event.target.closest("[data-composer-music]");
@@ -1181,7 +1208,14 @@
     const chip = event.target.closest("[data-composer-chip]");
     if (chip) {
       event.preventDefault();
-      toast("Creator metadata will attach from this composer surface soon.");
+      const chipType = chip.dataset.composerChip || "";
+      const snippets = {
+        topic: "#Topic",
+        mention: "@",
+        location: "📍 ",
+        feeling: "Feeling: ",
+      };
+      insertComposerText(snippets[chipType] || "");
       return;
     }
     const removeComposerMedia = event.target.closest("[data-remove-composer-media]");
@@ -1453,7 +1487,11 @@
   });
 
   document.getElementById("postTitle")?.addEventListener("input", updateComposerPublishState);
-  document.getElementById("postBody")?.addEventListener("input", updateComposerPublishState);
+  document.getElementById("postBody")?.addEventListener("input", () => {
+    syncComposerIntelligence();
+    updateComposerPublishState();
+  });
+  syncComposerIntelligence();
   updateComposerPublishState();
 
   document.getElementById("drawerOpen")?.addEventListener("click", () => document.body.classList.add("drawer-open"));

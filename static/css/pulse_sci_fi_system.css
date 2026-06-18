@@ -1,0 +1,288 @@
+:root {
+  --pulse-glass: rgba(8, 18, 32, .76);
+  --pulse-glass-strong: rgba(6, 14, 26, .9);
+  --pulse-holo-line: rgba(110, 223, 246, .28);
+  --pulse-holo-soft: rgba(110, 223, 246, .12);
+  --pulse-holo-green: rgba(54, 229, 143, .22);
+  --pulse-holo-red: rgba(255, 51, 93, .28);
+}
+
+.pulse-desktop-center > .layout > div,
+.feed {
+  gap: clamp(14px, 2.4vw, 24px) !important;
+}
+
+.feed > .post-card-modern,
+.post.card {
+  overflow: visible !important;
+  border-color: rgba(110, 223, 246, .18) !important;
+  background:
+    linear-gradient(180deg, rgba(13, 26, 45, .78), rgba(5, 12, 24, .9)),
+    radial-gradient(circle at 18% 0, rgba(110, 223, 246, .12), transparent 18rem) !important;
+  box-shadow:
+    0 24px 82px rgba(0, 0, 0, .28),
+    inset 0 1px 0 rgba(255, 255, 255, .06),
+    0 0 42px rgba(110, 223, 246, .07) !important;
+  transform: translateZ(0);
+}
+
+.feed > .post-card-modern:hover,
+.post.card:hover {
+  border-color: rgba(110, 223, 246, .32) !important;
+  box-shadow:
+    0 30px 96px rgba(0, 0, 0, .32),
+    inset 0 1px 0 rgba(255, 255, 255, .08),
+    0 0 58px rgba(110, 223, 246, .11) !important;
+}
+
+.feed > .post-card-modern .post-caption,
+.post h2,
+.post > p {
+  text-wrap: pretty;
+}
+
+.feed > .post-card-modern > .post-card-media,
+.post > .media-grid {
+  width: calc(100% + clamp(12px, 2vw, 28px)) !important;
+  margin-left: calc(clamp(6px, 1vw, 14px) * -1) !important;
+  margin-right: calc(clamp(6px, 1vw, 14px) * -1) !important;
+}
+
+.feed > .post-card-modern .post-card-media-frame,
+.pulse-media-wrap {
+  overflow: hidden;
+  border: 1px solid rgba(110, 223, 246, .2) !important;
+  border-radius: clamp(18px, 2vw, 28px) !important;
+  background:
+    linear-gradient(135deg, rgba(4, 10, 20, .98), rgba(7, 20, 35, .96)) !important;
+  box-shadow:
+    0 28px 86px rgba(0, 0, 0, .4),
+    0 0 0 1px rgba(255, 255, 255, .035) inset,
+    0 0 62px rgba(110, 223, 246, .12) !important;
+  transform: translateZ(0);
+}
+
+.feed > .post-card-modern .post-card-media-frame::before,
+.pulse-media-wrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    linear-gradient(120deg, rgba(255,255,255,.12), transparent 26%, transparent 72%, rgba(110,223,246,.08)),
+    radial-gradient(circle at 50% 0, rgba(110,223,246,.18), transparent 40%);
+  opacity: .78;
+}
+
+.feed > .post-card-modern .post-card-media-frame::after,
+.pulse-media-wrap::after {
+  content: "";
+  position: absolute;
+  inset: auto 8% -18px;
+  height: 44px;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 50%;
+  background: rgba(110, 223, 246, .16);
+  filter: blur(24px);
+}
+
+.feed > .post-card-modern .post-card-media-frame img,
+.feed > .post-card-modern .post-card-media-frame video,
+.pulse-media-wrap img,
+.pulse-media-wrap video {
+  position: relative;
+  z-index: 3;
+  width: 100% !important;
+  filter: saturate(1.06) contrast(1.03) drop-shadow(0 18px 42px rgba(0,0,0,.34));
+}
+
+.pulse-media-wrap.is-portrait,
+.post.media-portrait .pulse-media-wrap {
+  min-height: min(84vh, 760px);
+}
+
+.pulse-media-wrap.is-portrait img,
+.post.media-portrait .pulse-media-wrap img {
+  max-height: min(86vh, 840px) !important;
+  object-fit: contain !important;
+}
+
+.pulse-media-wrap.is-landscape,
+.post.media-landscape .pulse-media-wrap {
+  aspect-ratio: 16 / 9;
+}
+
+.pulse-media-wrap.is-square {
+  aspect-ratio: 1 / 1;
+}
+
+.post-action-row,
+.quick-actions,
+.reaction-strip {
+  border-color: rgba(110, 223, 246, .14) !important;
+}
+
+.post-action-button,
+.quick-action,
+.reaction-pill {
+  position: relative;
+  overflow: hidden;
+  touch-action: manipulation;
+  transition: transform .14s ease, background .14s ease, color .14s ease, box-shadow .14s ease;
+}
+
+.post-action-button::before,
+.quick-action::before,
+.reaction-pill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(110, 223, 246, .12), rgba(54, 229, 143, .08));
+  opacity: 0;
+  transition: opacity .14s ease;
+}
+
+.post-action-button:hover::before,
+.post-action-button:focus-visible::before,
+.quick-action:hover::before,
+.quick-action:focus-visible::before,
+.reaction-pill:hover::before,
+.reaction-pill:focus-visible::before {
+  opacity: 1;
+}
+
+.post-action-button:active,
+.quick-action:active,
+.reaction-pill:active {
+  transform: scale(.97);
+}
+
+.pulse-media-lightbox {
+  align-items: start !important;
+  place-items: start center !important;
+  padding: calc(12px + env(safe-area-inset-top)) clamp(10px, 2vw, 24px) calc(16px + env(safe-area-inset-bottom)) !important;
+  background:
+    radial-gradient(circle at 50% 0, rgba(110, 223, 246, .16), transparent 26rem),
+    rgba(1, 6, 14, .9) !important;
+  backdrop-filter: blur(18px) saturate(1.1) !important;
+}
+
+.pulse-media-lightbox-stage {
+  width: min(100%, 1320px) !important;
+  height: calc(100dvh - 38px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+  max-height: none !important;
+  display: grid !important;
+  place-items: start center !important;
+  padding-top: clamp(42px, 7vh, 72px);
+}
+
+.pulse-media-lightbox-stage img,
+.pulse-media-lightbox-stage video {
+  max-width: 100% !important;
+  max-height: calc(100dvh - 92px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+  object-fit: contain !important;
+  border-radius: clamp(16px, 2vw, 28px) !important;
+  box-shadow:
+    0 28px 96px rgba(0, 0, 0, .62),
+    0 0 0 1px rgba(255, 255, 255, .08),
+    0 0 82px rgba(110, 223, 246, .16) !important;
+}
+
+.pulse-media-lightbox-close {
+  top: calc(10px + env(safe-area-inset-top)) !important;
+  right: clamp(10px, 2vw, 18px) !important;
+  z-index: 3;
+  background: rgba(5, 13, 24, .78) !important;
+  backdrop-filter: blur(14px);
+}
+
+.pulse-live-now {
+  border-color: rgba(255, 51, 93, .26) !important;
+  background:
+    radial-gradient(circle at 12% 0, rgba(255, 51, 93, .18), transparent 18rem),
+    linear-gradient(160deg, rgba(14, 25, 43, .88), rgba(5, 12, 24, .94)) !important;
+}
+
+.pulse-live-now-card {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(255, 51, 93, .28) !important;
+  box-shadow: 0 18px 58px rgba(0, 0, 0, .24), 0 0 34px rgba(255, 51, 93, .08);
+}
+
+.pulse-live-now-card::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, rgba(255, 51, 93, .18), transparent);
+  transform: translateX(-100%);
+  animation: pulseLiveSweep 4.5s ease-in-out infinite;
+}
+
+.live-dot,
+.pulse-live-dot {
+  animation: pulseLiveBeat 1.6s ease-in-out infinite;
+}
+
+@keyframes pulseLiveSweep {
+  0%, 48% { transform: translateX(-100%); opacity: 0; }
+  58% { opacity: 1; }
+  100% { transform: translateX(100%); opacity: 0; }
+}
+
+@keyframes pulseLiveBeat {
+  0%, 100% { transform: scale(.92); filter: brightness(1); }
+  50% { transform: scale(1.08); filter: brightness(1.25); }
+}
+
+@media (max-width: 720px) {
+  .feed > .post-card-modern > .post-card-media,
+  .post > .media-grid {
+    width: calc(100% + 14px) !important;
+    margin-left: -7px !important;
+    margin-right: -7px !important;
+  }
+
+  .feed > .post-card-modern .post-card-media-frame,
+  .pulse-media-wrap {
+    border-radius: 18px !important;
+  }
+
+  .pulse-media-lightbox-stage {
+    height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+    padding-top: calc(42px + env(safe-area-inset-top));
+  }
+
+  .pulse-media-lightbox-stage img,
+  .pulse-media-lightbox-stage video {
+    max-height: calc(100dvh - 88px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+  }
+
+  .post-action-button,
+  .quick-action {
+    min-height: 42px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-live-now-card::before,
+  .live-dot,
+  .pulse-live-dot {
+    animation: none !important;
+  }
+
+  .post-action-button,
+  .quick-action,
+  .reaction-pill,
+  .feed > .post-card-modern,
+  .post.card {
+    transition: none !important;
+  }
+}

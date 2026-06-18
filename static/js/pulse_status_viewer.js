@@ -172,7 +172,7 @@
     return node?.closest?.("#pulseStatusStoryViewer,.pulse-status-story-viewer,[data-status-viewer]");
   }
 
-  function closeViewer(viewer) {
+  function closeStatusViewerNow(viewer) {
     const root = viewer || storyRuntime.viewer || document.querySelector("#pulseStatusStoryViewer,.pulse-status-story-viewer.open,[data-status-viewer].open");
     if (!root) return;
     clearStoryTimers();
@@ -186,13 +186,17 @@
     storyRuntime.viewer = null;
   }
 
+  function closeViewer(viewer) {
+    closeStatusViewerNow(viewer);
+  }
+
   function closeStatusViewerIntentional(event) {
     const closeButton = event.target?.closest?.("[data-status-story-close],[data-status-viewer-close]");
     if (!closeButton) return;
     hardenStatusCloseButton(closeButton);
     event.preventDefault();
     event.stopImmediatePropagation();
-    closeViewer(viewerRootFrom(closeButton));
+    closeStatusViewerNow(viewerRootFrom(closeButton));
   }
 
   function clearStoryTimers() {
