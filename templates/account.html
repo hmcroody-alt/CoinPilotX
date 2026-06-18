@@ -425,6 +425,13 @@
             <input type="hidden" name="next" value="{{ request.args.get('next', '') }}" />
             <input name="email" type="email" autocomplete="email" placeholder="Email address" value="{{ resend_email or '' }}" required />
             <input name="password" type="password" autocomplete="current-password" placeholder="Password" required />
+            {% if login_challenge and login_challenge.required %}
+              <label class="settings-card">
+                <span class="kicker">Security Check</span>
+                <span class="muted">{{ login_challenge.prompt }}</span>
+                <input name="login_challenge_answer" inputmode="numeric" autocomplete="off" placeholder="Answer" required />
+              </label>
+            {% endif %}
             <button class="button primary" type="submit" data-i18n="signinCta">Sign In to PulseSoc</button>
           </form>
           <form method="post" action="/resend-confirmation">
