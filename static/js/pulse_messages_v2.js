@@ -509,6 +509,11 @@
     window.CoinPilotNotifications?.pollNotifications?.({ refreshList: true });
   }
 
+  function updateNotificationBadges(payload) {
+    const count = typeof payload === "number" ? payload : payload?.chat_unread_count ?? payload?.unread_count;
+    updateChatBadges(count);
+  }
+
   function appendRealtimeMessage(message) {
     if (!message?.id || !state.active || Number(message.conversation_id) !== Number(state.active.conversation_id)) return false;
     if (state.messages.some((item) => Number(item.id) === Number(message.id))) return false;
@@ -555,7 +560,7 @@
     mergeRealtimeConversation(payload);
     if (type === "message_created" || type === "message_notification" || type === "notification_created") {
       appendRealtimeMessage(payload.message);
-      updateChatBadges(payload.chat_unread_count ?? payload.unread_count);
+      updateNotificationBadges(payload);
       if (!options.fromBroadcast) broadcastCommEvent(envelope);
     }
   }
@@ -572,7 +577,7 @@
       const data = await api(`/realtime?${params.toString()}`, {}, "realtime_delivery");
       state.realtimeAfterId = Math.max(state.realtimeAfterId, Number(data.latest_event_id || 0));
       (data.events || []).forEach(handleRealtimeEvent);
-      updateChatBadges(data.chat_unread_count ?? data.unread_count);
+      updateNotificationBadges(data);
     } catch (_) {
     } finally {
       state.realtimePolling = false;

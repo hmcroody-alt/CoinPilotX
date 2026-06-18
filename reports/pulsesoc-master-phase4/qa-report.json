@@ -1,0 +1,19 @@
+{
+  "initial": {
+    "segments": 3,
+    "current": 1,
+    "close": {
+      "w": 56,
+      "h": 56
+    },
+    "index": "0",
+    "overflow": 0
+  },
+  "afterTap": "1",
+  "paused": true,
+  "resumed": true,
+  "reacted": true,
+  "closed": true,
+  "errors": [],
+  "ok": true
+}

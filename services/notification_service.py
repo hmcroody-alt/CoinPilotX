@@ -77,6 +77,7 @@ PULSE_TYPE_TO_CATEGORY = {
     "follow": "follows",
     "follow_accept": "follows",
     "message": "chat_message",
+    "private_message": "chat_message",
     "voice_message": "chat_message",
     "group_invite": "group_message",
     "community_invite": "social",

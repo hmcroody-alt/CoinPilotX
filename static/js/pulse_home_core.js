@@ -652,6 +652,12 @@
   let composerPublishing = false;
   let composerMusicTrackId = "";
   let composerMusicLabel = "";
+  const composerPrompts = {
+    text: "Share something with the PulseSoc community...",
+    poll: "What would you like to ask?",
+    scam_report: "Describe the scam, warning, or suspicious activity...",
+    video: "Add a caption for your Reel...",
+  };
   try {
     const storedMusicTrack = sessionStorage.getItem("pulseComposerMusicTrackId");
     if (storedMusicTrack) {
@@ -680,6 +686,20 @@
     const value = Math.round(Number(seconds || 0));
     if (!Number.isFinite(value) || value <= 0) return "--:--";
     return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
+  }
+
+  function formatComposerSpeed(bytesPerSecond) {
+    const speed = Number(bytesPerSecond || 0);
+    if (!Number.isFinite(speed) || speed <= 0) return "";
+    if (speed >= 1024 * 1024) return `${(speed / 1024 / 1024).toFixed(1)} MB/s`;
+    return `${Math.max(1, Math.round(speed / 1024))} KB/s`;
+  }
+
+  function formatComposerEta(seconds) {
+    const value = Math.ceil(Number(seconds || 0));
+    if (!Number.isFinite(value) || value <= 0) return "";
+    if (value >= 60) return `${Math.floor(value / 60)}m ${String(value % 60).padStart(2, "0")}s left`;
+    return `${value}s left`;
   }
 
   function composerStageLabel(stage) {
@@ -733,6 +753,8 @@
       button.setAttribute("aria-pressed", active ? "true" : "false");
     });
     composer?.classList.add("is-expanded");
+    const bodyInput = document.getElementById("postBody");
+    if (bodyInput) bodyInput.placeholder = composerPrompts[next] || composerPrompts.text;
     updateComposerMusicVisibility();
     if (composeMsg) {
       composeMsg.textContent = composerMusicLabel
@@ -774,6 +796,11 @@
       composerProgress.setAttribute("aria-valuemin", "0");
       composerProgress.setAttribute("aria-valuemax", "100");
       composerProgress.setAttribute("aria-valuenow", String(Math.max(0, Math.min(100, Number(progress.percent || 0)))));
+      const meta = composerProgress.querySelector("[data-upload-progress-meta]");
+      if (meta) {
+        const busy = composerUploadItems.find(item => item.speedLabel || item.etaLabel);
+        meta.textContent = [busy?.speedLabel, busy?.etaLabel].filter(Boolean).join(" · ");
+      }
     }
   }
 
@@ -792,6 +819,8 @@
     if (percent) percent.textContent = `${Math.max(0, Math.min(100, Math.round(Number(item.percent || 0))))}%`;
     const state = card.querySelector("[data-composer-media-state]");
     if (state) state.textContent = item.error || item.message || composerStageLabel(item.stage);
+    const meta = card.querySelector("[data-composer-upload-meta]");
+    if (meta) meta.textContent = [item.speedLabel, item.etaLabel].filter(Boolean).join(" · ");
     const stage = card.querySelector("[data-composer-stage]");
     if (stage) stage.textContent = composerStageLabel(item.stage);
     const retry = card.querySelector("[data-retry-composer-upload]");
@@ -816,7 +845,7 @@
       const media = isVideo
         ? `<div class="composer-video-frame"><video src="${esc(item.previewUrl)}" controls muted playsinline webkit-playsinline preload="metadata" aria-label="${esc(name)} preview" data-composer-preview-video="${esc(item.id)}"></video><div class="composer-video-fallback" data-composer-video-fallback hidden><strong>Preview could not load.</strong><span>Reselect or remove this video.</span></div><div class="composer-video-controls"><button type="button" data-composer-video-toggle="${esc(item.id)}">Play</button><button type="button" data-composer-video-mute="${esc(item.id)}">Muted</button><span data-composer-video-duration="${esc(item.id)}">--:--</span></div></div>`
         : `<img src="${esc(item.previewUrl)}" alt="${esc(name)}" loading="eager" decoding="async">`;
-      return `<article class="pulse-selected-media ${isVideo ? "is-video" : "is-image"} ${item.stage === "failed" ? "is-failed" : item.mediaId ? "is-ready" : "is-uploading"}" data-selected-media="${esc(item.id)}" data-upload-stage="${esc(item.stage)}">${media}<footer><div class="composer-media-copy"><strong>${esc(name)}</strong><small data-composer-media-state>${esc(item.message || composerStageLabel(item.stage))}</small><span>${esc(isVideo ? "Video" : "Image")} · ${esc(file.type || "media")} · ${esc(formatComposerSize(file))}</span></div><div class="composer-upload-panel"><span class="composer-upload-ring" data-composer-upload-ring style="--upload-progress:${Math.max(0, Math.min(100, Number(item.percent || 0)))}"><b data-composer-percent>${Math.max(0, Math.min(100, Math.round(Number(item.percent || 0))))}%</b></span><div><span class="composer-stage-chip" data-composer-stage>${esc(composerStageLabel(item.stage))}</span><div class="composer-item-progress"><span data-composer-item-bar style="width:${Math.max(0, Math.min(100, Number(item.percent || 0)))}%"></span></div></div></div><div class="composer-preview-actions"><button type="button" data-retry-composer-upload="${esc(item.id)}" ${item.stage === "failed" ? "" : "hidden"}>Retry</button><button type="button" data-remove-composer-media="${esc(item.id)}">Remove</button></div></footer></article>`;
+      return `<article class="pulse-selected-media ${isVideo ? "is-video" : "is-image"} ${item.stage === "failed" ? "is-failed" : item.mediaId ? "is-ready" : "is-uploading"}" data-selected-media="${esc(item.id)}" data-upload-stage="${esc(item.stage)}">${media}<footer><div class="composer-media-copy"><strong>${esc(name)}</strong><small data-composer-media-state>${esc(item.message || composerStageLabel(item.stage))}</small><span>${esc(isVideo ? "Video" : "Image")} · ${esc(file.type || "media")} · ${esc(formatComposerSize(file))}</span><div class="composer-media-specs"><span data-composer-resolution="${esc(item.id)}">${isVideo ? "Resolution pending" : "Image"}</span><span data-composer-duration-chip="${esc(item.id)}">${isVideo ? "--:--" : esc(formatComposerSize(file))}</span><span>${esc(formatComposerSize(file))}</span></div></div><div class="composer-upload-panel"><span class="composer-upload-ring" data-composer-upload-ring style="--upload-progress:${Math.max(0, Math.min(100, Number(item.percent || 0)))}"><b data-composer-percent>${Math.max(0, Math.min(100, Math.round(Number(item.percent || 0))))}%</b></span><div><span class="composer-stage-chip" data-composer-stage>${esc(composerStageLabel(item.stage))}</span><div class="composer-item-progress"><span data-composer-item-bar style="width:${Math.max(0, Math.min(100, Number(item.percent || 0)))}%"></span></div><small data-composer-upload-meta>${esc([item.speedLabel, item.etaLabel].filter(Boolean).join(" · "))}</small></div></div><div class="composer-preview-actions"><button type="button" data-retry-composer-upload="${esc(item.id)}" ${item.stage === "failed" ? "" : "hidden"}>Retry</button><button type="button" data-open-composer-picker="${esc(item.isVideo ? "video" : "")}">Replace</button><button type="button" data-remove-composer-media="${esc(item.id)}">Remove</button></div></footer></article>`;
     }).join("");
     updateComposerMusicVisibility();
     hydrateComposerPreview();
@@ -830,7 +859,12 @@
       video.dataset.composerPreviewBound = "1";
       video.addEventListener("loadedmetadata", () => {
         const duration = postMediaPreview.querySelector(`[data-composer-video-duration="${CSS.escape(video.dataset.composerPreviewVideo || "")}"]`);
-        if (duration) duration.textContent = formatComposerDuration(video.duration);
+        const label = formatComposerDuration(video.duration);
+        if (duration) duration.textContent = label;
+        const chip = postMediaPreview.querySelector(`[data-composer-duration-chip="${CSS.escape(video.dataset.composerPreviewVideo || "")}"]`);
+        if (chip) chip.textContent = label;
+        const resolution = postMediaPreview.querySelector(`[data-composer-resolution="${CSS.escape(video.dataset.composerPreviewVideo || "")}"]`);
+        if (resolution && video.videoWidth && video.videoHeight) resolution.textContent = `${video.videoHeight}p`;
       }, { once: true });
       video.addEventListener("play", () => {
         const button = postMediaPreview.querySelector(`[data-composer-video-toggle="${CSS.escape(video.dataset.composerPreviewVideo || "")}"]`);
@@ -869,7 +903,7 @@
         ? "Fix Upload"
         : selectedType === "video" && !composerReadyVideoSelected()
           ? "Add Video"
-          : "Publish";
+          : "Ready to Publish";
   }
 
   async function startComposerUpload(item, batch) {
@@ -877,6 +911,9 @@
     item.stage = "preparing";
     item.percent = Math.max(1, item.percent || 1);
     item.message = item.isVideo ? "Preparing video upload..." : "Preparing media upload...";
+    item.startedAt = Date.now();
+    item.speedLabel = "";
+    item.etaLabel = "";
     updateComposerUploadItemDom(item);
     const formData = new FormData();
     formData.append("file", item.file);
@@ -895,6 +932,12 @@
             item.stage = step.stage || item.stage;
             item.percent = Number(step.percent ?? item.percent ?? 0);
             item.message = step.message || item.message;
+            if (step.loaded && step.total && item.startedAt) {
+              const elapsed = Math.max(.1, (Date.now() - item.startedAt) / 1000);
+              const speed = Number(step.loaded || 0) / elapsed;
+              item.speedLabel = formatComposerSpeed(speed);
+              item.etaLabel = speed > 0 ? formatComposerEta((Number(step.total || 0) - Number(step.loaded || 0)) / speed) : "";
+            }
             updateComposerUploadItemDom(item);
           },
         })
@@ -907,6 +950,8 @@
       item.percent = 100;
       item.error = "";
       item.message = item.isVideo ? "Upload complete. Video is ready to publish." : "Upload complete. Ready to publish.";
+      item.speedLabel = "";
+      item.etaLabel = "";
       updateComposerUploadItemDom(item);
     } catch (error) {
       if (batch !== composerUploadBatch) return;
@@ -947,6 +992,9 @@
       mediaId: null,
       message: composerFileIsVideo(file) ? "Preparing video upload..." : "Preparing media upload...",
       error: "",
+      speedLabel: "",
+      etaLabel: "",
+      startedAt: 0,
     }));
     syncComposerFiles();
     const batch = composerUploadBatch;
@@ -1003,9 +1051,21 @@
     const body = (bodyInput.value || "").trim();
     if (action === "title") {
       titleInput.value = titleInput.value.trim() || (type === "scam_report" ? "Scam Alert: " : type === "poll" ? "Question for PulseSoc" : type === "video" ? "PulseSoc Reel" : "PulseSoc Update");
+    } else if (action === "rewrite") {
+      bodyInput.value = body ? body.charAt(0).toUpperCase() + body.slice(1) : (composerPrompts[type] || composerPrompts.text);
+    } else if (action === "clarity") {
+      bodyInput.value = body ? body.replace(/\s+/g, " ").trim() : (type === "poll" ? "What specific answer would help you most?" : "Add the key point, context, and what you want people to do next.");
     } else if (action === "hashtags") {
       const tags = type === "scam_report" ? "#ScamAlert #CryptoSafety #PulseSoc" : type === "poll" ? "#Question #PulseSoc" : type === "video" ? "#Reel #PulseSoc #Creator" : "#PulseSoc";
       bodyInput.value = body ? `${body}\n\n${tags}` : tags;
+    } else if (action === "engagement") {
+      bodyInput.value = body ? `${body}\n\nWhat do you think?` : "What should the PulseSoc community know next?";
+    } else if (action === "scam") {
+      titleInput.value = titleInput.value.trim() || "Scam Alert: ";
+      bodyInput.value = body || "Warning:\nWhere it happened:\nWhat they asked for:\nWhy it looks suspicious:\nHow others can stay safe:";
+    } else if (action === "caption") {
+      titleInput.value = titleInput.value.trim() || (type === "video" ? "PulseSoc Reel" : "PulseSoc Update");
+      bodyInput.value = body || (type === "video" ? "New reel on PulseSoc.\n\n#Reel #PulseSoc" : "New PulseSoc update.\n\n#PulseSoc");
     } else if (type === "scam_report") {
       titleInput.value = titleInput.value.trim() || "Scam Alert: ";
       bodyInput.value = body || "Warning:\nWhere it happened:\nWhat they asked for:\nWhy it looks suspicious:\nHow others can stay safe:";
@@ -1062,6 +1122,12 @@
   }
 
   document.addEventListener("click", async event => {
+    const typeTrigger = event.target.closest("#pulseComposer [data-type]");
+    if (typeTrigger) {
+      event.preventDefault();
+      setComposerType(typeTrigger.dataset.type || "text");
+      return;
+    }
     const mediaTrigger = event.target.closest("[data-pulse-media-trigger]");
     if (mediaTrigger) {
       event.preventDefault();
@@ -1104,6 +1170,18 @@
       if (musicTrigger.hidden || !(postType?.value === "video" || composerHasVideo())) return toast("Add Music is available for Reel or video posts.");
       ensureComposerMusicPicker().classList.add("open");
       toast("Choose an approved track for this video.");
+      return;
+    }
+    const replaceComposerMedia = event.target.closest("[data-open-composer-picker]");
+    if (replaceComposerMedia) {
+      event.preventDefault();
+      openComposerPicker(replaceComposerMedia.dataset.openComposerPicker || "");
+      return;
+    }
+    const chip = event.target.closest("[data-composer-chip]");
+    if (chip) {
+      event.preventDefault();
+      toast("Creator metadata will attach from this composer surface soon.");
       return;
     }
     const removeComposerMedia = event.target.closest("[data-remove-composer-media]");

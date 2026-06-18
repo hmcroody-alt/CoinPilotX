@@ -5,7 +5,7 @@ import WebView, { WebViewMessageEvent, WebViewNavigation } from "react-native-we
 import type { WebView as WebViewType } from "react-native-webview";
 import { NativeLiveBroadcast } from "./components/NativeLiveBroadcast";
 import { colors, screenStyles } from "./components/theme";
-import { ensureNotificationPresentation, getNativePushToken, presentNativeDeviceAlert, wireNotificationLinks, wireNotificationPresentation } from "./services/push";
+import { ensureNotificationPresentation, getInitialNotificationUrl, getNativePushToken, presentNativeDeviceAlert, setActiveConversationFromUrl, wireNotificationLinks, wireNotificationPresentation } from "./services/push";
 
 const PULSESOC_ORIGIN = "https://pulsesoc.com";
 const PULSESOC_START_URL = `${PULSESOC_ORIGIN}/login?next=/pulse`;
@@ -34,6 +34,7 @@ function PulseSocWebShell() {
 
   const navigateToAppUrl = useCallback((incomingUrl: string) => {
     const next = toPulseSocWebUrl(incomingUrl);
+    setActiveConversationFromUrl(next);
     setOffline(false);
     setSourceUrl(next);
     webViewRef.current?.injectJavaScript(`window.location.href = ${JSON.stringify(next)}; true;`);
@@ -89,6 +90,9 @@ function PulseSocWebShell() {
   useEffect(() => {
     ensureNotificationPresentation().catch(() => undefined);
     Linking.getInitialURL().then(url => {
+      if (url) navigateToAppUrl(url);
+    }).catch(() => undefined);
+    getInitialNotificationUrl().then(url => {
       if (url) navigateToAppUrl(url);
     }).catch(() => undefined);
 
@@ -183,6 +187,7 @@ function PulseSocWebShell() {
 
   function handleNavigation(navState: WebViewNavigation) {
     setCanGoBack(navState.canGoBack);
+    setActiveConversationFromUrl(navState.url);
   }
 
   if (offline) {
@@ -284,6 +289,9 @@ function normalizeUrl(value: string) {
 }
 
 function toPulseSocWebUrl(incomingUrl: string) {
+  if (incomingUrl.startsWith("/")) {
+    return `${PULSESOC_ORIGIN}${incomingUrl}`;
+  }
   const parsed = normalizeUrl(incomingUrl);
   if (!parsed) return PULSESOC_ORIGIN;
   if (parsed.protocol === "pulse:") {

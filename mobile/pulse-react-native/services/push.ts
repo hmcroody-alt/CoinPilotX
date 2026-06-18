@@ -6,17 +6,24 @@ import { pulseApi } from "./apiClient";
 import { EXPO_PROJECT_ID } from "./config";
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true
-  })
+  handleNotification: async notification => {
+    const data = notification.request.content.data || {};
+    const incomingConversationId = notificationConversationId(data);
+    const isActiveConversation = Boolean(incomingConversationId && incomingConversationId === activeConversationId);
+    return {
+      shouldShowAlert: !isActiveConversation,
+      shouldShowBanner: !isActiveConversation,
+      shouldShowList: true,
+      shouldPlaySound: !isActiveConversation,
+      shouldSetBadge: true
+    };
+  }
 });
 
 const ANDROID_CHANNEL_ID = "default";
+const ANDROID_MESSAGES_CHANNEL_ID = "messages";
 const NOTIFICATION_VIBRATION_PATTERN = [0, 250, 120, 250];
+let activeConversationId = "";
 
 export async function registerForPushNotifications() {
   const token = await getNativePushToken();
@@ -41,7 +48,7 @@ export async function getNativePushToken(): Promise<{ ok: true; token: string } 
   const current = await Notifications.getPermissionsAsync();
   const permission = hasNotificationPermission(current) ? current : await Notifications.requestPermissionsAsync();
   if (!hasNotificationPermission(permission)) {
-    return { ok: false, message: "Push permission was not granted." };
+    return { ok: false, message: "Notifications are off. Open phone Settings, choose PulseSoc, then allow notifications, sound, and vibration." };
   }
 
   await ensureNotificationPresentation();
@@ -54,6 +61,15 @@ export async function ensureNotificationPresentation() {
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
       name: "PulseSoc",
+      importance: Notifications.AndroidImportance.MAX,
+      sound: "default",
+      enableVibrate: true,
+      vibrationPattern: NOTIFICATION_VIBRATION_PATTERN,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      bypassDnd: false
+    });
+    await Notifications.setNotificationChannelAsync(ANDROID_MESSAGES_CHANNEL_ID, {
+      name: "Messages",
       importance: Notifications.AndroidImportance.MAX,
       sound: "default",
       enableVibrate: true,
@@ -83,12 +99,22 @@ export async function unregisterPushNotifications() {
 
 export function wireNotificationLinks(onUrl?: (url: string) => void) {
   return Notifications.addNotificationResponseReceivedListener(response => {
-    const url = response.notification.request.content.data?.url;
+    const url = notificationUrlFromData(response.notification.request.content.data || {});
     if (typeof url === "string" && url.length > 0) {
       if (onUrl) onUrl(url);
       else Linking.openURL(url).catch(() => undefined);
     }
   });
+}
+
+export async function getInitialNotificationUrl() {
+  const response = await Notifications.getLastNotificationResponseAsync();
+  if (!response) return "";
+  return notificationUrlFromData(response.notification.request.content.data || {});
+}
+
+export function setActiveConversationFromUrl(url: string) {
+  activeConversationId = conversationIdFromUrl(url);
 }
 
 export function wireNotificationPresentation() {
@@ -103,16 +129,18 @@ export async function presentNativeDeviceAlert(payload: Record<string, unknown>)
   vibrateForNotification();
   const title = typeof payload.title === "string" && payload.title.trim() ? payload.title : "PulseSoc";
   const body = typeof payload.body === "string" && payload.body.trim() ? payload.body : "New PulseSoc activity.";
-  const url = typeof payload.url === "string" && payload.url.trim() ? payload.url : "/pulse/notifications";
+  const data = normalizeNotificationData(payload);
+  const url = typeof data.url === "string" && data.url.trim() ? data.url : "/pulse/notifications";
+  const channelId = data.conversationId ? ANDROID_MESSAGES_CHANNEL_ID : ANDROID_CHANNEL_ID;
   await Notifications.scheduleNotificationAsync({
     content: {
       title,
       body,
-      data: { url },
+      data,
       sound: "default",
       priority: Notifications.AndroidNotificationPriority.HIGH
     },
-    trigger: null
+    trigger: Platform.OS === "android" ? { channelId, seconds: 1 } : null
   });
 }
 
@@ -127,4 +155,42 @@ function vibrateForNotification() {
 function hasNotificationPermission(permission: unknown) {
   const value = permission as { granted?: boolean; status?: string };
   return value.granted === true || value.status === "granted";
+}
+
+function normalizeNotificationData(payload: Record<string, unknown>) {
+  const conversationId = stringValue(payload.conversationId || payload.conversation_id);
+  const messageId = stringValue(payload.messageId || payload.message_id);
+  const senderId = stringValue(payload.senderId || payload.sender_id);
+  const url = stringValue(payload.url || payload.deep_link || payload.target_url) || (conversationId ? `/messages/${conversationId}` : "/pulse/notifications");
+  return {
+    ...payload,
+    url,
+    type: stringValue(payload.type) || (conversationId ? "message" : "notification"),
+    conversationId,
+    conversation_id: conversationId,
+    messageId,
+    message_id: messageId,
+    senderId,
+    sender_id: senderId
+  };
+}
+
+function notificationUrlFromData(data: Record<string, unknown>) {
+  const normalized = normalizeNotificationData(data);
+  return stringValue(normalized.url);
+}
+
+function notificationConversationId(data: Record<string, unknown>) {
+  return stringValue(data.conversationId || data.conversation_id) || conversationIdFromUrl(stringValue(data.url));
+}
+
+function conversationIdFromUrl(url: string) {
+  const raw = stringValue(url);
+  if (!raw) return "";
+  const match = raw.match(/(?:^|\/)(?:pulse\/)?messages\/(\d+)/) || raw.match(/[?&]conversation_id=(\d+)/) || raw.match(/[?&]conversationId=(\d+)/);
+  return match ? match[1] : "";
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : value === undefined || value === null ? "" : String(value).trim();
 }

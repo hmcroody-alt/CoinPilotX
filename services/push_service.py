@@ -58,9 +58,12 @@ def save_subscription(user_id, subscription, user_agent="", device_type="", brow
 
 def _payload(title, body, data=None, push_type="general"):
     data = data or {}
+    conversation_id = data.get("conversationId") or data.get("conversation_id")
     url = data.get("url") or {
         "arena_invite": "/arena",
-        "private_message": "/messages",
+        "private_message": f"/messages/{conversation_id}" if conversation_id else "/messages",
+        "chat_message": f"/messages/{conversation_id}" if conversation_id else "/messages",
+        "message": f"/messages/{conversation_id}" if conversation_id else "/messages",
         "market_alert": "/alerts",
         "AI_briefing": "/chat",
         "quest_complete": "/arena/quests",
@@ -74,7 +77,7 @@ def _payload(title, body, data=None, push_type="general"):
         "title": title[:120],
         "body": body[:240],
         "tag": f"coinpilotxai-{push_type}",
-        "renotify": push_type in {"arena_invite", "scam_warning", "private_message", "market_alert"},
+        "renotify": push_type in {"arena_invite", "scam_warning", "private_message", "chat_message", "message", "market_alert"},
         "vibrate": [200, 100, 200],
         "data": {"url": url, "push_type": push_type, **data},
         "actions": [{"action": "open", "title": "Open"}, {"action": "dismiss", "title": "Dismiss"}],
@@ -97,14 +100,21 @@ def _send_expo_push(endpoint, payload):
     token = _expo_token(endpoint, payload.get("subscription") or {})
     if not token:
         return {"ok": False, "status": "failed", "message": "Expo push token missing."}
+    data = payload.get("data") or {}
+    push_type = str(data.get("push_type") or data.get("type") or "").strip()
+    channel_id = str(data.get("channel_id") or data.get("channelId") or "").strip()
+    if not channel_id:
+        channel_id = "messages" if push_type in {"private_message", "chat_message", "message", "voice_message"} or data.get("conversationId") or data.get("conversation_id") else "default"
     message = {
         "to": token,
         "title": payload.get("title") or "PulseSoc",
         "body": payload.get("body") or "New PulseSoc notification.",
-        "data": payload.get("data") or {},
+        "data": data,
         "sound": "default",
         "priority": "high",
-        "channelId": "default",
+        "channelId": channel_id,
+        "categoryId": push_type or "pulse",
+        "ttl": 3600,
     }
     try:
         response = requests.post(

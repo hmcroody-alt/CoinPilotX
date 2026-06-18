@@ -32,6 +32,14 @@ export async function registerPushToken() {
       enableVibrate: true,
       vibrationPattern: [0, 250, 250, 250]
     });
+    await Notifications.setNotificationChannelAsync("messages", {
+      name: "Messages",
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: "default",
+      enableVibrate: true,
+      vibrationPattern: [0, 250, 250, 250],
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC
+    });
   }
   const token = await Notifications.getExpoPushTokenAsync(EXPO_PROJECT_ID ? { projectId: EXPO_PROJECT_ID } : undefined);
   return pulseApi("/api/push/subscribe", {
@@ -48,7 +56,9 @@ export async function registerPushToken() {
 
 export function bindNotificationRouting() {
   return Notifications.addNotificationResponseReceivedListener(response => {
-    const url = response.notification.request.content.data?.url;
+    const data = response.notification.request.content.data || {};
+    const conversationId = data.conversationId || data.conversation_id;
+    const url = response.notification.request.content.data?.url || (conversationId ? `/messages/${conversationId}` : "");
     if (typeof url === "string" && url.length > 0) {
       Linking.openURL(url).catch(() => undefined);
     }

@@ -19,7 +19,7 @@ def main():
     require("data-notification-unread" in BOT, "Pulse shell exposes unread badge target")
     require("data-notification-list='dropdown'" in BOT, "desktop dropdown has a live notification list target")
     require("data-pulse-notification-list" in BOT, "notification center has a live refresh target")
-    require("setBadges(count)" in JS, "notification JS updates all badge targets")
+    require("setBadgeNodes(\"[data-alert-unread], [data-notification-unread]\", alertCount)" in JS and "setBadgeNodes(\"[data-chat-unread]\", chatCount)" in JS, "notification JS updates all badge targets")
     require("refreshNotificationList" in JS and "/api/pulse/notifications?limit=12" in JS, "notification JS refreshes dropdown/page list")
     require("schedulePolling(12000)" in JS and "document.hidden ? 45000 : 12000" in JS, "visible pages use 12 second fallback polling and slow hidden tabs")
     require("notification_created" in JS and "message_notification" in JS, "notification JS listens for message notification events")

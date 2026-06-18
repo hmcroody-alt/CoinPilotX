@@ -160,7 +160,7 @@
         xhr.upload.onprogress = function (event) {
           if (!event.lengthComputable) return;
           const percent = Math.min(88, Math.max(4, Math.round((event.loaded / event.total) * 88)));
-          const state = { stage: "uploading", percent, message: `Uploading video directly to Mux... ${percent}%`, type };
+          const state = { stage: "uploading", percent, loaded: event.loaded, total: event.total, message: `Uploading video directly to Mux... ${percent}%`, type };
           render(root, state);
           opts.onProgress && opts.onProgress(state);
         };
@@ -239,7 +239,7 @@
       xhr.upload.onprogress = function (event) {
         if (!event.lengthComputable) return;
         const percent = Math.min(84, Math.max(3, Math.round((event.loaded / event.total) * 84)));
-        const state = { stage: "uploading", percent, message: textFor("uploading", percent, type), type };
+        const state = { stage: "uploading", percent, loaded: event.loaded, total: event.total, message: textFor("uploading", percent, type), type };
         render(root, state);
         opts.onProgress && opts.onProgress(state);
       };
