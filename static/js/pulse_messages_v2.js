@@ -15,7 +15,7 @@
     replyTo: null,
     searchTimer: 0,
     groupSearchTimer: 0,
-    filter: "all",
+    filter: "chats",
     hasOlder: false,
     oldestMessageId: 0,
     loadingThread: false,
@@ -170,10 +170,36 @@
     return "offline";
   }
 
+  function previewMediaLabel(type, fallback = "Attachment") {
+    const value = String(type || "").toLowerCase();
+    if (value.includes("voice") || value.includes("audio")) return "Voice message";
+    if (value.includes("video") || value.includes("reel")) return "Video";
+    if (value.includes("image") || value.includes("photo") || value.includes("gif")) return "Photo";
+    if (value.includes("call")) return "Missed call";
+    if (value.includes("file")) return "File";
+    return fallback;
+  }
+
+  function containsLocalPath(value) {
+    const text = String(value || "");
+    return /(?:^|[\s"'(])(?:file:\/\/)?(?:\/Users\/|\/home\/|\/var\/|\/private\/|\/tmp\/|[A-Za-z]:\\|\\\\)[^\s"'<>]+/i.test(text)
+      || /(?:CoinPilotX|Desktop)[\\/][^\s"'<>]+/i.test(text);
+  }
+
+  function sanitizePreviewText(value, type = "") {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    if (!text) return "";
+    if (containsLocalPath(text)) return previewMediaLabel(type, "Attachment");
+    return text;
+  }
+
   function conversationPreview(item) {
     const type = String(item.last_message_type || item.latest_message_type || "").toLowerCase();
-    const mediaLabel = type === "voice" ? "Voice message" : type === "video" ? "Video" : type === "image" ? "Photo" : type && type !== "text" ? "Attachment" : "";
-    return item.last_message_preview || item.last_message_body || item.last_message_text || item.last_message || item.latest_message || mediaLabel || item.description || `${item.conversation_type || "Conversation"} / ${Number(item.member_count || 0)} members`;
+    const mediaLabel = previewMediaLabel(type, type && type !== "text" ? "Attachment" : "");
+    return sanitizePreviewText(item.last_message_preview || item.last_message_body || item.last_message_text || item.last_message || item.latest_message || "", type)
+      || mediaLabel
+      || sanitizePreviewText(item.description || "", type)
+      || `${item.conversation_type || "Conversation"} / ${Number(item.member_count || 0)} members`;
   }
 
   function avatarHtml(item, className = "avatar") {
@@ -185,9 +211,39 @@
     const query = state.conversationSearch.trim().toLowerCase();
     return state.conversations.filter((item) => {
       const matchesQuery = !query || `${item.title || ""} ${item.conversation_type || ""} ${conversationPreview(item)}`.toLowerCase().includes(query);
-      const matchesFilter = state.filter === "all" || (state.filter === "unread" ? Number(item.unread_count || 0) > 0 : item.conversation_type === state.filter);
+      const type = String(item.conversation_type || "direct");
+      const matchesFilter = state.filter === "groups"
+        ? type === "group"
+        : state.filter === "calls"
+          ? type === "call"
+          : type !== "group" && type !== "call";
       return matchesQuery && matchesFilter;
     });
+  }
+
+  function renderActiveRail() {
+    const rail = el("[data-active-rail]");
+    if (!rail) return;
+    const activeContacts = state.conversations
+      .filter((item) => String(item.conversation_type || "") !== "group")
+      .slice(0, 9)
+      .map((item) => {
+        const presence = presenceForConversation(item);
+        return `
+          <button class="active-person" type="button" data-conversation-id="${item.conversation_id}" title="${escapeAttr(item.title || "Open chat")}">
+            ${avatarHtml(item, `active-avatar presence-${presenceClass(presence)}`)}
+            <span>${escapeHtml(item.title || "Chat")}</span>
+          </button>
+        `;
+      }).join("");
+    rail.innerHTML = `
+      <a class="active-person active-ai" href="/pulse/assistant" data-pulse-ai title="Open Pulse AI">
+        <span class="active-avatar pulse-ai-avatar" aria-hidden="true">AI</span>
+        <span>Pulse AI</span>
+        <b>AI</b>
+      </a>
+      ${activeContacts}
+    `;
   }
 
   function renderPinnedConversations() {
@@ -207,10 +263,16 @@
 
   function renderConversations() {
     if (!list) return;
+    renderActiveRail();
     const filtered = filteredConversations();
     renderPinnedConversations();
+    if (state.filter === "calls") {
+      list.innerHTML = `<div class="empty-state">No call history yet. Voice and video calls will appear here when calling is enabled for this deployment.</div>`;
+      return;
+    }
     if (!filtered.length) {
-      list.innerHTML = `<div class="empty-state">No conversations yet. Start a DM, create a group, or open a room.</div>`;
+      const empty = state.filter === "groups" ? "No groups yet. Create a group to bring people together." : "No conversations yet. Start a DM, create a group, or open a room.";
+      list.innerHTML = `<div class="empty-state">${empty}</div>`;
       return;
     }
     list.innerHTML = filtered.map((item) => {
@@ -224,16 +286,11 @@
         <button class="conversation-open" type="button" data-conversation-id="${item.conversation_id}" aria-label="Open ${escapeAttr(item.title || "chat")}"></button>
         ${avatarHtml(item, `avatar presence-${presenceClass(presence)}`)}
         <span class="conversation-main">
-          <strong>${escapeHtml(item.title || "Untitled chat")}${item.pinned ? ` <span class="pin-mark" title="Pinned">&#9679;</span>` : ""}</strong>
+          <strong>${escapeHtml(item.title || "Untitled chat")}${item.verified ? ` <span class="verified-mark" title="Verified">✓</span>` : ""}${item.pinned ? ` <span class="pin-mark" title="Pinned">&#9679;</span>` : ""}</strong>
           <small class="${typingNames.length ? "is-typing" : ""}">${escapeHtml(preview)}</small>
-          <span class="conversation-state">${escapeHtml(presenceLabel(presence))}${item.muted ? " / Muted" : ""}</span>
+          <span class="conversation-state">${item.muted ? "Muted" : item.pinned ? "Pinned" : escapeHtml(item.conversation_type || "chat")}</span>
         </span>
         <span class="conversation-meta"><time>${escapeHtml(shortTime(item.last_message_at || item.last_activity_at || item.updated_at || item.created_at))}</time>${Number(item.unread_count || 0) ? `<span class="badge">${Number(item.unread_count)}</span>` : `<span class="delivery-mark" aria-label="Read">&#10003;</span>`}</span>
-        <span class="conversation-quick-actions">
-          <button type="button" data-quick-call="voice" data-call-conversation="${item.conversation_id}" aria-label="Voice call ${escapeAttr(item.title || "chat")}">&#9742;</button>
-          <button type="button" data-quick-call="video" data-call-conversation="${item.conversation_id}" aria-label="Video call ${escapeAttr(item.title || "chat")}">&#9655;</button>
-          <button type="button" data-open-conversation-actions="${item.conversation_id}" aria-label="More actions for ${escapeAttr(item.title || "chat")}">&#8942;</button>
-        </span>
       </article>
     `; }).join("");
   }
@@ -1087,15 +1144,7 @@
       const target = event.target instanceof Element ? event.target : event.target?.parentElement;
       if (!target) return;
       try {
-        const quickCall = target.closest("[data-quick-call]");
-        if (quickCall) {
-          setStatus(`${quickCall.dataset.quickCall === "video" ? "Video" : "Voice"} calling is not enabled on this deployment yet.`, "info");
-          return;
-        }
-        if (target.closest("[data-call-hub]")) {
-          setStatus("Calling is not enabled on this deployment yet.", "info");
-          return;
-        }
+        if (target.closest("[data-pulse-ai]")) return;
         const actionTrigger = target.closest("[data-open-conversation-actions]");
         if (actionTrigger) return openConversationActions(actionTrigger.dataset.openConversationActions);
         if (target.closest("[data-close-conversation-actions]")) return closeConversationActions();
@@ -1137,7 +1186,10 @@
           state.messages = [];
           state.members = [];
           state.initialThreadLoaded = false;
-          document.querySelectorAll("[data-filter]").forEach((btn) => btn.classList.toggle("is-active", btn === filter));
+          document.querySelectorAll("[data-filter]").forEach((btn) => {
+            btn.classList.toggle("is-active", btn === filter);
+            btn.setAttribute("aria-selected", btn === filter ? "true" : "false");
+          });
           renderConversations();
           return;
         }
@@ -1224,7 +1276,7 @@
     let pressTimer = 0;
     document.addEventListener("pointerdown", (event) => {
       const row = event.target instanceof Element ? event.target.closest("[data-conversation-row]") : null;
-      if (!row || event.target.closest("button")) return;
+      if (!row || event.target.closest("button,a")) return;
       pressTimer = window.setTimeout(() => openConversationActions(row.dataset.conversationRow), 520);
     });
     ["pointerup", "pointercancel", "pointermove"].forEach((type) => document.addEventListener(type, () => {

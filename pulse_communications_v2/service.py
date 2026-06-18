@@ -44,6 +44,41 @@ def _clean(value: Any, limit: int = 2000) -> str:
     return re.sub(r"<[^>]*>", "", str(value or "")).strip()[:limit]
 
 
+def _preview_label(message_type: str = "", fallback: str = "Attachment") -> str:
+    value = str(message_type or "").strip().lower()
+    if value in {"voice", "audio", "voice_note"}:
+        return "Voice message"
+    if value in {"video", "reel"}:
+        return "Video"
+    if value in {"image", "photo", "gif"}:
+        return "Photo"
+    if value in {"file", "document"}:
+        return "File"
+    if "call" in value:
+        return "Missed call"
+    if value and value != "text":
+        return "Attachment"
+    return fallback
+
+
+def _preview_has_local_path(value: Any) -> bool:
+    text = str(value or "")
+    if not text:
+        return False
+    return bool(re.search(r"(?:^|[\s\"'(])(?:file://)?(?:/Users/|/home/|/var/|/private/|/tmp/|[A-Za-z]:\\|\\\\)[^\s\"'<>]+", text, re.I)
+                or re.search(r"(?:CoinPilotX|Desktop)[\\/][^\s\"'<>]+", text, re.I))
+
+
+def _safe_preview(value: Any = "", message_type: str = "", fallback: str = "") -> str:
+    label = _preview_label(message_type, fallback or "Attachment")
+    text = _clean(value, 240)
+    if not text:
+        return "" if (str(message_type or "").lower() in {"", "text"} and not fallback) else label
+    if _preview_has_local_path(text):
+        return label
+    return text
+
+
 def _json_loads(value: str | None, fallback: Any = None) -> Any:
     try:
         return json.loads(value or "")
@@ -572,6 +607,8 @@ def _conversation_payloads(cur, conversations: list[dict], viewer_user_id: int) 
         mine = mine_by_conversation.get(conversation_id, {})
         members = preview_by_conversation.get(conversation_id, [])
         latest = latest_by_conversation.get(conversation_id, {})
+        latest_type = latest.get("message_type") or "text"
+        latest_preview = _safe_preview(latest.get("body") or "", latest_type)
         title = conversation.get("title") or ""
         if conversation.get("conversation_type") == "direct":
             others = [m for m in members if int(m.get("user_id") or 0) != int(viewer_user_id)]
@@ -591,8 +628,9 @@ def _conversation_payloads(cur, conversations: list[dict], viewer_user_id: int) 
             "member_count": int(conversation.get("member_count") or len(members) or 0),
             "last_message_id": int(conversation.get("last_message_id") or 0),
             "last_message_at": conversation.get("last_message_at") or "",
-            "last_message": latest.get("body") or "",
-            "last_message_type": latest.get("message_type") or "text",
+            "last_message": latest_preview,
+            "last_message_preview": latest_preview,
+            "last_message_type": latest_type,
             "last_activity_at": conversation.get("last_activity_at") or conversation.get("updated_at") or conversation.get("created_at") or "",
             "unread_count": int(mine.get("unread_count") or 0),
             "last_read_message_id": int(mine.get("last_read_message_id") or 0),
@@ -914,7 +952,7 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
         if recipient_ids:
             from services import notification_service
 
-            preview = message.get("body") or ("Sent a voice note." if message.get("message_type") == "voice" else "Sent an attachment.")
+            preview = _safe_preview(message.get("body") or "", message.get("message_type") or "")
             for recipient_id in recipient_ids[:25]:
                 recipient_message = _side_effect_message_payload(int(recipient_id), int(message.get("id") or 0)) or message
                 note = notification_service.create_pulse_notification(
@@ -1336,7 +1374,9 @@ def _message_payload(cur, message: dict, viewer_user_id: int) -> dict:
         cur.execute("SELECT id, sender_user_id, body, message_type FROM comm_v2_messages WHERE id=? LIMIT 1", (int(message.get("reply_to_message_id") or 0),))
         reply = _row(cur.fetchone())
         if reply:
-            reply_preview = {"id": int(reply.get("id") or 0), "sender": _user_summary(cur, int(reply.get("sender_user_id") or 0)), "body": reply.get("body") or "", "message_type": reply.get("message_type") or "text"}
+            reply_type = reply.get("message_type") or "text"
+            reply_preview = {"id": int(reply.get("id") or 0), "sender": _user_summary(cur, int(reply.get("sender_user_id") or 0)), "body": _safe_preview(reply.get("body") or "", reply_type), "message_type": reply_type}
+    message_type = message.get("message_type") or "text"
     return {
         "id": message_id,
         "public_id": message.get("public_id") or "",
@@ -1344,8 +1384,8 @@ def _message_payload(cur, message: dict, viewer_user_id: int) -> dict:
         "sender_user_id": int(message.get("sender_user_id") or 0),
         "sender": sender,
         "is_mine": int(message.get("sender_user_id") or 0) == int(viewer_user_id),
-        "message_type": message.get("message_type") or "text",
-        "body": message.get("body") or "",
+        "message_type": message_type,
+        "body": _safe_preview(message.get("body") or "", message_type),
         "reply_to_message_id": int(message.get("reply_to_message_id") or 0),
         "thread_root_message_id": int(message.get("thread_root_message_id") or 0),
         "delivery_status": receipt_state,
@@ -1413,7 +1453,8 @@ def _message_payloads(cur, message_rows: list[dict], viewer_user_id: int) -> lis
             cur.execute(f"SELECT id, sender_user_id, body, message_type FROM comm_v2_messages WHERE id IN ({reply_placeholders})", tuple(reply_ids))
             for row in cur.fetchall():
                 reply = _row(row)
-                reply_map[int(reply.get("id") or 0)] = {"id": int(reply.get("id") or 0), "sender_user_id": int(reply.get("sender_user_id") or 0), "body": reply.get("body") or "", "message_type": reply.get("message_type") or "text"}
+                reply_type = reply.get("message_type") or "text"
+                reply_map[int(reply.get("id") or 0)] = {"id": int(reply.get("id") or 0), "sender_user_id": int(reply.get("sender_user_id") or 0), "body": _safe_preview(reply.get("body") or "", reply_type), "message_type": reply_type}
     if sender_ids:
         placeholders = ",".join(["?"] * len(sender_ids))
         cur.execute(
@@ -1436,6 +1477,7 @@ def _message_payloads(cur, message_rows: list[dict], viewer_user_id: int) -> lis
         reply_preview = reply_map.get(int(message.get("reply_to_message_id") or 0))
         if reply_preview:
             reply_preview = {**reply_preview, "sender": sender_map.get(int(reply_preview.get("sender_user_id") or 0), {"display_name": f"Member {reply_preview.get('sender_user_id')}"})}
+        message_type = message.get("message_type") or "text"
         out.append({
             "id": message_id,
             "public_id": message.get("public_id") or "",
@@ -1448,8 +1490,8 @@ def _message_payloads(cur, message_rows: list[dict], viewer_user_id: int) -> lis
                 "avatar_url": "",
             },
             "is_mine": sender_user_id == int(viewer_user_id),
-            "message_type": message.get("message_type") or "text",
-            "body": message.get("body") or "",
+            "message_type": message_type,
+            "body": _safe_preview(message.get("body") or "", message_type),
             "reply_to_message_id": int(message.get("reply_to_message_id") or 0),
             "thread_root_message_id": int(message.get("thread_root_message_id") or 0),
             "delivery_status": receipt_map.get(message_id, message.get("delivery_status") or "sent") if sender_user_id == int(viewer_user_id) else message.get("delivery_status") or "sent",
