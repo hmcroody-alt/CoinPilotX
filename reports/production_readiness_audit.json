@@ -1,0 +1,212 @@
+[
+  {
+    "surface": "Admin routes",
+    "route": "/admin/dashboard",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Admin routes",
+    "route": "/admin/security",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Admin routes",
+    "route": "/admin/audit-logs",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Admin routes",
+    "route": "/admin/performance",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Admin routes",
+    "route": "/admin/system-audit",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Admin routes",
+    "route": "/admin/messages-health",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Admin routes",
+    "route": "/admin/notifications",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Messaging",
+    "route": "/pulse/messages",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Messaging",
+    "route": "/pulse/messages-v2",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Messaging",
+    "route": "/api/pulse/communications/v2/conversations",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Messaging",
+    "route": "/api/pulse/communications/v2/realtime?after_id=0&limit=20",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Live streaming",
+    "route": "/pulse/live",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Live streaming",
+    "route": "/api/pulse/live/stream",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Notifications",
+    "route": "/pulse/notifications",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Notifications",
+    "route": "/api/pulse/notifications/unread-count",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Notifications",
+    "route": "/api/pulse/badge-counts",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Composer",
+    "route": "/pulse/create",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Composer",
+    "route": "/pulse/camera",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Videos",
+    "route": "/pulse/videos",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Videos",
+    "route": "/api/pulse/videos",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Reels",
+    "route": "/pulse/reels",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Reels",
+    "route": "/api/pulse/reels/feed",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Premium",
+    "route": "/pulse/premium",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Premium",
+    "route": "/pulse/premium/undx",
+    "status": "warn",
+    "http_status": 403,
+    "detail": "HTTP 403"
+  },
+  {
+    "surface": "Premium",
+    "route": "/pulse/creator/dashboard",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Premium",
+    "route": "/admin/premium-command",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Marketplace",
+    "route": "/pulse/marketplace",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Marketplace",
+    "route": "/pulse/merchant/dashboard",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Marketplace",
+    "route": "/admin/marketplace-command",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  },
+  {
+    "surface": "Marketplace",
+    "route": "/admin/merchant-applications",
+    "status": "pass",
+    "http_status": 200,
+    "detail": "HTTP 200"
+  }
+]
