@@ -53,6 +53,9 @@ def audit_legacy_schema_migration():
 
 
 def audit_admin_security_route():
+    source = (ROOT / "bot.py").read_text()
+    require("HAVING COUNT(*) >= 3" in source, "suspicious-domain query avoids PostgreSQL SELECT alias in HAVING")
+    require("HAVING failures>=3" not in source and "HAVING failures >= 3" not in source, "suspicious-domain query is PostgreSQL-compatible")
     bot.init_db()
     conn = bot.db()
     conn.row_factory = sqlite3.Row
