@@ -143,6 +143,8 @@
     pressTimer: 0,
     longPress: false,
     signature: "",
+    currentStatusId: "",
+    reportedCompletion: "",
   };
 
   function hardenStatusCloseButton(button) {
@@ -175,6 +177,7 @@
   function closeStatusViewerNow(viewer) {
     const root = viewer || storyRuntime.viewer || document.querySelector("#pulseStatusStoryViewer,.pulse-status-story-viewer.open,[data-status-viewer].open");
     if (!root) return;
+    reportStoryCompletion(root, false);
     clearStoryTimers();
     root.querySelectorAll("video,audio").forEach(media => {
       try { media.pause(); } catch (_) {}
@@ -225,6 +228,7 @@
   function navigateStory(direction) {
     const viewer = activeViewer();
     if (!viewer) return;
+    if (direction > 0) reportStoryCompletion(viewer, true);
     const button = viewer.querySelector(actionSelector(direction > 0 ? "next" : "prev"));
     if (button && !button.disabled) {
       button.click();
@@ -276,6 +280,50 @@
     return 5000;
   }
 
+  function currentStoryId(viewer) {
+    return String(viewer?.dataset.statusCurrentId || viewer?.dataset.statusId || viewer?.querySelector?.("[data-status-current-id]")?.dataset.statusCurrentId || "").trim();
+  }
+
+  function storyElapsedRatio(viewer) {
+    const elapsed = storyRuntime.paused
+      ? storyRuntime.elapsedBeforePause
+      : storyRuntime.elapsedBeforePause + Math.max(0, Date.now() - (storyRuntime.startedAt || Date.now()));
+    const ratio = Math.max(0, Math.min(1, elapsed / Math.max(1, storyRuntime.durationMs || storyDuration(viewer))));
+    return { elapsed, ratio };
+  }
+
+  function reportStoryCompletion(viewer = activeViewer(), completed = false) {
+    const statusId = currentStoryId(viewer);
+    if (!statusId || !navigator.onLine) return;
+    const { elapsed, ratio } = storyElapsedRatio(viewer);
+    const finalRatio = completed ? Math.max(ratio, 0.95) : ratio;
+    const key = `${statusId}:${completed ? "complete" : Math.floor(finalRatio * 10)}`;
+    if (!completed && finalRatio < 0.25) return;
+    if (storyRuntime.reportedCompletion === key) return;
+    storyRuntime.reportedCompletion = key;
+    const payload = JSON.stringify({
+      source: "status_viewer",
+      completed: !!completed || finalRatio >= 0.95,
+      completion_ratio: finalRatio,
+      watch_ms: Math.round(elapsed),
+    });
+    try {
+      if (navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: "application/json" });
+        navigator.sendBeacon(`/api/pulse/status/${encodeURIComponent(statusId)}/view`, blob);
+        return;
+      }
+    } catch (_) {}
+    fetch(`/api/pulse/status/${encodeURIComponent(statusId)}/view`, {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      keepalive: true,
+    }).catch(() => {});
+  }
+
   function storySignature(viewer) {
     if (!viewer) return "";
     const media = viewer.querySelector("[data-status-story-media],[data-status-viewer-media]");
@@ -323,6 +371,8 @@
     clearStoryTimers();
     storyRuntime.viewer = viewer;
     storyRuntime.signature = storySignature(viewer);
+    storyRuntime.currentStatusId = currentStoryId(viewer);
+    storyRuntime.reportedCompletion = "";
     storyRuntime.paused = false;
     storyRuntime.elapsedBeforePause = 0;
     storyRuntime.startedAt = Date.now();
@@ -332,7 +382,10 @@
     const video = viewer.querySelector("video");
     if (video) {
       video.loop = false;
-      video.addEventListener("ended", () => navigateStory(1), { once: true });
+      video.addEventListener("ended", () => {
+        reportStoryCompletion(viewer, true);
+        navigateStory(1);
+      }, { once: true });
       video.play?.().catch(() => {});
     } else {
       storyRuntime.timer = window.setTimeout(() => navigateStory(1), storyRuntime.durationMs);

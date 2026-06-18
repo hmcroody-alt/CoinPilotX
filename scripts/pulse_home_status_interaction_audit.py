@@ -21,7 +21,7 @@ require("data-status-story-media" in bot and "unmuteStatusStoryVideo();" in bot,
 require("window.PulseStatusViewer?.scheduleStoryProgress?.(statusStoryViewer)" in bot, "homepage Status viewer schedules auto-next progress")
 require("data-status-story-next" in bot and "renderStatusStory(statusDraft.storyIndex+1)" in bot, "homepage Status viewer has next-story button wiring")
 require("absX >= 52" in viewer and "navigateStory(dx < 0 ? 1 : -1)" in viewer, "shared Status viewer supports horizontal swipe navigation")
-require("video.addEventListener(\"ended\", () => navigateStory(1)" in viewer, "video Status auto-advances when playback ends")
+require("video.addEventListener(\"ended\"" in viewer and "reportStoryCompletion(viewer, true)" in viewer and "navigateStory(1)" in viewer, "video Status auto-advances and records completion when playback ends")
 require("function unmuteViewerVideo" in viewer and "unmuteViewerVideo(viewer)" in viewer, "shared Status viewer tap-to-unmute is active")
 
 print("pulse home status interaction audit ok")

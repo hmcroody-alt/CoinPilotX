@@ -191,6 +191,9 @@
   function statusAvatarNode(item = {}) {
     const name = item.author_name || "PulseSoc";
     const ring = element("span", "pulse-status-avatar-ring", "");
+    const progress = element("i", "pulse-status-ring-progress", "");
+    progress.setAttribute("aria-hidden", "true");
+    ring.appendChild(progress);
     const avatar = item.author_avatar_url || "";
     if (avatar) {
       const img = document.createElement("img");
@@ -200,18 +203,25 @@
       img.decoding = "async";
       ring.appendChild(img);
     } else {
-      ring.textContent = name.slice(0, 1) || "P";
+      ring.appendChild(document.createTextNode(name.slice(0, 1) || "P"));
+    }
+    if (item.author_live) {
+      const live = element("b", "", "LIVE");
+      ring.appendChild(live);
     }
     return ring;
   }
 
   function statusCardNode(item = {}) {
-    const button = element("button", `pulse-status-card ${item.viewed ? "is-viewed" : ""}`, "");
+    const button = element("button", `pulse-status-card ${item.viewed ? "is-viewed" : ""} ${item.author_live ? "is-live" : ""} ${Number(item.unseen_count || 0) ? "has-unseen" : ""}`, "");
     button.type = "button";
     button.dataset.statusDynamic = "";
     button.dataset.openStatusId = item.id || "";
     button.dataset.statusId = item.id || "";
     button.dataset.statusOpenUrl = `/pulse/status?status=${item.id || ""}`;
+    button.dataset.storyCount = item.story_count || 1;
+    button.dataset.unseenCount = item.unseen_count || 0;
+    button.dataset.authorLive = item.author_live ? "1" : "0";
     button.setAttribute("aria-label", `Open ${item.author_name || "PulseSoc"} Status`);
     button.appendChild(statusAvatarNode(item));
     const preview = element("span", "pulse-status-home-preview", "");
@@ -240,7 +250,9 @@
       img.decoding = "async";
       preview.appendChild(img);
     }
-    preview.append(element("strong", "", item.body || item.music?.title || item.status_type || "PulseSoc Status"), element("small", "", `${item.author_name || "PulseSoc member"} · ${item.viewed ? "seen" : "new"}`));
+    const countLabel = Number(item.story_count || 1) > 1 ? ` · ${Number(item.story_count || 1)} stories` : "";
+    const liveLabel = item.author_live ? " · live" : "";
+    preview.append(element("strong", "", item.body || item.music?.title || item.status_type || "PulseSoc Status"), element("small", "", `${item.author_name || "PulseSoc member"} · ${item.viewed ? "seen" : "new"}${countLabel}${liveLabel}`));
     button.appendChild(preview);
     return button;
   }
@@ -249,7 +261,7 @@
     if (!statusUi.rail) return;
     try {
       const data = await api("/api/pulse/status/rail?lane=for_you");
-      const items = (data.items || []).slice(0, 12);
+      const items = (data.rail_items || data.items || []).slice(0, 12);
       statusUi.rail.querySelectorAll("[data-status-dynamic]").forEach(node => node.remove());
       if (statusUi.empty) statusUi.empty.hidden = !!items.length;
       const fragment = document.createDocumentFragment();
