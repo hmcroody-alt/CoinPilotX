@@ -548,7 +548,7 @@
         setBusy(true, "Posted successfully");
         window.PulseUploadManager?.render(processing, { stage: "success", percent: 100, message: "Posted successfully" });
         setPreviewStatus("Published.");
-        location.href = "/pulse/status";
+        location.href = `/pulse?status=${encodeURIComponent(data.status?.id || "")}`;
         return;
       }
       if (destination === "reel") {

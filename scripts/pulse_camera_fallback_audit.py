@@ -27,9 +27,10 @@ def main():
         expect(token in js + source, f"fallback runtime contains {token}")
     for route in ["/pulse/camera/status", "/pulse/camera/reel", "/pulse/camera/post"]:
         expect(route in source, f"camera entry route wired: {route}")
-    expect('data-pulse-camera-entry="composer"' in source, "feed composer has camera entry")
+    expect("openStatusCameraCreator" in source and "capture','environment" in source, "Status creator has in-place camera capture entry")
     expect("location.href='/pulse/camera/reel'" in source, "Reels camera entry uses shared camera route")
-    expect("location.href='/pulse/camera/status'" in source, "Status camera entry uses shared camera route")
+    expect("location.href='/pulse/camera/status'" in source, "Legacy Status camera route remains compatible")
+    expect("location.href = `/pulse?status=${encodeURIComponent(data.status?.id || \"\")}`" in js, "Status camera publish returns to Home deep link")
     expect("/api/pulse/media/upload" in js and "config.uploadEndpoint" in js, "camera uploads use shared media pipeline")
     expect("/api/pulse/status" in js, "Status publish path is present")
     expect("/api/pulse/reels/create" in js, "Reels publish path is present")

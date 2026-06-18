@@ -525,5 +525,5 @@
     }
   }
 
-  window.PulseStatusViewer = { render, styleFor, kindFor, decorateStatusActions, scheduleStoryProgress, pauseStory, resumeStory, navigateStory, unmuteViewerVideo, updateViewerSoundButton };
+  window.PulseStatusViewer = { render, styleFor, kindFor, decorateStatusActions, scheduleStoryProgress, pauseStory, resumeStory, navigateStory, unmuteViewerVideo, updateViewerSoundButton, closeStatusViewerNow };
 })();

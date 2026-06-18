@@ -74,11 +74,11 @@ def main():
         "data-status2-form",
         "/api/pulse/status",
         "body:JSON.stringify(payload)",
-        "Pulse Intelligence Field",
-        "UNDX is monitoring the Pulse network.",
+        "PulseSoc Intelligence Field",
+        "UNDX is monitoring the PulseSoc network.",
         "AI intelligence feed standing by.",
         "UNDX Feed Online",
-        "Pulse Network: Waiting",
+        "PulseSoc Network: Waiting",
         "data-pulse-intelligence-field",
     ]:
         expect(token in html, f"Status page contains {token}")

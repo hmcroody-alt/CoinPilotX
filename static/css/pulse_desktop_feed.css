@@ -3012,7 +3012,7 @@ font-size: clamp(20px, 2vw, 30px);
 .pulse-home-status-rail .pulse-status-mini-rail {
 display: grid;
 grid-auto-flow: column;
-grid-auto-columns: minmax(126px, 148px);
+grid-auto-columns: minmax(152px, 188px);
 gap: 10px;
 align-items: stretch;
 overflow-x: auto;
@@ -3024,7 +3024,7 @@ display: none;
 }
 .pulse-home-status-rail .pulse-status2-create,
 .pulse-home-status-rail .pulse-status-card {
-height: 150px;
+height: 174px;
 border-radius: 16px;
 border-color: rgba(255, 255, 255, .13);
 box-shadow: 0 16px 36px rgba(0, 0, 0, .24);
@@ -3100,8 +3100,8 @@ background: radial-gradient(circle at 50% 34%, rgba(54, 229, 143, .14), transpar
 .pulse-home-status-rail .pulse-status2-empty {
 display: grid;
 gap: 6px;
-height: 150px;
-min-width: 180px;
+height: 174px;
+min-width: 188px;
 align-content: end;
 justify-content: stretch;
 align-items: end;
@@ -3286,17 +3286,17 @@ white-space: normal;
 grid-column: 1 / -1;
 }
 .pulse-home-status-rail .pulse-status-mini-rail {
-grid-auto-columns: 112px;
+grid-auto-columns: minmax(136px, 72vw);
 gap: 8px;
 }
 .pulse-home-status-rail .pulse-status2-create,
 .pulse-home-status-rail .pulse-status-card,
 .pulse-home-status-rail .pulse-status2-empty {
-height: 136px;
-min-height: 136px;
+height: 158px;
+min-height: 158px;
 }
 .pulse-home-status-rail .pulse-status2-empty {
-min-width: 154px;
+min-width: 164px;
 }
 .pulse-status-home-preview {
 padding-top: 40px;

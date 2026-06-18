@@ -53,6 +53,338 @@
     }
   }
 
+  const statusUi = {
+    modal: document.getElementById("pulseStatusViewer"),
+    form: document.getElementById("pulseStatusForm"),
+    mediaInput: document.getElementById("pulseStatusMedia"),
+    soundInput: document.getElementById("pulseStatusSound"),
+    preview: document.getElementById("pulseStatusPreview"),
+    body: document.getElementById("pulseStatusBody"),
+    mode: document.getElementById("pulseStatusMode"),
+    privacy: document.getElementById("pulseStatusPrivacy"),
+    duration: document.getElementById("pulseStatusDuration"),
+    progress: document.querySelector("#pulseStatusForm [data-upload-progress]"),
+    modePicker: document.querySelector("[data-status-mode-picker]"),
+    rail: document.querySelector("[data-status-strip]"),
+    empty: document.querySelector("[data-status-empty]"),
+    file: null,
+    objectUrl: "",
+    publishing: false,
+  };
+
+  function statusRenderProgress(stage, percent, message) {
+    if (!statusUi.progress) return;
+    if (window.PulseUploadManager?.render) {
+      window.PulseUploadManager.render(statusUi.progress, { stage, percent, message });
+      return;
+    }
+    statusUi.progress.setAttribute("aria-valuenow", String(Math.max(0, Math.min(100, Number(percent || 0)))));
+    const bar = statusUi.progress.querySelector("[data-upload-progress-bar]");
+    const text = statusUi.progress.querySelector("[data-upload-progress-text]");
+    if (bar) bar.style.width = `${Math.max(0, Math.min(100, Number(percent || 0)))}%`;
+    if (text) text.textContent = message || "";
+  }
+
+  function statusSetState(message = "", tone = "") {
+    const node = document.querySelector("[data-status-inline-state]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.tone = tone;
+  }
+
+  function statusResetObjectUrl() {
+    if (statusUi.objectUrl) URL.revokeObjectURL(statusUi.objectUrl);
+    statusUi.objectUrl = "";
+  }
+
+  function statusClearDraft() {
+    statusResetObjectUrl();
+    statusUi.file = null;
+    if (statusUi.mediaInput) {
+      statusUi.mediaInput.value = "";
+      statusUi.mediaInput.removeAttribute("capture");
+    }
+    if (statusUi.soundInput) statusUi.soundInput.value = "";
+    if (statusUi.mode) statusUi.mode.value = "image";
+    if (statusUi.body) statusUi.body.value = "";
+    if (statusUi.preview) {
+      statusUi.preview.textContent = "";
+      const placeholder = element("span", "", "Choose a status type to preview it here.");
+      const overlays = element("div", "", "");
+      overlays.dataset.statusOverlays = "";
+      statusUi.preview.append(placeholder, overlays);
+    }
+    statusSetState("");
+    statusRenderProgress("idle", 0, "Choose a status type to begin.");
+  }
+
+  function statusOpenCreator(showPicker = true) {
+    if (!statusUi.modal || !statusUi.form) return;
+    statusUi.modal.classList.add("open");
+    statusUi.modal.setAttribute("aria-hidden", "false");
+    document.body.classList.add("status-editor-open");
+    statusUi.modePicker?.classList.toggle("is-hidden", !showPicker);
+    statusUi.form.classList.toggle("is-choosing", !!showPicker);
+    statusRenderProgress("idle", 0, showPicker ? "Choose photo, video, camera, or text." : "Status draft ready.");
+  }
+
+  function statusCloseCreator() {
+    statusUi.modal?.classList.remove("open");
+    statusUi.modal?.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("status-editor-open");
+    statusResetObjectUrl();
+  }
+
+  function statusTextMode() {
+    statusOpenCreator(false);
+    if (statusUi.mode) statusUi.mode.value = "text";
+    if (statusUi.preview) {
+      statusUi.preview.textContent = "";
+      const wrap = element("div", "pulse-ai-story-preview text-story", "");
+      wrap.append(element("strong", "", "Text Status"), element("small", "", "Write your update, choose privacy, then post."));
+      statusUi.preview.appendChild(wrap);
+    }
+    statusUi.body?.focus();
+    statusSetState("Text status selected.", "info");
+    statusRenderProgress("starting", 1, "Text status ready.");
+  }
+
+  function statusPickMedia(capture = false) {
+    statusOpenCreator(false);
+    if (statusUi.mode) statusUi.mode.value = "image";
+    if (capture) statusUi.mediaInput?.setAttribute("capture", "environment");
+    else statusUi.mediaInput?.removeAttribute("capture");
+    statusRenderProgress("idle", 0, capture ? "Open your camera or choose a recent capture." : "Choose an image or video from your gallery.");
+    statusUi.mediaInput?.click();
+  }
+
+  function statusRenderPreview() {
+    statusResetObjectUrl();
+    const file = statusUi.file;
+    if (!statusUi.preview || !file) return;
+    const isVideo = String(file.type || "").startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(file.name || "");
+    statusUi.objectUrl = URL.createObjectURL(file);
+    statusUi.preview.textContent = "";
+    const media = document.createElement(isVideo ? "video" : "img");
+    media.src = statusUi.objectUrl;
+    if (isVideo) {
+      media.controls = true;
+      media.loop = true;
+      media.playsInline = true;
+      media.setAttribute("webkit-playsinline", "");
+      if (statusUi.mode) statusUi.mode.value = "video";
+    } else {
+      media.alt = file.name || "PulseSoc Status media";
+      media.decoding = "async";
+      if (statusUi.mode) statusUi.mode.value = "image";
+    }
+    statusUi.preview.appendChild(media);
+    statusRenderProgress("starting", 1, `Ready to publish ${file.name || "media"}.`);
+  }
+
+  function statusMediaUrl(media = {}) {
+    return media.mux_playback_id
+      ? `https://stream.mux.com/${media.mux_playback_id}.m3u8`
+      : (media.mux_hls_url || media.playback_url || media.valid_url || media.cdn_url || media.media_url || media.url || "");
+  }
+
+  function statusAvatarNode(item = {}) {
+    const name = item.author_name || "PulseSoc";
+    const ring = element("span", "pulse-status-avatar-ring", "");
+    const avatar = item.author_avatar_url || "";
+    if (avatar) {
+      const img = document.createElement("img");
+      img.src = avatar;
+      img.alt = name;
+      img.loading = "lazy";
+      img.decoding = "async";
+      ring.appendChild(img);
+    } else {
+      ring.textContent = name.slice(0, 1) || "P";
+    }
+    return ring;
+  }
+
+  function statusCardNode(item = {}) {
+    const button = element("button", `pulse-status-card ${item.viewed ? "is-viewed" : ""}`, "");
+    button.type = "button";
+    button.dataset.statusDynamic = "";
+    button.dataset.openStatusId = item.id || "";
+    button.dataset.statusId = item.id || "";
+    button.dataset.statusOpenUrl = `/pulse/status?status=${item.id || ""}`;
+    button.setAttribute("aria-label", `Open ${item.author_name || "PulseSoc"} Status`);
+    button.appendChild(statusAvatarNode(item));
+    const preview = element("span", "pulse-status-home-preview", "");
+    const media = (item.media || [])[0] || {};
+    const src = statusMediaUrl(media);
+    const poster = media.poster_url || media.thumbnail_url || media.thumb || src;
+    const kind = String(media.media_type || item.status_type || "text").toLowerCase();
+    if (src && kind === "video") {
+      const video = document.createElement("video");
+      video.className = "pulse-status-card-media";
+      video.src = src;
+      if (poster) video.poster = poster;
+      video.autoplay = true;
+      video.muted = true;
+      video.loop = true;
+      video.playsInline = true;
+      video.preload = "metadata";
+      video.dataset.statusHomeVideo = "";
+      preview.appendChild(video);
+    } else if (poster || src) {
+      const img = document.createElement("img");
+      img.className = "pulse-status-card-media";
+      img.src = poster || src;
+      img.alt = item.body || "PulseSoc Status";
+      img.loading = "lazy";
+      img.decoding = "async";
+      preview.appendChild(img);
+    }
+    preview.append(element("strong", "", item.body || item.music?.title || item.status_type || "PulseSoc Status"), element("small", "", `${item.author_name || "PulseSoc member"} · ${item.viewed ? "seen" : "new"}`));
+    button.appendChild(preview);
+    return button;
+  }
+
+  async function statusHydrateRail() {
+    if (!statusUi.rail) return;
+    try {
+      const data = await api("/api/pulse/status/rail?lane=for_you");
+      const items = (data.items || []).slice(0, 12);
+      statusUi.rail.querySelectorAll("[data-status-dynamic]").forEach(node => node.remove());
+      if (statusUi.empty) statusUi.empty.hidden = !!items.length;
+      const fragment = document.createDocumentFragment();
+      items.forEach(item => fragment.appendChild(statusCardNode(item)));
+      statusUi.rail.appendChild(fragment);
+      statusUi.rail.querySelectorAll("[data-status-home-video]").forEach(video => video.play?.().catch(() => {}));
+    } catch (error) {
+      if (statusUi.empty && !statusUi.rail.querySelector("[data-status-dynamic]")) {
+        statusUi.empty.hidden = false;
+      }
+    }
+  }
+
+  async function statusPublish(event) {
+    event.preventDefault();
+    if (statusUi.publishing) return;
+    const text = (statusUi.body?.value || "").trim();
+    const mode = statusUi.mode?.value || "image";
+    if (!text && !statusUi.file) {
+      statusSetState("Add text, a photo, or a video before posting.", "error");
+      statusUi.body?.focus();
+      return;
+    }
+    statusUi.publishing = true;
+    const submitter = event.submitter || statusUi.form?.querySelector('[type="submit"]');
+    if (submitter) submitter.disabled = true;
+    try {
+      statusSetState("Posting Status...", "info");
+      const mediaIds = [];
+      if (statusUi.file) {
+        const formData = new FormData();
+        formData.append("file", statusUi.file);
+        formData.append("context_type", "pulse_status");
+        formData.append("context_id", "home-draft");
+        const upload = window.PulseUploadManager
+          ? await window.PulseUploadManager.upload({ url: "/api/pulse/media/upload", formData, file: statusUi.file, mediaType: statusUi.file.type || "", button: submitter, progressTarget: statusUi.progress, lockKey: `pulse-home-status-${statusUi.file.name}` })
+          : await api("/api/pulse/media/upload", { method: "POST", body: formData });
+        if (upload.media?.id) mediaIds.push(upload.media.id);
+        else throw new Error("Media uploaded, but PulseSoc did not return a media ID.");
+      }
+      statusRenderProgress("publishing", 96, "Publishing...");
+      const created = await api("/api/pulse/status", {
+        method: "POST",
+        body: JSON.stringify({
+          status_type: mediaIds.length ? mode : "text",
+          body: text,
+          media_ids: mediaIds,
+          visibility: statusUi.privacy?.value || "public",
+          duration_hours: Number(statusUi.duration?.value || 24),
+          ai_context: { source: "pulse_home_status_creator" },
+        }),
+      });
+      statusRenderProgress("success", 100, "Posted successfully.");
+      statusSetState("Status posted.", "success");
+      statusCloseCreator();
+      statusClearDraft();
+      await statusHydrateRail();
+      const id = created.status?.id || created.status_id;
+      const newCard = id ? document.querySelector(`[data-open-status-id="${CSS.escape(String(id))}"]`) : null;
+      newCard?.classList.add("just-created");
+      newCard?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    } catch (error) {
+      statusSetState(error.message || "Status publish failed.", "error");
+      statusRenderProgress("failed", 0, `${error.message || "Status publish failed."} Tap Post to retry.`);
+      toast(error.message || "Status publish failed.");
+    } finally {
+      statusUi.publishing = false;
+      if (submitter) submitter.disabled = false;
+    }
+  }
+
+  function bindStatusHome() {
+    if (!statusUi.modal || !statusUi.form) return;
+    document.body.dataset.statusHomeWired = "1";
+    window.PulseHomeStatus = {
+      open: statusOpenCreator,
+      close: statusCloseCreator,
+      text: statusTextMode,
+      pickMedia: statusPickMedia,
+      hydrate: statusHydrateRail,
+    };
+    document.addEventListener("click", event => {
+      const create = event.target.closest("[data-status-home-create]");
+      if (create) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        statusClearDraft();
+        statusOpenCreator(true);
+        return;
+      }
+      const starter = event.target.closest("[data-status-start]");
+      if (starter) {
+        const mode = starter.dataset.statusStart || "";
+        if (mode === "text") statusTextMode();
+        else if (mode === "upload") statusPickMedia(false);
+        else if (mode === "camera") statusPickMedia(true);
+        else if (mode === "music" || mode === "ai" || mode === "live") {
+          statusOpenCreator(false);
+          if (statusUi.mode) statusUi.mode.value = mode;
+          statusUi.body?.focus();
+          statusSetState(`${mode === "ai" ? "AI Story" : mode.charAt(0).toUpperCase() + mode.slice(1)} Status tools are being prepared. Add text, photo, or video to post today.`, "info");
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (event.target.closest("[data-status-cancel]")) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        statusCloseCreator();
+        statusClearDraft();
+      }
+    }, true);
+    statusUi.mediaInput?.addEventListener("change", event => {
+      statusUi.mediaInput?.removeAttribute("capture");
+      statusUi.file = event.target.files?.[0] || null;
+      if (statusUi.file) statusRenderPreview();
+    });
+    statusUi.form.addEventListener("submit", statusPublish);
+    const params = new URLSearchParams(location.search);
+    if (params.has("create_status")) {
+      statusClearDraft();
+      statusOpenCreator(true);
+    }
+    statusHydrateRail().then(() => {
+      const linkedStatusId = params.get("status") || params.get("status_id");
+      if (linkedStatusId) {
+        const card = document.querySelector(`[data-open-status-id="${CSS.escape(String(linkedStatusId))}"]`);
+        if (card) card.click();
+      }
+    });
+  }
+
+  bindStatusHome();
+
   function element(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;

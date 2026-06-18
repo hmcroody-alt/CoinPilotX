@@ -123,7 +123,7 @@ def main():
 
     home_html = client.get("/pulse").get_data(as_text=True)
     expect("data-status2-form" not in home_html and "pulseStatus2Media" not in home_html, "homepage does not render Create Status composer")
-    expect("href='/pulse/status'" in home_html or 'href="/pulse/status"' in home_html, "homepage Create Status entry routes to dedicated page")
+    expect("data-status-home-create" in home_html and "/pulse?create_status=1" in home_html, "homepage Create Status entry opens the Home command center")
     html = client.get("/pulse/status").get_data(as_text=True)
     required_tokens = [
         "data-status2-form",
