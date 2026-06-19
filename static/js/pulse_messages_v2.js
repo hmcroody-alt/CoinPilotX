@@ -31,6 +31,9 @@
     attachmentQueue: [],
     attachmentSeq: 0,
     attachmentSheetOpen: false,
+    aiEnabled: root?.dataset.aiEnabled === "true",
+    aiBusy: false,
+    aiOutput: "",
     maxAttachments: 8,
     uploadLimits: {
       image: 100 * 1024 * 1024,
@@ -351,6 +354,7 @@
       avatar.className = `thread-avatar presence-${presenceClass(threadPresence)}`;
     }
     renderTypingPill();
+    renderAIHooks();
     if (!state.active) {
       messages.innerHTML = `<div class="empty-state">Search for someone or create a group to start chatting.</div>`;
       return;
@@ -363,6 +367,43 @@
     messages.innerHTML = `${older}<div class="message-stack">${state.messages.map((item) => messageHtml(item)).join("")}</div>`;
     if (!state.preserveScroll) smoothScrollToBottom();
     state.preserveScroll = false;
+  }
+
+  function renderAIHooks() {
+    const summaryButton = el("[data-ai-summary]");
+    const panel = el("[data-ai-panel]");
+    const output = el("[data-ai-output]");
+    if (summaryButton) summaryButton.hidden = !(state.aiEnabled && state.active);
+    if (panel) panel.hidden = !(state.aiEnabled && state.active);
+    if (output) {
+      output.textContent = state.aiOutput || (state.aiEnabled ? "AI is ready when this conversation has enough context." : "AI analysis is not enabled.");
+    }
+  }
+
+  function aiResultText(data, fallback) {
+    if (!data?.available) return data?.message || "AI analysis is not enabled.";
+    const summary = data.summary || data.chat_summary || data.result || data.output;
+    if (typeof summary === "string" && summary.trim()) return summary.trim();
+    const replies = data.replies || data.smart_replies || data.suggestions;
+    if (Array.isArray(replies) && replies.length) return replies.map((item) => `• ${String(item)}`).join("\n");
+    return fallback;
+  }
+
+  async function runAIAction(kind) {
+    if (!state.aiEnabled || !state.active || state.aiBusy) return;
+    state.aiBusy = true;
+    state.aiOutput = kind === "smart-replies" ? "Preparing smart replies..." : "Summarizing conversation...";
+    renderAIHooks();
+    try {
+      const endpoint = kind === "smart-replies" ? "smart-replies" : "summary";
+      const data = await api(`/conversations/${state.active.conversation_id}/ai/${endpoint}`, { method: "POST", body: JSON.stringify({ limit: kind === "smart-replies" ? 12 : 30 }) }, `ai_${endpoint}`);
+      state.aiOutput = aiResultText(data, kind === "smart-replies" ? "No smart replies are available yet." : "No summary is available yet.");
+    } catch (err) {
+      state.aiOutput = err?.message || "AI analysis could not be completed.";
+    } finally {
+      state.aiBusy = false;
+      renderAIHooks();
+    }
   }
 
   function smoothScrollToBottom() {
@@ -1200,6 +1241,8 @@
         if (target.closest("[data-open-new-room]")) return openModal("new-room");
         if (target.closest("[data-close-modal]")) return closeModals();
         if (target.closest("[data-toggle-details]")) return toggleDetails();
+        if (target.closest("[data-ai-summary]")) return await runAIAction("summary");
+        if (target.closest("[data-ai-replies]")) return await runAIAction("smart-replies");
         if (target.closest("[data-mobile-list]")) {
           setMobileMode("list");
           return;

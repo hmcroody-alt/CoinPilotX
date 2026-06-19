@@ -1826,6 +1826,54 @@ def list_messages(user_id: int, conversation_ref: int | str, filters: dict | Non
         conn.close()
 
 
+def ai_context_for_conversation(user_id: int, conversation_ref: int | str, limit: int = 30) -> dict:
+    disabled = _disabled("ai_context")
+    if disabled:
+        return disabled
+    limit = max(1, min(int(limit or 30), 60))
+    conn, cur = _open_db()
+    try:
+        conversation, access = _conversation_access(cur, user_id, conversation_ref)
+        if access == "missing":
+            return _err("Conversation not found.", 404, "not_found")
+        if access == "denied":
+            return _err("You do not have access to this conversation.", 403, "forbidden")
+        if access == "blocked":
+            return _err("Messaging is unavailable for this conversation.", 403, "blocked")
+        conversation_id = int(conversation["id"])
+        cur.execute(
+            """
+            SELECT id, sender_user_id, message_type, body, created_at
+            FROM comm_v2_messages
+            WHERE conversation_id=? AND COALESCE(deleted_at,'')=''
+            ORDER BY id DESC LIMIT ?
+            """,
+            (conversation_id, limit),
+        )
+        rows = list(reversed([_row(row) for row in cur.fetchall()]))
+        messages = []
+        for row in rows:
+            message_type = str(row.get("message_type") or "text").lower()
+            body = _safe_preview(row.get("body") or "", message_type, "")
+            if not body and message_type != "text":
+                body = _preview_label(message_type, "Attachment")
+            messages.append({
+                "message_id": int(row.get("id") or 0),
+                "role": "me" if int(row.get("sender_user_id") or 0) == int(user_id) else "member",
+                "message_type": message_type[:30],
+                "body": body[:500],
+                "created_at": row.get("created_at") or "",
+            })
+        return _ok({
+            "conversation_id": conversation_id,
+            "conversation": _conversation_payload(cur, conversation, user_id),
+            "messages": messages,
+            "limit": limit,
+        })
+    finally:
+        conn.close()
+
+
 def search_messages(user_id: int, query: str = "", filters: dict | None = None) -> dict:
     disabled = _disabled("search_messages")
     if disabled:

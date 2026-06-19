@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=messages-sci-fi-inbox-20260618a">
 </head>
 <body data-comm-v2-enabled="{{ 'true' if enabled else 'false' }}">
-  <main class="comm-shell" data-current-user-id="{{ current_user.user_id }}">
+  <main class="comm-shell" data-current-user-id="{{ current_user.user_id }}" data-ai-enabled="{{ 'true' if ai_enabled else 'false' }}">
     <aside class="comm-list" aria-label="Conversations">
       <header class="comm-toolbar">
         <a class="icon-btn" href="/pulse" title="Back to PulseSoc" aria-label="Back to PulseSoc">&lt;</a>
@@ -62,6 +62,7 @@
           <p data-thread-subtitle>Search for someone or create a group to start chatting.</p>
         </div>
         <nav class="thread-actions" aria-label="Conversation actions">
+          <button class="icon-btn ai-action" type="button" data-ai-summary title="Summarize chat" aria-label="Summarize chat" hidden>AI</button>
           <button class="icon-btn" type="button" data-thread-search title="Search messages" aria-label="Search messages">⌕</button>
           <button class="icon-btn" type="button" data-toggle-details title="Conversation info" aria-label="Conversation info">i</button>
           <button class="icon-btn" type="button" data-thread-mute title="Mute conversation" aria-label="Mute conversation">◐</button>
@@ -72,6 +73,13 @@
         <div class="empty-state">Search for someone or create a group to start chatting.</div>
       </div>
       <div class="typing-pill" data-typing-pill hidden></div>
+      <section class="ai-assist-panel" data-ai-panel hidden aria-live="polite">
+        <header>
+          <strong>Pulse AI</strong>
+          <button type="button" data-ai-replies>Smart replies</button>
+        </header>
+        <div data-ai-output>AI analysis is not enabled.</div>
+      </section>
       <section class="attachment-preview-rail" data-attachment-preview hidden aria-label="Selected attachments"></section>
       <section class="voice-recorder" data-voice-panel hidden aria-live="polite">
         <div class="voice-recorder-main">

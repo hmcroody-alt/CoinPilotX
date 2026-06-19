@@ -13,6 +13,14 @@ from flask import Flask, jsonify, request
 from .config import load_config
 from .health import health_payload, utc_timestamp
 from .heartbeat import start_heartbeat
+from .ai_messaging import (
+    AIMessagingValidationError,
+    create_moderation_insight,
+    ensure_ai_schema,
+    explain_scam_risk,
+    suggest_replies,
+    summarize_conversation,
+)
 from .messaging import (
     MessagingValidationError,
     accept_message_event,
@@ -269,6 +277,54 @@ def create_app() -> Flask:
             LOGGER.warning("COMMAND_CENTER_SECURITY_RECENT_FAILED error_type=%s", exc.__class__.__name__)
             return jsonify({"ok": False, "error": "security_recent_failed"}), 503
 
+    @worker_app.post("/internal/command-center/ai/summary")
+    @require_internal_auth
+    def command_center_ai_summary():
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(summarize_conversation(body))
+        except AIMessagingValidationError as exc:
+            return jsonify({"ok": False, "available": False, "error": str(exc)}), 400
+        except Exception as exc:
+            LOGGER.warning("COMMAND_CENTER_AI_SUMMARY_FAILED error_type=%s", exc.__class__.__name__)
+            return jsonify({"ok": False, "available": False, "error": "ai_summary_failed"}), 503
+
+    @worker_app.post("/internal/command-center/ai/smart-replies")
+    @require_internal_auth
+    def command_center_ai_smart_replies():
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(suggest_replies(body))
+        except AIMessagingValidationError as exc:
+            return jsonify({"ok": False, "available": False, "error": str(exc)}), 400
+        except Exception as exc:
+            LOGGER.warning("COMMAND_CENTER_AI_SMART_REPLIES_FAILED error_type=%s", exc.__class__.__name__)
+            return jsonify({"ok": False, "available": False, "error": "ai_smart_replies_failed"}), 503
+
+    @worker_app.post("/internal/command-center/ai/scam-explanation")
+    @require_internal_auth
+    def command_center_ai_scam_explanation():
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(explain_scam_risk(body))
+        except AIMessagingValidationError as exc:
+            return jsonify({"ok": False, "available": False, "error": str(exc)}), 400
+        except Exception as exc:
+            LOGGER.warning("COMMAND_CENTER_AI_SCAM_EXPLANATION_FAILED error_type=%s", exc.__class__.__name__)
+            return jsonify({"ok": False, "available": False, "error": "ai_scam_explanation_failed"}), 503
+
+    @worker_app.post("/internal/command-center/ai/moderation-insight")
+    @require_internal_auth
+    def command_center_ai_moderation_insight():
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(create_moderation_insight(body))
+        except AIMessagingValidationError as exc:
+            return jsonify({"ok": False, "available": False, "error": str(exc)}), 400
+        except Exception as exc:
+            LOGGER.warning("COMMAND_CENTER_AI_MODERATION_INSIGHT_FAILED error_type=%s", exc.__class__.__name__)
+            return jsonify({"ok": False, "available": False, "error": "ai_moderation_insight_failed"}), 503
+
     return worker_app
 
 
@@ -285,6 +341,10 @@ try:
     ensure_security_schema()
 except Exception as exc:
     LOGGER.warning("COMMAND_CENTER_SECURITY_SCHEMA_INIT_SKIPPED error_type=%s", exc.__class__.__name__)
+try:
+    ensure_ai_schema()
+except Exception as exc:
+    LOGGER.warning("COMMAND_CENTER_AI_SCHEMA_INIT_SKIPPED error_type=%s", exc.__class__.__name__)
 start_heartbeat(load_config())
 
 

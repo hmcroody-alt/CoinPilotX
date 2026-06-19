@@ -91,7 +91,13 @@ def messages_v2_page():
     user = _current_user()
     if not user:
         return _bot().redirect(_bot().url_for("login_page", next="/pulse/messages-v2"))
-    return render_template("pulse_messages_v2.html", enabled=flags.is_enabled(), current_user=user)
+    try:
+        from services import command_center_client
+
+        ai_enabled = bool(command_center_client.is_enabled() and command_center_client.ai_enabled())
+    except Exception:
+        ai_enabled = False
+    return render_template("pulse_messages_v2.html", enabled=flags.is_enabled(), current_user=user, ai_enabled=ai_enabled)
 
 
 @comm_v2_blueprint.get(f"{API_PREFIX}/health")
@@ -190,6 +196,60 @@ def messages(conversation_ref):
     if denied:
         return denied
     return _timed_json("selected_thread_messages", lambda: service.list_messages(user["user_id"], conversation_ref, request.args))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/ai/summary")
+def ai_summary(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import command_center_client
+
+        body = request.get_json(silent=True) if request.is_json else {}
+        body = body if isinstance(body, dict) else {}
+        context = service.ai_context_for_conversation(
+            user["user_id"],
+            conversation_ref,
+            limit=int(request.args.get("limit") or body.get("limit") or 30),
+        )
+        if not context.get("ok"):
+            return context
+        if not command_center_client.is_enabled() or not command_center_client.ai_enabled():
+            return {"ok": True, "available": False, "status": "disabled", "reason": "ai_disabled", "message": "AI analysis is not enabled.", "trace_id": service._trace()}
+        return command_center_client.request_chat_summary(
+            context.get("conversation_id"),
+            user["user_id"],
+            context.get("messages") or [],
+            event_id=f"comm-ai-summary-{context.get('conversation_id')}-{user['user_id']}",
+        )
+
+    return _timed_json("ai_chat_summary", run)
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/ai/smart-replies")
+def ai_smart_replies(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import command_center_client
+
+        context = service.ai_context_for_conversation(user["user_id"], conversation_ref, limit=12)
+        if not context.get("ok"):
+            return context
+        if not command_center_client.is_enabled() or not command_center_client.ai_enabled():
+            return {"ok": True, "available": False, "status": "disabled", "reason": "ai_disabled", "message": "AI suggestions are not enabled.", "trace_id": service._trace()}
+        return command_center_client.request_smart_replies(
+            context.get("conversation_id"),
+            user["user_id"],
+            context.get("messages") or [],
+            event_id=f"comm-ai-replies-{context.get('conversation_id')}-{user['user_id']}",
+        )
+
+    return _timed_json("ai_smart_replies", run)
 
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/messages")

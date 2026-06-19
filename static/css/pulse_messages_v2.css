@@ -174,7 +174,7 @@ input, select {
 .comm-thread {
   min-width: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
 }
 .comm-details {
   min-width: 0;
@@ -203,6 +203,39 @@ input, select {
   gap: 10px;
   padding: 12px;
   border-bottom: 1px solid var(--line);
+}
+.ai-action {
+  border-color: rgba(20, 122, 126, .5);
+  background: linear-gradient(135deg, rgba(20, 122, 126, .14), rgba(47, 111, 221, .14));
+  color: var(--accent);
+  font-weight: 900;
+}
+.ai-assist-panel {
+  margin: 8px 12px;
+  padding: 10px;
+  border: 1px solid rgba(20, 122, 126, .28);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(20, 122, 126, .08), rgba(47, 111, 221, .06));
+  box-shadow: 0 12px 28px rgba(20, 122, 126, .08);
+  white-space: pre-wrap;
+}
+.ai-assist-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.ai-assist-panel button {
+  min-height: 32px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.ai-assist-panel [data-ai-output] {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
 }
 .member-list, .room-list, .detail-actions {
   display: grid;

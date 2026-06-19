@@ -71,6 +71,14 @@ def token_configured() -> bool:
     return bool(_env_text("COMMAND_CENTER_INTERNAL_TOKEN"))
 
 
+def ai_enabled() -> bool:
+    return _env_bool("PULSE_AI_ENABLED", False)
+
+
+def ai_configured() -> bool:
+    return ai_enabled() and bool(_env_text("PULSE_AI_PROVIDER"))
+
+
 def status() -> dict[str, Any]:
     identity = service_identity()
     return {
@@ -78,6 +86,9 @@ def status() -> dict[str, Any]:
         "enabled": is_enabled(),
         "url_configured": url_configured(),
         "token_configured": token_configured(),
+        "ai_enabled": ai_enabled(),
+        "ai_provider_configured": bool(_env_text("PULSE_AI_PROVIDER")),
+        "ai_model_configured": bool(_env_text("PULSE_AI_MODEL")),
         "timeout_seconds": _timeout_seconds(),
         "last_dispatch": last_dispatch_status(),
     }
@@ -392,6 +403,62 @@ def enqueue_media_event(payload: dict[str, Any] | None = None, idempotency_key: 
 
 def enqueue_ai_event(payload: dict[str, Any] | None = None, idempotency_key: str = "") -> dict[str, Any]:
     return dispatch_event("ai", payload, idempotency_key=idempotency_key)
+
+
+def _ai_unavailable(task_type: str, reason: str = "disabled") -> dict[str, Any]:
+    return {
+        "ok": True,
+        "available": False,
+        "status": "disabled" if reason in {"disabled", "ai_disabled"} else "unavailable",
+        "task_type": task_type,
+        "reason": reason,
+    }
+
+
+def _request_ai(path: str, task_type: str, payload: dict[str, Any] | None = None, idempotency_key: str = "") -> dict[str, Any]:
+    if not is_enabled():
+        return _ai_unavailable(task_type, "command_center_disabled")
+    if not ai_enabled():
+        return _ai_unavailable(task_type, "ai_disabled")
+    result = _post_worker(path, payload or {}, f"ai_{task_type}", idempotency_key=idempotency_key or f"ai-{task_type}")
+    if not result.get("ok"):
+        return _ai_unavailable(task_type, result.get("reason") or "request_failed")
+    response = result.get("response") if isinstance(result.get("response"), dict) else {}
+    return {"ok": True, "task_type": task_type, **response}
+
+
+def request_chat_summary(conversation_id: int, user_id: int, messages: list[dict[str, Any]] | None = None, event_id: str = "") -> dict[str, Any]:
+    body = {
+        "conversation_id": int(conversation_id or 0),
+        "user_id": int(user_id or 0),
+        "messages": messages or [],
+        "event_id": str(event_id or "")[:160],
+    }
+    return _request_ai("/internal/command-center/ai/summary", "chat_summary", body, idempotency_key=event_id or f"ai-summary-{body['conversation_id']}-{body['user_id']}")
+
+
+def request_smart_replies(conversation_id: int, user_id: int, messages: list[dict[str, Any]] | None = None, event_id: str = "") -> dict[str, Any]:
+    body = {
+        "conversation_id": int(conversation_id or 0),
+        "user_id": int(user_id or 0),
+        "messages": messages or [],
+        "event_id": str(event_id or "")[:160],
+    }
+    return _request_ai("/internal/command-center/ai/smart-replies", "smart_replies", body, idempotency_key=event_id or f"ai-replies-{body['conversation_id']}-{body['user_id']}")
+
+
+def request_scam_explanation(security_event: dict[str, Any] | None = None, user_id: int = 0, event_id: str = "") -> dict[str, Any]:
+    body = {
+        "user_id": int(user_id or 0),
+        "event_id": str(event_id or (security_event or {}).get("event_id") or "")[:160],
+        "security_event": security_event or {},
+    }
+    return _request_ai("/internal/command-center/ai/scam-explanation", "scam_explanation", body, idempotency_key=body["event_id"] or f"ai-scam-{body['user_id']}")
+
+
+def request_moderation_insight(payload: dict[str, Any] | None = None, user_id: int = 0, event_id: str = "") -> dict[str, Any]:
+    body = {"user_id": int(user_id or 0), "event_id": str(event_id or "")[:160], **(payload or {})}
+    return _request_ai("/internal/command-center/ai/moderation-insight", "moderation_insight", body, idempotency_key=body["event_id"] or f"ai-moderation-{body['user_id']}")
 
 
 def enqueue_presence_event(user_id: int, status: str, source: str | None = None, device_label: str | None = None) -> dict[str, Any]:
