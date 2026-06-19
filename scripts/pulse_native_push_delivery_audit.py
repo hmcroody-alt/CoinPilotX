@@ -27,6 +27,7 @@ def expect(condition, message, failures):
 class FakeResponse:
     ok = True
     content = b'{"data":{"status":"ok"}}'
+    status_code = 200
 
     @staticmethod
     def json():

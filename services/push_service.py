@@ -7,7 +7,10 @@ honest not_configured/skipped statuses when they are not.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import secrets
+import hashlib
 from datetime import datetime
 
 import requests
@@ -24,11 +27,34 @@ def _keys(subscription):
     return keys.get("p256dh") or "", keys.get("auth") or ""
 
 
+def _push_trace_enabled():
+    return str(os.getenv("PUSH_TRACE_ENABLED", "1")).lower() not in {"0", "false", "off", "no"}
+
+
+def _endpoint_hash(endpoint):
+    return hashlib.sha256(str(endpoint or "").encode("utf-8")).hexdigest()[:16] if endpoint else ""
+
+
+def _trace(stage, **fields):
+    if not _push_trace_enabled():
+        return
+    safe = {}
+    for key, value in fields.items():
+        if value is None:
+            continue
+        if key in {"endpoint", "token", "subscription", "subscription_json", "auth", "p256dh"}:
+            continue
+        safe[key] = value
+    logging.info("PUSH_TRACE stage=%s %s", stage, json.dumps(safe, default=str, sort_keys=True)[:2000])
+
+
 def save_subscription(user_id, subscription, user_agent="", device_type="", browser=""):
     endpoint = (subscription or {}).get("endpoint") or ""
     if not user_id or not endpoint:
+        _trace("token_register_rejected", user_id=int(user_id or 0), reason="missing_endpoint")
         return {"ok": False, "message": "Push subscription endpoint required."}
     p256dh, auth = _keys(subscription)
+    provider = "expo" if _is_expo_token(endpoint, subscription) else "webpush"
     conn = user_context.connect()
     cur = conn.cursor()
     cur.execute(
@@ -53,6 +79,15 @@ def save_subscription(user_id, subscription, user_agent="", device_type="", brow
     )
     conn.commit()
     conn.close()
+    _trace(
+        "token_registered",
+        user_id=int(user_id or 0),
+        endpoint_hash=_endpoint_hash(endpoint),
+        provider=provider,
+        device_type=device_type,
+        browser=browser,
+        user_agent_family=(user_agent or "")[:80],
+    )
     return {"ok": True, "message": "Push notifications connected."}
 
 
@@ -112,12 +147,17 @@ def _send_expo_push(endpoint, payload):
         "title": payload.get("title") or "PulseSoc",
         "body": payload.get("body") or "New PulseSoc notification.",
         "data": data,
-        "sound": "default",
+        "sound": os.getenv("PUSH_DEFAULT_SOUND") or "default",
         "priority": "high",
         "channelId": channel_id,
         "categoryId": push_type or "pulse",
         "ttl": 3600,
     }
+    if str(os.getenv("PUSH_BADGE_ENABLED", "1")).lower() not in {"0", "false", "off", "no"} and data.get("badge") is not None:
+        try:
+            message["badge"] = int(data.get("badge") or 0)
+        except Exception:
+            pass
     try:
         response = requests.post(
             "https://exp.host/--/api/v2/push/send",
@@ -128,22 +168,47 @@ def _send_expo_push(endpoint, payload):
         response_json = response.json() if response.content else {}
         status = (response_json.get("data") or {}).get("status")
         details = (response_json.get("data") or {}).get("details") or {}
+        http_status = int(getattr(response, "status_code", 0) or 0)
         if response.ok and status == "ok":
-            return {"ok": True, "status": "sent", "provider": "expo"}
+            return {"ok": True, "status": "sent", "provider": "expo", "http_status": http_status, "provider_status": status}
         if details.get("error") == "DeviceNotRegistered":
-            return {"ok": False, "status": "invalid", "provider": "expo", "message": "Expo device token is no longer registered."}
-        return {"ok": False, "status": "failed", "provider": "expo", "message": "Expo push service rejected the notification."}
-    except Exception:
-        return {"ok": False, "status": "failed", "provider": "expo", "message": "Expo push service request failed."}
+            return {"ok": False, "status": "invalid", "provider": "expo", "message": "Expo device token is no longer registered.", "http_status": http_status, "provider_status": status, "provider_error": "DeviceNotRegistered"}
+        return {"ok": False, "status": "failed", "provider": "expo", "message": "Expo push service rejected the notification.", "http_status": http_status, "provider_status": status, "provider_error": details.get("error") or status or "rejected"}
+    except Exception as exc:
+        return {"ok": False, "status": "failed", "provider": "expo", "message": "Expo push service request failed.", "error_type": type(exc).__name__}
 
 
 def send_push(user_id, title, body, data=None, push_type="general"):
+    data = data or {}
+    trace_id = data.get("push_trace_id") or data.get("trace_id") or secrets.token_hex(6)
+    data = {**data, "push_trace_id": trace_id}
     conn = user_context.connect()
     cur = conn.cursor()
-    cur.execute("SELECT id, endpoint, subscription_json FROM push_subscriptions WHERE user_id=? AND COALESCE(is_active, active, 1)=1", (user_id,))
+    cur.execute(
+        """
+        SELECT id, endpoint, subscription_json, device_type, browser, updated_at, last_seen_at
+        FROM push_subscriptions
+        WHERE user_id=? AND COALESCE(is_active, active, 1)=1
+        """,
+        (user_id,),
+    )
     rows = cur.fetchall()
+    conversation_id = data.get("conversationId") or data.get("conversation_id")
+    message_id = data.get("messageId") or data.get("message_id")
+    _trace(
+        "send_push_start",
+        trace_id=trace_id,
+        user_id=int(user_id or 0),
+        push_type=push_type,
+        conversation_id=conversation_id,
+        message_id=message_id,
+        subscription_count=len(rows),
+        title_len=len(title or ""),
+        body_len=len(body or ""),
+    )
     if not rows:
         conn.close()
+        _trace("send_push_no_tokens", trace_id=trace_id, user_id=int(user_id or 0), push_type=push_type)
         return {"ok": False, "status": "not_configured", "message": "No active push subscription."}
     sent = 0
     failures = []
@@ -151,13 +216,17 @@ def send_push(user_id, title, body, data=None, push_type="general"):
     payload = _payload(title, body, data, push_type)
     for row in rows:
         sub_id, endpoint, subscription_json = row[0], row[1], row[2]
+        device_type = row[3] if len(row) > 3 else ""
+        browser = row[4] if len(row) > 4 else ""
         try:
             subscription = json.loads(subscription_json or "{}")
         except Exception:
             subscription = {}
         if _is_expo_token(endpoint, subscription):
+            _trace("provider_request", trace_id=trace_id, user_id=int(user_id or 0), subscription_id=int(sub_id or 0), endpoint_hash=_endpoint_hash(endpoint), provider="expo", device_type=device_type, browser=browser, push_type=push_type, conversation_id=conversation_id, message_id=message_id)
             expo_payload = {**payload, "subscription": subscription}
             expo_result = _send_expo_push(endpoint, expo_payload)
+            _trace("provider_response", trace_id=trace_id, user_id=int(user_id or 0), subscription_id=int(sub_id or 0), endpoint_hash=_endpoint_hash(endpoint), provider="expo", status=expo_result.get("status"), ok=bool(expo_result.get("ok")), provider_status=expo_result.get("provider_status"), provider_error=expo_result.get("provider_error"), http_status=expo_result.get("http_status"), error_type=expo_result.get("error_type"))
             if expo_result.get("ok"):
                 sent += 1
             elif expo_result.get("status") == "invalid":
@@ -168,14 +237,17 @@ def send_push(user_id, title, body, data=None, push_type="general"):
             continue
         if not os.getenv("VAPID_PUBLIC_KEY") or not os.getenv("VAPID_PRIVATE_KEY"):
             failures.append("VAPID push variables are not configured.")
+            _trace("provider_response", trace_id=trace_id, user_id=int(user_id or 0), subscription_id=int(sub_id or 0), endpoint_hash=_endpoint_hash(endpoint), provider="webpush", status="not_configured", provider_error="missing_vapid")
             continue
         try:
             from pywebpush import WebPushException, webpush
         except Exception:
             failures.append("pywebpush is not installed.")
+            _trace("provider_response", trace_id=trace_id, user_id=int(user_id or 0), subscription_id=int(sub_id or 0), endpoint_hash=_endpoint_hash(endpoint), provider="webpush", status="not_configured", provider_error="pywebpush_missing")
             continue
 
         try:
+            _trace("provider_request", trace_id=trace_id, user_id=int(user_id or 0), subscription_id=int(sub_id or 0), endpoint_hash=_endpoint_hash(endpoint), provider="webpush", device_type=device_type, browser=browser, push_type=push_type, conversation_id=conversation_id, message_id=message_id)
             webpush(
                 subscription_info=subscription,
                 data=json.dumps(payload),
@@ -184,18 +256,24 @@ def send_push(user_id, title, body, data=None, push_type="general"):
                 timeout=10,
             )
             sent += 1
+            _trace("provider_response", trace_id=trace_id, user_id=int(user_id or 0), subscription_id=int(sub_id or 0), endpoint_hash=_endpoint_hash(endpoint), provider="webpush", status="sent", ok=True)
         except WebPushException as exc:
             message = str(exc)[:400]
             failures.append(message)
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            _trace("provider_response", trace_id=trace_id, user_id=int(user_id or 0), subscription_id=int(sub_id or 0), endpoint_hash=_endpoint_hash(endpoint), provider="webpush", status="invalid" if status_code in (404, 410) else "failed", http_status=status_code, error_type=type(exc).__name__)
             if getattr(exc, "response", None) is not None and exc.response.status_code in (404, 410):
                 invalid_ids.append(sub_id)
         except Exception as exc:
             failures.append(str(exc)[:400])
+            _trace("provider_response", trace_id=trace_id, user_id=int(user_id or 0), subscription_id=int(sub_id or 0), endpoint_hash=_endpoint_hash(endpoint), provider="webpush", status="failed", error_type=type(exc).__name__)
     for sub_id in invalid_ids:
         cur.execute("UPDATE push_subscriptions SET active=0, is_active=0, updated_at=? WHERE id=?", (_now(), sub_id))
     conn.commit()
     conn.close()
-    return {"ok": sent > 0, "status": "sent" if sent else "failed", "sent": sent, "failures": failures, "invalidated": len(invalid_ids)}
+    result = {"ok": sent > 0, "status": "sent" if sent else "failed", "sent": sent, "failures": failures, "invalidated": len(invalid_ids), "trace_id": trace_id}
+    _trace("send_push_complete", trace_id=trace_id, user_id=int(user_id or 0), push_type=push_type, status=result["status"], sent=sent, invalidated=len(invalid_ids), failures=len(failures), conversation_id=conversation_id, message_id=message_id)
+    return result
 
 
 def broadcast_user_notification(user_id, notification):

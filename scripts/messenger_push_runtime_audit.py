@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 import bot  # noqa: E402
 from pulse_communications_v2 import service  # noqa: E402
 from services import push_service  # noqa: E402
+from services import notification_service  # noqa: E402
 
 
 SENDER_ID = 984201
@@ -36,6 +37,7 @@ def expect(ok: bool, label: str, details: str = "") -> None:
 class FakeResponse:
     ok = True
     content = b"{}"
+    status_code = 200
 
     def __init__(self, status: str = "ok", details: dict | None = None):
         self._status = status
@@ -86,8 +88,8 @@ def setup_data() -> int:
     conversation_id = int(created.get("conversation_id") or 0)
     expect(conversation_id > 0, "conversation id returned", str(created))
 
-    push_service.save_subscription(SENDER_ID, {"endpoint": SENDER_TOKEN, "expo_push_token": SENDER_TOKEN, "token": SENDER_TOKEN}, "Audit Sender", "native", "Expo")
-    push_service.save_subscription(RECEIVER_ID, {"endpoint": RECEIVER_TOKEN, "expo_push_token": RECEIVER_TOKEN, "token": RECEIVER_TOKEN}, "Audit Receiver", "native", "Expo")
+    notification_service.save_pulse_device(SENDER_ID, {"endpoint": SENDER_TOKEN, "provider": "expo", "token": SENDER_TOKEN, "subscription": {"expo_push_token": SENDER_TOKEN}, "device_type": "native"}, "PulseSoc iOS QA")
+    notification_service.save_pulse_device(RECEIVER_ID, {"endpoint": RECEIVER_TOKEN, "provider": "expo", "token": RECEIVER_TOKEN, "subscription": {"expo_push_token": RECEIVER_TOKEN}, "device_type": "native"}, "PulseSoc Android QA")
     return conversation_id
 
 
@@ -112,6 +114,19 @@ def latest_push_delivery_status(user_id: int) -> str:
     row = cur.fetchone()
     conn.close()
     return str(dict(row or {}).get("status") or "")
+
+
+def active_push_subscription_count(user_id: int) -> int:
+    conn = bot.db()
+    conn.row_factory = bot.sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) AS total FROM push_subscriptions WHERE user_id=? AND COALESCE(is_active, active, 1)=1",
+        (int(user_id),),
+    )
+    total = int(dict(cur.fetchone() or {}).get("total") or 0)
+    conn.close()
+    return total
 
 
 def main() -> None:
@@ -139,6 +154,7 @@ def main() -> None:
         expect(data.get("conversationId") == conversation_id and data.get("messageId"), "conversation and message ids included", str(data))
         expect(data.get("senderId") == SENDER_ID and data.get("type") == "message", "sender and type included", str(data))
         expect(data.get("deepLink") == f"/pulse/messages/{conversation_id}", "exact conversation deep link included", str(data))
+        expect(bool(data.get("push_trace_id")), "push trace id included in provider payload", str(data))
 
         posts.clear()
         muted_until = (datetime.now(UTC) + timedelta(minutes=10)).isoformat(timespec="seconds")
@@ -174,13 +190,18 @@ def main() -> None:
         cur.execute("DELETE FROM push_subscriptions WHERE user_id=?", (RECEIVER_ID,))
         conn.commit()
         conn.close()
-        push_service.save_subscription(RECEIVER_ID, {"endpoint": INVALID_TOKEN, "expo_push_token": INVALID_TOKEN, "token": INVALID_TOKEN}, "Audit Invalid", "native", "Expo")
+        notification_service.save_pulse_device(RECEIVER_ID, {"endpoint": INVALID_TOKEN, "provider": "expo", "token": INVALID_TOKEN, "subscription": {"expo_push_token": INVALID_TOKEN}, "device_type": "native"}, "Audit Invalid")
         invalid = push_service.send_push(RECEIVER_ID, "Invalid audit", "Invalid token audit", {"type": "message", "conversationId": conversation_id}, push_type="message")
         expect(invalid.get("invalidated") == 1, "invalid Expo token is deactivated", str(invalid))
+        notification_service.save_pulse_device(RECEIVER_ID, {"endpoint": RECEIVER_TOKEN, "provider": "expo", "token": RECEIVER_TOKEN, "subscription": {"expo_push_token": RECEIVER_TOKEN}, "device_type": "native"}, "Audit Receiver")
+        expect(active_push_subscription_count(RECEIVER_ID) == 1, "receiver token active before unsubscribe")
+        unsubscribed = notification_service.unsubscribe_push(RECEIVER_ID, RECEIVER_TOKEN)
+        expect(unsubscribed.get("updated") == 1, "endpoint unsubscribe updates push_subscriptions", str(unsubscribed))
+        expect(active_push_subscription_count(RECEIVER_ID) == 0, "endpoint unsubscribe clears active delivery eligibility")
     finally:
         push_service.requests.post = original_post
 
-    print("PASS: runtime Messenger push delivery, deep links, suppression, private previews, and invalid-token cleanup verified.")
+    print("PASS: runtime Messenger push delivery, trace metadata, deep links, suppression, private previews, invalid-token cleanup, and unsubscribe cleanup verified.")
 
 
 if __name__ == "__main__":

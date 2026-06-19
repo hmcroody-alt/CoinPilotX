@@ -437,9 +437,14 @@ def create_pulse_notification(
 ):
     if not user_id:
         return {"ok": False, "message": "User required."}
+    metadata = metadata or {}
     existing_id = _recent_duplicate(user_id, note_type, entity_type, entity_id, deep_link, body)
     if existing_id:
         _log_pulse_delivery(existing_id, user_id, "in_app", "pulse", "duplicate_suppressed", {"dedupe": True}, "")
+        logging.info(
+            "PUSH_TRACE stage=notification_duplicate %s",
+            json.dumps({"user_id": int(user_id or 0), "notification_id": int(existing_id or 0), "note_type": note_type, "entity_type": entity_type, "entity_id": entity_id, "push_trace_id": metadata.get("push_trace_id")}, default=str, sort_keys=True)[:1200],
+        )
         return {"ok": True, "notification_id": existing_id, "duplicate_suppressed": True}
     conn = user_context.connect()
     cur = conn.cursor()
@@ -462,10 +467,10 @@ def create_pulse_notification(
             str(deep_link or "/pulse")[:700],
             str(deep_link or "/pulse")[:700],
             str(delivery_status or "created")[:60],
-            json.dumps(metadata or {})[:4000],
-            now,
-        ),
-    )
+                json.dumps(metadata)[:4000],
+                now,
+            ),
+        )
     notification_id = cur.lastrowid
     cur.execute(
         """
@@ -477,6 +482,24 @@ def create_pulse_notification(
     )
     conn.commit()
     conn.close()
+    logging.info(
+        "PUSH_TRACE stage=notification_created %s",
+        json.dumps(
+            {
+                "user_id": int(user_id or 0),
+                "actor_user_id": int(actor_user_id or 0),
+                "notification_id": int(notification_id or 0),
+                "note_type": note_type,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "deep_link": deep_link,
+                "push_trace_id": metadata.get("push_trace_id"),
+                "suppress_push": bool(metadata.get("suppress_push")),
+            },
+            default=str,
+            sort_keys=True,
+        )[:1600],
+    )
     push_result = {"status": "skipped"}
     try:
         category = _pulse_category(note_type)
@@ -495,9 +518,9 @@ def create_pulse_notification(
             )
         elif defaults.get("push"):
             push_metadata = {
-                **(metadata or {}),
+                **metadata,
                 "url": deep_link or "/pulse",
-                "deepLink": (metadata or {}).get("deepLink") or (metadata or {}).get("deep_link") or deep_link or "/pulse",
+                "deepLink": metadata.get("deepLink") or metadata.get("deep_link") or deep_link or "/pulse",
                 "type": note_type,
                 "push_type": category,
                 "notification_id": int(notification_id),
@@ -520,6 +543,23 @@ def create_pulse_notification(
             )
     except Exception as exc:
         logging.warning("PULSE_PUSH_DELIVERY_FAILED notification_id=%s user_id=%s error=%s", notification_id, user_id, type(exc).__name__)
+    logging.info(
+        "PUSH_TRACE stage=notification_push_result %s",
+        json.dumps(
+            {
+                "user_id": int(user_id or 0),
+                "notification_id": int(notification_id or 0),
+                "note_type": note_type,
+                "push_trace_id": metadata.get("push_trace_id") or push_result.get("trace_id"),
+                "push_status": push_result.get("status"),
+                "push_ok": bool(push_result.get("ok")),
+                "sent": push_result.get("sent"),
+                "invalidated": push_result.get("invalidated"),
+            },
+            default=str,
+            sort_keys=True,
+        )[:1600],
+    )
     return {"ok": True, "notification_id": notification_id, "push": push_result}
 
 
@@ -769,6 +809,21 @@ def save_pulse_device(user_id, subscription, user_agent=""):
     )
     conn.commit()
     conn.close()
+    logging.info(
+        "PUSH_TRACE stage=device_registered %s",
+        json.dumps(
+            {
+                "user_id": int(user_id or 0),
+                "provider": provider,
+                "device_type": device_type,
+                "endpoint_hash": push_service._endpoint_hash(endpoint),
+                "subscription_ok": bool(result.get("ok")),
+                "subscription_status": result.get("status") or ("ok" if result.get("ok") else "failed"),
+            },
+            default=str,
+            sort_keys=True,
+        )[:1200],
+    )
     return result
 
 
@@ -1222,13 +1277,32 @@ def unsubscribe_push(user_id, endpoint=""):
     conn = user_context.connect()
     cur = conn.cursor()
     if endpoint:
-        cur.execute("UPDATE push_subscriptions SET active=0, updated_at=? WHERE user_id=? AND endpoint=?", (_now(), user_id, endpoint))
+        cur.execute("UPDATE push_subscriptions SET active=0, is_active=0, updated_at=? WHERE user_id=? AND endpoint=?", (_now(), user_id, endpoint))
+        subscription_changed = cur.rowcount
+        cur.execute("UPDATE pulse_notification_devices SET active=0, updated_at=? WHERE user_id=? AND endpoint=?", (_now(), user_id, endpoint))
+        device_changed = cur.rowcount
     else:
-        cur.execute("UPDATE push_subscriptions SET active=0, updated_at=? WHERE user_id=?", (_now(), user_id))
-    changed = cur.rowcount
+        cur.execute("UPDATE push_subscriptions SET active=0, is_active=0, updated_at=? WHERE user_id=?", (_now(), user_id))
+        subscription_changed = cur.rowcount
+        cur.execute("UPDATE pulse_notification_devices SET active=0, updated_at=? WHERE user_id=?", (_now(), user_id))
+        device_changed = cur.rowcount
     conn.commit()
     conn.close()
-    return {"ok": True, "updated": changed}
+    logging.info(
+        "PUSH_TRACE stage=device_unsubscribed %s",
+        json.dumps(
+            {
+                "user_id": int(user_id or 0),
+                "endpoint_hash": push_service._endpoint_hash(endpoint),
+                "subscription_updated": int(subscription_changed or 0),
+                "device_updated": int(device_changed or 0),
+                "all_devices": not bool(endpoint),
+            },
+            default=str,
+            sort_keys=True,
+        )[:1200],
+    )
+    return {"ok": True, "updated": subscription_changed, "devices_updated": device_changed}
 
 
 def send_in_app_notification(user_id, title, message, notification_type="general", metadata=None):

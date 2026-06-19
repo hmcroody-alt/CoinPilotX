@@ -996,8 +996,23 @@ def _validate_message_media_ids(cur, user_id: int, conversation_id: int, media_i
 def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: dict) -> dict:
     results = {"notifications": "skipped", "realtime": "skipped"}
     realtime_payloads: list[dict] = []
+    push_trace_id = _trace()
     try:
         recipient_ids = [uid for uid in _participant_ids_for_side_effects(conversation_id) if int(uid) != int(user_id)]
+        logging.info(
+            "PUSH_TRACE stage=message_side_effects_start %s",
+            json.dumps(
+                {
+                    "push_trace_id": push_trace_id,
+                    "sender_user_id": int(user_id or 0),
+                    "conversation_id": int(conversation_id or 0),
+                    "message_id": int(message.get("id") or 0),
+                    "recipient_count": len(recipient_ids),
+                },
+                default=str,
+                sort_keys=True,
+            )[:1200],
+        )
         if recipient_ids:
             from services import notification_service
 
@@ -1017,6 +1032,21 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
                 finally:
                     policy_conn.close()
                 if policy.get("skip"):
+                    logging.info(
+                        "PUSH_TRACE stage=recipient_skipped %s",
+                        json.dumps(
+                            {
+                                "push_trace_id": push_trace_id,
+                                "recipient_user_id": int(recipient_id),
+                                "sender_user_id": int(user_id or 0),
+                                "conversation_id": int(conversation_id or 0),
+                                "message_id": int(message.get("id") or 0),
+                                "reason": policy.get("reason"),
+                            },
+                            default=str,
+                            sort_keys=True,
+                        )[:1200],
+                    )
                     continue
                 recipient_message = _side_effect_message_payload(int(recipient_id), int(message.get("id") or 0)) or message
                 message_id = int(message.get("id") or 0)
@@ -1046,7 +1076,25 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
                     "privacy_preview_hidden": bool(hide_preview),
                     "suppress_push": bool(policy.get("suppress_push")),
                     "push_policy": policy.get("reason") or "deliver",
+                    "push_trace_id": push_trace_id,
                 }
+                logging.info(
+                    "PUSH_TRACE stage=recipient_policy %s",
+                    json.dumps(
+                        {
+                            "push_trace_id": push_trace_id,
+                            "recipient_user_id": int(recipient_id),
+                            "sender_user_id": int(user_id or 0),
+                            "conversation_id": int(conversation_id or 0),
+                            "message_id": message_id,
+                            "policy": policy.get("reason") or "deliver",
+                            "suppress_push": bool(policy.get("suppress_push")),
+                            "privacy_preview_hidden": bool(hide_preview),
+                        },
+                        default=str,
+                        sort_keys=True,
+                    )[:1200],
+                )
                 note = notification_service.create_pulse_notification(
                     int(recipient_id),
                     note_type="voice_message" if message.get("message_type") == "voice" else "message",

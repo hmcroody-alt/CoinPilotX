@@ -40,7 +40,7 @@ def main() -> None:
     require(notifications, 'suppress_push = bool((metadata or {}).get("suppress_push"))', "audited push suppression")
     require(notifications, '"Push suppressed by notification policy."', "push suppression delivery log")
     require(push, 'channel_id = "messages"', "Expo messages channel selection")
-    require(push, '"sound": "default"', "Expo sound")
+    require(push, 'PUSH_DEFAULT_SOUND', "configurable Expo sound")
     require(push, '"priority": "high"', "Expo high priority")
     require(push, '"ttl": 3600', "Expo TTL")
     require(push, 'f"/pulse/messages/{conversation_id}"', "push service PulseSoc conversation route")
