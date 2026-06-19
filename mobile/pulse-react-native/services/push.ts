@@ -161,7 +161,7 @@ function normalizeNotificationData(payload: Record<string, unknown>) {
   const conversationId = stringValue(payload.conversationId || payload.conversation_id);
   const messageId = stringValue(payload.messageId || payload.message_id);
   const senderId = stringValue(payload.senderId || payload.sender_id);
-  const url = stringValue(payload.url || payload.deep_link || payload.target_url) || (conversationId ? `/messages/${conversationId}` : "/pulse/notifications");
+  const url = stringValue(payload.deepLink || payload.deep_link || payload.url || payload.target_url) || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications");
   return {
     ...payload,
     url,

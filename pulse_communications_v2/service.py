@@ -276,6 +276,7 @@ def _ensure_columns(bot, cur, conn) -> None:
         ("user_id", "INTEGER"),
         ("presence_privacy", "TEXT DEFAULT 'everyone'"),
         ("read_receipts_enabled", "INTEGER DEFAULT 1"),
+        ("message_preview_privacy", "TEXT DEFAULT 'show'"),
         ("updated_at", "TEXT"),
     ], conn=conn)
     add(cur, "comm_v2_presence", [
@@ -383,10 +384,11 @@ def _settings(cur, user_id: int) -> dict:
     cur.execute("SELECT * FROM comm_v2_user_settings WHERE user_id=? LIMIT 1", (int(user_id),))
     row = _row(cur.fetchone())
     if not row:
-        return {"presence_privacy": "everyone", "read_receipts_enabled": 1}
+        return {"presence_privacy": "everyone", "read_receipts_enabled": 1, "message_preview_privacy": "show"}
     return {
         "presence_privacy": row.get("presence_privacy") or "everyone",
         "read_receipts_enabled": 1 if int(row.get("read_receipts_enabled") or 0) else 0,
+        "message_preview_privacy": row.get("message_preview_privacy") or "show",
     }
 
 
@@ -452,6 +454,53 @@ def _blocked_between(cur, user_id: int, other_ids: list[int]) -> bool:
         (int(user_id), *ids, int(user_id), *ids),
     )
     return cur.fetchone() is not None
+
+
+def _parse_dt(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _participant_push_policy(cur, recipient_id: int, sender_id: int, conversation_id: int) -> dict:
+    if _blocked_between(cur, int(recipient_id), [int(sender_id)]):
+        return {"skip": True, "suppress_push": True, "reason": "blocked"}
+    cur.execute(
+        """
+        SELECT muted_until, notifications_level, last_seen_at, last_read_at
+        FROM comm_v2_participants
+        WHERE conversation_id=? AND user_id=? AND membership_state='active' AND COALESCE(left_at,'')=''
+        LIMIT 1
+        """,
+        (int(conversation_id), int(recipient_id)),
+    )
+    participant = _row(cur.fetchone())
+    if not participant:
+        return {"skip": True, "suppress_push": True, "reason": "not_participant"}
+    level = str(participant.get("notifications_level") or "all").lower()
+    now_dt = datetime.now(timezone.utc)
+    muted_until = _parse_dt(participant.get("muted_until"))
+    if level in {"none", "off", "muted", "silent"} or (muted_until and muted_until > now_dt):
+        return {"skip": False, "suppress_push": True, "reason": "muted"}
+    seen_at = _parse_dt(participant.get("last_seen_at"))
+    read_at = _parse_dt(participant.get("last_read_at"))
+    if seen_at and read_at and (now_dt - seen_at).total_seconds() <= 25 and (now_dt - read_at).total_seconds() <= 25:
+        return {"skip": False, "suppress_push": True, "reason": "active_chat"}
+    return {"skip": False, "suppress_push": False, "reason": "deliver"}
+
+
+def _message_preview_hidden(cur, user_id: int) -> bool:
+    value = str(_settings(cur, int(user_id)).get("message_preview_privacy") or "show").lower()
+    return value in {"hide", "hidden", "private", "generic", "off"}
 
 
 def _conversation_access(cur, user_id: int, conversation_ref: int | str, join_public: bool = False) -> tuple[dict, str]:
@@ -952,38 +1001,82 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
         if recipient_ids:
             from services import notification_service
 
+            sender_name = "PulseSoc"
+            policy_conn, policy_cur = _open_db()
+            try:
+                sender = _user_summary(policy_cur, int(user_id))
+                sender_name = sender.get("display_name") or "PulseSoc"
+            finally:
+                policy_conn.close()
             preview = _safe_preview(message.get("body") or "", message.get("message_type") or "")
             for recipient_id in recipient_ids[:25]:
+                policy_conn, policy_cur = _open_db()
+                try:
+                    policy = _participant_push_policy(policy_cur, int(recipient_id), int(user_id), int(conversation_id))
+                    hide_preview = _message_preview_hidden(policy_cur, int(recipient_id))
+                finally:
+                    policy_conn.close()
+                if policy.get("skip"):
+                    continue
                 recipient_message = _side_effect_message_payload(int(recipient_id), int(message.get("id") or 0)) or message
+                message_id = int(message.get("id") or 0)
+                deep_link = f"/pulse/messages/{int(conversation_id)}"
+                mobile_deep_link = f"pulse://messages/{int(conversation_id)}"
+                title = sender_name if not hide_preview else "New message"
+                body = preview[:220] if not hide_preview else "Open PulseSoc to view."
+                push_metadata = {
+                    "conversation_id": int(conversation_id),
+                    "conversationId": int(conversation_id),
+                    "message_id": message_id,
+                    "messageId": message_id,
+                    "sender_id": int(user_id),
+                    "senderId": int(user_id),
+                    "sender_name": sender_name,
+                    "message_preview": preview[:220],
+                    "preview_text": preview[:220],
+                    "type": "message",
+                    "push_type": "chat_message",
+                    "channel_id": "messages",
+                    "channelId": "messages",
+                    "url": deep_link,
+                    "deepLink": deep_link,
+                    "deep_link": deep_link,
+                    "target_url": deep_link,
+                    "mobile_deep_link": mobile_deep_link,
+                    "privacy_preview_hidden": bool(hide_preview),
+                    "suppress_push": bool(policy.get("suppress_push")),
+                    "push_policy": policy.get("reason") or "deliver",
+                }
                 note = notification_service.create_pulse_notification(
                     int(recipient_id),
                     note_type="voice_message" if message.get("message_type") == "voice" else "message",
-                    title="New Pulse message",
-                    body=preview[:220],
+                    title=title,
+                    body=body,
                     actor_user_id=int(user_id),
                     entity_type="comm_v2_message",
-                    entity_id=int(message.get("id") or 0),
-                    deep_link=f"/pulse/messages-v2?conversation={int(conversation_id)}",
-                    metadata={"conversation_id": int(conversation_id), "message_id": int(message.get("id") or 0)},
+                    entity_id=message_id,
+                    deep_link=deep_link,
+                    metadata=push_metadata,
                 )
                 unread = notification_service.pulse_unread_count(int(recipient_id))
                 realtime_payloads.append({
                     "recipient_user_id": int(recipient_id),
                     "conversation_id": int(conversation_id),
-                    "message_id": int(message.get("id") or 0),
+                    "message_id": message_id,
                     "sender_user_id": int(user_id),
                     "message": recipient_message,
                     "notification": {
                         "id": int(note.get("notification_id") or 0),
                         "type": "voice_message" if message.get("message_type") == "voice" else "message",
                         "category": "messages",
-                        "title": "New Pulse message",
-                        "body": preview[:220],
-                        "deep_link": f"/pulse/messages-v2?conversation={int(conversation_id)}",
-                        "target_url": f"/pulse/messages-v2?conversation={int(conversation_id)}",
+                        "title": title,
+                        "body": body,
+                        "deep_link": deep_link,
+                        "target_url": deep_link,
                         "read": False,
                         "status": "unread",
                         "created_at": _now(),
+                        "push_policy": policy.get("reason") or "deliver",
                     },
                     "unread_count": int(unread.get("unread_count") or unread.get("count") or 0),
                     "conversation": _side_effect_conversation_payload(int(recipient_id), int(conversation_id)),
@@ -1771,22 +1864,25 @@ def update_settings(user_id: int, payload: dict | None = None) -> dict:
     if privacy not in {"everyone", "contacts", "nobody"}:
         return _err("Choose a valid presence privacy setting.", 400, "invalid_presence_privacy")
     read_receipts_enabled = 1 if payload.get("read_receipts_enabled", payload.get("read_receipts", True)) not in {False, 0, "0", "false", "off", "no"} else 0
+    preview_privacy = _clean(payload.get("message_preview_privacy") or payload.get("message_previews") or "show", 20).lower()
+    if preview_privacy not in {"show", "hide"}:
+        return _err("Choose a valid message preview privacy setting.", 400, "invalid_message_preview_privacy")
     conn, cur = _open_db()
     try:
         now = _now()
         cur.execute(
             """
-            INSERT OR IGNORE INTO comm_v2_user_settings (user_id, presence_privacy, read_receipts_enabled, updated_at)
-            VALUES (?, ?, ?, ?)
+            INSERT OR IGNORE INTO comm_v2_user_settings (user_id, presence_privacy, read_receipts_enabled, message_preview_privacy, updated_at)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (int(user_id), privacy, read_receipts_enabled, now),
+            (int(user_id), privacy, read_receipts_enabled, preview_privacy, now),
         )
         cur.execute(
-            "UPDATE comm_v2_user_settings SET presence_privacy=?, read_receipts_enabled=?, updated_at=? WHERE user_id=?",
-            (privacy, read_receipts_enabled, now, int(user_id)),
+            "UPDATE comm_v2_user_settings SET presence_privacy=?, read_receipts_enabled=?, message_preview_privacy=?, updated_at=? WHERE user_id=?",
+            (privacy, read_receipts_enabled, preview_privacy, now, int(user_id)),
         )
         conn.commit()
-        return _ok({"settings": {"presence_privacy": privacy, "read_receipts_enabled": bool(read_receipts_enabled)}}, "Communication settings saved.")
+        return _ok({"settings": {"presence_privacy": privacy, "read_receipts_enabled": bool(read_receipts_enabled), "message_preview_privacy": preview_privacy}}, "Communication settings saved.")
     finally:
         conn.close()
 
@@ -1802,6 +1898,7 @@ def get_settings(user_id: int) -> dict:
             "settings": {
                 "presence_privacy": settings.get("presence_privacy") or "everyone",
                 "read_receipts_enabled": bool(settings.get("read_receipts_enabled", 1)),
+                "message_preview_privacy": settings.get("message_preview_privacy") or "show",
             }
         })
     finally:

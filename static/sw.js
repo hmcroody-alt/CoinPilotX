@@ -156,15 +156,20 @@ self.addEventListener("push", (event) => {
   } catch (error) {
     payload = { title: "PulseSoc Alert", body: event.data ? event.data.text() : "New intelligence alert." };
   }
+  const data = payload.data || {};
+  const conversationId = data.conversationId || data.conversation_id || payload.conversationId || payload.conversation_id;
+  const targetUrl = data.deepLink || data.deep_link || data.url || payload.deepLink || payload.deep_link || payload.url || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications");
   const title = payload.title || "PulseSoc Alert";
   const options = {
     body: payload.body || payload.message || "New PulseSoc intelligence update.",
     icon: payload.icon || "/static/brand/pulsesoc-icon-192-20260606.png",
     badge: payload.badge || "/static/brand/pulsesoc-icon-192-20260606.png",
     vibrate: payload.vibrate || [200, 100, 200],
-    data: payload.data || { url: payload.url || "/pulse/notifications" },
-    tag: payload.tag || "coinpilotxai-alert",
+    data: { ...data, url: targetUrl, deepLink: targetUrl },
+    tag: payload.tag || (conversationId ? `pulsesoc-message-${conversationId}` : "coinpilotxai-alert"),
     renotify: payload.renotify !== false,
+    silent: payload.silent === true ? true : false,
+    timestamp: payload.timestamp || Date.now(),
     actions: payload.actions || [
       { action: "open", title: "Open Alerts" },
       { action: "dismiss", title: "Dismiss" }
@@ -176,7 +181,9 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   if (event.action === "dismiss") return;
-  const url = (event.notification.data && event.notification.data.url) || "/pulse/notifications";
+  const data = event.notification.data || {};
+  const conversationId = data.conversationId || data.conversation_id;
+  const url = data.deepLink || data.deep_link || data.url || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications");
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {

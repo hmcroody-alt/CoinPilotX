@@ -216,6 +216,7 @@ COMM_V2_TABLES: tuple[TableSpec, ...] = (
             user_id INTEGER PRIMARY KEY,
             presence_privacy TEXT DEFAULT 'everyone',
             read_receipts_enabled INTEGER DEFAULT 1,
+            message_preview_privacy TEXT DEFAULT 'show',
             updated_at TEXT
         )
         """,

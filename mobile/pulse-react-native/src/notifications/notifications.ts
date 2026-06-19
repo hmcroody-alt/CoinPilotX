@@ -58,7 +58,7 @@ export function bindNotificationRouting() {
   return Notifications.addNotificationResponseReceivedListener(response => {
     const data = response.notification.request.content.data || {};
     const conversationId = data.conversationId || data.conversation_id;
-    const url = response.notification.request.content.data?.url || (conversationId ? `/messages/${conversationId}` : "");
+    const url = data.deepLink || data.deep_link || data.url || (conversationId ? `/pulse/messages/${conversationId}` : "");
     if (typeof url === "string" && url.length > 0) {
       Linking.openURL(url).catch(() => undefined);
     }

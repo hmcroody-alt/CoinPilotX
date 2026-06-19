@@ -481,10 +481,23 @@ def create_pulse_notification(
     try:
         category = _pulse_category(note_type)
         defaults = PULSE_NOTIFICATION_CATEGORIES.get(category, PULSE_NOTIFICATION_CATEGORIES.get("messages", {}))
-        if defaults.get("push"):
+        suppress_push = bool((metadata or {}).get("suppress_push"))
+        if suppress_push:
+            push_result = {"ok": True, "status": "skipped", "message": "Push suppressed by notification policy."}
+            _log_pulse_delivery(
+                notification_id,
+                user_id,
+                "push",
+                "web_expo_push",
+                "skipped",
+                push_result,
+                push_result["message"],
+            )
+        elif defaults.get("push"):
             push_metadata = {
                 **(metadata or {}),
                 "url": deep_link or "/pulse",
+                "deepLink": (metadata or {}).get("deepLink") or (metadata or {}).get("deep_link") or deep_link or "/pulse",
                 "type": note_type,
                 "push_type": category,
                 "notification_id": int(notification_id),

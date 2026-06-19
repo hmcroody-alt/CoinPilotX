@@ -8,7 +8,7 @@ import { EXPO_PROJECT_ID } from "./config";
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
-    shouldPlaySound: false,
+    shouldPlaySound: true,
     shouldSetBadge: true
   })
 });
@@ -27,7 +27,18 @@ export async function registerForPushNotifications() {
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync("default", {
       name: "Pulse",
-      importance: Notifications.AndroidImportance.DEFAULT
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: "default",
+      enableVibrate: true,
+      vibrationPattern: [0, 250, 250, 250]
+    });
+    await Notifications.setNotificationChannelAsync("messages", {
+      name: "Messages",
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: "default",
+      enableVibrate: true,
+      vibrationPattern: [0, 250, 250, 250],
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC
     });
   }
 
@@ -46,7 +57,9 @@ export async function registerForPushNotifications() {
 
 export function wireNotificationLinks() {
   return Notifications.addNotificationResponseReceivedListener(response => {
-    const url = response.notification.request.content.data?.url;
+    const data = response.notification.request.content.data || {};
+    const conversationId = data.conversationId || data.conversation_id;
+    const url = data.deepLink || data.deep_link || data.url || (conversationId ? `/pulse/messages/${conversationId}` : "");
     if (typeof url === "string" && url.length > 0) {
       Linking.openURL(url).catch(() => undefined);
     }

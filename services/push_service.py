@@ -59,11 +59,13 @@ def save_subscription(user_id, subscription, user_agent="", device_type="", brow
 def _payload(title, body, data=None, push_type="general"):
     data = data or {}
     conversation_id = data.get("conversationId") or data.get("conversation_id")
-    url = data.get("url") or {
+    deep_link = data.get("deepLink") or data.get("deep_link") or data.get("target_url")
+    url = data.get("url") or deep_link or {
         "arena_invite": "/arena",
-        "private_message": f"/messages/{conversation_id}" if conversation_id else "/messages",
-        "chat_message": f"/messages/{conversation_id}" if conversation_id else "/messages",
-        "message": f"/messages/{conversation_id}" if conversation_id else "/messages",
+        "private_message": f"/pulse/messages/{conversation_id}" if conversation_id else "/pulse/messages",
+        "chat_message": f"/pulse/messages/{conversation_id}" if conversation_id else "/pulse/messages",
+        "message": f"/pulse/messages/{conversation_id}" if conversation_id else "/pulse/messages",
+        "voice_message": f"/pulse/messages/{conversation_id}" if conversation_id else "/pulse/messages",
         "market_alert": "/alerts",
         "AI_briefing": "/chat",
         "quest_complete": "/arena/quests",
@@ -76,10 +78,10 @@ def _payload(title, body, data=None, push_type="general"):
     return {
         "title": title[:120],
         "body": body[:240],
-        "tag": f"coinpilotxai-{push_type}",
+        "tag": f"pulsesoc-message-{conversation_id}" if conversation_id and push_type in {"private_message", "chat_message", "message", "voice_message"} else f"coinpilotxai-{push_type}",
         "renotify": push_type in {"arena_invite", "scam_warning", "private_message", "chat_message", "message", "market_alert"},
         "vibrate": [200, 100, 200],
-        "data": {"url": url, "push_type": push_type, **data},
+        "data": {"url": url, "deepLink": deep_link or url, "push_type": push_type, **data},
         "actions": [{"action": "open", "title": "Open"}, {"action": "dismiss", "title": "Dismiss"}],
     }
 
