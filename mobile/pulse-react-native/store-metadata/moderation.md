@@ -14,8 +14,13 @@ PulseSoc includes user-generated posts, comments, reels, videos, statuses, messa
 
 ## Store Review Notes
 
-Before submission, verify report/block flows on native and web surfaces. If a native screen does not expose a report/block action yet, reviewers should be directed to the web support path only for the first internal builds, not production release.
+Before submission, attach a physical-device screen recording in App Review Information Notes that shows:
+
+- Terms/EULA agreement before registration or login.
+- A visible Report action on user-generated content.
+- A visible Block action on user-generated content.
+- Block removes the blocked creator's visible content from the user's feed and opens a moderation report.
 
 ## Launch Gate
 
-Production store submission should wait until native report/block entry points are visible from content detail screens or the app is clearly scoped to read-only/internal testing.
+Production store submission is allowed only after report/block flows are visible, wired to real moderation records, and verified with an App Review screen recording. Moderation must act on objectionable-content reports within 24 hours by removing violating content and restricting, suspending, or ejecting offending users when required.

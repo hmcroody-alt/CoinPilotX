@@ -42,4 +42,23 @@ CoinPilotXAI Inc.
 
 ## Review Notes
 
-PulseSoc includes user-generated posts, media, comments, messages, and notifications. Moderation, reporting, privacy controls, and support contact paths are available through PulseSoc.com. Test account details must be added in App Store Connect before review.
+This update addresses App Review Guideline 4, Guideline 1.2, and Guideline 3.1.1 feedback from PulseSoc iOS version 1.0 review.
+
+PulseSoc includes user-generated posts, media, comments, messages, notifications, profiles, statuses, marketplace/community surfaces, and live/video surfaces.
+
+User-generated content safety:
+- Users must agree to the PulseSoc Terms, Privacy Policy, and no-tolerance rules for objectionable content and abusive users before registering or logging in.
+- The Terms state that PulseSoc has no tolerance for objectionable content or abusive users.
+- Post menus include Report and Block actions. Report sends the content to moderation. Block creates a block record, creates an open moderation report, and removes that creator's visible posts from the user's feed.
+- PulseSoc moderation acts on objectionable-content reports within 24 hours by removing violating content and restricting, suspending, or ejecting offending users when required.
+
+Premium and payments:
+- The iOS native build does not present Stripe checkout or external billing for paid digital content.
+- Premium purchase surfaces are disabled in native iOS context until Apple in-app purchase products are implemented and approved.
+
+Device support:
+- The next review build is iPhone-only. iPad support is disabled until a dedicated iPad layout passes QA for all supported iPad screen sizes.
+
+App Review Information required before resubmission:
+- Add valid demo login credentials in App Store Connect.
+- Attach a physical-device screen recording showing the Terms/EULA before signup/login, the Report action, and the Block action.

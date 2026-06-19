@@ -783,14 +783,13 @@
       ["Save post", { savePost: post.id }],
       ["Copy link", { copyPost: postUrl(post) }],
       ["Share", { postShare: postUrl(post) }],
-      ["Not interested", { notInterested: post.id }],
       ["Report", { reportPost: post.id }],
     ];
     if (author?.public_player_id) {
-      items.push(["Mute user", { muteUser: author.public_player_id }], ["Block user", { blockUser: author.public_player_id }]);
+      items.push(["Block user", { blockUser: author.public_player_id }]);
     }
     if (post.can_delete) {
-      items.push(["Edit", { editPost: post.id }], ["Delete", { deletePost: post.id }]);
+      items.push(["Delete", { deletePost: post.id }]);
     }
     items.forEach(([label, attrs]) => {
       const button = element("button", "", label);
@@ -946,6 +945,7 @@
     card.dataset.postId = post.id;
     card.dataset.postType = post.post_type || kind;
     card.dataset.mediaKind = kind;
+    if (author.public_player_id) card.dataset.authorPublicPlayerId = author.public_player_id;
 
     const media = renderMedia(post, mediaItems);
     if (kind === "video" && media) {
@@ -2006,8 +2006,23 @@
       }
       return;
     }
-    const softAction = event.target.closest("[data-not-interested],[data-mute-user],[data-block-user],[data-edit-post]");
-    if (softAction) return toast("This menu action is queued for moderation tools.");
+    const block = event.target.closest("[data-block-user]");
+    if (block && block.dataset.blockUser) {
+      if (!confirm("Block this PulseSoc user? Their posts will be removed from your feed and sent to moderation.")) return;
+      try {
+        const data = await api("/api/pulse/block", {
+          method: "POST",
+          body: JSON.stringify({ public_player_id: block.dataset.blockUser, reason: "Blocked from PulseSoc feed" }),
+        });
+        document.querySelectorAll("[data-author-public-player-id]").forEach(node => {
+          if (node.dataset.authorPublicPlayerId === block.dataset.blockUser) node.remove();
+        });
+        toast(data.message || "User blocked.");
+      } catch (error) {
+        toast(error.message);
+      }
+      return;
+    }
     const del = event.target.closest("[data-delete-post]");
     if (del) {
       if (!confirm("Delete this PulseSoc post?")) return;
