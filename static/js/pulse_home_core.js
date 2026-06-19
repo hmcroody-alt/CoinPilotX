@@ -65,6 +65,11 @@
     duration: document.getElementById("pulseStatusDuration"),
     progress: document.querySelector("#pulseStatusForm [data-upload-progress]"),
     modePicker: document.querySelector("[data-status-mode-picker]"),
+    toolsets: document.querySelectorAll("[data-status-toolset]"),
+    modeButtons: document.querySelectorAll("[data-status-mode-button]"),
+    captionLabel: document.querySelector("[data-status-caption-label]"),
+    publishPrivacy: document.querySelector("[data-status-publish-privacy]"),
+    publishDuration: document.querySelector("[data-status-publish-duration]"),
     rail: document.querySelector("[data-status-strip]"),
     empty: document.querySelector("[data-status-empty]"),
     file: null,
@@ -105,17 +110,11 @@
       statusUi.mediaInput.removeAttribute("capture");
     }
     if (statusUi.soundInput) statusUi.soundInput.value = "";
-    if (statusUi.mode) statusUi.mode.value = "image";
+    if (statusUi.mode) statusUi.mode.value = "text";
     if (statusUi.body) statusUi.body.value = "";
-    if (statusUi.preview) {
-      statusUi.preview.textContent = "";
-      const placeholder = element("span", "", "Choose a status type to preview it here.");
-      const overlays = element("div", "", "");
-      overlays.dataset.statusOverlays = "";
-      statusUi.preview.append(placeholder, overlays);
-    }
+    statusSetMode("text", { focus: false, clearFile: false });
     statusSetState("");
-    statusRenderProgress("idle", 0, "Choose a status type to begin.");
+    statusRenderProgress("idle", 0, "Status studio ready.");
   }
 
   function statusOpenCreator(showPicker = true) {
@@ -123,9 +122,9 @@
     statusUi.modal.classList.add("open");
     statusUi.modal.setAttribute("aria-hidden", "false");
     document.body.classList.add("status-editor-open");
-    statusUi.modePicker?.classList.toggle("is-hidden", !showPicker);
-    statusUi.form.classList.toggle("is-choosing", !!showPicker);
-    statusRenderProgress("idle", 0, showPicker ? "Choose photo, video, camera, or text." : "Status draft ready.");
+    statusUi.form.classList.toggle("is-choosing", false);
+    if (showPicker) statusSetMode("text", { focus: false, clearFile: false });
+    statusRenderProgress("idle", 0, showPicker ? "Status studio ready." : "Status draft ready.");
   }
 
   function statusCloseCreator() {
@@ -135,27 +134,100 @@
     statusResetObjectUrl();
   }
 
+  function statusPrivacyLabel() {
+    const selected = statusUi.privacy?.selectedOptions?.[0]?.textContent || "🌎 Public";
+    return selected.trim();
+  }
+
+  function statusDurationLabel() {
+    const selected = statusUi.duration?.selectedOptions?.[0]?.textContent || "⏱ 24h";
+    return selected.trim();
+  }
+
+  function statusSyncPills() {
+    if (statusUi.publishPrivacy) statusUi.publishPrivacy.textContent = statusPrivacyLabel();
+    if (statusUi.publishDuration) statusUi.publishDuration.textContent = statusDurationLabel();
+  }
+
+  function statusSetMode(mode = "text", options = {}) {
+    const normalized = mode === "upload" || mode === "camera" || mode === "image" || mode === "video" ? "media" : mode;
+    if (!statusUi.form) return;
+    statusUi.form.dataset.statusStudioMode = normalized;
+    statusUi.form.classList.toggle("is-mode-text", normalized === "text");
+    statusUi.form.classList.toggle("is-mode-media", normalized === "media");
+    statusUi.form.classList.toggle("is-mode-live", normalized === "live");
+    statusUi.modeButtons?.forEach(button => {
+      const active = button.dataset.statusModeButton === normalized;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    statusUi.toolsets?.forEach(toolset => {
+      toolset.hidden = toolset.dataset.statusToolset !== normalized;
+    });
+    if (statusUi.mode) {
+      if (normalized === "text") statusUi.mode.value = "text";
+      if (normalized === "media") statusUi.mode.value = statusUi.file && String(statusUi.file.type || "").startsWith("video/") ? "video" : "image";
+      if (normalized === "live") statusUi.mode.value = "live";
+    }
+    if (statusUi.captionLabel) statusUi.captionLabel.textContent = normalized === "live" ? "Live title or description" : normalized === "media" ? "Caption" : "Text";
+    if (options.clearFile && normalized !== "media") {
+      statusUi.file = null;
+      if (statusUi.mediaInput) statusUi.mediaInput.value = "";
+      statusResetObjectUrl();
+    }
+    statusRenderLivePreview();
+    if (options.focus !== false) statusUi.body?.focus();
+    statusSyncPills();
+  }
+
+  function statusRenderLivePreview() {
+    if (!statusUi.preview) return;
+    const mode = statusUi.form?.dataset.statusStudioMode || "text";
+    const text = (statusUi.body?.value || "").trim();
+    if (mode === "media" && statusUi.file) {
+      statusRenderPreview();
+      return;
+    }
+    statusUi.preview.textContent = "";
+    const card = element("div", mode === "live" ? "pulse-status-preview-starter live-story" : "pulse-status-preview-starter text-story", "");
+    const title = element("strong", "", mode === "live" ? (text || "PulseSoc Live") : (text || "PulseSoc Status"));
+    const meta = element("span", "", mode === "live" ? `${statusPrivacyLabel()} · ${statusDurationLabel()} · Live ready` : text ? `${statusPrivacyLabel()} · ${statusDurationLabel()}` : "Start typing to shape the signal.");
+    card.append(title, meta);
+    const overlays = element("div", "", "");
+    overlays.dataset.statusOverlays = "";
+    statusUi.preview.append(card, overlays);
+  }
+
   function statusTextMode() {
     statusOpenCreator(false);
-    if (statusUi.mode) statusUi.mode.value = "text";
-    if (statusUi.preview) {
-      statusUi.preview.textContent = "";
-      const wrap = element("div", "pulse-ai-story-preview text-story", "");
-      wrap.append(element("strong", "", "Text Status"), element("small", "", "Write your update, choose privacy, then post."));
-      statusUi.preview.appendChild(wrap);
-    }
-    statusUi.body?.focus();
+    statusSetMode("text", { clearFile: true });
     statusSetState("Text status selected.", "info");
     statusRenderProgress("starting", 1, "Text status ready.");
   }
 
   function statusPickMedia(capture = false) {
     statusOpenCreator(false);
-    if (statusUi.mode) statusUi.mode.value = "image";
+    statusSetMode("media", { focus: false });
     if (capture) statusUi.mediaInput?.setAttribute("capture", "environment");
     else statusUi.mediaInput?.removeAttribute("capture");
     statusRenderProgress("idle", 0, capture ? "Open your camera or choose a recent capture." : "Choose an image or video from your gallery.");
     statusUi.mediaInput?.click();
+  }
+
+  function statusLiveMode() {
+    statusOpenCreator(false);
+    statusSetMode("live");
+    statusSetState("Live tools ready. Go Live or schedule from this studio.", "info");
+    statusRenderProgress("idle", 0, "Live preview ready.");
+  }
+
+  function statusValidateFile(file) {
+    if (!file) return true;
+    const allowed = /^(image\/(jpeg|png|webp|gif)|video\/(mp4|webm|quicktime))$/i;
+    const maxBytes = String(file.type || "").startsWith("video/") ? 250 * 1024 * 1024 : 25 * 1024 * 1024;
+    if (!allowed.test(file.type || "")) throw new Error("Choose a supported image or video file.");
+    if (file.size > maxBytes) throw new Error("That file is too large for Status.");
+    return true;
   }
 
   function statusRenderPreview() {
@@ -165,6 +237,7 @@
     const isVideo = String(file.type || "").startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(file.name || "");
     statusUi.objectUrl = URL.createObjectURL(file);
     statusUi.preview.textContent = "";
+    const wrap = element("div", "pulse-status2-media-preview", "");
     const media = document.createElement(isVideo ? "video" : "img");
     media.src = statusUi.objectUrl;
     if (isVideo) {
@@ -178,7 +251,11 @@
       media.decoding = "async";
       if (statusUi.mode) statusUi.mode.value = "image";
     }
-    statusUi.preview.appendChild(media);
+    wrap.appendChild(media);
+    const caption = (statusUi.body?.value || "").trim();
+    if (caption) wrap.appendChild(element("strong", "", caption));
+    wrap.appendChild(element("span", "pulse-status2-preview-label", `${isVideo ? "Video" : "Photo"} preview · ${statusPrivacyLabel()} · ${statusDurationLabel()}`));
+    statusUi.preview.appendChild(wrap);
     statusRenderProgress("starting", 1, `Ready to publish ${file.name || "media"}.`);
   }
 
@@ -280,6 +357,10 @@
     if (statusUi.publishing) return;
     const text = (statusUi.body?.value || "").trim();
     const mode = statusUi.mode?.value || "image";
+    if (mode === "live" && !text && !statusUi.file) {
+      location.href = "/pulse/live";
+      return;
+    }
     if (!text && !statusUi.file) {
       statusSetState("Add text, a photo, or a video before posting.", "error");
       statusUi.body?.focus();
@@ -292,6 +373,7 @@
       statusSetState("Posting Status...", "info");
       const mediaIds = [];
       if (statusUi.file) {
+        statusValidateFile(statusUi.file);
         const formData = new FormData();
         formData.append("file", statusUi.file);
         formData.append("context_type", "pulse_status");
@@ -356,11 +438,17 @@
       if (starter) {
         const mode = starter.dataset.statusStart || "";
         if (mode === "text") statusTextMode();
+        else if (mode === "media") {
+          statusOpenCreator(false);
+          statusSetMode("media", { focus: false });
+          statusRenderProgress("idle", 0, "Choose Camera or Gallery.");
+        }
         else if (mode === "upload") statusPickMedia(false);
         else if (mode === "camera") statusPickMedia(true);
-        else if (mode === "music" || mode === "ai" || mode === "live") {
+        else if (mode === "live") statusLiveMode();
+        else if (mode === "music" || mode === "ai") {
           statusOpenCreator(false);
-          if (statusUi.mode) statusUi.mode.value = mode;
+          statusSetMode(mode === "music" ? "media" : "text");
           statusUi.body?.focus();
           statusSetState(`${mode === "ai" ? "AI Story" : mode.charAt(0).toUpperCase() + mode.slice(1)} Status tools are being prepared. Add text, photo, or video to post today.`, "info");
         }
@@ -373,13 +461,55 @@
         event.stopImmediatePropagation();
         statusCloseCreator();
         statusClearDraft();
+        return;
+      }
+      const tool = event.target.closest("[data-status-tool]");
+      if (tool) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const name = tool.dataset.statusTool || "";
+        if (name === "music") statusSetState("Choose music from the sound panel below.", "info");
+        if (name === "filters") document.querySelector("[data-status-effects-tray]")?.classList.toggle("open");
+        if (name === "mention") {
+          statusUi.body.value = `${statusUi.body.value || ""}${statusUi.body.value ? " " : ""}@`;
+          statusUi.body.focus();
+          statusRenderLivePreview();
+        }
+        if (name === "links") {
+          statusUi.body.value = `${statusUi.body.value || ""}${statusUi.body.value ? "\n" : ""}https://`;
+          statusUi.body.focus();
+          statusRenderLivePreview();
+        }
+        if (name === "ai") statusSetState("AI Assist is ready. Refine wording, hashtags, or caption before posting.", "info");
+        return;
+      }
+      const liveAction = event.target.closest("[data-status-live-action]");
+      if (liveAction) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const action = liveAction.dataset.statusLiveAction || "go";
+        location.href = action === "schedule" ? "/pulse/live/schedule" : action === "event" ? "/pulse/live/events/new" : "/pulse/live";
       }
     }, true);
     statusUi.mediaInput?.addEventListener("change", event => {
       statusUi.mediaInput?.removeAttribute("capture");
       statusUi.file = event.target.files?.[0] || null;
-      if (statusUi.file) statusRenderPreview();
+      try {
+        if (statusUi.file) {
+          statusValidateFile(statusUi.file);
+          statusSetMode("media", { focus: false });
+          statusRenderPreview();
+        }
+      } catch (error) {
+        statusUi.file = null;
+        if (statusUi.mediaInput) statusUi.mediaInput.value = "";
+        statusSetState(error.message || "Unsupported Status media.", "error");
+        statusRenderProgress("failed", 0, error.message || "Unsupported Status media.");
+      }
     });
+    statusUi.body?.addEventListener("input", statusRenderLivePreview);
+    statusUi.privacy?.addEventListener("change", statusRenderLivePreview);
+    statusUi.duration?.addEventListener("change", statusRenderLivePreview);
     statusUi.form.addEventListener("submit", statusPublish);
     const params = new URLSearchParams(location.search);
     if (params.has("create_status")) {
