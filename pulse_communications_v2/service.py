@@ -108,11 +108,46 @@ def _safe_preview(value: Any = "", message_type: str = "", fallback: str = "") -
     return text
 
 
+def _message_security_classification(body: str) -> dict:
+    text = _clean(body, 4000)
+    if not text:
+        return {"risky": False, "score": 0, "severity": "Low", "reasons": [], "link_scan": {"urls_detected": 0, "domains": [], "flags": []}, "keyword_hits": []}
+    try:
+        from services.command_center_worker import security_engine
+
+        scored = security_engine.score_event("phishing_link", {"body": text, "message": text})
+        return {
+            "risky": int(scored.get("score") or 0) >= 50 or bool(scored.get("reasons")),
+            "score": int(scored.get("score") or 0),
+            "severity": scored.get("severity") or "Low",
+            "reasons": scored.get("reasons") or [],
+            "link_scan": scored.get("link_scan") or {"urls_detected": 0, "domains": [], "flags": []},
+            "keyword_hits": scored.get("keyword_hits") or [],
+        }
+    except Exception:
+        lowered = text.lower()
+        suspicious = any(token in lowered for token in ("connect wallet", "seed phrase", "claim airdrop", "verify wallet", "urgent login"))
+        suspicious = suspicious or bool(re.search(r"https?://[^\s]+(?:walletconnect|airdrop|verify|signin|password|bonus|giveaway)", lowered))
+        return {"risky": suspicious, "score": 76 if suspicious else 0, "severity": "High" if suspicious else "Low", "reasons": ["suspicious_link"] if suspicious else [], "link_scan": {"urls_detected": len(re.findall(r"https?://", text)), "domains": [], "flags": []}, "keyword_hits": []}
+
+
 def _json_loads(value: str | None, fallback: Any = None) -> Any:
     try:
         return json.loads(value or "")
     except Exception:
         return fallback
+
+
+def _safe_int_list(values: Any) -> list[int]:
+    out: list[int] = []
+    for item in values or []:
+        try:
+            value = int(item or 0)
+        except Exception:
+            continue
+        if value:
+            out.append(value)
+    return out
 
 
 def _row(row) -> dict:
@@ -785,8 +820,20 @@ def create_conversation(user_id: int, payload: dict | None = None) -> dict:
             cur.execute("SELECT * FROM comm_v2_conversations WHERE direct_key=? AND COALESCE(deleted_at,'')='' LIMIT 1", (direct_key,))
             existing = _row(cur.fetchone())
             if existing:
+                conversation_id = int(existing["id"])
+                _add_participant(cur, conversation_id, int(user_id), "member")
+                _add_participant(cur, conversation_id, target_id, "member")
+                cur.execute(
+                    """
+                    UPDATE comm_v2_conversations
+                    SET status='active', updated_at=?, last_activity_at=COALESCE(NULLIF(last_activity_at,''), ?)
+                    WHERE id=?
+                    """,
+                    (now, now, conversation_id),
+                )
                 conn.commit()
-                return _ok({"conversation": _conversation_payload(cur, existing, user_id), "conversation_id": int(existing["id"])}, "Direct message ready.")
+                cur.execute("SELECT * FROM comm_v2_conversations WHERE id=? LIMIT 1", (conversation_id,))
+                return _ok({"conversation": _conversation_payload(cur, _row(cur.fetchone()), user_id), "conversation_id": conversation_id}, "Direct message ready.")
             cur.execute(
                 """
                 INSERT INTO comm_v2_conversations
@@ -873,14 +920,16 @@ def list_conversations(user_id: int, filters: dict | None = None) -> dict:
             SELECT c.*
             FROM comm_v2_conversations c
             LEFT JOIN comm_v2_participants p ON p.conversation_id=c.id AND p.user_id=? AND p.membership_state='active' AND COALESCE(p.left_at,'')=''
+            LEFT JOIN comm_v2_participants mine_any ON mine_any.conversation_id=c.id AND mine_any.user_id=?
             WHERE COALESCE(c.deleted_at,'')='' AND c.status='active'
+              AND COALESCE(mine_any.membership_state,'')!='archived'
               AND (p.id IS NOT NULL OR (c.conversation_type='room' AND c.privacy='public' AND c.is_discoverable=1))
               {type_clause}
             ORDER BY CASE WHEN COALESCE(p.pinned_at,'')!='' THEN 0 ELSE 1 END,
                      COALESCE(p.pinned_at,c.last_activity_at,c.updated_at,c.created_at) DESC, c.id DESC
             LIMIT 120
             """,
-            tuple(params),
+            tuple([int(user_id), *params]),
         )
         items = _conversation_payloads(cur, [_row(row) for row in cur.fetchall()], user_id)
         return _ok({"items": items, "conversations": items})
@@ -980,8 +1029,33 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
         message = _message_payload(cur, _row(cur.fetchone()), user_id)
         if attachments:
             message["attachments"] = attachments
+        security_classification = _message_security_classification(body)
+        if security_classification.get("risky"):
+            message["pulse_shield"] = {
+                "flagged": True,
+                "severity": security_classification.get("severity") or "High",
+                "score": int(security_classification.get("score") or 0),
+                "reasons": security_classification.get("reasons") or [],
+            }
         step = "commit"
         conn.commit()
+        if security_classification.get("risky"):
+            _dispatch_command_center_async(
+                "enqueue_security_event",
+                {
+                    "event_type": "phishing_link",
+                    "user_id": int(user_id),
+                    "actor_id": int(user_id),
+                    "payload": {
+                        "surface": "messages",
+                        "conversation_id": conversation_id,
+                        "message_id": message_id,
+                        "body_preview": _safe_preview(body, "text", "")[:240],
+                        "classification": security_classification,
+                    },
+                },
+                idempotency_key=f"message-shield-{conversation_id}-{message_id}",
+            )
         _dispatch_command_center_async(
             "enqueue_message_event",
             "message_created",
@@ -1602,6 +1676,8 @@ def _message_payload(cur, message: dict, viewer_user_id: int) -> dict:
             reply_type = reply.get("message_type") or "text"
             reply_preview = {"id": int(reply.get("id") or 0), "sender": _user_summary(cur, int(reply.get("sender_user_id") or 0)), "body": _safe_preview(reply.get("body") or "", reply_type), "message_type": reply_type}
     message_type = message.get("message_type") or "text"
+    metadata = _json_loads(message.get("metadata_json"), {}) or {}
+    pinned_by = _safe_int_list(metadata.get("pinned_by_user_ids"))
     return {
         "id": message_id,
         "public_id": message.get("public_id") or "",
@@ -1623,6 +1699,7 @@ def _message_payload(cur, message: dict, viewer_user_id: int) -> dict:
         "updated_at": message.get("updated_at") or "",
         "edited_at": message.get("edited_at") or "",
         "is_edited": bool(message.get("edited_at")),
+        "pinned": int(viewer_user_id) in pinned_by,
     }
 
 
@@ -1703,6 +1780,8 @@ def _message_payloads(cur, message_rows: list[dict], viewer_user_id: int) -> lis
         if reply_preview:
             reply_preview = {**reply_preview, "sender": sender_map.get(int(reply_preview.get("sender_user_id") or 0), {"display_name": f"Member {reply_preview.get('sender_user_id')}"})}
         message_type = message.get("message_type") or "text"
+        metadata = _json_loads(message.get("metadata_json"), {}) or {}
+        pinned_by = _safe_int_list(metadata.get("pinned_by_user_ids"))
         out.append({
             "id": message_id,
             "public_id": message.get("public_id") or "",
@@ -1729,6 +1808,7 @@ def _message_payloads(cur, message_rows: list[dict], viewer_user_id: int) -> lis
             "updated_at": message.get("updated_at") or "",
             "edited_at": message.get("edited_at") or "",
             "is_edited": bool(message.get("edited_at")),
+            "pinned": int(viewer_user_id) in pinned_by,
         })
     return out
 
@@ -2045,6 +2125,58 @@ def mark_unread(user_id: int, conversation_ref: int | str) -> dict:
         )
         conn.commit()
         return _ok({"conversation_id": conversation_id, "unread_count": 1, "message": "Chat marked unread."})
+    finally:
+        conn.close()
+
+
+def toggle_mute(user_id: int, conversation_ref: int | str, minutes: int = 8 * 60) -> dict:
+    disabled = _disabled("toggle_mute")
+    if disabled:
+        return disabled
+    conn, cur = _open_db()
+    try:
+        conversation, access = _conversation_access(cur, user_id, conversation_ref)
+        if access != "ok":
+            return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403)
+        conversation_id = int(conversation["id"])
+        cur.execute("SELECT muted_until, notifications_level FROM comm_v2_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, int(user_id)))
+        participant = _row(cur.fetchone())
+        currently_muted = bool(participant.get("muted_until") and str(participant.get("muted_until")) > _now()) or str(participant.get("notifications_level") or "").lower() in {"none", "off", "muted", "silent"}
+        now_dt = datetime.now(timezone.utc)
+        muted_until = "" if currently_muted else (now_dt + timedelta(minutes=max(5, min(int(minutes or 480), 60 * 24 * 30)))).isoformat(timespec="seconds")
+        now = _now()
+        cur.execute(
+            "UPDATE comm_v2_participants SET muted_until=?, notifications_level=?, updated_at=? WHERE conversation_id=? AND user_id=?",
+            (muted_until, "all" if currently_muted else "muted", now, conversation_id, int(user_id)),
+        )
+        conn.commit()
+        muted = not currently_muted
+        return _ok({"conversation_id": conversation_id, "muted": muted, "muted_until": muted_until}, "Conversation muted." if muted else "Conversation unmuted.")
+    finally:
+        conn.close()
+
+
+def archive_conversation(user_id: int, conversation_ref: int | str) -> dict:
+    disabled = _disabled("archive_conversation")
+    if disabled:
+        return disabled
+    conn, cur = _open_db()
+    try:
+        conversation, access = _conversation_access(cur, user_id, conversation_ref)
+        if access != "ok":
+            return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403)
+        conversation_id = int(conversation["id"])
+        now = _now()
+        cur.execute(
+            """
+            UPDATE comm_v2_participants
+            SET membership_state='archived', unread_count=0, left_at='', updated_at=?
+            WHERE conversation_id=? AND user_id=?
+            """,
+            (now, conversation_id, int(user_id)),
+        )
+        conn.commit()
+        return _ok({"conversation_id": conversation_id, "archived": True}, "Conversation archived.")
     finally:
         conn.close()
 
@@ -2393,6 +2525,36 @@ def delete_message(user_id: int, message_id: int, delete_for: str = "self") -> d
             {"delete_for": scope, "deleted_at": now},
         )
         return _ok({"message_id": int(message_id), "delete_for": scope}, "Message deleted.")
+    finally:
+        conn.close()
+
+
+def toggle_message_pin(user_id: int, message_id: int) -> dict:
+    disabled = _disabled("toggle_message_pin")
+    if disabled:
+        return disabled
+    conn, cur = _open_db()
+    try:
+        cur.execute("SELECT * FROM comm_v2_messages WHERE id=? AND COALESCE(deleted_at,'')='' LIMIT 1", (int(message_id),))
+        message = _row(cur.fetchone())
+        if not message:
+            return _err("Message not found.", 404, "not_found")
+        conversation, access = _conversation_access(cur, user_id, int(message["conversation_id"]))
+        if access != "ok":
+            return _err("You do not have access to this message.", 403, "forbidden")
+        metadata = _json_loads(message.get("metadata_json"), {}) or {}
+        pinned_by = set(_safe_int_list(metadata.get("pinned_by_user_ids")))
+        pinned = int(user_id) not in pinned_by
+        if pinned:
+            pinned_by.add(int(user_id))
+        else:
+            pinned_by.discard(int(user_id))
+        metadata["pinned_by_user_ids"] = sorted(pinned_by)
+        metadata["pinned_updated_at"] = _now()
+        cur.execute("UPDATE comm_v2_messages SET metadata_json=?, updated_at=? WHERE id=?", (json.dumps(metadata, default=str)[:4000], _now(), int(message_id)))
+        conn.commit()
+        cur.execute("SELECT * FROM comm_v2_messages WHERE id=? LIMIT 1", (int(message_id),))
+        return _ok({"message": _message_payload(cur, _row(cur.fetchone()), user_id), "pinned": pinned}, "Message pinned." if pinned else "Message unpinned.")
     finally:
         conn.close()
 

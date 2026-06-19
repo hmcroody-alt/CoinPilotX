@@ -1,6 +1,13 @@
 (() => {
   const API = "/api/pulse/communications/v2";
   const INITIAL_MESSAGE_LIMIT = 40;
+  const el = (sel) => document.querySelector(sel);
+  const root = el(".comm-shell");
+  const currentUserId = Number(root?.dataset.currentUserId || 0);
+  const list = el("[data-conversations]");
+  const messages = el("[data-messages]");
+  const status = el("[data-status]");
+  const mobileQuery = window.matchMedia("(max-width: 768px)");
   const state = {
     conversations: [],
     conversationCache: new Map(),
@@ -15,7 +22,7 @@
     replyTo: null,
     searchTimer: 0,
     groupSearchTimer: 0,
-    filter: "chats",
+    filter: "all",
     hasOlder: false,
     oldestMessageId: 0,
     loadingThread: false,
@@ -58,15 +65,9 @@
     realtimeTimer: 0,
     realtimePolling: false,
     realtimeBound: false,
+    realtimeConnected: false,
     tabChannel: "BroadcastChannel" in window ? new BroadcastChannel("pulse-comm-v2") : null,
   };
-  const el = (sel) => document.querySelector(sel);
-  const root = el(".comm-shell");
-  const currentUserId = Number(root?.dataset.currentUserId || 0);
-  const list = el("[data-conversations]");
-  const messages = el("[data-messages]");
-  const status = el("[data-status]");
-  const mobileQuery = window.matchMedia("(max-width: 768px)");
 
   function isMobile() {
     return mobileQuery.matches;
@@ -185,6 +186,72 @@
     return fallback;
   }
 
+  function typeLabel(type) {
+    const value = String(type || "").toLowerCase();
+    if (value === "direct") return "Direct";
+    if (value === "group") return "Group";
+    if (value === "room") return "Room";
+    if (value === "community_channel") return "Room";
+    return value || "Chat";
+  }
+
+  function riskScan(text) {
+    const value = String(text || "");
+    const matches = value.match(/https?:\/\/[^\s<>"')]+/gi) || [];
+    const shorteners = new Set(["bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "buff.ly", "cutt.ly", "rebrand.ly", "shorturl.at"]);
+    const suspiciousWords = ["airdrop", "connect wallet", "seed phrase", "verify wallet", "claim reward", "urgent login", "reset your password", "gift card"];
+    const urls = [];
+    let score = 0;
+    matches.forEach((raw) => {
+      try {
+        const url = new URL(raw);
+        const domain = url.hostname.toLowerCase().replace(/^www\./, "");
+        const compact = `${domain}${url.pathname}`.toLowerCase();
+        const flags = [];
+        if (shorteners.has(domain)) flags.push("shortened link");
+        if (/(login|verify|secure|wallet)[-.][a-z0-9-]+\.(ru|top|xyz|info|click|live)$/i.test(domain)) flags.push("suspicious domain");
+        if (/(walletconnect|metamask|airdrop|bonus|giveaway|claim|verify|signin|password)/i.test(compact)) flags.push("phishing pattern");
+        score += flags.length * 35;
+        urls.push({ raw, href: url.href, domain, flags });
+      } catch (_) {}
+    });
+    suspiciousWords.forEach((word) => {
+      if (value.toLowerCase().includes(word)) score += 14;
+    });
+    return { risky: score >= 35, score: Math.min(100, score), urls };
+  }
+
+  function linkifiedMessageHtml(text) {
+    const value = String(text || "");
+    const scan = riskScan(value);
+    const parts = [];
+    let last = 0;
+    const regex = /https?:\/\/[^\s<>"')]+/gi;
+    let match;
+    while ((match = regex.exec(value))) {
+      parts.push(escapeHtml(value.slice(last, match.index)));
+      const raw = match[0];
+      let href = "";
+      let domain = "";
+      let risky = scan.risky;
+      try {
+        const url = new URL(raw);
+        href = url.href;
+        domain = url.hostname.replace(/^www\./, "");
+        const item = scan.urls.find((entry) => entry.raw === raw);
+        risky = risky || Boolean(item?.flags?.length);
+      } catch (_) {
+        href = "";
+      }
+      parts.push(href
+        ? `<a href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer" data-shield-link="${risky ? "risky" : "safe"}" data-link-domain="${escapeAttr(domain)}">${escapeHtml(raw)}</a>`
+        : escapeHtml(raw));
+      last = regex.lastIndex;
+    }
+    parts.push(escapeHtml(value.slice(last)));
+    return parts.join("");
+  }
+
   function containsLocalPath(value) {
     const text = String(value || "");
     return /(?:^|[\s"'(])(?:file:\/\/)?(?:\/Users\/|\/home\/|\/var\/|\/private\/|\/tmp\/|[A-Za-z]:\\|\\\\)[^\s"'<>]+/i.test(text)
@@ -217,13 +284,44 @@
     return state.conversations.filter((item) => {
       const matchesQuery = !query || `${item.title || ""} ${item.conversation_type || ""} ${conversationPreview(item)}`.toLowerCase().includes(query);
       const type = String(item.conversation_type || "direct");
-      const matchesFilter = state.filter === "groups"
-        ? type === "group"
-        : state.filter === "calls"
-          ? type === "call"
-          : type !== "group" && type !== "call";
+      const unread = Number(item.unread_count || 0) > 0;
+      const matchesFilter = state.filter === "direct"
+        ? type === "direct"
+        : state.filter === "groups"
+          ? type === "group"
+          : state.filter === "rooms"
+            ? type === "room" || type === "community_channel"
+            : state.filter === "unread"
+              ? unread
+              : true;
       return matchesQuery && matchesFilter;
     });
+  }
+
+  function renderRealtimeStatus() {
+    const target = el("[data-realtime-status]");
+    if (!target) return;
+    const connected = Boolean(state.realtimeConnected);
+    target.dataset.state = connected ? "connected" : "fallback";
+    target.innerHTML = `<span aria-hidden="true"></span>${connected ? "Realtime live" : "Secure fallback"}`;
+  }
+
+  function renderPulseAICard() {
+    const target = el("[data-pulse-ai-card]");
+    if (!target) return;
+    if (!state.aiEnabled) {
+      target.hidden = true;
+      target.innerHTML = "";
+      return;
+    }
+    target.hidden = false;
+    target.innerHTML = `
+      <button class="pulse-ai-card" type="button" data-ai-summary>
+        <span class="pulse-ai-avatar" aria-hidden="true">AI</span>
+        <span><strong>Pulse AI Assistant <em>Ready</em></strong><small>Summaries and smart replies unlock inside active chats.</small></span>
+        <span class="ai-online">Live</span>
+      </button>
+    `;
   }
 
   function renderActiveRail() {
@@ -241,14 +339,12 @@
           </button>
         `;
       }).join("");
-    rail.innerHTML = `
-      <a class="active-person active-ai" href="/pulse/assistant" data-pulse-ai title="Open Pulse AI">
+    rail.innerHTML = `${state.aiEnabled ? `
+      <button class="active-person active-ai" type="button" data-ai-summary title="Pulse AI">
         <span class="active-avatar pulse-ai-avatar" aria-hidden="true">AI</span>
         <span>Pulse AI</span>
         <b>AI</b>
-      </a>
-      ${activeContacts}
-    `;
+      </button>` : ""}${activeContacts}`;
   }
 
   function renderPinnedConversations() {
@@ -268,15 +364,21 @@
 
   function renderConversations() {
     if (!list) return;
+    renderRealtimeStatus();
+    renderPulseAICard();
     renderActiveRail();
     const filtered = filteredConversations();
     renderPinnedConversations();
-    if (state.filter === "calls") {
-      list.innerHTML = `<div class="empty-state">No call history yet. Voice and video calls will appear here when calling is enabled for this deployment.</div>`;
-      return;
-    }
     if (!filtered.length) {
-      const empty = state.filter === "groups" ? "No groups yet. Create a group to bring people together." : "No conversations yet. Start a DM, create a group, or open a room.";
+      const empty = state.filter === "groups"
+        ? "No groups yet. Create a group to bring people together."
+        : state.filter === "rooms"
+          ? "No rooms yet. Open or create a room when you are ready."
+          : state.filter === "unread"
+            ? "No unread chats. You are caught up."
+            : state.filter === "direct"
+              ? "No direct messages yet. Start a DM from New Chat."
+              : "No conversations yet. Start a DM, create a group, or open a room.";
       list.innerHTML = `<div class="empty-state">${empty}</div>`;
       return;
     }
@@ -293,7 +395,7 @@
         <span class="conversation-main">
           <strong>${escapeHtml(item.title || "Untitled chat")}${item.verified ? ` <span class="verified-mark" title="Verified">✓</span>` : ""}${item.pinned ? ` <span class="pin-mark" title="Pinned">&#9679;</span>` : ""}</strong>
           <small class="${typingNames.length ? "is-typing" : ""}">${escapeHtml(preview)}</small>
-          <span class="conversation-state">${item.muted ? "Muted" : item.pinned ? "Pinned" : escapeHtml(item.conversation_type || "chat")}</span>
+          <span class="conversation-state">${item.muted ? "Muted" : item.pinned ? "Pinned" : escapeHtml(typeLabel(item.conversation_type || "chat"))}</span>
         </span>
         <span class="conversation-meta"><time>${escapeHtml(shortTime(item.last_message_at || item.last_activity_at || item.updated_at || item.created_at))}</time>${Number(item.unread_count || 0) ? `<span class="badge">${Number(item.unread_count)}</span>` : `<span class="delivery-mark" aria-label="Read">&#10003;</span>`}</span>
       </article>
@@ -306,6 +408,8 @@
     const item = state.conversationCache.get(state.actionConversationId);
     const pin = sheet?.querySelector('[data-conversation-action="pin"]');
     if (pin) pin.textContent = item?.pinned ? "Unpin chat" : "Pin chat";
+    const mute = sheet?.querySelector('[data-conversation-action="mute"]');
+    if (mute) mute.textContent = item?.muted ? "Unmute conversation" : "Mute conversation";
     if (sheet) sheet.hidden = false;
   }
 
@@ -337,6 +441,25 @@
       const data = await api(`/conversations/${id}/unread`, { method: "POST", body: "{}" }, "mark_unread");
       item.unread_count = Number(data.unread_count || 1);
       renderConversations();
+    } else if (action === "mute") {
+      const data = await api(`/conversations/${id}/mute`, { method: "POST", body: "{}" }, "mute_conversation");
+      item.muted = Boolean(data.muted);
+      setStatus(data.message || (item.muted ? "Conversation muted." : "Conversation unmuted."));
+      renderConversations();
+    } else if (action === "archive") {
+      await api(`/conversations/${id}/archive`, { method: "POST", body: "{}" }, "archive_conversation");
+      state.conversations = state.conversations.filter((conversation) => Number(conversation.conversation_id) !== id);
+      state.conversationCache.delete(id);
+      if (state.active && Number(state.active.conversation_id) === id) {
+        state.active = null;
+        state.messages = [];
+        state.members = [];
+        setMobileMode("list");
+      }
+      setStatus("Conversation archived.");
+      renderConversations();
+      renderMessages();
+      renderMembers();
     }
     closeConversationActions();
   }
@@ -474,6 +597,7 @@
   function messageHtml(item) {
     const mine = Number(item.sender_user_id || 0) === currentUserId || item.is_mine;
     const attachments = (item.attachments || []).map(attachmentHtml).join("");
+    const shield = riskScan(item.body || "");
     const reactionLabels = { heart: "❤️", fire: "🔥", check: "✓" };
     const reactionKeys = { "❤️": "heart", "♥️": "heart", "🔥": "fire", "✓": "check", "✅": "check", heart: "heart", fire: "fire", check: "check" };
     const normalizeReaction = value => reactionKeys[String(value || "").trim()] || String(value || "").trim();
@@ -485,15 +609,17 @@
     const reactionSummary = summaryEntries.filter(([reaction, count]) => reaction && Number(count || 0) > 0).map(([reaction, count]) => `<span>${escapeHtml(reactionLabels[normalizeReaction(reaction)] || reaction)} ${Number(count || 0)}</span>`).join("");
     const reply = item.reply_preview ? `<button class="reply-preview" type="button" data-jump-message="${Number(item.reply_preview.id || 0)}">Replying to ${escapeHtml(item.reply_preview.sender?.display_name || "message")}: ${escapeHtml(item.reply_preview.body || item.reply_preview.message_type || "")}</button>` : "";
     return `
-      <article class="message ${mine ? "is-mine" : ""}" data-message-id="${item.id}">
+      <article class="message ${mine ? "is-mine" : ""} ${item.pinned ? "is-pinned" : ""}" data-message-id="${item.id}">
+        ${item.pinned ? `<span class="message-pin-badge">Pinned</span>` : ""}
         ${!mine ? `<strong>${escapeHtml(item.sender?.display_name || "PulseSoc member")}</strong>` : ""}
         ${reply}
-        ${item.body ? `<p>${escapeHtml(item.body)}</p>` : ""}
+        ${shield.risky ? `<div class="pulse-shield-warning" data-shield-score="${Number(shield.score || 0)}">Pulse Shield warning: suspicious link pattern detected. Review before opening.</div>` : ""}
+        ${item.body ? `<p>${linkifiedMessageHtml(item.body)}</p>` : ""}
         ${attachments ? `<div class="attachments">${attachments}</div>` : ""}
         ${reactionSummary ? `<div class="reaction-summary">${reactionSummary}</div>` : ""}
         <small class="message-meta"><time>${escapeHtml(shortTime(item.created_at))}</time>${item.is_edited ? " / Edited" : ""}${mine ? ` / ${escapeHtml(item.delivery_status || "sent")}` : ""}</small>
         <button class="message-menu-trigger" type="button" data-message-actions="${item.id}" aria-label="Message actions">...</button>
-        <div class="reaction-row" data-reaction-menu="${item.id}" hidden>${reactions}<button type="button" data-reply-message="${item.id}">Reply</button>${mine ? `<button type="button" data-edit-message="${item.id}">Edit</button><button type="button" data-delete-message="${item.id}" data-delete-for="everyone">Delete</button>` : `<button type="button" data-delete-message="${item.id}" data-delete-for="self">Remove</button>`}<button type="button" data-forward-message="${item.id}">Forward</button></div>
+        <div class="reaction-row" data-reaction-menu="${item.id}" hidden>${reactions}<button type="button" data-reply-message="${item.id}">Reply</button><button type="button" data-copy-message="${item.id}">Copy</button><button type="button" data-pin-message="${item.id}">${item.pinned ? "Unpin" : "Pin"}</button>${mine ? `<button type="button" data-edit-message="${item.id}">Edit</button><button type="button" data-delete-message="${item.id}" data-delete-for="everyone">Delete</button>` : `<button type="button" data-delete-message="${item.id}" data-delete-for="self">Remove</button>`}<button type="button" data-forward-message="${item.id}">Forward</button></div>
       </article>
     `;
   }
@@ -769,6 +895,14 @@
     if (state.realtimeBound) return;
     state.realtimeBound = true;
     if (window.PulseRealtime) {
+      window.PulseRealtime.on("connected", () => {
+        state.realtimeConnected = true;
+        renderRealtimeStatus();
+      });
+      window.PulseRealtime.on("reconnecting", () => {
+        state.realtimeConnected = false;
+        renderRealtimeStatus();
+      });
       window.PulseRealtime.on("message_notification", handleRealtimeEvent);
       window.PulseRealtime.on("notification_created", handleRealtimeEvent);
       window.PulseRealtime.on("message_created", handleRealtimeEvent);
@@ -803,6 +937,7 @@
     });
     pollRealtime();
     scheduleRealtimePoll(12000);
+    renderRealtimeStatus();
   }
 
   async function loadRooms() {
@@ -1275,6 +1410,14 @@
       if (!target) return;
       try {
         if (target.closest("[data-pulse-ai]")) return;
+        const shieldLink = target.closest("[data-shield-link]");
+        if (shieldLink && shieldLink.dataset.shieldLink === "risky") {
+          const domain = shieldLink.dataset.linkDomain || "this link";
+          if (!window.confirm(`Pulse Shield warning: ${domain} may be risky. Open it anyway?`)) {
+            event.preventDefault();
+            return;
+          }
+        }
         const actionTrigger = target.closest("[data-open-conversation-actions]");
         if (actionTrigger) return openConversationActions(actionTrigger.dataset.openConversationActions);
         if (target.closest("[data-close-conversation-actions]")) return closeConversationActions();
@@ -1328,6 +1471,15 @@
         if (target.closest("[data-open-new-room]")) return openModal("new-room");
         if (target.closest("[data-close-modal]")) return closeModals();
         if (target.closest("[data-toggle-details]")) return toggleDetails();
+        if (target.closest("[data-thread-mute]")) {
+          if (state.active?.conversation_id) {
+            state.actionConversationId = Number(state.active.conversation_id);
+            return await updateConversationPreference("mute");
+          }
+        }
+        if (target.closest("[data-thread-more]")) {
+          if (state.active?.conversation_id) return openConversationActions(state.active.conversation_id);
+        }
         if (target.closest("[data-ai-summary]")) return await runAIAction("summary");
         if (target.closest("[data-ai-replies]")) return await runAIAction("smart-replies");
         if (target.closest("[data-mobile-list]")) {
@@ -1382,6 +1534,10 @@
         if (react) return await reactToMessage(react.dataset.messageId, react.dataset.react);
         const reply = target.closest("[data-reply-message]");
         if (reply) return startReply(Number(reply.dataset.replyMessage || 0));
+        const copy = target.closest("[data-copy-message]");
+        if (copy) return await copyMessage(Number(copy.dataset.copyMessage || 0));
+        const pin = target.closest("[data-pin-message]");
+        if (pin) return await pinMessage(Number(pin.dataset.pinMessage || 0));
         const jump = target.closest("[data-jump-message]");
         if (jump) return jumpToMessage(Number(jump.dataset.jumpMessage || 0));
         const edit = target.closest("[data-edit-message]");
@@ -1407,11 +1563,37 @@
       renderConversations();
     });
     let pressTimer = 0;
+    let swipeMessage = null;
     document.addEventListener("pointerdown", (event) => {
+      const message = event.target instanceof Element ? event.target.closest("[data-message-id]") : null;
+      if (message && isMobile() && !event.target.closest("button,a,select,input")) {
+        swipeMessage = { id: Number(message.dataset.messageId || 0), startX: event.clientX, startY: event.clientY, node: message };
+      }
       const row = event.target instanceof Element ? event.target.closest("[data-conversation-row]") : null;
       if (!row || event.target.closest("button,a")) return;
       pressTimer = window.setTimeout(() => openConversationActions(row.dataset.conversationRow), 520);
     });
+    document.addEventListener("pointermove", (event) => {
+      if (!swipeMessage?.node) return;
+      const dx = event.clientX - swipeMessage.startX;
+      const dy = Math.abs(event.clientY - swipeMessage.startY);
+      if (dy > 28) return;
+      const offset = Math.max(-56, Math.min(56, dx));
+      swipeMessage.node.style.transform = `translateX(${offset}px)`;
+    }, { passive: true });
+    document.addEventListener("pointerup", (event) => {
+      if (swipeMessage?.node) {
+        const dx = event.clientX - swipeMessage.startX;
+        const dy = Math.abs(event.clientY - swipeMessage.startY);
+        swipeMessage.node.style.transform = "";
+        if (Math.abs(dx) > 54 && dy < 36) startReply(swipeMessage.id);
+      }
+      swipeMessage = null;
+    }, { passive: true });
+    document.addEventListener("pointercancel", () => {
+      if (swipeMessage?.node) swipeMessage.node.style.transform = "";
+      swipeMessage = null;
+    }, { passive: true });
     ["pointerup", "pointercancel", "pointermove"].forEach((type) => document.addEventListener(type, () => {
       window.clearTimeout(pressTimer);
       pressTimer = 0;
@@ -1798,6 +1980,36 @@
     state.replyTo = { id: Number(item.id), body: item.body || item.message_type || "attachment" };
     setStatus(`Replying to: ${state.replyTo.body}`);
     el("[data-message-input]")?.focus();
+  }
+
+  async function copyMessage(messageId) {
+    const item = state.messages.find((message) => Number(message.id) === Number(messageId));
+    const text = item?.body || "";
+    if (!text) return setStatus("This message has no text to copy.", "error");
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const scratch = document.createElement("textarea");
+      scratch.value = text;
+      scratch.style.position = "fixed";
+      scratch.style.opacity = "0";
+      document.body.appendChild(scratch);
+      scratch.select();
+      document.execCommand("copy");
+      scratch.remove();
+    }
+    setStatus("Message copied.");
+  }
+
+  async function pinMessage(messageId) {
+    const id = Number(messageId || 0);
+    if (!id) return;
+    const data = await api(`/messages/${id}/pin`, { method: "POST", body: "{}" }, "pin_message");
+    if (data.message) {
+      state.messages = state.messages.map((message) => Number(message.id) === id ? data.message : message);
+      renderMessages();
+      setStatus(data.pinned ? "Message pinned." : "Message unpinned.");
+    }
   }
 
   function jumpToMessage(messageId) {

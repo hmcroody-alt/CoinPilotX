@@ -5,15 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
   <title>PulseSoc Messages v2 | PulseSoc</title>
-  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=messages-sci-fi-inbox-20260618a">
+  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=command-center-chat-20260619a">
 </head>
 <body data-comm-v2-enabled="{{ 'true' if enabled else 'false' }}">
   <main class="comm-shell" data-current-user-id="{{ current_user.user_id }}" data-ai-enabled="{{ 'true' if ai_enabled else 'false' }}">
     <aside class="comm-list" aria-label="Conversations">
       <header class="comm-toolbar">
         <a class="icon-btn" href="/pulse" title="Back to PulseSoc" aria-label="Back to PulseSoc">&lt;</a>
-        <h1>Messages</h1>
+        <h1>Pulse Command</h1>
         <span class="comm-toolbar-spacer"></span>
+        <span class="realtime-status" data-realtime-status data-state="fallback"><span aria-hidden="true"></span>Secure fallback</span>
         <button class="icon-btn" type="button" data-open-new-chat title="New Chat" aria-label="Start a new chat">+</button>
       </header>
       <div class="comm-search-row">
@@ -25,14 +26,17 @@
         </label>
       </div>
       <section class="active-rail" aria-label="Active now" data-active-rail></section>
+      <section data-pulse-ai-card hidden></section>
       <section class="pinned-section" data-pinned-section hidden>
         <header><strong>Pinned</strong><button type="button" data-manage-pins>Manage</button></header>
         <div class="pinned-rail" data-pinned-conversations></div>
       </section>
       <div class="comm-filter" role="tablist" aria-label="Conversation type">
-        <button class="is-active" type="button" role="tab" aria-selected="true" data-filter="chats">Chats</button>
-        <button type="button" role="tab" aria-selected="false" data-filter="calls">Calls</button>
+        <button class="is-active" type="button" role="tab" aria-selected="true" data-filter="all">All</button>
+        <button type="button" role="tab" aria-selected="false" data-filter="direct">Direct</button>
         <button type="button" role="tab" aria-selected="false" data-filter="groups">Groups</button>
+        <button type="button" role="tab" aria-selected="false" data-filter="rooms">Rooms</button>
+        <button type="button" role="tab" aria-selected="false" data-filter="unread">Unread</button>
       </div>
       <div class="comm-actions" aria-label="Create chats">
         <button class="comm-action-card primary" type="button" data-open-new-chat><span class="action-icon">+</span><span><strong>New Chat</strong><small>Start a direct message</small></span></button>
@@ -47,9 +51,8 @@
     <div class="conversation-action-sheet" data-conversation-action-sheet hidden>
       <button type="button" data-conversation-action="pin">Pin chat</button>
       <button type="button" data-conversation-action="unread">Mark unread</button>
-      <button type="button" data-conversation-action="mute" disabled title="Backend support pending">Mute <small>Coming soon</small></button>
-      <button type="button" data-conversation-action="archive" disabled title="Backend support pending">Archive <small>Coming soon</small></button>
-      <button class="danger" type="button" data-conversation-action="delete" disabled title="Backend support pending">Delete <small>Coming soon</small></button>
+      <button type="button" data-conversation-action="mute">Mute conversation</button>
+      <button type="button" data-conversation-action="archive">Archive conversation</button>
       <button type="button" data-close-conversation-actions>Cancel</button>
     </div>
 
@@ -222,6 +225,6 @@
   <script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260613b"></script>
   <script src="/static/js/pulse_realtime.js" defer></script>
   <script src="/static/notifications.js?v=message-live-20260606" defer></script>
-  <script src="/static/js/pulse_messages_v2.js?v=messages-realtime-core-20260619a" defer></script>
+  <script src="/static/js/pulse_messages_v2.js?v=command-center-chat-20260619a" defer></script>
 </body>
 </html>

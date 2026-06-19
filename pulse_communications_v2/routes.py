@@ -346,6 +346,22 @@ def unread_conversation(conversation_ref):
     return _timed_json("mark_unread", lambda: service.mark_unread(user["user_id"], conversation_ref))
 
 
+@comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/mute")
+def mute_conversation(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("mute_conversation", lambda: service.toggle_mute(user["user_id"], conversation_ref))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/archive")
+def archive_conversation(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("archive_conversation", lambda: service.archive_conversation(user["user_id"], conversation_ref))
+
+
 @comm_v2_blueprint.post(f"{API_PREFIX}/presence/heartbeat")
 def presence_heartbeat():
     user, denied = _require_user()
@@ -413,6 +429,14 @@ def delete_message(message_id):
         return denied
     payload = request.get_json(silent=True) or {}
     return _timed_json("delete_message", lambda: service.delete_message(user["user_id"], message_id, payload.get("delete_for") or request.args.get("delete_for") or "self"))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/messages/<int:message_id>/pin")
+def pin_message(message_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("pin_message", lambda: service.toggle_message_pin(user["user_id"], message_id))
 
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/messages/<int:message_id>/forward")

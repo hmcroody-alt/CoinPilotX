@@ -2735,3 +2735,108 @@ body {
     max-width: 84%;
   }
 }
+
+/* Command Center chat experience: final user-facing layer. */
+.realtime-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  max-width: 150px;
+  padding: 0 10px;
+  border: 1px solid rgba(110, 223, 246, .16);
+  border-radius: 999px;
+  color: rgba(242, 251, 255, .78);
+  background: rgba(255, 255, 255, .045);
+  font-size: 11px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.realtime-status > span {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #ffd166;
+  box-shadow: 0 0 14px rgba(255, 209, 102, .45);
+}
+
+.realtime-status[data-state="connected"] > span {
+  background: #36e58f;
+  box-shadow: 0 0 14px rgba(54, 229, 143, .65);
+}
+
+[data-pulse-ai-card][hidden] {
+  display: none;
+}
+
+[data-pulse-ai-card] .pulse-ai-card {
+  width: calc(100% - 28px);
+  margin: 2px 14px 10px;
+  cursor: pointer;
+}
+
+.message {
+  transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+  will-change: transform;
+}
+
+.message.is-pinned {
+  border-color: rgba(255, 209, 102, .34);
+  box-shadow: 0 0 0 1px rgba(255, 209, 102, .08), 0 16px 42px rgba(0, 0, 0, .18);
+}
+
+.message-pin-badge,
+.pulse-shield-warning {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 5px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.message-pin-badge {
+  color: #2b2100;
+  background: linear-gradient(135deg, #ffd166, #fff2a8);
+}
+
+.pulse-shield-warning {
+  color: #ffd8dd;
+  border: 1px solid rgba(255, 77, 109, .38);
+  background: rgba(255, 77, 109, .12);
+}
+
+.message a[data-shield-link] {
+  color: #8defff;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.message a[data-shield-link="risky"] {
+  color: #ffbdc7;
+}
+
+@media (max-width: 768px) {
+  .realtime-status {
+    max-width: 116px;
+    padding-inline: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation,
+  .message,
+  .typing-pill,
+  .comm-details {
+    transition: none !important;
+  }
+}

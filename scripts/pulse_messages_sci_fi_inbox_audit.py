@@ -23,8 +23,9 @@ def expect(ok: bool, label: str, details: str = "") -> None:
 def main() -> None:
     expect("Search people, groups, messages..." in HTML, "search placeholder is production copy")
     expect("data-active-rail" in HTML and "function renderActiveRail" in JS, "active row is wired")
-    expect('data-filter="chats"' in HTML and 'data-filter="calls"' in HTML and 'data-filter="groups"' in HTML, "Chats Calls Groups tabs exist")
-    expect("data-pulse-ai" in JS and "active-ai" in JS, "Pulse AI is compact and wired")
+    for token in ['data-filter="all"', 'data-filter="direct"', 'data-filter="groups"', 'data-filter="rooms"', 'data-filter="unread"']:
+        expect(token in HTML, f"Command Center filter exists: {token}")
+    expect("data-ai-summary" in JS and "active-ai" in JS, "Pulse AI is compact and wired when enabled")
     expect("data-quick-call" not in JS, "row-level call/video buttons removed from renderer")
     expect(".conversation-quick-actions {\n  display: none !important;" in CSS, "old row quick actions are suppressed")
     expect("sanitizePreviewText" in JS and "containsLocalPath" in JS, "client preview sanitizer exists")
