@@ -77,6 +77,58 @@
     publishing: false,
   };
 
+  const pulseNetworkState = {
+    creatorsOnline: 0,
+    liveStreams: 0,
+    aiAlerts: 0,
+    trendingActivity: 0,
+    communityMood: "Warming up",
+  };
+
+  function pulseNetworkNumber(value, fallback = 0) {
+    return Math.max(0, Math.min(999, Number(value || fallback) || 0));
+  }
+
+  function pulseNetworkUpdate(next = {}) {
+    Object.assign(pulseNetworkState, {
+      creatorsOnline: pulseNetworkNumber(next.creatorsOnline, pulseNetworkState.creatorsOnline),
+      liveStreams: pulseNetworkNumber(next.liveStreams, pulseNetworkState.liveStreams),
+      aiAlerts: pulseNetworkNumber(next.aiAlerts, pulseNetworkState.aiAlerts),
+      trendingActivity: pulseNetworkNumber(next.trendingActivity, pulseNetworkState.trendingActivity),
+      communityMood: String(next.communityMood || pulseNetworkState.communityMood || "Warming up").slice(0, 48),
+    });
+    document.querySelectorAll("[data-pulse-network-globe]").forEach(card => {
+      card.dataset.creatorsOnline = String(pulseNetworkState.creatorsOnline);
+      card.dataset.liveStreams = String(pulseNetworkState.liveStreams);
+      card.dataset.aiAlerts = String(pulseNetworkState.aiAlerts);
+      card.dataset.trendingActivity = String(pulseNetworkState.trendingActivity);
+      card.querySelector('[data-network-count="creators"]')?.replaceChildren(document.createTextNode(String(pulseNetworkState.creatorsOnline)));
+      card.querySelector('[data-network-count="live"]')?.replaceChildren(document.createTextNode(String(pulseNetworkState.liveStreams)));
+      card.querySelector('[data-network-count="ai"]')?.replaceChildren(document.createTextNode(String(pulseNetworkState.aiAlerts)));
+      const mood = card.querySelector("[data-network-mood]");
+      if (mood) mood.textContent = pulseNetworkState.communityMood;
+      const summary = card.querySelector("[data-network-summary]");
+      if (summary) {
+        summary.textContent = `${pulseNetworkState.trendingActivity} public signals mapped. Aggregate activity only.`;
+      }
+    });
+  }
+
+  function pulseNetworkPaused(paused) {
+    document.querySelectorAll("[data-pulse-network-globe]").forEach(card => card.classList.toggle("is-paused", !!paused));
+  }
+
+  async function pulseNetworkRefreshLive() {
+    if (document.hidden) return;
+    try {
+      const data = await api("/api/pulse/live-now?limit=6", { timeoutMs: 8000 });
+      pulseNetworkUpdate({ liveStreams: (data.items || []).length });
+    } catch (_) {}
+  }
+
+  document.addEventListener("visibilitychange", () => pulseNetworkPaused(document.hidden));
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) pulseNetworkPaused(true);
+
   function statusRenderProgress(stage, percent, message) {
     if (!statusUi.progress) return;
     if (window.PulseUploadManager?.render) {
@@ -339,6 +391,12 @@
     try {
       const data = await api("/api/pulse/status/rail?lane=for_you");
       const items = (data.rail_items || data.items || []).slice(0, 12);
+      const signal = data.discovery_signal || {};
+      pulseNetworkUpdate({
+        creatorsOnline: signal.active_creators || items.length,
+        liveStreams: signal.live_creators || items.filter(item => item.author_live).length,
+        trendingActivity: Number(signal.unseen || 0) + items.length,
+      });
       statusUi.rail.querySelectorAll("[data-status-dynamic]").forEach(node => node.remove());
       if (statusUi.empty) statusUi.empty.hidden = !!items.length;
       const fragment = document.createDocumentFragment();
@@ -517,6 +575,7 @@
       statusOpenCreator(true);
     }
     statusHydrateRail().then(() => {
+      pulseNetworkRefreshLive();
       const linkedStatusId = params.get("status") || params.get("status_id");
       if (linkedStatusId) {
         const card = document.querySelector(`[data-open-status-id="${CSS.escape(String(linkedStatusId))}"]`);
@@ -1008,6 +1067,13 @@
     tabs.querySelectorAll("[data-feed]").forEach(button => button.classList.toggle("active", button.dataset.feed === state.feed));
     try {
       const data = await api(`/api/pulse/feed?tab=${encodeURIComponent(state.feed)}&topic=${encodeURIComponent(state.topic)}&profile=${encodeURIComponent(state.profile)}&offset=${state.offset}&limit=12`);
+      const intelligence = data.intelligence || {};
+      pulseNetworkUpdate({
+        creatorsOnline: Array.isArray(intelligence.active_creators) ? intelligence.active_creators.length : pulseNetworkState.creatorsOnline,
+        aiAlerts: Number(intelligence.open_reports || 0) + (Array.isArray(intelligence.scam_warnings) ? intelligence.scam_warnings.length : 0),
+        trendingActivity: (intelligence.trending_topics || []).reduce((sum, item) => sum + Number(item.count || 0), 0) + Number(intelligence.posts_today || 0),
+        communityMood: intelligence.community_mood || "Curious",
+      });
       const posts = data.posts || [];
       if (!posts.length && state.offset === 0) {
         const empty = element("section", "card");
@@ -1026,7 +1092,7 @@
       state.offset = data.next_offset ?? (state.offset + posts.length);
       if (loadMore) loadMore.style.display = data.has_more ? "inline-flex" : "none";
       const intel = document.getElementById("intel");
-      if (intel) intel.textContent = data.intelligence?.suggested_action || "PulseSoc feed connected.";
+      if (intel) intel.textContent = intelligence.suggested_action || "PulseSoc feed connected.";
     } catch (error) {
       renderFallback(error.message || "PulseSoc could not load the feed.");
       toast(error.message);
