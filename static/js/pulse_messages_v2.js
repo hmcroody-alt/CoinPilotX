@@ -614,6 +614,59 @@
     updateChatBadges(count);
   }
 
+  function normalizeRealtimeType(type) {
+    const value = String(type || "").toLowerCase();
+    const aliases = {
+      pulse_message_created: "message_created",
+      pulse_message_sent: "message_created",
+      group_message_created: "message_created",
+      room_message_created: "message_created",
+      message_notification: "message_created",
+      pulse_message_seen: "message_read",
+      pulse_typing_started: "typing_started",
+      typing_start: "typing_started",
+      pulse_typing_stopped: "typing_stopped",
+      typing_stop: "typing_stopped",
+      pulse_typing: "typing",
+      pulse_notification_created: "notification_created",
+      conversation_updated: "conversation_updated",
+      presence_updated: "presence_updated",
+      unread_count_updated: "unread_count_updated",
+    };
+    return aliases[value] || value || "message_created";
+  }
+
+  function applyRealtimeTyping(payload, isTyping) {
+    const conversationId = Number(payload?.conversation_id || 0);
+    if (!conversationId || !state.active || Number(state.active.conversation_id) !== conversationId) return;
+    const userId = Number(payload.user_id || payload.sender_id || 0);
+    if (!userId || userId === currentUserId) return;
+    const displayName = payload.display_name || payload.name || "Someone";
+    state.typing = (state.typing || []).filter((item) => Number(item.user_id || 0) !== userId);
+    if (isTyping) state.typing = [...state.typing, { user_id: userId, display_name: displayName, is_typing: true }];
+    renderTypingPill();
+    renderMembers();
+    renderConversations();
+  }
+
+  function applyRealtimePresence(payload) {
+    const userId = Number(payload?.user_id || 0);
+    if (!userId) return;
+    const nextPresence = {
+      user_id: userId,
+      status: payload.status || "offline",
+      active_now: payload.status === "online",
+      last_seen_at: payload.last_seen_at || payload.updated_at || new Date().toISOString(),
+      presence_visible: payload.presence_visible !== false,
+    };
+    const existing = (state.presence || []).filter((item) => Number(item.user_id || 0) !== userId);
+    state.presence = [...existing, nextPresence];
+    renderActiveRail();
+    renderConversations();
+    renderMessages();
+    renderMembers();
+  }
+
   function appendRealtimeMessage(message) {
     if (!message?.id || !state.active || Number(message.conversation_id) !== Number(state.active.conversation_id)) return false;
     if (state.messages.some((item) => Number(item.id) === Number(message.id))) return false;
@@ -653,14 +706,34 @@
 
   function handleRealtimeEvent(envelope, options = {}) {
     const payload = envelope?.payload || envelope || {};
-    const type = envelope?.event_type || envelope?.type || "message_notification";
+    let type = normalizeRealtimeType(envelope?.event_type || envelope?.type || payload.event_type || "message_notification");
+    if (type === "typing") type = payload.typing === false ? "typing_stopped" : "typing_started";
     const conversationId = Number(payload.conversation_id || payload.message?.conversation_id || 0);
-    if (!conversationId) return;
+    if (!conversationId && !["presence_updated", "notification_created", "unread_count_updated"].includes(type)) return;
     if (envelope?.id) state.realtimeAfterId = Math.max(state.realtimeAfterId, Number(envelope.id) || 0);
-    mergeRealtimeConversation(payload);
-    if (type === "message_created" || type === "message_notification" || type === "notification_created") {
-      appendRealtimeMessage(payload.message);
+    if (type === "presence_updated") {
+      applyRealtimePresence(payload);
+      return;
+    }
+    if (type === "typing_started" || type === "typing_stopped") {
+      applyRealtimeTyping(payload, type === "typing_started");
+      if (!options.fromBroadcast) broadcastCommEvent(envelope);
+      return;
+    }
+    if (type === "unread_count_updated") {
       updateNotificationBadges(payload);
+      return;
+    }
+    mergeRealtimeConversation(payload);
+    if (type === "message_created" || type === "notification_created") {
+      appendRealtimeMessage(payload.message || payload.data);
+      updateNotificationBadges(payload);
+      if (!options.fromBroadcast) broadcastCommEvent(envelope);
+    } else if (type === "message_read") {
+      if (state.active && Number(state.active.conversation_id) === conversationId) {
+        state.active.unread_count = 0;
+        renderConversations();
+      }
       if (!options.fromBroadcast) broadcastCommEvent(envelope);
     }
   }
@@ -698,6 +771,20 @@
     if (window.PulseRealtime) {
       window.PulseRealtime.on("message_notification", handleRealtimeEvent);
       window.PulseRealtime.on("notification_created", handleRealtimeEvent);
+      window.PulseRealtime.on("message_created", handleRealtimeEvent);
+      window.PulseRealtime.on("pulse_message_created", handleRealtimeEvent);
+      window.PulseRealtime.on("pulse_message_sent", handleRealtimeEvent);
+      window.PulseRealtime.on("group_message_created", handleRealtimeEvent);
+      window.PulseRealtime.on("room_message_created", handleRealtimeEvent);
+      window.PulseRealtime.on("message_read", handleRealtimeEvent);
+      window.PulseRealtime.on("pulse_message_seen", handleRealtimeEvent);
+      window.PulseRealtime.on("typing_started", handleRealtimeEvent);
+      window.PulseRealtime.on("typing_stopped", handleRealtimeEvent);
+      window.PulseRealtime.on("pulse_typing_started", handleRealtimeEvent);
+      window.PulseRealtime.on("pulse_typing_stopped", handleRealtimeEvent);
+      window.PulseRealtime.on("pulse_typing", handleRealtimeEvent);
+      window.PulseRealtime.on("unread_count_updated", handleRealtimeEvent);
+      window.PulseRealtime.on("presence_updated", handleRealtimeEvent);
       window.PulseRealtime.connect();
     }
     state.tabChannel?.addEventListener("message", (event) => {

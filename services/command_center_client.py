@@ -356,6 +356,52 @@ def mark_notification_read(user_id: int, event_id: str = "", mark_all: bool = Fa
     )
 
 
+def enqueue_realtime_event(
+    event_type: str,
+    payload: dict[str, Any] | None = None,
+    *,
+    recipient_ids: list[int] | None = None,
+    conversation_id: int = 0,
+    actor_id: int = 0,
+    event_id: str = "",
+) -> dict[str, Any]:
+    safe_type = str(event_type or "")[:80]
+    safe_recipients = []
+    for item in recipient_ids or []:
+        try:
+            parsed = int(item or 0)
+        except (TypeError, ValueError):
+            parsed = 0
+        if parsed > 0:
+            safe_recipients.append(parsed)
+    body = {
+        "event_type": safe_type,
+        "payload": payload or {},
+        "recipient_ids": safe_recipients,
+        "conversation_id": int(conversation_id or 0),
+        "actor_id": int(actor_id or 0),
+        "event_id": str(event_id or "")[:160],
+    }
+    return _post_worker(
+        "/internal/command-center/realtime/event",
+        body,
+        "realtime",
+        idempotency_key=body["event_id"] or f"realtime-{safe_type}-{body['conversation_id']}-{body['actor_id']}",
+    )
+
+
+def get_realtime_status() -> dict[str, Any]:
+    result = _get_worker("/internal/command-center/realtime/status", "realtime_status")
+    if not result.get("available"):
+        result.setdefault("transport", "polling_fallback")
+        result.setdefault("active_connections", 0)
+        result.setdefault("connected_users", 0)
+        result.setdefault("events_per_minute", 0)
+        result.setdefault("failed_sends", 0)
+        result.setdefault("reconnect_count", 0)
+    return result
+
+
 def enqueue_security_event(payload: dict[str, Any] | None = None, idempotency_key: str = "") -> dict[str, Any]:
     values = dict(payload or {})
     event_id = str(values.pop("event_id", "") or idempotency_key or "")[:160]

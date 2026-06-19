@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
 import secrets
 from collections import deque
 from typing import Any
 
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request, stream_with_context
 
 from .config import load_config
 from .health import health_payload, utc_timestamp
@@ -39,6 +40,15 @@ from .notifications import (
     mark_read as mark_notification_read,
 )
 from .presence import PresenceValidationError, get_presence, update_presence
+from .realtime_transport import (
+    RealtimeValidationError,
+    connect_user as realtime_connect_user,
+    disconnect_user as realtime_disconnect_user,
+    poll_user_events as realtime_poll_user_events,
+    publish_event as realtime_publish_event,
+    status_snapshot as realtime_status_snapshot,
+    subscribe_conversation as realtime_subscribe_conversation,
+)
 from .security import require_internal_auth
 from .security_engine import (
     SecurityValidationError,
@@ -102,6 +112,15 @@ def create_app() -> Flask:
         except Exception as exc:
             LOGGER.warning("COMMAND_CENTER_PRESENCE_UPDATE_FAILED error_type=%s", exc.__class__.__name__)
             return jsonify({"ok": False, "accepted": False, "error": "presence_update_failed"}), 503
+        try:
+            realtime_publish_event(
+                "presence_updated",
+                {"user_id": presence.get("user_id"), "status": presence.get("status"), "updated_at": presence.get("updated_at")},
+                recipient_ids=[presence.get("user_id")],
+                actor_id=presence.get("user_id"),
+            )
+        except Exception as exc:
+            LOGGER.info("COMMAND_CENTER_REALTIME_PRESENCE_PUBLISH_SKIPPED error_type=%s", exc.__class__.__name__)
         return jsonify({"ok": True, "accepted": True, "presence": presence})
 
     @worker_app.get("/internal/command-center/presence/<int:user_id>")
@@ -134,6 +153,28 @@ def create_app() -> Flask:
         except Exception as exc:
             LOGGER.warning("COMMAND_CENTER_MESSAGE_EVENT_FAILED error_type=%s", exc.__class__.__name__)
             return jsonify({"accepted": False, "error": "message_event_failed"}), 503
+        try:
+            event_type = str(event.get("event_type") or "")
+            realtime_type = "message_created" if event_type == "message_created" else "message_delivered" if event_type == "message_delivered" else "message_read" if event_type == "message_read" else event_type
+            if realtime_type in {"message_created", "message_delivered", "message_read", "typing_started", "typing_stopped"}:
+                realtime_publish_event(
+                    realtime_type,
+                    {**event, "payload": body.get("payload") if isinstance(body.get("payload"), dict) else {}},
+                    recipient_ids=[body.get("recipient_id")] if body.get("recipient_id") else [],
+                    conversation_id=event.get("conversation_id"),
+                    actor_id=body.get("sender_id") or 0,
+                    event_id=event.get("event_id") or "",
+                )
+                if realtime_type == "message_created" and body.get("recipient_id"):
+                    realtime_publish_event(
+                        "unread_count_updated",
+                        {"conversation_id": event.get("conversation_id"), "message_id": event.get("message_id"), "recipient_id": body.get("recipient_id")},
+                        recipient_ids=[body.get("recipient_id")],
+                        conversation_id=event.get("conversation_id"),
+                        actor_id=body.get("sender_id") or 0,
+                    )
+        except Exception as exc:
+            LOGGER.info("COMMAND_CENTER_REALTIME_MESSAGE_PUBLISH_SKIPPED error_type=%s", exc.__class__.__name__)
         return jsonify(event)
 
     @worker_app.get("/internal/command-center/messages/unread/<int:user_id>")
@@ -173,6 +214,20 @@ def create_app() -> Flask:
         except Exception as exc:
             LOGGER.warning("COMMAND_CENTER_MESSAGE_TYPING_FAILED error_type=%s", exc.__class__.__name__)
             return jsonify({"accepted": False, "error": "typing_event_failed"}), 503
+        try:
+            realtime_publish_event(
+                "typing_started" if is_typing else "typing_stopped",
+                {
+                    "conversation_id": body.get("conversation_id"),
+                    "user_id": body.get("sender_id") or body.get("user_id"),
+                    "typing": bool(is_typing),
+                    "display_name": str(body.get("display_name") or "")[:120],
+                },
+                conversation_id=body.get("conversation_id"),
+                actor_id=body.get("sender_id") or body.get("user_id") or 0,
+            )
+        except Exception as exc:
+            LOGGER.info("COMMAND_CENTER_REALTIME_TYPING_PUBLISH_SKIPPED error_type=%s", exc.__class__.__name__)
         return jsonify(result)
 
     @worker_app.post("/internal/command-center/notifications/event")
@@ -195,6 +250,16 @@ def create_app() -> Flask:
         except Exception as exc:
             LOGGER.warning("COMMAND_CENTER_NOTIFICATION_EVENT_FAILED error_type=%s", exc.__class__.__name__)
             return jsonify({"accepted": False, "error": "notification_event_failed"}), 503
+        try:
+            realtime_publish_event(
+                "notification_created",
+                event,
+                recipient_ids=[event.get("recipient_id")],
+                actor_id=body.get("actor_id") or 0,
+                event_id=event.get("event_id") or "",
+            )
+        except Exception as exc:
+            LOGGER.info("COMMAND_CENTER_REALTIME_NOTIFICATION_PUBLISH_SKIPPED error_type=%s", exc.__class__.__name__)
         return jsonify(event)
 
     @worker_app.get("/internal/command-center/notifications/unread/<int:user_id>")
@@ -253,7 +318,112 @@ def create_app() -> Flask:
         except Exception as exc:
             LOGGER.warning("COMMAND_CENTER_SECURITY_EVENT_FAILED error_type=%s", exc.__class__.__name__)
             return jsonify({"accepted": False, "error": "security_event_failed"}), 503
+        try:
+            recipient_ids = []
+            payload = body.get("payload") if isinstance(body.get("payload"), dict) else {}
+            if payload.get("recipient_id"):
+                recipient_ids = [payload.get("recipient_id")]
+            realtime_publish_event(
+                "security_alert_created",
+                event,
+                recipient_ids=recipient_ids or [body.get("user_id") or 0],
+                actor_id=body.get("actor_id") or 0,
+                event_id=event.get("event_id") or "",
+            )
+        except Exception as exc:
+            LOGGER.info("COMMAND_CENTER_REALTIME_SECURITY_PUBLISH_SKIPPED error_type=%s", exc.__class__.__name__)
         return jsonify(event)
+
+    @worker_app.post("/internal/command-center/realtime/connect")
+    @require_internal_auth
+    def command_center_realtime_connect():
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(
+                realtime_connect_user(
+                    body.get("user_id"),
+                    session_id=str(body.get("session_id") or ""),
+                    device_type=str(body.get("device_type") or body.get("device") or "web"),
+                    subscribed_conversations=body.get("subscribed_conversations") if isinstance(body.get("subscribed_conversations"), list) else [],
+                )
+            )
+        except RealtimeValidationError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @worker_app.post("/internal/command-center/realtime/disconnect")
+    @require_internal_auth
+    def command_center_realtime_disconnect():
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(realtime_disconnect_user(body.get("user_id"), session_id=str(body.get("session_id") or "")))
+        except RealtimeValidationError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @worker_app.post("/internal/command-center/realtime/subscribe")
+    @require_internal_auth
+    def command_center_realtime_subscribe():
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(realtime_subscribe_conversation(body.get("user_id"), str(body.get("session_id") or ""), body.get("conversation_id")))
+        except PermissionError:
+            return jsonify({"ok": False, "error": "conversation_access_denied"}), 403
+        except RealtimeValidationError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @worker_app.post("/internal/command-center/realtime/event")
+    @require_internal_auth
+    def command_center_realtime_event():
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(
+                realtime_publish_event(
+                    body.get("event_type") or body.get("type"),
+                    body.get("payload") if isinstance(body.get("payload"), dict) else {},
+                    recipient_ids=body.get("recipient_ids") if isinstance(body.get("recipient_ids"), list) else [],
+                    conversation_id=body.get("conversation_id") or 0,
+                    actor_id=body.get("actor_id") or body.get("user_id") or 0,
+                    event_id=str(body.get("event_id") or request.headers.get("X-Idempotency-Key") or ""),
+                )
+            )
+        except RealtimeValidationError as exc:
+            return jsonify({"ok": False, "accepted": False, "error": str(exc)}), 400
+
+    @worker_app.get("/internal/command-center/realtime/poll/<int:user_id>")
+    @require_internal_auth
+    def command_center_realtime_poll(user_id):
+        try:
+            return jsonify(realtime_poll_user_events(user_id, after_id=request.args.get("after_id") or 0, limit=request.args.get("limit") or 80))
+        except RealtimeValidationError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @worker_app.get("/internal/command-center/realtime/stream/<int:user_id>")
+    @require_internal_auth
+    def command_center_realtime_stream(user_id):
+        try:
+            start_id = int(request.args.get("after_id") or 0)
+        except (TypeError, ValueError):
+            start_id = 0
+
+        @stream_with_context
+        def event_stream():
+            after_id = start_id
+            for _ in range(24):
+                payload = realtime_poll_user_events(user_id, after_id=after_id, limit=80)
+                after_id = max(after_id, int(payload.get("latest_event_id") or after_id))
+                yield f"event: command_center\ndata: {json.dumps(payload, default=str)}\n\n"
+                import time
+
+                time.sleep(2)
+
+        response = Response(event_stream(), mimetype="text/event-stream")
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Accel-Buffering"] = "no"
+        return response
+
+    @worker_app.get("/internal/command-center/realtime/status")
+    @require_internal_auth
+    def command_center_realtime_status():
+        return jsonify(realtime_status_snapshot())
 
     @worker_app.get("/internal/command-center/security/user/<int:user_id>/risk")
     @require_internal_auth
