@@ -51,7 +51,7 @@ def main() -> int:
     css = css_path.read_text(encoding="utf-8")
 
     for token in [
-        "pulse_home_os.css?v=pulse-home-os-20260619i",
+        "pulse_home_os.css?v=pulse-home-os-20260619k",
         "request.path == '/pulse'",
         "pulse-network-feature",
         "home-intel-overview",
@@ -70,6 +70,12 @@ def main() -> int:
         "height: 342px",
         ".pulse-home-os .pulse-action-card-grid",
         ".pulse-home-os .feed > .post-card-modern",
+        "@media (max-width: 1380px)",
+        "body.pulse-home-os .pulse-desktop-topbar",
+        "grid-template-columns: minmax(142px, 190px) minmax(0, 1fr) minmax(160px, 220px) !important",
+        ".pulse-home-os .pulse-desktop-left {\n    display: none;",
+        "grid-template-columns: minmax(0, 1fr) minmax(260px, 290px)",
+        "@media (max-width: 1180px)",
         "@media (max-width: 900px)",
         "@media (max-width: 480px)",
         "@media (prefers-reduced-motion: reduce)",
@@ -85,7 +91,7 @@ def main() -> int:
     home_html = home.get_data(as_text=True)
     require(home.status_code == 200, "Home route loads", str(home.status_code))
     require('class="pulse-home-os"' in home_html, "Home route receives Home OS scope")
-    require("pulse_home_os.css?v=pulse-home-os-20260619i" in home_html, "Home loads cache-busted Home OS CSS")
+    require("pulse_home_os.css?v=pulse-home-os-20260619k" in home_html, "Home loads cache-busted Home OS CSS")
     for token in ["/pulse/live", "/scam-shield", "/pulse/premium/intelligence", "id=\"pulseComposer\"", "id=\"feed\""]:
         require(token in home_html, f"Home workflow remains wired: {token}")
 
