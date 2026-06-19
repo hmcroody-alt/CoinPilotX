@@ -276,8 +276,72 @@ def get_conversation_state(conversation_id: int, user_id: int = 0) -> dict[str, 
     return result
 
 
-def enqueue_notification_event(payload: dict[str, Any] | None = None, idempotency_key: str = "") -> dict[str, Any]:
-    return dispatch_event("notification", payload, idempotency_key=idempotency_key)
+def enqueue_notification_event(
+    recipient_id: int | dict[str, Any] = 0,
+    notification_type: str = "",
+    title: str = "",
+    body: str = "",
+    actor_id: int | None = None,
+    payload: dict[str, Any] | None = None,
+    channel: str = "in_app",
+    event_id: str = "",
+    idempotency_key: str = "",
+) -> dict[str, Any]:
+    if isinstance(recipient_id, dict):
+        values = dict(recipient_id)
+        recipient_id = int(values.pop("recipient_id", values.pop("user_id", 0)) or 0)
+        notification_type = str(values.pop("notification_type", values.pop("type", notification_type)) or notification_type)
+        title = str(values.pop("title", title) or title)
+        body = str(values.pop("body", body) or body)
+        actor_id = values.pop("actor_id", actor_id)
+        channel = str(values.pop("channel", channel) or channel)
+        event_id = str(values.pop("event_id", event_id) or event_id)
+        payload = payload or values
+    request_body = {
+        "recipient_id": int(recipient_id or 0),
+        "actor_id": int(actor_id) if actor_id else None,
+        "notification_type": str(notification_type or "")[:80],
+        "title": str(title or "")[:180],
+        "body": str(body or "")[:2000],
+        "payload": payload or {},
+        "channel": str(channel or "in_app")[:30],
+        "event_id": str(event_id or "")[:160],
+    }
+    return _post_worker(
+        "/internal/command-center/notifications/event",
+        request_body,
+        "notification",
+        idempotency_key=idempotency_key or request_body["event_id"] or f"notification-{request_body['recipient_id']}-{request_body['notification_type']}",
+    )
+
+
+def get_notification_unread_count(user_id: int) -> dict[str, Any]:
+    result = _get_worker(f"/internal/command-center/notifications/unread/{int(user_id or 0)}", "notification_unread")
+    if not result.get("available"):
+        result.setdefault("recipient_id", int(user_id or 0))
+        result.setdefault("alert_unread_count", 0)
+        result.setdefault("unread_count", 0)
+        result.setdefault("count", 0)
+    return result
+
+
+def get_recent_notifications(user_id: int, limit: int = 50) -> dict[str, Any]:
+    safe_limit = max(1, min(int(limit or 50), 100))
+    result = _get_worker(f"/internal/command-center/notifications/recent/{int(user_id or 0)}?limit={safe_limit}", "notification_recent")
+    if not result.get("available"):
+        result.setdefault("recipient_id", int(user_id or 0))
+        result.setdefault("notifications", [])
+        result.setdefault("items", [])
+    return result
+
+
+def mark_notification_read(user_id: int, event_id: str = "", mark_all: bool = False) -> dict[str, Any]:
+    return _post_worker(
+        "/internal/command-center/notifications/read",
+        {"recipient_id": int(user_id or 0), "event_id": str(event_id or "")[:160], "mark_all": bool(mark_all)},
+        "notification_read",
+        idempotency_key=f"notification-read-{int(user_id or 0)}-{str(event_id or 'all')[:80]}",
+    )
 
 
 def enqueue_security_event(payload: dict[str, Any] | None = None, idempotency_key: str = "") -> dict[str, Any]:

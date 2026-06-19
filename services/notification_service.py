@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import threading
 import time
 from datetime import datetime
 
@@ -13,6 +14,42 @@ from . import db as db_service
 
 def _now():
     return datetime.now().isoformat()
+
+
+def _dispatch_command_center_async(method_name, *args, **kwargs):
+    try:
+        from . import command_center_client
+
+        if not command_center_client.is_enabled():
+            return False
+        method = getattr(command_center_client, method_name, None)
+        if not callable(method):
+            return False
+
+        def run_dispatch():
+            try:
+                result = method(*args, **kwargs)
+                if not result.get("ok"):
+                    logging.info("NOTIFICATION_COMMAND_CENTER_DISPATCH_FAILED method=%s reason=%s", method_name, result.get("reason") or "unknown")
+            except Exception as exc:
+                logging.info("NOTIFICATION_COMMAND_CENTER_DISPATCH_SKIPPED method=%s error=%s", method_name, exc.__class__.__name__)
+
+        threading.Thread(target=run_dispatch, name=f"notification-{method_name}", daemon=True).start()
+        return True
+    except Exception as exc:
+        logging.info("NOTIFICATION_COMMAND_CENTER_UNAVAILABLE method=%s error=%s", method_name, exc.__class__.__name__)
+        return False
+
+
+def _message_like_notification(note_type="", entity_type="", deep_link=""):
+    normalized_type = str(note_type or "").strip().lower()
+    normalized_entity = str(entity_type or "").strip().lower()
+    normalized_link = str(deep_link or "").strip().lower()
+    return (
+        normalized_type in MESSAGE_NOTIFICATION_TYPES
+        or normalized_entity in {"message", "messages", "chat", "conversation", "pulse_message", "pulse_conversation", "comm_v2_message"}
+        or normalized_link.startswith(("/pulse/messages", "/messages", "/chat"))
+    )
 
 
 def _json(value, default=None):
@@ -482,6 +519,24 @@ def create_pulse_notification(
     )
     conn.commit()
     conn.close()
+    if not _message_like_notification(note_type, entity_type, deep_link):
+        _dispatch_command_center_async(
+            "enqueue_notification_event",
+            int(user_id),
+            str(note_type or "notification")[:80],
+            str(title or "PulseSoc notification")[:180],
+            str(body or "")[:2000],
+            int(actor_user_id or 0) or None,
+            {
+                **metadata,
+                "local_notification_id": int(notification_id or 0),
+                "entity_type": str(entity_type or "")[:80],
+                "entity_id": str(entity_id or "")[:120],
+                "deep_link": str(deep_link or "/pulse")[:700],
+            },
+            "in_app",
+            f"pulse-note-{int(notification_id or 0)}",
+        )
     logging.info(
         "PUSH_TRACE stage=notification_created %s",
         json.dumps(
@@ -694,6 +749,8 @@ def mark_pulse_read(user_id, notification_id):
     changed = cur.rowcount
     conn.commit()
     conn.close()
+    if changed:
+        _dispatch_command_center_async("mark_notification_read", int(user_id), f"pulse-note-{int(notification_id or 0)}", False)
     return {"ok": True, "updated": changed}
 
 
@@ -707,6 +764,8 @@ def mark_all_pulse_read(user_id):
     changed = cur.rowcount
     conn.commit()
     conn.close()
+    if changed:
+        _dispatch_command_center_async("mark_notification_read", int(user_id), "", True)
     return {"ok": True, "updated": changed}
 
 

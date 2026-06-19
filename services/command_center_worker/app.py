@@ -22,6 +22,14 @@ from .messaging import (
     get_unread_counts,
     set_typing,
 )
+from .notifications import (
+    NotificationValidationError,
+    accept_notification_event,
+    ensure_notification_schema,
+    get_recent_notifications,
+    get_unread_count,
+    mark_read as mark_notification_read,
+)
 from .presence import PresenceValidationError, get_presence, update_presence
 from .security import require_internal_auth
 
@@ -152,6 +160,67 @@ def create_app() -> Flask:
             return jsonify({"accepted": False, "error": "typing_event_failed"}), 503
         return jsonify(result)
 
+    @worker_app.post("/internal/command-center/notifications/event")
+    @require_internal_auth
+    def command_center_notification_event():
+        body = request.get_json(silent=True) or {}
+        try:
+            event = accept_notification_event(
+                body.get("recipient_id") or body.get("user_id"),
+                body.get("notification_type") or body.get("type"),
+                body.get("title"),
+                body=body.get("body") or "",
+                actor_id=body.get("actor_id"),
+                payload=body.get("payload") if isinstance(body.get("payload"), dict) else {},
+                channel=body.get("channel") or "in_app",
+                event_id=str(body.get("event_id") or request.headers.get("X-Idempotency-Key") or ""),
+            )
+        except NotificationValidationError as exc:
+            return jsonify({"accepted": False, "error": str(exc)}), 400
+        except Exception as exc:
+            LOGGER.warning("COMMAND_CENTER_NOTIFICATION_EVENT_FAILED error_type=%s", exc.__class__.__name__)
+            return jsonify({"accepted": False, "error": "notification_event_failed"}), 503
+        return jsonify(event)
+
+    @worker_app.get("/internal/command-center/notifications/unread/<int:user_id>")
+    @require_internal_auth
+    def command_center_notification_unread(user_id):
+        try:
+            return jsonify(get_unread_count(user_id))
+        except NotificationValidationError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            LOGGER.warning("COMMAND_CENTER_NOTIFICATION_UNREAD_FAILED error_type=%s", exc.__class__.__name__)
+            return jsonify({"ok": False, "error": "notification_unread_failed"}), 503
+
+    @worker_app.get("/internal/command-center/notifications/recent/<int:user_id>")
+    @require_internal_auth
+    def command_center_notification_recent(user_id):
+        try:
+            return jsonify(get_recent_notifications(user_id, limit=int(request.args.get("limit") or 50)))
+        except NotificationValidationError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            LOGGER.warning("COMMAND_CENTER_NOTIFICATION_RECENT_FAILED error_type=%s", exc.__class__.__name__)
+            return jsonify({"ok": False, "error": "notification_recent_failed"}), 503
+
+    @worker_app.post("/internal/command-center/notifications/read")
+    @require_internal_auth
+    def command_center_notification_read():
+        body = request.get_json(silent=True) or {}
+        try:
+            result = mark_notification_read(
+                body.get("recipient_id") or body.get("user_id"),
+                event_id=str(body.get("event_id") or ""),
+                mark_all=bool(body.get("mark_all")),
+            )
+        except NotificationValidationError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            LOGGER.warning("COMMAND_CENTER_NOTIFICATION_READ_FAILED error_type=%s", exc.__class__.__name__)
+            return jsonify({"ok": False, "error": "notification_read_failed"}), 503
+        return jsonify(result)
+
     return worker_app
 
 
@@ -160,6 +229,10 @@ try:
     ensure_messaging_schema()
 except Exception as exc:
     LOGGER.warning("COMMAND_CENTER_MESSAGE_SCHEMA_INIT_SKIPPED error_type=%s", exc.__class__.__name__)
+try:
+    ensure_notification_schema()
+except Exception as exc:
+    LOGGER.warning("COMMAND_CENTER_NOTIFICATION_SCHEMA_INIT_SKIPPED error_type=%s", exc.__class__.__name__)
 start_heartbeat(load_config())
 
 
