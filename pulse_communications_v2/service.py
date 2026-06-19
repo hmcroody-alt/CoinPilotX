@@ -36,6 +36,35 @@ def _trace() -> str:
     return secrets.token_hex(6)
 
 
+def _dispatch_command_center_async(method_name: str, *args, **kwargs) -> bool:
+    try:
+        from services import command_center_client
+
+        if not command_center_client.is_enabled():
+            return False
+        method = getattr(command_center_client, method_name, None)
+        if not callable(method):
+            return False
+
+        def run_dispatch():
+            try:
+                result = method(*args, **kwargs)
+                if not result.get("ok"):
+                    logging.info(
+                        "COMM_V2_COMMAND_CENTER_DISPATCH_FAILED method=%s reason=%s",
+                        method_name,
+                        result.get("reason") or "unknown",
+                    )
+            except Exception as exc:
+                logging.info("COMM_V2_COMMAND_CENTER_DISPATCH_SKIPPED method=%s error=%s", method_name, exc.__class__.__name__)
+
+        threading.Thread(target=run_dispatch, name=f"comm-v2-{method_name}", daemon=True).start()
+        return True
+    except Exception as exc:
+        logging.info("COMM_V2_COMMAND_CENTER_DISPATCH_UNAVAILABLE method=%s error=%s", method_name, exc.__class__.__name__)
+        return False
+
+
 def _public_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_urlsafe(12)}"
 
@@ -953,6 +982,20 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
             message["attachments"] = attachments
         step = "commit"
         conn.commit()
+        _dispatch_command_center_async(
+            "enqueue_message_event",
+            "message_created",
+            conversation_id,
+            message_id,
+            int(user_id),
+            None,
+            {
+                "message_type": message.get("message_type") or "text",
+                "created_at": message.get("created_at") or now,
+                "attachment_count": len(attachments or []),
+            },
+            idempotency_key=f"message-created-{conversation_id}-{message_id}",
+        )
         side_effects = _dispatch_message_side_effects(user_id, conversation_id, message)
         logging.info(
             "COMM_V2_SEND_COMPLETE user_id=%s conversation_id=%s message_id=%s attachment_count=%s side_effects=%s",
@@ -1749,9 +1792,28 @@ def list_messages(user_id: int, conversation_ref: int | str, filters: dict | Non
                     (now, now, int(message.get("id") or 0), int(user_id)),
                 )
         oldest_message_id = int(raw_messages[0].get("id") or 0) if raw_messages else 0
+        latest_incoming = next(
+            (message for message in reversed(raw_messages) if int(message.get("sender_user_id") or 0) != int(user_id)),
+            None,
+        )
         typing = typing_state(user_id, conversation_id, existing_conn=(conn, cur)).get("typing") or []
         mark_read(user_id, conversation_id, existing_conn=(conn, cur), commit=False)
         conn.commit()
+        if latest_incoming:
+            _dispatch_command_center_async(
+                "enqueue_message_delivered",
+                conversation_id,
+                int(latest_incoming.get("id") or 0),
+                int(user_id),
+                int(latest_incoming.get("sender_user_id") or 0),
+            )
+            _dispatch_command_center_async(
+                "enqueue_message_read",
+                conversation_id,
+                int(latest_incoming.get("id") or 0),
+                int(user_id),
+                int(latest_incoming.get("sender_user_id") or 0),
+            )
         return _ok({
             "conversation": _conversation_payload(cur, conversation, user_id),
             "messages": messages,
@@ -1879,6 +1941,14 @@ def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, com
                 )
         if commit:
             conn.commit()
+            if max_id:
+                _dispatch_command_center_async(
+                    "enqueue_message_read",
+                    conversation_id,
+                    max_id,
+                    int(user_id),
+                    0,
+                )
         return _ok({"conversation_id": conversation_id, "last_read_message_id": max_id})
     finally:
         if own_conn:
@@ -2004,7 +2074,7 @@ def set_typing(user_id: int, conversation_ref: int | str, is_typing: bool = True
         if access != "ok":
             return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403)
         now_dt = datetime.now(timezone.utc)
-        expires = (now_dt + timedelta(seconds=12)).isoformat(timespec="seconds")
+        expires = (now_dt + timedelta(seconds=5)).isoformat(timespec="seconds")
         now = now_dt.isoformat(timespec="seconds")
         cur.execute(
             """
@@ -2018,6 +2088,12 @@ def set_typing(user_id: int, conversation_ref: int | str, is_typing: bool = True
             (1 if is_typing else 0, expires, now, int(conversation["id"]), int(user_id)),
         )
         conn.commit()
+        _dispatch_command_center_async(
+            "enqueue_typing_event",
+            int(conversation["id"]),
+            int(user_id),
+            bool(is_typing),
+        )
         return _ok({"conversation_id": int(conversation["id"]), "is_typing": bool(is_typing)})
     finally:
         conn.close()
@@ -2167,6 +2243,15 @@ def set_reaction(user_id: int, message_id: int, reaction_type: str = "heart") ->
                 (int(message_id), int(message["conversation_id"]), int(user_id), reaction_type, now, now),
             )
         conn.commit()
+        _dispatch_command_center_async(
+            "enqueue_message_event",
+            "reaction_removed" if reaction_type in {"", "none", "remove"} else "reaction_added",
+            int(message["conversation_id"]),
+            int(message_id),
+            int(user_id),
+            None,
+            {"reaction_type": reaction_type},
+        )
         cur.execute("SELECT * FROM comm_v2_messages WHERE id=?", (int(message_id),))
         return _ok({"message": _message_payload(cur, _row(cur.fetchone()), user_id)})
     finally:
@@ -2202,6 +2287,15 @@ def edit_message(user_id: int, message_id: int, payload: dict | None = None) -> 
             (body, json.dumps(metadata, default=str)[:4000], now, now, int(message_id)),
         )
         conn.commit()
+        _dispatch_command_center_async(
+            "enqueue_message_event",
+            "message_edited",
+            int(message["conversation_id"]),
+            int(message_id),
+            int(user_id),
+            None,
+            {"edited_at": now},
+        )
         cur.execute("SELECT * FROM comm_v2_messages WHERE id=? LIMIT 1", (int(message_id),))
         return _ok({"message": _message_payload(cur, _row(cur.fetchone()), user_id)}, "Message edited.")
     finally:
@@ -2241,6 +2335,15 @@ def delete_message(user_id: int, message_id: int, delete_for: str = "self") -> d
             )
             scope = "self"
         conn.commit()
+        _dispatch_command_center_async(
+            "enqueue_message_event",
+            "message_deleted",
+            int(message["conversation_id"]),
+            int(message_id),
+            int(user_id),
+            None,
+            {"delete_for": scope, "deleted_at": now},
+        )
         return _ok({"message_id": int(message_id), "delete_for": scope}, "Message deleted.")
     finally:
         conn.close()

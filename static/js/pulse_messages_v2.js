@@ -21,6 +21,7 @@
     loadingThread: false,
     initialThreadLoaded: false,
     typingTimer: 0,
+    typingStopTimer: 0,
     typingSentAt: 0,
     detailsOpen: false,
     actionPending: false,
@@ -1268,6 +1269,7 @@
     });
     el("[data-composer]")?.addEventListener("submit", sendMessage);
     el("[data-message-input]")?.addEventListener("input", debounceTyping);
+    el("[data-message-input]")?.addEventListener("blur", sendTypingStopped);
     el("[data-person-search]")?.addEventListener("input", () => debouncePeopleSearch("direct"));
     el("[data-group-person-search]")?.addEventListener("input", () => debouncePeopleSearch("group"));
     el("[data-conversation-search]")?.addEventListener("input", (event) => {
@@ -1315,7 +1317,9 @@
   function debounceTyping() {
     if (!state.active) return;
     window.clearTimeout(state.typingTimer);
+    window.clearTimeout(state.typingStopTimer);
     state.typingTimer = window.setTimeout(sendTypingIndicator, 450);
+    state.typingStopTimer = window.setTimeout(sendTypingStopped, 5000);
   }
 
   async function sendTypingIndicator() {
@@ -1328,6 +1332,18 @@
         method: "POST",
         body: JSON.stringify({ is_typing: true }),
       }, "typing_indicator");
+    } catch (_) {}
+  }
+
+  async function sendTypingStopped() {
+    window.clearTimeout(state.typingTimer);
+    window.clearTimeout(state.typingStopTimer);
+    if (!state.active) return;
+    try {
+      await api(`/conversations/${state.active.conversation_id}/typing`, {
+        method: "POST",
+        body: JSON.stringify({ is_typing: false }),
+      }, "typing_stopped");
     } catch (_) {}
   }
 

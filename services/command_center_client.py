@@ -169,8 +169,111 @@ def dispatch_event(kind: str, payload: dict[str, Any] | None = None, idempotency
         return _record_status(safe_kind, False, False, "request_failed", error_type=exc.__class__.__name__)
 
 
-def enqueue_message_event(payload: dict[str, Any] | None = None, idempotency_key: str = "") -> dict[str, Any]:
-    return dispatch_event("message", payload, idempotency_key=idempotency_key)
+def _post_worker(path: str, payload: dict[str, Any], kind: str, idempotency_key: str = "") -> dict[str, Any]:
+    if not is_enabled():
+        return _record_status(kind, True, False, "disabled")
+    if not url_configured() or not token_configured():
+        return _record_status(kind, False, False, "not_configured")
+    try:
+        response = requests.post(
+            _worker_url(path),
+            json=payload,
+            headers=_internal_headers(idempotency_key),
+            timeout=_timeout_seconds(),
+        )
+        ok = 200 <= response.status_code < 300
+        if not ok:
+            LOGGER.warning("COMMAND_CENTER_%s_FAILED status_code=%s", kind.upper(), response.status_code)
+            return _record_status(kind, False, True, "worker_rejected", status_code=response.status_code)
+        response_payload = response.json() if response.content else {}
+        return {**_record_status(kind, True, True, "sent", status_code=response.status_code), "response": response_payload}
+    except (requests.RequestException, ValueError) as exc:
+        LOGGER.warning("COMMAND_CENTER_%s_FAILED error_type=%s", kind.upper(), exc.__class__.__name__)
+        return _record_status(kind, False, False, "request_failed", error_type=exc.__class__.__name__)
+
+
+def _get_worker(path: str, kind: str) -> dict[str, Any]:
+    if not is_enabled():
+        return {"ok": True, "available": False, "reason": "disabled"}
+    if not url_configured() or not token_configured():
+        return {"ok": False, "available": False, "reason": "not_configured"}
+    try:
+        response = requests.get(_worker_url(path), headers=_internal_headers(), timeout=_timeout_seconds())
+        if not (200 <= response.status_code < 300):
+            return {"ok": False, "available": False, "reason": "worker_rejected", "status_code": response.status_code}
+        return {"ok": True, "available": True, **(response.json() or {})}
+    except (requests.RequestException, ValueError) as exc:
+        LOGGER.warning("COMMAND_CENTER_%s_FAILED error_type=%s", kind.upper(), exc.__class__.__name__)
+        return {"ok": False, "available": False, "reason": "request_failed"}
+
+
+def enqueue_message_event(
+    event_type: str | dict[str, Any] = "message_created",
+    conversation_id: int = 0,
+    message_id: int = 0,
+    sender_id: int = 0,
+    recipient_id: int | None = None,
+    payload: dict[str, Any] | None = None,
+    idempotency_key: str = "",
+) -> dict[str, Any]:
+    if isinstance(event_type, dict):
+        event_payload = dict(event_type)
+        event_type = str(event_payload.pop("event_type", "message_created"))
+        conversation_id = int(event_payload.pop("conversation_id", conversation_id) or 0)
+        message_id = int(event_payload.pop("message_id", message_id) or 0)
+        sender_id = int(event_payload.pop("sender_id", sender_id) or 0)
+        recipient_id = event_payload.pop("recipient_id", recipient_id)
+        payload = payload or event_payload
+    body = {
+        "event_type": str(event_type or "message_created")[:80],
+        "conversation_id": int(conversation_id or 0),
+        "message_id": int(message_id or 0),
+        "sender_id": int(sender_id or 0),
+        "recipient_id": int(recipient_id) if recipient_id else None,
+        "payload": payload or {},
+    }
+    return _post_worker(
+        "/internal/command-center/messages/event",
+        body,
+        "message",
+        idempotency_key=idempotency_key or f"{body['event_type']}-{body['conversation_id']}-{body['message_id']}-{body['sender_id']}",
+    )
+
+
+def enqueue_message_delivered(conversation_id: int, message_id: int, recipient_id: int, sender_id: int = 0) -> dict[str, Any]:
+    return enqueue_message_event("message_delivered", conversation_id, message_id, sender_id, recipient_id, {"delivered": True})
+
+
+def enqueue_message_read(conversation_id: int, message_id: int, recipient_id: int, sender_id: int = 0) -> dict[str, Any]:
+    return enqueue_message_event("message_read", conversation_id, message_id, sender_id, recipient_id, {"read": True})
+
+
+def enqueue_typing_event(conversation_id: int, sender_id: int, is_typing: bool = True) -> dict[str, Any]:
+    return _post_worker(
+        "/internal/command-center/messages/typing",
+        {"conversation_id": int(conversation_id or 0), "sender_id": int(sender_id or 0), "is_typing": bool(is_typing)},
+        "typing",
+        idempotency_key=f"typing-{int(conversation_id or 0)}-{int(sender_id or 0)}-{int(bool(is_typing))}",
+    )
+
+
+def get_unread_counts(user_id: int) -> dict[str, Any]:
+    result = _get_worker(f"/internal/command-center/messages/unread/{int(user_id or 0)}", "message_unread")
+    if not result.get("available"):
+        result.setdefault("user_id", int(user_id or 0))
+        result.setdefault("total_unread", 0)
+        result.setdefault("conversations", [])
+    return result
+
+
+def get_conversation_state(conversation_id: int, user_id: int = 0) -> dict[str, Any]:
+    suffix = f"?user_id={int(user_id)}" if int(user_id or 0) > 0 else ""
+    result = _get_worker(f"/internal/command-center/messages/conversation/{int(conversation_id or 0)}/state{suffix}", "message_state")
+    if not result.get("available"):
+        result.setdefault("conversation_id", int(conversation_id or 0))
+        result.setdefault("typing", [])
+        result.setdefault("event_counts", {})
+    return result
 
 
 def enqueue_notification_event(payload: dict[str, Any] | None = None, idempotency_key: str = "") -> dict[str, Any]:
