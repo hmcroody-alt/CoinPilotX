@@ -113,6 +113,7 @@ def _internal_headers(idempotency_key: str = "") -> dict[str, str]:
     identity = service_identity()
     headers = {
         "Content-Type": "application/json",
+        "Authorization": f"Bearer {_env_text('COMMAND_CENTER_INTERNAL_TOKEN')}",
         "X-PulseSoc-Internal-Token": _env_text("COMMAND_CENTER_INTERNAL_TOKEN"),
         "X-PulseSoc-Service-Name": identity["service_name"],
         "X-PulseSoc-Service-Role": identity["service_role"],
@@ -345,7 +346,44 @@ def mark_notification_read(user_id: int, event_id: str = "", mark_all: bool = Fa
 
 
 def enqueue_security_event(payload: dict[str, Any] | None = None, idempotency_key: str = "") -> dict[str, Any]:
-    return dispatch_event("security", payload, idempotency_key=idempotency_key)
+    values = dict(payload or {})
+    event_id = str(values.pop("event_id", "") or idempotency_key or "")[:160]
+    event_type = str(values.pop("event_type", values.pop("type", "")) or "")[:80]
+    if not event_type:
+        return _record_status("security", False, False, "invalid_payload")
+    request_body = {
+        "event_id": event_id,
+        "user_id": int(values.pop("user_id", 0) or 0),
+        "actor_id": int(values.pop("actor_id", 0) or 0),
+        "event_type": event_type,
+        "payload": values.pop("payload", values) if isinstance(values.get("payload", values), dict) else values,
+    }
+    return _post_worker(
+        "/internal/command-center/security/event",
+        request_body,
+        "security",
+        idempotency_key=event_id or idempotency_key or f"security-{event_type}-{request_body['user_id']}",
+    )
+
+
+def get_user_risk_score(user_id: int) -> dict[str, Any]:
+    result = _get_worker(f"/internal/command-center/security/user/{int(user_id or 0)}/risk", "security_risk")
+    if not result.get("available"):
+        result.setdefault("user_id", int(user_id or 0))
+        result.setdefault("risk_score", 0)
+        result.setdefault("risk_level", "Low")
+    return result
+
+
+def get_recent_security_events(user_id: int = 0, limit: int = 50) -> dict[str, Any]:
+    safe_limit = max(1, min(int(limit or 50), 100))
+    suffix = f"?limit={safe_limit}"
+    if int(user_id or 0) > 0:
+        suffix += f"&user_id={int(user_id)}"
+    result = _get_worker(f"/internal/command-center/security/recent{suffix}", "security_recent")
+    if not result.get("available"):
+        result.setdefault("events", [])
+    return result
 
 
 def enqueue_media_event(payload: dict[str, Any] | None = None, idempotency_key: str = "") -> dict[str, Any]:

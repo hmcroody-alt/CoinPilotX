@@ -32,6 +32,13 @@ from .notifications import (
 )
 from .presence import PresenceValidationError, get_presence, update_presence
 from .security import require_internal_auth
+from .security_engine import (
+    SecurityValidationError,
+    create_security_event,
+    ensure_security_schema,
+    get_recent_security_events,
+    get_user_risk_score,
+)
 
 
 logging.basicConfig(level=os.getenv("COMMAND_CENTER_LOG_LEVEL", "INFO"))
@@ -221,6 +228,47 @@ def create_app() -> Flask:
             return jsonify({"ok": False, "error": "notification_read_failed"}), 503
         return jsonify(result)
 
+    @worker_app.post("/internal/command-center/security/event")
+    @require_internal_auth
+    def command_center_security_event():
+        body = request.get_json(silent=True) or {}
+        try:
+            event = create_security_event(
+                body.get("event_type") or body.get("type"),
+                user_id=body.get("user_id") or 0,
+                actor_id=body.get("actor_id") or 0,
+                payload=body.get("payload") if isinstance(body.get("payload"), dict) else {},
+                event_id=str(body.get("event_id") or request.headers.get("X-Idempotency-Key") or ""),
+            )
+        except SecurityValidationError as exc:
+            return jsonify({"accepted": False, "error": str(exc)}), 400
+        except Exception as exc:
+            LOGGER.warning("COMMAND_CENTER_SECURITY_EVENT_FAILED error_type=%s", exc.__class__.__name__)
+            return jsonify({"accepted": False, "error": "security_event_failed"}), 503
+        return jsonify(event)
+
+    @worker_app.get("/internal/command-center/security/user/<int:user_id>/risk")
+    @require_internal_auth
+    def command_center_security_user_risk(user_id):
+        try:
+            return jsonify(get_user_risk_score(user_id))
+        except SecurityValidationError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            LOGGER.warning("COMMAND_CENTER_SECURITY_RISK_FAILED error_type=%s", exc.__class__.__name__)
+            return jsonify({"ok": False, "error": "security_risk_failed"}), 503
+
+    @worker_app.get("/internal/command-center/security/recent")
+    @require_internal_auth
+    def command_center_security_recent():
+        try:
+            return jsonify(get_recent_security_events(limit=int(request.args.get("limit") or 50), user_id=int(request.args.get("user_id") or 0)))
+        except SecurityValidationError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            LOGGER.warning("COMMAND_CENTER_SECURITY_RECENT_FAILED error_type=%s", exc.__class__.__name__)
+            return jsonify({"ok": False, "error": "security_recent_failed"}), 503
+
     return worker_app
 
 
@@ -233,6 +281,10 @@ try:
     ensure_notification_schema()
 except Exception as exc:
     LOGGER.warning("COMMAND_CENTER_NOTIFICATION_SCHEMA_INIT_SKIPPED error_type=%s", exc.__class__.__name__)
+try:
+    ensure_security_schema()
+except Exception as exc:
+    LOGGER.warning("COMMAND_CENTER_SECURITY_SCHEMA_INIT_SKIPPED error_type=%s", exc.__class__.__name__)
 start_heartbeat(load_config())
 
 
