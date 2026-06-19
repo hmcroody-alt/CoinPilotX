@@ -2064,7 +2064,100 @@
   const pulseSearchOverlay = document.getElementById("pulseSearchOverlay");
   const pulseSearchInput = document.getElementById("pulseSearchOverlayInput");
   const pulseSearchResults = document.querySelector("[data-pulse-search-results]");
+  const pulseSearchStarter = document.querySelector("[data-pulse-search-starter]");
+  const pulseSearchRecentBox = document.querySelector("[data-pulse-search-recent]");
+  const pulseSearchTrendingBox = document.querySelector("[data-pulse-search-trending]");
+  const pulseSearchDesktopInput = document.querySelector(".pulse-desktop-search");
   const pulseSearchMobileButton = document.getElementById("pulseMobileSearch");
+  const pulseSearchState = {
+    timer: 0,
+    controller: null,
+    query: "",
+    groups: [["posts", "Posts"], ["creators", "Creators"], ["videos", "Videos"], ["reels", "Reels"], ["statuses", "Statuses"], ["marketplace", "Marketplace"], ["music", "Music"], ["groups", "Groups"], ["rooms", "Chat Rooms"], ["comments", "Comments"]],
+  };
+
+  function pulseSearchRecent() {
+    try {
+      return JSON.parse(localStorage.getItem("pulseRecentSearches") || "[]").filter(Boolean).slice(0, 8);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function pulseSearchSave(query) {
+    const clean = String(query || "").trim();
+    if (!clean) return;
+    try {
+      const next = [clean, ...pulseSearchRecent().filter(item => item.toLowerCase() !== clean.toLowerCase())].slice(0, 8);
+      localStorage.setItem("pulseRecentSearches", JSON.stringify(next));
+    } catch (_) {}
+  }
+
+  function pulseSearchChip(label) {
+    return `<button class="pulse-search-chip" type="button" data-pulse-search-chip="${esc(label)}">${esc(label)}</button>`;
+  }
+
+  function renderPulseSearchStarter(trending = []) {
+    if (!pulseSearchRecentBox || !pulseSearchTrendingBox) return;
+    const recent = pulseSearchRecent();
+    pulseSearchRecentBox.innerHTML = recent.length ? recent.map(pulseSearchChip).join("") : '<span class="muted">Your searches will appear here.</span>';
+    pulseSearchTrendingBox.innerHTML = (trending.length ? trending : ["scam alerts", "AI builders", "creator economy", "wallet safety", "marketplace", "music"]).map(pulseSearchChip).join("");
+    pulseSearchStarter?.classList.remove("is-hidden");
+  }
+
+  function pulseSearchHighlight(text, query) {
+    const safe = esc(text || "");
+    const term = String(query || "").trim();
+    if (!term) return safe;
+    const needle = [...term].map(char => ".*+?^${}()|[]\\".includes(char) ? `\\${char}` : char).join("");
+    return safe.replace(new RegExp(`(${needle})`, "ig"), "<em>$1</em>");
+  }
+
+  function pulseSearchResultHtml(item, query) {
+    const letter = String(item.type || item.title || "P").slice(0, 1).toUpperCase();
+    return `<a class="pulse-search-result" href="${esc(item.url || "/pulse")}"><span class="pulse-search-mark">${esc(letter)}</span><span><strong>${pulseSearchHighlight(item.title || "PulseSoc result", query)}</strong><small>${pulseSearchHighlight(item.description || item.meta || "", query)}</small></span><span class="pulse-search-type">${esc(item.type || "PulseSoc")}</span></a>`;
+  }
+
+  function renderPulseSearchResults(data) {
+    if (!pulseSearchResults) return;
+    const query = data.query || pulseSearchState.query || "";
+    const results = data.results || {};
+    const sections = pulseSearchState.groups.map(([key, label]) => {
+      const items = results[key] || [];
+      if (!items.length) return "";
+      return `<section class="pulse-search-group"><h3>${label}</h3>${items.map(item => pulseSearchResultHtml(item, query)).join("")}</section>`;
+    }).join("");
+    pulseSearchResults.innerHTML = sections || '<div class="pulse-search-empty"><strong>No PulseSoc results found.</strong><p class="muted">Try another creator, topic, video, sound, listing, room, reel, or signal.</p></div>';
+    renderPulseSearchStarter(data.trending || []);
+  }
+
+  async function runCorePulseSearch(query) {
+    const clean = String(query || "").trim();
+    pulseSearchState.query = clean;
+    if (!pulseSearchResults) return;
+    if (!clean) {
+      pulseSearchResults.innerHTML = '<p class="muted">Search public PulseSoc posts, creators, videos, reels, statuses, marketplace listings, music, groups, rooms, and comments.</p>';
+      renderPulseSearchStarter();
+      return;
+    }
+    pulseSearchState.controller?.abort();
+    pulseSearchState.controller = typeof AbortController === "undefined" ? null : new AbortController();
+    pulseSearchResults.innerHTML = '<div class="pulse-search-loading">Searching PulseSoc...</div>';
+    try {
+      const data = await api(`/api/pulse/search?q=${encodeURIComponent(clean)}&limit=8`, { signal: pulseSearchState.controller?.signal, timeoutMs: 12000 });
+      if (clean !== pulseSearchState.query) return;
+      pulseSearchSave(clean);
+      renderPulseSearchResults(data);
+    } catch (error) {
+      if (clean !== pulseSearchState.query || error?.name === "AbortError") return;
+      pulseSearchResults.innerHTML = `<div class="pulse-search-error"><strong>Search could not load.</strong><p class="muted">${esc(error.message || "Try again in a moment.")}</p></div>`;
+    }
+  }
+
+  function debounceCorePulseSearch(query) {
+    clearTimeout(pulseSearchState.timer);
+    pulseSearchState.timer = setTimeout(() => runCorePulseSearch(query), 320);
+  }
 
   function openCorePulseSearch(query = "") {
     if (!pulseSearchOverlay) {
@@ -2078,9 +2171,9 @@
       pulseSearchInput.value = String(query || "");
       setTimeout(() => pulseSearchInput.focus(), 30);
     }
-    if (pulseSearchResults && !pulseSearchResults.textContent.trim()) {
-      pulseSearchResults.innerHTML = '<p class="muted">Search across public PulseSoc posts, creators, reels, groups, rooms, and comments.</p>';
-    }
+    renderPulseSearchStarter();
+    if (query) runCorePulseSearch(query);
+    else if (pulseSearchResults) pulseSearchResults.innerHTML = '<p class="muted">Search public PulseSoc posts, creators, videos, reels, statuses, marketplace listings, music, groups, rooms, and comments.</p>';
   }
 
   function closeCorePulseSearch() {
@@ -2094,12 +2187,52 @@
     event.stopPropagation();
     openCorePulseSearch("");
   });
+  document.querySelector("[data-pulse-search-form]")?.addEventListener("submit", event => {
+    event.preventDefault();
+    openCorePulseSearch(pulseSearchDesktopInput?.value || "");
+  });
+  document.querySelector("[data-pulse-search-overlay-form]")?.addEventListener("submit", event => {
+    event.preventDefault();
+    runCorePulseSearch(pulseSearchInput?.value || "");
+  });
+  pulseSearchDesktopInput?.addEventListener("input", event => {
+    const query = event.target.value || "";
+    if (query.trim().length >= 2) {
+      openCorePulseSearch(query);
+      debounceCorePulseSearch(query);
+    }
+  });
+  document.addEventListener("input", event => {
+    const input = event.target.closest?.("[data-pulse-search-input].pulse-desktop-search");
+    if (!input || input === pulseSearchInput) return;
+    const query = input.value || "";
+    if (query.trim().length >= 2) {
+      openCorePulseSearch(query);
+      debounceCorePulseSearch(query);
+    }
+  });
+  document.addEventListener("submit", event => {
+    const form = event.target.closest?.("[data-pulse-search-form]");
+    if (!form) return;
+    event.preventDefault();
+    const input = form.querySelector("[data-pulse-search-input]");
+    openCorePulseSearch(input?.value || pulseSearchDesktopInput?.value || "");
+  });
+  pulseSearchInput?.addEventListener("input", event => debounceCorePulseSearch(event.target.value || ""));
   document.querySelector("[data-close-pulse-search]")?.addEventListener("click", event => {
     event.preventDefault();
     closeCorePulseSearch();
   });
   pulseSearchOverlay?.addEventListener("click", event => {
     if (event.target === pulseSearchOverlay) closeCorePulseSearch();
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && pulseSearchOverlay?.classList.contains("open")) closeCorePulseSearch();
+  });
+  document.addEventListener("click", event => {
+    const chip = event.target.closest("[data-pulse-search-chip]");
+    if (!chip) return;
+    openCorePulseSearch(chip.dataset.pulseSearchChip || chip.textContent || "");
   });
 
   function bindTouchDiagnostics() {
