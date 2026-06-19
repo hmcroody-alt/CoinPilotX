@@ -105,6 +105,23 @@ def _dispatch_url() -> str:
     return _env_text("COMMAND_CENTER_INTERNAL_URL").rstrip("/") + "/internal/dispatch"
 
 
+def _worker_url(path: str) -> str:
+    return _env_text("COMMAND_CENTER_INTERNAL_URL").rstrip("/") + path
+
+
+def _internal_headers(idempotency_key: str = "") -> dict[str, str]:
+    identity = service_identity()
+    headers = {
+        "Content-Type": "application/json",
+        "X-PulseSoc-Internal-Token": _env_text("COMMAND_CENTER_INTERNAL_TOKEN"),
+        "X-PulseSoc-Service-Name": identity["service_name"],
+        "X-PulseSoc-Service-Role": identity["service_role"],
+    }
+    if idempotency_key:
+        headers["X-Idempotency-Key"] = idempotency_key[:128]
+    return headers
+
+
 def dispatch_event(kind: str, payload: dict[str, Any] | None = None, idempotency_key: str = "") -> dict[str, Any]:
     safe_kind = (kind or "unknown").strip().lower().replace(" ", "_")[:64]
     if not is_enabled():
@@ -129,14 +146,7 @@ def dispatch_event(kind: str, payload: dict[str, Any] | None = None, idempotency
         "source": identity,
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
     }
-    headers = {
-        "Content-Type": "application/json",
-        "X-PulseSoc-Internal-Token": internal_token,
-        "X-PulseSoc-Service-Name": identity["service_name"],
-        "X-PulseSoc-Service-Role": identity["service_role"],
-    }
-    if idempotency_key:
-        headers["X-Idempotency-Key"] = idempotency_key[:128]
+    headers = _internal_headers(idempotency_key)
 
     try:
         response = requests.post(_dispatch_url(), json=event_body, headers=headers, timeout=_timeout_seconds())
@@ -177,3 +187,43 @@ def enqueue_media_event(payload: dict[str, Any] | None = None, idempotency_key: 
 
 def enqueue_ai_event(payload: dict[str, Any] | None = None, idempotency_key: str = "") -> dict[str, Any]:
     return dispatch_event("ai", payload, idempotency_key=idempotency_key)
+
+
+def enqueue_presence_event(user_id: int, status: str, source: str | None = None, device_label: str | None = None) -> dict[str, Any]:
+    safe_status = str(status or "").strip().lower()
+    payload = {
+        "user_id": int(user_id or 0),
+        "status": safe_status,
+        "source": str(source or "web")[:80],
+        "device_label": str(device_label or "")[:120],
+    }
+    if payload["user_id"] <= 0 or safe_status not in {"online", "away", "offline"}:
+        LOGGER.info("COMMAND_CENTER_PRESENCE_SKIPPED reason=invalid_payload status=%s", safe_status)
+        return _record_status("presence", False, False, "invalid_payload")
+    if not is_enabled():
+        LOGGER.info("COMMAND_CENTER_PRESENCE_SKIPPED user_id=%s reason=disabled", payload["user_id"])
+        return _record_status("presence", True, False, "disabled")
+    internal_url = _env_text("COMMAND_CENTER_INTERNAL_URL").rstrip("/")
+    internal_token = _env_text("COMMAND_CENTER_INTERNAL_TOKEN")
+    if not internal_url or not internal_token:
+        LOGGER.warning(
+            "COMMAND_CENTER_PRESENCE_SKIPPED reason=not_configured url_configured=%s token_configured=%s",
+            bool(internal_url),
+            bool(internal_token),
+        )
+        return _record_status("presence", False, False, "not_configured")
+    try:
+        response = requests.post(
+            _worker_url("/internal/command-center/presence/update"),
+            json=payload,
+            headers=_internal_headers(f"presence-{payload['user_id']}-{safe_status}"),
+            timeout=_timeout_seconds(),
+        )
+        ok = 200 <= response.status_code < 300
+        if not ok:
+            LOGGER.warning("COMMAND_CENTER_PRESENCE_FAILED status_code=%s", response.status_code)
+            return _record_status("presence", False, True, "worker_rejected", status_code=response.status_code)
+        return _record_status("presence", True, True, "sent", status_code=response.status_code)
+    except requests.RequestException as exc:
+        LOGGER.warning("COMMAND_CENTER_PRESENCE_FAILED error_type=%s", exc.__class__.__name__)
+        return _record_status("presence", False, False, "request_failed", error_type=exc.__class__.__name__)

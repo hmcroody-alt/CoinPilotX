@@ -13,6 +13,7 @@ from flask import Flask, jsonify, request
 from .config import load_config
 from .health import health_payload, utc_timestamp
 from .heartbeat import start_heartbeat
+from .presence import PresenceValidationError, get_presence, update_presence
 from .security import require_internal_auth
 
 
@@ -52,6 +53,35 @@ def create_app() -> Flask:
             event["source"],
         )
         return jsonify({"accepted": True, "event_id": event["event_id"], "status": "received"})
+
+    @worker_app.post("/internal/command-center/presence/update")
+    @require_internal_auth
+    def command_center_presence_update():
+        body = request.get_json(silent=True) or {}
+        try:
+            presence = update_presence(
+                body.get("user_id"),
+                body.get("status"),
+                source=str(body.get("source") or "worker")[:80],
+                device_label=str(body.get("device_label") or "")[:120],
+            )
+        except PresenceValidationError as exc:
+            return jsonify({"ok": False, "accepted": False, "error": str(exc)}), 400
+        except Exception as exc:
+            LOGGER.warning("COMMAND_CENTER_PRESENCE_UPDATE_FAILED error_type=%s", exc.__class__.__name__)
+            return jsonify({"ok": False, "accepted": False, "error": "presence_update_failed"}), 503
+        return jsonify({"ok": True, "accepted": True, "presence": presence})
+
+    @worker_app.get("/internal/command-center/presence/<int:user_id>")
+    @require_internal_auth
+    def command_center_presence_get(user_id):
+        try:
+            return jsonify(get_presence(user_id))
+        except PresenceValidationError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            LOGGER.warning("COMMAND_CENTER_PRESENCE_GET_FAILED error_type=%s", exc.__class__.__name__)
+            return jsonify({"ok": False, "error": "presence_lookup_failed"}), 503
 
     return worker_app
 

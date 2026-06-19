@@ -149,6 +149,7 @@
   }
 
   function presenceForConversation(item) {
+    if (item?.presence && item.presence.available !== false && item.presence.status) return item.presence;
     const peerId = Number(item?.peer_user_id || item?.other_user_id || item?.target_user_id || 0);
     const directPeer = peerId ? presenceForUser(peerId) : null;
     if (directPeer?.user_id) return directPeer;

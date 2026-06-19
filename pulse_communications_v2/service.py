@@ -380,6 +380,40 @@ def _participant_ids(cur, conversation_id: int) -> list[int]:
     return [int(row["user_id"]) for row in cur.fetchall()]
 
 
+def _user_presence_by_ids(cur, user_ids: list[int]) -> dict[int, dict]:
+    ids = sorted({int(user_id) for user_id in user_ids if int(user_id or 0)})
+    if not ids:
+        return {}
+    try:
+        bot = _bot()
+        ensure_presence = getattr(bot, "ensure_user_presence_schema", None)
+        if ensure_presence:
+            ensure_presence(cur)
+        placeholders = ",".join(["?"] * len(ids))
+        cur.execute(
+            f"""
+            SELECT user_id, status, last_seen_at, last_active_at, updated_at
+            FROM user_presence
+            WHERE user_id IN ({placeholders})
+            """,
+            tuple(ids),
+        )
+        return {
+            int(row["user_id"]): {
+                "user_id": int(row["user_id"]),
+                "status": row["status"] or "offline",
+                "last_seen_at": row["last_seen_at"] or "",
+                "last_active_at": row["last_active_at"] or "",
+                "updated_at": row["updated_at"] or "",
+                "available": True,
+            }
+            for row in cur.fetchall()
+        }
+    except Exception as exc:
+        logging.info("COMM_V2_USER_PRESENCE_LOOKUP_SKIPPED error=%s", exc.__class__.__name__)
+        return {}
+
+
 def _settings(cur, user_id: int) -> dict:
     cur.execute("SELECT * FROM comm_v2_user_settings WHERE user_id=? LIMIT 1", (int(user_id),))
     row = _row(cur.fetchone())
@@ -651,6 +685,7 @@ def _conversation_payloads(cur, conversations: list[dict], viewer_user_id: int) 
         )
         latest_by_conversation = {int(row["conversation_id"]): dict(row) for row in cur.fetchall()}
     out = []
+    presence_by_user = _user_presence_by_ids(cur, [int(member.get("user_id") or 0) for members in preview_by_conversation.values() for member in members])
     for conversation in conversations:
         conversation_id = int(conversation.get("id") or 0)
         mine = mine_by_conversation.get(conversation_id, {})
@@ -663,6 +698,10 @@ def _conversation_payloads(cur, conversations: list[dict], viewer_user_id: int) 
             others = [m for m in members if int(m.get("user_id") or 0) != int(viewer_user_id)]
             if others:
                 title = others[0].get("display_name") or title
+        peer_id = 0
+        if conversation.get("conversation_type") == "direct":
+            peer_id = next((int(m.get("user_id") or 0) for m in members if int(m.get("user_id") or 0) != int(viewer_user_id)), 0)
+        peer_presence = presence_by_user.get(peer_id, {}) if peer_id else {}
         avatar_url = next((m.get("avatar_url") or "" for m in members if int(m.get("user_id") or 0) != int(viewer_user_id)), "")
         out.append({
             "id": conversation_id,
@@ -687,6 +726,8 @@ def _conversation_payloads(cur, conversations: list[dict], viewer_user_id: int) 
             "pinned": bool(mine.get("pinned_at")),
             "muted": bool(mine.get("muted_until") and str(mine.get("muted_until")) > _now()),
             "participants_preview": members,
+            "peer_user_id": peer_id,
+            "presence": peer_presence if peer_presence.get("available") else {},
         })
     return out
 
