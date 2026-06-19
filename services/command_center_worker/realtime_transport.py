@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from services import db as db_service
+from .redis_manager import safe_delete, safe_get, safe_publish, safe_rate_limit, safe_scan, safe_set
 
 
 VALID_EVENT_TYPES = {
@@ -43,6 +44,7 @@ MAX_EVENTS = 1000
 MAX_PAYLOAD_BYTES = 12_000
 CONNECTION_TTL_SECONDS = 180
 TYPING_RATE_SECONDS = 0.7
+EVENT_CACHE_TTL_SECONDS = 10 * 60
 
 _lock = threading.RLock()
 _event_id = 0
@@ -180,6 +182,9 @@ def _normalize_recipient_ids(recipient_ids: Any, event_type: str, conversation_i
 def _rate_allowed(event_type: str, user_id: int, conversation_id: int) -> bool:
     if event_type not in NOISY_EVENT_TYPES:
         return True
+    redis_limit = safe_rate_limit(f"typing:{int(user_id)}:{int(conversation_id)}", limit=1, window_seconds=max(1, int(TYPING_RATE_SECONDS)))
+    if redis_limit.get("redis"):
+        return bool(redis_limit.get("allowed"))
     key = f"{event_type}:{int(user_id)}:{int(conversation_id)}"
     now = time.monotonic()
     with _lock:
@@ -200,6 +205,20 @@ def cleanup_stale_connections(max_age_seconds: int = CONNECTION_TTL_SECONDS) -> 
             if not isinstance(last_seen, datetime) or last_seen < cutoff:
                 _connections.pop(key, None)
                 removed += 1
+    for key in safe_scan("connection:*", limit=1000):
+        value = safe_get(key)
+        if not isinstance(value, dict):
+            continue
+        last_seen = value.get("last_seen") or value.get("connected_at") or ""
+        try:
+            parsed = datetime.fromisoformat(str(last_seen).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+        except Exception:
+            parsed = datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds + 1)
+        if parsed < cutoff:
+            safe_delete(key)
+            removed += 1
     return removed
 
 
@@ -226,6 +245,20 @@ def connect_user(user_id: Any, session_id: str = "", device_type: str = "", subs
             "subscribed_conversations": subscribed,
         }
         _metrics["connections_total"] += 1
+    safe_set(
+        f"connection:{normalized_user_id}:{normalized_session_id}",
+        {
+            "user_id": normalized_user_id,
+            "session_id": normalized_session_id,
+            "device": _clean_text(device_type or "web", 40),
+            "device_type": _clean_text(device_type or "web", 40),
+            "transport": "sse",
+            "connected_at": _connections[key]["connected_at"],
+            "last_seen": _connections[key]["last_seen"],
+            "subscriptions": subscribed,
+        },
+        ttl_seconds=CONNECTION_TTL_SECONDS,
+    )
     return {"ok": True, "connected": True, "user_id": normalized_user_id, "session_id": normalized_session_id, "subscribed_conversations": subscribed}
 
 
@@ -236,6 +269,7 @@ def disconnect_user(user_id: Any, session_id: str = "") -> dict:
         removed = _connections.pop(_connection_key(normalized_user_id, normalized_session_id), None)
         if removed:
             _metrics["disconnects_total"] += 1
+    safe_delete(f"connection:{normalized_user_id}:{normalized_session_id}")
     return {"ok": True, "disconnected": bool(removed)}
 
 
@@ -255,6 +289,17 @@ def subscribe_conversation(user_id: Any, session_id: str, conversation_id: Any) 
             item["subscribed_conversations"] = sorted(subscribed)
             item["last_seen"] = iso_now()
             item["last_seen_dt"] = datetime.now(timezone.utc)
+    safe_set(
+        f"connection:{normalized_user_id}:{_clean_text(session_id or 'session', 120)}",
+        {
+            "user_id": normalized_user_id,
+            "session_id": _clean_text(session_id or "session", 120),
+            "transport": "sse",
+            "last_seen": iso_now(),
+            "subscriptions": sorted(set((safe_get(f"connection:{normalized_user_id}:{_clean_text(session_id or 'session', 120)}") or {}).get("subscriptions") or []) | {normalized_conversation_id}),
+        },
+        ttl_seconds=CONNECTION_TTL_SECONDS,
+    )
     return {"ok": True, "subscribed": True, "conversation_id": normalized_conversation_id}
 
 
@@ -293,7 +338,13 @@ def publish_event(
         _events.append(event)
         _metrics["events_published"] += 1
         _metrics[f"type:{normalized_type}"] += 1
-    return {"ok": True, "accepted": True, "event": public_event(event), "recipient_count": len(recipients)}
+    public = public_event(event)
+    for recipient_id in recipients:
+        safe_set(f"realtime:user:{recipient_id}:event:{event['id']}", public, ttl_seconds=EVENT_CACHE_TTL_SECONDS)
+        safe_publish(f"realtime:user:{recipient_id}", public)
+    if normalized_conversation_id:
+        safe_publish(f"realtime:conversation:{normalized_conversation_id}", public)
+    return {"ok": True, "accepted": True, "event": public, "recipient_count": len(recipients)}
 
 
 def public_event(event: dict[str, Any]) -> dict[str, Any]:
@@ -312,6 +363,20 @@ def poll_user_events(user_id: Any, after_id: Any = 0, limit: Any = 80) -> dict:
     normalized_user_id = _positive_int(user_id, "user_id")
     normalized_after_id = _positive_int(after_id, "after_id", required=False)
     safe_limit = max(1, min(int(limit or 80), 200))
+    redis_events = []
+    for key in safe_scan(f"realtime:user:{normalized_user_id}:event:*", limit=500):
+        item = safe_get(key)
+        if isinstance(item, dict) and int(item.get("id") or 0) > normalized_after_id:
+            redis_events.append(item)
+    if redis_events:
+        events = sorted(redis_events, key=lambda item: int(item.get("id") or 0))[-safe_limit:]
+        return {
+            "ok": True,
+            "user_id": normalized_user_id,
+            "events": events,
+            "latest_event_id": max([int(event.get("id") or 0) for event in events] or [normalized_after_id]),
+            "transport": "redis_sse_polling_fallback_ready",
+        }
     with _lock:
         events = [
             public_event(event)
@@ -335,13 +400,20 @@ def status_snapshot() -> dict:
         subscribed = sum(len(item.get("subscribed_conversations") or []) for item in _connections.values())
         failed_sends = int(_metrics.get("failed_sends", 0))
         reconnect_count = int(_metrics.get("reconnects", 0))
+    redis_connection_keys = safe_scan("connection:*", limit=2000)
+    redis_event_keys = safe_scan("realtime:user:*:event:*", limit=2000)
+    redis_connected_users = set()
+    for key in redis_connection_keys:
+        item = safe_get(key)
+        if isinstance(item, dict) and int(item.get("user_id") or 0) > 0:
+            redis_connected_users.add(int(item.get("user_id") or 0))
     return {
         "ok": True,
-        "transport": "sse_first_polling_fallback",
-        "active_connections": len(_connections),
-        "connected_users": len(connected_users),
+        "transport": "redis_sse_first_polling_fallback" if redis_connection_keys or redis_event_keys else "sse_first_polling_fallback",
+        "active_connections": max(len(_connections), len(redis_connection_keys)),
+        "connected_users": max(len(connected_users), len(redis_connected_users)),
         "subscribed_conversations": subscribed,
-        "events_buffered": len(_events),
+        "events_buffered": max(len(_events), len(redis_event_keys)),
         "events_per_minute": len(recent_events),
         "failed_sends": failed_sends,
         "reconnect_count": reconnect_count,

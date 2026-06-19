@@ -9,12 +9,14 @@ from datetime import datetime, timezone
 from typing import Any
 
 from services import db as db_service
+from .redis_manager import safe_delete, safe_get, safe_set
 
 
 ALLOWED_CHANNELS = {"in_app", "push", "email", "sms"}
 EXTERNAL_CHANNELS = {"push", "email", "sms"}
 MESSAGE_TYPES = {"message", "chat_message", "voice_message", "group_message", "room_message"}
 MAX_PAYLOAD_BYTES = 12_000
+NOTIFICATION_CACHE_TTL_SECONDS = 10 * 60
 
 
 class NotificationValidationError(ValueError):
@@ -147,6 +149,7 @@ def accept_notification_event(
             (normalized_event_id, recipient_id, actor_id, notification_type, title, body, _payload_json(payload), channel, now),
         )
         conn.commit()
+        safe_delete(f"notifications:user:{recipient_id}", f"notifications:unread:user:{recipient_id}")
         return {
             "accepted": True,
             "event_id": normalized_event_id,
@@ -199,6 +202,7 @@ def mark_read(recipient_id: int, event_id: str = "", mark_all: bool = False) -> 
             )
         changed = int(cur.rowcount or 0)
         conn.commit()
+        safe_delete(f"notifications:user:{recipient_id}", f"notifications:unread:user:{recipient_id}")
         return {"ok": True, "updated": changed, "recipient_id": recipient_id, "event_id": event_id, "status": "read"}
     finally:
         conn.close()
@@ -206,6 +210,11 @@ def mark_read(recipient_id: int, event_id: str = "", mark_all: bool = False) -> 
 
 def get_unread_count(recipient_id: int) -> dict:
     recipient_id = _positive_int(recipient_id, "recipient_id")
+    cached = safe_get(f"notifications:unread:user:{recipient_id}")
+    if isinstance(cached, dict):
+        cached.setdefault("recipient_id", recipient_id)
+        cached.setdefault("source", "redis")
+        return cached
     conn, cur = _open_db()
     try:
         cur.execute(
@@ -214,7 +223,9 @@ def get_unread_count(recipient_id: int) -> dict:
         )
         row = cur.fetchone()
         count = int((row["total"] if hasattr(row, "keys") else row[0]) or 0)
-        return {"recipient_id": recipient_id, "alert_unread_count": count, "unread_count": count, "count": count}
+        result = {"recipient_id": recipient_id, "alert_unread_count": count, "unread_count": count, "count": count, "source": "postgres"}
+        safe_set(f"notifications:unread:user:{recipient_id}", result, ttl_seconds=NOTIFICATION_CACHE_TTL_SECONDS)
+        return result
     finally:
         conn.close()
 
@@ -222,6 +233,13 @@ def get_unread_count(recipient_id: int) -> dict:
 def get_recent_notifications(recipient_id: int, limit: int = 50) -> dict:
     recipient_id = _positive_int(recipient_id, "recipient_id")
     limit = max(1, min(int(limit or 50), 100))
+    cache_key = f"notifications:user:{recipient_id}"
+    if limit <= 50:
+        cached = safe_get(cache_key)
+        if isinstance(cached, dict):
+            cached.setdefault("recipient_id", recipient_id)
+            cached.setdefault("source", "redis")
+            return cached
     conn, cur = _open_db()
     try:
         cur.execute(
@@ -235,7 +253,10 @@ def get_recent_notifications(recipient_id: int, limit: int = 50) -> dict:
             (recipient_id, limit),
         )
         items = [dict(row) for row in cur.fetchall()]
-        return {"recipient_id": recipient_id, "notifications": items, "items": items}
+        result = {"recipient_id": recipient_id, "notifications": items, "items": items, "source": "postgres"}
+        if limit <= 50:
+            safe_set(cache_key, result, ttl_seconds=NOTIFICATION_CACHE_TTL_SECONDS)
+        return result
     finally:
         conn.close()
 

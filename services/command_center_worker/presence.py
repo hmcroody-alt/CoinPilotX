@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import load_config
+from .redis_manager import safe_delete, safe_get, safe_scan, safe_set
 
 try:
     from sqlalchemy import create_engine, text
@@ -21,6 +22,7 @@ LOGGER = logging.getLogger(__name__)
 VALID_STATUSES = {"online", "away", "offline"}
 AWAY_AFTER_MINUTES = 5
 OFFLINE_AFTER_MINUTES = 15
+PRESENCE_TTL_SECONDS = 20 * 60
 
 
 class PresenceValidationError(ValueError):
@@ -175,6 +177,46 @@ def _row_to_presence(row: Any, user_id: int) -> dict:
     }
 
 
+def _presence_key(user_id: int) -> str:
+    return f"presence:user:{int(user_id)}"
+
+
+def _presence_from_cache(user_id: int) -> dict | None:
+    cached = safe_get(_presence_key(user_id))
+    if not isinstance(cached, dict):
+        return None
+    status = str(cached.get("status") or "").lower()
+    if status not in VALID_STATUSES:
+        return None
+    return {
+        "user_id": int(cached.get("user_id") or user_id),
+        "status": status,
+        "last_seen_at": cached.get("last_seen_at") or cached.get("last_seen") or "",
+        "last_active_at": cached.get("last_active_at") or "",
+        "source": cached.get("source") or "",
+        "device_label": cached.get("device_label") or "",
+        "updated_at": cached.get("updated_at") or "",
+        "cache": "redis",
+    }
+
+
+def _cache_presence(presence: dict) -> bool:
+    user_id = int(presence.get("user_id") or 0)
+    if user_id <= 0:
+        return False
+    payload = {
+        "user_id": user_id,
+        "status": presence.get("status") or "offline",
+        "last_seen": presence.get("last_seen_at") or "",
+        "last_seen_at": presence.get("last_seen_at") or "",
+        "last_active_at": presence.get("last_active_at") or "",
+        "source": presence.get("source") or "",
+        "device_label": presence.get("device_label") or "",
+        "updated_at": presence.get("updated_at") or "",
+    }
+    return safe_set(_presence_key(user_id), payload, ttl_seconds=PRESENCE_TTL_SECONDS)
+
+
 def update_presence(user_id, status, source: str = "", device_label: str = "") -> dict:
     normalized_user_id = validate_user_id(user_id)
     normalized_status = normalize_status(status)
@@ -183,6 +225,16 @@ def update_presence(user_id, status, source: str = "", device_label: str = "") -
     last_active_at = now if normalized_status in {"online", "away"} else ""
     source = str(source or "")[:80]
     device_label = str(device_label or "")[:120]
+    cached_presence = {
+        "user_id": normalized_user_id,
+        "status": normalized_status,
+        "last_seen_at": last_seen_at,
+        "last_active_at": last_active_at,
+        "source": source,
+        "device_label": device_label,
+        "updated_at": now,
+    }
+    _cache_presence(cached_presence)
     connection_kind, conn = _connect()
     if connection_kind == "sqlalchemy":
         engine = conn
@@ -240,6 +292,9 @@ def update_presence(user_id, status, source: str = "", device_label: str = "") -
 
 def get_presence(user_id) -> dict:
     normalized_user_id = validate_user_id(user_id)
+    cached = _presence_from_cache(normalized_user_id)
+    if cached:
+        return cached
     connection_kind, conn = _connect()
     if connection_kind == "sqlalchemy":
         engine = conn
@@ -286,6 +341,20 @@ def cleanup_stale_presence() -> dict:
     now_dt = utc_now()
     now = iso_now()
     changed = {"away": 0, "offline": 0}
+    for key in safe_scan("presence:user:*", limit=1000):
+        cached = safe_get(key)
+        if not isinstance(cached, dict):
+            continue
+        user_id = int(cached.get("user_id") or str(key).rsplit(":", 1)[-1] or 0)
+        current_status = str(cached.get("status") or "offline")
+        next_status = _cleanup_status_for(cached.get("last_active_at") or cached.get("last_seen_at") or "", current_status, now_dt)
+        if next_status != current_status and user_id > 0:
+            cached["status"] = next_status
+            cached["updated_at"] = now
+            safe_set(_presence_key(user_id), cached, ttl_seconds=PRESENCE_TTL_SECONDS)
+            changed[next_status] = changed.get(next_status, 0) + 1
+        if next_status == "offline" and user_id > 0:
+            safe_delete(_presence_key(user_id))
     connection_kind, conn = _connect()
     if connection_kind == "sqlalchemy":
         engine = conn

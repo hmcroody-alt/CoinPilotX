@@ -62,7 +62,8 @@ def audit_worker_endpoints() -> dict:
 
     health = health_payload(config)
     expect("database_ok" in health, "database check missing from health payload")
-    expect(health.get("redis_ok") is None, "missing Redis should report null without crashing")
+    expect(health.get("redis_enabled") is False, "missing Redis should report disabled without crashing")
+    expect(health.get("redis_ok") is False, "missing Redis should report not ok without crashing")
     health_json = json.dumps(health, sort_keys=True)
     expect(AUDIT_TOKEN not in health_json, "internal token leaked in health payload")
     expect("COMMAND_CENTER_INTERNAL_TOKEN" not in health_json, "token env key leaked in health payload")
@@ -137,7 +138,7 @@ def main() -> int:
         "protected_endpoint_rejects_invalid_token": endpoints["invalid_token_status"] == 403,
         "protected_endpoint_accepts_valid_token": endpoints["accepted_status"] == 200,
         "database_check_exposes_secrets": False,
-        "redis_missing_does_not_crash": endpoints["health"].get("redis_ok") is None,
+        "redis_missing_does_not_crash": endpoints["health"].get("redis_enabled") is False and endpoints["health"].get("redis_ok") is False,
         "main_app_behavior_moved": False,
         "main_app": main_app,
     }

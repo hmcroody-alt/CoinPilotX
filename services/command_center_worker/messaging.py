@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from services import db as db_service
+from .redis_manager import safe_delete, safe_get, safe_scan, safe_set
 
 
 LOGGER = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ VALID_EVENT_TYPES = {
 }
 TYPING_TTL_SECONDS = 5
 MAX_PAYLOAD_BYTES = 12_000
+UNREAD_CACHE_TTL_SECONDS = 10 * 60
 _typing_rate_lock = threading.Lock()
 _typing_rate: dict[str, float] = {}
 
@@ -170,6 +172,10 @@ def accept_message_event(
             ),
         )
         conn.commit()
+        if normalized_type == "message_created" and normalized_recipient_id:
+            safe_delete(f"unread:user:{normalized_recipient_id}")
+        if normalized_type == "message_read" and normalized_recipient_id:
+            safe_delete(f"unread:user:{normalized_recipient_id}")
         return {
             "accepted": True,
             "event_id": normalized_event_id,
@@ -222,6 +228,17 @@ def set_typing(conversation_id: int, sender_id: int, payload: dict | None = None
     sender_id = _positive_int(sender_id, "sender_id")
     if not _typing_rate_allowed(conversation_id, sender_id):
         return {"accepted": True, "status": "rate_limited", "conversation_id": conversation_id, "sender_id": sender_id}
+    safe_set(
+        f"typing:{conversation_id}:{sender_id}",
+        {
+            "conversation_id": conversation_id,
+            "user_id": sender_id,
+            "sender_id": sender_id,
+            "is_typing": True,
+            "updated_at": iso_now(),
+        },
+        ttl_seconds=TYPING_TTL_SECONDS,
+    )
     return accept_message_event(
         "typing_started",
         conversation_id,
@@ -231,11 +248,17 @@ def set_typing(conversation_id: int, sender_id: int, payload: dict | None = None
 
 
 def clear_typing(conversation_id: int, sender_id: int, payload: dict | None = None) -> dict:
+    safe_delete(f"typing:{int(conversation_id or 0)}:{int(sender_id or 0)}")
     return accept_message_event("typing_stopped", conversation_id, sender_id=sender_id, payload=payload or {})
 
 
 def get_unread_counts(user_id: int) -> dict:
     normalized_user_id = _positive_int(user_id, "user_id")
+    cached = safe_get(f"unread:user:{normalized_user_id}")
+    if isinstance(cached, dict):
+        cached.setdefault("user_id", normalized_user_id)
+        cached.setdefault("source", "redis")
+        return cached
     conn = db_service.connect()
     cur = conn.cursor()
     try:
@@ -257,17 +280,33 @@ def get_unread_counts(user_id: int) -> dict:
             ]
         except Exception:
             conversations = []
-        return {
+        result = {
             "user_id": normalized_user_id,
             "total_unread": sum(item["unread_count"] for item in conversations),
             "conversations": conversations,
             "source": "comm_v2_participants",
         }
+        safe_set(f"unread:user:{normalized_user_id}", result, ttl_seconds=UNREAD_CACHE_TTL_SECONDS)
+        return result
     finally:
         conn.close()
 
 
 def _latest_typing(cur, conversation_id: int) -> list[dict]:
+    redis_typing = []
+    for key in safe_scan(f"typing:{int(conversation_id)}:*", limit=120):
+        cached = safe_get(key)
+        if isinstance(cached, dict) and int(cached.get("user_id") or cached.get("sender_id") or 0) > 0:
+            redis_typing.append(
+                {
+                    "user_id": int(cached.get("user_id") or cached.get("sender_id") or 0),
+                    "is_typing": True,
+                    "expires_in_seconds": TYPING_TTL_SECONDS,
+                    "source": "redis",
+                }
+            )
+    if redis_typing:
+        return redis_typing
     cutoff = (utc_now() - timedelta(seconds=TYPING_TTL_SECONDS)).isoformat(timespec="seconds").replace("+00:00", "Z")
     cur.execute(
         """

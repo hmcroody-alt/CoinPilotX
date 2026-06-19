@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import socket
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse
 
 from .config import WorkerConfig
+from .redis_manager import redis_health
 
 try:
     from sqlalchemy import create_engine, text
@@ -54,30 +53,16 @@ def check_database(config: WorkerConfig) -> bool:
         return False
 
 
-def check_redis(config: WorkerConfig) -> bool | None:
-    if not config.redis_url:
-        return None
-    try:
-        parsed = urlparse(config.redis_url)
-        host = parsed.hostname
-        port = parsed.port or 6379
-        if not host:
-            return False
-        with socket.create_connection((host, port), timeout=1.5) as sock:
-            sock.sendall(b"*1\r\n$4\r\nPING\r\n")
-            response = sock.recv(64)
-        return b"PONG" in response
-    except Exception:
-        return False
-
-
 def health_payload(config: WorkerConfig) -> dict:
+    redis = redis_health()
     return {
         "service_name": config.service_name,
         "service_role": config.service_role,
         "worker_enabled": config.worker_enabled,
         "database_ok": check_database(config),
-        "redis_ok": check_redis(config),
+        "redis_ok": redis.get("redis_ok"),
+        "redis_latency_ms": redis.get("redis_latency_ms"),
+        "redis_enabled": bool(redis.get("redis_enabled")),
         "redis_configured": config.redis_configured,
         "internal_auth_configured": config.internal_token_configured,
         "heartbeat_seconds": config.heartbeat_seconds,
