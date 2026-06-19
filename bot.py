@@ -4033,6 +4033,7 @@ def signup_page():
         email_opt_in = request.form.get("email_opt_in") == "on"
         sms_opt_in = request.form.get("sms_opt_in") == "on"
         age_confirmed = request.form.get("age_confirmed") == "on" or request.form.get("age_confirmed") == "true"
+        terms_accepted = request.form.get("terms_accepted") == "on" or request.form.get("terms_accepted") == "true"
         if email and not is_valid_email(email):
             return render_account_page("signup", "Create Account", error="Please enter a valid email address.")
         if not email and not phone:
@@ -4041,6 +4042,8 @@ def signup_page():
             return render_account_page("signup", "Create Account", error="Use 3-40 letters, numbers, dots, underscores, or dashes for your handle.")
         if not age_confirmed:
             return render_account_page("signup", "Create Account", error="Confirm your age eligibility before creating your account.")
+        if not terms_accepted:
+            return render_account_page("signup", "Create Account", error="Agree to the Terms, Privacy Policy, and no-tolerance safety rules before creating your account.")
         if len(password) < 8:
             return render_account_page("signup", "Create Account", error="Use at least 8 characters for your password.")
         if phone and not valid_phone(phone):
@@ -4090,6 +4093,9 @@ def login_page():
             return render_account_page("login", "Login", error="Security check failed. Please try again.")
         email = normalize_email(clean_html(request.form.get("email", "")))
         password = request.form.get("password", "")
+        terms_accepted = request.form.get("terms_accepted") == "on" or request.form.get("terms_accepted") == "true"
+        if not terms_accepted:
+            return render_account_page("login", "Login", error="Agree to the Terms, Privacy Policy, and no-tolerance safety rules before logging in.", resend_email=email), 400
         security_gate = login_security_preflight(email, enforce_challenge=False)
         if not security_gate.get("allowed"):
             return render_account_page(
@@ -63001,6 +63007,85 @@ def api_pulse_report():
     result = pulse_feed_engine.report(user["user_id"], payload.get("target_type") or "post", payload.get("target_id") or 0, payload.get("reason") or "reported")
     log_product_event(user["user_id"], "pulse_report_created", {"target_type": payload.get("target_type"), "target_id": payload.get("target_id")})
     return jsonify(result)
+
+
+@webhook_app.route("/api/pulse/block", methods=["POST"])
+def api_pulse_block_user():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    public_player_id = clean_html(str(payload.get("public_player_id") or "")).strip()[:120]
+    blocked_user_id = safe_int(payload.get("blocked_user_id"), 0)
+    reason = clean_html(str(payload.get("reason") or "Blocked from PulseSoc feed")).strip()[:500]
+    trace_id = secrets.token_hex(6)
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    try:
+        target = None
+        if public_player_id:
+            cur.execute(
+                """
+                SELECT u.user_id, ap.public_player_id
+                FROM arena_profiles ap
+                JOIN users u ON u.user_id=ap.user_id
+                WHERE LOWER(ap.public_player_id)=LOWER(?)
+                LIMIT 1
+                """,
+                (public_player_id,),
+            )
+            target = cur.fetchone()
+        if not target and blocked_user_id:
+            cur.execute(
+                """
+                SELECT u.user_id, ap.public_player_id
+                FROM users u
+                LEFT JOIN arena_profiles ap ON ap.user_id=u.user_id
+                WHERE u.user_id=?
+                LIMIT 1
+                """,
+                (blocked_user_id,),
+            )
+            target = cur.fetchone()
+        if not target:
+            conn.close()
+            return jsonify({"ok": False, "message": "User not found."}), 404
+        target = dict(target)
+        blocked_user_id = int(target.get("user_id") or 0)
+        if blocked_user_id == int(user["user_id"]):
+            conn.close()
+            return jsonify({"ok": False, "message": "You cannot block yourself."}), 400
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        cur.execute(
+            "INSERT INTO blocked_users (blocker_user_id, blocked_user_id, reason, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(blocker_user_id, blocked_user_id) DO UPDATE SET reason=excluded.reason",
+            (int(user["user_id"]), blocked_user_id, reason, now),
+        )
+        details = json.dumps({"source": "pulse_feed_block", "trace_id": trace_id, "public_player_id": target.get("public_player_id") or public_player_id})
+        cur.execute(
+            """
+            INSERT INTO pulse_reports (reporter_user_id, target_type, target_id, reason, details, status, created_at, updated_at)
+            VALUES (?, 'user', ?, ?, ?, 'open', ?, ?)
+            """,
+            (int(user["user_id"]), blocked_user_id, reason or "Blocked abusive user", details, now, now),
+        )
+        conn.commit()
+        log_product_event(user["user_id"], "pulse_user_blocked", {"blocked_user_id": blocked_user_id, "trace_id": trace_id})
+        pulse_emit_event("pulse_user_blocked", {"blocked_user_id": blocked_user_id, "trace_id": trace_id}, user["user_id"], blocked_user_id)
+        conn.close()
+        return jsonify({
+            "ok": True,
+            "message": "User blocked and sent to moderation.",
+            "blocked_user_id": blocked_user_id,
+            "public_player_id": target.get("public_player_id") or public_player_id,
+            "trace_id": trace_id,
+        })
+    except Exception as exc:
+        conn.rollback()
+        conn.close()
+        logging.exception("PULSE_BLOCK_USER_FAILED trace_id=%s user_id=%s", trace_id, user.get("user_id"))
+        return api_error("Block action failed. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
 
 
 @webhook_app.route("/api/pulse/posts/<int:post_id>/view", methods=["POST"])

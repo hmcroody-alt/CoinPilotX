@@ -36,6 +36,7 @@ def main():
         "mobile/pulse-react-native/store-metadata/data-safety.md",
         "mobile/pulse-react-native/store-metadata/moderation.md",
         "mobile/pulse-react-native/store-metadata/premium-compliance.md",
+        "scripts/pulse_app_store_review_fix_audit.py",
         "reports/pulse_app_store_connect_setup.md",
         "reports/pulse_app_store_play_store_readiness.md",
     ]
@@ -49,6 +50,7 @@ def main():
         "icon configured": app.get("icon") == "./assets/icon.png",
         "splash configured": (app.get("splash") or {}).get("image") == "./assets/splash.png",
         "ios bundle id": (app.get("ios") or {}).get("bundleIdentifier") == "com.pulsesoc.app",
+        "ios tablet disabled pending iPad QA": (app.get("ios") or {}).get("supportsTablet") is False,
         "ios firebase config": (app.get("ios") or {}).get("googleServicesFile") == "./credentials/firebase/GoogleService-Info.plist",
         "android package": (app.get("android") or {}).get("package") == "com.pulsesoc.app",
         "android firebase config": (app.get("android") or {}).get("googleServicesFile") == "./credentials/firebase/google-services.json",
@@ -74,7 +76,7 @@ def main():
     moderation = read("mobile/pulse-react-native/store-metadata/moderation.md")
     premium = read("mobile/pulse-react-native/store-metadata/premium-compliance.md")
     for label, text, tokens in [
-        ("app store metadata", app_store, ["Privacy Policy URL", "Support URL", "Review Notes"]),
+        ("app store metadata", app_store, ["Privacy Policy URL", "Support URL", "Review Notes", "Guideline 1.2", "Guideline 3.1.1", "Guideline 4"]),
         ("play store metadata", play_store, ["Short Description", "Full Description", "Privacy Policy"]),
         ("data safety", data_safety, ["Data Types Used", "User Controls", "Submission Blockers"]),
         ("moderation", moderation, ["Report content", "Block or restrict users", "Launch Gate"]),

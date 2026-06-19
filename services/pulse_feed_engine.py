@@ -652,6 +652,9 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         fetch_limit = max(limit, min(200, max(120, limit * 5)))
     params = []
     where = _public_feed_where("p")
+    if viewer_user_id:
+        where.append("NOT EXISTS (SELECT 1 FROM blocked_users bu WHERE bu.blocker_user_id=? AND bu.blocked_user_id=p.user_id)")
+        params.append(int(viewer_user_id))
     if feed == "following" and viewer_user_id:
         where.append("p.user_id IN (SELECT followed_user_id FROM pulse_follows WHERE follower_user_id=?)")
         params.append(int(viewer_user_id))
@@ -741,6 +744,9 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
     if not viewer_is_owner:
         where = [f"p.user_id=?", *_public_feed_where("p")]
         params = [int(user_id)]
+        if viewer_user_id:
+            where.append("NOT EXISTS (SELECT 1 FROM blocked_users bu WHERE bu.blocker_user_id=? AND bu.blocked_user_id=p.user_id)")
+            params.append(int(viewer_user_id))
     conn = user_context.connect()
     cur = conn.cursor()
     cur.execute(

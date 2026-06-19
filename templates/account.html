@@ -410,7 +410,7 @@
             <input name="phone" type="tel" autocomplete="tel" placeholder="Phone number if not using email" />
             <input name="country" autocomplete="country-name" placeholder="Country" required />
             <label class="consent-row"><input type="checkbox" name="age_confirmed" required /><span>I confirm I meet the age requirements for my country.</span></label>
-            <label class="consent-row"><input type="checkbox" required /><span>I agree to the Terms and Privacy Policy.</span></label>
+            <label class="consent-row"><input type="checkbox" name="terms_accepted" required /><span>I agree to the Terms, Privacy Policy, and PulseSoc no-tolerance rules for objectionable content and abusive users.</span></label>
             <label class="consent-row"><input type="checkbox" name="email_opt_in" /><span>I agree to receive promotional emails from PulseSoc. I can unsubscribe anytime.</span></label>
             <label class="consent-row"><input type="checkbox" name="sms_opt_in" /><span>I agree to receive promotional text messages from PulseSoc. Message and data rates may apply. Reply STOP to unsubscribe.</span></label>
             <button class="button primary" type="submit" data-i18n="createCta">Create Your PulseSoc Account</button>
@@ -425,6 +425,7 @@
             <input type="hidden" name="next" value="{{ request.args.get('next', '') }}" />
             <input name="email" type="email" autocomplete="email" placeholder="Email address" value="{{ resend_email or '' }}" required />
             <input name="password" type="password" autocomplete="current-password" placeholder="Password" required />
+            <label class="consent-row"><input type="checkbox" name="terms_accepted" required /><span>I agree to the Terms, Privacy Policy, and PulseSoc no-tolerance rules for objectionable content and abusive users.</span></label>
             {% if login_challenge and login_challenge.required %}
               <label class="settings-card">
                 <span class="kicker">Security Check</span>
