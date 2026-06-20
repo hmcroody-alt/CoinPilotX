@@ -595,7 +595,34 @@ def _delivery_status_from_result(result):
 def _log_delivery(user_id, channel, status, provider="", provider_response="", error_message="", notification_id=None, alert_rule_id=None, alert_event_id=None):
     conn = user_context.connect()
     cur = conn.cursor()
-    if alert_rule_id:
+    setup_status = status in {"not_configured", "permission_denied", "disabled"}
+    if setup_status and alert_rule_id:
+        cutoff = (_utcnow() - timedelta(days=1)).isoformat(timespec="seconds")
+        cur.execute(
+            """
+            SELECT id FROM notification_delivery_logs
+            WHERE alert_rule_id=? AND channel=? AND status=? AND created_at>=?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (alert_rule_id, channel, status, cutoff),
+        )
+        if cur.fetchone():
+            conn.close()
+            return {"ok": True, "duplicate": True, "reason": "setup_status_throttled"}
+    if alert_event_id:
+        cur.execute(
+            """
+            SELECT id FROM notification_delivery_logs
+            WHERE alert_event_id=? AND channel=?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (alert_event_id, channel),
+        )
+        if cur.fetchone():
+            conn.close()
+            return {"ok": True, "duplicate": True}
+    retryable_job = not setup_status and status != "skipped"
+    if alert_rule_id and retryable_job:
         cur.execute(
             """
             INSERT INTO alert_delivery_jobs
@@ -638,6 +665,7 @@ def _log_delivery(user_id, channel, status, provider="", provider_response="", e
     )
     conn.commit()
     conn.close()
+    return {"ok": True, "duplicate": False}
 
 
 def _telegram_send(user, title, body, metadata=None):
