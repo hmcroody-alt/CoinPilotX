@@ -30,6 +30,12 @@ def main() -> None:
         "data-follow-public",
         "data-message-public",
         "data-profile-more-toggle",
+        "data-open-report-profile",
+        "data-open-block-profile",
+        "data-profile-report-form",
+        "data-confirm-block-profile",
+        "'/api/pulse/report'",
+        "'/api/pulse/block'",
         "View All Badges",
         "profile-badge-row",
         "Posts</a>",
@@ -49,6 +55,10 @@ def main() -> None:
     expect("profile-role-badge:nth-of-type(n+4)" in profile, "mobile profile limits visible badges")
     expect("Profile Controls</h2>" not in profile, "legacy profile controls card is removed")
     expect("Add Friend</button><button data-message" not in profile, "legacy oversized visitor action stack is removed")
+    expect("profile-sheet-action profile-sheet-danger" in profile, "block action is visually separated as destructive")
+    expect("Private and confidential" in profile, "report workflow explains report privacy")
+    expect("They will no longer be able to message or interact with you" in profile, "block confirmation explains impact")
+    expect("profile-sheet-open" in profile and "pagehide" in profile, "profile sheets clean up scroll and overlay state")
 
 
 if __name__ == "__main__":
