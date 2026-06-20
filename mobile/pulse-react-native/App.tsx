@@ -329,7 +329,19 @@ function injectPushTokenRegistration(webView: WebViewType | null, token: string)
             device_type: 'native_webview'
           })
         });
-        window.dispatchEvent(new CustomEvent('PulseSocNativeMessage', { detail: { type: 'PULSESOC_PUSH_RESULT', ok: response.ok } }));
+        const text = await response.text();
+        let data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (parseError) { data = {}; }
+        window.dispatchEvent(new CustomEvent('PulseSocNativeMessage', {
+          detail: {
+            type: 'PULSESOC_PUSH_RESULT',
+            ok: response.ok && data.ok !== false,
+            status: response.status,
+            message: data.message || (response.ok ? 'Push device registered.' : 'Push registration failed.'),
+            active_subscriptions: data.active_subscriptions || 0,
+            active_devices: data.active_devices || 0
+          }
+        }));
       } catch (error) {
         window.dispatchEvent(new CustomEvent('PulseSocNativeMessage', { detail: { type: 'PULSESOC_PUSH_RESULT', ok: false, message: 'Push registration failed.' } }));
       }

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+import sqlite3
 import sys
 import uuid
 
@@ -66,6 +67,52 @@ def _conversation_id(opened: dict, client) -> int:
     raise AssertionError("No direct conversation available for two-user audit")
 
 
+def _verify_notification_records(user_id: int, message_id: int) -> dict:
+    conn = bot.db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, type, entity_type, entity_id, deep_link
+        FROM pulse_notifications
+        WHERE user_id=?
+          AND LOWER(COALESCE(entity_type,''))='comm_v2_message'
+          AND COALESCE(entity_id,'')=?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (int(user_id), str(int(message_id))),
+    )
+    note = cur.fetchone()
+    if not note:
+        conn.close()
+        raise AssertionError("Message send did not create a comm_v2_message pulse notification record")
+    note_id = int(note["id"])
+    cur.execute(
+        "SELECT id, channel, status FROM pulse_notification_deliveries WHERE notification_id=? AND channel='in_app' ORDER BY id DESC LIMIT 1",
+        (note_id,),
+    )
+    delivery = cur.fetchone()
+    if not delivery:
+        conn.close()
+        raise AssertionError("Message notification did not create an in-app delivery record")
+    cur.execute(
+        "SELECT id, status FROM push_delivery_jobs WHERE notification_id=? ORDER BY id DESC LIMIT 1",
+        (note_id,),
+    )
+    push_job = cur.fetchone()
+    conn.close()
+    if not push_job:
+        raise AssertionError("Message notification did not enqueue a durable push delivery job")
+    return {
+        "notification_id": note_id,
+        "notification_type": note["type"],
+        "entity_type": note["entity_type"],
+        "delivery_status": delivery["status"],
+        "push_job_status": push_job["status"],
+    }
+
+
 def main() -> int:
     user_a = 1
     user_b = 2
@@ -114,6 +161,11 @@ def main() -> int:
             raise AssertionError(f"Sender realtime missing read event: {sender_read_types}")
 
         _ok("reaction", client_b.post(f"{API}/messages/{message_id}/reactions", json={"reaction": "spark"}))
+        notification_records = _verify_notification_records(user_b, message_id)
+        message_notes = _ok("recipient_message_notifications", client_b.get("/api/pulse/notifications?filter=messages&limit=20"))
+        visible_note_ids = {int(item.get("id") or 0) for item in message_notes.get("notifications") or []}
+        if int(notification_records["notification_id"]) not in visible_note_ids:
+            raise AssertionError("Recipient Messages notification filter did not include the new message activity")
     finally:
         logging.getLogger().removeHandler(capture)
 
@@ -136,6 +188,7 @@ def main() -> int:
         "sender_read_types": sender_read_types[:8],
         "recipient_policy_count": len(policies),
         "send_push_start_count": len(push_starts),
+        "notification_records": notification_records,
     }, indent=2))
     return 0
 

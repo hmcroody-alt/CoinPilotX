@@ -660,7 +660,7 @@ def _message_notification_where_clause():
     type_placeholders = ",".join("?" for _ in MESSAGE_NOTIFICATION_TYPES)
     return (
         f"LOWER(COALESCE(type,'')) IN ({type_placeholders}) "
-        "OR LOWER(COALESCE(entity_type,'')) IN ('message','messages','chat','conversation','pulse_message','pulse_conversation') "
+        "OR LOWER(COALESCE(entity_type,'')) IN ('message','messages','chat','conversation','pulse_message','pulse_conversation','comm_v2_message') "
         "OR LOWER(COALESCE(deep_link,'')) LIKE '/pulse/messages%' "
         "OR LOWER(COALESCE(deep_link,'')) LIKE '/messages%' "
         "OR LOWER(COALESCE(deep_link,'')) LIKE '/chat%' "

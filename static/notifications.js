@@ -9,6 +9,7 @@
     listLoaded: false,
     realtimeBound: false,
     lastScrollAt: 0,
+    pushStatus: null,
     channel: "BroadcastChannel" in window ? new BroadcastChannel("pulse-notifications") : null
   };
 
@@ -56,6 +57,32 @@
     STATE.prefs = payload.experience || experience;
     renderSettings(payload);
     return payload;
+  }
+
+  async function loadPushStatus() {
+    const response = await fetch("/api/push/status", { cache: "no-store", credentials: "same-origin" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.ok === false) throw new Error(payload.message || "Push status unavailable.");
+    STATE.pushStatus = payload;
+    renderSettings({ experience: STATE.prefs || {}, push_status: payload });
+    return payload;
+  }
+
+  function waitForNativePushResult(timeoutMs = 15000) {
+    return new Promise((resolve, reject) => {
+      const timer = window.setTimeout(() => {
+        window.removeEventListener("PulseSocNativeMessage", onMessage);
+        reject(new Error("PulseSoc did not receive device push confirmation. Reopen the app and try Enable Push again."));
+      }, timeoutMs);
+      function onMessage(event) {
+        const detail = event.detail || {};
+        if (detail.type !== "PULSESOC_PUSH_RESULT") return;
+        window.clearTimeout(timer);
+        window.removeEventListener("PulseSocNativeMessage", onMessage);
+        resolve(detail);
+      }
+      window.addEventListener("PulseSocNativeMessage", onMessage);
+    });
   }
 
   function playSound() {
@@ -274,9 +301,19 @@
 
   async function subscribePush() {
     if (window.PulseSocNative && typeof window.PulseSocNative.registerPush === "function") {
+      const pendingNativeResult = waitForNativePushResult();
       window.PulseSocNative.registerPush();
+      const nativeResult = await pendingNativeResult;
+      if (!nativeResult.ok) {
+        throw new Error(nativeResult.message || "PulseSoc could not register this device for push notifications.");
+      }
+      const status = await loadPushStatus();
+      if (Number(status.active_subscriptions || 0) < 1 || Number(status.active_devices || 0) < 1) {
+        throw new Error("PulseSoc did not save an active device token. Stay logged in, reopen the app, and tap Enable Push again.");
+      }
       await saveExperience({ ...(STATE.prefs || {}), enable_push_notifications: true });
-      return { ok: true, provider: "native", message: "PulseSoc mobile push registration started." };
+      await loadPushStatus().catch(() => {});
+      return { ...status, ok: true, provider: "native", message: "PulseSoc mobile push is connected to this device." };
     }
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
       throw new Error("This browser does not support web push here.");
@@ -299,6 +336,7 @@
     const payload = await response.json();
     if (!response.ok || !payload.ok) throw new Error(payload.message || "Push subscription failed.");
     await saveExperience({ ...(STATE.prefs || {}), enable_push_notifications: true });
+    await loadPushStatus().catch(() => {});
     return payload;
   }
 
@@ -319,6 +357,7 @@
       body: JSON.stringify({ endpoint })
     }).catch(() => {});
     await saveExperience({ ...(STATE.prefs || {}), enable_push_notifications: false });
+    STATE.pushStatus = null;
   }
 
   async function testNotification() {
@@ -355,7 +394,10 @@
     const note = root.querySelector("[data-notification-status]");
     if (note) {
       const pushState = "Notification" in window ? Notification.permission : "unsupported";
-      note.textContent = "Push permission: " + pushState + ". Some phones only allow vibration or sound after app permission is granted.";
+      const status = (payload && payload.push_status) || STATE.pushStatus || {};
+      const activeDevices = Number(status.active_devices || status.active_subscriptions || 0);
+      const deviceText = activeDevices > 0 ? ` Active push devices: ${activeDevices}.` : " No active push device is saved yet.";
+      note.textContent = "Push permission: " + pushState + "." + deviceText + " Some phones only allow vibration or sound after app permission is granted.";
     }
   }
 
@@ -416,11 +458,12 @@
     STATE.lastScrollAt = Date.now();
   }, { passive: true });
 
-  window.CoinPilotNotifications = { loadPreferences, loadPulsePreferences, subscribePush, unsubscribePush, testNotification, playSound, vibrate, pollNotifications, refreshNotificationList, handleLiveNotification };
+  window.CoinPilotNotifications = { loadPreferences, loadPulsePreferences, loadPushStatus, subscribePush, unsubscribePush, testNotification, playSound, vibrate, pollNotifications, refreshNotificationList, handleLiveNotification };
 
   document.addEventListener("DOMContentLoaded", async () => {
     bindSettings();
     await loadPreferences().then(renderSettings).catch(() => {});
+    await loadPushStatus().catch(() => {});
     bindRealtime();
     window.setTimeout(bindRealtime, 500);
     pollNotifications({ refreshList: true, force: true });
