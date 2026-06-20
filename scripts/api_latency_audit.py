@@ -21,7 +21,7 @@ ENDPOINTS = [
     ("/api/pulse/videos?limit=8", 1200, 180_000, 60),
     ("/api/pulse/notifications/unread-count", 500, 20_000, 20),
     ("/api/pulse/notifications?limit=8", 900, 120_000, 35),
-    ("/api/pulse/communications/conversations?limit=12", 1200, 180_000, 260),
+    ("/api/pulse/communications/conversations?limit=12", 1200, 180_000, 160),
     ("/api/pulse/profile/me", 900, 120_000, 35),
 ]
 

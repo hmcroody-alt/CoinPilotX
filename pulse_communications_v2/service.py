@@ -1506,7 +1506,19 @@ def poll_realtime_events(user_id: int, args) -> dict:
 
     after_id = int(args.get("after_id") or args.get("since_id") or 0)
     limit = max(1, min(int(args.get("limit") or 80), 160))
-    events = realtime_engine.poll_events_for_channels(_realtime_channels_for_user(user_id, args), after_id=after_id, limit=limit)
+    events = []
+    transport = "local_polling"
+    try:
+        from services import command_center_client
+
+        shared = command_center_client.get_realtime_events(int(user_id), after_id=after_id, limit=limit)
+        if shared.get("available") and shared.get("ok"):
+            events = shared.get("events") or []
+            transport = str(shared.get("transport") or "command_center_polling")
+    except Exception as exc:
+        logging.info("COMM_V2_SHARED_REALTIME_POLL_SKIPPED user_id=%s error_type=%s", int(user_id), exc.__class__.__name__)
+    if not events:
+        events = realtime_engine.poll_events_for_channels(_realtime_channels_for_user(user_id, args), after_id=after_id, limit=limit)
     latest_event_id = max([after_id, *[int(item.get("id") or 0) for item in events]], default=after_id)
     unread = _chat_unread_count_for_user(int(user_id))
     return _ok({
@@ -1514,7 +1526,8 @@ def poll_realtime_events(user_id: int, args) -> dict:
         "latest_event_id": latest_event_id,
         "chat_unread_count": int(unread or 0),
         "unread_count": int(unread or 0),
-        "poll_interval_ms": 12000,
+        "poll_interval_ms": 3000,
+        "transport": transport,
     })
 
 
@@ -1526,7 +1539,7 @@ def stream_realtime_events(user_id: int, args) -> dict:
 
     after_id = int(args.get("after_id") or args.get("since_id") or 0)
     limit = max(1, min(int(args.get("limit") or 80), 160))
-    timeout_seconds = max(5.0, min(float(args.get("timeout") or 24), 28.0))
+    timeout_seconds = max(1.0, min(float(args.get("timeout") or 3), 5.0))
     channels = _realtime_channels_for_user(user_id, args)
     events = realtime_engine.wait_events(channels, after_id=after_id, limit=limit, timeout_seconds=timeout_seconds)
     latest_event_id = max([after_id, *[int(item.get("id") or 0) for item in events]], default=after_id)

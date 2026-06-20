@@ -896,6 +896,7 @@
   }
 
   function connectRealtimeStream() {
+    if (document.documentElement.dataset.pulseSse !== "enabled") return;
     if (!window.PulseRealtime) return;
     const params = new URLSearchParams({
       after_id: String(state.realtimeAfterId || 0),
@@ -978,19 +979,23 @@
       if (state.active?.conversation_id) params.set("conversation_id", String(state.active.conversation_id));
       const data = await api(`/realtime?${params.toString()}`, {}, "realtime_delivery");
       state.realtimeAfterId = Math.max(state.realtimeAfterId, Number(data.latest_event_id || 0));
+      state.realtimeConnected = /command_center|redis/i.test(String(data.transport || ""));
       (data.events || []).forEach(handleRealtimeEvent);
       updateNotificationBadges(data);
+      renderRealtimeStatus();
     } catch (_) {
+      state.realtimeConnected = false;
+      renderRealtimeStatus();
     } finally {
       state.realtimePolling = false;
     }
   }
 
-  function scheduleRealtimePoll(delay = 12000) {
+  function scheduleRealtimePoll(delay = 3000) {
     window.clearTimeout(state.realtimeTimer);
     state.realtimeTimer = window.setTimeout(async () => {
       if (!document.hidden) await pollRealtime();
-      scheduleRealtimePoll(document.hidden ? 45000 : 12000);
+      scheduleRealtimePoll(document.hidden ? 30000 : 3000);
     }, delay);
   }
 
@@ -1036,10 +1041,10 @@
     });
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) pollRealtime();
-      scheduleRealtimePoll(document.hidden ? 45000 : 12000);
+      scheduleRealtimePoll(document.hidden ? 30000 : 3000);
     });
     pollRealtime();
-    scheduleRealtimePoll(12000);
+    scheduleRealtimePoll(3000);
     renderRealtimeStatus();
   }
 

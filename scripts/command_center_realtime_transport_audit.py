@@ -207,10 +207,11 @@ def audit_frontend_hooks() -> dict:
         "typing_stopped",
         "unread_count_updated",
         "message_read",
-        "scheduleRealtimePoll(12000)",
+        "scheduleRealtimePoll(3000)",
     ):
         expect(required in source, f"messages frontend missing {required}")
     expect("COMMAND_CENTER_INTERNAL_TOKEN" not in source, "frontend must not reference internal token")
+    expect('dataset.pulseSse !== "enabled"' in source, "browser SSE must remain opt-in")
     return {"messages_realtime_hooks": True, "polling_fallback_present": True}
 
 

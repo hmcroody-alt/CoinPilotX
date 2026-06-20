@@ -402,6 +402,20 @@ def get_realtime_status() -> dict[str, Any]:
     return result
 
 
+def get_realtime_events(user_id: int, after_id: int = 0, limit: int = 80) -> dict[str, Any]:
+    safe_after_id = max(0, int(after_id or 0))
+    safe_limit = max(1, min(int(limit or 80), 160))
+    result = _get_worker(
+        f"/internal/command-center/realtime/poll/{int(user_id or 0)}?after_id={safe_after_id}&limit={safe_limit}",
+        "realtime_poll",
+    )
+    if not result.get("available"):
+        result.setdefault("user_id", int(user_id or 0))
+        result.setdefault("events", [])
+        result.setdefault("latest_event_id", safe_after_id)
+    return result
+
+
 def enqueue_security_event(payload: dict[str, Any] | None = None, idempotency_key: str = "") -> dict[str, Any]:
     values = dict(payload or {})
     event_id = str(values.pop("event_id", "") or idempotency_key or "")[:160]

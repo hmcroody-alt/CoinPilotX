@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import json
+import os
 import time
 
 from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
@@ -134,17 +135,21 @@ def realtime_stream():
     user, denied = _require_user()
     if denied:
         return denied
+    if os.getenv("PULSE_COMM_V2_SSE_ENABLED", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        response = Response(status=204)
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["X-Pulse-Realtime-Transport"] = "polling"
+        return response
     args = dict(request.args)
 
     def generate():
-        for _ in range(60):
-            payload = service.stream_realtime_events(user["user_id"], args)
-            if not payload.get("ok"):
-                yield "event: error\n"
-                yield f"data: {json.dumps(payload, default=str)}\n\n"
-                return
-            yield "event: pulse\n"
+        payload = service.stream_realtime_events(user["user_id"], args)
+        if not payload.get("ok"):
+            yield "event: error\n"
             yield f"data: {json.dumps(payload, default=str)}\n\n"
+            return
+        yield "event: pulse\n"
+        yield f"data: {json.dumps(payload, default=str)}\n\n"
 
     return _sse_response(generate)
 

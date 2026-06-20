@@ -157,22 +157,36 @@ def create_app() -> Flask:
             event_type = str(event.get("event_type") or "")
             realtime_type = "message_created" if event_type == "message_created" else "message_delivered" if event_type == "message_delivered" else "message_read" if event_type == "message_read" else event_type
             if realtime_type in {"message_created", "message_delivered", "message_read", "typing_started", "typing_stopped"}:
+                message_payload = body.get("payload") if isinstance(body.get("payload"), dict) else {}
+                recipient_ids = []
+                if body.get("recipient_id"):
+                    recipient_ids.append(body.get("recipient_id"))
+                for item in message_payload.get("recipient_ids") or []:
+                    if item and item not in recipient_ids:
+                        recipient_ids.append(item)
+                realtime_payload = {
+                    **message_payload,
+                    "conversation_id": int(event.get("conversation_id") or 0),
+                    "message_id": int(event.get("message_id") or 0),
+                    "sender_id": int(body.get("sender_id") or 0),
+                }
                 realtime_publish_event(
                     realtime_type,
-                    {**event, "payload": body.get("payload") if isinstance(body.get("payload"), dict) else {}},
-                    recipient_ids=[body.get("recipient_id")] if body.get("recipient_id") else [],
+                    realtime_payload,
+                    recipient_ids=recipient_ids,
                     conversation_id=event.get("conversation_id"),
                     actor_id=body.get("sender_id") or 0,
                     event_id=event.get("event_id") or "",
                 )
-                if realtime_type == "message_created" and body.get("recipient_id"):
-                    realtime_publish_event(
-                        "unread_count_updated",
-                        {"conversation_id": event.get("conversation_id"), "message_id": event.get("message_id"), "recipient_id": body.get("recipient_id")},
-                        recipient_ids=[body.get("recipient_id")],
-                        conversation_id=event.get("conversation_id"),
-                        actor_id=body.get("sender_id") or 0,
-                    )
+                if realtime_type == "message_created":
+                    for recipient_id in recipient_ids:
+                        realtime_publish_event(
+                            "unread_count_updated",
+                            {"conversation_id": event.get("conversation_id"), "message_id": event.get("message_id"), "recipient_id": recipient_id},
+                            recipient_ids=[recipient_id],
+                            conversation_id=event.get("conversation_id"),
+                            actor_id=body.get("sender_id") or 0,
+                        )
         except Exception as exc:
             LOGGER.info("COMMAND_CENTER_REALTIME_MESSAGE_PUBLISH_SKIPPED error_type=%s", exc.__class__.__name__)
         return jsonify(event)
