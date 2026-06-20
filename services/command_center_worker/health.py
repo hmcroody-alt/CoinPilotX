@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import sqlite3
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import WorkerConfig
 from .redis_manager import redis_health
+from services import native_push_readiness
 
 try:
     from sqlalchemy import create_engine, text
@@ -55,6 +57,18 @@ def check_database(config: WorkerConfig) -> bool:
 
 def health_payload(config: WorkerConfig) -> dict:
     redis = redis_health()
+    native_push = native_push_readiness.native_push_readiness(initialize_admin=False)
+    web_push = {
+        "vapid_public_key_loaded": bool(os.getenv("VAPID_PUBLIC_KEY")),
+        "vapid_private_key_loaded": bool(os.getenv("VAPID_PRIVATE_KEY")),
+        "ready": bool(os.getenv("VAPID_PUBLIC_KEY") and os.getenv("VAPID_PRIVATE_KEY")),
+    }
+    expo_push = {
+        "server_provider": "expo",
+        "sound_configured": bool(os.getenv("PUSH_DEFAULT_SOUND")),
+        "badge_enabled": str(os.getenv("PUSH_BADGE_ENABLED", "1")).lower() not in {"0", "false", "off", "no"},
+        "ready": True,
+    }
     return {
         "service_name": config.service_name,
         "service_role": config.service_role,
@@ -65,6 +79,11 @@ def health_payload(config: WorkerConfig) -> dict:
         "redis_enabled": bool(redis.get("redis_enabled")),
         "redis_configured": config.redis_configured,
         "internal_auth_configured": config.internal_token_configured,
+        "push_readiness": {
+            "native": native_push,
+            "web_push": web_push,
+            "expo": expo_push,
+        },
         "heartbeat_seconds": config.heartbeat_seconds,
         "timestamp": utc_timestamp(),
         "version": config.version,

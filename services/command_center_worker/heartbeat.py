@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -31,6 +32,15 @@ def heartbeat_once(config: WorkerConfig) -> dict:
         config.service_name,
         config.service_role,
         config.worker_enabled,
+    )
+    LOGGER.info(
+        "PUSH_WORKER_READINESS vapid_public=%s vapid_private=%s sound=%s badge=%s apns=%s fcm=%s",
+        bool(os.getenv("VAPID_PUBLIC_KEY")),
+        bool(os.getenv("VAPID_PRIVATE_KEY")),
+        bool(os.getenv("PUSH_DEFAULT_SOUND")),
+        str(os.getenv("PUSH_BADGE_ENABLED", "1")).lower() not in {"0", "false", "off", "no"},
+        all(bool(os.getenv(name)) for name in ("APNS_BUNDLE_ID", "APNS_KEY_ID", "APNS_PRIVATE_KEY", "APNS_TEAM_ID")),
+        all(bool(os.getenv(name)) for name in ("FCM_PROJECT_ID", "FCM_CLIENT_EMAIL", "FCM_PRIVATE_KEY")),
     )
     if config.worker_enabled:
         try:
