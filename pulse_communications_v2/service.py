@@ -438,10 +438,10 @@ def _user_summary(cur, user_id: int) -> dict:
 
 def _participant_ids(cur, conversation_id: int) -> list[int]:
     cur.execute(
-        "SELECT user_id FROM comm_v2_participants WHERE conversation_id=? AND membership_state='active' AND COALESCE(left_at,'')=''",
+        "SELECT DISTINCT user_id FROM comm_v2_participants WHERE conversation_id=? AND membership_state='active' AND COALESCE(left_at,'')=''",
         (int(conversation_id),),
     )
-    return [int(row["user_id"]) for row in cur.fetchall()]
+    return sorted({int(row["user_id"]) for row in cur.fetchall() if int(row["user_id"] or 0)})
 
 
 def _user_presence_by_ids(cur, user_ids: list[int]) -> dict[int, dict]:
@@ -1056,6 +1056,7 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
                 },
                 idempotency_key=f"message-shield-{conversation_id}-{message_id}",
             )
+        command_center_recipient_ids = [uid for uid in _participant_ids_for_side_effects(conversation_id) if int(uid) != int(user_id)]
         _dispatch_command_center_async(
             "enqueue_message_event",
             "message_created",
@@ -1064,9 +1065,21 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
             int(user_id),
             None,
             {
+                "type": "message_created",
+                "conversation_id": conversation_id,
+                "message_id": message_id,
+                "client_temp_id": message.get("client_temp_id") or message.get("client_message_id") or "",
+                "client_message_id": message.get("client_message_id") or "",
+                "sender_id": int(user_id),
+                "recipient_ids": command_center_recipient_ids,
+                "body": message.get("body") or "",
                 "message_type": message.get("message_type") or "text",
                 "created_at": message.get("created_at") or now,
                 "attachment_count": len(attachments or []),
+                "sender_display_name": message.get("sender_display_name") or (message.get("sender") or {}).get("display_name") or "",
+                "sender_avatar": message.get("sender_avatar") or (message.get("sender") or {}).get("avatar_url") or "",
+                "delivery_state": message.get("delivery_state") or "sent",
+                "message": message,
             },
             idempotency_key=f"message-created-{conversation_id}-{message_id}",
         )
@@ -1212,6 +1225,9 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
                 mobile_deep_link = f"pulse://messages/{int(conversation_id)}"
                 title = sender_name if not hide_preview else "New message"
                 body = preview[:220] if not hide_preview else "Open PulseSoc to view."
+                if (message.get("pulse_shield") or {}).get("flagged"):
+                    title = "Pulse Shield"
+                    body = "A message needs review before you open it."
                 push_metadata = {
                     "conversation_id": int(conversation_id),
                     "conversationId": int(conversation_id),
@@ -1264,7 +1280,23 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
                     deep_link=deep_link,
                     metadata=push_metadata,
                 )
-                unread = notification_service.pulse_unread_count(int(recipient_id))
+                push_result = {"ok": False, "status": "suppressed", "reason": policy.get("reason") or "unknown"}
+                logging.info(
+                    "PUSH_TRACE stage=notification_created %s",
+                    json.dumps(
+                        {
+                            "push_trace_id": push_trace_id,
+                            "recipient_user_id": int(recipient_id),
+                            "conversation_id": int(conversation_id),
+                            "message_id": message_id,
+                            "notification_id": int(note.get("notification_id") or 0),
+                        },
+                        default=str,
+                        sort_keys=True,
+                    )[:1200],
+                )
+                push_result = note.get("push") or push_result
+                unread = _chat_unread_count_for_user(int(recipient_id))
                 realtime_payloads.append({
                     "recipient_user_id": int(recipient_id),
                     "conversation_id": int(conversation_id),
@@ -1283,8 +1315,10 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
                         "status": "unread",
                         "created_at": _now(),
                         "push_policy": policy.get("reason") or "deliver",
+                        "push_sent": bool(push_result.get("ok")) and int(push_result.get("sent") or 0) > 0,
                     },
-                    "unread_count": int(unread.get("unread_count") or unread.get("count") or 0),
+                    "chat_unread_count": int(unread or 0),
+                    "unread_count": int(unread or 0),
                     "conversation": _side_effect_conversation_payload(int(recipient_id), int(conversation_id)),
                 })
             results["notifications"] = f"created:{len(recipient_ids[:25])}"
@@ -1299,22 +1333,93 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
             "message_created",
             {"conversation_id": int(conversation_id), "message": message},
         )
+        realtime_engine.publish_event(
+            f"cc:conversation:{int(conversation_id)}",
+            "message_created",
+            {"conversation_id": int(conversation_id), "message": message, "recipient_ids": [int(item["recipient_user_id"]) for item in realtime_payloads]},
+        )
         for payload in realtime_payloads:
+            user_message_event = {
+                "conversation_id": int(payload["conversation_id"]),
+                "message_id": int(payload["message_id"]),
+                "recipient_user_id": int(payload["recipient_user_id"]),
+                "sender_user_id": int(payload["sender_user_id"]),
+                "message": payload.get("message") or {},
+                "conversation": payload.get("conversation") or {},
+                "unread_count": int(payload.get("unread_count") or 0),
+                "notification": payload.get("notification") or {},
+            }
             realtime_engine.publish_event(
                 f"comm_v2:user:{int(payload['recipient_user_id'])}",
                 "message_notification",
                 payload,
             )
             realtime_engine.publish_event(
+                f"comm_v2:user:{int(payload['recipient_user_id'])}",
+                "message_created",
+                user_message_event,
+            )
+            realtime_engine.publish_event(
+                f"cc:user:{int(payload['recipient_user_id'])}",
+                "message_created",
+                user_message_event,
+            )
+            realtime_engine.publish_event(
                 f"pulse:user:{int(payload['recipient_user_id'])}",
                 "notification_created",
                 payload,
             )
-        results["realtime"] = f"published:{1 + len(realtime_payloads) * 2}"
+            realtime_engine.publish_event(
+                f"comm_v2:user:{int(payload['recipient_user_id'])}",
+                "unread_count_updated",
+                {"conversation_id": int(conversation_id), "unread_count": int(payload.get("unread_count") or 0)},
+            )
+        results["realtime"] = f"published:{2 + len(realtime_payloads) * 5}"
     except Exception as exc:
         logging.exception("COMM_V2_REALTIME_BROADCAST_FAILED conversation_id=%s message_id=%s error_type=%s", conversation_id, message.get("id"), type(exc).__name__)
         results["realtime"] = "failed"
     return results
+
+
+def _dispatch_push_alert_async(notification_service, recipient_id: int, title: str, body: str, metadata: dict, push_trace_id: str, conversation_id: int, message_id: int) -> None:
+    def run_delivery():
+        logging.info(
+            "PUSH_TRACE stage=send_push_start %s",
+            json.dumps(
+                {
+                    "push_trace_id": push_trace_id,
+                    "recipient_user_id": int(recipient_id),
+                    "conversation_id": int(conversation_id),
+                    "message_id": int(message_id),
+                },
+                default=str,
+                sort_keys=True,
+            )[:1200],
+        )
+        try:
+            result = notification_service.send_push_alert(int(recipient_id), title, body, metadata)
+        except Exception as exc:
+            result = {"ok": False, "failed": 1, "error_type": type(exc).__name__}
+        logging.info(
+            "PUSH_TRACE stage=send_push_complete %s",
+            json.dumps(
+                {
+                    "push_trace_id": push_trace_id,
+                    "recipient_user_id": int(recipient_id),
+                    "conversation_id": int(conversation_id),
+                    "message_id": int(message_id),
+                    "ok": bool(result.get("ok")),
+                    "sent": int(result.get("sent") or 0),
+                    "failed": int(result.get("failed") or 0),
+                    "skipped": int(result.get("skipped") or 0),
+                    "error_type": result.get("error_type") or "",
+                },
+                default=str,
+                sort_keys=True,
+            )[:1200],
+        )
+
+    threading.Thread(target=run_delivery, name=f"comm-v2-push-{conversation_id}-{message_id}-{recipient_id}", daemon=True).start()
 
 
 def _side_effect_conversation_payload(user_id: int, conversation_id: int) -> dict:
@@ -1351,36 +1456,79 @@ def _participant_ids_for_side_effects(conversation_id: int) -> list[int]:
         conn.close()
 
 
-def poll_realtime_events(user_id: int, args) -> dict:
-    disabled = _disabled("realtime")
-    if disabled:
-        return disabled
-    from services import notification_service, realtime_engine
+def _chat_unread_count_for_user(user_id: int) -> int:
+    conn, cur = _open_db()
+    try:
+        cur.execute(
+            """
+            SELECT COALESCE(SUM(CASE WHEN COALESCE(unread_count,0) > 0 THEN unread_count ELSE 0 END),0) AS total
+            FROM comm_v2_participants
+            WHERE user_id=? AND membership_state='active' AND COALESCE(left_at,'')=''
+            """,
+            (int(user_id),),
+        )
+        return int(_row(cur.fetchone()).get("total") or 0)
+    except Exception:
+        return 0
+    finally:
+        conn.close()
 
-    after_id = int(args.get("after_id") or args.get("since_id") or 0)
-    limit = max(1, min(int(args.get("limit") or 80), 160))
+
+def _realtime_channels_for_user(user_id: int, args) -> list[str]:
     conversation_ref = args.get("conversation_id") or args.get("conversation") or ""
-    channels = [f"comm_v2:user:{int(user_id)}", f"pulse:user:{int(user_id)}"]
+    channels = [f"comm_v2:user:{int(user_id)}", f"pulse:user:{int(user_id)}", f"cc:user:{int(user_id)}"]
     if conversation_ref:
         conn, cur = _open_db()
         try:
             conversation, access = _conversation_access(cur, user_id, conversation_ref, join_public=False)
             if access == "ok" and conversation:
-                channels.append(f"comm_v2:conversation:{int(conversation['id'])}")
+                conversation_id = int(conversation["id"])
+                channels.extend([f"comm_v2:conversation:{conversation_id}", f"cc:conversation:{conversation_id}"])
         finally:
             conn.close()
-    events_by_id: dict[int, dict] = {}
-    for channel in channels:
-        for event in realtime_engine.poll_events(channel, after_id=after_id, limit=limit):
-            events_by_id[int(event.get("id") or 0)] = event
-    events = [events_by_id[key] for key in sorted(events_by_id)]
+    return channels
+
+
+def poll_realtime_events(user_id: int, args) -> dict:
+    disabled = _disabled("realtime")
+    if disabled:
+        return disabled
+    from services import realtime_engine
+
+    after_id = int(args.get("after_id") or args.get("since_id") or 0)
+    limit = max(1, min(int(args.get("limit") or 80), 160))
+    events = realtime_engine.poll_events_for_channels(_realtime_channels_for_user(user_id, args), after_id=after_id, limit=limit)
     latest_event_id = max([after_id, *[int(item.get("id") or 0) for item in events]], default=after_id)
-    unread = notification_service.pulse_unread_count(int(user_id))
+    unread = _chat_unread_count_for_user(int(user_id))
     return _ok({
         "events": events[-limit:],
         "latest_event_id": latest_event_id,
-        "unread_count": int(unread.get("unread_count") or unread.get("count") or 0),
+        "chat_unread_count": int(unread or 0),
+        "unread_count": int(unread or 0),
         "poll_interval_ms": 12000,
+    })
+
+
+def stream_realtime_events(user_id: int, args) -> dict:
+    disabled = _disabled("realtime_stream")
+    if disabled:
+        return disabled
+    from services import realtime_engine
+
+    after_id = int(args.get("after_id") or args.get("since_id") or 0)
+    limit = max(1, min(int(args.get("limit") or 80), 160))
+    timeout_seconds = max(5.0, min(float(args.get("timeout") or 24), 28.0))
+    channels = _realtime_channels_for_user(user_id, args)
+    events = realtime_engine.wait_events(channels, after_id=after_id, limit=limit, timeout_seconds=timeout_seconds)
+    latest_event_id = max([after_id, *[int(item.get("id") or 0) for item in events]], default=after_id)
+    unread = _chat_unread_count_for_user(int(user_id))
+    return _ok({
+        "events": events[-limit:],
+        "latest_event_id": latest_event_id,
+        "chat_unread_count": int(unread or 0),
+        "unread_count": int(unread or 0),
+        "poll_interval_ms": 12000,
+        "stream": True,
     })
 
 
@@ -1680,16 +1828,23 @@ def _message_payload(cur, message: dict, viewer_user_id: int) -> dict:
     pinned_by = _safe_int_list(metadata.get("pinned_by_user_ids"))
     return {
         "id": message_id,
+        "message_id": message_id,
         "public_id": message.get("public_id") or "",
         "conversation_id": int(message.get("conversation_id") or 0),
+        "sender_id": int(message.get("sender_user_id") or 0),
         "sender_user_id": int(message.get("sender_user_id") or 0),
+        "sender_display_name": sender.get("display_name") or "",
+        "sender_avatar": sender.get("avatar_url") or "",
         "sender": sender,
         "is_mine": int(message.get("sender_user_id") or 0) == int(viewer_user_id),
         "message_type": message_type,
         "body": _safe_preview(message.get("body") or "", message_type),
         "reply_to_message_id": int(message.get("reply_to_message_id") or 0),
         "thread_root_message_id": int(message.get("thread_root_message_id") or 0),
+        "client_message_id": message.get("client_message_id") or "",
+        "client_temp_id": message.get("client_message_id") or "",
         "delivery_status": receipt_state,
+        "delivery_state": receipt_state,
         "moderation_status": message.get("moderation_status") or "approved",
         "reply_preview": reply_preview,
         "attachments": attachments,
@@ -1784,9 +1939,13 @@ def _message_payloads(cur, message_rows: list[dict], viewer_user_id: int) -> lis
         pinned_by = _safe_int_list(metadata.get("pinned_by_user_ids"))
         out.append({
             "id": message_id,
+            "message_id": message_id,
             "public_id": message.get("public_id") or "",
             "conversation_id": int(message.get("conversation_id") or 0),
+            "sender_id": sender_user_id,
             "sender_user_id": sender_user_id,
+            "sender_display_name": (sender_map.get(sender_user_id) or {}).get("display_name") or f"Member {sender_user_id}",
+            "sender_avatar": (sender_map.get(sender_user_id) or {}).get("avatar_url") or "",
             "sender": sender_map.get(sender_user_id) or {
                 "user_id": sender_user_id,
                 "display_name": f"Member {sender_user_id}",
@@ -1798,7 +1957,10 @@ def _message_payloads(cur, message_rows: list[dict], viewer_user_id: int) -> lis
             "body": _safe_preview(message.get("body") or "", message_type),
             "reply_to_message_id": int(message.get("reply_to_message_id") or 0),
             "thread_root_message_id": int(message.get("thread_root_message_id") or 0),
+            "client_message_id": message.get("client_message_id") or "",
+            "client_temp_id": message.get("client_message_id") or "",
             "delivery_status": receipt_map.get(message_id, message.get("delivery_status") or "sent") if sender_user_id == int(viewer_user_id) else message.get("delivery_status") or "sent",
+            "delivery_state": receipt_map.get(message_id, message.get("delivery_status") or "sent") if sender_user_id == int(viewer_user_id) else message.get("delivery_status") or "sent",
             "moderation_status": message.get("moderation_status") or "approved",
             "reply_preview": reply_preview,
             "attachments": attachment_map.get(message_id, []),
@@ -2077,6 +2239,31 @@ def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, com
                     int(user_id),
                     0,
                 )
+                try:
+                    from services import realtime_engine
+
+                    payload = {
+                        "conversation_id": int(conversation_id),
+                        "message_id": int(max_id),
+                        "reader_user_id": int(user_id),
+                        "user_id": int(user_id),
+                        "read_at": now,
+                    }
+                    realtime_engine.publish_event(f"comm_v2:conversation:{int(conversation_id)}", "message_read", payload)
+                    realtime_engine.publish_event(f"cc:conversation:{int(conversation_id)}", "message_read", payload)
+                    realtime_engine.publish_event(
+                        f"comm_v2:user:{int(user_id)}",
+                        "unread_count_updated",
+                        {"conversation_id": int(conversation_id), "unread_count": 0, "chat_unread_count": _chat_unread_count_for_user(int(user_id))},
+                    )
+                    for recipient_id in _participant_ids(cur, int(conversation_id)):
+                        if int(recipient_id) == int(user_id):
+                            continue
+                        user_payload = {**payload, "recipient_user_id": int(recipient_id)}
+                        realtime_engine.publish_event(f"comm_v2:user:{int(recipient_id)}", "message_read", user_payload)
+                        realtime_engine.publish_event(f"cc:user:{int(recipient_id)}", "message_read", user_payload)
+                except Exception:
+                    logging.info("COMM_V2_READ_REALTIME_SKIPPED conversation_id=%s user_id=%s", conversation_id, user_id)
         return _ok({"conversation_id": conversation_id, "last_read_message_id": max_id})
     finally:
         if own_conn:
@@ -2274,6 +2461,30 @@ def set_typing(user_id: int, conversation_ref: int | str, is_typing: bool = True
             int(user_id),
             bool(is_typing),
         )
+        try:
+            from services import realtime_engine
+
+            sender = _user_summary(cur, int(user_id))
+            event_type = "typing_started" if is_typing else "typing_stopped"
+            payload = {
+                "conversation_id": int(conversation["id"]),
+                "user_id": int(user_id),
+                "sender_id": int(user_id),
+                "display_name": sender.get("display_name") or "",
+                "is_typing": bool(is_typing),
+                "typing": bool(is_typing),
+                "expires_at": expires,
+            }
+            realtime_engine.publish_event(f"comm_v2:conversation:{int(conversation['id'])}", event_type, payload)
+            realtime_engine.publish_event(f"cc:conversation:{int(conversation['id'])}", event_type, payload)
+            for recipient_id in _participant_ids(cur, int(conversation["id"])):
+                if int(recipient_id) == int(user_id):
+                    continue
+                user_payload = {**payload, "recipient_user_id": int(recipient_id)}
+                realtime_engine.publish_event(f"comm_v2:user:{int(recipient_id)}", event_type, user_payload)
+                realtime_engine.publish_event(f"cc:user:{int(recipient_id)}", event_type, user_payload)
+        except Exception:
+            logging.info("COMM_V2_TYPING_REALTIME_SKIPPED conversation_id=%s user_id=%s", int(conversation["id"]), user_id)
         return _ok({"conversation_id": int(conversation["id"]), "is_typing": bool(is_typing)})
     finally:
         conn.close()

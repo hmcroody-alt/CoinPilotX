@@ -21,6 +21,12 @@
     return document.documentElement.dataset.pulseLegacySse === "enabled";
   }
 
+  function scopedSseAllowed(url) {
+    const value = String(url || "");
+    return value.indexOf("/api/pulse/communications/v2/realtime/stream") === 0 ||
+      value.indexOf("/api/pulse/comm/v2/realtime/stream") === 0;
+  }
+
   function emit(type, payload) {
     const list = state.listeners.get(type) || [];
     list.forEach((handler) => {
@@ -39,7 +45,9 @@
       if (state.seen.has(key)) return;
       state.seen.add(key);
       if (state.seen.size > state.maxSeen) {
-        state.seen = new Set(Array.from(state.seen).slice(-Math.floor(state.maxSeen / 2)));
+        const recent = Array.from(state.seen).slice(-Math.floor(state.maxSeen / 2));
+        state.seen.clear();
+        recent.forEach(function (item) { state.seen.add(item); });
       }
     }
     state.queue.push([type, payload]);
@@ -58,7 +66,7 @@
 
   function connect(url) {
     state.url = url || state.url;
-    if (!legacySseEnabled()) {
+    if (!legacySseEnabled() && !scopedSseAllowed(state.url)) {
       state.connected = false;
       emit("fallback", { transport: "polling" });
       return;
@@ -90,6 +98,18 @@
           enqueue("pulse", data);
         } catch (error) {
           enqueue("pulse", { raw: event.data });
+        }
+      });
+      state.source.addEventListener("command_center", function (event) {
+        try {
+          const data = JSON.parse(event.data || "{}");
+          if (data.latest_event_id) state.lastEventId = Math.max(state.lastEventId, Number(data.latest_event_id) || 0);
+          (data.events || []).forEach(function (item) {
+            enqueue(item.event_type || item.type || "command_center", item);
+          });
+          enqueue("command_center", data);
+        } catch (error) {
+          enqueue("command_center", { raw: event.data });
         }
       });
       state.source.onerror = function () {

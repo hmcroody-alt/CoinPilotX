@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+import json
 import time
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
 
 from . import flags, service
 
@@ -97,7 +98,13 @@ def messages_v2_page():
         ai_enabled = bool(command_center_client.is_enabled() and command_center_client.ai_enabled())
     except Exception:
         ai_enabled = False
-    return render_template("pulse_messages_v2.html", enabled=flags.is_enabled(), current_user=user, ai_enabled=ai_enabled)
+    return render_template(
+        "pulse_messages_v2.html",
+        enabled=flags.is_enabled(),
+        current_user=user,
+        ai_enabled=ai_enabled,
+        initial_conversation_id=int(request.args.get("conversation") or 0),
+    )
 
 
 @comm_v2_blueprint.get(f"{API_PREFIX}/health")
@@ -106,12 +113,40 @@ def health():
     return jsonify({"enabled": flags.is_enabled(), "status": "ready" if flags.is_enabled() else "disabled"})
 
 
+def _sse_response(generator):
+    response = Response(stream_with_context(generator()), mimetype="text/event-stream")
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["X-Accel-Buffering"] = "no"
+    return response
+
+
 @comm_v2_blueprint.get(f"{API_PREFIX}/diagnostics")
 def diagnostics():
     admin = _current_admin()
     if not admin:
         return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
     return _json(service.infrastructure_diagnostics())
+
+
+@comm_v2_blueprint.get(f"{API_PREFIX}/realtime/stream")
+@comm_v2_blueprint.get("/api/pulse/comm/v2/realtime/stream")
+def realtime_stream():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    args = dict(request.args)
+
+    def generate():
+        for _ in range(60):
+            payload = service.stream_realtime_events(user["user_id"], args)
+            if not payload.get("ok"):
+                yield "event: error\n"
+                yield f"data: {json.dumps(payload, default=str)}\n\n"
+                return
+            yield "event: pulse\n"
+            yield f"data: {json.dumps(payload, default=str)}\n\n"
+
+    return _sse_response(generate)
 
 
 @comm_v2_blueprint.get(f"{API_PREFIX}/conversations")

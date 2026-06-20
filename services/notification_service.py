@@ -1340,11 +1340,19 @@ def unsubscribe_push(user_id, endpoint=""):
         subscription_changed = cur.rowcount
         cur.execute("UPDATE pulse_notification_devices SET active=0, updated_at=? WHERE user_id=? AND endpoint=?", (_now(), user_id, endpoint))
         device_changed = cur.rowcount
+        try:
+            cur.execute("UPDATE user_device_tokens SET enabled=0, revoked_at=?, updated_at=? WHERE user_id=? AND push_token=?", (_now(), _now(), user_id, endpoint))
+        except Exception:
+            pass
     else:
         cur.execute("UPDATE push_subscriptions SET active=0, is_active=0, updated_at=? WHERE user_id=?", (_now(), user_id))
         subscription_changed = cur.rowcount
         cur.execute("UPDATE pulse_notification_devices SET active=0, updated_at=? WHERE user_id=?", (_now(), user_id))
         device_changed = cur.rowcount
+        try:
+            cur.execute("UPDATE user_device_tokens SET enabled=0, revoked_at=?, updated_at=? WHERE user_id=?", (_now(), _now(), user_id))
+        except Exception:
+            pass
     conn.commit()
     conn.close()
     logging.info(

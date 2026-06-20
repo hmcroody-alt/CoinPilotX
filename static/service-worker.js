@@ -1,4 +1,4 @@
-const CACHE_NAME = "coinpilotx-cache-v16-video-routing";
+const CACHE_NAME = "coinpilotx-cache-v17-command-center-assets";
 const STATIC_ASSETS = [
   "/manifest.json",
   "/static/analytics.js",
@@ -52,6 +52,14 @@ function isStaticAsset(request, pathname) {
     request.destination === "image" ||
     request.destination === "font" ||
     /\.(?:css|js|png|jpg|jpeg|webp|gif|svg|ico|woff2?|ttf)$/i.test(pathname)
+  );
+}
+
+function isRuntimeAsset(request, pathname) {
+  return (
+    request.destination === "style" ||
+    request.destination === "script" ||
+    /\.(?:css|js)$/i.test(pathname)
   );
 }
 
@@ -127,6 +135,22 @@ self.addEventListener("fetch", (event) => {
       console.log("[CoinPilotXAI SW] fetch failure", url.pathname, error && error.message ? error.message : error);
       throw error;
     }));
+    return;
+  }
+
+  if (isRuntimeAsset(request, url.pathname)) {
+    event.respondWith(
+      fetch(request, { cache: "no-store" }).then((response) => {
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        }
+        return response;
+      }).catch((error) => {
+        console.log("[CoinPilotXAI SW] runtime fetch fallback", url.pathname, error && error.message ? error.message : error);
+        return caches.match(request).then((cached) => cached || Promise.reject(error));
+      })
+    );
     return;
   }
 

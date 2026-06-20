@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
   <title>PulseSoc Messages v2 | PulseSoc</title>
-  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=command-center-chat-20260619a">
+  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=command-center-chat-20260620b">
 </head>
 <body data-comm-v2-enabled="{{ 'true' if enabled else 'false' }}">
-  <main class="comm-shell" data-current-user-id="{{ current_user.user_id }}" data-ai-enabled="{{ 'true' if ai_enabled else 'false' }}">
+  <main class="comm-shell" data-current-user-id="{{ current_user.user_id }}" data-ai-enabled="{{ 'true' if ai_enabled else 'false' }}" data-initial-conversation-id="{{ initial_conversation_id|default(0) }}">
     <aside class="comm-list" aria-label="Conversations">
       <header class="comm-toolbar">
         <a class="icon-btn" href="/pulse" title="Back to PulseSoc" aria-label="Back to PulseSoc">&lt;</a>
@@ -21,7 +21,7 @@
         <label class="comm-search">
           <span aria-hidden="true" class="search-icon">&#9906;</span>
           <span class="sr-only">Search conversations</span>
-          <input data-conversation-search autocomplete="off" placeholder="Search people, groups, messages...">
+          <input data-conversation-search autocomplete="off" placeholder="Search signal, people, rooms...">
           <button class="search-filter-toggle" type="button" data-toggle-filters aria-label="Message filters" aria-expanded="false">&#9881;</button>
         </label>
       </div>
@@ -37,6 +37,7 @@
         <button type="button" role="tab" aria-selected="false" data-filter="groups">Groups</button>
         <button type="button" role="tab" aria-selected="false" data-filter="rooms">Rooms</button>
         <button type="button" role="tab" aria-selected="false" data-filter="unread">Unread</button>
+        <button type="button" role="tab" aria-selected="false" data-filter="shield">Shield</button>
       </div>
       <div class="comm-actions" aria-label="Create chats">
         <button class="comm-action-card primary" type="button" data-open-new-chat><span class="action-icon">+</span><span><strong>New Chat</strong><small>Start a direct message</small></span></button>
@@ -72,6 +73,11 @@
           <button class="icon-btn" type="button" data-thread-more title="More actions" aria-label="More actions">⋯</button>
         </nav>
       </header>
+      <section class="signal-status-strip" aria-label="Communication state">
+        <span data-thread-signal-state>Realtime standby</span>
+        <span data-thread-reachability>Reachability pending</span>
+        <span data-thread-shield-state>Shield calm</span>
+      </section>
       <div class="messages" data-messages>
         <div class="empty-state">Search for someone or create a group to start chatting.</div>
       </div>
@@ -136,6 +142,20 @@
       <section class="details-card">
         <h3>Live Signal</h3>
         <p class="typing-state" data-typing-state>No one is typing right now.</p>
+      </section>
+      <section class="details-card signal-route-card">
+        <h3>Signal Route</h3>
+        <div class="signal-route" data-signal-route>
+          <span>DB commit</span>
+          <span>Realtime</span>
+          <span>Push</span>
+          <span>Read state</span>
+        </div>
+        <p data-delivery-summary>Open a chat to see route confidence.</p>
+      </section>
+      <section class="details-card">
+        <h3>Pulse Shield</h3>
+        <p data-shield-summary>No active message risk in this thread.</p>
       </section>
       <section class="details-card">
         <h3>Safety</h3>
@@ -225,6 +245,6 @@
   <script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260613b"></script>
   <script src="/static/js/pulse_realtime.js?v=web-capacity-20260619a" defer></script>
   <script src="/static/notifications.js?v=message-live-20260606" defer></script>
-  <script src="/static/js/pulse_messages_v2.js?v=command-center-chat-20260619a" defer></script>
+  <script src="/static/js/pulse_messages_v2.js?v=command-center-chat-20260620b" defer></script>
 </body>
 </html>

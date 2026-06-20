@@ -48,6 +48,38 @@ def _trace(stage, **fields):
     logging.info("PUSH_TRACE stage=%s %s", stage, json.dumps(safe, default=str, sort_keys=True)[:2000])
 
 
+def _ensure_user_device_tokens(cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_device_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            platform TEXT,
+            device_id TEXT,
+            push_token TEXT,
+            push_provider TEXT,
+            environment TEXT,
+            app_version TEXT,
+            device_label TEXT,
+            enabled INTEGER DEFAULT 1,
+            created_at TEXT,
+            updated_at TEXT,
+            last_seen_at TEXT,
+            revoked_at TEXT
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_device_tokens_user_enabled ON user_device_tokens(user_id, enabled)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_device_tokens_device ON user_device_tokens(device_id)")
+
+
+def _device_label(subscription, user_agent="", device_type="", browser=""):
+    label = (subscription or {}).get("device_label") or (subscription or {}).get("deviceLabel") or ""
+    if label:
+        return str(label)[:160]
+    return " ".join(part for part in [device_type or "", browser or ""] if part).strip()[:160] or (user_agent or "device")[:160]
+
+
 def save_subscription(user_id, subscription, user_agent="", device_type="", browser=""):
     endpoint = (subscription or {}).get("endpoint") or ""
     if not user_id or not endpoint:
@@ -57,6 +89,7 @@ def save_subscription(user_id, subscription, user_agent="", device_type="", brow
     provider = "expo" if _is_expo_token(endpoint, subscription) else "webpush"
     conn = user_context.connect()
     cur = conn.cursor()
+    _ensure_user_device_tokens(cur)
     cur.execute(
         """
         INSERT INTO push_subscriptions
@@ -77,6 +110,34 @@ def save_subscription(user_id, subscription, user_agent="", device_type="", brow
         """,
         (user_id, endpoint, json.dumps(subscription)[:8000], p256dh, auth, user_agent[:600], device_type[:80], browser[:120], _now(), _now(), _now()),
     )
+    device_id = (
+        (subscription or {}).get("device_id")
+        or (subscription or {}).get("deviceId")
+        or (subscription or {}).get("installation_id")
+        or _endpoint_hash(endpoint)
+    )
+    platform = (subscription or {}).get("platform") or device_type or ("ios" if "iphone" in (user_agent or "").lower() else "android" if "android" in (user_agent or "").lower() else "web")
+    environment = (subscription or {}).get("environment") or os.getenv("PUSH_ENVIRONMENT") or os.getenv("RAILWAY_ENVIRONMENT_NAME") or "production"
+    app_version = (subscription or {}).get("app_version") or (subscription or {}).get("appVersion") or ""
+    label = _device_label(subscription, user_agent, device_type, browser)
+    cur.execute(
+        """
+        UPDATE user_device_tokens
+        SET user_id=?, platform=?, push_token=?, push_provider=?, environment=?, app_version=?,
+            device_label=?, enabled=1, updated_at=?, last_seen_at=?, revoked_at=''
+        WHERE device_id=?
+        """,
+        (int(user_id), str(platform)[:80], endpoint, provider, str(environment)[:120], str(app_version)[:80], label, _now(), _now(), str(device_id)[:180]),
+    )
+    if cur.rowcount == 0:
+        cur.execute(
+            """
+            INSERT INTO user_device_tokens
+            (user_id, platform, device_id, push_token, push_provider, environment, app_version, device_label, enabled, created_at, updated_at, last_seen_at, revoked_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, '')
+            """,
+            (int(user_id), str(platform)[:80], str(device_id)[:180], endpoint, provider, str(environment)[:120], str(app_version)[:80], label, _now(), _now(), _now()),
+        )
     conn.commit()
     conn.close()
     _trace(
@@ -87,6 +148,8 @@ def save_subscription(user_id, subscription, user_agent="", device_type="", brow
         device_type=device_type,
         browser=browser,
         user_agent_family=(user_agent or "")[:80],
+        token_type=provider,
+        platform=str(platform)[:80],
     )
     return {"ok": True, "message": "Push notifications connected."}
 

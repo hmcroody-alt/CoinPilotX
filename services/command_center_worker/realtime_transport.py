@@ -341,9 +341,12 @@ def publish_event(
     public = public_event(event)
     for recipient_id in recipients:
         safe_set(f"realtime:user:{recipient_id}:event:{event['id']}", public, ttl_seconds=EVENT_CACHE_TTL_SECONDS)
+        safe_set(f"cc:user:{recipient_id}:event:{event['id']}", public, ttl_seconds=EVENT_CACHE_TTL_SECONDS)
         safe_publish(f"realtime:user:{recipient_id}", public)
+        safe_publish(f"cc:user:{recipient_id}", public)
     if normalized_conversation_id:
         safe_publish(f"realtime:conversation:{normalized_conversation_id}", public)
+        safe_publish(f"cc:conversation:{normalized_conversation_id}", public)
     return {"ok": True, "accepted": True, "event": public, "recipient_count": len(recipients)}
 
 

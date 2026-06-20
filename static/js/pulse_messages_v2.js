@@ -4,6 +4,8 @@
   const el = (sel) => document.querySelector(sel);
   const root = el(".comm-shell");
   const currentUserId = Number(root?.dataset.currentUserId || 0);
+  const pathConversationMatch = location.pathname.match(/\/pulse\/messages\/(\d+)/);
+  const initialConversationId = Number(root?.dataset.initialConversationId || new URLSearchParams(location.search).get("conversation") || pathConversationMatch?.[1] || 0);
   const list = el("[data-conversations]");
   const messages = el("[data-messages]");
   const status = el("[data-status]");
@@ -285,6 +287,7 @@
       const matchesQuery = !query || `${item.title || ""} ${item.conversation_type || ""} ${conversationPreview(item)}`.toLowerCase().includes(query);
       const type = String(item.conversation_type || "direct");
       const unread = Number(item.unread_count || 0) > 0;
+      const shield = riskScan(conversationPreview(item)).risky || Number(item.shield_count || item.risk_score || 0) > 0;
       const matchesFilter = state.filter === "direct"
         ? type === "direct"
         : state.filter === "groups"
@@ -293,6 +296,8 @@
             ? type === "room" || type === "community_channel"
             : state.filter === "unread"
               ? unread
+              : state.filter === "shield"
+                ? shield
               : true;
       return matchesQuery && matchesFilter;
     });
@@ -304,6 +309,72 @@
     const connected = Boolean(state.realtimeConnected);
     target.dataset.state = connected ? "connected" : "fallback";
     target.innerHTML = `<span aria-hidden="true"></span>${connected ? "Realtime live" : "Secure fallback"}`;
+    const threadSignal = el("[data-thread-signal-state]");
+    if (threadSignal) threadSignal.textContent = connected ? "Realtime live" : "Fallback polling armed";
+  }
+
+  function messageDeliveryLabel(item) {
+    const raw = String(item?.delivery_state || item?.delivery_status || (item?._pending ? "sending" : "") || "").toLowerCase();
+    if (item?._failed || raw === "failed") return "Failed";
+    if (item?._pending || raw === "sending") return "Sending";
+    if (raw.includes("read") || raw.includes("seen")) return "Read";
+    if (raw.includes("delivered")) return "Delivered";
+    if (raw.includes("sent")) return "Sent";
+    return "Sent";
+  }
+
+  function deliveryGlyph(label) {
+    return {
+      Sending: "⟲",
+      Sent: "✓",
+      Delivered: "✓✓",
+      Read: "◉",
+      Failed: "!",
+    }[label] || "✓";
+  }
+
+  function threadRiskSummary() {
+    const risky = (state.messages || []).filter((item) => riskScan(item.body || "").risky || item?.pulse_shield?.flagged);
+    if (!risky.length) return { count: 0, label: "Shield calm", text: "No active message risk in this thread." };
+    const top = Math.max(...risky.map((item) => Number(item?.pulse_shield?.score || riskScan(item.body || "").score || 0)));
+    return {
+      count: risky.length,
+      label: top >= 75 ? "Shield critical" : "Shield attention",
+      text: `${risky.length} message${risky.length === 1 ? "" : "s"} need link or scam review.`,
+    };
+  }
+
+  function renderSignalIntelligence() {
+    const presence = presenceForConversation(state.active || {});
+    const reachability = el("[data-thread-reachability]");
+    if (reachability) {
+      const label = presenceLabel(presence);
+      reachability.textContent = state.active ? `${label} / push policy protected` : "Reachability pending";
+    }
+    const risk = threadRiskSummary();
+    const shieldState = el("[data-thread-shield-state]");
+    if (shieldState) {
+      shieldState.textContent = risk.label;
+      shieldState.dataset.state = risk.count ? "attention" : "calm";
+    }
+    const shieldSummary = el("[data-shield-summary]");
+    if (shieldSummary) shieldSummary.textContent = risk.text;
+    const deliverySummary = el("[data-delivery-summary]");
+    if (deliverySummary) {
+      if (!state.active) deliverySummary.textContent = "Open a chat to see route confidence.";
+      else {
+        const mine = (state.messages || []).filter((item) => Number(item.sender_user_id || 0) === currentUserId || item.is_mine);
+        const last = mine[mine.length - 1];
+        deliverySummary.textContent = last ? `Last outbound signal: ${messageDeliveryLabel(last)}.` : "No outbound messages in this thread yet.";
+      }
+    }
+    const route = el("[data-signal-route]");
+    if (route) {
+      route.dataset.state = state.realtimeConnected ? "live" : "fallback";
+      route.querySelectorAll("span").forEach((node, index) => {
+        node.dataset.active = index < (state.realtimeConnected ? 4 : 2) ? "true" : "false";
+      });
+    }
   }
 
   function renderPulseAICard() {
@@ -370,12 +441,17 @@
     const filtered = filteredConversations();
     renderPinnedConversations();
     if (!filtered.length) {
-      const empty = state.filter === "groups"
+      const hasQuery = Boolean(state.conversationSearch.trim());
+      const empty = hasQuery
+        ? "No matching conversations. Try another signal or clear search."
+        : state.filter === "groups"
         ? "No groups yet. Create a group to bring people together."
         : state.filter === "rooms"
           ? "No rooms yet. Open or create a room when you are ready."
           : state.filter === "unread"
             ? "No unread chats. You are caught up."
+            : state.filter === "shield"
+              ? "No Shield-flagged chats. Pulse Shield is calm."
             : state.filter === "direct"
               ? "No direct messages yet. Start a DM from New Chat."
               : "No conversations yet. Start a DM, create a group, or open a room.";
@@ -478,6 +554,7 @@
     }
     renderTypingPill();
     renderAIHooks();
+    renderSignalIntelligence();
     if (!state.active) {
       messages.innerHTML = `<div class="empty-state">Search for someone or create a group to start chatting.</div>`;
       return;
@@ -557,6 +634,7 @@
       typing.textContent = typingSummary(names);
       typing.classList.toggle("is-visible", names.length > 0);
     }
+    renderSignalIntelligence();
     if (!target) return;
     if (!state.active) {
       target.innerHTML = `<div class="empty-state">No active conversation selected.</div>`;
@@ -613,11 +691,11 @@
         ${item.pinned ? `<span class="message-pin-badge">Pinned</span>` : ""}
         ${!mine ? `<strong>${escapeHtml(item.sender?.display_name || "PulseSoc member")}</strong>` : ""}
         ${reply}
-        ${shield.risky ? `<div class="pulse-shield-warning" data-shield-score="${Number(shield.score || 0)}">Pulse Shield warning: suspicious link pattern detected. Review before opening.</div>` : ""}
+        ${shield.risky || item?.pulse_shield?.flagged ? `<div class="pulse-shield-warning" data-shield-score="${Number(item?.pulse_shield?.score || shield.score || 0)}"><strong>Pulse Shield</strong><span>Suspicious link pattern detected. Review before opening.</span></div>` : ""}
         ${item.body ? `<p>${linkifiedMessageHtml(item.body)}</p>` : ""}
         ${attachments ? `<div class="attachments">${attachments}</div>` : ""}
         ${reactionSummary ? `<div class="reaction-summary">${reactionSummary}</div>` : ""}
-        <small class="message-meta"><time>${escapeHtml(shortTime(item.created_at))}</time>${item.is_edited ? " / Edited" : ""}${mine ? ` / ${escapeHtml(item.delivery_status || "sent")}` : ""}</small>
+        <small class="message-meta"><time>${escapeHtml(shortTime(item.created_at))}</time>${item.is_edited ? " / Edited" : ""}${mine ? ` <span class="delivery-state" data-state="${escapeAttr(messageDeliveryLabel(item).toLowerCase())}">${deliveryGlyph(messageDeliveryLabel(item))} ${escapeHtml(messageDeliveryLabel(item))}</span>` : ""}</small>
         <button class="message-menu-trigger" type="button" data-message-actions="${item.id}" aria-label="Message actions">...</button>
         <div class="reaction-row" data-reaction-menu="${item.id}" hidden>${reactions}<button type="button" data-reply-message="${item.id}">Reply</button><button type="button" data-copy-message="${item.id}">Copy</button><button type="button" data-pin-message="${item.id}">${item.pinned ? "Unpin" : "Pin"}</button>${mine ? `<button type="button" data-edit-message="${item.id}">Edit</button><button type="button" data-delete-message="${item.id}" data-delete-for="everyone">Delete</button>` : `<button type="button" data-delete-message="${item.id}" data-delete-for="self">Remove</button>`}<button type="button" data-forward-message="${item.id}">Forward</button></div>
       </article>
@@ -672,14 +750,18 @@
       const data = await api("/conversations", {}, "conversations_list");
       state.conversations = (data.items || data.conversations || []).map(rememberConversation);
       sortConversations();
-      if (selectFirst && !state.active && state.conversations.length) {
+      const initialTarget = initialConversationId ? state.conversations.find((item) => Number(item.conversation_id) === initialConversationId || Number(item.id) === initialConversationId) : null;
+      if (!state.active && initialTarget) {
+        state.active = initialTarget;
+        if (isMobile()) setMobileMode("thread");
+      } else if (selectFirst && !state.active && state.conversations.length) {
         state.active = state.conversations[0];
       } else if (state.active) {
         state.active = rememberConversation(state.conversations.find((c) => Number(c.conversation_id) === Number(state.active.conversation_id)) || state.active);
       }
       renderConversations();
       setStatus(state.conversations.length ? "" : "No v2 conversations yet.");
-      if (state.active && !state.initialThreadLoaded && !isMobile()) {
+      if (state.active && !state.initialThreadLoaded && (!isMobile() || Number(state.active.conversation_id) === initialConversationId)) {
         state.initialThreadLoaded = true;
         window.requestAnimationFrame(() => loadMessages(state.active.conversation_id).catch((err) => setStatus(err.message, "error")));
       }
@@ -714,6 +796,7 @@
       renderMembers();
       if (window.PulseMediaRenderer) window.PulseMediaRenderer.hydrate(messages);
       document.querySelectorAll("[data-voice-message]").forEach(bindVoiceAudio);
+      if (!appendOlder) connectRealtimeStream();
     } finally {
       state.loadingThread = false;
     }
@@ -795,13 +878,33 @@
 
   function appendRealtimeMessage(message) {
     if (!message?.id || !state.active || Number(message.conversation_id) !== Number(state.active.conversation_id)) return false;
-    if (state.messages.some((item) => Number(item.id) === Number(message.id))) return false;
+    const clientId = message.client_message_id || message.client_temp_id || "";
+    const existingIndex = state.messages.findIndex((item) => Number(item.id) === Number(message.id) || (clientId && (item.client_message_id === clientId || item.client_temp_id === clientId)));
+    if (existingIndex >= 0) {
+      state.messages[existingIndex] = { ...state.messages[existingIndex], ...message, _pending: false, _failed: false };
+      renderMessages();
+      document.querySelectorAll("[data-voice-message]").forEach(bindVoiceAudio);
+      if (window.PulseMediaRenderer) window.PulseMediaRenderer.hydrate(messages);
+      return true;
+    }
     state.messages = [...state.messages, message];
     renderMessages();
     document.querySelectorAll("[data-voice-message]").forEach(bindVoiceAudio);
     if (window.PulseMediaRenderer) window.PulseMediaRenderer.hydrate(messages);
     api(`/conversations/${state.active.conversation_id}/read`, { method: "POST", body: JSON.stringify({}) }, "read_receipt").catch(() => {});
     return true;
+  }
+
+  function connectRealtimeStream() {
+    if (!window.PulseRealtime) return;
+    const params = new URLSearchParams({
+      after_id: String(state.realtimeAfterId || 0),
+      limit: "80",
+    });
+    if (state.active?.conversation_id) params.set("conversation_id", String(state.active.conversation_id));
+    const url = `${API}/realtime/stream?${params.toString()}`;
+    try { window.PulseRealtime.disconnect(); } catch (_) {}
+    window.PulseRealtime.connect(url);
   }
 
   function mergeRealtimeConversation(payload) {
@@ -919,7 +1022,7 @@
       window.PulseRealtime.on("pulse_typing", handleRealtimeEvent);
       window.PulseRealtime.on("unread_count_updated", handleRealtimeEvent);
       window.PulseRealtime.on("presence_updated", handleRealtimeEvent);
-      window.PulseRealtime.connect();
+      connectRealtimeStream();
     }
     state.tabChannel?.addEventListener("message", (event) => {
       if (event.data?.type === "comm-v2-live-event") handleRealtimeEvent(event.data.payload, { fromBroadcast: true });
@@ -1891,6 +1994,7 @@
     renderMessages();
     renderMembers();
     await loadMessages(roomId);
+    connectRealtimeStream();
   }
 
   async function sendMessage(event) {
@@ -1903,7 +2007,33 @@
       return setStatus("Type a message, attach something, or record a voice note.", "error");
     }
     const clientMessageId = `comm-v2-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const pendingId = -Date.now();
+    const pendingMessage = {
+      id: pendingId,
+      message_id: pendingId,
+      conversation_id: Number(state.active.conversation_id),
+      client_message_id: clientMessageId,
+      client_temp_id: clientMessageId,
+      sender_user_id: currentUserId,
+      sender_id: currentUserId,
+      sender: { user_id: currentUserId, display_name: "You", avatar_url: "" },
+      sender_display_name: "You",
+      sender_avatar: "",
+      is_mine: true,
+      message_type: messageTypeForSend(hasVoice, state.attachmentQueue.length ? [1] : []),
+      body: body.trim() || (hasVoice ? "Voice message" : "Attachment"),
+      reply_to_message_id: state.replyTo?.id || 0,
+      delivery_status: "sending",
+      delivery_state: "sending",
+      moderation_status: "approved",
+      attachments: [],
+      reactions: [],
+      created_at: new Date().toISOString(),
+      _pending: true,
+    };
     try {
+      state.messages = [...state.messages, pendingMessage];
+      renderMessages();
       setStatus(hasVoice ? "Uploading voice note..." : state.attachmentQueue.length ? "Uploading attachments..." : "Sending...");
       const mediaIds = state.attachmentQueue.length ? await uploadAttachmentQueue() : [];
       const voiceId = hasVoice ? await uploadVoiceDraft() : 0;
@@ -1923,7 +2053,9 @@
       if (hasVoice) discardVoiceRecording({ silent: true });
       state.replyTo = null;
       if (data.message) {
-        state.messages = [...state.messages, data.message];
+        const index = state.messages.findIndex((item) => item.client_message_id === clientMessageId || item.client_temp_id === clientMessageId || Number(item.id) === Number(data.message.id));
+        if (index >= 0) state.messages[index] = { ...data.message, _pending: false, _failed: false };
+        else state.messages = [...state.messages, data.message];
         renderMessages();
         document.querySelectorAll("[data-voice-message]").forEach(bindVoiceAudio);
       } else {
@@ -1931,6 +2063,11 @@
       }
       setStatus("");
     } catch (err) {
+      const index = state.messages.findIndex((item) => item.client_message_id === clientMessageId || item.client_temp_id === clientMessageId);
+      if (index >= 0) {
+        state.messages[index] = { ...state.messages[index], delivery_status: "failed", delivery_state: "failed", _pending: false, _failed: true };
+        renderMessages();
+      }
       setStatus(err.message, "error");
     }
   }

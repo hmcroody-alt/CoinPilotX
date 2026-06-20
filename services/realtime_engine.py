@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from threading import RLock
+from threading import Condition, RLock
 from typing import Any
 import hashlib
 import json
@@ -34,6 +34,7 @@ class RealtimeEnvelope:
 
 
 _lock = RLock()
+_event_condition = Condition(_lock)
 _event_id = 0
 _channels: dict[str, deque[RealtimeEnvelope]] = defaultdict(lambda: deque(maxlen=MAX_EVENTS_PER_CHANNEL))
 _sessions: dict[str, dict[str, Any]] = {}
@@ -123,6 +124,7 @@ def publish_event(channel: str, event_type: str, payload: dict[str, Any] | None 
             _channels[clean_channel].append(event)
             if clean_channel != "pulse:global":
                 _channels["pulse:global"].append(event)
+            _event_condition.notify_all()
             return serialize_event(event)
     except Exception:
         _failed_broadcasts += 1
@@ -177,6 +179,31 @@ def poll_events(channel: str = "pulse:global", after_id: int = 0, limit: int = 8
     with _lock:
         events = [event for event in _channels.get(str(channel or "pulse:global")[:120], []) if int(event.id) > int(after_id or 0)]
         return [serialize_event(event) for event in events[-max(1, min(int(limit or 80), 200)):]]
+
+
+def poll_events_for_channels(channels: list[str] | tuple[str, ...], after_id: int = 0, limit: int = 80) -> list[dict[str, Any]]:
+    events_by_id: dict[int, RealtimeEnvelope] = {}
+    with _lock:
+        for channel in channels or ["pulse:global"]:
+            clean_channel = str(channel or "pulse:global")[:120]
+            for event in _channels.get(clean_channel, []):
+                if int(event.id) > int(after_id or 0):
+                    events_by_id[int(event.id)] = event
+        ordered = [events_by_id[key] for key in sorted(events_by_id)]
+        return [serialize_event(event) for event in ordered[-max(1, min(int(limit or 80), 200)):]]
+
+
+def wait_events(channels: list[str] | tuple[str, ...], after_id: int = 0, limit: int = 80, timeout_seconds: float = 24.0) -> list[dict[str, Any]]:
+    deadline = time.time() + max(1.0, min(float(timeout_seconds or 24.0), 30.0))
+    with _event_condition:
+        while True:
+            events = poll_events_for_channels(list(channels or ["pulse:global"]), after_id=after_id, limit=limit)
+            if events:
+                return events
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                return []
+            _event_condition.wait(timeout=min(remaining, 5.0))
 
 
 def get_post_live_state(post_id: int | str) -> dict[str, Any]:
