@@ -16,7 +16,8 @@ def require(condition, message):
 
 def main():
     require("unread_count=CASE WHEN user_id=? THEN 0 ELSE COALESCE(unread_count,0)+1 END" in SERVICE, "send path increments receiver unread count")
-    require('"unread_count": int(unread.get("unread_count")' in SERVICE, "realtime payload includes receiver notification unread count")
+    require('"chat_unread_count": int(unread or 0)' in SERVICE, "realtime payload includes authoritative receiver chat unread count")
+    require('"chat_unread_count": int(payload.get("chat_unread_count") or 0)' in SERVICE, "all receiver realtime events preserve chat unread count")
     require('"conversation": _side_effect_conversation_payload' in SERVICE, "realtime payload includes updated conversation metadata")
     require("mergeRealtimeConversation" in JS, "client merges live conversation metadata")
     require("last_message_preview" in JS, "client updates conversation preview from incoming message")

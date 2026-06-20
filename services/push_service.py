@@ -73,6 +73,55 @@ def _ensure_user_device_tokens(cur):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_device_tokens_device ON user_device_tokens(device_id)")
 
 
+def _ensure_expo_push_tickets(cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS expo_push_tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider_ticket_id TEXT UNIQUE,
+            notification_id INTEGER,
+            user_id INTEGER,
+            subscription_id INTEGER,
+            trace_id TEXT,
+            status TEXT DEFAULT 'accepted',
+            error_code TEXT,
+            receipt_json TEXT,
+            attempts INTEGER DEFAULT 0,
+            created_at TEXT,
+            checked_at TEXT
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_expo_push_tickets_status ON expo_push_tickets(status, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_expo_push_tickets_user ON expo_push_tickets(user_id, created_at)")
+
+
+def _deactivate_subscription(cur, subscription_id):
+    cur.execute("SELECT endpoint, user_id FROM push_subscriptions WHERE id=? LIMIT 1", (int(subscription_id),))
+    row = cur.fetchone()
+    endpoint = row[0] if row else ""
+    user_id = row[1] if row else 0
+    cur.execute(
+        "UPDATE push_subscriptions SET active=0, is_active=0, updated_at=? WHERE id=?",
+        (_now(), int(subscription_id)),
+    )
+    if endpoint:
+        try:
+            cur.execute(
+                "UPDATE user_device_tokens SET enabled=0, revoked_at=?, updated_at=? WHERE user_id=? AND push_token=?",
+                (_now(), _now(), int(user_id or 0), endpoint),
+            )
+        except Exception:
+            pass
+        try:
+            cur.execute(
+                "UPDATE pulse_notification_devices SET active=0, updated_at=? WHERE user_id=? AND endpoint=?",
+                (_now(), int(user_id or 0), endpoint),
+            )
+        except Exception:
+            pass
+
+
 def _device_label(subscription, user_agent="", device_type="", browser=""):
     label = (subscription or {}).get("device_label") or (subscription or {}).get("deviceLabel") or ""
     if label:
@@ -233,7 +282,15 @@ def _send_expo_push(endpoint, payload):
         details = (response_json.get("data") or {}).get("details") or {}
         http_status = int(getattr(response, "status_code", 0) or 0)
         if response.ok and status == "ok":
-            return {"ok": True, "status": "sent", "provider": "expo", "http_status": http_status, "provider_status": status}
+            return {
+                "ok": True,
+                "status": "sent",
+                "delivery_state": "accepted",
+                "provider": "expo",
+                "provider_ticket_id": str((response_json.get("data") or {}).get("id") or "")[:180],
+                "http_status": http_status,
+                "provider_status": status,
+            }
         if details.get("error") == "DeviceNotRegistered":
             return {"ok": False, "status": "invalid", "provider": "expo", "message": "Expo device token is no longer registered.", "http_status": http_status, "provider_status": status, "provider_error": "DeviceNotRegistered"}
         return {"ok": False, "status": "failed", "provider": "expo", "message": "Expo push service rejected the notification.", "http_status": http_status, "provider_status": status, "provider_error": details.get("error") or status or "rejected"}
@@ -247,6 +304,7 @@ def send_push(user_id, title, body, data=None, push_type="general"):
     data = {**data, "push_trace_id": trace_id}
     conn = user_context.connect()
     cur = conn.cursor()
+    _ensure_expo_push_tickets(cur)
     cur.execute(
         """
         SELECT id, endpoint, subscription_json, device_type, browser, updated_at, last_seen_at
@@ -274,6 +332,7 @@ def send_push(user_id, title, body, data=None, push_type="general"):
         _trace("send_push_no_tokens", trace_id=trace_id, user_id=int(user_id or 0), push_type=push_type)
         return {"ok": False, "status": "not_configured", "message": "No active push subscription."}
     sent = 0
+    accepted_tickets = 0
     failures = []
     invalid_ids = []
     payload = _payload(title, body, data, push_type)
@@ -292,6 +351,25 @@ def send_push(user_id, title, body, data=None, push_type="general"):
             _trace("provider_response", trace_id=trace_id, user_id=int(user_id or 0), subscription_id=int(sub_id or 0), endpoint_hash=_endpoint_hash(endpoint), provider="expo", status=expo_result.get("status"), ok=bool(expo_result.get("ok")), provider_status=expo_result.get("provider_status"), provider_error=expo_result.get("provider_error"), http_status=expo_result.get("http_status"), error_type=expo_result.get("error_type"))
             if expo_result.get("ok"):
                 sent += 1
+                provider_ticket_id = expo_result.get("provider_ticket_id")
+                if provider_ticket_id:
+                    cur.execute(
+                        """
+                        INSERT INTO expo_push_tickets
+                        (provider_ticket_id, notification_id, user_id, subscription_id, trace_id, status, created_at)
+                        VALUES (?, ?, ?, ?, ?, 'accepted', ?)
+                        ON CONFLICT(provider_ticket_id) DO NOTHING
+                        """,
+                        (
+                            provider_ticket_id,
+                            int(data.get("notification_id") or 0),
+                            int(user_id or 0),
+                            int(sub_id or 0),
+                            str(trace_id)[:120],
+                            _now(),
+                        ),
+                    )
+                    accepted_tickets += 1
             elif expo_result.get("status") == "invalid":
                 invalid_ids.append(sub_id)
                 failures.append(expo_result.get("message", "Expo device token is invalid."))
@@ -331,10 +409,19 @@ def send_push(user_id, title, body, data=None, push_type="general"):
             failures.append(str(exc)[:400])
             _trace("provider_response", trace_id=trace_id, user_id=int(user_id or 0), subscription_id=int(sub_id or 0), endpoint_hash=_endpoint_hash(endpoint), provider="webpush", status="failed", error_type=type(exc).__name__)
     for sub_id in invalid_ids:
-        cur.execute("UPDATE push_subscriptions SET active=0, is_active=0, updated_at=? WHERE id=?", (_now(), sub_id))
+        _deactivate_subscription(cur, sub_id)
     conn.commit()
     conn.close()
-    result = {"ok": sent > 0, "status": "sent" if sent else "failed", "sent": sent, "failures": failures, "invalidated": len(invalid_ids), "trace_id": trace_id}
+    result = {
+        "ok": sent > 0,
+        "status": "sent" if sent else "failed",
+        "delivery_state": "accepted" if accepted_tickets else ("submitted" if sent else "failed"),
+        "sent": sent,
+        "accepted_tickets": accepted_tickets,
+        "failures": failures,
+        "invalidated": len(invalid_ids),
+        "trace_id": trace_id,
+    }
     _trace("send_push_complete", trace_id=trace_id, user_id=int(user_id or 0), push_type=push_type, status=result["status"], sent=sent, invalidated=len(invalid_ids), failures=len(failures), conversation_id=conversation_id, message_id=message_id)
     return result
 
@@ -358,3 +445,97 @@ def cleanup_invalid_subscriptions():
     conn.commit()
     conn.close()
     return {"ok": True, "cleaned": changed}
+
+
+def process_expo_receipts(limit=100):
+    """Reconcile Expo tickets without exposing device tokens or blocking message sends."""
+    limit = max(1, min(int(limit or 100), 100))
+    conn = user_context.connect()
+    cur = conn.cursor()
+    _ensure_expo_push_tickets(cur)
+    cur.execute(
+        """
+        SELECT id, provider_ticket_id, notification_id, user_id, subscription_id, trace_id
+        FROM expo_push_tickets
+        WHERE status='accepted' AND COALESCE(attempts, 0) < 12
+        ORDER BY id ASC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+    rows = cur.fetchall()
+    if not rows:
+        conn.close()
+        return {"ok": True, "checked": 0, "confirmed": 0, "failed": 0, "invalidated": 0}
+    ticket_ids = [str(row[1]) for row in rows if row[1]]
+    try:
+        response = requests.post(
+            "https://exp.host/--/api/v2/push/getReceipts",
+            json={"ids": ticket_ids},
+            headers={"Accept": "application/json", "Content-Type": "application/json"},
+            timeout=10,
+        )
+        response_json = response.json() if response.content else {}
+        receipts = response_json.get("data") if isinstance(response_json.get("data"), dict) else {}
+        if not response.ok:
+            raise RuntimeError("expo_receipt_request_rejected")
+    except Exception as exc:
+        conn.close()
+        _trace("receipt_request_failed", ticket_count=len(ticket_ids), error_type=exc.__class__.__name__)
+        return {"ok": False, "checked": 0, "confirmed": 0, "failed": 0, "invalidated": 0, "reason": "provider_unavailable"}
+
+    confirmed = 0
+    failed = 0
+    invalidated = 0
+    now = _now()
+    for row in rows:
+        local_id, ticket_id, notification_id, user_id, subscription_id, trace_id = row
+        receipt = receipts.get(str(ticket_id))
+        if not isinstance(receipt, dict):
+            cur.execute("UPDATE expo_push_tickets SET attempts=COALESCE(attempts,0)+1, checked_at=? WHERE id=?", (now, local_id))
+            continue
+        provider_status = str(receipt.get("status") or "error")[:40]
+        details = receipt.get("details") if isinstance(receipt.get("details"), dict) else {}
+        error_code = str(details.get("error") or receipt.get("message") or "")[:120]
+        final_status = "provider_confirmed" if provider_status == "ok" else "invalid" if error_code == "DeviceNotRegistered" else "failed"
+        safe_receipt = {
+            "status": provider_status,
+            "error": error_code,
+            "message": str(receipt.get("message") or "")[:240],
+        }
+        cur.execute(
+            """
+            UPDATE expo_push_tickets
+            SET status=?, error_code=?, receipt_json=?, attempts=COALESCE(attempts,0)+1, checked_at=?
+            WHERE id=?
+            """,
+            (final_status, error_code, json.dumps(safe_receipt), now, local_id),
+        )
+        if notification_id:
+            cur.execute(
+                """
+                UPDATE pulse_notification_deliveries
+                SET status=?, error_message=?, provider_response=?, sent_at=COALESCE(sent_at, ?)
+                WHERE notification_id=? AND channel='push'
+                """,
+                (final_status, error_code, json.dumps(safe_receipt), now, int(notification_id)),
+            )
+        if final_status == "provider_confirmed":
+            confirmed += 1
+        else:
+            failed += 1
+        if final_status == "invalid":
+            _deactivate_subscription(cur, subscription_id)
+            invalidated += 1
+        _trace(
+            "provider_receipt",
+            trace_id=trace_id,
+            user_id=int(user_id or 0),
+            subscription_id=int(subscription_id or 0),
+            ticket_hash=_endpoint_hash(ticket_id),
+            status=final_status,
+            provider_error=error_code,
+        )
+    conn.commit()
+    conn.close()
+    return {"ok": True, "checked": len(rows), "confirmed": confirmed, "failed": failed, "invalidated": invalidated}

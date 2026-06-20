@@ -32,6 +32,22 @@ def heartbeat_once(config: WorkerConfig) -> dict:
         config.service_role,
         config.worker_enabled,
     )
+    if config.worker_enabled:
+        try:
+            from services.push_service import process_expo_receipts
+
+            receipt_result = process_expo_receipts(limit=100)
+            if receipt_result.get("checked") or not receipt_result.get("ok"):
+                LOGGER.info(
+                    "PUSH_RECEIPTS checked=%s confirmed=%s failed=%s invalidated=%s ok=%s",
+                    receipt_result.get("checked", 0),
+                    receipt_result.get("confirmed", 0),
+                    receipt_result.get("failed", 0),
+                    receipt_result.get("invalidated", 0),
+                    bool(receipt_result.get("ok")),
+                )
+        except Exception as exc:
+            LOGGER.warning("PUSH_RECEIPTS_SKIPPED error_type=%s", exc.__class__.__name__)
     return payload
 
 

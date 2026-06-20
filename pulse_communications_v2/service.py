@@ -116,11 +116,13 @@ def _message_security_classification(body: str) -> dict:
         from services.command_center_worker import security_engine
 
         scored = security_engine.score_event("phishing_link", {"body": text, "message": text})
+        reasons = scored.get("reasons") or []
+        risky = bool(reasons)
         return {
-            "risky": int(scored.get("score") or 0) >= 50 or bool(scored.get("reasons")),
-            "score": int(scored.get("score") or 0),
-            "severity": scored.get("severity") or "Low",
-            "reasons": scored.get("reasons") or [],
+            "risky": risky,
+            "score": int(scored.get("score") or 0) if risky else 0,
+            "severity": (scored.get("severity") or "High") if risky else "Low",
+            "reasons": reasons,
             "link_scan": scored.get("link_scan") or {"urls_detected": 0, "domains": [], "flags": []},
             "keyword_hits": scored.get("keyword_hits") or [],
         }
@@ -1346,6 +1348,7 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
                 "sender_user_id": int(payload["sender_user_id"]),
                 "message": payload.get("message") or {},
                 "conversation": payload.get("conversation") or {},
+                "chat_unread_count": int(payload.get("chat_unread_count") or 0),
                 "unread_count": int(payload.get("unread_count") or 0),
                 "notification": payload.get("notification") or {},
             }
@@ -1372,7 +1375,11 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
             realtime_engine.publish_event(
                 f"comm_v2:user:{int(payload['recipient_user_id'])}",
                 "unread_count_updated",
-                {"conversation_id": int(conversation_id), "unread_count": int(payload.get("unread_count") or 0)},
+                {
+                    "conversation_id": int(conversation_id),
+                    "chat_unread_count": int(payload.get("chat_unread_count") or 0),
+                    "unread_count": int(payload.get("unread_count") or 0),
+                },
             )
         results["realtime"] = f"published:{2 + len(realtime_payloads) * 5}"
     except Exception as exc:

@@ -183,6 +183,7 @@ def main() -> None:
         expect(private.get("ok") is True, "private-preview message send succeeds", str(private))
         expect(len(posts) == 1, "private-preview push delivered", str(posts))
         expect(posts[-1].get("title") == "New message" and posts[-1].get("body") == "Open PulseSoc to view.", "private preview uses generic lock-screen copy", str(posts[-1]))
+        expect(not (private.get("message") or {}).get("pulse_shield"), "ordinary message is not falsely flagged by Pulse Shield", str(private))
         expect(notification_rows(RECEIVER_ID), "receiver notification stored")
 
         conn = bot.db()
