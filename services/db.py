@@ -2,7 +2,6 @@ import logging
 import os
 import re
 import sqlite3
-import threading
 import time
 import traceback
 from collections.abc import Mapping
@@ -42,8 +41,6 @@ ENGINE_URL = _normalize_engine_url(_raw_database_url())
 IS_POSTGRES = ENGINE_URL.startswith("postgresql")
 ENGINE_NAME = "postgresql" if IS_POSTGRES else "sqlite"
 QUERY_OBSERVER = None
-SQLITE_PRAGMA_LOCK = threading.Lock()
-SQLITE_WAL_CONFIGURED = False
 
 
 def set_query_observer(callback):
@@ -59,41 +56,6 @@ def notify_query(sql, params=None, duration_ms=None):
         callback(str(sql or ""), tuple(params or ()), duration_ms)
     except Exception:
         pass
-
-
-def _sqlite_timeout_seconds():
-    try:
-        return max(0.2, min(float(os.getenv("SQLITE_BUSY_TIMEOUT_SECONDS", "3")), 30.0))
-    except (TypeError, ValueError):
-        return 3.0
-
-
-def _sqlite_tuning_enabled():
-    return os.getenv("SQLITE_RUNTIME_TUNING", "1").strip().lower() not in {"0", "false", "no", "off"}
-
-
-def _configure_sqlite_connection(conn):
-    global SQLITE_WAL_CONFIGURED
-    if not _sqlite_tuning_enabled():
-        return
-    timeout_ms = int(_sqlite_timeout_seconds() * 1000)
-    try:
-        conn.execute(f"PRAGMA busy_timeout={timeout_ms}")
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA temp_store=MEMORY")
-    except Exception as exc:
-        logging.debug("SQLite connection tuning skipped: %s", exc)
-    if os.getenv("SQLITE_WAL_ENABLED", "1").strip().lower() in {"0", "false", "no", "off"}:
-        return
-    with SQLITE_PRAGMA_LOCK:
-        if SQLITE_WAL_CONFIGURED:
-            return
-        try:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
-            SQLITE_WAL_CONFIGURED = True
-        except Exception as exc:
-            logging.debug("SQLite WAL tuning skipped: %s", exc)
 
 
 def masked_database_url():
@@ -653,8 +615,7 @@ def connect():
     elif raw_url.startswith("file:"):
         path = raw_url
         uri = True
-    conn = sqlite3.connect(path, uri=uri, timeout=_sqlite_timeout_seconds())
-    _configure_sqlite_connection(conn)
+    conn = sqlite3.connect(path, uri=uri)
     conn.row_factory = sqlite3.Row
     return conn
 

@@ -8,8 +8,6 @@ undx_execution_log.jsonl
 .undx/
 .undx_connector_audit_workspace/
 coinpilotx.db
-*.db-shm
-*.db-wal
 *.sqlite
 *.sqlite3
 
