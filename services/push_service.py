@@ -11,11 +11,14 @@ import logging
 import os
 import secrets
 import hashlib
+import threading
 from datetime import datetime, timedelta
 
 import requests
 
 from . import user_context
+
+PUSH_PROCESSOR_LOCK = threading.Lock()
 
 
 def _now():
@@ -131,6 +134,54 @@ def _async_push_enabled():
     return str(os.getenv("PUSH_ASYNC_DELIVERY_ENABLED", "1")).lower() not in {"0", "false", "off", "no"}
 
 
+def _opportunistic_processor_enabled():
+    return str(os.getenv("PUSH_OPPORTUNISTIC_PROCESSOR_ENABLED", "1")).lower() not in {"0", "false", "off", "no"}
+
+
+def _opportunistic_processor_limit():
+    try:
+        return max(1, min(int(os.getenv("PUSH_OPPORTUNISTIC_PROCESSOR_LIMIT", "25") or 25), 100))
+    except (TypeError, ValueError):
+        return 25
+
+
+def schedule_push_delivery_processing(reason="enqueue"):
+    """Drain queued push work in the background when a dedicated worker is unavailable."""
+    if not _opportunistic_processor_enabled():
+        return {"ok": True, "scheduled": False, "reason": "disabled"}
+    if not PUSH_PROCESSOR_LOCK.acquire(blocking=False):
+        return {"ok": True, "scheduled": False, "reason": "already_running"}
+
+    def _run():
+        try:
+            result = process_push_delivery_jobs(limit=_opportunistic_processor_limit())
+            if result.get("processed") or not result.get("ok"):
+                _trace(
+                    "opportunistic_processor_complete",
+                    reason=reason,
+                    processed=result.get("processed", 0),
+                    sent=result.get("sent", 0),
+                    retry=result.get("retry", 0),
+                    dead_letter=result.get("dead_letter", 0),
+                    failed=result.get("failed", 0),
+                    ok=bool(result.get("ok")),
+                )
+            try:
+                process_expo_receipts(limit=25)
+            except Exception as exc:
+                _trace("opportunistic_receipts_skipped", reason=reason, error_type=exc.__class__.__name__)
+        except Exception as exc:
+            _trace("opportunistic_processor_failed", reason=reason, error_type=exc.__class__.__name__)
+        finally:
+            try:
+                PUSH_PROCESSOR_LOCK.release()
+            except RuntimeError:
+                pass
+
+    threading.Thread(target=_run, name="push-delivery-opportunistic", daemon=True).start()
+    return {"ok": True, "scheduled": True, "reason": reason}
+
+
 def _delivery_job_key(user_id, title, body, data=None, push_type="general", notification_id=0):
     data = data or {}
     if notification_id:
@@ -207,6 +258,7 @@ def enqueue_push(user_id, title, body, data=None, push_type="general", notificat
             push_type=push_type,
             job_id=job_id,
         )
+        schedule_push_delivery_processing(reason="job_queued")
         return {"ok": True, "status": "queued", "delivery_state": "queued", "job_id": job_id, "id": queued_id, "trace_id": trace_id}
     except Exception as exc:
         if "unique" not in str(exc).lower() and "duplicate" not in str(exc).lower():
@@ -237,6 +289,7 @@ def enqueue_push(user_id, title, body, data=None, push_type="general", notificat
             push_type=push_type,
             job_id=existing_job,
         )
+        schedule_push_delivery_processing(reason="job_duplicate")
         return {"ok": True, "status": "queued", "delivery_state": "deduped", "duplicate": True, "job_id": existing_job, "id": existing_id, "job_status": existing_status, "trace_id": existing_trace}
     finally:
         try:

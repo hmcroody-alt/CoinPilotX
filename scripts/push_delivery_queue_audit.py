@@ -16,6 +16,7 @@ tmp = tempfile.NamedTemporaryFile(prefix="pulse-push-queue-", suffix=".db", dele
 tmp.close()
 os.environ["DATABASE_URL"] = f"sqlite:///{tmp.name}"
 os.environ["PUSH_ASYNC_DELIVERY_ENABLED"] = "1"
+os.environ["PUSH_OPPORTUNISTIC_PROCESSOR_ENABLED"] = "0"
 
 from services import push_service, user_context  # noqa: E402
 

@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 os.environ["PULSE_COMMUNICATIONS_V2_ENABLED"] = "true"
+os.environ["PUSH_OPPORTUNISTIC_PROCESSOR_ENABLED"] = "0"
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
