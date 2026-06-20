@@ -37,6 +37,7 @@ def main() -> int:
     require("live alert events ignore generic unread_count", "payload?.alert_unread_count || 0" in notifications_js and "payload?.alert_unread_count || payload?.unread_count" not in notifications_js, failures)
     require("backend excludes message notifications from alert count", "AND NOT ({_message_notification_where_clause()})" in service, failures)
     require("backend sums conversation unread for chat count", "COALESCE(SUM(CASE WHEN COALESCE(unread_count,0) > 0 THEN unread_count ELSE 0 END),0)" in service, failures)
+    require("backend includes Command Center V2 unread state", "comm_v2_participants" in service and "membership_state" in service, failures)
     require("desktop header has separate chat and alert badges", "data-chat-unread hidden" in bot and "data-alert-unread data-notification-unread hidden" in bot, failures)
     require("mobile topbar has separate chat and alert badges", 'href="/pulse/notifications"' in bot and 'href="/pulse/messages"' in bot and "data-chat-unread hidden" in bot, failures)
     require("bottom nav has separate chat and alert badges", "data-alert-unread data-notification-unread hidden" in bot and "data-chat-unread hidden" in bot and "mobile_bottom_html" in bot, failures)
@@ -53,6 +54,7 @@ def main() -> int:
     )
     cur.execute("DELETE FROM pulse_notifications WHERE user_id=?", (user_id,))
     cur.execute("DELETE FROM pulse_conversation_participants WHERE user_id=?", (user_id,))
+    cur.execute("DELETE FROM comm_v2_participants WHERE user_id=?", (user_id,))
     cur.execute(
         "INSERT INTO pulse_notifications (user_id, type, title, body, deep_link, is_read, created_at) VALUES (?, 'like', 'Like', 'Someone liked your post.', '/pulse/post/1', 0, ?)",
         (user_id, now),
@@ -63,6 +65,13 @@ def main() -> int:
     )
     cur.execute(
         "INSERT INTO pulse_conversation_participants (conversation_id, user_id, role, joined_at, unread_count) VALUES (123456, ?, 'member', ?, 3)",
+        (user_id, now),
+    )
+    cur.execute(
+        """
+        INSERT INTO comm_v2_participants (conversation_id, user_id, role, membership_state, joined_at, unread_count)
+        VALUES (654321, ?, 'member', 'active', ?, 2)
+        """,
         (user_id, now),
     )
     conn.commit()
@@ -91,13 +100,14 @@ def main() -> int:
     require("PostgreSQL table check avoids sqlite_master", "information_schema.tables" in postgres_cursor.sql and "sqlite_master" not in postgres_cursor.sql, failures)
 
     counts = notification_service.pulse_badge_counts(user_id)
-    require("backend count fixture separates alert from chat", counts.get("alert_unread_count") == 1 and counts.get("chat_unread_count") == 3, failures)
+    require("backend count fixture separates alert from chat", counts.get("alert_unread_count") == 1 and counts.get("chat_unread_count") == 5, failures)
     require("legacy count aliases remain alert-only", counts.get("count") == counts.get("alert_unread_count") and counts.get("unread_count") == counts.get("alert_unread_count"), failures)
 
     conn = sqlite3.connect(ROOT / "coinpilotx.db")
     cur = conn.cursor()
     cur.execute("DELETE FROM pulse_notifications WHERE user_id=?", (user_id,))
     cur.execute("DELETE FROM pulse_conversation_participants WHERE user_id=?", (user_id,))
+    cur.execute("DELETE FROM comm_v2_participants WHERE user_id=?", (user_id,))
     conn.commit()
     conn.close()
 

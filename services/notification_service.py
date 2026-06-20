@@ -713,6 +713,16 @@ def pulse_badge_counts(user_id):
             (int(user_id),),
         )
         chat_count += int(cur.fetchone()[0] or 0)
+    if _table_exists(cur, "comm_v2_participants"):
+        cur.execute(
+            """
+            SELECT COALESCE(SUM(CASE WHEN COALESCE(unread_count,0) > 0 THEN unread_count ELSE 0 END),0)
+            FROM comm_v2_participants
+            WHERE user_id=? AND COALESCE(membership_state,'active')='active' AND COALESCE(left_at,'')=''
+            """,
+            (int(user_id),),
+        )
+        chat_count += int(cur.fetchone()[0] or 0)
     if _table_exists(cur, "conversations") and _table_exists(cur, "conversation_members") and _table_exists(cur, "private_messages"):
         cur.execute(
             """
