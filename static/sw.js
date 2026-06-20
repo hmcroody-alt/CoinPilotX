@@ -1,4 +1,4 @@
-const CACHE_NAME = "coinpilotx-cache-v17-command-center-assets";
+const CACHE_NAME = "coinpilotx-cache-v18-pulse-home-bandwidth";
 const STATIC_ASSETS = [
   "/manifest.json",
   "/static/analytics.js",

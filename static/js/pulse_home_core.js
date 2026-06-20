@@ -21,6 +21,8 @@
   let feedVideoObserver = null;
   let longPressTimer = 0;
   let longPressStart = null;
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection || {};
+  const prefersReducedData = !!connection.saveData || /(^|-)2g$/i.test(String(connection.effectiveType || ""));
 
   function toast(message) {
     if (!toastNode) return;
@@ -118,10 +120,15 @@
     document.querySelectorAll("[data-pulse-network-globe]").forEach(card => card.classList.toggle("is-paused", !!paused));
   }
 
+  function feedPageLimit() {
+    if (prefersReducedData) return 5;
+    return window.innerWidth <= 760 ? 6 : 10;
+  }
+
   async function pulseNetworkRefreshLive() {
     if (document.hidden) return;
     try {
-      const data = await api("/api/pulse/live-now?limit=6", { timeoutMs: 8000 });
+      const data = await api("/api/pulse/live-now?limit=3", { timeoutMs: 5000 });
       pulseNetworkUpdate({ liveStreams: (data.items || []).length });
     } catch (_) {}
   }
@@ -1066,7 +1073,7 @@
     }
     tabs.querySelectorAll("[data-feed]").forEach(button => button.classList.toggle("active", button.dataset.feed === state.feed));
     try {
-      const data = await api(`/api/pulse/feed?tab=${encodeURIComponent(state.feed)}&topic=${encodeURIComponent(state.topic)}&profile=${encodeURIComponent(state.profile)}&offset=${state.offset}&limit=12`);
+      const data = await api(`/api/pulse/feed?tab=${encodeURIComponent(state.feed)}&topic=${encodeURIComponent(state.topic)}&profile=${encodeURIComponent(state.profile)}&offset=${state.offset}&limit=${feedPageLimit()}`);
       const intelligence = data.intelligence || {};
       pulseNetworkUpdate({
         creatorsOnline: Array.isArray(intelligence.active_creators) ? intelligence.active_creators.length : pulseNetworkState.creatorsOnline,

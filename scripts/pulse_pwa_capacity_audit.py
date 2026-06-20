@@ -20,7 +20,7 @@ def main():
 
     require('PULSE_LEGACY_SSE_ENABLED' in bot, "legacy SSE is controlled explicitly")
     require('return Response(status=204' in bot, "disabled legacy SSE releases request capacity")
-    require('function startLive(){setInterval(' in bot, "Home retains polling fallback")
+    require('function startLive(){if(pulsePrefersReducedData)return;setInterval(' in bot, "Home retains reduced-data-aware polling fallback")
     require('new EventSource(`/api/pulse/live/stream' not in bot, "web pages do not occupy legacy stream workers")
     require('dataset.pulseLegacySse === "enabled"' in realtime, "browser SSE is opt-in")
     require('if (document.hidden) {' in realtime and 'disconnect();' in realtime, "background tabs release realtime connections")

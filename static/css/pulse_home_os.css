@@ -908,6 +908,30 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
     padding: 11px !important;
   }
 
+  .pulse-home-os .composer-type-row {
+    display: flex !important;
+    overflow-x: auto !important;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    margin-inline: -2px;
+    padding: 0 2px 3px;
+  }
+
+  .pulse-home-os .composer-type-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .pulse-home-os .composer-type-row button,
+  .pulse-home-os .composer-type-row .button {
+    flex: 0 0 auto !important;
+    min-width: 112px !important;
+    max-width: 148px;
+    scroll-snap-align: start;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
   .pulse-home-os .pulse-action-card-grid {
     display: grid !important;
     grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
@@ -949,6 +973,12 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
     display: grid;
     grid-template-columns: 1fr 1fr;
   }
+
+  .pulse-home-os .composer-type-row button,
+  .pulse-home-os .composer-type-row .button {
+    min-width: 104px !important;
+    max-width: 132px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -956,5 +986,112 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   .pulse-home-os *::before,
   .pulse-home-os *::after {
     scroll-behavior: auto !important;
+  }
+}
+
+/* Pulse Home bandwidth/layout guard: keep the network module compact across cached shells. */
+.pulse-home-os .pulse-network-feature {
+  contain: layout paint;
+  overflow: visible;
+}
+
+.pulse-home-os .pulse-network-globe-card {
+  min-width: 0 !important;
+  height: auto !important;
+  min-height: clamp(204px, 18vw, 242px) !important;
+  grid-template-columns: minmax(178px, .52fr) minmax(0, 1fr) !important;
+  gap: clamp(12px, 1.6vw, 18px) !important;
+  align-items: center !important;
+  overflow: hidden !important;
+  content-visibility: auto;
+  contain-intrinsic-size: 228px;
+}
+
+.pulse-home-os .pulse-network-globe-stage {
+  height: clamp(168px, 16vw, 206px) !important;
+  min-height: 0 !important;
+}
+
+.pulse-home-os .pulse-network-globe {
+  width: clamp(138px, 14vw, 172px) !important;
+}
+
+.pulse-home-os .pulse-network-copy {
+  min-width: 0;
+  align-content: center !important;
+}
+
+.pulse-home-os .pulse-network-copy strong,
+.pulse-home-os .pulse-network-copy > small {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .pulse-home-os .pulse-network-globe-card {
+    min-height: 174px !important;
+    grid-template-columns: minmax(112px, 124px) minmax(0, 1fr) !important;
+    gap: 10px !important;
+    padding: 10px 12px !important;
+    contain-intrinsic-size: 178px;
+  }
+
+  .pulse-home-os .pulse-network-globe-stage {
+    height: 146px !important;
+  }
+
+  .pulse-home-os .pulse-network-globe {
+    width: 112px !important;
+  }
+
+  .pulse-home-os .pulse-network-copy strong {
+    font-size: clamp(21px, 7vw, 30px) !important;
+    line-height: .98 !important;
+  }
+
+  .pulse-home-os .pulse-network-copy > small {
+    max-width: 30ch !important;
+    line-height: 1.24 !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .pulse-home-os .pulse-network-globe-card {
+    min-height: 168px !important;
+    grid-template-columns: 108px minmax(0, 1fr) !important;
+    padding: 10px !important;
+  }
+
+  .pulse-home-os .pulse-network-globe-stage {
+    height: 138px !important;
+  }
+
+  .pulse-home-os .pulse-network-globe {
+    width: 104px !important;
+  }
+
+  .pulse-home-os .pulse-network-copy {
+    gap: 6px !important;
+  }
+
+  .pulse-home-os .pulse-network-copy > span {
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  .pulse-home-os .pulse-network-metrics span {
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce), (prefers-reduced-data: reduce) {
+  .pulse-home-os .pulse-network-globe-card,
+  .pulse-home-os .pulse-network-globe-card * {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .pulse-home-os .pulse-network-arc,
+  .pulse-home-os .pulse-network-radar {
+    opacity: .35;
   }
 }
