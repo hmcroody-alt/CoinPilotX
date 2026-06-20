@@ -164,6 +164,22 @@ def main() -> None:
         expect(bool(data.get("push_trace_id")), "push trace id included in provider payload", str(data))
 
         posts.clear()
+        recent_activity = datetime.now(UTC).isoformat(timespec="seconds")
+        conn = bot.db()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE comm_v2_participants SET last_seen_at=?, last_read_at=? WHERE conversation_id=? AND user_id=?",
+            (recent_activity, recent_activity, conversation_id, RECEIVER_ID),
+        )
+        conn.commit()
+        conn.close()
+        recently_active = service.send_message(SENDER_ID, conversation_id, {"body": "Runtime recently active push audit"})
+        expect(recently_active.get("ok") is True, "recently active recipient message send succeeds", str(recently_active))
+        processed_recent = push_service.process_push_delivery_jobs(limit=10)
+        expect(processed_recent.get("sent") == 1, "recently active recipient still receives provider push", str(processed_recent))
+        expect(len(posts) == 1, "recent activity does not suppress out-of-app push", str(posts))
+
+        posts.clear()
         muted_until = (datetime.now(UTC) + timedelta(minutes=10)).isoformat(timespec="seconds")
         conn = bot.db()
         cur = conn.cursor()

@@ -591,10 +591,6 @@ def _participant_push_policy(cur, recipient_id: int, sender_id: int, conversatio
     muted_until = _parse_dt(participant.get("muted_until"))
     if level in {"none", "off", "muted", "silent"} or (muted_until and muted_until > now_dt):
         return {"skip": False, "suppress_push": True, "reason": "muted"}
-    seen_at = _parse_dt(participant.get("last_seen_at"))
-    read_at = _parse_dt(participant.get("last_read_at"))
-    if seen_at and read_at and (now_dt - seen_at).total_seconds() <= 25 and (now_dt - read_at).total_seconds() <= 25:
-        return {"skip": False, "suppress_push": True, "reason": "active_chat"}
     return {"skip": False, "suppress_push": False, "reason": "deliver"}
 
 

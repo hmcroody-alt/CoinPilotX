@@ -580,13 +580,11 @@ def create_pulse_notification(
                 "push_type": category,
                 "notification_id": int(notification_id),
             }
-            push_result = push_service.enqueue_push(
+            push_result = send_push_alert(
                 int(user_id),
                 str(title or "PulseSoc notification"),
                 str(body or ""),
                 push_metadata,
-                push_type=category,
-                notification_id=int(notification_id),
             )
             _log_pulse_delivery(
                 notification_id,
