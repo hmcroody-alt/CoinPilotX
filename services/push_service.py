@@ -11,7 +11,7 @@ import logging
 import os
 import secrets
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests
 
@@ -94,6 +94,155 @@ def _ensure_expo_push_tickets(cur):
     )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_expo_push_tickets_status ON expo_push_tickets(status, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_expo_push_tickets_user ON expo_push_tickets(user_id, created_at)")
+
+
+def _ensure_push_delivery_jobs(cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS push_delivery_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT UNIQUE,
+            idempotency_key TEXT UNIQUE,
+            notification_id INTEGER,
+            user_id INTEGER,
+            push_type TEXT,
+            title TEXT,
+            body TEXT,
+            payload_json TEXT,
+            status TEXT DEFAULT 'pending',
+            attempts INTEGER DEFAULT 0,
+            max_attempts INTEGER DEFAULT 5,
+            next_retry_at TEXT,
+            last_error TEXT,
+            provider_response TEXT,
+            trace_id TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            processed_at TEXT
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_push_delivery_jobs_status_retry ON push_delivery_jobs(status, next_retry_at, id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_push_delivery_jobs_user_created ON push_delivery_jobs(user_id, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_push_delivery_jobs_notification ON push_delivery_jobs(notification_id)")
+
+
+def _async_push_enabled():
+    return str(os.getenv("PUSH_ASYNC_DELIVERY_ENABLED", "1")).lower() not in {"0", "false", "off", "no"}
+
+
+def _delivery_job_key(user_id, title, body, data=None, push_type="general", notification_id=0):
+    data = data or {}
+    if notification_id:
+        return f"notification:{int(notification_id)}:user:{int(user_id or 0)}:push:{str(push_type or 'general')[:80]}"
+    conversation_id = data.get("conversationId") or data.get("conversation_id") or ""
+    message_id = data.get("messageId") or data.get("message_id") or data.get("entity_id") or ""
+    if conversation_id and message_id:
+        return f"message:{int(user_id or 0)}:{conversation_id}:{message_id}:{str(push_type or 'message')[:80]}"
+    digest = hashlib.sha256(
+        json.dumps(
+            {
+                "user_id": int(user_id or 0),
+                "title": str(title or "")[:180],
+                "body": str(body or "")[:300],
+                "data": data,
+                "push_type": str(push_type or "general")[:80],
+            },
+            sort_keys=True,
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()[:24]
+    return f"push:{digest}"
+
+
+def _retry_at(attempts):
+    delay_seconds = min(3600, 30 * (2 ** max(0, int(attempts or 1) - 1)))
+    return (datetime.utcnow() + timedelta(seconds=delay_seconds)).isoformat(timespec="seconds")
+
+
+def enqueue_push(user_id, title, body, data=None, push_type="general", notification_id=0, idempotency_key=""):
+    """Persist a push delivery request without contacting the provider."""
+    if not user_id:
+        return {"ok": False, "status": "skipped", "message": "User required."}
+    data = data or {}
+    trace_id = data.get("push_trace_id") or data.get("trace_id") or secrets.token_hex(6)
+    safe_data = {**data, "push_trace_id": trace_id, "notification_id": int(notification_id or data.get("notification_id") or 0)}
+    key = str(idempotency_key or _delivery_job_key(user_id, title, body, safe_data, push_type, notification_id))[:240]
+    job_id = f"push_{secrets.token_hex(12)}"
+    now = _now()
+    conn = user_context.connect()
+    cur = conn.cursor()
+    _ensure_push_delivery_jobs(cur)
+    _ensure_expo_push_tickets(cur)
+    try:
+        cur.execute(
+            """
+            INSERT INTO push_delivery_jobs
+            (job_id, idempotency_key, notification_id, user_id, push_type, title, body, payload_json,
+             status, attempts, max_attempts, next_retry_at, trace_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, 5, ?, ?, ?, ?)
+            """,
+            (
+                job_id,
+                key,
+                int(notification_id or safe_data.get("notification_id") or 0),
+                int(user_id or 0),
+                str(push_type or "general")[:80],
+                str(title or "PulseSoc notification")[:180],
+                str(body or "")[:2000],
+                json.dumps(safe_data, default=str)[:8000],
+                now,
+                str(trace_id)[:120],
+                now,
+                now,
+            ),
+        )
+        queued_id = getattr(cur, "lastrowid", None) or 0
+        conn.commit()
+        _trace(
+            "push_job_queued",
+            trace_id=trace_id,
+            user_id=int(user_id or 0),
+            notification_id=int(notification_id or safe_data.get("notification_id") or 0),
+            push_type=push_type,
+            job_id=job_id,
+        )
+        return {"ok": True, "status": "queued", "delivery_state": "queued", "job_id": job_id, "id": queued_id, "trace_id": trace_id}
+    except Exception as exc:
+        if "unique" not in str(exc).lower() and "duplicate" not in str(exc).lower():
+            conn.rollback()
+            conn.close()
+            _trace("push_job_enqueue_failed", trace_id=trace_id, user_id=int(user_id or 0), push_type=push_type, error_type=type(exc).__name__)
+            return {"ok": False, "status": "failed", "message": "Push job could not be queued.", "error_type": type(exc).__name__, "trace_id": trace_id}
+        conn.rollback()
+        cur.execute(
+            """
+            SELECT id, job_id, status, trace_id FROM push_delivery_jobs
+            WHERE idempotency_key=?
+            LIMIT 1
+            """,
+            (key,),
+        )
+        existing = cur.fetchone()
+        conn.close()
+        existing_id = existing[0] if existing else 0
+        existing_job = existing[1] if existing else ""
+        existing_status = existing[2] if existing else "queued"
+        existing_trace = existing[3] if existing else trace_id
+        _trace(
+            "push_job_duplicate",
+            trace_id=existing_trace,
+            user_id=int(user_id or 0),
+            notification_id=int(notification_id or safe_data.get("notification_id") or 0),
+            push_type=push_type,
+            job_id=existing_job,
+        )
+        return {"ok": True, "status": "queued", "delivery_state": "deduped", "duplicate": True, "job_id": existing_job, "id": existing_id, "job_status": existing_status, "trace_id": existing_trace}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def _deactivate_subscription(cur, subscription_id):
@@ -206,8 +355,9 @@ def save_subscription(user_id, subscription, user_agent="", device_type="", brow
 def _payload(title, body, data=None, push_type="general"):
     data = data or {}
     conversation_id = data.get("conversationId") or data.get("conversation_id")
-    deep_link = data.get("deepLink") or data.get("deep_link") or data.get("target_url")
-    url = data.get("url") or deep_link or {
+    native_url = data.get("native_url") or data.get("app_url") or data.get("mobile_deep_link")
+    deep_link = data.get("deep_link") or data.get("target_url") or data.get("deepLink")
+    web_url = data.get("web_url") or data.get("url") or deep_link or {
         "arena_invite": "/arena",
         "private_message": f"/pulse/messages/{conversation_id}" if conversation_id else "/pulse/messages",
         "chat_message": f"/pulse/messages/{conversation_id}" if conversation_id else "/pulse/messages",
@@ -222,13 +372,26 @@ def _payload(title, body, data=None, push_type="general"):
         "whale_alert": "/whale-alerts",
         "scam_warning": "/scam-shield",
     }.get(push_type, "/pulse/notifications")
+    preferred_deep_link = native_url or data.get("deepLink") or deep_link or web_url
+    payload_data = {
+        **data,
+        "url": web_url,
+        "web_url": web_url,
+        "deepLink": preferred_deep_link,
+        "deep_link": deep_link or web_url,
+        "push_type": push_type,
+    }
+    if native_url:
+        payload_data["native_url"] = native_url
+        payload_data["app_url"] = native_url
+        payload_data["mobile_deep_link"] = native_url
     return {
         "title": title[:120],
         "body": body[:240],
         "tag": f"pulsesoc-message-{conversation_id}" if conversation_id and push_type in {"private_message", "chat_message", "message", "voice_message"} else f"coinpilotxai-{push_type}",
         "renotify": push_type in {"arena_invite", "scam_warning", "private_message", "chat_message", "message", "market_alert"},
         "vibrate": [200, 100, 200],
-        "data": {"url": url, "deepLink": deep_link or url, "push_type": push_type, **data},
+        "data": payload_data,
         "actions": [{"action": "open", "title": "Open"}, {"action": "dismiss", "title": "Dismiss"}],
     }
 
@@ -253,7 +416,7 @@ def _send_expo_push(endpoint, payload):
     push_type = str(data.get("push_type") or data.get("type") or "").strip()
     channel_id = str(data.get("channel_id") or data.get("channelId") or "").strip()
     if not channel_id:
-        channel_id = "messages" if push_type in {"private_message", "chat_message", "message", "voice_message"} or data.get("conversationId") or data.get("conversation_id") else "default"
+        channel_id = "pulse-messages-v2" if push_type in {"private_message", "chat_message", "message", "voice_message"} or data.get("conversationId") or data.get("conversation_id") else "default"
     message = {
         "to": token,
         "title": payload.get("title") or "PulseSoc",
@@ -424,6 +587,129 @@ def send_push(user_id, title, body, data=None, push_type="general"):
     }
     _trace("send_push_complete", trace_id=trace_id, user_id=int(user_id or 0), push_type=push_type, status=result["status"], sent=sent, invalidated=len(invalid_ids), failures=len(failures), conversation_id=conversation_id, message_id=message_id)
     return result
+
+
+def process_push_delivery_jobs(limit=50):
+    """Send queued push jobs with retries and dead-lettering."""
+    limit = max(1, min(int(limit or 50), 100))
+    now = _now()
+    conn = user_context.connect()
+    cur = conn.cursor()
+    _ensure_push_delivery_jobs(cur)
+    cur.execute(
+        """
+        SELECT id, job_id, notification_id, user_id, push_type, title, body, payload_json,
+               attempts, max_attempts, trace_id
+        FROM push_delivery_jobs
+        WHERE status IN ('pending', 'retry')
+          AND (next_retry_at IS NULL OR next_retry_at='' OR next_retry_at<=?)
+        ORDER BY id ASC
+        LIMIT ?
+        """,
+        (now, limit),
+    )
+    rows = cur.fetchall()
+    if not rows:
+        conn.close()
+        return {"ok": True, "processed": 0, "sent": 0, "retry": 0, "dead_letter": 0, "failed": 0}
+    processed = sent = retry = dead_letter = failed = 0
+    for row in rows:
+        local_id, job_id, notification_id, user_id, push_type, title, body, payload_json, attempts, max_attempts, trace_id = row
+        attempts = int(attempts or 0) + 1
+        max_attempts = int(max_attempts or 5)
+        cur.execute("UPDATE push_delivery_jobs SET status='processing', attempts=?, updated_at=? WHERE id=?", (attempts, _now(), int(local_id)))
+        conn.commit()
+        try:
+            payload = json.loads(payload_json or "{}")
+            payload.setdefault("notification_id", int(notification_id or 0))
+            payload.setdefault("push_trace_id", trace_id or secrets.token_hex(6))
+        except Exception:
+            payload = {"notification_id": int(notification_id or 0), "push_trace_id": trace_id or secrets.token_hex(6)}
+        _trace(
+            "push_job_processing",
+            trace_id=payload.get("push_trace_id") or trace_id,
+            user_id=int(user_id or 0),
+            notification_id=int(notification_id or 0),
+            push_type=push_type,
+            job_id=job_id,
+            attempt=attempts,
+        )
+        try:
+            result = send_push(int(user_id or 0), title, body, payload, push_type=push_type or "general")
+        except Exception as exc:
+            result = {"ok": False, "status": "failed", "message": "Push provider call crashed.", "error_type": type(exc).__name__}
+        status = str(result.get("status") or ("sent" if result.get("ok") else "failed"))[:60]
+        message = result.get("message") or "; ".join(result.get("failures") or []) or result.get("error_type") or ""
+        if result.get("ok") or status in {"sent", "submitted"}:
+            final_status = "sent"
+            sent += 1
+            processed += 1
+            cur.execute(
+                """
+                UPDATE push_delivery_jobs
+                SET status=?, last_error='', provider_response=?, updated_at=?, processed_at=?
+                WHERE id=?
+                """,
+                (final_status, json.dumps(result, default=str)[:4000], _now(), _now(), int(local_id)),
+            )
+        elif status in {"not_configured", "skipped", "invalid"}:
+            final_status = status
+            failed += 1
+            processed += 1
+            cur.execute(
+                """
+                UPDATE push_delivery_jobs
+                SET status=?, last_error=?, provider_response=?, updated_at=?, processed_at=?
+                WHERE id=?
+                """,
+                (final_status, str(message or status)[:1200], json.dumps(result, default=str)[:4000], _now(), _now(), int(local_id)),
+            )
+        elif attempts >= max_attempts:
+            final_status = "dead_letter"
+            dead_letter += 1
+            processed += 1
+            cur.execute(
+                """
+                UPDATE push_delivery_jobs
+                SET status='dead_letter', last_error=?, provider_response=?, updated_at=?, processed_at=?
+                WHERE id=?
+                """,
+                (str(message or "max attempts reached")[:1200], json.dumps(result, default=str)[:4000], _now(), _now(), int(local_id)),
+            )
+        else:
+            final_status = "retry"
+            retry += 1
+            processed += 1
+            cur.execute(
+                """
+                UPDATE push_delivery_jobs
+                SET status='retry', next_retry_at=?, last_error=?, provider_response=?, updated_at=?
+                WHERE id=?
+                """,
+                (_retry_at(attempts), str(message or "provider unavailable")[:1200], json.dumps(result, default=str)[:4000], _now(), int(local_id)),
+            )
+        if notification_id:
+            cur.execute(
+                """
+                UPDATE pulse_notification_deliveries
+                SET status=?, error_message=?, provider_response=?, sent_at=CASE WHEN ?='sent' THEN COALESCE(sent_at, ?) ELSE sent_at END
+                WHERE notification_id=? AND channel='push'
+                """,
+                (final_status, str(message or "")[:1200], json.dumps(result, default=str)[:4000], final_status, _now(), int(notification_id)),
+            )
+        _trace(
+            "push_job_complete",
+            trace_id=payload.get("push_trace_id") or trace_id,
+            user_id=int(user_id or 0),
+            notification_id=int(notification_id or 0),
+            push_type=push_type,
+            job_id=job_id,
+            status=final_status,
+            attempt=attempts,
+        )
+        conn.commit()
+    conn.close()
+    return {"ok": True, "processed": processed, "sent": sent, "retry": retry, "dead_letter": dead_letter, "failed": failed}
 
 
 def broadcast_user_notification(user_id, notification):

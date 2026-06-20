@@ -1,4 +1,5 @@
 const CACHE_NAME = "coinpilotx-cache-v18-pulse-home-bandwidth";
+const DEBUG_SW = false;
 const STATIC_ASSETS = [
   "/manifest.json",
   "/static/analytics.js",
@@ -83,7 +84,7 @@ function onlineNavigationError(pathname) {
 }
 
 self.addEventListener("install", (event) => {
-  console.log("[CoinPilotXAI SW] service worker installed", CACHE_NAME);
+  if (DEBUG_SW) console.log("[CoinPilotXAI SW] service worker installed", CACHE_NAME);
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => cache.addAll(STATIC_ASSETS))
@@ -92,12 +93,12 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  console.log("[CoinPilotXAI SW] service worker activated", CACHE_NAME);
+  if (DEBUG_SW) console.log("[CoinPilotXAI SW] service worker activated", CACHE_NAME);
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.map((key) => {
         if (key !== CACHE_NAME) {
-          console.log("[CoinPilotXAI SW] old cache deleted", key);
+          if (DEBUG_SW) console.log("[CoinPilotXAI SW] old cache deleted", key);
         }
         return key === CACHE_NAME ? Promise.resolve() : caches.delete(key);
       }))
@@ -114,16 +115,16 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    console.log("[CoinPilotXAI SW] navigation fetch attempted", url.pathname);
+    if (DEBUG_SW) console.log("[CoinPilotXAI SW] navigation fetch attempted", url.pathname);
     event.respondWith(
       fetch(request, { cache: "no-store" })
         .then((response) => {
-          console.log("[CoinPilotXAI SW] navigation fetch succeeded", url.pathname, response.status);
+          if (DEBUG_SW) console.log("[CoinPilotXAI SW] navigation fetch succeeded", url.pathname, response.status);
           return response;
         })
         .catch((error) => {
           const offline = self.navigator && self.navigator.onLine === false;
-          console.log("[CoinPilotXAI SW] navigation fetch failed", url.pathname, offline ? "offline" : "online", error && error.message ? error.message : error);
+          if (DEBUG_SW) console.log("[CoinPilotXAI SW] navigation fetch failed", url.pathname, offline ? "offline" : "online", error && error.message ? error.message : error);
           return offline ? offlineResponse() : onlineNavigationError(url.pathname);
         })
     );
@@ -132,7 +133,7 @@ self.addEventListener("fetch", (event) => {
 
   if (isNeverCachePath(url.pathname)) {
     event.respondWith(fetch(request, { cache: "no-store" }).catch((error) => {
-      console.log("[CoinPilotXAI SW] fetch failure", url.pathname, error && error.message ? error.message : error);
+      if (DEBUG_SW) console.log("[CoinPilotXAI SW] fetch failure", url.pathname, error && error.message ? error.message : error);
       throw error;
     }));
     return;
@@ -147,7 +148,7 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       }).catch((error) => {
-        console.log("[CoinPilotXAI SW] runtime fetch fallback", url.pathname, error && error.message ? error.message : error);
+        if (DEBUG_SW) console.log("[CoinPilotXAI SW] runtime fetch fallback", url.pathname, error && error.message ? error.message : error);
         return caches.match(request).then((cached) => cached || Promise.reject(error));
       })
     );
@@ -167,7 +168,7 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         }).catch((error) => {
-          console.log("[CoinPilotXAI SW] static fetch failure", url.pathname, error && error.message ? error.message : error);
+          if (DEBUG_SW) console.log("[CoinPilotXAI SW] static fetch failure", url.pathname, error && error.message ? error.message : error);
           throw error;
         });
       })
@@ -187,14 +188,14 @@ self.addEventListener("push", (event) => {
   }
   const data = payload.data || {};
   const conversationId = data.conversationId || data.conversation_id || payload.conversationId || payload.conversation_id;
-  const targetUrl = data.deepLink || data.deep_link || data.url || payload.deepLink || payload.deep_link || payload.url || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications");
+  const targetUrl = data.web_url || data.url || data.target_url || data.deep_link || payload.web_url || payload.url || payload.target_url || payload.deep_link || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications");
   const title = payload.title || "PulseSoc Alert";
   const options = {
     body: payload.body || payload.message || "New CoinPilotXAI intelligence update.",
     icon: payload.icon || "/static/brand/pulsesoc-icon-192-20260606.png",
     badge: payload.badge || "/static/brand/pulsesoc-icon-192-20260606.png",
     vibrate: payload.vibrate || [200, 100, 200],
-    data: { ...data, url: targetUrl, deepLink: targetUrl },
+    data: { ...data, url: targetUrl, web_url: targetUrl, deepLink: targetUrl },
     tag: payload.tag || (conversationId ? `pulsesoc-message-${conversationId}` : "coinpilotxai-alert"),
     renotify: payload.renotify !== false,
     silent: payload.silent === true ? true : false,
@@ -212,7 +213,7 @@ self.addEventListener("notificationclick", (event) => {
   if (event.action === "dismiss") return;
   const data = event.notification.data || {};
   const conversationId = data.conversationId || data.conversation_id;
-  const url = data.deepLink || data.deep_link || data.url || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications");
+  const url = data.web_url || data.url || data.target_url || data.deep_link || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications");
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {

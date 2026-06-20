@@ -446,7 +446,7 @@ def _mobile_deep_link(item):
     conversation_id = metadata.get("conversation_id") or metadata.get("conversationId")
     note_type = str(item.get("type") or "")
     if conversation_id:
-        return f"pulse://messages/{conversation_id}"
+        return f"pulse://pulse/messages-v2?conversation={conversation_id}"
     if status_id:
         if reply_id or comment_id:
             return f"pulse://status/{status_id}/reply/{reply_id or comment_id}"
@@ -456,7 +456,7 @@ def _mobile_deep_link(item):
             return f"pulse://post/{post_id}/comment/{comment_id}"
         return f"pulse://post/{post_id}"
     if note_type == "message" and item.get("entity_id"):
-        return f"pulse://messages/{item.get('entity_id')}"
+        return "pulse://pulse/messages-v2"
     return item.get("deep_link") or item.get("target_url") or "pulse://pulse/notifications"
 
 
@@ -580,12 +580,13 @@ def create_pulse_notification(
                 "push_type": category,
                 "notification_id": int(notification_id),
             }
-            push_result = push_service.send_push(
+            push_result = push_service.enqueue_push(
                 int(user_id),
                 str(title or "PulseSoc notification"),
                 str(body or ""),
                 push_metadata,
                 push_type=category,
+                notification_id=int(notification_id),
             )
             _log_pulse_delivery(
                 notification_id,
@@ -1273,7 +1274,8 @@ def send_multi_channel_notification(user_id, notification_type, title, body, met
             _log_delivery(user_id, notification_id, "sms", "skipped", "", "SMS alerts disabled.")
             _log_pulse_delivery(notification_id, user_id, "sms", "brevo_sms", "skipped", {}, "SMS alerts disabled.")
     if "push" in requested:
-        push_result = send_push_alert(user_id, title, body, metadata)
+        push_metadata = {**metadata, "notification_id": int(notification_id or metadata.get("notification_id") or 0)}
+        push_result = send_push_alert(user_id, title, body, push_metadata)
         result["push"] = push_result.get("status", "failed")
         _log_delivery(user_id, notification_id, "push", result["push"], push_result, push_result.get("message"))
         _log_pulse_delivery(notification_id, user_id, "push", "web_push", result["push"], push_result, push_result.get("message"))
@@ -1297,8 +1299,18 @@ sendMultiChannelNotification = send_multi_channel_notification
 
 
 def send_push_alert(user_id, title, message, metadata=None):
+    metadata = metadata or {}
     push_type = (metadata or {}).get("push_type") or (metadata or {}).get("type") or "general"
-    return push_service.send_push(user_id, title, message, metadata or {}, push_type=push_type)
+    if push_service._async_push_enabled():
+        return push_service.enqueue_push(
+            user_id,
+            title,
+            message,
+            metadata,
+            push_type=push_type,
+            notification_id=int(metadata.get("notification_id") or 0),
+        )
+    return push_service.send_push(user_id, title, message, metadata, push_type=push_type)
 
 
 def send_telegram_alert(user, title, message):

@@ -357,6 +357,7 @@ AUTO_PK_TABLES = {
     "moderation_cases": "id",
     "admin_session_logs": "id",
     "push_subscriptions": "id",
+    "push_delivery_jobs": "id",
     "user_alert_rules": "id",
     "alert_rules": "id",
     "alert_events": "id",

@@ -40,6 +40,14 @@ export async function registerForPushNotifications() {
       vibrationPattern: [0, 250, 250, 250],
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC
     });
+    await Notifications.setNotificationChannelAsync("pulse-messages-v2", {
+      name: "Messages",
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: "default",
+      enableVibrate: true,
+      vibrationPattern: [0, 250, 250, 250],
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC
+    });
   }
 
   const token = await Notifications.getExpoPushTokenAsync(EXPO_PROJECT_ID ? { projectId: EXPO_PROJECT_ID } : undefined);
@@ -59,7 +67,7 @@ export function wireNotificationLinks() {
   return Notifications.addNotificationResponseReceivedListener(response => {
     const data = response.notification.request.content.data || {};
     const conversationId = data.conversationId || data.conversation_id;
-    const url = data.deepLink || data.deep_link || data.url || (conversationId ? `/pulse/messages/${conversationId}` : "");
+    const url = data.native_url || data.app_url || data.mobile_deep_link || data.deepLink || data.deep_link || data.url || (conversationId ? `pulse://pulse/messages-v2?conversation=${conversationId}` : "");
     if (typeof url === "string" && url.length > 0) {
       Linking.openURL(url).catch(() => undefined);
     }

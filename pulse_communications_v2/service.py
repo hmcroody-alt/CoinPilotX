@@ -1223,8 +1223,9 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
                     continue
                 recipient_message = _side_effect_message_payload(int(recipient_id), int(message.get("id") or 0)) or message
                 message_id = int(message.get("id") or 0)
+                unread = _chat_unread_count_for_user(int(recipient_id))
                 deep_link = f"/pulse/messages/{int(conversation_id)}"
-                mobile_deep_link = f"pulse://messages/{int(conversation_id)}"
+                mobile_deep_link = f"pulse://pulse/messages-v2?conversation={int(conversation_id)}"
                 title = sender_name if not hide_preview else "New message"
                 body = preview[:220] if not hide_preview else "Open PulseSoc to view."
                 if (message.get("pulse_shield") or {}).get("flagged"):
@@ -1242,13 +1243,21 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
                     "preview_text": preview[:220],
                     "type": "message",
                     "push_type": "chat_message",
-                    "channel_id": "messages",
-                    "channelId": "messages",
+                    "channel_id": "pulse-messages-v2",
+                    "channelId": "pulse-messages-v2",
                     "url": deep_link,
-                    "deepLink": deep_link,
+                    "web_url": deep_link,
+                    "deepLink": mobile_deep_link,
                     "deep_link": deep_link,
                     "target_url": deep_link,
                     "mobile_deep_link": mobile_deep_link,
+                    "native_url": mobile_deep_link,
+                    "app_url": mobile_deep_link,
+                    "route": "messages",
+                    "screen": "Messages",
+                    "badge": int(unread or 0),
+                    "chat_unread_count": int(unread or 0),
+                    "unread_count": int(unread or 0),
                     "privacy_preview_hidden": bool(hide_preview),
                     "suppress_push": bool(policy.get("suppress_push")),
                     "push_policy": policy.get("reason") or "deliver",
@@ -1298,7 +1307,6 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
                     )[:1200],
                 )
                 push_result = note.get("push") or push_result
-                unread = _chat_unread_count_for_user(int(recipient_id))
                 realtime_payloads.append({
                     "recipient_user_id": int(recipient_id),
                     "conversation_id": int(conversation_id),

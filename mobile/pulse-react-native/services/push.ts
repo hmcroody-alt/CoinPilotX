@@ -21,7 +21,8 @@ Notifications.setNotificationHandler({
 });
 
 const ANDROID_CHANNEL_ID = "default";
-const ANDROID_MESSAGES_CHANNEL_ID = "messages";
+const ANDROID_MESSAGES_CHANNEL_ID = "pulse-messages-v2";
+const ANDROID_LEGACY_MESSAGES_CHANNEL_ID = "messages";
 const NOTIFICATION_VIBRATION_PATTERN = [0, 250, 120, 250];
 let activeConversationId = "";
 
@@ -69,6 +70,15 @@ export async function ensureNotificationPresentation() {
       bypassDnd: false
     });
     await Notifications.setNotificationChannelAsync(ANDROID_MESSAGES_CHANNEL_ID, {
+      name: "Messages",
+      importance: Notifications.AndroidImportance.MAX,
+      sound: "default",
+      enableVibrate: true,
+      vibrationPattern: NOTIFICATION_VIBRATION_PATTERN,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      bypassDnd: false
+    });
+    await Notifications.setNotificationChannelAsync(ANDROID_LEGACY_MESSAGES_CHANNEL_ID, {
       name: "Messages",
       importance: Notifications.AndroidImportance.MAX,
       sound: "default",
@@ -161,10 +171,16 @@ function normalizeNotificationData(payload: Record<string, unknown>) {
   const conversationId = stringValue(payload.conversationId || payload.conversation_id);
   const messageId = stringValue(payload.messageId || payload.message_id);
   const senderId = stringValue(payload.senderId || payload.sender_id);
-  const url = stringValue(payload.deepLink || payload.deep_link || payload.url || payload.target_url) || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications");
+  const preferredUrl =
+    stringValue(payload.native_url || payload.app_url || payload.mobile_deep_link || payload.deepLink || payload.deep_link || payload.url || payload.target_url) ||
+    (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications");
+  const url = normalizeNotificationUrl(preferredUrl, conversationId);
   return {
     ...payload,
     url,
+    deepLink: url,
+    native_url: stringValue(payload.native_url || payload.app_url || payload.mobile_deep_link) || url,
+    web_url: stringValue(payload.web_url || payload.url || payload.target_url) || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications"),
     type: stringValue(payload.type) || (conversationId ? "message" : "notification"),
     conversationId,
     conversation_id: conversationId,
@@ -181,7 +197,7 @@ function notificationUrlFromData(data: Record<string, unknown>) {
 }
 
 function notificationConversationId(data: Record<string, unknown>) {
-  return stringValue(data.conversationId || data.conversation_id) || conversationIdFromUrl(stringValue(data.url));
+  return stringValue(data.conversationId || data.conversation_id) || conversationIdFromUrl(stringValue(data.url || data.deepLink || data.native_url || data.mobile_deep_link));
 }
 
 function conversationIdFromUrl(url: string) {
@@ -189,6 +205,16 @@ function conversationIdFromUrl(url: string) {
   if (!raw) return "";
   const match = raw.match(/(?:^|\/)(?:pulse\/)?messages\/(\d+)/) || raw.match(/[?&]conversation_id=(\d+)/) || raw.match(/[?&]conversationId=(\d+)/);
   return match ? match[1] : "";
+}
+
+function normalizeNotificationUrl(url: string, conversationId = "") {
+  const raw = stringValue(url);
+  const id = conversationId || conversationIdFromUrl(raw);
+  if (!raw && id) return `pulse://pulse/messages-v2?conversation=${id}`;
+  if (/^pulse:\/\/messages\/\d+/i.test(raw) && id) return `pulse://pulse/messages-v2?conversation=${id}`;
+  if (/^https?:\/\/(?:www\.)?pulsesoc\.com\/pulse\/messages\/\d+/i.test(raw) && id) return `pulse://pulse/messages-v2?conversation=${id}`;
+  if (/^\/pulse\/messages\/\d+/i.test(raw) && id) return `pulse://pulse/messages-v2?conversation=${id}`;
+  return raw || "/pulse/notifications";
 }
 
 function stringValue(value: unknown) {

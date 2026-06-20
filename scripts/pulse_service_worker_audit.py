@@ -27,6 +27,8 @@ def main():
         require("self.addEventListener(\"install\"" in source, f"{label} has install listener")
         require("self.addEventListener(\"activate\"" in source, f"{label} has activate listener")
         require("self.addEventListener(\"fetch\"" in source, f"{label} has fetch listener")
+        require("const DEBUG_SW = false;" in source, f"{label} keeps fetch logging disabled by default")
+        require("if (DEBUG_SW) console.log" in source, f"{label} gates diagnostic logging")
         require("/manifest.json" in source, f"{label} caches manifest")
         require("/static/brand/pulsesoc-icon-192-20260606.png" in source, f"{label} caches 192 icon")
         require("/static/brand/pulsesoc-icon-512-20260606.png" in source, f"{label} caches 512 icon")

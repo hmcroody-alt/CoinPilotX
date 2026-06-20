@@ -80,6 +80,7 @@ def setup_data() -> int:
     cur.execute("DELETE FROM comm_v2_user_settings WHERE user_id IN (?, ?)", (SENDER_ID, RECEIVER_ID))
     cur.execute("DELETE FROM push_subscriptions WHERE user_id IN (?, ?)", (SENDER_ID, RECEIVER_ID))
     cur.execute("DELETE FROM pulse_notifications WHERE user_id IN (?, ?) OR actor_user_id IN (?, ?)", (SENDER_ID, RECEIVER_ID, SENDER_ID, RECEIVER_ID))
+    cur.execute("DELETE FROM push_delivery_jobs WHERE user_id IN (?, ?)", (SENDER_ID, RECEIVER_ID))
     conn.commit()
     conn.close()
 
@@ -145,15 +146,20 @@ def main() -> None:
     try:
         sent = service.send_message(SENDER_ID, conversation_id, {"body": "Runtime push audit hello"})
         expect(sent.get("ok") is True, "message send succeeds", str(sent))
-        expect(len(posts) == 1, "only receiver token pushed", str(posts))
+        expect(len(posts) == 0, "message send does not call provider inline", str(posts))
+        processed = push_service.process_push_delivery_jobs(limit=10)
+        expect(processed.get("sent") == 1, "queued push job processed", str(processed))
+        expect(len(posts) == 1, "only receiver token pushed by worker", str(posts))
         payload = posts[-1]
         data = payload.get("data") or {}
         expect(payload.get("to") == RECEIVER_TOKEN, "sender token skipped", str(payload))
-        expect(payload.get("channelId") == "messages", "Expo messages channel used", str(payload))
+        expect(payload.get("channelId") == "pulse-messages-v2", "Expo versioned messages channel used", str(payload))
         expect(payload.get("sound") == "default" and payload.get("priority") == "high", "audible high-priority push", str(payload))
         expect(data.get("conversationId") == conversation_id and data.get("messageId"), "conversation and message ids included", str(data))
         expect(data.get("senderId") == SENDER_ID and data.get("type") == "message", "sender and type included", str(data))
-        expect(data.get("deepLink") == f"/pulse/messages/{conversation_id}", "exact conversation deep link included", str(data))
+        expect(data.get("deepLink") == f"pulse://pulse/messages-v2?conversation={conversation_id}", "native exact conversation deep link included", str(data))
+        expect(data.get("web_url") == f"/pulse/messages/{conversation_id}" and data.get("url") == f"/pulse/messages/{conversation_id}", "PWA web conversation URL included", str(data))
+        expect(data.get("badge") is not None and data.get("chat_unread_count") is not None, "chat badge counts included", str(data))
         expect(bool(data.get("push_trace_id")), "push trace id included in provider payload", str(data))
 
         posts.clear()
@@ -165,6 +171,7 @@ def main() -> None:
         conn.close()
         muted = service.send_message(SENDER_ID, conversation_id, {"body": "Runtime muted push audit"})
         expect(muted.get("ok") is True, "muted message send succeeds", str(muted))
+        push_service.process_push_delivery_jobs(limit=10)
         expect(len(posts) == 0, "muted conversation suppresses provider push", str(posts))
         expect(latest_push_delivery_status(RECEIVER_ID) == "skipped", "muted suppression logged")
 
@@ -181,6 +188,9 @@ def main() -> None:
         conn.close()
         private = service.send_message(SENDER_ID, conversation_id, {"body": "Runtime private preview audit"})
         expect(private.get("ok") is True, "private-preview message send succeeds", str(private))
+        expect(len(posts) == 0, "private-preview message queues before provider delivery", str(posts))
+        processed_private = push_service.process_push_delivery_jobs(limit=10)
+        expect(processed_private.get("sent") == 1, "private-preview queued push processed", str(processed_private))
         expect(len(posts) == 1, "private-preview push delivered", str(posts))
         expect(posts[-1].get("title") == "New message" and posts[-1].get("body") == "Open PulseSoc to view.", "private preview uses generic lock-screen copy", str(posts[-1]))
         expect(not (private.get("message") or {}).get("pulse_shield"), "ordinary message is not falsely flagged by Pulse Shield", str(private))

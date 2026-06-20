@@ -13,7 +13,7 @@ def main():
         "original preview payload": "original_preview",
         "post deep link": "pulse://post/",
         "status deep link": "pulse://status/",
-        "message deep link": "pulse://messages/",
+        "message deep link": "pulse://pulse/messages-v2?conversation=",
         "comment id payload": "comment_id",
         "reply id payload": "reply_id",
         "conversation id payload": "conversation_id",
