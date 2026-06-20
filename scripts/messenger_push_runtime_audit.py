@@ -154,8 +154,9 @@ def main() -> None:
         payload = posts[-1]
         data = payload.get("data") or {}
         expect(payload.get("to") == RECEIVER_TOKEN, "sender token skipped", str(payload))
-        expect(payload.get("channelId") == "pulse-messages-v2", "Expo versioned messages channel used", str(payload))
+        expect(payload.get("channelId") == "default", "Expo default channel used for broad device delivery", str(payload))
         expect(payload.get("sound") == "default" and payload.get("priority") == "high", "audible high-priority push", str(payload))
+        expect(payload.get("interruptionLevel") == "active", "iOS interruption level included", str(payload))
         expect(data.get("conversationId") == conversation_id and data.get("messageId"), "conversation and message ids included", str(data))
         expect(data.get("senderId") == SENDER_ID and data.get("type") == "message", "sender and type included", str(data))
         expect(data.get("deepLink") == f"pulse://pulse/messages-v2?conversation={conversation_id}", "native exact conversation deep link included", str(data))

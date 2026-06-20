@@ -127,8 +127,9 @@ def main():
         expect(len(send_calls) == 1, "opportunistic processor calls Expo send provider without dedicated worker", str(calls))
         payload = send_calls[0]["json"]
         expect(payload.get("to") == TOKEN, "provider request targets saved native token", str(payload))
-        expect(payload.get("channelId") == "pulse-messages-v2", "message channel is used for Android delivery", str(payload))
+        expect(payload.get("channelId") == "default", "default channel is used for broad Android delivery", str(payload))
         expect(payload.get("sound") == "default" and payload.get("priority") == "high", "sound and high priority are preserved", str(payload))
+        expect(payload.get("interruptionLevel") == "active", "message interruption level is preserved", str(payload))
         data = payload.get("data") or {}
         expect(data.get("conversationId") == 44 and data.get("messageId") == 55, "exact conversation/message ids are included", str(data))
         expect(data.get("native_url") == "pulse://pulse/messages-v2?conversation=44", "native deep link is included", str(data))

@@ -201,7 +201,7 @@ self.addEventListener("push", (event) => {
     silent: payload.silent === true ? true : false,
     timestamp: payload.timestamp || Date.now(),
     actions: payload.actions || [
-      { action: "open", title: "Open Alerts" },
+      { action: "open", title: conversationId ? "Open Chat" : "Open Alerts" },
       { action: "dismiss", title: "Dismiss" }
     ]
   };

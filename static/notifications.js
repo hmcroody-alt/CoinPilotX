@@ -203,7 +203,17 @@
     const isChat = ["message_notification", "message_created", "chat_message", "group_message", "room_message"].includes(String(payload?._event_type || payload?.event_type || payload?.type || payload?.notification_type || ""));
     if (isChat) {
       const count = Number(payload?.chat_unread_count || 0);
+      const note = payload?.notification || payload || {};
+      const conversationId = payload?.conversation_id || payload?.conversationId || note?.conversation_id || note?.conversationId || "";
+      const onSameConversation = conversationId && new RegExp(`/pulse/messages(?:-v2)?(?:/|\\\\?conversation=)${conversationId}(?:\\\\b|$)`).test(window.location.pathname + window.location.search);
       if (count || count === 0) {
+        if (STATE.lastChatUnread !== null && count > STATE.lastChatUnread && !onSameConversation) {
+          alertUser({
+            title: note.title || payload?.title || "New PulseSoc message",
+            body: note.body || payload?.body || "Open PulseSoc to view.",
+            url: note.deep_link || note.target_url || payload?.deep_link || payload?.target_url || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/messages")
+          });
+        }
         STATE.lastChatUnread = count;
         setBadges({ alert: STATE.lastAlertUnread || 0, chat: count });
       }

@@ -25,7 +25,10 @@ function isNeverCachePath(pathname) {
     pathname.startsWith("/account") ||
     pathname.startsWith("/dashboard") ||
     pathname.startsWith("/app") ||
+    pathname.startsWith("/command-center") ||
     pathname.startsWith("/intelligence") ||
+    pathname.startsWith("/chat") ||
+    pathname.startsWith("/messages") ||
     pathname === "/pulse" ||
     pathname.startsWith("/pulse/") ||
     pathname.startsWith("/api/pulse/") ||
@@ -35,9 +38,11 @@ function isNeverCachePath(pathname) {
     pathname.startsWith("/alerts") ||
     pathname.startsWith("/upgrade") ||
     pathname.startsWith("/forgot-password") ||
+    pathname.startsWith("/forgot-username") ||
     pathname.startsWith("/reset-password") ||
     pathname.startsWith("/verify-email") ||
-    pathname === "/stripe-webhook"
+    pathname === "/stripe-webhook" ||
+    pathname.startsWith("/stripe/")
   );
 }
 
@@ -79,7 +84,7 @@ function onlineNavigationError(pathname) {
 }
 
 self.addEventListener("install", (event) => {
-  if (DEBUG_SW) console.log("[PulseSoc SW] service worker installed", CACHE_NAME);
+  if (DEBUG_SW) console.log("[CoinPilotXAI SW] service worker installed", CACHE_NAME);
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => cache.addAll(STATIC_ASSETS))
@@ -88,12 +93,12 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  if (DEBUG_SW) console.log("[PulseSoc SW] service worker activated", CACHE_NAME);
+  if (DEBUG_SW) console.log("[CoinPilotXAI SW] service worker activated", CACHE_NAME);
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.map((key) => {
         if (key !== CACHE_NAME) {
-          if (DEBUG_SW) console.log("[PulseSoc SW] old cache deleted", key);
+          if (DEBUG_SW) console.log("[CoinPilotXAI SW] old cache deleted", key);
         }
         return key === CACHE_NAME ? Promise.resolve() : caches.delete(key);
       }))
@@ -110,16 +115,16 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    if (DEBUG_SW) console.log("[PulseSoc SW] navigation fetch attempted", url.pathname);
+    if (DEBUG_SW) console.log("[CoinPilotXAI SW] navigation fetch attempted", url.pathname);
     event.respondWith(
       fetch(request, { cache: "no-store" })
         .then((response) => {
-          if (DEBUG_SW) console.log("[PulseSoc SW] navigation fetch succeeded", url.pathname, response.status);
+          if (DEBUG_SW) console.log("[CoinPilotXAI SW] navigation fetch succeeded", url.pathname, response.status);
           return response;
         })
         .catch((error) => {
           const offline = self.navigator && self.navigator.onLine === false;
-          if (DEBUG_SW) console.log("[PulseSoc SW] navigation fetch failed", url.pathname, offline ? "offline" : "online", error && error.message ? error.message : error);
+          if (DEBUG_SW) console.log("[CoinPilotXAI SW] navigation fetch failed", url.pathname, offline ? "offline" : "online", error && error.message ? error.message : error);
           return offline ? offlineResponse() : onlineNavigationError(url.pathname);
         })
     );
@@ -128,7 +133,7 @@ self.addEventListener("fetch", (event) => {
 
   if (isNeverCachePath(url.pathname)) {
     event.respondWith(fetch(request, { cache: "no-store" }).catch((error) => {
-      if (DEBUG_SW) console.log("[PulseSoc SW] fetch failure", url.pathname, error && error.message ? error.message : error);
+      if (DEBUG_SW) console.log("[CoinPilotXAI SW] fetch failure", url.pathname, error && error.message ? error.message : error);
       throw error;
     }));
     return;
@@ -143,7 +148,7 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       }).catch((error) => {
-        if (DEBUG_SW) console.log("[PulseSoc SW] runtime fetch fallback", url.pathname, error && error.message ? error.message : error);
+        if (DEBUG_SW) console.log("[CoinPilotXAI SW] runtime fetch fallback", url.pathname, error && error.message ? error.message : error);
         return caches.match(request).then((cached) => cached || Promise.reject(error));
       })
     );
@@ -163,7 +168,7 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         }).catch((error) => {
-          if (DEBUG_SW) console.log("[PulseSoc SW] static fetch failure", url.pathname, error && error.message ? error.message : error);
+          if (DEBUG_SW) console.log("[CoinPilotXAI SW] static fetch failure", url.pathname, error && error.message ? error.message : error);
           throw error;
         });
       })
@@ -186,7 +191,7 @@ self.addEventListener("push", (event) => {
   const targetUrl = data.web_url || data.url || data.target_url || data.deep_link || payload.web_url || payload.url || payload.target_url || payload.deep_link || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications");
   const title = payload.title || "PulseSoc Alert";
   const options = {
-    body: payload.body || payload.message || "New PulseSoc intelligence update.",
+    body: payload.body || payload.message || "New CoinPilotXAI intelligence update.",
     icon: payload.icon || "/static/brand/pulsesoc-icon-192-20260606.png",
     badge: payload.badge || "/static/brand/pulsesoc-icon-192-20260606.png",
     vibrate: payload.vibrate || [200, 100, 200],
@@ -196,7 +201,7 @@ self.addEventListener("push", (event) => {
     silent: payload.silent === true ? true : false,
     timestamp: payload.timestamp || Date.now(),
     actions: payload.actions || [
-      { action: "open", title: "Open Alerts" },
+      { action: "open", title: conversationId ? "Open Chat" : "Open Alerts" },
       { action: "dismiss", title: "Dismiss" }
     ]
   };

@@ -27,6 +27,8 @@ def main():
     require("appendRealtimeMessage" in MESSAGES_JS, "active conversation can append incoming messages without refresh")
     require("BroadcastChannel(\"pulse-comm-v2\")" in MESSAGES_JS, "Messages V2 mirrors live events across tabs")
     require("handleLiveNotification" in NOTIFICATIONS_JS and "BroadcastChannel(\"pulse-notifications\")" in NOTIFICATIONS_JS, "global notification UI handles live events and cross-tab refresh")
+    require("count > STATE.lastChatUnread && !onSameConversation" in NOTIFICATIONS_JS, "global notification UI alerts for new chat events outside active conversation")
+    require("New PulseSoc message" in NOTIFICATIONS_JS, "global notification UI has message alert copy")
 
 
 if __name__ == "__main__":

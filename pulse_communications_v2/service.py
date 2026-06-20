@@ -1239,8 +1239,6 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
                     "preview_text": preview[:220],
                     "type": "message",
                     "push_type": "chat_message",
-                    "channel_id": "pulse-messages-v2",
-                    "channelId": "pulse-messages-v2",
                     "url": deep_link,
                     "web_url": deep_link,
                     "deepLink": mobile_deep_link,
