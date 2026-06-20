@@ -631,7 +631,10 @@ def list_pulse_notifications(user_id, limit=50, category="all", unread_only=Fals
         "security": ["security_alert", "account_login", "new_device"],
         "premium": ["premium_alert", "marketplace_update"],
     }.get(normalized_category)
-    if category_types:
+    if normalized_category in {"messages", "message", "chat"}:
+        clauses.append(f"({_message_notification_where_clause()})")
+        params.extend(_message_notification_params())
+    elif category_types:
         clauses.append("type IN (%s)" % ",".join("?" for _ in category_types))
         params.extend(category_types)
     else:
