@@ -150,6 +150,10 @@ body.pulse-home-os::before {
   box-shadow: none;
 }
 
+.pulse-home-os .pulse-desktop-left > .pulse-signal-ad-left {
+  display: grid;
+}
+
 .pulse-home-os .desktop-rail-link {
   display: none;
   min-height: 43px;
@@ -587,7 +591,8 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
 .pulse-home-os .pulse-desktop-right > .home-intel-overview,
 .pulse-home-os .pulse-desktop-right > .home-intel-trending,
 .pulse-home-os .pulse-desktop-right > .home-intel-live,
-.pulse-home-os .pulse-desktop-right > .home-intel-safety {
+.pulse-home-os .pulse-desktop-right > .home-intel-safety,
+.pulse-home-os .pulse-desktop-right > .pulse-signal-ad {
   display: grid;
 }
 
@@ -633,6 +638,197 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
 .pulse-home-os .home-intel-safety .desktop-rail-ico {
   color: var(--home-emerald);
   background: rgba(49, 230, 161, .09);
+}
+
+.pulse-home-os .pulse-signal-ad {
+  position: relative;
+  isolation: isolate;
+  gap: 10px;
+  min-height: 178px;
+  border-color: rgba(83, 224, 245, .22) !important;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(49, 230, 161, .2), transparent 8rem),
+    radial-gradient(circle at 88% 18%, rgba(155, 92, 255, .16), transparent 9rem),
+    linear-gradient(150deg, rgba(8, 22, 36, .96), rgba(4, 10, 20, .95)) !important;
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, .34),
+    inset 0 1px 0 rgba(255, 255, 255, .035),
+    0 0 32px rgba(83, 224, 245, .08) !important;
+}
+
+.pulse-home-os .pulse-signal-ad[hidden] {
+  display: none !important;
+}
+
+.pulse-home-os .pulse-signal-ad::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent, rgba(110, 223, 246, .09), transparent),
+    repeating-linear-gradient(0deg, rgba(110, 223, 246, .05) 0 1px, transparent 1px 18px),
+    repeating-linear-gradient(90deg, rgba(110, 223, 246, .035) 0 1px, transparent 1px 22px);
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, .95), rgba(0, 0, 0, .45));
+  animation: pulseSignalAdSweep 8s linear infinite;
+}
+
+.pulse-home-os .pulse-signal-ad::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -2;
+  pointer-events: none;
+  border-radius: inherit;
+  background: conic-gradient(from 160deg, transparent, rgba(54, 229, 143, .28), transparent 32%, rgba(110, 223, 246, .22), transparent 62%);
+  filter: blur(16px);
+  opacity: .52;
+  animation: pulseSignalAdAura 9s ease-in-out infinite;
+}
+
+.pulse-home-os .pulse-signal-ad-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pulse-home-os .pulse-signal-ad-label {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid rgba(54, 229, 143, .3);
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(54, 229, 143, .08);
+  color: #bfffe0;
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.pulse-home-os .pulse-signal-ad [data-hide-sponsored-signal] {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 0;
+  color: rgba(233, 244, 248, .82);
+  background: rgba(255, 255, 255, .045);
+}
+
+.pulse-home-os .pulse-signal-ad h3 {
+  font-size: 15px;
+  color: #f2fbff;
+}
+
+.pulse-home-os .pulse-signal-ad p {
+  margin: 0;
+  font-size: 11px;
+}
+
+.pulse-home-os .pulse-signal-ad-visual,
+.pulse-home-os .pulse-signal-ad-orbit {
+  position: relative;
+  pointer-events: none;
+  min-height: 58px;
+  border: 1px solid rgba(110, 223, 246, .12);
+  border-radius: 14px;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 50%, rgba(110, 223, 246, .18), transparent 34%), rgba(255, 255, 255, .025);
+}
+
+.pulse-home-os .pulse-signal-ad-visual span,
+.pulse-home-os .pulse-signal-ad-orbit span {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--home-emerald);
+  box-shadow: 0 0 18px rgba(54, 229, 143, .72);
+}
+
+.pulse-home-os .pulse-signal-ad-visual span:nth-child(1) { left: 14%; top: 32%; animation: pulseSignalNode 3.6s ease-in-out infinite; }
+.pulse-home-os .pulse-signal-ad-visual span:nth-child(2) { left: 44%; top: 18%; background: #6edff6; animation: pulseSignalNode 4.2s ease-in-out infinite .4s; }
+.pulse-home-os .pulse-signal-ad-visual span:nth-child(3) { right: 18%; top: 42%; background: #9b5cff; animation: pulseSignalNode 4.8s ease-in-out infinite .8s; }
+.pulse-home-os .pulse-signal-ad-visual span:nth-child(4) { left: 62%; bottom: 14%; background: #ffd166; animation: pulseSignalNode 5.2s ease-in-out infinite 1.1s; }
+
+.pulse-home-os .pulse-signal-ad-orbit {
+  min-height: 74px;
+  border-radius: 18px;
+}
+
+.pulse-home-os .pulse-signal-ad-orbit::before {
+  content: "";
+  position: absolute;
+  inset: 12px 24px;
+  border: 1px solid rgba(110, 223, 246, .25);
+  border-radius: 50%;
+  transform: rotate(-14deg);
+  box-shadow: inset 0 0 18px rgba(110, 223, 246, .08);
+}
+
+.pulse-home-os .pulse-signal-ad-orbit span:nth-child(1) { left: 22%; top: 28%; }
+.pulse-home-os .pulse-signal-ad-orbit span:nth-child(2) { left: 54%; top: 18%; background: #9b5cff; }
+.pulse-home-os .pulse-signal-ad-orbit span:nth-child(3) { right: 18%; bottom: 26%; background: #6edff6; }
+
+.pulse-home-os .pulse-signal-ad-actions {
+  display: grid;
+  gap: 7px;
+}
+
+.pulse-home-os .pulse-signal-ad-actions > a,
+.pulse-home-os .pulse-signal-ad-actions summary {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(110, 223, 246, .18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .045);
+  color: #dffcff;
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.pulse-home-os .pulse-signal-ad-actions > a:first-child {
+  color: #06101b;
+  border: 0;
+  background: linear-gradient(135deg, var(--home-emerald), #6edff6);
+}
+
+.pulse-home-os .pulse-signal-ad-actions details p {
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, .18);
+}
+
+@keyframes pulseSignalAdSweep {
+  from { transform: translate3d(-18%, 0, 0); }
+  to { transform: translate3d(18%, 0, 0); }
+}
+
+@keyframes pulseSignalAdAura {
+  0%, 100% { opacity: .28; transform: scale(.98); }
+  50% { opacity: .58; transform: scale(1.02); }
+}
+
+@keyframes pulseSignalNode {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(.9); opacity: .72; }
+  50% { transform: translate3d(3px, -4px, 0) scale(1.16); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-home-os .pulse-signal-ad::before,
+  .pulse-home-os .pulse-signal-ad::after,
+  .pulse-home-os .pulse-signal-ad-visual span {
+    animation: none !important;
+  }
 }
 
 @media (max-width: 1380px) {

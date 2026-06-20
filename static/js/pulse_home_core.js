@@ -32,6 +32,19 @@
     toastNode._pulseTimer = setTimeout(() => toastNode.classList.remove("show"), 3200);
   }
 
+  function bootSponsoredSignals() {
+    const cards = document.querySelectorAll("[data-sponsored-signal]");
+    if (!cards.length) return;
+    cards.forEach(card => {
+      const key = `pulse_hide_sponsor_${card.dataset.sponsoredSignal || "signal"}`;
+      try {
+        if (sessionStorage.getItem(key) === "1") card.hidden = true;
+      } catch (_) {}
+    });
+  }
+
+  bootSponsoredSignals();
+
   async function api(url, options = {}) {
     const controller = typeof AbortController === "undefined" ? null : new AbortController();
     const timer = controller ? setTimeout(() => controller.abort(), Number(options.timeoutMs || 10000)) : null;
@@ -1752,6 +1765,19 @@
   }
 
   document.addEventListener("click", async event => {
+    const hideSponsor = event.target.closest("[data-hide-sponsored-signal]");
+    if (hideSponsor) {
+      const card = hideSponsor.closest("[data-sponsored-signal]");
+      if (card) {
+        const key = `pulse_hide_sponsor_${card.dataset.sponsoredSignal || "signal"}`;
+        try {
+          sessionStorage.setItem(key, "1");
+        } catch (_) {}
+        card.hidden = true;
+      }
+      event.preventDefault();
+      return;
+    }
     const typeTrigger = event.target.closest("#pulseComposer [data-type]");
     if (typeTrigger) {
       event.preventDefault();
