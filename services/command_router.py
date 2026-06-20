@@ -262,7 +262,14 @@ def execute_menu_action(user_id, action_key, channel="web", payload=None):
             return _card(action_key, "PulseSoc Premium", "PulseSoc Premium is active for this account.", "Website account database", "High", ["Open dashboard", "Account"])
         return _card(action_key, "PulseSoc Premium", "Core tools are free. PulseSoc Premium adds prestige identity, advanced creator effects, elite AI tools, and creator analytics.", "Stripe hosted checkout", "High", ["Explore PulseSoc Premium"])
     if action_key == "help":
-        return _card(action_key, "Help", "Use buttons or slash commands like /price BTC, /market, /scam, /wallet, /portfolio, /day, /sports, or ask naturally.", "PulseSoc command router", "High")
+        return _card(
+            action_key,
+            "PulseSoc Help Center",
+            "Open /help for account support, report/block guidance, notification troubleshooting, Messenger help, Premium questions, safety resources, and a real support ticket form. Useful slash commands: /price BTC, /market, /scam, /wallet, /portfolio, /day, /sports.",
+            "PulseSoc command router",
+            "High",
+            ["Open Help Center", "Report Safety Issue", "Notification Settings", "Messenger"],
+        )
     return _card(action_key, "PulseSoc Command", "Live source temporarily unavailable or this command is being connected.", "PulseSoc platform", "Low")
 
 

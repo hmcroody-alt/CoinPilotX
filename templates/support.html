@@ -3,351 +3,192 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Support | PulseSoc</title>
-  <meta name="description" content="Contact PulseSoc support for account, subscription, payment, and safety questions." />
+  <title>Help Center | PulseSoc</title>
+  <meta name="description" content="PulseSoc Help Center for account help, safety reports, Messenger, notifications, Premium, privacy, and support tickets." />
   <meta name="robots" content="index, follow, max-image-preview:large" />
-  {% if google_site_verification %}<meta name="google-site-verification" content="{{ google_site_verification }}" />{% endif %}
-  {% if bing_site_verification %}<meta name="msvalidate.01" content="{{ bing_site_verification }}" />{% endif %}
-  <link rel="canonical" href="https://pulsesoc.com/support" />
-  <meta property="og:title" content="PulseSoc Support" />
-  <meta property="og:description" content="Support for PulseSoc account, subscription, payment, optional Telegram companion, and safety questions." />
+  <link rel="canonical" href="https://pulsesoc.com/help" />
+  <meta property="og:title" content="PulseSoc Help Center" />
+  <meta property="og:description" content="Fast support, safety guidance, report and block help, notifications, Messenger, Premium, privacy, and ticket creation." />
   <meta property="og:image" content="https://pulsesoc.com/static/brand/pulsesoc-logo-20260606.png" />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://pulsesoc.com/support" />
-  <meta property="og:site_name" content="PulseSoc" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="PulseSoc Support" />
-  <meta name="twitter:description" content="Get PulseSoc support for subscriptions, payments, account access, and safety questions." />
-  <meta name="twitter:image" content="https://pulsesoc.com/static/brand/pulsesoc-logo-20260606.png" />
-  <meta name="theme-color" content="#00e5ff" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="PulseSoc" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta property="og:url" content="https://pulsesoc.com/help" />
+  <meta name="theme-color" content="#020817" />
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" />
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}" />
   <link rel="manifest" href="/manifest.json" />
-  <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
-  <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
-  {% if ga_measurement_id %}
-  <script async src="https://www.googletagmanager.com/gtag/js?id={{ ga_measurement_id }}"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag("js", new Date());
-    gtag("config", "{{ ga_measurement_id }}", { anonymize_ip: true });
-  </script>
-  {% endif %}
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "Organization",
-        "@id": "https://pulsesoc.com/#organization",
-        "name": "CoinPilotXAI Inc.",
-        "legalName": "CoinPilotXAI Inc.",
-        "url": "https://pulsesoc.com/",
-        "logo": "https://pulsesoc.com/static/brand/pulsesoc-logo-20260606.png",
-        "email": "support@pulsesoc.com",
-        "contactPoint": [{
-          "@type": "ContactPoint",
-          "contactType": "customer support",
-          "email": "support@pulsesoc.com",
-          "url": "https://pulsesoc.com/support"
-        }]
-      },
-      {
-        "@type": "BreadcrumbList",
-        "itemListElement": [
-          {"@type": "ListItem", "position": 1, "name": "Home", "item": "https://pulsesoc.com/"},
-          {"@type": "ListItem", "position": 2, "name": "Support", "item": "https://pulsesoc.com/support"}
-        ]
-      }
-    ]
-  }
-  </script>
   <style>
-    :root {
-      --bg: #070b14;
-      --panel: rgba(13, 22, 39, 0.88);
-      --line: rgba(110, 223, 246, 0.18);
-      --text: #f2fbff;
-      --muted: #9fb5c0;
-      --cyan: #6edff6;
-      --green: #36e58f;
-      --gold: #ffd166;
-    }
-
+    :root { color-scheme: dark; --bg:#050b14; --panel:rgba(12,22,38,.86); --line:rgba(110,223,246,.24); --text:#f2fbff; --muted:#a8bac6; --cyan:#6edff6; --green:#36e58f; --gold:#ffd166; --red:#ff6b7a; --purple:#9b5cff; }
     * { box-sizing: border-box; }
-
-    html { scroll-behavior: smooth; }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-      color: var(--text);
-      background:
-        radial-gradient(circle at 20% 10%, rgba(110, 223, 246, 0.16), transparent 28%),
-        radial-gradient(circle at 78% 4%, rgba(54, 229, 143, 0.12), transparent 26%),
-        linear-gradient(135deg, #070b14, #0b1424 58%, #07111e);
-      line-height: 1.65;
-    }
-
+    html, body { margin: 0; min-height: 100%; max-width: 100%; overflow-x: hidden; }
+    body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; color: var(--text); background: radial-gradient(circle at 12% 0, rgba(110,223,246,.18), transparent 26rem), radial-gradient(circle at 85% 10%, rgba(155,92,255,.16), transparent 28rem), linear-gradient(145deg, #020817, #071421 62%, #04110f); line-height: 1.55; }
     a { color: inherit; }
-
-    .container {
-      width: min(100% - 32px, 1040px);
-      margin: 0 auto;
-    }
-
-    header, footer {
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      background: rgba(7, 11, 20, 0.82);
-      backdrop-filter: blur(18px);
-    }
-
-    footer {
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
-      border-bottom: 0;
-      margin-top: 54px;
-    }
-
-    nav, .footer-inner {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 18px;
-      padding: 18px 0;
-    }
-
-    .brand {
-      display: inline-flex;
-      align-items: center;
-      gap: 12px;
-      text-decoration: none;
-      font-weight: 900;
-    }
-
-    .brand img {
-      width: 46px;
-      height: 46px;
-      max-height: 72px;
-      object-fit: contain;
-      border-radius: 10px;
-      filter: drop-shadow(0 0 18px rgba(110, 223, 246, 0.28));
-    }
-
-    .nav-links {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      color: var(--muted);
-      font-size: 14px;
-      font-weight: 750;
-    }
-
-    .nav-links a {
-      min-height: 44px;
-      display: inline-grid;
-      place-items: center;
-      text-decoration: none;
-    }
-
-    main {
-      padding: 70px 0 24px;
-    }
-
-    .hero {
-      max-width: 820px;
-      margin-bottom: 28px;
-    }
-
-    .kicker {
-      color: var(--green);
-      font-size: 13px;
-      font-weight: 900;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-
-    h1 {
-      margin: 12px 0 14px;
-      font-size: clamp(38px, 7vw, 72px);
-      line-height: 0.98;
-      letter-spacing: 0;
-    }
-
-    h2 {
-      margin: 0 0 12px;
-      font-size: clamp(24px, 4vw, 36px);
-      letter-spacing: 0;
-    }
-
-    h3 {
-      margin: 0 0 8px;
-      font-size: 19px;
-    }
-
-    p {
-      margin: 0 0 14px;
-      color: var(--muted);
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 16px;
-    }
-
-    .card {
-      padding: 22px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: var(--panel);
-      box-shadow: 0 20px 58px rgba(0, 0, 0, 0.28);
-    }
-
-    .highlight {
-      border-color: rgba(255, 209, 102, 0.28);
-      background:
-        radial-gradient(circle at top right, rgba(255, 209, 102, 0.12), transparent 38%),
-        var(--panel);
-    }
-
-    .button {
-      min-height: 46px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 12px 16px;
-      border: 1px solid rgba(110, 223, 246, 0.28);
-      border-radius: 8px;
-      color: #06101b;
-      background: linear-gradient(135deg, var(--green), var(--cyan));
-      font-weight: 900;
-      text-decoration: none;
-    }
-
-    .list {
-      padding-left: 18px;
-      color: var(--muted);
-    }
-
-    .list li { margin: 8px 0; }
-
-    .notice {
-      margin-top: 18px;
-      padding: 16px;
-      border: 1px solid rgba(54, 229, 143, 0.22);
-      border-radius: 10px;
-      color: #d9fff0;
-      background: rgba(54, 229, 143, 0.08);
-    }
-
-    @media (max-width: 720px) {
-      nav, .footer-inner {
-        align-items: flex-start;
-        flex-direction: column;
-      }
-
-      main {
-        padding-top: 46px;
-      }
-
-      .grid {
-        grid-template-columns: 1fr;
-      }
-
-      .brand img {
-        width: 40px;
-        height: 40px;
-        max-height: 52px;
-      }
-
-      .button {
-        width: 100%;
-      }
-    }
+    .wrap { width: min(100% - 28px, 1180px); margin: 0 auto; padding: 18px 0 calc(84px + env(safe-area-inset-bottom)); }
+    .topbar { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 950; }
+    .brand img { width: 42px; height: 42px; border-radius: 12px; filter: drop-shadow(0 0 18px rgba(110,223,246,.26)); }
+    .nav { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .button, button { min-height: 46px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.055); color: var(--text); padding: 11px 14px; font: inherit; font-weight: 900; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; }
+    .primary, button.primary { color: #06101b; border: 0; background: linear-gradient(135deg, var(--green), var(--cyan)); box-shadow: 0 18px 44px rgba(54,229,143,.18); }
+    .hero { margin-top: 20px; display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(290px, .92fr); gap: 16px; align-items: stretch; }
+    .card { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: linear-gradient(180deg, rgba(17,29,50,.9), rgba(9,17,31,.88)); box-shadow: 0 24px 80px rgba(0,0,0,.28); padding: 20px; }
+    .card:before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 16% 0, rgba(110,223,246,.08), transparent 18rem), linear-gradient(135deg, rgba(54,229,143,.06), transparent 42%); }
+    .card > * { position: relative; }
+    .kicker { display: inline-flex; width: max-content; max-width: 100%; border: 1px solid rgba(54,229,143,.28); border-radius: 999px; padding: 7px 11px; color: #bfffe0; background: rgba(54,229,143,.08); font-size: 12px; font-weight: 950; letter-spacing: .08em; text-transform: uppercase; }
+    h1 { margin: 14px 0; font-size: clamp(44px, 8vw, 86px); line-height: .94; letter-spacing: 0; }
+    h2 { margin: 0 0 10px; font-size: clamp(24px, 4vw, 36px); letter-spacing: 0; }
+    h3 { margin: 0 0 7px; font-size: 18px; }
+    p, .muted { color: var(--muted); }
+    .hero p { font-size: clamp(16px, 2vw, 20px); }
+    .quick-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+    .quick-card { min-height: 112px; border: 1px solid rgba(110,223,246,.18); border-radius: 14px; background: rgba(255,255,255,.045); padding: 14px; text-decoration: none; display: grid; align-content: start; gap: 5px; transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+    .quick-card:hover, .quick-card:focus-visible { transform: translateY(-2px); border-color: rgba(110,223,246,.48); box-shadow: 0 0 28px rgba(110,223,246,.12); outline: none; }
+    .quick-card strong { font-size: 18px; }
+    .quick-card span { color: var(--muted); }
+    .signal-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; margin-top: 16px; }
+    .signal { border: 1px solid rgba(255,255,255,.1); border-radius: 14px; background: rgba(0,0,0,.15); padding: 12px; }
+    .signal strong { display: block; font-size: 24px; }
+    .section-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+    .tools { display: grid; gap: 9px; }
+    .tool-link { border: 1px solid rgba(255,255,255,.1); border-radius: 12px; background: rgba(255,255,255,.04); padding: 12px; text-decoration: none; font-weight: 900; }
+    .tool-link small { display: block; color: var(--muted); margin-top: 3px; font-weight: 650; }
+    form { display: grid; gap: 10px; }
+    label { display: grid; gap: 6px; color: #dffcff; font-weight: 900; }
+    input, select, textarea { width: 100%; border: 1px solid rgba(110,223,246,.22); border-radius: 12px; background: #071322; color: var(--text); padding: 12px; font: inherit; }
+    textarea { min-height: 160px; resize: vertical; }
+    .notice { margin: 14px 0 0; border: 1px solid rgba(54,229,143,.24); border-radius: 14px; background: rgba(54,229,143,.08); padding: 14px; color: #d8ffe9; }
+    .error { border-color: rgba(255,107,122,.38); background: rgba(255,107,122,.1); color: #ffd8de; }
+    .faq { display: grid; gap: 10px; margin-top: 16px; }
+    details { border: 1px solid rgba(255,255,255,.1); border-radius: 12px; background: rgba(255,255,255,.04); padding: 12px; }
+    summary { cursor: pointer; font-weight: 950; }
+    footer { margin-top: 22px; color: var(--muted); display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    @media (max-width: 880px) { .hero, .section-grid { grid-template-columns: 1fr; } .quick-grid { grid-template-columns: 1fr; } .signal-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .nav { justify-content: flex-start; } .button, button { width: 100%; } }
+    @media (max-width: 520px) { .wrap { width: min(100% - 22px, 1180px); } .topbar { align-items: flex-start; flex-direction: column; } .signal-grid { grid-template-columns: 1fr; } .card { padding: 16px; border-radius: 16px; } h1 { font-size: clamp(38px, 13vw, 58px); } }
+    @media (prefers-reduced-motion: reduce) { *, *:before, *:after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
   </style>
 </head>
 <body>
-  <header>
-    <div class="container">
-      <nav aria-label="Support navigation">
-        <a class="brand" href="/">
-          <img src="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" alt="PulseSoc logo" width="46" height="46" />
-          <span>PulseSoc</span>
-        </a>
-        <div class="nav-links">
-          <a href="/">Home</a>
-          <a href="/privacy">Privacy</a>
-          <a href="/terms">Terms</a>
-          <a href="https://t.me/DocShieldX_bot">Telegram Companion</a>
+  <main class="wrap">
+    <nav class="topbar" aria-label="Help navigation">
+      <a class="brand" href="/pulse">
+        <img src="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" alt="PulseSoc logo" width="42" height="42" />
+        <span>PulseSoc</span>
+      </a>
+      <div class="nav">
+        <a class="button" href="/pulse">Home</a>
+        <a class="button" href="/pulse/messages">Messages</a>
+        <a class="button" href="/pulse/notifications">Notifications</a>
+        <a class="button" href="/privacy">Privacy</a>
+        <a class="button" href="/terms">Terms</a>
+      </div>
+    </nav>
+
+    <section class="hero">
+      <article class="card">
+        <span class="kicker">PulseSoc Support OS</span>
+        <h1>Help that actually gets you unstuck.</h1>
+        <p>Find the right action fast: account access, Messenger, notifications, reporting, blocking, Premium, safety, privacy, and direct support tickets.</p>
+        <div class="quick-grid" aria-label="Fast support actions">
+          <a class="quick-card" href="/pulse/settings/notifications"><strong>Fix Notifications</strong><span>Review push, email, and alert settings.</span></a>
+          <a class="quick-card" href="/pulse/messages"><strong>Open Messenger</strong><span>Check chats, unread messages, groups, and rooms.</span></a>
+          <a class="quick-card" href="/security"><strong>Report Safety Issue</strong><span>Scams, phishing, account compromise, or abusive behavior.</span></a>
+          <a class="quick-card" href="/pulse/settings/privacy"><strong>Privacy Center</strong><span>Review visibility, blocked users, and account safety.</span></a>
         </div>
-      </nav>
+        <div class="signal-grid" aria-label="Support commitments">
+          <div class="signal"><strong>24h</strong><span class="muted">UGC moderation target</span></div>
+          <div class="signal"><strong>0</strong><span class="muted">seed phrases requested</span></div>
+          <div class="signal"><strong>Live</strong><span class="muted">ticket + safety routing</span></div>
+        </div>
+      </article>
+
+      <aside class="card" id="ticket">
+        <span class="kicker">Open Ticket</span>
+        <h2>Tell support what happened.</h2>
+        {% if message %}<div class="notice">{{ message }}</div>{% endif %}
+        {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
+        <form method="post" action="{{ request.path }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <label>Name
+            <input name="name" autocomplete="name" value="{{ (current_user.full_name if current_user else '') or (current_user.username if current_user else '') or '' }}" placeholder="Your name" />
+          </label>
+          <label>Email
+            <input name="email" type="email" autocomplete="email" value="{{ (current_user.email if current_user else '') or '' }}" placeholder="you@example.com" required />
+          </label>
+          <label>What do you need?
+            <select name="issue_type">
+              <option value="account_access">Account or login</option>
+              <option value="messenger">Messenger or chat</option>
+              <option value="notifications">Notifications</option>
+              <option value="report_block">Report or block help</option>
+              <option value="premium_billing">Premium or billing</option>
+              <option value="safety_security">Safety or security</option>
+              <option value="bug_report">Bug report</option>
+              <option value="general support">General support</option>
+            </select>
+          </label>
+          <label>Subject
+            <input name="subject" maxlength="180" placeholder="Short summary" required />
+          </label>
+          <label>Details
+            <textarea name="message" maxlength="4000" placeholder="Describe the problem, what you expected, device/browser, and any safe evidence. Do not send passwords, seed phrases, private keys, or payment secrets." required></textarea>
+          </label>
+          <button class="primary" type="submit">Send to PulseSoc Support</button>
+        </form>
+      </aside>
+    </section>
+
+    <section class="section-grid" aria-label="Help topics">
+      <article class="card tools">
+        <h2>Account + App</h2>
+        <a class="tool-link" href="/login">Login <small>Recover access or continue after redirects.</small></a>
+        <a class="tool-link" href="/pulse/profile/edit">Profile Settings <small>Edit public profile details safely.</small></a>
+        <a class="tool-link" href="/pulse/settings/privacy">Privacy Settings <small>Control profile visibility and safety preferences.</small></a>
+        <a class="tool-link" href="/pulse/premium">Premium <small>Review iOS-safe Premium access information.</small></a>
+      </article>
+      <article class="card tools">
+        <h2>Communication</h2>
+        <a class="tool-link" href="/pulse/messages">Messages <small>Open direct messages, groups, rooms, and unread chats.</small></a>
+        <a class="tool-link" href="/pulse/settings/notifications">Notification Settings <small>Push, badges, quiet preferences, and alert controls.</small></a>
+        <a class="tool-link" href="/pulse/notifications">Signal Center <small>General alerts stay separate from Messenger counts.</small></a>
+        <a class="tool-link" href="#ticket">Contact Support <small>Send evidence and get help from the team.</small></a>
+      </article>
+      <article class="card tools">
+        <h2>Safety</h2>
+        <a class="tool-link" href="/security">Security Report <small>Report phishing, impersonation, account compromise, or scam behavior.</small></a>
+        <a class="tool-link" href="/crypto-scam-scanner">Scam Shield Scanner <small>Inspect suspicious links, DMs, or wallet prompts.</small></a>
+        <a class="tool-link" href="/terms">Terms + UGC Policy <small>Rules for content, moderation, reports, and enforcement.</small></a>
+        <a class="tool-link" href="/privacy">Privacy Policy <small>How PulseSoc handles account and platform data.</small></a>
+      </article>
+    </section>
+
+    <section class="card faq" aria-label="Common help answers">
+      <h2>Fast Answers</h2>
+      <details>
+        <summary>How do I report or block someone?</summary>
+        <p>Open the profile, post, message, or listing menu and choose Report or Block where available. If you cannot find the control, open a ticket above and include the public username, post link, or conversation context. Do not include private passwords or secrets.</p>
+      </details>
+      <details>
+        <summary>Why are messages and alerts counted separately?</summary>
+        <p>Messenger unread badges are chat-only. The Signal Center handles general notifications such as security alerts, comments, follows, Premium, and platform updates. This avoids clearing chat unread counts when you read general alerts.</p>
+      </details>
+      <details>
+        <summary>What should I do if notifications do not arrive?</summary>
+        <p>Open Notification Settings, confirm the device/browser permission is enabled, then send a support ticket with your device type, browser/app version, and whether you were locked, backgrounded, or inside the app.</p>
+      </details>
+      <details>
+        <summary>Will PulseSoc support ask for wallet secrets?</summary>
+        <p>No. PulseSoc and CoinPilotXAI Inc. never ask for seed phrases, private keys, wallet passwords, recovery phrases, or remote wallet access.</p>
+      </details>
+    </section>
+
+    <div class="notice">
+      PulseSoc is a community discussion space and educational platform. Content is community-generated and is not financial, investment, betting, legal, or professional advice.
     </div>
-  </header>
 
-  <main>
-    <div class="container">
-      <section class="hero">
-        <div class="kicker">Customer Support</div>
-        <h1>Support for PulseSoc users.</h1>
-        <p>PulseSoc support helps users with account, subscription, payment, optional Telegram companion, safety, and product questions.</p>
-        <a class="button" href="mailto:support@pulsesoc.com">Email support@pulsesoc.com</a>
-      </section>
-
-      <section class="grid" aria-label="Support details">
-        <article class="card highlight">
-          <h2>Contact</h2>
-          <p>Email: <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a></p>
-          <p>Typical response time: within 1-2 business days. Payment and account access questions are prioritized.</p>
-          <p>You can also connect the optional PulseSoc Telegram companion for quick commands and account status.</p>
-        </article>
-
-        <article class="card">
-          <h2>Before You Contact Us</h2>
-          <ul class="list">
-            <li>Include your Telegram username or user ID if the issue is bot-related.</li>
-            <li>For payment questions, include the payment method and transaction/session reference if available.</li>
-            <li>Never send seed phrases, private keys, wallet passwords, or recovery phrases.</li>
-          </ul>
-        </article>
-
-        <article class="card">
-          <h2>Common Questions</h2>
-          <h3>Does CoinPilotXAI Inc. hold user funds?</h3>
-          <p>No. PulseSoc does not custody crypto, create exchange accounts, or control user wallets.</p>
-          <h3>Can support recover my wallet?</h3>
-          <p>No. CoinPilotXAI Inc. cannot recover wallets and will never ask for private wallet credentials.</p>
-          <h3>What is PulseSoc Premium?</h3>
-          <p>PulseSoc Premium is optional prestige: glowing identity, elite profile effects, creator enhancements, advanced creator tools, analytics, and exclusive PulseSoc badges. Core platform access remains free for authenticated users.</p>
-        </article>
-
-        <article class="card">
-          <h2>Safety Notice</h2>
-          <p>CoinPilotXAI Inc. never asks for seed phrases, private keys, recovery phrases, wallet passwords, or remote wallet access.</p>
-          <p>If someone claims to be PulseSoc support and asks for private wallet information, treat it as suspicious and stop immediately.</p>
-        </article>
-      </section>
-
-      <div class="notice">
-        CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.
-      </div>
-    </div>
+    <footer>
+      <span>PulseSoc Help Center</span>
+      <span><a href="/support">Support</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></span>
+    </footer>
   </main>
-
-  <footer>
-    <div class="container footer-inner">
-      <div>PulseSoc — Powered by CoinPilotXAI</div>
-      <div class="nav-links">
-        <a href="/support">Support</a>
-        <a href="/privacy">Privacy</a>
-        <a href="/terms">Terms</a>
-      </div>
-    </div>
-  </footer>
   <script src="{{ url_for('static', filename='analytics.js') }}" defer></script>
 </body>
 </html>
