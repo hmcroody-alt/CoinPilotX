@@ -3500,6 +3500,296 @@ body {
   }
 }
 
+/* Pulse Command OS 2026-06-20: concept-faithful communication command center. */
+.comm-shell {
+  isolation: isolate;
+}
+
+.comm-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(54, 229, 143, .10), transparent 22rem),
+    radial-gradient(circle at 76% 12%, rgba(110, 223, 246, .10), transparent 26rem),
+    linear-gradient(rgba(110, 223, 246, .025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(110, 223, 246, .022) 1px, transparent 1px);
+  background-size: auto, auto, 72px 72px, 72px 72px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, .88), transparent 84%);
+}
+
+.comm-toolbar h1 {
+  max-width: 15ch;
+  line-height: 1.02;
+}
+
+.comm-toolbar h1::first-line {
+  color: #f7fcff;
+}
+
+.thread-actions .call-action {
+  position: relative;
+  border-color: rgba(54, 229, 143, .22);
+  background:
+    radial-gradient(circle at 30% 20%, rgba(54, 229, 143, .12), transparent 60%),
+    rgba(255, 255, 255, .052);
+  color: #dffcff;
+}
+
+.thread-actions .call-action:hover {
+  border-color: rgba(54, 229, 143, .46);
+  box-shadow: 0 0 26px rgba(54, 229, 143, .14);
+}
+
+.thread-actions .call-action::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: inherit;
+  border: 1px solid rgba(54, 229, 143, .08);
+  pointer-events: none;
+}
+
+.comm-list {
+  box-shadow: inset -1px 0 0 rgba(110, 223, 246, .07), 18px 0 72px rgba(0, 0, 0, .28);
+}
+
+.comm-thread {
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, .025);
+}
+
+.active-person {
+  border: 1px solid transparent;
+  border-radius: 18px;
+}
+
+.active-person:hover,
+.active-person:focus-visible {
+  border-color: rgba(110, 223, 246, .2);
+}
+
+.active-avatar::before,
+.pinned-avatar::before,
+.avatar::before,
+.thread-avatar::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  z-index: -1;
+  border-radius: inherit;
+  background: conic-gradient(from 180deg, rgba(54, 229, 143, .92), rgba(110, 223, 246, .76), rgba(155, 102, 255, .62), rgba(54, 229, 143, .92));
+  opacity: .44;
+}
+
+.conversation {
+  min-height: 74px;
+}
+
+.conversation-main strong {
+  letter-spacing: 0;
+}
+
+.conversation-meta {
+  min-width: 66px;
+}
+
+.conversation-meta time {
+  color: rgba(223, 247, 255, .62);
+}
+
+.conversation .badge {
+  justify-self: end;
+}
+
+.signal-status-strip {
+  box-shadow: inset 0 -1px 0 rgba(110, 223, 246, .05);
+}
+
+.messages {
+  position: relative;
+}
+
+.messages::before {
+  content: "";
+  position: sticky;
+  top: 0;
+  z-index: 0;
+  display: block;
+  height: 1px;
+  margin-bottom: -1px;
+  background: linear-gradient(90deg, transparent, rgba(110, 223, 246, .2), rgba(54, 229, 143, .18), transparent);
+}
+
+.message {
+  position: relative;
+  contain: layout paint;
+}
+
+.message::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(135deg, rgba(255, 255, 255, .08), transparent 40%);
+  opacity: .55;
+}
+
+.message p,
+.message strong,
+.message small,
+.message .attachments,
+.message .reply-preview,
+.message .reaction-summary,
+.message .reaction-row,
+.message .message-pin-badge,
+.message .pulse-shield-warning {
+  position: relative;
+  z-index: 1;
+}
+
+.message.is-mine::after {
+  content: "";
+  position: absolute;
+  right: 10px;
+  bottom: -2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(54, 229, 143, .36), transparent 70%);
+  filter: blur(3px);
+  pointer-events: none;
+}
+
+.reaction-row {
+  max-width: min(100%, 560px);
+  flex-wrap: wrap;
+}
+
+.reaction-row button.active {
+  color: #031019;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+
+.attachment-sheet button,
+.attachment-preview-card,
+.voice-recorder,
+.voice-message {
+  backdrop-filter: blur(18px);
+}
+
+.attachment-sheet button:hover,
+.voice-actions button:hover {
+  transform: translateY(-1px);
+}
+
+.details-card h3 {
+  color: #e9fbff;
+  letter-spacing: 0;
+}
+
+.signal-route-card {
+  overflow: hidden;
+}
+
+.signal-route-card::after {
+  content: "";
+  height: 1px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--purple));
+  opacity: .42;
+}
+
+@media (min-width: 941px) {
+  .comm-shell {
+    grid-template-columns: clamp(330px, 24vw, 390px) minmax(0, 1fr) clamp(294px, 21vw, 360px);
+  }
+
+  .comm-details {
+    position: static;
+    width: auto;
+    transform: none;
+    height: 100dvh;
+    box-shadow: inset 1px 0 0 rgba(110, 223, 246, .08), -18px 0 70px rgba(0, 0, 0, .20);
+  }
+
+  .details-collapsed {
+    grid-template-columns: clamp(330px, 24vw, 390px) minmax(0, 1fr) 0;
+  }
+
+  .details-collapsed .comm-details {
+    width: 0;
+    transform: none;
+  }
+}
+
+@media (max-width: 940px) {
+  .thread-actions .call-action {
+    display: inline-grid;
+  }
+}
+
+@media (max-width: 768px) {
+  .comm-toolbar h1 {
+    max-width: 11ch;
+    font-size: 28px;
+  }
+
+  .comm-filter {
+    display: none;
+  }
+
+  .comm-filter.is-mobile-open {
+    display: flex;
+  }
+
+  .thread-actions [data-thread-search],
+  .thread-actions [data-thread-more] {
+    display: none;
+  }
+
+  .comm-search input {
+    min-height: 54px;
+    border-radius: 20px;
+  }
+
+  .active-person {
+    flex-basis: 72px;
+  }
+
+  .comm-actions {
+    gap: 10px;
+  }
+
+  .comm-action-card {
+    min-height: 72px;
+    border-radius: 18px;
+  }
+
+  .conversation {
+    min-height: 88px;
+    grid-template-columns: 52px minmax(0, 1fr) 74px;
+    border-radius: 22px;
+  }
+
+  .conversation-meta {
+    min-width: 66px;
+  }
+
+  .composer {
+    grid-template-columns: 42px minmax(0, 1fr) 42px 46px;
+  }
+
+  .message {
+    border-radius: 20px 20px 20px 8px;
+  }
+
+  .message.is-mine {
+    border-radius: 20px 20px 8px 20px;
+  }
+}
+
 /* PulseSoc Communications OS: final sci-fi visual layer over the wired command center. */
 :root {
   color-scheme: dark;
@@ -3949,6 +4239,14 @@ select:focus {
     grid-template-columns: 1fr 1fr;
   }
 
+  .comm-filter {
+    display: none;
+  }
+
+  .comm-filter.is-mobile-open {
+    display: flex;
+  }
+
   .comm-action-card {
     min-height: 66px;
     border-radius: 16px;
@@ -4042,5 +4340,95 @@ select:focus {
 @media (max-width: 940px) {
   .comm-shell {
     overflow-x: hidden !important;
+  }
+}
+
+/* Pulse Command OS enforcement layer: must remain last. */
+.comm-shell {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(54, 229, 143, .13), transparent 26rem),
+    radial-gradient(circle at 84% 12%, rgba(110, 223, 246, .12), transparent 28rem),
+    linear-gradient(145deg, #020711 0%, #06111f 48%, #020711 100%) !important;
+}
+
+.comm-list,
+.comm-thread,
+.comm-details {
+  background: linear-gradient(180deg, rgba(7, 17, 31, .9), rgba(3, 9, 18, .96)) !important;
+}
+
+.thread-actions .call-action {
+  position: relative;
+  display: inline-grid;
+  border-color: rgba(54, 229, 143, .24) !important;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(54, 229, 143, .13), transparent 62%),
+    rgba(255, 255, 255, .052) !important;
+  color: #dffcff !important;
+}
+
+.thread-actions .call-action:hover {
+  border-color: rgba(54, 229, 143, .48) !important;
+  box-shadow: 0 0 26px rgba(54, 229, 143, .14) !important;
+}
+
+.conversation {
+  border-radius: 18px !important;
+}
+
+.conversation.is-active {
+  box-shadow: 0 0 0 1px rgba(54, 229, 143, .12), 0 18px 46px rgba(0, 0, 0, .28), inset 3px 0 0 rgba(54, 229, 143, .82) !important;
+}
+
+.message {
+  contain: layout paint;
+  border-radius: 18px 18px 18px 7px !important;
+  backdrop-filter: blur(12px);
+}
+
+.message.is-mine {
+  border-radius: 18px 18px 7px 18px !important;
+}
+
+.reaction-row button.active,
+.reaction-row button[aria-pressed="true"] {
+  color: #02100b !important;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2)) !important;
+}
+
+@media (min-width: 941px) {
+  .comm-shell {
+    grid-template-columns: clamp(330px, 24vw, 390px) minmax(0, 1fr) clamp(294px, 21vw, 360px) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .comm-shell,
+  .comm-list,
+  .comm-thread {
+    height: 100dvh;
+  }
+
+  .comm-filter {
+    display: none;
+  }
+
+  .comm-filter.is-mobile-open {
+    display: flex;
+  }
+
+  .thread-actions [data-thread-search],
+  .thread-actions [data-thread-more] {
+    display: none;
+  }
+
+  .composer {
+    grid-template-columns: 42px minmax(0, 1fr) 42px 46px;
+  }
+
+  .conversation {
+    min-height: 88px;
+    grid-template-columns: 52px minmax(0, 1fr) 74px;
+    border-radius: 22px !important;
   }
 }

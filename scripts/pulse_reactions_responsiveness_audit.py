@@ -38,7 +38,7 @@ def main() -> int:
     require("video detail reaction rolls back", "oldCount=Number(like.dataset.videoReactionCount" in bot and "like.dataset.videoReactionCount=oldCount" in bot, failures)
     require("reel reactions block rapid duplicate taps", "button.dataset.busy='1'" in bot and "delete button.dataset.busy" in bot, failures)
     require("reel comment reactions optimistic", "data-reel-comment-like" in bot and "oldText=likeComment.textContent" in bot, failures)
-    require("message reactions call authorized backend route", "fetch(`/api/pulse/messages/${id}/react`" in messages, failures)
+    require("message reactions call authorized backend route", "api(`/messages/${id}/reactions`" in messages, failures)
     require("message reactions rollback local state", "state.messages[index] = previous" in messages, failures)
     require("message reaction summaries support backend object shape", "Object.entries(item.reactions || {})" in messages, failures)
     require("message reactions normalize backend emoji values", '"🔥": "fire"' in messages and "normalizeReaction(data.my_reaction" in messages, failures)

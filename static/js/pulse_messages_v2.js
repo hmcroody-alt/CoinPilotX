@@ -1579,6 +1579,8 @@
         if (target.closest("[data-open-new-room]")) return openModal("new-room");
         if (target.closest("[data-close-modal]")) return closeModals();
         if (target.closest("[data-toggle-details]")) return toggleDetails();
+        const callTrigger = target.closest("[data-start-call]");
+        if (callTrigger) return await startCall(callTrigger.dataset.startCall || "voice");
         if (target.closest("[data-thread-mute]")) {
           if (state.active?.conversation_id) {
             state.actionConversationId = Number(state.active.conversation_id);
@@ -2098,15 +2100,10 @@
     const button = document.querySelector(`[data-message-id="${id}"][data-react="${reaction}"]`);
     animateReactionButton(button, reaction === "fire" ? "🔥" : reaction === "check" ? "✓" : "❤️");
     try {
-      const response = await fetch(`/api/pulse/messages/${id}/react`, {
+      const data = await api(`/messages/${id}/reactions`, {
         method: "POST",
-        credentials: "same-origin",
-        cache: "no-store",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reaction_type: reaction })
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || data.ok === false) throw new Error(data.message || "Reaction failed.");
+      }, "message_reaction");
       state.messages[index] = { ...state.messages[index], reactions: data.reactions || {}, my_reaction: normalizeReaction(data.my_reaction || ""), viewer_reaction: normalizeReaction(data.my_reaction || ""), _reactionPending: false };
       renderMessages();
     } catch (error) {
@@ -2207,6 +2204,17 @@
     if (!last) return setStatus("No message is available to report.", "error");
     await api(`/messages/${last.id}/report`, { method: "POST", body: JSON.stringify({ reason: "Reported from v2 test UI" }) }, "report");
     setStatus("Report sent to moderation.");
+  }
+
+  async function startCall(kind = "voice") {
+    if (!state.active?.conversation_id) return setStatus("Choose a conversation before starting a call.", "error");
+    const safeKind = String(kind || "voice").toLowerCase() === "video" ? "video" : "voice";
+    const label = safeKind === "video" ? "Video" : "Audio";
+    const data = await api(`/conversations/${state.active.conversation_id}/${safeKind}/start`, {
+      method: "POST",
+      body: JSON.stringify({ client_capability: "future_call_control" }),
+    }, `${safeKind}_call_gate`);
+    setStatus(data.message || `${label} calls are reserved for the next communication phase.`);
   }
 
   async function blockPeer() {

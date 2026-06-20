@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
   <title>PulseSoc Messages v2 | PulseSoc</title>
-  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=command-center-chat-20260620c">
+  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=pulse-command-os-20260620a">
 </head>
 <body data-comm-v2-enabled="{{ 'true' if enabled else 'false' }}">
   <main class="comm-shell" data-current-user-id="{{ current_user.user_id }}" data-ai-enabled="{{ 'true' if ai_enabled else 'false' }}" data-initial-conversation-id="{{ initial_conversation_id|default(0) }}">
@@ -67,6 +67,8 @@
         </div>
         <nav class="thread-actions" aria-label="Conversation actions">
           <button class="icon-btn ai-action" type="button" data-ai-summary title="Summarize chat" aria-label="Summarize chat" hidden>AI</button>
+          <button class="icon-btn call-action" type="button" data-start-call="voice" title="Audio call" aria-label="Audio call">☎</button>
+          <button class="icon-btn call-action" type="button" data-start-call="video" title="Video call" aria-label="Video call">▣</button>
           <button class="icon-btn" type="button" data-thread-search title="Search messages" aria-label="Search messages">⌕</button>
           <button class="icon-btn" type="button" data-toggle-details title="Conversation info" aria-label="Conversation info">i</button>
           <button class="icon-btn" type="button" data-thread-mute title="Mute conversation" aria-label="Mute conversation">◐</button>
@@ -245,6 +247,6 @@
   <script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260613b"></script>
   <script src="/static/js/pulse_realtime.js?v=web-capacity-20260619a" defer></script>
   <script src="/static/notifications.js?v=message-live-20260606" defer></script>
-  <script src="/static/js/pulse_messages_v2.js?v=command-center-chat-20260620c" defer></script>
+  <script src="/static/js/pulse_messages_v2.js?v=pulse-command-os-20260620a" defer></script>
 </body>
 </html>

@@ -79,13 +79,13 @@ def static_ui_checks() -> dict:
     css = (ROOT / "static" / "css" / "pulse_messages_v2.css").read_text(encoding="utf-8")
     for token in ['data-filter="all"', 'data-filter="direct"', 'data-filter="groups"', 'data-filter="rooms"', 'data-filter="unread"']:
         expect(token in template, f"filter wired: {token}")
-    for token in ["data-realtime-status", "data-pulse-ai-card", "data-conversation-action=\"mute\"", "data-conversation-action=\"archive\""]:
+    for token in ["data-realtime-status", "data-pulse-ai-card", "data-conversation-action=\"mute\"", "data-conversation-action=\"archive\"", "data-start-call=\"voice\"", "data-start-call=\"video\""]:
         expect(token in template, f"template includes {token}")
-    for token in ["const root = el(\".comm-shell\")", "data-shield-link", "riskScan", "copyMessage", "pinMessage", "swipeMessage", "Realtime live"]:
+    for token in ["const root = el(\".comm-shell\")", "data-shield-link", "riskScan", "copyMessage", "pinMessage", "swipeMessage", "Realtime live", "startCall", "api(`/messages/${id}/reactions`"]:
         expect(token in js, f"js includes {token}")
     expect("aiEnabled: root?.dataset.aiEnabled" in js, "AI state reads root after declaration")
     expect("disabled title=\"Backend support pending\"" not in template, "no disabled backend-pending action placeholders")
-    for token in [".realtime-status", ".pulse-shield-warning", ".message.is-pinned", "@media (prefers-reduced-motion: reduce)"]:
+    for token in [".realtime-status", ".pulse-shield-warning", ".message.is-pinned", ".thread-actions .call-action", "Pulse Command OS 2026-06-20", "@media (prefers-reduced-motion: reduce)"]:
         expect(token in css, f"css includes {token}")
     return {"template": True, "js": True, "css": True}
 
