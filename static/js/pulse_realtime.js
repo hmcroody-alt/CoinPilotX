@@ -17,6 +17,10 @@
     lastEventId: 0
   };
 
+  function legacySseEnabled() {
+    return document.documentElement.dataset.pulseLegacySse === "enabled";
+  }
+
   function emit(type, payload) {
     const list = state.listeners.get(type) || [];
     list.forEach((handler) => {
@@ -54,6 +58,11 @@
 
   function connect(url) {
     state.url = url || state.url;
+    if (!legacySseEnabled()) {
+      state.connected = false;
+      emit("fallback", { transport: "polling" });
+      return;
+    }
     if (state.source || !("EventSource" in window)) return;
     try {
       state.source = new EventSource(state.url, { withCredentials: true });
@@ -121,7 +130,10 @@
   }
 
   document.addEventListener("visibilitychange", function () {
-    if (document.hidden) return;
+    if (document.hidden) {
+      disconnect();
+      return;
+    }
     if (!state.source) connect(state.url);
   });
 
