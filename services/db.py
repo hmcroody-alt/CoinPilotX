@@ -90,6 +90,8 @@ def _make_engine():
             pool_recycle=300,
             pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
             max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
+            pool_timeout=int(os.getenv("DB_POOL_TIMEOUT_SECONDS", "3")),
+            connect_args={"connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "3"))},
             future=True,
         )
     return create_engine(
