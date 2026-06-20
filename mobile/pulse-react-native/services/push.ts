@@ -203,7 +203,7 @@ function notificationConversationId(data: Record<string, unknown>) {
 function conversationIdFromUrl(url: string) {
   const raw = stringValue(url);
   if (!raw) return "";
-  const match = raw.match(/(?:^|\/)(?:pulse\/)?messages\/(\d+)/) || raw.match(/[?&]conversation_id=(\d+)/) || raw.match(/[?&]conversationId=(\d+)/);
+  const match = raw.match(/(?:^|\/)(?:pulse\/)?messages\/(\d+)/) || raw.match(/[?&](?:conversation|conversation_id|conversationId)=(\d+)/);
   return match ? match[1] : "";
 }
 
