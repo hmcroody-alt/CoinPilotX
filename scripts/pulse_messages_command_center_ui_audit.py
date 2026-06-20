@@ -53,6 +53,12 @@ def main() -> int:
         ".signal-route",
         ".delivery-state",
         ".pulse-shield-warning",
+        "PulseSoc Communications OS",
+        "--glow-cyan",
+        ".message.is-mine",
+        "desktop details placement guard",
+        "grid-template-areas: \"list thread details\"",
+        "position: static !important",
         "prefers-reduced-motion",
     ):
         require(needle in css, f"Messages CSS missing {needle}")

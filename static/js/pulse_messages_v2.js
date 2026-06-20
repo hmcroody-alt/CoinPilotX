@@ -1829,8 +1829,8 @@
       if (result !== false) setStatus("");
       return result;
     } catch (err) {
-      console.error("PulseSoc Communications V2 action failed", err);
-      setStatus(err?.message || "That action could not be completed. Please try again.", "error");
+      console.error("Pulse Communications V2 action failed", err);
+      setStatus(err?.message || "Pulse Communications V2 action failed. Please try again.", "error");
       return false;
     } finally {
       state.actionPending = false;

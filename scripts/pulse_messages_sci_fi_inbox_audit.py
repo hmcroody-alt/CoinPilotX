@@ -21,7 +21,7 @@ def expect(ok: bool, label: str, details: str = "") -> None:
 
 
 def main() -> None:
-    expect("Search people, groups, messages..." in HTML, "search placeholder is production copy")
+    expect("Search signal, people, rooms..." in HTML, "search placeholder is production copy")
     expect("data-active-rail" in HTML and "function renderActiveRail" in JS, "active row is wired")
     for token in ['data-filter="all"', 'data-filter="direct"', 'data-filter="groups"', 'data-filter="rooms"', 'data-filter="unread"']:
         expect(token in HTML, f"Command Center filter exists: {token}")
@@ -31,6 +31,9 @@ def main() -> None:
     expect("sanitizePreviewText" in JS and "containsLocalPath" in JS, "client preview sanitizer exists")
     expect("pulse_safe_message_preview" in (ROOT / "bot.py").read_text(encoding="utf-8"), "legacy serializer preview sanitizer exists")
     expect("_safe_preview" in (ROOT / "pulse_communications_v2/service.py").read_text(encoding="utf-8"), "v2 serializer preview sanitizer exists")
+    for token in ["PulseSoc Communications OS", "--glow-cyan", ".message.is-mine", ".voice-message", ".composer input[data-message-input]"]:
+        expect(token in CSS, f"sci-fi command center CSS includes {token}")
+    expect("command-center-chat-20260620c" in HTML, "messages assets are cache-busted")
 
     import bot
     from pulse_communications_v2 import service
