@@ -1246,6 +1246,7 @@
   let composerPublishing = false;
   let composerMusicTrackId = "";
   let composerMusicLabel = "";
+  let composerMusicAutofocus = false;
   const composerPrompts = {
     text: "What’s happening in your world?",
     poll: "Ask the PulseSoc community…",
@@ -1254,11 +1255,19 @@
     live: "Describe your live session...",
   };
   try {
-    const storedMusicTrack = sessionStorage.getItem("pulseComposerMusicTrackId");
+    const params = new URLSearchParams(location.search);
+    const storedMusicTrack = params.get("music")
+      || params.get("music_track_id")
+      || sessionStorage.getItem("pulseComposerMusicTrackId")
+      || sessionStorage.getItem("pulseSelectedMusicTrackId");
     if (storedMusicTrack) {
       composerMusicTrackId = storedMusicTrack;
-      composerMusicLabel = "Selected PulseSoc music";
+      composerMusicLabel = sessionStorage.getItem("pulseVideoPendingMusicLabel")
+        || sessionStorage.getItem("pulseSelectedMusicLabel")
+        || "Selected PulseSoc music";
+      composerMusicAutofocus = true;
       sessionStorage.removeItem("pulseComposerMusicTrackId");
+      sessionStorage.removeItem("pulseVideoPendingMusicLabel");
     }
   } catch (_) {}
 
@@ -2379,6 +2388,11 @@
   }
 
   bindTouchDiagnostics();
+  if (composerMusicAutofocus) {
+    setComposerType("video");
+    composer?.scrollIntoView({ block: "center" });
+    toast("Music attached to video composer. Choose a video to publish.");
+  }
   document.getElementById("pulseFab")?.addEventListener("click", event => {
     const sheet = document.getElementById("createSheet");
     if (!sheet) return;

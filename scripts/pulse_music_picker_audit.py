@@ -31,6 +31,13 @@ def main():
         ("length", "duration filter exists"),
         ("data-select-composer-track", "track select control exists"),
         ("music_track_id:composerMusicTrackId", "composer sends selected music track"),
+        ("data-use-library-music=\"reel\"", "public music library wires Use in Reel"),
+        ("data-use-library-music=\"video\"", "public music library wires Use in Video"),
+        ("data-use-library-music=\"status\"", "public music library wires Use in Status"),
+        ("pulseSelectedMusicTrackId", "music library persists selected track for handoff"),
+        ("adoptIncomingReelMusic", "Reels consumes selected library music"),
+        ("adoptIncomingStatusMusic", "Status consumes selected library music"),
+        ("composerMusicAutofocus", "Video composer opens when music is handed off"),
         ("proof verified", "picker shows license proof status"),
     ]:
         require(token in source, label)
