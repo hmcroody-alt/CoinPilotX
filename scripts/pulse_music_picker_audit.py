@@ -42,6 +42,11 @@ def main():
         ("data-browse-composer-music", "composer music picker exposes approved-track browse action"),
         ("proof verified", "picker shows license proof status"),
         ("payload.get(\"music_track_id\")", "Reel create API accepts shared music track field"),
+        ("Creator-safe sounds", "normal Home runtime labels the creator-safe sounds panel"),
+        ("openComposerMusicPanel", "normal Home runtime opens music through one wired helper"),
+        ("pulseBasePostHtml", "normal Home runtime renders attached post music"),
+        ("data-toggle-post-music", "normal Home runtime exposes playable post music"),
+        ("video.muted=true", "normal Home runtime mutes post video before attached music plays"),
     ]:
         require(token in source, label)
     for token, label in [
@@ -50,8 +55,20 @@ def main():
         ('data-remove-composer-music', "selected music can be removed before publish"),
         ('music_track_id: composerMusicTrackId', "photo and video publish payload includes approved track id"),
         ('music_track_id:selectedSoundId', "Reel upload sends selected approved track id"),
+        ('Creator-safe sounds', "core Home runtime labels the creator-safe sounds panel"),
+        ('function openComposerMusicPanel()', "core Home runtime opens music through one wired helper"),
+        ('function renderPostMusic(card, post)', "core Home runtime renders attached post music"),
+        ('video.defaultMuted = true', "core Home runtime defaults attached post video audio to muted"),
     ]:
         require(token in home_core or token in source, label)
+    feed_engine = (ROOT / "services" / "pulse_feed_engine.py").read_text(encoding="utf-8")
+    for token, label in [
+        ("def _music_for_posts(post_ids):", "feed hydrates attached music in one query"),
+        ('\"music\": display_music', "feed post contract includes attached music"),
+        ("COALESCE(at.approved_by_admin,0)=1", "feed rechecks current admin approval before playback"),
+        ("COALESCE(at.removed_at,'')=''", "feed suppresses tracks removed after attachment"),
+    ]:
+        require(token in feed_engine, label)
     client = bot.webhook_app.test_client()
     with client.session_transaction() as sess:
         sess["account_user_id"] = 1
@@ -59,6 +76,33 @@ def main():
     payload = response.get_json() or {}
     require(response.status_code == 200 and payload.get("ok") and payload.get("items"), "AI music suggestion returns approved tracks", response.get_data(as_text=True)[:300])
     require(all(item.get("is_creator_safe") for item in payload.get("items") or []), "AI suggestions are creator-safe")
+    track = (payload.get("items") or [])[0]
+    created = bot.pulse_feed_engine.create_post(1, "Temporary music hydration audit", "text", enqueue_background=False)
+    post_id = int(created.get("post_id") or 0)
+    require(post_id > 0, "temporary feed post created for music hydration")
+    try:
+        conn = bot.db()
+        cur = conn.cursor()
+        attached = bot.pulse_attach_music_to_content(
+            cur,
+            content_type="post",
+            content_id=post_id,
+            track_id=track.get("track_id") or track.get("id"),
+            user_id=1,
+        )
+        conn.commit()
+        conn.close()
+        require(attached.get("ok"), "approved music attaches to a feed post")
+        hydrated = bot.pulse_feed_engine.get_post(post_id, viewer_user_id=1, include_private=True) or {}
+        music = hydrated.get("music") or {}
+        require(music.get("is_creator_safe") and music.get("audio_url"), "feed rehydrates playable creator-safe music")
+    finally:
+        conn = bot.db()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM pulse_content_music WHERE content_id=? AND content_type IN ('post','video')", (post_id,))
+        cur.execute("DELETE FROM pulse_posts WHERE id=?", (post_id,))
+        conn.commit()
+        conn.close()
     print("pulse music picker audit ok")
 
 

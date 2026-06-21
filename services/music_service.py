@@ -145,6 +145,10 @@ def _safe_track(track: dict) -> bool:
     return not public_visibility_reasons(track)
 
 
+def _playable_track(track: dict) -> bool:
+    return bool(str(track.get("audio_url") or track.get("preview_url") or "").strip())
+
+
 def public_visibility_reasons(track: dict) -> list[str]:
     """Return public catalog blockers for a music track without exposing secrets."""
     source = str(track.get("source") or track.get("source_provider") or track.get("source_type") or "").strip().lower()
@@ -243,6 +247,7 @@ def _load_db_tracks(query: str = "", limit: int = 300) -> list[dict]:
             SELECT * FROM pulse_audio_tracks
             WHERE COALESCE(safety_status,'approved')='approved'
               AND COALESCE(active,1)=1
+              AND COALESCE(audio_url,'')!=''
               AND COALESCE(approved_by_admin,0)=1
               AND COALESCE(commercial_use_allowed,0)=1
               AND COALESCE(remix_edit_allowed,0)=1
@@ -270,6 +275,7 @@ def _load_db_track_by_id(track_id: str) -> dict:
             WHERE id=?
               AND COALESCE(safety_status,'approved')='approved'
               AND COALESCE(active,1)=1
+              AND COALESCE(audio_url,'')!=''
               AND COALESCE(approved_by_admin,0)=1
               AND COALESCE(commercial_use_allowed,0)=1
               AND COALESCE(remix_edit_allowed,0)=1
@@ -293,7 +299,7 @@ def _catalog_tracks(query: str = "") -> list[dict]:
     tracks = []
     for track in [*_load_db_tracks(query=query), *DEFAULT_TRACKS]:
         key = str(track.get("id") or f"{track.get('title')}:{track.get('artist')}")
-        if key in seen or not _safe_track(track):
+        if key in seen or not _safe_track(track) or not _playable_track(track):
             continue
         seen.add(key)
         enriched = dict(track)
@@ -330,7 +336,10 @@ def _score(track: dict, query: str = "", mood: str = "", genre: str = "", topic:
 def search_tracks(query: str = "", mood: str = "", genre: str = "", topic: str = "", length: int | float = 0, limit: int = 12) -> list[dict]:
     tracks = []
     db_query = " ".join(part for part in [query, topic] if part).strip()
-    for track in _catalog_tracks(query=db_query):
+    catalog = _catalog_tracks(query=db_query)
+    if not catalog and db_query:
+        catalog = _catalog_tracks()
+    for track in catalog:
         enriched = dict(track)
         enriched["score"] = _score(track, query, mood, genre, topic, length)
         enriched["is_creator_safe"] = True
@@ -361,7 +370,7 @@ def trending_tracks(limit: int = 10) -> list[dict]:
 
 def public_track(track_id: str) -> dict:
     db_track = _load_db_track_by_id(str(track_id or ""))
-    if db_track:
+    if db_track and _playable_track(db_track):
         db_track["is_creator_safe"] = True
         return db_track
     return next((track for track in _catalog_tracks() if str(track.get("id")) == str(track_id)), {})
@@ -387,6 +396,8 @@ def attach_music_payload(track_id: str, volume: float = 0.82) -> dict:
         "title": match["title"],
         "artist": match["artist"],
         "preview_url": match.get("preview_url", ""),
+        "audio_url": match.get("audio_url") or match.get("preview_url") or "",
+        "duration_seconds": float(match.get("duration_seconds") or 0),
         "waveform": waveform_for_track(match["id"]),
         "volume": max(0.0, min(float(volume or 0.82), 1.0)),
         "license": match.get("license_type") or match.get("license", "approved"),

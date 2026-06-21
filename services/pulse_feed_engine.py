@@ -291,6 +291,62 @@ def _media_for_posts(post_ids):
         conn.close()
 
 
+def _music_for_posts(post_ids):
+    """Hydrate creator-safe music attached to feed posts in one query."""
+    if not post_ids:
+        return {}
+    conn = user_context.connect()
+    cur = conn.cursor()
+    placeholders = ",".join(["?"] * len(post_ids))
+    try:
+        cur.execute(
+            f"""
+            SELECT pcm.content_id, pcm.audio_track_id, pcm.title, pcm.artist, pcm.source,
+                   pcm.license_snapshot_json, pcm.created_at, at.audio_url AS current_audio_url,
+                   at.duration_seconds AS current_duration_seconds
+            FROM pulse_content_music pcm
+            JOIN pulse_audio_tracks at ON CAST(at.id AS TEXT)=CAST(pcm.audio_track_id AS TEXT)
+            WHERE pcm.content_type IN ('post','video')
+              AND pcm.content_id IN ({placeholders})
+              AND COALESCE(at.safety_status,'approved')='approved'
+              AND COALESCE(at.active,1)=1
+              AND COALESCE(at.approved_by_admin,0)=1
+              AND COALESCE(at.commercial_use_allowed,0)=1
+              AND COALESCE(at.remix_edit_allowed,0)=1
+              AND COALESCE(at.removed_at,'')=''
+              AND COALESCE(at.audio_url,'')!=''
+            ORDER BY CASE WHEN pcm.content_type='video' THEN 0 ELSE 1 END, pcm.created_at DESC
+            """,
+            [int(post_id) for post_id in post_ids],
+        )
+        music = {}
+        for row in cur.fetchall():
+            item = dict(row)
+            post_id = int(item.get("content_id") or 0)
+            if post_id in music:
+                continue
+            snapshot = _json(item.get("license_snapshot_json"), {})
+            audio_url = _public_media_url(item.get("current_audio_url") or snapshot.get("audio_url") or snapshot.get("preview_url") or "")
+            if not audio_url:
+                continue
+            music[post_id] = {
+                "track_id": str(item.get("audio_track_id") or snapshot.get("track_id") or ""),
+                "title": _clean_text(item.get("title") or snapshot.get("title") or "Approved track", 180),
+                "artist": _clean_text(item.get("artist") or snapshot.get("artist") or "PulseSoc Music", 180),
+                "audio_url": audio_url,
+                "preview_url": audio_url,
+                "duration_seconds": int(float(item.get("current_duration_seconds") or snapshot.get("duration_seconds") or snapshot.get("duration") or 0) or 0),
+                "source": _clean_text(item.get("source") or snapshot.get("source") or "PulseSoc", 120),
+                "is_creator_safe": True,
+            }
+        return music
+    except Exception as exc:
+        logging.warning("PulseSoc music hydration skipped: %s", exc)
+        return {}
+    finally:
+        conn.close()
+
+
 def _reaction_counts(cur, post_ids):
     if not post_ids:
         return {}
@@ -319,7 +375,7 @@ def _view_counts(cur, post_ids):
     return {int(row["post_id"]): int(row["total"] or 0) for row in cur.fetchall()}
 
 
-def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=None, viewer_user_id=None, views=0):
+def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=None, viewer_user_id=None, views=0, music=None):
     item = dict(row)
     author = _public_author(item)
     repost_original = item.get("_repost_original") or None
@@ -330,6 +386,7 @@ def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=No
     if repost_original and repost_original.get("body") and repost_original.get("body") not in display_body:
         display_body = "\n\n".join(part for part in [display_body, repost_original.get("body")] if part)
     display_title = item.get("title") or (repost_original or {}).get("title") or ""
+    display_music = music or (repost_original or {}).get("music") or None
     reaction_counts = reactions or {}
     reaction_total = sum(int(v or 0) for v in reaction_counts.values())
     can_delete = bool(viewer_user_id and int(item.get("user_id") or 0) == int(viewer_user_id or 0))
@@ -365,6 +422,7 @@ def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=No
         "author_avatar": author.get("avatar_url"),
         "author_public_player_id": author.get("public_player_id"),
         "media": display_media,
+        "music": display_music,
         "repost": {
             "original_post_id": int(item.get("repost_of_post_id") or 0),
             "caption": item.get("body") or "",
@@ -424,6 +482,7 @@ def _repost_originals(cur, rows, viewer_user_id=None):
         cur.execute(f"SELECT post_id, reaction_type FROM pulse_reactions WHERE user_id=? AND post_id IN ({reaction_placeholders})", (int(viewer_user_id), *hydrated_ids))
         viewer_reactions = {int(row["post_id"]): row["reaction_type"] for row in cur.fetchall()}
     media = _media_for_posts(hydrated_ids)
+    music = _music_for_posts(hydrated_ids)
     return {
         int(row["id"]): _public_post(
             row,
@@ -433,6 +492,7 @@ def _repost_originals(cur, rows, viewer_user_id=None):
             viewer_reactions.get(int(row["id"])),
             viewer_user_id,
             views.get(int(row["id"]), 0),
+            music.get(int(row["id"])),
         )
         for row in originals
     }
@@ -636,7 +696,8 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
         row["_repost_original"] = repost_originals.get(int(row.get("repost_of_post_id") or 0))
     conn.close()
     media = _media_for_posts(post_ids)
-    return _public_post(row, media.get(int(post_id), []), reactions.get(int(post_id), {}), comments.get(int(post_id), 0), viewer_reaction, viewer_user_id, views.get(int(post_id), 0))
+    music = _music_for_posts(post_ids)
+    return _public_post(row, media.get(int(post_id), []), reactions.get(int(post_id), {}), comments.get(int(post_id), 0), viewer_reaction, viewer_user_id, views.get(int(post_id), 0), music.get(int(post_id)))
 
 
 def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_player_id="", limit=20, offset=0):
@@ -723,7 +784,8 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
             row["_repost_original"] = repost_originals.get(original_id)
     conn.close()
     media = _media_for_posts(post_ids)
-    posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id, views.get(int(row["id"]), 0)) for row in rows]
+    music = _music_for_posts(post_ids)
+    posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id, views.get(int(row["id"]), 0), music.get(int(row["id"]))) for row in rows]
     try:
         if feed == "trending" or (feed == "for_you" and (topic or profile_public_player_id)):
             posts = pulse_feed_ranking_engine.rank_posts(posts, {"viewer_user_id": viewer_user_id})
@@ -780,7 +842,8 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
             row["_repost_original"] = repost_originals.get(original_id)
     conn.close()
     media = _media_for_posts(post_ids)
-    posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id, views.get(int(row["id"]), 0)) for row in rows]
+    music = _music_for_posts(post_ids)
+    posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id, views.get(int(row["id"]), 0), music.get(int(row["id"]))) for row in rows]
     return {"ok": True, "feed": "my_posts", "topic": "", "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": safe_intelligence_panel("")}
 
 
