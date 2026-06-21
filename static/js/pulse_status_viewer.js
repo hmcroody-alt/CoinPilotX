@@ -150,6 +150,7 @@
 
   function revealStatusChrome(viewer = activeViewer(), options = {}) {
     if (!viewer) return;
+    ensurePremiumStatusHud(viewer);
     window.clearTimeout(storyRuntime.controlHideTimer);
     viewer.classList.add("is-ui-visible");
     const keepOpen =
@@ -163,6 +164,44 @@
       if (active.matches(":focus-within") || active.querySelector?.(".pulse-status-story-actions:hover")) return;
       active.classList.remove("is-ui-visible");
     }, Number(options.timeout || 2600));
+  }
+
+  function ensurePremiumStatusHud(viewer = activeViewer()) {
+    if (!viewer) return;
+    const shell = viewer.querySelector(".pulse-status-story-shell");
+    if (!shell) return;
+    const body =
+      viewer.querySelector("[data-status-viewer-body],[data-status-story-body]")?.textContent?.trim() ||
+      "PulseSoc Status";
+    const author =
+      viewer.querySelector("[data-status-viewer-author],[data-status-story-author]")?.textContent?.trim() ||
+      "PulseSoc creator";
+    let sound = shell.querySelector("[data-status-hud-sound]");
+    if (!sound) {
+      sound = document.createElement("div");
+      sound.className = "pulse-status-story-sound-card";
+      sound.dataset.statusHudSound = "1";
+      sound.innerHTML = `
+        <button class="pulse-status-story-sound-play" type="button" data-status-hud-sound-toggle aria-label="Toggle Status sound">▶</button>
+        <span class="pulse-status-story-sound-copy">
+          <strong data-status-hud-sound-title>PulseSoc Sound</strong>
+          <small data-status-hud-sound-artist>PulseSoc Music</small>
+        </span>
+        <span class="pulse-status-story-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      `;
+      shell.appendChild(sound);
+    }
+    const title = sound.querySelector("[data-status-hud-sound-title]");
+    const artist = sound.querySelector("[data-status-hud-sound-artist]");
+    if (title) title.textContent = body.length > 42 ? `${body.slice(0, 39)}...` : body;
+    if (artist) artist.textContent = author;
+    if (!shell.querySelector("[data-status-hud-hint]")) {
+      const hint = document.createElement("div");
+      hint.className = "pulse-status-story-advance-hint";
+      hint.dataset.statusHudHint = "1";
+      hint.textContent = "Tap anywhere to advance";
+      shell.appendChild(hint);
+    }
   }
 
   function hardenStatusCloseButton(button) {
@@ -388,6 +427,7 @@
 
   function scheduleStoryProgress(viewer = activeViewer()) {
     if (!viewer) return;
+    ensurePremiumStatusHud(viewer);
     clearStoryTimers();
     storyRuntime.viewer = viewer;
     storyRuntime.signature = storySignature(viewer);
@@ -549,6 +589,17 @@
 
   bindStoryTouchControls();
   document.addEventListener("click", event => {
+    const soundToggle = event.target?.closest?.("[data-status-hud-sound-toggle]");
+    if (soundToggle) {
+      const viewer = viewerRootFrom(soundToggle);
+      const mute = viewer?.querySelector?.("[data-status-story-mute],[data-status-viewer-mute]");
+      if (mute) {
+        event.preventDefault();
+        event.stopPropagation();
+        mute.click();
+      }
+      return;
+    }
     const closeButton = event.target?.closest?.("[data-status-story-close],[data-status-viewer-close]");
     if (closeButton) {
       hardenStatusCloseButton(closeButton);

@@ -92,9 +92,9 @@ def main() -> int:
     require(normal.status_code == 200, "full diagnostic boot profile loads")
     require('data-pulse-boot-profile="normal"' in normal_html, "full diagnostic boot profile is labeled")
     require("global-media-ui-20260614a" in normal_html, "full profile references the current media renderer cache key")
-    require("status-content-first-20260621a" in normal_html, "full profile references the current status viewer cache key")
+    require("status-cinematic-hud-20260621a" in normal_html, "full profile references the current status viewer cache key")
     require('pulse_media_renderer.js?v=global-media-ui-20260614a" defer' in normal_html, "full profile defers the media runtime")
-    require('pulse_status_viewer.js?v=status-content-first-20260621a" defer' in normal_html, "full profile defers the status runtime")
+    require('pulse_status_viewer.js?v=status-cinematic-hud-20260621a" defer' in normal_html, "full profile defers the status runtime")
     require("pulseBootTask" in normal_html, "full profile retains the advanced controller")
 
     for profile, absent_asset in (
