@@ -13,6 +13,107 @@
   overflow: visible !important;
 }
 
+html.pulse-music-picker-open,
+body.pulse-music-picker-open {
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+
+.pulse-composer-music-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 10080 !important;
+  display: none;
+  align-items: end;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(1, 6, 14, .76);
+  backdrop-filter: blur(12px) saturate(1.08);
+  -webkit-backdrop-filter: blur(12px) saturate(1.08);
+  overflow: hidden;
+  isolation: isolate;
+  touch-action: none;
+}
+
+.pulse-composer-music-modal.open {
+  display: flex !important;
+}
+
+.pulse-composer-music-sheet {
+  width: min(680px, 100%);
+  max-height: min(84dvh, 780px);
+  display: grid;
+  gap: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  border: 1px solid rgba(110, 223, 246, .3);
+  border-radius: 24px;
+  padding: 18px 18px calc(18px + env(safe-area-inset-bottom));
+  color: #effcff;
+  background:
+    radial-gradient(circle at 88% 0, rgba(54, 229, 143, .14), transparent 17rem),
+    linear-gradient(155deg, rgba(8, 20, 36, .99), rgba(3, 9, 18, .995));
+  box-shadow: 0 -24px 90px rgba(0, 0, 0, .62), 0 0 42px rgba(110, 223, 246, .1);
+}
+
+.pulse-composer-music-sheet > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pulse-composer-music-sheet h2,
+.pulse-composer-music-sheet p {
+  margin: 0;
+}
+
+.pulse-composer-music-sheet h2 {
+  margin-top: 7px;
+}
+
+.pulse-composer-music-close {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 25px;
+}
+
+.pulse-composer-music-sheet form,
+.pulse-composer-music-sheet .sound-list {
+  display: grid;
+  gap: 10px;
+}
+
+.pulse-composer-music-sheet input {
+  width: 100%;
+  min-height: 44px;
+}
+
+.pulse-composer-music-sheet .sound-list {
+  min-height: 84px;
+}
+
+@media (max-width: 600px) {
+  .pulse-composer-music-modal {
+    padding: 0;
+  }
+
+  .pulse-composer-music-sheet {
+    width: 100%;
+    max-height: min(88dvh, 760px);
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 24px 24px 0 0;
+    padding: 15px 14px calc(18px + env(safe-area-inset-bottom));
+  }
+}
+
 .pulse-composer-top {
   display: flex;
   align-items: center;

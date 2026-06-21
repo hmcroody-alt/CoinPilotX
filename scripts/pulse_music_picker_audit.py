@@ -57,10 +57,22 @@ def main():
         ('music_track_id:selectedSoundId', "Reel upload sends selected approved track id"),
         ('Creator-safe sounds', "core Home runtime labels the creator-safe sounds panel"),
         ('function openComposerMusicPanel()', "core Home runtime opens music through one wired helper"),
+        ('className = "pulse-composer-music-modal"', "Home music picker uses a viewport-owned modal"),
+        ('composerMusicReturnFocus.blur()', "Home music picker dismisses an active mobile keyboard"),
+        ('[data-close-composer-music]")?.focus', "Home music picker avoids auto-focusing a text input"),
+        ('pulse-music-picker-open', "Home music picker locks background scrolling while open"),
         ('function renderPostMusic(card, post)', "core Home runtime renders attached post music"),
         ('video.defaultMuted = true', "core Home runtime defaults attached post video audio to muted"),
     ]:
         require(token in home_core or token in source, label)
+    composer_css = (ROOT / "static" / "css" / "pulse_composer_premium.css").read_text(encoding="utf-8")
+    for token, label in [
+        ('.pulse-composer-music-modal', "composer music modal has dedicated styling"),
+        ('position: fixed !important', "composer music modal is fixed to the viewport"),
+        ('z-index: 10080 !important', "composer music modal renders above Home controls"),
+        ('overscroll-behavior: contain', "composer music sheet contains touch scrolling"),
+    ]:
+        require(token in composer_css, label)
     feed_engine = (ROOT / "services" / "pulse_feed_engine.py").read_text(encoding="utf-8")
     for token, label in [
         ("def _music_for_posts(post_ids):", "feed hydrates attached music in one query"),

@@ -1405,6 +1405,7 @@
   let composerMusicTrackId = "";
   let composerMusicLabel = "";
   let composerMusicAutofocus = false;
+  let composerMusicReturnFocus = null;
   const composerPrompts = {
     text: "What’s happening in your world?",
     poll: "Ask the PulseSoc community…",
@@ -1911,10 +1912,20 @@
     if (modal) return modal;
     modal = document.createElement("section");
     modal.id = "pulseMusicPicker";
-    modal.className = "reels-modal";
+    modal.className = "pulse-composer-music-modal";
     modal.setAttribute("aria-hidden", "true");
-    modal.innerHTML = `<div class="reels-sheet" role="dialog" aria-modal="true" aria-labelledby="pulseMusicPickerTitle"><h2 id="pulseMusicPickerTitle">Creator-safe sounds</h2><p class="muted">Choose admin-approved tracks with verified commercial and edit rights for this PulseSoc upload.</p><form data-composer-music-search><input name="topic" placeholder="Video, photo, or status topic"><div class="grid two"><input name="mood" placeholder="Mood"><input name="genre" placeholder="Genre"></div><input name="length" type="number" min="5" max="600" placeholder="Length in seconds"><div class="actions"><button class="primary" type="submit">Suggest sounds</button><button type="button" data-browse-composer-music>Browse creator-safe sounds</button><button type="button" data-close-composer-music>Close</button></div></form><div class="sound-list" data-composer-music-results><p class="muted">Loading creator-safe sounds...</p></div></div>`;
+    modal.innerHTML = `<div class="pulse-composer-music-sheet" role="dialog" aria-modal="true" aria-labelledby="pulseMusicPickerTitle"><header><div><span class="badge">PulseSoc Music</span><h2 id="pulseMusicPickerTitle">Creator-safe sounds</h2></div><button type="button" class="pulse-composer-music-close" data-close-composer-music aria-label="Close music library">×</button></header><p class="muted">Choose admin-approved tracks with verified commercial and edit rights for this PulseSoc upload.</p><form data-composer-music-search><input name="topic" inputmode="search" placeholder="Video, photo, or status topic"><div class="grid two"><input name="mood" placeholder="Mood"><input name="genre" placeholder="Genre"></div><input name="length" type="number" min="5" max="600" placeholder="Length in seconds"><div class="actions"><button class="primary" type="submit">Suggest sounds</button><button type="button" data-browse-composer-music>Browse creator-safe sounds</button></div></form><div class="sound-list" data-composer-music-results><p class="muted">Loading creator-safe sounds...</p></div></div>`;
     document.body.appendChild(modal);
+    const closePicker = () => {
+      modal.classList.remove("open");
+      modal.setAttribute("aria-hidden", "true");
+      document.documentElement.classList.remove("pulse-music-picker-open");
+      document.body.classList.remove("pulse-music-picker-open");
+      const target = composerMusicReturnFocus;
+      composerMusicReturnFocus = null;
+      if (target?.isConnected) target.focus({ preventScroll: true });
+    };
+    modal._closePicker = closePicker;
     const renderTracks = (items = []) => {
       const box = modal.querySelector("[data-composer-music-results]");
       if (!box) return;
@@ -1930,8 +1941,8 @@
     modal._loadApprovedTracks = loadApprovedTracks;
     modal.addEventListener("click", event => {
       if (event.target === modal || event.target.closest("[data-close-composer-music]")) {
-        modal.classList.remove("open");
-        modal.setAttribute("aria-hidden", "true");
+        closePicker();
+        return;
       }
       if (event.target.closest("[data-browse-composer-music]")) {
         event.preventDefault();
@@ -1944,8 +1955,7 @@
       if (selected) {
         composerMusicTrackId = selected.dataset.selectComposerTrack || "";
         composerMusicLabel = selected.dataset.trackLabel || "Approved PulseSoc music";
-        modal.classList.remove("open");
-        modal.setAttribute("aria-hidden", "true");
+        closePicker();
         setComposerType(postType?.value || "text");
         toast("Approved music attached.");
       }
@@ -1967,23 +1977,37 @@
         box.innerHTML = `<p class="muted">${esc(error.message || "Music search failed.")}</p>`;
       }
     });
+    modal.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closePicker();
+      }
+    });
     return modal;
   }
 
-  function openComposerMusicPanel() {
+  function openComposerMusicPanel(trigger = null) {
     composer?.classList.add("is-expanded");
     if (!(postType?.value === "video" || composerHasMedia())) {
       toast("Choose a photo or video first, then add music.");
       return;
     }
     const picker = ensureComposerMusicPicker();
+    composerMusicReturnFocus = trigger instanceof HTMLElement
+      ? trigger
+      : (document.activeElement instanceof HTMLElement && !document.activeElement.matches("input, textarea, [contenteditable='true']")
+          ? document.activeElement
+          : null);
+    if (composerMusicReturnFocus?.matches("input, textarea, [contenteditable='true']")) composerMusicReturnFocus.blur();
+    document.documentElement.classList.add("pulse-music-picker-open");
+    document.body.classList.add("pulse-music-picker-open");
     picker.classList.add("open");
     picker.setAttribute("aria-hidden", "false");
     if (picker.dataset.loadedApprovedTracks !== "1") {
       picker.dataset.loadedApprovedTracks = "1";
       picker._loadApprovedTracks?.({ topic: composerHasVideo() ? "video" : "photo", mood: "", genre: "", length: "" }).catch(() => {});
     }
-    picker.querySelector("[data-composer-music-search] input")?.focus({ preventScroll: true });
+    requestAnimationFrame(() => picker.querySelector("[data-close-composer-music]")?.focus({ preventScroll: true }));
     toast(`Choose creator-safe sounds for this ${composerHasVideo() ? "video" : "photo"}.`);
   }
 
@@ -2059,7 +2083,7 @@
       event.preventDefault();
       event.stopImmediatePropagation();
       if (musicTrigger.hidden) return toast("Choose a photo or video first, then add music.");
-      openComposerMusicPanel();
+      openComposerMusicPanel(musicTrigger);
       return;
     }
     const removeMusic = event.target.closest("[data-remove-composer-music]");
@@ -2345,7 +2369,7 @@
       event.preventDefault();
       event.stopImmediatePropagation();
       if (button.hidden) return toast("Choose a photo or video first, then add music.");
-      openComposerMusicPanel();
+      openComposerMusicPanel(button);
     }, true);
   });
 
