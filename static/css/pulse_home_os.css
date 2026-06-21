@@ -173,8 +173,7 @@ body.pulse-home-os::before {
 .pulse-home-os .desktop-rail-link[href="/pulse/groups"],
 .pulse-home-os .desktop-rail-link[href="/pulse/saved"],
 .pulse-home-os .desktop-rail-link[href="/pulse/creator/dashboard"],
-.pulse-home-os .desktop-rail-link[href="/pulse/premium"],
-.pulse-home-os .desktop-rail-link[href="/admin/global-command"] {
+.pulse-home-os .desktop-rail-link[href="/pulse/premium"] {
   display: grid;
 }
 
