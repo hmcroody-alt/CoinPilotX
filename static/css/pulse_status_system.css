@@ -3058,6 +3058,14 @@ height: 100% !important;
 object-fit: cover !important;
 filter: saturate(1.08) contrast(1.05);
 }
+.pulse-status-story-viewer [data-status-music-audio],
+[data-status-viewer] [data-status-music-audio] {
+display: none !important;
+}
+.pulse-status-story-viewer .pulse-status-now-playing[hidden],
+[data-status-viewer] .pulse-status-now-playing[hidden] {
+display: none !important;
+}
 .pulse-status-story-viewer.open .pulse-status-story-progress,
 [data-status-viewer].open .pulse-status-story-progress {
 z-index: 8;

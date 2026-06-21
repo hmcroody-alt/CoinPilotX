@@ -79,7 +79,8 @@ def main() -> int:
     require("Traceback" not in html and "Internal Server Error" not in html, "/pulse contains no server traceback")
     require('data-pulse-boot-profile="core"' in html, "/pulse defaults to the core-safe boot profile")
     require("pulse_media_renderer.js" not in html, "core-safe /pulse suppresses the global media runtime")
-    require("pulse_status_viewer.js" not in html, "core-safe /pulse suppresses the global status runtime")
+    require('pulse_status_viewer.js?v=status-audio-unified-20260621a" defer' in html, "core-safe /pulse defers the shared status runtime")
+    require("ensureStatusViewerRuntime" in html and "dataset.pulseStatusRuntime" in html, "core-safe /pulse can reuse Status after user interaction")
     require("static/notifications.js" not in html, "core-safe /pulse suppresses the global notification runtime")
     require("data-pulse-shell-runtime" not in html, "core-safe /pulse suppresses the oversized inline controller")
     core_script = client.get("/static/js/pulse_home_core.js?v=pulse-home-core-20260614a")
@@ -92,9 +93,9 @@ def main() -> int:
     require(normal.status_code == 200, "full diagnostic boot profile loads")
     require('data-pulse-boot-profile="normal"' in normal_html, "full diagnostic boot profile is labeled")
     require("global-media-ui-20260614a" in normal_html, "full profile references the current media renderer cache key")
-    require("status-immersive-story-20260621a" in normal_html, "full profile references the current status viewer cache key")
+    require("status-audio-unified-20260621a" in normal_html, "full profile references the current status viewer cache key")
     require('pulse_media_renderer.js?v=global-media-ui-20260614a" defer' in normal_html, "full profile defers the media runtime")
-    require('pulse_status_viewer.js?v=status-immersive-story-20260621a" defer' in normal_html, "full profile defers the status runtime")
+    require('pulse_status_viewer.js?v=status-audio-unified-20260621a" defer' in normal_html, "full profile defers the status runtime")
     require("pulseBootTask" in normal_html, "full profile retains the advanced controller")
 
     for profile, absent_asset in (
@@ -106,7 +107,10 @@ def main() -> int:
         profiled_html = profiled.get_data(as_text=True)
         require(profiled.status_code == 200, f"diagnostic boot profile loads {profile}")
         require(f'data-pulse-boot-profile="{profile}"' in profiled_html, f"diagnostic boot profile is labeled {profile}")
-        require(absent_asset not in profiled_html, f"diagnostic boot profile suppresses {absent_asset}")
+        if absent_asset == "pulse_status_viewer.js":
+            require('<script src="/static/js/pulse_status_viewer.js' not in profiled_html, f"diagnostic boot profile suppresses eager {absent_asset}")
+        else:
+            require(absent_asset not in profiled_html, f"diagnostic boot profile suppresses {absent_asset}")
     shell_only = client.get("/pulse?boot_profile=shell_only")
     shell_only_html = shell_only.get_data(as_text=True)
     require(shell_only.status_code == 200, "diagnostic shell-only profile loads")

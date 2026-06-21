@@ -31,6 +31,7 @@
   const mediaUrl = media => media.mux_playback_id
     ? `https://stream.mux.com/${media.mux_playback_id}.m3u8`
     : (media.mux_hls_url || media.playback_url || media.valid_url || media.cdn_url || media.media_url || media.url || media.src || "");
+  const musicUrl = item => item?.music?.audio_url || item?.music?.preview_url || "";
 
   function styleFor(item) {
     const style = { ...defaults, ...(item.status_style || item.status_tools?.status_style || {}) };
@@ -62,6 +63,10 @@
     const kind = kindFor(item, media, src);
     const poster = media.poster_url || media.poster || media.thumbnail_url || media.mux_thumbnail_url || media.thumb || "";
     const text = esc(item.body || item.music?.title || "PulseSoc Status");
+    const attachedAudio = musicUrl(item);
+    const musicHtml = attachedAudio
+      ? `<audio data-status-music-audio preload="metadata" src="${esc(attachedAudio)}"></audio>`
+      : "";
     if (src && window.PulseMediaRenderer) {
       const rendered = window.PulseMediaRenderer.renderMedia({
         ...media,
@@ -78,7 +83,7 @@
         loop: false,
         attrs: 'data-status-viewer-player="1"',
       });
-      return `${rendered}${item.body ? `<p>${text}</p>` : ""}`;
+      return `${rendered}${musicHtml}${item.body ? `<p>${text}</p>` : ""}`;
     }
     if (src && kind === "video") {
       if (window.PulseMediaRenderer?.renderMedia) {
@@ -93,10 +98,10 @@
           duration_seconds: item.duration_seconds || item.duration || 0,
         }, { surface: "status", loop: true })}${item.body ? `<p>${text}</p>` : ""}`;
       }
-      return `<video src="${esc(src)}" ${poster ? `poster="${esc(poster)}"` : ""} autoplay muted playsinline webkit-playsinline preload="metadata" controlsList="nodownload noplaybackrate noremoteplayback" disablepictureinpicture></video>${item.body ? `<p>${text}</p>` : ""}`;
+      return `<video src="${esc(src)}" ${poster ? `poster="${esc(poster)}"` : ""} autoplay muted playsinline webkit-playsinline preload="metadata" controlsList="nodownload noplaybackrate noremoteplayback" disablepictureinpicture></video>${musicHtml}${item.body ? `<p>${text}</p>` : ""}`;
     }
-    if (src && kind === "image") return `<img src="${esc(src)}" alt="${text}" loading="eager" decoding="async">${item.body ? `<p>${text}</p>` : ""}`;
-    return `<div class="pulse-status-story-text style-${esc(item.status_style?.card_style || item.status_tools?.status_style?.card_style || "soft")}" style="${esc(styleFor(item))}"><strong>${text}</strong></div>`;
+    if (src && kind === "image") return `<img src="${esc(src)}" alt="${text}" loading="eager" decoding="async">${musicHtml}${item.body ? `<p>${text}</p>` : ""}`;
+    return `<div class="pulse-status-story-text style-${esc(item.status_style?.card_style || item.status_tools?.status_style?.card_style || "soft")}" style="${esc(styleFor(item))}"><strong>${text}</strong></div>${musicHtml}`;
   }
 
   const statusActionMeta = {
@@ -260,49 +265,93 @@
     }
   }
 
-  function updateViewerSoundButton(viewer, video) {
+  function viewerSoundMedia(viewer = activeViewer()) {
+    return viewer?.querySelector?.("[data-status-music-audio]") || viewer?.querySelector?.("video") || null;
+  }
+
+  function updateViewerSoundButton(viewer, media = viewerSoundMedia(viewer)) {
     const button = viewer?.querySelector?.("[data-status-story-mute],[data-status-viewer-mute]");
-    if (!button || !video) return;
+    if (!button || !media) return;
+    const muted = media.muted || Number(media.volume || 0) === 0;
     button.hidden = false;
     if (button.matches("[data-status-story-mute]")) {
       delete button.dataset.statusActionDecorated;
-      button.textContent = video.muted || Number(video.volume || 0) === 0 ? "Tap for sound" : "Sound";
+      button.textContent = muted ? "Tap for sound" : "Sound";
       decorateActionButton(button, "mute");
       return;
     }
-    button.innerHTML = `<span class="pulse-status-action-icon" aria-hidden="true">${video.muted || Number(video.volume || 0) === 0 ? "🔇" : "🔊"}</span><small>${video.muted || Number(video.volume || 0) === 0 ? "Tap sound" : "Sound"}</small>`;
+    button.innerHTML = `<span class="pulse-status-action-icon" aria-hidden="true">${muted ? "🔇" : "🔊"}</span><small>${muted ? "Tap sound" : "Sound"}</small>`;
   }
 
   function unmuteViewerVideo(viewer = activeViewer()) {
-    const video = viewer?.querySelector?.("video");
-    if (!video) return false;
-    video.defaultMuted = false;
-    video.removeAttribute("muted");
-    video.volume = Number(video.dataset.pulsePreferredVolume || video.volume || 1) || 1;
-    if (window.PulseMediaRenderer?.setVideoMuted) window.PulseMediaRenderer.setVideoMuted(video, false, "status-user-unmute");
-    else video.muted = false;
+    const media = viewerSoundMedia(viewer);
+    if (!media) return false;
+    media.defaultMuted = false;
+    media.removeAttribute("muted");
+    media.volume = Number(media.dataset.pulsePreferredVolume || media.volume || 1) || 1;
+    if (media.readyState === 0) media.load?.();
+    if (media.tagName === "VIDEO" && window.PulseMediaRenderer?.setVideoMuted) window.PulseMediaRenderer.setVideoMuted(media, false, "status-user-unmute");
+    else media.muted = false;
     window.PulseMediaRenderer?.setSoundEnabled?.(true);
-    video.play?.().catch(() => {});
-    updateViewerSoundButton(viewer, video);
+    media.play?.().catch(() => {});
+    updateViewerSoundButton(viewer, media);
     return true;
   }
 
   function toggleViewerSound(viewer = activeViewer()) {
-    const video = viewer?.querySelector?.("video");
-    if (!video) return false;
-    const shouldMute = !(video.muted || Number(video.volume || 0) === 0);
+    const media = viewerSoundMedia(viewer);
+    if (!media) return false;
+    const shouldMute = !(media.muted || Number(media.volume || 0) === 0);
     viewer.dataset.statusSoundToggledAt = String(Date.now());
-    video.defaultMuted = false;
+    media.defaultMuted = false;
     if (!shouldMute) {
-      video.removeAttribute("muted");
-      video.volume = Number(video.dataset.pulsePreferredVolume || video.volume || 1) || 1;
+      media.removeAttribute("muted");
+      media.volume = Number(media.dataset.pulsePreferredVolume || media.volume || 1) || 1;
     }
-    if (window.PulseMediaRenderer?.setVideoMuted) window.PulseMediaRenderer.setVideoMuted(video, shouldMute, "status-tap-toggle-sound");
-    else video.muted = shouldMute;
+    if (media.tagName === "VIDEO" && window.PulseMediaRenderer?.setVideoMuted) window.PulseMediaRenderer.setVideoMuted(media, shouldMute, "status-tap-toggle-sound");
+    else media.muted = shouldMute;
     window.PulseMediaRenderer?.setSoundEnabled?.(!shouldMute);
-    video.play?.().catch(() => {});
-    updateViewerSoundButton(viewer, video);
+    if (!shouldMute) {
+      if (media.readyState === 0) media.load?.();
+      media.play?.().catch(() => {});
+    }
+    else media.pause?.();
+    updateViewerSoundButton(viewer, media);
     revealStatusChrome(viewer, { timeout: 900 });
+    return true;
+  }
+
+  function playViewerMedia(viewer = activeViewer(), preferSound = true) {
+    if (!viewer) return false;
+    const video = viewer.querySelector("video");
+    const music = viewer.querySelector("[data-status-music-audio]");
+    if (video) {
+      video.autoplay = true;
+      video.playsInline = true;
+      video.setAttribute("playsinline", "");
+      video.setAttribute("webkit-playsinline", "");
+      if (music) {
+        if (window.PulseMediaRenderer?.setVideoMuted) window.PulseMediaRenderer.setVideoMuted(video, true, "status-attached-music");
+        else video.muted = true;
+      }
+      video.play?.().catch(() => {});
+    }
+    const soundMedia = music || video;
+    if (!soundMedia) return false;
+    const wantsSound = preferSound && window.PulseMediaRenderer?.soundEnabled?.() !== false;
+    soundMedia.defaultMuted = false;
+    soundMedia.volume = Number(viewer.dataset.statusMusicVolume || soundMedia.dataset.pulsePreferredVolume || soundMedia.volume || 1) || 1;
+    soundMedia.muted = !wantsSound;
+    if (soundMedia.readyState === 0) soundMedia.load?.();
+    if (wantsSound) {
+      soundMedia.removeAttribute("muted");
+      soundMedia.play?.().catch(() => {
+        soundMedia.muted = true;
+        soundMedia.play?.().catch(() => {});
+        updateViewerSoundButton(viewer, soundMedia);
+      });
+    }
+    updateViewerSoundButton(viewer, soundMedia);
     return true;
   }
 
@@ -322,6 +371,9 @@
       `;
       shell.insertBefore(sound, shell.querySelector(".pulse-status-story-footer") || null);
     }
+    const hasAttachedMusic = !!viewer.querySelector("[data-status-music-audio]");
+    sound.hidden = !hasAttachedMusic;
+    viewer.classList.toggle("has-status-music", hasAttachedMusic);
     const body =
       viewer.dataset.statusMusicTitle ||
       viewer.querySelector("[data-status-viewer-body],[data-status-story-body]")?.textContent?.trim() ||
@@ -335,6 +387,11 @@
   }
 
   function storyDuration(viewer) {
+    const music = viewer?.querySelector?.("[data-status-music-audio]");
+    if (music) {
+      const seconds = Number(music.duration || music.dataset.durationSeconds || 0);
+      if (Number.isFinite(seconds) && seconds > 1) return Math.max(2500, Math.min(seconds * 1000, 30000));
+    }
     const video = viewer?.querySelector?.("video");
     if (video) {
       const seconds = Number(video.duration || video.dataset.durationSeconds || video.getAttribute("duration") || 0);
@@ -455,8 +512,9 @@
         reportStoryCompletion(viewer, true);
         navigateStory(1);
       }, { once: true });
-      video.play?.().catch(() => {});
+      playViewerMedia(viewer, true);
     } else {
+      playViewerMedia(viewer, true);
       storyRuntime.timer = window.setTimeout(() => navigateStory(1), storyRuntime.durationMs);
     }
     storyRuntime.progressTimer = window.setInterval(() => {
@@ -474,8 +532,8 @@
     storyRuntime.pauseStartedAt = Date.now();
     storyRuntime.elapsedBeforePause += Date.now() - storyRuntime.startedAt;
     window.clearTimeout(storyRuntime.timer);
-    viewer.querySelectorAll("video").forEach(video => {
-      try { video.pause(); } catch (_) {}
+    viewer.querySelectorAll("video,audio").forEach(media => {
+      try { media.pause(); } catch (_) {}
     });
     viewer.classList.add("is-paused");
   }
@@ -485,7 +543,7 @@
     if (!viewer || !storyRuntime.paused) return;
     storyRuntime.paused = false;
     storyRuntime.startedAt = Date.now();
-    viewer.querySelectorAll("video").forEach(video => video.play?.().catch(() => {}));
+    viewer.querySelectorAll("video,audio").forEach(media => media.play?.().catch(() => {}));
     viewer.classList.remove("is-paused");
     if (!viewer.querySelector("video")) {
       const remaining = Math.max(250, storyRuntime.durationMs - storyRuntime.elapsedBeforePause);
@@ -650,5 +708,5 @@
     }
   }
 
-  window.PulseStatusViewer = { render, styleFor, kindFor, decorateStatusActions, scheduleStoryProgress, pauseStory, resumeStory, navigateStory, unmuteViewerVideo, toggleViewerSound, updateViewerSoundButton, closeStatusViewerNow };
+  window.PulseStatusViewer = { render, styleFor, kindFor, decorateStatusActions, scheduleStoryProgress, pauseStory, resumeStory, navigateStory, unmuteViewerVideo, toggleViewerSound, playViewerMedia, updateViewerSoundButton, closeStatusViewerNow };
 })();
