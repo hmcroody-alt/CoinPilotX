@@ -252,17 +252,72 @@
 
   function navigateStory(direction) {
     const viewer = activeViewer();
-    if (!viewer) return;
+    if (!viewer) return false;
     if (direction > 0) reportStoryCompletion(viewer, true);
     const button = viewer.querySelector(actionSelector(direction > 0 ? "next" : "prev"));
     if (button && !button.disabled) {
       button.click();
       window.setTimeout(() => scheduleStoryProgress(viewer), 80);
-      return;
+      return true;
     }
     if (direction > 0) {
       closeViewer(viewer);
+      return true;
     }
+    return false;
+  }
+
+  function navigateCreator(direction) {
+    const viewer = activeViewer();
+    if (!viewer) return false;
+    reportStoryCompletion(viewer, direction > 0);
+    const event = new CustomEvent("pulse-status-creator-navigate", {
+      bubbles: true,
+      cancelable: true,
+      detail: {
+        direction: direction > 0 ? 1 : -1,
+        statusId: currentStoryId(viewer),
+        handled: false,
+      },
+    });
+    viewer.dispatchEvent(event);
+    if (event.defaultPrevented || event.detail?.handled) {
+      window.setTimeout(() => scheduleStoryProgress(viewer), 80);
+      return true;
+    }
+    return navigateStory(direction);
+  }
+
+  function handleViewerTap(event, viewer = activeViewer()) {
+    if (!viewer || !event || isInteractiveTarget(event.target)) return false;
+    const rect = viewer.getBoundingClientRect();
+    const width = Math.max(1, rect.width || window.innerWidth || 1);
+    const tapRatio = Math.max(0, Math.min(1, (event.clientX - rect.left) / width));
+    viewer.dataset.statusGestureHandledAt = String(Date.now());
+    if (tapRatio <= 0.32) return navigateStory(-1);
+    if (tapRatio >= 0.68) return navigateStory(1);
+    return toggleViewerSound(viewer);
+  }
+
+  function openStatusReply(viewer = activeViewer()) {
+    if (!viewer) return false;
+    const input = viewer.querySelector("[data-status-story-reply],[data-status-viewer-reply]");
+    if (!input) return false;
+    viewer.classList.add("is-commenting", "is-ui-visible");
+    pauseStory();
+    input.removeAttribute("hidden");
+    window.setTimeout(() => {
+      input.focus({ preventScroll: true });
+      input.select?.();
+    }, 30);
+    return true;
+  }
+
+  function closeStatusReplyIfEmpty(viewer = activeViewer()) {
+    const input = viewer?.querySelector?.("[data-status-story-reply],[data-status-viewer-reply]");
+    if (!viewer || !input || String(input.value || "").trim()) return;
+    viewer.classList.remove("is-commenting");
+    resumeStory();
   }
 
   function viewerSoundMedia(viewer = activeViewer()) {
@@ -595,9 +650,9 @@
       } else if (dy >= 76 && absY > absX * 1.08) {
         closeViewer(viewer);
       } else if (absX >= 52 && absX > absY * 1.18) {
-        navigateStory(dx < 0 ? 1 : -1);
+        navigateCreator(dx < 0 ? 1 : -1);
       } else if (absX < 10 && absY < 10 && !isInteractiveTarget(event.target)) {
-        toggleViewerSound(viewer);
+        handleViewerTap(event, viewer);
       }
       storyRuntime.pointer = null;
       storyRuntime.longPress = false;
@@ -629,22 +684,42 @@
 
   function optimisticStatusReaction(event) {
     const button = event.target?.closest?.("[data-status-story-react]");
-    if (!button || button.dataset.statusUiPending === "1") return;
+    if (!button) return;
     decorateActionButton(button, "love");
     const count = button.querySelector("[data-status-story-reaction-count]");
     const previous = count?.textContent || "0";
-    button.dataset.statusUiPending = "1";
+    const firstPendingClick = button.dataset.statusUiPending !== "1";
+    if (firstPendingClick) button.dataset.statusUiPending = "1";
     button.dataset.statusPreviousCount = previous;
     button.classList.remove("is-popping");
     void button.offsetWidth;
     button.classList.add("active", "is-popping");
     button.setAttribute("aria-pressed", "true");
-    if (count) count.textContent = String(parseCount(previous) + 1);
+    emitReactionBurst(button);
+    if (count && firstPendingClick) count.textContent = String(parseCount(previous) + 1);
     setTimeout(() => button.classList.remove("is-popping"), 360);
+    if (firstPendingClick) {
+      setTimeout(() => {
+        delete button.dataset.statusUiPending;
+        syncStatusReactionButton(button.closest("#pulseStatusStoryViewer,.pulse-status-story-viewer"));
+      }, 1400);
+    }
+  }
+
+  function emitReactionBurst(button) {
+    const viewer = viewerRootFrom(button) || activeViewer();
+    const burst = document.createElement("span");
+    burst.className = "pulse-status-reaction-burst";
+    burst.textContent = "❤️";
+    const rect = button.getBoundingClientRect();
+    burst.style.left = `${Math.round(rect.left + rect.width / 2)}px`;
+    burst.style.top = `${Math.round(rect.top + rect.height / 2)}px`;
+    document.body.appendChild(burst);
+    viewer?.classList.add("has-live-reaction");
     setTimeout(() => {
-      delete button.dataset.statusUiPending;
-      syncStatusReactionButton(button.closest("#pulseStatusStoryViewer,.pulse-status-story-viewer"));
-    }, 1400);
+      burst.remove();
+      viewer?.classList.remove("has-live-reaction");
+    }, 720);
   }
 
   bindStoryTouchControls();
@@ -654,15 +729,32 @@
       hardenStatusCloseButton(closeButton);
       closeStatusViewerIntentional(event);
     }
+    const commentButton = event.target?.closest?.("[data-status-story-comment],[data-status-viewer-comment]");
+    if (commentButton) {
+      const viewer = viewerRootFrom(commentButton);
+      if (openStatusReply(viewer)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }
   }, true);
   document.addEventListener("click", optimisticStatusReaction, true);
   document.addEventListener("focusin", event => {
     const viewer = viewerRootFrom(event.target);
-    if (viewer) revealStatusChrome(viewer, { persist: true });
+    if (viewer) {
+      if (event.target?.matches?.("[data-status-story-reply],[data-status-viewer-reply]")) {
+        viewer.classList.add("is-commenting", "is-ui-visible");
+        pauseStory();
+      }
+      revealStatusChrome(viewer, { persist: true });
+    }
   }, true);
   document.addEventListener("focusout", event => {
     const viewer = viewerRootFrom(event.target);
-    if (viewer) window.setTimeout(() => revealStatusChrome(viewer, { timeout: 1400 }), 60);
+    if (viewer) window.setTimeout(() => {
+      closeStatusReplyIfEmpty(viewer);
+      revealStatusChrome(viewer, { timeout: 1400 });
+    }, 120);
   }, true);
   document.addEventListener("DOMContentLoaded", () => {
     decorateStatusActions(document);
@@ -708,5 +800,5 @@
     }
   }
 
-  window.PulseStatusViewer = { render, styleFor, kindFor, decorateStatusActions, scheduleStoryProgress, pauseStory, resumeStory, navigateStory, unmuteViewerVideo, toggleViewerSound, playViewerMedia, updateViewerSoundButton, closeStatusViewerNow };
+  window.PulseStatusViewer = { render, styleFor, kindFor, decorateStatusActions, scheduleStoryProgress, pauseStory, resumeStory, navigateStory, navigateCreator, handleViewerTap, openStatusReply, unmuteViewerVideo, toggleViewerSound, playViewerMedia, updateViewerSoundButton, closeStatusViewerNow };
 })();

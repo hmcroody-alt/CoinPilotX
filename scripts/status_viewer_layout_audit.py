@@ -28,7 +28,12 @@ def main():
     require("status-attached-music" in JS and "playViewerMedia" in JS, "attached music keeps the underlying video muted")
     require("media.readyState === 0" in JS and "soundMedia.readyState === 0" in JS, "attached Status audio is explicitly loaded before playback")
     require("dy >= 76" in JS and "closeViewer(viewer)" in JS, "downward swipe exits the viewer")
-    require("absX >= 52" in JS and "navigateStory(dx < 0 ? 1 : -1)" in JS, "horizontal swipe navigates stories")
+    require("absX >= 52" in JS and "navigateCreator(dx < 0 ? 1 : -1)" in JS, "horizontal swipe navigates between creators")
+    require("tapRatio <= 0.32" in JS and "tapRatio >= 0.68" in JS and "handleViewerTap" in JS, "left and right edge taps navigate the current story stack")
+    require("return toggleViewerSound(viewer)" in JS and "statusGestureHandledAt" in JS, "middle tap toggles sound without falling through to duplicate click handlers")
+    require("openStatusReply" in JS and "is-commenting" in CSS, "comment action opens a visible reply composer")
+    require("pulse-status-reaction-burst" in JS and "pulseStatusReactionBurst" in CSS, "reactions animate on every click")
+    require("pulse-status-creator-navigate" in BOT and "navigateStatusStoryCreator" in BOT and "navigateStatusPageCreator" in BOT, "Home and Status pages handle creator-level swipe navigation")
     require("ensureImmersiveStatusHud" in JS and "pulse-status-now-playing" in CSS, "viewer includes reference-style sound identity strip")
     require("statusSoundToggledAt" in JS and "statusSoundToggledAt" in BOT, "tap sound toggle is guarded against duplicate click handlers")
     require("ensurePulseStatusViewerRuntime" in BOT and "data-pulse-status-runtime" in BOT, "Home lazy-loads the shared viewer on first Status open")
@@ -42,7 +47,7 @@ def main():
     require("display: none !important" in CSS and ".pulse-status-story-nav" in CSS, "visible next/back buttons are hidden")
     require("button.hidden = false" in JS, "Sound control stays available after unmuting")
     require("revealStatusChrome" in JS, "viewer can briefly reveal lightweight controls")
-    require("status-audio-unified-20260621a" in BOT, "status CSS/JS cache keys are bumped")
+    require("status-gesture-command-20260621c" in BOT, "status CSS/JS cache keys are bumped")
     require("padding:42px16px16px" not in compact and "linear-gradient(180deg,transparent,rgba(2,6,23,.88))" not in compact, "old large bottom metadata panel styling is removed")
 
 

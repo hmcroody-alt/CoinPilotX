@@ -1962,11 +1962,15 @@ z-index: 34;
 text-align: left;
 padding-inline: 14px;
 }
+.pulse-status-story-viewer.is-commenting .pulse-status-story-actions input,
+[data-status-viewer].is-commenting .pulse-status-story-actions input,
 .pulse-status-story-actions input:focus {
 opacity: 1;
 pointer-events: auto;
 transform: translateY(0);
 }
+.pulse-status-story-viewer.is-commenting .pulse-status-story-actions input + button,
+[data-status-viewer].is-commenting .pulse-status-story-actions input + button,
 .pulse-status-story-actions input:focus + button,
 .pulse-status-story-actions button[data-status-story-send-reply],
 .pulse-status-story-actions button[data-status-viewer-send-reply] {
@@ -1978,6 +1982,8 @@ opacity: 0;
 pointer-events: none;
 transform: translateY(10px);
 }
+.pulse-status-story-viewer.is-commenting .pulse-status-story-actions input + button,
+[data-status-viewer].is-commenting .pulse-status-story-actions input + button,
 .pulse-status-story-actions input:focus + button {
 opacity: 1;
 pointer-events: auto;
@@ -3594,6 +3600,58 @@ font-size: 20px !important;
 .pulse-status-story-viewer.open .pulse-status-story-actions small,
 [data-status-viewer].open .pulse-status-story-actions small {
 display: none !important;
+}
+.pulse-status-story-viewer.open.is-commenting .pulse-status-story-actions input,
+[data-status-viewer].open.is-commenting .pulse-status-story-actions input {
+opacity: 1 !important;
+pointer-events: auto !important;
+transform: translateY(0) !important;
+}
+.pulse-status-story-viewer.open.is-commenting .pulse-status-story-actions input + button,
+[data-status-viewer].open.is-commenting .pulse-status-story-actions input + button {
+opacity: 1 !important;
+pointer-events: auto !important;
+transform: translateY(0) !important;
+}
+.pulse-status-story-viewer.open.is-commenting::after,
+[data-status-viewer].open.is-commenting::after {
+content: "";
+position: absolute;
+left: 0;
+right: 0;
+bottom: 0;
+height: 150px;
+z-index: 7;
+pointer-events: none;
+background: linear-gradient(180deg, transparent, rgba(0,0,0,.58));
+}
+.pulse-status-reaction-burst {
+position: fixed;
+z-index: 10095;
+width: 28px;
+height: 28px;
+display: grid;
+place-items: center;
+margin: -14px 0 0 -14px;
+font-size: 24px;
+line-height: 1;
+pointer-events: none;
+filter: drop-shadow(0 0 18px rgba(54,229,143,.62));
+animation: pulseStatusReactionBurst .72s cubic-bezier(.2,.8,.2,1) forwards;
+}
+.pulse-status-story-actions .pulse-status-action.is-popping,
+.pulse-status-story-actions [data-status-viewer-react].is-popping {
+animation: pulseStatusActionPop .36s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes pulseStatusActionPop {
+0% { transform: scale(.86); }
+58% { transform: scale(1.16); box-shadow: 0 0 30px rgba(54,229,143,.38), inset 0 1px 0 rgba(255,255,255,.14); }
+100% { transform: scale(1); }
+}
+@keyframes pulseStatusReactionBurst {
+0% { opacity: 0; transform: translate3d(0, 8px, 0) scale(.55) rotate(-8deg); }
+20% { opacity: 1; }
+100% { opacity: 0; transform: translate3d(-12px, -92px, 0) scale(1.65) rotate(10deg); }
 }
 .pulse-status-story-sound-card,
 .pulse-status-story-advance-hint,
