@@ -23,8 +23,11 @@ def main():
         ("COALESCE(at.remix_edit_allowed,0)=1", "Reels picker requires edit rights"),
         ("pulse_attach_music_to_content(cur, content_type=\"reel\"", "Reels snapshot approved license attachment"),
         ("user_upload_pending_rights", "uploaded sounds stay pending until reviewed"),
+        ("ON CONFLICT(reel_id, audio_track_id) DO UPDATE", "Reel music attachment upsert is PostgreSQL compatible"),
+        ("PULSE_REELS_PAYLOAD_NONCRITICAL_FAILED", "Reel response rendering failures are noncritical after DB create"),
     ]:
         require(token in source, label)
+    require("INSERT OR REPLACE INTO pulse_reel_audio" not in source, "Reel music attachment avoids SQLite-only INSERT OR REPLACE")
     print("pulse reels music audit ok")
 
 

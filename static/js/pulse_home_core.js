@@ -78,6 +78,7 @@
     mode: document.getElementById("pulseStatusMode"),
     privacy: document.getElementById("pulseStatusPrivacy"),
     duration: document.getElementById("pulseStatusDuration"),
+    musicTrack: document.getElementById("pulseStatusMusicTrack"),
     progress: document.querySelector("#pulseStatusForm [data-upload-progress]"),
     modePicker: document.querySelector("[data-status-mode-picker]"),
     toolsets: document.querySelectorAll("[data-status-toolset]"),
@@ -182,6 +183,8 @@
       statusUi.mediaInput.removeAttribute("capture");
     }
     if (statusUi.soundInput) statusUi.soundInput.value = "";
+    if (statusUi.musicTrack) statusUi.musicTrack.value = "";
+    statusShowMusicPanel(false);
     if (statusUi.mode) statusUi.mode.value = "text";
     if (statusUi.body) statusUi.body.value = "";
     statusSetMode("text", { focus: false, clearFile: false });
@@ -221,6 +224,78 @@
     if (statusUi.publishDuration) statusUi.publishDuration.textContent = statusDurationLabel();
   }
 
+  function statusSelectedMusicLabel() {
+    return String(statusUi.musicTrack?.dataset.trackLabel || "").trim();
+  }
+
+  function statusMusicPanel() {
+    return document.querySelector("[data-status-music-panel]");
+  }
+
+  function statusRenderMusicWave() {
+    const wave = document.querySelector("[data-status-waveform]");
+    if (!wave) return;
+    wave.innerHTML = "<i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>";
+  }
+
+  function statusTrackButton(track = {}) {
+    const id = track.id || track.track_id || "";
+    const title = track.title || "Approved PulseSoc sound";
+    const artist = track.artist || "PulseSoc Music";
+    const mood = track.mood || track.genre || "creator-safe";
+    const duration = Math.round(Number(track.duration_seconds || track.duration || 0) || 0);
+    return `<button type="button" data-status-select-track="${esc(id)}" data-track-title="${esc(title)}" data-track-artist="${esc(artist)}" data-track-label="${esc(`${title} · ${artist}`)}">
+      <strong>${esc(title)}</strong>
+      <small>${esc(artist)} · ${esc(mood)}${duration ? ` · ${duration}s` : ""}</small>
+    </button>`;
+  }
+
+  async function statusLoadMusic(query = "") {
+    const box = document.querySelector("[data-status-music-results]");
+    if (!box) return;
+    box.innerHTML = '<p class="muted">Loading approved PulseSoc music...</p>';
+    try {
+      const data = await api(`/api/pulse/status/music/search?q=${encodeURIComponent(query || "")}`, { timeoutMs: 8000 });
+      const items = data.items || data.sounds || [];
+      box.innerHTML = items.length ? items.map(statusTrackButton).join("") : '<p class="muted">No creator-safe sounds found.</p>';
+    } catch (error) {
+      box.innerHTML = `<p class="muted">${esc(error.message || "Music search failed.")}</p>`;
+    }
+  }
+
+  function statusShowMusicPanel(open = true) {
+    const panel = statusMusicPanel();
+    if (!panel) {
+      statusSetState("Approved music picker is unavailable. Refresh PulseSoc and retry.", "error");
+      return;
+    }
+    panel.classList.toggle("open", !!open);
+    panel.hidden = false;
+    panel.setAttribute("aria-hidden", open ? "false" : "true");
+    if (open) {
+      statusOpenCreator(false);
+      statusSetMode("media", { focus: false });
+      statusSetState("Choose an approved creator-safe sound.", "info");
+      statusLoadMusic(panel.querySelector("[data-status-music-search]")?.value || "");
+      panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+
+  function statusAttachTrackFromButton(button) {
+    if (!button || !statusUi.musicTrack) return;
+    const trackId = button.dataset.statusSelectTrack || "";
+    const label = button.dataset.trackLabel || `${button.dataset.trackTitle || "PulseSoc sound"} · ${button.dataset.trackArtist || "PulseSoc Music"}`;
+    statusUi.musicTrack.value = trackId;
+    statusUi.musicTrack.dataset.trackLabel = label;
+    if (statusUi.mode && !statusUi.file) statusUi.mode.value = "music";
+    if (statusUi.body && !statusUi.body.value.trim()) statusUi.body.value = label;
+    statusRenderMusicWave();
+    statusShowMusicPanel(false);
+    statusSetState("Music attached. Add media or publish your Status.", "success");
+    statusRenderLivePreview();
+    toast("Sound attached.");
+  }
+
   function statusSetMode(mode = "text", options = {}) {
     const normalized = mode === "upload" || mode === "camera" || mode === "image" || mode === "video" ? "media" : mode;
     if (!statusUi.form) return;
@@ -256,6 +331,7 @@
     if (!statusUi.preview) return;
     const mode = statusUi.form?.dataset.statusStudioMode || "text";
     const text = (statusUi.body?.value || "").trim();
+    const musicLabel = statusSelectedMusicLabel();
     if (mode === "media" && statusUi.file) {
       statusRenderPreview();
       return;
@@ -263,7 +339,7 @@
     statusUi.preview.textContent = "";
     const card = element("div", mode === "live" ? "pulse-status-preview-starter live-story" : "pulse-status-preview-starter text-story", "");
     const title = element("strong", "", mode === "live" ? (text || "PulseSoc Live") : (text || "PulseSoc Status"));
-    const meta = element("span", "", mode === "live" ? `${statusPrivacyLabel()} · ${statusDurationLabel()} · Live ready` : text ? `${statusPrivacyLabel()} · ${statusDurationLabel()}` : "Start typing to shape the signal.");
+    const meta = element("span", "", mode === "live" ? `${statusPrivacyLabel()} · ${statusDurationLabel()} · Live ready` : musicLabel ? `${statusPrivacyLabel()} · ${statusDurationLabel()} · Sound: ${musicLabel}` : text ? `${statusPrivacyLabel()} · ${statusDurationLabel()}` : "Start typing to shape the signal.");
     card.append(title, meta);
     const overlays = element("div", "", "");
     overlays.dataset.statusOverlays = "";
@@ -326,7 +402,8 @@
     wrap.appendChild(media);
     const caption = (statusUi.body?.value || "").trim();
     if (caption) wrap.appendChild(element("strong", "", caption));
-    wrap.appendChild(element("span", "pulse-status2-preview-label", `${isVideo ? "Video" : "Photo"} preview · ${statusPrivacyLabel()} · ${statusDurationLabel()}`));
+    const musicLabel = statusSelectedMusicLabel();
+    wrap.appendChild(element("span", "pulse-status2-preview-label", `${isVideo ? "Video" : "Photo"} preview · ${statusPrivacyLabel()} · ${statusDurationLabel()}${musicLabel ? ` · Sound: ${musicLabel}` : ""}`));
     statusUi.preview.appendChild(wrap);
     statusRenderProgress("starting", 1, `Ready to publish ${file.name || "media"}.`);
   }
@@ -435,11 +512,12 @@
     if (statusUi.publishing) return;
     const text = (statusUi.body?.value || "").trim();
     const mode = statusUi.mode?.value || "image";
+    const musicTrackId = statusUi.musicTrack?.value || "";
     if (mode === "live" && !text && !statusUi.file) {
       location.href = "/pulse/live";
       return;
     }
-    if (!text && !statusUi.file) {
+    if (!text && !statusUi.file && !musicTrackId) {
       statusSetState("Add text, a photo, or a video before posting.", "error");
       statusUi.body?.focus();
       return;
@@ -466,12 +544,13 @@
       const created = await api("/api/pulse/status", {
         method: "POST",
         body: JSON.stringify({
-          status_type: mediaIds.length ? mode : "text",
+          status_type: mediaIds.length ? mode : (musicTrackId ? "music" : "text"),
           body: text,
           media_ids: mediaIds,
+          music_track_id: musicTrackId,
           visibility: statusUi.privacy?.value || "public",
           duration_hours: Number(statusUi.duration?.value || 24),
-          ai_context: { source: "pulse_home_status_creator" },
+          ai_context: { source: "pulse_home_status_creator", music_track_id: musicTrackId },
         }),
       });
       statusRenderProgress("success", 100, "Posted successfully.");
@@ -527,8 +606,11 @@
         else if (mode === "music" || mode === "ai") {
           statusOpenCreator(false);
           statusSetMode(mode === "music" ? "media" : "text");
-          statusUi.body?.focus();
-          statusSetState(`${mode === "ai" ? "AI Story" : mode.charAt(0).toUpperCase() + mode.slice(1)} Status tools are being prepared. Add text, photo, or video to post today.`, "info");
+          if (mode === "music") statusShowMusicPanel(true);
+          else {
+            statusUi.body?.focus();
+            statusSetState("AI Story Status tools are being prepared. Add text, photo, or video to post today.", "info");
+          }
         }
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -546,7 +628,10 @@
         event.preventDefault();
         event.stopImmediatePropagation();
         const name = tool.dataset.statusTool || "";
-        if (name === "music") statusSetState("Choose music from the sound panel below.", "info");
+        if (name === "music") {
+          statusShowMusicPanel(true);
+          return;
+        }
         if (name === "filters") document.querySelector("[data-status-effects-tray]")?.classList.toggle("open");
         if (name === "mention") {
           statusUi.body.value = `${statusUi.body.value || ""}${statusUi.body.value ? " " : ""}@`;
@@ -559,6 +644,19 @@
           statusRenderLivePreview();
         }
         if (name === "ai") statusSetState("AI Assist is ready. Refine wording, hashtags, or caption before posting.", "info");
+        return;
+      }
+      if (event.target.closest("[data-close-status-music]")) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        statusShowMusicPanel(false);
+        return;
+      }
+      const statusTrack = event.target.closest("[data-status-select-track]");
+      if (statusTrack) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        statusAttachTrackFromButton(statusTrack);
         return;
       }
       const liveAction = event.target.closest("[data-status-live-action]");
@@ -588,6 +686,10 @@
     statusUi.body?.addEventListener("input", statusRenderLivePreview);
     statusUi.privacy?.addEventListener("change", statusRenderLivePreview);
     statusUi.duration?.addEventListener("change", statusRenderLivePreview);
+    document.querySelector("[data-status-music-search]")?.addEventListener("input", event => {
+      clearTimeout(event.target._pulseMusicTimer);
+      event.target._pulseMusicTimer = setTimeout(() => statusLoadMusic(event.target.value || ""), 220);
+    });
     statusUi.form.addEventListener("submit", statusPublish);
     const params = new URLSearchParams(location.search);
     if (params.has("create_status")) {
