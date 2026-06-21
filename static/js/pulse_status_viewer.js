@@ -140,12 +140,30 @@
     pointer: null,
     closePointer: null,
     closeAt: 0,
+    controlHideTimer: 0,
     pressTimer: 0,
     longPress: false,
     signature: "",
     currentStatusId: "",
     reportedCompletion: "",
   };
+
+  function revealStatusChrome(viewer = activeViewer(), options = {}) {
+    if (!viewer) return;
+    window.clearTimeout(storyRuntime.controlHideTimer);
+    viewer.classList.add("is-ui-visible");
+    const keepOpen =
+      options.persist ||
+      viewer.matches(":focus-within") ||
+      viewer.querySelector?.(".pulse-status-story-actions:hover");
+    if (keepOpen) return;
+    storyRuntime.controlHideTimer = window.setTimeout(() => {
+      const active = activeViewer();
+      if (!active || active !== viewer) return;
+      if (active.matches(":focus-within") || active.querySelector?.(".pulse-status-story-actions:hover")) return;
+      active.classList.remove("is-ui-visible");
+    }, Number(options.timeout || 2600));
+  }
 
   function hardenStatusCloseButton(button) {
     if (!button) return;
@@ -205,9 +223,11 @@
   function clearStoryTimers() {
     window.clearTimeout(storyRuntime.timer);
     window.clearTimeout(storyRuntime.pressTimer);
+    window.clearTimeout(storyRuntime.controlHideTimer);
     window.clearInterval(storyRuntime.progressTimer);
     storyRuntime.timer = 0;
     storyRuntime.pressTimer = 0;
+    storyRuntime.controlHideTimer = 0;
     storyRuntime.progressTimer = 0;
   }
 
@@ -379,6 +399,7 @@
     storyRuntime.durationMs = storyDuration(viewer);
     ensureProgressSegments(viewer);
     setProgress(viewer, 0);
+    revealStatusChrome(viewer);
     const video = viewer.querySelector("video");
     if (video) {
       video.loop = false;
@@ -428,6 +449,7 @@
     document.addEventListener("pointerdown", event => {
       const viewer = activeViewer();
       if (!viewer) return;
+      revealStatusChrome(viewer, { timeout: 2200 });
       const close = event.target?.closest?.("[data-status-story-close],[data-status-viewer-close]");
       if (close) {
         hardenStatusCloseButton(close);
@@ -534,6 +556,14 @@
     }
   }, true);
   document.addEventListener("click", optimisticStatusReaction, true);
+  document.addEventListener("focusin", event => {
+    const viewer = viewerRootFrom(event.target);
+    if (viewer) revealStatusChrome(viewer, { persist: true });
+  }, true);
+  document.addEventListener("focusout", event => {
+    const viewer = viewerRootFrom(event.target);
+    if (viewer) window.setTimeout(() => revealStatusChrome(viewer, { timeout: 1400 }), 60);
+  }, true);
   document.addEventListener("DOMContentLoaded", () => {
     decorateStatusActions(document);
     requestAnimationFrame(() => decorateStatusActions(document));
