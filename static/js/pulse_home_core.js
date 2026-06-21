@@ -1279,6 +1279,20 @@
     return (composerUploadItems.length ? composerUploadItems.map(item => item.file) : (composerFiles.length ? composerFiles : Array.from(postMedia?.files || []))).some(composerFileIsVideo);
   }
 
+  function composerHasMedia() {
+    return composerUploadItems.length > 0 || composerFiles.length > 0 || Number(postMedia?.files?.length || 0) > 0;
+  }
+
+  function renderComposerMusicSelection() {
+    const panel = document.querySelector("#pulseComposer [data-composer-music-selection]");
+    const label = panel?.querySelector("[data-composer-music-label]");
+    if (panel) panel.hidden = !composerMusicTrackId;
+    if (label) label.textContent = composerMusicLabel || "Approved PulseSoc music";
+    document.querySelectorAll("#pulseComposer [data-composer-music]").forEach(button => {
+      button.classList.toggle("active", Boolean(composerMusicTrackId));
+    });
+  }
+
   function formatComposerSize(file) {
     const size = Number(file?.size || 0);
     if (!size) return "Size pending";
@@ -1336,11 +1350,12 @@
 
   function updateComposerMusicVisibility() {
     const selectedType = postType?.value || "text";
-    const show = selectedType === "video" || composerHasVideo();
+    const show = selectedType === "video" || composerHasMedia();
     document.querySelectorAll("#pulseComposer [data-composer-music]").forEach(button => {
       button.hidden = !show;
       button.setAttribute("aria-hidden", show ? "false" : "true");
     });
+    renderComposerMusicSelection();
   }
 
   function setComposerType(type) {
@@ -1739,10 +1754,30 @@
     modal = document.createElement("section");
     modal.id = "pulseMusicPicker";
     modal.className = "reels-modal";
-    modal.innerHTML = `<div class="reels-sheet"><h2>Find approved music</h2><p class="muted">Only admin-approved tracks with verified commercial and edit rights appear here.</p><form data-composer-music-search><input name="topic" placeholder="Video topic"><div class="grid two"><input name="mood" placeholder="Mood"><input name="genre" placeholder="Genre"></div><input name="length" type="number" min="5" max="600" placeholder="Length in seconds"><div class="actions"><button class="primary" type="submit">Suggest tracks</button><button type="button" data-close-composer-music>Close</button></div></form><div class="sound-list" data-composer-music-results><p class="muted">Describe the mood, genre, or topic to get safe suggestions.</p></div></div>`;
+    modal.innerHTML = `<div class="reels-sheet"><h2>Find approved music</h2><p class="muted">Only admin-approved tracks with verified commercial and edit rights appear here.</p><form data-composer-music-search><input name="topic" placeholder="Video topic"><div class="grid two"><input name="mood" placeholder="Mood"><input name="genre" placeholder="Genre"></div><input name="length" type="number" min="5" max="600" placeholder="Length in seconds"><div class="actions"><button class="primary" type="submit">Suggest tracks</button><button type="button" data-browse-composer-music>Browse approved music</button><button type="button" data-close-composer-music>Close</button></div></form><div class="sound-list" data-composer-music-results><p class="muted">Loading approved PulseSoc music...</p></div></div>`;
     document.body.appendChild(modal);
+    const renderTracks = (items = []) => {
+      const box = modal.querySelector("[data-composer-music-results]");
+      if (!box) return;
+      box.innerHTML = items.map(track => `<article class="sound-row"><button class="sound-preview" type="button" data-preview-composer-track="${esc(track.preview_url || track.audio_url || "")}">▶</button><div><strong>${esc(track.title || "Approved track")}</strong><p class="muted">${esc(track.artist || "PulseSoc")} · ${esc(track.mood || "approved")} · ${Math.round(track.duration_seconds || track.duration || 0)}s</p><small>${esc(track.license_type || track.license || "approved")} · proof verified</small></div><div class="actions"><button class="primary" type="button" data-select-composer-track="${esc(track.id || track.track_id)}" data-track-label="${esc(`${track.title || "Approved track"} · ${track.artist || "PulseSoc"}`)}">Select</button></div></article>`).join("") || '<p class="muted">No approved tracks matched. Try another mood, genre, or topic.</p>';
+    };
+    const loadApprovedTracks = async (payload = {}) => {
+      const box = modal.querySelector("[data-composer-music-results]");
+      if (box) box.innerHTML = '<p class="muted">Checking approved catalog...</p>';
+      const data = await api("/api/pulse/music/ai-suggest", { method: "POST", body: JSON.stringify(payload) });
+      renderTracks(data.items || data.sounds || []);
+    };
+    modal.dataset.loadApprovedTracks = "1";
+    modal._loadApprovedTracks = loadApprovedTracks;
     modal.addEventListener("click", event => {
       if (event.target === modal || event.target.closest("[data-close-composer-music]")) modal.classList.remove("open");
+      if (event.target.closest("[data-browse-composer-music]")) {
+        event.preventDefault();
+        loadApprovedTracks({ topic: "creator content", mood: "", genre: "", length: "" }).catch(error => {
+          const box = modal.querySelector("[data-composer-music-results]");
+          if (box) box.innerHTML = `<p class="muted">${esc(error.message || "Music search failed.")}</p>`;
+        });
+      }
       const selected = event.target.closest("[data-select-composer-track]");
       if (selected) {
         composerMusicTrackId = selected.dataset.selectComposerTrack || "";
@@ -1764,8 +1799,7 @@
       const box = modal.querySelector("[data-composer-music-results]");
       box.innerHTML = '<p class="muted">Checking approved catalog...</p>';
       try {
-        const data = await api("/api/pulse/music/ai-suggest", { method: "POST", body: JSON.stringify({ topic: form.topic.value, mood: form.mood.value, genre: form.genre.value, length: form.length.value }) });
-        box.innerHTML = (data.items || []).map(track => `<article class="sound-row"><button class="sound-preview" type="button" data-preview-composer-track="${esc(track.preview_url || "")}">▶</button><div><strong>${esc(track.title || "Approved track")}</strong><p class="muted">${esc(track.artist || "PulseSoc")} · ${esc(track.mood || "approved")} · ${Math.round(track.duration_seconds || 0)}s</p><small>${esc(track.license_type || track.license || "approved")} · proof verified</small></div><div class="actions"><button class="primary" type="button" data-select-composer-track="${esc(track.id)}" data-track-label="${esc(`${track.title || "Approved track"} · ${track.artist || "PulseSoc"}`)}">Select</button></div></article>`).join("") || '<p class="muted">No approved tracks matched. Try another mood or topic.</p>';
+        await loadApprovedTracks({ topic: form.topic.value, mood: form.mood.value, genre: form.genre.value, length: form.length.value });
       } catch (error) {
         box.innerHTML = `<p class="muted">${esc(error.message || "Music search failed.")}</p>`;
       }
@@ -1843,9 +1877,24 @@
     const musicTrigger = event.target.closest("[data-composer-music]");
     if (musicTrigger) {
       event.preventDefault();
-      if (musicTrigger.hidden || !(postType?.value === "video" || composerHasVideo())) return toast("Add Music is available for Reel or video posts.");
-      ensureComposerMusicPicker().classList.add("open");
-      toast("Choose an approved track for this video.");
+      if (musicTrigger.hidden || !(postType?.value === "video" || composerHasMedia())) return toast("Choose a photo or video first, then add music.");
+      const picker = ensureComposerMusicPicker();
+      picker.classList.add("open");
+      if (picker.dataset.loadedApprovedTracks !== "1") {
+        picker.dataset.loadedApprovedTracks = "1";
+        picker._loadApprovedTracks?.({ topic: composerHasVideo() ? "video" : "photo", mood: "", genre: "", length: "" }).catch(() => {});
+      }
+      toast(`Choose approved music for this ${composerHasVideo() ? "video" : "photo"}.`);
+      return;
+    }
+    const removeMusic = event.target.closest("[data-remove-composer-music]");
+    if (removeMusic) {
+      event.preventDefault();
+      composerMusicTrackId = "";
+      composerMusicLabel = "";
+      renderComposerMusicSelection();
+      setComposerType(postType?.value || "text");
+      toast("Music removed.");
       return;
     }
     const replaceComposerMedia = event.target.closest("[data-open-composer-picker]");
@@ -1874,7 +1923,11 @@
       if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl);
       composerUploadItems = composerUploadItems.filter(candidate => candidate.id !== id);
       syncComposerFiles();
-      if (postMedia && !composerUploadItems.length) postMedia.value = "";
+      if (!composerUploadItems.length) {
+        if (postMedia) postMedia.value = "";
+        composerMusicTrackId = "";
+        composerMusicLabel = "";
+      }
       renderComposerPreview();
       toast(composerUploadItems.length ? "Media removed." : "Media cleared.");
       return;

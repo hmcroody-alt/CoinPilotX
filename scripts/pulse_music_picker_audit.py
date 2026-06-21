@@ -21,6 +21,7 @@ def require(condition, message, details=""):
 def main():
     bot.init_db()
     source = (ROOT / "bot.py").read_text(encoding="utf-8")
+    home_core = (ROOT / "static" / "js" / "pulse_home_core.js").read_text(encoding="utf-8")
     for token, label in [
         ("/api/pulse/music/search", "shared music search API exists"),
         ("/api/pulse/music/ai-suggest", "AI music suggestion API exists"),
@@ -38,9 +39,19 @@ def main():
         ("adoptIncomingReelMusic", "Reels consumes selected library music"),
         ("adoptIncomingStatusMusic", "Status consumes selected library music"),
         ("composerMusicAutofocus", "Video composer opens when music is handed off"),
+        ("data-browse-composer-music", "composer music picker exposes approved-track browse action"),
         ("proof verified", "picker shows license proof status"),
+        ("payload.get(\"music_track_id\")", "Reel create API accepts shared music track field"),
     ]:
         require(token in source, label)
+    for token, label in [
+        ("function composerHasMedia()", "composer detects photo or video uploads"),
+        ('selectedType === "video" || composerHasMedia()', "music action appears for photo and video content"),
+        ('data-remove-composer-music', "selected music can be removed before publish"),
+        ('music_track_id: composerMusicTrackId', "photo and video publish payload includes approved track id"),
+        ('music_track_id:selectedSoundId', "Reel upload sends selected approved track id"),
+    ]:
+        require(token in home_core or token in source, label)
     client = bot.webhook_app.test_client()
     with client.session_transaction() as sess:
         sess["account_user_id"] = 1
