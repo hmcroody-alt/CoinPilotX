@@ -3344,3 +3344,183 @@ mask-image: none;
     animation: none;
   }
 }
+
+/* Edge-to-edge PulseSoc Status gesture model: content first, compact controls. */
+.pulse-status-story-viewer.open,
+[data-status-viewer].open {
+padding: 0 !important;
+background: #000 !important;
+backdrop-filter: none !important;
+}
+.pulse-status-story-viewer.open .pulse-status-story-shell,
+[data-status-viewer].open .pulse-status-story-shell {
+width: 100vw !important;
+height: 100dvh !important;
+min-height: 100dvh !important;
+max-width: none !important;
+max-height: none !important;
+aspect-ratio: auto !important;
+border: 0 !important;
+border-radius: 0 !important;
+background: #000 !important;
+box-shadow: none !important;
+}
+.pulse-status-story-viewer.open .pulse-status-story-shell::before,
+.pulse-status-story-viewer.open .pulse-status-story-shell::after,
+[data-status-viewer].open .pulse-status-story-shell::before,
+[data-status-viewer].open .pulse-status-story-shell::after {
+display: none !important;
+}
+.pulse-status-story-viewer.open .pulse-status-story-media,
+[data-status-viewer].open .pulse-status-story-media {
+position: absolute !important;
+inset: 0 !important;
+border-radius: 0 !important;
+background: #000 !important;
+}
+.pulse-status-story-viewer.open .pulse-status-story-media::before,
+[data-status-viewer].open .pulse-status-story-media::before {
+display: none !important;
+}
+.pulse-status-story-viewer.open .pulse-status-story-media img,
+.pulse-status-story-viewer.open .pulse-status-story-media video,
+.pulse-status-story-viewer.open .pulse-status-story-media .pulse-media-wrap,
+.pulse-status-story-viewer.open .pulse-status-story-media .pulse-status-viewer-player,
+.pulse-status-story-viewer.open .pulse-status-story-media .pulse-media-wrap img,
+.pulse-status-story-viewer.open .pulse-status-story-media .pulse-media-wrap video,
+.pulse-status-story-viewer.open .pulse-status-story-media .pulse-status-viewer-player img,
+.pulse-status-story-viewer.open .pulse-status-story-media .pulse-status-viewer-player video,
+[data-status-viewer].open .pulse-status-story-media img,
+[data-status-viewer].open .pulse-status-story-media video,
+[data-status-viewer].open .pulse-status-story-media .pulse-media-wrap,
+[data-status-viewer].open .pulse-status-story-media .pulse-status-viewer-player,
+[data-status-viewer].open .pulse-status-story-media .pulse-media-wrap img,
+[data-status-viewer].open .pulse-status-story-media .pulse-media-wrap video,
+[data-status-viewer].open .pulse-status-story-media .pulse-status-viewer-player img,
+[data-status-viewer].open .pulse-status-story-media .pulse-status-viewer-player video {
+width: 100% !important;
+height: 100% !important;
+max-width: none !important;
+max-height: none !important;
+object-fit: cover !important;
+object-position: center !important;
+border-radius: 0 !important;
+}
+.pulse-status-story-viewer.open .pulse-status-story-progress,
+[data-status-viewer].open .pulse-status-story-progress {
+top: max(8px, env(safe-area-inset-top)) !important;
+left: max(8px, env(safe-area-inset-left)) !important;
+right: max(8px, env(safe-area-inset-right)) !important;
+height: 3px !important;
+gap: 5px !important;
+z-index: 8 !important;
+}
+.pulse-status-story-viewer.open .pulse-status-story-footer,
+[data-status-viewer].open .pulse-status-story-footer {
+z-index: 8 !important;
+left: max(12px, env(safe-area-inset-left)) !important;
+right: max(74px, calc(64px + env(safe-area-inset-right))) !important;
+bottom: max(18px, calc(14px + env(safe-area-inset-bottom))) !important;
+top: auto !important;
+grid-template-columns: 38px minmax(0, 1fr) !important;
+gap: 9px !important;
+max-width: min(520px, calc(100vw - 92px)) !important;
+padding: 0 !important;
+border: 0 !important;
+background: transparent !important;
+box-shadow: none !important;
+opacity: .92 !important;
+text-shadow: 0 2px 16px rgba(0,0,0,.86);
+}
+.pulse-status-story-viewer.open .pulse-status-story-footer .pulse-status-story-avatar,
+[data-status-viewer].open .pulse-status-story-footer .pulse-status-story-avatar {
+width: 38px !important;
+height: 38px !important;
+border: 2px solid rgba(54, 229, 143, .92) !important;
+box-shadow: 0 0 20px rgba(54, 229, 143, .28) !important;
+}
+.pulse-status-story-viewer.open .pulse-status-story-footer strong,
+[data-status-viewer].open .pulse-status-story-footer strong {
+font-size: 14px !important;
+line-height: 1.05 !important;
+}
+.pulse-status-story-viewer.open .pulse-status-story-footer [data-status-story-body],
+.pulse-status-story-viewer.open .pulse-status-story-footer [data-status-viewer-body],
+[data-status-viewer].open .pulse-status-story-footer [data-status-story-body],
+[data-status-viewer].open .pulse-status-story-footer [data-status-viewer-body] {
+display: block !important;
+margin-top: 5px !important;
+font-size: 14px !important;
+line-height: 1.3 !important;
+max-width: 42ch !important;
+}
+.pulse-status-story-viewer.open .pulse-status-story-footer [data-status-story-count],
+.pulse-status-story-viewer.open .pulse-status-story-footer [data-status-viewer-count],
+[data-status-viewer].open .pulse-status-story-footer [data-status-story-count],
+[data-status-viewer].open .pulse-status-story-footer [data-status-viewer-count] {
+display: none !important;
+}
+.pulse-status-story-viewer.open .pulse-status-story-actions,
+[data-status-viewer].open .pulse-status-story-actions {
+z-index: 9 !important;
+right: max(6px, env(safe-area-inset-right)) !important;
+top: 50% !important;
+width: 48px !important;
+gap: 6px !important;
+padding: 6px 3px !important;
+border: 0 !important;
+border-radius: 999px !important;
+background: rgba(4, 10, 18, .20) !important;
+box-shadow: none !important;
+backdrop-filter: blur(8px);
+opacity: .86 !important;
+pointer-events: auto !important;
+transform: translate3d(0, -50%, 0) !important;
+}
+.pulse-status-story-viewer.open .pulse-status-story-actions .pulse-status-action,
+.pulse-status-story-viewer.open .pulse-status-story-actions [data-status-viewer-react],
+.pulse-status-story-viewer.open .pulse-status-story-actions [data-status-viewer-comment],
+.pulse-status-story-viewer.open .pulse-status-story-actions [data-status-viewer-share],
+.pulse-status-story-viewer.open .pulse-status-story-actions [data-status-viewer-save],
+.pulse-status-story-viewer.open .pulse-status-story-actions [data-status-viewer-more],
+.pulse-status-story-viewer.open .pulse-status-story-actions [data-status-viewer-mute],
+[data-status-viewer].open .pulse-status-story-actions .pulse-status-action,
+[data-status-viewer].open .pulse-status-story-actions [data-status-viewer-react],
+[data-status-viewer].open .pulse-status-story-actions [data-status-viewer-comment],
+[data-status-viewer].open .pulse-status-story-actions [data-status-viewer-share],
+[data-status-viewer].open .pulse-status-story-actions [data-status-viewer-save],
+[data-status-viewer].open .pulse-status-story-actions [data-status-viewer-more],
+[data-status-viewer].open .pulse-status-story-actions [data-status-viewer-mute] {
+width: 42px !important;
+height: 42px !important;
+min-width: 42px !important;
+min-height: 42px !important;
+padding: 0 !important;
+background: rgba(0, 0, 0, .22) !important;
+border: 1px solid rgba(255,255,255,.12) !important;
+box-shadow: 0 8px 24px rgba(0,0,0,.22) !important;
+}
+.pulse-status-story-viewer.open .pulse-status-story-actions .pulse-status-action-icon,
+[data-status-viewer].open .pulse-status-story-actions .pulse-status-action-icon {
+font-size: 18px !important;
+}
+.pulse-status-story-viewer.open .pulse-status-story-actions small,
+[data-status-viewer].open .pulse-status-story-actions small {
+display: none !important;
+}
+.pulse-status-story-sound-card,
+.pulse-status-story-advance-hint,
+[data-status-hud-sound],
+[data-status-hud-hint] {
+display: none !important;
+}
+.pulse-status-story-viewer.open .pulse-status-story-close,
+[data-status-viewer].open .pulse-status-story-close {
+width: 42px !important;
+height: 42px !important;
+min-height: 42px !important;
+top: max(16px, calc(12px + env(safe-area-inset-top))) !important;
+right: max(8px, env(safe-area-inset-right)) !important;
+opacity: .62 !important;
+background: rgba(0,0,0,.24) !important;
+}
