@@ -291,6 +291,7 @@
     const video = viewer?.querySelector?.("video");
     if (!video) return false;
     const shouldMute = !(video.muted || Number(video.volume || 0) === 0);
+    viewer.dataset.statusSoundToggledAt = String(Date.now());
     video.defaultMuted = false;
     if (!shouldMute) {
       video.removeAttribute("muted");
@@ -303,6 +304,34 @@
     updateViewerSoundButton(viewer, video);
     revealStatusChrome(viewer, { timeout: 900 });
     return true;
+  }
+
+  function ensureImmersiveStatusHud(viewer = activeViewer()) {
+    if (!viewer) return;
+    const shell = viewer.querySelector?.(".pulse-status-story-shell");
+    if (!shell) return;
+    let sound = shell.querySelector("[data-status-now-playing]");
+    if (!sound) {
+      sound = document.createElement("div");
+      sound.className = "pulse-status-now-playing";
+      sound.dataset.statusNowPlaying = "1";
+      sound.innerHTML = `
+        <span class="pulse-status-now-playing-dot" aria-hidden="true">♪</span>
+        <strong data-status-now-title>PulseSoc Status</strong>
+        <span class="pulse-status-now-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      `;
+      shell.insertBefore(sound, shell.querySelector(".pulse-status-story-footer") || null);
+    }
+    const body =
+      viewer.dataset.statusMusicTitle ||
+      viewer.querySelector("[data-status-viewer-body],[data-status-story-body]")?.textContent?.trim() ||
+      "PulseSoc Status";
+    const artist =
+      viewer.dataset.statusMusicArtist ||
+      viewer.querySelector("[data-status-viewer-author],[data-status-story-author]")?.textContent?.trim() ||
+      "PulseSoc Music";
+    const title = sound.querySelector("[data-status-now-title]");
+    if (title) title.textContent = `${body} · ${artist}`;
   }
 
   function storyDuration(viewer) {
@@ -416,6 +445,7 @@
     storyRuntime.startedAt = Date.now();
     storyRuntime.durationMs = storyDuration(viewer);
     ensureProgressSegments(viewer);
+    ensureImmersiveStatusHud(viewer);
     setProgress(viewer, 0);
     revealStatusChrome(viewer);
     const video = viewer.querySelector("video");
@@ -620,5 +650,5 @@
     }
   }
 
-  window.PulseStatusViewer = { render, styleFor, kindFor, decorateStatusActions, scheduleStoryProgress, pauseStory, resumeStory, navigateStory, unmuteViewerVideo, updateViewerSoundButton, closeStatusViewerNow };
+  window.PulseStatusViewer = { render, styleFor, kindFor, decorateStatusActions, scheduleStoryProgress, pauseStory, resumeStory, navigateStory, unmuteViewerVideo, toggleViewerSound, updateViewerSoundButton, closeStatusViewerNow };
 })();
