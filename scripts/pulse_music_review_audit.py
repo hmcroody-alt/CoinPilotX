@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import bot  # noqa: E402
+from services import music_service  # noqa: E402
 
 
 def require(condition: bool, message: str) -> None:
@@ -95,12 +96,23 @@ def main() -> int:
     conn = bot.db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT approved_by_admin, active, safety_status FROM pulse_audio_tracks WHERE id=?", (track_id,))
+    cur.execute("SELECT * FROM pulse_audio_tracks WHERE id=?", (track_id,))
     saved = dict(cur.fetchone() or {})
     conn.close()
     require(int(saved.get("approved_by_admin") or 0) == 1, "Approved track was not marked approved.")
     require(int(saved.get("active") or 0) == 1, "Approved track was not activated.")
     require(saved.get("safety_status") == "approved", "Approved track safety status was not updated.")
+    require(not music_service.public_visibility_reasons(saved), "Approved track visibility diagnostics rejected a valid track.")
+
+    with client.session_transaction() as session:
+        session["account_user_id"] = 1
+    public_search = client.get("/api/pulse/music/search?q=Audit%20Pending%20Track&limit=40")
+    payload = public_search.get_json(silent=True) or {}
+    require(public_search.status_code == 200 and payload.get("ok"), "Public music search did not return a valid response.")
+    require(
+        any(str(item.get("id")) == str(track_id) for item in payload.get("items") or []),
+        "Approved music did not appear in public PulseSoc Music search.",
+    )
 
     print("Pulse music review audit passed.")
     return 0

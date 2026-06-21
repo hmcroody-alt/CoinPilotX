@@ -39,6 +39,8 @@ LICENSE_REQUIRED_FIELDS = [
     "active",
 ]
 
+BLOCKED_LICENSE_TYPES = {"noncommercial", "cc-by-nc", "no-derivatives", "cc-by-nd"}
+
 DEFAULT_TRACKS = [
     {
         "id": "pulse-original-rise",
@@ -140,14 +142,30 @@ def _bool(value) -> bool:
 
 
 def _safe_track(track: dict) -> bool:
-    return (
-        bool(track.get("active", True))
-        and bool(track.get("approved_by_admin", True))
-        and bool(track.get("commercial_use_allowed", True))
-        and bool(track.get("remix_edit_allowed", True))
-        and bool(track.get("proof_url") or track.get("proof_file") or str(track.get("source", "")).startswith("original_pulse_sound"))
-        and str(track.get("license_type") or track.get("license") or "").lower() not in {"noncommercial", "cc-by-nc", "no-derivatives", "cc-by-nd"}
-    )
+    return not public_visibility_reasons(track)
+
+
+def public_visibility_reasons(track: dict) -> list[str]:
+    """Return public catalog blockers for a music track without exposing secrets."""
+    source = str(track.get("source") or track.get("source_provider") or track.get("source_type") or "").strip().lower()
+    license_type = str(track.get("license_type") or track.get("license") or "").strip().lower()
+    safety_status = str(track.get("safety_status") or track.get("moderation_status") or "approved").strip().lower()
+    reasons: list[str] = []
+    if safety_status != "approved":
+        reasons.append("safety_status must be approved")
+    if not _bool(track.get("active", True)):
+        reasons.append("active must be true")
+    if not _bool(track.get("approved_by_admin", True)):
+        reasons.append("approved_by_admin must be true")
+    if not _bool(track.get("commercial_use_allowed", True)):
+        reasons.append("commercial use must be allowed")
+    if not _bool(track.get("remix_edit_allowed", True)):
+        reasons.append("edit/remix use must be allowed")
+    if not (track.get("proof_url") or track.get("proof_file") or source.startswith("original_pulse_sound")):
+        reasons.append("license proof or PulseSoc original source is required")
+    if license_type in BLOCKED_LICENSE_TYPES:
+        reasons.append("license type is not allowed for creator reuse")
+    return reasons
 
 
 def _db_track(row) -> dict:
@@ -199,12 +217,29 @@ def _db_track(row) -> dict:
     }
 
 
-def _load_db_tracks() -> list[dict]:
+def _load_db_tracks(query: str = "", limit: int = 300) -> list[dict]:
     try:
         conn = _connection()
         cur = conn.cursor()
-        cur.execute(
+        limit = max(50, min(int(limit or 300), 1000))
+        query = str(query or "").strip().lower()[:120]
+        search_clause = ""
+        params: list[object] = []
+        if query:
+            like = f"%{query}%"
+            search_clause = """
+              AND (
+                LOWER(COALESCE(title,'')) LIKE ?
+                OR LOWER(COALESCE(artist,'')) LIKE ?
+                OR LOWER(COALESCE(genre,'')) LIKE ?
+                OR LOWER(COALESCE(mood,'')) LIKE ?
+                OR LOWER(COALESCE(language,'')) LIKE ?
+                OR LOWER(COALESCE(tags_json,'')) LIKE ?
+              )
             """
+            params.extend([like, like, like, like, like, like])
+        cur.execute(
+            f"""
             SELECT * FROM pulse_audio_tracks
             WHERE COALESCE(safety_status,'approved')='approved'
               AND COALESCE(active,1)=1
@@ -212,9 +247,11 @@ def _load_db_tracks() -> list[dict]:
               AND COALESCE(commercial_use_allowed,0)=1
               AND COALESCE(remix_edit_allowed,0)=1
               AND COALESCE(license_type,'') NOT IN ('noncommercial','cc-by-nc','no-derivatives','cc-by-nd')
+              {search_clause}
             ORDER BY trend_score DESC, usage_count DESC, created_at DESC
-            LIMIT 200
-            """
+            LIMIT ?
+            """,
+            (*params, limit),
         )
         rows = [_db_track(row) for row in cur.fetchall()]
         conn.close()
@@ -223,10 +260,38 @@ def _load_db_tracks() -> list[dict]:
         return []
 
 
-def _catalog_tracks() -> list[dict]:
+def _load_db_track_by_id(track_id: str) -> dict:
+    try:
+        conn = _connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT * FROM pulse_audio_tracks
+            WHERE id=?
+              AND COALESCE(safety_status,'approved')='approved'
+              AND COALESCE(active,1)=1
+              AND COALESCE(approved_by_admin,0)=1
+              AND COALESCE(commercial_use_allowed,0)=1
+              AND COALESCE(remix_edit_allowed,0)=1
+              AND COALESCE(license_type,'') NOT IN ('noncommercial','cc-by-nc','no-derivatives','cc-by-nd')
+            LIMIT 1
+            """,
+            (track_id,),
+        )
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return {}
+        track = _db_track(row)
+        return track if _safe_track(track) else {}
+    except Exception:
+        return {}
+
+
+def _catalog_tracks(query: str = "") -> list[dict]:
     seen = set()
     tracks = []
-    for track in [*_load_db_tracks(), *DEFAULT_TRACKS]:
+    for track in [*_load_db_tracks(query=query), *DEFAULT_TRACKS]:
         key = str(track.get("id") or f"{track.get('title')}:{track.get('artist')}")
         if key in seen or not _safe_track(track):
             continue
@@ -264,7 +329,8 @@ def _score(track: dict, query: str = "", mood: str = "", genre: str = "", topic:
 
 def search_tracks(query: str = "", mood: str = "", genre: str = "", topic: str = "", length: int | float = 0, limit: int = 12) -> list[dict]:
     tracks = []
-    for track in _catalog_tracks():
+    db_query = " ".join(part for part in [query, topic] if part).strip()
+    for track in _catalog_tracks(query=db_query):
         enriched = dict(track)
         enriched["score"] = _score(track, query, mood, genre, topic, length)
         enriched["is_creator_safe"] = True
@@ -294,6 +360,10 @@ def trending_tracks(limit: int = 10) -> list[dict]:
 
 
 def public_track(track_id: str) -> dict:
+    db_track = _load_db_track_by_id(str(track_id or ""))
+    if db_track:
+        db_track["is_creator_safe"] = True
+        return db_track
     return next((track for track in _catalog_tracks() if str(track.get("id")) == str(track_id)), {})
 
 
@@ -305,7 +375,7 @@ def waveform_for_track(track_id: str) -> list[float]:
 
 
 def attach_music_payload(track_id: str, volume: float = 0.82) -> dict:
-    match = next((track for track in _catalog_tracks() if str(track["id"]) == str(track_id)), None)
+    match = public_track(str(track_id or ""))
     if not match:
         return {
             "track_id": str(track_id or ""),
