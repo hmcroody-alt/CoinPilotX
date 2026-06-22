@@ -45,12 +45,7 @@ body.pulse-home-os::before {
 .pulse-home-os .pulse-desktop-topbar,
 .pulse-home-os .pulse-shell,
 .pulse-home-os .mobile-bottom-nav,
-.pulse-home-os .pulse-fab,
-.pulse-home-os .create-sheet,
-.pulse-home-os .pulse-search-overlay,
-.pulse-home-os .pulse-status-story-viewer,
-.pulse-home-os .pulse-media-lightbox,
-.pulse-home-os .toast {
+.pulse-home-os .pulse-fab {
   position: relative;
   z-index: 2;
 }
