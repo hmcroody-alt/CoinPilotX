@@ -57,7 +57,7 @@ def main() -> int:
     radio_js = radio_js_path.read_text(encoding="utf-8")
 
     for token in [
-        "pulse_home_os.css?v=pulse-home-os-20260621a",
+        "pulse_home_os.css?v=pulse-home-os-20260622a",
         "pulse_environment_engine.js?v=galactic-city-20260621a",
         "pulse_radio.js?v=pulse-radio-20260621a",
         "request.path == '/pulse'",
@@ -85,6 +85,10 @@ def main() -> int:
         ".pulse-home-os .pulse-network-globe-card",
         ".pulse-home-os .pulse-radio-launch",
         ".pulse-home-os .pulse-radio-player",
+        "--pulse-mobile-nav-height",
+        ".pulse-home-os .mobile-bottom-nav",
+        "grid-template-columns: repeat(5, minmax(0, 1fr)) !important",
+        "body.pulse-home-os.pulse-search-open .mobile-bottom-nav",
         "@keyframes pulseRadioOrb",
         "height: 342px",
         ".pulse-home-os .pulse-action-card-grid",
@@ -133,7 +137,7 @@ def main() -> int:
     home_html = home.get_data(as_text=True)
     require(home.status_code == 200, "Home route loads", str(home.status_code))
     require('class="pulse-home-os"' in home_html, "Home route receives Home OS scope")
-    require("pulse_home_os.css?v=pulse-home-os-20260621a" in home_html, "Home loads cache-busted Home OS CSS")
+    require("pulse_home_os.css?v=pulse-home-os-20260622a" in home_html, "Home loads cache-busted Home OS CSS")
     require("pulse_environment_engine.js?v=galactic-city-20260621a" in home_html, "Home loads cache-busted galactic city runtime")
     require("pulse_radio.js?v=pulse-radio-20260621a" in home_html, "Home loads cache-busted Pulse Radio runtime")
     require("data-pulse-radio-toggle" in home_html and "data-pulse-radio-player" in home_html, "Home renders Pulse Radio controls")

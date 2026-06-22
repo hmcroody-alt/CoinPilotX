@@ -1777,6 +1777,137 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   }
 }
 
+@media (max-width: 900px) {
+  body.pulse-home-os {
+    --pulse-mobile-nav-height: 82px;
+    --pulse-mobile-radio-gap: 12px;
+  }
+
+  .pulse-home-os .pulse-shell,
+  .pulse-home-os .wrap {
+    padding-bottom: calc(172px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .pulse-home-os .mobile-bottom-nav {
+    display: grid !important;
+    position: fixed !important;
+    left: 10px !important;
+    right: 10px !important;
+    bottom: max(8px, env(safe-area-inset-bottom, 0px)) !important;
+    width: auto !important;
+    min-height: var(--pulse-mobile-nav-height) !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 5px !important;
+    padding: 8px 8px 10px !important;
+    overflow: visible !important;
+    z-index: 72 !important;
+    isolation: isolate;
+    border: 1px solid rgba(83, 224, 245, .24) !important;
+    border-radius: 24px !important;
+    background:
+      linear-gradient(180deg, rgba(9, 20, 34, .82), rgba(2, 7, 14, .94)),
+      radial-gradient(circle at 20% 10%, rgba(49, 230, 161, .18), transparent 42%),
+      radial-gradient(circle at 84% 0, rgba(83, 224, 245, .12), transparent 40%) !important;
+    box-shadow:
+      0 -18px 70px rgba(0, 0, 0, .46),
+      0 0 34px rgba(83, 224, 245, .14),
+      inset 0 1px 0 rgba(255, 255, 255, .06) !important;
+    backdrop-filter: blur(18px) saturate(1.25) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(1.25) !important;
+    contain: layout paint style;
+  }
+
+  .pulse-home-os .mobile-bottom-nav::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background:
+      linear-gradient(90deg, transparent, rgba(49, 230, 161, .26), rgba(83, 224, 245, .22), transparent);
+    opacity: .42;
+  }
+
+  .pulse-home-os .mobile-bottom-nav a {
+    display: grid !important;
+    grid-template-rows: 24px 16px !important;
+    place-items: center !important;
+    align-content: center !important;
+    gap: 3px !important;
+    min-width: 0 !important;
+    min-height: 58px !important;
+    padding: 6px 2px !important;
+    border-radius: 17px !important;
+    color: rgba(225, 249, 255, .82) !important;
+    text-decoration: none !important;
+    background: rgba(255, 255, 255, .035) !important;
+    border: 1px solid rgba(255, 255, 255, .055) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035);
+    touch-action: manipulation;
+    transform: translateZ(0);
+    transition: transform .14s ease, background .14s ease, border-color .14s ease, color .14s ease, box-shadow .14s ease;
+  }
+
+  .pulse-home-os .mobile-bottom-nav a:active,
+  .pulse-home-os .mobile-bottom-nav a:focus-visible,
+  .pulse-home-os .mobile-bottom-nav a[href="/pulse"] {
+    color: #06101b !important;
+    border-color: transparent !important;
+    background: linear-gradient(135deg, var(--home-emerald), var(--home-cyan)) !important;
+    box-shadow: 0 0 24px rgba(49, 230, 161, .2), inset 0 1px 0 rgba(255, 255, 255, .26) !important;
+  }
+
+  .pulse-home-os .mobile-bottom-nav a:active {
+    transform: scale(.96) translateZ(0);
+  }
+
+  .pulse-home-os .mobile-bottom-nav .nav-ico {
+    width: 24px !important;
+    height: 24px !important;
+    display: grid !important;
+    place-items: center !important;
+    font-size: 19px !important;
+    line-height: 1 !important;
+  }
+
+  .pulse-home-os .mobile-bottom-nav .nav-ico svg {
+    width: 22px !important;
+    height: 22px !important;
+  }
+
+  .pulse-home-os .mobile-bottom-nav .nav-label {
+    max-width: 100% !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+    letter-spacing: 0 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .pulse-home-os .mobile-bottom-nav .nav-badge {
+    right: 8px !important;
+    top: 5px !important;
+    z-index: 2 !important;
+  }
+
+  .pulse-home-os .pulse-radio-player {
+    bottom: calc(var(--pulse-mobile-nav-height) + var(--pulse-mobile-radio-gap) + env(safe-area-inset-bottom, 0px)) !important;
+    z-index: 70 !important;
+    max-width: calc(100vw - 20px) !important;
+  }
+
+  body.pulse-home-os.pulse-search-open .mobile-bottom-nav,
+  body.pulse-home-os.drawer-open .mobile-bottom-nav,
+  body.pulse-home-os.status-viewer-open .mobile-bottom-nav,
+  body.pulse-home-os.pulse-status-viewer-open .mobile-bottom-nav {
+    pointer-events: none !important;
+    opacity: 0 !important;
+    transform: translate3d(0, 18px, 0);
+  }
+}
+
 @media (prefers-reduced-motion: reduce), (prefers-reduced-data: reduce) {
   .pulse-home-os .pulse-city-traffic,
   .pulse-home-os .pulse-city-holograms {
