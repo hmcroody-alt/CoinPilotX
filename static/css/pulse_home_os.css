@@ -550,6 +550,161 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   background: linear-gradient(180deg, transparent, rgba(1, 4, 8, .62));
 }
 
+.pulse-home-os .pulse-radio-launch {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 9;
+  min-height: 42px;
+  border-radius: 999px;
+  padding: 8px 12px 8px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(83, 224, 245, .28);
+  color: #dffcff;
+  background: linear-gradient(135deg, rgba(4, 12, 22, .9), rgba(12, 28, 43, .72));
+  box-shadow: 0 14px 38px rgba(0, 0, 0, .28), inset 0 0 22px rgba(83, 224, 245, .08);
+  backdrop-filter: blur(14px);
+}
+
+.pulse-home-os .pulse-radio-launch:hover,
+.pulse-home-os .pulse-radio-launch:focus-visible,
+.pulse-home-os .pulse-radio-launch.is-playing {
+  border-color: rgba(49, 230, 161, .56);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, .32), 0 0 30px rgba(49, 230, 161, .16), inset 0 0 24px rgba(83, 224, 245, .12);
+}
+
+.pulse-home-os .pulse-radio-launch-orb {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: block;
+  position: relative;
+  background: radial-gradient(circle at 35% 30%, #f6feff, #66e8f6 42%, #36e58f 100%);
+  box-shadow: 0 0 0 5px rgba(83, 224, 245, .08), 0 0 24px rgba(83, 224, 245, .3);
+}
+
+.pulse-home-os .pulse-radio-launch-orb::before {
+  content: "";
+  position: absolute;
+  inset: 7px 8px 7px 9px;
+  border-left: 7px solid #06101b;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+}
+
+.pulse-home-os .pulse-radio-launch.is-playing .pulse-radio-launch-orb::before {
+  inset: 7px;
+  border: 0;
+  background: linear-gradient(90deg, #06101b 0 35%, transparent 35% 62%, #06101b 62% 100%);
+}
+
+.pulse-home-os .pulse-radio-launch.is-playing .pulse-radio-launch-orb {
+  animation: pulseRadioOrb 1.9s ease-in-out infinite;
+}
+
+@keyframes pulseRadioOrb {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 5px rgba(83, 224, 245, .08), 0 0 24px rgba(83, 224, 245, .28); }
+  50% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(49, 230, 161, .1), 0 0 34px rgba(49, 230, 161, .34); }
+}
+
+.pulse-home-os .pulse-radio-player {
+  position: fixed;
+  left: 50%;
+  bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  z-index: 42;
+  transform: translate3d(-50%, 0, 0);
+  width: min(520px, calc(100vw - 28px));
+  min-height: 62px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 18px;
+  border: 1px solid rgba(83, 224, 245, .24);
+  color: #f2fbff;
+  background: linear-gradient(135deg, rgba(5, 12, 22, .94), rgba(9, 24, 36, .9));
+  box-shadow: 0 20px 62px rgba(0, 0, 0, .46), 0 0 46px rgba(83, 224, 245, .12);
+  backdrop-filter: blur(18px);
+  content-visibility: auto;
+}
+
+.pulse-home-os .pulse-radio-player[hidden] {
+  display: none !important;
+}
+
+.pulse-home-os .pulse-radio-player.is-playing {
+  border-color: rgba(49, 230, 161, .42);
+  box-shadow: 0 20px 62px rgba(0, 0, 0, .46), 0 0 50px rgba(49, 230, 161, .15);
+}
+
+.pulse-home-os .pulse-radio-control {
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  min-height: 42px;
+  border-radius: 999px;
+  padding: 0;
+  color: #06101b;
+  background: linear-gradient(135deg, var(--home-emerald), var(--home-cyan));
+  border: 0;
+}
+
+.pulse-home-os .pulse-radio-control span {
+  font-size: 0;
+}
+
+.pulse-home-os .pulse-radio-control span::before {
+  content: "";
+  display: block;
+  width: 0;
+  height: 0;
+  margin-left: 3px;
+  border-left: 11px solid #06101b;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+}
+
+.pulse-home-os .pulse-radio-player.is-playing .pulse-radio-control span::before {
+  width: 13px;
+  height: 16px;
+  margin-left: 0;
+  border: 0;
+  background: linear-gradient(90deg, #06101b 0 36%, transparent 36% 62%, #06101b 62% 100%);
+}
+
+.pulse-home-os .pulse-radio-track {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.pulse-home-os .pulse-radio-track strong,
+.pulse-home-os .pulse-radio-track small {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pulse-home-os .pulse-radio-track small {
+  color: rgba(204, 224, 232, .68);
+}
+
+.pulse-home-os .pulse-radio-next,
+.pulse-home-os .pulse-radio-library {
+  min-height: 38px;
+  border-radius: 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  color: #dffcff;
+  background: rgba(255, 255, 255, .045);
+  text-decoration: none;
+  font-weight: 900;
+}
+
 .pulse-home-os .pulse-network-globe-stage {
   height: 300px;
 }
@@ -1598,6 +1753,28 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   .pulse-home-os .pulse-network-metrics span {
     min-width: 0;
   }
+
+  .pulse-home-os .pulse-radio-launch {
+    top: 8px;
+    right: 8px;
+    min-height: 38px;
+    padding: 7px;
+  }
+
+  .pulse-home-os .pulse-radio-launch span:not(.pulse-radio-launch-orb) {
+    display: none;
+  }
+
+  .pulse-home-os .pulse-radio-player {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    width: calc(100vw - 22px);
+    bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+    border-radius: 16px;
+  }
+
+  .pulse-home-os .pulse-radio-library {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce), (prefers-reduced-data: reduce) {
@@ -1621,5 +1798,9 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   .pulse-home-os .pulse-network-arc,
   .pulse-home-os .pulse-network-radar {
     opacity: .35;
+  }
+
+  .pulse-home-os .pulse-radio-launch.is-playing .pulse-radio-launch-orb {
+    animation: none !important;
   }
 }

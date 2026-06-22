@@ -48,16 +48,22 @@ def main() -> int:
     source = (ROOT / "bot.py").read_text(encoding="utf-8")
     css_path = ROOT / "static/css/pulse_home_os.css"
     js_path = ROOT / "static/js/pulse_environment_engine.js"
+    radio_js_path = ROOT / "static/js/pulse_radio.js"
     require(css_path.exists(), "Home OS stylesheet exists")
     require(js_path.exists(), "Galactic city runtime exists")
+    require(radio_js_path.exists(), "Pulse Radio runtime exists")
     css = css_path.read_text(encoding="utf-8")
     js = js_path.read_text(encoding="utf-8")
+    radio_js = radio_js_path.read_text(encoding="utf-8")
 
     for token in [
         "pulse_home_os.css?v=pulse-home-os-20260621a",
         "pulse_environment_engine.js?v=galactic-city-20260621a",
+        "pulse_radio.js?v=pulse-radio-20260621a",
         "request.path == '/pulse'",
         "pulse-network-feature",
+        "data-pulse-radio-toggle",
+        "data-pulse-radio-player",
         "home-intel-overview",
         "home-intel-trending",
         "home-intel-live",
@@ -77,6 +83,9 @@ def main() -> int:
         "body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card",
         "display: none !important",
         ".pulse-home-os .pulse-network-globe-card",
+        ".pulse-home-os .pulse-radio-launch",
+        ".pulse-home-os .pulse-radio-player",
+        "@keyframes pulseRadioOrb",
         "height: 342px",
         ".pulse-home-os .pulse-action-card-grid",
         ".pulse-home-os .feed > .post-card-modern",
@@ -105,6 +114,17 @@ def main() -> int:
     ]:
         require(token in js, f"Galactic city runtime contains {token}")
 
+    for token in [
+        "/api/pulse/music/search?lane=trending&limit=24",
+        "data-pulse-radio-audio",
+        "navigator.mediaSession",
+        "new MediaMetadata",
+        "pulse_radio",
+        "/api/pulse/music/",
+        "visibilitychange",
+    ]:
+        require(token in radio_js, f"Pulse Radio runtime contains {token}")
+
     client = bot.webhook_app.test_client()
     with client.session_transaction() as session:
         session["account_user_id"] = ensure_user()
@@ -115,6 +135,8 @@ def main() -> int:
     require('class="pulse-home-os"' in home_html, "Home route receives Home OS scope")
     require("pulse_home_os.css?v=pulse-home-os-20260621a" in home_html, "Home loads cache-busted Home OS CSS")
     require("pulse_environment_engine.js?v=galactic-city-20260621a" in home_html, "Home loads cache-busted galactic city runtime")
+    require("pulse_radio.js?v=pulse-radio-20260621a" in home_html, "Home loads cache-busted Pulse Radio runtime")
+    require("data-pulse-radio-toggle" in home_html and "data-pulse-radio-player" in home_html, "Home renders Pulse Radio controls")
     for token in ["/pulse/live", "/scam-shield", "/pulse/premium/intelligence", "id=\"pulseComposer\"", "id=\"feed\""]:
         require(token in home_html, f"Home workflow remains wired: {token}")
 
