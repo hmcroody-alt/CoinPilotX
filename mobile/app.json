@@ -3,7 +3,7 @@
     "name": "PulseSoc",
     "slug": "pulsesoc",
     "scheme": "pulse",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",
@@ -16,8 +16,9 @@
       "backgroundColor": "#06111f"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.pulsesoc.app",
+      "buildNumber": "27",
       "googleServicesFile": "./credentials/firebase/GoogleService-Info.plist",
       "associatedDomains": [
         "applinks:pulsesoc.com",

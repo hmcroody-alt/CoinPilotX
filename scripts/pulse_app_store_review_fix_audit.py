@@ -49,8 +49,9 @@ def main():
         '@webhook_app.route("/api/pulse/block"',
         "INSERT INTO blocked_users",
         "INSERT INTO pulse_reports",
-        "Premium purchases are not available in this iOS build",
+        "Paid digital access is not available in this iOS build",
         "External billing management is not available in this iOS build",
+        "ios_paid_digital_unavailable_response(api=True)",
     ]:
         require(bot, token, "bot.py", failures)
 

@@ -10,8 +10,8 @@ Apple and Google may require in-app purchase for digital features, subscriptions
 
 - Do not present Stripe checkout, external billing links, or paid digital purchase prompts inside the iOS native production build.
 - Hide or disable mobile Premium purchase surfaces in native iOS context until Apple in-app purchase products are implemented and approved.
-- Keep entitlement enforcement server-side for existing accounts, but do not sell or link to paid digital content from the iOS app until IAP is ready.
-- Use web billing management for existing subscribers only if policy allows.
+- Keep entitlement enforcement server-side, but do not expose externally purchased paid digital benefits inside the iOS app until IAP is ready.
+- Do not show web billing management for existing subscribers inside the iOS native build unless Apple policy review explicitly allows it.
 - Prepare an in-app purchase implementation plan for PulseSoc Premium and Founder-equivalent benefits if required.
 
 ## Required Before Production Submission
@@ -24,6 +24,7 @@ Apple and Google may require in-app purchase for digital features, subscriptions
 
 ## App Store Review 1.0 Fix
 
-- iOS native checkout is blocked server-side for `/upgrade`, checkout session APIs, founder activation APIs, and `/pulse/premium`.
+- iOS native checkout is blocked server-side for `/upgrade`, checkout session APIs, founder activation APIs, creator/marketplace/course checkout APIs, billing portal APIs, and `/pulse/premium`.
+- Premium Intelligence, Premium Portfolio, UNDX Premium, and premium-only appearance APIs return an iOS paid-digital unavailable response inside the native iOS app.
 - The iOS native build must not be resubmitted with paid digital content available unless matching Apple IAP products are available in the app.
 - If Premium is reintroduced in iOS, it must use StoreKit purchase and restore flows with receipt validation before App Review.

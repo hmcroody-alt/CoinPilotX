@@ -42,7 +42,7 @@ CoinPilotXAI Inc.
 
 ## Review Notes
 
-This update addresses App Review Guideline 4, Guideline 1.2, and Guideline 3.1.1 feedback from PulseSoc iOS version 1.0 review.
+This update addresses App Review Guideline 4, Guideline 5.1.1(v), Guideline 3.1.1, Guideline 2.1(a), and Guideline 1.2 feedback from PulseSoc iOS version 1.0 review.
 
 PulseSoc includes user-generated posts, media, comments, messages, notifications, profiles, statuses, marketplace/community surfaces, and live/video surfaces.
 
@@ -54,11 +54,22 @@ User-generated content safety:
 
 Premium and payments:
 - The iOS native build does not present Stripe checkout or external billing for paid digital content.
-- Premium purchase surfaces are disabled in native iOS context until Apple in-app purchase products are implemented and approved.
+- Premium purchase surfaces are disabled in native iOS context.
+- Premium purchase, Founder activation, billing portal, creator checkout, marketplace checkout, course checkout, Premium Intelligence, Premium Portfolio, UNDX Premium, and premium-only appearance APIs are disabled in native iOS context until Apple in-app purchase products are implemented and approved.
+- Existing web subscriptions do not unlock paid digital premium surfaces inside this iOS build.
 
 Device support:
 - The next review build is iPhone-only. iPad support is disabled until a dedicated iPad layout passes QA for all supported iPad screen sizes.
 
+Account deletion:
+- Users can initiate permanent account deletion inside the app from PulseSoc Settings > Account > Delete my account.
+- The deletion screen requires password confirmation and explicit acknowledgement that deletion is permanent.
+- The direct authenticated deletion path is `/account/delete`.
+
+Responsive/tappable controls:
+- The submitted build uses the native WebView user agent `PulseSocNativeApp/1.0` so server-side App Store compliance gates apply consistently.
+- The auth/account screens include an iPad-width breakpoint to prevent left-cropped layouts if Apple tests on iPad hardware, while the app configuration remains iPhone-only.
+
 App Review Information required before resubmission:
 - Add valid demo login credentials in App Store Connect.
-- Attach a physical-device screen recording showing the Terms/EULA before signup/login, the Report action, and the Block action.
+- Attach a physical-device screen recording showing the Terms/EULA before signup/login, the Report action, the Block action, and the account deletion path from Settings > Account > Delete my account.
