@@ -47,11 +47,15 @@ def main() -> int:
     bot.init_db()
     source = (ROOT / "bot.py").read_text(encoding="utf-8")
     css_path = ROOT / "static/css/pulse_home_os.css"
+    js_path = ROOT / "static/js/pulse_environment_engine.js"
     require(css_path.exists(), "Home OS stylesheet exists")
+    require(js_path.exists(), "Galactic city runtime exists")
     css = css_path.read_text(encoding="utf-8")
+    js = js_path.read_text(encoding="utf-8")
 
     for token in [
-        "pulse_home_os.css?v=pulse-home-os-20260619k",
+        "pulse_home_os.css?v=pulse-home-os-20260621a",
+        "pulse_environment_engine.js?v=galactic-city-20260621a",
         "request.path == '/pulse'",
         "pulse-network-feature",
         "home-intel-overview",
@@ -63,6 +67,12 @@ def main() -> int:
 
     for token in [
         "body.pulse-home-os",
+        ".pulse-home-os .pulse-environment-engine",
+        ".pulse-home-os .pulse-city-district-left",
+        ".pulse-home-os .pulse-city-district-right",
+        ".pulse-home-os .pulse-city-vehicle",
+        ".pulse-home-os .pulse-city-billboard",
+        "@keyframes pulseCityVehicle",
         ".pulse-home-os .pulse-desktop-layout",
         "body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card",
         "display: none !important",
@@ -83,6 +93,18 @@ def main() -> int:
     ]:
         require(token in css, f"Home OS CSS contains {token}")
 
+    for token in [
+        "data-pulse-environment",
+        "pulse-city-district-left",
+        "pulse-city-district-right",
+        "pulse-city-vehicle",
+        "pulse-city-billboard",
+        "visibilitychange",
+        "prefers-reduced-motion: reduce",
+        "navigator.connection",
+    ]:
+        require(token in js, f"Galactic city runtime contains {token}")
+
     client = bot.webhook_app.test_client()
     with client.session_transaction() as session:
         session["account_user_id"] = ensure_user()
@@ -91,7 +113,8 @@ def main() -> int:
     home_html = home.get_data(as_text=True)
     require(home.status_code == 200, "Home route loads", str(home.status_code))
     require('class="pulse-home-os"' in home_html, "Home route receives Home OS scope")
-    require("pulse_home_os.css?v=pulse-home-os-20260619k" in home_html, "Home loads cache-busted Home OS CSS")
+    require("pulse_home_os.css?v=pulse-home-os-20260621a" in home_html, "Home loads cache-busted Home OS CSS")
+    require("pulse_environment_engine.js?v=galactic-city-20260621a" in home_html, "Home loads cache-busted galactic city runtime")
     for token in ["/pulse/live", "/scam-shield", "/pulse/premium/intelligence", "id=\"pulseComposer\"", "id=\"feed\""]:
         require(token in home_html, f"Home workflow remains wired: {token}")
 

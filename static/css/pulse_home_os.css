@@ -29,7 +29,300 @@ body.pulse-home-os::before {
 }
 
 .pulse-home-os .pulse-environment-engine {
-  display: none;
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  contain: layout paint style;
+  background:
+    radial-gradient(circle at var(--pulse-env-x, 50%) var(--pulse-env-y, 16%), rgba(83, 224, 245, .12), transparent 24rem),
+    radial-gradient(circle at 82% 12%, rgba(155, 92, 255, .14), transparent 26rem),
+    radial-gradient(circle at 16% 70%, rgba(49, 230, 161, .08), transparent 25rem);
+}
+
+.pulse-home-os .pulse-desktop-topbar,
+.pulse-home-os .pulse-shell,
+.pulse-home-os .mobile-bottom-nav,
+.pulse-home-os .pulse-fab,
+.pulse-home-os .create-sheet,
+.pulse-home-os .pulse-search-overlay,
+.pulse-home-os .pulse-status-story-viewer,
+.pulse-home-os .pulse-media-lightbox,
+.pulse-home-os .toast {
+  position: relative;
+  z-index: 2;
+}
+
+.pulse-home-os .pulse-environment-engine,
+.pulse-home-os .pulse-environment-engine * {
+  user-select: none;
+}
+
+.pulse-home-os .pulse-city-deep,
+.pulse-home-os .pulse-city-district,
+.pulse-home-os .pulse-city-highway,
+.pulse-home-os .pulse-city-traffic,
+.pulse-home-os .pulse-city-holograms {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  will-change: transform, opacity;
+}
+
+.pulse-home-os .pulse-city-deep {
+  opacity: .78;
+  transform: translate3d(calc((var(--pulse-city-x, 50) - 50) * -.035vw), calc(var(--pulse-city-scroll, 0) * -.08px), 0);
+}
+
+.pulse-home-os .pulse-city-starfield {
+  position: absolute;
+  inset: -12% -8%;
+  opacity: .36;
+  background-image:
+    radial-gradient(circle, rgba(255, 255, 255, .8) 0 1px, transparent 1.6px),
+    radial-gradient(circle, rgba(83, 224, 245, .66) 0 1px, transparent 1.6px),
+    radial-gradient(circle, rgba(155, 102, 255, .5) 0 1px, transparent 1.4px);
+  background-size: 96px 88px, 142px 130px, 210px 180px;
+  animation: pulseCityStars 120s linear infinite;
+}
+
+.pulse-home-os .pulse-city-planet,
+.pulse-home-os .pulse-city-moon {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(.1px);
+  opacity: .55;
+  box-shadow: inset -26px -22px 56px rgba(0, 0, 0, .56), 0 0 70px rgba(83, 224, 245, .15);
+}
+
+.pulse-home-os .pulse-city-planet {
+  width: clamp(180px, 16vw, 330px);
+  height: clamp(180px, 16vw, 330px);
+  right: 5vw;
+  top: 10vh;
+  background:
+    radial-gradient(circle at 33% 28%, rgba(110, 223, 246, .75), transparent 10%),
+    linear-gradient(145deg, rgba(28, 63, 99, .42), rgba(12, 13, 50, .18));
+}
+
+.pulse-home-os .pulse-city-moon {
+  width: clamp(60px, 6vw, 126px);
+  height: clamp(60px, 6vw, 126px);
+  left: 11vw;
+  top: 18vh;
+  background: linear-gradient(145deg, rgba(255, 209, 102, .5), rgba(155, 102, 255, .18));
+  opacity: .38;
+}
+
+.pulse-home-os .pulse-city-district {
+  top: 76px;
+  bottom: 0;
+  opacity: .86;
+  transform: translate3d(calc((var(--pulse-city-x, 50) - 50) * -.018vw), calc(var(--pulse-city-scroll, 0) * -.18px), 0);
+}
+
+.pulse-home-os .pulse-city-district-left {
+  right: calc(50vw + min(34vw, 570px));
+  left: 0;
+}
+
+.pulse-home-os .pulse-city-district-right {
+  left: calc(50vw + min(34vw, 570px));
+  right: 0;
+  transform: translate3d(calc((var(--pulse-city-x, 50) - 50) * .018vw), calc(var(--pulse-city-scroll, 0) * -.18px), 0);
+}
+
+.pulse-home-os .pulse-city-tower {
+  position: absolute;
+  bottom: -2vh;
+  width: clamp(62px, 5.8vw, 132px);
+  border: 1px solid rgba(83, 224, 245, .08);
+  border-bottom: 0;
+  border-radius: 26px 26px 4px 4px;
+  background:
+    repeating-linear-gradient(180deg, rgba(83, 224, 245, .12) 0 1px, transparent 1px 18px),
+    linear-gradient(180deg, rgba(16, 42, 64, .34), rgba(3, 8, 14, .88));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 0 34px rgba(83, 224, 245, .08);
+  opacity: .7;
+}
+
+.pulse-home-os .pulse-city-tower::before,
+.pulse-home-os .pulse-city-tower::after {
+  content: "";
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(83, 224, 245, .6), transparent);
+  box-shadow: 0 0 14px rgba(83, 224, 245, .42);
+  animation: pulseCityTowerScan 7s linear infinite;
+}
+
+.pulse-home-os .pulse-city-tower::after {
+  animation-delay: -3.5s;
+  background: linear-gradient(90deg, transparent, rgba(49, 230, 161, .58), transparent);
+}
+
+.pulse-home-os .tower-a { height: 56vh; left: 8%; }
+.pulse-home-os .tower-b { height: 72vh; left: 38%; width: clamp(84px, 7vw, 164px); opacity: .58; }
+.pulse-home-os .tower-c { height: 48vh; right: 8%; }
+.pulse-home-os .tower-d { height: 64vh; right: 9%; }
+.pulse-home-os .tower-e { height: 78vh; right: 39%; width: clamp(86px, 7.2vw, 172px); opacity: .6; }
+.pulse-home-os .tower-f { height: 52vh; left: 8%; }
+
+.pulse-home-os .pulse-city-billboard {
+  position: absolute;
+  display: inline-grid;
+  place-items: center;
+  min-width: 88px;
+  min-height: 32px;
+  border: 1px solid rgba(83, 224, 245, .2);
+  border-radius: 10px;
+  padding: 6px 10px;
+  color: rgba(220, 255, 255, .9);
+  background: rgba(5, 16, 29, .44);
+  box-shadow: 0 0 22px rgba(83, 224, 245, .12), inset 0 0 18px rgba(83, 224, 245, .05);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  opacity: .68;
+  animation: pulseCityBillboard 5s ease-in-out infinite;
+}
+
+.pulse-home-os .billboard-live { right: 11%; top: 20%; color: #ffd6dd; border-color: rgba(255, 78, 104, .28); }
+.pulse-home-os .billboard-trend { left: 18%; top: 42%; }
+.pulse-home-os .billboard-ai { left: 10%; top: 23%; color: #eee8ff; border-color: rgba(155, 102, 255, .28); }
+.pulse-home-os .billboard-market { right: 18%; top: 46%; color: #fff0c2; border-color: rgba(255, 209, 102, .25); }
+
+.pulse-home-os .pulse-city-highway {
+  opacity: .34;
+  transform: translate3d(0, calc(var(--pulse-city-scroll, 0) * -.55px), 0);
+}
+
+.pulse-home-os .pulse-city-highway::before,
+.pulse-home-os .pulse-city-highway::after {
+  content: "";
+  position: absolute;
+  top: 75px;
+  bottom: -10%;
+  width: clamp(420px, 48vw, 900px);
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.pulse-home-os .pulse-city-highway::before {
+  background:
+    linear-gradient(90deg, transparent, rgba(83, 224, 245, .11), transparent),
+    repeating-linear-gradient(180deg, transparent 0 44px, rgba(83, 224, 245, .08) 45px 46px, transparent 47px 92px);
+  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+}
+
+.pulse-home-os .pulse-city-highway::after {
+  border-left: 1px solid rgba(83, 224, 245, .08);
+  border-right: 1px solid rgba(155, 102, 255, .07);
+  box-shadow: inset 0 0 46px rgba(83, 224, 245, .045);
+}
+
+.pulse-home-os .pulse-highway-line {
+  position: absolute;
+  left: 50%;
+  top: 78px;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(83, 224, 245, .22), transparent);
+  opacity: .62;
+}
+
+.pulse-home-os .line-a { transform: translateX(-310px); }
+.pulse-home-os .line-b { transform: translateX(0); opacity: .28; }
+.pulse-home-os .line-c { transform: translateX(310px); }
+
+.pulse-home-os .pulse-city-traffic {
+  opacity: .78;
+  transform: translate3d(calc((var(--pulse-city-x, 50) - 50) * .012vw), 0, 0);
+}
+
+.pulse-home-os .pulse-city-vehicle {
+  position: absolute;
+  width: 42px;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, #6edff6 24%, #36e58f 72%, transparent);
+  box-shadow: 0 0 16px rgba(83, 224, 245, .6), 0 0 34px rgba(49, 230, 161, .24);
+  opacity: .72;
+  animation: pulseCityVehicle 18s linear infinite;
+}
+
+.pulse-home-os .vehicle-a { left: -5vw; top: 22vh; animation-duration: 22s; }
+.pulse-home-os .vehicle-b { left: -8vw; top: 58vh; animation-delay: -8s; animation-duration: 30s; opacity: .52; }
+.pulse-home-os .vehicle-c { right: -5vw; top: 34vh; animation-name: pulseCityVehicleReverse; animation-delay: -4s; animation-duration: 26s; background: linear-gradient(90deg, transparent, #ff4e68 30%, #9b66ff 72%, transparent); }
+.pulse-home-os .vehicle-d { right: -8vw; top: 72vh; animation-name: pulseCityVehicleReverse; animation-delay: -12s; animation-duration: 34s; opacity: .48; }
+
+.pulse-home-os .pulse-city-holograms {
+  opacity: .5;
+  transform: translate3d(calc((var(--pulse-city-x, 50) - 50) * -.008vw), calc(var(--pulse-city-scroll, 0) * -.34px), 0);
+}
+
+.pulse-home-os .pulse-city-holo {
+  position: absolute;
+  border: 1px solid rgba(83, 224, 245, .14);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(83, 224, 245, .13), transparent 60%);
+  box-shadow: inset 0 0 24px rgba(83, 224, 245, .08), 0 0 24px rgba(83, 224, 245, .07);
+  animation: pulseCityHolo 11s ease-in-out infinite;
+}
+
+.pulse-home-os .holo-a { width: 160px; height: 58px; left: 6vw; top: 44vh; transform: rotate(-18deg); }
+.pulse-home-os .holo-b { width: 190px; height: 70px; right: 7vw; top: 31vh; transform: rotate(14deg); animation-delay: -4s; }
+.pulse-home-os .holo-c { width: 120px; height: 44px; right: 14vw; bottom: 14vh; transform: rotate(-8deg); animation-delay: -7s; }
+
+.pulse-home-os .pulse-environment-engine.has-live-energy .billboard-live,
+.pulse-home-os .pulse-environment-engine.has-alert-energy .billboard-ai {
+  opacity: .95;
+  box-shadow: 0 0 32px rgba(255, 78, 104, .18), inset 0 0 20px rgba(255, 78, 104, .08);
+}
+
+.pulse-home-os .pulse-environment-engine.is-paused *,
+.pulse-home-os .pulse-environment-engine.is-reduced * {
+  animation-play-state: paused !important;
+}
+
+@keyframes pulseCityStars {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-96px, 88px, 0); }
+}
+
+@keyframes pulseCityTowerScan {
+  from { top: 6%; opacity: .15; }
+  15%, 55% { opacity: .75; }
+  to { top: 92%; opacity: .08; }
+}
+
+@keyframes pulseCityBillboard {
+  0%, 100% { transform: translate3d(0, 0, 0); opacity: .48; }
+  50% { transform: translate3d(0, -4px, 0); opacity: .82; }
+}
+
+@keyframes pulseCityVehicle {
+  from { transform: translate3d(-8vw, 0, 0) scale(.72); }
+  50% { transform: translate3d(55vw, -4vh, 0) scale(1); }
+  to { transform: translate3d(112vw, 2vh, 0) scale(.78); }
+}
+
+@keyframes pulseCityVehicleReverse {
+  from { transform: translate3d(8vw, 0, 0) scale(.72); }
+  50% { transform: translate3d(-55vw, 3vh, 0) scale(1); }
+  to { transform: translate3d(-112vw, -2vh, 0) scale(.78); }
+}
+
+@keyframes pulseCityHolo {
+  0%, 100% { opacity: .25; filter: blur(.2px); }
+  50% { opacity: .7; filter: blur(0); }
 }
 
 .pulse-home-os .pulse-desktop-topbar {
@@ -909,6 +1202,20 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
 }
 
 @media (max-width: 1180px) {
+  .pulse-home-os .pulse-city-district,
+  .pulse-home-os .pulse-city-billboard,
+  .pulse-home-os .pulse-city-holograms {
+    opacity: .38;
+  }
+
+  .pulse-home-os .pulse-city-district-left {
+    right: 72vw;
+  }
+
+  .pulse-home-os .pulse-city-district-right {
+    left: 72vw;
+  }
+
   .pulse-home-os .pulse-desktop-topbar {
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 8px;
@@ -960,6 +1267,26 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
 @media (max-width: 900px) {
   body.pulse-home-os {
     background: #02060c;
+  }
+
+  .pulse-home-os .pulse-environment-engine {
+    background:
+      radial-gradient(circle at var(--pulse-env-x, 50%) 8%, rgba(83, 224, 245, .1), transparent 15rem),
+      radial-gradient(circle at 84% 18%, rgba(155, 102, 255, .1), transparent 16rem);
+  }
+
+  .pulse-home-os .pulse-city-district,
+  .pulse-home-os .pulse-city-highway,
+  .pulse-home-os .pulse-city-traffic,
+  .pulse-home-os .pulse-city-holograms,
+  .pulse-home-os .pulse-city-planet,
+  .pulse-home-os .pulse-city-moon {
+    display: none;
+  }
+
+  .pulse-home-os .pulse-city-starfield {
+    opacity: .2;
+    animation-duration: 180s;
   }
 
   .pulse-home-os .pulse-shell {
@@ -1279,6 +1606,17 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
 }
 
 @media (prefers-reduced-motion: reduce), (prefers-reduced-data: reduce) {
+  .pulse-home-os .pulse-city-traffic,
+  .pulse-home-os .pulse-city-holograms {
+    display: none;
+  }
+
+  .pulse-home-os .pulse-city-billboard,
+  .pulse-home-os .pulse-city-tower,
+  .pulse-home-os .pulse-city-starfield {
+    animation: none !important;
+  }
+
   .pulse-home-os .pulse-network-globe-card,
   .pulse-home-os .pulse-network-globe-card * {
     animation-duration: .001ms !important;
