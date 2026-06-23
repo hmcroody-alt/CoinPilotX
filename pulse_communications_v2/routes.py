@@ -121,6 +121,19 @@ def _sse_response(generator):
     return response
 
 
+def _main_app_sse_allowed() -> bool:
+    """Keep long-lived browser streams off the main web workers by default."""
+    return os.getenv("PULSE_MAIN_APP_SSE_ALLOWED", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _polling_fallback_response(reason: str = "main_app_worker_protection"):
+    response = Response(status=204)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["X-Pulse-Realtime-Transport"] = "polling"
+    response.headers["X-Pulse-SSE-Disabled-Reason"] = reason
+    return response
+
+
 @comm_v2_blueprint.get(f"{API_PREFIX}/diagnostics")
 def diagnostics():
     admin = _current_admin()
@@ -135,11 +148,10 @@ def realtime_stream():
     user, denied = _require_user()
     if denied:
         return denied
+    if not _main_app_sse_allowed():
+        return _polling_fallback_response()
     if os.getenv("PULSE_COMM_V2_SSE_ENABLED", "").strip().lower() not in {"1", "true", "yes", "on"}:
-        response = Response(status=204)
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        response.headers["X-Pulse-Realtime-Transport"] = "polling"
-        return response
+        return _polling_fallback_response("sse_flag_disabled")
     args = dict(request.args)
 
     def generate():

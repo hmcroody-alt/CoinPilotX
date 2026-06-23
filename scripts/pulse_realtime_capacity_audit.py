@@ -13,8 +13,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 os.environ.setdefault("PULSE_COMMUNICATIONS_V2_ENABLED", "true")
-os.environ.pop("PULSE_COMM_V2_SSE_ENABLED", None)
+os.environ["PULSE_COMM_V2_SSE_ENABLED"] = "true"
+os.environ["PULSE_LEGACY_SSE_ENABLED"] = "true"
 os.environ.pop("ARENA_SSE_ENABLED", None)
+os.environ.pop("PULSE_MAIN_APP_SSE_ALLOWED", None)
 
 import bot  # noqa: E402
 
@@ -47,8 +49,14 @@ def main() -> None:
         session["account_user_id"] = USER_ID
 
     comm_stream = client.get("/api/pulse/communications/v2/realtime/stream")
-    expect(comm_stream.status_code == 204, "Communications SSE is disabled by default on web workers")
+    expect(comm_stream.status_code == 204, "Communications SSE is disabled on main web workers even if legacy flag is enabled")
     expect(comm_stream.headers.get("X-Pulse-Realtime-Transport") == "polling", "Communications stream advertises polling fallback")
+    expect(comm_stream.headers.get("X-Pulse-SSE-Disabled-Reason") == "main_app_worker_protection", "Communications stream explains main app protection")
+
+    legacy_stream = client.get("/api/pulse/live/stream")
+    expect(legacy_stream.status_code == 204, "Legacy Pulse SSE is disabled on main web workers even if legacy flag is enabled")
+    expect(legacy_stream.headers.get("X-Pulse-Realtime-Transport") == "polling", "Legacy stream advertises polling fallback")
+    expect(legacy_stream.headers.get("X-Pulse-SSE-Disabled-Reason") == "main_app_worker_protection", "Legacy stream explains main app protection")
 
     arena_stream = client.get("/api/arena/realtime/match/1/stream")
     expect(arena_stream.status_code == 204, "Arena SSE is disabled by default on web workers")
