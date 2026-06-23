@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import random
 import sqlite3
 from typing import Iterable
 
@@ -366,6 +367,28 @@ def trending_tracks(limit: int = 10) -> list[dict]:
         track["momentum_score"] = max(10, 100 - index * 9)
         track["usage_hint"] = "Approved for Status, Reels, Videos, and Posts."
     return tracks
+
+
+def radio_tracks(limit: int = 240) -> list[dict]:
+    """Return a shuffled, playable Pulse Radio catalog.
+
+    Pulse Radio must reflect the approved music pool automatically. It uses the
+    same creator-safe visibility rules as content attachment, but avoids
+    popularity/order bias so newly approved tracks can surface in playback.
+    """
+    max_items = max(1, min(int(limit or 240), 1000))
+    tracks = [
+        dict(track)
+        for track in _catalog_tracks()
+        if _safe_track(track) and _playable_track(track)
+    ][:1000]
+    rng = random.SystemRandom()
+    rng.shuffle(tracks)
+    for track in tracks:
+        track["is_creator_safe"] = True
+        track["radio_ready"] = True
+        track["usage_hint"] = "Shuffled from the approved PulseSoc Music pool."
+    return tracks[:max_items]
 
 
 def public_track(track_id: str) -> dict:

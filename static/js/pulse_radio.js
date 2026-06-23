@@ -11,6 +11,7 @@
     playing: false,
     index: -1,
     tracks: [],
+    playHistory: [],
     failedTracks: new Set(),
     lastEventKey: "",
   };
@@ -62,17 +63,36 @@
     };
   }
 
+  function shuffleTracks(tracks) {
+    const copy = [...(tracks || [])];
+    const secureCrypto = window.crypto || window.msCrypto;
+    if (secureCrypto?.getRandomValues) {
+      for (let index = copy.length - 1; index > 0; index -= 1) {
+        const random = new Uint32Array(1);
+        secureCrypto.getRandomValues(random);
+        const swap = random[0] % (index + 1);
+        [copy[index], copy[swap]] = [copy[swap], copy[index]];
+      }
+      return copy;
+    }
+    for (let index = copy.length - 1; index > 0; index -= 1) {
+      const swap = Math.floor(Math.random() * (index + 1));
+      [copy[index], copy[swap]] = [copy[swap], copy[index]];
+    }
+    return copy;
+  }
+
   async function loadTracks() {
     if (state.tracks.length || state.loading) return state.tracks;
     state.loading = true;
     player.removeAttribute("hidden");
     setPlayerText("Pulse Radio", "Loading approved PulseSoc sounds...");
     try {
-      const data = await api("/api/pulse/music/search?lane=trending&limit=24", { timeoutMs: 9000 });
-      state.tracks = (data.items || [])
+      const data = await api("/api/pulse/music/radio?limit=80", { timeoutMs: 9000 });
+      state.tracks = shuffleTracks((data.items || [])
         .map(normalizeTrack)
         .filter(track => track.id && track.audio_url)
-        .slice(0, 24);
+        .slice(0, 80));
       if (!state.tracks.length) throw new Error("No playable approved PulseSoc tracks are available yet.");
       return state.tracks;
     } finally {
@@ -137,11 +157,20 @@
   async function prepareTrack(index) {
     await loadTracks();
     if (!state.tracks.length) return null;
+    if (state.index >= state.tracks.length - 1 && state.playHistory.length >= state.tracks.length - state.failedTracks.size) {
+      const currentId = currentTrack()?.id || "";
+      state.tracks = shuffleTracks(state.tracks);
+      if (state.tracks.length > 1 && String(state.tracks[0]?.id || "") === String(currentId)) {
+        state.tracks.push(state.tracks.shift());
+      }
+      state.playHistory = [];
+      index = 0;
+    }
     let nextIndex = ((index % state.tracks.length) + state.tracks.length) % state.tracks.length;
     for (let attempts = 0; attempts < state.tracks.length; attempts += 1) {
       const candidate = state.tracks[nextIndex];
       if (candidate && !state.failedTracks.has(String(candidate.id))) break;
-      nextIndex = (nextIndex + 1) % state.tracks.length;
+      nextIndex = (nextIndex + 1 + Math.floor(Math.random() * Math.max(1, state.tracks.length - 1))) % state.tracks.length;
     }
     state.index = nextIndex;
     const track = currentTrack();
@@ -150,6 +179,8 @@
     }
     audio.src = track.audio_url;
     audio.dataset.trackId = String(track.id);
+    state.playHistory.push(String(track.id));
+    if (state.playHistory.length > state.tracks.length) state.playHistory.shift();
     audio.load();
     updateMediaSession(track);
     syncUi();

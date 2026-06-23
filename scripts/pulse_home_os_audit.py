@@ -59,7 +59,7 @@ def main() -> int:
     for token in [
         "pulse_home_os.css?v=pulse-home-os-20260622a",
         "pulse_environment_engine.js?v=galactic-city-20260621a",
-        "pulse_radio.js?v=pulse-radio-20260621a",
+        "pulse_radio.js?v=pulse-radio-20260623a",
         "request.path == '/pulse'",
         "pulse-network-feature",
         "data-pulse-radio-toggle",
@@ -84,6 +84,7 @@ def main() -> int:
         "display: none !important",
         ".pulse-home-os .pulse-network-globe-card",
         ".pulse-home-os .pulse-radio-launch",
+        ".pulse-home-os .pulse-radio-launch-label",
         ".pulse-home-os .pulse-radio-player",
         "--pulse-mobile-nav-height",
         ".pulse-home-os .mobile-bottom-nav",
@@ -119,7 +120,9 @@ def main() -> int:
         require(token in js, f"Galactic city runtime contains {token}")
 
     for token in [
-        "/api/pulse/music/search?lane=trending&limit=24",
+        "/api/pulse/music/radio?limit=80",
+        "shuffleTracks",
+        "playHistory",
         "data-pulse-radio-audio",
         "navigator.mediaSession",
         "new MediaMetadata",
@@ -139,8 +142,9 @@ def main() -> int:
     require('class="pulse-home-os"' in home_html, "Home route receives Home OS scope")
     require("pulse_home_os.css?v=pulse-home-os-20260622a" in home_html, "Home loads cache-busted Home OS CSS")
     require("pulse_environment_engine.js?v=galactic-city-20260621a" in home_html, "Home loads cache-busted galactic city runtime")
-    require("pulse_radio.js?v=pulse-radio-20260621a" in home_html, "Home loads cache-busted Pulse Radio runtime")
+    require("pulse_radio.js?v=pulse-radio-20260623a" in home_html, "Home loads cache-busted Pulse Radio runtime")
     require("data-pulse-radio-toggle" in home_html and "data-pulse-radio-player" in home_html, "Home renders Pulse Radio controls")
+    require("pulse-radio-launch-label" in home_html and "Pulse Radio" in home_html, "Home renders visible Pulse Radio launch label")
     for token in ["/pulse/live", "/scam-shield", "/pulse/premium/intelligence", "id=\"pulseComposer\"", "id=\"feed\""]:
         require(token in home_html, f"Home workflow remains wired: {token}")
 

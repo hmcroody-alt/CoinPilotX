@@ -49,6 +49,8 @@ def main():
         ("adoptIncomingReelMusic", "Reels page consumes music handoff"),
         ("pulseStatusPendingMusicTrackId", "library can hand off music to Status"),
         ("adoptIncomingStatusMusic", "Status creator consumes music handoff"),
+        ('@webhook_app.route("/api/pulse/music/radio"', "Pulse Radio approved-pool endpoint exists"),
+        ("music_service.radio_tracks", "Pulse Radio uses the approved music service pool"),
         ("pulseVideoPendingMusicLabel", "video composer preserves selected music label"),
         ("soundUploadRights", "Reels upload confirms rights"),
         ("rights_confirmed", "rights acceptance is stored"),
@@ -60,6 +62,9 @@ def main():
         ("cover_art_url", "music catalog exposes cover art"),
         ("public_track", "single-track public payload helper exists"),
         ("artist_user_id", "artist ownership is exposed"),
+        ("def radio_tracks(", "Pulse Radio approved-pool helper exists"),
+        ("random.SystemRandom", "Pulse Radio server shuffle is enabled"),
+        ("_safe_track(track) and _playable_track(track)", "Pulse Radio only returns safe playable tracks"),
     ]:
         require(token in service, label)
 
@@ -90,6 +95,16 @@ def main():
     require(tracks, "catalog returns launch-safe music")
     require(all(track.get("is_creator_safe") for track in tracks), "catalog only returns creator-safe tracks")
     require(music_service.attach_music_payload(tracks[0]["id"]).get("track_id"), "music can be prepared for content attachment")
+    radio_tracks = music_service.radio_tracks(limit=40)
+    require(radio_tracks, "Pulse Radio returns approved playable music")
+    require(
+        all(track.get("is_creator_safe") and track.get("audio_url") for track in radio_tracks),
+        "Pulse Radio catalog only returns playable creator-safe tracks",
+    )
+    require(
+        all(track.get("radio_ready") for track in radio_tracks),
+        "Pulse Radio marks approved tracks as radio ready",
+    )
     print("PulseSoc Music launch audit ok")
 
 
