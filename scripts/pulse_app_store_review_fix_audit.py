@@ -35,6 +35,10 @@ def main():
     account = read("templates/account.html")
     require(account, 'name="terms_accepted"', "account forms", failures)
     require(account, "no-tolerance rules for objectionable content and abusive users", "account forms", failures)
+    require(account, "{% if paid_digital_access_available %}\n            <a href=\"/pulse/premium\">PulseSoc Premium</a>", "native iOS account nav paid access gate", failures)
+    require(account, "{% if not access.is_paid_pro and paid_digital_access_available %}", "native iOS dashboard paid CTA gate", failures)
+    require(account, "{% if not paid_digital_access_available %}", "native iOS core fallback", failures)
+    require(account, "Paid digital access is not available in this iOS build.", "native iOS paid unavailable copy", failures)
 
     terms = read("templates/terms.html")
     for token in [
@@ -52,6 +56,8 @@ def main():
         "Paid digital access is not available in this iOS build",
         "External billing management is not available in this iOS build",
         "ios_paid_digital_unavailable_response(api=True)",
+        'context.setdefault("paid_digital_access_available", paid_digital_access_available)',
+        "if ios_native_app_request():\n        body = f\"\"\"",
     ]:
         require(bot, token, "bot.py", failures)
 

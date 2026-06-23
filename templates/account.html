@@ -339,7 +339,7 @@
     }
   </style>
 </head>
-<body class="{% if page in ['signup', 'login'] %}premium-auth-body{% endif %}">
+<body class="{% if page in ['signup', 'login'] %}premium-auth-body{% endif %}{% if is_ios_native %} ios-native-account{% endif %}">
   <header>
     <div class="container">
       <nav>
@@ -351,7 +351,9 @@
           <a href="/">Home</a>
           <a href="/dashboard">Dashboard</a>
           <a href="/account">Account</a>
-          <a href="/pulse/premium">PulseSoc Premium</a>
+          {% if paid_digital_access_available %}
+            <a href="/pulse/premium">PulseSoc Premium</a>
+          {% endif %}
           <a href="/account/settings">Settings</a>
           <a href="/support">Support</a>
           {% if current_user %}<a href="/logout">Logout</a>{% else %}<a href="/login">Login</a>{% endif %}
@@ -386,7 +388,9 @@
               <div class="auth-feature"><span>V</span><strong data-i18n="featureVideos">Watch Videos & Reels</strong></div>
               <div class="auth-feature"><span>RT</span><strong data-i18n="featureChat">Chat in Real Time</strong></div>
               <div class="auth-feature"><span>AI</span><strong data-i18n="featureAi">AI-Powered Discovery</strong></div>
-              <div class="auth-feature"><span>XP</span><strong data-i18n="featurePremium">Exclusive Premium</strong></div>
+              {% if paid_digital_access_available %}
+                <div class="auth-feature"><span>XP</span><strong data-i18n="featurePremium">Exclusive Premium</strong></div>
+              {% endif %}
               <div class="auth-feature"><span>PF</span><strong data-i18n="featurePrivacy">Privacy First</strong></div>
             </div>
             <div class="auth-footer">PulseSoc™ • Built by CoinPilotXAI Inc.</div>
@@ -508,7 +512,11 @@
           <div class="profile-card" style="margin-top:18px">
             <h3>Free Core Ecosystem</h3>
             <p>PulseSoc posting, groups, spaces, messenger, reels, livestream basics, marketplace browsing, AI utilities, watchlists, alerts, profile customization, and community participation are available to authenticated users.</p>
-            <p class="muted">PulseSoc Premium adds prestige identity, creator cosmetics, advanced creator tools, and elite profile enhancements. CoinPilotXAI Inc. provides educational AI intelligence only.</p>
+              {% if paid_digital_access_available %}
+                <p class="muted">PulseSoc Premium adds prestige identity, creator cosmetics, advanced creator tools, and elite profile enhancements. CoinPilotXAI Inc. provides educational AI intelligence only.</p>
+              {% else %}
+                <p class="muted">Paid digital access is not available in this iOS build. PulseSoc core social features remain available.</p>
+              {% endif %}
           </div>
           {% if access.referral_code %}
             <div class="profile-card" style="margin-top:18px">
@@ -520,14 +528,30 @@
           <div class="actions">
             <a class="button primary" href="/account/settings">Account Settings</a>
             <a class="button primary" href="/dashboard">Open Dashboard</a>
-            {% if not access.is_paid_pro %}
+            {% if not access.is_paid_pro and paid_digital_access_available %}
               <a class="button primary" href="/pulse/premium" data-analytics="dashboard_upgrade_clicked">PulseSoc Premium</a>
             {% endif %}
             <a class="button gold" href="https://t.me/DocShieldX_bot">Connect Telegram Companion</a>
             <a class="button" href="/support">Support</a>
+            {% if not paid_digital_access_available %}
+              <a class="button" href="/terms">Terms</a>
+            {% endif %}
           </div>
 
         {% elif page == "upgrade" %}
+          {% if not paid_digital_access_available %}
+          <div class="profile-card">
+            <h3>PulseSoc on iOS</h3>
+            <p><strong>Paid digital access is not available in this iOS build.</strong></p>
+            <p>PulseSoc core social features remain available. Apple in-app purchase support must be completed before paid digital access can be offered in the iOS app.</p>
+            <div class="actions">
+              <a class="button primary" href="/pulse">Open PulseSoc</a>
+              <a class="button" href="/account/settings">Account Settings</a>
+              <a class="button" href="/support">Support</a>
+              <a class="button" href="/terms">Terms</a>
+            </div>
+          </div>
+          {% else %}
           <div class="grid">
             <div class="profile-card">
               <h3>PulseSoc Premium</h3>
@@ -560,6 +584,7 @@
               <p>If you experience any issue after payment, email <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a> and include the email address used for your PulseSoc account.</p>
             </div>
           </div>
+          {% endif %}
 
         {% elif page == "upgrade_success" %}
           <div class="profile-card" data-upgrade-session="{{ stripe_session_id or '' }}">
@@ -698,13 +723,13 @@
           slogan: "Connect. Create. Discover. Pulse the World.",
           createCta: "Create Your PulseSoc Account",
           signinCta: "Sign In to PulseSoc",
-          signupIntro: "Create your PulseSoc account. Core tools are free for authenticated users; PulseSoc Premium is optional for prestige identity, elite creator effects, and deeper creator enhancements.",
+          signupIntro: "{% if paid_digital_access_available %}Create your PulseSoc account. Core tools are free for authenticated users; PulseSoc Premium is optional for prestige identity, elite creator effects, and deeper creator enhancements.{% else %}Create your PulseSoc account. Core social tools are available in this iOS build.{% endif %}",
           loginIntro: "Log in to manage your PulseSoc profile, account, alerts, and optional Telegram companion connection.",
           featureCommunities: "Join Communities",
           featureVideos: "Watch Videos & Reels",
           featureChat: "Chat in Real Time",
           featureAi: "AI-Powered Discovery",
-          featurePremium: "Exclusive Premium",
+          featurePremium: "{% if paid_digital_access_available %}Exclusive Premium{% else %}Core Access{% endif %}",
           featurePrivacy: "Privacy First"
         },
         fr: {
@@ -712,13 +737,13 @@
           slogan: "Connectez. Créez. Découvrez. Faites vibrer le monde.",
           createCta: "Créer votre compte PulseSoc",
           signinCta: "Se connecter à PulseSoc",
-          signupIntro: "Créez votre compte PulseSoc. Les outils de base sont gratuits; PulseSoc Premium reste optionnel pour l'identité, les effets créateur et les avantages avancés.",
+          signupIntro: "{% if paid_digital_access_available %}Créez votre compte PulseSoc. Les outils de base sont gratuits; PulseSoc Premium reste optionnel pour l'identité, les effets créateur et les avantages avancés.{% else %}Créez votre compte PulseSoc. Les outils sociaux principaux sont disponibles dans cette version iOS.{% endif %}",
           loginIntro: "Connectez-vous pour gérer votre profil PulseSoc, votre compte, vos alertes et vos connexions.",
           featureCommunities: "Rejoindre des communautés",
           featureVideos: "Voir vidéos et Reels",
           featureChat: "Discuter en temps réel",
           featureAi: "Découverte avec IA",
-          featurePremium: "Premium exclusif",
+          featurePremium: "{% if paid_digital_access_available %}Premium exclusif{% else %}Accès principal{% endif %}",
           featurePrivacy: "Confidentialité d'abord"
         },
         ht: {
@@ -726,13 +751,13 @@
           slogan: "Konekte. Kreye. Dekouvri. Fè mond lan bat.",
           createCta: "Kreye kont PulseSoc ou",
           signinCta: "Konekte sou PulseSoc",
-          signupIntro: "Kreye kont PulseSoc ou. Zouti prensipal yo gratis; PulseSoc Premium opsyonèl pou idantite, efè kreyatè, ak avantaj avanse.",
+          signupIntro: "{% if paid_digital_access_available %}Kreye kont PulseSoc ou. Zouti prensipal yo gratis; PulseSoc Premium opsyonèl pou idantite, efè kreyatè, ak avantaj avanse.{% else %}Kreye kont PulseSoc ou. Zouti sosyal prensipal yo disponib nan vèsyon iOS sa a.{% endif %}",
           loginIntro: "Konekte pou jere pwofil PulseSoc ou, kont ou, alèt ou, ak koneksyon ou yo.",
           featureCommunities: "Antre nan kominote",
           featureVideos: "Gade videyo ak Reels",
           featureChat: "Pale an tan reyèl",
           featureAi: "Dekouvèt ak AI",
-          featurePremium: "Premium eksklizif",
+          featurePremium: "{% if paid_digital_access_available %}Premium eksklizif{% else %}Aksè prensipal{% endif %}",
           featurePrivacy: "Konfidansyalite avan tout"
         },
         es: {
@@ -740,13 +765,13 @@
           slogan: "Conecta. Crea. Descubre. Haz latir el mundo.",
           createCta: "Crear tu cuenta PulseSoc",
           signinCta: "Iniciar sesión en PulseSoc",
-          signupIntro: "Crea tu cuenta PulseSoc. Las herramientas principales son gratis; PulseSoc Premium es opcional para identidad, efectos de creador y mejoras avanzadas.",
+          signupIntro: "{% if paid_digital_access_available %}Crea tu cuenta PulseSoc. Las herramientas principales son gratis; PulseSoc Premium es opcional para identidad, efectos de creador y mejoras avanzadas.{% else %}Crea tu cuenta PulseSoc. Las herramientas sociales principales están disponibles en esta versión iOS.{% endif %}",
           loginIntro: "Inicia sesión para administrar tu perfil PulseSoc, cuenta, alertas y conexiones.",
           featureCommunities: "Unirse a comunidades",
           featureVideos: "Ver videos y Reels",
           featureChat: "Chat en tiempo real",
           featureAi: "Descubrimiento con IA",
-          featurePremium: "Premium exclusivo",
+          featurePremium: "{% if paid_digital_access_available %}Premium exclusivo{% else %}Acceso principal{% endif %}",
           featurePrivacy: "Privacidad primero"
         },
         pt: {
@@ -754,13 +779,13 @@
           slogan: "Conecte. Crie. Descubra. Pulse o mundo.",
           createCta: "Criar sua conta PulseSoc",
           signinCta: "Entrar no PulseSoc",
-          signupIntro: "Crie sua conta PulseSoc. As ferramentas principais são gratuitas; PulseSoc Premium é opcional para identidade, efeitos de criador e recursos avançados.",
+          signupIntro: "{% if paid_digital_access_available %}Crie sua conta PulseSoc. As ferramentas principais são gratuitas; PulseSoc Premium é opcional para identidade, efeitos de criador e recursos avançados.{% else %}Crie sua conta PulseSoc. As ferramentas sociais principais estão disponíveis nesta versão iOS.{% endif %}",
           loginIntro: "Entre para gerenciar seu perfil PulseSoc, conta, alertas e conexões.",
           featureCommunities: "Participar de comunidades",
           featureVideos: "Assistir vídeos e Reels",
           featureChat: "Conversar em tempo real",
           featureAi: "Descoberta com IA",
-          featurePremium: "Premium exclusivo",
+          featurePremium: "{% if paid_digital_access_available %}Premium exclusivo{% else %}Acesso principal{% endif %}",
           featurePrivacy: "Privacidade primeiro"
         }
       };
@@ -834,6 +859,7 @@
         });
       }
 
+      {% if paid_digital_access_available %}
       var upgradeStatus = document.querySelector("[data-upgrade-status]");
       var upgradeDetail = document.querySelector("[data-upgrade-detail]");
       if (upgradeStatus && upgradeDetail) {
@@ -904,6 +930,7 @@
         confirmSession();
         pollStatus();
       }
+      {% endif %}
 
       document.querySelectorAll("[data-friendly-date]").forEach(function (node) {
         var raw = (node.textContent || "").trim();
