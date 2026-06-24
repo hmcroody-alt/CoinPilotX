@@ -912,6 +912,7 @@
       items.push(["Block user", { blockUser: author.public_player_id }]);
     }
     if (post.can_delete) {
+      items.push(["Edit", { editPost: post.id }]);
       items.push(["Delete", { deletePost: post.id }]);
     }
     items.forEach(([label, attrs]) => {
@@ -2312,6 +2313,34 @@
           if (node.dataset.authorPublicPlayerId === block.dataset.blockUser) node.remove();
         });
         toast(data.message || "User blocked.");
+      } catch (error) {
+        toast(error.message);
+      }
+      return;
+    }
+    const edit = event.target.closest("[data-edit-post]");
+    if (edit) {
+      const postId = edit.dataset.editPost;
+      const card = document.querySelector(`[data-post-id="${CSS.escape(String(postId))}"]`);
+      const titleNode = card?.querySelector(".post-caption h2");
+      const bodyNode = card?.querySelector(".post-caption p");
+      const title = prompt("Edit post title", titleNode?.textContent?.trim() || "");
+      if (title === null) return;
+      const body = prompt("Edit post", bodyNode?.textContent?.trim() || "");
+      if (body === null) return;
+      const visibility = prompt("Visibility: public, followers, or private", "public");
+      if (visibility === null) return;
+      try {
+        await api(`/api/pulse/posts/${postId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ title, body, visibility }),
+        });
+        if (titleNode) titleNode.textContent = title;
+        else if (title.trim() && card?.querySelector(".post-caption")) card.querySelector(".post-caption").prepend(element("h2", "", title));
+        if (bodyNode) bodyNode.textContent = body;
+        else if (body.trim() && card?.querySelector(".post-caption")) card.querySelector(".post-caption").appendChild(element("p", "", body));
+        card?.querySelector("[data-post-sheet]")?.classList.remove("open");
+        toast("Post updated.");
       } catch (error) {
         toast(error.message);
       }
