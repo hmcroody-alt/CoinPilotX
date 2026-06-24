@@ -4,38 +4,40 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="robots" content="noindex,nofollow">
-  <meta name="theme-color" content="#06101b">
+  <meta name="theme-color" content="#050b15">
   <title>PulseSoc Mission Control</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}">
   <style>
     :root {
-      --bg: #030912;
-      --panel: rgba(9, 20, 34, .82);
-      --panel-strong: rgba(13, 28, 46, .94);
-      --line: rgba(112, 231, 255, .22);
-      --line-strong: rgba(64, 235, 166, .42);
-      --text: #f3fbff;
-      --muted: #9fb3c0;
-      --cyan: #69e7ff;
-      --emerald: #36ee9c;
-      --purple: #a879ff;
-      --gold: #ffd66e;
-      --red: #ff4f74;
+      --bg: #030811;
+      --panel: rgba(7, 17, 31, .82);
+      --panel-2: rgba(11, 25, 44, .9);
+      --line: rgba(91, 219, 255, .2);
+      --line-hot: rgba(50, 235, 174, .52);
+      --text: #f4fbff;
+      --muted: #91a8b8;
+      --cyan: #5bdcff;
+      --blue: #2d8cff;
+      --emerald: #32ebae;
+      --purple: #a95cff;
+      --gold: #ffd45a;
+      --red: #ff4f72;
+      --radius: 18px;
       color-scheme: dark;
     }
     * { box-sizing: border-box; }
-    html { background: var(--bg); }
+    html { background: var(--bg); scroll-behavior: smooth; }
     body {
       margin: 0;
       min-height: 100dvh;
+      overflow-x: hidden;
       color: var(--text);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
       background:
-        radial-gradient(circle at 8% 8%, rgba(54, 238, 156, .16), transparent 24rem),
-        radial-gradient(circle at 84% 0, rgba(105, 231, 255, .18), transparent 28rem),
-        radial-gradient(circle at 58% 38%, rgba(168, 121, 255, .11), transparent 30rem),
-        linear-gradient(135deg, #030912, #071525 56%, #04070e);
-      overflow-x: hidden;
+        radial-gradient(circle at 18% 0, rgba(45, 140, 255, .22), transparent 26rem),
+        radial-gradient(circle at 78% 6%, rgba(169, 92, 255, .16), transparent 32rem),
+        radial-gradient(circle at 44% 42%, rgba(50, 235, 174, .1), transparent 28rem),
+        linear-gradient(135deg, #030811, #06172a 58%, #02050b);
     }
     body::before {
       content: "";
@@ -43,176 +45,388 @@
       inset: 0;
       z-index: -2;
       background-image:
-        linear-gradient(rgba(105,231,255,.055) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(105,231,255,.055) 1px, transparent 1px);
-      background-size: 72px 72px;
-      mask-image: linear-gradient(to bottom, rgba(0,0,0,.8), rgba(0,0,0,.18));
+        linear-gradient(rgba(91,220,255,.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(91,220,255,.055) 1px, transparent 1px),
+        radial-gradient(circle, rgba(255,255,255,.16) 1px, transparent 1.5px);
+      background-size: 72px 72px, 72px 72px, 130px 130px;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,.9), rgba(0,0,0,.3));
+      pointer-events: none;
     }
     body::after {
       content: "";
       position: fixed;
-      inset: auto -20vw 0;
-      height: 32vh;
+      inset: 0;
       z-index: -1;
-      background: radial-gradient(ellipse at center, rgba(54,238,156,.12), transparent 62%);
-      filter: blur(26px);
       pointer-events: none;
+      background:
+        linear-gradient(110deg, transparent 0 36%, rgba(91, 220, 255, .07) 48%, transparent 60% 100%),
+        radial-gradient(ellipse at 50% 100%, rgba(50,235,174,.12), transparent 56%);
+      animation: slowSweep 16s ease-in-out infinite alternate;
     }
     a { color: inherit; text-decoration: none; }
     button, input { font: inherit; }
-    .shell { width: min(100% - 28px, 1460px); margin: 0 auto; padding: calc(18px + env(safe-area-inset-top)) 0 calc(96px + env(safe-area-inset-bottom)); }
-    .topbar {
+    .app-shell {
+      width: min(100% - 28px, 1500px);
+      margin: 0 auto;
+      padding: calc(18px + env(safe-area-inset-top)) 0 calc(96px + env(safe-area-inset-bottom));
+    }
+    .mission-layout {
+      display: grid;
+      grid-template-columns: 258px minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .rail {
       position: sticky;
-      top: 0;
-      z-index: 20;
-      margin: 0 0 22px;
-      padding: calc(12px + env(safe-area-inset-top)) max(14px, calc((100vw - min(100vw - 28px, 1460px)) / 2)) 12px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      top: 18px;
+      display: grid;
       gap: 14px;
-      border-bottom: 1px solid rgba(105,231,255,.16);
-      background: rgba(3, 9, 18, .86);
-      backdrop-filter: blur(18px);
+      max-height: calc(100dvh - 36px);
+      overflow: auto;
+      padding: 14px;
+      border: 1px solid rgba(91,220,255,.18);
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(7,17,31,.95), rgba(4,10,19,.84));
+      box-shadow: 0 26px 90px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.045);
+      scrollbar-width: thin;
     }
-    .brand { display: inline-flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 950; letter-spacing: 0; }
-    .brand img { width: 44px; height: 44px; border-radius: 13px; box-shadow: 0 0 26px rgba(105,231,255,.18); }
-    .top-actions { display: flex; align-items: center; gap: 10px; min-width: 0; }
-    .search {
-      min-width: min(34vw, 440px);
+    .rail-brand {
       display: flex;
       align-items: center;
-      gap: 8px;
-      min-height: 48px;
-      padding: 0 8px 0 14px;
-      border: 1px solid rgba(105,231,255,.18);
-      border-radius: 14px;
-      background: rgba(255,255,255,.045);
+      gap: 12px;
+      padding: 8px;
+      border: 1px solid rgba(91,220,255,.16);
+      border-radius: 16px;
+      background: rgba(255,255,255,.04);
     }
-    .search input { min-width: 0; width: 100%; border: 0; outline: 0; color: var(--text); background: transparent; }
-    .btn {
-      min-height: 46px;
+    .rail-brand img { width: 42px; height: 42px; border-radius: 12px; box-shadow: 0 0 24px rgba(91,220,255,.18); }
+    .rail-brand strong { display: block; font-size: 20px; line-height: 1; }
+    .micro { color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .rail-nav { display: grid; gap: 8px; }
+    .rail-title {
+      margin: 10px 4px 2px;
+      color: var(--purple);
+      font-size: 11px;
+      font-weight: 950;
+      letter-spacing: .11em;
+      text-transform: uppercase;
+    }
+    .rail-link, .rail-action {
+      min-height: 44px;
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 7px 8px;
+      border: 1px solid transparent;
+      border-radius: 14px;
+      color: #d8f6ff;
+      background: transparent;
+      transition: transform .16s ease, border-color .16s ease, background .16s ease;
+    }
+    .rail-link:hover, .rail-action:hover {
+      transform: translateX(2px);
+      border-color: rgba(91,220,255,.26);
+      background: rgba(91,220,255,.075);
+    }
+    .rail-link.active {
+      border-color: rgba(45,140,255,.6);
+      background: linear-gradient(90deg, rgba(45,140,255,.28), rgba(91,220,255,.08));
+      box-shadow: inset 3px 0 0 var(--cyan), 0 0 26px rgba(45,140,255,.12);
+    }
+    .rail-action.locked { opacity: .66; }
+    .glyph {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(91,220,255,.2);
+      border-radius: 12px;
+      color: var(--cyan);
+      background: rgba(91,220,255,.08);
+      font-size: 12px;
+      font-weight: 950;
+      letter-spacing: .04em;
+    }
+    .pill {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
-      padding: 11px 15px;
+      min-height: 24px;
+      padding: 4px 8px;
+      border: 1px solid rgba(91,220,255,.2);
+      border-radius: 999px;
+      color: #dffbff;
+      background: rgba(91,220,255,.08);
+      font-size: 11px;
+      font-weight: 950;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      white-space: nowrap;
+    }
+    .pill.premium { color: #090c05; border-color: transparent; background: linear-gradient(135deg, var(--gold), var(--emerald)); }
+    .pill.locked { color: var(--gold); border-color: rgba(255,212,90,.34); background: rgba(255,212,90,.09); }
+    .pill.red { color: #ffdce4; border-color: rgba(255,79,114,.38); background: rgba(255,79,114,.1); }
+    .logout {
+      display: grid;
+      place-items: center;
+      min-height: 48px;
+      border: 1px solid rgba(255,79,114,.4);
       border-radius: 14px;
-      border: 1px solid rgba(105,231,255,.22);
-      background: rgba(255,255,255,.055);
-      color: var(--text);
-      font-weight: 900;
-      cursor: pointer;
-      transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+      color: #ffb8c6;
+      font-weight: 950;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      background: rgba(255,79,114,.06);
     }
-    .btn:hover { transform: translateY(-1px); border-color: rgba(105,231,255,.45); box-shadow: 0 0 24px rgba(105,231,255,.12); }
-    .btn.primary { color: #04101a; border-color: transparent; background: linear-gradient(135deg, var(--emerald), var(--cyan)); }
-    .btn.locked { color: #190f00; border-color: transparent; background: linear-gradient(135deg, var(--gold), #ffa047); }
-    .mission-grid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 18px; align-items: start; }
-    .profile-panel, .section, .metric, .quick-panel {
-      border: 1px solid var(--line);
-      border-radius: 22px;
-      background: linear-gradient(180deg, var(--panel-strong), var(--panel));
-      box-shadow: 0 24px 80px rgba(0,0,0,.26), inset 0 1px 0 rgba(255,255,255,.045);
-    }
-    .profile-panel {
-      position: sticky;
-      top: 96px;
-      padding: 18px;
+    .main { display: grid; gap: 16px; min-width: 0; }
+    .command-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: center;
+      min-height: 128px;
+      padding: 20px 22px;
+      border: 1px solid rgba(91,220,255,.2);
+      border-radius: 24px;
+      background:
+        radial-gradient(circle at 16% 14%, rgba(45,140,255,.22), transparent 20rem),
+        radial-gradient(circle at 84% 0, rgba(169,92,255,.18), transparent 22rem),
+        linear-gradient(135deg, rgba(9,20,37,.96), rgba(5,12,23,.9));
+      box-shadow: 0 28px 90px rgba(0,0,0,.32), 0 0 34px rgba(91,220,255,.08);
       overflow: hidden;
+      position: relative;
     }
-    .profile-panel::before, .section::before {
+    .command-header::after {
       content: "";
       position: absolute;
-      inset: 0;
-      pointer-events: none;
-      background: linear-gradient(120deg, transparent 0 40%, rgba(105,231,255,.09), transparent 60% 100%);
-      opacity: .5;
+      inset: auto 0 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--cyan), var(--purple), transparent);
+      opacity: .8;
     }
-    .avatar-wrap { display: flex; align-items: center; gap: 14px; position: relative; }
-    .avatar {
-      width: 74px;
-      height: 74px;
-      border-radius: 24px;
+    .headline { min-width: 0; }
+    .kicker { margin: 0 0 7px; color: var(--cyan); font-size: 13px; font-weight: 950; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(38px, 6vw, 72px); line-height: .94; letter-spacing: .07em; text-transform: uppercase; }
+    .subcopy { margin: 8px 0 0; color: var(--muted); font-size: clamp(15px, 1.8vw, 19px); }
+    .header-tools { display: flex; align-items: center; gap: 12px; }
+    .search {
+      width: min(36vw, 390px);
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 13px;
+      border: 1px solid rgba(91,220,255,.22);
+      border-radius: 999px;
+      background: rgba(255,255,255,.045);
+    }
+    .search input { width: 100%; min-width: 0; border: 0; outline: 0; color: var(--text); background: transparent; }
+    .icon-btn, .avatar-chip {
+      min-width: 48px;
+      min-height: 48px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(91,220,255,.22);
+      border-radius: 18px;
+      background: rgba(255,255,255,.055);
+      color: var(--cyan);
+      font-weight: 950;
+    }
+    .avatar-chip {
+      grid-template-columns: 48px auto;
+      gap: 10px;
+      padding: 6px 10px 6px 6px;
+      text-align: right;
+    }
+    .avatar, .avatar-fallback {
+      width: 48px;
+      height: 48px;
+      border-radius: 16px;
       object-fit: cover;
       display: grid;
       place-items: center;
-      flex: 0 0 auto;
-      color: #05111b;
-      font-size: 30px;
-      font-weight: 950;
+      color: #04101a;
       background: linear-gradient(135deg, var(--cyan), var(--purple));
-      box-shadow: 0 0 0 1px rgba(255,255,255,.16), 0 0 30px rgba(105,231,255,.18);
+      font-size: 21px;
+      font-weight: 950;
+      box-shadow: 0 0 0 1px rgba(255,255,255,.16), 0 0 22px rgba(91,220,255,.18);
     }
-    .user-name { margin: 0; font-size: clamp(28px, 4vw, 44px); line-height: 1; letter-spacing: 0; }
-    .muted { color: var(--muted); }
-    .badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
-    .badge {
-      display: inline-flex;
+    .avatar-name { display: grid; gap: 2px; }
+    .avatar-name strong { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .metric-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+    .metric-card {
+      min-height: 118px;
+      display: grid;
+      grid-template-columns: 52px minmax(0, 1fr);
+      gap: 12px;
       align-items: center;
-      gap: 7px;
-      min-height: 30px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      color: #dffcff;
-      border: 1px solid rgba(105,231,255,.22);
-      background: rgba(105,231,255,.075);
-      font-size: 12px;
-      font-weight: 900;
-      text-transform: uppercase;
-      letter-spacing: .06em;
+      padding: 14px;
+      border: 1px solid rgba(91,220,255,.2);
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(10,23,40,.9), rgba(6,14,26,.8));
+      box-shadow: 0 18px 52px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.035);
     }
-    .badge.premium { color: #101004; border-color: transparent; background: linear-gradient(135deg, var(--gold), var(--emerald)); }
-    .quick-panel { margin-top: 14px; padding: 14px; }
-    .quick-panel h2, .section h2 { margin: 0 0 12px; font-size: 18px; }
-    .quick-actions { display: grid; gap: 8px; }
-    .quick-actions .btn { width: 100%; justify-content: flex-start; }
-    .main { display: grid; gap: 18px; min-width: 0; }
-    .hero {
-      min-height: 220px;
-      padding: 24px;
-      border: 1px solid rgba(54,238,156,.28);
-      border-radius: 28px;
+    .metric-orb {
+      width: 52px;
+      height: 52px;
+      display: grid;
+      place-items: center;
+      border-radius: 18px;
+      border: 1px solid rgba(91,220,255,.28);
+      color: var(--cyan);
+      background: radial-gradient(circle, rgba(91,220,255,.18), rgba(91,220,255,.04));
+      font-size: 13px;
+      font-weight: 950;
+    }
+    .metric-card[data-accent="emerald"] .metric-orb { color: var(--emerald); border-color: rgba(50,235,174,.34); background: rgba(50,235,174,.08); }
+    .metric-card[data-accent="purple"] .metric-orb { color: var(--purple); border-color: rgba(169,92,255,.36); background: rgba(169,92,255,.08); }
+    .metric-card[data-accent="gold"] .metric-orb { color: var(--gold); border-color: rgba(255,212,90,.36); background: rgba(255,212,90,.08); }
+    .metric-label { color: var(--muted); font-size: 12px; font-weight: 950; text-transform: uppercase; letter-spacing: .05em; }
+    .metric-value { display: block; margin: 6px 0; font-size: clamp(24px, 3vw, 36px); line-height: 1; font-weight: 950; }
+    .metric-detail { color: var(--emerald); font-size: 12px; font-weight: 850; }
+    .section-stack { display: grid; gap: 16px; }
+    .module-section {
+      position: relative;
+      overflow: hidden;
+      padding: 16px;
+      border: 1px solid rgba(91,220,255,.2);
+      border-radius: 20px;
+      background: linear-gradient(180deg, rgba(8,18,34,.9), rgba(4,10,19,.82));
+      box-shadow: 0 20px 70px rgba(0,0,0,.26), inset 0 1px 0 rgba(255,255,255,.035);
+    }
+    .module-section::before {
+      content: "";
+      position: absolute;
+      inset: 0;
       background:
-        radial-gradient(circle at 18% 18%, rgba(54,238,156,.18), transparent 20rem),
-        radial-gradient(circle at 92% 8%, rgba(168,121,255,.18), transparent 22rem),
-        linear-gradient(135deg, rgba(12,27,45,.94), rgba(5,14,25,.9));
-      box-shadow: 0 30px 90px rgba(0,0,0,.32), 0 0 42px rgba(54,238,156,.12);
+        linear-gradient(90deg, transparent 0 18%, rgba(91,220,255,.12), transparent 42% 100%),
+        radial-gradient(circle at 94% 0, rgba(169,92,255,.1), transparent 18rem);
+      opacity: .58;
+      pointer-events: none;
     }
-    .kicker { color: var(--emerald); font-size: 12px; font-weight: 950; letter-spacing: .13em; text-transform: uppercase; }
-    h1 { margin: 8px 0; font-size: clamp(42px, 7vw, 84px); line-height: .93; letter-spacing: 0; }
-    .hero p { max-width: 780px; font-size: clamp(17px, 2vw, 22px); }
-    .metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
-    .metric { padding: 15px; min-height: 108px; }
-    .metric strong { display: block; font-size: clamp(24px, 3vw, 38px); line-height: 1; margin: 8px 0; }
-    .sections { display: grid; gap: 16px; }
-    .section { position: relative; padding: 16px; overflow: hidden; }
-    .section-head { position: relative; z-index: 1; display: flex; justify-content: space-between; gap: 12px; align-items: end; margin-bottom: 12px; }
-    .widget-grid { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-    .widget {
-      min-height: 168px;
+    .module-section[data-accent="emerald"] { border-color: rgba(50,235,174,.24); }
+    .module-section[data-accent="gold"] { border-color: rgba(255,212,90,.26); }
+    .module-section[data-accent="purple"] { border-color: rgba(169,92,255,.28); }
+    .module-section[data-accent="red"] { border-color: rgba(255,79,114,.28); }
+    .section-head {
+      position: relative;
+      z-index: 1;
       display: flex;
-      flex-direction: column;
+      align-items: center;
       justify-content: space-between;
       gap: 14px;
-      padding: 14px;
-      border: 1px solid rgba(105,231,255,.16);
-      border-radius: 18px;
-      background: rgba(255,255,255,.045);
-      transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease, opacity .16s ease;
-      overflow: hidden;
+      margin-bottom: 14px;
     }
-    .widget:hover { transform: translateY(-2px); border-color: rgba(105,231,255,.38); box-shadow: 0 18px 48px rgba(0,0,0,.26), 0 0 24px rgba(105,231,255,.12); }
-    .widget[data-accent="emerald"] { border-color: rgba(54,238,156,.24); }
-    .widget[data-accent="purple"] { border-color: rgba(168,121,255,.24); }
-    .widget[data-accent="gold"] { border-color: rgba(255,214,110,.26); }
-    .widget[data-accent="red"] { border-color: rgba(255,79,116,.28); }
-    .widget.locked { opacity: .62; filter: saturate(.72); background: rgba(255,255,255,.03); }
-    .widget h3 { margin: 0; font-size: 20px; }
-    .widget p { margin: 7px 0 0; color: var(--muted); }
-    .widget-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 900; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-    .status-dot { width: 10px; height: 10px; border-radius: 999px; background: var(--emerald); box-shadow: 0 0 18px rgba(54,238,156,.75); }
-    .locked .status-dot { background: var(--gold); box-shadow: 0 0 18px rgba(255,214,110,.6); }
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .section-title h2 { margin: 0; font-size: 20px; letter-spacing: .03em; text-transform: uppercase; }
+    .section-line { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(91,220,255,.42), transparent); }
+    .module-grid {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .module-card {
+      min-height: 160px;
+      display: grid;
+      align-content: space-between;
+      gap: 14px;
+      padding: 13px;
+      border: 1px solid rgba(91,220,255,.24);
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(5,17,34,.92), rgba(4,10,19,.72));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+      transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+    }
+    .module-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(91,220,255,.58);
+      box-shadow: 0 18px 48px rgba(0,0,0,.26), 0 0 28px rgba(91,220,255,.12);
+    }
+    .module-card.locked {
+      opacity: .58;
+      filter: saturate(.62);
+      border-color: rgba(255,255,255,.2);
+      background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.025));
+    }
+    .module-card[data-accent="emerald"] { border-color: rgba(50,235,174,.38); }
+    .module-card[data-accent="purple"] { border-color: rgba(169,92,255,.38); }
+    .module-card[data-accent="gold"] { border-color: rgba(255,212,90,.38); }
+    .module-card[data-accent="red"] { border-color: rgba(255,79,114,.4); }
+    .module-card h3 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+    .module-card p {
+      margin: 7px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .module-top, .module-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .module-icon {
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(91,220,255,.25);
+      border-radius: 50%;
+      color: var(--cyan);
+      background: radial-gradient(circle, rgba(91,220,255,.14), rgba(91,220,255,.03));
+      font-size: 12px;
+      font-weight: 950;
+    }
+    .module-cta {
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      border: 1px solid rgba(91,220,255,.22);
+      border-radius: 12px;
+      color: #dffbff;
+      background: rgba(255,255,255,.045);
+      font-weight: 950;
+      font-size: 13px;
+    }
+    .module-card.locked .module-cta {
+      color: #0d0b03;
+      border-color: transparent;
+      background: linear-gradient(135deg, var(--gold), #ffac43);
+    }
+    .quick-strip {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      padding: 13px;
+      border: 1px solid rgba(91,220,255,.18);
+      border-radius: 20px;
+      background: rgba(5,14,25,.72);
+    }
+    .quick-strip .rail-action { min-height: 56px; border-color: rgba(91,220,255,.16); background: rgba(255,255,255,.035); }
+    .legend {
+      display: flex;
+      justify-content: center;
+      gap: 18px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 4px 0 0;
+    }
     .bottom-nav {
       position: fixed;
       left: 0;
@@ -220,28 +434,70 @@
       bottom: 0;
       z-index: 30;
       padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
-      border-top: 1px solid rgba(105,231,255,.16);
-      background: rgba(3, 9, 18, .9);
+      border-top: 1px solid rgba(91,220,255,.16);
+      background: rgba(3, 8, 17, .9);
       backdrop-filter: blur(18px);
     }
-    .bottom-nav-inner { width: min(100%, 720px); margin: 0 auto; display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
-    .bottom-nav a { min-height: 54px; display: grid; place-items: center; border-radius: 16px; color: #d9f8ff; font-weight: 900; font-size: 12px; }
-    .bottom-nav a.active { color: #03101a; background: linear-gradient(135deg, var(--emerald), var(--cyan)); }
-    @media (max-width: 1180px) {
-      .mission-grid { grid-template-columns: 1fr; }
-      .profile-panel { position: relative; top: auto; }
-      .metrics { grid-template-columns: repeat(3, 1fr); }
-      .widget-grid { grid-template-columns: repeat(2, 1fr); }
+    .bottom-nav-inner {
+      width: min(100%, 720px);
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
     }
-    @media (max-width: 760px) {
-      .topbar { align-items: stretch; flex-direction: column; padding: calc(12px + env(safe-area-inset-top)) 14px 12px; }
-      .top-actions { display: grid; grid-template-columns: 1fr auto; }
-      .search { min-width: 0; width: 100%; }
-      .shell { width: min(100% - 24px, 1460px); }
-      .hero { padding: 18px; border-radius: 24px; }
-      .metrics, .widget-grid { grid-template-columns: 1fr; }
-      .section-head { align-items: start; flex-direction: column; }
-      .btn { min-height: 50px; }
+    .bottom-nav a {
+      min-height: 54px;
+      display: grid;
+      place-items: center;
+      border-radius: 16px;
+      color: #d9f8ff;
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .bottom-nav a.active {
+      color: #03101a;
+      background: linear-gradient(135deg, var(--emerald), var(--cyan));
+      box-shadow: 0 0 24px rgba(50,235,174,.22);
+    }
+    @keyframes slowSweep {
+      from { transform: translateX(-2%); opacity: .72; }
+      to { transform: translateX(2%); opacity: .95; }
+    }
+    @media (max-width: 1280px) {
+      .mission-layout { grid-template-columns: 1fr; }
+      .rail {
+        position: relative;
+        top: auto;
+        max-height: none;
+        grid-template-columns: 1fr;
+      }
+      .rail-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .rail-title, .logout { grid-column: 1 / -1; }
+      .metric-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .module-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 820px) {
+      .app-shell { width: min(100% - 22px, 1500px); padding-top: calc(12px + env(safe-area-inset-top)); }
+      .rail { display: none; }
+      .command-header { grid-template-columns: 1fr; padding: 18px; border-radius: 22px; }
+      .header-tools { display: grid; grid-template-columns: 1fr auto auto; }
+      .search { width: 100%; }
+      .avatar-chip { grid-template-columns: 44px; padding: 4px; }
+      .avatar-name { display: none; }
+      .metric-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .module-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .quick-strip { grid-template-columns: 1fr; }
+      h1 { font-size: clamp(36px, 12vw, 58px); }
+    }
+    @media (max-width: 520px) {
+      .app-shell { width: min(100% - 18px, 1500px); }
+      .command-header { min-height: auto; }
+      .header-tools { grid-template-columns: 1fr auto; }
+      .header-tools .icon-btn:nth-of-type(2) { display: none; }
+      .metric-row, .module-grid { grid-template-columns: 1fr; }
+      .module-card { min-height: 138px; }
+      .section-head { align-items: flex-start; flex-direction: column; }
+      .section-line { width: 100%; flex: none; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
@@ -251,109 +507,127 @@
 <body>
   {% set mc = mission_control %}
   {% set profile = mc.user %}
-  <header class="topbar">
-    <a class="brand" href="/pulse" aria-label="PulseSoc Home">
-      <img src="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" alt="">
-      <span>PulseSoc</span>
-    </a>
-    <div class="top-actions">
-      <form class="search" action="/pulse/search" method="get" role="search">
-        <span aria-hidden="true">Search</span>
-        <input name="q" type="search" placeholder="Search PulseSoc..." autocomplete="off">
-      </form>
-      <a class="btn primary" href="/pulse">Create</a>
-    </div>
-  </header>
-
-  <main class="shell">
-    <div class="mission-grid">
-      <aside>
-        <section class="profile-panel" aria-label="Mission profile">
-          <div class="avatar-wrap">
-            {% if profile.avatar_url %}
-              <img class="avatar" src="{{ profile.avatar_url }}" alt="">
-            {% else %}
-              <div class="avatar" aria-hidden="true">{{ (profile.display_name or "P")[:1] }}</div>
-            {% endif %}
-            <div>
-              <p class="kicker">Mission Control</p>
-              <h2 class="user-name">{{ profile.display_name }}</h2>
-              <p class="muted">{{ profile.username or "Private dashboard" }}</p>
-            </div>
-          </div>
-          <div class="badge-row">
-            <span class="badge">{{ profile.role_badge }}</span>
-            <span class="badge {% if profile.plan_badge == 'Premium' %}premium{% endif %}">{{ profile.plan_badge }}</span>
-            <span class="badge">{{ "Verified" if profile.verified else "Unverified" }}</span>
-          </div>
-          <p class="muted">Your dashboard only shows your data. Premium cards can be locked, but staff tools are never shown unless your server-side role allows them.</p>
-        </section>
-        <section class="quick-panel" aria-label="Quick actions">
-          <h2>Quick Actions</h2>
-          <div class="quick-actions">
-            {% for action in mc.quick_actions %}
-              <a class="btn {% if action.access == 'locked' %}locked{% endif %}" href="{{ action.route }}">{{ action.label }}{% if action.reason %}<span class="muted">{{ action.reason }}</span>{% endif %}</a>
+  <main class="app-shell">
+    <div class="mission-layout">
+      <aside class="rail" aria-label="PulseSoc dashboard navigation">
+        <a class="rail-brand" href="/pulse" aria-label="PulseSoc Home">
+          <img src="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" alt="">
+          <span><strong>PulseSoc</strong><small class="micro">Connect · Create · Elevate</small></span>
+        </a>
+        <nav class="rail-nav">
+          <a class="rail-link active" href="/dashboard"><span class="glyph">MC</span><span>Dashboard</span><span class="pill">Live</span></a>
+          {% for category in mc.categories %}
+            <p class="rail-title">{{ category.label }}</p>
+            {% for widget in category.widgets[:5] %}
+              <a class="rail-link {% if widget.access == 'locked' %}locked{% endif %}" href="{{ widget.cta_route if widget.access == 'locked' else widget.route }}">
+                <span class="glyph">{{ widget.icon }}</span>
+                <span>{{ widget.display_name }}</span>
+                {% if widget.access == 'locked' %}<span class="pill locked">Lock</span>{% else %}<span class="pill">On</span>{% endif %}
+              </a>
             {% endfor %}
-          </div>
-        </section>
+          {% endfor %}
+        </nav>
+        <a class="logout" href="/logout">Logout</a>
       </aside>
 
-      <div class="main">
-        <section class="hero">
-          <p class="kicker">PulseSoc Account</p>
-          <h1>Mission Control</h1>
-          <p class="muted">A role-aware command center for your account, network, creator tools, media, safety, and economy surfaces. Everything here is real, routed, and filtered by entitlement.</p>
-          <div class="badge-row">
-            <span class="badge">{{ mc.counts.active_widgets }} active</span>
-            <span class="badge">{{ mc.counts.locked_widgets }} locked</span>
-            <span class="badge">{{ mc.generated_at }}</span>
+      <section class="main">
+        <header class="command-header">
+          <div class="headline">
+            <p class="kicker">Mission Control</p>
+            <h1>Welcome Back, {{ profile.display_name }}</h1>
+            <p class="subcopy">Your private PulseSoc command layer for account health, creator tools, intelligence, media, economy, and safety.</p>
           </div>
-        </section>
+          <div class="header-tools">
+            <form class="search" action="/pulse/search" method="get" role="search">
+              <span aria-hidden="true">Search</span>
+              <input name="q" type="search" placeholder="Search PulseSoc..." autocomplete="off">
+            </form>
+            <a class="icon-btn" href="/pulse/notifications" aria-label="Notifications">AL</a>
+            <a class="icon-btn" href="/pulse" aria-label="Create">+</a>
+            <a class="avatar-chip" href="/pulse/profile" aria-label="Open profile">
+              {% if profile.avatar_url %}
+                <img class="avatar" src="{{ profile.avatar_url }}" alt="">
+              {% else %}
+                <span class="avatar-fallback">{{ (profile.display_name or "P")[:1] }}</span>
+              {% endif %}
+              <span class="avatar-name">
+                <strong>{{ profile.display_name }}</strong>
+                <span class="pill {% if profile.plan_badge == 'Premium' %}premium{% endif %}">{{ profile.plan_badge }}</span>
+              </span>
+            </a>
+          </div>
+        </header>
 
-        <section class="metrics" aria-label="Top metrics">
+        <section class="metric-row" aria-label="Mission metrics">
           {% for metric in mc.metrics %}
-            <article class="metric">
-              <span class="muted">{{ metric.label }}</span>
-              <strong>{{ metric.value }}</strong>
-              <span class="muted">{{ metric.detail }}</span>
+            <article class="metric-card" data-accent="{{ metric.accent }}">
+              <span class="metric-orb">{{ metric.icon }}</span>
+              <div>
+                <span class="metric-label">{{ metric.label }}</span>
+                <strong class="metric-value">{{ metric.value }}</strong>
+                <span class="metric-detail">{{ metric.trend }} · {{ metric.detail }}</span>
+              </div>
             </article>
           {% endfor %}
         </section>
 
-        <section class="sections" aria-label="Dashboard inventory">
+        <section class="section-stack" aria-label="Dashboard inventory">
           {% for category in mc.categories %}
-            <section class="section">
+            <section class="module-section" id="section-{{ loop.index }}" data-accent="{{ category.accent }}">
               <div class="section-head">
-                <div>
-                  <p class="kicker">Access Layer</p>
+                <div class="section-title">
+                  <span class="glyph">{{ category.icon }}</span>
                   <h2>{{ category.name }}</h2>
+                  <span class="section-line" aria-hidden="true"></span>
                 </div>
-                <span class="badge">{{ category.widgets|length }} modules</span>
+                <span class="pill">{{ category.widgets|length }} modules</span>
               </div>
-              <div class="widget-grid">
+              <div class="module-grid">
                 {% for widget in category.widgets %}
-                  <article class="widget {{ 'locked' if widget.access == 'locked' else '' }}" data-accent="{{ widget.accent }}">
+                  <article class="module-card {{ 'locked' if widget.access == 'locked' else '' }}" data-accent="{{ widget.accent }}">
                     <div>
-                      <div class="widget-status">
-                        <span>{{ widget.access }}</span>
-                        <i class="status-dot" aria-hidden="true"></i>
+                      <div class="module-top">
+                        <span class="module-icon">{{ widget.icon }}</span>
+                        {% if widget.access == 'locked' %}
+                          <span class="pill locked">Premium</span>
+                        {% else %}
+                          <span class="pill">Active</span>
+                        {% endif %}
                       </div>
                       <h3>{{ widget.display_name }}</h3>
                       <p>{{ widget.description }}</p>
-                      {% if widget.lock_reason %}<p class="muted">{{ widget.lock_reason }}</p>{% endif %}
+                      {% if widget.lock_reason %}<p>{{ widget.lock_reason }}</p>{% endif %}
                     </div>
-                    {% if widget.access == 'locked' %}
-                      <a class="btn locked" href="{{ widget.cta_route }}">Unlock</a>
-                    {% else %}
-                      <a class="btn" href="{{ widget.route }}">Open</a>
-                    {% endif %}
+                    <div class="module-bottom">
+                      {% if widget.access == 'locked' %}
+                        <a class="module-cta" href="{{ widget.cta_route }}">Unlock</a>
+                      {% else %}
+                        <a class="module-cta" href="{{ widget.route }}">Open</a>
+                      {% endif %}
+                      <span class="pill">{{ widget.access }}</span>
+                    </div>
                   </article>
                 {% endfor %}
               </div>
             </section>
           {% endfor %}
         </section>
-      </div>
+
+        <section class="quick-strip" aria-label="Quick actions">
+          {% for action in mc.quick_actions %}
+            <a class="rail-action {% if action.access == 'locked' %}locked{% endif %}" href="{{ action.route }}">
+              <span class="glyph">{{ action.label[:2] }}</span>
+              <span>{{ action.label }}</span>
+              {% if action.reason %}<span class="pill locked">Lock</span>{% else %}<span class="pill">Go</span>{% endif %}
+            </a>
+          {% endfor %}
+        </section>
+        <div class="legend" aria-label="Dashboard access legend">
+          <span>Unlocked for your account</span>
+          <span>Premium cards lock for free users</span>
+          <span>Admin and moderator tools stay hidden unless authorized</span>
+        </div>
+      </section>
     </div>
   </main>
 

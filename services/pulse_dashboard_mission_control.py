@@ -142,6 +142,69 @@ def _widget(
     }
 
 
+SECTION_META = {
+    "Account Command Center": {"icon": "ID", "accent": "cyan", "label": "Account"},
+    "Pulse Network": {"icon": "PN", "accent": "purple", "label": "Network"},
+    "Creator Studio": {"icon": "CS", "accent": "blue", "label": "Creator"},
+    "Intelligence Center": {"icon": "AI", "accent": "emerald", "label": "Intel"},
+    "Economy & Earnings": {"icon": "$", "accent": "gold", "label": "Economy"},
+    "Pulse Radio & Media": {"icon": "FM", "accent": "purple", "label": "Media"},
+    "Moderation / Safety": {"icon": "SH", "accent": "emerald", "label": "Safety"},
+    "Admin / Moderator Only": {"icon": "AD", "accent": "red", "label": "Admin"},
+}
+
+WIDGET_ICONS = {
+    "profile": "ID",
+    "verification": "OK",
+    "account_health": "98",
+    "security": "LK",
+    "settings": "GE",
+    "advanced_security": "2F",
+    "notifications": "AL",
+    "messages": "MS",
+    "friends": "FR",
+    "followers": "NW",
+    "groups": "GR",
+    "status_activity": "ST",
+    "community_activity": "CM",
+    "my_posts": "PO",
+    "reels": "RL",
+    "videos": "VD",
+    "statuses": "SS",
+    "live_studio": "LV",
+    "audience_analytics": "AN",
+    "content_performance": "CP",
+    "best_posting_time": "BT",
+    "creator_score": "SC",
+    "creator_tools": "TL",
+    "scam_shield": "SH",
+    "scam_alerts": "!",
+    "pulse_intelligence": "PI",
+    "ai_insights": "AI",
+    "safety_scan": "100",
+    "recommendations": "RC",
+    "wallet": "WL",
+    "earnings": "ER",
+    "marketplace": "MK",
+    "seller_tools": "SL",
+    "subscriptions": "SB",
+    "premium": "PR",
+    "creator_revenue": "RV",
+    "payouts": "PY",
+    "pulse_radio": "FM",
+    "music_library": "MU",
+    "video_library": "VL",
+    "saved_media": "SV",
+    "upload_music": "UP",
+    "playlists": "PL",
+    "reports_submitted": "RP",
+    "blocked_users": "BL",
+    "appeals": "AP",
+    "moderation_status": "MD",
+    "content_removals": "RM",
+}
+
+
 WIDGETS: list[dict[str, Any]] = [
     _widget("profile", "Profile", "Account Command Center", "/pulse/profile", "Manage your public identity, bio, avatar, and profile surface.", sort_order=10),
     _widget("verification", "Verification", "Account Command Center", "/account", "Check email, identity, and premium verification state.", sort_order=20, accent="emerald"),
@@ -257,11 +320,13 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
         item["access"] = access
         item["lock_reason"] = _lock_reason(widget, caps) if access == "locked" else ""
         item["cta_route"] = "/pulse/premium" if "Premium" in item.get("lock_reason", "") else (item["route"] or "/dashboard")
+        item["icon"] = WIDGET_ICONS.get(item["widget_key"], "MC")
         widgets.append(item)
     categories = []
     for category in dict.fromkeys(item["category"] for item in widgets):
         section_widgets = sorted([item for item in widgets if item["category"] == category], key=lambda item: item["sort_order"])
-        categories.append({"name": category, "widgets": section_widgets})
+        meta = SECTION_META.get(category, {"icon": "MC", "accent": "cyan", "label": category})
+        categories.append({"name": category, "widgets": section_widgets, **meta})
     quick_actions = _quick_actions(caps)
     return {
         "ok": True,
@@ -307,12 +372,12 @@ def _metrics(cur: Any, user: dict[str, Any], caps: dict[str, Any]) -> list[dict[
     engagement = posts + reels + videos + comments
     health = 92 if caps.get("verified") else 76
     return [
-        {"label": "Pulse Score", "value": str(pulse_score), "detail": "creator and trust activity"},
-        {"label": "Followers", "value": str(followers), "detail": f"{following} following"},
-        {"label": "Profile Views", "value": str(_profile_views(cur, user_id)), "detail": "private owner metric"},
-        {"label": "Engagement", "value": str(engagement), "detail": "posts, reels, videos, comments"},
-        {"label": "Account Health", "value": f"{health}%", "detail": "security and verification"},
-        {"label": "Unread", "value": str(unread_messages + unread_alerts), "detail": "messages and alerts separated"},
+        {"label": "Pulse Score", "value": str(pulse_score), "detail": "creator and trust activity", "icon": "PS", "accent": "emerald", "trend": "Live"},
+        {"label": "Followers", "value": str(followers), "detail": f"{following} following", "icon": "NW", "accent": "purple", "trend": "Network"},
+        {"label": "Profile Views", "value": str(_profile_views(cur, user_id)), "detail": "private owner metric", "icon": "EV", "accent": "cyan", "trend": "Owner"},
+        {"label": "Engagement", "value": str(engagement), "detail": "posts, reels, videos, comments", "icon": "EG", "accent": "purple", "trend": "Signals"},
+        {"label": "Account Health", "value": f"{health}%", "detail": "security and verification", "icon": "SH", "accent": "emerald", "trend": "Secure"},
+        {"label": "Unread", "value": str(unread_messages + unread_alerts), "detail": "messages and alerts separated", "icon": "IN", "accent": "gold", "trend": "Split"},
     ]
 
 
