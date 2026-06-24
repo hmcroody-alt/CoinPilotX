@@ -1,1222 +1,384 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dashboard | PulseSoc</title>
-  <meta name="description" content="Private PulseSoc account dashboard for portfolio tracking, watchlists, alerts, native notifications, and account sync." />
-  <meta name="robots" content="noindex, nofollow" />
-  <link rel="canonical" href="https://pulsesoc.com/dashboard" />
-  <meta name="theme-color" content="#00e5ff" />
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" />
-  <link rel="manifest" href="/manifest.json" />
-  <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
-  <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="theme-color" content="#06101b">
+  <title>PulseSoc Mission Control</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}">
   <style>
-    :root { --bg:#050b14; --panel:#0d1627; --panel2:#111d32; --line:rgba(110,223,246,.18); --text:#f2fbff; --muted:#9fb5c0; --cyan:#6edff6; --green:#36e58f; --gold:#ffd166; --red:#ff6b7a; }
-    * { box-sizing:border-box; }
-    body { margin:0; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; color:var(--text); background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 30rem),radial-gradient(circle at 90% 10%,rgba(54,229,143,.12),transparent 26rem),linear-gradient(135deg,#050b14,#081421 60%,#04070d); line-height:1.6; overflow-x:hidden; padding-bottom:76px; }
-    a { color:inherit; }
-    .container { width:min(100% - 32px,1240px); margin:0 auto; }
-    header { position:sticky; top:0; z-index:20; border-bottom:1px solid rgba(255,255,255,.08); background:rgba(5,11,20,.88); backdrop-filter:blur(18px); }
-    nav { min-height:72px; display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
-    .brand { display:inline-flex; align-items:center; gap:12px; text-decoration:none; font-weight:900; }
-    .brand img { width:44px; height:44px; object-fit:contain; filter:drop-shadow(0 0 18px rgba(110,223,246,.3)); }
-    .nav-links { display:flex; gap:10px; flex-wrap:wrap; }
-    .button { min-height:44px; display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:11px 15px; border-radius:8px; border:1px solid var(--line); background:rgba(255,255,255,.055); color:var(--text); text-decoration:none; font-weight:850; cursor:pointer; }
-    .button.primary { color:#06101b; border-color:transparent; background:linear-gradient(135deg,var(--green),var(--cyan)); }
-    .button.gold { color:#1c1303; border-color:transparent; background:linear-gradient(135deg,var(--gold),#ffaf37); }
-    .command-glow { position:relative; overflow:hidden; border:1px solid rgba(110,223,246,.36); background:linear-gradient(135deg,rgba(255,255,255,.08),rgba(255,255,255,.035)); box-shadow:0 0 0 1px rgba(255,255,255,.03),0 0 24px rgba(110,223,246,.10); transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease; animation:commandPulse 7s ease-in-out infinite; }
-    .command-glow::before { content:""; position:absolute; inset:-1px; z-index:-1; opacity:.5; background:linear-gradient(135deg,var(--glow-a,#6edff6),var(--glow-b,#36e58f)); filter:blur(18px); }
-    .command-glow:hover { transform:translateY(-2px); box-shadow:0 14px 42px rgba(0,0,0,.28),0 0 36px color-mix(in srgb,var(--glow-a,#6edff6) 42%,transparent); border-color:color-mix(in srgb,var(--glow-a,#6edff6) 70%,white); }
-    .command-glow:active { transform:translateY(1px) scale(.985); }
-    .command-glow:focus-visible,.alerts-dance:focus-visible { outline:3px solid rgba(255,255,255,.88); outline-offset:3px; }
-    .command-glow-market { --glow-a:#00e5ff; --glow-b:#2f80ff; }
-    .command-glow-ai { --glow-a:#36e58f; --glow-b:#00c2a8; }
-    .command-glow-risk { --glow-a:#ffd166; --glow-b:#ff5a66; }
-    .command-glow-portfolio { --glow-a:#9b5cff; --glow-b:#2f80ff; }
-    .command-glow-sports { --glow-a:#b6ff4f; --glow-b:#ffd166; }
-    .command-glow-account { --glow-a:#6edff6; --glow-b:#77a7ff; }
-    .arena-cta-card { position:relative; overflow:hidden; border-color:rgba(54,229,143,.42); background:radial-gradient(circle at 12% 8%,rgba(54,229,143,.22),transparent 15rem),radial-gradient(circle at 92% 0,rgba(110,223,246,.20),transparent 18rem),linear-gradient(160deg,rgba(17,29,50,.96),rgba(5,11,20,.9)); box-shadow:0 24px 80px rgba(0,0,0,.32),0 0 42px rgba(54,229,143,.14); animation:arenaPortalPulse 7s ease-in-out infinite; }
-    .arena-cta-card::before { content:""; position:absolute; inset:-60% -30%; opacity:.36; background:linear-gradient(110deg,transparent 28%,rgba(255,255,255,.18),transparent 45%); transform:translateX(-40%) rotate(8deg); animation:arenaLightSweep 5.8s ease-in-out infinite; pointer-events:none; }
-    .arena-cta-card > * { position:relative; z-index:1; }
-    .roast-dashboard-card { position:relative; overflow:hidden; border-color:rgba(255,90,102,.48); background:radial-gradient(circle at 12% 0,rgba(255,90,102,.22),transparent 15rem),radial-gradient(circle at 90% 10%,rgba(255,209,102,.18),transparent 18rem),linear-gradient(160deg,rgba(17,29,50,.97),rgba(5,11,20,.92)); box-shadow:0 24px 82px rgba(0,0,0,.34),0 0 44px rgba(255,90,102,.16); animation:roastPulse 6.8s ease-in-out infinite; }
-    .roast-dashboard-card::before { content:""; position:absolute; inset:-60% -30%; opacity:.34; background:linear-gradient(112deg,transparent 28%,rgba(255,255,255,.2),transparent 46%); transform:translateX(-45%) rotate(10deg); animation:arenaLightSweep 5.4s ease-in-out infinite; pointer-events:none; }
-    .roast-dashboard-card > * { position:relative; z-index:1; }
-    .roast-live-badge { border-color:rgba(255,90,102,.42); color:#ffe2e6; background:rgba(255,90,102,.14); animation:roastBadgePulse 1.8s ease-in-out infinite; }
-    .roast-live-badge::before { background:#ff5a66; box-shadow:0 0 14px rgba(255,90,102,.85); }
-    .roast-emoji-row { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; font-size:22px; }
-    .roast-emoji-row span { display:inline-grid; place-items:center; width:34px; height:34px; border-radius:10px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.09); box-shadow:0 0 18px rgba(255,209,102,.08); }
-    .arena-live-badge { display:inline-flex; align-items:center; gap:7px; width:max-content; border:1px solid rgba(54,229,143,.38); border-radius:999px; padding:5px 9px; color:#c8ffe2; background:rgba(54,229,143,.12); font-size:12px; font-weight:950; letter-spacing:.04em; }
-    .arena-live-badge::before { content:""; width:8px; height:8px; border-radius:999px; background:var(--green); box-shadow:0 0 14px rgba(54,229,143,.85); }
-    .arena-preview-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:10px 0 14px; }
-    .arena-preview-grid span { border:1px solid rgba(255,255,255,.09); border-radius:10px; background:rgba(255,255,255,.045); padding:8px; color:#dffcff; font-weight:850; }
-    .start-path { display:grid; gap:8px; }
-    .start-step { display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center; border:1px solid rgba(255,255,255,.09); border-radius:10px; padding:10px; background:rgba(255,255,255,.045); text-decoration:none; }
-    .start-step b { width:28px; height:28px; display:grid; place-items:center; border-radius:999px; color:#06101b; background:linear-gradient(135deg,var(--green),var(--cyan)); }
-    .start-step.done b { background:linear-gradient(135deg,var(--gold),var(--green)); }
-    .world-feed { display:grid; gap:8px; max-height:280px; overflow:auto; }
-    .world-feed a { display:grid; gap:3px; border-left:3px solid var(--cyan); border-radius:10px; padding:9px 10px; background:rgba(255,255,255,.04); text-decoration:none; }
-    .signal-mode { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:10px 0; }
-    .signal-mode label { border:1px solid rgba(255,255,255,.09); border-radius:10px; padding:9px; color:var(--muted); }
-    .glow-education,.glow-optimism,.glow-future,.glow-alert { position:relative; overflow:hidden; border:1px solid rgba(110,223,246,.34); box-shadow:0 0 26px rgba(110,223,246,.12); transition:transform .18s ease,box-shadow .18s ease; animation:commandPulse 8s ease-in-out infinite; }
-    .glow-education { --glow-a:#00e5ff; --glow-b:#2f80ff; background:linear-gradient(135deg,rgba(0,229,255,.22),rgba(47,128,255,.12)); }
-    .glow-optimism { --glow-a:#36e58f; --glow-b:#00c2a8; background:linear-gradient(135deg,rgba(54,229,143,.22),rgba(0,194,168,.12)); }
-    .glow-future { --glow-a:#9b5cff; --glow-b:#4f7cff; background:linear-gradient(135deg,rgba(155,92,255,.22),rgba(79,124,255,.12)); }
-    .glow-alert { --glow-a:#ffd166; --glow-b:#ff5a66; background:linear-gradient(135deg,rgba(255,209,102,.22),rgba(255,90,102,.12)); }
-    .glow-education:hover,.glow-optimism:hover,.glow-future:hover,.glow-alert:hover { transform:translateY(-2px); box-shadow:0 14px 42px rgba(0,0,0,.28),0 0 38px color-mix(in srgb,var(--glow-a) 34%,transparent); }
-    .alerts-dance { transition:transform .2s ease,box-shadow .2s ease; }
-    .alerts-dance.is-dancing { animation:alertDance 1.8s ease-in-out 1; box-shadow:0 0 28px rgba(255,209,102,.55); }
-    .timeline-summary { display:grid; gap:8px; }
-    .timeline-panel[hidden] { display:none; }
-    .timeline-panel { max-height:400px; overflow:auto; border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:10px; margin-top:12px; background:rgba(0,0,0,.16); }
-    @keyframes commandPulse { 0%,78%,100%{box-shadow:0 0 0 1px rgba(255,255,255,.03),0 0 20px rgba(110,223,246,.08)} 84%{box-shadow:0 0 0 1px rgba(255,255,255,.06),0 0 34px color-mix(in srgb,var(--glow-a,#6edff6) 28%,transparent)} }
-    @keyframes alertDance { 0%,100%{transform:translateY(0) rotate(0)} 18%{transform:translateY(-5px) rotate(-2deg)} 36%{transform:translateY(0) rotate(2deg)} 54%{transform:translateY(-3px) rotate(-1deg)} 72%{transform:translateY(0) rotate(1deg)} }
-    @keyframes arenaPortalPulse { 0%,100%{box-shadow:0 24px 80px rgba(0,0,0,.32),0 0 32px rgba(54,229,143,.12)} 50%{box-shadow:0 26px 86px rgba(0,0,0,.34),0 0 48px rgba(110,223,246,.18)} }
-    @keyframes arenaLightSweep { 0%,55%,100%{transform:translateX(-48%) rotate(8deg)} 72%{transform:translateX(58%) rotate(8deg)} }
-    @keyframes roastPulse { 0%,100%{box-shadow:0 24px 82px rgba(0,0,0,.34),0 0 32px rgba(255,90,102,.12)} 50%{box-shadow:0 28px 88px rgba(0,0,0,.36),0 0 52px rgba(255,209,102,.18)} }
-    @keyframes roastBadgePulse { 0%,100%{transform:scale(1);box-shadow:0 0 0 rgba(255,90,102,0)} 50%{transform:scale(1.04);box-shadow:0 0 24px rgba(255,90,102,.22)} }
-    main { padding:34px 0 64px; }
-    .hero { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr); gap:18px; align-items:stretch; margin-bottom:18px; }
-    .hero > .card:first-child { grid-column:1 / -1; }
-    .card { border:1px solid var(--line); border-radius:14px; background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.86)); box-shadow:0 24px 70px rgba(0,0,0,.28); padding:20px; }
-    .kicker { color:var(--green); font-weight:900; letter-spacing:.08em; text-transform:uppercase; font-size:12px; }
-    h1 { margin:8px 0 8px; font-size:clamp(34px,6vw,58px); line-height:1; letter-spacing:0; }
-    h2 { margin:0 0 12px; font-size:clamp(22px,3vw,32px); }
-    h3 { margin:0 0 8px; }
-    p,.muted { color:var(--muted); }
-    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
-    .wide { grid-column:span 2; }
-    .metric { font-size:clamp(28px,5vw,48px); font-weight:950; margin:4px 0; }
-    .green { color:var(--green); } .red { color:var(--red); } .cyan { color:var(--cyan); }
-    .list { display:grid; gap:10px; }
-    .row { display:grid; grid-template-columns:1.2fr .8fr .8fr .8fr auto; gap:10px; align-items:center; padding:12px; border:1px solid rgba(255,255,255,.08); border-radius:10px; background:rgba(255,255,255,.04); }
-    .watch-row,.alert-row,.activity-row { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:12px; border:1px solid rgba(255,255,255,.08); border-radius:10px; background:rgba(255,255,255,.04); }
-    form { display:grid; gap:10px; }
-    input,select,textarea { width:100%; min-height:44px; border:1px solid rgba(110,223,246,.18); border-radius:8px; background:rgba(255,255,255,.055); color:var(--text); padding:11px 12px; font:inherit; }
-    .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
-    .status { display:inline-flex; align-items:center; gap:8px; color:#c8ffe2; font-weight:850; }
-    .status::before { content:""; width:9px; height:9px; border-radius:999px; background:var(--green); box-shadow:0 0 16px rgba(54,229,143,.8); }
-    .chart { display:flex; align-items:end; gap:6px; height:140px; padding-top:12px; }
-    .bar { flex:1; min-height:8px; border-radius:8px 8px 0 0; background:linear-gradient(180deg,var(--cyan),var(--green)); opacity:.82; }
-    .notice { padding:13px 14px; border-radius:10px; border:1px solid rgba(255,209,102,.24); background:rgba(255,209,102,.08); color:#ffe4a8; }
-    .locked { opacity:.56; filter:saturate(.72); }
-    .lock-badge { display:inline-flex; align-items:center; padding:4px 8px; border-radius:999px; background:rgba(255,209,102,.14); color:#ffe4a8; font-size:12px; font-weight:900; }
-    .score-ring { width:118px; height:118px; border-radius:999px; display:grid; place-items:center; border:10px solid rgba(54,229,143,.24); box-shadow:inset 0 0 24px rgba(54,229,143,.15),0 0 28px rgba(110,223,246,.12); font-size:34px; font-weight:950; }
-    .bottom-nav { position:fixed; left:0; right:0; bottom:0; z-index:40; min-height:calc(64px + env(safe-area-inset-bottom)); border-top:1px solid rgba(255,255,255,.08); background:rgba(5,11,20,.94); backdrop-filter:blur(10px); padding-bottom:env(safe-area-inset-bottom); overflow:hidden; }
-    .bottom-nav .container { display:flex; gap:2px; padding:6px; align-items:center; justify-content:space-around; }
-    .bottom-nav a { min-width:0; flex:1 1 0; min-height:50px; display:grid; place-items:center; color:var(--muted); text-decoration:none; font-size:10px; line-height:1; font-weight:900; border-radius:9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .bottom-nav a:hover,.bottom-nav a.active { color:#06101b; background:linear-gradient(135deg,var(--green),var(--cyan)); }
-    .channel-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
-    .channel-grid label { display:flex; gap:8px; align-items:center; padding:10px; border:1px solid rgba(255,255,255,.08); border-radius:8px; color:var(--muted); }
-    .customize-home { position:relative; }
-    .customize-panel { position:absolute; right:0; top:52px; z-index:35; width:min(360px,calc(100vw - 32px)); border:1px solid rgba(110,223,246,.25); border-radius:16px; background:rgba(8,15,28,.96); backdrop-filter:blur(18px); padding:14px; box-shadow:0 22px 70px rgba(0,0,0,.38),0 0 28px rgba(110,223,246,.12); }
-    .customize-panel[hidden] { display:none; }
-    .toggle-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px; border:1px solid rgba(255,255,255,.08); border-radius:12px; margin-top:8px; color:var(--muted); }
-    .toggle-row input { width:44px; height:24px; min-height:24px; accent-color:var(--green); filter:drop-shadow(0 0 10px rgba(54,229,143,.3)); }
-    [data-home-hidden="true"] { display:none!important; }
-    .private-chat-launcher { position:fixed; right:20px; bottom:calc(env(safe-area-inset-bottom) + 88px); z-index:65; width:clamp(160px,42vw,220px); min-width:0; border:1px solid rgba(110,223,246,.34); border-radius:999px; box-shadow:0 14px 40px rgba(0,0,0,.3),0 0 24px rgba(110,223,246,.16); backdrop-filter:blur(10px); white-space:nowrap; }
-    .private-chat-launcher-icon { font-size:20px; line-height:1; }
-    .private-chat-badge,
-    .nav-badge { min-width:22px; height:22px; display:inline-grid; place-items:center; border-radius:999px; color:#fff; background:#ff335d; font-size:12px; font-weight:950; box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 18px rgba(255,51,93,.55); }
-    .private-chat-badge:not([hidden]) { animation:chatUnreadPulse 1.7s ease-in-out infinite; }
-    .private-chat-shell { position:fixed; inset:0; z-index:64; pointer-events:none; }
-    .private-chat-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.42); backdrop-filter:blur(7px); opacity:0; transition:opacity .2s ease; pointer-events:none; }
-    .private-chat-panel { position:absolute; right:20px; bottom:92px; width:min(420px,calc(100vw - 32px)); height:min(650px,calc(100vh - 130px)); display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; border:1px solid rgba(110,223,246,.24); border-radius:20px; background:linear-gradient(180deg,rgba(17,29,50,.96),rgba(5,11,20,.95)); box-shadow:0 28px 90px rgba(0,0,0,.48),0 0 34px rgba(110,223,246,.16); overflow:hidden; transform:translate3d(0,18px,0) scale(.98); opacity:0; transition:transform .34s cubic-bezier(.18,.9,.2,1),opacity .2s ease; will-change:transform; }
-    .private-chat-shell.is-open { pointer-events:none; }
-    .private-chat-shell.is-open .private-chat-backdrop { opacity:1; pointer-events:auto; }
-    .private-chat-shell.is-open .private-chat-panel { transform:translate3d(0,0,0) scale(1); opacity:1; }
-    .private-chat-panel { pointer-events:auto; }
-    .private-chat-drag { display:none; padding:9px 0 2px; touch-action:none; cursor:grab; pointer-events:none; }
-    .private-chat-drag::before { content:""; display:block; width:46px; height:5px; margin:auto; border-radius:999px; background:rgba(242,251,255,.38); box-shadow:0 0 18px rgba(110,223,246,.35); }
-    .private-chat-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px; border-bottom:1px solid rgba(255,255,255,.07); position:relative; z-index:8; pointer-events:auto; }
-    .private-chat-head strong { display:block; }
-    .private-chat-tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:10px 14px; border-bottom:1px solid rgba(255,255,255,.08); position:relative; z-index:9; pointer-events:auto; }
-    .private-chat-tabs button { min-height:38px; border:1px solid rgba(110,223,246,.2); border-radius:10px; background:rgba(255,255,255,.05); color:var(--text); font-weight:850; position:relative; z-index:10; pointer-events:auto; }
-    .private-chat-tabs button.is-active { color:#06101b; background:linear-gradient(135deg,var(--green),var(--cyan)); }
-    .private-chat-main { min-height:0; overflow:hidden; display:grid; grid-template-columns:1fr; }
-    .private-chat-view { min-height:0; overflow:auto; padding:12px; }
-    .private-chat-view[hidden] { display:none; }
-    .conversation-row { width:100%; text-align:left; display:grid; gap:4px; border:1px solid rgba(255,255,255,.08); border-radius:12px; background:rgba(255,255,255,.045); color:var(--text); padding:11px; margin-bottom:8px; cursor:pointer; }
-    .conversation-row:hover { border-color:rgba(110,223,246,.32); box-shadow:0 0 22px rgba(110,223,246,.1); }
-    .conversation-meta { display:flex; justify-content:space-between; gap:8px; color:var(--muted); font-size:12px; }
-    .online-dot { display:inline-flex; align-items:center; gap:6px; color:#c8ffe2; font-size:12px; }
-    .online-dot::before { content:""; width:8px; height:8px; border-radius:999px; background:var(--green); box-shadow:0 0 12px rgba(54,229,143,.7); }
-    .chat-thread { display:grid; gap:9px; }
-    .chat-bubble { max-width:82%; padding:10px 12px; border-radius:14px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.08); }
-    .chat-bubble.me { justify-self:end; color:#06101b; background:linear-gradient(135deg,var(--cyan),#77a7ff); }
-    .chat-bubble.them { justify-self:start; background:rgba(255,255,255,.065); }
-    .chat-bubble small { display:block; margin-top:4px; opacity:.76; }
-    .private-chat-form { position:sticky; bottom:0; z-index:2; display:flex; gap:8px; padding:12px; border-top:1px solid rgba(255,255,255,.08); background:rgba(5,11,20,.94); backdrop-filter:blur(14px); }
-    .private-chat-form input { min-width:0; }
-    .private-chat-empty { min-height:180px; display:grid; place-items:center; text-align:center; color:var(--muted); padding:24px; line-height:1.55; }
-    .private-chat-empty::before { content:"💬"; display:grid; place-items:center; width:54px; height:54px; margin:0 auto 12px; border-radius:20px; background:rgba(110,223,246,.1); box-shadow:0 0 24px rgba(110,223,246,.18); animation:chatUnreadPulse 2.4s ease-in-out infinite; }
-    .private-chat-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
-    .private-chat-tools { position:relative; display:flex; align-items:center; gap:8px; }
-    .private-chat-menu-backdrop { position:fixed; inset:0; z-index:9998; background:rgba(0,0,0,.48); backdrop-filter:blur(7px); pointer-events:auto; }
-    .private-chat-menu-backdrop[hidden] { display:none; }
-    .private-chat-menu { position:absolute; right:0; top:48px; min-width:250px; padding:8px; border:1px solid rgba(110,223,246,.22); border-radius:18px; background:rgba(8,15,28,.98); box-shadow:0 20px 70px rgba(0,0,0,.45); backdrop-filter:blur(18px); display:grid; gap:6px; z-index:9999; pointer-events:auto; }
-    .private-chat-menu[hidden] { display:none; }
-    .private-chat-menu button { width:100%; justify-content:flex-start; min-height:42px; background:rgba(255,255,255,.045); border-color:rgba(255,255,255,.08); }
-    .private-chat-menu-title { padding:8px 10px 4px; font-weight:950; color:var(--text); }
-    .private-chat-menu-section { display:grid; gap:6px; padding:6px; border-top:1px solid rgba(255,255,255,.08); }
-    .private-chat-menu-section:first-of-type { border-top:0; }
-    .private-chat-menu small { padding:8px 10px 0; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; font-weight:850; }
-    .private-chat-modal { position:fixed; inset:0; z-index:10000; display:none; place-items:end center; padding:14px; background:rgba(0,0,0,.52); backdrop-filter:blur(8px); }
-    .private-chat-modal.is-open { display:grid; }
-    .private-chat-sheet { width:min(560px,100%); max-height:min(720px,86dvh); overflow:auto; padding:16px; border:1px solid rgba(110,223,246,.22); border-radius:24px; background:#071321; box-shadow:0 30px 90px rgba(0,0,0,.55); }
-    .private-chat-sheet form { display:grid; gap:10px; }
-    @keyframes chatUnreadPulse { 0%,100%{transform:scale(1);box-shadow:0 0 18px rgba(255,209,102,.45)} 50%{transform:scale(1.08);box-shadow:0 0 28px rgba(54,229,143,.62)} }
-    @media (max-width:900px){ .hero,.grid{grid-template-columns:1fr}.wide{grid-column:auto}.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.button{width:100%}.nav-links{width:100%;display:grid;grid-template-columns:1fr 1fr}.watch-row,.alert-row,.activity-row{align-items:flex-start;flex-direction:column}.private-chat-launcher{right:14px;bottom:calc(env(safe-area-inset-bottom) + 88px);width:54px;max-width:54px;height:54px;min-height:54px;padding:0;border-radius:50%;display:grid;place-items:center;font-size:0;background:linear-gradient(135deg,rgba(54,229,143,.92),rgba(110,223,246,.96));color:#06101b;box-shadow:0 14px 38px rgba(0,0,0,.32),0 0 22px rgba(110,223,246,.24)}.private-chat-launcher-label{display:none}.private-chat-launcher-icon{font-size:23px}.private-chat-launcher .private-chat-badge{position:absolute;right:-5px;top:-6px;min-width:22px;height:22px;font-size:11px}.private-chat-shell.is-open{z-index:67}.private-chat-backdrop{backdrop-filter:blur(4px)}.private-chat-panel{inset:auto 0 0 0; width:100%; height:95dvh; max-height:95dvh; border-radius:26px 26px 0 0; transform:translate3d(0,105%,0); opacity:1; grid-template-rows:auto auto minmax(0,1fr) auto}.private-chat-shell.is-half .private-chat-panel{height:58dvh;max-height:58dvh;transform:translate3d(0,0,0)}.private-chat-shell.is-full .private-chat-panel,.private-chat-shell.is-open:not(.is-half) .private-chat-panel{height:min(95dvh,100dvh);max-height:95dvh;transform:translate3d(0,0,0)}.private-chat-drag{display:block;padding:10px 0 4px}.private-chat-head{position:sticky;top:0;z-index:8;padding:8px 14px 14px;background:rgba(8,15,28,.96);backdrop-filter:blur(10px)}.private-chat-head .button{width:auto}.private-chat-tabs{z-index:9}.private-chat-tabs button{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:0}.private-chat-tabs button::after{font-size:12px}.private-chat-tabs [data-chat-tab="list"]::after{content:"Chats"}.private-chat-tabs [data-chat-tab="thread"]::after{content:"Rooms"}.private-chat-tabs [data-chat-tab="groups"]::after{content:"Groups"}.private-chat-menu{position:fixed;left:0;right:0;top:auto;bottom:0;min-width:0;width:100%;padding:12px 12px calc(14px + env(safe-area-inset-bottom));border-radius:26px 26px 0 0;animation:chatSheetIn .22s cubic-bezier(.18,.9,.2,1)}.private-chat-menu::before{content:"";display:block;width:46px;height:5px;border-radius:999px;background:rgba(242,251,255,.36);margin:2px auto 10px}.private-chat-view{padding:16px 14px 18px}.private-chat-form .button{width:50px;min-width:50px;padding:0}.private-chat-form{padding:12px 14px calc(16px + env(safe-area-inset-bottom));align-items:end}.private-chat-form input{min-height:48px;border-radius:16px}.private-chat-modal{padding:0}.private-chat-sheet{width:100%;border-radius:26px 26px 0 0;padding-bottom:calc(18px + env(safe-area-inset-bottom))}.arena-preview-grid{grid-template-columns:1fr} body.private-chat-lock{overflow:hidden;touch-action:none} } @keyframes chatSheetIn{from{transform:translateY(18px);opacity:.86}to{transform:translateY(0);opacity:1}}
-    @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important;scroll-behavior:auto!important} }
+    :root {
+      --bg: #030912;
+      --panel: rgba(9, 20, 34, .82);
+      --panel-strong: rgba(13, 28, 46, .94);
+      --line: rgba(112, 231, 255, .22);
+      --line-strong: rgba(64, 235, 166, .42);
+      --text: #f3fbff;
+      --muted: #9fb3c0;
+      --cyan: #69e7ff;
+      --emerald: #36ee9c;
+      --purple: #a879ff;
+      --gold: #ffd66e;
+      --red: #ff4f74;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--bg); }
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      background:
+        radial-gradient(circle at 8% 8%, rgba(54, 238, 156, .16), transparent 24rem),
+        radial-gradient(circle at 84% 0, rgba(105, 231, 255, .18), transparent 28rem),
+        radial-gradient(circle at 58% 38%, rgba(168, 121, 255, .11), transparent 30rem),
+        linear-gradient(135deg, #030912, #071525 56%, #04070e);
+      overflow-x: hidden;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      background-image:
+        linear-gradient(rgba(105,231,255,.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(105,231,255,.055) 1px, transparent 1px);
+      background-size: 72px 72px;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,.8), rgba(0,0,0,.18));
+    }
+    body::after {
+      content: "";
+      position: fixed;
+      inset: auto -20vw 0;
+      height: 32vh;
+      z-index: -1;
+      background: radial-gradient(ellipse at center, rgba(54,238,156,.12), transparent 62%);
+      filter: blur(26px);
+      pointer-events: none;
+    }
+    a { color: inherit; text-decoration: none; }
+    button, input { font: inherit; }
+    .shell { width: min(100% - 28px, 1460px); margin: 0 auto; padding: calc(18px + env(safe-area-inset-top)) 0 calc(96px + env(safe-area-inset-bottom)); }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      margin: 0 0 22px;
+      padding: calc(12px + env(safe-area-inset-top)) max(14px, calc((100vw - min(100vw - 28px, 1460px)) / 2)) 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      border-bottom: 1px solid rgba(105,231,255,.16);
+      background: rgba(3, 9, 18, .86);
+      backdrop-filter: blur(18px);
+    }
+    .brand { display: inline-flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 950; letter-spacing: 0; }
+    .brand img { width: 44px; height: 44px; border-radius: 13px; box-shadow: 0 0 26px rgba(105,231,255,.18); }
+    .top-actions { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .search {
+      min-width: min(34vw, 440px);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 48px;
+      padding: 0 8px 0 14px;
+      border: 1px solid rgba(105,231,255,.18);
+      border-radius: 14px;
+      background: rgba(255,255,255,.045);
+    }
+    .search input { min-width: 0; width: 100%; border: 0; outline: 0; color: var(--text); background: transparent; }
+    .btn {
+      min-height: 46px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 11px 15px;
+      border-radius: 14px;
+      border: 1px solid rgba(105,231,255,.22);
+      background: rgba(255,255,255,.055);
+      color: var(--text);
+      font-weight: 900;
+      cursor: pointer;
+      transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+    }
+    .btn:hover { transform: translateY(-1px); border-color: rgba(105,231,255,.45); box-shadow: 0 0 24px rgba(105,231,255,.12); }
+    .btn.primary { color: #04101a; border-color: transparent; background: linear-gradient(135deg, var(--emerald), var(--cyan)); }
+    .btn.locked { color: #190f00; border-color: transparent; background: linear-gradient(135deg, var(--gold), #ffa047); }
+    .mission-grid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 18px; align-items: start; }
+    .profile-panel, .section, .metric, .quick-panel {
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: linear-gradient(180deg, var(--panel-strong), var(--panel));
+      box-shadow: 0 24px 80px rgba(0,0,0,.26), inset 0 1px 0 rgba(255,255,255,.045);
+    }
+    .profile-panel {
+      position: sticky;
+      top: 96px;
+      padding: 18px;
+      overflow: hidden;
+    }
+    .profile-panel::before, .section::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(120deg, transparent 0 40%, rgba(105,231,255,.09), transparent 60% 100%);
+      opacity: .5;
+    }
+    .avatar-wrap { display: flex; align-items: center; gap: 14px; position: relative; }
+    .avatar {
+      width: 74px;
+      height: 74px;
+      border-radius: 24px;
+      object-fit: cover;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      color: #05111b;
+      font-size: 30px;
+      font-weight: 950;
+      background: linear-gradient(135deg, var(--cyan), var(--purple));
+      box-shadow: 0 0 0 1px rgba(255,255,255,.16), 0 0 30px rgba(105,231,255,.18);
+    }
+    .user-name { margin: 0; font-size: clamp(28px, 4vw, 44px); line-height: 1; letter-spacing: 0; }
+    .muted { color: var(--muted); }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 30px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      color: #dffcff;
+      border: 1px solid rgba(105,231,255,.22);
+      background: rgba(105,231,255,.075);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    .badge.premium { color: #101004; border-color: transparent; background: linear-gradient(135deg, var(--gold), var(--emerald)); }
+    .quick-panel { margin-top: 14px; padding: 14px; }
+    .quick-panel h2, .section h2 { margin: 0 0 12px; font-size: 18px; }
+    .quick-actions { display: grid; gap: 8px; }
+    .quick-actions .btn { width: 100%; justify-content: flex-start; }
+    .main { display: grid; gap: 18px; min-width: 0; }
+    .hero {
+      min-height: 220px;
+      padding: 24px;
+      border: 1px solid rgba(54,238,156,.28);
+      border-radius: 28px;
+      background:
+        radial-gradient(circle at 18% 18%, rgba(54,238,156,.18), transparent 20rem),
+        radial-gradient(circle at 92% 8%, rgba(168,121,255,.18), transparent 22rem),
+        linear-gradient(135deg, rgba(12,27,45,.94), rgba(5,14,25,.9));
+      box-shadow: 0 30px 90px rgba(0,0,0,.32), 0 0 42px rgba(54,238,156,.12);
+    }
+    .kicker { color: var(--emerald); font-size: 12px; font-weight: 950; letter-spacing: .13em; text-transform: uppercase; }
+    h1 { margin: 8px 0; font-size: clamp(42px, 7vw, 84px); line-height: .93; letter-spacing: 0; }
+    .hero p { max-width: 780px; font-size: clamp(17px, 2vw, 22px); }
+    .metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+    .metric { padding: 15px; min-height: 108px; }
+    .metric strong { display: block; font-size: clamp(24px, 3vw, 38px); line-height: 1; margin: 8px 0; }
+    .sections { display: grid; gap: 16px; }
+    .section { position: relative; padding: 16px; overflow: hidden; }
+    .section-head { position: relative; z-index: 1; display: flex; justify-content: space-between; gap: 12px; align-items: end; margin-bottom: 12px; }
+    .widget-grid { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .widget {
+      min-height: 168px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px;
+      border: 1px solid rgba(105,231,255,.16);
+      border-radius: 18px;
+      background: rgba(255,255,255,.045);
+      transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease, opacity .16s ease;
+      overflow: hidden;
+    }
+    .widget:hover { transform: translateY(-2px); border-color: rgba(105,231,255,.38); box-shadow: 0 18px 48px rgba(0,0,0,.26), 0 0 24px rgba(105,231,255,.12); }
+    .widget[data-accent="emerald"] { border-color: rgba(54,238,156,.24); }
+    .widget[data-accent="purple"] { border-color: rgba(168,121,255,.24); }
+    .widget[data-accent="gold"] { border-color: rgba(255,214,110,.26); }
+    .widget[data-accent="red"] { border-color: rgba(255,79,116,.28); }
+    .widget.locked { opacity: .62; filter: saturate(.72); background: rgba(255,255,255,.03); }
+    .widget h3 { margin: 0; font-size: 20px; }
+    .widget p { margin: 7px 0 0; color: var(--muted); }
+    .widget-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 900; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    .status-dot { width: 10px; height: 10px; border-radius: 999px; background: var(--emerald); box-shadow: 0 0 18px rgba(54,238,156,.75); }
+    .locked .status-dot { background: var(--gold); box-shadow: 0 0 18px rgba(255,214,110,.6); }
+    .bottom-nav {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 30;
+      padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+      border-top: 1px solid rgba(105,231,255,.16);
+      background: rgba(3, 9, 18, .9);
+      backdrop-filter: blur(18px);
+    }
+    .bottom-nav-inner { width: min(100%, 720px); margin: 0 auto; display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+    .bottom-nav a { min-height: 54px; display: grid; place-items: center; border-radius: 16px; color: #d9f8ff; font-weight: 900; font-size: 12px; }
+    .bottom-nav a.active { color: #03101a; background: linear-gradient(135deg, var(--emerald), var(--cyan)); }
+    @media (max-width: 1180px) {
+      .mission-grid { grid-template-columns: 1fr; }
+      .profile-panel { position: relative; top: auto; }
+      .metrics { grid-template-columns: repeat(3, 1fr); }
+      .widget-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 760px) {
+      .topbar { align-items: stretch; flex-direction: column; padding: calc(12px + env(safe-area-inset-top)) 14px 12px; }
+      .top-actions { display: grid; grid-template-columns: 1fr auto; }
+      .search { min-width: 0; width: 100%; }
+      .shell { width: min(100% - 24px, 1460px); }
+      .hero { padding: 18px; border-radius: 24px; }
+      .metrics, .widget-grid { grid-template-columns: 1fr; }
+      .section-head { align-items: start; flex-direction: column; }
+      .btn { min-height: 50px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+    }
   </style>
 </head>
 <body>
-  <header>
-    <div class="container">
-      <nav>
-        <a class="brand" href="/"><img src="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" alt="PulseSoc logo"><span>PulseSoc</span></a>
-        <div class="nav-links" data-home-action-group="compact_menu">
-          <a class="button" href="/account">Account</a>
-          <details>
-            <summary class="button">☰ Menu</summary>
-            <div class="customize-panel" style="right:0;top:54px">
-              <a class="button" href="/account">Account</a>
-              <a class="button" href="/pulse/premium">PulseSoc Premium</a>
-              <a class="button" href="/command-center">Command Center</a>
-              <a class="button" href="/logout">Logout</a>
-            </div>
-          </details>
-        </div>
-      </nav>
+  {% set mc = mission_control %}
+  {% set profile = mc.user %}
+  <header class="topbar">
+    <a class="brand" href="/pulse" aria-label="PulseSoc Home">
+      <img src="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" alt="">
+      <span>PulseSoc</span>
+    </a>
+    <div class="top-actions">
+      <form class="search" action="/pulse/search" method="get" role="search">
+        <span aria-hidden="true">Search</span>
+        <input name="q" type="search" placeholder="Search PulseSoc..." autocomplete="off">
+      </form>
+      <a class="btn primary" href="/pulse">Create</a>
     </div>
   </header>
 
-  <main class="container">
-    <section class="hero">
-      <article class="card">
-        <div class="kicker">Personal Intelligence Dashboard</div>
-        <h1 data-user-name>Welcome back</h1>
-        <p>Track your manual crypto holdings, watchlist, alerts, native notifications, and AI risk context from the same source-of-truth website account.</p>
-        <div class="actions">
-          <button class="button primary" type="button" data-scroll="#add-holding">Add Holding</button>
-          <button class="button" type="button" data-scroll="#add-watchlist">Add Watchlist Coin</button>
-          <a class="button gold alerts-dance" href="/alerts" data-alerts-button>Create Alert</a>
-        </div>
-      </article>
-    </section>
-
-    <section class="grid">
-      <article class="card" data-priority-card="portfolio">
-        <div class="kicker">Portfolio Value</div>
-        <div class="metric" data-total-value>$0.00</div>
-        <p>P/L: <strong data-pnl>$0.00</strong> · <strong data-pnl-percent>0.00%</strong></p>
-        <p class="muted" data-top-movers>Add your first holding to activate portfolio intelligence.</p>
-        <a class="button command-glow command-glow-portfolio" href="#add-holding">Open Portfolio Details</a>
-      </article>
-      <article class="card arena-cta-card" data-priority-card="arena">
-        <span class="arena-live-badge">FREE CORE ACCESS</span>
-        <div class="kicker">Alpha Arena</div>
-        <h2>Enter Alpha Arena</h2>
-        <p>Battle, train, survive scams, and climb the ranks.</p>
-        <div class="arena-preview-grid">
-          <span data-arena-rank-preview>Rank: Rookie</span>
-          <span data-arena-xp-preview>XP: 0</span>
-        </div>
-        <p class="muted" data-arena-summary>Virtual dollars. Real skill. No gambling.</p>
-        <div class="private-chat-actions">
-          <a class="button primary command-glow command-glow-ai" href="/arena/play">Play Now</a>
-          <a class="button" href="/arena/leaderboard">View Leaderboard</a>
-        </div>
-      </article>
-      <article class="card roast-dashboard-card" data-priority-card="roast-battle">
-        <span class="arena-live-badge roast-live-badge">LIVE WORLD STAGE</span>
-        <div class="kicker">Roast Battle</div>
-        <h2>Roast Battle Arena</h2>
-        <p>Step onto the global stage. Drop clever lines, win crowd heat, and climb the leaderboard.</p>
-        <div class="roast-emoji-row" aria-hidden="true"><span>🔥</span><span>😂</span><span>👑</span><span>⚡</span><span>🧠</span></div>
-        <div class="arena-preview-grid">
-          <span>Stage Balance: $1,000,000</span>
-          <span>Top call sign: Cyber Flame</span>
-        </div>
-        <p class="muted">Virtual-dollar scoring for entertainment only. No real-money value.</p>
-        <div class="private-chat-actions">
-          <a class="button primary command-glow command-glow-risk" href="/arena/roast-battle">Enter Roast Battle</a>
-          <a class="button" href="/arena/roast-battle/room/1">Watch Live</a>
-        </div>
-      </article>
-      <article class="card wide" data-priority-card="start-here">
-        <div class="kicker">Start Here</div>
-        <h2>Your Core Loop</h2>
-        <p class="muted">One clear path: train, detect scams, battle, enter live rooms, then react with the crowd.</p>
-        <div class="start-path" data-start-here><p class="muted">Loading your next mission...</p></div>
-      </article>
-      <article class="card" data-priority-card="auto-signals">
-        <div class="kicker">Auto Signals</div>
-        <h2>Hands-free market monitoring</h2>
-        <p class="muted">Creates real BTC, ETH, and SOL alert rules tuned to your sensitivity. External channels activate only when configured.</p>
-        <div class="signal-mode">
-          <label><input type="radio" name="auto_signal_mode" value="conservative"> Conservative</label>
-          <label><input type="radio" name="auto_signal_mode" value="balanced" checked> Balanced</label>
-          <label><input type="radio" name="auto_signal_mode" value="aggressive"> Aggressive</label>
-        </div>
-        <div class="private-chat-actions">
-          <button class="button primary command-glow command-glow-market" type="button" data-auto-signals>Activate Auto Signals</button>
-          <button class="button" type="button" data-auto-signals-stop hidden>Stop Auto Signals</button>
-          <a class="button" href="/alerts">View Alerts</a>
-        </div>
-        <p class="muted" data-auto-signals-result>Ready to monitor major market moves.</p>
-        <p class="muted" data-auto-signals-meta>Monitoring status will appear here.</p>
-        <div class="list" data-auto-signals-alerts></div>
-      </article>
-      <article class="card" data-priority-card="market">
-        <div class="kicker">Live Market Snapshot</div>
-        <div class="list" data-market-snapshot><p class="muted">Loading market data...</p></div>
-        <a class="button command-glow command-glow-market" href="/quote">View More</a>
-      </article>
-      <article class="card">
-        <div class="kicker">Live World Feed</div>
-        <h2>Platform PulseSoc</h2>
-        <div class="world-feed" data-world-feed><p class="muted">Connecting live activity...</p></div>
-      </article>
-      <article class="card">
-        <div class="kicker">Daily Intelligence Brief</div>
-        <h2>Today’s Market PulseSoc</h2>
-        <p data-daily-brief>Loading daily brief...</p>
-        <p class="muted" data-what-changed>Checking what changed since yesterday...</p>
-      </article>
-      <article class="card">
-        <div class="kicker">Risk Shield Score</div>
-        <div class="score-ring" data-risk-score>--</div>
-        <p class="muted" data-risk-detail>Loading safety coverage...</p>
-      </article>
-      <article class="card">
-        <div class="kicker">Daily Progress</div>
-        <div class="metric" data-streak>0</div>
-        <p>daily check-in streak</p>
-        <p class="muted" data-progress-note>Build safer habits one clear review at a time.</p>
-      </article>
-      <article class="card wide">
-        <h2>Personal Watch Command Center</h2>
-        <p class="muted">Watch coins, wallets, exchanges, scam keywords, whale movements, news topics, sports edges, and portfolio assets.</p>
-        <div class="list" data-watch-items><p class="muted">No watched intelligence items yet.</p></div>
-        <form data-watch-item-form>
-          <div class="form-grid">
-            <select name="watch_type"><option value="coin">Coin</option><option value="wallet">Wallet</option><option value="exchange">Exchange</option><option value="scam_keyword">Scam keyword</option><option value="news_topic">News topic</option><option value="sports_edge">Sports edge</option></select>
-            <input name="value" placeholder="BTC, wallet, exchange, topic, or keyword" required>
+  <main class="shell">
+    <div class="mission-grid">
+      <aside>
+        <section class="profile-panel" aria-label="Mission profile">
+          <div class="avatar-wrap">
+            {% if profile.avatar_url %}
+              <img class="avatar" src="{{ profile.avatar_url }}" alt="">
+            {% else %}
+              <div class="avatar" aria-hidden="true">{{ (profile.display_name or "P")[:1] }}</div>
+            {% endif %}
+            <div>
+              <p class="kicker">Mission Control</p>
+              <h2 class="user-name">{{ profile.display_name }}</h2>
+              <p class="muted">{{ profile.username or "Private dashboard" }}</p>
+            </div>
           </div>
-          <button class="button primary" type="submit">Watch This</button>
-          <p class="muted" data-watch-item-message></p>
-        </form>
-      </article>
-      <article class="card">
-        <h2>AI Memory Card</h2>
-        <p>PulseSoc remembers your watchlist, alerts, portfolio, and recent questions for your private account context.</p>
-        <p class="muted" data-memory-card>Recent saved insights and suggested next actions will appear here.</p>
-      </article>
-
-      <article class="card">
-        <div class="kicker">Today's Risk Note</div>
-        <p data-ai-insight>Loading AI portfolio insight...</p>
-      </article>
-
-      <article class="card wide">
-        <h2>Portfolio Tracker</h2>
-        <div class="list" data-holdings><p class="muted">No holdings yet.</p></div>
-      </article>
-      <article class="card" id="add-holding">
-        <h2>Add Holding</h2>
-        <form data-portfolio-form>
-          <div class="form-grid">
-            <input name="symbol" placeholder="Symbol, e.g. BTC" required>
-            <input name="coin_name" placeholder="Coin name, optional">
-            <input name="amount" type="number" min="0" step="any" placeholder="Amount held" required>
-            <input name="average_buy_price" type="number" min="0" step="any" placeholder="Average buy price">
+          <div class="badge-row">
+            <span class="badge">{{ profile.role_badge }}</span>
+            <span class="badge {% if profile.plan_badge == 'Premium' %}premium{% endif %}">{{ profile.plan_badge }}</span>
+            <span class="badge">{{ "Verified" if profile.verified else "Unverified" }}</span>
           </div>
-          <textarea name="notes" placeholder="Notes, optional"></textarea>
-          <button class="button primary" type="submit">Save Holding</button>
-          <p class="muted" data-portfolio-message></p>
-        </form>
-      </article>
-
-      <article class="card">
-        <h2>Allocation Snapshot</h2>
-        <div class="chart" data-allocation-chart></div>
-      </article>
-      <article class="card wide">
-        <h2>Watchlist</h2>
-        <div class="list" data-watchlist><p class="muted">No watchlist coins yet.</p></div>
-      </article>
-      <article class="card" id="add-watchlist">
-        <h2>Add Watchlist Coin</h2>
-        <form data-watchlist-form>
-          <input name="symbol" placeholder="Symbol, e.g. ETH" required>
-          <input name="coin_name" placeholder="Coin name, optional">
-          <button class="button primary" type="submit">Save Watchlist Coin</button>
-          <p class="muted" data-watchlist-message></p>
-        </form>
-      </article>
-
-      <article class="card wide">
-        <h2>Crypto Education Journey</h2>
-        <p class="muted">Daily lessons for crypto basics, investor safety, scam defense, wallet intelligence, market psychology, and on-chain analysis.</p>
-        <div class="list">
-          <a class="button glow-education" href="/education">Open Education Hub</a>
-          <a class="button glow-optimism" href="/education/optimism">Live Optimism Market Data</a>
-          <a class="button glow-future" href="/education/toncoin-scenarios">Toncoin Scenario Education</a>
-          <a class="button glow-alert" href="/dashboard/scam-alerts">Crypto Scam Alerts</a>
-        </div>
-        <p class="muted" data-education-progress>Education progress will appear here.</p>
-      </article>
-      <article class="card" data-home-card="show_saved_insights">
-        <h2>Saved Insights Library</h2>
-        <div class="list" data-saved-insights><p class="muted">Save AI responses, market notes, scam checks, wallet reports, and lessons here.</p></div>
-      </article>
-
-      <article class="card wide" data-home-card="show_activity_timeline">
-        <h2>Activity Timeline</h2>
-        <div class="timeline-summary">
-          <p class="muted" data-activity-summary>Latest activity will appear here.</p>
-          <button class="button command-glow command-glow-account" type="button" data-toggle-timeline>View Activity Timeline</button>
-        </div>
-        <div class="timeline-panel" data-activity-panel hidden>
-          <div class="list" data-activity><p class="muted">Activity will appear here.</p></div>
-          <button class="button" type="button" data-hide-timeline>Hide Timeline</button>
-        </div>
-      </article>
-      <article class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;position:relative">
+          <p class="muted">Your dashboard only shows your data. Premium cards can be locked, but staff tools are never shown unless your server-side role allows them.</p>
+        </section>
+        <section class="quick-panel" aria-label="Quick actions">
           <h2>Quick Actions</h2>
-          <div class="customize-home">
-            <button class="button command-glow command-glow-account" type="button" data-customize-home>⚙ Customize</button>
-            <div class="customize-panel" data-customize-panel hidden>
-              <strong>Customize Home</strong>
-              <p class="muted">Hide or restore dashboard actions and large cards.</p>
-              <label class="toggle-row">Account <input type="checkbox" data-pref-toggle="show_account" checked></label>
-              <label class="toggle-row">PulseSoc Premium <input type="checkbox" data-pref-toggle="show_upgrade_pro" checked></label>
-              <label class="toggle-row">Command Center <input type="checkbox" data-pref-toggle="show_command_center" checked></label>
-              <label class="toggle-row">Logout <input type="checkbox" data-pref-toggle="show_logout" checked></label>
-              <label class="toggle-row">Saved Insights Library <input type="checkbox" data-pref-toggle="show_saved_insights" checked></label>
-              <label class="toggle-row">Activity Timeline <input type="checkbox" data-pref-toggle="show_activity_timeline" checked></label>
-              <button class="button" type="button" data-pref-reset>Reset defaults</button>
-            </div>
+          <div class="quick-actions">
+            {% for action in mc.quick_actions %}
+              <a class="btn {% if action.access == 'locked' %}locked{% endif %}" href="{{ action.route }}">{{ action.label }}{% if action.reason %}<span class="muted">{{ action.reason }}</span>{% endif %}</a>
+            {% endfor %}
           </div>
-        </div>
-        <div class="list">
-          <a class="button primary command-glow command-glow-ai" href="/chat?focus=1">Ask AI</a>
-          <a class="button primary command-glow command-glow-market" href="/pulse">Open PulseSoc Feed</a>
-          <a class="button command-glow command-glow-risk" href="/scam-shield/scan">Run Scam Shield</a>
-          <a class="button command-glow command-glow-ai" href="/day-signal">Run Day Signal</a>
-          {% if dashboard_prefs.show_command_center %}
-          <a class="button command-glow command-glow-market" href="/command-center" data-home-action="show_command_center">Open Command Center</a>
-          {% endif %}
-          <a class="button command-glow command-glow-market" href="/predictions/crypto">Crypto Predictions</a>
-          <a class="button command-glow command-glow-portfolio" href="/simulator">Trading Simulator</a>
-          <a class="button command-glow command-glow-sports" href="/arena">Play Arena</a>
-          {% if dashboard_prefs.show_upgrade_pro %}
-          <a class="button gold command-glow command-glow-account" href="/pulse/premium" data-home-action="show_upgrade_pro" data-analytics="pulse_premium_clicked">PulseSoc Premium</a>
-          {% endif %}
-        </div>
-      </article>
-    </section>
+        </section>
+      </aside>
 
-    <p class="notice">Portfolio tracker is educational only. CoinPilotXAI Inc. does not hold funds, does not ask for seed phrases/private keys, and does not provide financial advice.</p>
-  </main>
-  <button class="button primary private-chat-launcher" type="button" data-private-chat-open aria-expanded="false" aria-label="Open Private Chat">
-    <span class="private-chat-launcher-icon" aria-hidden="true">💬</span><span class="private-chat-launcher-label">Private Chat</span><span class="private-chat-badge" data-private-chat-unread data-chat-unread hidden>0</span>
-  </button>
-  <section class="private-chat-shell" data-private-chat-shell aria-label="Private chat room" aria-hidden="true">
-    <div class="private-chat-backdrop" data-private-chat-close></div>
-    <aside class="private-chat-panel" role="dialog" aria-modal="true" aria-labelledby="private-chat-title">
-      <div class="private-chat-drag" data-private-chat-drag aria-hidden="true"></div>
-      <header class="private-chat-head">
-        <div>
-          <strong id="private-chat-title">Private Chat</strong>
-          <small class="muted">Message another PulseSoc user securely.</small>
-        </div>
-        <div class="private-chat-tools">
-          <button class="button" type="button" data-chat-menu-toggle aria-label="Conversation options">...</button>
-          <button class="button" type="button" data-private-chat-close aria-label="Close private chat">Close</button>
-          <div class="private-chat-menu-backdrop" data-chat-menu-backdrop hidden></div>
-          <div class="private-chat-menu" data-chat-safety-menu hidden>
-            <div class="private-chat-menu-title">Messenger Options</div>
-            <div class="private-chat-menu-section">
-              <button type="button" data-chat-create-group>Create Group Chat</button>
-              <button type="button" data-chat-new-private>New Private Message</button>
-              <button type="button">Message Requests</button>
-              <button type="button">Muted Chats</button>
-              <button type="button">Report a Problem</button>
-            </div>
-            <small>Safety & Privacy</small>
-            <div class="private-chat-menu-section">
-              <button type="button">Blocked Users</button>
-              <button type="button">Restricted Users</button>
-            </div>
+      <div class="main">
+        <section class="hero">
+          <p class="kicker">PulseSoc Account</p>
+          <h1>Mission Control</h1>
+          <p class="muted">A role-aware command center for your account, network, creator tools, media, safety, and economy surfaces. Everything here is real, routed, and filtered by entitlement.</p>
+          <div class="badge-row">
+            <span class="badge">{{ mc.counts.active_widgets }} active</span>
+            <span class="badge">{{ mc.counts.locked_widgets }} locked</span>
+            <span class="badge">{{ mc.generated_at }}</span>
           </div>
-        </div>
-      </header>
-      <div class="private-chat-tabs">
-        <button class="is-active" type="button" data-chat-tab="list">Conversations</button>
-        <button type="button" data-chat-tab="thread">Chat Room</button>
-        <button type="button" data-chat-tab="groups">Group Chat</button>
+        </section>
+
+        <section class="metrics" aria-label="Top metrics">
+          {% for metric in mc.metrics %}
+            <article class="metric">
+              <span class="muted">{{ metric.label }}</span>
+              <strong>{{ metric.value }}</strong>
+              <span class="muted">{{ metric.detail }}</span>
+            </article>
+          {% endfor %}
+        </section>
+
+        <section class="sections" aria-label="Dashboard inventory">
+          {% for category in mc.categories %}
+            <section class="section">
+              <div class="section-head">
+                <div>
+                  <p class="kicker">Access Layer</p>
+                  <h2>{{ category.name }}</h2>
+                </div>
+                <span class="badge">{{ category.widgets|length }} modules</span>
+              </div>
+              <div class="widget-grid">
+                {% for widget in category.widgets %}
+                  <article class="widget {{ 'locked' if widget.access == 'locked' else '' }}" data-accent="{{ widget.accent }}">
+                    <div>
+                      <div class="widget-status">
+                        <span>{{ widget.access }}</span>
+                        <i class="status-dot" aria-hidden="true"></i>
+                      </div>
+                      <h3>{{ widget.display_name }}</h3>
+                      <p>{{ widget.description }}</p>
+                      {% if widget.lock_reason %}<p class="muted">{{ widget.lock_reason }}</p>{% endif %}
+                    </div>
+                    {% if widget.access == 'locked' %}
+                      <a class="btn locked" href="{{ widget.cta_route }}">Unlock</a>
+                    {% else %}
+                      <a class="btn" href="{{ widget.route }}">Open</a>
+                    {% endif %}
+                  </article>
+                {% endfor %}
+              </div>
+            </section>
+          {% endfor %}
+        </section>
       </div>
-      <div class="private-chat-main">
-        <div class="private-chat-view" data-chat-list-view>
-          <form data-chat-start-form>
-            <input name="query" type="text" placeholder="Search by name or public PulseSoc ID" maxlength="160" autocomplete="off">
-            <button class="button primary" type="submit">Start Chat</button>
-            <p class="muted" data-chat-start-message></p>
-          </form>
-          <div data-chat-conversations>
-            <div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another PulseSoc user.</div>
-          </div>
-        </div>
-        <div class="private-chat-view" data-chat-thread-view hidden>
-          <div class="private-chat-empty" data-chat-thread-empty>Choose a conversation to start messaging.</div>
-          <div class="chat-thread" data-chat-thread></div>
-        </div>
-        <div class="private-chat-view" data-chat-groups-view hidden>
-          <button class="button primary" type="button" data-chat-create-group>Create Group Chat</button>
-          <div data-chat-groups>
-            <div class="private-chat-empty">No group chats yet.<br>Create one with friends, creators, or your community.</div>
-          </div>
-        </div>
-      </div>
-      <form class="private-chat-form" data-chat-send-form>
-        <input name="body" placeholder="Type a private message..." maxlength="2000" autocomplete="off">
-        <button class="button primary" type="submit">Send</button>
-      </form>
-    </aside>
-  </section>
-  <section class="private-chat-modal" data-create-group-modal aria-hidden="true">
-    <div class="private-chat-sheet" role="dialog" aria-modal="true" aria-label="Create Group Chat">
-      <form data-create-group-form>
-        <h2>Create Group Chat</h2>
-        <input name="title" placeholder="Group chat name" maxlength="140" required>
-        <textarea name="description" placeholder="Description optional" maxlength="500"></textarea>
-        <select name="privacy">
-          <option value="private">Private</option>
-          <option value="invite_only">Invite Only</option>
-          <option value="community">Community</option>
-        </select>
-        <p class="muted">You can add people after the chat opens.</p>
-        <div class="private-chat-actions">
-          <button class="button" type="button" data-create-group-cancel>Cancel</button>
-          <button class="button primary" type="submit">Create Group Chat</button>
-        </div>
-        <p class="muted" data-create-group-message></p>
-      </form>
     </div>
-  </section>
-  <nav class="bottom-nav">
-    <div class="container">
-      <a class="active" href="/dashboard">Home</a>
-      <a href="/pulse">PulseSoc</a>
-      {% if dashboard_prefs.show_command_center %}<a href="/command-center" data-home-action="show_command_center">Intel</a>{% endif %}
-      <a href="/live-market">Live</a>
-      <a class="alerts-dance" href="/alerts" data-alerts-button>Alerts <span class="nav-badge" data-alert-unread data-notification-unread hidden>0</span></a>
-      <a href="/account">Account</a>
+  </main>
+
+  <nav class="bottom-nav" aria-label="PulseSoc mobile navigation">
+    <div class="bottom-nav-inner">
+      <a href="/pulse">Home</a>
+      <a href="/pulse/reels">Reels</a>
+      <a class="active" href="/dashboard">Dashboard</a>
+      <a href="/pulse/messages">Messages</a>
+      <a href="/pulse/profile">Profile</a>
     </div>
   </nav>
 
-  <script src="/static/notifications.js" defer></script>
   <script>
-    const money = value => Number(value || 0).toLocaleString(undefined, { style: "currency", currency: "USD" });
-    const pct = value => (Number(value || 0) >= 0 ? "+" : "") + Number(value || 0).toFixed(2) + "%";
-    const text = (selector, value) => { const node = document.querySelector(selector); if (node) node.textContent = value; };
-    const qs = selector => document.querySelector(selector);
-    const setHTML = (selector, html) => { const node = qs(selector); if (node) node.innerHTML = html; };
-    const accountSyncText = message => text("[data-account-sync-message]", message);
-    const postJson = (url, payload, method = "POST") => fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then(r => r.json().then(j => { if (!r.ok || j.ok === false) throw new Error(j.message || "Request failed"); return j; }));
-    const escapeHtml = value => String(value || "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
-    const chatState = { open: false, snap: "minimized", activeConversationId: null, activeOtherUserId: null, currentUserId: null, lastMessageId: 0, polling: false };
-
-    function setChatTab(tab) {
-      document.querySelectorAll("[data-chat-tab]").forEach(button => button.classList.toggle("is-active", button.dataset.chatTab === tab));
-      const listView = qs("[data-chat-list-view]");
-      const threadView = qs("[data-chat-thread-view]");
-      const groupsView = qs("[data-chat-groups-view]");
-      if (listView) listView.hidden = tab !== "list";
-      if (threadView) threadView.hidden = tab !== "thread";
-      if (groupsView) groupsView.hidden = tab !== "groups";
-      if (tab === "groups") loadChatConversations();
-    }
-
-    function setChatMenu(open) {
-      const menu = document.querySelector("[data-chat-safety-menu]");
-      const backdrop = document.querySelector("[data-chat-menu-backdrop]");
-      const toggle = document.querySelector("[data-chat-menu-toggle]");
-      if (menu) menu.hidden = !open;
-      if (backdrop) backdrop.hidden = !open;
-      if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
-    }
-
-    function setCreateGroupModal(open) {
-      const modal = document.querySelector("[data-create-group-modal]");
-      if (!modal) return;
-      modal.classList.toggle("is-open", open);
-      modal.setAttribute("aria-hidden", open ? "false" : "true");
-      if (open) modal.querySelector("input[name='title']")?.focus();
-    }
-
-    function setPrivateChatSnap(snap) {
-      const shell = document.querySelector("[data-private-chat-shell]");
-      const launcher = document.querySelector("[data-private-chat-open]");
-      if (!shell || !launcher) return;
-      chatState.snap = snap;
-      const open = snap !== "minimized";
-      shell.classList.toggle("is-open", open);
-      shell.classList.toggle("is-half", snap === "half");
-      shell.classList.toggle("is-full", snap === "full");
-      shell.setAttribute("aria-hidden", open ? "false" : "true");
-      launcher.setAttribute("aria-expanded", open ? "true" : "false");
-      chatState.open = open;
-      document.body.classList.toggle("private-chat-lock", open && window.matchMedia("(max-width: 900px)").matches);
-      if (open) loadChatConversations();
-    }
-
-    function openPrivateChat(snap = "full") {
-      setPrivateChatSnap(window.matchMedia("(max-width: 900px)").matches ? snap : "full");
-    }
-
-    function closePrivateChat() {
-      setPrivateChatSnap("minimized");
-    }
-
-    function bindPrivateChatDrag() {
-      const handle = document.querySelector("[data-private-chat-drag]");
-      if (!handle || handle.dataset.bound) return;
-      handle.dataset.bound = "1";
-      let startY = 0;
-      let dragging = false;
-      handle.addEventListener("pointerdown", event => {
-        dragging = true;
-        startY = event.clientY;
-        handle.setPointerCapture?.(event.pointerId);
+    (() => {
+      const search = document.querySelector(".search");
+      if (!search) return;
+      search.addEventListener("submit", (event) => {
+        const input = search.querySelector("input");
+        if (!input || !input.value.trim()) {
+          event.preventDefault();
+          input && input.focus();
+        }
       });
-      handle.addEventListener("pointerup", event => {
-        if (!dragging) return;
-        dragging = false;
-        const delta = event.clientY - startY;
-        if (delta > 54) closePrivateChat();
-        else if (delta < -54) setPrivateChatSnap("full");
-        else setPrivateChatSnap(chatState.snap === "full" ? "half" : "full");
-      });
-      handle.addEventListener("pointercancel", () => { dragging = false; });
-      document.addEventListener("keydown", event => {
-        if (event.key !== "Escape") return;
-        setChatMenu(false);
-        setCreateGroupModal(false);
-        if (chatState.open) closePrivateChat();
-      });
-      let touchStartY = 0;
-      document.querySelector("[data-private-chat-open]")?.addEventListener("touchstart", event => { touchStartY = event.touches[0].clientY; }, { passive: true });
-      document.querySelector("[data-private-chat-open]")?.addEventListener("touchend", event => {
-        if (touchStartY - event.changedTouches[0].clientY > 34) openPrivateChat("full");
-      }, { passive: true });
-    }
-
-    async function loadChatConversations() {
-      const node = document.querySelector("[data-chat-conversations]");
-      const groupNode = document.querySelector("[data-chat-groups]");
-      if (!node) return;
-      node.innerHTML = '<div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another PulseSoc user.</div>';
-      if (groupNode) groupNode.innerHTML = '<div class="private-chat-empty">No group chats yet.<br>Create one with friends, creators, or your community.</div>';
-      try {
-        const response = await fetch("/api/chat/threads", { cache: "no-store", credentials: "same-origin" });
-        const data = await response.json();
-        if (!response.ok || !data.ok) throw new Error(data.message || "Unable to load conversations.");
-        const totalUnread = (data.conversations || []).reduce((sum, item) => sum + Number(item.unread_count || 0), 0);
-        const badge = document.querySelector("[data-private-chat-unread]");
-        if (badge) {
-          badge.hidden = totalUnread <= 0;
-          badge.textContent = totalUnread > 99 ? "99+" : totalUnread;
-        }
-        node.innerHTML = (data.conversations || []).map(item => `
-          <button class="conversation-row" type="button" data-open-conversation="${item.id}" data-other-user-id="${item.other_user_id || ""}">
-            <strong>${escapeHtml(item.title || "PulseSoc user")} ${Number(item.unread_count || 0) ? `<span class="private-chat-badge">${Number(item.unread_count || 0)}</span>` : ""}</strong>
-            <span>${escapeHtml(item.latest_message || "No messages yet.")}</span>
-            <span class="conversation-meta"><span class="online-dot">${item.other_last_seen_at ? "Recently active" : "User"}</span><span>${friendlyTime(item.last_message_at || item.updated_at)}</span></span>
-          </button>`).join("") || '<div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another PulseSoc user.</div>';
-        if (groupNode) {
-          const pulseResponse = await fetch("/api/pulse/messages/conversations", { cache: "no-store", credentials: "same-origin" });
-          const pulseData = await pulseResponse.json();
-          const groupConversations = (pulseData.conversations || []).filter(item => ["group","community","community_group","creator","live"].includes(item.conversation_type || ""));
-          groupNode.innerHTML = groupConversations.map(item => `
-            <button class="conversation-row" type="button" data-open-pulse-conversation="${item.id}">
-              <strong>${escapeHtml(item.title || "Group Chat")} ${Number(item.unread_count || 0) ? `<span class="private-chat-badge">${Number(item.unread_count || 0)}</span>` : ""}</strong>
-              <span>${escapeHtml(item.latest_message || "No messages yet.")}</span>
-              <span class="conversation-meta"><span class="online-dot">${escapeHtml(item.conversation_type || "group")}</span><span>${friendlyTime(item.last_message_at || item.updated_at)}</span></span>
-            </button>`).join("") || '<div class="private-chat-empty">No group chats yet.<br>Create one with friends, creators, or your community.</div>';
-        }
-      } catch (error) {
-        node.innerHTML = `<div class="private-chat-empty">${escapeHtml(error.message || "Private chat is temporarily unavailable.")}</div>`;
-        if (groupNode) groupNode.innerHTML = `<div class="private-chat-empty">${escapeHtml(error.message || "Group chats are temporarily unavailable.")}</div>`;
-      }
-    }
-
-    function friendlyTime(value) {
-      if (!value) return "";
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return "";
-      const seconds = Math.max(1, Math.floor((Date.now() - date.getTime()) / 1000));
-      if (seconds < 60) return seconds + "s ago";
-      const minutes = Math.floor(seconds / 60);
-      if (minutes < 60) return minutes + "m ago";
-      const hours = Math.floor(minutes / 60);
-      if (hours < 24) return hours + "h ago";
-      return Math.floor(hours / 24) + "d ago";
-    }
-
-    function chatMessageHtml(message, optimistic = false) {
-      const mine = message.is_mine !== undefined ? !!message.is_mine : Number(message.sender_id || message.sender_user_id) === Number(chatState.currentUserId);
-      const id = message.message_id || message.id || "";
-      return `<div class="chat-bubble ${mine ? "me" : "them"}" data-message-id="${escapeHtml(id)}"><strong>${mine ? "You" : "PulseSoc user"}</strong><div>${escapeHtml(message.body)}</div><small>${optimistic ? "sending..." : friendlyTime(message.created_at) + " · " + escapeHtml(message.delivery_status || "delivered")}</small></div>`;
-    }
-
-    function renderChatMessages(messages) {
-      const thread = document.querySelector("[data-chat-thread]");
-      if (!thread) return;
-      thread.innerHTML = (messages || []).map(message => chatMessageHtml(message)).join("") || '<div class="private-chat-empty">No messages yet. Send the first one.</div>';
-      chatState.lastMessageId = Math.max(0, ...(messages || []).map(message => Number(message.message_id || message.id || 0)));
-      thread.scrollTop = thread.scrollHeight;
-    }
-
-    function appendChatMessages(messages) {
-      const thread = document.querySelector("[data-chat-thread]");
-      if (!thread) return;
-      const seen = new Set([...thread.querySelectorAll("[data-message-id]")].map(node => node.dataset.messageId));
-      (messages || []).forEach(message => {
-        const id = String(message.message_id || message.id || "");
-        if (id && seen.has(id)) return;
-        thread.insertAdjacentHTML("beforeend", chatMessageHtml(message));
-        chatState.lastMessageId = Math.max(chatState.lastMessageId, Number(message.message_id || message.id || 0));
-      });
-      if ((messages || []).length) thread.scrollTop = thread.scrollHeight;
-    }
-
-    async function pollActiveConversation() {
-      if (!chatState.open || !chatState.activeConversationId || chatState.polling || document.hidden) return;
-      chatState.polling = true;
-      try {
-        const response = await fetch(`/api/chat/thread/${chatState.activeConversationId}/new?after_id=${chatState.lastMessageId}`, { cache: "no-store", credentials: "same-origin" });
-        const data = await response.json();
-        if (response.ok && data.ok) appendChatMessages(data.messages || []);
-      } catch (error) {
-      } finally {
-        chatState.polling = false;
-      }
-    }
-
-    async function openConversation(conversationId, otherUserId) {
-      chatState.activeConversationId = conversationId;
-      chatState.activeOtherUserId = otherUserId || null;
-      chatState.lastMessageId = 0;
-      setChatTab("thread");
-      const thread = document.querySelector("[data-chat-thread]");
-      const empty = document.querySelector("[data-chat-thread-empty]");
-      if (empty) empty.hidden = true;
-      if (thread) thread.innerHTML = '<div class="private-chat-empty">Loading messages...</div>';
-      try {
-        const response = await fetch("/api/chat/thread/" + conversationId, { cache: "no-store", credentials: "same-origin" });
-        const data = await response.json();
-        if (!response.ok || !data.ok) throw new Error(data.message || "Unable to load messages.");
-        chatState.currentUserId = data.me?.user_id || null;
-        renderChatMessages(data.messages || []);
-        loadChatConversations();
-      } catch (error) {
-        if (thread) thread.innerHTML = `<div class="private-chat-empty">${escapeHtml(error.message || "Unable to load messages.")}</div>`;
-      }
-    }
-
-    async function openPulseRoom() {
-      try {
-        const result = await postJson("/api/pulse/messages/room/open", { room_key: "pulse-general" });
-        location.href = result.next_url || ("/pulse/messages/" + result.conversation_id);
-      } catch (error) {
-        text("[data-chat-start-message]", error.message || "Chat room could not be opened.");
-      }
-    }
-
-    function render(data) {
-      text("[data-user-name]", "Welcome back, " + (data.user.name || "PulseSoc user"));
-      text("[data-plan]", data.user.plan || "Free");
-      text("[data-subscription]", data.user.subscription_status || "inactive");
-      text("[data-telegram]", data.user.telegram_linked ? "Connected" : "Not connected");
-      text("[data-expires]", data.user.pro_expires_at || "Not set");
-      text("[data-total-value]", money(data.portfolio.total_value));
-      text("[data-pnl]", money(data.portfolio.pnl_value));
-      text("[data-pnl-percent]", pct(data.portfolio.pnl_percent));
-      text("[data-ai-insight]", data.ai_insight || data.safety);
-      const mover = data.portfolio.top_gainer ? "Top gainer: " + data.portfolio.top_gainer.symbol + " · Top loser: " + (data.portfolio.top_loser ? data.portfolio.top_loser.symbol : "n/a") : "Add holdings to see top gainer and loser.";
-      text("[data-top-movers]", mover);
-
-      setHTML("[data-holdings]", (data.portfolio.holdings || []).map(item => `
-        <div class="row">
-          <strong>${item.symbol}</strong>
-          <span>${money(item.price)}</span>
-          <span>${money(item.value)}</span>
-          <span class="${item.pnl_value >= 0 ? "green" : "red"}">${money(item.pnl_value)} · ${pct(item.pnl_percent)}</span>
-          <button class="button" data-delete-portfolio="${item.id}">Delete</button>
-        </div>`).join("") || '<p class="muted">No holdings yet.</p>');
-
-      setHTML("[data-watchlist]", (data.watchlist || []).map(item => `
-        <div class="watch-row">
-          <strong>${item.symbol}</strong>
-          <span>${money(item.price)} · ${pct(item.change_24h)}</span>
-          <button class="button" data-delete-watchlist="${item.id}">Delete</button>
-        </div>`).join("") || '<p class="muted">No watchlist coins yet.</p>');
-
-      setHTML("[data-alerts]", (data.alerts || []).map(item => `
-        <div class="alert-row">
-          <strong>${item.symbol || item.target || "Alert"}</strong>
-          <span>${item.alert_type || "price"} ${item.condition || ""} ${item.target_value || item.threshold || ""}</span>
-          <button class="button" data-delete-alert="${item.id}">Delete</button>
-        </div>`).join("") || '<p class="muted">No active alerts yet.</p>');
-
-      setHTML("[data-market-snapshot]", (data.market.markets || []).slice(0, 4).map(item => `
-        <a class="watch-row" href="/quote/crypto/${encodeURIComponent(item.symbol)}"><strong>${item.symbol}</strong><span>${money(item.price)} · ${pct(item.change_24h)}</span></a>`).join("") || '<p class="muted">Live source reconnecting. Last known data shown if available.</p>');
-
-      const activity = data.activity || [];
-      const relative = value => {
-        const date = new Date(value || Date.now());
-        const seconds = Math.max(1, Math.floor((Date.now() - date.getTime()) / 1000));
-        if (seconds < 60) return seconds + "s ago";
-        const minutes = Math.floor(seconds / 60);
-        if (minutes < 60) return minutes + "m ago";
-        const hours = Math.floor(minutes / 60);
-        if (hours < 24) return hours + "h ago";
-        return Math.floor(hours / 24) + "d ago";
-      };
-      const latest = activity[0];
-      text("[data-activity-summary]", latest ? `Latest: ${String(latest.event_type || "activity").replaceAll("_", " ")} · ${latest.event_label || "PulseSoc"} · ${relative(latest.created_at)} · ${activity.length} recent` : "No recent activity yet.");
-      setHTML("[data-activity]", activity.slice(0, 10).map(item => `
-        <div class="activity-row"><strong>✓ ${String(item.event_type || "activity").replaceAll("_", " ")}</strong><span>${item.event_label || ""}</span><small>${relative(item.created_at)}</small></div>`).join("") || '<p class="muted">Activity will appear here.</p>');
-
-      const chart = qs("[data-allocation-chart]");
-      const holdings = data.portfolio.holdings || [];
-      const max = Math.max(...holdings.map(i => i.value || 0), 1);
-      if (chart) chart.innerHTML = holdings.map(i => `<div class="bar" title="${i.symbol} ${money(i.value)}" style="height:${Math.max(8, (i.value || 0) / max * 100)}%"></div>`).join("") || '<p class="muted">Add holdings to see allocation.</p>';
-    }
-
-    async function loadRetentionPanels() {
-      const [brief, risk, streak, insights, watch, progress, arena] = await Promise.all([
-        fetch("/api/dashboard/brief", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
-        fetch("/api/dashboard/risk-score", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
-        fetch("/api/dashboard/streak", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
-        fetch("/api/insights", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
-        fetch("/api/watch", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
-        fetch("/api/education/progress", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
-        fetch("/api/arena/profile", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null)
-      ]);
-      if (brief && brief.ok) {
-        text("[data-daily-brief]", brief.market_pulse + " · " + brief.ai_insight);
-        text("[data-what-changed]", "Watch today: " + (brief.top_watch || []).join(", ") + ". " + brief.scam_warning);
-      }
-      if (risk && risk.ok) {
-        text("[data-risk-score]", risk.score);
-        text("[data-risk-detail]", "Security " + risk.account_security + " · Wallet " + risk.wallet_safety + " · Alerts " + risk.alert_coverage);
-      }
-      if (streak && streak.ok) {
-        text("[data-streak]", streak.daily_checkin_streak || 0);
-        text("[data-progress-note]", "Scam safety " + (streak.scam_safety_score || 70) + " · Portfolio discipline " + (streak.portfolio_discipline_score || 70));
-      }
-      if (insights && insights.ok) {
-        setHTML("[data-saved-insights]", (insights.insights || []).slice(0, 5).map(item => `<div class="activity-row"><strong>${item.title}</strong><span>${item.insight_type}</span></div>`).join("") || '<p class="muted">Save AI responses, market notes, scam checks, wallet reports, and lessons here.</p>');
-        text("[data-memory-card]", (insights.insights || [])[0]?.title || "Ask AI or save an insight to build your memory card.");
-      }
-      if (watch && watch.ok) {
-        setHTML("[data-watch-items]", (watch.items || []).slice(0, 8).map(item => `<div class="watch-row"><strong>${item.label || item.value}</strong><span>${item.watch_type}</span></div>`).join("") || '<p class="muted">No watched intelligence items yet.</p>');
-      }
-      if (progress && progress.ok) {
-        text("[data-education-progress]", progress.paths.join(" · "));
-      }
-      if (arena && arena.ok && arena.profile) {
-        text("[data-arena-summary]", `${arena.profile.rank || "Rookie"} · Arena IQ ${arena.profile.arena_iq || 50} · ${arena.profile.xp || 0} XP · ${arena.profile.streak_count || 0} mission streak`);
-        text("[data-arena-rank-preview]", `Rank: ${arena.profile.rank || "Rookie"}`);
-        text("[data-arena-xp-preview]", `XP: ${arena.profile.xp || 0}`);
-      }
-    }
-
-    async function loadDashboard() {
-      const response = await fetch("/api/dashboard", { cache: "no-store", credentials: "same-origin" });
-      const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.message || "Dashboard failed");
-      render(data);
-    }
-
-    async function loadLiveOps() {
-      const [ops, world] = await Promise.all([
-        fetch("/api/live-ops/today", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
-        fetch("/api/world-presence?limit=8", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null)
-      ]);
-      if (ops && ops.ok) {
-        const progress = ops.progress || {};
-        const completed = new Set((progress.steps || []).filter(step => step.completed).map(step => step.key));
-        setHTML("[data-start-here]", (ops.start_here || []).map((step, index) => `
-          <a class="start-step ${completed.has(step.key) ? "done" : ""}" href="${step.url}" data-core-step="${step.key}">
-            <b>${completed.has(step.key) ? "✓" : index + 1}</b>
-            <span><strong>${step.title}</strong><small class="muted"> · ${step.xp} XP</small></span>
-            <small>${completed.has(step.key) ? "Done" : "Start"}</small>
-          </a>`).join(""));
-      }
-      if (world && world.ok) {
-        setHTML("[data-world-feed]", (world.items || []).map(item => `
-          <a href="${item.url || "/arena/play"}"><strong>${escapeHtml(item.title || "Live event")}</strong><small class="muted">${escapeHtml(item.body || "")}</small></a>`).join("") || '<p class="muted">No live events yet.</p>');
-      }
-    }
-
-    async function activateAutoSignals() {
-      const button = qs("[data-auto-signals]");
-      const result = qs("[data-auto-signals-result]");
-      const stopButton = qs("[data-auto-signals-stop]");
-      const mode = qs("input[name='auto_signal_mode']:checked")?.value || "balanced";
-      if (button) {
-        button.disabled = true;
-        button.textContent = "Activating...";
-      }
-      if (result) result.textContent = "Creating live monitoring rules...";
-      try {
-        const response = await fetch("/api/auto-signals/activate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Push-Permission": ("Notification" in window ? Notification.permission : "unsupported") },
-          credentials: "same-origin",
-          body: JSON.stringify({ mode, push_permission: ("Notification" in window ? Notification.permission : "unsupported") })
-        });
-        const data = await response.json();
-        if (!response.ok || !data.ok) throw new Error(data.message || "Auto Signals could not activate.");
-        const alerts = Array.isArray(data.alerts) ? data.alerts : (Array.isArray(data.created) ? data.created : []);
-        if (result) result.textContent = data.message || `Auto Signals activated. PulseSoc is now monitoring your market alerts. ${alerts.length} signal rules active.`;
-        setHTML("[data-auto-signals-alerts]", alerts.map(item => `
-          <div class="alert-row">
-            <strong>${escapeHtml(item.symbol || "Signal")}</strong>
-            <span>${escapeHtml(item.condition || "")} ${escapeHtml(item.threshold || "")}</span>
-          </div>`).join("") || '<p class="muted">Auto Signals is active. Alert details will appear in the Alerts Command Center.</p>');
-        if (button) {
-          button.dataset.active = "true";
-          button.textContent = "Auto Signals Active";
-        }
-        if (stopButton) stopButton.hidden = false;
-        await loadAutoSignalsStatus();
-        await loadDashboard().catch(() => {});
-      } catch (err) {
-        if (result) result.textContent = "Auto Signals could not activate right now. Please try again.";
-        setHTML("[data-auto-signals-alerts]", `<p class="muted">${escapeHtml(err.message || "Live monitoring setup did not complete.")}</p>`);
-      } finally {
-        if (button) {
-          button.disabled = false;
-          if (button.dataset.active !== "true") button.textContent = "Activate Auto Signals";
-        }
-      }
-    }
-
-    async function loadAutoSignalsStatus() {
-      try {
-        const data = await fetch("/api/auto-signals/status", { cache: "no-store", credentials: "same-origin" }).then(r => r.json());
-        if (!data.ok) return;
-        const button = qs("[data-auto-signals]");
-        const stopButton = qs("[data-auto-signals-stop]");
-        const modeInput = qs(`input[name='auto_signal_mode'][value='${data.mode || "balanced"}']`);
-        if (modeInput) modeInput.checked = true;
-        if (button) {
-          button.dataset.active = data.enabled ? "true" : "false";
-          button.textContent = data.enabled ? "Auto Signals Active" : "Activate Auto Signals";
-        }
-        if (stopButton) stopButton.hidden = !data.enabled;
-        text("[data-auto-signals-result]", data.enabled ? "Monitoring nonstop until you stop it." : "Ready to monitor major market moves.");
-        const checked = data.last_checked_at ? friendlyTime(data.last_checked_at) : "not checked yet";
-        text("[data-auto-signals-meta]", data.enabled ? `Mode: ${data.mode}. Active signal rules: ${data.active_alerts_count || 0}. Last checked: ${checked}.` : "Choose a sensitivity and activate hands-free monitoring.");
-      } catch (error) {}
-    }
-
-    async function stopAutoSignals() {
-      const button = qs("[data-auto-signals-stop]");
-      const result = qs("[data-auto-signals-result]");
-      if (button) {
-        button.disabled = true;
-        button.textContent = "Stopping...";
-      }
-      try {
-        const response = await fetch("/api/auto-signals/stop", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: "{}" });
-        const data = await response.json();
-        if (!response.ok || !data.ok) throw new Error(data.message || "Auto Signals could not stop.");
-        if (result) result.textContent = data.message || "Auto Signals stopped.";
-        setHTML("[data-auto-signals-alerts]", '<p class="muted">Auto Signals history remains available in Alerts.</p>');
-        await loadAutoSignalsStatus();
-      } catch (error) {
-        if (result) result.textContent = "Auto Signals could not stop right now. Please try again.";
-      } finally {
-        if (button) {
-          button.disabled = false;
-          button.textContent = "Stop Auto Signals";
-        }
-      }
-    }
-
-    function applyDashboardPreferences(prefs) {
-      Object.entries(prefs || {}).forEach(([key, value]) => {
-        if (!key.startsWith("show_")) return;
-        document.querySelectorAll(`[data-home-action="${key}"], [data-home-card="${key}"]`).forEach(node => {
-          node.dataset.homeHidden = value ? "false" : "true";
-        });
-        document.querySelectorAll(`[data-pref-toggle="${key}"]`).forEach(input => { input.checked = !!value; });
-      });
-    }
-
-    async function loadDashboardPreferences() {
-      try {
-        const response = await fetch("/api/dashboard/preferences", { cache: "no-store", credentials: "same-origin" });
-        const prefs = await response.json();
-        if (response.ok && prefs.ok) applyDashboardPreferences(prefs);
-      } catch (error) {}
-    }
-
-    async function saveDashboardPreference(key, value) {
-      applyDashboardPreferences({ [key]: value });
-      const payload = { [key]: value };
-      const response = await fetch("/api/dashboard/preferences", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        cache: "no-store",
-        body: JSON.stringify(payload)
-      });
-      const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.message || "Could not save preference.");
-      applyDashboardPreferences(data);
-      if (value && !document.querySelector(`[data-home-action="${key}"], [data-home-card="${key}"]`)) {
-        window.location.reload();
-      }
-    }
-
-    async function loadAccountStatus() {
-      console.log("account status fetch started");
-      accountSyncText("Syncing live account status...");
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 8000);
-      try {
-        const response = await fetch("/api/account/status?ts=" + Date.now(), {
-          cache: "no-store",
-          credentials: "same-origin",
-          signal: controller.signal
-        });
-        console.log("account status response status", response.status);
-        const payload = await response.json();
-        console.log("account status parsed payload", payload);
-        if (!response.ok || !payload.ok) throw new Error(payload.message || "Account status unavailable");
-        const planLabel = payload.is_paid_pro ? "PulseSoc Premium" : payload.is_trialing ? "Legacy Trial" : payload.has_pro_access ? "Premium" : "Free Core";
-        const subLabel = payload.is_paid_pro ? "active" : payload.subscription_status || "inactive";
-        const telegramLabel = payload.telegram_linked ? ("Connected" + (payload.telegram_username ? " @" + payload.telegram_username : "")) : "Not connected";
-        const expiresLabel = payload.is_paid_pro
-          ? (payload.pro_expires_at || "Active")
-          : payload.is_trialing
-            ? (payload.trial_end_date || payload.pro_expires_at || "Not set")
-            : (payload.pro_expires_at || "Not set");
-        text("[data-plan]", planLabel);
-        text("[data-subscription]", subLabel);
-        text("[data-telegram]", telegramLabel);
-        text("[data-expires]", expiresLabel);
-        accountSyncText(payload.is_paid_pro ? "PulseSoc Premium account sync complete." : "Account sync complete.");
-        console.log("account status render success");
-      } catch (error) {
-        console.log("account status render error", error && error.message ? error.message : error);
-        text("[data-plan]", "Account sync unavailable");
-        text("[data-subscription]", "Refresh or contact support");
-        text("[data-telegram]", "Unable to load");
-        text("[data-expires]", "Unable to load");
-        accountSyncText("Account sync unavailable. Refresh or contact support.");
-      } finally {
-        window.clearTimeout(timeout);
-      }
-    }
-
-    document.addEventListener("submit", async event => {
-      if (event.target.matches("[data-portfolio-form]")) {
-        event.preventDefault();
-        const form = event.target;
-        const payload = Object.fromEntries(new FormData(form).entries());
-        try { await postJson("/api/portfolio", payload); form.reset(); text("[data-portfolio-message]", "Holding saved."); loadDashboard(); } catch (err) { text("[data-portfolio-message]", err.message); }
-      }
-      if (event.target.matches("[data-watchlist-form]")) {
-        event.preventDefault();
-        const form = event.target;
-        try { await postJson("/api/watchlist", Object.fromEntries(new FormData(form).entries())); form.reset(); text("[data-watchlist-message]", "Watchlist coin saved."); loadDashboard(); } catch (err) { text("[data-watchlist-message]", err.message); }
-      }
-      if (event.target.matches("[data-alert-form]")) {
-        event.preventDefault();
-        const form = event.target;
-        const formData = new FormData(form);
-        const payload = Object.fromEntries(formData.entries());
-        payload.channels = formData.getAll("channels");
-        try { await postJson("/api/alerts", payload); form.reset(); text("[data-alert-message]", "Alert created."); loadDashboard(); loadRetentionPanels(); } catch (err) { text("[data-alert-message]", err.message); }
-      }
-      if (event.target.matches("[data-watch-item-form]")) {
-        event.preventDefault();
-        const form = event.target;
-        try { await postJson("/api/watch", Object.fromEntries(new FormData(form).entries())); form.reset(); text("[data-watch-item-message]", "Watch item saved."); loadRetentionPanels(); } catch (err) { text("[data-watch-item-message]", err.message); }
-      }
-      if (event.target.matches("[data-chat-start-form]")) {
-        event.preventDefault();
-        const form = event.target;
-        const payload = Object.fromEntries(new FormData(form).entries());
-        try {
-          const result = await postJson("/api/chat/start", payload);
-          form.reset();
-          text("[data-chat-start-message]", "Conversation opened.");
-          await loadChatConversations();
-          await openConversation(result.thread_id || result.conversation_id, null);
-        } catch (err) {
-          text("[data-chat-start-message]", err.message);
-        }
-      }
-      if (event.target.matches("[data-chat-send-form]")) {
-        event.preventDefault();
-        const form = event.target;
-        if (!chatState.activeConversationId) return;
-        const body = new FormData(form).get("body");
-        if (!String(body || "").trim()) return;
-        const thread = document.querySelector("[data-chat-thread]");
-        if (!thread) return;
-        const tempId = "temp-" + Date.now();
-        thread.insertAdjacentHTML("beforeend", `<div class="chat-bubble me" data-message-id="${tempId}"><strong>You</strong><div>${escapeHtml(body)}</div><small>sending...</small></div>`);
-        thread.scrollTop = thread.scrollHeight;
-        form.reset();
-        try {
-          const result = await postJson("/api/chat/thread/" + chatState.activeConversationId + "/send", { message: body });
-          const pending = thread.querySelector(`[data-message-id="${tempId}"]`);
-          if (pending && result.message) pending.outerHTML = chatMessageHtml(result.message);
-          if (result.message) chatState.lastMessageId = Math.max(chatState.lastMessageId, Number(result.message.message_id || result.message.id || 0));
-          await loadChatConversations();
-        } catch (err) {
-          const pending = thread.querySelector(`[data-message-id="${tempId}"]`);
-          if (pending) pending.querySelector("small").textContent = "failed - retry";
-          form.elements.body.value = body;
-          thread.insertAdjacentHTML("beforeend", `<div class="private-chat-empty">${escapeHtml(err.message)}</div>`);
-        }
-      }
-      if (event.target.matches("[data-create-group-form]")) {
-        event.preventDefault();
-        const form = event.target;
-        const payload = Object.fromEntries(new FormData(form).entries());
-        try {
-          const result = await postJson("/api/pulse/messages/group/create", { ...payload, participant_ids: [] });
-          text("[data-create-group-message]", "Group chat created. Opening now.");
-          await loadChatConversations();
-          setCreateGroupModal(false);
-          setChatTab("groups");
-          location.href = result.next_url || ("/pulse/messages/" + result.conversation_id);
-        } catch (err) {
-          text("[data-create-group-message]", err.message);
-        }
-      }
-    });
-
-    document.addEventListener("click", async event => {
-      if (event.target.closest("[data-customize-home]")) {
-        const panel = document.querySelector("[data-customize-panel]");
-        if (panel) panel.hidden = !panel.hidden;
-      }
-      if (event.target.closest("[data-pref-reset]")) {
-        const defaults = { show_account:false, show_upgrade_pro:false, show_command_center:false, show_logout:false, show_saved_insights:true, show_activity_timeline:true };
-        for (const [key, value] of Object.entries(defaults)) await saveDashboardPreference(key, value).catch(() => {});
-      }
-      if (event.target.closest("[data-private-chat-open]")) openPrivateChat("full");
-      if (event.target.closest("[data-private-chat-close]")) closePrivateChat();
-      const chatMenuToggle = event.target.closest("[data-chat-menu-toggle]");
-      if (chatMenuToggle) {
-        const menu = document.querySelector("[data-chat-safety-menu]");
-        setChatMenu(menu?.hidden !== false);
-      } else if (event.target.closest("[data-chat-menu-backdrop]") || !event.target.closest("[data-chat-safety-menu]")) {
-        setChatMenu(false);
-      }
-      const chatTab = event.target.closest("[data-chat-tab]");
-      if (chatTab) {
-        if (chatTab.dataset.chatTab === "thread" && !chatState.activeConversationId) {
-          await openPulseRoom();
-          return;
-        }
-        setChatTab(chatTab.dataset.chatTab);
-      }
-      const conversation = event.target.closest("[data-open-conversation]");
-      if (conversation) await openConversation(conversation.dataset.openConversation, conversation.dataset.otherUserId);
-      const pulseConversation = event.target.closest("[data-open-pulse-conversation]");
-      if (pulseConversation) location.href = "/pulse/messages/" + encodeURIComponent(pulseConversation.dataset.openPulseConversation);
-      if (event.target.closest("[data-chat-new-private]")) {
-        setChatMenu(false);
-        setChatTab("list");
-        document.querySelector("[data-chat-start-form] input")?.focus();
-      }
-      if (event.target.closest("[data-chat-create-group]")) {
-        setChatMenu(false);
-        setCreateGroupModal(true);
-      }
-      if (event.target.closest("[data-create-group-cancel]") || event.target.matches("[data-create-group-modal]")) setCreateGroupModal(false);
-      if (event.target.closest("[data-chat-report]") && chatState.activeConversationId) {
-        const reason = window.prompt("Briefly describe the concern for moderation review.");
-        if (reason) await postJson("/api/messages/report", { conversation_id: chatState.activeConversationId, reported_user_id: chatState.activeOtherUserId || 0, reason });
-      }
-      if (event.target.closest("[data-chat-block]") && chatState.activeOtherUserId) {
-        if (window.confirm("Block this user from private messaging you?")) {
-          await postJson("/api/messages/block", { blocked_user_id: chatState.activeOtherUserId, reason: "Blocked from dashboard chat widget" });
-          await loadChatConversations();
-          setChatTab("list");
-        }
-      }
-      if (event.target.closest("[data-chat-mute]")) toast("Notifications muted for this conversation.");
-      if (event.target.closest("[data-chat-restrict]")) toast("Restriction request saved for review.");
-      const scrollButton = event.target.closest("[data-scroll]");
-      if (scrollButton) document.querySelector(scrollButton.dataset.scroll)?.scrollIntoView({ behavior: "smooth", block: "start" });
-      const autoSignals = event.target.closest("[data-auto-signals]");
-      if (autoSignals) await activateAutoSignals();
-      const autoSignalsStop = event.target.closest("[data-auto-signals-stop]");
-      if (autoSignalsStop) await stopAutoSignals();
-      const coreStep = event.target.closest("[data-core-step]");
-      if (coreStep) {
-        fetch("/api/onboarding/step", { method:"POST", headers:{ "Content-Type":"application/json" }, credentials:"same-origin", body:JSON.stringify({ step_key: coreStep.dataset.coreStep }) }).catch(() => {});
-      }
-      const holding = event.target.closest("[data-delete-portfolio]");
-      const watch = event.target.closest("[data-delete-watchlist]");
-      const alert = event.target.closest("[data-delete-alert]");
-      if (holding) { await fetch("/api/portfolio/" + holding.dataset.deletePortfolio, { method: "DELETE" }); loadDashboard(); }
-      if (watch) { await fetch("/api/watchlist/" + watch.dataset.deleteWatchlist, { method: "DELETE" }); loadDashboard(); }
-      if (alert) { await fetch("/api/alerts/" + alert.dataset.deleteAlert, { method: "DELETE" }); loadDashboard(); }
-      const timeline = event.target.closest("[data-toggle-timeline]");
-      if (timeline) {
-        const panel = document.querySelector("[data-activity-panel]");
-        if (panel) panel.hidden = false;
-        timeline.textContent = "Activity Timeline Open";
-      }
-      if (event.target.closest("[data-hide-timeline]")) {
-        const panel = document.querySelector("[data-activity-panel]");
-        if (panel) panel.hidden = true;
-        const btn = document.querySelector("[data-toggle-timeline]");
-        if (btn) btn.textContent = "View Activity Timeline";
-      }
-    });
-
-    document.addEventListener("change", event => {
-      const toggle = event.target.closest("[data-pref-toggle]");
-      if (toggle) saveDashboardPreference(toggle.dataset.prefToggle, !!toggle.checked).catch(() => loadDashboardPreferences());
-    });
-
-    loadDashboardPreferences();
-    bindPrivateChatDrag();
-    loadAutoSignalsStatus();
-    loadDashboard().then(loadAccountStatus).then(loadRetentionPanels).then(loadLiveOps).catch(err => { text("[data-ai-insight]", err.message); loadAccountStatus(); loadRetentionPanels(); loadLiveOps(); });
-    window.setInterval(function () { loadDashboard().catch(function () {}); loadAccountStatus(); loadRetentionPanels(); loadLiveOps(); }, 60000);
-    loadChatConversations().catch(function () {});
-    window.setInterval(function () { if (!chatState.open) loadChatConversations().catch(function () {}); }, 30000);
-    window.setInterval(function () { pollActiveConversation().catch(function () {}); }, 15000);
-    document.addEventListener("visibilitychange", function () { if (!document.hidden) pollActiveConversation().catch(function () {}); });
-    function danceAlerts() {
-      document.querySelectorAll("[data-alerts-button]").forEach(button => {
-        if (button.classList.contains("is-dancing")) return;
-        button.classList.add("is-dancing");
-        window.setTimeout(() => button.classList.remove("is-dancing"), 1900);
-      });
-    }
-    window.setInterval(danceAlerts, 30000);
+    })();
   </script>
-  <script src="{{ url_for('static', filename='analytics.js') }}" defer></script>
 </body>
 </html>
