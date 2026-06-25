@@ -494,14 +494,19 @@
             <div class="profile-card">
               <h3>Access</h3>
               <p><strong>Plan:</strong> {{ access.label }}</p>
+              {% if not paid_digital_access_available %}
+                <p><strong>iOS access:</strong> Core social features only.</p>
+                <p class="muted">Web or external paid digital subscriptions do not unlock paid digital features in this iOS build.</p>
+              {% else %}
               <p><strong>Subscription:</strong> {{ current_user.subscription_status or "inactive" }}</p>
-              {% if access.is_paid_pro %}
+              {% endif %}
+              {% if paid_digital_access_available and access.is_paid_pro %}
                 <p><strong>PulseSoc Premium:</strong> Active.</p>
                 <p><strong>Billing/access date:</strong> {{ access.pro_expires_at }}</p>
-              {% elif access.is_trial %}
+              {% elif paid_digital_access_available and access.is_trial %}
                 <p><strong>Trial ends:</strong> {{ access.trial_end }}</p>
                 <p><strong>Days remaining:</strong> {{ access.days_remaining }}</p>
-              {% elif access.trial_expired %}
+              {% elif paid_digital_access_available and access.trial_expired %}
                 <p><strong>Trial:</strong> Ended. Core access remains free; PulseSoc Premium is optional when you want elite identity and creator enhancements.</p>
               {% endif %}
               <p><strong>Telegram:</strong> {% if current_user.telegram_user_id %}Connected{% else %}Not connected{% endif %}</p>

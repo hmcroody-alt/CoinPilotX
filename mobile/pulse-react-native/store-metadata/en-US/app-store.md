@@ -10,15 +10,15 @@ Create, connect, stay aware
 
 ## Promotional Text
 
-PulseSoc brings social posting, reels, videos, messaging, notifications, and premium creator tools into one mobile-first community.
+PulseSoc brings social posting, reels, videos, messaging, notifications, profiles, and community tools into one mobile-first social space.
 
 ## Description
 
-PulseSoc is a social platform for creating, learning, and connecting through posts, videos, reels, messages, notifications, and creator-focused premium tools.
+PulseSoc is a social platform for creating, learning, and connecting through posts, videos, reels, messages, notifications, profiles, and community tools.
 
 With PulseSoc, you can follow creators, explore video content, check notifications, manage your profile, and stay connected through direct messages. PulseSoc is operated by CoinPilotXAI Inc. and is built around user control, moderation, privacy-aware design, and clear communication.
 
-PulseSoc is not financial, investment, legal, or betting advice. Premium features and crypto-related education tools are informational only.
+PulseSoc is not financial, investment, legal, or betting advice. Paid digital access is not available in this iOS build.
 
 ## Keywords
 
@@ -57,6 +57,8 @@ Premium and payments:
 - Premium purchase surfaces are disabled in native iOS context.
 - Premium purchase, Founder activation, billing portal, creator checkout, marketplace checkout, course checkout, Premium Intelligence, Premium Portfolio, UNDX Premium, and premium-only appearance APIs are disabled in native iOS context until Apple in-app purchase products are implemented and approved.
 - Existing web subscriptions do not unlock paid digital premium surfaces inside this iOS build.
+- Account status, entitlement, purchase, order, billing confirmation, creator monetization, creator AI, paid course, and premium dashboard APIs return iOS core-only responses in the submitted iOS context.
+- The native Premium screen does not open Stripe, checkout, billing portal, Premium Intelligence, creator monetization, paid courses, or external-purchase subscription benefits on iOS.
 
 Device support:
 - The next review build is iPhone-only. iPad support is disabled until a dedicated iPad layout passes QA for all supported iPad screen sizes.

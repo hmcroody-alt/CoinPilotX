@@ -8,7 +8,7 @@
     },
     "info": {
       "en-US": {
-        "description": "PulseSoc is a social platform for creating, learning, and connecting through posts, videos, reels, messages, notifications, and creator-focused premium tools.\n\nWith PulseSoc, you can follow creators, explore video content, check notifications, manage your profile, and stay connected through direct messages. PulseSoc is operated by CoinPilotXAI Inc. and is built around user control, moderation, privacy-aware design, and clear communication.\n\nPulseSoc is not financial, investment, legal, or betting advice. Premium features and crypto-related education tools are informational only.",
+        "description": "PulseSoc is a social platform for creating, learning, and connecting through posts, videos, reels, messages, notifications, profiles, and community tools.\n\nWith PulseSoc, you can follow creators, explore video content, check notifications, manage your profile, and stay connected through direct messages. PulseSoc is operated by CoinPilotXAI Inc. and is built around user control, moderation, privacy-aware design, and clear communication.\n\nPulseSoc is not financial, investment, legal, or betting advice. Paid digital access is not available in this iOS build.",
         "keywords": [
           "social",
           "creator",
@@ -20,7 +20,7 @@
           "PulseSoc"
         ],
         "marketingUrl": "https://pulsesoc.com",
-        "promoText": "PulseSoc brings social posting, reels, videos, messaging, notifications, and premium creator tools into one mobile-first community.",
+        "promoText": "PulseSoc brings social posting, reels, videos, messaging, notifications, profiles, and community tools into one mobile-first social space.",
         "supportUrl": "https://pulsesoc.com/support",
         "title": "PulseSoc",
         "subtitle": "Create, connect, stay aware",
@@ -37,7 +37,6 @@
           ],
           "APP_IPAD_PRO_3GEN_129": [
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/ipad-13-welcome-2048x2732.png",
-            "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/ipad-13-premium-inside-2048x2732.png",
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/ipad-13-feed-inside-2048x2732.png",
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/ipad-13-messages-inside-2048x2732.png"
           ]
@@ -85,7 +84,7 @@
       "demoUsername": "Ulagwop@gmail.com",
       "demoPassword": "Ula@123456",
       "demoRequired": true,
-      "notes": "PulseSoc is a WebView-based native shell for the live PulseSoc social platform at https://pulsesoc.com. The app supports login, posts, reels, videos, messaging, notifications, profile, and premium surfaces. Camera, microphone, and photo permissions are used only when a reviewer chooses to upload or record media in the app. Push notifications are used for account and social activity."
+      "notes": "PulseSoc is a WebView-based native shell for the live PulseSoc social platform at https://pulsesoc.com. The iOS app supports login, posts, reels, videos, messaging, notifications, profile, reporting, blocking, and account settings. Paid digital access, Stripe checkout, external billing, Premium Intelligence, creator monetization, paid courses, and web-purchased subscription benefits are unavailable in this iOS build until Apple In-App Purchase support is implemented and approved. Camera, microphone, and photo permissions are used only when a reviewer chooses to upload or record media in the app. Push notifications are used for account and social activity."
     }
   }
 }
