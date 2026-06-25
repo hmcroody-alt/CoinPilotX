@@ -34,6 +34,7 @@ def main() -> int:
     require("VAPID_PUBLIC_KEY" in push and "VAPID_PRIVATE_KEY" in push, "Web/PWA push checks VAPID at send time")
     require("os.getenv(\"PUSH_DEFAULT_SOUND\") or \"default\"" in push, "Provider payload includes configured sound fallback")
     require("\"priority\": \"high\"" in push, "Provider payload uses high priority for chat pushes")
+    require('os.getenv("PUSH_MESSAGE_CHANNEL_ID", "pulse-messages-v2")' in push, "Chat pushes default to the dedicated Android messages channel")
     require("PUSH_BADGE_ENABLED" in push, "Provider payload honors badge enablement")
     require("process_push_delivery_jobs" in worker_heartbeat, "Command Center Worker drains durable push jobs")
     require("process_expo_receipts" in worker_heartbeat, "Command Center Worker reconciles Expo receipts")

@@ -326,7 +326,9 @@ function injectPushTokenRegistration(webView: WebViewType | null, token: string)
             provider: 'expo',
             token: ${JSON.stringify(token)},
             subscription: { expo_push_token: ${JSON.stringify(token)} },
-            device_type: 'native_webview'
+            device_type: 'native_webview',
+            platform: ${JSON.stringify(Platform.OS)},
+            app_version: '1.0.0'
           })
         });
         const text = await response.text();

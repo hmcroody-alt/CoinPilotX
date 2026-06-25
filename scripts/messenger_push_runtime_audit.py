@@ -154,11 +154,11 @@ def main() -> None:
         payload = posts[-1]
         data = payload.get("data") or {}
         expect(payload.get("to") == RECEIVER_TOKEN, "sender token skipped", str(payload))
-        expect(payload.get("channelId") == "default", "Expo default channel used for broad device delivery", str(payload))
+        expect(payload.get("channelId") == "pulse-messages-v2", "Expo chat push uses dedicated Android messages channel", str(payload))
         expect(payload.get("sound") == "default" and payload.get("priority") == "high", "audible high-priority push", str(payload))
         expect(payload.get("interruptionLevel") == "active", "iOS interruption level included", str(payload))
         expect(data.get("conversationId") == conversation_id and data.get("messageId"), "conversation and message ids included", str(data))
-        expect(data.get("senderId") == SENDER_ID and data.get("type") == "message", "sender and type included", str(data))
+        expect(data.get("senderId") == SENDER_ID and data.get("type") == "chat_message" and data.get("push_type") == "chat_message", "sender and chat push type included", str(data))
         expect(data.get("deepLink") == f"pulse://pulse/messages-v2?conversation={conversation_id}", "native exact conversation deep link included", str(data))
         expect(data.get("web_url") == f"/pulse/messages/{conversation_id}" and data.get("url") == f"/pulse/messages/{conversation_id}", "PWA web conversation URL included", str(data))
         expect(data.get("badge") is not None and data.get("chat_unread_count") is not None, "chat badge counts included", str(data))

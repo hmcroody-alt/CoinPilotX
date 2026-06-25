@@ -45,8 +45,10 @@ require(finalize_call_count >= send_call_count, "every canonical send call site 
 require(BOT.count("pulse_finalize_legacy_message_delivery(") >= 5, "legacy and compatibility sends bridge into canonical delivery")
 
 require("send_push_alert(" in NOTIFICATIONS and "enqueue_push(" in NOTIFICATIONS, "notification service enqueues durable push delivery")
+require('"push_type": push_type' in NOTIFICATIONS and '"channelId": metadata.get("channelId")' in NOTIFICATIONS, "notification service preserves chat push type and channel metadata")
 require('"sound": os.getenv("PUSH_DEFAULT_SOUND") or "default"' in PUSH, "native push includes configured sound")
 require('"priority": "high"' in PUSH, "chat push uses high provider priority")
+require('os.getenv("PUSH_MESSAGE_CHANNEL_ID", "pulse-messages-v2")' in PUSH, "chat push uses dedicated Android messages channel by default")
 require("process_push_delivery_jobs" in PUSH and "dead_letter" in PUSH, "push worker has retry and dead-letter processing")
 require("@require_internal_auth" in WORKER and '"/internal/command-center/messages/event"' in WORKER, "Command Center message endpoint requires internal authentication")
 require("COMMAND_CENTER_INTERNAL_TOKEN" not in finalizer, "browser-facing delivery code never reads or exposes the internal token")

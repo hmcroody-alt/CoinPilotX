@@ -36,7 +36,9 @@ export async function registerForPushNotifications() {
       provider: "expo",
       token: token.token,
       subscription: { expo_push_token: token.token },
-      device_type: "native"
+      device_type: "native",
+      platform: Platform.OS,
+      app_version: "1.0.0"
     })
   });
 }
@@ -102,7 +104,9 @@ export async function unregisterPushNotifications() {
       endpoint: token.data,
       provider: "expo",
       token: token.data,
-      device_type: "native"
+      device_type: "native",
+      platform: Platform.OS,
+      app_version: "1.0.0"
     })
   });
 }

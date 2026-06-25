@@ -572,12 +572,20 @@ def create_pulse_notification(
                 push_result["message"],
             )
         elif defaults.get("push"):
+            is_message_like = _message_like_notification(note_type, entity_type, deep_link)
+            push_type = str(metadata.get("push_type") or ("chat_message" if is_message_like else metadata.get("type")) or category or note_type or "notification")[:80]
+            notification_type = str(metadata.get("type") or note_type or push_type)[:80]
+            payload_type = push_type if is_message_like or push_type in {"chat_message", "private_message", "group_message"} else notification_type
             push_metadata = {
                 **metadata,
-                "url": deep_link or "/pulse",
-                "deepLink": metadata.get("deepLink") or metadata.get("deep_link") or deep_link or "/pulse",
-                "type": note_type,
-                "push_type": category,
+                "url": metadata.get("url") or deep_link or "/pulse",
+                "web_url": metadata.get("web_url") or (f"https://pulsesoc.com{deep_link}" if str(deep_link or "").startswith("/") else deep_link or "/pulse"),
+                "deepLink": metadata.get("deepLink") or metadata.get("native_url") or metadata.get("mobile_deep_link") or metadata.get("deep_link") or deep_link or "/pulse",
+                "type": payload_type,
+                "notification_type": notification_type,
+                "push_type": push_type,
+                "channel_id": metadata.get("channel_id") or metadata.get("channelId") or ("pulse-messages-v2" if is_message_like else "default"),
+                "channelId": metadata.get("channelId") or metadata.get("channel_id") or ("pulse-messages-v2" if is_message_like else "default"),
                 "notification_id": int(notification_id),
             }
             push_result = send_push_alert(

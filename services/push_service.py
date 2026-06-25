@@ -469,7 +469,13 @@ def _send_expo_push(endpoint, payload):
     push_type = str(data.get("push_type") or data.get("type") or "").strip()
     channel_id = str(data.get("channel_id") or data.get("channelId") or "").strip()
     if not channel_id:
-        channel_id = os.getenv("PUSH_MESSAGE_CHANNEL_ID", "default") if push_type in {"private_message", "chat_message", "message", "voice_message"} or data.get("conversationId") or data.get("conversation_id") else "default"
+        channel_id = (
+            os.getenv("PUSH_MESSAGE_CHANNEL_ID", "pulse-messages-v2")
+            if push_type in {"private_message", "chat_message", "message", "voice_message"}
+            or data.get("conversationId")
+            or data.get("conversation_id")
+            else "default"
+        )
     message = {
         "to": token,
         "title": payload.get("title") or "PulseSoc",

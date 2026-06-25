@@ -24,14 +24,14 @@ def main() -> None:
     require(bot, 'channels=["in_app", "push"]', "legacy message push channel")
     require(bot, '"conversationId": conversation_id', "camelCase conversationId payload")
     require(bot, '"messageId": message_id', "camelCase messageId payload")
-    require(bot, '"senderId": user["user_id"]', "camelCase senderId payload")
+    require(bot, '"senderId": sender_id', "camelCase senderId payload")
     require(bot, 'mobile_deep_link = f"pulse://pulse/messages-v2?conversation={conversation_id}"', "legacy PulseSoc native deepLink")
     if '"channel_id": "pulse-messages-v2"' in bot or '"channelId": "pulse-messages-v2"' in bot:
         raise SystemExit("FAIL: legacy message paths must not hardcode Android message channel")
     require(bot, 'return redirect(f"/pulse/messages/{conversation_id}")', "V2 deep-link redirect")
     require(bot, 'deep_link = f"/pulse/messages/{conversation_id}"', "legacy PulseSoc message push URL")
-    require(bot, '"web_url": deep_link', "legacy PulseSoc web URL payload")
-    require(bot, '"badge": int(chat_unread_count or 0)', "legacy PulseSoc badge payload")
+    require(bot, '"web_url": f"https://pulsesoc.com{deep_link}"', "legacy PulseSoc web URL payload")
+    require(bot, '"badge": unread_count', "legacy PulseSoc badge payload")
     require(comm_v2, '"conversationId": int(conversation_id)', "V2 conversationId payload")
     require(comm_v2, '"messageId": message_id', "V2 messageId payload")
     require(comm_v2, '"senderId": int(user_id)', "V2 senderId payload")
@@ -46,7 +46,7 @@ def main() -> None:
     require(comm_v2, '"web_url": deep_link', "V2 web URL payload")
     require(notifications, 'suppress_push = bool((metadata or {}).get("suppress_push"))', "audited push suppression")
     require(notifications, '"Push suppressed by notification policy."', "push suppression delivery log")
-    require(push, 'os.getenv("PUSH_MESSAGE_CHANNEL_ID", "default")', "Expo message channel fallback")
+    require(push, 'os.getenv("PUSH_MESSAGE_CHANNEL_ID", "pulse-messages-v2")', "Expo message channel fallback")
     require(push, 'PUSH_DEFAULT_SOUND', "configurable Expo sound")
     require(push, '"priority": "high"', "Expo high priority")
     require(push, '"ttl": 3600', "Expo TTL")
@@ -68,7 +68,7 @@ def main() -> None:
     notifications_js = (ROOT / "static" / "notifications.js").read_text()
     require(notifications_js, "count > STATE.lastChatUnread && !onSameConversation", "foreground chat alert off active conversation")
     require(notifications_js, "New PulseSoc message", "foreground chat alert title")
-    print("PASS: Messenger push notifications include reliable default channel fallback, sound, private-preview policy, foreground chat alerts, recipient payloads, push suppression, and exact deep links.")
+    print("PASS: Messenger push notifications include reliable dedicated message channel fallback, sound, private-preview policy, foreground chat alerts, recipient payloads, push suppression, and exact deep links.")
 
 
 if __name__ == "__main__":

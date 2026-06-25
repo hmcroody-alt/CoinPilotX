@@ -42,7 +42,7 @@ def main() -> int:
     require("comm_v2_message" in notifications, "message notifications filter must include Command Center v2 message entity records")
     require("pulse://pulse/messages-v2?conversation=" in comm, "mobile deep link must target exact conversation")
     require('"channelId": "pulse-messages-v2"' not in comm, "message path must not hardcode fragile Android channel")
-    require('os.getenv("PUSH_MESSAGE_CHANNEL_ID", "default")' in push, "message push must use configurable default Android channel fallback")
+    require('os.getenv("PUSH_MESSAGE_CHANNEL_ID", "pulse-messages-v2")' in push, "message push must use configurable dedicated Android channel fallback")
     require('"badge": int(unread or 0)' in comm, "message push must include chat badge count")
     require("/pulse/messages/" in comm, "web deep link must target exact conversation")
     require("privacy_preview_hidden" in comm, "push payload must respect private preview mode")
