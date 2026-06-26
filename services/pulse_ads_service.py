@@ -51,7 +51,24 @@ ACTIVE_CAMPAIGN_STATUS = {"active"}
 APPROVED_CREATIVE_STATUS = {"approved"}
 VALID_CREATIVE_TYPES = {"image", "video", "text", "hologram", "audio"}
 VALID_OBJECTIVES = {"awareness", "traffic", "engagement", "creator_growth", "marketplace", "radio"}
-VALID_EVENTS = {"viewability", "conversion", "hide", "report", "save", "dismiss"}
+VALID_EVENTS = {
+    "viewability",
+    "conversion",
+    "hide",
+    "report",
+    "save",
+    "dismiss",
+    "video_start",
+    "video_25",
+    "video_50",
+    "video_75",
+    "video_complete",
+    "audio_start",
+    "audio_complete",
+    "mute",
+    "unmute",
+    "error",
+}
 VALID_BUDGET_TYPES = {"daily", "lifetime"}
 VALID_ACCOUNT_STATUS = {"draft", "pending_verification", "active", "suspended"}
 VALID_DEVICE_TYPES = {"desktop", "mobile", "tablet", "all"}
@@ -256,9 +273,9 @@ def seed_placements(cur) -> None:
             cur.execute(
                 """
                 UPDATE pulse_ad_placements
-                SET priority=COALESCE(priority, ?),
-                    supported_creative_types=COALESCE(supported_creative_types, ?),
-                    card_style=COALESCE(card_style, ?)
+                SET priority=?,
+                    supported_creative_types=?,
+                    card_style=?
                 WHERE placement_key=?
                 """,
                 (
