@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from services import dashboard_account_command_center
 from services import db as db_service
 from services import premium_identity_engine
 
@@ -283,12 +284,12 @@ WIDGET_ICONS = {
 
 
 WIDGETS: list[dict[str, Any]] = [
-    _widget("profile", "Profile", "Account Command Center", "/pulse/profile", "Manage your public identity, bio, avatar, and profile surface.", sort_order=10),
-    _widget("verification", "Verification", "Account Command Center", "/account", "Check email, identity, and premium verification state.", sort_order=20, accent="emerald"),
-    _widget("account_health", "Account Health", "Account Command Center", "/pulse/profile/security", "Review account safety, recovery, and activity protections.", sort_order=30, accent="emerald"),
-    _widget("security", "Security", "Account Command Center", "/pulse/profile/security", "Password, sessions, devices, and sensitive action protection.", sort_order=40),
-    _widget("settings", "Settings", "Account Command Center", "/account", "Profile, notification, privacy, and account settings.", sort_order=50),
-    _widget("advanced_security", "Advanced Security", "Account Command Center", "/pulse/profile/security", "Premium device intelligence and risk hardening.", premium_required=True, sort_order=60, accent="purple"),
+    _widget("profile", "Profile", "Account Command Center", "/dashboard/account/profile", "Manage your public identity, bio, avatar, and profile surface.", sort_order=10),
+    _widget("verification", "Verification", "Account Command Center", "/dashboard/account/verification", "Check email, identity, and premium verification state.", sort_order=20, accent="emerald"),
+    _widget("account_health", "Account Health", "Account Command Center", "/dashboard/account/health", "Review account safety, recovery, and activity protections.", sort_order=30, accent="emerald"),
+    _widget("security", "Security", "Account Command Center", "/dashboard/account/security", "Password, sessions, devices, and sensitive action protection.", sort_order=40),
+    _widget("settings", "Settings", "Account Command Center", "/dashboard/account/settings", "Profile, notification, privacy, and account settings.", sort_order=50),
+    _widget("advanced_security", "Advanced Security", "Account Command Center", "/dashboard/account/security", "Premium device intelligence and risk hardening.", premium_required=True, sort_order=60, accent="purple"),
     _widget("notifications", "Notifications", "Pulse Network", "/pulse/notifications", "Friend requests, reactions, follows, security alerts, and updates.", sort_order=10),
     _widget("messages", "Messages", "Pulse Network", "/pulse/messages", "Open Messenger with unread counts and private chat controls.", sort_order=20, accent="emerald"),
     _widget("friends", "Friends", "Pulse Network", "/pulse/friends", "Review friend requests and your connection graph.", sort_order=30),
@@ -466,6 +467,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
     cur = conn.cursor()
     caps = _user_capabilities(cur, user, session_admin)
     user_id = caps["user_id"]
+    account_state = dashboard_account_command_center.build_account_state(conn, user)
     metrics = _metrics(cur, user, caps)
     widgets = []
     for widget in WIDGETS:
@@ -473,11 +475,21 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
         if access == "hidden":
             continue
         item = dict(widget)
+        state = dashboard_account_command_center.state_for_widget(account_state, item["widget_key"])
         item["access"] = access
         item["lock_reason"] = _lock_reason(widget, caps) if access == "locked" else ""
+        if state and state.get("route"):
+            item["route"] = str(state.get("route") or item["route"])[:200]
         item["cta_route"] = "/pulse/premium" if "Premium" in item.get("lock_reason", "") else (item["route"] or "/dashboard")
         item["icon"] = WIDGET_ICONS.get(item["widget_key"], "MC")
-        item["status_label"] = str(item.get("status") or "PRODUCTION_READY").replace("_", " ").title()
+        if access == "locked":
+            item["status_label"] = "LOCK"
+        elif state and state.get("state"):
+            item["status_label"] = str(state.get("state") or "").upper()
+        else:
+            item["status_label"] = str(item.get("status") or "PRODUCTION_READY").replace("_", " ").title()
+        if state:
+            item["state"] = state
         widgets.append(item)
     categories = []
     for category in dict.fromkeys(item["category"] for item in widgets):
@@ -497,6 +509,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             "locked_widgets": len([item for item in widgets if item["access"] == "locked"]),
             "active_widgets": len([item for item in widgets if item["access"] == "active"]),
         },
+        "account_command_center": account_state,
     }
 
 
