@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <meta name="theme-color" content="#050b15">
+  <title>PulseSoc Advertiser Mission Control</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/pulse_advertiser_portal.css') }}">
+</head>
+<body>
+  <main class="ad-portal" data-portal-root>
+    <aside class="ad-rail" aria-label="Advertiser sections">
+      <a class="brand" href="/pulse">
+        <img src="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" alt="PulseSoc">
+        <span>
+          <strong>PulseSoc Ads</strong>
+          <small>Mission Control</small>
+        </span>
+      </a>
+      <nav>
+        <a href="#overview" class="active">Overview</a>
+        <a href="#account">Account Center</a>
+        <a href="#wizard">Campaign Wizard</a>
+        <a href="#creatives">Creative Studio</a>
+        <a href="#budget">Budget</a>
+        <a href="#analytics">Analytics</a>
+        <a href="#review">Review Board</a>
+      </nav>
+      <a class="rail-cta" href="/pulse">Back to PulseSoc</a>
+    </aside>
+
+    <section class="ad-main">
+      <header class="hero" id="overview">
+        <div>
+          <p class="eyebrow">Sponsored Signal Command</p>
+          <h1>Advertiser Mission Control</h1>
+          <p>Build campaigns, submit safe creatives, monitor delivery, and prepare budget controls without exposing billing secrets.</p>
+        </div>
+        <div class="operator">
+          <div class="avatar">{{ (current_user.get('name') or current_user.get('email') or 'P')[:1] }}</div>
+          <strong>{{ current_user.get('name') or current_user.get('email') or 'PulseSoc Advertiser' }}</strong>
+          <span data-role-pill>Loading access</span>
+        </div>
+      </header>
+
+      <section class="metric-grid" aria-label="Advertiser metrics">
+        <article><span>Accounts</span><strong data-metric="account_count">0</strong></article>
+        <article><span>Campaigns</span><strong data-metric="campaign_count">0</strong></article>
+        <article><span>Active</span><strong data-metric="active_campaigns">0</strong></article>
+        <article><span>Reviews</span><strong data-metric="pending_reviews">0</strong></article>
+        <article><span>Spend</span><strong data-metric="total_spend">$0.00</strong></article>
+      </section>
+
+      <section class="panel split" id="account">
+        <div>
+          <p class="eyebrow">Business Identity</p>
+          <h2>Advertiser Account Center</h2>
+          <p class="muted">Verification, legal, contact, health, spend summary, and lifecycle notifications are tied to your own ad accounts only.</p>
+          <form class="mini-form" data-create-account-form>
+            <input name="business_name" placeholder="Business name" required maxlength="120">
+            <input name="business_email" type="email" placeholder="Business email">
+            <input name="business_website" inputmode="url" placeholder="https:// website">
+            <button type="submit">Create Ad Account</button>
+          </form>
+          <div class="account-list" data-account-list></div>
+        </div>
+        <form class="mission-form" data-account-form>
+          <input type="hidden" name="account_id">
+          <label>Legal name<input name="legal_name" autocomplete="organization"></label>
+          <label>Contact email<input name="contact_email" type="email" autocomplete="email"></label>
+          <label>Website<input name="website" inputmode="url" placeholder="https://"></label>
+          <label>Industry<input name="industry"></label>
+          <label>Tax country<input name="tax_country" maxlength="40"></label>
+          <label>Tax identifier<input name="tax_identifier" placeholder="Stored masked only"></label>
+          <button type="submit">Save Account Profile</button>
+        </form>
+      </section>
+
+      <section class="panel" id="wizard">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Draft Builder</p>
+            <h2>Campaign Wizard</h2>
+          </div>
+          <span class="status-chip">Autosave ready</span>
+        </div>
+        <form class="wizard-grid" data-campaign-form>
+          <label>Ad account<select name="ad_account_id" required data-account-select></select></label>
+          <label>Objective<select name="objective"><option value="awareness">Awareness</option><option value="traffic">Traffic</option><option value="engagement">Engagement</option><option value="creator_growth">Creator Growth</option><option value="marketplace">Marketplace</option><option value="radio">Pulse Radio</option></select></label>
+          <label>Campaign name<input name="campaign_name" required maxlength="120" placeholder="Creator launch sequence"></label>
+          <label>Budget type<select name="budget_type"><option value="daily">Daily</option><option value="lifetime">Lifetime</option></select></label>
+          <label>Daily budget cents<input name="daily_budget_cents" type="number" min="0" max="10000000" value="2500"></label>
+          <label>Lifetime budget cents<input name="lifetime_budget_cents" type="number" min="0" max="100000000" value="0"></label>
+          <label>Start<input name="start_at" type="datetime-local"></label>
+          <label>End<input name="end_at" type="datetime-local"></label>
+          <fieldset>
+            <legend>Placements</legend>
+            <label><input type="checkbox" name="placements" value="feed_inline" checked> Feed inline</label>
+            <label><input type="checkbox" name="placements" value="feed_side_ufo_desktop"> Desktop UFO</label>
+            <label><input type="checkbox" name="placements" value="feed_inline_ufo_mobile"> Mobile UFO</label>
+            <label><input type="checkbox" name="placements" value="pulse_network_hologram"> Pulse Network</label>
+            <label><input type="checkbox" name="placements" value="pulse_radio_sponsor"> Pulse Radio</label>
+          </fieldset>
+          <button type="submit">Save Draft Campaign</button>
+        </form>
+      </section>
+
+      <section class="panel" id="creatives">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Moderation Safe Assets</p>
+            <h2>Creative Studio</h2>
+          </div>
+          <span class="status-chip">No self approval</span>
+        </div>
+        <form class="wizard-grid" data-creative-form>
+          <label>Campaign<select name="campaign_id" required data-campaign-select></select></label>
+          <label>Type<select name="creative_type"><option value="text">Text</option><option value="image">Image</option><option value="video">Video</option><option value="audio">Audio</option><option value="hologram">Hologram</option></select></label>
+          <label>Title<input name="title" required maxlength="100"></label>
+          <label>Call to action<input name="call_to_action" maxlength="40" value="Learn more"></label>
+          <label class="wide">Body<textarea name="body" maxlength="240"></textarea></label>
+          <label>Media URL<input name="media_url" inputmode="url" placeholder="https:// approved media"></label>
+          <label>Thumbnail URL<input name="thumbnail_url" inputmode="url" placeholder="https:// thumbnail"></label>
+          <label class="wide">Destination URL<input name="destination_url" required inputmode="url" placeholder="https://"></label>
+          <button type="submit">Create Draft Creative</button>
+        </form>
+        <div class="creative-grid" data-creative-list></div>
+      </section>
+
+      <section class="panel split" id="budget">
+        <div>
+          <p class="eyebrow">Spend Guardrails</p>
+          <h2>Budget Manager</h2>
+          <p class="muted">Daily and lifetime budgets are active. Live billing, recharge, and payment collection remain disabled until the billing feature flag is enabled server-side.</p>
+        </div>
+        <div class="budget-board" data-budget-board></div>
+      </section>
+
+      <section class="panel" id="analytics">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Signal Performance</p>
+            <h2>Analytics</h2>
+          </div>
+          <button type="button" data-refresh>Refresh</button>
+        </div>
+        <div class="analytics-grid" data-analytics></div>
+      </section>
+
+      <section class="panel" id="review">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Creative Safety</p>
+            <h2>Review Board</h2>
+          </div>
+          <span class="status-chip">Advertiser view only</span>
+        </div>
+        <div class="review-list" data-review-list></div>
+      </section>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='js/pulse_advertiser_portal.js') }}" defer></script>
+</body>
+</html>
