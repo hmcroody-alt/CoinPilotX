@@ -180,18 +180,60 @@ def _ensure_campaign(conn, owner_user_id: int, account_id: int) -> dict:
     return _fetch_one(cur, "SELECT * FROM pulse_ad_campaigns WHERE id=?", (campaign["id"],))
 
 
-def _ensure_creative(conn, owner_user_id: int, campaign_id: int, media_url: str) -> dict:
+def _ensure_ad_media_asset(conn, owner_user_id: int, account_id: int, media_url: str) -> dict:
+    from services import pulse_ads_service
+
+    now = pulse_ads_service.now_iso()
+    cur = conn.cursor()
+    asset = _fetch_one(
+        cur,
+        """
+        SELECT * FROM pulse_ad_media_assets
+        WHERE owner_user_id=? AND ad_account_id=? AND public_url=? AND asset_kind='creative_media' AND COALESCE(deleted_at, '')=''
+        ORDER BY id DESC LIMIT 1
+        """,
+        (owner_user_id, account_id, media_url),
+    )
+    if asset:
+        return pulse_ads_service._ad_asset_public(asset)
+    cur.execute(
+        """
+        INSERT INTO chat_media_uploads
+        (uploader_user_id, original_filename, media_url, thumbnail_url, media_type, mime_type, file_size_bytes, width, height, context_type, context_id, moderation_status, created_at)
+        VALUES (?, 'pulse-radio-sponsored-ad.png', ?, ?, 'image', 'image/png', ?, 1536, 864, 'pulse_ad_creative', ?, 'approved', ?)
+        """,
+        (owner_user_id, media_url, media_url, int((ROOT / "static" / DEFAULT_MEDIA_RELATIVE).stat().st_size), f"account:{account_id}:creative_media", now),
+    )
+    return pulse_ads_service.create_ad_media_asset(
+        conn,
+        owner_user_id,
+        account_id,
+        {
+            "id": cur.lastrowid,
+            "media_type": "image",
+            "mime_type": "image/png",
+            "media_url": media_url,
+            "thumbnail_url": media_url,
+            "width": 1536,
+            "height": 864,
+            "file_size_bytes": int((ROOT / "static" / DEFAULT_MEDIA_RELATIVE).stat().st_size),
+        },
+    )
+
+
+def _ensure_creative(conn, owner_user_id: int, account_id: int, campaign_id: int, media_url: str) -> dict:
     from services import pulse_ads_service
 
     cur = conn.cursor()
+    asset = _ensure_ad_media_asset(conn, owner_user_id, account_id, media_url)
     creative = _fetch_one(
         cur,
         """
         SELECT * FROM pulse_ad_creatives
-        WHERE campaign_id=? AND title=? AND body=? AND media_url=? AND destination_url=?
+        WHERE campaign_id=? AND title=? AND body=? AND media_asset_id=? AND destination_url=?
         ORDER BY id DESC LIMIT 1
         """,
-        (campaign_id, TITLE, BODY, media_url, DESTINATION_URL),
+        (campaign_id, TITLE, BODY, asset["id"], DESTINATION_URL),
     )
     if not creative:
         creative = pulse_ads_service.create_creative(
@@ -202,8 +244,7 @@ def _ensure_creative(conn, owner_user_id: int, campaign_id: int, media_url: str)
                 "creative_type": "image",
                 "title": TITLE,
                 "body": BODY,
-                "media_url": media_url,
-                "thumbnail_url": media_url,
+                "media_asset_id": asset["id"],
                 "destination_url": DESTINATION_URL,
                 "call_to_action": CTA,
                 "category": "radio",
@@ -278,7 +319,7 @@ def activate_pulse_radio_ad() -> dict:
         _ensure_owner_user(conn, owner_user_id)
         account = _ensure_account(conn, owner_user_id)
         campaign = _ensure_campaign(conn, owner_user_id, account["id"])
-        creative = _ensure_creative(conn, owner_user_id, campaign["id"], media_url)
+        creative = _ensure_creative(conn, owner_user_id, account["id"], campaign["id"], media_url)
         verification = _verify_eligibility(conn, creative["id"])
         return {
             "ok": True,

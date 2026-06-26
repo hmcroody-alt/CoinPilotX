@@ -294,6 +294,154 @@ def validate_media_url(url: str) -> str:
     return validate_destination_url(cleaned, required=False)
 
 
+AD_MEDIA_REQUIRED_TYPES = {
+    "image": {"image", "gif"},
+    "video": {"video"},
+    "audio": {"audio"},
+}
+
+
+def _asset_type_allowed(creative_type: str, media_type: str) -> bool:
+    required = AD_MEDIA_REQUIRED_TYPES.get(clean_text(creative_type, 30).lower())
+    if not required:
+        return True
+    return clean_text(media_type, 40).lower() in required
+
+
+def _ad_asset_public(asset: dict) -> dict:
+    item = dict(asset or {})
+    return {
+        "id": item.get("id"),
+        "asset_id": item.get("asset_id") or item.get("id"),
+        "asset_kind": item.get("asset_kind") or "",
+        "media_type": item.get("media_type") or "",
+        "mime_type": item.get("mime_type") or "",
+        "width": safe_int(item.get("width"), 0),
+        "height": safe_int(item.get("height"), 0),
+        "duration_seconds": float(item.get("duration_seconds") or 0),
+        "file_size": safe_int(item.get("file_size"), 0),
+        "public_url": item.get("playback_url") or item.get("public_url") or "",
+        "thumbnail_url": item.get("thumbnail_url") or item.get("poster_url") or item.get("public_url") or "",
+        "poster_url": item.get("poster_url") or item.get("thumbnail_url") or "",
+        "playback_url": item.get("playback_url") or "",
+        "moderation_status": item.get("moderation_status") or "pending",
+        "security_status": item.get("security_status") or "passed",
+    }
+
+
+def _owned_ad_media_asset(conn, owner_user_id, ad_account_id, asset_id, *, allowed_kinds=None) -> dict:
+    cur = conn.cursor()
+    identifier = safe_int(asset_id, 0)
+    if identifier:
+        cur.execute(
+            """
+            SELECT * FROM pulse_ad_media_assets
+            WHERE id=? AND owner_user_id=? AND ad_account_id=? AND COALESCE(deleted_at, '')=''
+            """,
+            (identifier, owner_user_id, ad_account_id),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT * FROM pulse_ad_media_assets
+            WHERE asset_id=? AND owner_user_id=? AND ad_account_id=? AND COALESCE(deleted_at, '')=''
+            """,
+            (clean_text(asset_id, 80), owner_user_id, ad_account_id),
+        )
+    asset = row_to_dict(cur.fetchone())
+    if not asset:
+        raise PulseAdsError("Uploaded ad media was not found.", 404)
+    if allowed_kinds and clean_text(asset.get("asset_kind"), 40) not in allowed_kinds:
+        raise PulseAdsError("Uploaded media is not compatible with this creative field.")
+    return asset
+
+
+def create_ad_media_asset(conn, owner_user_id, ad_account_id, media: dict, asset_kind="creative_media") -> dict:
+    _owned_account(conn, owner_user_id, ad_account_id)
+    asset_kind = clean_text(asset_kind or "creative_media", 40)
+    if asset_kind not in {"creative_media", "thumbnail", "companion_image"}:
+        raise PulseAdsError("Unsupported ad media asset type.")
+    media_id = safe_int((media or {}).get("id"), 0)
+    if media_id <= 0:
+        raise PulseAdsError("Uploaded media record is required.")
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT * FROM chat_media_uploads
+        WHERE id=? AND uploader_user_id=? AND COALESCE(deleted_at, '')=''
+        LIMIT 1
+        """,
+        (media_id, owner_user_id),
+    )
+    upload = row_to_dict(cur.fetchone())
+    if not upload:
+        raise PulseAdsError("Uploaded media does not belong to this advertiser.", 403)
+    media_type = clean_text(media.get("media_type") or upload.get("media_type"), 40).lower()
+    if asset_kind in {"thumbnail", "companion_image"} and media_type not in {"image", "gif"}:
+        raise PulseAdsError("Custom thumbnails must be uploaded as images.")
+    public_url = clean_text(media.get("valid_url") or media.get("media_url") or upload.get("media_url"), 1000)
+    if not public_url:
+        raise PulseAdsError("Uploaded media is not ready yet.")
+    storage_key = clean_text(media.get("storage_key") or upload.get("storage_key"), 600)
+    checksum = hashlib.sha256(f"{owner_user_id}:{media_id}:{storage_key}:{public_url}".encode("utf-8")).hexdigest()
+    now = now_iso()
+    metadata = {
+        "source_media_id": media_id,
+        "context_type": clean_text(upload.get("context_type"), 120),
+        "processing_status": clean_text(media.get("processing_status") or upload.get("processing_status") or "ready", 80),
+    }
+    cur.execute(
+        """
+        INSERT INTO pulse_ad_media_assets
+        (asset_id, owner_user_id, ad_account_id, media_upload_id, asset_kind, media_type, storage_provider, storage_key,
+         public_url, thumbnail_url, poster_url, playback_url, mime_type, width, height, duration_seconds, file_size,
+         checksum, moderation_status, security_status, metadata_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'passed', ?, ?, ?)
+        """,
+        (
+            f"adma_{checksum[:24]}",
+            owner_user_id,
+            ad_account_id,
+            media_id,
+            asset_kind,
+            media_type,
+            clean_text(media.get("storage_provider") or upload.get("storage_provider") or "local", 40),
+            storage_key,
+            public_url,
+            clean_text(media.get("thumbnail_url") or upload.get("thumbnail_url"), 1000),
+            clean_text(media.get("poster_url") or upload.get("poster_url") or media.get("thumbnail_url") or upload.get("thumbnail_url"), 1000),
+            clean_text(media.get("playback_url") or upload.get("playback_url"), 1000),
+            clean_text(media.get("mime_type") or upload.get("mime_type"), 120),
+            safe_int(media.get("width") or upload.get("width"), 0),
+            safe_int(media.get("height") or upload.get("height"), 0),
+            float(media.get("duration") or media.get("duration_seconds") or upload.get("duration_seconds") or 0),
+            safe_int(media.get("file_size_bytes") or media.get("file_size") or upload.get("file_size_bytes"), 0),
+            checksum,
+            clean_json(metadata),
+            now,
+            now,
+        ),
+    )
+    asset_id = cur.lastrowid
+    audit_log(conn, owner_user_id, "ad_media_asset_uploaded", "pulse_ad_media_assets", asset_id, after={"asset_kind": asset_kind, "media_type": media_type})
+    conn.commit()
+    cur.execute("SELECT * FROM pulse_ad_media_assets WHERE id=?", (asset_id,))
+    return _ad_asset_public(row_to_dict(cur.fetchone()))
+
+
+def delete_ad_media_asset(conn, owner_user_id, ad_account_id, asset_id) -> dict:
+    asset = _owned_ad_media_asset(conn, owner_user_id, ad_account_id, asset_id)
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM pulse_ad_creatives WHERE media_asset_id=? OR thumbnail_asset_id=? LIMIT 1", (asset.get("id"), asset.get("id")))
+    if row_to_dict(cur.fetchone()):
+        raise PulseAdsError("Media already attached to a creative cannot be deleted. Replace or delete the draft creative first.", 409)
+    now = now_iso()
+    cur.execute("UPDATE pulse_ad_media_assets SET deleted_at=?, updated_at=? WHERE id=?", (now, now, asset.get("id")))
+    audit_log(conn, owner_user_id, "ad_media_asset_deleted", "pulse_ad_media_assets", asset.get("id"), before=_ad_asset_public(asset), after={"deleted_at": now})
+    conn.commit()
+    return {"ok": True, "asset_id": asset.get("id"), "deleted": True}
+
+
 def seed_placements(cur) -> None:
     now = now_iso()
     for key, name, device_type, placement_type, max_frequency in PLACEMENTS:
@@ -558,32 +706,60 @@ def policy_review(conn, creative_id, payload: dict) -> dict:
 def create_creative(conn, owner_user_id, payload: dict) -> dict:
     campaign_id = safe_int(payload.get("campaign_id"), minimum=1)
     campaign = _owned_campaign(conn, owner_user_id, campaign_id)
+    ad_account_id = safe_int(campaign.get("ad_account_id"), minimum=1)
     creative_type = clean_text(payload.get("creative_type") or "text", 30).lower()
     if creative_type not in VALID_CREATIVE_TYPES:
         raise PulseAdsError("Unsupported creative type.")
+    if payload.get("media_url") or payload.get("thumbnail_url"):
+        raise PulseAdsError("Upload media through PulseSoc Creative Studio instead of pasting media URLs.")
     title = clean_text(payload.get("title"), TEXT_LIMITS["title"])
     body = clean_text(payload.get("body"), TEXT_LIMITS["body"])
     destination_url = validate_destination_url(payload.get("destination_url"), required=True)
     if not title:
         raise PulseAdsError("Creative title is required.")
+    media_asset = {}
+    thumbnail_asset = {}
+    media_asset_id = safe_int(payload.get("media_asset_id"), 0)
+    thumbnail_asset_id = safe_int(payload.get("thumbnail_asset_id"), 0)
+    if media_asset_id:
+        media_asset = _owned_ad_media_asset(conn, owner_user_id, ad_account_id, media_asset_id, allowed_kinds={"creative_media", "companion_image"})
+        if not _asset_type_allowed(creative_type, media_asset.get("media_type")):
+            raise PulseAdsError(f"{creative_type.title()} creatives require a matching uploaded {creative_type} asset.")
+    elif creative_type in AD_MEDIA_REQUIRED_TYPES:
+        raise PulseAdsError(f"Upload a {creative_type} asset before creating this creative.")
+    if thumbnail_asset_id:
+        thumbnail_asset = _owned_ad_media_asset(conn, owner_user_id, ad_account_id, thumbnail_asset_id, allowed_kinds={"thumbnail", "companion_image"})
+        if clean_text(thumbnail_asset.get("media_type"), 40).lower() not in {"image", "gif"}:
+            raise PulseAdsError("Custom thumbnails must be uploaded as images.")
+    media_public = _ad_asset_public(media_asset)
+    thumb_public = _ad_asset_public(thumbnail_asset)
+    media_metadata = {
+        "media_asset": {k: media_public.get(k) for k in ("media_type", "mime_type", "width", "height", "duration_seconds", "file_size") if media_public.get(k) not in ("", None, 0)},
+        "thumbnail_asset": {k: thumb_public.get(k) for k in ("media_type", "mime_type", "width", "height", "file_size") if thumb_public.get(k) not in ("", None, 0)},
+    }
     now = now_iso()
     cur = conn.cursor()
     cur.execute(
         """
         INSERT INTO pulse_ad_creatives
-        (ad_account_id, campaign_id, creative_type, title, body, media_url, thumbnail_url, destination_url, call_to_action, status, moderation_status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'draft', ?, ?)
+        (ad_account_id, campaign_id, creative_type, title, body, media_url, thumbnail_url, media_asset_id, thumbnail_asset_id,
+         destination_url, call_to_action, status, moderation_status, media_ready, media_metadata_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'draft', ?, ?, ?, ?)
         """,
         (
-            campaign.get("ad_account_id"),
+            ad_account_id,
             campaign_id,
             creative_type,
             title,
             body,
-            validate_media_url(payload.get("media_url")),
-            validate_media_url(payload.get("thumbnail_url")),
+            media_public.get("public_url") or "",
+            thumb_public.get("thumbnail_url") or media_public.get("thumbnail_url") or "",
+            media_asset.get("id") if media_asset else None,
+            thumbnail_asset.get("id") if thumbnail_asset else None,
             destination_url,
             clean_text(payload.get("call_to_action") or "Learn more", TEXT_LIMITS["call_to_action"]),
+            1 if (creative_type == "text" or media_asset) else 0,
+            clean_json(media_metadata),
             now,
             now,
         ),
@@ -608,7 +784,7 @@ def get_creative(conn, owner_user_id, creative_id) -> dict:
     creative = row_to_dict(cur.fetchone())
     if not creative:
         raise PulseAdsError("Creative not found.", 404)
-    return creative
+    return attach_creative_media(conn, creative)
 
 
 def list_creatives(conn, owner_user_id) -> list[dict]:
@@ -622,7 +798,33 @@ def list_creatives(conn, owner_user_id) -> list[dict]:
         """,
         (owner_user_id,),
     )
-    return [row_to_dict(row) for row in cur.fetchall()]
+    return [attach_creative_media(conn, row_to_dict(row)) for row in cur.fetchall()]
+
+
+def attach_creative_media(conn, creative: dict) -> dict:
+    item = dict(creative or {})
+    cur = conn.cursor()
+    media_asset_id = safe_int(item.get("media_asset_id"), 0)
+    thumbnail_asset_id = safe_int(item.get("thumbnail_asset_id"), 0)
+    if media_asset_id:
+        cur.execute("SELECT * FROM pulse_ad_media_assets WHERE id=? AND COALESCE(deleted_at, '')=''", (media_asset_id,))
+        media_asset = row_to_dict(cur.fetchone())
+        if media_asset:
+            item["media_asset"] = _ad_asset_public(media_asset)
+            item["media_url"] = item["media_asset"].get("public_url") or item.get("media_url") or ""
+            item["playback_url"] = item["media_asset"].get("playback_url") or ""
+            item["media_moderation_status"] = media_asset.get("moderation_status") or ""
+    if thumbnail_asset_id:
+        cur.execute("SELECT * FROM pulse_ad_media_assets WHERE id=? AND COALESCE(deleted_at, '')=''", (thumbnail_asset_id,))
+        thumbnail_asset = row_to_dict(cur.fetchone())
+        if thumbnail_asset:
+            item["thumbnail_asset"] = _ad_asset_public(thumbnail_asset)
+            item["thumbnail_url"] = item["thumbnail_asset"].get("thumbnail_url") or item["thumbnail_asset"].get("public_url") or item.get("thumbnail_url") or ""
+            item["thumbnail_moderation_status"] = thumbnail_asset.get("moderation_status") or ""
+    if not item.get("thumbnail_url") and item.get("media_asset"):
+        item["thumbnail_url"] = item["media_asset"].get("thumbnail_url") or ""
+    item["media_ready"] = bool(item.get("media_asset_id") or item.get("creative_type") == "text")
+    return item
 
 
 def submit_creative_for_review(conn, owner_user_id, creative_id) -> dict:
@@ -656,7 +858,8 @@ def review_board(conn, limit=100) -> list[dict]:
         """
         SELECT rb.id AS review_id, rb.review_status, rb.risk_score, rb.automated_review_status, rb.human_review_status,
                rb.review_reason, rb.created_at, rb.reviewed_at, cr.id AS creative_id, cr.title, cr.body,
-               cr.destination_url, cr.moderation_status, c.id AS campaign_id, c.campaign_name, a.business_name
+               cr.destination_url, cr.moderation_status, cr.creative_type, cr.media_asset_id, cr.thumbnail_asset_id,
+               c.id AS campaign_id, c.campaign_name, a.business_name
         FROM pulse_ad_review_board rb
         JOIN pulse_ad_creatives cr ON cr.id=rb.creative_id
         JOIN pulse_ad_campaigns c ON c.id=rb.campaign_id
@@ -669,7 +872,7 @@ def review_board(conn, limit=100) -> list[dict]:
     for row in cur.fetchall():
         item = row_to_dict(row)
         item.pop("destination_url", None)
-        rows.append(item)
+        rows.append(attach_creative_media(conn, item))
     return rows
 
 
@@ -684,6 +887,9 @@ def approve_creative(conn, admin_user_id, creative_id, notes="") -> dict:
         "UPDATE pulse_ad_creatives SET status='approved', moderation_status='approved', rejection_reason='', updated_at=? WHERE id=?",
         (now, creative_id),
     )
+    for asset_id in (safe_int(before.get("media_asset_id"), 0), safe_int(before.get("thumbnail_asset_id"), 0)):
+        if asset_id:
+            cur.execute("UPDATE pulse_ad_media_assets SET moderation_status='approved', updated_at=? WHERE id=?", (now, asset_id))
     cur.execute(
         "UPDATE pulse_ad_moderation_queue SET status='approved', reviewer_id=?, notes=?, reviewed_at=? WHERE creative_id=?",
         (admin_user_id, clean_text(notes, TEXT_LIMITS["notes"]), now, creative_id),
@@ -713,6 +919,9 @@ def reject_creative(conn, admin_user_id, creative_id, reason="") -> dict:
         "UPDATE pulse_ad_creatives SET status='rejected', moderation_status='rejected', rejection_reason=?, updated_at=? WHERE id=?",
         (reason, now, creative_id),
     )
+    for asset_id in (safe_int(before.get("media_asset_id"), 0), safe_int(before.get("thumbnail_asset_id"), 0)):
+        if asset_id:
+            cur.execute("UPDATE pulse_ad_media_assets SET moderation_status='rejected', updated_at=? WHERE id=?", (now, asset_id))
     cur.execute(
         "UPDATE pulse_ad_moderation_queue SET status='rejected', reviewer_id=?, notes=?, reviewed_at=? WHERE creative_id=?",
         (admin_user_id, reason, now, creative_id),
@@ -860,6 +1069,13 @@ def sanitize_ad_payload(row: dict) -> dict:
         "body": clean_text(row.get("body"), TEXT_LIMITS["body"]),
         "media_url": row.get("media_url") or "",
         "thumbnail_url": row.get("thumbnail_url") or "",
+        "playback_url": row.get("playback_url") or "",
+        "media_type": clean_text(row.get("media_type") or row.get("creative_type") or "", 40),
+        "mime_type": clean_text(row.get("mime_type") or "", 120),
+        "width": safe_int(row.get("width"), 0),
+        "height": safe_int(row.get("height"), 0),
+        "duration_seconds": float(row.get("duration_seconds") or 0),
+        "file_size": safe_int(row.get("file_size"), 0),
         "destination_url": row.get("destination_url") or "",
         "call_to_action": clean_text(row.get("call_to_action") or "Learn more", TEXT_LIMITS["call_to_action"]),
         "card_style": clean_text(row.get("card_style") or PLACEMENT_METADATA.get(row.get("placement_key"), {}).get("card_style") or "signal-card", 80),
@@ -967,7 +1183,16 @@ def select_ads(conn, user_id=None, session_id="", context="home", device_type="d
     cur = conn.cursor()
     cur.execute(
         f"""
-        SELECT cr.id AS creative_id, cr.creative_type, cr.title, cr.body, cr.media_url, cr.thumbnail_url,
+        SELECT cr.id AS creative_id, cr.creative_type, cr.title, cr.body,
+               COALESCE(NULLIF(ma.playback_url, ''), NULLIF(ma.public_url, ''), NULLIF(cr.media_url, ''), '') AS media_url,
+               COALESCE(NULLIF(ta.public_url, ''), NULLIF(ma.thumbnail_url, ''), NULLIF(ma.poster_url, ''), NULLIF(cr.thumbnail_url, ''), '') AS thumbnail_url,
+               COALESCE(NULLIF(ma.playback_url, ''), '') AS playback_url,
+               COALESCE(ma.media_type, cr.creative_type, '') AS media_type,
+               COALESCE(ma.mime_type, '') AS mime_type,
+               COALESCE(ma.width, 0) AS width,
+               COALESCE(ma.height, 0) AS height,
+               COALESCE(ma.duration_seconds, 0) AS duration_seconds,
+               COALESCE(ma.file_size, 0) AS file_size,
                cr.destination_url, cr.call_to_action, c.id AS campaign_id, c.ad_account_id, c.status AS campaign_status,
                c.budget_type, c.daily_budget_cents, c.lifetime_budget_cents, c.spent_cents,
                COALESCE(c.priority, 0) AS campaign_priority,
@@ -982,6 +1207,8 @@ def select_ads(conn, user_id=None, session_id="", context="home", device_type="d
         JOIN pulse_ad_accounts a ON a.id=c.ad_account_id
         JOIN pulse_ad_campaign_placements cp ON cp.campaign_id=c.id
         JOIN pulse_ad_placements p ON p.id=cp.placement_id
+        LEFT JOIN pulse_ad_media_assets ma ON ma.id=cr.media_asset_id AND COALESCE(ma.deleted_at, '')=''
+        LEFT JOIN pulse_ad_media_assets ta ON ta.id=cr.thumbnail_asset_id AND COALESCE(ta.deleted_at, '')=''
         LEFT JOIN pulse_ad_targeting t ON t.campaign_id=c.id
         WHERE p.placement_key IN ({placeholders})
           AND p.is_active=1
@@ -989,6 +1216,9 @@ def select_ads(conn, user_id=None, session_id="", context="home", device_type="d
           AND a.status='active'
           AND cr.moderation_status='approved'
           AND cr.status='approved'
+          AND (cr.creative_type NOT IN ('image','video','audio') OR cr.media_asset_id IS NOT NULL)
+          AND (cr.media_asset_id IS NULL OR ma.moderation_status='approved')
+          AND (cr.thumbnail_asset_id IS NULL OR ta.moderation_status='approved')
           AND (c.start_at IS NULL OR c.start_at='' OR c.start_at<=?)
           AND (c.end_at IS NULL OR c.end_at='' OR c.end_at>=?)
           AND (p.device_type='all' OR p.device_type=?)

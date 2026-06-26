@@ -381,13 +381,13 @@ def list_creatives(conn, user_id) -> list[dict]:
         """,
         tuple(account_ids),
     )
-    return [_creative_public(row_to_dict(row)) for row in cur.fetchall()]
+    return [_creative_public(pulse_ads_service.attach_creative_media(conn, row_to_dict(row))) for row in cur.fetchall()]
 
 
 def _creative_public(creative: dict) -> dict:
     item = dict(creative or {})
     item["performance_state"] = "Ready" if item.get("moderation_status") == "approved" else "Waiting for review"
-    item["media_ready"] = bool(item.get("media_url") or item.get("creative_type") == "text")
+    item["media_ready"] = bool(item.get("media_asset_id") or item.get("media_url") or item.get("creative_type") == "text")
     item["destination_safe"] = bool(item.get("destination_url", "").startswith(("http://", "https://")))
     return item
 
@@ -649,9 +649,10 @@ def creative_action(conn, user_id, creative_id, action: str) -> dict:
             """
             INSERT INTO pulse_ad_creatives
             (ad_account_id, campaign_id, creative_type, title, body, media_url, thumbnail_url, destination_url,
-             call_to_action, status, moderation_status, rejection_reason, metadata_json, compatibility_json,
+             media_asset_id, thumbnail_asset_id, media_ready, media_metadata_json, call_to_action,
+             status, moderation_status, rejection_reason, metadata_json, compatibility_json,
              moderation_history_json, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'draft', '', ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'draft', '', ?, ?, ?, ?, ?)
             """,
             (
                 before.get("ad_account_id"),
@@ -662,6 +663,10 @@ def creative_action(conn, user_id, creative_id, action: str) -> dict:
                 before.get("media_url"),
                 before.get("thumbnail_url"),
                 before.get("destination_url"),
+                before.get("media_asset_id"),
+                before.get("thumbnail_asset_id"),
+                before.get("media_ready") or 0,
+                before.get("media_metadata_json") or "{}",
                 before.get("call_to_action"),
                 before.get("metadata_json") or "{}",
                 before.get("compatibility_json") or "{}",
@@ -703,25 +708,48 @@ def replace_creative(conn, user_id, creative_id, payload: dict) -> dict:
     before = row_to_dict(cur.fetchone())
     if before.get("moderation_status") == "approved":
         raise pulse_ads_service.PulseAdsError("Approved creatives cannot be replaced. Duplicate it and submit a new version.", 409)
-    media_url = pulse_ads_service.validate_media_url(payload.get("media_url"))
-    thumbnail_url = pulse_ads_service.validate_media_url(payload.get("thumbnail_url"))
+    if payload.get("media_url") or payload.get("thumbnail_url"):
+        raise pulse_ads_service.PulseAdsError("Upload replacement media through PulseSoc Creative Studio instead of pasting media URLs.")
+    media_asset_id = safe_int(payload.get("media_asset_id"), 0)
+    thumbnail_asset_id = safe_int(payload.get("thumbnail_asset_id"), 0)
+    if not media_asset_id:
+        raise pulse_ads_service.PulseAdsError("Upload replacement media before replacing this creative.")
+    media_asset = pulse_ads_service._owned_ad_media_asset(conn, user_id, account_id, media_asset_id, allowed_kinds={"creative_media", "companion_image"})
+    if not pulse_ads_service._asset_type_allowed(before.get("creative_type"), media_asset.get("media_type")):
+        raise pulse_ads_service.PulseAdsError("Replacement media is not compatible with this creative type.")
+    thumbnail_asset = {}
+    if thumbnail_asset_id:
+        thumbnail_asset = pulse_ads_service._owned_ad_media_asset(conn, user_id, account_id, thumbnail_asset_id, allowed_kinds={"thumbnail", "companion_image"})
+    media_public = pulse_ads_service._ad_asset_public(media_asset)
+    thumb_public = pulse_ads_service._ad_asset_public(thumbnail_asset)
     metadata = {
-        "file_name": clean_text(payload.get("file_name"), 180),
-        "media_type": clean_text(payload.get("media_type"), 80),
-        "file_size": safe_int(payload.get("file_size"), 0, 0, 500_000_000),
-        "duration_seconds": safe_int(payload.get("duration_seconds"), 0, 0, 7200),
+        "media_asset_id": media_asset.get("id"),
+        "thumbnail_asset_id": thumbnail_asset.get("id") if thumbnail_asset else None,
+        "media_type": media_public.get("media_type"),
+        "file_size": media_public.get("file_size"),
+        "duration_seconds": media_public.get("duration_seconds"),
         "replaced_at": now_iso(),
     }
     cur.execute(
         """
         UPDATE pulse_ad_creatives
-        SET media_url=?, thumbnail_url=?, metadata_json=?, moderation_status='draft', status='draft', updated_at=?
+        SET media_url=?, thumbnail_url=?, media_asset_id=?, thumbnail_asset_id=?, media_ready=1,
+            media_metadata_json=?, metadata_json=?, moderation_status='draft', status='draft', updated_at=?
         WHERE id=?
         """,
-        (media_url, thumbnail_url, clean_json(metadata), now_iso(), creative_id),
+        (
+            media_public.get("public_url") or "",
+            thumb_public.get("thumbnail_url") or media_public.get("thumbnail_url") or "",
+            media_asset.get("id"),
+            thumbnail_asset.get("id") if thumbnail_asset else None,
+            clean_json(metadata),
+            clean_json(metadata),
+            now_iso(),
+            creative_id,
+        ),
     )
     cur.execute("SELECT * FROM pulse_ad_creatives WHERE id=?", (creative_id,))
-    after = row_to_dict(cur.fetchone())
+    after = pulse_ads_service.attach_creative_media(conn, row_to_dict(cur.fetchone()))
     pulse_ads_service.audit_log(conn, user_id, "ad_creative_media_replaced", "pulse_ad_creatives", creative_id, before=before, after={"metadata": metadata})
     conn.commit()
     return _creative_public(after)

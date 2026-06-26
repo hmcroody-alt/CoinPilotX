@@ -63,6 +63,55 @@ def create_users(conn):
     conn.commit()
 
 
+def create_ad_asset(conn, owner_id: int, account_id: int, creative_type: str, campaign_name: str) -> dict:
+    now = pulse_ads_service.now_iso()
+    media_type = "audio" if creative_type == "audio" else "video" if creative_type == "video" else "image"
+    ext = "mp3" if media_type == "audio" else "mp4" if media_type == "video" else "jpg"
+    mime = "audio/mpeg" if media_type == "audio" else "video/mp4" if media_type == "video" else "image/jpeg"
+    media_url = f"/static/uploads/pulse_ads/{campaign_name.lower().replace(' ', '-')}.{ext}"
+    thumbnail_url = f"/static/uploads/pulse_ads/{campaign_name.lower().replace(' ', '-')}.jpg"
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO chat_media_uploads
+        (uploader_user_id, original_filename, stored_filename, media_url, thumbnail_url, media_type, mime_type,
+         file_size_bytes, width, height, duration_seconds, context_type, context_id, moderation_status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pulse_ad_creative', ?, 'approved', ?)
+        """,
+        (
+            owner_id,
+            f"{campaign_name}.{ext}",
+            f"{campaign_name}.{ext}",
+            media_url,
+            thumbnail_url,
+            media_type,
+            mime,
+            2048,
+            1200 if media_type != "audio" else 0,
+            628 if media_type != "audio" else 0,
+            15 if media_type in {"audio", "video"} else 0,
+            f"account:{account_id}:creative_media",
+            now,
+        ),
+    )
+    return pulse_ads_service.create_ad_media_asset(
+        conn,
+        owner_id,
+        account_id,
+        {
+            "id": cur.lastrowid,
+            "media_type": media_type,
+            "mime_type": mime,
+            "media_url": media_url,
+            "thumbnail_url": thumbnail_url,
+            "width": 1200 if media_type != "audio" else 0,
+            "height": 628 if media_type != "audio" else 0,
+            "duration_seconds": 15 if media_type in {"audio", "video"} else 0,
+            "file_size_bytes": 2048,
+        },
+    )
+
+
 def build_approved_ad(conn, *, placements, creative_type="text", campaign_name="Delivery Audit", account_active=True):
     account = pulse_ads_service.create_ad_account(
         conn,
@@ -84,17 +133,21 @@ def build_approved_ad(conn, *, placements, creative_type="text", campaign_name="
             "placements": placements,
         },
     )
+    media_asset = create_ad_asset(conn, 2101, account["id"], creative_type, campaign_name) if creative_type in {"image", "video", "audio"} else {}
+    creative_payload = {
+        "campaign_id": campaign["id"],
+        "creative_type": creative_type,
+        "title": campaign_name,
+        "body": "Privacy-safe sponsored signal for PulseSoc creators.",
+        "destination_url": "https://example.com/creator",
+        "call_to_action": "Explore",
+    }
+    if media_asset:
+        creative_payload["media_asset_id"] = media_asset["id"]
     creative = pulse_ads_service.create_creative(
         conn,
         2101,
-        {
-            "campaign_id": campaign["id"],
-            "creative_type": creative_type,
-            "title": campaign_name,
-            "body": "Privacy-safe sponsored signal for PulseSoc creators.",
-            "destination_url": "https://example.com/creator",
-            "call_to_action": "Explore",
-        },
+        creative_payload,
     )
     pulse_ads_service.submit_creative_for_review(conn, 2101, creative["id"])
     pulse_ads_service.approve_creative(conn, 9001, creative["id"], "Delivery audit approval")

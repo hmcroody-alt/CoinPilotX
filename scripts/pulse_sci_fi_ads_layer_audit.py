@@ -64,6 +64,40 @@ def create_users(conn):
     conn.commit()
 
 
+def create_ad_asset(conn, owner_id: int, account_id: int, creative_type: str, name: str) -> dict:
+    now = pulse_ads_service.now_iso()
+    media_type = "video" if creative_type == "video" else "audio" if creative_type == "audio" else "image"
+    ext = "mp4" if media_type == "video" else "mp3" if media_type == "audio" else "jpg"
+    mime = "video/mp4" if media_type == "video" else "audio/mpeg" if media_type == "audio" else "image/jpeg"
+    media_url = f"/static/uploads/pulse_ads/{name.lower().replace(' ', '-')}.{ext}"
+    thumb_url = f"/static/uploads/pulse_ads/{name.lower().replace(' ', '-')}.jpg"
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO chat_media_uploads
+        (uploader_user_id, original_filename, media_url, thumbnail_url, media_type, mime_type, file_size_bytes, width, height, duration_seconds, context_type, context_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pulse_ad_creative', ?, ?)
+        """,
+        (owner_id, f"{name}.{ext}", media_url, thumb_url, media_type, mime, 2048, 1200 if media_type != "audio" else 0, 628 if media_type != "audio" else 0, 15 if media_type in {"video", "audio"} else 0, f"account:{account_id}:creative_media", now),
+    )
+    return pulse_ads_service.create_ad_media_asset(
+        conn,
+        owner_id,
+        account_id,
+        {
+            "id": cur.lastrowid,
+            "media_type": media_type,
+            "mime_type": mime,
+            "media_url": media_url,
+            "thumbnail_url": thumb_url,
+            "width": 1200 if media_type != "audio" else 0,
+            "height": 628 if media_type != "audio" else 0,
+            "duration_seconds": 15 if media_type in {"video", "audio"} else 0,
+            "file_size_bytes": 2048,
+        },
+    )
+
+
 def build_ad(conn, *, placements, creative_type="video", campaign_name="Sci Fi Delivery", approved=True):
     account = pulse_ads_service.create_ad_account(
         conn,
@@ -85,6 +119,7 @@ def build_ad(conn, *, placements, creative_type="video", campaign_name="Sci Fi D
             "placements": placements,
         },
     )
+    asset = create_ad_asset(conn, 4101, account["id"], creative_type, campaign_name)
     creative = pulse_ads_service.create_creative(
         conn,
         4101,
@@ -93,8 +128,7 @@ def build_ad(conn, *, placements, creative_type="video", campaign_name="Sci Fi D
             "creative_type": creative_type,
             "title": campaign_name,
             "body": "Approved sponsor signal rendered as a PulseSoc sci-fi projection.",
-            "media_url": "https://example.com/media/pulse-ad.mp4" if creative_type == "video" else "",
-            "thumbnail_url": "https://example.com/media/pulse-ad.jpg",
+            "media_asset_id": asset["id"],
             "destination_url": "https://example.com/creator",
             "call_to_action": "Explore",
         },

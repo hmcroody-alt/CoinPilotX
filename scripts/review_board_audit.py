@@ -42,6 +42,34 @@ def create_user(conn) -> int:
     return cur.lastrowid
 
 
+def create_ad_asset(conn, owner_id: int, account_id: int, media_type="image") -> dict:
+    now = pulse_ads_service.now_iso()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO chat_media_uploads
+        (uploader_user_id, original_filename, media_url, thumbnail_url, media_type, mime_type, file_size_bytes, width, height, context_type, context_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pulse_ad_creative', ?, ?)
+        """,
+        (owner_id, "review.png", "/static/uploads/pulse_ads/review.png", "/static/uploads/pulse_ads/review.png", media_type, "image/png", 512, 1200, 628, f"account:{account_id}:creative_media", now),
+    )
+    return pulse_ads_service.create_ad_media_asset(
+        conn,
+        owner_id,
+        account_id,
+        {
+            "id": cur.lastrowid,
+            "media_type": media_type,
+            "mime_type": "image/png",
+            "media_url": "/static/uploads/pulse_ads/review.png",
+            "thumbnail_url": "/static/uploads/pulse_ads/review.png",
+            "width": 1200,
+            "height": 628,
+            "file_size_bytes": 512,
+        },
+    )
+
+
 def main():
     bot.init_db()
     conn = sqlite3.connect(db_path())
@@ -62,12 +90,13 @@ def main():
             "daily_budget_cents": 1000,
             "placements": ["feed_inline"],
         })
+        asset = create_ad_asset(conn, owner_id, account["id"])
         creative = pulse_ads_service.create_creative(conn, owner_id, {
             "campaign_id": campaign["id"],
             "creative_type": "image",
             "title": "Review Creative",
             "body": "Safe creative for moderation.",
-            "media_url": "https://example.com/ad.png",
+            "media_asset_id": asset["id"],
             "destination_url": "https://example.com",
             "call_to_action": "Open",
         })

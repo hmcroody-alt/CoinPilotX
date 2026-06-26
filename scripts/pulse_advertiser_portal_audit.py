@@ -19,7 +19,7 @@ os.environ["FLASK_SECRET_KEY"] = "portal-audit-secret"
 os.environ["SESSION_SECRET"] = "portal-audit-session"
 
 import bot  # noqa: E402
-from services import pulse_advertiser_portal  # noqa: E402
+from services import pulse_advertiser_portal, pulse_ads_service  # noqa: E402
 
 
 def assert_true(condition, message):
@@ -59,6 +59,42 @@ def api(client, method: str, path: str, payload=None, csrf=True):
     if method == "GET":
         return client.get(path, headers=headers)
     return client.open(path, method=method, json=payload or {}, headers=headers)
+
+
+def create_ad_asset(owner_id: int, account_id: int) -> dict:
+    conn = sqlite3.connect(db_path())
+    conn.row_factory = sqlite3.Row
+    try:
+        now = pulse_ads_service.now_iso()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO chat_media_uploads
+            (uploader_user_id, original_filename, stored_filename, media_url, thumbnail_url, media_type, mime_type,
+             file_size_bytes, width, height, context_type, context_id, moderation_status, created_at)
+            VALUES (?, 'portal-ad.png', 'portal-ad.png', '/static/uploads/pulse_ads/portal-ad.png',
+                    '/static/uploads/pulse_ads/portal-ad.png', 'image', 'image/png', 2048, 1200, 628,
+                    'pulse_ad_creative', ?, 'approved', ?)
+            """,
+            (owner_id, f"account:{account_id}:creative_media", now),
+        )
+        return pulse_ads_service.create_ad_media_asset(
+            conn,
+            owner_id,
+            account_id,
+            {
+                "id": cur.lastrowid,
+                "media_type": "image",
+                "mime_type": "image/png",
+                "media_url": "/static/uploads/pulse_ads/portal-ad.png",
+                "thumbnail_url": "/static/uploads/pulse_ads/portal-ad.png",
+                "width": 1200,
+                "height": 628,
+                "file_size_bytes": 2048,
+            },
+        )
+    finally:
+        conn.close()
 
 
 def main():
@@ -135,6 +171,7 @@ def main():
     assert_true(patch_resp.status_code == 200, patch_resp.get_data(as_text=True))
     assert_true("feed_inline_ufo_mobile" in patch_resp.get_json()["campaign"]["placements"], "campaign placements should update")
 
+    asset = create_ad_asset(owner_id, account_id)
     creative_resp = api(
         client,
         "POST",
@@ -144,7 +181,7 @@ def main():
             "creative_type": "image",
             "title": "Creator Intelligence Stack",
             "body": "Premium tools for safer creators.",
-            "media_url": "https://example.com/ad.png",
+            "media_asset_id": asset["id"],
             "destination_url": "https://example.com/creator",
             "call_to_action": "Explore",
         },

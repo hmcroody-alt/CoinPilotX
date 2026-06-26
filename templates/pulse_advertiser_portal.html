@@ -129,8 +129,27 @@
           <label>Title<input name="title" required maxlength="100"></label>
           <label>Call to action<input name="call_to_action" maxlength="40" value="Learn more"></label>
           <label class="wide">Body<textarea name="body" maxlength="240"></textarea></label>
-          <label>Media URL<input name="media_url" inputmode="url" placeholder="https:// approved media"></label>
-          <label>Thumbnail URL<input name="thumbnail_url" inputmode="url" placeholder="https:// thumbnail"></label>
+          <div class="wide ad-upload-studio" data-creative-upload-studio>
+            <input type="hidden" name="media_asset_id" data-media-asset-id>
+            <input type="hidden" name="thumbnail_asset_id" data-thumbnail-asset-id>
+            <div class="ad-upload-zone" data-creative-drop-zone>
+              <div>
+                <p class="eyebrow">PulseSoc-secured media</p>
+                <strong data-upload-zone-title>Upload Image, Video, or Audio</strong>
+                <span data-upload-zone-help>Files are validated, stored by PulseSoc, scanned, and sent to moderation before delivery.</span>
+              </div>
+              <label class="upload-button">Choose media<input type="file" data-creative-media-input accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/quicktime,video/webm,audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/ogg"></label>
+            </div>
+            <div class="ad-upload-meta">
+              <label class="upload-button secondary">Custom video thumbnail<input type="file" data-creative-thumbnail-input accept="image/png,image/jpeg,image/webp,image/gif"></label>
+              <button type="button" class="secondary" data-remove-creative-media disabled>Remove draft media</button>
+              <span data-creative-upload-status>Waiting for upload.</span>
+            </div>
+            <progress data-creative-upload-progress value="0" max="100" hidden></progress>
+            <div class="ad-upload-preview" data-creative-upload-preview>
+              <span class="muted">Preview appears after upload. Raw storage URLs are never requested from advertisers.</span>
+            </div>
+          </div>
           <label class="wide">Destination URL<input name="destination_url" required inputmode="url" placeholder="https://"></label>
           <button type="submit">Create Draft Creative</button>
         </form>

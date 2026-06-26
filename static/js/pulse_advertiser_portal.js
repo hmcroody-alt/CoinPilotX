@@ -5,6 +5,8 @@
   const state = {
     portal: null,
     selectedAccountId: null,
+    creativeMediaAsset: null,
+    creativeThumbnailAsset: null,
   };
 
   function csrfToken() {
@@ -68,6 +70,154 @@
       data[key] = checkboxes[key];
     });
     return data;
+  }
+
+  function selectedCampaign() {
+    const form = document.querySelector("[data-creative-form]");
+    const campaignId = form && form.campaign_id ? form.campaign_id.value : "";
+    const campaigns = (state.portal && state.portal.campaigns) || [];
+    return campaigns.find((campaign) => String(campaign.id) === String(campaignId)) || null;
+  }
+
+  function accountIdForCreativeUpload() {
+    const campaign = selectedCampaign();
+    return campaign ? campaign.ad_account_id || campaign.account_id || "" : "";
+  }
+
+  function resetCreativeUploadState() {
+    state.creativeMediaAsset = null;
+    state.creativeThumbnailAsset = null;
+    const form = document.querySelector("[data-creative-form]");
+    const mediaInput = form && form.querySelector("[data-media-asset-id]");
+    const thumbInput = form && form.querySelector("[data-thumbnail-asset-id]");
+    if (mediaInput) mediaInput.value = "";
+    if (thumbInput) thumbInput.value = "";
+    const status = document.querySelector("[data-creative-upload-status]");
+    const preview = document.querySelector("[data-creative-upload-preview]");
+    const remove = document.querySelector("[data-remove-creative-media]");
+    const progress = document.querySelector("[data-creative-upload-progress]");
+    if (status) status.textContent = "Waiting for upload.";
+    if (remove) remove.disabled = true;
+    if (progress) {
+      progress.hidden = true;
+      progress.value = 0;
+    }
+    if (preview) {
+      clear(preview);
+      preview.appendChild(el("span", "muted", "Preview appears after upload. Raw storage URLs are never requested from advertisers."));
+    }
+  }
+
+  function renderUploadedAsset(asset, kind) {
+    const preview = document.querySelector("[data-creative-upload-preview]");
+    const status = document.querySelector("[data-creative-upload-status]");
+    const remove = document.querySelector("[data-remove-creative-media]");
+    if (!preview || !asset) return;
+    clear(preview);
+    const mediaType = String(asset.media_type || "").toLowerCase();
+    const url = asset.public_url || asset.playback_url || "";
+    const thumb = asset.thumbnail_url || asset.poster_url || url;
+    if (mediaType === "video") {
+      const video = el("video", "ad-upload-media");
+      video.src = url;
+      video.controls = true;
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = "metadata";
+      if (thumb) video.poster = thumb;
+      preview.appendChild(video);
+    } else if (mediaType === "audio") {
+      const audio = el("audio", "ad-upload-audio");
+      audio.src = url;
+      audio.controls = true;
+      audio.preload = "metadata";
+      preview.appendChild(audio);
+    } else {
+      const img = el("img", "ad-upload-media");
+      img.src = thumb || url;
+      img.alt = "Uploaded ad creative preview";
+      img.loading = "lazy";
+      preview.appendChild(img);
+    }
+    const details = el("div", "ad-upload-details");
+    details.appendChild(el("strong", "", kind === "thumbnail" ? "Thumbnail uploaded" : "Media uploaded"));
+    details.appendChild(el("span", "", `${asset.media_type || "media"} · ${asset.mime_type || "verified"} · ${asset.file_size || 0} bytes`));
+    details.appendChild(pill(asset.moderation_status || "pending review", "warn"));
+    preview.appendChild(details);
+    if (status) status.textContent = kind === "thumbnail" ? "Custom thumbnail attached." : "Media uploaded. Preview and submit when ready.";
+    if (remove) remove.disabled = !state.creativeMediaAsset;
+  }
+
+  function uploadAdMedia(file, assetKind) {
+    const accountId = accountIdForCreativeUpload();
+    if (!accountId) {
+      return Promise.reject(new Error("Select a campaign before uploading media."));
+    }
+    const progress = document.querySelector("[data-creative-upload-progress]");
+    const status = document.querySelector("[data-creative-upload-status]");
+    if (status) status.textContent = "Uploading through PulseSoc secure media pipeline...";
+    if (progress) {
+      progress.hidden = false;
+      progress.value = 0;
+    }
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `/api/pulse/ads/accounts/${accountId}/media/upload`);
+      xhr.withCredentials = true;
+      xhr.setRequestHeader("X-CSRF-Token", csrfToken());
+      xhr.upload.onprogress = (event) => {
+        if (progress && event.lengthComputable) {
+          progress.value = Math.round((event.loaded / event.total) * 100);
+        }
+      };
+      xhr.onload = () => {
+        let data = {};
+        try {
+          data = JSON.parse(xhr.responseText || "{}");
+        } catch (_) {
+          data = { ok: false, error: "Invalid server response." };
+        }
+        if (progress) {
+          progress.value = 100;
+          window.setTimeout(() => { progress.hidden = true; }, 400);
+        }
+        if (xhr.status < 200 || xhr.status >= 300 || data.ok === false) {
+          reject(new Error(data.error || "Upload failed."));
+          return;
+        }
+        resolve(data.asset);
+      };
+      xhr.onerror = () => reject(new Error("Upload failed. Check your connection and retry."));
+      const body = new FormData();
+      body.append("file", file);
+      body.append("asset_kind", assetKind || "creative_media");
+      xhr.send(body);
+    });
+  }
+
+  async function handleMediaInput(event, assetKind) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    try {
+      const asset = await uploadAdMedia(file, assetKind);
+      const form = document.querySelector("[data-creative-form]");
+      if (assetKind === "thumbnail") {
+        state.creativeThumbnailAsset = asset;
+        const input = form && form.querySelector("[data-thumbnail-asset-id]");
+        if (input) input.value = asset.id || "";
+      } else {
+        state.creativeMediaAsset = asset;
+        const input = form && form.querySelector("[data-media-asset-id]");
+        if (input) input.value = asset.id || "";
+      }
+      renderUploadedAsset(asset, assetKind);
+    } catch (error) {
+      const status = document.querySelector("[data-creative-upload-status]");
+      if (status) status.textContent = error.message || "Upload failed.";
+      alert(error.message || "Upload failed.");
+    } finally {
+      event.target.value = "";
+    }
   }
 
   function renderMetrics() {
@@ -164,6 +314,34 @@
       const card = el("article", "portal-card");
       card.appendChild(el("h3", "", creative.title || "Creative"));
       card.appendChild(el("p", "", `${creative.creative_type || "text"} · ${creative.campaign_name || "Campaign"}`));
+      const media = creative.media_asset || {};
+      if (media.public_url || media.thumbnail_url) {
+        const preview = el("div", "ad-card-preview");
+        const type = String(media.media_type || creative.creative_type || "").toLowerCase();
+        if (type === "audio") {
+          const audio = el("audio", "");
+          audio.controls = true;
+          audio.preload = "metadata";
+          audio.src = media.public_url || media.playback_url || "";
+          preview.appendChild(audio);
+        } else if (type === "video") {
+          const video = el("video", "");
+          video.controls = true;
+          video.muted = true;
+          video.playsInline = true;
+          video.preload = "metadata";
+          video.src = media.public_url || media.playback_url || "";
+          if (media.thumbnail_url) video.poster = media.thumbnail_url;
+          preview.appendChild(video);
+        } else {
+          const img = el("img", "");
+          img.src = media.thumbnail_url || media.public_url || "";
+          img.alt = "Creative preview";
+          img.loading = "lazy";
+          preview.appendChild(img);
+        }
+        card.appendChild(preview);
+      }
       const row = el("div", "row");
       row.appendChild(pill(creative.moderation_status || "draft", creative.moderation_status === "approved" ? "ok" : creative.moderation_status === "rejected" ? "bad" : "warn"));
       row.appendChild(pill(creative.media_ready ? "media ready" : "text only", creative.media_ready ? "ok" : "warn"));
@@ -390,8 +568,17 @@
     event.preventDefault();
     const payload = serializeForm(event.currentTarget);
     if (!payload.campaign_id) return;
+    delete payload.file;
+    delete payload.creative_media_file;
+    delete payload.creative_thumbnail_file;
+    const creativeType = String(payload.creative_type || "text").toLowerCase();
+    if (["image", "video", "audio"].includes(creativeType) && !payload.media_asset_id) {
+      alert(`Upload a ${creativeType} file before creating this creative.`);
+      return;
+    }
     await jsonFetch("/api/pulse/ads/creatives", { method: "POST", body: JSON.stringify(payload) });
     event.currentTarget.reset();
+    resetCreativeUploadState();
     await loadPortal();
   }
 
@@ -437,6 +624,20 @@
   document.querySelector("[data-creative-form]")?.addEventListener("submit", createCreative);
   document.querySelector("[data-wallet-funding-form]")?.addEventListener("submit", createFundingSession);
   document.querySelector("[data-refresh]")?.addEventListener("click", loadPortal);
+  document.querySelector("[data-creative-media-input]")?.addEventListener("change", (event) => handleMediaInput(event, "creative_media"));
+  document.querySelector("[data-creative-thumbnail-input]")?.addEventListener("change", (event) => handleMediaInput(event, "thumbnail"));
+  document.querySelector("[data-campaign-select]")?.addEventListener("change", resetCreativeUploadState);
+  document.querySelector("[data-remove-creative-media]")?.addEventListener("click", async () => {
+    const accountId = accountIdForCreativeUpload();
+    const asset = state.creativeMediaAsset;
+    if (!accountId || !asset) return;
+    try {
+      await jsonFetch(`/api/pulse/ads/accounts/${accountId}/media/${asset.id}/delete`, { method: "POST", body: JSON.stringify({}) });
+      resetCreativeUploadState();
+    } catch (error) {
+      alert(error.message || "Could not delete draft media.");
+    }
+  });
 
   loadPortal().catch((error) => {
     const main = document.querySelector(".ad-main");
