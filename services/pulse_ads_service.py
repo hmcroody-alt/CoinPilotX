@@ -8,9 +8,11 @@ not expose private targeting data to clients.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
+import time
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
@@ -52,6 +54,34 @@ VALID_OBJECTIVES = {"awareness", "traffic", "engagement", "creator_growth", "mar
 VALID_EVENTS = {"viewability", "conversion", "hide", "report", "save", "dismiss"}
 VALID_BUDGET_TYPES = {"daily", "lifetime"}
 VALID_ACCOUNT_STATUS = {"draft", "pending_verification", "active", "suspended"}
+VALID_DEVICE_TYPES = {"desktop", "mobile", "tablet", "all"}
+DELIVERY_TOKEN_TTL_SECONDS = 60 * 60 * 6
+
+PLACEMENT_METADATA = {
+    key: {
+        "placement_key": key,
+        "display_name": name,
+        "device_type": device_type,
+        "placement_type": placement_type,
+        "max_frequency": max_frequency,
+        "priority": 6 if placement_type in {"feed", "marketplace", "radio", "search"} else 4,
+        "card_style": {
+            "feed": "signal-card",
+            "side": "ufo-side",
+            "network": "hologram",
+            "sidebar": "creator-signal",
+            "marketplace": "marketplace-sponsored",
+            "radio": "radio-sponsor",
+            "video": "video-pre-roll",
+            "status": "status-interstitial",
+            "search": "search-result",
+            "dashboard": "dashboard-sponsor",
+            "profile": "profile-sponsor",
+        }.get(placement_type, "signal-card"),
+        "supported_creative_types": ["image", "video", "text", "hologram", "audio"],
+    }
+    for key, name, device_type, placement_type, max_frequency in PLACEMENTS
+}
 
 TEXT_LIMITS = {
     "business_name": 120,
@@ -127,6 +157,65 @@ def hash_value(value: str) -> str:
     return hashlib.sha256(f"{salt}:{value}".encode("utf-8")).hexdigest()
 
 
+def _ads_secret() -> str:
+    return os.getenv("PULSE_ADS_DELIVERY_SECRET") or os.getenv("SESSION_SECRET") or os.getenv("FLASK_SECRET_KEY") or "pulse-ads-local-secret"
+
+
+def _compact_json(payload: dict) -> str:
+    return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+
+
+def _sign_payload(payload: dict) -> str:
+    return hmac.new(_ads_secret().encode("utf-8"), _compact_json(payload).encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _delivery_subject(viewer_user_id=None, session_id="") -> str:
+    if viewer_user_id:
+        return f"user:{hash_value(str(viewer_user_id))[:24]}"
+    return f"session:{hash_value(str(session_id or 'anon'))[:24]}"
+
+
+def make_delivery_token(creative_id, campaign_id, placement_key, viewer_user_id=None, session_id="") -> tuple[str, str]:
+    issued_at = int(time.time())
+    nonce = hashlib.sha256(f"{issued_at}:{creative_id}:{campaign_id}:{placement_key}:{session_id}:{os.urandom(8).hex()}".encode("utf-8")).hexdigest()[:24]
+    payload = {
+        "cid": safe_int(creative_id, minimum=1),
+        "cmp": safe_int(campaign_id, minimum=1),
+        "pl": clean_text(placement_key, 80),
+        "sub": _delivery_subject(viewer_user_id, session_id),
+        "iat": issued_at,
+        "exp": issued_at + DELIVERY_TOKEN_TTL_SECONDS,
+        "nonce": nonce,
+    }
+    token = f"{_compact_json(payload)}.{_sign_payload(payload)}"
+    return token, nonce
+
+
+def verify_delivery_token(token: str, creative_id, campaign_id, placement_key, viewer_user_id=None, session_id="") -> dict:
+    raw = str(token or "")
+    if "." not in raw or len(raw) > 1200:
+        raise PulseAdsError("Ad delivery token is required.", 403)
+    payload_raw, signature = raw.rsplit(".", 1)
+    try:
+        payload = json.loads(payload_raw)
+    except Exception as exc:
+        raise PulseAdsError("Invalid ad delivery token.", 403) from exc
+    expected = _sign_payload(payload)
+    if not hmac.compare_digest(expected, signature):
+        raise PulseAdsError("Invalid ad delivery token.", 403)
+    if safe_int(payload.get("exp"), 0) < int(time.time()):
+        raise PulseAdsError("Ad delivery token expired.", 403)
+    if safe_int(payload.get("cid"), 0) != safe_int(creative_id, minimum=1):
+        raise PulseAdsError("Ad delivery token does not match creative.", 403)
+    if safe_int(payload.get("cmp"), 0) != safe_int(campaign_id, minimum=1):
+        raise PulseAdsError("Ad delivery token does not match campaign.", 403)
+    if clean_text(payload.get("pl"), 80) != clean_text(placement_key, 80):
+        raise PulseAdsError("Ad delivery token does not match placement.", 403)
+    if payload.get("sub") != _delivery_subject(viewer_user_id, session_id):
+        raise PulseAdsError("Ad delivery token does not match viewer.", 403)
+    return payload
+
+
 def validate_destination_url(url: str, required: bool = True) -> str:
     cleaned = clean_text(url, 500)
     if not cleaned:
@@ -162,6 +251,25 @@ def seed_placements(cur) -> None:
             """,
             (key, name, device_type, placement_type, max_frequency, now, now),
         )
+    for key, meta in PLACEMENT_METADATA.items():
+        try:
+            cur.execute(
+                """
+                UPDATE pulse_ad_placements
+                SET priority=COALESCE(priority, ?),
+                    supported_creative_types=COALESCE(supported_creative_types, ?),
+                    card_style=COALESCE(card_style, ?)
+                WHERE placement_key=?
+                """,
+                (
+                    meta["priority"],
+                    ",".join(meta["supported_creative_types"]),
+                    meta["card_style"],
+                    key,
+                ),
+            )
+        except Exception:
+            pass
 
 
 def platform_ads_enabled(conn) -> bool:
@@ -586,6 +694,51 @@ def _candidate_placements(context: str, device_type: str) -> list[str]:
     return keys
 
 
+def placement_metadata(context: str = "", device_type: str = "desktop") -> list[dict]:
+    keys = _candidate_placements(context or "home", clean_text(device_type, 20).lower() or "desktop")
+    return [dict(PLACEMENT_METADATA[key]) for key in keys if key in PLACEMENT_METADATA]
+
+
+def normalize_delivery_context(payload: dict | None = None, **kwargs) -> dict:
+    data = {}
+    data.update(payload or {})
+    data.update(kwargs)
+    device_type = clean_text(data.get("device_type") or "desktop", 20).lower()
+    if device_type not in VALID_DEVICE_TYPES:
+        device_type = "desktop"
+    country = clean_text(data.get("country") or "", 32).upper()
+    if len(country) > 2:
+        country = ""
+    language = clean_text(data.get("language") or "", 12).lower()
+    if not re.match(r"^[a-z]{2}(-[a-z]{2})?$", language or ""):
+        language = ""
+    return {
+        "context": clean_text(data.get("context") or "home", 40).lower(),
+        "device_type": device_type,
+        "viewport": clean_text(data.get("viewport") or "", 80),
+        "country": country,
+        "language": language,
+        "contextual_category": clean_text(data.get("contextual_category") or data.get("category") or "", 80).lower(),
+        "search_query_hash": hash_value(clean_text(data.get("search_query") or "", 160)) if data.get("search_query") else "",
+        "feed_context": clean_text(data.get("feed_context") or "", 80),
+        "marketplace_context": clean_text(data.get("marketplace_context") or "", 80),
+        "radio_context": clean_text(data.get("radio_context") or "", 80),
+        "is_premium": 1 if str(data.get("is_premium") or "").lower() in {"1", "true", "yes"} else 0,
+    }
+
+
+def user_personalized_ads_opt_out(conn, user_id) -> bool:
+    if not user_id:
+        return True
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT personalized_ads_opt_out FROM privacy_preferences WHERE user_id=?", (user_id,))
+        row = row_to_dict(cur.fetchone())
+        return safe_int(row.get("personalized_ads_opt_out"), 1) != 0
+    except Exception:
+        return True
+
+
 def _frequency_allowed(conn, viewer_user_id, session_id, campaign_id, placement_key, max_frequency) -> bool:
     cur = conn.cursor()
     if viewer_user_id:
@@ -639,7 +792,7 @@ def bump_frequency(conn, viewer_user_id, session_id, campaign_id, placement_key)
 
 
 def sanitize_ad_payload(row: dict) -> dict:
-    return {
+    payload = {
         "ad_id": row.get("creative_id"),
         "creative_id": row.get("creative_id"),
         "campaign_id": row.get("campaign_id"),
@@ -652,13 +805,92 @@ def sanitize_ad_payload(row: dict) -> dict:
         "thumbnail_url": row.get("thumbnail_url") or "",
         "destination_url": row.get("destination_url") or "",
         "call_to_action": clean_text(row.get("call_to_action") or "Learn more", TEXT_LIMITS["call_to_action"]),
+        "card_style": clean_text(row.get("card_style") or PLACEMENT_METADATA.get(row.get("placement_key"), {}).get("card_style") or "signal-card", 80),
+        "placement_type": clean_text(row.get("placement_type") or "", 40),
+        "delivery_token": row.get("delivery_token") or "",
+        "tracking_nonce": row.get("tracking_nonce") or "",
+        "expires_at": row.get("expires_at") or "",
+        "reportable": True,
     }
+    return payload
 
 
-def select_ads(conn, user_id=None, session_id="", context="home", device_type="desktop", limit=3) -> list[dict]:
+def _compatible_creative(creative_type: str, supported: str) -> bool:
+    allowed = {item.strip() for item in str(supported or "").split(",") if item.strip()} or VALID_CREATIVE_TYPES
+    return clean_text(creative_type, 30).lower() in allowed
+
+
+def _campaign_budget_available(conn, campaign: dict) -> bool:
+    lifetime = safe_int(campaign.get("lifetime_budget_cents"), 0, 0)
+    daily = safe_int(campaign.get("daily_budget_cents"), 0, 0)
+    spent = safe_int(campaign.get("spent_cents"), 0, 0)
+    if lifetime and spent >= lifetime:
+        return False
+    if daily:
+        cur = conn.cursor()
+        today = now_iso()[:10]
+        cur.execute(
+            "SELECT COUNT(*) AS c FROM pulse_ad_impressions WHERE campaign_id=? AND created_at>=?",
+            (campaign.get("campaign_id") or campaign.get("id"), today),
+        )
+        impressions_today = safe_int(row_to_dict(cur.fetchone()).get("c"), 0)
+        estimated_daily_spend = impressions_today
+        if estimated_daily_spend >= daily:
+            return False
+    return True
+
+
+def _matches_targeting(target: dict, ctx: dict, personalized_opt_out: bool) -> bool:
+    if not target:
+        return True
+    target_device = clean_text(target.get("device_type") or "all", 20).lower()
+    if target_device not in {"", "all", ctx["device_type"]}:
+        return False
+    category = clean_text(target.get("contextual_category") or "", 80).lower()
+    if category and ctx.get("contextual_category") and category != ctx.get("contextual_category"):
+        return False
+    if personalized_opt_out:
+        return True
+    country = clean_text(target.get("country") or "", 32).upper()
+    if country and ctx.get("country") and country != ctx.get("country"):
+        return False
+    language = clean_text(target.get("language") or "", 12).lower()
+    if language and ctx.get("language") and language != ctx.get("language"):
+        return False
+    premium = safe_int(target.get("premium_audience"), 0)
+    if premium and not ctx.get("is_premium"):
+        return False
+    return True
+
+
+def _recent_campaigns(conn, viewer_user_id, session_id, placement_key) -> set[int]:
+    cur = conn.cursor()
+    if viewer_user_id:
+        cur.execute(
+            """
+            SELECT campaign_id FROM pulse_ad_impressions
+            WHERE viewer_user_id=? AND placement_key=?
+            ORDER BY id DESC LIMIT 3
+            """,
+            (viewer_user_id, placement_key),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT campaign_id FROM pulse_ad_impressions
+            WHERE session_id=? AND placement_key=?
+            ORDER BY id DESC LIMIT 3
+            """,
+            (session_id or "", placement_key),
+        )
+    return {safe_int(row_to_dict(row).get("campaign_id"), 0) for row in cur.fetchall()}
+
+
+def select_ads(conn, user_id=None, session_id="", context="home", device_type="desktop", limit=3, **context_kwargs) -> list[dict]:
     if not platform_ads_enabled(conn):
         return []
-    placement_keys = _candidate_placements(context, device_type)
+    ctx = normalize_delivery_context(context=context, device_type=device_type, **context_kwargs)
+    placement_keys = _candidate_placements(ctx["context"], ctx["device_type"])
     if not placement_keys:
         return []
     placeholders = ",".join(["?"] * len(placement_keys))
@@ -668,67 +900,142 @@ def select_ads(conn, user_id=None, session_id="", context="home", device_type="d
         f"""
         SELECT cr.id AS creative_id, cr.creative_type, cr.title, cr.body, cr.media_url, cr.thumbnail_url,
                cr.destination_url, cr.call_to_action, c.id AS campaign_id, c.status AS campaign_status,
-               p.placement_key, p.max_frequency, p.device_type
+               c.budget_type, c.daily_budget_cents, c.lifetime_budget_cents, c.spent_cents,
+               COALESCE(c.priority, 0) AS campaign_priority,
+               a.status AS account_status,
+               p.placement_key, p.max_frequency, p.device_type, p.placement_type,
+               COALESCE(p.priority, 0) AS placement_priority,
+               COALESCE(p.supported_creative_types, '') AS supported_creative_types,
+               COALESCE(p.card_style, '') AS card_style,
+               t.country, t.language, t.device_type AS target_device_type, t.premium_audience, t.contextual_category
         FROM pulse_ad_creatives cr
         JOIN pulse_ad_campaigns c ON c.id=cr.campaign_id
+        JOIN pulse_ad_accounts a ON a.id=c.ad_account_id
         JOIN pulse_ad_campaign_placements cp ON cp.campaign_id=c.id
         JOIN pulse_ad_placements p ON p.id=cp.placement_id
+        LEFT JOIN pulse_ad_targeting t ON t.campaign_id=c.id
         WHERE p.placement_key IN ({placeholders})
           AND p.is_active=1
           AND c.status='active'
+          AND a.status='active'
           AND cr.moderation_status='approved'
           AND cr.status='approved'
           AND (c.start_at IS NULL OR c.start_at='' OR c.start_at<=?)
           AND (c.end_at IS NULL OR c.end_at='' OR c.end_at>=?)
           AND (p.device_type='all' OR p.device_type=?)
-        ORDER BY cr.id DESC LIMIT ?
+        ORDER BY placement_priority DESC, campaign_priority DESC, cr.id DESC LIMIT ?
         """,
-        (*placement_keys, now, now, device_type, safe_int(limit, 3, 1, 10) * 4),
+        (*placement_keys, now, now, ctx["device_type"], safe_int(limit, 3, 1, 10) * 8),
     )
-    ads = []
+    personalized_opt_out = user_personalized_ads_opt_out(conn, user_id)
+    candidates = []
+    seen_by_placement = {key: _recent_campaigns(conn, user_id, session_id, key) for key in placement_keys}
     for row in cur.fetchall():
         item = row_to_dict(row)
+        target = {
+            "country": item.get("country"),
+            "language": item.get("language"),
+            "device_type": item.get("target_device_type"),
+            "premium_audience": item.get("premium_audience"),
+            "contextual_category": item.get("contextual_category"),
+        }
+        if not _matches_targeting(target, ctx, personalized_opt_out):
+            continue
+        if not _compatible_creative(item.get("creative_type"), item.get("supported_creative_types")):
+            continue
+        if not _campaign_budget_available(conn, item):
+            continue
         if not _frequency_allowed(conn, user_id, session_id, item.get("campaign_id"), item.get("placement_key"), item.get("max_frequency")):
             continue
+        recent_penalty = 50 if item.get("campaign_id") in seen_by_placement.get(item.get("placement_key"), set()) else 0
+        rotation_hash = int(hashlib.sha256(f"{now[:13]}:{session_id}:{item.get('creative_id')}:{item.get('placement_key')}".encode("utf-8")).hexdigest()[:8], 16) % 20
+        item["_score"] = safe_int(item.get("placement_priority"), 0) * 100 + safe_int(item.get("campaign_priority"), 0) + rotation_hash - recent_penalty
+        candidates.append(item)
+    ads = []
+    used_campaigns = set()
+    for item in sorted(candidates, key=lambda entry: entry.get("_score", 0), reverse=True):
+        if item.get("campaign_id") in used_campaigns and len(candidates) > safe_int(limit, 3, 1, 10):
+            continue
+        token, nonce = make_delivery_token(item.get("creative_id"), item.get("campaign_id"), item.get("placement_key"), user_id, session_id)
+        item["delivery_token"] = token
+        item["tracking_nonce"] = nonce
+        item["expires_at"] = datetime.fromtimestamp(int(time.time()) + DELIVERY_TOKEN_TTL_SECONDS, tz=timezone.utc).replace(microsecond=0).isoformat()
         ads.append(sanitize_ad_payload(item))
+        used_campaigns.add(item.get("campaign_id"))
         if len(ads) >= safe_int(limit, 3, 1, 10):
             break
     return ads
 
 
-def _assert_served_creative(conn, creative_id, campaign_id) -> dict:
+def _assert_served_creative(conn, creative_id, campaign_id, placement_key="") -> dict:
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT cr.id AS creative_id, cr.campaign_id, cr.destination_url, cr.status, cr.moderation_status, c.status AS campaign_status
+        SELECT cr.id AS creative_id, cr.campaign_id, cr.destination_url, cr.status, cr.moderation_status,
+               cr.creative_type, c.status AS campaign_status, p.placement_key,
+               COALESCE(p.supported_creative_types, '') AS supported_creative_types
         FROM pulse_ad_creatives cr
         JOIN pulse_ad_campaigns c ON c.id=cr.campaign_id
-        WHERE cr.id=? AND c.id=?
+        JOIN pulse_ad_campaign_placements cp ON cp.campaign_id=c.id
+        JOIN pulse_ad_placements p ON p.id=cp.placement_id
+        WHERE cr.id=? AND c.id=? AND (?='' OR p.placement_key=?)
         """,
-        (creative_id, campaign_id),
+        (creative_id, campaign_id, clean_text(placement_key, 80), clean_text(placement_key, 80)),
     )
     creative = row_to_dict(cur.fetchone())
     if not creative:
         raise PulseAdsError("Ad creative not found.", 404)
     if creative.get("status") != "approved" or creative.get("moderation_status") != "approved" or creative.get("campaign_status") != "active":
         raise PulseAdsError("Ad is not eligible for tracking.", 403)
+    if placement_key and not _compatible_creative(creative.get("creative_type"), creative.get("supported_creative_types")):
+        raise PulseAdsError("Ad is not compatible with this placement.", 403)
     return creative
+
+
+def _validate_tracking_delivery(payload, creative_id, campaign_id, placement_key, viewer_user_id=None, session_id="") -> dict:
+    token_payload = verify_delivery_token(payload.get("delivery_token"), creative_id, campaign_id, placement_key, viewer_user_id, session_id)
+    nonce = clean_text(payload.get("tracking_nonce"), 64)
+    if nonce != clean_text(token_payload.get("nonce"), 64):
+        raise PulseAdsError("Ad tracking nonce mismatch.", 403)
+    return token_payload
 
 
 def record_impression(conn, payload: dict, viewer_user_id=None, session_id="", device_type="", viewport="") -> dict:
     creative_id = safe_int(payload.get("creative_id") or payload.get("ad_id"), minimum=1)
     campaign_id = safe_int(payload.get("campaign_id"), minimum=1)
     placement_key = clean_text(payload.get("placement_key"), 80)
-    _assert_served_creative(conn, creative_id, campaign_id)
+    token_payload = _validate_tracking_delivery(payload, creative_id, campaign_id, placement_key, viewer_user_id, session_id)
+    _assert_served_creative(conn, creative_id, campaign_id, placement_key)
+    token_hash = hash_value(str(payload.get("delivery_token") or ""))[:64]
     cur = conn.cursor()
     now = now_iso()
+    cur.execute("SELECT id FROM pulse_ad_impressions WHERE delivery_token_hash=? AND request_fingerprint=?", (token_hash, token_payload.get("nonce")))
+    existing = row_to_dict(cur.fetchone())
+    if existing:
+        return {"ok": True, "impression_id": existing.get("id"), "deduped": True}
     cur.execute(
         """
         INSERT INTO pulse_ad_impressions
-        (campaign_id, creative_id, placement_key, viewer_user_id, session_id, device_type, viewport, rendered_at, visible_ms, viewable, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
+        (campaign_id, creative_id, placement_key, viewer_user_id, session_id, device_type, viewport, rendered_at, visible_ms, viewable, created_at,
+         delivery_token_hash, request_fingerprint, country, language, contextual_category)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?)
         """,
-        (campaign_id, creative_id, placement_key, viewer_user_id, session_id or "", clean_text(device_type, 40), clean_text(viewport, 80), now, now),
+        (
+            campaign_id,
+            creative_id,
+            placement_key,
+            viewer_user_id,
+            session_id or "",
+            clean_text(device_type, 40),
+            clean_text(viewport, 80),
+            now,
+            now,
+            token_hash,
+            token_payload.get("nonce"),
+            clean_text(payload.get("country"), 32),
+            clean_text(payload.get("language"), 12),
+            clean_text(payload.get("contextual_category"), 80),
+        ),
     )
     impression_id = cur.lastrowid
     bump_frequency(conn, viewer_user_id, session_id, campaign_id, placement_key)
@@ -756,33 +1063,38 @@ def record_click(conn, payload: dict, viewer_user_id=None, session_id="") -> dic
     creative_id = safe_int(payload.get("creative_id") or payload.get("ad_id"), minimum=1)
     campaign_id = safe_int(payload.get("campaign_id"), minimum=1)
     placement_key = clean_text(payload.get("placement_key"), 80)
-    creative = _assert_served_creative(conn, creative_id, campaign_id)
+    _validate_tracking_delivery(payload, creative_id, campaign_id, placement_key, viewer_user_id, session_id)
+    creative = _assert_served_creative(conn, creative_id, campaign_id, placement_key)
+    token_hash = hash_value(str(payload.get("delivery_token") or ""))[:64]
     cur = conn.cursor()
     now = now_iso()
     cur.execute(
         """
         INSERT INTO pulse_ad_clicks
-        (campaign_id, creative_id, placement_key, viewer_user_id, session_id, clicked_at, destination_url, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (campaign_id, creative_id, placement_key, viewer_user_id, session_id, clicked_at, destination_url, created_at, delivery_token_hash, request_fingerprint)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (campaign_id, creative_id, placement_key, viewer_user_id, session_id or "", now, creative.get("destination_url"), now),
+        (campaign_id, creative_id, placement_key, viewer_user_id, session_id or "", now, creative.get("destination_url"), now, token_hash, clean_text(payload.get("tracking_nonce"), 64)),
     )
     click_id = cur.lastrowid
     conn.commit()
     return {"ok": True, "click_id": click_id, "destination_url": creative.get("destination_url")}
 
 
-def record_event(conn, payload: dict, viewer_user_id=None) -> dict:
+def record_event(conn, payload: dict, viewer_user_id=None, session_id="") -> dict:
     event_type = clean_text(payload.get("event_type"), 40).lower()
     if event_type not in VALID_EVENTS:
         raise PulseAdsError("Unsupported ad event.")
     creative_id = safe_int(payload.get("creative_id") or payload.get("ad_id"), minimum=1)
     campaign_id = safe_int(payload.get("campaign_id"), minimum=1)
-    _assert_served_creative(conn, creative_id, campaign_id)
+    placement_key = clean_text(payload.get("placement_key"), 80)
+    _validate_tracking_delivery(payload, creative_id, campaign_id, placement_key, viewer_user_id, session_id)
+    _assert_served_creative(conn, creative_id, campaign_id, placement_key)
     metadata = {
         "viewer_user_id_hash": hash_value(str(viewer_user_id)) if viewer_user_id else "",
-        "placement_key": clean_text(payload.get("placement_key"), 80),
+        "placement_key": placement_key,
         "reason": clean_text(payload.get("reason"), 200),
+        "delivery_token_hash": hash_value(str(payload.get("delivery_token") or ""))[:64],
     }
     cur = conn.cursor()
     cur.execute(
@@ -795,3 +1107,48 @@ def record_event(conn, payload: dict, viewer_user_id=None) -> dict:
     event_id = cur.lastrowid
     conn.commit()
     return {"ok": True, "event_id": event_id}
+
+
+def advertiser_analytics(conn, owner_user_id, account_id=None) -> dict:
+    cur = conn.cursor()
+    params = [owner_user_id]
+    account_clause = ""
+    if account_id:
+        account_clause = " AND a.id=?"
+        params.append(safe_int(account_id, minimum=1))
+    cur.execute(
+        f"""
+        SELECT a.id AS account_id, a.business_name, c.id AS campaign_id, c.campaign_name, c.status,
+               COUNT(DISTINCT i.id) AS impressions,
+               SUM(CASE WHEN i.viewable=1 THEN 1 ELSE 0 END) AS viewable_impressions,
+               COUNT(DISTINCT cl.id) AS clicks,
+               COUNT(DISTINCT CASE WHEN e.event_type='hide' THEN e.id END) AS hides,
+               COUNT(DISTINCT CASE WHEN e.event_type='report' THEN e.id END) AS reports
+        FROM pulse_ad_accounts a
+        LEFT JOIN pulse_ad_campaigns c ON c.ad_account_id=a.id
+        LEFT JOIN pulse_ad_impressions i ON i.campaign_id=c.id
+        LEFT JOIN pulse_ad_clicks cl ON cl.campaign_id=c.id
+        LEFT JOIN pulse_ad_events e ON e.campaign_id=c.id
+        WHERE a.owner_user_id=?{account_clause}
+        GROUP BY a.id, a.business_name, c.id, c.campaign_name, c.status
+        ORDER BY c.id DESC
+        LIMIT 100
+        """,
+        tuple(params),
+    )
+    campaigns = []
+    for row in cur.fetchall():
+        item = row_to_dict(row)
+        impressions = safe_int(item.get("impressions"), 0)
+        clicks = safe_int(item.get("clicks"), 0)
+        item["ctr"] = round((clicks / impressions) * 100, 2) if impressions else 0
+        campaigns.append(item)
+    totals = {
+        "impressions": sum(safe_int(item.get("impressions"), 0) for item in campaigns),
+        "viewable_impressions": sum(safe_int(item.get("viewable_impressions"), 0) for item in campaigns),
+        "clicks": sum(safe_int(item.get("clicks"), 0) for item in campaigns),
+        "hides": sum(safe_int(item.get("hides"), 0) for item in campaigns),
+        "reports": sum(safe_int(item.get("reports"), 0) for item in campaigns),
+    }
+    totals["ctr"] = round((totals["clicks"] / totals["impressions"]) * 100, 2) if totals["impressions"] else 0
+    return {"totals": totals, "campaigns": campaigns}

@@ -1263,6 +1263,113 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   background: linear-gradient(135deg, var(--home-emerald), #6edff6);
 }
 
+.pulse-sponsored-signal {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(110, 223, 246, .22);
+  border-radius: 16px;
+  overflow: hidden;
+  color: #f2fbff;
+  background:
+    radial-gradient(circle at 18% 0, rgba(54, 229, 143, .13), transparent 17rem),
+    linear-gradient(135deg, rgba(110, 223, 246, .09), rgba(155, 92, 255, .06) 44%, rgba(54, 229, 143, .045)),
+    rgba(7, 14, 27, .88);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .24), inset 0 1px 0 rgba(255, 255, 255, .05);
+  contain: content;
+}
+
+.pulse-sponsored-signal::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent, rgba(110, 223, 246, .08), transparent),
+    repeating-linear-gradient(0deg, rgba(110, 223, 246, .035) 0 1px, transparent 1px 18px);
+  opacity: .75;
+}
+
+.pulse-sponsored-signal > * {
+  position: relative;
+}
+
+.pulse-sponsored-signal__label {
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid rgba(54, 229, 143, .32);
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #bffff0;
+  background: rgba(54, 229, 143, .08);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.pulse-sponsored-signal__title {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.12;
+}
+
+.pulse-sponsored-signal__body {
+  margin: 0;
+  color: rgba(216, 235, 242, .78);
+  line-height: 1.35;
+}
+
+.pulse-sponsored-signal__media {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid rgba(110, 223, 246, .18);
+}
+
+.pulse-sponsored-signal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pulse-sponsored-signal__actions button {
+  min-height: 38px;
+  border-radius: 10px;
+  border: 1px solid rgba(110, 223, 246, .2);
+  padding: 8px 12px;
+  color: #eaffff;
+  background: rgba(255, 255, 255, .055);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.pulse-sponsored-signal__cta {
+  color: #06101b !important;
+  border-color: transparent !important;
+  background: linear-gradient(135deg, #36e58f, #6edff6) !important;
+}
+
+.pulse-sponsored-signal__report[disabled] {
+  opacity: .7;
+  cursor: default;
+}
+
+.pulse-sponsored-signal--radio-sponsor,
+.pulse-sponsored-signal--radio {
+  border-color: rgba(155, 92, 255, .36);
+  background:
+    radial-gradient(circle at 88% 8%, rgba(155, 92, 255, .2), transparent 14rem),
+    linear-gradient(135deg, rgba(17, 27, 47, .94), rgba(10, 38, 41, .9));
+}
+
+.pulse-sponsored-signal--marketplace-sponsored,
+.pulse-sponsored-signal--marketplace {
+  border-color: rgba(255, 209, 102, .26);
+}
+
 .pulse-home-os .pulse-signal-ad-actions details p {
   padding: 8px;
   border: 1px solid rgba(255, 255, 255, .08);

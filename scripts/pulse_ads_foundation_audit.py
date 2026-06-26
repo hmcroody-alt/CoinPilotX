@@ -50,6 +50,7 @@ REQUIRED_TABLES = {
 
 REQUIRED_ROUTES = {
     "/api/pulse/ads/placements",
+    "/api/pulse/ads/placement-metadata",
     "/api/pulse/ads/impression",
     "/api/pulse/ads/viewability",
     "/api/pulse/ads/click",
@@ -59,6 +60,7 @@ REQUIRED_ROUTES = {
     "/api/pulse/ads/campaigns",
     "/api/pulse/ads/creatives",
     "/api/pulse/ads/creatives/submit",
+    "/api/pulse/ads/analytics",
     "/api/admin/pulse/ads/review-board",
     "/api/admin/pulse/ads/creatives/approve",
     "/api/admin/pulse/ads/creatives/reject",
@@ -156,6 +158,7 @@ def main():
         assert_true(blocked_before_approval == [], "Unapproved creative was served")
 
         pulse_ads_service.approve_creative(conn, 9001, creative["id"], "Audit approval")
+        cur.execute("UPDATE pulse_ad_accounts SET status='active', verification_status='verified' WHERE id=?", (account["id"],))
         cur.execute("UPDATE pulse_ad_campaigns SET status='active', start_at='', end_at='' WHERE id=?", (campaign["id"],))
         conn.commit()
         ads = pulse_ads_service.select_ads(conn, user_id=1002, session_id="viewer-a", context="home", device_type="desktop", limit=1)
@@ -170,8 +173,19 @@ def main():
         assert_true(viewability.get("viewable") is True, "Viewability did not mark as true")
         click = pulse_ads_service.record_click(conn, ad, viewer_user_id=1002, session_id="viewer-a")
         assert_true(click.get("destination_url") == "https://example.com/creator", "Click destination was not preserved")
-        hidden = pulse_ads_service.record_event(conn, {**ad, "event_type": "hide", "reason": "not relevant"}, viewer_user_id=1002)
+        hidden = pulse_ads_service.record_event(conn, {**ad, "event_type": "hide", "reason": "not relevant"}, viewer_user_id=1002, session_id="viewer-a")
         assert_true(hidden.get("event_id"), "Hide event was not recorded")
+        try:
+            forged = dict(ad)
+            forged.pop("delivery_token", None)
+            pulse_ads_service.record_click(conn, forged, viewer_user_id=1002, session_id="viewer-a")
+            raise AssertionError("Tracking accepted a missing delivery token")
+        except pulse_ads_service.PulseAdsError:
+            pass
+
+        analytics = pulse_ads_service.advertiser_analytics(conn, 1001)
+        assert_true(analytics["totals"]["impressions"] >= 1, "Advertiser analytics did not count impressions")
+        assert_true("viewer_user_id" not in str(analytics), "Advertiser analytics exposed viewer identifiers")
 
         try:
             pulse_ads_service.create_creative(
