@@ -11,7 +11,7 @@ import json
 import os
 from datetime import datetime, timezone
 
-from services import pulse_ads_service
+from services import pulse_ad_payments, pulse_ads_service
 
 
 ACCOUNT_ROLES = {"owner", "campaign_manager", "marketing_manager", "analyst", "viewer"}
@@ -443,14 +443,38 @@ def portal_summary(conn, user_id) -> dict:
     analytics = pulse_ads_service.advertiser_analytics(conn, user_id)
     review_rows = review_status(conn, user_id)
     note_rows = notifications(conn, user_id)
+    wallet_rows = []
+    for account in accounts:
+        try:
+            wallet_rows.append(pulse_ad_payments.wallet_summary(conn, user_id, account.get("id")))
+        except Exception:
+            wallet_rows.append({
+                "account_id": safe_int(account.get("id")),
+                "available_balance_cents": 0,
+                "reserved_budget_cents": 0,
+                "lifetime_funded_cents": 0,
+                "lifetime_spent_cents": 0,
+                "spendable_balance_cents": 0,
+                "available_balance": "$0.00",
+                "reserved_budget": "$0.00",
+                "spendable_balance": "$0.00",
+                "transactions": [],
+                "receipts": [],
+                "billing_enabled": pulse_ad_payments.billing_enabled(),
+                "stripe_ready": pulse_ad_payments.stripe_ready(),
+            })
     unread_notes = sum(1 for item in note_rows if item.get("status") == "unread")
     status_counts = campaign_status_counts(conn, account_ids)
     spend_total = sum(safe_int(account.get("total_spend_cents")) for account in accounts)
+    wallet_total = sum(safe_int(wallet.get("available_balance_cents")) for wallet in wallet_rows)
+    reserved_total = sum(safe_int(wallet.get("reserved_budget_cents")) for wallet in wallet_rows)
+    spendable_total = sum(safe_int(wallet.get("spendable_balance_cents")) for wallet in wallet_rows)
     billing_enabled = os.getenv("PULSE_ADS_BILLING_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
     return {
         "accounts": accounts,
         "campaigns": campaigns,
         "creatives": creatives,
+        "wallets": wallet_rows,
         "analytics": analytics,
         "review_board": review_rows,
         "notifications": note_rows,
@@ -471,6 +495,12 @@ def portal_summary(conn, user_id) -> dict:
             "unread_notifications": unread_notes,
             "total_spend_cents": spend_total,
             "total_spend": money(spend_total),
+            "wallet_balance_cents": wallet_total,
+            "wallet_balance": money(wallet_total),
+            "reserved_budget_cents": reserved_total,
+            "reserved_budget": money(reserved_total),
+            "spendable_balance_cents": spendable_total,
+            "spendable_balance": money(spendable_total),
         },
         "campaign_status_counts": status_counts,
         "placements": pulse_ads_service.PLACEMENT_METADATA,
@@ -574,6 +604,9 @@ def campaign_action(conn, user_id, campaign_id, action: str) -> dict:
         "complete": "completed",
     }
     new_status = status_map[action]
+    reserve_result = None
+    if action == "resume":
+        reserve_result = pulse_ad_payments.reserve_campaign_budget(conn, user_id, campaign_id)
     set_parts = ["status=?", "updated_at=?"]
     params = [new_status, now]
     if action == "archive" and _has_column(conn, "pulse_ad_campaigns", "archived_at"):
@@ -593,7 +626,10 @@ def campaign_action(conn, user_id, campaign_id, action: str) -> dict:
     _add_notification(conn, account_id, campaign_id, None, user_id, f"campaign_{action}", f"Campaign {new_status}", f"{before.get('campaign_name')} is now {new_status}.")
     pulse_ads_service.audit_log(conn, user_id, f"ad_campaign_{action}", "pulse_ad_campaigns", campaign_id, before=before, after=after)
     conn.commit()
-    return {"campaign_id": campaign_id, "status": new_status, "action": action}
+    result = {"campaign_id": campaign_id, "status": new_status, "action": action}
+    if reserve_result:
+        result["budget_reserve"] = reserve_result
+    return result
 
 
 def creative_action(conn, user_id, creative_id, action: str) -> dict:
@@ -693,6 +729,7 @@ def replace_creative(conn, user_id, creative_id, payload: dict) -> dict:
 
 def billing_summary(conn, user_id, account_id) -> dict:
     _require_account_role(conn, user_id, account_id, {"owner"})
+    wallet = pulse_ad_payments.wallet_summary(conn, user_id, account_id)
     cur = conn.cursor()
     cur.execute("SELECT wallet_balance_cents, spend_limit_cents, billing_status, funding_status, updated_at FROM pulse_ad_billing_profiles WHERE account_id=?", (account_id,))
     billing = row_to_dict(cur.fetchone())
@@ -708,5 +745,6 @@ def billing_summary(conn, user_id, account_id) -> dict:
     billing["spend_limit"] = money(billing.get("spend_limit_cents"))
     billing["live_charging"] = False
     billing["billing_enabled"] = os.getenv("PULSE_ADS_BILLING_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+    billing["wallet"] = wallet
+    billing["stripe_customer_visible"] = False
     return billing
-

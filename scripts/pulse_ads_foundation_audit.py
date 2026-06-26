@@ -27,7 +27,7 @@ os.environ.setdefault("FLASK_SECRET_KEY", "pulse-ads-audit-secret")
 os.environ.setdefault("SESSION_SECRET", "pulse-ads-audit-session")
 
 import bot  # noqa: E402
-from services import pulse_ads_service  # noqa: E402
+from services import pulse_ad_payments, pulse_ads_service  # noqa: E402
 
 
 REQUIRED_TABLES = {
@@ -160,6 +160,11 @@ def main():
         pulse_ads_service.approve_creative(conn, 9001, creative["id"], "Audit approval")
         cur.execute("UPDATE pulse_ad_accounts SET status='active', verification_status='verified' WHERE id=?", (account["id"],))
         cur.execute("UPDATE pulse_ad_campaigns SET status='active', start_at='', end_at='' WHERE id=?", (campaign["id"],))
+        wallet = pulse_ad_payments.ensure_wallet(conn, account["id"])
+        cur.execute(
+            "UPDATE pulse_ad_wallets SET available_balance_cents=1000, lifetime_funded_cents=1000 WHERE id=?",
+            (wallet["id"],),
+        )
         conn.commit()
         ads = pulse_ads_service.select_ads(conn, user_id=1002, session_id="viewer-a", context="home", device_type="desktop", limit=1)
         assert_true(len(ads) == 1, "Approved active creative did not serve")

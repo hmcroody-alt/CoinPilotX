@@ -25,9 +25,14 @@
         <a href="#account">Account Center</a>
         <a href="#wizard">Campaign Wizard</a>
         <a href="#creatives">Creative Studio</a>
+        <a href="#placements">Placements</a>
         <a href="#budget">Budget</a>
         <a href="#analytics">Analytics</a>
+        <a href="#wallet">Wallet</a>
+        <a href="#billing">Billing</a>
         <a href="#review">Review Board</a>
+        <a href="#notifications">Notifications</a>
+        <a href="#settings">Settings</a>
       </nav>
       <a class="rail-cta" href="/pulse">Back to PulseSoc</a>
     </aside>
@@ -52,6 +57,8 @@
         <article><span>Active</span><strong data-metric="active_campaigns">0</strong></article>
         <article><span>Reviews</span><strong data-metric="pending_reviews">0</strong></article>
         <article><span>Spend</span><strong data-metric="total_spend">$0.00</strong></article>
+        <article><span>Wallet</span><strong data-metric="wallet_balance">$0.00</strong></article>
+        <article><span>Reserved</span><strong data-metric="reserved_budget">$0.00</strong></article>
       </section>
 
       <section class="panel split" id="account">
@@ -89,7 +96,7 @@
         </div>
         <form class="wizard-grid" data-campaign-form>
           <label>Ad account<select name="ad_account_id" required data-account-select></select></label>
-          <label>Objective<select name="objective"><option value="awareness">Awareness</option><option value="traffic">Traffic</option><option value="engagement">Engagement</option><option value="creator_growth">Creator Growth</option><option value="marketplace">Marketplace</option><option value="radio">Pulse Radio</option></select></label>
+          <label>Objective<select name="objective"><option value="brand_awareness">Brand Awareness</option><option value="website_traffic">Website Traffic</option><option value="marketplace_sales">Marketplace Sales</option><option value="pulse_radio">Pulse Radio</option><option value="creator_promotion">Creator Promotion</option><option value="music_promotion">Music Promotion</option><option value="video_promotion">Video Promotion</option><option value="app_promotion">App Promotion</option><option value="event_promotion">Event Promotion</option><option value="hologram_campaign">UFO/Hologram Campaign</option></select></label>
           <label>Campaign name<input name="campaign_name" required maxlength="120" placeholder="Creator launch sequence"></label>
           <label>Budget type<select name="budget_type"><option value="daily">Daily</option><option value="lifetime">Lifetime</option></select></label>
           <label>Daily budget cents<input name="daily_budget_cents" type="number" min="0" max="10000000" value="2500"></label>
@@ -130,6 +137,17 @@
         <div class="creative-grid" data-creative-list></div>
       </section>
 
+      <section class="panel" id="placements">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Inventory Map</p>
+            <h2>Placements</h2>
+          </div>
+          <span class="status-chip">Compatibility checked</span>
+        </div>
+        <div class="placement-grid" data-placement-board></div>
+      </section>
+
       <section class="panel split" id="budget">
         <div>
           <p class="eyebrow">Spend Guardrails</p>
@@ -137,6 +155,31 @@
           <p class="muted">Daily and lifetime budgets are active. Live billing, recharge, and payment collection remain disabled until the billing feature flag is enabled server-side.</p>
         </div>
         <div class="budget-board" data-budget-board></div>
+      </section>
+
+      <section class="panel split" id="wallet">
+        <div>
+          <p class="eyebrow">Ad Wallet</p>
+          <h2>Funding and Spend Ledger</h2>
+          <p class="muted">Campaigns draw from wallet balance and reserved budget. Stripe funding is web-only and only active when the server billing flag is enabled.</p>
+          <form class="mini-form" data-wallet-funding-form>
+            <select name="account_id" data-wallet-account-select></select>
+            <input name="amount_cents" type="number" min="500" max="500000" step="100" value="2500" aria-label="Funding amount in cents">
+            <button type="submit">Add Funds</button>
+          </form>
+        </div>
+        <div class="wallet-board" data-wallet-board></div>
+      </section>
+
+      <section class="panel" id="billing">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Billing Center</p>
+            <h2>Invoices, Receipts, and Credits</h2>
+          </div>
+          <span class="status-chip">Provider IDs hidden</span>
+        </div>
+        <div class="billing-list" data-billing-list></div>
       </section>
 
       <section class="panel" id="analytics">
@@ -159,6 +202,41 @@
           <span class="status-chip">Advertiser view only</span>
         </div>
         <div class="review-list" data-review-list></div>
+      </section>
+
+      <section class="panel" id="notifications">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Advertiser Alerts</p>
+            <h2>Notifications</h2>
+          </div>
+          <span class="status-chip">Owner scoped</span>
+        </div>
+        <div class="notification-list" data-ad-notification-list></div>
+      </section>
+
+      <section class="panel" id="settings">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Controls</p>
+            <h2>Settings</h2>
+          </div>
+          <span class="status-chip">Secure defaults</span>
+        </div>
+        <div class="settings-grid">
+          <article class="portal-card">
+            <h3>Business profile</h3>
+            <p>Update legal, billing, and contact fields in Account Center.</p>
+          </article>
+          <article class="portal-card">
+            <h3>Review safety</h3>
+            <p>Creatives always require moderation approval before delivery.</p>
+          </article>
+          <article class="portal-card">
+            <h3>iOS compliance</h3>
+            <p>Advertiser wallet funding is blocked in native iOS until policy review is complete.</p>
+          </article>
+        </div>
       </section>
     </section>
   </main>

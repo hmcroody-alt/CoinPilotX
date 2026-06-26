@@ -50,7 +50,24 @@ CONTEXT_PLACEMENTS = {
 ACTIVE_CAMPAIGN_STATUS = {"active"}
 APPROVED_CREATIVE_STATUS = {"approved"}
 VALID_CREATIVE_TYPES = {"image", "video", "text", "hologram", "audio"}
-VALID_OBJECTIVES = {"awareness", "traffic", "engagement", "creator_growth", "marketplace", "radio"}
+VALID_OBJECTIVES = {
+    "awareness",
+    "brand_awareness",
+    "traffic",
+    "website_traffic",
+    "engagement",
+    "creator_growth",
+    "creator_promotion",
+    "marketplace",
+    "marketplace_sales",
+    "radio",
+    "pulse_radio",
+    "music_promotion",
+    "video_promotion",
+    "app_promotion",
+    "event_promotion",
+    "hologram_campaign",
+}
 VALID_EVENTS = {
     "viewability",
     "conversion",
@@ -877,6 +894,15 @@ def _campaign_budget_available(conn, campaign: dict) -> bool:
         estimated_daily_spend = impressions_today
         if estimated_daily_spend >= daily:
             return False
+    try:
+        from services import pulse_ad_payments
+        if clean_text(campaign.get("account_business_type"), 80) == "internal_promotion":
+            return True
+        if not pulse_ad_payments.campaign_can_spend(conn, campaign):
+            return False
+    except Exception:
+        if safe_int(campaign.get("ad_account_id"), 0):
+            return False
     return True
 
 
@@ -942,10 +968,10 @@ def select_ads(conn, user_id=None, session_id="", context="home", device_type="d
     cur.execute(
         f"""
         SELECT cr.id AS creative_id, cr.creative_type, cr.title, cr.body, cr.media_url, cr.thumbnail_url,
-               cr.destination_url, cr.call_to_action, c.id AS campaign_id, c.status AS campaign_status,
+               cr.destination_url, cr.call_to_action, c.id AS campaign_id, c.ad_account_id, c.status AS campaign_status,
                c.budget_type, c.daily_budget_cents, c.lifetime_budget_cents, c.spent_cents,
                COALESCE(c.priority, 0) AS campaign_priority,
-               a.status AS account_status,
+               a.status AS account_status, a.business_type AS account_business_type,
                p.placement_key, p.max_frequency, p.device_type, p.placement_type,
                COALESCE(p.priority, 0) AS placement_priority,
                COALESCE(p.supported_creative_types, '') AS supported_creative_types,
@@ -1056,6 +1082,22 @@ def record_impression(conn, payload: dict, viewer_user_id=None, session_id="", d
     existing = row_to_dict(cur.fetchone())
     if existing:
         return {"ok": True, "impression_id": existing.get("id"), "deduped": True}
+    try:
+        from services import pulse_ad_payments
+        spend_result = pulse_ad_payments.record_spend_event(
+            conn,
+            campaign_id,
+            creative_id,
+            placement_key,
+            amount_cents=1,
+            idempotency_key=f"impression-token:{token_hash}:{token_payload.get('nonce')}",
+        )
+        if spend_result.get("paused"):
+            raise PulseAdsError("Campaign wallet balance is exhausted.", 409)
+    except PulseAdsError:
+        raise
+    except Exception:
+        pass
     cur.execute(
         """
         INSERT INTO pulse_ad_impressions
@@ -1166,14 +1208,15 @@ def advertiser_analytics(conn, owner_user_id, account_id=None) -> dict:
                SUM(CASE WHEN i.viewable=1 THEN 1 ELSE 0 END) AS viewable_impressions,
                COUNT(DISTINCT cl.id) AS clicks,
                COUNT(DISTINCT CASE WHEN e.event_type='hide' THEN e.id END) AS hides,
-               COUNT(DISTINCT CASE WHEN e.event_type='report' THEN e.id END) AS reports
+               COUNT(DISTINCT CASE WHEN e.event_type='report' THEN e.id END) AS reports,
+               COALESCE(c.spent_cents, 0) AS spent_cents
         FROM pulse_ad_accounts a
         LEFT JOIN pulse_ad_campaigns c ON c.ad_account_id=a.id
         LEFT JOIN pulse_ad_impressions i ON i.campaign_id=c.id
         LEFT JOIN pulse_ad_clicks cl ON cl.campaign_id=c.id
         LEFT JOIN pulse_ad_events e ON e.campaign_id=c.id
         WHERE a.owner_user_id=?{account_clause}
-        GROUP BY a.id, a.business_name, c.id, c.campaign_name, c.status
+        GROUP BY a.id, a.business_name, c.id, c.campaign_name, c.status, c.spent_cents
         ORDER BY c.id DESC
         LIMIT 100
         """,
@@ -1185,6 +1228,9 @@ def advertiser_analytics(conn, owner_user_id, account_id=None) -> dict:
         impressions = safe_int(item.get("impressions"), 0)
         clicks = safe_int(item.get("clicks"), 0)
         item["ctr"] = round((clicks / impressions) * 100, 2) if impressions else 0
+        item["spend"] = f"${safe_int(item.get('spent_cents')) / 100:,.2f}"
+        item["estimated_cpc"] = round((safe_int(item.get("spent_cents")) / 100) / clicks, 2) if clicks else 0
+        item["estimated_cpm"] = round((safe_int(item.get("spent_cents")) / 100) / impressions * 1000, 2) if impressions else 0
         campaigns.append(item)
     totals = {
         "impressions": sum(safe_int(item.get("impressions"), 0) for item in campaigns),
@@ -1192,6 +1238,10 @@ def advertiser_analytics(conn, owner_user_id, account_id=None) -> dict:
         "clicks": sum(safe_int(item.get("clicks"), 0) for item in campaigns),
         "hides": sum(safe_int(item.get("hides"), 0) for item in campaigns),
         "reports": sum(safe_int(item.get("reports"), 0) for item in campaigns),
+        "spend_cents": sum(safe_int(item.get("spent_cents"), 0) for item in campaigns),
     }
     totals["ctr"] = round((totals["clicks"] / totals["impressions"]) * 100, 2) if totals["impressions"] else 0
+    totals["spend"] = f"${totals['spend_cents'] / 100:,.2f}"
+    totals["estimated_cpc"] = round((totals["spend_cents"] / 100) / totals["clicks"], 2) if totals["clicks"] else 0
+    totals["estimated_cpm"] = round((totals["spend_cents"] / 100) / totals["impressions"] * 1000, 2) if totals["impressions"] else 0
     return {"totals": totals, "campaigns": campaigns}

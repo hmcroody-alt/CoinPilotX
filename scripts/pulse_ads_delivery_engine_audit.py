@@ -28,7 +28,7 @@ os.environ.setdefault("SESSION_SECRET", "pulse-ads-delivery-audit-session")
 os.environ.setdefault("PULSE_ADS_DELIVERY_SECRET", "pulse-ads-delivery-token-secret")
 
 import bot  # noqa: E402
-from services import pulse_ads_service  # noqa: E402
+from services import pulse_ad_payments, pulse_ads_service  # noqa: E402
 
 
 def assert_true(condition, message):
@@ -103,6 +103,11 @@ def build_approved_ad(conn, *, placements, creative_type="text", campaign_name="
         cur.execute(
             "UPDATE pulse_ad_accounts SET status='active', verification_status='verified' WHERE id=?",
             (account["id"],),
+        )
+        wallet = pulse_ad_payments.ensure_wallet(conn, account["id"])
+        cur.execute(
+            "UPDATE pulse_ad_wallets SET available_balance_cents=2000, lifetime_funded_cents=2000 WHERE id=?",
+            (wallet["id"],),
         )
     cur.execute("UPDATE pulse_ad_campaigns SET status='active', start_at='', end_at='' WHERE id=?", (campaign["id"],))
     conn.commit()

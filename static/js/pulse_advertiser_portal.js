@@ -77,6 +77,8 @@
     setMetric("active_campaigns", metrics.active_campaigns || 0);
     setMetric("pending_reviews", metrics.pending_reviews || 0);
     setMetric("total_spend", metrics.total_spend || "$0.00");
+    setMetric("wallet_balance", metrics.wallet_balance || "$0.00");
+    setMetric("reserved_budget", metrics.reserved_budget || "$0.00");
     const role = document.querySelector("[data-role-pill]");
     if (role) role.textContent = ((state.portal && state.portal.roles && state.portal.roles.current) || "advertiser").replace(/_/g, " ");
   }
@@ -113,6 +115,23 @@
       const option = el("option", "", account.business_name || `Account ${account.id}`);
       option.value = account.id;
       accountSelect.appendChild(option);
+    });
+    renderWalletAccountSelect(accounts);
+  }
+
+  function renderWalletAccountSelect(accounts) {
+    const select = document.querySelector("[data-wallet-account-select]");
+    clear(select);
+    if (!accounts.length) {
+      const option = el("option", "", "Create an ad account first");
+      option.value = "";
+      select.appendChild(option);
+      return;
+    }
+    accounts.forEach((account) => {
+      const option = el("option", "", account.business_name || `Account ${account.id}`);
+      option.value = account.id;
+      select.appendChild(option);
     });
   }
 
@@ -198,6 +217,8 @@
       ["Viewable", totals.viewable_impressions || 0],
       ["Clicks", totals.clicks || 0],
       ["CTR", `${totals.ctr || 0}%`],
+      ["Spend", totals.spend || "$0.00"],
+      ["eCPM", totals.estimated_cpm || 0],
       ["Reports", totals.reports || 0],
       ["Hides", totals.hides || 0],
     ].forEach(([label, value]) => {
@@ -206,6 +227,65 @@
       card.appendChild(el("p", "", label));
       node.appendChild(card);
     });
+  }
+
+  function renderPlacements() {
+    const node = document.querySelector("[data-placement-board]");
+    clear(node);
+    const placements = state.portal && state.portal.placements ? Object.values(state.portal.placements) : [];
+    if (!placements.length) {
+      node.appendChild(el("div", "empty", "No placements are configured yet."));
+      return;
+    }
+    placements.forEach((placement) => {
+      const card = el("article", "portal-card");
+      card.appendChild(el("h3", "", placement.display_name || placement.placement_key));
+      card.appendChild(el("p", "", `${placement.placement_key} · ${placement.device_type || "all"} · max frequency ${placement.max_frequency || 0}`));
+      const row = el("div", "row");
+      row.appendChild(pill(placement.card_style || "signal-card"));
+      row.appendChild(pill((placement.supported_creative_types || []).join(", ") || "all creatives"));
+      card.appendChild(row);
+      node.appendChild(card);
+    });
+  }
+
+  function renderWallet() {
+    const board = document.querySelector("[data-wallet-board]");
+    const billing = document.querySelector("[data-billing-list]");
+    clear(board);
+    clear(billing);
+    const wallets = (state.portal && state.portal.wallets) || [];
+    if (!wallets.length) {
+      board.appendChild(el("div", "empty", "Create an advertiser account to activate wallet controls."));
+      billing.appendChild(el("div", "empty", "Receipts appear after successful wallet funding."));
+      return;
+    }
+    wallets.forEach((wallet) => {
+      const card = el("article", "portal-card wallet-card");
+      card.appendChild(el("h3", "", wallet.spendable_balance || "$0.00"));
+      card.appendChild(el("p", "", `Spendable balance · reserved ${wallet.reserved_budget || "$0.00"}`));
+      const row = el("div", "row");
+      row.appendChild(pill(wallet.billing_enabled ? "billing enabled" : "funding prepared", wallet.billing_enabled ? "ok" : "warn"));
+      row.appendChild(pill(wallet.stripe_ready ? "stripe ready" : "stripe not configured", wallet.stripe_ready ? "ok" : "warn"));
+      card.appendChild(row);
+      board.appendChild(card);
+
+      (wallet.transactions || []).slice(0, 8).forEach((tx) => {
+        const item = el("article", "portal-card compact");
+        item.appendChild(el("h3", "", `${tx.transaction_type || "transaction"} · ${tx.amount || "$0.00"}`));
+        item.appendChild(el("p", "", `${tx.status || "posted"} · ${tx.description || ""} · ${tx.created_at || ""}`));
+        billing.appendChild(item);
+      });
+      (wallet.receipts || []).slice(0, 6).forEach((receipt) => {
+        const item = el("article", "portal-card compact");
+        item.appendChild(el("h3", "", `${receipt.receipt_number || "Receipt"} · ${receipt.amount || "$0.00"}`));
+        item.appendChild(el("p", "", `${receipt.status || "paid"} · ${receipt.created_at || ""}`));
+        billing.appendChild(item);
+      });
+    });
+    if (!billing.children.length) {
+      billing.appendChild(el("div", "empty", "Funding, spend, receipts, and future refunds will appear here."));
+    }
   }
 
   function renderReview() {
@@ -228,14 +308,34 @@
     });
   }
 
+  function renderNotifications() {
+    const list = document.querySelector("[data-ad-notification-list]");
+    clear(list);
+    const rows = (state.portal && state.portal.notifications) || [];
+    if (!rows.length) {
+      list.appendChild(el("div", "empty", "No advertiser notifications yet."));
+      return;
+    }
+    rows.slice(0, 20).forEach((row) => {
+      const card = el("article", "portal-card compact");
+      card.appendChild(el("h3", "", row.title || "Notification"));
+      card.appendChild(el("p", "", `${row.body || ""} · ${row.created_at || ""}`));
+      card.appendChild(pill(row.status || "unread", row.status === "read" ? "" : "warn"));
+      list.appendChild(card);
+    });
+  }
+
   function renderAll() {
     renderMetrics();
     renderAccountLists();
     renderCampaignSelect();
     renderCreatives();
+    renderPlacements();
     renderBudget();
     renderAnalytics();
+    renderWallet();
     renderReview();
+    renderNotifications();
   }
 
   async function loadPortal() {
@@ -295,6 +395,26 @@
     await loadPortal();
   }
 
+  async function createFundingSession(event) {
+    event.preventDefault();
+    const payload = serializeForm(event.currentTarget);
+    if (!payload.account_id) return;
+    const data = await jsonFetch(`/api/pulse/ads/accounts/${payload.account_id}/wallet/funding-session`, {
+      method: "POST",
+      body: JSON.stringify({
+        amount_cents: payload.amount_cents,
+        currency: "usd",
+        idempotency_key: `wallet-${payload.account_id}-${Date.now()}`,
+      }),
+    });
+    const checkoutUrl = data.funding_session && data.funding_session.checkout_url;
+    if (checkoutUrl) {
+      window.location.assign(checkoutUrl);
+      return;
+    }
+    await loadPortal();
+  }
+
   async function campaignAction(campaignId, action) {
     await jsonFetch(`/api/pulse/ads/campaigns/${campaignId}/action`, {
       method: "POST",
@@ -315,6 +435,7 @@
   document.querySelector("[data-create-account-form]")?.addEventListener("submit", createAccount);
   document.querySelector("[data-campaign-form]")?.addEventListener("submit", createCampaign);
   document.querySelector("[data-creative-form]")?.addEventListener("submit", createCreative);
+  document.querySelector("[data-wallet-funding-form]")?.addEventListener("submit", createFundingSession);
   document.querySelector("[data-refresh]")?.addEventListener("click", loadPortal);
 
   loadPortal().catch((error) => {
