@@ -12,7 +12,7 @@ Create, connect, watch, message, and stay notified with PulseSoc.
 
 PulseSoc is a mobile social platform for posts, reels, videos, messages, notifications, profiles, and premium creator tools.
 
-Use PulseSoc to follow creators, discover community media, stay updated with notifications, and manage your profile from your phone. PulseSoc is operated by CoinPilotXAI Inc. and is designed for privacy-aware social interaction, user control, and safety-first community experiences.
+Use PulseSoc to follow creators, discover community media, stay updated with notifications, and manage your profile from your phone. PulseSoc is operated by CoinPlotXAI Inc. and is designed for privacy-aware social interaction, user control, and safety-first community experiences.
 
 PulseSoc includes user-generated content. Users should follow the community rules and use report/support tools when content needs review.
 

@@ -3,7 +3,7 @@ from .schema import SHARE_IMAGE_URL, SITE_URL
 COMMON_FAQS = [
     {
         "question": "Is PulseSoc financial advice?",
-        "answer": "No. CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.",
+        "answer": "No. CoinPlotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.",
     },
     {
         "question": "Does PulseSoc hold user funds?",
@@ -22,7 +22,7 @@ SEO_PAGES = {
         "points": ["Public wallet and TXID checks", "Wallet-drain warning patterns", "Approval-risk education", "Explorer links for public verification"],
         "faqs": [
             {"question": "What is Wallet Intel?", "answer": "Wallet Intel is PulseSoc's public wallet and transaction education tool. It helps users review public blockchain context without requesting private credentials."},
-            {"question": "Can PulseSoc recover a wallet?", "answer": "No. CoinPilotXAI Inc. cannot recover wallets and will never ask for seed phrases or private keys."},
+            {"question": "Can PulseSoc recover a wallet?", "answer": "No. CoinPlotXAI Inc. cannot recover wallets and will never ask for seed phrases or private keys."},
         ] + COMMON_FAQS,
         "related": ["/crypto-scams", "/crypto-safety", "/ai-market-analysis"],
     },
@@ -64,7 +64,7 @@ SEO_PAGES = {
         "points": ["Live public scoreboard context", "Sport-specific risk notes", "Position intelligence prompts", "optional Telegram companion for deeper analysis"],
         "faqs": [
             {"question": "What is Sports Edge?", "answer": "Sports Edge is PulseSoc's informational sports intelligence feature for reviewing game state, risk factors, market context, and position discipline."},
-            {"question": "Does Sports Edge give guaranteed picks?", "answer": "No. CoinPilotXAI Inc. does not guarantee sports outcomes or betting results."},
+            {"question": "Does Sports Edge give guaranteed picks?", "answer": "No. CoinPlotXAI Inc. does not guarantee sports outcomes or betting results."},
         ] + COMMON_FAQS,
         "related": ["/day-signal", "/ai-market-analysis", "/telegram-crypto-bot"],
     },
@@ -191,7 +191,7 @@ SEO_PAGES.update({
         "h1": "PulseSoc Safety Center",
         "eyebrow": "Trust and Safety",
         "intro": "PulseSoc is built around public data, account safety, educational AI intelligence, and clear limits.",
-        "answer": "CoinPilotXAI Inc. never holds user funds and never asks for private wallet credentials.",
+        "answer": "CoinPlotXAI Inc. never holds user funds and never asks for private wallet credentials.",
         "points": ["Never holds funds", "Public wallet data only", "Stripe website billing", "Educational AI intelligence only"],
         "faqs": COMMON_FAQS,
         "related": ["/support", "/privacy", "/terms", "/crypto-safety"],
@@ -266,7 +266,7 @@ SEO_PAGES.update({
         "answer": "A responsible Telegram trading assistant should help users understand risk, context, and scenarios before acting. PulseSoc is built around that standard.",
         "points": ["Optional Telegram AI questions", "Live market board", "Scam safety reminders", "Portfolio context"],
         "faqs": [
-            {"question": "Does PulseSoc provide guaranteed trading signals?", "answer": "No. PulseSoc is operated by CoinPilotXAI Inc. and provides educational signal context, not guaranteed outcomes."},
+            {"question": "Does PulseSoc provide guaranteed trading signals?", "answer": "No. PulseSoc is operated by CoinPlotXAI Inc. and provides educational signal context, not guaranteed outcomes."},
             {"question": "Can I use PulseSoc from Telegram?", "answer": "Yes. PulseSoc is platform-first, with Telegram available as an optional companion."},
         ] + COMMON_FAQS,
         "related": ["/telegram-crypto-bot", "/ai-market-analysis", "/portfolio-intelligence"],
@@ -351,7 +351,7 @@ SEO_PAGES.update({
         "points": ["Volatility context", "Scam and phishing risk", "Wallet safety reminders", "Whale pressure as one factor", "Safer decision prompts"],
         "faqs": [
             {"question": "What is crypto risk intelligence?", "answer": "It is structured education about crypto risks such as volatility, scams, wallet exposure, market pressure, and emotional decisions."},
-            {"question": "Does CoinPilotXAI Inc. remove crypto risk?", "answer": "No. CoinPilotXAI Inc. explains risk context but cannot remove risk or guarantee outcomes."},
+            {"question": "Does CoinPlotXAI Inc. remove crypto risk?", "answer": "No. CoinPlotXAI Inc. explains risk context but cannot remove risk or guarantee outcomes."},
         ] + COMMON_FAQS,
         "related": ["/crypto-safety", "/wallet-security", "/ai-market-analysis"],
     },
@@ -413,7 +413,7 @@ SEO_PAGES.update({
     },
     "pwa-crypto-app": {
         "title": "Crypto Intelligence PWA | PulseSoc",
-        "description": "Install CoinPilotXAI Inc. as a progressive web app for faster access to PulseSoc crypto intelligence and platform workflows.",
+        "description": "Install CoinPlotXAI Inc. as a progressive web app for faster access to PulseSoc crypto intelligence and platform workflows.",
         "h1": "Crypto Intelligence Progressive Web App",
         "eyebrow": "Installable App",
         "intro": "PulseSoc supports a mobile-friendly PWA experience for faster access to AI crypto intelligence, Scam Shield, Day Signal, and optional Telegram companion.",
@@ -523,7 +523,7 @@ SEO_PAGES.update({
         "answer": "A responsible Bitcoin prediction page explains possible scenarios, risk factors, and what could change the market view. It should never claim a guaranteed BTC price target.",
         "points": ["BTC momentum context", "Volatility and downside risk", "Whale and market-pressure awareness", "Scenario-based thinking"],
         "faqs": [
-            {"question": "Can PulseSoc predict Bitcoin with certainty?", "answer": "No. PulseSoc is operated by CoinPilotXAI Inc. and provides educational BTC scenario context and risk reminders only."},
+            {"question": "Can PulseSoc predict Bitcoin with certainty?", "answer": "No. PulseSoc is operated by CoinPlotXAI Inc. and provides educational BTC scenario context and risk reminders only."},
             {"question": "What affects a Bitcoin prediction?", "answer": "Trend, volume, macro news, ETF flows, whale pressure, liquidity, sentiment, and volatility can all affect BTC scenarios."},
         ] + COMMON_FAQS,
         "related": ["/markets/btc", "/markets/btc/prediction", "/crypto-risk-intelligence"],
@@ -579,7 +579,7 @@ SEO_PAGES.update({
         "answer": "Sports betting intelligence should never claim locks or guaranteed wins. PulseSoc focuses on risk, probability, missing data, and discipline.",
         "points": ["Game context", "Market and odds availability", "Momentum and risk factors", "Why to avoid forcing positions"],
         "faqs": [
-            {"question": "Does PulseSoc provide sports betting locks?", "answer": "No. CoinPilotXAI Inc. does not provide guaranteed sports picks, locks, or risk-free outcomes."},
+            {"question": "Does PulseSoc provide sports betting locks?", "answer": "No. CoinPlotXAI Inc. does not provide guaranteed sports picks, locks, or risk-free outcomes."},
             {"question": "What does Sports Edge explain?", "answer": "Sports Edge explains game state, risk factors, market context where available, and what could change the view."},
         ] + COMMON_FAQS,
         "related": ["/sports-edge", "/sports-intelligence-ai", "/day-signal"],
@@ -607,7 +607,7 @@ SEO_PAGES.update({
         "answer": "Scam alerts should be clear and practical. PulseSoc prioritizes critical safety warnings for every user, not just Pro users.",
         "points": ["Fake support detection", "Wallet-drainer warnings", "Airdrop risk patterns", "Urgency and pressure tactics"],
         "faqs": [
-            {"question": "What should I do if a message asks for my seed phrase?", "answer": "Stop immediately. CoinPilotXAI Inc. will never ask for seed phrases, private keys, recovery phrases, or wallet passwords."},
+            {"question": "What should I do if a message asks for my seed phrase?", "answer": "Stop immediately. CoinPlotXAI Inc. will never ask for seed phrases, private keys, recovery phrases, or wallet passwords."},
             {"question": "Can scammers copy real brands?", "answer": "Yes. Always verify domains, official channels, and wallet permissions before acting."},
         ] + COMMON_FAQS,
         "related": ["/crypto-scams", "/crypto-scam-checker", "/intel/wallet-drainer-warning-signs"],
@@ -815,7 +815,7 @@ ARTICLE_PAGES = {
             {"title": "Final caution", "body": "Sports Edge is informational only and not betting advice. Never risk money you cannot afford to lose."},
         ],
         "faqs": [
-            {"question": "Does Sports Edge give locks?", "answer": "No. CoinPilotXAI Inc. does not provide locks, sure bets, or guaranteed outcomes."},
+            {"question": "Does Sports Edge give locks?", "answer": "No. CoinPlotXAI Inc. does not provide locks, sure bets, or guaranteed outcomes."},
             {"question": "When should a user wait?", "answer": "Waiting may be appropriate when data is incomplete, risk is elevated, or the user feels pressured."},
         ] + COMMON_FAQS,
         "related": ["/sports-edge", "/sports-betting-intelligence", "/sports-edge/live-games"],
@@ -827,7 +827,7 @@ ARTICLE_PAGES = {
         "h1": "Telegram Crypto Bot Safety Guide",
         "eyebrow": "Telegram Safety",
         "intro": "Telegram is fast and convenient, but crypto users need strong safety habits before trusting links, bots, or direct messages.",
-        "answer": "CoinPilotXAI Inc. will never ask for seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials in Telegram.",
+        "answer": "CoinPlotXAI Inc. will never ask for seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials in Telegram.",
         "points": ["Avoid fake support DMs", "Verify official bot links", "Never share wallet secrets", "Use public data only"],
         "sections": [
             {"title": "Safer Telegram habits", "body": "Use official links, verify bot usernames carefully, and avoid clicking wallet-connect links sent through unsolicited messages."},
@@ -904,7 +904,7 @@ def market_page(symbol):
         "points": ["Live market board context", "AI assistant explanations", "Risk and momentum sections", "platform command center"],
         "faqs": [
             {"question": f"Can PulseSoc analyze {item['symbol']}?", "answer": f"Yes. PulseSoc can explain {item['symbol']} market context, risk factors, momentum, and safer next steps using available live market data."},
-            {"question": f"Is {item['symbol']} analysis financial advice?", "answer": "No. CoinPilotXAI Inc. provides educational AI intelligence only."},
+            {"question": f"Is {item['symbol']} analysis financial advice?", "answer": "No. CoinPlotXAI Inc. provides educational AI intelligence only."},
         ] + COMMON_FAQS,
         "related": ["/ai-market-analysis", "/portfolio-intelligence", "/whale-alerts"],
     }
@@ -1042,7 +1042,7 @@ def seo_index_payload():
     pages = searchable_pages()
     return {
         "brand": "PulseSoc",
-        "legal_name": "CoinPilotXAI Inc.",
+        "legal_name": "CoinPlotXAI Inc.",
         "site": SITE_URL + "/",
         "telegram_bot": "https://t.me/DocShieldX_bot",
         "purpose": "Educational AI intelligence for crypto market context, scam awareness, wallet safety, portfolio scenarios, Sports Edge, and web-first platform workflows.",

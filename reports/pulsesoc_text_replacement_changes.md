@@ -14,7 +14,7 @@ Date: 2026-06-06
 
 ## Intentionally Kept
 
-- CoinPilotXAI Inc. remains in legal disclaimers, privacy/terms operator language, organization legalName schema, safety notices, and admin/legal contexts.
+- CoinPlotXAI Inc. remains in legal disclaimers, privacy/terms operator language, organization legalName schema, safety notices, and admin/legal contexts.
 - coinpilotx.app remains in compatibility and infrastructure areas where removing it could break production continuity.
 - cdn.coinpilotx.app remains as the active CDN/storage delivery host.
 - Route names such as /dashboard remain unchanged.

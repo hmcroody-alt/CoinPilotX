@@ -3,7 +3,7 @@ from datetime import datetime
 
 from . import market_data, pro_access, user_context
 
-SAFETY = "Portfolio tracker is educational only. CoinPilotXAI Inc. does not hold funds or provide financial advice."
+SAFETY = "Portfolio tracker is educational only. CoinPlotXAI Inc. does not hold funds or provide financial advice."
 FREE_LIMITS = {"holdings": 3, "watchlist": 5, "alerts": 2}
 
 

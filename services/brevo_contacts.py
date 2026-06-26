@@ -8,7 +8,7 @@ import requests
 from .user_context import connect
 
 BREVO_BASE_URL = "https://api.brevo.com/v3"
-DEFAULT_FOLDER_NAME = "CoinPilotXAI Inc."
+DEFAULT_FOLDER_NAME = "CoinPlotXAI Inc."
 LIST_NAMES = {
     "default": "Website Leads",
     "pro": "Pro Users",

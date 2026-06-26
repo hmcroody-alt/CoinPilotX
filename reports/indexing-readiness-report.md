@@ -1,4 +1,4 @@
-# CoinPilotXAI Inc. Indexing Readiness Report
+# CoinPlotXAI Inc. Indexing Readiness Report
 
 Date: 2026-05-10
 
@@ -14,7 +14,7 @@ Date: 2026-05-10
 
 - Organization schema is available sitewide through SEO pages.
 - WebSite schema includes search action support.
-- SoftwareApplication schema describes CoinPilotX as the public product operated by CoinPilotXAI Inc.
+- SoftwareApplication schema describes CoinPilotX as the public product operated by CoinPlotXAI Inc.
 - FAQ schema is rendered on SEO pages.
 - Breadcrumb schema is rendered on SEO pages.
 - Article schema is rendered for article-style pages and prediction/sports scenario pages.

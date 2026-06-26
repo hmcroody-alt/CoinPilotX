@@ -8,7 +8,7 @@ Audited public-facing app text, page titles, metadata, manifests, Roast Battle, 
 
 ### Legal/operator references kept
 
-- `CoinPilotXAI Inc.` remains in privacy, terms, support, admin, payments, security, and legal disclaimers.
+- `CoinPlotXAI Inc.` remains in privacy, terms, support, admin, payments, security, and legal disclaimers.
 - `Pulse — Powered by CoinPilotXAI` remains valid footer/legal support text.
 
 ### Public-facing UI changed

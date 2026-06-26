@@ -4,7 +4,7 @@
 
 - Public product brand: `Pulse`
 - Public domain: `PulseSoc.com`
-- Legal operator: `CoinPilotXAI Inc.`
+- Legal operator: `CoinPlotXAI Inc.`
 - Footer/legal phrasing: `Pulse — Powered by CoinPilotXAI`
 
 ## Files Updated
@@ -26,4 +26,4 @@ New audit coverage checks:
 
 ## Remaining Intentional References
 
-`CoinPilotXAI Inc.` remains in legal, privacy, terms, support, admin, payments, security, and operator contexts. Existing `coinpilotx.app` references remain where required for compatibility, CDN, historical reports, or infrastructure.
+`CoinPlotXAI Inc.` remains in legal, privacy, terms, support, admin, payments, security, and operator contexts. Existing `coinpilotx.app` references remain where required for compatibility, CDN, historical reports, or infrastructure.

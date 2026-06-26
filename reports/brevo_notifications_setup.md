@@ -91,7 +91,7 @@ Reusable Pulse-branded app templates were added for:
 - Crypto alert
 - Security alert
 
-Templates use Pulse branding, PulseSoc.com, and the legal line that Pulse is operated by CoinPilotXAI Inc.
+Templates use Pulse branding, PulseSoc.com, and the legal line that Pulse is operated by CoinPlotXAI Inc.
 
 ## Admin Visibility
 

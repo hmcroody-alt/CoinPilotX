@@ -1,4 +1,4 @@
-# CoinPilotXAI Inc. SEO Infrastructure Report
+# CoinPlotXAI Inc. SEO Infrastructure Report
 
 Date: 2026-05-10
 

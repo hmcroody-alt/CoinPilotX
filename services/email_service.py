@@ -289,7 +289,7 @@ def send_payment_confirmation(user, payment_details=None):
             f"{amount_line}"
             "<p>Account: <a href='https://pulsesoc.com/account'>https://pulsesoc.com/account</a></p>"
             "<p>If you experience any issue after payment, please email support@pulsesoc.com and include the email address used for your PulseSoc account.</p>"
-            "<p>CoinPilotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice.</p>"
+            "<p>CoinPlotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice.</p>"
         ),
         "Your PulseSoc Premium access is active. Account: https://pulsesoc.com/account. Support: support@pulsesoc.com",
         email_type="payment_confirmation",
@@ -340,7 +340,7 @@ def send_trial_ended_email(user):
 def send_admin_invitation_email(admin_user, invite_url):
     return send_email(
         (admin_user or {}).get("email"),
-        "CoinPilotXAI Inc. admin invitation",
+        "CoinPlotXAI Inc. admin invitation",
         f"<p><a href='{invite_url}'>Accept admin invitation</a></p>",
         f"Accept admin invitation: {invite_url}",
     )

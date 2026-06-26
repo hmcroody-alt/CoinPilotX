@@ -2,13 +2,13 @@
   "configVersion": 0,
   "apple": {
     "version": "1.0",
-    "copyright": "CoinPilotXAI Inc.",
+    "copyright": "CoinPlotXAI Inc.",
     "release": {
       "automaticRelease": true
     },
     "info": {
       "en-US": {
-        "description": "PulseSoc is a social platform for creating, learning, and connecting through posts, videos, reels, messages, notifications, profiles, and community tools.\n\nWith PulseSoc, you can follow creators, explore video content, check notifications, manage your profile, and stay connected through direct messages. PulseSoc is operated by CoinPilotXAI Inc. and is built around user control, moderation, privacy-aware design, and clear communication.\n\nPulseSoc is not financial, investment, legal, or betting advice. Paid digital access is not available in this iOS build.",
+        "description": "PulseSoc is a social platform for creating, learning, and connecting through posts, videos, reels, messages, notifications, profiles, and community tools.\n\nWith PulseSoc, you can follow creators, explore video content, check notifications, manage your profile, and stay connected through direct messages. PulseSoc is operated by CoinPlotXAI Inc. and is built around user control, moderation, privacy-aware design, and clear communication.\n\nPulseSoc is not financial, investment, legal, or betting advice. Paid digital access is not available in this iOS build.",
         "keywords": [
           "social",
           "creator",

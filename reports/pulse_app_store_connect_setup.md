@@ -28,7 +28,7 @@ Date: 2026-06-06
   - Keywords
   - Support URL: `https://pulsesoc.com/support`
   - Marketing URL: `https://pulsesoc.com`
-  - Copyright: `CoinPilotXAI Inc.`
+  - Copyright: `CoinPlotXAI Inc.`
   - Release mode: manual release
 - Updated EAS submit configuration with the real App Store Connect app ID.
 

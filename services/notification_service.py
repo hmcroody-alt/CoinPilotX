@@ -374,7 +374,7 @@ def _branded_html(headline, body, deep_link="/pulse/notifications"):
         f"<h1 style='font-size:24px;margin:0 0 12px'>{headline}</h1>"
         f"<p>{body}</p>"
         f"<p><a href='{link}' style='color:#2563eb'>Open PulseSoc</a></p>"
-        "<p style='font-size:12px;color:#64748b'>PulseSoc is operated by CoinPilotXAI Inc. Visit PulseSoc.com.</p>"
+        "<p style='font-size:12px;color:#64748b'>PulseSoc is operated by CoinPlotXAI Inc. Visit PulseSoc.com.</p>"
         "</div>"
     )
 

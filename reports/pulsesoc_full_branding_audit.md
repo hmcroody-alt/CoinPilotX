@@ -6,7 +6,7 @@ Date: 2026-06-06
 
 - Public product/brand: Pulse
 - Public domain: PulseSoc.com / https://pulsesoc.com
-- Legal operator: CoinPilotXAI Inc.
+- Legal operator: CoinPlotXAI Inc.
 - Public footer pattern: Pulse — Powered by CoinPilotXAI
 - Public email addresses: support@pulsesoc.com, security@pulsesoc.com, noreply@pulsesoc.com
 
@@ -19,9 +19,9 @@ Date: 2026-06-06
 
 ### B. Legal/company text kept
 
-- Legal pages and legal disclaimers continue to identify CoinPilotXAI Inc. as the operator.
-- Terms, privacy, billing/payment disclaimers, safety disclaimers, and organization legalName schema keep CoinPilotXAI Inc.
-- Admin-only and legal/admin invitation text still uses CoinPilotXAI Inc. where appropriate.
+- Legal pages and legal disclaimers continue to identify CoinPlotXAI Inc. as the operator.
+- Terms, privacy, billing/payment disclaimers, safety disclaimers, and organization legalName schema keep CoinPlotXAI Inc.
+- Admin-only and legal/admin invitation text still uses CoinPlotXAI Inc. where appropriate.
 
 ### C. Infrastructure/internal config kept
 

@@ -1,4 +1,4 @@
-# CoinPilotXAI Inc. Lighthouse Readiness Report
+# CoinPlotXAI Inc. Lighthouse Readiness Report
 
 Date: 2026-05-10
 

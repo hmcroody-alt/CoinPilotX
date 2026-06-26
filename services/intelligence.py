@@ -32,7 +32,7 @@ def assistant_response(user_id, question, pro=False):
         )
     snapshot = market_data.live_market_board(limit=10)
     system = (
-        "You are PulseSoc, operated by CoinPilotXAI Inc. Give honest crypto, wallet, scam, market, sports, and portfolio education. "
+        "You are PulseSoc, operated by CoinPlotXAI Inc. Give honest crypto, wallet, scam, market, sports, and portfolio education. "
         "Never guarantee profits, betting wins, certainty, or insider information. Never ask for seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials. "
         "Use sections: Market Snapshot, Momentum Read, Risk Level, What to Watch, Safer Next Step, Disclaimer. "
         "If live data is unavailable, say so clearly."

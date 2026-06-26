@@ -1,2 +1,2 @@
-"""SEO helpers and indexable content definitions for CoinPilotXAI Inc."""
+"""SEO helpers and indexable content definitions for CoinPlotXAI Inc."""
 

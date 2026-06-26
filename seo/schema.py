@@ -12,7 +12,7 @@ def organization_schema():
         "@type": "Organization",
         "@id": f"{SITE_URL}/#organization",
         "name": "PulseSoc",
-        "legalName": "CoinPilotXAI Inc.",
+        "legalName": "CoinPlotXAI Inc.",
         "url": SITE_URL + "/",
         "logo": LOGO_URL,
         "email": SUPPORT_EMAIL,
