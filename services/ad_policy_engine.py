@@ -11,6 +11,7 @@ ALLOWED_CATEGORIES = {
     "creator_sponsorship",
     "approved_exchange",
     "financial_education",
+    "radio",
 }
 
 BLOCKED_CATEGORIES = {

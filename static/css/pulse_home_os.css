@@ -1284,6 +1284,10 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   min-height: 210px;
 }
 
+.pulse-mobile-inline-ad {
+  display: none;
+}
+
 .pulse-sponsored-ad-zone.has-live-sponsored-signal {
   padding: 0;
   border-color: transparent;
@@ -1533,6 +1537,63 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
 
 .pulse-sponsored-signal--feed_inline_ufo_mobile {
   margin: 10px 0;
+}
+
+@media (max-width: 900px) {
+  .pulse-mobile-inline-ad {
+    display: block;
+    min-height: 0;
+    margin: 10px 0 calc(90px + env(safe-area-inset-bottom));
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .pulse-mobile-inline-ad:not(.has-live-sponsored-signal) {
+    display: none;
+  }
+
+  .pulse-mobile-inline-ad > .pulse-sponsored-signal {
+    border-radius: 18px;
+  }
+
+  .pulse-sponsored-signal--feed_inline_ufo_mobile {
+    gap: 6px;
+    margin: 0;
+    padding: 10px;
+  }
+
+  .pulse-sponsored-signal--feed_inline_ufo_mobile > * {
+    padding: 6px;
+  }
+
+  .pulse-sponsored-signal--feed_inline_ufo_mobile .pulse-sponsored-signal__media-shell {
+    max-height: 92px;
+  }
+
+  .pulse-sponsored-signal--feed_inline_ufo_mobile .pulse-sponsored-signal__media {
+    aspect-ratio: 21 / 9;
+    max-height: 92px;
+  }
+
+  .pulse-sponsored-signal--feed_inline_ufo_mobile .pulse-sponsored-signal__body {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 12px;
+  }
+
+  .pulse-sponsored-signal--feed_inline_ufo_mobile .pulse-sponsored-signal__actions button {
+    min-height: 34px;
+    padding: 6px 9px;
+    font-size: 12px;
+  }
+
+  .pulse-sponsored-signal--feed_inline_ufo_mobile .pulse-sponsored-signal__why {
+    display: none;
+  }
 }
 
 .pulse-sponsored-signal--radio-sponsor,

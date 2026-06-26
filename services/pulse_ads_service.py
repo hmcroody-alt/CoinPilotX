@@ -239,19 +239,42 @@ def validate_destination_url(url: str, required: bool = True) -> str:
         if required:
             raise PulseAdsError("Destination URL is required.")
         return ""
+    lowered = cleaned.lower()
+    if any(lowered.startswith(prefix) for prefix in ("javascript:", "data:", "file:", "vbscript:")):
+        raise PulseAdsError("Unsafe destination URL.")
+    if cleaned.startswith("/") and not cleaned.startswith("//"):
+        parsed_path = urlparse(cleaned)
+        if parsed_path.scheme or parsed_path.netloc:
+            raise PulseAdsError("Unsafe destination URL.")
+        if not parsed_path.path.startswith("/pulse/") and parsed_path.path != "/pulse":
+            raise PulseAdsError("Internal ad destinations must stay inside PulseSoc.")
+        if parsed_path.path.startswith(("/pulse/admin", "/pulse/api")):
+            raise PulseAdsError("Internal ad destination is not allowed.")
+        return cleaned
     parsed = urlparse(cleaned)
     if parsed.scheme not in {"https", "http"} or not parsed.netloc:
-        raise PulseAdsError("Destination URL must be http or https.")
+        raise PulseAdsError("Destination URL must be http, https, or a safe PulseSoc path.")
     host = (parsed.hostname or "").lower()
     if host in {"localhost", "127.0.0.1", "0.0.0.0"} or host.endswith(".local"):
         raise PulseAdsError("Local destination URLs are not allowed.")
-    if any(cleaned.lower().startswith(prefix) for prefix in ("javascript:", "data:", "file:", "vbscript:")):
-        raise PulseAdsError("Unsafe destination URL.")
     return cleaned
 
 
 def validate_media_url(url: str) -> str:
-    return validate_destination_url(url, required=False)
+    cleaned = clean_text(url, 500)
+    if not cleaned:
+        return ""
+    lowered = cleaned.lower()
+    if any(lowered.startswith(prefix) for prefix in ("javascript:", "data:", "file:", "vbscript:")):
+        raise PulseAdsError("Unsafe media URL.")
+    if cleaned.startswith("/") and not cleaned.startswith("//"):
+        parsed_path = urlparse(cleaned)
+        if parsed_path.scheme or parsed_path.netloc:
+            raise PulseAdsError("Unsafe media URL.")
+        if not parsed_path.path.startswith("/static/uploads/pulse_ads/"):
+            raise PulseAdsError("Internal ad media must use approved ads storage.")
+        return cleaned
+    return validate_destination_url(cleaned, required=False)
 
 
 def seed_placements(cur) -> None:
@@ -908,6 +931,9 @@ def select_ads(conn, user_id=None, session_id="", context="home", device_type="d
         return []
     ctx = normalize_delivery_context(context=context, device_type=device_type, **context_kwargs)
     placement_keys = _candidate_placements(ctx["context"], ctx["device_type"])
+    placement_hint = clean_text(context_kwargs.get("placement_hint") or "", 80)
+    if placement_hint and placement_hint in placement_keys:
+        placement_keys = [placement_hint]
     if not placement_keys:
         return []
     placeholders = ",".join(["?"] * len(placement_keys))

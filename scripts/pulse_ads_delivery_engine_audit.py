@@ -185,7 +185,12 @@ def main():
 
         with bot.webhook_app.test_client() as client:
             response = client.get("/api/pulse/ads/placement-metadata?context=radio&device_type=mobile")
-            assert_true(response.status_code in {401, 403}, "Placement metadata should require login")
+            assert_true(response.status_code == 200, "Placement metadata should be public-safe for ad rendering")
+            metadata = response.get_json() or {}
+            assert_true(metadata.get("ok") is True, "Placement metadata response should be successful")
+            assert_true(isinstance(metadata.get("placements"), list), "Placement metadata should return placement summaries")
+            assert_true("delivery_token" not in str(metadata), "Placement metadata exposed delivery tokens")
+            assert_true("advertiser" not in str(metadata).lower(), "Placement metadata exposed advertiser data")
     finally:
         conn.close()
 
