@@ -54,7 +54,6 @@ def main():
         "INSERT INTO blocked_users",
         "INSERT INTO pulse_reports",
         "Paid digital access is not available in this iOS build",
-        "External billing management is not available in this iOS build",
         "ios_paid_digital_unavailable_response(api=True)",
         '"ios_core_only": True',
         '"paid_digital_access_available": not ios_native',
@@ -67,6 +66,15 @@ def main():
         "def pulse_premium_page():",
     ]:
         require(bot, token, "bot.py", failures)
+    billing_portal_marker = "def api_premium_billing_portal():"
+    if billing_portal_marker not in bot:
+        failures.append("missing route function api_premium_billing_portal")
+    else:
+        billing_portal_segment = bot[bot.index(billing_portal_marker): bot.index(billing_portal_marker) + 750]
+        if "ios_native_app_request()" not in billing_portal_segment:
+            failures.append("api_premium_billing_portal must detect native iOS")
+        if "return ios_paid_digital_unavailable_response(api=True)" not in billing_portal_segment:
+            failures.append("api_premium_billing_portal must use shared native iOS paid digital block")
     for route_name in [
         "checkout_page",
         "upgrade_success_page",
