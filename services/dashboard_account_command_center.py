@@ -29,6 +29,7 @@ VERIFICATION_STATUSES = {
 }
 VERIFICATION_TYPES = {"identity", "blue_check", "business", "government_id"}
 ACCOUNT_HEALTH_STATUSES = {"secure", "watch", "restricted", "suspended"}
+STATE_LABELS = {"READY", "ACTION", "REVIEW", "WARNING", "LOCKED", "PREMIUM", "BETA", "PARTIAL", "ADMIN"}
 SETTING_KEYS = {
     "profile_visibility": {"public", "private"},
     "message_requests": {"everyone", "followers", "none"},
@@ -57,6 +58,131 @@ RESERVED_USERNAMES = {
     "null",
     "undefined",
 }
+
+ACCOUNT_SUBSYSTEMS: tuple[dict[str, Any], ...] = (
+    {
+        "key": "profile",
+        "label": "Profile Operating System",
+        "route": "/dashboard/account/profile",
+        "admin_route": "/admin/account-command/profile",
+        "actions": ("Manage Profile", "Improve Profile", "Preview Public Profile", "Review Profile Health"),
+        "monitors": ("profile_completion", "profile_visits", "search_appearances", "username_risk", "impersonation_risk"),
+        "protects": ("public_identity", "profile_media", "reserved_usernames", "unsafe_bio_content"),
+        "recovers": ("profile_change_history", "avatar_banner_history", "admin_revert_queue"),
+    },
+    {
+        "key": "verification",
+        "label": "Verification Operating System",
+        "route": "/dashboard/account/verification",
+        "admin_route": "/admin/account-command/verification",
+        "actions": ("Continue Verification", "Review Verification", "Submit Appeal", "View Verification Timeline"),
+        "monitors": ("verification_status", "document_uploads", "review_queue", "badge_state"),
+        "protects": ("private_documents", "badge_integrity", "review_permissions"),
+        "recovers": ("appeal_flow", "needs_more_info_flow", "badge_revoke_history"),
+    },
+    {
+        "key": "account_health",
+        "label": "Account Health Operating System",
+        "route": "/dashboard/account/health",
+        "admin_route": "/admin/account-command/account-health",
+        "actions": ("View Account Health", "Fix Account Issues", "Review Restrictions", "Submit Appeal"),
+        "monitors": ("trust_score", "warnings", "strikes", "restrictions", "appeals"),
+        "protects": ("reporter_identity", "moderator_notes", "restriction_state"),
+        "recovers": ("appeal_history", "restriction_expiration", "recovery_plan"),
+    },
+    {
+        "key": "security",
+        "label": "Security Operating System",
+        "route": "/dashboard/account/security",
+        "admin_route": "/admin/account-command/security",
+        "actions": ("Secure Account", "Manage Security", "Review Security Risks", "Revoke Sessions"),
+        "monitors": ("password_state", "2fa", "trusted_devices", "login_history", "suspicious_activity"),
+        "protects": ("sessions", "devices", "security_events", "sensitive_actions"),
+        "recovers": ("session_revoke", "force_logout", "recovery_methods"),
+    },
+    {
+        "key": "settings",
+        "label": "Settings Operating System",
+        "route": "/dashboard/account/settings",
+        "admin_route": "/admin/account-command/settings",
+        "actions": ("Manage Settings", "Review Privacy", "Tune Experience", "Manage Notifications"),
+        "monitors": ("privacy_settings", "notification_settings", "ads_privacy", "accessibility", "conflicts"),
+        "protects": ("private_settings", "notification_consent", "ads_privacy_choices"),
+        "recovers": ("safe_defaults", "settings_audit", "conflict_resolution"),
+    },
+    {
+        "key": "advanced_security",
+        "label": "Advanced Security Operating System",
+        "route": "/dashboard/account/advanced-security",
+        "admin_route": "/admin/account-command/advanced-security",
+        "actions": ("Harden Security", "Review Protection", "Enable Stronger Security"),
+        "monitors": ("2fa_strength", "passkey_readiness", "high_risk_actions", "recovery_protection"),
+        "protects": ("high_risk_changes", "trusted_device_model", "recovery_surface"),
+        "recovers": ("hardening_plan", "device_retrust", "admin_review"),
+    },
+    {
+        "key": "identity_protection",
+        "label": "Identity Protection Operating System",
+        "route": "/dashboard/account/identity-protection",
+        "admin_route": "/admin/account-command/identity-protection",
+        "actions": ("Protect Identity", "Review Identity Risk", "Report Impersonation"),
+        "monitors": ("username_similarity", "avatar_similarity", "fake_account_risk", "badge_protection"),
+        "protects": ("personal_identity", "brand_identity", "badge_identity"),
+        "recovers": ("identity_lock", "impersonation_report", "admin_identity_review"),
+    },
+    {
+        "key": "session_intelligence",
+        "label": "Session Intelligence Operating System",
+        "route": "/dashboard/account/session-intelligence",
+        "admin_route": "/admin/account-command/session-intelligence",
+        "actions": ("Review Sessions", "Manage Sessions", "End Suspicious Session"),
+        "monitors": ("active_sessions", "session_trust", "last_active", "impossible_travel"),
+        "protects": ("session_credentials_hidden", "suspicious_sessions", "device_context"),
+        "recovers": ("session_kill", "session_trust", "session_rename"),
+    },
+    {
+        "key": "device_intelligence",
+        "label": "Device Intelligence Operating System",
+        "route": "/dashboard/account/device-intelligence",
+        "admin_route": "/admin/account-command/device-intelligence",
+        "actions": ("Manage Devices", "Trust Device", "Remove Device", "Review Device Risk"),
+        "monitors": ("known_devices", "stale_devices", "push_registration_health", "platform_version"),
+        "protects": ("push_registration_health", "device_private_data", "trusted_devices"),
+        "recovers": ("device_revoke", "device_retrust", "stale_cleanup"),
+    },
+    {
+        "key": "security_timeline",
+        "label": "Security Timeline Operating System",
+        "route": "/dashboard/account/security-timeline",
+        "admin_route": "/admin/account-command/security-timeline",
+        "actions": ("View Timeline", "Review Events", "Investigate Activity"),
+        "monitors": ("logins", "password_changes", "2fa_changes", "device_changes", "admin_actions"),
+        "protects": ("safe_user_timeline", "admin_detail_gate", "sensitive_event_redaction"),
+        "recovers": ("event_review", "timeline_audit", "support_context"),
+    },
+    {
+        "key": "threat_detection",
+        "label": "Threat Detection Operating System",
+        "route": "/dashboard/account/threat-detection",
+        "admin_route": "/admin/account-command/threat-detection",
+        "actions": ("View Alerts", "Review Threats", "Investigate Risk"),
+        "monitors": ("threat_level", "suspicious_login", "device_risk", "profile_impersonation", "scam_risk"),
+        "protects": ("account_access", "profile_identity", "risk_alerts"),
+        "recovers": ("risk_recommendations", "admin_threat_review", "alert_resolution"),
+    },
+    {
+        "key": "login_analytics",
+        "label": "Login Analytics Operating System",
+        "route": "/dashboard/account/login-analytics",
+        "admin_route": "/admin/account-command/login-analytics",
+        "actions": ("Review Logins", "View Login Patterns", "Investigate Login Risk"),
+        "monitors": ("login_history", "failed_login_count", "new_device_count", "region_safety", "risk_trend"),
+        "protects": ("login_privacy", "ip_hashes", "safe_region_display"),
+        "recovers": ("login_review", "failed_login_cooldown", "security_recommendations"),
+    },
+)
+
+ACCOUNT_SUBSYSTEM_MAP = {item["key"]: item for item in ACCOUNT_SUBSYSTEMS}
 
 
 def _now() -> str:
@@ -292,6 +418,22 @@ def ensure_schema(conn: Any) -> None:
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS account_system_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            subsystem_key TEXT,
+            event_type TEXT,
+            severity TEXT DEFAULT 'low',
+            public_summary TEXT,
+            status TEXT DEFAULT 'open',
+            source TEXT,
+            created_at TEXT,
+            resolved_at TEXT
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS user_settings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
@@ -310,6 +452,7 @@ def ensure_schema(conn: Any) -> None:
         "account_strikes": ("user_id", "status"),
         "account_warnings": ("user_id", "status"),
         "account_restrictions": ("user_id", "status"),
+        "account_system_events": ("user_id", "subsystem_key"),
         "user_settings": ("user_id", "setting_key"),
     }.items():
         if not _table_exists(cur, table):
@@ -642,6 +785,140 @@ def _health_summary(cur: Any, user_id: int) -> dict[str, Any]:
     }
 
 
+def _safe_ratio(done: int, total: int) -> int:
+    if total <= 0:
+        return 0
+    return max(0, min(100, round((done / total) * 100)))
+
+
+def _event_count(cur: Any, user_id: int, subsystem_key: str = "", severity: str = "") -> int:
+    if not _table_exists(cur, "account_system_events"):
+        return 0
+    where = ["user_id=?", "COALESCE(status,'open')='open'"]
+    params: list[Any] = [int(user_id)]
+    if subsystem_key:
+        where.append("subsystem_key=?")
+        params.append(subsystem_key)
+    if severity:
+        where.append("severity=?")
+        params.append(severity)
+    return _count(cur, "account_system_events", " AND ".join(where), tuple(params))
+
+
+def record_account_system_event(
+    conn: Any,
+    *,
+    user_id: int,
+    subsystem_key: str,
+    event_type: str,
+    public_summary: str,
+    severity: str = "low",
+    source: str = "account_command_center",
+) -> None:
+    ensure_schema(conn)
+    if subsystem_key not in ACCOUNT_SUBSYSTEM_MAP:
+        subsystem_key = "account_health"
+    severity = str(severity or "low").lower()
+    if severity not in {"low", "medium", "high", "critical"}:
+        severity = "low"
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO account_system_events
+        (user_id, subsystem_key, event_type, severity, public_summary, status, source, created_at)
+        VALUES (?, ?, ?, ?, ?, 'open', ?, ?)
+        """,
+        (
+            int(user_id),
+            subsystem_key,
+            str(event_type or "account_event")[:100],
+            severity,
+            str(public_summary or "")[:1000],
+            str(source or "account_command_center")[:80],
+            _now(),
+        ),
+    )
+    record_account_audit(
+        conn,
+        user_id=user_id,
+        actor_user_id=user_id,
+        action="account_system_event_created",
+        target_type="account_system_event",
+        details={"subsystem_key": subsystem_key, "event_type": event_type, "severity": severity},
+    )
+
+
+def _recent_audit_events(cur: Any, user_id: int, limit: int = 8) -> list[dict[str, str]]:
+    if not _table_exists(cur, "account_audit_logs"):
+        return []
+    try:
+        cur.execute(
+            """
+            SELECT action, target_type, created_at
+            FROM account_audit_logs
+            WHERE user_id=?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (int(user_id), max(1, min(int(limit), 20))),
+        )
+        return [
+            {
+                "action": str(_row_dict(row).get("action") or "")[:120],
+                "target_type": str(_row_dict(row).get("target_type") or "")[:80],
+                "created_at": str(_row_dict(row).get("created_at") or "")[:40],
+            }
+            for row in cur.fetchall()
+        ]
+    except Exception:
+        return []
+
+
+def _state_from_score(score: int, *, review: bool = False, warning: bool = False, action: bool = False) -> str:
+    if review:
+        return "REVIEW"
+    if warning or score < 50:
+        return "WARNING"
+    if action or score < 75:
+        return "ACTION"
+    return "READY"
+
+
+def _subsystem_payload(
+    *,
+    key: str,
+    state: str,
+    score: int,
+    status: str,
+    primary_action: str | None = None,
+    recommendations: list[str] | None = None,
+    metrics: dict[str, Any] | None = None,
+    protections: list[str] | None = None,
+    monitors: list[str] | None = None,
+    recovery: list[str] | None = None,
+) -> dict[str, Any]:
+    spec = ACCOUNT_SUBSYSTEM_MAP[key]
+    state = state if state in STATE_LABELS else "PARTIAL"
+    return {
+        "key": key,
+        "label": spec["label"],
+        "state": state,
+        "status": str(status or state.lower())[:80],
+        "score": max(0, min(100, int(score))),
+        "route": spec["route"],
+        "admin_route": spec["admin_route"],
+        "cta_label": primary_action or spec["actions"][0],
+        "actions": list(spec["actions"]),
+        "recommendations": [str(item)[:180] for item in (recommendations or [])],
+        "metrics": metrics or {},
+        "monitors": list(monitors or spec["monitors"]),
+        "protections": list(protections or spec["protects"]),
+        "recovery": list(recovery or spec["recovers"]),
+        "audited": True,
+        "backend_managed": True,
+    }
+
+
 def build_account_state(conn: Any, user: dict[str, Any]) -> dict[str, Any]:
     ensure_schema(conn)
     cur = conn.cursor()
@@ -652,57 +929,200 @@ def build_account_state(conn: Any, user: dict[str, Any]) -> dict[str, Any]:
         verification_status = "submitted" if verification_status in {"pending", "review"} else "not_started"
     health = _health_summary(cur, user_id)
     settings = get_settings(conn, user_id)
-    profile_complete = bool(user.get("display_name") and user.get("username") and user.get("avatar_url"))
-    trusted_devices = _count(cur, "user_trusted_devices", "user_id=?", (user_id,))
+    profile_fields = {
+        "display_name": bool(user.get("display_name")),
+        "username": bool(user.get("username")),
+        "avatar": bool(user.get("avatar_url")),
+        "banner": bool(user.get("cover_url") or user.get("banner_url")),
+        "bio": bool(user.get("bio")),
+    }
+    profile_score = _safe_ratio(sum(1 for value in profile_fields.values() if value), len(profile_fields))
+    profile_complete = profile_score >= 60
+    profile_visits = _count(cur, "profile_views", "profile_user_id=?", (user_id,))
+    search_appearances = _count(cur, "search_events", "result_user_id=?", (user_id,))
+    trusted_devices = _count(cur, "user_trusted_devices", "user_id=?", (user_id,)) + _count(cur, "security_devices", "user_id=? AND COALESCE(trusted,0)=1", (user_id,))
+    known_devices = _count(cur, "security_devices", "user_id=?", (user_id,))
+    active_sessions = _count(cur, "active_sessions", "user_id=? AND COALESCE(revoked_at,'')=''", (user_id,))
+    login_events = _count(cur, "security_login_events", "user_id=?", (user_id,))
+    failed_logins = _count(cur, "security_login_events", "user_id=? AND event_type IN ('login_failed','failed_login')", (user_id,))
     recovery_codes = _count(cur, "user_recovery_codes", "user_id=? AND used_at IS NULL", (user_id,))
     suspicious = health["security_alerts"]
     security_score = max(0, min(100, 45 + (15 if user.get("email_verified") else 0) + (15 if user.get("phone_verified") else 0) + (15 if user.get("two_factor_enabled") else 0) + (10 if recovery_codes else 0) + (5 if trusted_devices else 0) - min(suspicious, 5) * 8))
     security_status = "secure" if security_score >= 75 else "watch" if security_score >= 45 else "action"
-    return {
-        "profile": {
-            "state": "ON" if profile_complete else "ACTION",
-            "status": "complete" if profile_complete else "needs_attention",
-            "route": "/dashboard/account/profile",
-            "fields": {
-                "display_name": bool(user.get("display_name")),
-                "username": bool(user.get("username")),
-                "avatar": bool(user.get("avatar_url")),
-                "banner": bool(user.get("cover_url") or user.get("banner_url")),
-                "visibility": str(user.get("profile_visibility") or settings.get("profile_visibility") or "public"),
-            },
-        },
-        "verification": {
-            "state": "ON" if verification_status == "approved" else "REVIEW" if verification_status in {"submitted", "in_review", "appealed"} else "WARNING" if verification_status == "suspended" else "ACTION",
-            "status": verification_status,
-            "request_id": _safe_int(latest_verification.get("id"), 0),
-            "route": "/dashboard/account/verification",
-        },
-        "account_health": {
-            "state": "ON" if health["status"] == "secure" else "WARNING",
-            "route": "/dashboard/account/health",
-            **health,
-        },
-        "security": {
-            "state": "ON" if security_status == "secure" else "ACTION",
-            "status": security_status,
-            "score": security_score,
-            "trusted_devices": trusted_devices,
-            "recovery_codes_ready": recovery_codes > 0,
-            "two_factor_enabled": bool(user.get("two_factor_enabled")),
-            "route": "/dashboard/account/security",
-        },
-        "settings": {
-            "state": "ON",
-            "status": "server_managed",
-            "route": "/dashboard/account/settings",
-            "settings": settings,
+    verification_score = 100 if verification_status == "approved" else 55 if verification_status in {"submitted", "in_review", "appealed"} else 25
+    identity_risk = 0
+    if not user.get("avatar_url"):
+        identity_risk += 12
+    if not user.get("username"):
+        identity_risk += 18
+    if verification_status in {"rejected", "suspended"}:
+        identity_risk += 30
+    session_risk = min(60, suspicious * 12 + failed_logins * 4)
+    device_score = max(0, min(100, 72 + min(20, trusted_devices * 6) - max(0, known_devices - trusted_devices) * 6 - suspicious * 8))
+    settings_conflicts = 1 if settings.get("notifications_enabled") == "false" and settings.get("message_requests") == "everyone" else 0
+    risk_level = "Low"
+    if health["status"] == "restricted" or security_score < 45 or suspicious >= 3:
+        risk_level = "High"
+    elif health["status"] != "secure" or security_score < 75 or identity_risk >= 30:
+        risk_level = "Medium"
+
+    recommendations: list[str] = []
+    if profile_score < 80:
+        recommendations.append("Complete your profile photo, banner, bio, and public handle.")
+    if verification_status in {"not_started", "draft", "rejected", "needs_more_info", "suspended"}:
+        recommendations.append("Continue verification so your trust signals stay clear.")
+    if security_score < 80:
+        recommendations.append("Strengthen security with 2FA, trusted devices, and recovery readiness.")
+    if health["warnings"] or health["strikes"] or health["restrictions"]:
+        recommendations.append("Review account health and resolve warnings, strikes, or restrictions.")
+    if settings_conflicts:
+        recommendations.append("Review notification and message settings; current choices may reduce important alerts.")
+    if not recommendations:
+        recommendations.append("Account systems are stable. Review recent activity periodically.")
+
+    subsystems = {
+        "profile": _subsystem_payload(
+            key="profile",
+            state=_state_from_score(profile_score, action=profile_score < 80),
+            score=profile_score,
+            status="complete" if profile_complete else "needs_attention",
+            primary_action="Manage Profile" if profile_complete else "Improve Profile",
+            recommendations=[] if profile_score >= 80 else ["Add missing public profile fields.", "Preview your public profile after saving."],
+            metrics={"completion": profile_score, "profile_visits": profile_visits, "search_appearances": search_appearances, **profile_fields},
+        ),
+        "verification": _subsystem_payload(
+            key="verification",
+            state="READY" if verification_status == "approved" else "REVIEW" if verification_status in {"submitted", "in_review", "appealed"} else "WARNING" if verification_status == "suspended" else "ACTION",
+            score=verification_score,
+            status=verification_status,
+            primary_action="Review Verification" if verification_status in {"submitted", "in_review", "appealed", "approved"} else "Continue Verification",
+            recommendations=[] if verification_status == "approved" else ["Submit the right verification request for your account type.", "Upload private documents only through the secure review flow."],
+            metrics={"request_id": _safe_int(latest_verification.get("id"), 0), "status": verification_status, "type": latest_verification.get("verification_type") or "identity"},
+        ),
+        "account_health": _subsystem_payload(
+            key="account_health",
+            state="READY" if health["status"] == "secure" else "WARNING",
+            score=health["score"],
+            status=health["status"],
+            primary_action="View Account Health" if health["status"] == "secure" else "Fix Account Issues",
+            recommendations=[] if health["status"] == "secure" else ["Review visible warnings and restrictions.", "Submit an appeal where available."],
+            metrics=health,
+        ),
+        "security": _subsystem_payload(
+            key="security",
+            state=_state_from_score(security_score, warning=suspicious > 0, action=security_score < 75),
+            score=security_score,
+            status=security_status,
+            primary_action="Manage Security" if security_score >= 75 else "Secure Account",
+            recommendations=[] if security_score >= 80 else ["Enable stronger login protection.", "Review suspicious activity and trusted devices."],
+            metrics={"trusted_devices": trusted_devices, "active_sessions": active_sessions, "recovery_codes_ready": recovery_codes > 0, "two_factor_enabled": bool(user.get("two_factor_enabled"))},
+        ),
+        "settings": _subsystem_payload(
+            key="settings",
+            state="ACTION" if settings_conflicts else "READY",
+            score=92 - settings_conflicts * 12,
+            status="server_managed",
+            primary_action="Manage Settings" if not settings_conflicts else "Review Privacy",
+            recommendations=[] if not settings_conflicts else ["Resolve notification/message setting conflict."],
+            metrics={"settings": settings, "conflicts": settings_conflicts},
+        ),
+        "advanced_security": _subsystem_payload(
+            key="advanced_security",
+            state=_state_from_score(security_score, warning=suspicious > 1, action=security_score < 85),
+            score=max(0, security_score - 5 + (10 if trusted_devices else 0)),
+            status="hardening_ready" if security_score >= 75 else "hardening_needed",
+            primary_action="Harden Security",
+            recommendations=["Review 2FA strength, trusted devices, and high-risk action protection."],
+            metrics={"trusted_devices": trusted_devices, "active_sessions": active_sessions, "suspicious_events": suspicious},
+        ),
+        "identity_protection": _subsystem_payload(
+            key="identity_protection",
+            state="WARNING" if identity_risk >= 30 else "ACTION" if identity_risk else "READY",
+            score=max(0, 100 - identity_risk),
+            status="identity_clear" if identity_risk == 0 else "identity_review_recommended",
+            primary_action="Protect Identity" if identity_risk else "Review Identity Risk",
+            recommendations=[] if identity_risk == 0 else ["Add verified identity signals and profile media.", "Report impersonation if another account is copying you."],
+            metrics={"identity_risk": identity_risk, "verified": verification_status == "approved", "avatar_present": bool(user.get("avatar_url"))},
+        ),
+        "session_intelligence": _subsystem_payload(
+            key="session_intelligence",
+            state="WARNING" if session_risk >= 35 else "ACTION" if active_sessions > 1 else "READY",
+            score=max(0, 100 - session_risk),
+            status="sessions_monitored",
+            primary_action="Review Sessions" if session_risk < 35 else "End Suspicious Session",
+            recommendations=["Review active sessions after new-device logins.", "End sessions you do not recognize."],
+            metrics={"active_sessions": active_sessions, "failed_logins": failed_logins, "session_risk": session_risk},
+        ),
+        "device_intelligence": _subsystem_payload(
+            key="device_intelligence",
+            state=_state_from_score(device_score, warning=device_score < 60, action=known_devices and trusted_devices == 0),
+            score=device_score,
+            status="devices_monitored",
+            primary_action="Manage Devices",
+            recommendations=["Trust devices you recognize and remove stale devices."],
+            metrics={"known_devices": known_devices, "trusted_devices": trusted_devices, "push_registration_health": "redacted"},
+        ),
+        "security_timeline": _subsystem_payload(
+            key="security_timeline",
+            state="READY" if login_events or _recent_audit_events(cur, user_id, 1) else "ACTION",
+            score=88 if login_events else 72,
+            status="timeline_available",
+            primary_action="View Timeline",
+            recommendations=["Review recent security, profile, verification, and device events."],
+            metrics={"login_events": login_events, "recent_audit_events": len(_recent_audit_events(cur, user_id, 8))},
+        ),
+        "threat_detection": _subsystem_payload(
+            key="threat_detection",
+            state="WARNING" if risk_level == "High" else "ACTION" if risk_level == "Medium" else "READY",
+            score=max(0, 100 - max(identity_risk, session_risk) - suspicious * 5),
+            status=risk_level.lower(),
+            primary_action="View Alerts" if risk_level == "Low" else "Review Threats",
+            recommendations=[] if risk_level == "Low" else ["Investigate unusual login or identity activity.", "Harden account protection before sensitive actions."],
+            metrics={"risk_level": risk_level, "active_alerts": suspicious + _event_count(cur, user_id), "identity_risk": identity_risk, "session_risk": session_risk},
+        ),
+        "login_analytics": _subsystem_payload(
+            key="login_analytics",
+            state="WARNING" if failed_logins >= 5 else "READY" if login_events else "ACTION",
+            score=max(0, 92 - min(50, failed_logins * 6)),
+            status="login_patterns_available" if login_events else "waiting_for_activity",
+            primary_action="Review Logins" if login_events else "View Login Patterns",
+            recommendations=["Review new-device and failed-login patterns regularly."],
+            metrics={"login_events": login_events, "failed_logins": failed_logins, "new_device_count": max(0, known_devices - trusted_devices)},
+        ),
+    }
+    intelligence = {
+        "trust_score": health["score"],
+        "account_score": round((health["score"] + profile_score + verification_score) / 3),
+        "security_score": security_score,
+        "profile_completion": profile_score,
+        "verification_status": verification_status,
+        "risk_level": risk_level,
+        "active_sessions": active_sessions,
+        "trusted_devices": trusted_devices,
+        "active_alerts": suspicious + _event_count(cur, user_id),
+        "recent_security_events": login_events,
+        "recommended_next_actions": recommendations[:5],
+    }
+    result = {
+        "intelligence": intelligence,
+        "subsystems": subsystems,
+        "recent_events": _recent_audit_events(cur, user_id, 8),
+        "event_bus": {
+            "shared_backend_events": True,
+            "audit_layer": True,
+            "cross_module_updates": [
+                "profile_change_updates_timeline_and_health",
+                "verification_decision_updates_health_and_recommendations",
+                "new_device_updates_device_session_threat_and_timeline",
+                "settings_change_updates_privacy_notifications_and_audit",
+            ],
         },
     }
+    result.update(subsystems)
+    return result
 
 
 def state_for_widget(account_state: dict[str, Any], widget_key: str) -> dict[str, Any] | None:
-    if widget_key == "advanced_security":
-        base = dict(account_state.get("security") or {})
-        base["route"] = "/dashboard/account/security"
-        return base
+    if widget_key in ACCOUNT_SUBSYSTEM_MAP:
+        return account_state.get("subsystems", {}).get(widget_key) or account_state.get(widget_key)
     return account_state.get(widget_key)

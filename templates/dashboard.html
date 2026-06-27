@@ -636,7 +636,7 @@
                       {% if widget.access == 'locked' %}
                         <a class="module-cta" href="{{ widget.cta_route }}">Unlock</a>
                       {% else %}
-                        <a class="module-cta" href="{{ widget.route }}">Open</a>
+                        <a class="module-cta" href="{{ widget.route }}">{{ widget.cta_label or "Open" }}</a>
                       {% endif %}
                       <span class="pill">{{ widget.access }}</span>
                     </div>

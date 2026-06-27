@@ -344,12 +344,12 @@ WIDGETS: list[dict[str, Any]] = [
 ]
 
 WIDGETS.extend([
-    _widget("identity_protection", "Identity Protection", "Account Command Center", "/pulse/profile/security", "Premium identity and impersonation protection.", premium_required=True, sort_order=70, accent="purple", status="BETA", tables=("users", "security_events"), dependencies=("premium", "security")),
-    _widget("session_intelligence", "Session Intelligence", "Account Command Center", "/pulse/settings/devices", "Session and device activity analysis.", premium_required=True, sort_order=80, accent="purple", status="PARTIAL", tables=("security_events",), dependencies=("security",)),
-    _widget("device_intelligence", "Device Intelligence", "Account Command Center", "/pulse/settings/devices", "Known-device trust and activity review.", premium_required=True, sort_order=90, accent="purple", status="PARTIAL", tables=("security_events",), dependencies=("security",)),
-    _widget("security_timeline", "Security Timeline", "Account Command Center", "/pulse/profile/security", "Timeline for account safety events.", premium_required=True, sort_order=100, accent="purple", status="BETA", tables=("security_events", "audit_logs"), dependencies=("security",)),
-    _widget("threat_detection", "Threat Detection", "Account Command Center", "/pulse/profile/security", "Premium warning signals for unusual activity.", premium_required=True, sort_order=110, accent="red", status="BETA", tables=("security_events",), dependencies=("security",)),
-    _widget("login_analytics", "Login Analytics", "Account Command Center", "/pulse/profile/security", "Login pattern analytics for account owners.", premium_required=True, sort_order=120, accent="purple", status="PARTIAL", tables=("security_events",), dependencies=("security",)),
+    _widget("identity_protection", "Identity Protection", "Account Command Center", "/dashboard/account/identity-protection", "Identity, impersonation, username, avatar, and badge protection.", premium_required=True, sort_order=70, accent="purple", status="BETA", tables=("users", "security_events"), dependencies=("premium", "security")),
+    _widget("session_intelligence", "Session Intelligence", "Account Command Center", "/dashboard/account/session-intelligence", "Session trust, active-device behavior, and suspicious session review.", premium_required=True, sort_order=80, accent="purple", status="BETA", tables=("security_events",), dependencies=("security",)),
+    _widget("device_intelligence", "Device Intelligence", "Account Command Center", "/dashboard/account/device-intelligence", "Known-device trust, stale devices, and redacted push registration health.", premium_required=True, sort_order=90, accent="purple", status="BETA", tables=("security_events",), dependencies=("security",)),
+    _widget("security_timeline", "Security Timeline", "Account Command Center", "/dashboard/account/security-timeline", "Safe owner-visible timeline for login, device, profile, verification, and admin events.", premium_required=True, sort_order=100, accent="purple", status="BETA", tables=("security_events", "audit_logs"), dependencies=("security",)),
+    _widget("threat_detection", "Threat Detection", "Account Command Center", "/dashboard/account/threat-detection", "Unusual login, device, identity, and account-risk warnings.", premium_required=True, sort_order=110, accent="red", status="BETA", tables=("security_events",), dependencies=("security",)),
+    _widget("login_analytics", "Login Analytics", "Account Command Center", "/dashboard/account/login-analytics", "Login history, failed-login trends, new-device counts, and safe region signals.", premium_required=True, sort_order=120, accent="purple", status="BETA", tables=("security_events",), dependencies=("security",)),
 
     _widget("network_insights", "Network Insights", "Pulse Network", "/pulse/premium/intelligence", "Premium view of audience and connection trends.", premium_required=True, sort_order=80, accent="purple", status="BETA", tables=("friendships",), dependencies=("premium",)),
     _widget("connection_analytics", "Connection Analytics", "Pulse Network", "/pulse/premium/intelligence", "Relationship growth and retention signals.", premium_required=True, sort_order=90, accent="purple", status="COMING_SOON", tables=("friendships",), dependencies=("premium",)),
@@ -480,6 +480,12 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
         item["lock_reason"] = _lock_reason(widget, caps) if access == "locked" else ""
         if state and state.get("route"):
             item["route"] = str(state.get("route") or item["route"])[:200]
+        if state and state.get("cta_label"):
+            item["cta_label"] = str(state.get("cta_label") or "")[:80]
+        elif item["category"] == "Account Command Center":
+            item["cta_label"] = "Manage Account"
+        else:
+            item["cta_label"] = "Open"
         item["cta_route"] = "/pulse/premium" if "Premium" in item.get("lock_reason", "") else (item["route"] or "/dashboard")
         item["icon"] = WIDGET_ICONS.get(item["widget_key"], "MC")
         if access == "locked":

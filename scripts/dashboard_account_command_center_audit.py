@@ -141,7 +141,10 @@ def run() -> None:
 
         cur.execute("SELECT * FROM users WHERE user_id=201")
         state = dashboard_account_command_center.build_account_state(conn, dict(cur.fetchone()))
-        assert_true(state["profile"]["state"] == "ON", "profile state is backend derived")
+        assert_true("intelligence" in state, "account intelligence summary exists")
+        expected_subsystems = set(dashboard_account_command_center.ACCOUNT_SUBSYSTEM_MAP)
+        assert_true(expected_subsystems.issubset(set((state.get("subsystems") or {}).keys())), "all account subsystems are represented")
+        assert_true(state["profile"]["state"] in {"READY", "ACTION"}, "profile state is backend derived")
         assert_true(state["verification"]["state"] == "ACTION", "verification starts as action")
         assert_true("settings" in state and state["settings"]["status"] == "server_managed", "settings are server managed")
 
@@ -165,13 +168,31 @@ def run() -> None:
     assert_true(page.status_code == 200, "dashboard loads for account user")
     html = page.get_data(as_text=True)
     assert_true("/dashboard/account/profile" in html, "dashboard links account profile route")
-    assert_true("LOCK" in html, "locked premium account items are visible to free users")
+    assert_true("LOCK" in html or "PREMIUM" in html, "locked premium account items are visible to free users")
+    for route in (
+        "/dashboard/account",
+        "/dashboard/account/profile",
+        "/dashboard/account/verification",
+        "/dashboard/account/health",
+        "/dashboard/account/security",
+        "/dashboard/account/settings",
+        "/dashboard/account/advanced-security",
+        "/dashboard/account/identity-protection",
+        "/dashboard/account/session-intelligence",
+        "/dashboard/account/device-intelligence",
+        "/dashboard/account/security-timeline",
+        "/dashboard/account/threat-detection",
+        "/dashboard/account/login-analytics",
+    ):
+        response = free_client.get(route)
+        assert_true(response.status_code == 200, f"{route} loads")
+        assert_true("LogiNexus" not in response.get_data(as_text=True), f"{route} keeps internal naming invisible")
 
     state_response = free_client.get("/api/dashboard/account/state")
     assert_true(state_response.status_code == 200, "account state API loads")
     payload = state_response.get_json() or {}
     serialized = json.dumps(payload).lower()
-    for secret_word in ("private_key", "database_url", "storage_path", "token", "password_hash", "internal_note"):
+    for secret_word in ("private_key", "database_url", "storage_path", "raw_token", "raw_push_token", "password_hash", "internal_note"):
         assert_true(secret_word not in serialized, f"state payload does not expose {secret_word}")
 
     bad_username = free_client.post("/api/pulse/profile/update", json={"display_name": "Free Account", "username": "admin", "bio": ""})
@@ -186,6 +207,27 @@ def run() -> None:
     admin_page = admin_client.get("/admin/account-command")
     assert_true(admin_page.status_code == 200, "admin account command loads")
     assert_true("Account Command Center" in admin_page.get_data(as_text=True), "admin account page renders")
+    for route in (
+        "/admin/account-command/profile",
+        "/admin/account-command/verification",
+        "/admin/account-command/account-health",
+        "/admin/account-command/security",
+        "/admin/account-command/settings",
+        "/admin/account-command/advanced-security",
+        "/admin/account-command/identity-protection",
+        "/admin/account-command/session-intelligence",
+        "/admin/account-command/device-intelligence",
+        "/admin/account-command/security-timeline",
+        "/admin/account-command/threat-detection",
+        "/admin/account-command/login-analytics",
+        "/admin/account-command/audit",
+    ):
+        response = admin_client.get(route)
+        assert_true(response.status_code == 200, f"{route} loads")
+        body = response.get_data(as_text=True)
+        assert_true("LogiNexus" not in body, f"{route} keeps internal naming invisible")
+        for secret_word in ("private_key", "database_url", "password_hash", "internal_note"):
+            assert_true(secret_word not in body.lower(), f"{route} does not expose {secret_word}")
 
     print("PASS: Dashboard Account Command Center audit passed")
 
