@@ -69,9 +69,9 @@ FEATURES: tuple[BackendFeature, ...] = (
     BackendFeature("account.restrictions", "Restrictions", "account", "/admin/account-command", "admin", "moderation.manage", "active", "Trust", "dashboard_account_command_center", "account_restrictions", "critical", True, True, "Restriction state is stored and reflected in account health."),
     BackendFeature("account.sessions", "Sessions", "account", "/admin/account-command", "admin", "security.view", "active", "Security", "dashboard_account_command_center", "active_sessions", "critical", True, True, "Session/device inventory is backend-managed."),
     BackendFeature("account.devices", "Devices", "account", "/admin/account-command", "admin", "security.view", "active", "Security", "dashboard_account_command_center", "security_devices", "critical", True, True, "Device and push registration management hooks are backend-visible."),
-    BackendFeature("network.notifications", "Notifications", "network", "/admin/notifications", "admin", "command_center.view", "active", "Notifications", "notification_orchestrator", "notification_delivery_logs", "high", True, True, "Provider health, delivery logs, and queue controls."),
-    BackendFeature("network.messages", "Messages", "network", "/admin/private-chat-reports", "moderator", "moderation.manage", "active", "Messaging", "chat_realtime_service", "admin_audit_logs", "critical", True, True, "Chat reports, realtime health, and moderation escalation."),
-    BackendFeature("network.groups", "Groups", "network", "/admin/departments/social", "moderator", "command_center.view", "partial", "Community", "community_governance_engine", "admin_tasks", "medium", False, True, "Group management routes remain distributed; command tasks centralize oversight."),
+    BackendFeature("network.notifications", "Notifications", "network", "/admin/network-command-center/notifications", "admin", "command_center.view", "active", "Notifications", "notification_orchestrator", "notification_delivery_logs", "high", True, True, "Provider health, delivery logs, queue controls, preferences, retries, and deep-link diagnostics."),
+    BackendFeature("network.messages", "Messages", "network", "/admin/network-command-center/messenger", "moderator", "moderation.manage", "active", "Messaging", "chat_realtime_service", "admin_audit_logs", "critical", True, True, "Chat reports, realtime health, delivery receipts, push status, and moderation escalation without private body leakage."),
+    BackendFeature("network.groups", "Groups", "network", "/admin/network-command-center/groups", "moderator", "command_center.view", "active", "Community", "community_governance_engine", "admin_tasks", "medium", False, True, "Group memberships, roles, reports, bans, mutes, and group health command surface."),
     BackendFeature("network.status_activity", "Status Activity", "network", "/admin/pulse-moderation", "moderator", "pulse.moderate", "active", "PulseSoc", "pulse_moderation_engine", "moderation_cases", "high", True, True, "Status reports and content moderation flow through PulseSoc moderation."),
     BackendFeature("creator.posts", "Posts", "creator", "/admin/pulse-moderation", "moderator", "pulse.moderate", "active", "Creator", "pulse_moderation_engine", "moderation_cases", "high", True, True, "Posts are reviewable and removable through moderation tools."),
     BackendFeature("creator.reels", "Reels", "creator", "/admin/pulse-moderation", "moderator", "pulse.moderate", "active", "Creator", "reel_ranking_engine", "moderation_cases", "high", True, True, "Reels use PulseSoc content moderation and ranking audits."),
@@ -99,7 +99,13 @@ FEATURES: tuple[BackendFeature, ...] = (
 
 
 FEATURES = FEATURES + (
-    BackendFeature("network.friends", "Friends / Follows", "network", "/admin/departments/social", "moderator", "command_center.view", "partial", "Community", "community_governance_engine", "admin_tasks", "medium", False, True, "Relationship health and report escalation remain visible through social operations."),
+    BackendFeature("network.friends", "Friends", "network", "/admin/network-command-center/friends", "moderator", "command_center.view", "active", "Community", "community_governance_engine", "admin_tasks", "medium", False, True, "Friend requests, accepted edges, cancelled requests, abuse protection, and relationship audit coverage."),
+    BackendFeature("network.followers", "Followers / Following", "network", "/admin/network-command-center/followers", "moderator", "command_center.view", "active", "Community", "community_governance_engine", "admin_tasks", "medium", False, True, "Follower/following edges, pending requests, blocked relationships, and spike detection."),
+    BackendFeature("network.blocks_mutes", "Blocks & Mutes", "network", "/admin/network-command-center/blocks-mutes", "moderator", "moderation.manage", "active", "Community Safety", "community_governance_engine", "admin_audit_logs", "high", True, True, "Block, unblock, mute, unmute, conversation mute, and enforcement diagnostics."),
+    BackendFeature("network.bans", "Bans", "network", "/admin/network-command-center/bans", "moderator", "moderation.manage", "active", "Community Safety", "community_governance_engine", "admin_audit_logs", "critical", True, True, "Temporary bans, permanent bans, group bans, restrictions, and appeal-aware status."),
+    BackendFeature("network.push_delivery", "Push Delivery", "network", "/admin/network-command-center/push-delivery", "admin", "command_center.view", "active", "Notifications", "notification_orchestrator", "notification_delivery_logs", "critical", True, True, "Push token registry, token health, provider responses, retries, and deep-link diagnostics."),
+    BackendFeature("network.message_health", "Message Health", "network", "/admin/network-command-center/message-health", "moderator", "moderation.manage", "active", "Messaging", "chat_realtime_service", "admin_audit_logs", "critical", True, True, "Realtime delivery, read receipts, delivery receipts, failed messages, attachment health, and voice note health."),
+    BackendFeature("network.audit_logs", "Network Audit Logs", "network", "/admin/network-command-center/audit", "admin", "audit.view", "active", "Security", "admin_ai_assistant", "admin_audit_logs", "critical", True, True, "Friend, follow, block, mute, ban, group, push, retry, and moderation audit visibility."),
     BackendFeature("network.search", "Search Management", "network", "/admin/command-center/network", "admin", "command_center.view", "partial", "Search", "search_index_service", "admin_tasks", "high", True, True, "Search is registered for backend oversight; deeper index controls remain intentionally staged."),
     BackendFeature("creator.statuses", "Statuses", "creator", "/admin/pulse-moderation", "moderator", "pulse.moderate", "active", "Creator", "pulse_moderation_engine", "moderation_cases", "high", True, True, "Status media, reactions, and report handling are moderation-visible."),
     BackendFeature("creator.media_library", "Video / Reels / Status Media", "creator", "/admin/pulse-moderation", "moderator", "pulse.moderate", "active", "Creator", "media_service", "moderation_cases", "high", True, True, "Creator media inventory is managed through moderation and media storage controls."),
@@ -152,10 +158,10 @@ MODULE_OPERATING_BLUEPRINTS: dict[str, dict[str, Any]] = {
         "failure_behavior": "Sensitive actions fail closed and require audit log creation.",
     },
     "network": {
-        "surface": "/admin/notifications, /admin/private-chat-reports, social operations",
+        "surface": "/admin/network-command-center",
         "operators": "Admin, moderator, support",
-        "visible_state": "notifications, messages, unread volume, reports, groups, search",
-        "actions": ["inspect", "triage", "notify", "mark safe", "escalate"],
+        "visible_state": "notifications, messages, friends, followers, groups, blocks, mutes, bans, push delivery, message health",
+        "actions": ["inspect", "triage", "retry", "mute", "block", "escalate", "audit"],
         "failure_behavior": "Messaging falls back to polling; notifications log precise skip/failure reasons.",
     },
     "creator": {
