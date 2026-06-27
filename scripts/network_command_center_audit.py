@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import sys
 import tempfile
@@ -57,6 +58,18 @@ def assert_status(label: str, response, expected: set[int]) -> None:
     if response.status_code not in expected:
         body = response.get_data(as_text=True)[:500]
         raise AssertionError(f"{label} returned {response.status_code}, expected {sorted(expected)}: {body}")
+
+
+def assert_internal_admin_links_resolve(client, route: str, html: str) -> None:
+    """Catch dead admin links exposed from Network Command Center surfaces."""
+    hrefs = set(re.findall(r"href=['\"](/admin/[^'\"#?]+)", html))
+    for href in sorted(hrefs):
+        if href in {"/admin/logout"} or href.startswith("/admin/api/"):
+            continue
+        response = client.get(href)
+        if response.status_code == 404 or response.status_code >= 500:
+            body = response.get_data(as_text=True)[:500]
+            raise AssertionError(f"{route} exposed broken admin link {href}: {response.status_code} {body}")
 
 
 def main() -> int:
@@ -126,6 +139,7 @@ def main() -> int:
         forbidden_terms = ("DATABASE_URL", "COMMAND_CENTER_INTERNAL_TOKEN", "APNS_PRIVATE_KEY", "VAPID_PRIVATE_KEY")
         if any(term in text for term in forbidden_terms):
             raise AssertionError(f"{route} exposed forbidden diagnostic text")
+        assert_internal_admin_links_resolve(client, route, text)
 
     print("network_command_center_audit: PASS")
     print(f"user_routes={len(user_routes)} admin_routes={len(admin_routes)} privacy_flags=ok")
