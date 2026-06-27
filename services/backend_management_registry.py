@@ -25,6 +25,9 @@ REQUIRED_MODULES = {
     "media": "Media Command Center",
     "ai": "AI Command Center",
     "system": "System Command Center",
+    "launch": "Launch Readiness Command Center",
+    "controls": "Global Controls Command Center",
+    "audit": "Audit Command Center",
 }
 
 RISK_LEVELS = {"low", "medium", "high", "critical"}
@@ -95,6 +98,156 @@ FEATURES: tuple[BackendFeature, ...] = (
 )
 
 
+FEATURES = FEATURES + (
+    BackendFeature("network.friends", "Friends / Follows", "network", "/admin/departments/social", "moderator", "command_center.view", "partial", "Community", "community_governance_engine", "admin_tasks", "medium", False, True, "Relationship health and report escalation remain visible through social operations."),
+    BackendFeature("network.search", "Search Management", "network", "/admin/command-center/network", "admin", "command_center.view", "partial", "Search", "search_index_service", "admin_tasks", "high", True, True, "Search is registered for backend oversight; deeper index controls remain intentionally staged."),
+    BackendFeature("creator.statuses", "Statuses", "creator", "/admin/pulse-moderation", "moderator", "pulse.moderate", "active", "Creator", "pulse_moderation_engine", "moderation_cases", "high", True, True, "Status media, reactions, and report handling are moderation-visible."),
+    BackendFeature("creator.media_library", "Video / Reels / Status Media", "creator", "/admin/pulse-moderation", "moderator", "pulse.moderate", "active", "Creator", "media_service", "moderation_cases", "high", True, True, "Creator media inventory is managed through moderation and media storage controls."),
+    BackendFeature("creator.monetization", "Creator Monetization", "creator", "/admin/departments/monetization", "admin", "monetization.manage", "partial", "Monetization", "creator_monetization_engine", "admin_tasks", "critical", True, True, "Monetization is visible and gated; iOS paid-digital compliance remains enforced separately."),
+    BackendFeature("moderation.content_removals", "Content Removals", "moderation", "/admin/pulse-moderation", "moderator", "pulse.moderate", "active", "Trust", "pulse_moderation_engine", "moderation_cases", "critical", True, True, "Removals, appeals, and status changes must stay reviewable and audited."),
+    BackendFeature("ads.advertiser_portal", "Advertiser Portal", "ads", "/advertiser", "admin", "command_center.view", "active", "Ads", "pulse_ads_service", "pulse_ad_audit_logs", "high", True, True, "Advertiser account, campaign, wallet, and creative workflows are registry-visible."),
+    BackendFeature("ads.sponsored_layers", "Sci-Fi Sponsored Layers", "ads", "/admin/pulse-ads-delivery-intelligence", "admin", "analytics.view", "active", "Ads", "pulse_ads_service", "pulse_ad_events", "high", True, True, "UFO, hologram, radio, and sponsored placements are delivery-method tracked."),
+    BackendFeature("ads.kill_switch", "Ads Kill Switch", "ads", "/admin/pulse-ads-review-board", "admin", "command_center.view", "active", "Ads", "pulse_ads_service", "pulse_ad_platform_settings", "critical", True, True, "Ad serving can be disabled globally or by method without exposing internals."),
+    BackendFeature("economy.wallets", "Wallet Management", "economy", "/admin/pulse-ad-finance", "admin", "billing.view", "active", "Finance", "pulse_ad_payments", "pulse_ad_wallet_transactions", "critical", True, True, "Ad wallet balances, funding sessions, reserves, and spend ledger are admin-visible."),
+    BackendFeature("economy.subscriptions", "Premium / Subscriptions", "economy", "/admin/transactions", "admin", "billing.view", "active", "Billing", "premium_entitlement_service", "payment_audit_logs", "critical", True, True, "Subscriptions are observable while native iOS paid-digital routes stay blocked."),
+    BackendFeature("economy.payouts", "Payouts / Refunds", "economy", "/admin/payments-command-center", "admin", "billing.view", "partial", "Finance", "payment_provider", "payment_audit_logs", "critical", True, True, "Payout and refund readiness is visible; risky provider mutations require owner approval."),
+    BackendFeature("media.r2_storage", "Media Storage / R2", "media", "/admin/pulse-infrastructure", "admin", "system.view", "partial", "Media", "media_storage", "admin_tasks", "critical", True, True, "Storage health and configured/missing state are shown without exposing bucket credentials."),
+    BackendFeature("media.pulse_radio_management", "Pulse Radio Management", "media", "/admin/pulse-music-review", "moderator", "pulse.moderate", "active", "Media", "music_service", "music_review_logs", "high", True, True, "Approved music automatically powers radio and creator-safe sound pools."),
+    BackendFeature("media.marketplace_media", "Marketplace Media", "media", "/admin/departments/monetization", "admin", "monetization.manage", "partial", "Marketplace", "marketplace_engine", "admin_tasks", "medium", False, True, "Listing media is visible through marketplace operations."),
+    BackendFeature("ai.routing", "AI Model Routing", "ai", "/admin/ai-usage", "admin", "ai.view", "partial", "AI", "ai_router", "ai_usage_logs", "high", False, True, "Provider routing is status-visible; provider credentials and provider credentials stay hidden."),
+    BackendFeature("ai.safety_blocks", "AI Safety Blocks", "ai", "/admin/scam-shield", "admin", "trust_safety.manage", "active", "AI Safety", "autonomous_safety_engine", "command_center_ai_events", "critical", True, True, "Safety blocks and scam explanations remain review-gated."),
+    BackendFeature("system.railway", "Railway Services", "system", "/admin/system", "admin", "system.view", "partial", "Infrastructure", "railway_runtime", "admin_audit_logs", "critical", True, True, "Deployment/service status is shown as configured/missing and must not expose Railway credentials."),
+    BackendFeature("system.database", "PostgreSQL", "system", "/admin/system", "admin", "system.view", "active", "Infrastructure", "database", "admin_audit_logs", "critical", True, True, "Database health and compatibility audits are launch-critical."),
+    BackendFeature("system.cache", "Cache / Redis", "system", "/admin/system", "admin", "system.view", "partial", "Infrastructure", "redis_manager", "admin_audit_logs", "critical", True, True, "Cache presence and latency are visible while PostgreSQL remains source of truth."),
+    BackendFeature("system.workers", "Background Workers", "system", "/admin/system", "admin", "system.view", "partial", "Infrastructure", "command_center_worker", "admin_audit_logs", "critical", True, True, "Worker readiness, queue health, and fallback mode are backend-visible."),
+    BackendFeature("system.scheduled_jobs", "Scheduled Jobs", "system", "/admin/system", "admin", "system.view", "partial", "Infrastructure", "scheduler", "admin_audit_logs", "high", True, True, "Cron and scheduled job coverage is visible; failures must route to admin review."),
+    BackendFeature("system.feature_flags", "Feature Flags", "system", "/admin/system", "admin", "system.view", "active", "Engineering", "feature_flag_service", "admin_audit_logs", "critical", True, True, "Feature flags and rollout state are backend-managed."),
+    BackendFeature("system.api_key_status", "API Keys / Credentials Status", "system", "/admin/system", "admin", "system.view", "active", "Security", "env_readiness", "admin_audit_logs", "critical", True, True, "Only configured/missing state is shown. Credential values are never rendered."),
+    BackendFeature("system.firebase", "Firebase / FCM", "system", "/admin/notifications", "admin", "system.view", "partial", "Notifications", "push_service", "notification_delivery_logs", "critical", True, True, "Push provider readiness is visible without exposing private keys."),
+    BackendFeature("system.stripe", "Stripe", "system", "/admin/payments-command-center", "admin", "billing.view", "partial", "Billing", "payment_provider", "payment_audit_logs", "critical", True, True, "Stripe health is visible while product IDs and credentials remain protected."),
+    BackendFeature("system.brevo", "Brevo", "system", "/admin/notifications", "admin", "system.view", "partial", "Notifications", "email_provider", "notification_delivery_logs", "high", True, True, "Email provider readiness and failures are visible without exposing API keys."),
+    BackendFeature("system.livekit", "LiveKit", "system", "/admin/pulse-infrastructure", "admin", "system.view", "partial", "Live", "live_stream_health_service", "admin_tasks", "critical", True, True, "LiveKit configured/missing status is visible for live streaming operations."),
+    BackendFeature("system.mux", "Mux", "system", "/admin/pulse-infrastructure", "admin", "system.view", "partial", "Media", "mux_live_service", "admin_tasks", "critical", True, True, "Mux configured/missing status is visible for video/live processing."),
+    BackendFeature("system.expo", "Expo / EAS", "system", "/admin/notifications", "admin", "system.view", "partial", "Mobile", "push_service", "notification_delivery_logs", "high", True, True, "Expo push and mobile build readiness are status-visible."),
+    BackendFeature("system.app_store", "App Store Connect", "system", "/admin/system", "admin", "system.view", "partial", "Mobile", "app_store_review_workflow", "admin_tasks", "high", True, True, "App review status is tracked as an operational launch surface."),
+    BackendFeature("system.google_play", "Google Play", "system", "/admin/system", "admin", "system.view", "planned", "Mobile", "play_store_workflow", "admin_tasks", "medium", False, True, "Google Play readiness is registered but not launch-critical for iOS submission."),
+    BackendFeature("launch.readiness", "Launch Readiness", "launch", "/admin/launch-readiness", "admin", "command_center.view", "active", "Operations", "backend_management_registry", "backend_management_audit_events", "critical", True, True, "Strict launch readiness and backend gap visibility."),
+    BackendFeature("launch.blockers", "Launch Blockers", "launch", "/admin/launch-readiness", "admin", "command_center.view", "active", "Operations", "backend_management_registry", "backend_management_audit_events", "critical", True, True, "Unmanaged or partial launch-critical systems are blockers until documented."),
+    BackendFeature("launch.qa_evidence", "QA Evidence", "launch", "/admin/launch-readiness", "admin", "command_center.view", "partial", "QA", "qa_audit_scripts", "backend_management_audit_events", "critical", True, True, "QA evidence is tracked by report and audit scripts; browser screenshots remain external artifacts."),
+    BackendFeature("controls.global_kill_switches", "Global Kill Switches", "controls", "/admin/system", "admin", "system.view", "partial", "Operations", "feature_flag_service", "admin_audit_logs", "critical", True, True, "High-risk global controls are visible and require owner-level approval before mutation."),
+    BackendFeature("controls.ads_kill_switch", "Ads Kill Switch", "controls", "/admin/pulse-ads-review-board", "admin", "command_center.view", "active", "Ads", "pulse_ads_service", "pulse_ad_platform_settings", "critical", True, True, "Ads can be disabled safely without touching unrelated systems."),
+    BackendFeature("controls.notifications_pause", "Notification Delivery Pause", "controls", "/admin/notifications", "admin", "system.view", "partial", "Notifications", "notification_orchestrator", "notification_delivery_logs", "critical", True, True, "Provider pausing is visible; destructive changes require approval."),
+    BackendFeature("audit.admin_actions", "Admin Actions", "audit", "/admin/audit-logs", "admin", "audit.view", "active", "Security", "admin_ai_assistant", "admin_audit_logs", "critical", True, True, "Admin actions are searchable and role-gated."),
+    BackendFeature("audit.payment_actions", "Payment Audit", "audit", "/admin/payments-command-center", "admin", "billing.view", "active", "Finance", "payment_provider", "payment_audit_logs", "critical", True, True, "Money actions must remain idempotent and auditable."),
+    BackendFeature("audit.ad_actions", "Ads Audit", "audit", "/admin/pulse-ads-review-board", "admin", "command_center.view", "active", "Ads", "pulse_ads_service", "pulse_ad_audit_logs", "critical", True, True, "Ad moderation, delivery, wallet, and tracking actions are audit-backed."),
+)
+
+
+MODULE_OPERATING_BLUEPRINTS: dict[str, dict[str, Any]] = {
+    "account": {
+        "surface": "/admin/account-command",
+        "operators": "Owner, admin, security, trust roles",
+        "visible_state": "users, verification, profile updates, account health, sessions, restrictions",
+        "actions": ["review", "revert", "restrict", "force logout", "audit"],
+        "failure_behavior": "Sensitive actions fail closed and require audit log creation.",
+    },
+    "network": {
+        "surface": "/admin/notifications, /admin/private-chat-reports, social operations",
+        "operators": "Admin, moderator, support",
+        "visible_state": "notifications, messages, unread volume, reports, groups, search",
+        "actions": ["inspect", "triage", "notify", "mark safe", "escalate"],
+        "failure_behavior": "Messaging falls back to polling; notifications log precise skip/failure reasons.",
+    },
+    "creator": {
+        "surface": "/admin/pulse-moderation, /admin/pulse-analytics",
+        "operators": "Moderator, creator ops, admin",
+        "visible_state": "posts, reels, videos, statuses, live, creator analytics",
+        "actions": ["review", "remove", "restore", "feature", "escalate"],
+        "failure_behavior": "Unclear moderation decisions stay queued; content is not destroyed without audit.",
+    },
+    "moderation": {
+        "surface": "/admin/pulse-moderation, /admin/security, /admin/scam-shield",
+        "operators": "Trust and safety, moderators, owner",
+        "visible_state": "reports, scam events, suspicious domains, account risk, removals",
+        "actions": ["approve", "reject", "block", "mark safe", "investigate"],
+        "failure_behavior": "Detection flags do not auto-ban; human review remains required.",
+    },
+    "ads": {
+        "surface": "/admin/pulse-ads-review-board, /admin/pulse-ads-delivery-intelligence",
+        "operators": "Ads ops, finance, owner",
+        "visible_state": "creative review, campaigns, wallets, delivery methods, frequency caps",
+        "actions": ["approve", "reject", "pause", "kill switch", "audit spend"],
+        "failure_behavior": "Unapproved ads cannot serve; kill switch disables delivery safely.",
+    },
+    "economy": {
+        "surface": "/admin/payments-command-center, /admin/pulse-ad-finance",
+        "operators": "Finance admins and owner",
+        "visible_state": "payments, wallets, subscriptions, refunds, payouts, marketplace money",
+        "actions": ["inspect", "reconcile", "refund prepare", "pause", "audit"],
+        "failure_behavior": "Money actions are idempotent and must not create negative balances.",
+    },
+    "media": {
+        "surface": "/admin/pulse-music-review, /admin/pulse-infrastructure",
+        "operators": "Media ops, moderator, admin",
+        "visible_state": "uploads, approved music, Pulse Radio, R2/Mux health",
+        "actions": ["approve", "reject", "quarantine", "repair", "audit"],
+        "failure_behavior": "Unsafe media stays unavailable until reviewed; raw storage paths are hidden.",
+    },
+    "ai": {
+        "surface": "/admin/ai-usage, /admin/scam-shield",
+        "operators": "AI ops, security admins",
+        "visible_state": "usage, failures, safety blocks, routing readiness",
+        "actions": ["inspect", "disable", "explain risk", "audit"],
+        "failure_behavior": "AI is optional and must fail unavailable without blocking core messaging/feed.",
+    },
+    "system": {
+        "surface": "/admin/system, /admin/performance",
+        "operators": "Engineering, owner",
+        "visible_state": "Railway, database, cache, workers, provider readiness, app stores",
+        "actions": ["health check", "diagnose", "restart externally", "disable feature", "audit"],
+        "failure_behavior": "Secrets are never displayed; operational resource renames require approval.",
+    },
+    "launch": {
+        "surface": "/admin/launch-readiness",
+        "operators": "Owner, launch lead",
+        "visible_state": "registered features, unmanaged gaps, QA coverage, blockers",
+        "actions": ["review blockers", "open module", "run audit", "document risk"],
+        "failure_behavior": "Launch readiness stays watch/blocked when launch-critical coverage is incomplete.",
+    },
+    "controls": {
+        "surface": "/admin/system plus module-specific control rooms",
+        "operators": "Owner-level admins",
+        "visible_state": "kill switches, provider pauses, feature flags, risky operations",
+        "actions": ["disable", "pause", "require approval", "audit"],
+        "failure_behavior": "Risky changes require approval and must be audited.",
+    },
+    "audit": {
+        "surface": "/admin/audit-logs",
+        "operators": "Owner, audit admins",
+        "visible_state": "admin, payment, ads, account, moderation, security actions",
+        "actions": ["search", "export-ready review", "investigate", "escalate"],
+        "failure_behavior": "Missing audit coverage is a launch readiness blocker.",
+    },
+}
+
+
+EXTERNAL_SERVICE_CHECKS: tuple[dict[str, Any], ...] = (
+    {"key": "railway", "label": "Railway", "module": "system", "env": ("RAILWAY_ENVIRONMENT", "RAILWAY_SERVICE_ID", "RAILWAY_DEPLOYMENT_ID")},
+    {"key": "postgres", "label": "PostgreSQL", "module": "system", "env": ("DATABASE_URL",)},
+    {"key": "redis", "label": "Redis", "module": "system", "env": ("REDIS_URL",)},
+    {"key": "cloudflare_r2", "label": "Cloudflare R2", "module": "media", "env": ("R2_BUCKET_NAME", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY")},
+    {"key": "stripe", "label": "Stripe", "module": "economy", "env": ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET")},
+    {"key": "brevo", "label": "Brevo", "module": "network", "env": ("BREVO_API_KEY",)},
+    {"key": "firebase", "label": "Firebase / FCM", "module": "system", "env": ("FCM_PROJECT_ID", "FCM_CLIENT_EMAIL", "FCM_PRIVATE_KEY")},
+    {"key": "apns", "label": "Apple APNs", "module": "system", "env": ("APNS_BUNDLE_ID", "APNS_KEY_ID", "APNS_TEAM_ID", "APNS_PRIVATE_KEY")},
+    {"key": "expo", "label": "Expo / EAS", "module": "system", "env": ("EXPO_ACCESS_TOKEN",)},
+    {"key": "livekit", "label": "LiveKit", "module": "system", "env": ("LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "LIVEKIT_URL")},
+    {"key": "mux", "label": "Mux", "module": "system", "env": ("MUX_TOKEN_ID", "MUX_TOKEN_SECRET")},
+    {"key": "app_store", "label": "App Store Connect", "module": "launch", "env": ("APP_STORE_CONNECT_KEY_ID", "APP_STORE_CONNECT_ISSUER_ID")},
+    {"key": "google_play", "label": "Google Play", "module": "launch", "env": ("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON",)},
+)
+
+
 def all_features() -> list[dict[str, Any]]:
     return [feature.safe_dict() for feature in FEATURES]
 
@@ -160,6 +313,95 @@ def category_summary(features: list[dict[str, Any]] | None = None) -> list[dict[
     return summary
 
 
+def module_blueprint(category: str) -> dict[str, Any]:
+    category = str(category or "").strip().lower()
+    return MODULE_OPERATING_BLUEPRINTS.get(category, {
+        "surface": "/admin/command-center",
+        "operators": "Role-gated admins",
+        "visible_state": "Registered feature status and audit coverage",
+        "actions": ["inspect", "audit", "escalate"],
+        "failure_behavior": "Unknown modules fail closed and remain hidden from unauthorized roles.",
+    })
+
+
+def service_readiness_from_env(env: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    import os
+
+    source = env if env is not None else os.environ
+    rows: list[dict[str, Any]] = []
+    for check in EXTERNAL_SERVICE_CHECKS:
+        env_names = tuple(check.get("env") or ())
+        configured = [name for name in env_names if bool(source.get(name))]
+        missing = [name for name in env_names if not source.get(name)]
+        if not env_names:
+            state = "not_tracked"
+        elif len(configured) == len(env_names):
+            state = "configured"
+        elif configured:
+            state = "partial"
+        else:
+            state = "missing"
+        rows.append({
+            "key": check["key"],
+            "label": check["label"],
+            "module": check["module"],
+            "state": state,
+            "configured_count": len(configured),
+            "required_count": len(env_names),
+            "missing_env_names": missing,
+        })
+    return rows
+
+
+def operating_system_snapshot(features: list[dict[str, Any]] | None = None, env: dict[str, str] | None = None) -> dict[str, Any]:
+    rows = features if features is not None else all_features()
+    modules = category_summary(rows)
+    services = service_readiness_from_env(env)
+    unmanaged = [item for item in rows if not item.get("manageable_from_backend")]
+    partial = [item for item in rows if item.get("status") == "partial"]
+    blocked = [item for item in rows if item.get("status") in {"blocked", "planned"}]
+    audit_missing = [item for item in rows if not str(item.get("audit_log_table") or "").strip()]
+    routes_missing = [item for item in rows if not str(item.get("route") or "").strip()]
+    critical = [item for item in rows if item.get("launch_critical")]
+    configured_services = [item for item in services if item.get("state") == "configured"]
+    service_gaps = [item for item in services if item.get("state") in {"missing", "partial"}]
+    module_cards: list[dict[str, Any]] = []
+    for module in modules:
+        blueprint = module_blueprint(str(module.get("category") or ""))
+        state = "ONLINE" if module.get("risk_level") == "low" and not module.get("gaps") else "WATCH" if module.get("risk_level") in {"medium", "high"} else "CRITICAL"
+        module_cards.append({
+            **module,
+            "state": state,
+            "surface": blueprint["surface"],
+            "operators": blueprint["operators"],
+            "visible_state": blueprint["visible_state"],
+            "actions": blueprint["actions"],
+            "failure_behavior": blueprint["failure_behavior"],
+        })
+    return {
+        "generated_at": datetime.utcnow().isoformat(timespec="seconds"),
+        "total_features": len(rows),
+        "registered_modules": len([item for item in modules if item.get("total")]),
+        "managed_features": len([item for item in rows if item.get("manageable_from_backend")]),
+        "unmanaged_features": len(unmanaged),
+        "partial_features": len(partial),
+        "blocked_features": len(blocked),
+        "critical_features": len(critical),
+        "audit_missing": len(audit_missing),
+        "route_missing": len(routes_missing),
+        "external_services": services,
+        "external_services_configured": len(configured_services),
+        "external_service_gaps": len(service_gaps),
+        "modules": module_cards,
+        "risk_summary": {
+            "critical": len([item for item in rows if item.get("risk_level") == "critical"]),
+            "high": len([item for item in rows if item.get("risk_level") == "high"]),
+            "medium": len([item for item in rows if item.get("risk_level") == "medium"]),
+            "low": len([item for item in rows if item.get("risk_level") == "low"]),
+        },
+    }
+
+
 def _module_risk(items: list[dict[str, Any]]) -> str:
     if any(item.get("risk_level") == "critical" and item.get("status") in {"partial", "blocked", "planned"} for item in items):
         return "critical"
@@ -177,6 +419,8 @@ def launch_readiness() -> dict[str, Any]:
     partial = [item for item in critical if item.get("status") == "partial"]
     active = [item for item in critical if item.get("status") == "active" and item.get("manageable_from_backend")]
     score = 100 if not critical else round((len(active) / len(critical)) * 100)
+    os_snapshot = operating_system_snapshot(features)
+    gaps = gap_audit()
     return {
         "generated_at": datetime.utcnow().isoformat(timespec="seconds"),
         "score": score,
@@ -186,7 +430,14 @@ def launch_readiness() -> dict[str, Any]:
         "critical_partial": len(partial),
         "critical_blocked": len(blocked),
         "modules": category_summary(features),
-        "remaining_gaps": gap_audit()["gaps"],
+        "remaining_gaps": gaps["gaps"],
+        "total_features_discovered": os_snapshot["total_features"],
+        "registered_modules": os_snapshot["registered_modules"],
+        "managed_features": os_snapshot["managed_features"],
+        "unmanaged_features": os_snapshot["unmanaged_features"],
+        "audit_missing": os_snapshot["audit_missing"],
+        "external_service_gaps": os_snapshot["external_service_gaps"],
+        "strict_gap_count": gaps["missing_count"],
     }
 
 
@@ -220,6 +471,13 @@ def gap_audit() -> dict[str, Any]:
             severity = "high" if item.get("launch_critical") else "medium"
         if reason:
             gaps.append({"feature_key": item["feature_key"], "severity": severity, "reason": reason, "route": item.get("route"), "category": item.get("category")})
+        if not item.get("audit_log_table"):
+            gaps.append({"feature_key": item["feature_key"], "severity": "critical" if item.get("launch_critical") else "high", "reason": "missing audit target", "route": item.get("route"), "category": item.get("category")})
+    for service in service_readiness_from_env():
+        if service.get("state") == "missing":
+            gaps.append({"feature_key": f"external.{service['key']}", "severity": "high", "reason": f"{service['label']} env status missing", "route": "/admin/system", "category": service.get("module")})
+        elif service.get("state") == "partial":
+            gaps.append({"feature_key": f"external.{service['key']}", "severity": "medium", "reason": f"{service['label']} env status partial", "route": "/admin/system", "category": service.get("module")})
     return {
         "generated_at": datetime.utcnow().isoformat(timespec="seconds"),
         "total_features": len(features),
@@ -243,7 +501,7 @@ def audit_standard() -> dict[str, Any]:
         "do_not_launch_without": [
             "auth required",
             "owner/admin scoping",
-            "no secret exposure",
+            "no credential value exposure",
             "clear rollback or moderation action where applicable",
             "mobile and desktop admin usability",
         ],
