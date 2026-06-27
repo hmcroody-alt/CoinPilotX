@@ -192,6 +192,19 @@ def main() -> int:
         "/dashboard/creator/videos",
         "/dashboard/creator/statuses",
         "/dashboard/creator/live-studio",
+        "/dashboard/creator/audience-intelligence",
+        "/dashboard/creator/content-performance",
+        "/dashboard/creator/best-posting-time",
+        "/dashboard/creator/creator-score",
+        "/dashboard/creator/creator-tools",
+        "/dashboard/creator/trend-intelligence",
+        "/dashboard/creator/content-planner",
+        "/dashboard/creator/post-scheduler",
+        "/dashboard/creator/draft-studio",
+        "/dashboard/creator/ai-creator-assistant",
+        "/dashboard/creator/engagement-prediction",
+        "/dashboard/creator/creator-reputation",
+        "/dashboard/creator/viral-opportunity-scanner",
     ]
     admin_routes = [
         "/admin/creator-command-center",
@@ -200,7 +213,19 @@ def main() -> int:
         "/admin/creator-command-center/videos",
         "/admin/creator-command-center/statuses",
         "/admin/creator-command-center/live-studio",
-        "/admin/creator-command-center/analytics",
+        "/admin/creator-command-center/audience-intelligence",
+        "/admin/creator-command-center/content-performance",
+        "/admin/creator-command-center/best-posting-time",
+        "/admin/creator-command-center/creator-score",
+        "/admin/creator-command-center/creator-tools",
+        "/admin/creator-command-center/trend-intelligence",
+        "/admin/creator-command-center/content-planner",
+        "/admin/creator-command-center/post-scheduler",
+        "/admin/creator-command-center/draft-studio",
+        "/admin/creator-command-center/ai-creator-assistant",
+        "/admin/creator-command-center/engagement-prediction",
+        "/admin/creator-command-center/creator-reputation",
+        "/admin/creator-command-center/viral-opportunity-scanner",
         "/admin/creator-command-center/media-health",
         "/admin/creator-command-center/moderation",
         "/admin/creator-command-center/audit",
@@ -223,14 +248,57 @@ def main() -> int:
             raise AssertionError(f"{route} did not render Creator command content")
         if "LogiNexus" in text:
             raise AssertionError(f"{route} leaked internal LogiNexus terminology")
+        if ">Open<" in text or ">Open</a>" in text:
+            raise AssertionError(f"{route} rendered a generic Open button")
+        if ">ON<" in text or ">ACTIVE<" in text:
+            raise AssertionError(f"{route} rendered a misleading ON/ACTIVE state")
 
     state_response = client.get("/api/dashboard/creator/state")
     assert_status("authenticated creator api", state_response, {200})
     state_json = state_response.get_json() or {}
-    privacy = ((state_json.get("creator") or {}).get("privacy") or {})
+    creator_state = state_json.get("creator") or {}
+    privacy = (creator_state.get("privacy") or {})
     for key in ("owner_scoped", "raw_media_urls_hidden", "moderation_notes_hidden", "viewer_identity_protected"):
         if privacy.get(key) is not True:
             raise AssertionError(f"privacy flag missing or false: {key}")
+    intelligence = creator_state.get("intelligence") or {}
+    for key in ("creator_health", "creator_score", "content_queue", "best_time_to_post", "recommended_next_actions"):
+        if key not in intelligence:
+            raise AssertionError(f"creator intelligence hub missing {key}")
+    subsystems = creator_state.get("subsystems") or {}
+    required_subsystems = {
+        "posts",
+        "reels",
+        "videos",
+        "statuses",
+        "live_studio",
+        "audience_intelligence",
+        "content_performance",
+        "best_posting_time",
+        "creator_score",
+        "creator_tools",
+        "trend_intelligence",
+        "content_planner",
+        "post_scheduler",
+        "draft_studio",
+        "ai_creator_assistant",
+        "engagement_prediction",
+        "creator_reputation",
+        "viral_opportunity_scanner",
+    }
+    missing_subsystems = required_subsystems.difference(subsystems)
+    if missing_subsystems:
+        raise AssertionError(f"creator subsystems missing: {sorted(missing_subsystems)}")
+    allowed_states = {"READY", "ACTION", "REVIEW", "WARNING", "LOCKED", "PREMIUM", "BETA", "PARTIAL", "COMING SOON", "ADMIN"}
+    for key, subsystem in subsystems.items():
+        state = subsystem.get("state")
+        if state not in allowed_states:
+            raise AssertionError(f"{key} has invalid state {state!r}")
+        for layer in ("intelligence", "command", "automation", "analytics", "protection", "recovery", "ai_guidance", "backend", "audit"):
+            if not subsystem.get(layer):
+                raise AssertionError(f"{key} missing {layer}")
+        if subsystem.get("action") in {"Open", "Open Studio"}:
+            raise AssertionError(f"{key} has generic action {subsystem.get('action')}")
 
     with client.session_transaction() as sess:
         sess["admin_user_id"] = 1
@@ -241,13 +309,17 @@ def main() -> int:
         text = response.get_data(as_text=True)
         if "Creator Command Center" not in text and "Creator" not in text:
             raise AssertionError(f"{route} did not render admin Creator command content")
+        if ">Open<" in text or ">Open</a>" in text:
+            raise AssertionError(f"{route} rendered a generic Open button")
+        if ">ON<" in text or ">ACTIVE<" in text:
+            raise AssertionError(f"{route} rendered a misleading ON/ACTIVE state")
         forbidden_terms = ("DATABASE_URL", "COMMAND_CENTER_INTERNAL_TOKEN", "APNS_PRIVATE_KEY", "VAPID_PRIVATE_KEY", "raw token")
         if any(term in text for term in forbidden_terms):
             raise AssertionError(f"{route} exposed forbidden diagnostic text")
         assert_internal_admin_links_resolve(client, route, text)
 
     print("creator_command_center_audit: PASS")
-    print(f"user_routes={len(user_routes)} admin_routes={len(admin_routes)} privacy_flags=ok")
+    print(f"user_routes={len(user_routes)} admin_routes={len(admin_routes)} subsystems={len(required_subsystems)} privacy_flags=ok")
     return 0
 
 
