@@ -1,25 +1,41 @@
-# PulseSoc Network Command Center Report
+# PulseSoc Pulse Network Operating System Report
 
 Date: 2026-06-27
 
 ## Scope
 
-Completed the user Dashboard Network section and backend/admin Network Command Center for:
+Expanded the user Dashboard Network section and backend Network Command Center into a backend-managed operating layer for:
 
 - Notifications
-- Messages
+- Messenger
 - Friends
 - Followers / Following
 - Groups
+- Status Activity
+- Community Activity
+- Network Health
+- Delivery Intelligence
+- Notification Intelligence
+- Relationship Intelligence
+- Connection Analytics
+- Audience Mapping
+- Growth Signals
+- Pulse Delivery Matrix
+- Network Security
+- Community Intelligence
+- Creator Reach
+- Connection Recovery
 - Blocks & Mutes
 - Bans
 - Push Delivery
 - Message Health
 - Network Audit Logs
 
+The internal design standard remains invisible. No user-facing Network UI renders the internal technology name.
+
 ## User Dashboard
 
-Added backend-managed routes:
+User routes are now backend-managed and owner-scoped:
 
 - `/dashboard/network`
 - `/dashboard/network/notifications`
@@ -27,52 +43,86 @@ Added backend-managed routes:
 - `/dashboard/network/friends`
 - `/dashboard/network/followers`
 - `/dashboard/network/groups`
+- `/dashboard/network/status-activity`
+- `/dashboard/network/community-activity`
+- `/dashboard/network/network-health`
+- `/dashboard/network/delivery-intelligence`
+- `/dashboard/network/notification-intelligence`
+- `/dashboard/network/relationship-intelligence`
+- `/dashboard/network/connection-analytics`
+- `/dashboard/network/audience-mapping`
+- `/dashboard/network/growth-signals`
+- `/dashboard/network/delivery-matrix`
+- `/dashboard/network/network-security`
+- `/dashboard/network/community-intelligence`
+- `/dashboard/network/creator-reach`
+- `/dashboard/network/connection-recovery`
 - `/api/dashboard/network/state`
 
-Each route renders real owner-scoped state and routes actions to existing production workflows:
+Each card uses contextual action labels such as `Manage Notifications`, `Open Messenger`, `Manage Friends`, `View Audience`, `Open Communities`, `Review Network Health`, and `Manage Delivery`.
 
-- Notification Center: `/pulse/notifications`
-- Notification Settings: `/pulse/settings/notifications`
-- Messenger: `/pulse/messages`
-- Friends: `/pulse/friends`
-- Followers / Following: `/pulse/friends` and `/pulse/following`
-- Groups: `/pulse/groups` and `/pulse/groups/create`
+## Intelligence Panel
+
+The top Network panel now summarizes:
+
+- Network Health
+- Relationship Score
+- Audience Score
+- Delivery Score
+- Community Score
+- Unread Messages
+- Pending Requests
+- New Followers
+- Notification Queue
+- Delivery Health
+- Risk Alerts
+- Recent Activity
+- Recommended Next Actions
+
+The panel is computed server-side from safe aggregate signals.
 
 ## Backend Command Center
 
-Added protected admin routes:
+Protected admin routes now exist for the full Network inventory:
 
 - `/admin/network-command-center`
-- `/admin/network-command-center/notifications`
-- `/admin/network-command-center/messenger`
-- `/admin/network-command-center/friends`
-- `/admin/network-command-center/followers`
-- `/admin/network-command-center/groups`
-- `/admin/network-command-center/blocks-mutes`
-- `/admin/network-command-center/bans`
-- `/admin/network-command-center/push-delivery`
-- `/admin/network-command-center/message-health`
-- `/admin/network-command-center/audit`
+- `/admin/network-command-center/<subsystem>`
 
-Updated Backend Management Registry so Network module Open buttons resolve to the new command center surfaces.
+Every visible backend management button routes to a protected existing operational surface or a protected diagnostics page. The backend management registry now includes the expanded Network subsystem list so launch readiness and admin inventory can see the modules.
 
-## Backend Data Layer
+## State Labels
 
-Added `services/dashboard_network_command_center.py` as a defensive, additive state layer.
+Network state uses strict labels only:
 
-It aggregates safe counts from existing legacy/current tables where present and gracefully returns zero when tables are absent. No destructive migrations were required.
+- `READY`
+- `ACTION REQUIRED`
+- `REVIEW`
+- `WARNING`
+- `SYNCING`
+- `OFFLINE`
+- `LIMITED`
+- `PREMIUM`
+- `ADMIN`
+- `BETA`
+- `COMING SOON`
+- `PRODUCTION READY`
 
-## Status Labels
+No generic `ON` state is used for the Network operating system.
 
-The Network dashboard now uses state labels tied to backend signals:
+## Event Model
 
-- `ON`: available and wired
-- `WARNING`: delivery or pending-action signal exists
+The state payload includes an `event_bus` descriptor for shared network events:
 
-No fake `ON` state is used for missing pages. All visible Network cards route to real pages.
+- `notification.updated`
+- `message.delivery_updated`
+- `relationship.changed`
+- `audience.changed`
+- `community.changed`
+- `delivery.health_changed`
+- `network.security_changed`
+
+These descriptors document how future event propagation should update all related modules without exposing private data.
 
 ## Current Limitations
 
-- The first implementation is management and diagnostics focused. Deeper mutation controls such as admin-side block/unblock or group-ban mutation remain routed through existing moderation/account surfaces.
-- Private message body review remains intentionally excluded from general admin Network surfaces.
-
+The current implementation is a backend-managed intelligence and diagnostics layer. Deeper mutation controls for some admin actions still route through existing protected moderation, account, notification, and audit surfaces. Any future direct mutation controls must add CSRF, rate limits, role checks, and audit records before becoming writable.

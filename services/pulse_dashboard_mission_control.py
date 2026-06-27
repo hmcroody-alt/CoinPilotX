@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from services import dashboard_account_command_center
+from services import dashboard_network_command_center
 from services import db as db_service
 from services import premium_identity_engine
 
@@ -295,8 +296,8 @@ WIDGETS: list[dict[str, Any]] = [
     _widget("friends", "Friends", "Pulse Network", "/dashboard/network/friends", "Review friend requests and your connection graph.", sort_order=30),
     _widget("followers", "Followers / Following", "Pulse Network", "/dashboard/network/followers", "Inspect your public network counts without exposing private data.", sort_order=40),
     _widget("groups", "Groups", "Pulse Network", "/dashboard/network/groups", "Communities and rooms you are allowed to access.", sort_order=50),
-    _widget("status_activity", "Status Activity", "Pulse Network", "/pulse/status", "Your status rail, story signals, and viewer activity.", sort_order=60, accent="purple"),
-    _widget("community_activity", "Community Activity", "Pulse Network", "/pulse", "Your feed participation, replies, and community signals.", sort_order=70),
+    _widget("status_activity", "Status Activity", "Pulse Network", "/dashboard/network/status-activity", "Your status rail, story signals, and viewer activity.", sort_order=60, accent="purple"),
+    _widget("community_activity", "Community Activity", "Pulse Network", "/dashboard/network/community-activity", "Your feed participation, replies, and community signals.", sort_order=70),
     _widget("my_posts", "My Posts", "Creator Studio", "/dashboard/creator/posts", "Review and manage your published posts.", sort_order=10),
     _widget("reels", "Reels", "Creator Studio", "/dashboard/creator/reels", "Create, review, and manage short-form reels.", sort_order=20),
     _widget("videos", "Videos", "Creator Studio", "/dashboard/creator/videos", "Upload and manage long-form video signals.", sort_order=30),
@@ -351,11 +352,18 @@ WIDGETS.extend([
     _widget("threat_detection", "Threat Detection", "Account Command Center", "/dashboard/account/threat-detection", "Unusual login, device, identity, and account-risk warnings.", premium_required=True, sort_order=110, accent="red", status="BETA", tables=("security_events",), dependencies=("security",)),
     _widget("login_analytics", "Login Analytics", "Account Command Center", "/dashboard/account/login-analytics", "Login history, failed-login trends, new-device counts, and safe region signals.", premium_required=True, sort_order=120, accent="purple", status="BETA", tables=("security_events",), dependencies=("security",)),
 
-    _widget("network_insights", "Network Insights", "Pulse Network", "/pulse/premium/intelligence", "Premium view of audience and connection trends.", premium_required=True, sort_order=80, accent="purple", status="BETA", tables=("friendships",), dependencies=("premium",)),
-    _widget("connection_analytics", "Connection Analytics", "Pulse Network", "/pulse/premium/intelligence", "Relationship growth and retention signals.", premium_required=True, sort_order=90, accent="purple", status="COMING_SOON", tables=("friendships",), dependencies=("premium",)),
-    _widget("audience_mapping", "Audience Mapping", "Pulse Network", "/pulse/creator/analytics", "Creator audience cluster mapping.", premium_required=True, creator_required=True, sort_order=100, accent="purple", status="COMING_SOON", tables=("friendships", "posts"), dependencies=("creator",)),
-    _widget("relationship_intelligence", "Relationship Intelligence", "Pulse Network", "/pulse/premium/intelligence", "AI-assisted private relationship insights.", premium_required=True, sort_order=110, accent="purple", status="COMING_SOON", tables=("friendships",), dependencies=("premium", "ai")),
-    _widget("growth_signals", "Growth Signals", "Pulse Network", "/pulse/creator/analytics", "Signals that help creators grow without private data leakage.", premium_required=True, creator_required=True, sort_order=120, accent="emerald", status="BETA", tables=("posts", "pulse_reels"), dependencies=("creator",)),
+    _widget("network_health", "Network Health", "Pulse Network", "/dashboard/network/network-health", "Connection, relationship, delivery, audience, community, and trust health.", sort_order=80, accent="emerald", status="BETA", tables=("friendships",), dependencies=("network",)),
+    _widget("delivery_intelligence", "Delivery Intelligence", "Pulse Network", "/dashboard/network/delivery-intelligence", "Push, email, SMS, Telegram, socket, retry, and latency diagnostics.", sort_order=90, accent="emerald", status="BETA", tables=("notification_delivery_logs",), dependencies=("network",)),
+    _widget("notification_intelligence", "Notification Intelligence", "Pulse Network", "/dashboard/network/notification-intelligence", "Priority learning, quiet-hour guidance, notification fatigue, and useful alert routing.", sort_order=100, accent="purple", status="BETA", tables=("notifications",), dependencies=("network",)),
+    _widget("relationship_intelligence", "Relationship Intelligence", "Pulse Network", "/dashboard/network/relationship-intelligence", "Strong connections, dormant relationships, reconnect guidance, and trust signals.", sort_order=110, accent="purple", status="BETA", tables=("friendships",), dependencies=("network",)),
+    _widget("connection_analytics", "Connection Analytics", "Pulse Network", "/dashboard/network/connection-analytics", "Connection growth, retention, acceptance, friend conversion, and follower conversion.", sort_order=120, accent="purple", status="BETA", tables=("friendships",), dependencies=("network",)),
+    _widget("audience_mapping", "Audience Mapping", "Pulse Network", "/dashboard/network/audience-mapping", "Interest clusters, creator communities, overlap, expansion, and distribution.", sort_order=130, accent="purple", status="BETA", tables=("friendships", "posts"), dependencies=("network",)),
+    _widget("growth_signals", "Growth Signals", "Pulse Network", "/dashboard/network/growth-signals", "Growth opportunities, recommended actions, audience momentum, and connection opportunities.", sort_order=140, accent="emerald", status="BETA", tables=("posts", "pulse_reels"), dependencies=("network",)),
+    _widget("delivery_matrix", "Pulse Delivery Matrix", "Pulse Network", "/dashboard/network/delivery-matrix", "Live communication matrix across notifications, messages, queues, retries, and worker health.", sort_order=150, accent="emerald", status="BETA", tables=("notification_delivery_logs",), dependencies=("network",)),
+    _widget("network_security", "Network Security", "Pulse Network", "/dashboard/network/network-security", "Spam, scam, abuse, blocks, mutes, hidden requests, privacy controls, and trust signals.", sort_order=160, accent="red", status="BETA", tables=("user_blocks",), dependencies=("network",)),
+    _widget("community_intelligence", "Community Intelligence", "Pulse Network", "/dashboard/network/community-intelligence", "Community health, spam level, moderator health, growth, engagement, and suggested improvements.", sort_order=170, accent="purple", status="BETA", tables=("pulse_groups",), dependencies=("network",)),
+    _widget("creator_reach", "Creator Reach", "Pulse Network", "/dashboard/network/creator-reach", "Reach, shares, audience spread, virality, engagement, and network expansion.", sort_order=180, accent="emerald", status="BETA", tables=("posts",), dependencies=("network",)),
+    _widget("connection_recovery", "Connection Recovery", "Pulse Network", "/dashboard/network/connection-recovery", "Failed requests, broken connections, lost followers, and relationship recovery guidance.", sort_order=190, accent="gold", status="BETA", tables=("friend_requests",), dependencies=("network",)),
 
     _widget("trend_intelligence", "Trend Intelligence", "Creator Studio", "/pulse/creator/analytics", "Premium trend signals for creators.", premium_required=True, creator_required=True, sort_order=110, accent="purple", status="BETA", tables=("posts", "pulse_reels"), dependencies=("creator", "premium")),
     _widget("content_planner", "Content Planner", "Creator Studio", "/pulse/creator/dashboard", "Plan future posts, reels, videos, and statuses.", premium_required=True, creator_required=True, sort_order=120, accent="purple", status="COMING_SOON", tables=("dashboard_modules",), dependencies=("creator",)),
@@ -468,6 +476,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
     caps = _user_capabilities(cur, user, session_admin)
     user_id = caps["user_id"]
     account_state = dashboard_account_command_center.build_account_state(conn, user)
+    network_state = dashboard_network_command_center.build_network_state(conn, user)
     metrics = _metrics(cur, user, caps)
     widgets = []
     for widget in WIDGETS:
@@ -475,7 +484,10 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
         if access == "hidden":
             continue
         item = dict(widget)
-        state = dashboard_account_command_center.state_for_widget(account_state, item["widget_key"])
+        if item["category"] == "Pulse Network":
+            state = dashboard_network_command_center.state_for_widget(network_state, item["widget_key"])
+        else:
+            state = dashboard_account_command_center.state_for_widget(account_state, item["widget_key"])
         item["access"] = access
         item["lock_reason"] = _lock_reason(widget, caps) if access == "locked" else ""
         if state and state.get("route"):
@@ -484,6 +496,8 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             item["cta_label"] = str(state.get("cta_label") or "")[:80]
         elif item["category"] == "Account Command Center":
             item["cta_label"] = "Manage Account"
+        elif item["category"] == "Pulse Network":
+            item["cta_label"] = "Review Network"
         else:
             item["cta_label"] = "Open"
         item["cta_route"] = "/pulse/premium" if "Premium" in item.get("lock_reason", "") else (item["route"] or "/dashboard")
@@ -516,6 +530,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             "active_widgets": len([item for item in widgets if item["access"] == "active"]),
         },
         "account_command_center": account_state,
+        "network_command_center": network_state,
     }
 
 

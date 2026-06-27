@@ -4,28 +4,55 @@ Date: 2026-06-27
 
 ## Security Boundary
 
-The Network Command Center is designed around safe aggregate state.
-
-It does not expose:
+The Pulse Network operating layer is designed around safe aggregate state. It does not expose:
 
 - Private message bodies
 - Deleted message bodies
 - Reporter identities
-- Raw push tokens
+- Raw device registrations
 - Device secrets
 - Provider credentials
 - Internal worker tokens
 - Private user settings from other accounts
+- Exact private geolocation
+- Hidden/private status visibility
 
 ## User Permissions
 
-User-facing Network dashboard routes require an authenticated PulseSoc account and only build state for the current account.
+User-facing Network dashboard routes require an authenticated PulseSoc account and only build state for the current account. The state layer accepts the current user from the server session and does not trust client-supplied user IDs.
 
 ## Admin Permissions
 
-Admin Network Command Center routes require `command_center.view`.
+Admin Network Command Center routes require `command_center.view`. General admin diagnostics remain aggregate and redacted. Private message body access is intentionally excluded from this surface and would require a separate role-gated, audited workflow.
 
-General admin diagnostics remain aggregate and redacted. Private message body access is intentionally not part of this surface and would require a separate role-gated, audited workflow.
+## Backend Registry
+
+The backend management registry now includes the expanded Network inventory so launch readiness can detect whether Network modules are backend-visible:
+
+- Notifications
+- Messages
+- Friends
+- Followers / Following
+- Groups
+- Status Activity
+- Community Activity
+- Network Health
+- Delivery Intelligence
+- Notification Intelligence
+- Relationship Intelligence
+- Connection Analytics
+- Audience Mapping
+- Growth Signals
+- Pulse Delivery Matrix
+- Network Security
+- Community Intelligence
+- Creator Reach
+- Connection Recovery
+- Blocks & Mutes
+- Bans
+- Push Delivery
+- Message Health
+- Network Audit Logs
 
 ## Data Handling
 
@@ -37,25 +64,23 @@ The state layer:
 - Avoids raw SQL writes.
 - Avoids destructive migrations.
 - Avoids unsafe client-controlled routing.
+- Avoids unsafe HTML.
+- Keeps internal provider state and secrets out of rendered UI.
 
 ## Auditability
 
-The backend registry now registers Network management surfaces for:
+Network state changes are designed to flow through audit-backed systems:
 
-- Notifications
-- Messages
-- Friends
-- Followers / Following
-- Groups
-- Blocks & Mutes
-- Bans
-- Push Delivery
-- Message Health
-- Network Audit Logs
-
-These surfaces route to protected admin pages and existing audit-backed operational tools.
+- Friend request actions
+- Follow/unfollow actions
+- Block/unblock and mute/unmute
+- Bans and restrictions
+- Group membership and role changes
+- Notification retries
+- Push delivery failures
+- Message health events
+- Admin command-center actions
 
 ## Remaining Risk
 
-Future phases that add admin mutation buttons for blocks, mutes, bans, or group moderation must add CSRF, rate limits, role checks, and explicit audit records before enabling writes.
-
+The current implementation does not add new direct admin mutation buttons for blocks, mutes, bans, group moderation, or provider retry execution. Future writable controls must add CSRF, rate limits, server-side role checks, explicit audit records, and rollback/recovery behavior before enabling writes.

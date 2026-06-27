@@ -16,6 +16,71 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+STATE_LABELS = {
+    "READY",
+    "ACTION REQUIRED",
+    "REVIEW",
+    "WARNING",
+    "SYNCING",
+    "OFFLINE",
+    "LIMITED",
+    "PREMIUM",
+    "ADMIN",
+    "BETA",
+    "COMING SOON",
+    "PRODUCTION READY",
+}
+
+NETWORK_ROUTE_KEYS = [
+    "notifications",
+    "messages",
+    "friends",
+    "followers",
+    "groups",
+    "status-activity",
+    "community-activity",
+    "network-health",
+    "delivery-intelligence",
+    "notification-intelligence",
+    "relationship-intelligence",
+    "connection-analytics",
+    "audience-mapping",
+    "growth-signals",
+    "delivery-matrix",
+    "network-security",
+    "community-intelligence",
+    "creator-reach",
+    "connection-recovery",
+]
+
+ADMIN_ROUTE_KEYS = [
+    "notifications",
+    "messenger",
+    "friends",
+    "followers",
+    "groups",
+    "status-activity",
+    "community-activity",
+    "network-health",
+    "delivery-intelligence",
+    "notification-intelligence",
+    "relationship-intelligence",
+    "connection-analytics",
+    "audience-mapping",
+    "growth-signals",
+    "delivery-matrix",
+    "network-security",
+    "community-intelligence",
+    "creator-reach",
+    "connection-recovery",
+    "blocks-mutes",
+    "bans",
+    "push-delivery",
+    "message-health",
+    "audit",
+]
+
+
 def configure_env() -> Path:
     temp_dir = Path(tempfile.mkdtemp(prefix="pulsesoc-network-command-"))
     db_path = temp_dir / "audit.db"
@@ -79,27 +144,8 @@ def main() -> int:
     seed_data(bot)
     client = bot.webhook_app.test_client()
 
-    user_routes = [
-        "/dashboard/network",
-        "/dashboard/network/notifications",
-        "/dashboard/network/messages",
-        "/dashboard/network/friends",
-        "/dashboard/network/followers",
-        "/dashboard/network/groups",
-    ]
-    admin_routes = [
-        "/admin/network-command-center",
-        "/admin/network-command-center/notifications",
-        "/admin/network-command-center/messenger",
-        "/admin/network-command-center/friends",
-        "/admin/network-command-center/followers",
-        "/admin/network-command-center/groups",
-        "/admin/network-command-center/blocks-mutes",
-        "/admin/network-command-center/bans",
-        "/admin/network-command-center/push-delivery",
-        "/admin/network-command-center/message-health",
-        "/admin/network-command-center/audit",
-    ]
+    user_routes = ["/dashboard/network"] + [f"/dashboard/network/{key}" for key in NETWORK_ROUTE_KEYS]
+    admin_routes = ["/admin/network-command-center"] + [f"/admin/network-command-center/{key}" for key in ADMIN_ROUTE_KEYS]
 
     for route in user_routes:
         assert_status(f"unauthenticated {route}", client.get(route), {302})
@@ -118,14 +164,38 @@ def main() -> int:
             raise AssertionError(f"{route} did not render Network command content")
         if "LogiNexus" in text:
             raise AssertionError(f"{route} leaked internal LogiNexus terminology")
+        if ">Open</a>" in text or ">ON<" in text:
+            raise AssertionError(f"{route} rendered a generic Open button or ON state")
 
     state_response = client.get("/api/dashboard/network/state")
     assert_status("authenticated network api", state_response, {200})
     state_json = state_response.get_json() or {}
-    privacy = ((state_json.get("network") or {}).get("privacy") or {})
-    for key in ("message_body_redacted", "raw_push_tokens_redacted", "reporter_identity_hidden", "device_secrets_hidden"):
+    network = state_json.get("network") or {}
+    privacy = (network.get("privacy") or {})
+    for key in ("message_body_redacted", "raw_device_registrations_redacted", "reporter_identity_hidden", "device_private_data_hidden"):
         if privacy.get(key) is not True:
             raise AssertionError(f"privacy flag missing or false: {key}")
+    intelligence = network.get("intelligence") or {}
+    for key in ("network_health", "relationship_score", "audience_score", "delivery_score", "community_score", "recommended_next_actions"):
+        if key not in intelligence:
+            raise AssertionError(f"network intelligence missing {key}")
+    subsystems = network.get("subsystems") or {}
+    expected_subsystems = {key.replace("-", "_") for key in NETWORK_ROUTE_KEYS}
+    expected_subsystems.discard("messages")
+    expected_subsystems.add("messenger")
+    missing = sorted(expected_subsystems - set(subsystems))
+    if missing:
+        raise AssertionError(f"missing network subsystems: {missing}")
+    for key, subsystem in subsystems.items():
+        state = subsystem.get("state")
+        if state not in STATE_LABELS:
+            raise AssertionError(f"invalid state for {key}: {state}")
+        action = str(subsystem.get("action") or subsystem.get("cta_label") or "")
+        if action.strip() == "Open":
+            raise AssertionError(f"generic Open action for {key}")
+        for required in ("intelligence", "automation", "protection", "recovery"):
+            if not subsystem.get(required):
+                raise AssertionError(f"{key} missing {required} layer")
 
     with client.session_transaction() as sess:
         sess["admin_user_id"] = 1
@@ -136,6 +206,10 @@ def main() -> int:
         text = response.get_data(as_text=True)
         if "Network Command Center" not in text and "Network" not in text:
             raise AssertionError(f"{route} did not render admin Network command content")
+        if "LogiNexus" in text:
+            raise AssertionError(f"{route} leaked internal LogiNexus terminology")
+        if ">Open</a>" in text or ">ON<" in text:
+            raise AssertionError(f"{route} rendered a generic Open button or ON state")
         forbidden_terms = ("DATABASE_URL", "COMMAND_CENTER_INTERNAL_TOKEN", "APNS_PRIVATE_KEY", "VAPID_PRIVATE_KEY")
         if any(term in text for term in forbidden_terms):
             raise AssertionError(f"{route} exposed forbidden diagnostic text")
