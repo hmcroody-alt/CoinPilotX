@@ -169,10 +169,22 @@ def run() -> None:
     for key, subsystem in (state.get("subsystems") or {}).items():
         assert_true(subsystem.get("state") in ALLOWED_STATES, f"{key} uses strict state label")
         assert_true(subsystem.get("cta_label") and subsystem.get("cta_label") != "Open", f"{key} has contextual CTA")
-        for field in ("monitors", "protections", "recovery", "audited"):
+        for field in ("monitors", "protections", "recovery"):
             assert_true(field in subsystem, f"{key} includes {field} layer")
     serialized = json.dumps(state).lower()
-    for forbidden in ("private_key", "database_url", "password_hash", "internal_note", "raw_token", "raw_push_token"):
+    for forbidden in (
+        "private_key",
+        "database_url",
+        "password_hash",
+        "internal_note",
+        "raw_token",
+        "raw_push_token",
+        "audited",
+        "backend_managed",
+        "admin_route",
+        "admin_label",
+        "/admin/",
+    ):
         assert_true(forbidden not in serialized, f"state omits {forbidden}")
 
     user_client = client_for(301)

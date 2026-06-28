@@ -62,7 +62,8 @@ RESERVED_USERNAMES = {
 ACCOUNT_SUBSYSTEMS: tuple[dict[str, Any], ...] = (
     {
         "key": "profile",
-        "label": "Profile Operating System",
+        "label": "Profile Control",
+        "admin_label": "Profile Manager",
         "route": "/dashboard/account/profile",
         "admin_route": "/admin/account-command/profile",
         "actions": ("Manage Profile", "Improve Profile", "Preview Public Profile", "Review Profile Health"),
@@ -72,7 +73,8 @@ ACCOUNT_SUBSYSTEMS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "verification",
-        "label": "Verification Operating System",
+        "label": "Verification Center",
+        "admin_label": "Verification Queue",
         "route": "/dashboard/account/verification",
         "admin_route": "/admin/account-command/verification",
         "actions": ("Continue Verification", "Review Verification", "Submit Appeal", "View Verification Timeline"),
@@ -82,7 +84,8 @@ ACCOUNT_SUBSYSTEMS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "account_health",
-        "label": "Account Health Operating System",
+        "label": "Account Health",
+        "admin_label": "Account Health Manager",
         "route": "/dashboard/account/health",
         "admin_route": "/admin/account-command/account-health",
         "actions": ("View Account Health", "Fix Account Issues", "Review Restrictions", "Submit Appeal"),
@@ -92,7 +95,8 @@ ACCOUNT_SUBSYSTEMS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "security",
-        "label": "Security Operating System",
+        "label": "Security Center",
+        "admin_label": "Security Center",
         "route": "/dashboard/account/security",
         "admin_route": "/admin/account-command/security",
         "actions": ("Secure Account", "Manage Security", "Review Security Risks", "Revoke Sessions"),
@@ -102,7 +106,8 @@ ACCOUNT_SUBSYSTEMS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "settings",
-        "label": "Settings Operating System",
+        "label": "Settings Center",
+        "admin_label": "Settings Manager",
         "route": "/dashboard/account/settings",
         "admin_route": "/admin/account-command/settings",
         "actions": ("Manage Settings", "Review Privacy", "Tune Experience", "Manage Notifications"),
@@ -112,7 +117,8 @@ ACCOUNT_SUBSYSTEMS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "advanced_security",
-        "label": "Advanced Security Operating System",
+        "label": "Advanced Protection",
+        "admin_label": "Advanced Security Manager",
         "route": "/dashboard/account/advanced-security",
         "admin_route": "/admin/account-command/advanced-security",
         "actions": ("Harden Security", "Review Protection", "Enable Stronger Security"),
@@ -122,7 +128,8 @@ ACCOUNT_SUBSYSTEMS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "identity_protection",
-        "label": "Identity Protection Operating System",
+        "label": "Identity Protection",
+        "admin_label": "Identity Protection Manager",
         "route": "/dashboard/account/identity-protection",
         "admin_route": "/admin/account-command/identity-protection",
         "actions": ("Protect Identity", "Review Identity Risk", "Report Impersonation"),
@@ -132,7 +139,8 @@ ACCOUNT_SUBSYSTEMS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "session_intelligence",
-        "label": "Session Intelligence Operating System",
+        "label": "Session Review",
+        "admin_label": "Session Intelligence Manager",
         "route": "/dashboard/account/session-intelligence",
         "admin_route": "/admin/account-command/session-intelligence",
         "actions": ("Review Sessions", "Manage Sessions", "End Suspicious Session"),
@@ -142,7 +150,8 @@ ACCOUNT_SUBSYSTEMS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "device_intelligence",
-        "label": "Device Intelligence Operating System",
+        "label": "Device Review",
+        "admin_label": "Device Intelligence Manager",
         "route": "/dashboard/account/device-intelligence",
         "admin_route": "/admin/account-command/device-intelligence",
         "actions": ("Manage Devices", "Trust Device", "Remove Device", "Review Device Risk"),
@@ -152,7 +161,8 @@ ACCOUNT_SUBSYSTEMS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "security_timeline",
-        "label": "Security Timeline Operating System",
+        "label": "Security Timeline",
+        "admin_label": "Security Timeline Manager",
         "route": "/dashboard/account/security-timeline",
         "admin_route": "/admin/account-command/security-timeline",
         "actions": ("View Timeline", "Review Events", "Investigate Activity"),
@@ -162,7 +172,8 @@ ACCOUNT_SUBSYSTEMS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "threat_detection",
-        "label": "Threat Detection Operating System",
+        "label": "Threat Alerts",
+        "admin_label": "Threat Detection Manager",
         "route": "/dashboard/account/threat-detection",
         "admin_route": "/admin/account-command/threat-detection",
         "actions": ("View Alerts", "Review Threats", "Investigate Risk"),
@@ -172,7 +183,8 @@ ACCOUNT_SUBSYSTEMS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "login_analytics",
-        "label": "Login Analytics Operating System",
+        "label": "Login History",
+        "admin_label": "Login Analytics Manager",
         "route": "/dashboard/account/login-analytics",
         "admin_route": "/admin/account-command/login-analytics",
         "actions": ("Review Logins", "View Login Patterns", "Investigate Login Risk"),
@@ -906,7 +918,6 @@ def _subsystem_payload(
         "status": str(status or state.lower())[:80],
         "score": max(0, min(100, int(score))),
         "route": spec["route"],
-        "admin_route": spec["admin_route"],
         "cta_label": primary_action or spec["actions"][0],
         "actions": list(spec["actions"]),
         "recommendations": [str(item)[:180] for item in (recommendations or [])],
@@ -914,8 +925,6 @@ def _subsystem_payload(
         "monitors": list(monitors or spec["monitors"]),
         "protections": list(protections or spec["protects"]),
         "recovery": list(recovery or spec["recovers"]),
-        "audited": True,
-        "backend_managed": True,
     }
 
 

@@ -294,9 +294,13 @@ def main() -> int:
         state = subsystem.get("state")
         if state not in allowed_states:
             raise AssertionError(f"{key} has invalid state {state!r}")
-        for layer in ("intelligence", "command", "automation", "analytics", "protection", "recovery", "ai_guidance", "backend", "audit"):
+        for layer in ("intelligence", "command", "automation", "analytics", "protection", "recovery", "ai_guidance"):
             if not subsystem.get(layer):
                 raise AssertionError(f"{key} missing {layer}")
+        serialized = str(subsystem).lower()
+        for forbidden in ("backend", "audit", "admin_route", "/admin/"):
+            if forbidden in serialized:
+                raise AssertionError(f"{key} leaked user-facing {forbidden}")
         if subsystem.get("action") in {"Open", "Open Studio"}:
             raise AssertionError(f"{key} has generic action {subsystem.get('action')}")
 

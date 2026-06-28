@@ -458,7 +458,7 @@ def _build_subsystem(blueprint: dict[str, Any], metrics: dict[str, Any]) -> dict
     elif metric_key in {"trust_score", "payment_health", "fraud_risk", "payout_readiness", "seller_readiness", "premium_readiness", "store_score", "product_score", "revenue_trend"}:
         detail = f"{count}% signal. {detail}"
     return {
-        **blueprint,
+        **{key: value for key, value in blueprint.items() if key != "admin_route"},
         "state": state,
         "count": count,
         "count_display": _money(raw_count) if metric_key.endswith("_cents") else str(count),
@@ -513,10 +513,10 @@ def build_economy_state(conn: Any, user: dict[str, Any]) -> dict[str, Any]:
             "sale": ("wallet", "earnings", "marketplace", "notifications", "revenue-analytics"),
             "refund": ("wallet", "orders", "revenue", "fraud", "audit"),
             "subscription_renewal": ("premium", "subscriptions", "analytics", "notifications"),
-            "fraud_detected": ("wallet", "fraud", "admin-review", "user-warning"),
+            "fraud_detected": ("wallet", "risk-review", "review", "warning"),
             "chargeback": ("revenue", "seller-trust", "audit", "fraud"),
         },
-        "security_boundary": "Owner-scoped money summaries only. No raw card, bank, Stripe customer, Stripe subscription, provider token, or secret data is exposed.",
+        "security_boundary": "Owner-scoped money summaries only. No raw card, bank, provider identifiers, tokens, or secret data is exposed.",
     }
 
 

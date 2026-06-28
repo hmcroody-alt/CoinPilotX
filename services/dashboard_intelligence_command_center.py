@@ -80,8 +80,8 @@ INTELLIGENCE_SUBSYSTEM_BLUEPRINTS: tuple[dict[str, Any], ...] = (
         "admin_route": "/admin/intelligence-command-center/pulse-brain",
         "action": "Open Pulse Brain",
         "metric": "platform_health",
-        "description": "Community mood, platform health, trending communities, topic/creator intelligence, safety signals, summaries, and daily briefing.",
-        "intelligence": "Combines safe platform, feed, community, safety, and creator signals into one readable briefing.",
+        "description": "Community mood, signal health, trending communities, topic/creator intelligence, safety signals, summaries, and daily briefing.",
+        "intelligence": "Combines safe feed, community, safety, and creator signals into one readable briefing.",
         "prediction": "Estimates community momentum and next useful actions from aggregate signals.",
         "automation": "Updates feed intelligence, recommendations, creator studio, community heatmaps, and daily briefing.",
         "safety": "Uses aggregate public/platform signals only.",
@@ -200,7 +200,7 @@ INTELLIGENCE_SUBSYSTEM_BLUEPRINTS: tuple[dict[str, Any], ...] = (
         "intelligence": "Connects account health, moderation, creator reputation, copyright, and appeals.",
         "prediction": "Shows whether trust is likely to improve after recommended actions.",
         "automation": "Updates Account Health, Creator Reputation, Monetization, and Intelligence Hub.",
-        "safety": "Reporter identity and moderator-only notes are never shown to users.",
+        "safety": "Private report details and internal review notes are not shown to users.",
         "explainability": "Explains trust score with safe categories and improvement steps.",
         "recommendations": ("Resolve warnings and appeals.", "Avoid reposting disputed content.", "Keep profile and content policy-safe."),
     },
@@ -360,8 +360,8 @@ def _metric_map(cur: Any, user_id: int) -> dict[str, Any]:
         + _count(cur, "command_center_security_events", "user_id=? AND lower(coalesce(severity,'')) IN ('high','critical')", (user_id,))
     )
     scam_events = (
-        _count(cur, "security_events", "lower(coalesce(event_type,'')) LIKE '%scam%' OR lower(coalesce(event_type,'')) LIKE '%phishing%'", ())
-        + _count(cur, "command_center_security_events", "lower(coalesce(event_type,'')) LIKE '%scam%' OR lower(coalesce(event_type,'')) LIKE '%phishing%'", ())
+        _count(cur, "security_events", "user_id=? AND (lower(coalesce(event_type,'')) LIKE '%scam%' OR lower(coalesce(event_type,'')) LIKE '%phishing%')", (user_id,))
+        + _count(cur, "command_center_security_events", "user_id=? AND (lower(coalesce(event_type,'')) LIKE '%scam%' OR lower(coalesce(event_type,'')) LIKE '%phishing%')", (user_id,))
     )
     user_reports = _count(cur, "reports", "reported_user_id=? OR reporter_user_id=?", (user_id, user_id))
     moderation_cases = _count(cur, "moderation_cases", "user_id=? OR target_user_id=?", (user_id, user_id))
@@ -379,12 +379,12 @@ def _metric_map(cur: Any, user_id: int) -> dict[str, Any]:
     safety_score = max(0, 100 - min(70, high_security_events * 12 + user_reports * 4 + moderation_cases * 6))
     risk_score = min(100, high_security_events * 18 + user_reports * 5 + moderation_cases * 8)
     trust_score = max(0, 100 - min(65, risk_score // 2 + moderation_cases * 4))
-    platform_health = max(55, 94 - min(28, scam_events // 4))
+    signal_health = max(55, 94 - min(28, scam_events * 2 + user_security_events))
     prediction_confidence = 72 if (posts + reels + videos + notifications + user_security_events) else 48
     community_heat = min(100, 35 + min(50, public_posts // 10))
     return {
-        "overall_intelligence_score": int((safety_score + trust_score + platform_health + max(0, 100 - risk_score)) / 4),
-        "platform_health": platform_health,
+        "overall_intelligence_score": int((safety_score + trust_score + signal_health + max(0, 100 - risk_score)) / 4),
+        "platform_health": signal_health,
         "safety_score": safety_score,
         "active_threats": active_threats,
         "current_scam_alerts": scam_events,
@@ -444,16 +444,14 @@ def _build_subsystem(blueprint: dict[str, Any], metrics: dict[str, Any]) -> dict
     elif state == "BETA":
         detail = "Functional beta with safe fallback and no core dependency."
     else:
-        detail = "Ready and backend-managed."
+        detail = "Ready and connected."
     return {
-        **blueprint,
+        **{key: value for key, value in blueprint.items() if key != "admin_route"},
         "state": state,
         "count": count,
         "confidence": confidence,
         "detail": detail,
         "cta_label": blueprint.get("action"),
-        "audit": "Owner-visible intelligence actions are audit-ready; admin actions are role-gated.",
-        "backend": blueprint.get("admin_route"),
     }
 
 
@@ -481,7 +479,7 @@ def build_intelligence_state(conn: Any, user: dict[str, Any]) -> dict[str, Any]:
         "security_events": metrics["security_events"],
         "new_opportunities": metrics["new_opportunities"],
         "creator_insights": metrics["creator_insights"],
-        "personalized_daily_brief": "Your intelligence layer is monitoring safety, feed momentum, recommendations, and trust signals without exposing private data.",
+        "personalized_daily_brief": "PulseSoc is monitoring your safety, recommendations, and trust signals without exposing private data.",
         "recommended_next_actions": hub_recommendations,
     }
     subsystems = {
@@ -493,8 +491,8 @@ def build_intelligence_state(conn: Any, user: dict[str, Any]) -> dict[str, Any]:
         "scam_detected -> Scam Shield, Alert Center, Threat Intelligence, Security Intelligence, Notifications",
         "high_risk_login -> Risk Assessment, Security Intelligence, Trust Intelligence, Account Security",
         "trending_topic -> Pulse Brain, Feed Intelligence, Smart Recommendations, Creator Studio, Pulse Heatmap",
-        "copyright_or_report -> Trust Intelligence, Creator Reputation, Account Health, Admin Review",
-        "marketplace_risk -> Risk Assessment, Scam Shield, Notifications, Admin Review",
+        "copyright_or_report -> Trust Intelligence, Creator Reputation, Account Health, Review Center",
+        "marketplace_risk -> Risk Assessment, Scam Shield, Notifications, Review Center",
     ]
     return {
         "ok": True,
@@ -504,7 +502,7 @@ def build_intelligence_state(conn: Any, user: dict[str, Any]) -> dict[str, Any]:
         "subsystems": subsystems,
         "cards": cards,
         "event_mesh": event_mesh,
-        "privacy_boundary": "Private messages, raw tokens, secrets, exact geolocation, reporter identities, and hidden/private content are redacted.",
+        "privacy_boundary": "Private content, sensitive account data, device secrets, and hidden content are redacted.",
     }
 
 

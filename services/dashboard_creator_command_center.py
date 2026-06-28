@@ -126,7 +126,7 @@ CREATOR_SECTIONS = (
         "key": "media-health",
         "label": "Media Processing Health",
         "route": "/admin/creator-command-center/media-health",
-        "description": "Upload, thumbnail, transcoding, Mux/processing, playback, and media moderation health.",
+        "description": "Upload, thumbnail, processing, playback, and media review health.",
     },
     {
         "key": "moderation",
@@ -161,7 +161,7 @@ CREATOR_SUBSYSTEM_BLUEPRINTS: tuple[dict[str, Any], ...] = (
         "automation": "Updates creator hub, moderation queue, content performance, and reputation when post state changes.",
         "analytics": "Tracks owner-safe comments, reactions, share readiness, views where available, and moderation status.",
         "protection": "Owner-scoped actions, sanitized text, server-side privacy controls, and moderation gating.",
-        "recovery": "Archives stay recoverable where data exists; unsafe changes remain visible through audit logs.",
+        "recovery": "Archives stay recoverable where data exists; unsafe changes remain traceable for support review.",
         "ai_guidance": "Suggests stronger captions, safer wording, hashtag cleanup, and publish readiness when AI is enabled.",
         "recommendations": ("Review private or archived posts.", "Resolve moderation review items first.", "Use strong captions before publishing."),
     },
@@ -209,7 +209,7 @@ CREATOR_SUBSYSTEM_BLUEPRINTS: tuple[dict[str, Any], ...] = (
         "automation": "Status expiration, reactions, and reports update status activity and creator hub.",
         "analytics": "Shows aggregate status views and completion without leaking private viewer data.",
         "protection": "Privacy rules, report handling, and media moderation are enforced server-side.",
-        "recovery": "Expired/deleted story behavior stays backend-managed and auditable.",
+        "recovery": "Expired or deleted story behavior remains traceable and recoverable where policy allows.",
         "ai_guidance": "Can recommend tighter story captions and better timing when enabled.",
         "recommendations": ("Check completion rate.", "Keep story overlays readable.", "Use privacy intentionally."),
     },
@@ -221,11 +221,11 @@ CREATOR_SUBSYSTEM_BLUEPRINTS: tuple[dict[str, Any], ...] = (
         "admin_route": "/admin/creator-command-center/live-studio",
         "action": "Manage Live Broadcasts",
         "metric": "live_total",
-        "description": "Live readiness, schedule/go-live entry, provider health, reports, and replay readiness.",
+        "description": "Live readiness, schedule/go-live entry, stream readiness, safety reviews, and replay readiness.",
         "intelligence": "Checks live records, active/scheduled state, reports, and readiness signals.",
         "automation": "Live starts update audience, notification, creator hub, and moderation surfaces.",
-        "analytics": "Tracks safe aggregate live status and reports without exposing restricted provider data.",
-        "protection": "Provider secrets and stream keys are never exposed; reports stay backend moderated.",
+        "analytics": "Tracks safe aggregate live status and safety reviews without exposing restricted stream data.",
+        "protection": "Stream keys are never exposed; safety reviews stay protected.",
         "recovery": "Readiness checks guide failed live setup without blocking other creator tools.",
         "ai_guidance": "Can help plan titles, show structure, and safety notes when enabled.",
         "recommendations": ("Run readiness checks before going live.", "Resolve open live reports.", "Schedule live sessions ahead of peak audience time."),
@@ -640,7 +640,7 @@ def _creator_subsystem_payload(
     metric_value = _safe_int(metrics.get(metric_key), 0)
     if count is None:
         count = metric_value
-    description = str(blueprint.get("description") or "Backend-managed creator subsystem.")
+    description = str(blueprint.get("description") or "Creator subsystem.")
     recommendations = list(blueprint.get("recommendations") or ())
     if not recommendations:
         recommendations = [
@@ -653,21 +653,18 @@ def _creator_subsystem_payload(
         "card_key": str(blueprint.get("card_key") or key.replace("-", "_")),
         "label": str(blueprint.get("label") or key.replace("-", " ").title()),
         "route": str(blueprint.get("route") or f"/dashboard/creator/{key}"),
-        "admin_route": str(blueprint.get("admin_route") or f"/admin/creator-command-center/{key}"),
         "action": str(blueprint.get("action") or "Review Creator"),
         "state": _safe_state(base_state),
         "count": _safe_int(count, 0),
         "detail": str(blueprint.get("detail") or description),
         "description": description,
         "intelligence": str(blueprint.get("intelligence") or "Reads owner-scoped creator signals and explains what needs attention."),
-        "command": str(blueprint.get("command") or "Routes the creator to the correct workflow and admins to protected diagnostics."),
+        "command": str(blueprint.get("command") or "Routes the creator to the correct workflow."),
         "automation": str(blueprint.get("automation") or "Synchronizes related creator surfaces when content, media, moderation, or live state changes."),
         "analytics": str(blueprint.get("analytics") or "Uses aggregate, owner-safe metrics without exposing private viewer or draft data."),
-        "protection": str(blueprint.get("protection") or "Applies owner scoping, server-side permissions, media validation, and moderation boundaries."),
+        "protection": str(blueprint.get("protection") or "Applies owner scoping, server-side permissions, media validation, and safety boundaries."),
         "recovery": str(blueprint.get("recovery") or "Keeps failed, draft, processing, and review states visible enough to recover safely."),
         "ai_guidance": str(blueprint.get("ai_guidance") or "Returns safe guidance when AI is enabled and stays quiet when disabled."),
-        "backend": "Creator Command Center",
-        "audit": "Creator Audit Logs",
         "recommendations": recommendations,
     }
 
@@ -675,7 +672,7 @@ def _creator_subsystem_payload(
 def _creator_event_bus(metrics: dict[str, Any]) -> list[dict[str, str]]:
     events = [
         ("content_uploaded", "New post/reel/video/status signals refresh creator hub, media health, and content performance."),
-        ("media_processing_changed", "Processing warnings update media health, creator hub, and backend diagnostics."),
+        ("media_processing_changed", "Processing warnings update media health and creator hub."),
         ("moderation_state_changed", "Review or warning states update reputation, content performance, and creator hub."),
         ("live_state_changed", "Live readiness and active streams update audience, delivery, and creator hub."),
         ("schedule_changed", "Planner, scheduler, drafts, and timing intelligence stay synchronized."),
