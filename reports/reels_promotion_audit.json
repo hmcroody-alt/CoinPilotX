@@ -1,0 +1,215 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "GET /pulse/reels route exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "POST /api/reels route exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "POST /api/reels/<int:reel_id>/like route exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "GET /api/reels/<int:reel_id>/comments route exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "POST /api/reels/<int:reel_id>/comments route exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "PATCH /api/reels/<int:reel_id> route exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "DELETE /api/reels/<int:reel_id> route exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "POST /api/reels/<int:reel_id>/save route exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "POST /api/reels/<int:reel_id>/not-interested route exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "POST /api/reels/<int:reel_id>/follow-creator route exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "POST /api/reels/<int:reel_id>/audio route exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "GET /api/promotions/eligibility route exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "GET /api/promotions route exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "POST /api/promotions route exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "GET /api/reels/<int:reel_id>/promotions route exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "POST /api/reels/<int:reel_id>/promotions route exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Reels bottom plus opens in-page creator",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Reel owner menu has edit/delete/promote/audio controls",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Unsupported Remix action is disabled with a reason",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Reel creator unsupported templates/drafts are safely disabled",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Videos owner sheet is wired to promotions",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Marketplace owner listing is wired to promotions",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Promotion UI does not fabricate reach",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Promotion modal calls backend APIs",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Owner can load Reel promotion eligibility",
+      "passed": true,
+      "details": "{'audiences': [{'enabled': True, 'key': 'automatic', 'label': 'Automatic Audience', 'reason': 'Contextual delivery without sensitive targeting.'}, {'enabled': False, 'key': 'custom', 'label': 'Custom Audience', 'reason': 'Custom targeting is unavailable until privacy-safe audience controls are confi"
+    },
+    {
+      "name": "Eligibility uses safe unavailable forecasting state",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Non-owner cannot load Reel promotion eligibility",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Custom promotion audiences are rejected until configured",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Owner can save a real draft promotion",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Promotion analytics stay unavailable until real campaign exists",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Non-owner cannot update another user's promotion",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "video promotion eligibility is backend-wired",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "marketplace_listing promotion eligibility is backend-wired",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "post promotion eligibility is backend-wired",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Owner can edit Reel metadata",
+      "passed": true,
+      "details": "{\"message\":\"Reel updated.\",\"ok\":true,\"reel\":{\"ai_summary\":\"\",\"ai_tags\":[\"audit\",\"updated\"],\"ai_tags_json\":\"[\\\"audit\\\", \\\"updated\\\"]\",\"audio\":{\"artist\":\"\",\"bpm\":0,\"duration\":0.0,\"id\":0,\"title\":\"\",\"track_id\":0,\"trend_score\":0,\"usage_count\":0,\"waveform\":\"\"},\"author\":{\"avatar_url\":\"\",\"badge_keys\":[],\"ba"
+    },
+    {
+      "name": "Non-owner cannot edit Reel",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Invalid Reel audio timing is rejected",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Owner can select original Reel audio",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Non-owner cannot change Reel audio",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Non-owner Not Interested action is wired",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Reel create does not fake upload success",
+      "passed": true,
+      "details": ""
+    },
+    {
+      "name": "Promotion changes are audited",
+      "passed": true,
+      "details": ""
+    }
+  ]
+}
