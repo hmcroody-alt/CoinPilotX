@@ -33,6 +33,7 @@ STRICT_STATES = {
 
 ALERT_CONDITIONS = {"above", "below", "percent_change", "volume_spike", "market_cap_change"}
 CRYPTO_SYMBOL_RE = re.compile(r"^[A-Z0-9]{2,12}$")
+CRYPTO_AI_DISCLAIMER = "Educational information only. This is not financial advice. PulseSoc does not guarantee returns or tell users to buy or sell assets."
 
 MODULES: tuple[dict[str, Any], ...] = (
     {"key": "market_pulse", "widget_key": "crypto_market_pulse", "label": "Market Pulse", "route": "/dashboard/crypto/market-pulse", "action": "View Market Pulse", "description": "BTC, ETH, SOL, market health, sentiment, and provider freshness."},
@@ -585,33 +586,123 @@ def record_recent_asset(conn: Any, user_id: int, symbol: str) -> None:
     conn.commit()
 
 
+def _env_enabled(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def crypto_ai_status() -> dict[str, Any]:
+    """Return the actual Crypto AI capability state without implying fake AI."""
+    if not _env_enabled("PULSE_CRYPTO_AI_ENABLED"):
+        return {
+            "state": "DISABLED",
+            "status_label": "Disabled (feature flag)",
+            "message": "Crypto AI actions are disabled by feature flag.",
+            "actions_enabled": False,
+            "tooltip": "AI not enabled yet",
+            "http_status": 503,
+        }
+    if _env_enabled("PULSE_CRYPTO_AI_SAFE_FALLBACK_ENABLED"):
+        return {
+            "state": "LIMITED",
+            "status_label": "Limited (beta)",
+            "message": "Crypto AI is using a transparent rule-based educational fallback, not a generative AI provider.",
+            "actions_enabled": True,
+            "tooltip": "Limited beta fallback enabled",
+            "http_status": 200,
+        }
+    return {
+        "state": "UNAVAILABLE",
+        "status_label": "Unavailable (backend missing)",
+        "message": "Crypto AI is flagged on, but no approved AI router or safe fallback is configured.",
+        "actions_enabled": False,
+        "tooltip": "AI not enabled yet",
+        "http_status": 503,
+    }
+
+
+def _limited_crypto_analysis(question: str, symbol: str = "") -> dict[str, Any]:
+    """Deterministic fallback analysis used only when explicitly enabled."""
+    board = market_board(limit=80)
+    markets = board.get("markets") or []
+    normalized_question = question.lower()
+    symbols = [symbol] if symbol else []
+    if "btc" in normalized_question or "bitcoin" in normalized_question:
+        symbols.append("BTC")
+    if "eth" in normalized_question or "ethereum" in normalized_question:
+        symbols.append("ETH")
+    symbols = list(dict.fromkeys([s for s in symbols if s]))
+    matched = [item for item in markets if str(item.get("symbol") or "").upper() in symbols]
+    market_lines = []
+    for item in matched[:4]:
+        price = item.get("price")
+        change = item.get("change_24h")
+        price_text = f"${float(price):,.4f}" if price is not None else "price unavailable"
+        change_text = f"{float(change):+.2f}%" if change is not None else "24h change unavailable"
+        market_lines.append(f"{item.get('symbol')}: {price_text}, {change_text} over 24h.")
+    if not market_lines:
+        market_lines.append("Live provider-backed asset data is unavailable for this question.")
+    suspicious_terms = ("airdrop", "guaranteed", "seed phrase", "private key", "connect wallet", "urgent", "unlock", "withdrawal fee")
+    risk_terms = [term for term in suspicious_terms if term in normalized_question]
+    if "compare" in normalized_question and {"BTC", "ETH"}.issubset(set(symbols)):
+        focus = "BTC and ETH comparison should weigh liquidity, volatility, network use, macro sensitivity, and risk tolerance. "
+    elif "moving" in normalized_question or "market" in normalized_question:
+        focus = "Market movement should be checked against price trend, volume, macro news, ETF or regulatory headlines, and broader risk appetite. "
+    elif "suspicious" in normalized_question or risk_terms:
+        focus = "Suspicious-token review should prioritize contract verification, liquidity locks, holder concentration, permissions, official domains, and wallet approval safety. "
+    else:
+        focus = "Crypto review should combine market data, project fundamentals, source quality, liquidity, and personal risk controls. "
+    risk_note = "No obvious scam keywords were detected in the question, but independent verification is still required."
+    if risk_terms:
+        risk_note = "Risk keywords detected: " + ", ".join(risk_terms) + ". Do not connect a wallet or send funds until verified through official sources."
+    return {
+        "analysis": focus + "Available fallback signals: " + " ".join(market_lines),
+        "risk_note": risk_note,
+        "disclaimer": CRYPTO_AI_DISCLAIMER,
+        "confidence": 0.42 if matched else 0.25,
+        "source": "safe_rule_based_fallback",
+    }
+
+
 def ask_crypto_ai(conn: Any, user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     ensure_tables(conn)
-    prompt = re.sub(r"\s+", " ", str(payload.get("prompt") or "").strip())[:1000]
-    if len(prompt) < 4:
+    question = re.sub(r"\s+", " ", str(payload.get("question") or payload.get("prompt") or "").strip())[:1000]
+    if len(question) < 4:
         raise ValueError("Ask a clear crypto question.")
     symbol = ""
-    if payload.get("assetSymbol"):
-        symbol = _normalize_symbol(payload.get("assetSymbol"))
-    digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:32]
-    enabled = os.getenv("PULSE_AI_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
-    if enabled:
-        response = "Crypto AI is enabled. This educational answer should use configured AI routing before production release."
-        state = "BETA"
-    else:
-        response = "Crypto AI is not enabled yet. Use alerts, watchlists, and market pulse while AI analysis remains in safe preview. This is educational only and not financial advice."
-        state = "PARTIAL"
+    if payload.get("asset") or payload.get("assetSymbol"):
+        symbol = _normalize_symbol(payload.get("asset") or payload.get("assetSymbol"))
+    digest = hashlib.sha256(question.encode("utf-8")).hexdigest()[:32]
+    capability = crypto_ai_status()
+    if not capability.get("actions_enabled"):
+        response_summary = capability["status_label"]
+        conn.execute(
+            "INSERT INTO crypto_ai_queries (user_id, prompt_hash, asset_symbol, response_summary, created_at) VALUES (?, ?, ?, ?, ?)",
+            (int(user_id), digest, symbol or None, response_summary[:300], _now()),
+        )
+        _audit(conn, user_id, "ask_crypto_ai_blocked", "crypto_ai_query", digest, {"asset": symbol or "general", "state": capability["state"]})
+        conn.commit()
+        return {
+            "ok": False,
+            "state": capability["state"],
+            "status_label": capability["status_label"],
+            "message": capability["message"],
+            "analysis": "",
+            "risk_note": "Crypto AI did not run because the feature is not enabled.",
+            "disclaimer": CRYPTO_AI_DISCLAIMER,
+            "confidence": None,
+        }
+    computed = _limited_crypto_analysis(question, symbol)
     conn.execute(
         "INSERT INTO crypto_ai_queries (user_id, prompt_hash, asset_symbol, response_summary, created_at) VALUES (?, ?, ?, ?, ?)",
-        (int(user_id), digest, symbol or None, response[:300], _now()),
+        (int(user_id), digest, symbol or None, computed["analysis"][:300], _now()),
     )
-    _audit(conn, user_id, "ask_crypto_ai", "crypto_ai_query", digest, {"asset": symbol or "general", "state": state})
+    _audit(conn, user_id, "ask_crypto_ai", "crypto_ai_query", digest, {"asset": symbol or "general", "state": capability["state"], "source": computed["source"]})
     conn.commit()
     return {
         "ok": True,
-        "state": state,
-        "answer": response,
-        "disclaimer": "Educational information only. This is not financial advice. PulseSoc does not guarantee returns or tell users to buy or sell assets.",
+        "state": capability["state"],
+        "status_label": capability["status_label"],
+        **computed,
     }
 
 

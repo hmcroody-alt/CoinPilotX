@@ -24,6 +24,7 @@ os.environ["SESSION_SECRET"] = "crypto-command-audit-secret"
 os.environ["FORCE_INIT_DB"] = "1"
 os.environ["PULSESOC_CRYPTO_DISABLE_LIVE_MARKETS"] = "1"
 os.environ["PULSE_AI_ENABLED"] = "false"
+os.environ["PULSE_CRYPTO_AI_ENABLED"] = "false"
 
 import bot  # noqa: E402
 from services import dashboard_crypto_command_center  # noqa: E402
@@ -96,6 +97,7 @@ EXPECTED_ROUTE_RULES = {
     "/api/crypto/watchlists",
     "/api/crypto/watchlists/<int:watchlist_id>/assets",
     "/api/crypto/watchlists/<int:watchlist_id>/assets/<int:asset_id>",
+    "/api/crypto/ask",
     "/api/crypto/ask-ai",
     "/api/crypto/token-scan",
     "/api/crypto/trending",
@@ -316,11 +318,48 @@ def run() -> None:
     forbidden_asset_delete = other_client.delete(f"/api/crypto/watchlists/{watchlist_id}/assets/{asset_id}")
     assert_true(forbidden_asset_delete.status_code == 400, "another user cannot delete watchlist asset")
 
-    ai_response = user_client.post("/api/crypto/ask-ai", json={"prompt": "Why is Bitcoin moving today?", "assetSymbol": "BTC"})
-    assert_true(ai_response.status_code == 200, "crypto AI endpoint returns safe response")
+    ask_page = user_client.get("/dashboard/crypto/ask-ai")
+    assert_true(ask_page.status_code == 200, "Ask Crypto AI page loads")
+    ask_body = ask_page.get_data(as_text=True)
+    assert_true("Disabled (feature flag)" in ask_body, "Ask Crypto AI page shows disabled feature-flag state")
+    assert_true("title='AI not enabled yet'" in ask_body, "disabled AI controls expose required tooltip")
+    assert_true('data-crypto-ai-enabled="0"' in ask_body, "Ask Crypto AI form is gated off")
+    assert_true("data-disabled-prompt" in ask_body, "quick actions are rendered as disabled prompts")
+    assert_true("data-prompt=" not in ask_body, "disabled quick actions have no active prompt handlers")
+    assert_true("name=\"question\"" in ask_body and "name=\"asset\"" in ask_body, "question and asset fields are present")
+    assert_true("Crypto AI is not enabled yet" not in ask_body, "old placeholder state text is removed")
+
+    ai_response = user_client.post("/api/crypto/ask", json={"question": "Why is Bitcoin moving today?", "asset": "BTC"})
+    assert_true(ai_response.status_code == 503, "crypto AI primary endpoint is gated when disabled")
     ai_payload = json_body(ai_response)
-    assert_true(ai_payload.get("state") == "PARTIAL", "crypto AI is truthful when disabled")
+    assert_true(ai_payload.get("ok") is False, "disabled crypto AI does not pretend success")
+    assert_true(ai_payload.get("state") == "DISABLED", "crypto AI is disabled by feature flag")
+    assert_true(not ai_payload.get("analysis"), "disabled crypto AI does not return fake analysis")
     assert_true("not financial advice" in (ai_payload.get("disclaimer") or "").lower(), "crypto AI includes safety disclaimer")
+
+    legacy_ai_response = user_client.post("/api/crypto/ask-ai", json={"prompt": "Compare BTC and ETH.", "assetSymbol": "ETH"})
+    assert_true(legacy_ai_response.status_code == 503, "legacy crypto AI endpoint is also gated when disabled")
+    legacy_ai_payload = json_body(legacy_ai_response)
+    assert_true(legacy_ai_payload.get("state") == "DISABLED", "legacy endpoint uses same disabled state")
+    assert_true("not financial advice" in (ai_payload.get("disclaimer") or "").lower(), "crypto AI includes safety disclaimer")
+
+    os.environ["PULSE_CRYPTO_AI_ENABLED"] = "true"
+    os.environ["PULSE_CRYPTO_AI_SAFE_FALLBACK_ENABLED"] = "false"
+    unavailable_response = user_client.post("/api/crypto/ask", json={"question": "Summarize crypto market", "asset": "BTC"})
+    assert_true(unavailable_response.status_code == 503, "crypto AI is unavailable when flag is on without backend")
+    unavailable_payload = json_body(unavailable_response)
+    assert_true(unavailable_payload.get("state") == "UNAVAILABLE", "flag-on missing backend reports unavailable")
+    assert_true(not unavailable_payload.get("analysis"), "unavailable crypto AI does not return fake analysis")
+
+    os.environ["PULSE_CRYPTO_AI_SAFE_FALLBACK_ENABLED"] = "true"
+    limited_response = user_client.post("/api/crypto/ask", json={"question": "Compare BTC and ETH", "asset": "BTC"})
+    assert_true(limited_response.status_code == 200, "safe fallback can answer when explicitly enabled")
+    limited_payload = json_body(limited_response)
+    assert_true(limited_payload.get("state") == "LIMITED", "safe fallback reports limited beta state")
+    assert_true(limited_payload.get("analysis"), "safe fallback returns computed analysis")
+    assert_true(limited_payload.get("source") == "safe_rule_based_fallback", "safe fallback labels its source")
+    os.environ["PULSE_CRYPTO_AI_ENABLED"] = "false"
+    os.environ["PULSE_CRYPTO_AI_SAFE_FALLBACK_ENABLED"] = "false"
 
     scan_response = user_client.post("/api/crypto/token-scan", json={"symbol": "DOGE"})
     assert_true(scan_response.status_code == 200, "token scanner returns beta response")

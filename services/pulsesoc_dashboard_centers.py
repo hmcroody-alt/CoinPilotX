@@ -1163,7 +1163,7 @@ def build_subscriptions(conn: Any, user: dict[str, Any]) -> dict[str, Any]:
         },
         "checklist": checklist,
         "recommendations": [
-            _recommendation("Open billing portal", "Use the secure billing portal for payment method changes.", "This avoids exposing payment method details in PulseSoc.", "Stripe portal endpoint if configured", "/billing/portal", "medium", limited=True),
+            _recommendation("Switch billing safely", "Use the secure billing controls for payment method or plan changes when a provider subscription exists.", "This avoids exposing payment method details in PulseSoc and disables the action when Stripe is not connected.", "Stripe portal availability and backend subscription status", "/dashboard/economy/subscriptions", "medium", limited=True),
             _recommendation("Review premium access", "Confirm which entitlements are active.", "Access badges must match backend permissions.", "account plan and entitlement fields", "/dashboard/economy/premium", "high", limited=not premium),
         ],
         "score_explanation": "Subscription health is calculated from checklist completion, failed payment count, and real premium entitlement state.",
