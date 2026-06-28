@@ -17,6 +17,7 @@ from services import dashboard_intelligence_command_center
 from services import dashboard_network_command_center
 from services import db as db_service
 from services import premium_identity_engine
+from services import system_mission_control
 
 
 PUBLIC_ROLES = {"user", "member", "free", "premium", "creator", "seller"}
@@ -422,16 +423,16 @@ WIDGETS.extend([
     _widget("ai_video_tools", "Video Intelligence Studio", "PulseSoc AI", "/dashboard/ai/video-studio", "Video scripts, reels, captions, thumbnails, pacing, and publishing readiness.", premium_required=True, sort_order=70, accent="purple", status="BETA", tables=("ai_action_requests",), dependencies=("ai", "video")),
     _widget("ai_intelligence_center", "AI Mission Control", "PulseSoc AI", "/dashboard/ai/mission-control", "Cross-platform AI hub for safe summaries, recommendations, automations, and system health.", premium_required=True, sort_order=80, accent="purple", status="BETA", tables=("ai_analyses", "ai_recommendations"), dependencies=("ai", "premium")),
 
-    _widget("feed_status", "Feed", "System Status", "/pulse", "Feed service status.", sort_order=10, accent="emerald", status="ACTIVE", tables=("posts",), dependencies=("feed",)),
-    _widget("messenger_status", "Messenger", "System Status", "/pulse/messages", "Messenger service status.", sort_order=20, accent="emerald", status="ACTIVE", tables=("conversations", "private_messages"), dependencies=("messaging",)),
-    _widget("live_status", "Live", "System Status", "/pulse/live", "Live system status.", sort_order=30, accent="emerald", status="BETA", tables=("live_streams",), dependencies=("live",)),
-    _widget("radio_status", "Radio", "System Status", "/pulse/music", "Pulse Radio status.", sort_order=40, accent="emerald", status="ACTIVE", tables=("audio_tracks",), dependencies=("music",)),
-    _widget("marketplace_status", "Marketplace", "System Status", "/pulse/marketplace", "Marketplace status.", sort_order=50, accent="emerald", status="BETA", tables=("marketplace_listings",), dependencies=("marketplace",)),
-    _widget("notifications_status", "Notifications", "System Status", "/pulse/notifications", "Notification system status.", sort_order=60, accent="gold", status="PARTIAL", tables=("notifications", "notification_delivery_logs"), dependencies=("notifications",)),
-    _widget("ai_status", "AI", "System Status", "/pulse/premium/intelligence", "AI systems status.", sort_order=70, accent="purple", status="BETA", tables=("ai_conversations",), dependencies=("ai",)),
-    _widget("scam_shield_status", "Scam Shield", "System Status", "/scam-shield", "Scam Shield status.", sort_order=80, accent="emerald", status="ACTIVE", tables=("security_events",), dependencies=("security",)),
-    _widget("ads_status", "Ads", "System Status", "/pulse", "Ads system readiness.", sort_order=90, accent="gold", status="BETA", tables=("ad_placements", "ads"), dependencies=("ads",)),
-    _widget("creator_studio_status", "Creator Studio", "System Status", "/pulse/creator/dashboard", "Creator Studio status.", creator_required=True, sort_order=100, accent="emerald", status="BETA", tables=("posts", "pulse_reels", "videos"), dependencies=("creator",)),
+    _widget("feed_status", "Feed Intelligence", "System Status", "/dashboard/system/feed", "Feed latency, ranking health, realtime hydration, discovery confidence, and prediction graph.", sort_order=10, accent="emerald", status="BETA", tables=("posts",), dependencies=("feed",)),
+    _widget("messenger_status", "Messenger Intelligence", "System Status", "/dashboard/system/messenger", "Realtime delivery, receipts, typing, push health, media delivery, and network quality.", sort_order=20, accent="cyan", status="BETA", tables=("conversations", "private_messages"), dependencies=("messaging",)),
+    _widget("live_status", "Live Network", "System Status", "/dashboard/system/live", "Streams, viewers, encoder health, LiveKit, Mux, bitrate, recording, audio, and prediction.", sort_order=30, accent="emerald", status="BETA", tables=("live_streams",), dependencies=("live",)),
+    _widget("radio_status", "Radio Intelligence", "System Status", "/dashboard/system/radio", "Listeners, now playing, buffer health, creator uploads, recommendations, and licensing readiness.", sort_order=40, accent="purple", status="BETA", tables=("audio_tracks",), dependencies=("music",)),
+    _widget("marketplace_status", "Marketplace Intelligence", "System Status", "/dashboard/system/marketplace", "Listings, orders, transactions, fraud detection, seller health, revenue, and trust score.", sort_order=50, accent="gold", status="BETA", tables=("marketplace_listings",), dependencies=("marketplace",)),
+    _widget("notifications_status", "Notification Intelligence", "System Status", "/dashboard/system/notifications", "Push, SMS, email, in-app, retries, queues, failures, delivery rate, and prediction.", sort_order=60, accent="gold", status="BETA", tables=("notifications", "notification_delivery_logs"), dependencies=("notifications",)),
+    _widget("ai_status", "AI Intelligence", "System Status", "/dashboard/system/ai", "Models, routing, memory, knowledge graph, agents, context, and response health.", sort_order=70, accent="purple", status="BETA", tables=("ai_conversations",), dependencies=("ai",)),
+    _widget("scam_shield_status", "Scam Shield", "System Status", "/dashboard/system/scam-shield", "Threats, analyzed signals, confidence, risk map, realtime alerts, and community safety.", sort_order=80, accent="emerald", status="BETA", tables=("security_events",), dependencies=("security",)),
+    _widget("ads_status", "Advertising Intelligence", "System Status", "/dashboard/system/advertising", "Campaigns, delivery, revenue, conversions, brand safety, budget pacing, and optimization.", sort_order=90, accent="gold", status="BETA", tables=("ad_placements", "ads"), dependencies=("ads",)),
+    _widget("creator_studio_status", "Creator Intelligence", "System Status", "/dashboard/system/creator", "Publishing, uploads, processing, creator health, performance, revenue, and AI optimization.", creator_required=True, sort_order=100, accent="emerald", status="BETA", tables=("posts", "pulse_reels", "videos"), dependencies=("creator",)),
 ])
 
 
@@ -485,6 +486,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
     economy_state = dashboard_economy_command_center.build_economy_state(conn, user)
     ads_state = dashboard_ads_command_center.build_ads_state(conn, user)
     ai_state = dashboard_ai_command_center.build_ai_state(conn, user)
+    system_state = system_mission_control.build_system_state(conn)
     metrics = _metrics(cur, user, caps)
     widgets = []
     for widget in WIDGETS:
@@ -502,6 +504,8 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             state = dashboard_ads_command_center.state_for_widget(ads_state, item["widget_key"])
         elif item["category"] == "PulseSoc AI":
             state = dashboard_ai_command_center.state_for_widget(ai_state, item["widget_key"])
+        elif item["category"] == "System Status":
+            state = system_mission_control.state_for_widget(system_state, item["widget_key"])
         else:
             state = dashboard_account_command_center.state_for_widget(account_state, item["widget_key"])
         item["access"] = access
@@ -522,6 +526,8 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             item["cta_label"] = "Review Commerce"
         elif item["category"] == "PulseSoc AI":
             item["cta_label"] = "Open AI Mission Control"
+        elif item["category"] == "System Status":
+            item["cta_label"] = "Review System"
         else:
             item["cta_label"] = "Open"
         item["cta_route"] = "/pulse/premium" if "Premium" in item.get("lock_reason", "") else (item["route"] or "/dashboard")
@@ -557,6 +563,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
         "network_command_center": network_state,
         "intelligence_command_center": intelligence_state,
         "economy_command_center": economy_state,
+        "system_mission_control": system_state,
     }
 
 
