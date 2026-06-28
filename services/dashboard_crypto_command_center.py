@@ -586,8 +586,11 @@ def record_recent_asset(conn: Any, user_id: int, symbol: str) -> None:
     conn.commit()
 
 
-def _env_enabled(name: str) -> bool:
-    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+def _env_enabled(name: str, *, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def crypto_ai_status() -> dict[str, Any]:
@@ -601,7 +604,9 @@ def crypto_ai_status() -> dict[str, Any]:
             "tooltip": "AI not enabled yet",
             "http_status": 503,
         }
-    if _env_enabled("PULSE_CRYPTO_AI_SAFE_FALLBACK_ENABLED"):
+    # The deterministic fallback is an approved in-process backend, so an
+    # enabled Crypto AI feature uses it unless operators explicitly disable it.
+    if _env_enabled("PULSE_CRYPTO_AI_SAFE_FALLBACK_ENABLED", default=True):
         return {
             "state": "LIMITED",
             "status_label": "Limited (beta)",
@@ -609,13 +614,14 @@ def crypto_ai_status() -> dict[str, Any]:
             "actions_enabled": True,
             "tooltip": "Limited beta fallback enabled",
             "http_status": 200,
+            "provider": "safe_rule_based_fallback",
         }
     return {
-        "state": "UNAVAILABLE",
-        "status_label": "Unavailable (backend missing)",
-        "message": "Crypto AI is flagged on, but no approved AI router or safe fallback is configured.",
+        "state": "DISABLED",
+        "status_label": "Disabled (fallback feature flag)",
+        "message": "Crypto AI is enabled, but its approved educational fallback is explicitly disabled.",
         "actions_enabled": False,
-        "tooltip": "AI not enabled yet",
+        "tooltip": "Educational fallback disabled by feature flag",
         "http_status": 503,
     }
 
