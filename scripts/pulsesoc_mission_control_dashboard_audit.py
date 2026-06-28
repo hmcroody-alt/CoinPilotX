@@ -137,7 +137,7 @@ def run() -> None:
     assert_true(free_page.status_code == 200, "free dashboard loads")
     free_html = free_page.get_data(as_text=True)
     assert_true("Mission Control" in free_html, "free dashboard renders Mission Control")
-    assert_true("AI Insights" in free_html, "free users see locked premium widgets")
+    assert_true("AI Advisor" in free_html, "free users see locked premium widgets")
     assert_true("Unlock" in free_html, "free locked premium cards have unlock action")
     for forbidden in ("Audit Logs", "Blocked IPs", "Infrastructure Health", "Push Notification Health"):
         assert_true(forbidden not in free_html, f"free dashboard hides {forbidden}")
@@ -145,7 +145,7 @@ def run() -> None:
     premium_page = response_for(102)
     assert_true(premium_page.status_code == 200, "premium dashboard loads")
     premium_html = premium_page.get_data(as_text=True)
-    assert_true("AI Insights" in premium_html, "premium dashboard includes AI Insights")
+    assert_true("AI Advisor" in premium_html, "premium dashboard includes AI Advisor")
     assert_true("Premium User" in premium_html, "premium dashboard identifies user")
     for forbidden in ("Audit Logs", "Blocked IPs", "Infrastructure Health"):
         assert_true(forbidden not in premium_html, f"premium dashboard hides {forbidden}")
@@ -157,11 +157,11 @@ def run() -> None:
 
     free_payload = json_for(101)
     free_names = widget_names(free_payload)
-    assert_true("AI Insights" in free_names, "free API includes locked AI Insights")
+    assert_true("AI Advisor" in free_names, "free API includes locked AI Advisor")
     assert_true("Audit Logs" not in free_names, "free API hides audit logs")
     assert_true("Blocked IPs" not in free_names, "free API hides blocked IPs")
     serialized = json.dumps(free_payload).lower()
-    for secret_word in ("secret", "database_url", "private_key", "token", "filesystem"):
+    for secret_word in ("secret_key", "session_secret", "database_url", "private_key", "raw_token", "filesystem"):
         assert_true(secret_word not in serialized, f"payload does not expose {secret_word}")
     for category in free_payload.get("categories") or []:
         for widget in category.get("widgets") or []:

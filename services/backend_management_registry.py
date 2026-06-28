@@ -19,6 +19,7 @@ REQUIRED_MODULES = {
     "account": "Account Command Center",
     "network": "Network Command Center",
     "creator": "Creator Command Center",
+    "intelligence": "Intelligence Command Center",
     "moderation": "Moderation / Safety Command Center",
     "ads": "Ads Command Center",
     "economy": "Economy Command Center",
@@ -180,6 +181,26 @@ FEATURES = FEATURES + (
 )
 
 
+FEATURES = FEATURES + (
+    BackendFeature("intelligence.scam_shield", "Scam Intelligence", "intelligence", "/admin/intelligence-command-center/scam-intelligence", "admin", "trust_safety.manage", "active", "Trust", "dashboard_intelligence_command_center", "command_center_security_events", "critical", True, True, "Scam patterns, fake account/giveaway/crypto/job/marketplace/link signals, community reports, and safety recommendations."),
+    BackendFeature("intelligence.alerts", "Alert Management", "intelligence", "/admin/intelligence-command-center/alert-management", "admin", "command_center.view", "active", "Notifications", "dashboard_intelligence_command_center", "notification_delivery_logs", "high", True, True, "Active/local/global/trending scam alerts, priority, dismissals, notification queue integration, and alert audit."),
+    BackendFeature("intelligence.pulse_brain", "Pulse Brain", "intelligence", "/admin/intelligence-command-center/pulse-brain", "admin", "analytics.view", "active", "Intelligence", "dashboard_intelligence_command_center", "admin_audit_logs", "high", True, True, "Community mood, platform health, topics, creators, safety signals, summaries, and daily briefing state."),
+    BackendFeature("intelligence.ai_advisor", "AI Advisor", "intelligence", "/admin/intelligence-command-center/ai-advisor", "admin", "ai.view", "partial", "AI", "dashboard_intelligence_command_center", "command_center_ai_events", "high", True, True, "Daily recommendations, suggested actions, explanations, and provider-disabled safe behavior."),
+    BackendFeature("intelligence.safety_scanner", "Safety Scanner", "intelligence", "/admin/intelligence-command-center/safety-scanner", "admin", "security.view", "active", "Security", "dashboard_intelligence_command_center", "security_events", "critical", True, True, "Message, link, file, device, session, suspicious activity, recovery action, and threat integration scans."),
+    BackendFeature("intelligence.recommendations", "Recommendation Engine", "intelligence", "/admin/intelligence-command-center/recommendation-engine", "admin", "analytics.view", "partial", "Recommendations", "dashboard_intelligence_command_center", "dashboard_recommendations", "medium", True, True, "Privacy-safe people, groups, content, marketplace, music, creator suggestions, and ranking signals."),
+    BackendFeature("intelligence.security_operations", "Security Operations", "intelligence", "/admin/intelligence-command-center/security-operations", "admin", "security.view", "active", "Security", "dashboard_intelligence_command_center", "admin_audit_logs", "critical", True, True, "Overall safety score, checklist, device/login/privacy health, recovery status, and security timeline."),
+    BackendFeature("intelligence.threats", "Threat Intelligence", "intelligence", "/admin/intelligence-command-center/threat-intelligence", "admin", "security.view", "active", "Security", "dashboard_intelligence_command_center", "security_events", "critical", True, True, "Current threats, timelines, suspicious accounts, blocked threats, emerging risks, severity, and resolution history."),
+    BackendFeature("intelligence.risk", "Risk Assessment", "intelligence", "/admin/intelligence-command-center/risk-assessment", "admin", "security.view", "partial", "Risk", "dashboard_intelligence_command_center", "command_center_security_events", "critical", True, True, "Account, device, network, financial, reputation, marketplace, confidence, and timeline risk."),
+    BackendFeature("intelligence.trust", "Trust Intelligence", "intelligence", "/admin/intelligence-command-center/trust-intelligence", "admin", "trust_safety.manage", "partial", "Trust", "dashboard_intelligence_command_center", "moderation_cases", "high", True, True, "Reputation, trust, reports, copyright, violations, appeals, improvement plan, and trust timeline."),
+    BackendFeature("intelligence.signals", "Signal Intelligence", "intelligence", "/admin/intelligence-command-center/signal-intelligence", "admin", "analytics.view", "partial", "Signals", "dashboard_intelligence_command_center", "admin_audit_logs", "medium", True, True, "Feed, community, trend, creator, engagement, safety, and recommendation signal processing."),
+    BackendFeature("intelligence.research", "Research Engine", "intelligence", "/admin/intelligence-command-center/research-engine", "admin", "ai.view", "partial", "AI", "dashboard_intelligence_command_center", "command_center_ai_events", "medium", True, True, "Topic research, source summaries, saved research, citations, export readiness, and usage limits."),
+    BackendFeature("intelligence.feed", "Feed Intelligence", "intelligence", "/admin/intelligence-command-center/feed-intelligence", "admin", "analytics.view", "partial", "Feed", "dashboard_intelligence_command_center", "posts", "medium", True, True, "Feed summaries, hidden trends, recommended reading, creator opportunities, and personalized briefing."),
+    BackendFeature("intelligence.predictions", "Prediction Engine", "intelligence", "/admin/intelligence-command-center/prediction-engine", "admin", "analytics.view", "partial", "Predictions", "dashboard_intelligence_command_center", "dashboard_recommendations", "medium", True, True, "Future risks, opportunities, creator predictions, trend forecasts, confidence levels, and history."),
+    BackendFeature("intelligence.heatmaps", "Heatmap Engine", "intelligence", "/admin/intelligence-command-center/heatmap-engine", "admin", "analytics.view", "partial", "Heatmaps", "dashboard_intelligence_command_center", "posts", "medium", True, True, "Aggregate-only global/community/topic/engagement/safety/discovery heatmaps."),
+    BackendFeature("intelligence.audit", "Intelligence Audit Logs", "intelligence", "/admin/intelligence-command-center/audit", "admin", "audit.view", "active", "Security", "admin_ai_assistant", "admin_audit_logs", "critical", True, True, "Sensitive intelligence actions, recommendations, scans, alerts, and admin changes remain audit-visible."),
+)
+
+
 MODULE_OPERATING_BLUEPRINTS: dict[str, dict[str, Any]] = {
     "account": {
         "surface": "/admin/account-command",
@@ -201,6 +222,13 @@ MODULE_OPERATING_BLUEPRINTS: dict[str, dict[str, Any]] = {
         "visible_state": "posts, reels, videos, statuses, live, creator analytics",
         "actions": ["review", "remove", "restore", "feature", "escalate"],
         "failure_behavior": "Unclear moderation decisions stay queued; content is not destroyed without audit.",
+    },
+    "intelligence": {
+        "surface": "/admin/intelligence-command-center",
+        "operators": "Owner, admin, AI ops, trust and safety",
+        "visible_state": "scam shield, alerts, Pulse Brain, AI Advisor, safety scan, recommendations, threat, risk, trust, signals, research, feed, predictions, heatmaps",
+        "actions": ["analyze", "explain", "triage", "recommend", "review", "audit"],
+        "failure_behavior": "AI and prediction features fail closed to safe unavailable states; safety and scam signals remain review-gated.",
     },
     "moderation": {
         "surface": "/admin/pulse-moderation, /admin/security, /admin/scam-shield",
