@@ -11,6 +11,7 @@ from typing import Any
 
 from services import dashboard_account_command_center
 from services import dashboard_ads_command_center
+from services import dashboard_ai_command_center
 from services import dashboard_economy_command_center
 from services import dashboard_intelligence_command_center
 from services import dashboard_network_command_center
@@ -412,14 +413,14 @@ WIDGETS.extend([
     _widget("audience_targeting", "Audience Targeting", "Ads & Sponsorships", "/dashboard/ads/audience-targeting", "Privacy-first aggregate targeting, contextual clusters, saturation, overlap, timing, language, and device rules.", sort_order=90, accent="gold", status="BETA", tables=("pulse_ad_targeting",), dependencies=("ads",)),
     _widget("conversion_tracking", "Conversion Tracking", "Ads & Sponsorships", "/dashboard/ads/conversion-tracking", "View, click, profile, follow, save, share, comment, purchase, drop-off, and funnel diagnostics.", sort_order=100, accent="gold", status="BETA", tables=("pulse_ad_events", "pulse_ad_clicks"), dependencies=("ads",)),
 
-    _widget("undx", "UNDX", "PulseSoc AI", "/pulse/premium/undx", "Unknown Destination intelligence layer.", premium_required=True, sort_order=10, accent="purple", status="BETA", tables=("ai_conversations",), dependencies=("premium", "ai")),
-    _widget("ai_assistant", "AI Assistant", "PulseSoc AI", "/pulse/assistant", "PulseSoc assistant entry point.", premium_required=True, sort_order=20, accent="purple", status="BETA", tables=("ai_conversations", "ai_messages"), dependencies=("ai",)),
-    _widget("ai_research", "AI Research", "PulseSoc AI", "/pulse/premium/intelligence", "Premium AI research workspace.", premium_required=True, sort_order=30, accent="purple", status="BETA", tables=("ai_analyses",), dependencies=("ai",)),
-    _widget("ai_content_generator", "AI Content Generator", "PulseSoc AI", "/pulse/premium/intelligence", "AI-assisted creator content generation.", premium_required=True, sort_order=40, accent="purple", status="COMING_SOON", tables=("ai_action_requests",), dependencies=("ai", "creator")),
-    _widget("ai_image_tools", "AI Image Tools", "PulseSoc AI", "/pulse/premium/intelligence", "Prepared image tooling.", premium_required=True, sort_order=50, accent="purple", status="COMING_SOON", tables=("ai_action_requests",), dependencies=("ai",)),
-    _widget("ai_music_tools", "AI Music Tools", "PulseSoc AI", "/pulse/premium/intelligence", "Prepared music AI tooling.", premium_required=True, sort_order=60, accent="purple", status="COMING_SOON", tables=("ai_action_requests",), dependencies=("ai", "music")),
-    _widget("ai_video_tools", "AI Video Tools", "PulseSoc AI", "/pulse/premium/intelligence", "Prepared video AI tooling.", premium_required=True, sort_order=70, accent="purple", status="COMING_SOON", tables=("ai_action_requests",), dependencies=("ai", "video")),
-    _widget("ai_intelligence_center", "AI Intelligence Center", "PulseSoc AI", "/pulse/premium/intelligence", "Premium AI intelligence command center.", premium_required=True, sort_order=80, accent="purple", status="BETA", tables=("ai_analyses", "ai_recommendations"), dependencies=("ai", "premium")),
+    _widget("undx", "UNDX Core Intelligence", "PulseSoc AI", "/dashboard/ai/undx", "Mission workspace, project memory, agent coordination, and execution readiness.", premium_required=True, sort_order=10, accent="purple", status="BETA", tables=("ai_conversations",), dependencies=("premium", "ai")),
+    _widget("ai_assistant", "Adaptive AI Companion", "PulseSoc AI", "/dashboard/ai/assistant", "Context-aware assistant with privacy-safe guidance and fallback behavior.", premium_required=True, sort_order=20, accent="purple", status="BETA", tables=("ai_conversations", "ai_messages"), dependencies=("ai",)),
+    _widget("ai_research", "Research Intelligence Lab", "PulseSoc AI", "/dashboard/ai/research", "Evidence, confidence, knowledge maps, research memory, and saved findings.", premium_required=True, sort_order=30, accent="purple", status="BETA", tables=("ai_analyses",), dependencies=("ai",)),
+    _widget("ai_content_generator", "Creative Intelligence Studio", "PulseSoc AI", "/dashboard/ai/creative-studio", "AI-assisted posts, scripts, captions, strategies, presentations, and creator drafts.", premium_required=True, sort_order=40, accent="purple", status="BETA", tables=("ai_action_requests",), dependencies=("ai", "creator")),
+    _widget("ai_image_tools", "Visual Intelligence Engine", "PulseSoc AI", "/dashboard/ai/visual-engine", "Visual prompts, thumbnail guidance, asset safety, and media-ready image workflows.", premium_required=True, sort_order=50, accent="purple", status="BETA", tables=("ai_action_requests",), dependencies=("ai",)),
+    _widget("ai_music_tools", "Music Intelligence Studio", "PulseSoc AI", "/dashboard/ai/music-studio", "Music recommendations, mood, metadata, radio readiness, and creator sound guidance.", premium_required=True, sort_order=60, accent="purple", status="BETA", tables=("ai_action_requests",), dependencies=("ai", "music")),
+    _widget("ai_video_tools", "Video Intelligence Studio", "PulseSoc AI", "/dashboard/ai/video-studio", "Video scripts, reels, captions, thumbnails, pacing, and publishing readiness.", premium_required=True, sort_order=70, accent="purple", status="BETA", tables=("ai_action_requests",), dependencies=("ai", "video")),
+    _widget("ai_intelligence_center", "AI Mission Control", "PulseSoc AI", "/dashboard/ai/mission-control", "Cross-platform AI hub for safe summaries, recommendations, automations, and system health.", premium_required=True, sort_order=80, accent="purple", status="BETA", tables=("ai_analyses", "ai_recommendations"), dependencies=("ai", "premium")),
 
     _widget("feed_status", "Feed", "System Status", "/pulse", "Feed service status.", sort_order=10, accent="emerald", status="ACTIVE", tables=("posts",), dependencies=("feed",)),
     _widget("messenger_status", "Messenger", "System Status", "/pulse/messages", "Messenger service status.", sort_order=20, accent="emerald", status="ACTIVE", tables=("conversations", "private_messages"), dependencies=("messaging",)),
@@ -483,6 +484,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
     intelligence_state = dashboard_intelligence_command_center.build_intelligence_state(conn, user)
     economy_state = dashboard_economy_command_center.build_economy_state(conn, user)
     ads_state = dashboard_ads_command_center.build_ads_state(conn, user)
+    ai_state = dashboard_ai_command_center.build_ai_state(conn, user)
     metrics = _metrics(cur, user, caps)
     widgets = []
     for widget in WIDGETS:
@@ -498,6 +500,8 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             state = dashboard_economy_command_center.state_for_widget(economy_state, item["widget_key"])
         elif item["category"] == "Ads & Sponsorships":
             state = dashboard_ads_command_center.state_for_widget(ads_state, item["widget_key"])
+        elif item["category"] == "PulseSoc AI":
+            state = dashboard_ai_command_center.state_for_widget(ai_state, item["widget_key"])
         else:
             state = dashboard_account_command_center.state_for_widget(account_state, item["widget_key"])
         item["access"] = access
@@ -516,6 +520,8 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             item["cta_label"] = "Manage Economy"
         elif item["category"] == "Ads & Sponsorships":
             item["cta_label"] = "Review Commerce"
+        elif item["category"] == "PulseSoc AI":
+            item["cta_label"] = "Open AI Mission Control"
         else:
             item["cta_label"] = "Open"
         item["cta_route"] = "/pulse/premium" if "Premium" in item.get("lock_reason", "") else (item["route"] or "/dashboard")
