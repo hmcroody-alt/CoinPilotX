@@ -1,6 +1,6 @@
 # Internal LogiNexus Engineering Constitution
 
-Version: 1.0
+Version: 1.1
 
 Classification: Internal only
 
@@ -68,6 +68,163 @@ Users should experience the result:
 18. Every feature must earn its place. Build only what solves a real problem or creates meaningful value.
 19. Design for scale. Assume growth and avoid decisions that require full rewrites.
 20. Continuous improvement. Observe, measure, learn, improve, repeat.
+
+## Meta Architecture
+
+Every PulseSoc decision must satisfy three realities:
+
+- Physical reality: servers, databases, storage, workers, networking, mobile clients, browsers, providers, and runtime constraints.
+- Logical reality: architecture, services, APIs, permissions, workflows, data models, algorithms, security boundaries, and maintainability.
+- Human reality: trust, attention, creativity, conversation, safety, dignity, accessibility, and meaningful community value.
+
+A solution is incomplete if it only works technically. It must also be maintainable by engineers and genuinely improve the user experience.
+
+## Architectural Layers
+
+Every subsystem should be reviewed through these layers:
+
+1. Purpose: why the subsystem should exist.
+2. Knowledge: evidence, constraints, user friction, and operational facts.
+3. Design: information architecture, interaction, accessibility, visual hierarchy, and user flow.
+4. Engineering: code, APIs, automation, infrastructure, performance, and security.
+5. Experience: responsiveness, motion, feedback, clarity, beauty, and graceful failure.
+6. Community: how the feature affects relationships, trust, collaboration, and safety.
+7. Evolution: how the system learns, adapts, and remains easy to improve.
+8. Legacy: how today's decision becomes tomorrow's foundation.
+
+## Digital DNA
+
+Every PulseSoc feature should inherit the same core DNA:
+
+- purpose
+- trust
+- reliability
+- elegance
+- accessibility
+- performance
+- security
+- privacy
+- human value
+- maintainability
+- scalability
+
+If a feature weakens one of these traits, it should be refined before release.
+
+## Adaptation Calculus
+
+PulseSoc should not merely recover from problems. It should learn from them.
+
+Adaptation requires:
+
+- observation
+- interpretation
+- decision
+- refinement
+- verification
+- documentation
+
+Do not optimize blindly. Changes should follow evidence from user friction, operational risk, performance drag, security findings, creator pain, community weakness, or technical debt.
+
+Every important workflow should emit enough safe signals to learn from:
+
+- logs without secrets
+- metrics without private data leaks
+- traces where useful
+- audit records for sensitive actions
+- failure reasons that help repair without exposing internals
+
+## Refinement Loop
+
+For meaningful changes, follow this loop:
+
+1. Observe the signal.
+2. Diagnose the cause.
+3. Design the smallest safe improvement.
+4. Implement without breaking invariants.
+5. Verify with targeted tests and QA.
+6. Measure the resulting behavior.
+7. Document what changed and why.
+8. Repeat only when evidence supports more change.
+
+Skipping verification creates false confidence. Skipping documentation creates repeated failure.
+
+## Evolution Kernel
+
+Every code change is a controlled mutation:
+
+```text
+Mutation = code change + data change + behavior change + risk change
+```
+
+A mutation is acceptable only when value increases and invariants survive.
+
+Protected invariants include:
+
+- permission integrity
+- privacy boundaries
+- truthful state labels
+- recovery paths
+- auditability
+- user dignity
+- secure payment boundaries
+- admin-only data separation
+- no raw secrets in UI, logs, reports, or APIs
+
+## Versioning and Migration
+
+Evolving systems must know what version of truth they operate on. Apply version thinking to:
+
+- APIs
+- database schemas
+- events
+- notification payloads
+- media processing
+- AI prompts
+- admin actions
+- entitlement and payment state
+- mobile and PWA compatibility
+
+Schema changes are high-risk when they affect identity, permissions, payments, messages, media, privacy, admin tools, or creator earnings.
+
+Safe migration requires:
+
+- forward plan
+- rollback plan where possible
+- data validation
+- compatibility review
+- monitoring
+- production-safe failure behavior
+
+Do not perform destructive migrations unless explicitly approved and fully justified.
+
+## Feature Flag and Rollback Rule
+
+Risky evolution should be controlled by flags or guarded rollout paths where practical.
+
+Feature flags allow:
+
+- owner-only QA
+- mobile/desktop separation
+- gradual rollout
+- fast rollback
+- measurement
+- risk containment
+
+A deployment is incomplete if failure behavior and rollback have not been considered.
+
+## Evolution Review
+
+Before completing substantial work, ask:
+
+- What evidence motivated this?
+- What behavior changed?
+- What data changed?
+- What invariant must survive?
+- Is the change compatible with mobile, desktop, PWA, backend, workers, database, providers, and admin tools?
+- What signal proves success?
+- What signal reveals failure?
+- What rollback or mitigation exists?
+- What learning should be preserved?
 
 ## Design Test
 
