@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from services import dashboard_account_command_center
+from services import dashboard_ads_command_center
 from services import dashboard_economy_command_center
 from services import dashboard_intelligence_command_center
 from services import dashboard_network_command_center
@@ -400,16 +401,16 @@ WIDGETS.extend([
     _widget("broadcast_tools", "Broadcast Tools", "Pulse Radio & Media", "/pulse/live", "Broadcast and live media tool entry point.", premium_required=True, creator_required=True, sort_order=110, accent="purple", status="BETA", tables=("live_streams",), dependencies=("live",)),
     _widget("sponsored_audio", "Sponsored Audio", "Pulse Radio & Media", "/pulse/music", "Prepared sponsored audio surface.", premium_required=True, sort_order=120, accent="gold", status="COMING_SOON", tables=("sponsorships", "ad_creatives"), dependencies=("ads", "music")),
 
-    _widget("view_sponsored_signals", "View Sponsored Signals", "Ads & Sponsorships", "/pulse", "View public sponsored signals when available.", sort_order=10, accent="gold", status="BETA", tables=("ad_placements",), dependencies=("ads",)),
-    _widget("ads_manager", "Ads Manager", "Ads & Sponsorships", "/pulse/premium", "Prepared advertiser dashboard.", premium_required=True, sort_order=20, accent="gold", status="COMING_SOON", tables=("ads", "ad_campaigns"), dependencies=("ads", "premium")),
-    _widget("campaign_builder", "Campaign Builder", "Ads & Sponsorships", "/pulse/premium", "Prepared campaign builder.", premium_required=True, sort_order=30, accent="gold", status="COMING_SOON", tables=("ad_campaigns", "ad_creatives"), dependencies=("ads",)),
-    _widget("sponsored_signal_studio", "Sponsored Signal Studio", "Ads & Sponsorships", "/pulse/premium", "Prepared sponsored signal creation flow.", premium_required=True, sort_order=40, accent="gold", status="COMING_SOON", tables=("ad_creatives", "ad_placements"), dependencies=("ads",)),
-    _widget("ad_analytics", "Ad Analytics", "Ads & Sponsorships", "/pulse/premium", "Prepared analytics for ad performance.", premium_required=True, sort_order=50, accent="gold", status="COMING_SOON", tables=("ad_impressions", "ad_clicks"), dependencies=("ads",)),
-    _widget("brand_deals", "Brand Deals", "Ads & Sponsorships", "/pulse/premium", "Prepared brand deal workspace.", premium_required=True, creator_required=True, sort_order=60, accent="gold", status="COMING_SOON", tables=("brand_deals",), dependencies=("ads", "creator")),
-    _widget("creator_sponsorships", "Creator Sponsorships", "Ads & Sponsorships", "/pulse/premium", "Prepared sponsorship center for creators.", premium_required=True, creator_required=True, sort_order=70, accent="gold", status="COMING_SOON", tables=("sponsorships",), dependencies=("ads", "creator")),
-    _widget("ad_revenue_center", "Ad Revenue Center", "Ads & Sponsorships", "/pulse/premium", "Prepared ad revenue controls.", premium_required=True, creator_required=True, sort_order=80, accent="gold", status="COMING_SOON", tables=("ad_revenue",), dependencies=("ads", "creator")),
-    _widget("audience_targeting", "Audience Targeting", "Ads & Sponsorships", "/pulse/premium", "Prepared privacy-safe targeting controls.", premium_required=True, sort_order=90, accent="gold", status="COMING_SOON", tables=("ad_targeting",), dependencies=("ads",)),
-    _widget("conversion_tracking", "Conversion Tracking", "Ads & Sponsorships", "/pulse/premium", "Prepared conversion analytics.", premium_required=True, sort_order=100, accent="gold", status="COMING_SOON", tables=("ad_clicks",), dependencies=("ads",)),
+    _widget("view_sponsored_signals", "Sponsored Signal Intelligence", "Ads & Sponsorships", "/dashboard/ads/sponsored-signals", "Approved sponsored signals, transparency, sponsor trust, relevance, privacy explanation, and public feedback.", sort_order=10, accent="gold", status="BETA", tables=("pulse_ad_placements", "pulse_ad_creatives"), dependencies=("ads",)),
+    _widget("ads_manager", "Commercial Mission Control", "Ads & Sponsorships", "/dashboard/ads/manager", "Campaign health, budget pacing, spend, delivery diagnostics, review state, creative health, and recommendations.", sort_order=20, accent="gold", status="BETA", tables=("pulse_ad_accounts", "pulse_ad_campaigns"), dependencies=("ads",)),
+    _widget("campaign_builder", "Campaign Builder", "Ads & Sponsorships", "/dashboard/ads/campaign-builder", "Guided objectives, budget, schedule, audience, placement, creative, privacy checks, and review-readiness workflow.", sort_order=30, accent="gold", status="BETA", tables=("pulse_ad_campaigns", "pulse_ad_creatives"), dependencies=("ads",)),
+    _widget("sponsored_signal_studio", "Sponsored Signal Studio", "Ads & Sponsorships", "/dashboard/ads/signal-studio", "Creative upload, copy, CTA, media preview, compliance scan, community relevance, and approval readiness.", sort_order=40, accent="gold", status="BETA", tables=("pulse_ad_creatives", "pulse_ad_media_assets"), dependencies=("ads",)),
+    _widget("ad_analytics", "Ad Analytics", "Ads & Sponsorships", "/dashboard/ads/analytics", "Impressions, viewability, clicks, CTR, spend, creative comparison, placement performance, and conversion events.", sort_order=50, accent="gold", status="BETA", tables=("pulse_ad_impressions", "pulse_ad_clicks"), dependencies=("ads",)),
+    _widget("brand_deals", "Brand Deals", "Ads & Sponsorships", "/dashboard/ads/brand-deals", "Verified brand and creator partnerships, deliverables, milestones, trust, and performance history.", creator_required=True, sort_order=60, accent="gold", status="BETA", tables=("pulse_brand_deals",), dependencies=("ads", "creator")),
+    _widget("creator_sponsorships", "Creator Sponsorships", "Ads & Sponsorships", "/dashboard/ads/creator-sponsorships", "Sponsorship readiness, sponsor fit, estimated earnings, application state, and deliverable tracking.", creator_required=True, sort_order=70, accent="gold", status="BETA", tables=("pulse_creator_sponsorships",), dependencies=("ads", "creator")),
+    _widget("ad_revenue_center", "Revenue Intelligence", "Ads & Sponsorships", "/dashboard/ads/revenue-intelligence", "Projected earnings, spend signals, trend, source mix, creator share, and growth recommendations.", creator_required=True, sort_order=80, accent="gold", status="BETA", tables=("pulse_ad_campaigns", "pulse_ad_wallets"), dependencies=("ads", "creator")),
+    _widget("audience_targeting", "Audience Targeting", "Ads & Sponsorships", "/dashboard/ads/audience-targeting", "Privacy-first aggregate targeting, contextual clusters, saturation, overlap, timing, language, and device rules.", sort_order=90, accent="gold", status="BETA", tables=("pulse_ad_targeting",), dependencies=("ads",)),
+    _widget("conversion_tracking", "Conversion Tracking", "Ads & Sponsorships", "/dashboard/ads/conversion-tracking", "View, click, profile, follow, save, share, comment, purchase, drop-off, and funnel diagnostics.", sort_order=100, accent="gold", status="BETA", tables=("pulse_ad_events", "pulse_ad_clicks"), dependencies=("ads",)),
 
     _widget("undx", "UNDX", "PulseSoc AI", "/pulse/premium/undx", "Unknown Destination intelligence layer.", premium_required=True, sort_order=10, accent="purple", status="BETA", tables=("ai_conversations",), dependencies=("premium", "ai")),
     _widget("ai_assistant", "AI Assistant", "PulseSoc AI", "/pulse/assistant", "PulseSoc assistant entry point.", premium_required=True, sort_order=20, accent="purple", status="BETA", tables=("ai_conversations", "ai_messages"), dependencies=("ai",)),
@@ -481,6 +482,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
     network_state = dashboard_network_command_center.build_network_state(conn, user)
     intelligence_state = dashboard_intelligence_command_center.build_intelligence_state(conn, user)
     economy_state = dashboard_economy_command_center.build_economy_state(conn, user)
+    ads_state = dashboard_ads_command_center.build_ads_state(conn, user)
     metrics = _metrics(cur, user, caps)
     widgets = []
     for widget in WIDGETS:
@@ -494,6 +496,8 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             state = dashboard_intelligence_command_center.state_for_widget(intelligence_state, item["widget_key"])
         elif item["category"] == "Economy & Earnings":
             state = dashboard_economy_command_center.state_for_widget(economy_state, item["widget_key"])
+        elif item["category"] == "Ads & Sponsorships":
+            state = dashboard_ads_command_center.state_for_widget(ads_state, item["widget_key"])
         else:
             state = dashboard_account_command_center.state_for_widget(account_state, item["widget_key"])
         item["access"] = access
@@ -510,6 +514,8 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             item["cta_label"] = "Review Intelligence"
         elif item["category"] == "Economy & Earnings":
             item["cta_label"] = "Manage Economy"
+        elif item["category"] == "Ads & Sponsorships":
+            item["cta_label"] = "Review Commerce"
         else:
             item["cta_label"] = "Open"
         item["cta_route"] = "/pulse/premium" if "Premium" in item.get("lock_reason", "") else (item["route"] or "/dashboard")
