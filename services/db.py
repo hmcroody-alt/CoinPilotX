@@ -424,6 +424,13 @@ AUTO_PK_TABLES = {
     "permissions": "id",
     "role_permissions": "id",
     "support_tickets": "id",
+    "crypto_alerts": "id",
+    "crypto_watchlists": "id",
+    "crypto_watchlist_assets": "id",
+    "crypto_ai_queries": "id",
+    "crypto_recent_assets": "id",
+    "crypto_favorite_assets": "id",
+    "crypto_audit_logs": "id",
 }
 
 

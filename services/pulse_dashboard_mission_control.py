@@ -12,6 +12,7 @@ from typing import Any
 from services import dashboard_account_command_center
 from services import dashboard_ads_command_center
 from services import dashboard_ai_command_center
+from services import dashboard_crypto_command_center
 from services import dashboard_economy_command_center
 from services import dashboard_intelligence_command_center
 from services import dashboard_network_command_center
@@ -162,6 +163,7 @@ SECTION_META = {
     "Intelligence Center": {"icon": "AI", "accent": "emerald", "label": "Intel"},
     "Economy & Earnings": {"icon": "$", "accent": "gold", "label": "Economy"},
     "Pulse Radio & Media": {"icon": "FM", "accent": "purple", "label": "Media"},
+    "Crypto Command Center": {"icon": "BTC", "accent": "gold", "label": "Crypto"},
     "Moderation / Safety": {"icon": "SH", "accent": "emerald", "label": "Safety"},
     "Admin / Moderator Only": {"icon": "AD", "accent": "red", "label": "Admin"},
     "Ads & Sponsorships": {"icon": "AD", "accent": "gold", "label": "Ads"},
@@ -258,6 +260,24 @@ WIDGET_ICONS = {
     "media_analytics": "MA",
     "broadcast_tools": "BT",
     "sponsored_audio": "SA",
+    "crypto_market_pulse": "BTC",
+    "crypto_create_alert": "+A",
+    "crypto_my_alerts": "AL",
+    "crypto_watchlists": "WL",
+    "crypto_ask_ai": "AI",
+    "crypto_portfolio": "PF",
+    "crypto_wallet": "CW",
+    "crypto_market_scanner": "MS",
+    "crypto_whale_alerts": "WH",
+    "crypto_trending_coins": "TR",
+    "crypto_top_gainers": "UP",
+    "crypto_top_losers": "DN",
+    "crypto_token_scanner": "TS",
+    "crypto_news": "NW",
+    "crypto_economic_calendar": "EC",
+    "crypto_ai_market_analysis": "MA",
+    "crypto_favorite_coins": "FV",
+    "crypto_recent_assets": "RC",
     "view_sponsored_signals": "VS",
     "ads_manager": "AM",
     "campaign_builder": "CB",
@@ -333,6 +353,24 @@ WIDGETS: list[dict[str, Any]] = [
     _widget("saved_media", "Saved Media", "Pulse Radio & Media", "/pulse/saved", "Owner-only saved content and media.", sort_order=40),
     _widget("upload_music", "Upload Music", "Pulse Radio & Media", "/pulse/music", "Partner upload workflow for approved music.", premium_required=True, sort_order=50, accent="purple"),
     _widget("playlists", "Playlists", "Pulse Radio & Media", "/pulse/music", "Build radio-ready playlists.", premium_required=True, sort_order=60, accent="purple"),
+    _widget("crypto_market_pulse", "Market Pulse", "Crypto Command Center", "/dashboard/crypto/market-pulse", "BTC, ETH, SOL, market health, sentiment, and provider freshness.", sort_order=10, accent="gold", status="BETA", tables=("crypto_alerts", "crypto_watchlists"), dependencies=("market-data",)),
+    _widget("crypto_create_alert", "Create Alert", "Crypto Command Center", "/dashboard/crypto/alerts/create", "Create owner-scoped crypto price, percent, volume, and market-cap alerts.", sort_order=20, accent="emerald", tables=("crypto_alerts",), dependencies=("notifications",)),
+    _widget("crypto_my_alerts", "My Alerts", "Crypto Command Center", "/dashboard/crypto/alerts", "Pause, resume, edit, delete, duplicate, and inspect your crypto alerts.", sort_order=30, accent="emerald", tables=("crypto_alerts",), dependencies=("notifications",)),
+    _widget("crypto_watchlists", "Watchlists", "Crypto Command Center", "/dashboard/crypto/watchlists", "Create watchlists, add assets, notes, favorites, and alert context.", sort_order=40, accent="gold", tables=("crypto_watchlists", "crypto_watchlist_assets"), dependencies=("market-data",)),
+    _widget("crypto_ask_ai", "Ask Crypto AI", "Crypto Command Center", "/dashboard/crypto/ask-ai", "Ask educational crypto questions with safety boundaries.", sort_order=50, accent="purple", status="PARTIAL", tables=("crypto_ai_queries",), dependencies=("ai",)),
+    _widget("crypto_portfolio", "Portfolio Intelligence", "Crypto Command Center", "/dashboard/crypto/portfolio", "Owner-entered or connected portfolio visibility and risk guidance.", sort_order=60, accent="gold", status="PARTIAL", tables=("crypto_watchlist_assets",), dependencies=("portfolio",)),
+    _widget("crypto_wallet", "Wallet", "Crypto Command Center", "/dashboard/crypto/wallet", "Wallet readiness and safety without exposing private keys, seed phrases, or secrets.", sort_order=70, accent="gold", status="PARTIAL", dependencies=("wallet",)),
+    _widget("crypto_market_scanner", "Market Scanner", "Crypto Command Center", "/dashboard/crypto/market-scanner", "Scan volume, volatility, trend, and market movement signals.", sort_order=80, accent="cyan", status="BETA", dependencies=("market-data",)),
+    _widget("crypto_whale_alerts", "Whale Alerts", "Crypto Command Center", "/dashboard/crypto/whale-alerts", "Prepared whale intelligence surface; live provider required.", sort_order=90, accent="purple", status="PARTIAL", dependencies=("whale-provider",)),
+    _widget("crypto_trending_coins", "Trending Coins", "Crypto Command Center", "/dashboard/crypto/trending", "Trending assets from available market data and PulseSoc signals.", sort_order=100, accent="cyan", status="BETA", dependencies=("market-data",)),
+    _widget("crypto_top_gainers", "Top Gainers", "Crypto Command Center", "/dashboard/crypto/gainers", "Assets with strongest available 24h movement.", sort_order=110, accent="emerald", status="BETA", dependencies=("market-data",)),
+    _widget("crypto_top_losers", "Top Losers", "Crypto Command Center", "/dashboard/crypto/losers", "Assets with weakest available 24h movement.", sort_order=120, accent="red", status="BETA", dependencies=("market-data",)),
+    _widget("crypto_token_scanner", "Token Scanner", "Crypto Command Center", "/dashboard/crypto/token-scanner", "Inspect a token symbol or contract with transparent risk limits.", sort_order=130, accent="purple", status="BETA", tables=("crypto_audit_logs",), dependencies=("security",)),
+    _widget("crypto_news", "Crypto News", "Crypto Command Center", "/dashboard/crypto/news", "Market news, asset news, source links, and summaries when providers are available.", sort_order=140, accent="cyan", status="PARTIAL", dependencies=("news-provider",)),
+    _widget("crypto_economic_calendar", "Economic Calendar", "Crypto Command Center", "/dashboard/crypto/calendar", "Macro and crypto event calendar prepared for reminders.", sort_order=150, accent="gold", status="PARTIAL", dependencies=("calendar-provider",)),
+    _widget("crypto_ai_market_analysis", "AI Market Analysis", "Crypto Command Center", "/dashboard/crypto/ai-analysis", "Educational market analysis, risk summary, confidence, and explanations.", sort_order=160, accent="purple", status="PARTIAL", tables=("crypto_ai_queries",), dependencies=("ai", "market-data")),
+    _widget("crypto_favorite_coins", "Favorite Coins", "Crypto Command Center", "/dashboard/crypto/favorites", "Favorite assets, notes, alerts, and quick actions.", sort_order=170, accent="gold", tables=("crypto_favorite_assets",), dependencies=("market-data",)),
+    _widget("crypto_recent_assets", "Recently Viewed Assets", "Crypto Command Center", "/dashboard/crypto/recent", "Private recently viewed assets with quick alert and watchlist actions.", sort_order=180, accent="cyan", tables=("crypto_recent_assets",), dependencies=("market-data",)),
     _widget("reports_submitted", "Reports Submitted", "Moderation / Safety", "/support", "Your submitted reports and support requests.", sort_order=10),
     _widget("blocked_users", "Blocked Users", "Moderation / Safety", "/pulse/profile/security", "People you blocked and privacy controls.", sort_order=20),
     _widget("appeals", "Appeals", "Moderation / Safety", "/support", "Submit or review your own moderation appeals.", sort_order=30),
@@ -442,6 +480,10 @@ QUICK_ACTIONS = [
     {"label": "Upload Video", "route": "/pulse/videos", "capability": "all"},
     {"label": "Add Status", "route": "/pulse/status", "capability": "all"},
     {"label": "Invite Friends", "route": "/pulse/friends", "capability": "all"},
+    {"label": "Create Crypto Alert", "route": "/dashboard/crypto/alerts/create", "capability": "all"},
+    {"label": "Ask Crypto AI", "route": "/dashboard/crypto/ask-ai", "capability": "all"},
+    {"label": "Scan Token", "route": "/dashboard/crypto/token-scanner", "capability": "all"},
+    {"label": "Add Watchlist Asset", "route": "/dashboard/crypto/watchlists", "capability": "all"},
     {"label": "Upgrade to Premium", "route": "/pulse/premium", "capability": "free"},
     {"label": "Open Scam Shield", "route": "/scam-shield", "capability": "all"},
     {"label": "Open Pulse Radio", "route": "/pulse/music", "capability": "all"},
@@ -484,6 +526,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
     network_state = dashboard_network_command_center.build_network_state(conn, user)
     intelligence_state = dashboard_intelligence_command_center.build_intelligence_state(conn, user)
     economy_state = dashboard_economy_command_center.build_economy_state(conn, user)
+    crypto_state = dashboard_crypto_command_center.build_crypto_state(conn, user)
     ads_state = dashboard_ads_command_center.build_ads_state(conn, user)
     ai_state = dashboard_ai_command_center.build_ai_state(conn, user)
     system_state = system_mission_control.build_system_state(conn)
@@ -500,6 +543,8 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             state = dashboard_intelligence_command_center.state_for_widget(intelligence_state, item["widget_key"])
         elif item["category"] == "Economy & Earnings":
             state = dashboard_economy_command_center.state_for_widget(economy_state, item["widget_key"])
+        elif item["category"] == "Crypto Command Center":
+            state = dashboard_crypto_command_center.state_for_widget(crypto_state, item["widget_key"])
         elif item["category"] == "Ads & Sponsorships":
             state = dashboard_ads_command_center.state_for_widget(ads_state, item["widget_key"])
         elif item["category"] == "PulseSoc AI":
@@ -522,6 +567,8 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             item["cta_label"] = "Review Intelligence"
         elif item["category"] == "Economy & Earnings":
             item["cta_label"] = "Manage Economy"
+        elif item["category"] == "Crypto Command Center":
+            item["cta_label"] = "Review Crypto"
         elif item["category"] == "Ads & Sponsorships":
             item["cta_label"] = "Review Commerce"
         elif item["category"] == "PulseSoc AI":
@@ -563,6 +610,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
         "network_command_center": network_state,
         "intelligence_command_center": intelligence_state,
         "economy_command_center": economy_state,
+        "crypto_command_center": crypto_state,
         "system_mission_control": system_state,
     }
 

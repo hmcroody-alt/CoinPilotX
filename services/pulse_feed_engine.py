@@ -41,6 +41,7 @@ FEEDS = {
     "arena_highlights",
     "roast_clips",
     "questions",
+    "crypto",
     "my_posts",
     "reels",
 }
@@ -54,6 +55,9 @@ FEED_ALIASES = {
     "roast": "roast_clips",
     "roast-clips": "roast_clips",
     "clips": "roast_clips",
+    "crypto-feed": "crypto",
+    "market": "crypto",
+    "markets": "crypto",
     "my-posts": "my_posts",
 }
 POST_TYPE_ALIASES = {"scam_warning": "scam_report", "question": "poll", "roast": "roast_clip", "roast_battle": "roast_clip"}
@@ -727,6 +731,31 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         where.append("(p.post_type='roast_clip' OR p.tags_json LIKE '%roastbattle%' OR p.tags_json LIKE '%roast%' OR p.body LIKE '%Roast Battle%')")
     elif feed == "questions":
         where.append("(p.post_type IN ('poll','question') OR p.tags_json LIKE '%question%' OR p.body LIKE '%?%')")
+    elif feed == "crypto":
+        crypto_terms = (
+            "crypto",
+            "bitcoin",
+            "btc",
+            "ethereum",
+            "eth",
+            "solana",
+            "sol",
+            "token",
+            "wallet",
+            "whale",
+            "defi",
+            "nft",
+            "market",
+            "blockchain",
+        )
+        crypto_clauses = []
+        for term in crypto_terms:
+            crypto_clauses.append(
+                "(lower(COALESCE(p.tags_json,'')) LIKE ? OR lower(COALESCE(p.body,'')) LIKE ? OR lower(COALESCE(p.title,'')) LIKE ?)"
+            )
+            token = f"%{term}%"
+            params.extend([token, token, token])
+        where.append("(" + " OR ".join(crypto_clauses) + ")")
     elif feed == "reels":
         where = [clause.replace("COALESCE(p.visibility,'public')='public'", "COALESCE(p.visibility,'public') IN ('public','reel_only')") for clause in where]
         where.append("(p.post_type IN ('video','replay','roast_clip') OR COALESCE(p.media_ids_json,'[]') NOT IN ('[]',''))")
