@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from services import dashboard_account_command_center
+from services import dashboard_economy_command_center
 from services import dashboard_intelligence_command_center
 from services import dashboard_network_command_center
 from services import db as db_service
@@ -315,14 +316,14 @@ WIDGETS: list[dict[str, Any]] = [
     _widget("ai_insights", "AI Advisor", "Intelligence Center", "/dashboard/intelligence/ai-advisor", "Personalized recommendations, explanations, and safe AI guidance.", premium_required=True, sort_order=40, accent="purple"),
     _widget("safety_scan", "Safety Scan", "Intelligence Center", "/dashboard/intelligence/safety-scan", "Message, link, file, device, session, and suspicious activity scan state.", sort_order=50, accent="emerald"),
     _widget("recommendations", "Smart Recommendations", "Intelligence Center", "/dashboard/intelligence/smart-recommendations", "Privacy-safe people, group, content, music, marketplace, and creator recommendations.", premium_required=True, sort_order=60, accent="purple"),
-    _widget("wallet", "Wallet", "Economy & Earnings", "/pulse/portfolio", "Manual portfolio and wallet readiness tools.", sort_order=10, accent="gold"),
-    _widget("earnings", "Earnings", "Economy & Earnings", "/pulse/creator/analytics", "Owner-only creator earnings once enabled.", creator_required=True, sort_order=20, accent="gold", status="BETA", tables=("creator_dashboard_metrics",), dependencies=("creator",)),
-    _widget("marketplace", "Marketplace", "Economy & Earnings", "/pulse/marketplace", "Browse marketplace items under platform safety rules.", sort_order=30),
-    _widget("seller_tools", "Seller Tools", "Economy & Earnings", "/pulse/merchant/dashboard", "Seller inventory and marketplace tools.", seller_required=True, sort_order=40, accent="gold"),
-    _widget("subscriptions", "Subscriptions", "Economy & Earnings", "/account", "Manage plan, entitlement, and access state.", premium_required=True, sort_order=50),
-    _widget("premium", "Premium", "Economy & Earnings", "/pulse/premium", "Unlock premium creator, AI, and security tools.", sort_order=60, accent="gold"),
-    _widget("creator_revenue", "Creator Revenue", "Economy & Earnings", "/pulse/creator/analytics", "Creator revenue insights when available.", premium_required=True, creator_required=True, sort_order=70, accent="gold"),
-    _widget("payouts", "Payouts", "Economy & Earnings", "/account", "Payout readiness and account requirements.", premium_required=True, seller_required=True, sort_order=80, accent="gold"),
+    _widget("wallet", "Wallet", "Economy & Earnings", "/dashboard/economy/wallet", "Balances, transactions, holds, refunds, credits, payment methods, and wallet protection.", sort_order=10, accent="gold"),
+    _widget("earnings", "Earnings", "Economy & Earnings", "/dashboard/economy/earnings", "Owner-only earnings, source breakdowns, payout timeline, taxes, and projections.", creator_required=True, sort_order=20, accent="gold", status="BETA", tables=("creator_dashboard_metrics",), dependencies=("creator",)),
+    _widget("marketplace", "Marketplace", "Economy & Earnings", "/dashboard/economy/marketplace", "Products, orders, inventory, refunds, disputes, seller reputation, and fraud checks.", sort_order=30),
+    _widget("seller_tools", "Seller Tools", "Economy & Earnings", "/dashboard/economy/seller-tools", "Seller onboarding, verification, KYC readiness, store policies, and trust state.", seller_required=True, sort_order=40, accent="gold"),
+    _widget("subscriptions", "Subscriptions", "Economy & Earnings", "/dashboard/economy/subscriptions", "Plan state, invoices, renewals, cancellations, history, and entitlements.", premium_required=True, sort_order=50),
+    _widget("premium", "Premium", "Economy & Earnings", "/dashboard/economy/premium", "Premium center, benefits, recommendations, and iOS-safe access state.", sort_order=60, accent="gold"),
+    _widget("creator_revenue", "Creator Revenue", "Economy & Earnings", "/dashboard/economy/creator-revenue", "Creator revenue sources, trends, sponsorships, and opportunities.", premium_required=True, creator_required=True, sort_order=70, accent="gold"),
+    _widget("payouts", "Payouts", "Economy & Earnings", "/dashboard/economy/payouts", "Payout readiness, verification, schedules, failed payouts, and retry state.", premium_required=True, seller_required=True, sort_order=80, accent="gold"),
     _widget("pulse_radio", "Pulse Radio", "Pulse Radio & Media", "/pulse/music", "Listen to approved PulseSoc music and radio streams.", sort_order=10, accent="emerald"),
     _widget("music_library", "Music Library", "Pulse Radio & Media", "/pulse/music", "Approved tracks, creator-safe sounds, and uploads.", sort_order=20),
     _widget("video_library", "Video Library", "Pulse Radio & Media", "/pulse/videos", "Your videos and public video discovery.", sort_order=30),
@@ -385,12 +386,12 @@ WIDGETS.extend([
     _widget("predictive_alerts", "Prediction Center", "Intelligence Center", "/dashboard/intelligence/prediction-center", "Future risks, opportunities, creator predictions, forecasts, and confidence history.", premium_required=True, sort_order=140, accent="purple", status="PARTIAL", tables=("dashboard_recommendations",), dependencies=("ai", "premium")),
     _widget("community_heatmaps", "Pulse Heatmap", "Intelligence Center", "/dashboard/intelligence/pulse-heatmap", "Aggregate-only activity, topic, engagement, safety, and discovery heatmaps.", premium_required=True, sort_order=150, accent="purple", status="PARTIAL", tables=("posts", "pulse_reels"), dependencies=("premium",)),
 
-    _widget("revenue_analytics", "Revenue Analytics", "Economy & Earnings", "/pulse/creator/analytics", "Premium analytics for creator and seller revenue.", premium_required=True, creator_required=True, sort_order=90, accent="gold", status="BETA", tables=("creator_revenue_events",), dependencies=("creator", "premium")),
-    _widget("ad_revenue", "Ad Revenue", "Economy & Earnings", "/pulse/premium", "Prepared ad revenue center for eligible creators.", premium_required=True, creator_required=True, sort_order=100, accent="gold", status="COMING_SOON", tables=("ad_revenue",), dependencies=("ads", "premium")),
-    _widget("affiliate_revenue", "Affiliate Revenue", "Economy & Earnings", "/pulse/premium", "Prepared affiliate revenue tracking.", premium_required=True, sort_order=110, accent="gold", status="COMING_SOON", tables=("dashboard_modules",), dependencies=("premium",)),
-    _widget("store_analytics", "Store Analytics", "Economy & Earnings", "/pulse/merchant/dashboard", "Seller store analytics.", seller_required=True, sort_order=120, accent="gold", status="BETA", tables=("marketplace_listings", "marketplace_orders_placeholder"), dependencies=("marketplace",)),
-    _widget("product_intelligence", "Product Intelligence", "Economy & Earnings", "/pulse/merchant/dashboard", "Marketplace product intelligence.", seller_required=True, sort_order=130, accent="gold", status="BETA", tables=("marketplace_listings",), dependencies=("marketplace",)),
-    _widget("revenue_forecasting", "Revenue Forecasting", "Economy & Earnings", "/pulse/creator/analytics", "Forecast creator and seller revenue.", premium_required=True, creator_required=True, sort_order=140, accent="gold", status="COMING_SOON", tables=("creator_dashboard_metrics",), dependencies=("premium",)),
+    _widget("revenue_analytics", "Revenue Analytics", "Economy & Earnings", "/dashboard/economy/revenue-analytics", "Revenue charts, summaries, projections, seasonality, and benchmarks.", premium_required=True, creator_required=True, sort_order=90, accent="gold", status="BETA", tables=("creator_revenue_events",), dependencies=("creator", "premium")),
+    _widget("ad_revenue", "Ad Revenue", "Economy & Earnings", "/dashboard/economy/ad-revenue", "Advertising eligibility, RPM, CPM, impressions, fill rate, and payout history.", premium_required=True, creator_required=True, sort_order=100, accent="gold", status="COMING_SOON", tables=("ad_revenue",), dependencies=("ads", "premium")),
+    _widget("affiliate_revenue", "Affiliate Revenue", "Economy & Earnings", "/dashboard/economy/affiliate-revenue", "Referrals, commissions, conversions, campaign performance, and payout state.", premium_required=True, sort_order=110, accent="gold", status="COMING_SOON", tables=("dashboard_modules",), dependencies=("premium",)),
+    _widget("store_analytics", "Store Analytics", "Economy & Earnings", "/dashboard/economy/store-analytics", "Sales, visitors, conversion, abandoned carts, repeat customers, and refunds.", seller_required=True, sort_order=120, accent="gold", status="BETA", tables=("marketplace_listings", "marketplace_orders_placeholder"), dependencies=("marketplace",)),
+    _widget("product_intelligence", "Product Intelligence", "Economy & Earnings", "/dashboard/economy/product-intelligence", "Top products, pricing, inventory alerts, demand prediction, and recommendations.", seller_required=True, sort_order=130, accent="gold", status="BETA", tables=("marketplace_listings",), dependencies=("marketplace",)),
+    _widget("revenue_forecasting", "Revenue Forecasting", "Economy & Earnings", "/dashboard/economy/revenue-forecast", "Monthly/yearly forecasts, best/worst cases, confidence, and recommendations.", premium_required=True, creator_required=True, sort_order=140, accent="gold", status="COMING_SOON", tables=("creator_dashboard_metrics",), dependencies=("premium",)),
 
     _widget("radio_studio", "Radio Studio", "Pulse Radio & Media", "/pulse/music", "Tools for radio-ready music workflows.", premium_required=True, sort_order=70, accent="purple", status="BETA", tables=("audio_tracks", "pulse_music_events"), dependencies=("music",)),
     _widget("creator_music_distribution", "Creator Music Distribution", "Pulse Radio & Media", "/pulse/music", "Prepared distribution layer for approved creators.", premium_required=True, creator_required=True, sort_order=80, accent="purple", status="COMING_SOON", tables=("audio_tracks",), dependencies=("music", "creator")),
@@ -479,6 +480,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
     account_state = dashboard_account_command_center.build_account_state(conn, user)
     network_state = dashboard_network_command_center.build_network_state(conn, user)
     intelligence_state = dashboard_intelligence_command_center.build_intelligence_state(conn, user)
+    economy_state = dashboard_economy_command_center.build_economy_state(conn, user)
     metrics = _metrics(cur, user, caps)
     widgets = []
     for widget in WIDGETS:
@@ -490,6 +492,8 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             state = dashboard_network_command_center.state_for_widget(network_state, item["widget_key"])
         elif item["category"] == "Intelligence Center":
             state = dashboard_intelligence_command_center.state_for_widget(intelligence_state, item["widget_key"])
+        elif item["category"] == "Economy & Earnings":
+            state = dashboard_economy_command_center.state_for_widget(economy_state, item["widget_key"])
         else:
             state = dashboard_account_command_center.state_for_widget(account_state, item["widget_key"])
         item["access"] = access
@@ -504,6 +508,8 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             item["cta_label"] = "Review Network"
         elif item["category"] == "Intelligence Center":
             item["cta_label"] = "Review Intelligence"
+        elif item["category"] == "Economy & Earnings":
+            item["cta_label"] = "Manage Economy"
         else:
             item["cta_label"] = "Open"
         item["cta_route"] = "/pulse/premium" if "Premium" in item.get("lock_reason", "") else (item["route"] or "/dashboard")
@@ -538,6 +544,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
         "account_command_center": account_state,
         "network_command_center": network_state,
         "intelligence_command_center": intelligence_state,
+        "economy_command_center": economy_state,
     }
 
 
