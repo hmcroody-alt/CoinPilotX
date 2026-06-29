@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import logging
 import secrets
+import sqlite3
 import sys
 import tempfile
 import time
@@ -49,6 +50,37 @@ def scalar(sql, params=()):
         conn.close()
 
 
+def seed_legacy_subscription_schema():
+    """Reproduce the existing-db shape that broke signup before migration."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                status TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def table_columns(table):
+    conn = db_service.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"PRAGMA table_info({table})")
+        return {str(row[1]) for row in cur.fetchall()}
+    finally:
+        conn.close()
+
+
 def register(email):
     client = bot.webhook_app.test_client()
     started = time.monotonic()
@@ -73,8 +105,12 @@ def recover(email):
 
 
 def main():
+    seed_legacy_subscription_schema()
     bot.init_db()
     bot.dispatch_brevo_contact_sync_safe = lambda *_args, **_kwargs: {"ok": True, "status": "queued_for_audit"}
+    subscription_columns = table_columns("subscriptions")
+    for column in {"plan", "payment_type", "trial_start_date", "trial_end_date", "pro_expires_at"}:
+        require(column in subscription_columns, f"legacy subscriptions table is migrated with {column}")
 
     # Any direct provider call from a request is a test failure.
     def forbidden_provider_call(*_args, **_kwargs):
