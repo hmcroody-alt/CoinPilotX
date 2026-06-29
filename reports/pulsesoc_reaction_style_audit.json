@@ -1,0 +1,85 @@
+{
+  "checks": [
+    {
+      "details": "",
+      "name": "Shared reaction class exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Post action rows use shared class",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Status actions use shared class",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Inline status viewer uses shared class",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Video feed actions use shared class",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Post action data actions exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Status data actions exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Backend status data actions exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Backend video data actions exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Active states styled",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Status active states styled",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Status save toggles pressed state",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Video save/repost toggles pressed state",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Handlers still referenced",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No duplicate Remix introduced",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No obvious dead action hrefs",
+      "passed": true
+    }
+  ],
+  "ok": true
+}

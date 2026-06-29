@@ -135,11 +135,13 @@
     const count = button.matches("[data-status-story-react]")
       ? (button.querySelector("[data-status-story-reaction-count]")?.textContent || "0")
       : label;
-    button.classList.add("pulse-status-action");
+    button.classList.add("pulse-status-action", "pulse-action-button");
+    button.dataset.action = key === "love" ? "like" : key;
     if (key === "love") button.classList.add("pulse-status-react");
     button.innerHTML = `<span class="pulse-status-action-icon" aria-hidden="true">${icon}</span><small ${key === "love" ? 'data-status-story-reaction-count' : ""}>${count}</small>`;
     button.dataset.statusActionDecorated = "1";
-    if (key === "love" && !button.hasAttribute("aria-pressed")) button.setAttribute("aria-pressed", "false");
+    button.setAttribute("aria-label", `${label} Status`);
+    if ((key === "love" || key === "save") && !button.hasAttribute("aria-pressed")) button.setAttribute("aria-pressed", "false");
   }
 
   const storyRuntime = {
