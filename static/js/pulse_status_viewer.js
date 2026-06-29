@@ -116,6 +116,7 @@
   const statusActionMeta = {
     love: ["❤", "0"],
     comment: ["💬", "Comment"],
+    repost: ["↻", "Repost"],
     share: ["↗", "Share"],
     save: ["🔖", "Save"],
     more: ["•••", "More"],
@@ -132,18 +133,130 @@
       icon = "🔊";
       label = "Sound";
     }
-    const count = button.matches("[data-status-story-react]")
-      ? (button.querySelector("[data-status-story-reaction-count]")?.textContent || "0")
+    const count = button.matches("[data-status-story-react],[data-status-viewer-react]")
+      ? (button.querySelector("[data-status-story-reaction-count],.pulse-status-action-count,.reel-action-meta")?.textContent || "0")
       : label;
-    button.classList.add("pulse-status-action", "pulse-action-button", "pulse-reaction-button", "reel-action", "reel-action-button");
+    button.classList.add("pulse-status-action", "pulse-status-action-v3", "pulse-action-button", "pulse-reaction-button", "lnx-action-control", "reel-action", "reel-action-button");
     button.dataset.action = key === "love" ? "like" : key;
     button.dataset.contentViewerAction = button.dataset.action;
+    button.dataset.statusV3Action = button.dataset.action;
     if (key === "love") button.classList.add("pulse-status-react");
-    button.innerHTML = `<span class="reel-action-icon action-icon pulse-status-action-icon" aria-hidden="true">${icon}</span><span class="reel-action-label">${label}</span><small class="reel-action-meta" ${key === "love" ? 'data-status-story-reaction-count' : ""}>${count}</small>`;
+    if (key === "repost") {
+      button.dataset.statusUnavailableReason = "Status repost is not available yet.";
+      button.setAttribute("aria-disabled", "true");
+      button.title = "Status repost is not available yet.";
+    }
+    button.innerHTML = `<span class="reel-action-icon action-icon pulse-status-action-icon" aria-hidden="true">${icon}</span><span class="reel-action-label pulse-status-action-label">${label}</span><small class="reel-action-meta pulse-status-action-count" ${key === "love" ? 'data-status-story-reaction-count data-status-viewer-reaction-count' : ""}>${count}</small>`;
     window.PulseReactionSystem?.decorate?.(button, { action: button.dataset.action, label, itemType: "Status" });
     button.dataset.statusActionDecorated = "1";
     button.setAttribute("aria-label", `${label} Status`);
-    if ((key === "love" || key === "save") && !button.hasAttribute("aria-pressed")) button.setAttribute("aria-pressed", "false");
+    if ((key === "love" || key === "save" || key === "repost") && !button.hasAttribute("aria-pressed")) button.setAttribute("aria-pressed", "false");
+  }
+
+  function avatarHtmlFrom(node, fallback = "P") {
+    const img = node?.querySelector?.("img");
+    if (img?.src) return `<img src="${esc(img.getAttribute("src") || img.src)}" alt="${esc(img.getAttribute("alt") || "Profile picture")}" loading="eager" decoding="async">`;
+    return esc((node?.textContent || fallback || "P").trim().slice(0, 1) || "P");
+  }
+
+  function ensureStatusV3Structure(viewer) {
+    if (!viewer) return;
+    viewer.classList.add("pulse-status-v3-viewer");
+    viewer.dataset.contentViewerMode = "status";
+    const shell = viewer.querySelector?.(".pulse-status-story-shell");
+    if (!shell) return;
+    shell.classList.add("pulse-status-v3-shell");
+    const progress = shell.querySelector(".pulse-status-story-progress");
+    if (progress) progress.classList.add("pulse-status-segmented-progress-v3");
+
+    let header = shell.querySelector("[data-status-v3-header]");
+    if (!header) {
+      header = document.createElement("header");
+      header.className = "pulse-status-creator-header-v3";
+      header.dataset.statusV3Header = "1";
+      header.innerHTML = `
+        <span class="pulse-status-v3-avatar" data-status-v3-avatar>P</span>
+        <span class="pulse-status-v3-identity">
+          <strong data-status-v3-author>PulseSoc creator</strong>
+          <small data-status-v3-role>PulseSoc Status</small>
+          <em data-status-v3-time>Active story</em>
+        </span>
+      `;
+      shell.insertBefore(header, shell.querySelector(".pulse-status-story-media") || shell.firstChild);
+    }
+
+    const actions = shell.querySelector(".pulse-status-story-actions");
+    if (actions) {
+      actions.classList.add("pulse-status-action-rail-v3", "lnx-action-bar", "pulse-reaction-bar");
+      actions.dataset.contentType = "status";
+      actions.dataset.statusV3Rail = "1";
+      if (!actions.querySelector("[data-status-story-repost],[data-status-viewer-repost]")) {
+        const repost = document.createElement("button");
+        repost.type = "button";
+        repost.textContent = "Repost";
+        repost.dataset.statusV3Created = "1";
+        if (viewer.matches("[data-status-viewer]")) repost.dataset.statusViewerRepost = "1";
+        else repost.dataset.statusStoryRepost = "1";
+        const share = actions.querySelector("[data-status-story-share],[data-status-viewer-share]");
+        actions.insertBefore(repost, share || actions.querySelector("[data-status-story-save],[data-status-viewer-save]") || null);
+      }
+    }
+
+    const replyInput = shell.querySelector("[data-status-story-reply],[data-status-viewer-reply]");
+    const replySend = shell.querySelector("[data-status-story-send-reply],[data-status-viewer-send-reply]");
+    if (replyInput && replySend && !replyInput.closest(".pulse-status-reply-composer-v3")) {
+      const composer = document.createElement("div");
+      composer.className = "pulse-status-reply-composer-v3";
+      composer.dataset.statusV3ReplyComposer = "1";
+      composer.innerHTML = `<span class="pulse-status-reply-avatar-v3" data-status-v3-reply-avatar>P</span>`;
+      replyInput.parentNode.insertBefore(composer, replyInput);
+      composer.appendChild(replyInput);
+      composer.appendChild(replySend);
+      replyInput.placeholder = replyInput.placeholder || "Reply to this Status";
+      replySend.classList.add("pulse-status-reply-send-v3");
+      replySend.setAttribute("aria-label", "Send Status reply");
+      shell.appendChild(composer);
+    }
+
+    const footer = shell.querySelector(".pulse-status-story-footer");
+    if (footer) {
+      footer.classList.add("pulse-status-bottom-strip-v3");
+      footer.dataset.statusV3BottomStrip = "1";
+      if (!footer.querySelector("[data-status-v3-follow]")) {
+        const follow = document.createElement("button");
+        follow.type = "button";
+        follow.className = "pulse-status-follow-v3";
+        follow.dataset.statusV3Follow = "1";
+        follow.hidden = true;
+        follow.textContent = "Follow";
+        follow.setAttribute("aria-label", "Follow Status creator");
+        footer.appendChild(follow);
+      }
+    }
+  }
+
+  function syncStatusV3Metadata(viewer) {
+    if (!viewer) return;
+    ensureStatusV3Structure(viewer);
+    const author =
+      viewer.querySelector("[data-status-viewer-author],[data-status-story-author]")?.textContent?.trim() ||
+      "PulseSoc creator";
+    const role =
+      viewer.dataset.statusCreatorRole ||
+      viewer.querySelector("[data-status-viewer-body],[data-status-story-body]")?.textContent?.trim() ||
+      "PulseSoc Status";
+    const time =
+      viewer.querySelector("[data-status-story-time]")?.textContent?.trim() ||
+      viewer.querySelector("[data-status-viewer-count],[data-status-story-count]")?.textContent?.trim()?.split("·").pop()?.trim() ||
+      "Active story";
+    const sourceAvatar = viewer.querySelector("[data-status-viewer-avatar],[data-status-story-avatar]");
+    viewer.querySelectorAll("[data-status-v3-avatar],[data-status-v3-reply-avatar]").forEach(node => { node.innerHTML = avatarHtmlFrom(sourceAvatar, author); });
+    const authorNode = viewer.querySelector("[data-status-v3-author]");
+    const roleNode = viewer.querySelector("[data-status-v3-role]");
+    const timeNode = viewer.querySelector("[data-status-v3-time]");
+    if (authorNode) authorNode.textContent = author;
+    if (roleNode) roleNode.textContent = role;
+    if (timeNode) timeNode.textContent = time;
   }
 
   const storyRuntime = {
@@ -197,10 +310,16 @@
 
   function decorateStatusActions(root = document) {
     const scope = root?.querySelectorAll ? root : document;
+    scope.querySelectorAll?.("#pulseStatusStoryViewer,.pulse-status-story-viewer,[data-status-viewer]").forEach(viewer => {
+      ensureStatusV3Structure(viewer);
+      syncStatusV3Metadata(viewer);
+    });
     scope.querySelectorAll?.("[data-status-story-react]").forEach(button => decorateActionButton(button, "love"));
     scope.querySelectorAll?.("[data-status-viewer-react]").forEach(button => decorateActionButton(button, "love"));
     scope.querySelectorAll?.("[data-status-story-comment]").forEach(button => decorateActionButton(button, "comment"));
     scope.querySelectorAll?.("[data-status-viewer-comment]").forEach(button => decorateActionButton(button, "comment"));
+    scope.querySelectorAll?.("[data-status-story-repost]").forEach(button => decorateActionButton(button, "repost"));
+    scope.querySelectorAll?.("[data-status-viewer-repost]").forEach(button => decorateActionButton(button, "repost"));
     scope.querySelectorAll?.("[data-status-story-share]").forEach(button => decorateActionButton(button, "share"));
     scope.querySelectorAll?.("[data-status-viewer-share]").forEach(button => decorateActionButton(button, "share"));
     scope.querySelectorAll?.("[data-status-story-save]").forEach(button => decorateActionButton(button, "save"));
@@ -335,6 +454,7 @@
   function closeStatusReplyIfEmpty(viewer = activeViewer()) {
     const input = viewer?.querySelector?.("[data-status-story-reply],[data-status-viewer-reply]");
     if (!viewer || !input || String(input.value || "").trim()) return;
+    if (viewer.contains(document.activeElement) && document.activeElement === input) return;
     viewer.classList.remove("is-commenting");
     resumeStory();
   }
@@ -348,19 +468,24 @@
   function updateViewerSoundButton(viewer, media = viewerSoundMedia(viewer)) {
     const button = viewer?.querySelector?.("[data-status-story-mute],[data-status-viewer-mute]");
     if (!button || !media) return;
-    const muted = window.PulseMediaRenderer?.hasAttachedAudio?.(media) ? media.dataset.statusAttachedSoundOn !== "1" : (media.muted || Number(media.volume || 0) === 0);
+    const attached = !!window.PulseMediaRenderer?.hasAttachedAudio?.(media);
+    const muted = attached ? media.dataset.statusAttachedSoundOn !== "1" : (media.muted || Number(media.volume || 0) === 0);
     button.hidden = false;
-    if (button.matches("[data-status-story-mute]")) {
-      delete button.dataset.statusActionDecorated;
-      button.textContent = muted ? "Tap for sound" : "Sound";
-      decorateActionButton(button, "mute");
-      return;
-    }
-    button.classList.add("pulse-status-action", "pulse-action-button", "pulse-reaction-button", "reel-action", "reel-action-button");
+    delete button.dataset.statusActionDecorated;
+    button.textContent = attached ? (muted ? "Music muted" : "Music") : (muted ? "Tap for sound" : "Sound");
+    decorateActionButton(button, "mute");
+    button.classList.add("pulse-status-action-v3", "lnx-action-control");
     button.dataset.action = "mute";
-    button.setAttribute("aria-label", muted ? "Enable Status sound" : "Mute Status sound");
-    button.innerHTML = `<span class="reel-action-icon action-icon pulse-status-action-icon" aria-hidden="true">${muted ? "🔇" : "🔊"}</span><span class="reel-action-label">${muted ? "Tap sound" : "Sound"}</span><small class="reel-action-meta">${muted ? "Tap" : "Sound"}</small>`;
-    window.PulseReactionSystem?.decorate?.(button, { action: "mute", label: muted ? "Tap sound" : "Sound", itemType: "Status" });
+    button.dataset.statusActiveAudio = attached ? "attached" : "original";
+    button.setAttribute("aria-label", attached ? (muted ? "Play attached Status music" : "Mute attached Status music") : (muted ? "Enable Status sound" : "Mute Status sound"));
+    const iconNode = button.querySelector(".pulse-status-action-icon,.reel-action-icon");
+    const labelNode = button.querySelector(".pulse-status-action-label,.reel-action-label");
+    const metaNode = button.querySelector(".pulse-status-action-count,.reel-action-meta");
+    if (iconNode) iconNode.textContent = attached ? "♫" : (muted ? "🔇" : "🔊");
+    if (labelNode) labelNode.textContent = attached ? (muted ? "Music muted" : "Music") : (muted ? "Tap sound" : "Sound");
+    if (metaNode) metaNode.textContent = attached ? (muted ? "Tap" : "Playing") : (muted ? "Tap" : "Sound");
+    window.PulseReactionSystem?.decorate?.(button, { action: "mute", label: attached ? "Music" : (muted ? "Tap sound" : "Sound"), itemType: "Status" });
+    updateStatusMiniPlayer(viewer, media);
   }
 
   function unmuteViewerVideo(viewer = activeViewer()) {
@@ -483,23 +608,28 @@
     if (!viewer) return;
     const shell = viewer.querySelector?.(".pulse-status-story-shell");
     if (!shell) return;
+    ensureStatusV3Structure(viewer);
+    syncStatusV3Metadata(viewer);
     let sound = shell.querySelector("[data-status-now-playing]");
     if (!sound) {
       sound = document.createElement("div");
-      sound.className = "pulse-status-now-playing";
+      sound.className = "pulse-status-now-playing pulse-status-music-mini-v3 lnx-music-controller";
       sound.dataset.statusNowPlaying = "1";
+      sound.dataset.statusMiniPlayer = "1";
       sound.innerHTML = `
-        <span class="pulse-status-now-playing-dot" aria-hidden="true">♪</span>
+        <span class="pulse-status-now-playing-dot pulse-status-music-art-v3" aria-hidden="true">♪</span>
         <span class="pulse-status-now-copy">
           <strong data-status-now-title>PulseSoc Status</strong>
           <small data-status-now-artist>PulseSoc Music</small>
         </span>
         <span class="pulse-status-now-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
-        <span class="pulse-status-now-play" aria-hidden="true">▶</span>
+        <span class="pulse-status-now-progress" aria-hidden="true"><i data-status-now-progress></i></span>
+        <button class="pulse-status-now-play" type="button" data-status-music-toggle aria-label="Play or pause Status music">▶</button>
       `;
       shell.insertBefore(sound, shell.querySelector(".pulse-status-story-footer") || null);
     }
-    const hasAttachedMusic = !!viewer.querySelector("[data-status-music-audio]");
+    const activeMedia = viewerSoundMedia(viewer);
+    const hasAttachedMusic = !!viewer.querySelector("[data-status-music-audio]") || !!(activeMedia && window.PulseMediaRenderer?.hasAttachedAudio?.(activeMedia));
     sound.hidden = !hasAttachedMusic;
     viewer.classList.toggle("has-status-music", hasAttachedMusic);
     const body =
@@ -514,6 +644,28 @@
     const artistNode = sound.querySelector("[data-status-now-artist]");
     if (title) title.textContent = body;
     if (artistNode) artistNode.textContent = artist;
+    updateStatusMiniPlayer(viewer, activeMedia);
+  }
+
+  function updateStatusMiniPlayer(viewer = activeViewer(), media = viewerSoundMedia(viewer)) {
+    const mini = viewer?.querySelector?.("[data-status-mini-player]");
+    if (!mini) return;
+    const hasAttached = !!viewer.querySelector("[data-status-music-audio]") || !!(media && window.PulseMediaRenderer?.hasAttachedAudio?.(media));
+    mini.hidden = !hasAttached;
+    if (!hasAttached || !media) return;
+    const playing = window.PulseMediaRenderer?.hasAttachedAudio?.(media)
+      ? media.dataset.statusAttachedSoundOn === "1"
+      : !(media.paused || media.muted || Number(media.volume || 0) === 0);
+    mini.classList.toggle("is-playing", playing);
+    const play = mini.querySelector("[data-status-music-toggle]");
+    if (play) {
+      play.textContent = playing ? "Ⅱ" : "▶";
+      play.setAttribute("aria-label", playing ? "Pause Status music" : "Play Status music");
+    }
+    const progress = mini.querySelector("[data-status-now-progress]");
+    if (progress && media.duration && Number.isFinite(media.duration)) {
+      progress.style.transform = `scaleX(${Math.max(0, Math.min(1, media.currentTime / media.duration))})`;
+    }
   }
 
   function storyDuration(viewer) {
@@ -631,6 +783,7 @@
     storyRuntime.elapsedBeforePause = 0;
     storyRuntime.startedAt = Date.now();
     storyRuntime.durationMs = storyDuration(viewer);
+    syncStatusV3Metadata(viewer);
     ensureProgressSegments(viewer);
     ensureImmersiveStatusHud(viewer);
     setProgress(viewer, 0);
@@ -651,6 +804,7 @@
       if (!activeViewer() || storyRuntime.paused) return;
       const elapsed = storyRuntime.elapsedBeforePause + Date.now() - storyRuntime.startedAt;
       setProgress(viewer, elapsed / Math.max(1, storyRuntime.durationMs));
+      updateStatusMiniPlayer(viewer);
       if (!video && elapsed >= storyRuntime.durationMs) navigateStory(1);
     }, 100);
   }
@@ -666,6 +820,7 @@
       try { media.pause(); } catch (_) {}
     });
     viewer.classList.add("is-paused");
+    updateStatusMiniPlayer(viewer);
   }
 
   function resumeStory() {
@@ -675,6 +830,7 @@
     storyRuntime.startedAt = Date.now();
     viewer.querySelectorAll("video,audio").forEach(media => media.play?.().catch(() => {}));
     viewer.classList.remove("is-paused");
+    updateStatusMiniPlayer(viewer);
     if (!viewer.querySelector("video")) {
       const remaining = Math.max(250, storyRuntime.durationMs - storyRuntime.elapsedBeforePause);
       storyRuntime.timer = window.setTimeout(() => navigateStory(1), remaining);
@@ -803,6 +959,22 @@
     if (closeButton) {
       hardenStatusCloseButton(closeButton);
       closeStatusViewerIntentional(event);
+    }
+    const repostButton = event.target?.closest?.("[data-status-story-repost],[data-status-viewer-repost]");
+    if (repostButton) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      revealStatusChrome(viewerRootFrom(repostButton), { timeout: 1400 });
+      window.toast?.(repostButton.dataset.statusUnavailableReason || "Status repost is not available yet.");
+      return;
+    }
+    const musicToggle = event.target?.closest?.("[data-status-music-toggle]");
+    if (musicToggle) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const viewer = viewerRootFrom(musicToggle);
+      if (toggleViewerSound(viewer)) updateStatusMiniPlayer(viewer);
+      return;
     }
     const commentButton = event.target?.closest?.("[data-status-story-comment],[data-status-viewer-comment]");
     if (commentButton) {

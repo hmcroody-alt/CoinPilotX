@@ -1,0 +1,125 @@
+{
+  "checks": [
+    {
+      "details": "",
+      "name": "Status V3 runtime class exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Pages load Status V3 asset version",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Segmented progress exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Progress pauses and resumes",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Creator header exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Full media remains primary layer",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Right rail uses shared action classes",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Required rail actions exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Repost is safely unavailable, not fake",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Old status buttons are not the active layout",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Music mini-player V3 exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Music waveform/progress exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Sound toggle uses active audio source",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Attached audio keeps original video muted",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Close button exists and stops playback",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Bottom creator strip exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Reply composer exists outside rail",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Desktop centering rules exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Mobile safe-area rules exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No large shield overlay introduced",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No dead Status links",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No javascript void Status links",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Functional handlers remain wired",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Shared content viewer mode remains internal",
+      "passed": true
+    }
+  ],
+  "ok": true
+}
