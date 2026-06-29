@@ -895,12 +895,29 @@
     });
   }
 
+  function actionNameFromAttrs(attrs = {}) {
+    if (attrs.postLike) return "like";
+    if (attrs.postComment) return "comment";
+    if (attrs.postRepost) return "repost";
+    if (attrs.postShare) return "share";
+    if (attrs.savePost) return "save";
+    if (attrs.reportPost) return "more";
+    if (attrs.commentSend) return "send";
+    if (attrs.commentMedia) return "media";
+    if (attrs.commentEmoji) return "emoji";
+    return "action";
+  }
+
   function actionButton(icon, label, attrs = {}) {
-    const button = element("button", "post-action-button", "");
+    const action = attrs.action || actionNameFromAttrs(attrs);
+    const button = element("button", "post-action-button pulse-action-button", "");
     button.type = "button";
+    button.dataset.action = action;
     Object.entries(attrs).forEach(([key, value]) => {
+      if (key === "action") return;
       button.dataset[key] = value;
     });
+    button.setAttribute("aria-label", label ? `${label} post` : `${action} post`);
     const iconNode = element("span", "post-action-icon", icon);
     iconNode.setAttribute("aria-hidden", "true");
     button.append(iconNode, document.createTextNode(" "), element("span", "", label));
@@ -1192,15 +1209,18 @@
 
   function renderActions(card, post) {
     const row = element("div", "post-action-row");
-    const like = actionButton("👍", "Like", { postLike: post.id });
+    const like = actionButton("👍", "Like", { postLike: post.id, action: "like" });
     like.setAttribute("aria-pressed", post.viewer_reaction ? "true" : "false");
     if (post.viewer_reaction) like.classList.add("active");
+    const save = actionButton("🔖", "Save", { savePost: post.id, action: "save" });
+    save.setAttribute("aria-pressed", post.viewer_saved ? "true" : "false");
+    if (post.viewer_saved) save.classList.add("active");
     row.append(
       like,
-      actionButton("💬", "Comment", { postComment: post.id }),
-      actionButton("🔁", "Repost", { postRepost: post.id }),
-      actionButton("↗", "Share", { postShare: postUrl(post) }),
-      actionButton("🔖", "Save", { savePost: post.id })
+      actionButton("💬", "Comment", { postComment: post.id, action: "comment" }),
+      actionButton("🔁", "Repost", { postRepost: post.id, action: "repost" }),
+      actionButton("↗", "Share", { postShare: postUrl(post), action: "share" }),
+      save
     );
     card.appendChild(row);
   }
@@ -1213,9 +1233,9 @@
     input.placeholder = "Write a comment...";
     input.dataset.commentInput = post.id;
     composer.appendChild(input);
-    composer.appendChild(actionButton("📷", "", { commentMedia: post.id }));
-    composer.appendChild(actionButton("☺", "", { commentEmoji: post.id }));
-    composer.appendChild(actionButton("➤", "", { commentSend: post.id }));
+    composer.appendChild(actionButton("📷", "", { commentMedia: post.id, action: "media" }));
+    composer.appendChild(actionButton("☺", "", { commentEmoji: post.id, action: "emoji" }));
+    composer.appendChild(actionButton("➤", "", { commentSend: post.id, action: "send" }));
     card.appendChild(composer);
   }
 
@@ -1241,8 +1261,8 @@
       live.href = post.live.live_url;
       card.appendChild(live);
     }
-    if (media) card.appendChild(media);
     renderPostMusic(card, post);
+    if (media) card.appendChild(media);
     renderEngagement(card, post);
     renderActions(card, post);
     renderComposer(card, post);
@@ -2122,13 +2142,16 @@
 
   function openPulseComposer(type = "text", { focus = true } = {}) {
     const nextType = ["text", "poll", "scam_report", "video"].includes(type) ? type : "text";
-    document.getElementById("createSheet")?.classList.remove("open");
+    const createSheet = document.getElementById("createSheet");
+    createSheet?.classList.remove("open");
+    createSheet?.setAttribute("aria-hidden", "true");
     setComposerType(nextType);
     composer?.classList.add("is-expanded");
     composer?.scrollIntoView({ block: "center", behavior: "smooth" });
     if (focus) window.setTimeout(() => document.getElementById("postBody")?.focus(), 220);
     toast(nextType === "video" ? "Reel composer ready." : "Composer ready.");
   }
+  window.openPulseComposer = openPulseComposer;
 
   function syncFrontDropdowns(activeDetails = null) {
     const openMenus = Array.from(document.querySelectorAll(".pulse-desktop-more-menu[open], .pulse-live-menu[open]"));
@@ -2169,6 +2192,96 @@
   }
 
   bootFrontDropdowns();
+
+  function bootUniversalDock() {
+    const dock = document.querySelector(".mobile-bottom-nav");
+    if (!dock) return;
+    if (dock.dataset.universalDockReady === "1") return;
+    dock.dataset.universalDockReady = "1";
+    dock.classList.add("pulse-universal-dock");
+    dock.setAttribute("aria-label", "Primary PulseSoc navigation");
+    const items = Array.from(dock.querySelectorAll("[data-pulse-dock-item]"));
+    const currentPath = window.location.pathname.replace(/\/+$/, "") || "/pulse";
+    items.forEach(item => {
+      const href = item.getAttribute("href") || "";
+      const action = item.dataset.dockAction || "";
+      const targetPath = href.split("#", 1)[0].replace(/\/+$/, "") || href;
+      const active =
+        (action === "home" && currentPath === "/pulse") ||
+        (action === "reels" && currentPath.startsWith("/pulse/reels")) ||
+        (action === "messages" && currentPath.startsWith("/pulse/messages")) ||
+        (action === "profile" && currentPath.startsWith("/pulse/profile"));
+      item.classList.toggle("is-active", active);
+      if (active) item.setAttribute("aria-current", "page");
+      else item.removeAttribute("aria-current");
+    });
+
+    let lastY = window.scrollY || 0;
+    let ticking = false;
+    let keyboardOpen = false;
+    let pinned = false;
+    const threshold = 10;
+
+    function interactiveOpen() {
+      const active = document.activeElement;
+      const typing = !!active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName || "");
+      return typing ||
+        keyboardOpen ||
+        composer?.classList.contains("is-expanded") ||
+        document.body.classList.contains("pulse-dropdown-open") ||
+        document.body.classList.contains("drawer-open") ||
+        document.body.classList.contains("pulse-search-open") ||
+        document.body.classList.contains("status-editor-open") ||
+        document.body.classList.contains("pulse-music-picker-open") ||
+        document.body.classList.contains("pulse-status-viewer-open") ||
+        document.body.classList.contains("status-viewer-open") ||
+        document.querySelector("#createSheet.open, .create-sheet.open, .post-sheet.open, .pulse-media-lightbox.open, .pulse-promotion-modal.open, [data-status-viewer].open, #pulseStatusStoryViewer.open");
+    }
+
+    function setDockHidden(hidden) {
+      const shouldPin = !!interactiveOpen();
+      pinned = shouldPin;
+      dock.classList.toggle("is-pinned", shouldPin);
+      if (shouldPin) hidden = false;
+      dock.classList.toggle("is-hidden", !!hidden);
+      dock.setAttribute("aria-hidden", hidden ? "true" : "false");
+      document.body.classList.toggle("pulse-dock-hidden", !!hidden);
+      document.body.classList.toggle("pulse-dock-pinned", shouldPin);
+    }
+
+    function updateDock() {
+      ticking = false;
+      const y = Math.max(0, window.scrollY || 0);
+      const delta = y - lastY;
+      if (Math.abs(delta) < threshold) {
+        setDockHidden(dock.classList.contains("is-hidden") && !pinned);
+        return;
+      }
+      setDockHidden(delta > 0 && y > 120);
+      lastY = y;
+    }
+
+    function requestDockUpdate() {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(updateDock);
+    }
+
+    window.addEventListener("scroll", requestDockUpdate, { passive: true });
+    window.addEventListener("focusin", requestDockUpdate, true);
+    window.addEventListener("focusout", () => window.setTimeout(requestDockUpdate, 90), true);
+    document.addEventListener("click", () => window.setTimeout(requestDockUpdate, 30), true);
+    if (window.visualViewport) {
+      const baseHeight = window.visualViewport.height;
+      window.visualViewport.addEventListener("resize", () => {
+        keyboardOpen = baseHeight - window.visualViewport.height > 120;
+        requestDockUpdate();
+      }, { passive: true });
+    }
+    setDockHidden(false);
+  }
+
+  bootUniversalDock();
 
   document.addEventListener("click", async event => {
     const createTrigger = event.target.closest("[data-pulse-create-trigger], a[href='/pulse/create'], a[href=\"#create\"], a[href='/pulse#create']");
@@ -2232,19 +2345,6 @@
     if (aiSuggestion) {
       event.preventDefault();
       enhanceComposer(aiSuggestion.dataset.aiSuggestion || "clarity");
-      return;
-    }
-    const aiRail = event.target.closest("[data-composer-ai]");
-    if (aiRail) {
-      event.preventDefault();
-      const bodyInput = document.getElementById("postBody");
-      if ((bodyInput?.value || "").trim() || composerUploadItems.length) {
-        composer?.classList.add("is-ai-awake");
-        composerSuggestions?.querySelector("[data-ai-suggestion]:not([hidden])")?.focus();
-      } else {
-        bodyInput?.focus();
-        toast("Start typing or select media to unlock contextual AI.");
-      }
       return;
     }
     const musicTrigger = event.target.closest("[data-composer-music]");
@@ -2431,11 +2531,22 @@
 
     const save = event.target.closest("[data-save-post]");
     if (save) {
+      const wasActive = save.classList.contains("active") || save.getAttribute("aria-pressed") === "true";
+      save.disabled = true;
+      save.classList.toggle("active", !wasActive);
+      save.setAttribute("aria-pressed", wasActive ? "false" : "true");
       try {
         const data = await api(`/api/pulse/posts/${save.dataset.savePost}/save`, { method: "POST", body: JSON.stringify({}) });
+        const active = !(data.removed || data.saved === false);
+        save.classList.toggle("active", active);
+        save.setAttribute("aria-pressed", active ? "true" : "false");
         toast(data.message || "Saved.");
       } catch (error) {
+        save.classList.toggle("active", wasActive);
+        save.setAttribute("aria-pressed", wasActive ? "true" : "false");
         toast(error.message);
+      } finally {
+        save.disabled = false;
       }
       return;
     }

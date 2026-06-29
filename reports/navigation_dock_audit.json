@@ -1,0 +1,110 @@
+{
+  "checks": [
+    {
+      "details": "",
+      "name": "Dock exists on Home",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Dock exists on shared PulseSoc shell",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Dock has five primary actions",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Shared shell has five primary actions",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Dock is enabled on desktop",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Dock is enabled on tablet/mobile",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Create opens in-page composer",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Shared shell Create opens in-place sheet",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No legacy create route in Home dock",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No legacy create route in shared shell dock",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Hide on downward scroll",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Reveal on upward scroll",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Disabled while composer open",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Disabled while keyboard visible",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Disabled while sheets/modals open",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Active route state exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Unread badge remains backend/live wired",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Profile uses real avatar or initials",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Dock transition quality",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Reduced motion supported",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Create sheet is above dock",
+      "passed": true
+    }
+  ],
+  "ok": true
+}
