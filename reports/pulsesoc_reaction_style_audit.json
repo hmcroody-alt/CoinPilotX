@@ -7,7 +7,12 @@
     },
     {
       "details": "",
-      "name": "Post action rows use shared class",
+      "name": "Post action rows use shared Reels class",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Post action markup uses Reels icon/label/meta",
       "passed": true
     },
     {
@@ -22,7 +27,7 @@
     },
     {
       "details": "",
-      "name": "Video feed actions use shared class",
+      "name": "Video feed actions use shared Reels class",
       "passed": true
     },
     {

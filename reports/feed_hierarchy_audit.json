@@ -7,12 +7,17 @@
     },
     {
       "details": "",
-      "name": "Attached audio card before media",
+      "name": "Attached audio card below media",
       "passed": true
     },
     {
       "details": "",
       "name": "Media is not rendered before owner header",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "CSS explicitly keeps owner header above media",
       "passed": true
     },
     {
@@ -28,6 +33,11 @@
     {
       "details": "",
       "name": "Post actions remain wired",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Post actions use Reels reaction component",
       "passed": true
     },
     {

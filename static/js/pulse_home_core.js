@@ -910,7 +910,7 @@
 
   function actionButton(icon, label, attrs = {}) {
     const action = attrs.action || actionNameFromAttrs(attrs);
-    const button = element("button", "post-action-button pulse-action-button", "");
+    const button = element("button", "post-action-button pulse-action-button reel-action reel-action-button", "");
     button.type = "button";
     button.dataset.action = action;
     Object.entries(attrs).forEach(([key, value]) => {
@@ -918,9 +918,11 @@
       button.dataset[key] = value;
     });
     button.setAttribute("aria-label", label ? `${label} post` : `${action} post`);
-    const iconNode = element("span", "post-action-icon", icon);
+    const iconNode = element("span", "post-action-icon reel-action-icon action-icon", icon);
     iconNode.setAttribute("aria-hidden", "true");
-    button.append(iconNode, document.createTextNode(" "), element("span", "", label));
+    const labelNode = element("span", "reel-action-label", label || action);
+    const metaNode = element("small", "reel-action-meta", label || "");
+    button.append(iconNode, labelNode, metaNode);
     return button;
   }
 
@@ -1261,8 +1263,8 @@
       live.href = post.live.live_url;
       card.appendChild(live);
     }
-    renderPostMusic(card, post);
     if (media) card.appendChild(media);
+    renderPostMusic(card, post);
     renderEngagement(card, post);
     renderActions(card, post);
     renderComposer(card, post);
