@@ -129,6 +129,12 @@
         summary.textContent = `${pulseNetworkState.trendingActivity} public signals mapped. Aggregate activity only.`;
       }
     });
+    document.querySelectorAll("[data-desktop-creators-online]").forEach(node => {
+      node.textContent = String(pulseNetworkState.creatorsOnline);
+    });
+    document.querySelectorAll("[data-desktop-live-count]").forEach(node => {
+      node.textContent = String(pulseNetworkState.liveStreams);
+    });
   }
 
   function pulseNetworkPaused(paused) {
@@ -2130,6 +2136,9 @@
       event.preventDefault();
       const type = createTrigger.dataset.sheetType || createTrigger.dataset.createType || (createTrigger.matches("[data-composer-reel]") ? "video" : "text");
       openPulseComposer(type);
+      if (createTrigger.dataset.openComposerPicker) {
+        window.setTimeout(() => openComposerPicker(createTrigger.dataset.openComposerPicker || ""), 260);
+      }
       return;
     }
     const hideSponsor = event.target.closest("[data-hide-sponsored-signal]");
@@ -2202,7 +2211,10 @@
     if (musicTrigger) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (musicTrigger.hidden) return toast("Choose a photo or video first, then add music.");
+      composer?.classList.add("is-expanded");
+      if (!composerHasVideo() && !composerUploadItems.length) {
+        toast("Music is ready. Add a photo or video first so the attached track has media to sync with.");
+      }
       openComposerMusicPanel(musicTrigger);
       return;
     }
@@ -2219,7 +2231,16 @@
     const replaceComposerMedia = event.target.closest("[data-open-composer-picker]");
     if (replaceComposerMedia) {
       event.preventDefault();
+      document.getElementById("createSheet")?.classList.remove("open");
+      composer?.classList.add("is-expanded");
       openComposerPicker(replaceComposerMedia.dataset.openComposerPicker || "");
+      return;
+    }
+    const moreCreate = event.target.closest("[data-create-menu-more]");
+    if (moreCreate) {
+      event.preventDefault();
+      document.getElementById("createSheet")?.classList.add("open");
+      toast("Create menu opened.");
       return;
     }
     const chip = event.target.closest("[data-composer-chip],[data-composer-rail]");

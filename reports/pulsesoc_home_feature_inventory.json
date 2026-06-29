@@ -1,0 +1,441 @@
+{
+  "checks": [
+    {
+      "details": "32 features inventoried",
+      "name": "Feature inventory exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Required PulseSoc routes exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Pulse Radio present",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Top nav old ! removed",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Big P removed",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Create Signal exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Left nav includes required features",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Composer includes required actions",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Status preview system present",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Feed hierarchy markers present",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Attached audio priority present",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Promotion access present",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Quick Apps present",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No obvious legacy route references in Home",
+      "passed": true
+    },
+    {
+      "details": "[]",
+      "name": "No obvious dead Home anchors",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No public LogiNexus exposure",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No fake analytics/reach copy",
+      "passed": true
+    }
+  ],
+  "inventory": [
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/feed",
+      "current_entry_point": "pulse_page_html",
+      "current_route": "/pulse",
+      "current_status": "wired",
+      "feature": "Home",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "static/js/pulse_radio.js",
+      "current_entry_point": "hero + left radio dock",
+      "current_route": "/pulse/music#pulse-radio",
+      "current_status": "wired when approved tracks exist",
+      "feature": "Pulse Radio",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/status/rail",
+      "current_entry_point": "status rail + create sheet",
+      "current_route": "/pulse/status",
+      "current_status": "wired",
+      "feature": "Statuses / Stories",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/reels/feed",
+      "current_entry_point": "top nav + rail + composer",
+      "current_route": "/pulse/reels",
+      "current_status": "wired",
+      "feature": "Reels",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/feed",
+      "current_entry_point": "top nav + rail",
+      "current_route": "/pulse/videos",
+      "current_status": "wired",
+      "feature": "Videos",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/live-now",
+      "current_entry_point": "top nav + hero + composer",
+      "current_route": "/pulse/live",
+      "current_status": "wired",
+      "feature": "Live",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/posts",
+      "current_entry_point": "top Create Signal + create sheet",
+      "current_route": "/pulse#create",
+      "current_status": "wired",
+      "feature": "Pulse Composer",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/feed",
+      "current_entry_point": "main feed tabs",
+      "current_route": "/pulse",
+      "current_status": "wired",
+      "feature": "Feed",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/messages",
+      "current_entry_point": "top nav + rail + bottom nav",
+      "current_route": "/pulse/messages",
+      "current_status": "wired",
+      "feature": "Messages",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/notifications",
+      "current_entry_point": "top alert radar + rail",
+      "current_route": "/pulse/notifications",
+      "current_status": "wired",
+      "feature": "Notifications / Pulse Alerts",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/search",
+      "current_entry_point": "universal search",
+      "current_route": "/pulse/search",
+      "current_status": "wired",
+      "feature": "Search",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/profile/update",
+      "current_entry_point": "avatar + rail + bottom nav",
+      "current_route": "/pulse/profile",
+      "current_status": "wired",
+      "feature": "Profile",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/pulse/groups",
+      "current_entry_point": "rail + drawer + quick apps",
+      "current_route": "/pulse/communities",
+      "current_status": "gateway",
+      "feature": "Communities",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/groups",
+      "current_entry_point": "communities gateway",
+      "current_route": "/pulse/groups",
+      "current_status": "wired",
+      "feature": "Groups",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/pulse/marketplace/create",
+      "current_entry_point": "rail + composer + quick apps",
+      "current_route": "/pulse/marketplace",
+      "current_status": "wired",
+      "feature": "Marketplace",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/music/ai-suggest",
+      "current_entry_point": "rail + composer + quick apps",
+      "current_route": "/pulse/music",
+      "current_status": "wired",
+      "feature": "Music",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/pulse/live",
+      "current_entry_point": "rail + create sheet + quick apps",
+      "current_route": "/pulse/events",
+      "current_status": "safe gateway",
+      "feature": "Events",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/creator-ai/<tool>",
+      "current_entry_point": "rail + quick apps",
+      "current_route": "/pulse/creator-studio",
+      "current_status": "wired alias",
+      "feature": "Creator Studio",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/pulse/dashboard/seller-tools",
+      "current_entry_point": "rail + gateway",
+      "current_route": "/pulse/seller-tools",
+      "current_status": "wired gateway",
+      "feature": "Seller Tools",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/pulse/premium/activate",
+      "current_entry_point": "rail + promo card",
+      "current_route": "/pulse/premium",
+      "current_status": "wired",
+      "feature": "Premium",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/promotions",
+      "current_entry_point": "rail + sidebar + owner post tools",
+      "current_route": "/pulse/promote",
+      "current_status": "safe gateway",
+      "feature": "Promote / Ads",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/saved",
+      "current_entry_point": "rail + drawer",
+      "current_route": "/pulse/saved",
+      "current_status": "wired",
+      "feature": "Saved",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/saved/collections",
+      "current_entry_point": "rail + drawer",
+      "current_route": "/pulse/collections",
+      "current_status": "safe gateway",
+      "feature": "Collections",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/account/security",
+      "current_entry_point": "rail + drawer",
+      "current_route": "/pulse/settings",
+      "current_status": "wired gateway",
+      "feature": "Settings",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "n/a",
+      "current_entry_point": "top Apps + Quick Apps",
+      "current_route": "/pulse/discover#apps",
+      "current_status": "wired",
+      "feature": "Apps menu",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/creator-ai/<tool>",
+      "current_entry_point": "composer + creator studio",
+      "current_route": "/pulse/creator-studio#creator-ai",
+      "current_status": "wired",
+      "feature": "AI Assistant",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/feed",
+      "current_entry_point": "right intelligence sidebar",
+      "current_route": "/pulse",
+      "current_status": "wired",
+      "feature": "Pulse Intelligence",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/feed?tab=trending",
+      "current_entry_point": "feed tabs + right rail",
+      "current_route": "/pulse?feed=trending",
+      "current_status": "wired",
+      "feature": "Trending Signals",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/search",
+      "current_entry_point": "right rail",
+      "current_route": "/pulse/discover",
+      "current_status": "safe gateway",
+      "feature": "Recommended Creators",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/live-now",
+      "current_entry_point": "top shortcut + hero",
+      "current_route": "/pulse/live",
+      "current_status": "wired",
+      "feature": "Live Network",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/api/pulse/promotions",
+      "current_entry_point": "sidebar + post owner actions",
+      "current_route": "/pulse/promote",
+      "current_status": "safe gateway",
+      "feature": "Advertiser / promotion tools",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": false,
+      "appears_on_home": false,
+      "current_backend_route_or_api": "/api/dashboard/*",
+      "current_entry_point": "dashboard routes",
+      "current_route": "/pulse/dashboard/content-planner",
+      "current_status": "wired",
+      "feature": "Dashboard centers",
+      "known_issues": []
+    }
+  ],
+  "missing_routes": [],
+  "ok": true,
+  "routes_verified": [
+    "/pulse",
+    "/pulse/reels",
+    "/pulse/videos",
+    "/pulse/live",
+    "/pulse/messages",
+    "/pulse/notifications",
+    "/pulse/search",
+    "/pulse/profile",
+    "/pulse/marketplace",
+    "/pulse/music",
+    "/pulse/events",
+    "/pulse/creator-studio",
+    "/pulse/premium",
+    "/pulse/promote",
+    "/pulse/discover",
+    "/pulse/communities",
+    "/pulse/collections",
+    "/pulse/settings",
+    "/pulse/seller-tools"
+  ],
+  "source_files": [
+    "bot.py",
+    "static/js/pulse_home_core.js",
+    "static/js/pulse_media_renderer.js",
+    "static/css/pulse_home_os.css",
+    "static/css/pulse_desktop_feed.css"
+  ]
+}

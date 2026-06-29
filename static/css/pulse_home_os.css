@@ -2364,3 +2364,120 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
     animation: none !important;
   }
 }
+
+/* PulseSoc Home feature-inventory command center additions. */
+.pulse-hero-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.pulse-hero-metrics span,
+.pulse-radio-dock,
+.home-quick-apps,
+.home-promotion-gateway,
+.home-intel-recommended {
+  min-width: 0;
+}
+
+.pulse-hero-metrics span {
+  border: 1px solid rgba(110, 223, 246, .18);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .045);
+  padding: 10px;
+}
+
+.pulse-hero-metrics strong {
+  display: block;
+  font-size: clamp(22px, 4vw, 34px);
+  line-height: 1;
+}
+
+.pulse-hero-metrics small,
+.pulse-radio-dock-track small {
+  display: block;
+  color: var(--muted);
+}
+
+.pulse-hero-actions {
+  margin: 12px 0;
+}
+
+.pulse-radio-dock {
+  display: grid;
+  gap: 10px;
+}
+
+.pulse-radio-dock-tabs,
+.pulse-radio-dock-actions,
+.pulse-quick-app-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.pulse-radio-dock-tabs a,
+.pulse-quick-app-grid a {
+  text-decoration: none;
+  border: 1px solid rgba(110, 223, 246, .16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .05);
+  padding: 7px 9px;
+  font-weight: 850;
+}
+
+.pulse-radio-dock-tabs a.active {
+  background: rgba(110, 223, 246, .14);
+  color: #ecfbff;
+}
+
+.pulse-radio-dock-track {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+}
+
+.pulse-radio-live-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #36e58f;
+  box-shadow: 0 0 16px rgba(54, 229, 143, .68);
+}
+
+.pulse-topnav-live {
+  min-width: 52px;
+  width: auto;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
+.pulse-quick-app-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 720px) {
+  .pulse-hero-metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1380px) {
+  body.pulse-home-os .pulse-desktop-topbar {
+    grid-template-columns: minmax(142px, 190px) minmax(0, 1fr) minmax(330px, 390px) !important;
+  }
+
+  body.pulse-home-os .pulse-desktop-search-form {
+    display: none !important;
+  }
+
+  body.pulse-home-os .pulse-create-strong {
+    display: inline-flex !important;
+    min-width: max-content;
+  }
+}
