@@ -1,0 +1,86 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "Login-style notifications are stored in-app",
+      "ok": true,
+      "details": "2"
+    },
+    {
+      "name": "Push jobs queue inside the caller transaction before commit",
+      "ok": true,
+      "details": "2"
+    },
+    {
+      "name": "Push jobs remain durable pending work",
+      "ok": true,
+      "details": "[{'push_type': 'account_login', 'status': 'pending', 'attempts': 0, 'max_attempts': 5, 'trace_id': '2696d7a212d1'}, {'push_type': 'new_device', 'status': 'pending', 'attempts': 0, 'max_attempts': 5, 'trace_id': 'f0e5a111bc0b'}]"
+    },
+    {
+      "name": "In-app delivery rows are written",
+      "ok": true,
+      "details": "[{'channel': 'in_app', 'provider': 'pulse', 'status': 'created', 'error_message': None}, {'channel': 'push', 'provider': 'web_expo_push', 'status': 'queued', 'error_message': ''}, {'channel': 'in_app', 'provider': 'pulse', 'status': 'created', 'error_message': None}, {'channel': 'push', 'provider': 'web_expo_push', 'status': 'queued', 'error_message': ''}]"
+    },
+    {
+      "name": "Push delivery rows record queued state",
+      "ok": true,
+      "details": "[{'channel': 'in_app', 'provider': 'pulse', 'status': 'created', 'error_message': None}, {'channel': 'push', 'provider': 'web_expo_push', 'status': 'queued', 'error_message': ''}, {'channel': 'in_app', 'provider': 'pulse', 'status': 'created', 'error_message': None}, {'channel': 'push', 'provider': 'web_expo_push', 'status': 'queued', 'error_message': ''}]"
+    },
+    {
+      "name": "No push_job_enqueue_failed trace is emitted",
+      "ok": true,
+      "details": "[]"
+    }
+  ],
+  "details": {
+    "root_cause_before_fix": "Legacy notify_user wrote notification rows on one SQLite transaction, then opened a second writer through send_push_alert/enqueue_push before the first transaction committed. That can raise sqlite OperationalError: database is locked.",
+    "fix": "Legacy notify_user now queues async push jobs with push_service.enqueue_push_with_cursor on the caller cursor, so notification rows and push jobs commit together.",
+    "jobs_before_commit": 2,
+    "deliveries": [
+      {
+        "channel": "in_app",
+        "provider": "pulse",
+        "status": "created",
+        "error_message": null
+      },
+      {
+        "channel": "push",
+        "provider": "web_expo_push",
+        "status": "queued",
+        "error_message": ""
+      },
+      {
+        "channel": "in_app",
+        "provider": "pulse",
+        "status": "created",
+        "error_message": null
+      },
+      {
+        "channel": "push",
+        "provider": "web_expo_push",
+        "status": "queued",
+        "error_message": ""
+      }
+    ],
+    "jobs": [
+      {
+        "push_type": "account_login",
+        "status": "pending",
+        "attempts": 0,
+        "max_attempts": 5,
+        "trace_id": "2696d7a212d1"
+      },
+      {
+        "push_type": "new_device",
+        "status": "pending",
+        "attempts": 0,
+        "max_attempts": 5,
+        "trace_id": "f0e5a111bc0b"
+      }
+    ],
+    "push_trace_records": [
+      "PUSH_TRACE stage=push_job_queued {\"job_id\": \"push_1fd313a09a0bf1a43043bb67\", \"notification_id\": 1543, \"push_type\": \"account_login\", \"trace_id\": \"2696d7a212d1\", \"transactional\": true, \"user_id\": 9950781}",
+      "PUSH_TRACE stage=push_job_queued {\"job_id\": \"push_5d3b5da0bf265377f3ac67a1\", \"notification_id\": 1544, \"push_type\": \"new_device\", \"trace_id\": \"f0e5a111bc0b\", \"transactional\": true, \"user_id\": 9950781}"
+    ]
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "Reel create with feed share succeeds",
+      "ok": true,
+      "details": "{'data': {'reel': {'ai_summary': 'Attached music must survive the Reel-to-feed share.', 'ai_tags': ['audit', 'music', 'eth'], 'ai_tags_json': '[\"audit\", \"music\"]', 'attached_audio_url': '/static/audit/attached-pulsesoc-music.wav', 'audio': {'artist': 'PulseSoc QA', 'attached_audio_url': '/static/aud"
+    },
+    {
+      "name": "Created Reel has post and reel ids",
+      "ok": true,
+      "details": "post_id=1119 reel_id=112"
+    },
+    {
+      "name": "Reel music attachment persisted",
+      "ok": true,
+      "details": "[{'content_type': 'post', 'content_id': 1119, 'audio_track_id': '32467', 'original_audio_muted': 1, 'audio_start_time': 0.0, 'audio_volume': 0.8}, {'content_type': 'reel', 'content_id': 112, 'audio_track_id': '32467', 'original_audio_muted': 1, 'audio_start_time': 0.0, 'audio_volume': 0.8}, {'content_type': 'video', 'content_id': 1119, 'audio_track_id': '32467', 'original_audio_muted': 1, 'audio_start_time': 0.0, 'audio_volume': 0.8}]"
+    },
+    {
+      "name": "Feed post music attachment persisted",
+      "ok": true,
+      "details": "[{'content_type': 'post', 'content_id': 1119, 'audio_track_id': '32467', 'original_audio_muted': 1, 'audio_start_time': 0.0, 'audio_volume': 0.8}, {'content_type': 'reel', 'content_id': 112, 'audio_track_id': '32467', 'original_audio_muted': 1, 'audio_start_time': 0.0, 'audio_volume': 0.8}, {'content_type': 'video', 'content_id': 1119, 'audio_track_id': '32467', 'original_audio_muted': 1, 'audio_start_time': 0.0, 'audio_volume': 0.8}]"
+    },
+    {
+      "name": "Feed video music attachment persisted",
+      "ok": true,
+      "details": "[{'content_type': 'post', 'content_id': 1119, 'audio_track_id': '32467', 'original_audio_muted': 1, 'audio_start_time': 0.0, 'audio_volume': 0.8}, {'content_type': 'reel', 'content_id': 112, 'audio_track_id': '32467', 'original_audio_muted': 1, 'audio_start_time': 0.0, 'audio_volume': 0.8}, {'content_type': 'video', 'content_id': 1119, 'audio_track_id': '32467', 'original_audio_muted': 1, 'audio_start_time': 0.0, 'audio_volume': 0.8}]"
+    },
+    {
+      "name": "All music attachments mute original audio",
+      "ok": true,
+      "details": "[{'content_type': 'post', 'content_id': 1119, 'audio_track_id': '32467', 'original_audio_muted': 1, 'audio_start_time': 0.0, 'audio_volume': 0.8}, {'content_type': 'reel', 'content_id': 112, 'audio_track_id': '32467', 'original_audio_muted': 1, 'audio_start_time': 0.0, 'audio_volume': 0.8}, {'content_type': 'video', 'content_id': 1119, 'audio_track_id': '32467', 'original_audio_muted': 1, 'audio_start_time': 0.0, 'audio_volume': 0.8}]"
+    },
+    {
+      "name": "Feed serializer exposes same attached audio track",
+      "ok": true,
+      "details": "{\"audio_id\": \"32467\", \"track_id\": \"32467\", \"title\": \"QA Attached PulseSoc Music\", \"artist\": \"PulseSoc QA\", \"attached_audio_url\": \"/static/audit/attached-pulsesoc-music.wav\", \"audio_url\": \"/static/audit/attached-pulsesoc-music.wav\", \"preview_url\": \"/static/audit/attached-pulsesoc-music.wav\", \"duratio"
+    },
+    {
+      "name": "Feed serializer exposes attached audio URL",
+      "ok": true,
+      "details": "{\"audio_id\": \"32467\", \"track_id\": \"32467\", \"title\": \"QA Attached PulseSoc Music\", \"artist\": \"PulseSoc QA\", \"attached_audio_url\": \"/static/audit/attached-pulsesoc-music.wav\", \"audio_url\": \"/static/audit/attached-pulsesoc-music.wav\", \"preview_url\": \"/static/audit/attached-pulsesoc-music.wav\", \"duratio"
+    },
+    {
+      "name": "Feed media carries attached audio URL",
+      "ok": true,
+      "details": "{\"id\": 1470, \"type\": \"video\", \"media_type\": \"video\", \"media_url\": \"/static/audit/video-with-original-audio.mp4\", \"valid_url\": \"/static/audit/video-with-original-audio.mp4\", \"cdn_url\": \"\", \"playback_url\": \"/static/audit/video-with-original-audio.mp4\", \"mux_playback_id\": \"\", \"mux_asset_id\": \"\", \"mux_s"
+    },
+    {
+      "name": "Feed media marks original audio muted",
+      "ok": true,
+      "details": "{\"id\": 1470, \"type\": \"video\", \"media_type\": \"video\", \"media_url\": \"/static/audit/video-with-original-audio.mp4\", \"valid_url\": \"/static/audit/video-with-original-audio.mp4\", \"cdn_url\": \"\", \"playback_url\": \"/static/audit/video-with-original-audio.mp4\", \"mux_playback_id\": \"\", \"mux_asset_id\": \"\", \"mux_s"
+    },
+    {
+      "name": "Reel payload exposes same attached audio track",
+      "ok": true,
+      "details": "{\"id\": 32467, \"track_id\": 32467, \"title\": \"QA Attached PulseSoc Music\", \"artist\": \"PulseSoc QA\", \"attached_audio_url\": \"/static/audit/attached-pulsesoc-music.wav\", \"audio_url\": \"/static/audit/attached-pulsesoc-music.wav\", \"preview_url\": \"/static/audit/attached-pulsesoc-music.wav\", \"duration\": 5.0, \""
+    },
+    {
+      "name": "Reel and feed use same attached audio URL",
+      "ok": true,
+      "details": "{\"id\": 32467, \"track_id\": 32467, \"title\": \"QA Attached PulseSoc Music\", \"artist\": \"PulseSoc QA\", \"attached_audio_url\": \"/static/audit/attached-pulsesoc-music.wav\", \"audio_url\": \"/static/audit/attached-pulsesoc-music.wav\", \"preview_url\": \"/static/audit/attached-pulsesoc-music.wav\", \"duration\": 5.0, \""
+    },
+    {
+      "name": "Home Status previews use visibility observer",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Status previews declare first-10-second loop",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Image Status previews animate",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Text Status previews animate",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Pulse Alert replaces exclamation icon",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Top nav uses server-rendered avatar slot",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Top nav routes are real PulseSoc routes",
+      "ok": true,
+      "details": ""
+    }
+  ]
+}

@@ -876,7 +876,13 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
 }
 
 .pulse-home-os .pulse-status-home-preview {
-  display: none !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 2 !important;
+  display: grid !important;
+  align-content: end !important;
+  padding: 46px 7px 7px !important;
+  pointer-events: none !important;
 }
 
 .pulse-home-os .pulse-status-home-preview strong {
@@ -885,6 +891,28 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   white-space: nowrap !important;
   text-overflow: ellipsis !important;
   font-size: 11px;
+}
+
+.pulse-home-os .pulse-home-status-rail .status-preview-layer {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  display: block !important;
+}
+
+.pulse-home-os .pulse-home-status-rail .status-preview-video,
+.pulse-home-os .pulse-home-status-rail .status-preview-image {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+.pulse-home-os .pulse-home-status-rail .status-avatar-layer {
+  position: absolute !important;
+  z-index: 3 !important;
+  top: 7px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
 }
 
 .pulse-home-os .pulse-status-home-preview small {

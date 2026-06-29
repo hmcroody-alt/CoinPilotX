@@ -305,14 +305,18 @@ def _music_for_posts(post_ids):
     try:
         cur.execute(
             f"""
-            SELECT pcm.content_id, pcm.audio_track_id, pcm.title, pcm.artist, pcm.source,
+            SELECT CASE WHEN pcm.content_type='reel' THEN r.post_id ELSE pcm.content_id END AS content_id,
+                   pcm.audio_track_id, pcm.title, pcm.artist, pcm.source,
                    pcm.license_snapshot_json, pcm.created_at, pcm.audio_start_time, pcm.audio_volume, pcm.original_audio_muted,
                    at.audio_url AS current_audio_url,
                    at.duration_seconds AS current_duration_seconds
             FROM pulse_content_music pcm
             JOIN pulse_audio_tracks at ON CAST(at.id AS TEXT)=CAST(pcm.audio_track_id AS TEXT)
-            WHERE pcm.content_type IN ('post','video')
-              AND pcm.content_id IN ({placeholders})
+            LEFT JOIN pulse_reels r ON pcm.content_type='reel' AND CAST(r.id AS TEXT)=CAST(pcm.content_id AS TEXT)
+            WHERE (
+                (pcm.content_type IN ('post','video') AND pcm.content_id IN ({placeholders}))
+                OR (pcm.content_type='reel' AND r.post_id IN ({placeholders}))
+              )
               AND COALESCE(at.safety_status,'approved')='approved'
               AND COALESCE(at.active,1)=1
               AND COALESCE(at.approved_by_admin,0)=1
@@ -320,9 +324,9 @@ def _music_for_posts(post_ids):
               AND COALESCE(at.remix_edit_allowed,0)=1
               AND COALESCE(at.removed_at,'')=''
               AND COALESCE(at.audio_url,'')!=''
-            ORDER BY CASE WHEN pcm.content_type='video' THEN 0 ELSE 1 END, pcm.created_at DESC
+            ORDER BY CASE WHEN pcm.content_type='video' THEN 0 WHEN pcm.content_type='post' THEN 1 ELSE 2 END, pcm.created_at DESC
             """,
-            [int(post_id) for post_id in post_ids],
+            [int(post_id) for post_id in post_ids] * 2,
         )
         music = {}
         for row in cur.fetchall():

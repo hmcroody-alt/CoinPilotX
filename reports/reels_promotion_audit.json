@@ -174,7 +174,7 @@
     {
       "name": "Owner can edit Reel metadata",
       "passed": true,
-      "details": "{\"message\":\"Reel updated.\",\"ok\":true,\"reel\":{\"ai_summary\":\"\",\"ai_tags\":[\"audit\",\"updated\"],\"ai_tags_json\":\"[\\\"audit\\\", \\\"updated\\\"]\",\"audio\":{\"artist\":\"\",\"bpm\":0,\"duration\":0.0,\"id\":0,\"title\":\"\",\"track_id\":0,\"trend_score\":0,\"usage_count\":0,\"waveform\":\"\"},\"author\":{\"avatar_url\":\"\",\"badge_keys\":[],\"ba"
+      "details": "{\"message\":\"Reel updated.\",\"ok\":true,\"reel\":{\"ai_summary\":\"\",\"ai_tags\":[\"audit\",\"updated\"],\"ai_tags_json\":\"[\\\"audit\\\", \\\"updated\\\"]\",\"audio\":{\"artist\":\"\",\"attached_audio_url\":\"\",\"audio_duration\":0.0,\"audio_start_time\":0.0,\"audio_url\":\"\",\"audio_volume\":1.0,\"bpm\":0,\"duration\":0.0,\"id\":0,\"original_audi"
     },
     {
       "name": "Non-owner cannot edit Reel",

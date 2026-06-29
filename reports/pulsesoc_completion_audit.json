@@ -1,0 +1,297 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "GET /pulse route exists",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "GET /pulse/reels route exists",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "GET /pulse/search route exists",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "GET /pulse/notifications route exists",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "GET /pulse/messages route exists",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "GET /pulse/profile route exists",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "GET /pulse/videos route exists",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "GET /pulse/marketplace route exists",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "POST /api/reels route exists",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "PATCH /api/reels/<int:reel_id> route exists",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "DELETE /api/reels/<int:reel_id> route exists",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "POST /api/reels/<int:reel_id>/audio route exists",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "POST /api/promotions route exists",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "GET /api/promotions/eligibility route exists",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Reels bottom Create opens in-page creator",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Reels owner menu exposes edit/delete/promote",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Reels audit verifies non-owner edit block",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Remix is single safe unavailable action",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Reel action stack normalizes duplicate Remix buttons",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Shared media renderer enforces attached-audio priority",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Reel create propagates attached music to feed post/video",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Feed serializer hydrates Reel-linked music rows",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Feed post hierarchy is owner, caption, media, audio, engagement, actions, comment composer",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Status video previews are visible-only first-10-second loops",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Image/text Status previews have animated fallbacks",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Pulse Alert radar replaces old alert icon",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Top nav uses real avatar/fallback slot",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Internal design label is not exposed in Home shell",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Legacy create links are intercepted into current composer",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "No visible Create control routes to legacy /pulse/create",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Promotion modal uses backend and safe unavailable forecasting",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Push enqueue supports caller transaction without second writer",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "No obvious javascript:void(0) pattern in scoped PulseSoc files",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "No obvious empty onclick pattern in scoped PulseSoc files",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "No obvious fake success copy pattern in scoped PulseSoc files",
+      "ok": true,
+      "details": ""
+    }
+  ],
+  "task_statuses": [
+    {
+      "item": "Reels redesign",
+      "status": "COMPLETE",
+      "files": [
+        "bot.py",
+        "static/css/pulse_reels_experience.css"
+      ],
+      "routes": [
+        "/pulse/reels"
+      ],
+      "qa_evidence": "Static and reels_promotion audits verify in-page creator, action stack, owner controls.",
+      "known_limitations": "Browser audio audibility still depends on browser autoplay/user gesture rules."
+    },
+    {
+      "item": "Reels owner controls/edit/delete",
+      "status": "COMPLETE",
+      "files": [
+        "bot.py",
+        "scripts/reels_promotion_audit.py"
+      ],
+      "routes": [
+        "/api/reels/<int:reel_id>"
+      ],
+      "qa_evidence": "Owner edit and non-owner 403 are verified by reels_promotion_audit.",
+      "known_limitations": ""
+    },
+    {
+      "item": "Reel-to-feed attached audio propagation",
+      "status": "COMPLETE",
+      "files": [
+        "bot.py",
+        "services/pulse_feed_engine.py",
+        "scripts/reel_feed_audio_status_nav_audit.py"
+      ],
+      "routes": [
+        "/api/pulse/reels/create",
+        "/api/pulse/feed"
+      ],
+      "qa_evidence": "Audit creates real shared Reel and verifies same track URL plus original_audio_muted in feed and Reel payloads.",
+      "known_limitations": ""
+    },
+    {
+      "item": "Status preview cards",
+      "status": "COMPLETE",
+      "files": [
+        "bot.py",
+        "static/js/pulse_home_core.js",
+        "static/css/pulse_status_system.css"
+      ],
+      "routes": [
+        "/pulse",
+        "/api/pulse/status/rail"
+      ],
+      "qa_evidence": "Completion audit verifies observer, muted first-10-second loop, and image/text animation hooks.",
+      "known_limitations": ""
+    },
+    {
+      "item": "Feed post hierarchy",
+      "status": "COMPLETE",
+      "files": [
+        "static/js/pulse_home_core.js",
+        "static/css/pulse_desktop_feed.css"
+      ],
+      "routes": [
+        "/api/pulse/feed"
+      ],
+      "qa_evidence": "Render order check verifies owner header before caption/media and comment composer last.",
+      "known_limitations": ""
+    },
+    {
+      "item": "Top nav redesign",
+      "status": "COMPLETE",
+      "files": [
+        "bot.py",
+        "static/css/pulse_desktop_feed.css"
+      ],
+      "routes": [
+        "/pulse/search",
+        "/pulse/notifications",
+        "/pulse/messages",
+        "/pulse/profile"
+      ],
+      "qa_evidence": "Authenticated browser QA and route checks loaded desktop/mobile with no old alert bang links.",
+      "known_limitations": ""
+    },
+    {
+      "item": "Universal promote system",
+      "status": "COMPLETE",
+      "files": [
+        "services/pulsesoc_promotions.py",
+        "static/js/pulsesoc_promotions.js",
+        "scripts/reels_promotion_audit.py"
+      ],
+      "routes": [
+        "/api/promotions",
+        "/api/promotions/eligibility"
+      ],
+      "qa_evidence": "Owner draft promotion, non-owner blocks, safe unavailable forecasting and analytics verified.",
+      "known_limitations": "Launch remains billing-gated until funding/provider readiness."
+    },
+    {
+      "item": "Push notification infrastructure issue",
+      "status": "COMPLETE",
+      "files": [
+        "bot.py",
+        "services/push_service.py",
+        "scripts/push_notification_audit.py"
+      ],
+      "routes": [
+        "notify_user",
+        "push_delivery_jobs"
+      ],
+      "qa_evidence": "Push audit verifies login-style notification writes queue durable jobs in same transaction without enqueue failure.",
+      "known_limitations": "Provider delivery still requires configured subscriptions/provider credentials."
+    }
+  ]
+}

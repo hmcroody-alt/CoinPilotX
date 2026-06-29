@@ -264,8 +264,9 @@ def enqueue_push(user_id, title, body, data=None, push_type="general", notificat
         if "unique" not in str(exc).lower() and "duplicate" not in str(exc).lower():
             conn.rollback()
             conn.close()
-            _trace("push_job_enqueue_failed", trace_id=trace_id, user_id=int(user_id or 0), push_type=push_type, error_type=type(exc).__name__)
-            return {"ok": False, "status": "failed", "message": "Push job could not be queued.", "error_type": type(exc).__name__, "trace_id": trace_id}
+            error_detail = str(exc)[:400]
+            _trace("push_job_enqueue_failed", trace_id=trace_id, user_id=int(user_id or 0), push_type=push_type, error_type=type(exc).__name__, error_detail=error_detail)
+            return {"ok": False, "status": "failed", "message": "Push job could not be queued.", "error_type": type(exc).__name__, "error_detail": error_detail, "trace_id": trace_id}
         conn.rollback()
         cur.execute(
             """
@@ -296,6 +297,98 @@ def enqueue_push(user_id, title, body, data=None, push_type="general", notificat
             conn.close()
         except Exception:
             pass
+
+
+def enqueue_push_with_cursor(cur, user_id, title, body, data=None, push_type="general", notification_id=0, idempotency_key=""):
+    """Persist a push delivery request on the caller's open transaction."""
+    if not user_id:
+        return {"ok": False, "status": "skipped", "message": "User required."}
+    data = data or {}
+    trace_id = data.get("push_trace_id") or data.get("trace_id") or secrets.token_hex(6)
+    safe_data = {**data, "push_trace_id": trace_id, "notification_id": int(notification_id or data.get("notification_id") or 0)}
+    key = str(idempotency_key or _delivery_job_key(user_id, title, body, safe_data, push_type, notification_id))[:240]
+    job_id = f"push_{secrets.token_hex(12)}"
+    now = _now()
+    savepoint = "pulse_push_enqueue"
+    try:
+        cur.execute(f"SAVEPOINT {savepoint}")
+        _ensure_push_delivery_jobs(cur)
+        _ensure_expo_push_tickets(cur)
+        cur.execute(
+            """
+            INSERT INTO push_delivery_jobs
+            (job_id, idempotency_key, notification_id, user_id, push_type, title, body, payload_json,
+             status, attempts, max_attempts, next_retry_at, trace_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, 5, ?, ?, ?, ?)
+            """,
+            (
+                job_id,
+                key,
+                int(notification_id or safe_data.get("notification_id") or 0),
+                int(user_id or 0),
+                str(push_type or "general")[:80],
+                str(title or "PulseSoc notification")[:180],
+                str(body or "")[:2000],
+                json.dumps(safe_data, default=str)[:8000],
+                now,
+                str(trace_id)[:120],
+                now,
+                now,
+            ),
+        )
+        queued_id = getattr(cur, "lastrowid", None) or 0
+        cur.execute(f"RELEASE SAVEPOINT {savepoint}")
+        _trace(
+            "push_job_queued",
+            trace_id=trace_id,
+            user_id=int(user_id or 0),
+            notification_id=int(notification_id or safe_data.get("notification_id") or 0),
+            push_type=push_type,
+            job_id=job_id,
+            transactional=True,
+        )
+        if _opportunistic_processor_enabled():
+            threading.Timer(0.25, schedule_push_delivery_processing, kwargs={"reason": "transactional_job_queued"}).start()
+        return {"ok": True, "status": "queued", "delivery_state": "queued", "job_id": job_id, "id": queued_id, "trace_id": trace_id}
+    except Exception as exc:
+        try:
+            cur.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        except Exception:
+            pass
+        try:
+            cur.execute(f"RELEASE SAVEPOINT {savepoint}")
+        except Exception:
+            pass
+        if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+            try:
+                cur.execute(
+                    """
+                    SELECT id, job_id, status, trace_id FROM push_delivery_jobs
+                    WHERE idempotency_key=?
+                    LIMIT 1
+                    """,
+                    (key,),
+                )
+                existing = cur.fetchone()
+            except Exception:
+                existing = None
+            existing_id = existing[0] if existing else 0
+            existing_job = existing[1] if existing else ""
+            existing_status = existing[2] if existing else "queued"
+            existing_trace = existing[3] if existing else trace_id
+            _trace(
+                "push_job_duplicate",
+                trace_id=existing_trace,
+                user_id=int(user_id or 0),
+                notification_id=int(notification_id or safe_data.get("notification_id") or 0),
+                push_type=push_type,
+                job_id=existing_job,
+                transactional=True,
+            )
+            return {"ok": True, "status": "queued", "delivery_state": "deduped", "duplicate": True, "job_id": existing_job, "id": existing_id, "job_status": existing_status, "trace_id": existing_trace}
+        error_detail = str(exc)[:400]
+        _trace("push_job_enqueue_failed", trace_id=trace_id, user_id=int(user_id or 0), push_type=push_type, error_type=type(exc).__name__, error_detail=error_detail, transactional=True)
+        return {"ok": False, "status": "failed", "message": "Push job could not be queued.", "error_type": type(exc).__name__, "error_detail": error_detail, "trace_id": trace_id}
 
 
 def _deactivate_subscription(cur, subscription_id):

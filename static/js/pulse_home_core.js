@@ -439,6 +439,68 @@
     return ring;
   }
 
+  let statusPreviewObserver = null;
+
+  function statusPreviewVideos(root = document) {
+    return [...(root.querySelectorAll?.("[data-status-home-video]") || [])];
+  }
+
+  function pauseStatusPreviewVideos(root = document) {
+    statusPreviewVideos(root).forEach(video => video.pause?.());
+  }
+
+  function attachStatusPreviewLoop(video) {
+    if (!video || video.dataset.statusPreviewLoopReady === "1") return;
+    video.dataset.statusPreviewLoopReady = "1";
+    video.dataset.statusPreviewSeconds = video.dataset.statusPreviewSeconds || "10";
+    video.muted = true;
+    video.defaultMuted = true;
+    video.volume = 0;
+    video.playsInline = true;
+    video.setAttribute("playsinline", "");
+    video.setAttribute("muted", "");
+    video.addEventListener("timeupdate", () => {
+      const duration = Number(video.duration || 0);
+      const limit = Math.min(10, duration && Number.isFinite(duration) ? duration : 10);
+      if (Number(video.currentTime || 0) >= limit) {
+        try { video.currentTime = 0; } catch (_) {}
+        if (!document.hidden && video.closest?.("[data-status-dynamic]")) video.play?.().catch(() => {});
+      }
+    });
+  }
+
+  function observeStatusPreviewVideo(video) {
+    if (!video) return;
+    attachStatusPreviewLoop(video);
+    if (!("IntersectionObserver" in window)) {
+      video.play?.().catch(() => {});
+      return;
+    }
+    if (!statusPreviewObserver) {
+      statusPreviewObserver = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          const target = entry.target;
+          if (document.hidden || !entry.isIntersecting) {
+            target.pause?.();
+            return;
+          }
+          target.muted = true;
+          target.defaultMuted = true;
+          target.volume = 0;
+          target.play?.().catch(() => {});
+        });
+      }, { threshold: 0.45 });
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) pauseStatusPreviewVideos(document);
+        else statusPreviewVideos(document).forEach(video => video.play?.().catch(() => {}));
+      });
+      document.addEventListener("click", event => {
+        if (event.target.closest?.("[data-open-status-id]")) pauseStatusPreviewVideos(document);
+      }, true);
+    }
+    statusPreviewObserver.observe(video);
+  }
+
   function statusCardNode(item = {}) {
     const button = element("button", `pulse-status-card ${item.viewed ? "is-viewed" : ""} ${item.author_live ? "is-live" : ""} ${Number(item.unseen_count || 0) ? "has-unseen" : ""}`, "");
     button.type = "button";
@@ -450,7 +512,10 @@
     button.dataset.unseenCount = item.unseen_count || 0;
     button.dataset.authorLive = item.author_live ? "1" : "0";
     button.setAttribute("aria-label", `Open ${item.author_name || "PulseSoc"} Status`);
-    button.appendChild(statusAvatarNode(item));
+    const previewLayer = element("span", "status-preview-layer", "");
+    const overlay = element("span", "status-preview-overlay", "");
+    const avatarLayer = element("span", "status-avatar-layer", "");
+    avatarLayer.appendChild(statusAvatarNode(item));
     const preview = element("span", "pulse-status-home-preview", "");
     const media = (item.media || [])[0] || {};
     const src = statusMediaUrl(media);
@@ -458,28 +523,34 @@
     const kind = String(media.media_type || item.status_type || "text").toLowerCase();
     if (src && kind === "video") {
       const video = document.createElement("video");
-      video.className = "pulse-status-card-media";
+      video.className = "pulse-status-card-media status-preview-video";
       video.src = src;
       if (poster) video.poster = poster;
-      video.autoplay = true;
       video.muted = true;
+      video.defaultMuted = true;
+      video.volume = 0;
       video.loop = true;
       video.playsInline = true;
       video.preload = "metadata";
       video.dataset.statusHomeVideo = "";
-      preview.appendChild(video);
+      video.dataset.statusPreviewSeconds = "10";
+      previewLayer.appendChild(video);
     } else if (poster || src) {
       const img = document.createElement("img");
-      img.className = "pulse-status-card-media";
+      img.className = "pulse-status-card-media status-preview-image";
       img.src = poster || src;
       img.alt = item.body || "PulseSoc Status";
       img.loading = "lazy";
       img.decoding = "async";
-      preview.appendChild(img);
+      previewLayer.appendChild(img);
+    } else {
+      const textPreview = element("span", "status-preview-text", item.body || item.music?.title || item.status_type || "PulseSoc Status");
+      previewLayer.appendChild(textPreview);
     }
     const countLabel = Number(item.story_count || 1) > 1 ? ` · ${Number(item.story_count || 1)} stories` : "";
     const liveLabel = item.author_live ? " · live" : "";
     preview.append(element("strong", "", item.body || item.music?.title || item.status_type || "PulseSoc Status"), element("small", "", `${item.author_name || "PulseSoc member"} · ${item.viewed ? "seen" : "new"}${countLabel}${liveLabel}`));
+    button.append(previewLayer, overlay, avatarLayer);
     button.appendChild(preview);
     return button;
   }
@@ -500,7 +571,7 @@
       const fragment = document.createDocumentFragment();
       items.forEach(item => fragment.appendChild(statusCardNode(item)));
       statusUi.rail.appendChild(fragment);
-      statusUi.rail.querySelectorAll("[data-status-home-video]").forEach(video => video.play?.().catch(() => {}));
+      statusUi.rail.querySelectorAll("[data-status-home-video]").forEach(observeStatusPreviewVideo);
     } catch (error) {
       if (statusUi.empty && !statusUi.rail.querySelector("[data-status-dynamic]")) {
         statusUi.empty.hidden = false;
