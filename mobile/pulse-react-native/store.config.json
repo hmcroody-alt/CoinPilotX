@@ -84,7 +84,7 @@
       "demoUsername": "Ulagwop@gmail.com",
       "demoPassword": "Ula@123456",
       "demoRequired": true,
-      "notes": "PulseSoc is a WebView-based native shell for the live PulseSoc social platform at https://pulsesoc.com. The iOS app supports login, posts, reels, videos, messaging, notifications, profile, reporting, blocking, and account settings. Paid digital access, Stripe checkout, external billing, Premium Intelligence, creator monetization, paid courses, and web-purchased subscription benefits are unavailable in this iOS build until Apple In-App Purchase support is implemented and approved. Camera, microphone, and photo permissions are used only when a reviewer chooses to upload or record media in the app. Push notifications are used for account and social activity."
+      "notes": "PulseSoc is a WebView-based native shell for the live PulseSoc social platform at https://pulsesoc.com. Initial account creation is email-based; a phone number is not collected or required and can be added later in Account Settings. The iOS app supports login, posts, reels, videos, messaging, notifications, profile, reporting, blocking, and account settings. Paid digital access, Stripe checkout, external billing, Premium Intelligence, creator monetization, paid courses, and web-purchased subscription benefits are unavailable in this iOS build until Apple In-App Purchase support is implemented and approved. Camera, microphone, and photo permissions are used only when a reviewer chooses to upload or record media in the app. Push notifications are used for account and social activity."
     }
   }
 }

@@ -39,6 +39,11 @@ def main():
     require(account, "{% if not access.is_paid_pro and paid_digital_access_available %}", "native iOS dashboard paid CTA gate", failures)
     require(account, "{% if not paid_digital_access_available %}", "native iOS core fallback", failures)
     require(account, "Paid digital access is not available in this iOS build.", "native iOS paid unavailable copy", failures)
+    require(account, 'name="email" type="email" autocomplete="email" placeholder="Email address" required', "email-based signup", failures)
+    require(account, "A phone number is not required. You can add one later in Account Settings", "optional phone signup copy", failures)
+    signup_form = account[account.index('{% if page == "signup" %}'): account.index('{% elif page == "login" %}')]
+    if 'name="phone"' in signup_form or 'name="sms_opt_in"' in signup_form:
+        failures.append("initial signup must not collect phone or SMS consent")
 
     terms = read("templates/terms.html")
     for token in [
@@ -64,6 +69,9 @@ def main():
         'def api_payments_entitlements():',
         'context.setdefault("paid_digital_access_available", paid_digital_access_available)',
         "def pulse_premium_page():",
+        'phone = ""',
+        'sms_opt_in = False',
+        'error="Enter your email address to create your account."',
     ]:
         require(bot, token, "bot.py", failures)
     billing_portal_marker = "def api_premium_billing_portal():"

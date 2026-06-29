@@ -44,6 +44,11 @@ CoinPlotXAI Inc.
 
 This update addresses App Review Guideline 4, Guideline 5.1.1(v), Guideline 3.1.1, Guideline 2.1(a), and Guideline 1.2 feedback from PulseSoc iOS version 1.0 review.
 
+Account creation:
+- Initial account creation is email-based and does not collect or require a phone number.
+- The signup screen explicitly states that phone is optional and may be added later from Account Settings for users who choose SMS or phone-based security features.
+- Both the WebView signup form and native registration API are regression-tested with the phone field omitted.
+
 PulseSoc includes user-generated posts, media, comments, messages, notifications, profiles, statuses, marketplace/community surfaces, and live/video surfaces.
 
 User-generated content safety:
