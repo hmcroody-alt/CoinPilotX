@@ -64,6 +64,7 @@ def main():
         '"paid_digital_access_available": not ios_native',
         '"stripe_customer_id": "",',
         '"stripe_subscription_id": "",',
+        'payload.pop(key, None)',
         'def api_billing_confirm_session():',
         'def api_payments_list_purchases():',
         'def api_payments_entitlements():',
@@ -83,6 +84,20 @@ def main():
             failures.append("api_premium_billing_portal must detect native iOS")
         if "return ios_paid_digital_unavailable_response(api=True)" not in billing_portal_segment:
             failures.append("api_premium_billing_portal must use shared native iOS paid digital block")
+    status_marker = "def subscription_status_payload(user):"
+    if status_marker not in bot:
+        failures.append("missing subscription_status_payload")
+    else:
+        status_segment = bot[bot.index(status_marker): bot.index(status_marker) + 5200]
+        if "if ios_native:" not in status_segment or "payload.pop(key, None)" not in status_segment:
+            failures.append("native iOS subscription status must strip provider and Stripe identifier keys")
+        for token in [
+            '"provider_connected",',
+            '"provider_subscription_connected",',
+            '"stripe_customer_id",',
+            '"stripe_subscription_id",',
+        ]:
+            require(status_segment, token, "native iOS subscription status sanitizer", failures)
     for route_name in [
         "checkout_page",
         "upgrade_success_page",

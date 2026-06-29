@@ -106,6 +106,31 @@ def main():
     require(api_response.status_code == 200, "native signup API accepts no phone field")
     require(api_captured.get("phone") == "", "native signup API treats omitted phone as empty")
     require((api_response.get_json() or {}).get("requires_email_confirmation") is True, "native signup API reaches email confirmation")
+
+    paid_user = {
+        "user_id": 991829,
+        "email": "native-paid-sanitize-audit@example.com",
+        "plan": "founder_premium",
+        "subscription_plan": "founder_premium",
+        "subscription_status": "active",
+        "is_pro": 1,
+        "stripe_customer_id": "cus_native_should_not_leak",
+        "stripe_subscription_id": "sub_native_should_not_leak",
+        "provider_customer_id": "cus_provider_should_not_leak",
+        "provider_subscription_id": "sub_provider_should_not_leak",
+    }
+    with client.session_transaction() as session:
+        session["account_user_id"] = paid_user["user_id"]
+    with patch.object(bot, "load_account_by_id", return_value=paid_user), patch.object(bot, "_latest_user_subscription_row", return_value={}):
+        status_response = client.get("/api/subscriptions/status", headers={"User-Agent": NATIVE_IOS_UA})
+    status_json = status_response.get_json() or {}
+    status_body = status_response.get_data(as_text=True)
+    require(status_response.status_code == 200, "native subscription status loads for authenticated user")
+    require(status_json.get("plan") == "free", "native subscription status reports iOS core access only")
+    require(status_json.get("subscription_status") == "ios_core_only", "native subscription status does not expose paid subscription state")
+    for token in ("stripe_customer_id", "stripe_subscription_id", "provider_customer_id", "provider_subscription_id", "cus_", "sub_"):
+        require(token not in status_body, f"native subscription status omits {token}")
+
     print("app_store_optional_phone_signup_audit: PASS")
 
 
