@@ -1,0 +1,150 @@
+{
+  "checks": [
+    {
+      "details": "",
+      "name": "Feed action V2 row exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Feed action chips exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Required feed action labels exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Required feed action handlers remain wired",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "More chip uses existing post menu handler",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Owner promote chip is owner-only",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Server-rendered /pulse feed receives V2 row",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Server-rendered /pulse actions are wired",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Server-rendered /pulse composer is V2",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Server-rendered /pulse order supports tags music media",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Server-rendered /pulse repost has rollback",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Server-rendered /pulse save honors backend toggle state",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Action chip has no legacy feed toolbar classes",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Old post-action-row CSS cannot control V2 row",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No duplicate icon label meta structure in feed chips",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Counts have stable update targets",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Like count updates only after backend response",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Comment count updates after comment backend success",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Comment composer V2 exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Composer buttons remain wired",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Composer has compact CSS",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Feed action CSS uses compact glass chips",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Mobile feed action layout avoids page overflow",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Very small mobile avoids label/icon collisions",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Accessible pressed states exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No href hash or javascript void in feed action runtime",
+      "passed": true
+    },
+    {
+      "details": "[718, 882, 1082, 1115, 1155, 1189, 1220]",
+      "name": "Feed render order matches required structure",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Media is not rendered before creator identity",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Shared hydrator recognizes V2 feed classes",
+      "passed": true
+    }
+  ],
+  "ok": true
+}

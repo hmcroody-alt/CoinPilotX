@@ -32,7 +32,7 @@
     },
     {
       "details": "",
-      "name": "Feed posts use shared reaction classes",
+      "name": "Feed posts use dedicated V2 reaction classes",
       "passed": true
     },
     {

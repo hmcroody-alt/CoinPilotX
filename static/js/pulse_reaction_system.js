@@ -10,9 +10,12 @@
     share: "↗",
     save: "🔖",
     more: "•••",
+    promote: "↗",
     send: "➤",
     media: "▣",
     emoji: "☺",
+    "comment-media": "▣",
+    "comment-emoji": "☺",
   };
 
   function normalizeAction(button) {
@@ -24,6 +27,7 @@
       || (button?.matches?.("[data-open-comments],[data-post-comment],[data-status-viewer-comment],[data-status-story-comment]") ? "comment" : "")
       || (button?.matches?.("[data-share-reel],[data-post-share],[data-share-video],[data-status-viewer-share],[data-status-story-share]") ? "share" : "")
       || (button?.matches?.("[data-reel-more],[data-post-menu],[data-status-viewer-more],[data-status-story-more]") ? "more" : "")
+      || (button?.matches?.("[data-promote-content]") ? "promote" : "")
       || (button?.matches?.("[data-status-viewer-react],[data-status-story-react]") ? "like" : "")
       || (button?.matches?.("[data-status-viewer-save],[data-status-story-save]") ? "save" : "")
       || (button?.matches?.("[data-status-viewer-mute],[data-status-story-mute]") ? "mute" : "");
@@ -68,14 +72,14 @@
 
   function hydrate(root = document) {
     root.querySelectorAll?.(".post-card-modern,.video-card-modern,.reel-card,.reels-shell,.reels-immersive,.pulse-status-story-shell,.pulse-status-story-viewer,[data-status-viewer]").forEach(decorateViewer);
-    root.querySelectorAll?.(".reel-actions,.reels-action-rail,.pulse-status-story-actions,.post-action-row").forEach((bar) => {
+    root.querySelectorAll?.(".reel-actions,.reels-action-rail,.pulse-status-story-actions,.post-action-row,.pulse-feed-actions-v2").forEach((bar) => {
       bar.classList.add("pulse-reaction-bar");
       bar.classList.add("lnx-action-bar");
       if (!bar.dataset.layout) {
-        bar.dataset.layout = bar.classList.contains("post-action-row") ? "horizontal" : "vertical";
+        bar.dataset.layout = (bar.classList.contains("post-action-row") || bar.classList.contains("pulse-feed-actions-v2")) ? "horizontal" : "vertical";
       }
     });
-    root.querySelectorAll?.(".reel-action,.pulse-action-button,.pulse-status-action,.post-action-button").forEach((button) => decorate(button));
+    root.querySelectorAll?.(".reel-action,.pulse-action-button,.pulse-status-action,.post-action-button,.pulse-action-chip,.pulse-comment-action").forEach((button) => decorate(button));
     root.querySelectorAll?.(".post-card-header,.reel-creator,.reel-details-creator,.featured-creator,.video-card-creator").forEach((node) => {
       node.classList.add("pulse-creator-header");
     });

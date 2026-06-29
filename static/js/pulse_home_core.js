@@ -908,15 +908,19 @@
     return "action";
   }
 
+  function applyDataset(node, attrs = {}) {
+    Object.entries(attrs).forEach(([key, value]) => {
+      if (key === "action") return;
+      node.dataset[key] = value;
+    });
+  }
+
   function actionButton(icon, label, attrs = {}) {
     const action = attrs.action || actionNameFromAttrs(attrs);
     const button = element("button", "post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button", "");
     button.type = "button";
     button.dataset.action = action;
-    Object.entries(attrs).forEach(([key, value]) => {
-      if (key === "action") return;
-      button.dataset[key] = value;
-    });
+    applyDataset(button, attrs);
     button.setAttribute("aria-label", label ? `${label} post` : `${action} post`);
     const iconNode = element("span", "post-action-icon reel-action-icon action-icon", icon);
     iconNode.setAttribute("aria-hidden", "true");
@@ -924,6 +928,47 @@
     const metaNode = element("small", "reel-action-meta", label || "");
     button.append(iconNode, labelNode, metaNode);
     window.PulseReactionSystem?.decorate?.(button, { action, label, itemType: "post" });
+    return button;
+  }
+
+  function feedActionChip(icon, label, attrs = {}, value = "") {
+    const action = attrs.action || actionNameFromAttrs(attrs);
+    const button = element("button", "pulse-action-chip pulse-reaction-button", "");
+    button.type = "button";
+    button.dataset.action = action;
+    button.dataset.feedAction = action;
+    applyDataset(button, attrs);
+    button.setAttribute("aria-label", label ? `${label} post` : `${action} post`);
+    if (["like", "save", "repost"].includes(action)) {
+      button.setAttribute("aria-pressed", "false");
+    }
+    const iconNode = element("span", "pulse-action-icon", icon);
+    iconNode.setAttribute("aria-hidden", "true");
+    const labelNode = element("span", "pulse-action-label", label || action);
+    button.append(iconNode, labelNode);
+    if (value !== null && value !== undefined && value !== "") {
+      const countNode = element("span", "pulse-action-count", compactNumber(value));
+      if (attrs.postLike) countNode.dataset.postLikeCount = attrs.postLike;
+      if (attrs.postComment) countNode.dataset.postCommentCount = attrs.postComment;
+      if (attrs.postRepost) countNode.dataset.postRepostCount = attrs.postRepost;
+      if (attrs.postShare) countNode.dataset.postShareCount = attrs.postShare;
+      button.appendChild(countNode);
+    }
+    window.PulseReactionSystem?.decorate?.(button, { action, label, itemType: "post" });
+    return button;
+  }
+
+  function commentComposerButton(icon, label, attrs = {}) {
+    const action = attrs.action || actionNameFromAttrs(attrs);
+    const button = element("button", "pulse-comment-action pulse-action-chip pulse-reaction-button", "");
+    button.type = "button";
+    button.dataset.action = action;
+    applyDataset(button, attrs);
+    button.setAttribute("aria-label", label || `${action} comment`);
+    const iconNode = element("span", "pulse-action-icon", icon);
+    iconNode.setAttribute("aria-hidden", "true");
+    button.appendChild(iconNode);
+    window.PulseReactionSystem?.decorate?.(button, { action, label, itemType: "comment" });
     return button;
   }
 
@@ -1211,35 +1256,52 @@
   }
 
   function renderActions(card, post) {
-    const row = element("div", "post-action-row pulse-reaction-bar");
+    const row = element("div", "pulse-feed-actions-v2 pulse-reaction-bar");
     row.dataset.layout = "horizontal";
-    const like = actionButton("👍", "Like", { postLike: post.id, action: "like" });
+    row.dataset.contentType = "feed";
+    const like = feedActionChip("❤", "Like", { postLike: post.id, action: "like" }, reactionTotal(post));
     like.setAttribute("aria-pressed", post.viewer_reaction ? "true" : "false");
     if (post.viewer_reaction) like.classList.add("active");
-    const save = actionButton("🔖", "Save", { savePost: post.id, action: "save" });
+    const save = feedActionChip("🔖", "Save", { savePost: post.id, action: "save" }, "");
     save.setAttribute("aria-pressed", post.viewer_saved ? "true" : "false");
     if (post.viewer_saved) save.classList.add("active");
     row.append(
       like,
-      actionButton("💬", "Comment", { postComment: post.id, action: "comment" }),
-      actionButton("↻", "Repost", { postRepost: post.id, action: "repost" }),
-      actionButton("↗", "Share", { postShare: postUrl(post), action: "share" }),
-      save
+      feedActionChip("💬", "Comment", { postComment: post.id, action: "comment" }, post.comments_count || post.comment_count || 0),
+      feedActionChip("↻", "Repost", { postRepost: post.id, action: "repost" }, post.repost_count || post.reposts_count || 0),
+      feedActionChip("↗", "Share", { postShare: postUrl(post), action: "share" }, post.share_count || post.shares_count || 0),
+      save,
+      feedActionChip("•••", "More", { postMenu: post.id, action: "more" }, "")
     );
+    if (post.can_delete) {
+      const rawType = String(post.post_type || "post").toLowerCase();
+      const promoteType = rawType === "image"
+        ? "photo"
+        : (["article", "blog", "podcast", "event", "business_post", "creator_content"].includes(rawType) ? rawType : "post");
+      const promote = feedActionChip("↗", "Promote", { action: "promote" }, "");
+      promote.dataset.promoteContent = promoteType;
+      promote.dataset.contentId = post.id;
+      promote.dataset.contentLabel = post.title || "PulseSoc Post";
+      promote.setAttribute("aria-label", "Promote post");
+      row.appendChild(promote);
+    }
     card.appendChild(row);
   }
 
   function renderComposer(card, post) {
-    const composer = element("section", "post-comment-composer");
-    composer.appendChild(currentViewerAvatar(post));
+    const composer = element("section", "pulse-comment-composer-v2 post-comment-composer");
+    const avatarWrap = element("div", "pulse-comment-avatar", "");
+    avatarWrap.appendChild(currentViewerAvatar(post));
+    composer.appendChild(avatarWrap);
     const input = document.createElement("input");
     input.type = "text";
     input.placeholder = "Write a comment...";
+    input.setAttribute("aria-label", "Write a comment");
     input.dataset.commentInput = post.id;
     composer.appendChild(input);
-    composer.appendChild(actionButton("📷", "", { commentMedia: post.id, action: "media" }));
-    composer.appendChild(actionButton("☺", "", { commentEmoji: post.id, action: "emoji" }));
-    composer.appendChild(actionButton("➤", "", { commentSend: post.id, action: "send" }));
+    composer.appendChild(commentComposerButton("▣", "Add comment media", { commentMedia: post.id, action: "comment-media" }));
+    composer.appendChild(commentComposerButton("☺", "Add emoji", { commentEmoji: post.id, action: "comment-emoji" }));
+    composer.appendChild(commentComposerButton("➤", "Send comment", { commentSend: post.id, action: "send" }));
     card.appendChild(composer);
   }
 
@@ -1265,8 +1327,8 @@
       live.href = post.live.live_url;
       card.appendChild(live);
     }
-    if (media) card.appendChild(media);
     renderPostMusic(card, post);
+    if (media) card.appendChild(media);
     renderEngagement(card, post);
     renderActions(card, post);
     renderComposer(card, post);
@@ -1434,6 +1496,9 @@
         node.classList.toggle("active", !data.removed);
         node.setAttribute("aria-pressed", data.removed ? "false" : "true");
       });
+      document.querySelectorAll(`[data-post-like-count="${postId}"]`).forEach(node => {
+        node.textContent = compactNumber(total);
+      });
     } catch (error) {
       if (button) {
         button.classList.toggle("active", wasActive);
@@ -1460,6 +1525,9 @@
       input.value = "";
       const current = Number(document.querySelector(`[data-summary-comments="${postId}"]`)?.textContent.replace(/[^\d.]/g, "") || 0);
       updateSummary(postId, "comments", current + 1);
+      document.querySelectorAll(`[data-post-comment-count="${postId}"]`).forEach(node => {
+        node.textContent = compactNumber(current + 1);
+      });
       toast("Comment posted.");
     } catch (error) {
       toast(error.message);
