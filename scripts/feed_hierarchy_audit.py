@@ -76,7 +76,7 @@ def main() -> int:
         check("CSS does not visually move video media before header", "order: -2" not in feed_css and "order: -1" not in feed_css),
         check("Attached audio preserves original mute rule", "Original audio muted" in render_music and "forceOriginalAudioMuted" in render_music and "forceOriginalAudioMuted" in media),
         check("Post actions remain wired", all(token in js for token in ["data-post-like", "data-post-comment", "data-post-repost", "data-post-share", "data-save-post"])),
-        check("Post actions use Reels reaction component", '"post-action-button pulse-action-button reel-action reel-action-button"' in js and "reel-action-meta" in js),
+        check("Post actions use unified reaction component", '"post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button"' in js and "reel-action-meta" in js),
         check("Comment composer remains bottom", "renderComposer(card, post)" in render_post and render_post.rfind("renderComposer") > render_post.rfind("renderActions")),
         check("Composer AI shortcut removed", composer_shortcut_removed),
         check("Composer core buttons remain", all(label in page for label in ["Photo", "Video", "Music", "Feeling", "Location", "Mention", "Topic", "Public"])),

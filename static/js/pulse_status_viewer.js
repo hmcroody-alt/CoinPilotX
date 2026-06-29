@@ -135,10 +135,11 @@
     const count = button.matches("[data-status-story-react]")
       ? (button.querySelector("[data-status-story-reaction-count]")?.textContent || "0")
       : label;
-    button.classList.add("pulse-status-action", "pulse-action-button", "reel-action", "reel-action-button");
+    button.classList.add("pulse-status-action", "pulse-action-button", "pulse-reaction-button", "reel-action", "reel-action-button");
     button.dataset.action = key === "love" ? "like" : key;
     if (key === "love") button.classList.add("pulse-status-react");
     button.innerHTML = `<span class="reel-action-icon action-icon pulse-status-action-icon" aria-hidden="true">${icon}</span><span class="reel-action-label">${label}</span><small class="reel-action-meta" ${key === "love" ? 'data-status-story-reaction-count' : ""}>${count}</small>`;
+    window.PulseReactionSystem?.decorate?.(button, { action: button.dataset.action, label, itemType: "Status" });
     button.dataset.statusActionDecorated = "1";
     button.setAttribute("aria-label", `${label} Status`);
     if ((key === "love" || key === "save") && !button.hasAttribute("aria-pressed")) button.setAttribute("aria-pressed", "false");
@@ -196,11 +197,17 @@
   function decorateStatusActions(root = document) {
     const scope = root?.querySelectorAll ? root : document;
     scope.querySelectorAll?.("[data-status-story-react]").forEach(button => decorateActionButton(button, "love"));
+    scope.querySelectorAll?.("[data-status-viewer-react]").forEach(button => decorateActionButton(button, "love"));
     scope.querySelectorAll?.("[data-status-story-comment]").forEach(button => decorateActionButton(button, "comment"));
+    scope.querySelectorAll?.("[data-status-viewer-comment]").forEach(button => decorateActionButton(button, "comment"));
     scope.querySelectorAll?.("[data-status-story-share]").forEach(button => decorateActionButton(button, "share"));
+    scope.querySelectorAll?.("[data-status-viewer-share]").forEach(button => decorateActionButton(button, "share"));
     scope.querySelectorAll?.("[data-status-story-save]").forEach(button => decorateActionButton(button, "save"));
+    scope.querySelectorAll?.("[data-status-viewer-save]").forEach(button => decorateActionButton(button, "save"));
     scope.querySelectorAll?.("[data-status-story-more]").forEach(button => decorateActionButton(button, "more"));
+    scope.querySelectorAll?.("[data-status-viewer-more]").forEach(button => decorateActionButton(button, "more"));
     scope.querySelectorAll?.("[data-status-story-mute]").forEach(button => decorateActionButton(button, "mute"));
+    scope.querySelectorAll?.("[data-status-viewer-mute]").forEach(button => decorateActionButton(button, "mute"));
     scope.querySelectorAll?.("[data-status-story-close]").forEach(hardenStatusCloseButton);
   }
 
@@ -348,10 +355,11 @@
       decorateActionButton(button, "mute");
       return;
     }
-    button.classList.add("pulse-status-action", "pulse-action-button", "reel-action", "reel-action-button");
+    button.classList.add("pulse-status-action", "pulse-action-button", "pulse-reaction-button", "reel-action", "reel-action-button");
     button.dataset.action = "mute";
     button.setAttribute("aria-label", muted ? "Enable Status sound" : "Mute Status sound");
     button.innerHTML = `<span class="reel-action-icon action-icon pulse-status-action-icon" aria-hidden="true">${muted ? "🔇" : "🔊"}</span><span class="reel-action-label">${muted ? "Tap sound" : "Sound"}</span><small class="reel-action-meta">${muted ? "Tap" : "Sound"}</small>`;
+    window.PulseReactionSystem?.decorate?.(button, { action: "mute", label: muted ? "Tap sound" : "Sound", itemType: "Status" });
   }
 
   function unmuteViewerVideo(viewer = activeViewer()) {

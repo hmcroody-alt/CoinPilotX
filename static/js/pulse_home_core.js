@@ -910,7 +910,7 @@
 
   function actionButton(icon, label, attrs = {}) {
     const action = attrs.action || actionNameFromAttrs(attrs);
-    const button = element("button", "post-action-button pulse-action-button reel-action reel-action-button", "");
+    const button = element("button", "post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button", "");
     button.type = "button";
     button.dataset.action = action;
     Object.entries(attrs).forEach(([key, value]) => {
@@ -923,6 +923,7 @@
     const labelNode = element("span", "reel-action-label", label || action);
     const metaNode = element("small", "reel-action-meta", label || "");
     button.append(iconNode, labelNode, metaNode);
+    window.PulseReactionSystem?.decorate?.(button, { action, label, itemType: "post" });
     return button;
   }
 
@@ -1210,7 +1211,8 @@
   }
 
   function renderActions(card, post) {
-    const row = element("div", "post-action-row");
+    const row = element("div", "post-action-row pulse-reaction-bar");
+    row.dataset.layout = "horizontal";
     const like = actionButton("👍", "Like", { postLike: post.id, action: "like" });
     like.setAttribute("aria-pressed", post.viewer_reaction ? "true" : "false");
     if (post.viewer_reaction) like.classList.add("active");

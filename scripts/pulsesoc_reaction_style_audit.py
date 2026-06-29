@@ -32,11 +32,11 @@ def main() -> int:
     bot_py = read(BOT)
     checks = [
         check("Shared reaction class exists", ".pulse-action-button" in feed_css and ".pulse-action-button" in status_css),
-        check("Post action rows use shared Reels class", '"post-action-button pulse-action-button reel-action reel-action-button"' in home_js),
+        check("Post action rows use shared Reels class", '"post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button"' in home_js),
         check("Post action markup uses Reels icon/label/meta", all(token in home_js for token in ["reel-action-icon action-icon", "reel-action-label", "reel-action-meta"])),
-        check("Status actions use shared class", '"pulse-status-action", "pulse-action-button", "reel-action", "reel-action-button"' in status_js),
-        check("Inline status viewer uses shared class", "button.classList.add('pulse-status-action','pulse-action-button','reel-action','reel-action-button')" in bot_py),
-        check("Video feed actions use shared Reels class", '"post-action-button pulse-action-button reel-action reel-action-button"' in bot_py and "post-action-icon reel-action-icon action-icon" in bot_py and 'data-video-repost' in bot_py and 'data-save-video' in bot_py),
+        check("Status actions use shared class", '"pulse-status-action", "pulse-action-button", "pulse-reaction-button", "reel-action", "reel-action-button"' in status_js),
+        check("Inline status viewer uses shared class", "button.classList.add('pulse-status-action','pulse-action-button','pulse-reaction-button','reel-action','reel-action-button')" in bot_py),
+        check("Video feed actions use shared Reels class", '"post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button"' in bot_py and "post-action-icon reel-action-icon action-icon" in bot_py and 'data-video-repost' in bot_py and 'data-save-video' in bot_py),
         check("Post action data actions exist", all(token in home_js for token in ['action: "like"', 'action: "comment"', 'action: "repost"', 'action: "share"', 'action: "save"'])),
         check("Status data actions exist", "button.dataset.action" in status_js and 'key === "love" ? "like" : key' in status_js and 'button.dataset.action = "mute"' in status_js),
         check("Backend status data actions exist", all(token in bot_py for token in ["button.dataset.action=action", "'like'", "'comment'", "'share'", "'save'", "'more'"])),

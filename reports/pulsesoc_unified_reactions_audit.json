@@ -1,0 +1,130 @@
+{
+  "checks": [
+    {
+      "details": "",
+      "name": "Shared reaction CSS exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Shared reaction JS exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Pulse pages load shared reaction CSS",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Pulse pages load shared reaction JS",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Feed posts use shared reaction classes",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Video posts use shared reaction classes",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Statuses use shared reaction classes",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Standalone Status viewer uses shared reaction selectors",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Inline status viewer uses shared reaction classes",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Reels use shared reaction classes",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Reels mobile enhancer uses shared reaction classes",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Shared active states include like/save/remix",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Old surface CSS is overridden by shared layer",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No duplicate Remix protection exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No reaction dead hrefs",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No javascript void reaction links",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Like handlers still exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Comment/reply handlers still exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Share handlers still exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Save handlers still exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "More menu handlers still exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Owner and non-owner menu guards still exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Minimum tap target is enforced",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Reduced motion is supported",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No duplicate shared class tokens",
+      "passed": true
+    }
+  ],
+  "ok": true
+}

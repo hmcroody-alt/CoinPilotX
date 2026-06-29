@@ -1776,13 +1776,14 @@
     if (!avatar) return;
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "reel-action reel-action-avatar";
+    button.className = "reel-action reel-action-button pulse-reaction-button reel-action-avatar";
     button.dataset.followCreator = card.dataset.authorId || "";
     button.setAttribute("aria-label", "Follow creator");
     button.appendChild(avatar);
     const plus = document.createElement("small");
     plus.textContent = "+";
     button.appendChild(plus);
+    window.PulseReactionSystem?.decorate?.(button, { action: "follow", label: "Follow creator", itemType: "reel" });
     rail.insertBefore(button, rail.firstChild);
   }
 
@@ -1791,10 +1792,11 @@
     if (!rail || rail.querySelector("[data-reel-remix]")) return;
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "reel-action reel-remix-action";
+    button.className = "reel-action reel-action-button pulse-reaction-button reel-remix-action";
     button.dataset.reelRemix = card.dataset.reelId || "";
     button.setAttribute("aria-label", "Remix");
     button.innerHTML = '⟳<small>Remix</small>';
+    window.PulseReactionSystem?.decorate?.(button, { action: "remix", label: "Remix", itemType: "reel" });
     rail.appendChild(button);
   }
 
@@ -1807,6 +1809,7 @@
     actionLabel(card.querySelector("[data-reel-save]"), "Save");
     actionLabel(card.querySelector("[data-open-comments]"), compactCount(card.querySelector("[data-comment-count]")?.textContent || "0"));
     actionLabel(card.querySelector("[data-reel-react]"), compactCount(card.querySelector("[data-fire-count]")?.textContent || "0"));
+    window.PulseReactionSystem?.hydrate?.(card);
     ensureReelProgress(card);
     card.querySelectorAll("video").forEach(video => {
       video.setAttribute("playsinline", "");

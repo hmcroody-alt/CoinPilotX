@@ -1,0 +1,162 @@
+/* Shared PulseSoc reaction system: Reels, Statuses, feed posts, and future cards. */
+:root {
+--pulse-reaction-bg: rgba(4, 10, 20, .26);
+--pulse-reaction-bg-hover: rgba(8, 18, 32, .38);
+--pulse-reaction-border: rgba(150, 235, 255, .26);
+--pulse-reaction-border-hover: rgba(0, 224, 255, .55);
+--pulse-reaction-text: rgba(255, 255, 255, .95);
+--pulse-reaction-glow: rgba(0, 224, 255, .10);
+--pulse-reaction-like: rgba(255, 59, 92, .72);
+--pulse-reaction-save: rgba(255, 210, 80, .68);
+--pulse-reaction-remix: rgba(170, 80, 255, .68);
+}
+
+.pulse-reaction-bar,
+.reels-action-rail.pulse-reaction-bar,
+.reel-actions.pulse-reaction-bar,
+.pulse-status-story-actions.pulse-reaction-bar,
+.post-action-row.pulse-reaction-bar {
+display: flex;
+gap: 12px;
+}
+
+.pulse-reaction-bar[data-layout="vertical"],
+.reels-action-rail.pulse-reaction-bar,
+.reel-actions.pulse-reaction-bar,
+.pulse-status-story-actions.pulse-reaction-bar {
+flex-direction: column;
+align-items: center;
+}
+
+.pulse-reaction-bar[data-layout="horizontal"],
+.post-action-row.pulse-reaction-bar {
+flex-direction: row;
+align-items: stretch;
+}
+
+.pulse-reaction-button,
+.pulse-action-button.pulse-reaction-button,
+.reel-action.reel-action-button.pulse-reaction-button,
+.pulse-status-action.pulse-reaction-button {
+position: relative !important;
+min-width: 52px !important;
+min-height: 52px !important;
+border-radius: 999px !important;
+background: var(--pulse-reaction-bg) !important;
+border: 1px solid var(--pulse-reaction-border) !important;
+backdrop-filter: blur(16px) saturate(160%) !important;
+-webkit-backdrop-filter: blur(16px) saturate(160%) !important;
+color: var(--pulse-reaction-text) !important;
+box-shadow:
+inset 0 0 18px rgba(255, 255, 255, .045),
+0 0 18px var(--pulse-reaction-glow),
+0 16px 42px rgba(0, 0, 0, .24) !important;
+transition:
+transform 160ms ease,
+border-color 160ms ease,
+background 160ms ease,
+box-shadow 160ms ease,
+opacity 160ms ease !important;
+}
+
+.pulse-reaction-button:hover,
+.pulse-reaction-button:focus-visible {
+transform: translateY(-1px) scale(1.035) !important;
+background: var(--pulse-reaction-bg-hover) !important;
+border-color: var(--pulse-reaction-border-hover) !important;
+box-shadow:
+inset 0 0 18px rgba(255, 255, 255, .06),
+0 0 24px rgba(0, 224, 255, .22),
+0 16px 42px rgba(0, 0, 0, .28) !important;
+outline: 2px solid rgba(110, 223, 246, .28) !important;
+outline-offset: 3px !important;
+}
+
+.pulse-reaction-button:active {
+transform: scale(.92) !important;
+}
+
+.pulse-reaction-button[disabled],
+.pulse-reaction-button[aria-disabled="true"],
+.pulse-reaction-button.is-unavailable {
+opacity: .62 !important;
+cursor: not-allowed !important;
+}
+
+.pulse-reaction-button .pulse-reaction-icon,
+.pulse-reaction-button .reel-action-icon,
+.pulse-reaction-button .post-action-icon,
+.pulse-reaction-button .action-icon {
+display: grid !important;
+place-items: center !important;
+filter: drop-shadow(0 0 8px rgba(255, 255, 255, .35)) !important;
+}
+
+.pulse-reaction-button .pulse-reaction-label,
+.pulse-reaction-button .reel-action-label {
+font-weight: 900 !important;
+letter-spacing: 0 !important;
+}
+
+.pulse-reaction-button .pulse-reaction-meta,
+.pulse-reaction-button .reel-action-meta {
+font-weight: 800 !important;
+letter-spacing: 0 !important;
+color: rgba(229, 246, 255, .78) !important;
+}
+
+.pulse-reaction-button[data-action="like"].active,
+.pulse-reaction-button[data-action="like"].is-active,
+.pulse-reaction-button[data-action="like"][aria-pressed="true"] {
+border-color: var(--pulse-reaction-like) !important;
+box-shadow:
+inset 0 0 20px rgba(255, 59, 92, .14),
+0 0 26px rgba(255, 59, 92, .38) !important;
+}
+
+.pulse-reaction-button[data-action="save"].active,
+.pulse-reaction-button[data-action="save"].is-active,
+.pulse-reaction-button[data-action="save"][aria-pressed="true"] {
+border-color: var(--pulse-reaction-save) !important;
+box-shadow:
+inset 0 0 20px rgba(255, 210, 80, .12),
+0 0 24px rgba(255, 210, 80, .32) !important;
+}
+
+.pulse-reaction-button[data-action="repost"].active,
+.pulse-reaction-button[data-action="repost"].is-active,
+.pulse-reaction-button[data-action="repost"][aria-pressed="true"],
+.pulse-reaction-button[data-action="remix"].active,
+.pulse-reaction-button[data-action="remix"].is-active,
+.pulse-reaction-button[data-action="remix"][aria-pressed="true"] {
+border-color: var(--pulse-reaction-remix) !important;
+box-shadow:
+inset 0 0 20px rgba(170, 80, 255, .12),
+0 0 24px rgba(170, 80, 255, .32) !important;
+}
+
+.pulse-reaction-button.active::after,
+.pulse-reaction-button.is-active::after,
+.pulse-reaction-button[aria-pressed="true"]::after {
+content: "" !important;
+position: absolute !important;
+inset: -5px !important;
+border-radius: inherit !important;
+border: 1px solid currentColor !important;
+opacity: .18 !important;
+animation: pulseReactionPulse 1300ms ease-out infinite !important;
+pointer-events: none !important;
+}
+
+@keyframes pulseReactionPulse {
+0% { transform: scale(.92); opacity: .24; }
+100% { transform: scale(1.18); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+.pulse-reaction-button,
+.pulse-reaction-button::after {
+animation: none !important;
+transition: none !important;
+}
+}
