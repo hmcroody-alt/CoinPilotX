@@ -1,0 +1,50 @@
+{
+  "checks": [
+    {
+      "details": "",
+      "name": "Feed hierarchy owner/caption/audio/media/actions order",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Attached audio card before media",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Media is not rendered before owner header",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "CSS does not visually move video media before header",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Attached audio preserves original mute rule",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Post actions remain wired",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Comment composer remains bottom",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Composer AI shortcut removed",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Composer core buttons remain",
+      "passed": true
+    }
+  ],
+  "ok": true
+}

@@ -42,6 +42,21 @@
     },
     {
       "details": "",
+      "name": "Reels Create opens real creator",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Messages and Profile route to real pages",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Create uses context-aware safe sheet outside Home",
+      "passed": true
+    },
+    {
+      "details": "",
       "name": "No legacy create route in Home dock",
       "passed": true
     },

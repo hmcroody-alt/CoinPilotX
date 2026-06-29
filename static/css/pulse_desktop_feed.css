@@ -2590,7 +2590,6 @@ background: linear-gradient(180deg, rgba(3, 9, 17, .98), rgba(6, 15, 27, .98)) !
 box-shadow: 0 30px 96px rgba(0, 0, 0, .48), 0 0 42px rgba(110, 223, 246, .08) !important;
 }
 .feed > .post-card-modern.post-card-video > .post-card-media {
-order: -2;
 margin: 0 !important;
 width: 100% !important;
 }
