@@ -4,6 +4,7 @@ import re
 import sqlite3
 import time
 import traceback
+import threading
 from collections.abc import Mapping
 from contextlib import contextmanager
 from urllib.parse import urlparse
@@ -41,6 +42,8 @@ ENGINE_URL = _normalize_engine_url(_raw_database_url())
 IS_POSTGRES = ENGINE_URL.startswith("postgresql")
 ENGINE_NAME = "postgresql" if IS_POSTGRES else "sqlite"
 QUERY_OBSERVER = None
+SQLITE_CONFIG_LOCK = threading.Lock()
+SQLITE_CONFIGURED_PATHS = set()
 
 
 def set_query_observer(callback):
@@ -637,8 +640,21 @@ def connect():
     elif raw_url.startswith("file:"):
         path = raw_url
         uri = True
-    conn = sqlite3.connect(path, uri=uri)
+    try:
+        busy_timeout_ms = max(1000, min(int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", "10000") or 10000), 60000))
+    except (TypeError, ValueError):
+        busy_timeout_ms = 10000
+    conn = sqlite3.connect(path, uri=uri, timeout=busy_timeout_ms / 1000.0)
     conn.row_factory = sqlite3.Row
+    conn.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
+    with SQLITE_CONFIG_LOCK:
+        if path not in SQLITE_CONFIGURED_PATHS and path != ":memory:":
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+                SQLITE_CONFIGURED_PATHS.add(path)
+            except sqlite3.OperationalError as exc:
+                logging.warning("SQLite WAL configuration deferred path=%s error=%s", path, exc)
     return conn
 
 
