@@ -1,7 +1,7 @@
 {
   "checks": [
     {
-      "details": "32 features inventoried",
+      "details": "33 features inventoried",
       "name": "Feature inventory exists",
       "passed": true
     },
@@ -33,6 +33,16 @@
     {
       "details": "",
       "name": "Left nav includes required features",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Dashboard visible in Home sidebar",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Dropdowns promoted to front layer",
       "passed": true
     },
     {
@@ -95,6 +105,16 @@
       "current_route": "/pulse",
       "current_status": "wired",
       "feature": "Home",
+      "known_issues": []
+    },
+    {
+      "appears_in_nav_menu_search_apps": true,
+      "appears_on_home": true,
+      "current_backend_route_or_api": "/dashboard",
+      "current_entry_point": "left rail + Apps menu",
+      "current_route": "/dashboard",
+      "current_status": "wired",
+      "feature": "Dashboard",
       "known_issues": []
     },
     {
@@ -412,6 +432,7 @@
   "ok": true,
   "routes_verified": [
     "/pulse",
+    "/dashboard",
     "/pulse/reels",
     "/pulse/videos",
     "/pulse/live",

@@ -23,6 +23,7 @@ REPORT = ROOT / "reports/pulsesoc_home_feature_inventory.json"
 
 FEATURES = [
     ("Home", "/pulse", "pulse_page_html", "/api/pulse/feed", "wired"),
+    ("Dashboard", "/dashboard", "left rail + Apps menu", "/dashboard", "wired"),
     ("Pulse Radio", "/pulse/music#pulse-radio", "hero + left radio dock", "static/js/pulse_radio.js", "wired when approved tracks exist"),
     ("Statuses / Stories", "/pulse/status", "status rail + create sheet", "/api/pulse/status/rail", "wired"),
     ("Reels", "/pulse/reels", "top nav + rail + composer", "/api/pulse/reels/feed", "wired"),
@@ -59,6 +60,7 @@ FEATURES = [
 
 REQUIRED_ROUTES = [
     "/pulse",
+    "/dashboard",
     "/pulse/reels",
     "/pulse/videos",
     "/pulse/live",
@@ -81,6 +83,7 @@ REQUIRED_ROUTES = [
 
 LEFT_NAV_LABELS = [
     "Home",
+    "Dashboard",
     "Discover",
     "Reels",
     "Videos",
@@ -225,6 +228,8 @@ def main() -> int:
         check("Big P removed", "pulse-desktop-brand" in home and "pulsesoc-logo" in home and "PulseSoc</a>" in home),
         check("Create Signal exists", "Create Signal" in home and "data-pulse-create-trigger" in home),
         check("Left nav includes required features", not missing_left_nav, ", ".join(missing_left_nav)),
+        check("Dashboard visible in Home sidebar", '("Dashboard", "/dashboard"' in function_body(bot, "pulse_desktop_left_rail_html") and '.desktop-rail-link[href="/dashboard"]' in home_css),
+        check("Dropdowns promoted to front layer", "pulse-dropdown-open" in home_js and "pulse-desktop-more-menu[open]" in home_css and "z-index: 1301" in home_css),
         check("Composer includes required actions", not missing_composer, ", ".join(missing_composer)),
         check("Status preview system present", "data-status-home-video" in bot and "observeStatusPreviewVideo" in home_js),
         check("Feed hierarchy markers present", feed_order_ok),

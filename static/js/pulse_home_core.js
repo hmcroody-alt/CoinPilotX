@@ -2130,6 +2130,46 @@
     toast(nextType === "video" ? "Reel composer ready." : "Composer ready.");
   }
 
+  function syncFrontDropdowns(activeDetails = null) {
+    const openMenus = Array.from(document.querySelectorAll(".pulse-desktop-more-menu[open], .pulse-live-menu[open]"));
+    openMenus.forEach(menu => {
+      if (activeDetails && menu !== activeDetails) {
+        menu.removeAttribute("open");
+        menu.classList.remove("is-frontmost");
+        return;
+      }
+      menu.classList.add("is-frontmost");
+    });
+    document.body.classList.toggle("pulse-dropdown-open", openMenus.some(menu => menu.hasAttribute("open")));
+  }
+
+  function bootFrontDropdowns() {
+    const menus = document.querySelectorAll(".pulse-desktop-more-menu, .pulse-live-menu");
+    if (!menus.length) return;
+    menus.forEach(menu => {
+      menu.addEventListener("toggle", () => syncFrontDropdowns(menu));
+    });
+    document.addEventListener("click", event => {
+      if (event.target.closest(".pulse-desktop-more-menu, .pulse-live-menu")) return;
+      menus.forEach(menu => {
+        menu.removeAttribute("open");
+        menu.classList.remove("is-frontmost");
+      });
+      document.body.classList.remove("pulse-dropdown-open");
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key !== "Escape") return;
+      menus.forEach(menu => {
+        menu.removeAttribute("open");
+        menu.classList.remove("is-frontmost");
+      });
+      document.body.classList.remove("pulse-dropdown-open");
+    });
+    syncFrontDropdowns();
+  }
+
+  bootFrontDropdowns();
+
   document.addEventListener("click", async event => {
     const createTrigger = event.target.closest("[data-pulse-create-trigger], a[href='/pulse/create'], a[href=\"#create\"], a[href='/pulse#create']");
     if (createTrigger) {
