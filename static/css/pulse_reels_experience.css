@@ -282,6 +282,219 @@ display: none !important;
 display: none !important;
 }
 
+/* Premium transparent Reels action stack. Keep these overrides last so old
+   opaque action styles cannot win when multiple Reels CSS layers load. */
+.reels-action-rail,
+.reel-actions {
+z-index: 20 !important;
+right: max(10px, env(safe-area-inset-right)) !important;
+bottom: calc(112px + env(safe-area-inset-bottom)) !important;
+top: auto !important;
+transform: none !important;
+display: flex !important;
+flex-direction: column !important;
+align-items: center !important;
+gap: 14px !important;
+pointer-events: auto !important;
+}
+
+.reel-action.reel-action-button {
+position: relative !important;
+width: 58px !important;
+min-width: 58px !important;
+height: auto !important;
+min-height: 58px !important;
+padding: 7px 4px !important;
+border-radius: 999px !important;
+background: rgba(4, 10, 20, .26) !important;
+border: 1px solid rgba(150, 235, 255, .26) !important;
+backdrop-filter: blur(14px) saturate(150%) !important;
+-webkit-backdrop-filter: blur(14px) saturate(150%) !important;
+box-shadow: inset 0 0 18px rgba(255, 255, 255, .045), 0 0 18px rgba(0, 224, 255, .10), 0 16px 42px rgba(0, 0, 0, .28) !important;
+color: rgba(255, 255, 255, .94) !important;
+font-size: 0 !important;
+text-shadow: none !important;
+display: grid !important;
+grid-template-rows: 26px auto !important;
+align-content: center !important;
+justify-items: center !important;
+gap: 4px !important;
+line-height: 1 !important;
+text-align: center !important;
+transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease !important;
+}
+
+.reel-action.reel-action-button:hover,
+.reel-action.reel-action-button:focus-visible {
+transform: translateY(-1px) scale(1.035) !important;
+background: rgba(8, 18, 32, .38) !important;
+outline: 2px solid rgba(110, 223, 246, .28) !important;
+outline-offset: 3px !important;
+}
+
+.reel-action.reel-action-button:active {
+transform: scale(.94) !important;
+}
+
+.reel-action.reel-action-button .action-icon {
+width: 26px !important;
+height: 26px !important;
+display: grid !important;
+place-items: center !important;
+filter: drop-shadow(0 0 8px rgba(255, 255, 255, .35)) !important;
+}
+
+.reel-action.reel-action-button .action-icon svg {
+width: 26px !important;
+height: 26px !important;
+display: block !important;
+stroke: currentColor !important;
+fill: none !important;
+stroke-width: 1.9 !important;
+stroke-linecap: round !important;
+stroke-linejoin: round !important;
+}
+
+.reel-action.reel-action-button .reel-action-meta {
+display: block !important;
+margin: 4px 0 0 !important;
+max-width: 56px !important;
+min-height: 12px !important;
+text-align: center !important;
+font-size: 12px !important;
+font-weight: 800 !important;
+line-height: 1 !important;
+letter-spacing: .01em !important;
+color: rgba(255, 255, 255, .92) !important;
+text-shadow: 0 1px 8px rgba(0, 0, 0, .75) !important;
+white-space: nowrap !important;
+overflow: hidden !important;
+text-overflow: ellipsis !important;
+}
+
+.reel-action.reel-action-button .reel-action-label {
+position: absolute !important;
+right: 66px !important;
+top: 50% !important;
+transform: translateY(-50%) translateX(8px) !important;
+opacity: 0 !important;
+pointer-events: none !important;
+padding: 6px 9px !important;
+border-radius: 999px !important;
+background: rgba(2, 7, 14, .62) !important;
+border: 1px solid rgba(150, 235, 255, .18) !important;
+color: #fff !important;
+font-size: 12px !important;
+font-weight: 900 !important;
+white-space: nowrap !important;
+transition: opacity 160ms ease, transform 160ms ease !important;
+}
+
+.reel-action.reel-action-button:hover .reel-action-label,
+.reel-action.reel-action-button:focus-visible .reel-action-label {
+opacity: 1 !important;
+transform: translateY(-50%) translateX(0) !important;
+}
+
+.reel-action-button[data-action="follow"] {
+border-color: rgba(0, 224, 255, .38) !important;
+box-shadow: inset 0 0 18px rgba(255, 255, 255, .045), 0 0 20px rgba(0, 224, 255, .14) !important;
+}
+
+.reel-action-button[data-action="like"].active,
+.reel-action-button[data-action="like"][aria-pressed="true"] {
+border-color: rgba(255, 65, 120, .62) !important;
+box-shadow: inset 0 0 20px rgba(255, 65, 120, .12), 0 0 26px rgba(255, 65, 120, .38) !important;
+}
+
+.reel-action-button[data-action="comment"] {
+border-color: rgba(140, 220, 255, .32) !important;
+}
+
+.reel-action-button[data-action="share"] {
+border-color: rgba(80, 180, 255, .38) !important;
+}
+
+.reel-action-button[data-action="save"].active,
+.reel-action-button[data-action="save"][aria-pressed="true"] {
+border-color: rgba(255, 210, 80, .62) !important;
+box-shadow: inset 0 0 20px rgba(255, 210, 80, .12), 0 0 26px rgba(255, 210, 80, .32) !important;
+}
+
+.reel-action-button[data-action="remix"] {
+border-color: rgba(170, 80, 255, .50) !important;
+box-shadow: 0 0 22px rgba(170, 80, 255, .20) !important;
+}
+
+.reel-action-button[data-action="more"] {
+border-color: rgba(255, 255, 255, .22) !important;
+}
+
+.reel-action-button.is-unavailable {
+opacity: .72 !important;
+}
+
+.reel-action-button.active::after,
+.reel-action-button[aria-pressed="true"]::after {
+content: "" !important;
+position: absolute !important;
+inset: -5px !important;
+border-radius: inherit !important;
+border: 1px solid currentColor !important;
+opacity: .18 !important;
+animation: reelActionPulse 1300ms ease-out infinite !important;
+pointer-events: none !important;
+}
+
+@keyframes reelActionPulse {
+0% { transform: scale(.92); opacity: .24; }
+100% { transform: scale(1.18); opacity: 0; }
+}
+
+@media (min-width: 901px) {
+.reels-action-rail,
+.reel-actions {
+right: clamp(18px, 2vw, 34px) !important;
+top: 50% !important;
+bottom: auto !important;
+transform: translateY(-50%) !important;
+}
+}
+
+@media (max-width: 480px) {
+.reels-action-rail,
+.reel-actions {
+right: max(8px, env(safe-area-inset-right)) !important;
+gap: 12px !important;
+bottom: calc(106px + env(safe-area-inset-bottom)) !important;
+}
+
+.reel-action.reel-action-button {
+width: 54px !important;
+min-width: 54px !important;
+min-height: 54px !important;
+}
+
+.reel-action.reel-action-button .action-icon,
+.reel-action.reel-action-button .action-icon svg {
+width: 24px !important;
+height: 24px !important;
+}
+
+.reel-action.reel-action-button .reel-action-meta {
+font-size: 11px !important;
+max-width: 52px !important;
+}
+}
+
+@media (prefers-reduced-motion: reduce) {
+.reel-action.reel-action-button,
+.reel-action.reel-action-button::after {
+animation: none !important;
+transition: none !important;
+}
+}
+
 /* Premium desktop Reels redesign. Mobile rules above remain the fullscreen contract. */
 @media (min-width: 901px) {
 body:has(.reels-immersive) {
