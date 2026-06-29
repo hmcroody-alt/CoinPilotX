@@ -57,6 +57,26 @@
     },
     {
       "details": "",
+      "name": "Shared creator/music/counter primitives exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Feed and video dynamic renders hydrate shared system",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Feed actions use compact shared glass controls",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Shared animations cover pop and ripple",
+      "passed": true
+    },
+    {
+      "details": "",
       "name": "Shared active states include like/save/remix",
       "passed": true
     },

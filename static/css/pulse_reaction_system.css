@@ -105,6 +105,22 @@ letter-spacing: 0 !important;
 color: rgba(229, 246, 255, .78) !important;
 }
 
+.pulse-reaction-button.is-popping .pulse-reaction-icon,
+.pulse-reaction-button.is-popping .reel-action-icon,
+.pulse-reaction-button.is-popping .post-action-icon {
+animation: pulseReactionPop 420ms cubic-bezier(.2, 1.35, .34, 1) !important;
+}
+
+.pulse-reaction-button.is-rippling::before {
+content: "" !important;
+position: absolute !important;
+inset: -8px !important;
+border-radius: inherit !important;
+border: 1px solid rgba(110, 223, 246, .48) !important;
+animation: pulseReactionRipple 460ms ease-out forwards !important;
+pointer-events: none !important;
+}
+
 .pulse-reaction-button[data-action="like"].active,
 .pulse-reaction-button[data-action="like"].is-active,
 .pulse-reaction-button[data-action="like"][aria-pressed="true"] {
@@ -153,9 +169,217 @@ pointer-events: none !important;
 100% { transform: scale(1.18); opacity: 0; }
 }
 
+@keyframes pulseReactionPop {
+0% { transform: scale(.88); }
+62% { transform: scale(1.18); }
+100% { transform: scale(1); }
+}
+
+@keyframes pulseReactionRipple {
+0% { transform: scale(.88); opacity: .48; }
+100% { transform: scale(1.38); opacity: 0; }
+}
+
+.post-action-row.pulse-reaction-bar,
+.feed > .post-card-modern .post-action-row.pulse-reaction-bar,
+.video-card-modern.post-card-modern .post-action-row.pulse-reaction-bar {
+display: flex !important;
+grid-template-columns: none !important;
+align-items: center !important;
+justify-content: space-between !important;
+gap: 8px !important;
+padding: 8px 0 !important;
+border-top: 1px solid rgba(255, 255, 255, .055) !important;
+border-bottom: 1px solid rgba(255, 255, 255, .055) !important;
+overflow-x: auto !important;
+scrollbar-width: none !important;
+}
+
+.post-action-row.pulse-reaction-bar::-webkit-scrollbar,
+.feed > .post-card-modern .post-action-row.pulse-reaction-bar::-webkit-scrollbar,
+.video-card-modern.post-card-modern .post-action-row.pulse-reaction-bar::-webkit-scrollbar {
+display: none !important;
+}
+
+.post-action-row.pulse-reaction-bar .pulse-reaction-button,
+.feed > .post-card-modern .post-action-row.pulse-reaction-bar .pulse-reaction-button,
+.video-card-modern.post-card-modern .post-action-row.pulse-reaction-bar .pulse-reaction-button {
+flex: 0 0 auto !important;
+width: auto !important;
+min-width: 56px !important;
+min-height: 52px !important;
+padding: 6px 10px !important;
+display: inline-grid !important;
+grid-template-columns: 24px !important;
+grid-template-rows: 24px 14px !important;
+justify-items: center !important;
+align-items: center !important;
+gap: 2px !important;
+text-align: center !important;
+line-height: 1 !important;
+}
+
+.post-action-row.pulse-reaction-bar .pulse-reaction-button .reel-action-icon,
+.post-action-row.pulse-reaction-bar .pulse-reaction-button .post-action-icon,
+.feed > .post-card-modern .post-action-row.pulse-reaction-bar .pulse-reaction-button .reel-action-icon,
+.feed > .post-card-modern .post-action-row.pulse-reaction-bar .pulse-reaction-button .post-action-icon,
+.video-card-modern.post-card-modern .post-action-row.pulse-reaction-bar .pulse-reaction-button .reel-action-icon,
+.video-card-modern.post-card-modern .post-action-row.pulse-reaction-bar .pulse-reaction-button .post-action-icon {
+grid-column: 1 !important;
+grid-row: 1 !important;
+width: 24px !important;
+height: 24px !important;
+font-size: 18px !important;
+}
+
+.post-action-row.pulse-reaction-bar .pulse-reaction-button .reel-action-label,
+.feed > .post-card-modern .post-action-row.pulse-reaction-bar .pulse-reaction-button .reel-action-label,
+.video-card-modern.post-card-modern .post-action-row.pulse-reaction-bar .pulse-reaction-button .reel-action-label {
+grid-column: 1 !important;
+grid-row: 2 !important;
+font-size: 11px !important;
+max-width: 68px !important;
+white-space: nowrap !important;
+overflow: hidden !important;
+text-overflow: ellipsis !important;
+}
+
+.post-action-row.pulse-reaction-bar .pulse-reaction-button .reel-action-meta,
+.feed > .post-card-modern .post-action-row.pulse-reaction-bar .pulse-reaction-button .reel-action-meta,
+.video-card-modern.post-card-modern .post-action-row.pulse-reaction-bar .pulse-reaction-button .reel-action-meta {
+display: none !important;
+}
+
+.pulse-creator-header,
+.post-card-header.pulse-creator-header,
+.reel-creator.pulse-creator-header,
+.reel-details-creator.pulse-creator-header,
+.featured-creator.pulse-creator-header,
+.video-card-creator.pulse-creator-header {
+gap: 8px !important;
+align-items: center !important;
+border: 0 !important;
+background: linear-gradient(90deg, rgba(5, 14, 25, .42), rgba(5, 14, 25, .10), transparent) !important;
+border-radius: 16px !important;
+padding: 8px !important;
+}
+
+.pulse-creator-header .post-card-avatar,
+.pulse-creator-header .reel-avatar,
+.pulse-creator-header img,
+.pulse-creator-header .creator-initial {
+width: 42px !important;
+height: 42px !important;
+border-radius: 50% !important;
+border: 1px solid rgba(110, 223, 246, .28) !important;
+box-shadow: 0 0 18px rgba(0, 224, 255, .12) !important;
+}
+
+.post-card-name-row,
+.pulse-creator-header strong {
+font-size: 14px !important;
+line-height: 1.15 !important;
+letter-spacing: 0 !important;
+}
+
+.post-card-creator-line,
+.post-card-meta,
+.pulse-creator-header small {
+font-size: 12px !important;
+line-height: 1.25 !important;
+color: rgba(218, 238, 246, .72) !important;
+}
+
+.pulse-counter-row,
+.post-engagement-summary.pulse-counter-row,
+.reel-details-stats.pulse-counter-row,
+.featured-stats.pulse-counter-row,
+.video-meta.pulse-counter-row {
+display: flex !important;
+flex-wrap: wrap !important;
+align-items: center !important;
+gap: 8px 12px !important;
+padding: 8px 0 !important;
+font-size: 12px !important;
+font-weight: 800 !important;
+color: rgba(229, 246, 255, .76) !important;
+}
+
+.pulse-counter-row span,
+.post-engagement-summary.pulse-counter-row span {
+line-height: 1.25 !important;
+}
+
+.pulse-music-card,
+.post-music-player.pulse-music-card,
+.reel-music.pulse-music-card,
+.pulse-media-attached-audio.pulse-music-card,
+.video-detail-attached-audio.pulse-music-card {
+display: flex !important;
+align-items: center !important;
+gap: 8px !important;
+min-height: 48px !important;
+padding: 8px !important;
+border-radius: 16px !important;
+border: 1px solid rgba(110, 223, 246, .18) !important;
+background: linear-gradient(90deg, rgba(4, 10, 20, .42), rgba(0, 224, 255, .08), rgba(4, 10, 20, .24)) !important;
+backdrop-filter: blur(16px) saturate(150%) !important;
+-webkit-backdrop-filter: blur(16px) saturate(150%) !important;
+box-shadow: inset 0 0 18px rgba(255, 255, 255, .035), 0 16px 42px rgba(0, 0, 0, .18) !important;
+}
+
+.pulse-music-card::before {
+content: "♪" !important;
+width: 32px !important;
+height: 32px !important;
+border-radius: 10px !important;
+display: grid !important;
+place-items: center !important;
+flex: 0 0 32px !important;
+background: linear-gradient(135deg, rgba(54, 229, 143, .88), rgba(110, 223, 246, .86)) !important;
+color: #06101b !important;
+font-weight: 950 !important;
+box-shadow: 0 0 18px rgba(54, 229, 143, .24) !important;
+}
+
+.pulse-music-card strong {
+font-size: 13px !important;
+line-height: 1.2 !important;
+}
+
+.pulse-music-card small,
+.pulse-music-card span {
+font-size: 11px !important;
+line-height: 1.25 !important;
+color: rgba(229, 246, 255, .72) !important;
+}
+
+.pulse-glass-overlay,
+.reel-sound-badge.pulse-glass-overlay,
+.reel-quality-pill.pulse-glass-overlay,
+.video-duration.pulse-glass-overlay,
+.video-status-badge.pulse-glass-overlay,
+.pulse-media-sound-unlock.pulse-glass-overlay {
+border: 1px solid rgba(110, 223, 246, .22) !important;
+background: rgba(4, 10, 20, .42) !important;
+backdrop-filter: blur(14px) saturate(150%) !important;
+-webkit-backdrop-filter: blur(14px) saturate(150%) !important;
+box-shadow: 0 12px 34px rgba(0, 0, 0, .24), 0 0 18px rgba(0, 224, 255, .10) !important;
+}
+
+.post-card-modern.is-comment-primed .post-comment-composer,
+.pulse-status-story-viewer.is-comment-primed .pulse-status-story-actions {
+transform: translateY(-1px) !important;
+box-shadow: 0 0 24px rgba(110, 223, 246, .14) !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
 .pulse-reaction-button,
-.pulse-reaction-button::after {
+.pulse-reaction-button::after,
+.pulse-reaction-button::before,
+.pulse-reaction-button .pulse-reaction-icon,
+.pulse-reaction-button .reel-action-icon,
+.pulse-reaction-button .post-action-icon {
 animation: none !important;
 transition: none !important;
 }

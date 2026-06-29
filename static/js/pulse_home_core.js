@@ -1270,6 +1270,7 @@
     renderEngagement(card, post);
     renderActions(card, post);
     renderComposer(card, post);
+    window.PulseReactionSystem?.hydrate?.(card);
     return card;
   }
 
