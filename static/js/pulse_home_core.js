@@ -881,11 +881,29 @@
     return Object.values(post.reaction_counts || {}).reduce((sum, value) => sum + count(value), 0);
   }
 
+  const feedReactionChoices = [
+    ["like", "👍", "Like"],
+    ["love", "❤️", "Love"],
+    ["funny", "😂", "Funny"],
+    ["wow", "😮", "Wow"],
+    ["brutal", "😢", "Sad"],
+    ["scam_alert", "😡", "Angry"],
+  ];
+
+  function reactionEmojiFor(type) {
+    return Object.fromEntries(feedReactionChoices.map(([key, emoji]) => [key, emoji]))[type] || "👍";
+  }
+
+  function reactionLabelFor(type) {
+    const found = feedReactionChoices.find(([key]) => key === type);
+    return found?.[2] || "Like";
+  }
+
   function reactionEmojis(post) {
-    const map = { like: "👍", love: "❤️", fire: "🔥", laugh: "😂", wow: "😮", sad: "😢" };
+    const map = { like: "👍", love: "❤️", fire: "🔥", funny: "😂", laugh: "😂", wow: "😮", brutal: "😢", sad: "😢", scam_alert: "😡" };
     const counts = post.reaction_counts || {};
     const active = Object.keys(counts).filter(type => count(counts[type]) > 0).sort((a, b) => count(counts[b]) - count(counts[a]));
-    const emojis = (active.length ? active : ["like", "love", "fire"]).slice(0, 3).map(type => map[type] || "👍");
+    const emojis = (active.length ? active : ["like", "love", "funny", "wow", "brutal", "scam_alert"]).slice(0, 6).map(type => map[type] || "👍");
     return emojis.join(" ");
   }
 
@@ -933,7 +951,7 @@
 
   function feedActionChip(icon, label, attrs = {}, value = "") {
     const action = attrs.action || actionNameFromAttrs(attrs);
-    const button = element("button", "pulse-action-chip pulse-reaction-button", "");
+    const button = element("button", "pulse-action-chip pulse-feed-action-v3 pulse-reaction-button", "");
     button.type = "button";
     button.dataset.action = action;
     button.dataset.feedAction = action;
@@ -956,6 +974,26 @@
     }
     window.PulseReactionSystem?.decorate?.(button, { action, label, itemType: "post" });
     return button;
+  }
+
+  function renderFeedReactionPicker(card, post) {
+    const palette = element("div", "pulse-feed-reaction-picker-v3");
+    palette.dataset.feedReactionPicker = post.id;
+    palette.setAttribute("role", "menu");
+    palette.setAttribute("aria-label", "Choose a reaction");
+    palette.setAttribute("aria-hidden", "true");
+    feedReactionChoices.forEach(([reaction, emoji, label]) => {
+      const button = element("button", "pulse-feed-reaction-choice-v3", "");
+      button.type = "button";
+      button.dataset.feedReactionChoice = reaction;
+      button.dataset.postId = post.id;
+      button.setAttribute("role", "menuitemradio");
+      button.setAttribute("aria-label", `${label} reaction`);
+      button.setAttribute("aria-checked", post.viewer_reaction === reaction ? "true" : "false");
+      button.append(element("span", "", emoji), element("small", "", label));
+      palette.appendChild(button);
+    });
+    card.appendChild(palette);
   }
 
   function commentComposerButton(icon, label, attrs = {}) {
@@ -1225,7 +1263,7 @@
   }
 
   function renderEngagement(card, post) {
-    const row = element("div", "post-engagement-summary");
+    const row = element("div", "post-engagement-summary post-engagement-summary-v3");
     row.setAttribute(
       "aria-label",
       `${reactionEmojis(post)} ${compactNumber(reactionTotal(post))}, ${compactNumber(post.comments_count || post.comment_count)} comments, ${compactNumber(post.repost_count || post.reposts_count)} reposts, ${compactNumber(post.share_count || post.shares_count)} shares, ${compactNumber(post.view_count)} views`
@@ -1241,7 +1279,6 @@
       ["comments", post.comments_count || post.comment_count, "Comment", "Comments"],
       ["reposts", post.repost_count || post.reposts_count, "Repost", "Reposts"],
       ["shares", post.share_count || post.shares_count, "Share", "Shares"],
-      ["views", post.view_count, "View", "Views"],
     ];
     metrics.forEach(([key, value, singular, plural]) => {
       const item = element("span", "post-summary-metric", "");
@@ -1256,10 +1293,14 @@
   }
 
   function renderActions(card, post) {
-    const row = element("div", "pulse-feed-actions-v2 pulse-reaction-bar");
+    const row = element("div", "pulse-feed-actions-v3 pulse-feed-actions-v2 pulse-reaction-bar");
     row.dataset.layout = "horizontal";
     row.dataset.contentType = "feed";
-    const like = feedActionChip("❤", "Like", { postLike: post.id, action: "like" }, reactionTotal(post));
+    const activeReaction = post.viewer_reaction || "";
+    const like = feedActionChip(reactionEmojiFor(activeReaction || "like"), reactionLabelFor(activeReaction || "like"), { postLike: post.id, action: "like" }, reactionTotal(post));
+    like.dataset.postLikeReaction = activeReaction || "like";
+    like.dataset.longPressReactions = post.id;
+    like.setAttribute("aria-haspopup", "menu");
     like.setAttribute("aria-pressed", post.viewer_reaction ? "true" : "false");
     if (post.viewer_reaction) like.classList.add("active");
     const save = feedActionChip("🔖", "Save", { savePost: post.id, action: "save" }, "");
@@ -1286,6 +1327,7 @@
       row.appendChild(promote);
     }
     card.appendChild(row);
+    renderFeedReactionPicker(card, post);
   }
 
   function renderComposer(card, post) {
@@ -1311,7 +1353,7 @@
     const label = author.primary_label || author.rank || (author.badges || ["Member"])[0] || "PulseSoc member";
     const mediaItems = post.media || [];
     const kind = mediaTypeLabel(post, mediaItems);
-    const card = element("article", `card post post-card-modern post-card-${kind}`);
+    const card = element("article", `card post post-card-modern pulse-feed-post-v3 post-card-${kind}`);
     card.dataset.postId = post.id;
     card.dataset.postType = post.post_type || kind;
     card.dataset.mediaKind = kind;
@@ -1475,8 +1517,53 @@
     }
   }
 
-  async function reactToPost(postId, button) {
+  function closeFeedReactionPickers(exceptPostId = "") {
+    document.querySelectorAll("[data-feed-reaction-picker]").forEach(palette => {
+      const open = exceptPostId && palette.dataset.feedReactionPicker === String(exceptPostId);
+      palette.classList.toggle("open", !!open);
+      palette.setAttribute("aria-hidden", open ? "false" : "true");
+    });
+  }
+
+  function openFeedReactionPicker(postId, anchor) {
+    if (!postId) return false;
+    closeFeedReactionPickers(postId);
+    const palette = document.querySelector(`[data-feed-reaction-picker="${CSS.escape(String(postId))}"]`);
+    const card = anchor?.closest?.("[data-post-id]");
+    if (!palette || !card) return false;
+    card.classList.add("is-choosing-reaction");
+    window.setTimeout(() => card.classList.remove("is-choosing-reaction"), 1600);
+    return true;
+  }
+
+  function syncFeedReactionUi(postId, reactionType, removed, counts = {}) {
+    const total = Object.values(counts || {}).reduce((sum, value) => sum + count(value), 0);
+    const active = !removed && !!reactionType;
+    document.querySelectorAll(`[data-post-like="${postId}"]`).forEach(node => {
+      node.classList.toggle("active", active);
+      node.setAttribute("aria-pressed", active ? "true" : "false");
+      node.dataset.postLikeReaction = active ? reactionType : "like";
+      const icon = node.querySelector(".pulse-action-icon");
+      const label = node.querySelector(".pulse-action-label");
+      if (icon) icon.textContent = reactionEmojiFor(active ? reactionType : "like");
+      if (label) label.textContent = reactionLabelFor(active ? reactionType : "like");
+    });
+    if (Object.keys(counts || {}).length) {
+      document.querySelectorAll(`[data-post-id="${postId}"] .post-reaction-emojis`).forEach(node => {
+        node.textContent = `${reactionEmojis({ reaction_counts: counts })} ${compactNumber(total)}`;
+      });
+      document.querySelectorAll(`[data-post-like-count="${postId}"]`).forEach(node => {
+        node.textContent = compactNumber(total);
+      });
+      document.querySelectorAll(`[data-feed-reaction-picker="${postId}"] [data-feed-reaction-choice]`).forEach(node => {
+        node.setAttribute("aria-checked", active && node.dataset.feedReactionChoice === reactionType ? "true" : "false");
+      });
+    }
+  }
+
+  async function reactToPost(postId, button, reactionType = "like") {
     if (!postId || button?.disabled) return;
+    const selectedReaction = reactionType || button?.dataset?.postLikeReaction || "like";
     const wasActive = button?.classList.contains("active");
     if (button) {
       button.disabled = true;
@@ -1486,19 +1573,14 @@
     try {
       const data = await api(`/api/pulse/posts/${postId}/react`, {
         method: "POST",
-        body: JSON.stringify({ reaction_type: "like" }),
+        body: JSON.stringify({ reaction_type: selectedReaction }),
       });
       const total = Object.values(data.reaction_counts || {}).reduce((sum, value) => sum + count(value), 0);
-      document.querySelectorAll(`[data-post-id="${postId}"] .post-reaction-emojis`).forEach(node => {
-        node.textContent = `${reactionEmojis({ reaction_counts: data.reaction_counts })} ${compactNumber(total)}`;
-      });
-      document.querySelectorAll(`[data-post-like="${postId}"]`).forEach(node => {
-        node.classList.toggle("active", !data.removed);
-        node.setAttribute("aria-pressed", data.removed ? "false" : "true");
-      });
+      syncFeedReactionUi(postId, data.reaction_type || selectedReaction, !!data.removed, data.reaction_counts || {});
       document.querySelectorAll(`[data-post-like-count="${postId}"]`).forEach(node => {
         node.textContent = compactNumber(total);
       });
+      closeFeedReactionPickers();
     } catch (error) {
       if (button) {
         button.classList.toggle("active", wasActive);
@@ -2357,6 +2439,7 @@
   bootUniversalDock();
 
   document.addEventListener("click", async event => {
+    if (!event.target.closest("[data-feed-reaction-picker],[data-post-like]")) closeFeedReactionPickers();
     const createTrigger = event.target.closest("[data-pulse-create-trigger], a[href='/pulse/create'], a[href=\"#create\"], a[href='/pulse#create']");
     if (createTrigger) {
       event.preventDefault();
@@ -2562,7 +2645,7 @@
       const now = Date.now();
       if (postId && now - Number(mediaOpen.dataset.lastTap || 0) < 320) {
         mediaOpen.dataset.lastTap = "0";
-        await reactToPost(postId, document.querySelector(`[data-post-like="${postId}"]`));
+        await reactToPost(postId, document.querySelector(`[data-post-like="${postId}"]`), "like");
         return;
       }
       mediaOpen.dataset.lastTap = String(now);
@@ -2581,8 +2664,14 @@
       return;
     }
 
+    const reactionChoice = event.target.closest("[data-feed-reaction-choice]");
+    if (reactionChoice) {
+      const postId = reactionChoice.dataset.postId;
+      const likeButton = document.querySelector(`[data-post-like="${CSS.escape(String(postId))}"]`);
+      return reactToPost(postId, likeButton, reactionChoice.dataset.feedReactionChoice || "like");
+    }
     const like = event.target.closest("[data-post-like]");
-    if (like) return reactToPost(like.dataset.postLike, like);
+    if (like) return reactToPost(like.dataset.postLike, like, like.dataset.postLikeReaction || "like");
     const comment = event.target.closest("[data-post-comment]");
     if (comment) {
       document.querySelector(`[data-comment-input="${comment.dataset.postComment}"]`)?.focus();
@@ -2733,15 +2822,21 @@
   });
 
   document.addEventListener("pointerdown", event => {
+    const like = event.target.closest("[data-post-like]");
+    if (like) {
+      longPressStart = { x: event.clientX, y: event.clientY, postId: like.dataset.postLike, reactionPicker: true, anchor: like };
+      clearTimeout(longPressTimer);
+      longPressTimer = setTimeout(() => {
+        if (!longPressStart?.postId || !longPressStart.reactionPicker) return;
+        openFeedReactionPicker(longPressStart.postId, longPressStart.anchor);
+        longPressStart = null;
+      }, 420);
+      return;
+    }
     const media = event.target.closest("[data-open-media-lightbox]");
     if (!media) return;
-    longPressStart = { x: event.clientX, y: event.clientY, postId: media.dataset.doubleTapLike };
+    longPressStart = { x: event.clientX, y: event.clientY, postId: media.dataset.doubleTapLike, reactionPicker: false };
     clearTimeout(longPressTimer);
-    longPressTimer = setTimeout(() => {
-      if (!longPressStart?.postId) return;
-      document.querySelector(`[data-post-sheet="${longPressStart.postId}"]`)?.classList.add("open");
-      longPressStart = null;
-    }, 620);
   }, { passive: true });
 
   document.addEventListener("pointermove", event => {

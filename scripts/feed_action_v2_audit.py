@@ -54,13 +54,13 @@ def main() -> int:
         "renderComposer(card, post)",
     ]
     order_positions = [render_post.find(token) for token in order_tokens]
-    required_actions = ["Like", "Comment", "Repost", "Share", "Save", "More"]
+    required_actions = ["Comment", "Repost", "Share", "Save", "More"]
     required_action_attrs = ["data-post-like", "data-post-comment", "data-post-repost", "data-post-share", "data-save-post", "data-post-menu"]
 
     checks = [
-        check("Feed action V2 row exists", '"pulse-feed-actions-v2 pulse-reaction-bar"' in home_js and 'row.dataset.contentType = "feed"' in home_js),
-        check("Feed action chips exist", "function feedActionChip" in home_js and '"pulse-action-chip pulse-reaction-button"' in home_js),
-        check("Required feed action labels exist", all(f'"{label}"' in render_actions for label in required_actions)),
+        check("Feed action V2/V3 row exists", '"pulse-feed-actions-v3 pulse-feed-actions-v2 pulse-reaction-bar"' in home_js and 'row.dataset.contentType = "feed"' in home_js),
+        check("Feed action chips exist", "function feedActionChip" in home_js and '"pulse-action-chip pulse-feed-action-v3 pulse-reaction-button"' in home_js),
+        check("Required feed action labels exist", "reactionLabelFor(activeReaction || \"like\")" in render_actions and all(f'"{label}"' in render_actions for label in required_actions)),
         check("Required feed action handlers remain wired", all(token in home_js for token in required_action_attrs)),
         check("More chip uses existing post menu handler", 'feedActionChip("•••", "More", { postMenu: post.id, action: "more" }' in home_js and 'event.target.closest("[data-post-menu]")' in home_js),
         check("Owner promote chip is owner-only", "if (post.can_delete)" in render_actions and "promote.dataset.promoteContent" in render_actions and "data-promote-content" in reaction_js + bot),

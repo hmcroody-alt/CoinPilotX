@@ -2,7 +2,7 @@
   "checks": [
     {
       "details": "",
-      "name": "Feed action V2 row exists",
+      "name": "Feed action V2/V3 row exists",
       "passed": true
     },
     {
@@ -131,7 +131,7 @@
       "passed": true
     },
     {
-      "details": "[718, 882, 1082, 1115, 1155, 1189, 1220]",
+      "details": "[737, 901, 1101, 1134, 1174, 1208, 1239]",
       "name": "Feed render order matches required structure",
       "passed": true
     },

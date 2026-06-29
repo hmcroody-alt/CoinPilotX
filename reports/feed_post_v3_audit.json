@@ -1,0 +1,110 @@
+{
+  "checks": [
+    {
+      "details": "",
+      "name": "Feed V3 card class exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Pulse page loads Feed V3 CSS asset",
+      "passed": true
+    },
+    {
+      "details": "[737, 901, 1101, 1134, 1174, 1208, 1239]",
+      "name": "Required feed hierarchy order is preserved",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Music is ordered before media in CSS",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Media is edge-to-edge inside the post",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Nested media borders are removed",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Reaction summary V3 exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Reaction summary excludes view metric in V3 renderer",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Bottom action bar V3 exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Feed actions are bottom row only",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Required actions remain wired",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Long press reaction picker exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Reaction picker uses backend reaction types",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Reaction picker uses real react endpoint",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Media long press no longer opens menu",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Comment composer compact V3 grid exists",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Comment send remains visible",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Responsive targets exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Reduced motion supported",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "No dead action links",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Internal design name is not user-facing",
+      "passed": true
+    }
+  ],
+  "ok": true
+}
