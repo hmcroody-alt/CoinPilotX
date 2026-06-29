@@ -23,6 +23,7 @@ def main() -> int:
     bot = read("bot.py")
     renderer = read("static/js/pulse_media_renderer.js")
     status_viewer = read("static/js/pulse_status_viewer.js")
+    home = read("static/js/pulse_home_core.js")
     feed = read("services/pulse_feed_engine.py")
     checks: list[dict] = []
 
@@ -53,6 +54,27 @@ def main() -> int:
     require(checks, "status original video muted", "video.volume = 0" in status_viewer and "status-attached-music" in status_viewer, "Status video original audio is muted when music exists")
 
     require(checks, "feed media enriched with music", "_media_with_attached_music" in feed and "attached_audio_url" in feed, "feed media carries attached audio metadata")
+    hierarchy_tokens = [
+        "renderCreatorHeader(card, post",
+        "renderCaption(card, post)",
+        "card.appendChild(media)",
+        "renderPostMusic(card, post)",
+        "renderEngagement(card, post)",
+        "renderActions(card, post)",
+        "renderComposer(card, post)",
+    ]
+    render_post_start = home.find("function renderPost(post)")
+    render_post_end = home.find("function observePost", render_post_start)
+    render_post_body = home[render_post_start:render_post_end] if render_post_start >= 0 and render_post_end > render_post_start else ""
+    hierarchy_positions = [render_post_body.find(token) for token in hierarchy_tokens]
+    require(checks, "home feed hierarchy owner before media", all(pos >= 0 for pos in hierarchy_positions) and hierarchy_positions == sorted(hierarchy_positions), "owner, caption, media, audio, engagement, actions, comment composer render in order")
+    require(checks, "home attached audio uses shared player", "data-post-music-audio" not in home and "playAttachedAudio" in home and "forceOriginalAudioMuted" in home, "Home audio bar controls shared synchronized attached-audio player")
+    require(checks, "home create stays in composer", "openPulseComposer" in home and "location.hash === \"#create\"" in home and "a[href='/pulse/create']" in home, "Create links are intercepted and opened in the current Home composer")
+    require(checks, "legacy create route redirects", 'if request.path.endswith("/create")' in bot and 'return redirect("/pulse#create")' in bot, "legacy /pulse/create routes to new Home composer anchor")
+    require(checks, "home shell create links are in-page", "data-pulse-create-trigger='1'" in bot and 'href="#create" data-pulse-create-trigger="1"' in bot and '("Create", "#create", "＋")' in bot, "new Home shell Create buttons do not navigate to legacy create")
+    require(checks, "published videos hydrate attached audio", "pulse_video_hydrate_attached_music" in bot and "data-video-attached-play" in bot and "video_attached_audio_url" in bot, "Videos API and detail player include attached music metadata")
+    require(checks, "videos mark original audio muted", "data-original-audio-muted=\"true\"" in bot and "video-detail-attached-button" in bot, "Videos hub/detail force original video audio muted when attached music exists")
+    require(checks, "status shared player preferred", "attached_audio_url" in status_viewer and "attachedAudio && !window.PulseMediaRenderer" in status_viewer, "Status uses shared attached-audio player with fallback only when renderer is absent")
     require(checks, "database stores priority fields", all(token in bot for token in ["original_audio_muted", "audio_start_time", "audio_volume"]), "content music table has priority fields")
 
     ok = all(item["ok"] for item in checks)

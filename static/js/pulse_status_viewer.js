@@ -31,7 +31,7 @@
   const mediaUrl = media => media.mux_playback_id
     ? `https://stream.mux.com/${media.mux_playback_id}.m3u8`
     : (media.mux_hls_url || media.playback_url || media.valid_url || media.cdn_url || media.media_url || media.url || media.src || "");
-  const musicUrl = item => item?.music?.audio_url || item?.music?.preview_url || "";
+  const musicUrl = item => item?.music?.attached_audio_url || item?.music?.audio_url || item?.music?.preview_url || "";
 
   function styleFor(item) {
     const style = { ...defaults, ...(item.status_style || item.status_tools?.status_style || {}) };
@@ -64,7 +64,7 @@
     const poster = media.poster_url || media.poster || media.thumbnail_url || media.mux_thumbnail_url || media.thumb || "";
     const text = esc(item.body || item.music?.title || "PulseSoc Status");
     const attachedAudio = musicUrl(item);
-    const musicHtml = attachedAudio
+    const musicHtml = attachedAudio && !window.PulseMediaRenderer
       ? `<audio data-status-music-audio preload="metadata" src="${esc(attachedAudio)}"></audio>`
       : "";
     if (src && window.PulseMediaRenderer) {
@@ -355,9 +355,9 @@
     if (window.PulseMediaRenderer?.hasAttachedAudio?.(media)) {
       window.PulseMediaRenderer.forceOriginalAudioMuted?.(media, "status-attached-unmute");
       window.PulseMediaRenderer.setSoundEnabled?.(true);
-      window.PulseMediaRenderer.setAttachedAudioMuted?.(media, false, true);
+      window.PulseMediaRenderer.setAttachedAudioMuted?.(media, false, true, true);
+      window.PulseMediaRenderer.playAttachedAudio?.(media, true, true);
       media.play?.().catch(() => {});
-      window.PulseMediaRenderer.playAttachedAudio?.(media, true);
       media.dataset.statusAttachedSoundOn = "1";
       updateViewerSoundButton(viewer, media);
       return true;
@@ -381,12 +381,12 @@
       const shouldMute = media.dataset.statusAttachedSoundOn === "1";
       viewer.dataset.statusSoundToggledAt = String(Date.now());
       window.PulseMediaRenderer.forceOriginalAudioMuted?.(media, "status-attached-toggle");
-      window.PulseMediaRenderer.setAttachedAudioMuted?.(media, shouldMute, true);
+      window.PulseMediaRenderer.setAttachedAudioMuted?.(media, shouldMute, true, !shouldMute);
       window.PulseMediaRenderer.setSoundEnabled?.(!shouldMute);
       media.dataset.statusAttachedSoundOn = shouldMute ? "0" : "1";
       if (!shouldMute) {
+        window.PulseMediaRenderer.playAttachedAudio?.(media, true, true);
         media.play?.().catch(() => {});
-        window.PulseMediaRenderer.playAttachedAudio?.(media, true);
       } else {
         window.PulseMediaRenderer.pauseAttachedAudio?.(media);
       }

@@ -97,6 +97,46 @@
       "detail": "feed media carries attached audio metadata"
     },
     {
+      "name": "home feed hierarchy owner before media",
+      "ok": true,
+      "detail": "owner, caption, media, audio, engagement, actions, comment composer render in order"
+    },
+    {
+      "name": "home attached audio uses shared player",
+      "ok": true,
+      "detail": "Home audio bar controls shared synchronized attached-audio player"
+    },
+    {
+      "name": "home create stays in composer",
+      "ok": true,
+      "detail": "Create links are intercepted and opened in the current Home composer"
+    },
+    {
+      "name": "legacy create route redirects",
+      "ok": true,
+      "detail": "legacy /pulse/create routes to new Home composer anchor"
+    },
+    {
+      "name": "home shell create links are in-page",
+      "ok": true,
+      "detail": "new Home shell Create buttons do not navigate to legacy create"
+    },
+    {
+      "name": "published videos hydrate attached audio",
+      "ok": true,
+      "detail": "Videos API and detail player include attached music metadata"
+    },
+    {
+      "name": "videos mark original audio muted",
+      "ok": true,
+      "detail": "Videos hub/detail force original video audio muted when attached music exists"
+    },
+    {
+      "name": "status shared player preferred",
+      "ok": true,
+      "detail": "Status uses shared attached-audio player with fallback only when renderer is absent"
+    },
+    {
       "name": "database stores priority fields",
       "ok": true,
       "detail": "content music table has priority fields"

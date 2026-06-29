@@ -968,6 +968,18 @@
       frame.dataset.mediaType = video ? "video" : "image";
       frame.dataset.mediaPoster = item.thumbnail_url || item.poster_url || "";
       frame.dataset.doubleTapLike = post.id;
+      const attachedAudio = post.music?.attached_audio_url || post.music?.audio_url || post.music?.preview_url || item.attached_audio_url || "";
+      if (attachedAudio) {
+        frame.dataset.audioId = post.music?.audio_id || post.music?.track_id || item.audio_id || "";
+        frame.dataset.musicId = post.music?.track_id || post.music?.audio_id || item.music_id || "";
+        frame.dataset.attachedAudioUrl = attachedAudio;
+        frame.dataset.audioTitle = post.music?.title || item.audio_title || "Approved track";
+        frame.dataset.audioArtist = post.music?.artist || item.audio_artist || "PulseSoc Music";
+        frame.dataset.audioDuration = post.music?.audio_duration || post.music?.duration_seconds || item.audio_duration || 0;
+        frame.dataset.audioStartTime = post.music?.audio_start_time || item.audio_start_time || 0;
+        frame.dataset.audioVolume = post.music?.audio_volume || item.audio_volume || 1;
+        frame.dataset.originalAudioMuted = "true";
+      }
       frame.setAttribute("aria-label", video ? "Open video" : "Open image");
       if (video) {
         const poster = item.thumbnail_url || item.poster_url || item.mux_thumbnail_url || item.preview_url || "";
@@ -976,10 +988,13 @@
         media.preload = index === 0 ? "metadata" : "none";
         media.playsInline = true;
         media.muted = true;
+        media.defaultMuted = true;
+        media.volume = attachedAudio ? 0 : media.volume;
         media.controls = false;
         media.loop = true;
         media.tabIndex = -1;
         media.dataset.feedVideoPreview = "1";
+        if (attachedAudio) media.dataset.originalAudioMuted = "true";
         if (poster) media.poster = poster;
         media.addEventListener("play", () => frame.classList.add("is-playing"));
         media.addEventListener("pause", () => frame.classList.remove("is-playing"));
@@ -1001,54 +1016,69 @@
 
   function renderPostMusic(card, post) {
     const track = post.music || null;
-    const audioUrl = track?.audio_url || track?.preview_url || "";
+    const audioUrl = track?.attached_audio_url || track?.audio_url || track?.preview_url || "";
     if (!track?.is_creator_safe || !audioUrl) return;
     card.classList.add("has-attached-music");
     card.querySelectorAll("video").forEach(video => {
-      video.muted = true;
-      video.defaultMuted = true;
+      window.PulseMediaRenderer?.forceOriginalAudioMuted?.(video, "home-render-attached-music");
+      if (!window.PulseMediaRenderer?.forceOriginalAudioMuted) {
+        video.muted = true;
+        video.defaultMuted = true;
+        video.volume = 0;
+      }
     });
     const player = element("section", "post-music-player");
     player.dataset.postMusic = post.id;
+    player.dataset.attachedAudioUrl = audioUrl;
     const button = element("button", "post-music-toggle", "▶");
     button.type = "button";
     button.setAttribute("aria-label", `Play ${track.title || "attached music"}`);
     const copy = element("span", "post-music-copy");
     copy.append(
       element("strong", "", track.title || "Approved track"),
-      element("small", "", `${track.artist || "PulseSoc Music"} · Creator-safe sound`)
+      element("small", "", `${track.artist || "PulseSoc Music"} · Using attached audio · Original audio muted`)
     );
-    const audio = document.createElement("audio");
-    audio.src = audioUrl;
-    audio.preload = "metadata";
-    audio.dataset.postMusicAudio = post.id;
     button.addEventListener("click", async () => {
-      if (audio.paused) {
-        if (activePostMusic && activePostMusic !== audio) activePostMusic.pause();
-        card.querySelectorAll("video").forEach(video => { video.muted = true; });
+      const video = card.querySelector("video");
+      if (!video || !window.PulseMediaRenderer?.hasAttachedAudio?.(video)) {
+        toast("Attached music is not available for this post.");
+        return;
+      }
+      const shouldPlay = button.dataset.playing !== "1";
+      if (shouldPlay) {
+        if (activePostMusic && activePostMusic !== video) window.PulseMediaRenderer?.pauseAttachedAudio?.(activePostMusic);
+        window.PulseMediaRenderer?.forceOriginalAudioMuted?.(video, "home-post-music-button");
+        window.PulseMediaRenderer?.setSoundEnabled?.(true);
+        window.PulseMediaRenderer?.setAttachedAudioMuted?.(video, false, true, true);
         try {
-          await audio.play();
-          activePostMusic = audio;
+          const attachedStarted = await window.PulseMediaRenderer?.playAttachedAudio?.(video, true, true);
+          await video.play();
+          if (!attachedStarted) throw new Error("attached-audio-blocked");
+          activePostMusic = video;
+          button.dataset.playing = "1";
+          button.textContent = "❚❚";
+          button.setAttribute("aria-label", `Pause ${track.title || "attached music"}`);
+          player.classList.add("is-playing");
         } catch (_) {
           toast("Music could not play. Check your device audio settings.");
         }
       } else {
-        audio.pause();
+        window.PulseMediaRenderer?.pauseAttachedAudio?.(video);
+        video.pause();
+        button.dataset.playing = "0";
+        button.textContent = "▶";
+        button.setAttribute("aria-label", `Play ${track.title || "attached music"}`);
+        player.classList.remove("is-playing");
+        if (activePostMusic === video) activePostMusic = null;
       }
     });
-    audio.addEventListener("play", () => {
-      button.textContent = "❚❚";
-      button.setAttribute("aria-label", `Pause ${track.title || "attached music"}`);
-      player.classList.add("is-playing");
-    });
-    audio.addEventListener("pause", () => {
+    card.querySelector("video")?.addEventListener("pause", () => {
+      button.dataset.playing = "0";
       button.textContent = "▶";
-      button.setAttribute("aria-label", `Play ${track.title || "attached music"}`);
       player.classList.remove("is-playing");
-      if (activePostMusic === audio) activePostMusic = null;
+      if (activePostMusic === card.querySelector("video")) activePostMusic = null;
     });
-    audio.addEventListener("ended", () => { audio.currentTime = 0; });
-    player.append(button, copy, audio);
+    player.append(button, copy);
     card.appendChild(player);
   }
 
@@ -1125,30 +1155,19 @@
     if (author.public_player_id) card.dataset.authorPublicPlayerId = author.public_player_id;
 
     const media = renderMedia(post, mediaItems);
-    if (kind === "video" && media) {
-      card.appendChild(media);
-      renderEngagement(card, post);
-      renderActions(card, post);
-      renderCreatorHeader(card, post, author, authorName, label);
-      renderCreatorDrawer(card, post, author, authorName, label);
-      renderMenu(card, post, author);
-      renderCaption(card, post);
-      renderPostMusic(card, post);
-    } else {
-      renderCreatorHeader(card, post, author, authorName, label);
-      renderCreatorDrawer(card, post, author, authorName, label);
-      renderMenu(card, post, author);
-      renderCaption(card, post);
-      if (post.live?.live_url) {
-        const live = element("a", "button primary", "Join live");
-        live.href = post.live.live_url;
-        card.appendChild(live);
-      }
-      if (media) card.appendChild(media);
-      renderPostMusic(card, post);
-      renderEngagement(card, post);
-      renderActions(card, post);
+    renderCreatorHeader(card, post, author, authorName, label);
+    renderCreatorDrawer(card, post, author, authorName, label);
+    renderMenu(card, post, author);
+    renderCaption(card, post);
+    if (post.live?.live_url) {
+      const live = element("a", "button primary", "Join live");
+      live.href = post.live.live_url;
+      card.appendChild(live);
     }
+    if (media) card.appendChild(media);
+    renderPostMusic(card, post);
+    renderEngagement(card, post);
+    renderActions(card, post);
     renderComposer(card, post);
     return card;
   }
@@ -1188,9 +1207,20 @@
           const frame = video.closest(".post-card-media-frame");
           if (entry.isIntersecting && entry.intersectionRatio >= 0.62) {
             video.preload = "metadata";
-            video.muted = true;
-            video.play().then(() => frame?.classList.add("is-playing")).catch(() => frame?.classList.remove("is-playing"));
+            if (window.PulseMediaRenderer?.hasAttachedAudio?.(video)) {
+              window.PulseMediaRenderer.bindAttachedAudioPriority?.(frame, video);
+              window.PulseMediaRenderer.forceOriginalAudioMuted?.(video, "home-feed-visible");
+            } else {
+              video.muted = true;
+            }
+            video.play().then(() => {
+              frame?.classList.add("is-playing");
+              if (window.PulseMediaRenderer?.hasAttachedAudio?.(video) && window.PulseMediaRenderer?.soundEnabled?.()) {
+                window.PulseMediaRenderer.playAttachedAudio?.(video, true);
+              }
+            }).catch(() => frame?.classList.remove("is-playing"));
           } else {
+            window.PulseMediaRenderer?.pauseAttachedAudio?.(video);
             video.pause();
             frame?.classList.remove("is-playing");
             if (!entry.isIntersecting) video.preload = "none";
@@ -1258,7 +1288,8 @@
         const empty = element("section", "card");
         empty.appendChild(element("p", "muted", "No posts yet. Create the first PulseSoc."));
         const create = element("a", "button primary", "Create PulseSoc");
-        create.href = "/pulse/create";
+        create.href = "#create";
+        create.dataset.pulseCreateTrigger = "1";
         empty.appendChild(create);
         feed.appendChild(empty);
       } else {
@@ -2012,7 +2043,24 @@
     toast(`Choose creator-safe sounds for this ${composerHasVideo() ? "video" : "photo"}.`);
   }
 
+  function openPulseComposer(type = "text", { focus = true } = {}) {
+    const nextType = ["text", "poll", "scam_report", "video"].includes(type) ? type : "text";
+    document.getElementById("createSheet")?.classList.remove("open");
+    setComposerType(nextType);
+    composer?.classList.add("is-expanded");
+    composer?.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (focus) window.setTimeout(() => document.getElementById("postBody")?.focus(), 220);
+    toast(nextType === "video" ? "Reel composer ready." : "Composer ready.");
+  }
+
   document.addEventListener("click", async event => {
+    const createTrigger = event.target.closest("[data-pulse-create-trigger], a[href='/pulse/create'], a[href=\"#create\"], a[href='/pulse#create']");
+    if (createTrigger) {
+      event.preventDefault();
+      const type = createTrigger.dataset.sheetType || createTrigger.dataset.createType || (createTrigger.matches("[data-composer-reel]") ? "video" : "text");
+      openPulseComposer(type);
+      return;
+    }
     const hideSponsor = event.target.closest("[data-hide-sponsored-signal]");
     if (hideSponsor) {
       const card = hideSponsor.closest("[data-sponsored-signal]");
@@ -2682,6 +2730,8 @@
     setComposerType("video");
     composer?.scrollIntoView({ block: "center" });
     toast("Music attached to video composer. Choose a video to publish.");
+  } else if (location.hash === "#create") {
+    window.setTimeout(() => openPulseComposer("text"), 120);
   }
   document.getElementById("pulseFab")?.addEventListener("click", event => {
     const sheet = document.getElementById("createSheet");

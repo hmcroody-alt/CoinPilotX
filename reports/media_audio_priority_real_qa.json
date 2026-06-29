@@ -1,0 +1,53 @@
+{
+  "tested_at": "2026-06-28T23:59:22-04:00",
+  "result": "implementation_verified_audio_output_blocked_by_automation_browser",
+  "manual_audible_confirmation_complete": false,
+  "media": {
+    "video_id": 286,
+    "title": "QA Video With Original Audio",
+    "path": "/static/audit/video-with-original-audio.mp4",
+    "duration_seconds": 5.711108843537415,
+    "codecs": [
+      "H.264",
+      "MPEG-4 AAC"
+    ],
+    "original_audio_present": true
+  },
+  "attached_music": {
+    "track_id": 32371,
+    "title": "QA Attached PulseSoc Music",
+    "path": "/static/audit/attached-pulsesoc-music.wav",
+    "duration_seconds": 5.0,
+    "format": "PCM 16-bit mono 44100 Hz",
+    "rms": 10445.22,
+    "peak": 18743,
+    "non_silent": true
+  },
+  "browser_checks": {
+    "published_video_route": "/pulse/videos/286",
+    "attached_audio_metadata_rendered": true,
+    "attached_audio_title_matches": true,
+    "original_video_muted": true,
+    "original_audio_muted_backend_flag": true,
+    "attached_player_created": true,
+    "attached_player_synchronized": true,
+    "audio_output_confirmation": "blocked",
+    "block_reason": "The in-app automation browser rejects programmatic media starts with NotAllowedError even after injected clicks, so audible output cannot be claimed honestly.",
+    "console_errors": 0,
+    "route_404s": 0
+  },
+  "responsive_checks": {
+    "mobile_width": 390,
+    "mobile_horizontal_overflow": false,
+    "mobile_comment_bar_covered": false,
+    "desktop_horizontal_overflow": false
+  },
+  "create_flow": {
+    "route": "/pulse#create",
+    "legacy_route_loaded": false,
+    "composer_expanded": true,
+    "composer_focused": true,
+    "route_changed_on_create_click": false
+  },
+  "required_follow_up": "Confirm audible attached music once in a user-driven browser or device session before calling the audible QA requirement complete."
+}

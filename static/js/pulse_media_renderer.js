@@ -14,6 +14,9 @@
   const predictiveMediaCache = new Map();
   const preloadControllers = new WeakMap();
   const attachedAudioPlayers = new WeakMap();
+  const attachedAudioPlayPromises = new WeakMap();
+  const attachedAudioPlayTokens = new WeakMap();
+  const attachedAudioStarting = new WeakSet();
   const PRELOAD_WINDOW = Object.freeze({ previous: 1, next: 2 });
   const PRELOAD_MAX_CACHE = 72;
   const PRELOAD_ROOT_SELECTOR = [
@@ -31,6 +34,7 @@
   let hlsLoaderPromise = null;
   let activeHlsVideo = null;
   let activeAttachedAudio = null;
+  let attachedAudioUserUnlocked = false;
   let lastScrollAt = 0;
   let controlsObserver = null;
   const HYDRATE_INITIAL_LIMIT = 10;
@@ -728,6 +732,16 @@
     return Math.max(0, Math.min(Number(wrap?.dataset?.audioVolume || 1) || 1, 1));
   }
 
+  function markAttachedAudioState(wrap, audio, state) {
+    if (!wrap) return;
+    wrap.dataset.attachedAudioState = state || "idle";
+    if (audio) {
+      wrap.dataset.attachedAudioCurrentTime = String(Number(audio.currentTime || 0).toFixed(3));
+      wrap.dataset.attachedAudioMuted = audio.muted ? "true" : "false";
+      wrap.dataset.attachedAudioPaused = audio.paused ? "true" : "false";
+    }
+  }
+
   function forceOriginalAudioMuted(video, reason = "attached-audio-priority") {
     if (!video) return;
     video.dataset.pulseAttachedAudioPriority = "1";
@@ -745,12 +759,15 @@
     let audio = attachedAudioPlayers.get(wrap);
     if (!audio || audio.src !== new URL(url, window.location.href).href) {
       if (audio) audio.pause();
-      audio = new Audio(url);
+      audio = document.createElement("audio");
       audio.preload = "metadata";
+      audio.defaultMuted = true;
+      audio.muted = true;
+      audio.setAttribute("muted", "");
       audio.dataset.pulseAttachedAudio = "1";
       audio.dataset.audioId = wrap.dataset.audioId || wrap.dataset.musicId || "";
       audio.volume = attachedAudioVolume(wrap);
-      audio.muted = !soundEnabled();
+      audio.src = url;
       attachedAudioPlayers.set(wrap, audio);
     }
     return audio;
@@ -761,48 +778,112 @@
     const wrap = attachedAudioWrap(video);
     const audio = attachedAudioFor(video);
     if (!audio) return;
-    const targetTime = attachedAudioStart(wrap) + Math.max(0, Number(video.currentTime || 0) || 0);
+    if (!force && attachedAudioStarting.has(audio)) return;
+    let targetTime = attachedAudioStart(wrap) + Math.max(0, Number(video.currentTime || 0) || 0);
+    const audioDuration = Number(audio.duration || 0);
+    if (audioDuration > 0 && Number.isFinite(audioDuration)) {
+      targetTime = targetTime % audioDuration;
+    }
+    audio.playbackRate = Number(video.playbackRate || 1) || 1;
+    audio.loop = !!video.loop || (audioDuration > 0 && Number(video.duration || 0) > audioDuration);
     if (force || Math.abs(Number(audio.currentTime || 0) - targetTime) > .45) {
       try {
         audio.currentTime = Math.max(0, targetTime);
       } catch (_) {}
     }
+    markAttachedAudioState(wrap, audio, audio.paused ? "paused" : "playing");
   }
 
   function pauseAttachedAudio(target) {
+    const wrap = attachedAudioWrap(target);
     const audio = attachedAudioFor(target);
     if (audio) audio.pause();
     if (activeAttachedAudio === audio) activeAttachedAudio = null;
+    markAttachedAudioState(wrap, audio, "paused");
   }
 
-  async function playAttachedAudio(video, preferSound = true) {
+  async function playAttachedAudio(video, preferSound = true, forceSound = false) {
     if (!video || !hasAttachedAudio(video)) return false;
     forceOriginalAudioMuted(video, "attached-audio-play");
+    const wrap = attachedAudioWrap(video);
     const audio = attachedAudioFor(video);
     if (!audio) return false;
-    if (activeAttachedAudio && activeAttachedAudio !== audio) activeAttachedAudio.pause();
-    audio.volume = attachedAudioVolume(attachedAudioWrap(video));
-    audio.muted = !(preferSound && soundEnabled());
-    syncAttachedAudioTime(video, true);
-    if (audio.muted) return false;
-    try {
-      await audio.play();
-      activeAttachedAudio = audio;
-      return true;
-    } catch (_) {
-      audio.muted = true;
-      return false;
+    if (activeAttachedAudio && activeAttachedAudio !== audio) {
+      activeAttachedAudio.pause();
     }
+    if (forceSound) {
+      attachedAudioUserUnlocked = true;
+      setSoundEnabled(true);
+    }
+    audio.volume = attachedAudioVolume(wrap);
+    const wantsSound = forceSound || (preferSound && soundEnabled() && attachedAudioUserUnlocked);
+    const pendingPlay = attachedAudioPlayPromises.get(audio);
+    if (pendingPlay) {
+      if (!forceSound || pendingPlay.forceSound) return pendingPlay.promise;
+      audio.muted = true;
+      await pendingPlay.promise;
+      audio.muted = false;
+      audio.defaultMuted = false;
+      audio.removeAttribute("muted");
+      if (!audio.paused) {
+        activeAttachedAudio = audio;
+        delete wrap.dataset.attachedAudioError;
+        markAttachedAudioState(wrap, audio, "playing");
+        return true;
+      }
+    }
+    audio.muted = !wantsSound;
+    audio.defaultMuted = !wantsSound;
+    audio.toggleAttribute("muted", !wantsSound);
+    if (!audio.paused) {
+      activeAttachedAudio = audio;
+      delete wrap.dataset.attachedAudioError;
+      markAttachedAudioState(wrap, audio, audio.muted ? "playing-muted" : "playing");
+      return !audio.muted;
+    }
+    syncAttachedAudioTime(video, true);
+    attachedAudioStarting.add(audio);
+    const playToken = {};
+    attachedAudioPlayTokens.set(audio, playToken);
+    const playPromise = (async () => {
+      try {
+        await audio.play();
+        activeAttachedAudio = audio;
+        delete wrap.dataset.attachedAudioError;
+        syncAttachedAudioTime(video, false);
+        markAttachedAudioState(wrap, audio, audio.muted ? "playing-muted" : "playing");
+        return !audio.muted;
+      } catch (error) {
+        if (attachedAudioPlayTokens.get(audio) === playToken) {
+          audio.muted = true;
+          wrap.dataset.attachedAudioError = `${error?.name || "Error"}: ${error?.message || "Playback blocked"}`;
+          markAttachedAudioState(wrap, audio, "blocked");
+        }
+        if (mediaDebugEnabled()) console.warn("PulseSoc attached audio blocked", error);
+        return false;
+      } finally {
+        if (attachedAudioPlayTokens.get(audio) === playToken) {
+          attachedAudioStarting.delete(audio);
+        }
+        if (attachedAudioPlayPromises.get(audio)?.promise === playPromise) {
+          attachedAudioPlayPromises.delete(audio);
+        }
+      }
+    })();
+    attachedAudioPlayPromises.set(audio, { promise: playPromise, forceSound: !!forceSound });
+    return playPromise;
   }
 
-  function setAttachedAudioMuted(target, muted, persist = false) {
+  function setAttachedAudioMuted(target, muted, persist = false, forceSound = false) {
     const video = target?.tagName === "VIDEO" ? target : attachedAudioWrap(target)?.querySelector?.("video");
     if (video) forceOriginalAudioMuted(video, "attached-audio-toggle");
     const audio = attachedAudioFor(target);
     if (!audio) return false;
     audio.muted = !!muted;
+    audio.defaultMuted = !!muted;
+    audio.toggleAttribute("muted", !!muted);
     if (persist) setSoundEnabled(!audio.muted);
-    if (!audio.muted && video && !video.paused) playAttachedAudio(video, true);
+    if (!audio.muted && video && !video.paused) playAttachedAudio(video, true, forceSound);
     return !audio.muted;
   }
 
@@ -824,6 +905,10 @@
     });
     video.addEventListener("seeking", () => syncAttachedAudioTime(video, true));
     video.addEventListener("seeked", () => syncAttachedAudioTime(video, true));
+    video.addEventListener("ratechange", () => {
+      const audio = attachedAudioFor(video);
+      if (audio) audio.playbackRate = Number(video.playbackRate || 1) || 1;
+    });
     video.addEventListener("timeupdate", () => {
       if (!video.paused) syncAttachedAudioTime(video, false);
     });
@@ -1002,7 +1087,7 @@
       if (hasAttachedAudio(video)) {
         const audio = attachedAudioFor(video);
         const nextMuted = !(audio && !audio.muted);
-        setAttachedAudioMuted(video, nextMuted, true);
+        setAttachedAudioMuted(video, nextMuted, true, !nextMuted);
         showTapIcon(wrap, nextMuted ? "🔇" : "🔊");
         if (!nextMuted) video.play().catch(() => showSoundPrompt(wrap, true, true));
         else showSoundPrompt(wrap, true);
@@ -1791,7 +1876,7 @@
       setSoundEnabled(true);
       const video = soundButton.closest(".pulse-media-wrap")?.querySelector("video") || activeVideo;
       if (video && hasAttachedAudio(video)) {
-        setAttachedAudioMuted(video, false, true);
+        setAttachedAudioMuted(video, false, true, true);
         window.PulseMediaRenderer?.playVisibleVideo?.(video, true);
       } else if (video) window.PulseMediaRenderer?.playVisibleVideo?.(video, true);
       return;
@@ -1840,6 +1925,10 @@
     if (activeAttachedAudio) activeAttachedAudio.pause();
     document.querySelectorAll("video").forEach(video => destroyHls(video));
     predictiveMediaCache.clear();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && activeAttachedAudio) activeAttachedAudio.pause();
   });
 
   if ("MutationObserver" in window) {
