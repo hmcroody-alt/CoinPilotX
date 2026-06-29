@@ -77,6 +77,15 @@
         thumbnail_url: media.thumbnail_url || media.mux_thumbnail_url || media.thumb || poster,
         media_type: kind === "image" ? "image" : "video",
         mime_type: src.includes(".m3u8") ? "application/vnd.apple.mpegurl" : (media.playback_mime_type || media.mime_type || media.mime || ""),
+        audio_id: media.audio_id || item.music?.audio_id || item.music?.track_id || "",
+        music_id: media.music_id || item.music?.music_id || item.music?.track_id || "",
+        attached_audio_url: media.attached_audio_url || item.music?.attached_audio_url || item.music?.audio_url || item.music?.preview_url || "",
+        audio_title: media.audio_title || item.music?.audio_title || item.music?.title || "",
+        audio_artist: media.audio_artist || item.music?.audio_artist || item.music?.artist || "",
+        audio_duration: media.audio_duration || item.music?.audio_duration || item.music?.duration_seconds || 0,
+        audio_start_time: media.audio_start_time || item.music?.audio_start_time || 0,
+        audio_volume: media.audio_volume || item.music?.audio_volume || item.music?.volume || 1,
+        original_audio_muted: !!attachedAudio,
       }, {
         surface: "status",
         className: "pulse-status-viewer-player",
@@ -321,13 +330,15 @@
   }
 
   function viewerSoundMedia(viewer = activeViewer()) {
-    return viewer?.querySelector?.("[data-status-music-audio]") || viewer?.querySelector?.("video") || null;
+    const video = viewer?.querySelector?.("video") || null;
+    if (video && window.PulseMediaRenderer?.hasAttachedAudio?.(video)) return video;
+    return viewer?.querySelector?.("[data-status-music-audio]") || video || null;
   }
 
   function updateViewerSoundButton(viewer, media = viewerSoundMedia(viewer)) {
     const button = viewer?.querySelector?.("[data-status-story-mute],[data-status-viewer-mute]");
     if (!button || !media) return;
-    const muted = media.muted || Number(media.volume || 0) === 0;
+    const muted = window.PulseMediaRenderer?.hasAttachedAudio?.(media) ? media.dataset.statusAttachedSoundOn !== "1" : (media.muted || Number(media.volume || 0) === 0);
     button.hidden = false;
     if (button.matches("[data-status-story-mute]")) {
       delete button.dataset.statusActionDecorated;
@@ -341,6 +352,16 @@
   function unmuteViewerVideo(viewer = activeViewer()) {
     const media = viewerSoundMedia(viewer);
     if (!media) return false;
+    if (window.PulseMediaRenderer?.hasAttachedAudio?.(media)) {
+      window.PulseMediaRenderer.forceOriginalAudioMuted?.(media, "status-attached-unmute");
+      window.PulseMediaRenderer.setSoundEnabled?.(true);
+      window.PulseMediaRenderer.setAttachedAudioMuted?.(media, false, true);
+      media.play?.().catch(() => {});
+      window.PulseMediaRenderer.playAttachedAudio?.(media, true);
+      media.dataset.statusAttachedSoundOn = "1";
+      updateViewerSoundButton(viewer, media);
+      return true;
+    }
     media.defaultMuted = false;
     media.removeAttribute("muted");
     media.volume = Number(media.dataset.pulsePreferredVolume || media.volume || 1) || 1;
@@ -356,6 +377,23 @@
   function toggleViewerSound(viewer = activeViewer()) {
     const media = viewerSoundMedia(viewer);
     if (!media) return false;
+    if (window.PulseMediaRenderer?.hasAttachedAudio?.(media)) {
+      const shouldMute = media.dataset.statusAttachedSoundOn === "1";
+      viewer.dataset.statusSoundToggledAt = String(Date.now());
+      window.PulseMediaRenderer.forceOriginalAudioMuted?.(media, "status-attached-toggle");
+      window.PulseMediaRenderer.setAttachedAudioMuted?.(media, shouldMute, true);
+      window.PulseMediaRenderer.setSoundEnabled?.(!shouldMute);
+      media.dataset.statusAttachedSoundOn = shouldMute ? "0" : "1";
+      if (!shouldMute) {
+        media.play?.().catch(() => {});
+        window.PulseMediaRenderer.playAttachedAudio?.(media, true);
+      } else {
+        window.PulseMediaRenderer.pauseAttachedAudio?.(media);
+      }
+      updateViewerSoundButton(viewer, media);
+      revealStatusChrome(viewer, { timeout: 900 });
+      return true;
+    }
     const shouldMute = !(media.muted || Number(media.volume || 0) === 0);
     viewer.dataset.statusSoundToggledAt = String(Date.now());
     media.defaultMuted = false;
@@ -380,16 +418,33 @@
     if (!viewer) return false;
     const video = viewer.querySelector("video");
     const music = viewer.querySelector("[data-status-music-audio]");
+    const sharedAttached = video && window.PulseMediaRenderer?.hasAttachedAudio?.(video);
     if (video) {
       video.autoplay = true;
       video.playsInline = true;
       video.setAttribute("playsinline", "");
       video.setAttribute("webkit-playsinline", "");
       if (music) {
-        if (window.PulseMediaRenderer?.setVideoMuted) window.PulseMediaRenderer.setVideoMuted(video, true, "status-attached-music");
+        if (window.PulseMediaRenderer?.forceOriginalAudioMuted) window.PulseMediaRenderer.forceOriginalAudioMuted(video, "status-attached-music");
+        else if (window.PulseMediaRenderer?.setVideoMuted) window.PulseMediaRenderer.setVideoMuted(video, true, "status-attached-music");
         else video.muted = true;
+        video.defaultMuted = true;
+        video.volume = 0;
       }
       video.play?.().catch(() => {});
+    }
+    if (sharedAttached) {
+      music?.pause?.();
+      const wantsSound = preferSound && window.PulseMediaRenderer?.soundEnabled?.() !== false;
+      if (wantsSound) {
+        window.PulseMediaRenderer.setAttachedAudioMuted?.(video, false, true);
+        window.PulseMediaRenderer.playAttachedAudio?.(video, true);
+      } else {
+        window.PulseMediaRenderer.setAttachedAudioMuted?.(video, true, false);
+      }
+      video.dataset.statusAttachedSoundOn = wantsSound ? "1" : "0";
+      updateViewerSoundButton(viewer, video);
+      return true;
     }
     const soundMedia = music || video;
     if (!soundMedia) return false;

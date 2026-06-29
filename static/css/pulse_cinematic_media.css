@@ -1056,3 +1056,51 @@ article.card > .pulse-media-wrap.media-kind-video,
   width: 100% !important;
   max-width: none !important;
 }
+
+.pulse-media-attached-audio {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 6;
+  display: grid;
+  gap: 2px;
+  max-width: min(82%, 340px);
+  padding: 8px 10px;
+  border: 1px solid rgba(110, 223, 246, .24);
+  border-radius: 8px;
+  background: rgba(3, 10, 20, .78);
+  color: #f4fbff;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .28);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.pulse-media-attached-audio span,
+.pulse-media-attached-audio strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.pulse-media-attached-audio span {
+  color: rgba(244, 251, 255, .72);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pulse-media-attached-audio strong {
+  color: #ffffff;
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .pulse-media-attached-audio {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    max-width: none;
+  }
+}

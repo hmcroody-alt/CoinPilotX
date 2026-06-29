@@ -306,7 +306,8 @@ def _music_for_posts(post_ids):
         cur.execute(
             f"""
             SELECT pcm.content_id, pcm.audio_track_id, pcm.title, pcm.artist, pcm.source,
-                   pcm.license_snapshot_json, pcm.created_at, at.audio_url AS current_audio_url,
+                   pcm.license_snapshot_json, pcm.created_at, pcm.audio_start_time, pcm.audio_volume, pcm.original_audio_muted,
+                   at.audio_url AS current_audio_url,
                    at.duration_seconds AS current_duration_seconds
             FROM pulse_content_music pcm
             JOIN pulse_audio_tracks at ON CAST(at.id AS TEXT)=CAST(pcm.audio_track_id AS TEXT)
@@ -334,12 +335,18 @@ def _music_for_posts(post_ids):
             if not audio_url:
                 continue
             music[post_id] = {
+                "audio_id": str(item.get("audio_track_id") or snapshot.get("track_id") or ""),
                 "track_id": str(item.get("audio_track_id") or snapshot.get("track_id") or ""),
                 "title": _clean_text(item.get("title") or snapshot.get("title") or "Approved track", 180),
                 "artist": _clean_text(item.get("artist") or snapshot.get("artist") or "PulseSoc Music", 180),
+                "attached_audio_url": audio_url,
                 "audio_url": audio_url,
                 "preview_url": audio_url,
                 "duration_seconds": int(float(item.get("current_duration_seconds") or snapshot.get("duration_seconds") or snapshot.get("duration") or 0) or 0),
+                "audio_duration": int(float(item.get("current_duration_seconds") or snapshot.get("duration_seconds") or snapshot.get("duration") or 0) or 0),
+                "audio_start_time": float(item.get("audio_start_time") or snapshot.get("audio_start_time") or snapshot.get("start_seconds") or 0),
+                "audio_volume": max(0.0, min(float(item.get("audio_volume") or snapshot.get("volume") or snapshot.get("audio_volume") or 1), 1.0)),
+                "original_audio_muted": bool(int(item.get("original_audio_muted") if item.get("original_audio_muted") is not None else 1)),
                 "source": _clean_text(item.get("source") or snapshot.get("source") or "PulseSoc", 120),
                 "is_creator_safe": True,
             }
@@ -379,6 +386,27 @@ def _view_counts(cur, post_ids):
     return {int(row["post_id"]): int(row["total"] or 0) for row in cur.fetchall()}
 
 
+def _media_with_attached_music(media, music):
+    if not media or not music or not (music.get("attached_audio_url") or music.get("audio_url") or music.get("preview_url")):
+        return media or []
+    out = []
+    for item in media or []:
+        enriched = dict(item)
+        enriched.update({
+            "audio_id": music.get("audio_id") or music.get("track_id") or "",
+            "music_id": music.get("track_id") or music.get("audio_id") or "",
+            "attached_audio_url": music.get("attached_audio_url") or music.get("audio_url") or music.get("preview_url") or "",
+            "audio_title": music.get("title") or "Approved track",
+            "audio_artist": music.get("artist") or "PulseSoc Music",
+            "audio_duration": music.get("audio_duration") or music.get("duration_seconds") or 0,
+            "audio_start_time": music.get("audio_start_time") or 0,
+            "audio_volume": music.get("audio_volume") or 1,
+            "original_audio_muted": True,
+        })
+        out.append(enriched)
+    return out
+
+
 def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=None, viewer_user_id=None, views=0, music=None):
     item = dict(row)
     author = _public_author(item)
@@ -391,6 +419,7 @@ def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=No
         display_body = "\n\n".join(part for part in [display_body, repost_original.get("body")] if part)
     display_title = item.get("title") or (repost_original or {}).get("title") or ""
     display_music = music or (repost_original or {}).get("music") or None
+    display_media = _media_with_attached_music(display_media, display_music)
     reaction_counts = reactions or {}
     reaction_total = sum(int(v or 0) for v in reaction_counts.values())
     can_delete = bool(viewer_user_id and int(item.get("user_id") or 0) == int(viewer_user_id or 0))

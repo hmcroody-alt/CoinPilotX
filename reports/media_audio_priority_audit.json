@@ -1,0 +1,105 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "api field audio_id",
+      "ok": true,
+      "detail": "audio_id is emitted by backend payloads"
+    },
+    {
+      "name": "api field attached_audio_url",
+      "ok": true,
+      "detail": "attached_audio_url is emitted by backend payloads"
+    },
+    {
+      "name": "api field audio_title",
+      "ok": true,
+      "detail": "audio_title is emitted by backend payloads"
+    },
+    {
+      "name": "api field audio_artist",
+      "ok": true,
+      "detail": "audio_artist is emitted by backend payloads"
+    },
+    {
+      "name": "api field audio_duration",
+      "ok": true,
+      "detail": "audio_duration is emitted by backend payloads"
+    },
+    {
+      "name": "api field audio_start_time",
+      "ok": true,
+      "detail": "audio_start_time is emitted by backend payloads"
+    },
+    {
+      "name": "api field audio_volume",
+      "ok": true,
+      "detail": "audio_volume is emitted by backend payloads"
+    },
+    {
+      "name": "api field original_audio_muted",
+      "ok": true,
+      "detail": "original_audio_muted is emitted by backend payloads"
+    },
+    {
+      "name": "shared renderer detects attached audio",
+      "ok": true,
+      "detail": "shared renderer reads attached audio metadata"
+    },
+    {
+      "name": "original video audio forced muted",
+      "ok": true,
+      "detail": "attached audio forces video muted and volume zero"
+    },
+    {
+      "name": "attached audio sync events",
+      "ok": true,
+      "detail": "attached audio is synced to video lifecycle"
+    },
+    {
+      "name": "mute controls attached audio",
+      "ok": true,
+      "detail": "sound toggles use attached audio when present"
+    },
+    {
+      "name": "no duplicate post audio element playback",
+      "ok": true,
+      "detail": "post music control uses shared attached-audio player"
+    },
+    {
+      "name": "reels pass attached audio metadata",
+      "ok": true,
+      "detail": "Reels renderMedia receives attached audio metadata"
+    },
+    {
+      "name": "reels managed playback uses shared priority",
+      "ok": true,
+      "detail": "managed Reel player uses shared attached-audio controls"
+    },
+    {
+      "name": "reel save-time priority persisted",
+      "ok": true,
+      "detail": "Reel create/manage persists muted original audio rule"
+    },
+    {
+      "name": "status attached audio gated",
+      "ok": true,
+      "detail": "Status viewer routes attached audio through shared priority"
+    },
+    {
+      "name": "status original video muted",
+      "ok": true,
+      "detail": "Status video original audio is muted when music exists"
+    },
+    {
+      "name": "feed media enriched with music",
+      "ok": true,
+      "detail": "feed media carries attached audio metadata"
+    },
+    {
+      "name": "database stores priority fields",
+      "ok": true,
+      "detail": "content music table has priority fields"
+    }
+  ]
+}
