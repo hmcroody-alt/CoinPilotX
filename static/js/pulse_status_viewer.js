@@ -114,9 +114,9 @@
   }
 
   const statusActionMeta = {
-    love: ["❤️", "0"],
+    love: ["❤", "0"],
     comment: ["💬", "Comment"],
-    share: ["↗️", "Share"],
+    share: ["↗", "Share"],
     save: ["🔖", "Save"],
     more: ["•••", "More"],
     mute: ["🔇", "Sound"],
@@ -137,6 +137,7 @@
       : label;
     button.classList.add("pulse-status-action", "pulse-action-button", "pulse-reaction-button", "reel-action", "reel-action-button");
     button.dataset.action = key === "love" ? "like" : key;
+    button.dataset.contentViewerAction = button.dataset.action;
     if (key === "love") button.classList.add("pulse-status-react");
     button.innerHTML = `<span class="reel-action-icon action-icon pulse-status-action-icon" aria-hidden="true">${icon}</span><span class="reel-action-label">${label}</span><small class="reel-action-meta" ${key === "love" ? 'data-status-story-reaction-count' : ""}>${count}</small>`;
     window.PulseReactionSystem?.decorate?.(button, { action: button.dataset.action, label, itemType: "Status" });
@@ -489,8 +490,12 @@
       sound.dataset.statusNowPlaying = "1";
       sound.innerHTML = `
         <span class="pulse-status-now-playing-dot" aria-hidden="true">♪</span>
-        <strong data-status-now-title>PulseSoc Status</strong>
+        <span class="pulse-status-now-copy">
+          <strong data-status-now-title>PulseSoc Status</strong>
+          <small data-status-now-artist>PulseSoc Music</small>
+        </span>
         <span class="pulse-status-now-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        <span class="pulse-status-now-play" aria-hidden="true">▶</span>
       `;
       shell.insertBefore(sound, shell.querySelector(".pulse-status-story-footer") || null);
     }
@@ -506,7 +511,9 @@
       viewer.querySelector("[data-status-viewer-author],[data-status-story-author]")?.textContent?.trim() ||
       "PulseSoc Music";
     const title = sound.querySelector("[data-status-now-title]");
-    if (title) title.textContent = `${body} · ${artist}`;
+    const artistNode = sound.querySelector("[data-status-now-artist]");
+    if (title) title.textContent = body;
+    if (artistNode) artistNode.textContent = artist;
   }
 
   function storyDuration(viewer) {

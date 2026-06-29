@@ -2,6 +2,18 @@
   if (window.PulseReactionSystem) return;
 
   const toggleActions = new Set(["like", "save", "repost", "remix", "follow"]);
+  const actionIcons = {
+    like: "❤",
+    love: "❤",
+    comment: "💬",
+    repost: "↻",
+    share: "↗",
+    save: "🔖",
+    more: "•••",
+    send: "➤",
+    media: "▣",
+    emoji: "☺",
+  };
 
   function normalizeAction(button) {
     const raw = button?.dataset?.action
@@ -22,7 +34,9 @@
     if (!button) return null;
     const action = String(options.action || normalizeAction(button)).trim().toLowerCase() || "action";
     button.classList.add("pulse-reaction-button");
+    button.classList.add("lnx-action-control");
     button.dataset.action = action;
+    button.dataset.contentViewerAction = action;
     if (!button.hasAttribute("aria-label")) {
       const label = options.label || button.querySelector(".reel-action-label")?.textContent || button.textContent || action;
       button.setAttribute("aria-label", `${String(label).trim() || action} ${options.itemType || "content"}`.trim());
@@ -31,7 +45,12 @@
       button.setAttribute("aria-pressed", button.classList.contains("active") || button.classList.contains("is-active") ? "true" : "false");
     }
     const icon = button.querySelector(".reel-action-icon,.post-action-icon,.action-icon");
-    icon?.classList.add("pulse-reaction-icon");
+    if (icon) {
+      icon.classList.add("pulse-reaction-icon");
+      if (actionIcons[action] && !button.matches("[data-reel-remix],[data-status-viewer-mute],[data-status-story-mute]")) {
+        icon.textContent = actionIcons[action];
+      }
+    }
     const label = button.querySelector(".reel-action-label");
     label?.classList.add("pulse-reaction-label");
     const meta = button.querySelector(".reel-action-meta");
@@ -39,9 +58,19 @@
     return button;
   }
 
+  function decorateViewer(node) {
+    if (!node) return;
+    node.classList.add("lnx-content-viewer");
+    if (node.matches(".post-card-modern,.video-card-modern")) node.dataset.contentViewerMode = node.classList.contains("post-card-video") || node.classList.contains("video-card-modern") ? "video" : "feed";
+    if (node.matches(".reel-card,.reels-shell,.reels-immersive")) node.dataset.contentViewerMode = "reel";
+    if (node.matches(".pulse-status-story-shell,.pulse-status-story-viewer,[data-status-viewer]")) node.dataset.contentViewerMode = "status";
+  }
+
   function hydrate(root = document) {
+    root.querySelectorAll?.(".post-card-modern,.video-card-modern,.reel-card,.reels-shell,.reels-immersive,.pulse-status-story-shell,.pulse-status-story-viewer,[data-status-viewer]").forEach(decorateViewer);
     root.querySelectorAll?.(".reel-actions,.reels-action-rail,.pulse-status-story-actions,.post-action-row").forEach((bar) => {
       bar.classList.add("pulse-reaction-bar");
+      bar.classList.add("lnx-action-bar");
       if (!bar.dataset.layout) {
         bar.dataset.layout = bar.classList.contains("post-action-row") ? "horizontal" : "vertical";
       }
@@ -52,6 +81,9 @@
     });
     root.querySelectorAll?.(".post-music-player,.reel-music,.pulse-media-attached-audio,.video-detail-attached-audio").forEach((node) => {
       node.classList.add("pulse-music-card");
+      node.classList.add("lnx-music-controller");
+      node.setAttribute("role", node.getAttribute("role") || "group");
+      node.setAttribute("aria-label", node.getAttribute("aria-label") || "PulseSoc music controller");
     });
     root.querySelectorAll?.(".post-engagement-summary,.reel-details-stats,.featured-stats,.video-meta").forEach((node) => {
       node.classList.add("pulse-counter-row");
@@ -64,17 +96,21 @@
   document.addEventListener("click", (event) => {
     const button = event.target?.closest?.(".pulse-reaction-button");
     if (!button || button.disabled || button.getAttribute("aria-disabled") === "true") return;
-    button.classList.remove("is-popping", "is-rippling");
+    button.classList.remove("is-popping", "is-rippling", "is-save-flashing");
     void button.offsetWidth;
-    button.classList.add(button.dataset.action === "share" ? "is-rippling" : "is-popping");
-    window.setTimeout(() => button.classList.remove("is-popping", "is-rippling"), 460);
+    if (button.dataset.action === "share") button.classList.add("is-rippling");
+    else if (button.dataset.action === "save") button.classList.add("is-save-flashing", "is-popping");
+    else button.classList.add("is-popping");
+    window.setTimeout(() => button.classList.remove("is-popping", "is-rippling", "is-save-flashing"), 520);
     if (button.dataset.action === "comment") {
       button.closest(".post-card-modern,.pulse-status-story-viewer,.reel-card")?.classList.add("is-comment-primed");
       window.setTimeout(() => button.closest(".post-card-modern,.pulse-status-story-viewer,.reel-card")?.classList.remove("is-comment-primed"), 480);
     }
   }, true);
 
-  window.PulseReactionSystem = { decorate, hydrate };
+  const api = { decorate, hydrate, decorateViewer };
+  window.PulseReactionSystem = api;
+  window.LogiNexusContentViewer = api;
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => hydrate(document), { once: true });
   } else {

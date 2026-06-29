@@ -7,6 +7,11 @@
     },
     {
       "details": "",
+      "name": "Shared content viewer JS exists",
+      "passed": true
+    },
+    {
+      "details": "",
       "name": "Shared reaction JS exists",
       "passed": true
     },
@@ -18,6 +23,11 @@
     {
       "details": "",
       "name": "Pulse pages load shared reaction JS",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Pulse pages load updated Status viewer JS",
       "passed": true
     },
     {
@@ -62,6 +72,11 @@
     },
     {
       "details": "",
+      "name": "Content viewer modes are internal and shared",
+      "passed": true
+    },
+    {
+      "details": "",
       "name": "Feed and video dynamic renders hydrate shared system",
       "passed": true
     },
@@ -72,12 +87,42 @@
     },
     {
       "details": "",
-      "name": "Shared animations cover pop and ripple",
+      "name": "Action rail uses same compact control dimensions",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Shared animations cover pop ripple and save flash",
       "passed": true
     },
     {
       "details": "",
       "name": "Shared active states include like/save/remix",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Shared V2 design tokens exist",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Music controllers are unified",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Comment composer is compact",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Desktop Status viewer stage is centered",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Canonical desktop action icons are present",
       "passed": true
     },
     {
@@ -132,12 +177,17 @@
     },
     {
       "details": "",
-      "name": "Minimum tap target is enforced",
+      "name": "Minimum tap target is enforced without oversized chips",
       "passed": true
     },
     {
       "details": "",
       "name": "Reduced motion is supported",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Internal design name is not rendered in public HTML",
       "passed": true
     },
     {

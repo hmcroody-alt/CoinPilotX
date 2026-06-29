@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit the shared PulseSoc reaction system across Reels, Statuses, and posts."""
+"""Audit the shared PulseSoc content viewer/reaction system across surfaces."""
 
 from __future__ import annotations
 
@@ -52,9 +52,11 @@ def main() -> int:
     pulse_css_after_reels = re.search(r"pulse_reels_experience\.css[^<]+<link rel=\"stylesheet\" href=\"/static/css/pulse_cinematic_media\.css[^<]+<link rel=\"stylesheet\" href=\"/static/css/pulse_home_os\.css[^<]+<link rel=\"stylesheet\" href=\"/static/css/pulse_reaction_system\.css", bot, re.S) is not None
     checks = [
         check("Shared reaction CSS exists", ".pulse-reaction-button" in reaction_css and ".pulse-reaction-bar" in reaction_css),
+        check("Shared content viewer JS exists", "window.LogiNexusContentViewer" in reaction_js and "decorateViewer" in reaction_js and "hydrate(root" in reaction_js),
         check("Shared reaction JS exists", "window.PulseReactionSystem" in reaction_js and "decorate(button" in reaction_js and "hydrate(root" in reaction_js),
-        check("Pulse pages load shared reaction CSS", "pulse_reaction_system.css?v=logi-unified-20260629b" in bot),
-        check("Pulse pages load shared reaction JS", "pulse_reaction_system.js?v=logi-unified-20260629b" in bot),
+        check("Pulse pages load shared reaction CSS", "pulse_reaction_system.css?v=loginexus-v2-20260629a" in bot),
+        check("Pulse pages load shared reaction JS", "pulse_reaction_system.js?v=loginexus-v2-20260629a" in bot),
+        check("Pulse pages load updated Status viewer JS", "pulse_status_viewer.js?v=loginexus-v2-20260629a" in bot),
         check("Feed posts use shared reaction classes", "post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" in home_js and "post-action-row pulse-reaction-bar" in home_js),
         check("Video posts use shared reaction classes", "post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" in bot and "post-action-row pulse-reaction-bar" in bot and "data-video-repost" in bot and "data-save-video" in bot),
         check("Statuses use shared reaction classes", "pulse-status-action\", \"pulse-action-button\", \"pulse-reaction-button\", \"reel-action\", \"reel-action-button\"" in status_js and "PulseReactionSystem?.decorate" in status_js),
@@ -63,10 +65,17 @@ def main() -> int:
         check("Reels use shared reaction classes", "reels-action-rail reel-actions pulse-reaction-bar" in bot and "button.classList.add('reel-action-button','pulse-reaction-button')" in bot),
         check("Reels mobile enhancer uses shared reaction classes", "reel-action reel-action-button pulse-reaction-button" in media_js and "PulseReactionSystem?.hydrate?.(card)" in media_js),
         check("Shared creator/music/counter primitives exist", all(token in reaction_css + reaction_js for token in ["pulse-creator-header", "pulse-music-card", "pulse-counter-row", "pulse-glass-overlay"])),
+        check("Content viewer modes are internal and shared", all(token in reaction_js for token in ['dataset.contentViewerAction', '? "video" : "feed"', 'dataset.contentViewerMode = "reel"', 'dataset.contentViewerMode = "status"'])),
         check("Feed and video dynamic renders hydrate shared system", "PulseReactionSystem?.hydrate?.(card)" in home_js and "PulseReactionSystem?.hydrate?.(videosGrid)" in bot),
-        check("Feed actions use compact shared glass controls", "post-action-row.pulse-reaction-bar .pulse-reaction-button" in reaction_css and "grid-template-columns: none" in reaction_css and "min-width: 56px" in reaction_css),
-        check("Shared animations cover pop and ripple", all(token in reaction_css + reaction_js for token in ["pulseReactionPop", "pulseReactionRipple", "is-rippling", "is-popping"])),
+        check("Feed actions use compact shared glass controls", "post-action-row.pulse-reaction-bar .lnx-action-control" in reaction_css and "min-height: 38px" in reaction_css and "display: inline-flex" in reaction_css),
+        check("Action rail uses same compact control dimensions", all(token in reaction_css for token in [".pulse-status-story-actions .lnx-action-control", ".reels-action-rail .lnx-action-control", "width: 46px", "height: 46px"])),
+        check("Shared animations cover pop ripple and save flash", all(token in reaction_css + reaction_js for token in ["lnxActionPop", "lnxShareRipple", "lnxGoldFlash", "is-rippling", "is-save-flashing", "is-popping"])),
         check("Shared active states include like/save/remix", all(token in reaction_css for token in ['data-action="like"', 'data-action="save"', 'data-action="remix"', 'pulseReactionPulse'])),
+        check("Shared V2 design tokens exist", all(token in reaction_css for token in ["--lnx-viewer-radius", "--lnx-glass-blur", "--lnx-action-size", "--lnx-motion-fast"])),
+        check("Music controllers are unified", all(token in reaction_css + reaction_js + status_js for token in ["lnx-music-controller", "pulse-status-now-copy", "pulse-status-now-play", "lnxMusicWave"])),
+        check("Comment composer is compact", all(token in reaction_css for token in [".post-comment-composer", "height: 34px", "min-height: 42px"])),
+        check("Desktop Status viewer stage is centered", all(token in reaction_css for token in ["--lnx-status-stage-width", "object-fit: contain", ".pulse-status-story-viewer.open .pulse-status-story-actions"])),
+        check("Canonical desktop action icons are present", all(token in reaction_js + status_js + home_js for token in ['like: "❤"', 'comment: "💬"', 'share: "↗"', 'save: "🔖"', 'more: "•••"']) and 'actionButton("↻", "Repost"' in home_js),
         check("Old surface CSS is overridden by shared layer", pulse_css_after_status and pulse_css_after_reels),
         check("No duplicate Remix protection exists", "rail.querySelector('[data-reel-repost]')" in bot and "button.remove()" in bot and "data-reel-more" in bot),
         check("No reaction dead hrefs", not dead_links, "; ".join(dead_links[:3])),
@@ -77,8 +86,9 @@ def main() -> int:
         check("Save handlers still exist", all(token in home_js + status_js + bot for token in ["data-save-post", "data-status-story-save", "data-reel-save"])),
         check("More menu handlers still exist", all(token in home_js + status_js + bot for token in ["data-post-menu", "data-status-story-more", "data-reel-more"])),
         check("Owner and non-owner menu guards still exist", all(token in home_js + bot for token in ["post.can_delete", "canDelete", "ownerTools", "canManage"])),
-        check("Minimum tap target is enforced", "min-width: 52px" in reaction_css and "min-height: 52px" in reaction_css),
+        check("Minimum tap target is enforced without oversized chips", "--lnx-action-size: 42px" in reaction_css and "min-height: 38px" in reaction_css and "width: 46px" in reaction_css),
         check("Reduced motion is supported", "prefers-reduced-motion" in reaction_css),
+        check("Internal design name is not rendered in public HTML", "LogiNexus" not in bot[bot.find("def pulse_page_html") : bot.find("def pulse_emit_event")] and "LogiNexus" not in bot[bot.find("def pulse_social_shell") : bot.find("def pulse_reels_page")]),
         check("No duplicate shared class tokens", "pulse-reaction-button pulse-reaction-button" not in bot + home_js + status_js + media_js),
     ]
     report = {"ok": all(item["passed"] for item in checks), "checks": checks}

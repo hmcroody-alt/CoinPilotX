@@ -1222,7 +1222,7 @@
     row.append(
       like,
       actionButton("💬", "Comment", { postComment: post.id, action: "comment" }),
-      actionButton("🔁", "Repost", { postRepost: post.id, action: "repost" }),
+      actionButton("↻", "Repost", { postRepost: post.id, action: "repost" }),
       actionButton("↗", "Share", { postShare: postUrl(post), action: "share" }),
       save
     );
