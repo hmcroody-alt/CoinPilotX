@@ -135,10 +135,10 @@
     const count = button.matches("[data-status-story-react]")
       ? (button.querySelector("[data-status-story-reaction-count]")?.textContent || "0")
       : label;
-    button.classList.add("pulse-status-action", "pulse-action-button");
+    button.classList.add("pulse-status-action", "pulse-action-button", "reel-action", "reel-action-button");
     button.dataset.action = key === "love" ? "like" : key;
     if (key === "love") button.classList.add("pulse-status-react");
-    button.innerHTML = `<span class="pulse-status-action-icon" aria-hidden="true">${icon}</span><small ${key === "love" ? 'data-status-story-reaction-count' : ""}>${count}</small>`;
+    button.innerHTML = `<span class="reel-action-icon action-icon pulse-status-action-icon" aria-hidden="true">${icon}</span><span class="reel-action-label">${label}</span><small class="reel-action-meta" ${key === "love" ? 'data-status-story-reaction-count' : ""}>${count}</small>`;
     button.dataset.statusActionDecorated = "1";
     button.setAttribute("aria-label", `${label} Status`);
     if ((key === "love" || key === "save") && !button.hasAttribute("aria-pressed")) button.setAttribute("aria-pressed", "false");
@@ -348,7 +348,10 @@
       decorateActionButton(button, "mute");
       return;
     }
-    button.innerHTML = `<span class="pulse-status-action-icon" aria-hidden="true">${muted ? "🔇" : "🔊"}</span><small>${muted ? "Tap sound" : "Sound"}</small>`;
+    button.classList.add("pulse-status-action", "pulse-action-button", "reel-action", "reel-action-button");
+    button.dataset.action = "mute";
+    button.setAttribute("aria-label", muted ? "Enable Status sound" : "Mute Status sound");
+    button.innerHTML = `<span class="reel-action-icon action-icon pulse-status-action-icon" aria-hidden="true">${muted ? "🔇" : "🔊"}</span><span class="reel-action-label">${muted ? "Tap sound" : "Sound"}</span><small class="reel-action-meta">${muted ? "Tap" : "Sound"}</small>`;
   }
 
   function unmuteViewerVideo(viewer = activeViewer()) {

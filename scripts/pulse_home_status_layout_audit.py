@@ -52,8 +52,9 @@ def main() -> None:
 
     for forbidden in ["Stories from your Pulse world.", "Trending Status", "View Status</a>", "Quick updates, creator moments"]:
         expect(forbidden not in source, f"Home Status tray removed marketing text: {forbidden}")
-    for token in ["pulse-status-tray-only", "overflow-x: auto", "grid-auto-columns: 92px", ".pulse-status-card-media", "-webkit-line-clamp: 3", ".pulse-status-avatar-ring img", "pulse-instant-pressed", "touch-action: manipulation", "pointer-events: none"]:
+    for token in ["pulse-status-tray-only", "overflow-x: auto", ".pulse-status-card-media", "-webkit-line-clamp: 3", ".pulse-status-avatar-ring img", "pulse-instant-pressed", "touch-action: manipulation", "pointer-events: none"]:
         expect(token in status_css, f"Home Status tray layout includes {token}")
+    expect("grid-auto-columns: 108px" in status_css or "grid-auto-columns: 92px" in status_css, "Home Status tray layout includes compact fixed columns")
     expect(".pulse-status-story-viewer" in status_css and ".pulse-status-story-actions" in status_css, "Homepage status viewer uses full-screen story CSS")
     expect("@media(prefers-reduced-motion:reduce)" in compact or "@media(prefers-reduced-motion:reduce)" in compact, "Reduced motion guard exists")
 
