@@ -278,7 +278,7 @@
     window.clearTimeout(STATE.pollTimer);
     STATE.pollTimer = window.setTimeout(async () => {
       if (!document.hidden) await pollNotifications({ refreshList: true });
-      schedulePolling(document.hidden ? 45000 : 12000);
+      schedulePolling(document.hidden ? 45000 : 30000);
     }, delay);
   }
 
@@ -452,7 +452,7 @@
   });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) pollNotifications({ refreshList: true, force: true });
-    schedulePolling(document.hidden ? 45000 : 12000);
+    schedulePolling(document.hidden ? 45000 : 30000);
   });
   window.addEventListener("scroll", () => {
     STATE.lastScrollAt = Date.now();
@@ -467,6 +467,6 @@
     bindRealtime();
     window.setTimeout(bindRealtime, 500);
     pollNotifications({ refreshList: true, force: true });
-    schedulePolling(12000);
+    schedulePolling(30000);
   });
 })();
