@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""Audit real PulseSoc Join Live request/approval flow."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from pathlib import Path
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+import bot  # noqa: E402
+from services import db as db_service  # noqa: E402
+
+
+BOT = (ROOT / "bot.py").read_text(encoding="utf-8")
+JS = (ROOT / "static/js/pulse_live_studio_runtime.js").read_text(encoding="utf-8")
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise AssertionError(message)
+    print(f"ok - {message}")
+
+
+def create_user(cur, prefix: str, now: str) -> int:
+    stamp = now.replace(":", "").replace("-", "")
+    cur.execute(
+        "INSERT INTO users (username, display_name, email, signup_time, created_at) VALUES (?, ?, ?, ?, ?)",
+        (f"{prefix}_{stamp}", f"{prefix.title()} User", f"{prefix}-{stamp}@example.com", now, now),
+    )
+    return int(cur.lastrowid)
+
+
+def create_live() -> tuple[int, int, int]:
+    bot.init_db()
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db_service.connect()
+    conn.row_factory = bot.sqlite3.Row
+    cur = conn.cursor()
+    host_id = create_user(cur, "livehostaudit", now)
+    viewer_id = create_user(cur, "livevieweraudit", now)
+    cur.execute(
+        """
+        INSERT INTO pulse_live_sessions
+            (user_id,title,category,status,stream_key,viewer_count,created_at,started_at,stream_uuid,hls_url,webrtc_room_id,stream_health,bitrate_kbps,fps,updated_at,publish_state,mux_live_status)
+        VALUES (?, 'Join Flow Audit', 'Community', 'live', 'join_key', 1, ?, ?, 'joinflowaudit', 'https://live.coinpilotxai.app/hls/joinflowaudit.m3u8', 'pulse-live-join-audit', 'stable', 2400, 30, ?, 'browser_live_egress', 'active')
+        """,
+        (host_id, now, now, now),
+    )
+    live_id = int(cur.lastrowid)
+    conn.commit()
+    conn.close()
+    return host_id, viewer_id, live_id
+
+
+def login(client, user_id: int) -> None:
+    with client.session_transaction() as session:
+        session["account_user_id"] = user_id
+
+
+def main() -> int:
+    host_id, viewer_id, live_id = create_live()
+    client = bot.webhook_app.test_client()
+
+    login(client, viewer_id)
+    denied_token = client.post(f"/api/pulse/live/{live_id}/livekit/token", json={"role": "guest"})
+    require(denied_token.status_code == 403, "viewer cannot get guest publish token before approval")
+    bad_request = client.post(f"/api/pulse/live/{live_id}/join-request", json={"camera_ready": False, "mic_ready": True})
+    require(bad_request.status_code == 400, "join request enforces camera/mic readiness")
+    request_res = client.post(
+        f"/api/pulse/live/{live_id}/join-request",
+        json={"camera_ready": True, "mic_ready": True, "network_quality": "ready", "connection": {"camera_ready": True, "mic_ready": True}},
+    )
+    request_data = request_res.get_json() or {}
+    request_id = int((request_data.get("request") or {}).get("id") or 0)
+    require(request_res.status_code == 200 and request_data.get("status") == "pending" and request_id, "viewer creates real pending join request")
+
+    state = client.get(f"/api/pulse/live/{live_id}/state").get_json() or {}
+    require((state.get("viewer_join_request") or {}).get("status") == "pending", "viewer state shows pending join request")
+
+    login(client, host_id)
+    host_state = client.get(f"/api/pulse/live/{live_id}/state").get_json() or {}
+    require(host_state.get("join_request_count", 0) >= 1, "host state receives pending request without refresh")
+    deny_res = client.post(f"/api/pulse/live/{live_id}/join-requests/{request_id}/deny", json={})
+    require(deny_res.status_code == 200 and (deny_res.get_json() or {}).get("status") == "denied", "host can deny request")
+
+    login(client, viewer_id)
+    second = client.post(f"/api/pulse/live/{live_id}/join-request", json={"camera_ready": True, "mic_ready": True, "network_quality": "ready"})
+    second_data = second.get_json() or {}
+    second_id = int((second_data.get("request") or {}).get("id") or 0)
+    require(second.status_code == 200 and second_id and second_id != request_id, "viewer can request again after denial")
+
+    login(client, host_id)
+    accept_res = client.post(f"/api/pulse/live/{live_id}/join-requests/{second_id}/accept", json={})
+    accept_data = accept_res.get_json() or {}
+    guest = accept_data.get("guest") or {}
+    require(accept_res.status_code == 200 and accept_data.get("status") == "accepted" and guest.get("id"), "host can accept request and create guest permission")
+
+    login(client, viewer_id)
+    status = client.get(f"/api/pulse/live/{live_id}/join-status").get_json() or {}
+    require(status.get("can_publish") is True and (status.get("guest") or {}).get("id") == guest.get("id"), "accepted viewer receives guest publish state")
+    token_res = client.post(f"/api/pulse/live/{live_id}/livekit/token", json={"role": "guest"})
+    require(token_res.status_code in {200, 503}, "accepted guest reaches server-side guest token gate")
+
+    login(client, host_id)
+    mute = client.post(f"/api/pulse/live/{live_id}/guests/{int(guest.get('id'))}/mute", json={})
+    require(mute.status_code == 200, "host can mute guest")
+    remove = client.post(f"/api/pulse/live/{live_id}/guests/{int(guest.get('id'))}/remove", json={})
+    require(remove.status_code == 200, "host can remove guest")
+
+    require("pulse_live_guest_requests" in BOT and "pulse_live_guests" in BOT and "pulse_live_audit_logs" in BOT, "guest request, guest, and audit tables exist")
+    require("requested_role in {\"guest\", \"cohost\", \"co-host\"}" in BOT, "guest token generation is server-side and role-gated")
+    require("Only the live host can manage join requests" in BOT, "host permission checks exist")
+    require("Only the requesting viewer can cancel this request" in BOT, "viewer-only cancel check exists")
+    require("pending" in BOT and "accepted" in BOT and "denied" in BOT and "cancelled" in BOT and "removed" in BOT, "request states exist")
+    require("requestJoinLive" in JS and "publishGuestToLiveKit" in JS and "hostJoinRequestAction" in JS, "UI button states and handlers are wired")
+    require("fake join" not in BOT.lower() and "fake guest" not in BOT.lower(), "no fake join request literals")
+    require('href="#"' not in BOT and "javascript:void(0)" not in BOT, "no dead href/hash or javascript void links")
+    print("live join flow audit ok")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

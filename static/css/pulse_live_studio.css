@@ -718,6 +718,317 @@
   margin-top: 10px;
 }
 
+.live-screen-v1 {
+  min-height: calc(100dvh - 24px);
+}
+
+.live-screen-grid {
+  display: grid;
+  grid-template-columns: minmax(170px, 220px) minmax(0, 1fr) minmax(320px, 390px);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.live-discovery-rail {
+  position: sticky;
+  top: calc(env(safe-area-inset-top) + 10px);
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  max-height: calc(100dvh - 20px);
+  border: 1px solid var(--live-line);
+  border-radius: 24px;
+  padding: 12px;
+  background: linear-gradient(180deg, rgba(9, 19, 33, 0.92), rgba(5, 12, 22, 0.86));
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.28);
+}
+
+.live-discovery-rail a,
+.live-discovery-rail button {
+  min-height: 42px;
+  justify-content: flex-start;
+  text-align: left;
+  border-radius: 14px;
+  text-decoration: none;
+}
+
+.live-discovery-rail a.is-active {
+  border-color: rgba(105, 231, 255, 0.46);
+  color: #eaffff;
+  background: rgba(105, 231, 255, 0.11);
+}
+
+.live-ai-card,
+.live-backstage-panel,
+.live-join-panel,
+.live-guest-sidecar {
+  border: 1px solid rgba(105, 231, 255, 0.18);
+  border-radius: 18px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(16px);
+}
+
+.live-ai-card {
+  margin-top: 8px;
+}
+
+.live-ai-card span,
+.live-ai-card strong {
+  display: block;
+}
+
+.live-ai-card span {
+  color: var(--live-cyan);
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.live-ai-card p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.live-theater {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.live-top-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 22px;
+  padding: 10px 12px;
+  background: rgba(5, 12, 22, 0.72);
+  backdrop-filter: blur(18px);
+}
+
+.live-host-identity,
+.live-join-request-main,
+.live-guest-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.live-host-identity strong,
+.live-join-request-main strong,
+.live-guest-control strong,
+.live-guest-tile strong {
+  display: block;
+  color: #f3fcff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-host-identity small,
+.live-join-request-main small,
+.live-guest-control small,
+.live-guest-tile small {
+  display: block;
+  color: rgba(214, 241, 246, 0.72);
+  font-size: 12px;
+}
+
+.live-hero-player {
+  min-height: clamp(520px, 72dvh, 820px);
+}
+
+.live-topic-pill {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  z-index: 6;
+  max-width: min(72%, 420px);
+  border: 1px solid rgba(105, 231, 255, 0.24);
+  border-radius: 999px;
+  padding: 9px 12px;
+  color: #eaffff;
+  background: rgba(3, 10, 18, 0.58);
+  backdrop-filter: blur(16px);
+  font-size: 13px;
+  font-weight: 950;
+  pointer-events: none;
+}
+
+.live-host-header-card,
+.live-stream-health-card,
+.live-guest-stack {
+  position: absolute;
+  z-index: 6;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: rgba(3, 10, 18, 0.54);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
+}
+
+.live-host-header-card {
+  top: 58px;
+  left: 16px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  max-width: min(82%, 420px);
+  padding: 10px;
+}
+
+.live-stream-health-card {
+  left: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: min(86%, 620px);
+  padding: 9px;
+  color: rgba(226, 252, 255, 0.88);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.live-stream-health-card span {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.live-guest-stack {
+  top: 16px;
+  right: 16px;
+  display: grid;
+  gap: 8px;
+  width: min(240px, 34%);
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  padding: 8px;
+}
+
+.live-guest-tile,
+.live-join-request,
+.live-guest-control {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.live-guest-tile {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.live-guest-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: #06101b;
+  font-weight: 950;
+  background: linear-gradient(135deg, var(--live-cyan), #9b78ff);
+  box-shadow: 0 0 24px rgba(105, 231, 255, 0.18);
+}
+
+.live-view-action-bar {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  border: 1px solid var(--live-line);
+  border-radius: 22px;
+  padding: 9px;
+  background: rgba(5, 12, 22, 0.8);
+  backdrop-filter: blur(18px);
+}
+
+.live-view-action-bar button,
+.live-primary-action {
+  min-height: 46px;
+  border-radius: 16px;
+}
+
+.live-view-action-bar button:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.live-join-panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.live-primary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 160px;
+  border: 1px solid rgba(105, 231, 255, 0.34);
+  color: #06101b;
+  background: linear-gradient(135deg, #36e58f, #6edff6);
+  box-shadow: 0 14px 36px rgba(54, 229, 143, 0.24);
+  font-weight: 950;
+  text-decoration: none;
+}
+
+.live-primary-action.is-accepted {
+  background: linear-gradient(135deg, #ffd166, #6edff6);
+}
+
+.live-room-panel {
+  position: sticky;
+  top: calc(env(safe-area-inset-top) + 10px);
+  display: grid;
+  grid-template-rows: auto minmax(260px, 1fr) auto auto auto;
+  max-height: calc(100dvh - 20px);
+}
+
+.live-backstage-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.live-join-request-list,
+.live-guest-control-list,
+[data-live-guest-sidecar] {
+  display: grid;
+  gap: 8px;
+}
+
+.live-join-request {
+  display: grid;
+  gap: 9px;
+}
+
+.live-join-request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.live-join-request-actions button {
+  min-height: 36px;
+  border-radius: 12px;
+  padding: 7px 10px;
+}
+
+.live-guest-control {
+  justify-content: space-between;
+}
+
 .live-mobile-controls {
   display: none;
 }
@@ -725,6 +1036,18 @@
 @media (max-width: 1280px) {
   .studio-pro-shell {
     grid-template-columns: 1fr;
+  }
+  .live-screen-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  }
+  .live-discovery-rail {
+    grid-column: 1 / -1;
+    position: static;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .live-discovery-rail .studio-brand,
+  .live-discovery-rail .live-ai-card {
+    grid-column: 1 / -1;
   }
   .studio-sidebar {
     position: static;
@@ -746,6 +1069,14 @@
   .studio-workspace {
     grid-template-columns: 1fr;
   }
+  .live-screen-grid {
+    grid-template-columns: 1fr;
+  }
+  .live-room-panel,
+  .live-discovery-rail {
+    position: static;
+    max-height: none;
+  }
   .studio-chat-panel {
     position: static;
     max-height: none;
@@ -763,6 +1094,9 @@
   .live-preview-stage,
   .live-public-player {
     min-height: min(62vh, 520px);
+  }
+  .live-view-action-bar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -782,6 +1116,53 @@
   }
   .live-view-shell .live-public-player {
     min-height: min(58dvh, 520px);
+  }
+  .live-screen-v1 {
+    min-height: 100dvh;
+  }
+  .live-screen-grid {
+    gap: 10px;
+  }
+  .live-discovery-rail {
+    display: none;
+  }
+  .live-top-overlay {
+    align-items: flex-start;
+    border-radius: 0 0 18px 18px;
+  }
+  .live-host-identity {
+    min-width: 0;
+  }
+  .live-hero-player {
+    min-height: min(68dvh, 650px);
+  }
+  .live-guest-stack {
+    top: 12px;
+    right: 10px;
+    width: min(190px, 46%);
+  }
+  .live-host-header-card,
+  .live-stream-health-card {
+    display: none;
+  }
+  .live-topic-pill {
+    left: 12px;
+    right: 12px;
+    max-width: none;
+    bottom: 12px;
+  }
+  .live-view-action-bar {
+    grid-template-columns: repeat(6, minmax(62px, 1fr));
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .live-view-action-bar button {
+    min-width: 62px;
+    font-size: 12px;
+  }
+  .live-join-panel,
+  .live-room-panel {
+    margin: 0 10px;
   }
   .live-unmute-button {
     bottom: 14px;

@@ -139,6 +139,9 @@
     if (score) score.style.setProperty("--score", Math.max(0, Math.min(100, Number(health.score || 0))));
     renderChat(root, data.messages || []);
     renderReactionBurst(root, data.reaction_cloud || []);
+    renderLiveGuests(root, data.guests || []);
+    renderBackstage(root, data.join_requests || [], data.guests || []);
+    renderJoinPanel(root, data.viewer_join_request, data.guest);
     ensurePublicPlayback(root, data);
   }
 
@@ -297,6 +300,269 @@
         button.classList.remove("is-popping", "is-pending");
         delete button.dataset.busy;
       }
+    }
+  }
+
+  function liveGuestTileHtml(guest) {
+    const name = guest.display_name || "Guest";
+    const initial = String(name).trim().slice(0, 1).toUpperCase() || "G";
+    const muted = guest.audio_muted ? "Muted" : "Guest active";
+    return `<article class="live-guest-tile" data-live-guest-id="${Number(guest.id || 0)}">
+      <span class="live-guest-avatar">${escapeHtml(initial)}</span>
+      <div><strong>${escapeHtml(name)}</strong><small>${escapeHtml(muted)}</small></div>
+    </article>`;
+  }
+
+  function liveGuestControlHtml(guest) {
+    const action = guest.audio_muted ? "unmute" : "mute";
+    return `<article class="live-guest-control" data-live-guest-id="${Number(guest.id || 0)}">
+      <div><strong>${escapeHtml(guest.display_name || "Guest")}</strong><small>${guest.audio_muted ? "Muted by host" : "Audio active"} · Video ${guest.video_enabled ? "on" : "off"}</small></div>
+      <div class="live-join-request-actions">
+        <button type="button" data-live-guest-action="${action}" data-live-guest-id="${Number(guest.id || 0)}">${action === "unmute" ? "Unmute" : "Mute"}</button>
+        <button type="button" data-live-guest-action="remove" data-live-guest-id="${Number(guest.id || 0)}">Remove</button>
+      </div>
+    </article>`;
+  }
+
+  function liveJoinRequestHtml(request) {
+    const name = request.display_name || "Viewer";
+    const initial = String(name).trim().slice(0, 1).toUpperCase() || "V";
+    const requestId = Number(request.id || 0);
+    return `<article class="live-join-request" data-live-request-id="${requestId}">
+      <div class="live-join-request-main">
+        <span class="live-guest-avatar">${escapeHtml(initial)}</span>
+        <div><strong>${escapeHtml(name)}</strong><small>Camera ${request.camera_ready ? "ready" : "blocked"} · Mic ${request.mic_ready ? "ready" : "blocked"} · ${escapeHtml(request.network_quality || "unknown")}</small></div>
+      </div>
+      <div class="live-join-request-actions">
+        <button type="button" data-live-request-action="accept" data-live-request-id="${requestId}">Accept</button>
+        <button type="button" data-live-request-action="deny" data-live-request-id="${requestId}">Deny</button>
+      </div>
+    </article>`;
+  }
+
+  function renderLiveGuests(root, guests) {
+    const list = Array.isArray(guests) ? guests : [];
+    const html = list.length ? list.map(liveGuestTileHtml).join("") : `<article class="live-guest-tile is-empty"><span class="live-guest-avatar">+</span><div><strong>No guests</strong><small>Approved guests appear here.</small></div></article>`;
+    qsa(root, "[data-live-guest-stack]").forEach((node) => { node.innerHTML = html; });
+    qsa(root, "[data-live-guest-sidecar]").forEach((node) => { node.innerHTML = list.length ? html : `<p class="muted">No approved guests yet.</p>`; });
+  }
+
+  function renderBackstage(root, requests, guests) {
+    const requestList = qs(root, "[data-live-join-request-list]");
+    const guestList = qs(root, "[data-live-guest-control-list]");
+    const safeRequests = Array.isArray(requests) ? requests : [];
+    const safeGuests = Array.isArray(guests) ? guests : [];
+    qsa(root, "[data-live-request-count]").forEach((node) => { node.textContent = String(safeRequests.length); });
+    if (requestList) {
+      requestList.innerHTML = safeRequests.length ? safeRequests.map(liveJoinRequestHtml).join("") : `<p class="muted">No join requests. Viewers can request camera/mic access from the Live room.</p>`;
+    }
+    if (guestList) {
+      guestList.innerHTML = safeGuests.length ? safeGuests.map(liveGuestControlHtml).join("") : `<p class="muted">No active guests.</p>`;
+    }
+  }
+
+  function renderJoinPanel(root, request, guest) {
+    const panel = qs(root, "[data-live-join-panel]");
+    if (!panel || root.dataset.liveViewerKind === "host") return;
+    const status = guest ? "accepted" : (request?.status || "none");
+    panel.dataset.liveRequestStatus = status;
+    if (guest) {
+      panel.innerHTML = `<button class="live-primary-action is-accepted" type="button" data-live-guest-join>Accepted — joining...</button><button type="button" data-live-guest-leave data-live-guest-id="${Number(guest.id || 0)}">Leave guest seat</button><p class="muted" data-live-join-status>Publishing is server-approved for this guest slot.</p>`;
+      publishGuestToLiveKit(root).catch((error) => {
+        setText(root, "[data-live-join-status]", error.message || "Guest publishing could not start.");
+      });
+      return;
+    }
+    if (status === "pending") {
+      panel.innerHTML = `<button class="live-primary-action" type="button" data-live-join-request disabled>Waiting for host approval</button><button type="button" data-live-cancel-request data-live-request-id="${Number(request?.id || 0)}">Cancel request</button><p class="muted" data-live-join-status>Request sent. The host can accept or deny from Backstage.</p>`;
+      return;
+    }
+    if (status === "denied") {
+      panel.innerHTML = `<button class="live-primary-action" type="button" data-live-join-request>Request again</button><p class="muted" data-live-join-status>Your last request was denied.</p>`;
+      return;
+    }
+    if (status === "cancelled") {
+      panel.innerHTML = `<button class="live-primary-action" type="button" data-live-join-request>Request to Join</button><p class="muted" data-live-join-status>Request cancelled. You can request again.</p>`;
+      return;
+    }
+    panel.innerHTML = `<button class="live-primary-action" type="button" data-live-join-request>Request to Join</button><p class="muted" data-live-join-status>Camera and microphone readiness will be checked before the host sees your request.</p>`;
+  }
+
+  function livekitClient() {
+    return window.LivekitClient || window.LiveKitClient || window.livekitClient || null;
+  }
+
+  function stopGuestMedia(root) {
+    root.__pulseLiveGuestTracks?.forEach((track) => {
+      try { track.stop?.(); } catch (_) {}
+      try { track.mediaStreamTrack?.stop?.(); } catch (_) {}
+    });
+    root.__pulseLiveGuestStream?.getTracks?.().forEach((track) => {
+      try { track.stop(); } catch (_) {}
+    });
+    root.__pulseLiveGuestTracks = [];
+    root.__pulseLiveGuestStream = null;
+  }
+
+  async function checkGuestReadiness(root) {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera and microphone are unavailable in this browser.");
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const cameraReady = stream.getVideoTracks().some((track) => track.readyState === "live");
+    const micReady = stream.getAudioTracks().some((track) => track.readyState === "live");
+    const settings = stream.getVideoTracks()[0]?.getSettings?.() || {};
+    const payload = {
+      camera_ready: cameraReady,
+      mic_ready: micReady,
+      network_quality: navigator.onLine === false ? "offline" : "ready",
+      connection: {
+        camera_ready: cameraReady,
+        mic_ready: micReady,
+        width: Number(settings.width || 0),
+        height: Number(settings.height || 0),
+        frameRate: Number(settings.frameRate || 0),
+        effectiveType: navigator.connection?.effectiveType || "",
+        downlink: navigator.connection?.downlink || "",
+      },
+    };
+    stream.getTracks().forEach((track) => track.stop());
+    return payload;
+  }
+
+  async function requestJoinLive(root) {
+    const id = root?.dataset?.liveId;
+    const button = qs(root, "[data-live-join-request]");
+    if (!id || button?.dataset.busy === "1") return;
+    button.dataset.busy = "1";
+    button.disabled = true;
+    const setStatus = (message) => setText(root, "[data-live-join-status]", message);
+    try {
+      button.textContent = "Checking camera...";
+      setStatus("Checking camera and microphone permission...");
+      const readiness = await checkGuestReadiness(root);
+      button.textContent = "Sending request...";
+      const response = await fetch(`/api/pulse/live/${id}/join-request`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(readiness),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.message || "Join request failed.");
+      setStatus(data.message || "Request sent. Waiting for host approval.");
+      await fetchState(root);
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "Request to Join";
+      setStatus(error.message || "Join Live unavailable.");
+      notify(error.message || "Join Live unavailable.");
+    } finally {
+      delete button.dataset.busy;
+    }
+  }
+
+  async function cancelJoinRequest(root, requestId) {
+    const id = root?.dataset?.liveId;
+    if (!id || !requestId) return;
+    const response = await fetch(`/api/pulse/live/${id}/join-requests/${encodeURIComponent(requestId)}/cancel`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(data.message || "Request could not be cancelled.");
+    stopGuestMedia(root);
+    await fetchState(root);
+  }
+
+  async function hostJoinRequestAction(root, requestId, action) {
+    const id = root?.dataset?.liveId;
+    if (!id || !requestId || !action) return;
+    const response = await fetch(`/api/pulse/live/${id}/join-requests/${encodeURIComponent(requestId)}/${encodeURIComponent(action)}`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(data.message || "Join request action failed.");
+    notify(data.message || `Join request ${action}ed.`);
+    await fetchState(root);
+  }
+
+  async function hostGuestAction(root, guestId, action) {
+    const id = root?.dataset?.liveId;
+    if (!id || !guestId || !action) return;
+    const response = await fetch(`/api/pulse/live/${id}/guests/${encodeURIComponent(guestId)}/${encodeURIComponent(action)}`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(data.message || "Guest action failed.");
+    if (action === "leave") {
+      stopGuestMedia(root);
+      root.__pulseLiveGuestPublished = false;
+      try { await root.__pulseLiveGuestRoom?.disconnect?.(); } catch (_) {}
+      root.__pulseLiveGuestRoom = null;
+    }
+    await fetchState(root);
+  }
+
+  async function publishGuestToLiveKit(root) {
+    if (root.__pulseLiveGuestPublished || root.__pulseLiveGuestPublishing) return;
+    const id = root?.dataset?.liveId;
+    if (!id || root.dataset.liveViewerKind === "host") return;
+    const LK = livekitClient();
+    if (!LK) throw new Error("LiveKit is not available in this browser.");
+    root.__pulseLiveGuestPublishing = true;
+    try {
+      setText(root, "[data-live-join-status]", "Accepted. Starting camera and microphone...");
+      const tokenResponse = await fetch(`/api/pulse/live/${id}/livekit/token`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "guest" }),
+      });
+      const tokenData = await tokenResponse.json().catch(() => ({}));
+      if (!tokenResponse.ok || tokenData.ok === false) throw new Error(tokenData.message || "Guest token could not be created.");
+      const room = new LK.Room({ adaptiveStream: true, dynacast: true });
+      await room.connect(tokenData.livekit_url, tokenData.token, { autoSubscribe: true });
+      let tracks = [];
+      if (LK.createLocalTracks) {
+        tracks = await LK.createLocalTracks({ video: true, audio: true });
+        for (const track of tracks) await room.localParticipant.publishTrack(track);
+      } else {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        root.__pulseLiveGuestStream = stream;
+        tracks = stream.getTracks();
+        for (const track of tracks) await room.localParticipant.publishTrack(track);
+      }
+      root.__pulseLiveGuestRoom = room;
+      root.__pulseLiveGuestTracks = tracks;
+      root.__pulseLiveGuestPublished = true;
+      setText(root, "[data-live-join-status]", "You are live as a guest. Host controls remain server-gated.");
+      qsa(root, "[data-live-guest-join]").forEach((button) => { button.textContent = "Guest live"; button.disabled = true; });
+      window.addEventListener("pagehide", () => {
+        stopGuestMedia(root);
+        try { room.disconnect?.(); } catch (_) {}
+      }, { once: true });
+    } finally {
+      root.__pulseLiveGuestPublishing = false;
+    }
+  }
+
+  async function shareLive(root) {
+    const url = new URL(`/pulse/live/${encodeURIComponent(root.dataset.liveId || "")}`, window.location.origin).href;
+    try {
+      if (navigator.share) await navigator.share({ title: "PulseSoc Live", url });
+      else {
+        await navigator.clipboard?.writeText(url);
+        notify("Live link copied.");
+      }
+    } catch (_) {
+      notify("Live share was cancelled.");
     }
   }
 
@@ -1438,6 +1704,64 @@
     });
     qsa(root, "[data-check-mux-status]").forEach((button) => {
         button.addEventListener("click", () => checkMuxStatus(root));
+    });
+    root.addEventListener("click", async (event) => {
+      const joinButton = event.target?.closest?.("[data-live-join-request]");
+      const cancelButton = event.target?.closest?.("[data-live-cancel-request]");
+      const requestButton = event.target?.closest?.("[data-live-request-action]");
+      const guestButton = event.target?.closest?.("[data-live-guest-action], [data-live-guest-leave]");
+      const shareButton = event.target?.closest?.("[data-live-share]");
+      const backstageButton = event.target?.closest?.("[data-live-open-backstage]");
+      if (!joinButton && !cancelButton && !requestButton && !guestButton && !shareButton && !backstageButton) return;
+      if (joinButton) {
+        event.preventDefault();
+        await requestJoinLive(root);
+        return;
+      }
+      if (cancelButton) {
+        event.preventDefault();
+        try {
+          await cancelJoinRequest(root, cancelButton.dataset.liveRequestId || "");
+        } catch (error) {
+          notify(error.message || "Request could not be cancelled.");
+        }
+        return;
+      }
+      if (requestButton) {
+        event.preventDefault();
+        requestButton.disabled = true;
+        try {
+          await hostJoinRequestAction(root, requestButton.dataset.liveRequestId || "", requestButton.dataset.liveRequestAction || "");
+        } catch (error) {
+          notify(error.message || "Join request action failed.");
+        } finally {
+          requestButton.disabled = false;
+        }
+        return;
+      }
+      if (guestButton) {
+        event.preventDefault();
+        const action = guestButton.dataset.liveGuestAction || (guestButton.matches("[data-live-guest-leave]") ? "leave" : "");
+        const guestId = guestButton.dataset.liveGuestId || "";
+        guestButton.disabled = true;
+        try {
+          await hostGuestAction(root, guestId, action);
+        } catch (error) {
+          notify(error.message || "Guest action failed.");
+        } finally {
+          guestButton.disabled = false;
+        }
+        return;
+      }
+      if (shareButton) {
+        event.preventDefault();
+        await shareLive(root);
+        return;
+      }
+      if (backstageButton) {
+        event.preventDefault();
+        qs(root, "[data-live-backstage-panel]")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
     });
     scheduleMuxPolling(root);
     const unmuteButton = qs(root, "[data-live-unmute]");

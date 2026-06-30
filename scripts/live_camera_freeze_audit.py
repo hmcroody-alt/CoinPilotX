@@ -44,7 +44,9 @@ def audit_live_file(path: Path) -> None:
         require(event_name in source, f"{name} handles mobile lifecycle event {event_name}")
     require("TrackMuted" in source and "TrackUnmuted" in source and "LocalTrackUnpublished" in source, f"{name} monitors LiveKit track lifecycle")
     require("live_video_recovery_success" in source and "live_video_recovery_failed" in source, f"{name} logs recovery outcomes")
-    get_user_media_calls = len(re.findall(r"\bgetUserMedia\s*\(", source))
+    boot_camera = re.search(r"function bootCamera\(root\) \{(?P<body>.*?)\n  function init\(root\)", source, re.S)
+    publisher_source = boot_camera.group("body") if boot_camera else source
+    get_user_media_calls = len(re.findall(r"\bgetUserMedia\s*\(", publisher_source))
     require(get_user_media_calls <= 1, f"{name} avoids duplicate direct getUserMedia publisher calls")
 
 
