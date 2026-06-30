@@ -888,6 +888,11 @@
     ["wow", "😮", "Wow"],
     ["brutal", "😢", "Sad"],
     ["scam_alert", "😡", "Angry"],
+    ["fire", "🔥", "Fire"],
+    ["fast_signal", "⚡", "Genius"],
+    ["elite", "💎", "Valuable"],
+    ["bullish", "🚀", "Bullish"],
+    ["bearish", "🐻", "Bearish"],
   ];
 
   function reactionEmojiFor(type) {
@@ -900,7 +905,22 @@
   }
 
   function reactionEmojis(post) {
-    const map = { like: "👍", love: "❤️", fire: "🔥", funny: "😂", laugh: "😂", wow: "😮", brutal: "😢", sad: "😢", scam_alert: "😡" };
+    const map = {
+      like: "👍",
+      love: "❤️",
+      fire: "🔥",
+      funny: "😂",
+      laugh: "😂",
+      wow: "😮",
+      brutal: "😢",
+      sad: "😢",
+      scam_alert: "😡",
+      fast_signal: "⚡",
+      smart: "⚡",
+      elite: "💎",
+      bullish: "🚀",
+      bearish: "🐻",
+    };
     const counts = post.reaction_counts || {};
     const active = Object.keys(counts).filter(type => count(counts[type]) > 0).sort((a, b) => count(counts[b]) - count(counts[a]));
     const emojis = (active.length ? active : ["like", "love", "funny", "wow", "brutal", "scam_alert"]).slice(0, 6).map(type => map[type] || "👍");
@@ -1129,6 +1149,132 @@
     if (caption.childElementCount) card.appendChild(caption);
   }
 
+  function musicPayload(post, item = {}) {
+    const track = post.music || null;
+    const audioUrl = track?.attached_audio_url || track?.audio_url || track?.preview_url || item.attached_audio_url || "";
+    if (!track?.is_creator_safe || !audioUrl) return null;
+    return {
+      title: track.title || item.audio_title || "Approved track",
+      artist: track.artist || item.audio_artist || "PulseSoc Music",
+      audioUrl,
+      audioId: track.audio_id || track.track_id || item.audio_id || "",
+      musicId: track.track_id || track.audio_id || item.music_id || "",
+      duration: track.audio_duration || track.duration_seconds || item.audio_duration || 0,
+      startTime: track.audio_start_time || item.audio_start_time || 0,
+      volume: track.audio_volume || item.audio_volume || 1,
+    };
+  }
+
+  function pauseActivePostMusic(exceptTarget = null) {
+    if (!activePostMusic || activePostMusic === exceptTarget) return;
+    try {
+      if (activePostMusic.kind === "video") {
+        window.PulseMediaRenderer?.pauseAttachedAudio?.(activePostMusic.target);
+        activePostMusic.target?.pause?.();
+      } else {
+        activePostMusic.target?.pause?.();
+      }
+      activePostMusic.player?.classList?.remove("is-playing");
+      const button = activePostMusic.player?.querySelector?.(".post-music-toggle");
+      if (button) {
+        button.dataset.playing = "0";
+        button.textContent = "▶";
+      }
+    } catch (_) {}
+    activePostMusic = null;
+  }
+
+  function renderPostMusicOverlay(frame, post, item = {}) {
+    const track = musicPayload(post, item);
+    if (!track) return;
+    frame.classList.add("has-media-music-overlay");
+    frame.dataset.audioId = track.audioId;
+    frame.dataset.musicId = track.musicId;
+    frame.dataset.attachedAudioUrl = track.audioUrl;
+    frame.dataset.audioTitle = track.title;
+    frame.dataset.audioArtist = track.artist;
+    frame.dataset.audioDuration = track.duration;
+    frame.dataset.audioStartTime = track.startTime;
+    frame.dataset.audioVolume = track.volume;
+    frame.dataset.originalAudioMuted = "true";
+
+    const player = element("section", "post-music-player post-media-music-overlay");
+    player.dataset.postMusic = post.id;
+    player.dataset.attachedAudioUrl = track.audioUrl;
+    player.setAttribute("aria-label", `${track.title} by ${track.artist}`);
+    const button = element("button", "post-music-toggle", "▶");
+    button.type = "button";
+    button.setAttribute("aria-label", `Play ${track.title}`);
+    const copy = element("span", "post-music-copy");
+    copy.append(
+      element("strong", "", track.title),
+      element("small", "", track.artist || "PulseSoc Music")
+    );
+    const wave = element("span", "post-music-wave", "");
+    for (let index = 0; index < 18; index += 1) {
+      wave.appendChild(element("i", "", ""));
+    }
+    const eq = element("span", "post-music-eq", "≋");
+    eq.setAttribute("aria-hidden", "true");
+    button.addEventListener("click", async event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const media = frame.querySelector("video");
+      const shouldPlay = button.dataset.playing !== "1";
+      if (shouldPlay) {
+        pauseActivePostMusic(media || player);
+        try {
+          if (media) {
+            window.PulseMediaRenderer?.forceOriginalAudioMuted?.(media, "home-post-music-overlay");
+            window.PulseMediaRenderer?.setSoundEnabled?.(true);
+            window.PulseMediaRenderer?.setAttachedAudioMuted?.(media, false, true, true);
+            const attachedStarted = await window.PulseMediaRenderer?.playAttachedAudio?.(media, true, true);
+            await media.play();
+            if (!attachedStarted && window.PulseMediaRenderer?.hasAttachedAudio?.(media)) throw new Error("attached-audio-blocked");
+            activePostMusic = { kind: "video", target: media, player };
+          } else {
+            let audio = player._pulseAudio;
+            if (!audio) {
+              audio = new Audio(track.audioUrl);
+              audio.preload = "metadata";
+              audio.volume = Number(track.volume || 1);
+              audio.addEventListener("ended", () => {
+                button.dataset.playing = "0";
+                button.textContent = "▶";
+                button.setAttribute("aria-label", `Play ${track.title}`);
+                player.classList.remove("is-playing");
+                if (activePostMusic?.target === audio) activePostMusic = null;
+              });
+              player._pulseAudio = audio;
+            }
+            await audio.play();
+            activePostMusic = { kind: "audio", target: audio, player };
+          }
+          button.dataset.playing = "1";
+          button.textContent = "❚❚";
+          button.setAttribute("aria-label", `Pause ${track.title}`);
+          player.classList.add("is-playing");
+        } catch (_) {
+          toast("Music could not play. Check your device audio settings.");
+        }
+      } else {
+        pauseActivePostMusic();
+        button.dataset.playing = "0";
+        button.textContent = "▶";
+        button.setAttribute("aria-label", `Play ${track.title}`);
+        player.classList.remove("is-playing");
+      }
+    });
+    frame.querySelector("video")?.addEventListener("pause", () => {
+      button.dataset.playing = "0";
+      button.textContent = "▶";
+      player.classList.remove("is-playing");
+      if (activePostMusic?.target === frame.querySelector("video")) activePostMusic = null;
+    });
+    player.append(button, copy, wave, eq);
+    frame.appendChild(player);
+  }
+
   function renderMedia(post, items) {
     const wrap = element("div", "post-card-media");
     (items || []).slice(0, 4).forEach((item, index) => {
@@ -1148,7 +1294,7 @@
       frame.dataset.mediaType = video ? "video" : "image";
       frame.dataset.mediaPoster = item.thumbnail_url || item.poster_url || "";
       frame.dataset.doubleTapLike = post.id;
-      const attachedAudio = post.music?.attached_audio_url || post.music?.audio_url || post.music?.preview_url || item.attached_audio_url || "";
+      const attachedAudio = musicPayload(post, item)?.audioUrl || "";
       if (attachedAudio) {
         frame.dataset.audioId = post.music?.audio_id || post.music?.track_id || item.audio_id || "";
         frame.dataset.musicId = post.music?.track_id || post.music?.audio_id || item.music_id || "";
@@ -1189,15 +1335,15 @@
         image.decoding = "async";
         frame.appendChild(image);
       }
+      if (index === 0) renderPostMusicOverlay(frame, post, item);
       wrap.appendChild(frame);
     });
     return wrap.childElementCount ? wrap : null;
   }
 
   function renderPostMusic(card, post) {
-    const track = post.music || null;
-    const audioUrl = track?.attached_audio_url || track?.audio_url || track?.preview_url || "";
-    if (!track?.is_creator_safe || !audioUrl) return;
+    const track = musicPayload(post);
+    if (!track) return;
     card.classList.add("has-attached-music");
     card.querySelectorAll("video").forEach(video => {
       window.PulseMediaRenderer?.forceOriginalAudioMuted?.(video, "home-render-attached-music");
@@ -1207,78 +1353,26 @@
         video.volume = 0;
       }
     });
-    const player = element("section", "post-music-player");
-    player.dataset.postMusic = post.id;
-    player.dataset.attachedAudioUrl = audioUrl;
-    const button = element("button", "post-music-toggle", "▶");
-    button.type = "button";
-    button.setAttribute("aria-label", `Play ${track.title || "attached music"}`);
-    const copy = element("span", "post-music-copy");
-    copy.append(
-      element("strong", "", track.title || "Approved track"),
-      element("small", "", `${track.artist || "PulseSoc Music"} · Using attached audio · Original audio muted`)
-    );
-    button.addEventListener("click", async () => {
-      const video = card.querySelector("video");
-      if (!video || !window.PulseMediaRenderer?.hasAttachedAudio?.(video)) {
-        toast("Attached music is not available for this post.");
-        return;
-      }
-      const shouldPlay = button.dataset.playing !== "1";
-      if (shouldPlay) {
-        if (activePostMusic && activePostMusic !== video) window.PulseMediaRenderer?.pauseAttachedAudio?.(activePostMusic);
-        window.PulseMediaRenderer?.forceOriginalAudioMuted?.(video, "home-post-music-button");
-        window.PulseMediaRenderer?.setSoundEnabled?.(true);
-        window.PulseMediaRenderer?.setAttachedAudioMuted?.(video, false, true, true);
-        try {
-          const attachedStarted = await window.PulseMediaRenderer?.playAttachedAudio?.(video, true, true);
-          await video.play();
-          if (!attachedStarted) throw new Error("attached-audio-blocked");
-          activePostMusic = video;
-          button.dataset.playing = "1";
-          button.textContent = "❚❚";
-          button.setAttribute("aria-label", `Pause ${track.title || "attached music"}`);
-          player.classList.add("is-playing");
-        } catch (_) {
-          toast("Music could not play. Check your device audio settings.");
-        }
-      } else {
-        window.PulseMediaRenderer?.pauseAttachedAudio?.(video);
-        video.pause();
-        button.dataset.playing = "0";
-        button.textContent = "▶";
-        button.setAttribute("aria-label", `Play ${track.title || "attached music"}`);
-        player.classList.remove("is-playing");
-        if (activePostMusic === video) activePostMusic = null;
-      }
-    });
-    card.querySelector("video")?.addEventListener("pause", () => {
-      button.dataset.playing = "0";
-      button.textContent = "▶";
-      player.classList.remove("is-playing");
-      if (activePostMusic === card.querySelector("video")) activePostMusic = null;
-    });
-    player.append(button, copy);
-    card.appendChild(player);
   }
 
   function renderEngagement(card, post) {
     const row = element("div", "post-engagement-summary post-engagement-summary-v3");
     row.setAttribute(
       "aria-label",
-      `${reactionEmojis(post)} ${compactNumber(reactionTotal(post))}, ${compactNumber(post.comments_count || post.comment_count)} comments, ${compactNumber(post.repost_count || post.reposts_count)} reposts, ${compactNumber(post.share_count || post.shares_count)} shares, ${compactNumber(post.view_count)} views`
+      `${reactionEmojis(post)} ${compactNumber(reactionTotal(post))} reactions, ${compactNumber(post.comments_count || post.comment_count)} comments, ${compactNumber(post.repost_count || post.reposts_count)} reposts, ${compactNumber(post.share_count || post.shares_count)} shares, ${compactNumber(post.save_count || post.saves_count)} saves`
     );
     const reactions = element("span", "post-reaction-emojis", "");
     reactions.append(
       element("span", "post-reaction-icons", reactionEmojis(post)),
       document.createTextNode(" "),
-      element("span", "post-reaction-total", compactNumber(reactionTotal(post)))
+      element("span", "post-reaction-total", `${compactNumber(reactionTotal(post))} Reactions`)
     );
     row.appendChild(reactions);
     const metrics = [
       ["comments", post.comments_count || post.comment_count, "Comment", "Comments"],
       ["reposts", post.repost_count || post.reposts_count, "Repost", "Reposts"],
       ["shares", post.share_count || post.shares_count, "Share", "Shares"],
+      ["saves", post.save_count || post.saves_count, "Save", "Saves"],
     ];
     metrics.forEach(([key, value, singular, plural]) => {
       const item = element("span", "post-summary-metric", "");
@@ -1369,8 +1463,8 @@
       live.href = post.live.live_url;
       card.appendChild(live);
     }
-    renderPostMusic(card, post);
     if (media) card.appendChild(media);
+    renderPostMusic(card, post);
     renderEngagement(card, post);
     renderActions(card, post);
     renderComposer(card, post);
@@ -1550,7 +1644,7 @@
     });
     if (Object.keys(counts || {}).length) {
       document.querySelectorAll(`[data-post-id="${postId}"] .post-reaction-emojis`).forEach(node => {
-        node.textContent = `${reactionEmojis({ reaction_counts: counts })} ${compactNumber(total)}`;
+        node.textContent = `${reactionEmojis({ reaction_counts: counts })} ${compactNumber(total)} Reactions`;
       });
       document.querySelectorAll(`[data-post-like-count="${postId}"]`).forEach(node => {
         node.textContent = compactNumber(total);

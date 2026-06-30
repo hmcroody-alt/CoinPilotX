@@ -3947,7 +3947,6 @@ z-index: -1 !important;
 .feed > .pulse-feed-post-v3 .post-creator-drawer,
 .feed > .pulse-feed-post-v3 .post-card-menu { order: 2 !important; }
 .feed > .pulse-feed-post-v3 .post-caption { order: 3 !important; }
-.feed > .pulse-feed-post-v3 .post-music-player { order: 4 !important; }
 .feed > .pulse-feed-post-v3 > .post-card-media { order: 5 !important; }
 .feed > .pulse-feed-post-v3 .post-engagement-summary { order: 6 !important; }
 .feed > .pulse-feed-post-v3 .pulse-feed-actions-v3 { order: 7 !important; }
@@ -4055,15 +4054,16 @@ backdrop-filter: blur(12px) !important;
 
 .feed > .pulse-feed-post-v3 .post-caption {
 display: grid !important;
-gap: 7px !important;
-padding: 2px 2px 0 !important;
+gap: 8px !important;
+padding: 4px 2px 0 !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-caption h2 {
 margin: 0 !important;
-font-size: clamp(18px, 2vw, 23px) !important;
-line-height: 1.18 !important;
-font-weight: 900 !important;
+font-size: clamp(24px, 3vw, 34px) !important;
+line-height: 1.06 !important;
+font-weight: 950 !important;
+letter-spacing: -.035em !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-caption p {
@@ -4076,9 +4076,9 @@ letter-spacing: -.01em !important;
 
 .feed > .pulse-feed-post-v3 .post-card-tags {
 display: flex !important;
-gap: 8px !important;
+gap: 10px !important;
 flex-wrap: wrap !important;
-margin-top: 1px !important;
+margin-top: -1px !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-card-tags .tag {
@@ -4092,54 +4092,107 @@ text-decoration: none !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-music-player {
-width: fit-content !important;
-max-width: min(100%, 420px) !important;
-min-height: 42px !important;
+position: absolute !important;
+left: clamp(10px, 2vw, 18px) !important;
+right: clamp(10px, 2vw, 18px) !important;
+bottom: clamp(10px, 2vw, 18px) !important;
+z-index: 8 !important;
+width: auto !important;
+max-width: none !important;
+min-height: 54px !important;
 display: grid !important;
-grid-template-columns: 34px minmax(0, 1fr) !important;
+grid-template-columns: 46px minmax(0, 1fr) minmax(82px, 150px) 28px !important;
 align-items: center !important;
-gap: 8px !important;
-padding: 5px 12px 5px 5px !important;
-border-radius: 999px !important;
-background: linear-gradient(145deg, rgba(255,255,255,.075), rgba(255,255,255,.024)), rgba(5,12,24,.46) !important;
-border: 1px solid rgba(166, 88, 255, .42) !important;
-box-shadow: inset 0 0 14px rgba(255,255,255,.035), 0 0 18px rgba(166,88,255,.14) !important;
-backdrop-filter: blur(16px) saturate(160%) !important;
--webkit-backdrop-filter: blur(16px) saturate(160%) !important;
-}
-
-.feed > .pulse-feed-post-v3 .post-music-player::after {
-content: "" !important;
-width: 42px !important;
-height: 14px !important;
-justify-self: end !important;
+gap: 10px !important;
+padding: 8px 12px 8px 8px !important;
+border-radius: 20px !important;
 background:
-linear-gradient(90deg, transparent 0 6%, #b06cff 6% 10%, transparent 10% 18%, #6edff6 18% 22%, transparent 22% 32%, #36e58f 32% 37%, transparent 37% 48%, #b06cff 48% 52%, transparent 52% 66%, #6edff6 66% 70%, transparent 70%) !important;
-opacity: .74 !important;
-animation: postV3Wave 1.1s ease-in-out infinite !important;
-grid-column: 2 !important;
+linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.035)),
+rgba(2, 7, 16, .62) !important;
+border: 1px solid rgba(255,255,255,.13) !important;
+box-shadow: inset 0 0 24px rgba(255,255,255,.035), 0 18px 50px rgba(0,0,0,.34), 0 0 28px rgba(140,77,255,.20) !important;
+backdrop-filter: blur(22px) saturate(170%) !important;
+-webkit-backdrop-filter: blur(22px) saturate(170%) !important;
 }
 
-.feed > .pulse-feed-post-v3 .post-music-player:not(.is-playing)::after {
-animation-play-state: paused !important;
-opacity: .34 !important;
+.feed > .pulse-feed-post-v3 .post-music-player::before {
+content: "" !important;
+position: absolute !important;
+inset: auto 12px 0 58px !important;
+height: 1px !important;
+background: linear-gradient(90deg, rgba(176,108,255,.9), rgba(47,140,255,.85), rgba(54,229,143,.6), transparent) !important;
+opacity: .7 !important;
+pointer-events: none !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-music-toggle {
-width: 34px !important;
-height: 34px !important;
-min-height: 34px !important;
+width: 46px !important;
+height: 46px !important;
+min-height: 46px !important;
 border-radius: 999px !important;
 padding: 0 !important;
+font-size: 17px !important;
+background: radial-gradient(circle at 35% 25%, rgba(255,255,255,.22), transparent 36%), linear-gradient(135deg, rgba(47,140,255,.95), rgba(140,77,255,.96)) !important;
+border: 1px solid rgba(255,255,255,.18) !important;
+box-shadow: 0 0 28px rgba(47,140,255,.28), 0 0 24px rgba(140,77,255,.24) !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-music-copy strong {
-font-size: 13px !important;
+display: block !important;
+font-size: clamp(14px, 1.5vw, 17px) !important;
 font-weight: 950 !important;
+line-height: 1.1 !important;
+white-space: nowrap !important;
+overflow: hidden !important;
+text-overflow: ellipsis !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-music-copy small {
-font-size: 11px !important;
+display: block !important;
+margin-top: 3px !important;
+font-size: 12px !important;
+line-height: 1.1 !important;
+color: rgba(224,237,248,.70) !important;
+white-space: nowrap !important;
+overflow: hidden !important;
+text-overflow: ellipsis !important;
+}
+
+.feed > .pulse-feed-post-v3 .post-music-wave {
+height: 24px !important;
+display: grid !important;
+grid-template-columns: repeat(18, 1fr) !important;
+align-items: end !important;
+gap: 3px !important;
+opacity: .88 !important;
+}
+
+.feed > .pulse-feed-post-v3 .post-music-wave i {
+display: block !important;
+width: 3px !important;
+height: calc(7px + (var(--wave-step, 1) * 1px)) !important;
+min-height: 6px !important;
+border-radius: 999px !important;
+background: linear-gradient(180deg, #6edff6, #2f8cff 46%, #b06cff) !important;
+box-shadow: 0 0 9px rgba(47,140,255,.36) !important;
+animation: postV3Wave 1.05s ease-in-out infinite !important;
+animation-delay: calc(var(--wave-index, 0) * -72ms) !important;
+}
+
+.feed > .pulse-feed-post-v3 .post-music-player:not(.is-playing) .post-music-wave i {
+animation-play-state: paused !important;
+opacity: .44 !important;
+}
+
+.feed > .pulse-feed-post-v3 .post-music-wave i:nth-child(3n+1) { --wave-step: 8; --wave-index: 1; }
+.feed > .pulse-feed-post-v3 .post-music-wave i:nth-child(3n+2) { --wave-step: 14; --wave-index: 2; }
+.feed > .pulse-feed-post-v3 .post-music-wave i:nth-child(3n) { --wave-step: 20; --wave-index: 3; }
+
+.feed > .pulse-feed-post-v3 .post-music-eq {
+font-size: 24px !important;
+line-height: 1 !important;
+color: #b06cff !important;
+filter: drop-shadow(0 0 10px rgba(176,108,255,.42)) !important;
 }
 
 .feed > .pulse-feed-post-v3 > .post-card-media {
@@ -4150,6 +4203,7 @@ display: block !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-card-media-frame {
+position: relative !important;
 width: 100% !important;
 border: 0 !important;
 border-radius: clamp(14px, 2vw, 22px) !important;
@@ -4170,9 +4224,10 @@ box-shadow: 0 22px 70px rgba(0,0,0,.38), 0 0 40px rgba(110,223,246,.14) !importa
 .feed > .pulse-feed-post-v3 .post-card-media-frame video {
 display: block !important;
 width: 100% !important;
-height: auto !important;
-max-height: min(78vh, 860px) !important;
-object-fit: contain !important;
+height: clamp(360px, 67vw, 790px) !important;
+max-height: min(80vh, 900px) !important;
+object-fit: cover !important;
+object-position: center center !important;
 background: #020711 !important;
 border: 0 !important;
 border-radius: 0 !important;
@@ -4211,7 +4266,7 @@ display: flex !important;
 align-items: center !important;
 justify-content: space-between !important;
 gap: 10px 14px !important;
-padding: 4px 2px 0 !important;
+padding: 8px 2px 0 !important;
 margin: 0 !important;
 border: 0 !important;
 color: rgba(224,237,248,.82) !important;
@@ -4226,6 +4281,10 @@ align-items: center !important;
 gap: 8px !important;
 min-width: 0 !important;
 font-weight: 950 !important;
+padding: 4px 9px 4px 5px !important;
+border-radius: 999px !important;
+background: rgba(255,255,255,.045) !important;
+border: 1px solid rgba(255,255,255,.07) !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-reaction-icons {
@@ -4247,7 +4306,7 @@ display: grid !important;
 grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
 gap: 2px !important;
 width: 100% !important;
-padding: 7px 0 6px !important;
+padding: 8px 0 7px !important;
 border-top: 1px solid rgba(255,255,255,.07) !important;
 border-bottom: 1px solid rgba(255,255,255,.07) !important;
 overflow: visible !important;
@@ -4364,25 +4423,25 @@ outline-offset: 2px !important;
 
 .feed > .pulse-feed-post-v3 .post-comment-composer {
 display: grid !important;
-grid-template-columns: 38px minmax(0, 1fr) 40px 40px 46px !important;
+grid-template-columns: 44px minmax(0, 1fr) 42px 42px 50px !important;
 align-items: center !important;
-gap: 7px !important;
-min-height: 50px !important;
-padding: 0 2px 2px !important;
+gap: 8px !important;
+min-height: 52px !important;
+padding: 2px 2px 2px !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-comment-composer .pulse-comment-avatar,
 .feed > .pulse-feed-post-v3 .post-comment-composer .post-card-avatar {
-width: 38px !important;
-height: 38px !important;
-min-width: 38px !important;
-min-height: 38px !important;
+width: 44px !important;
+height: 44px !important;
+min-width: 44px !important;
+min-height: 44px !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-comment-composer input {
-height: 42px !important;
-min-height: 42px !important;
-padding: 0 14px !important;
+height: 48px !important;
+min-height: 48px !important;
+padding: 0 18px !important;
 border-radius: 999px !important;
 background: rgba(255,255,255,.055) !important;
 border: 1px solid rgba(255,255,255,.12) !important;
@@ -4391,26 +4450,26 @@ font-size: 15px !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-comment-composer .pulse-comment-action {
-width: 40px !important;
-height: 40px !important;
-min-width: 40px !important;
-min-height: 40px !important;
+width: 42px !important;
+height: 42px !important;
+min-width: 42px !important;
+min-height: 42px !important;
 border-radius: 999px !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-comment-composer [data-comment-send] {
 display: grid !important;
-width: 46px !important;
-height: 46px !important;
-min-width: 46px !important;
-min-height: 46px !important;
+width: 50px !important;
+height: 50px !important;
+min-width: 50px !important;
+min-height: 50px !important;
 background: linear-gradient(135deg, #2f8cff, #8c4dff) !important;
 box-shadow: 0 0 24px rgba(140,77,255,.28) !important;
 }
 
 @keyframes postV3Wave {
-0%, 100% { transform: scaleY(.58); opacity: .45; }
-50% { transform: scaleY(1); opacity: .9; }
+0%, 100% { transform: scaleY(.42); opacity: .48; }
+50% { transform: scaleY(1); opacity: .96; }
 }
 
 @media (max-width: 620px) {
@@ -4442,6 +4501,11 @@ margin-inline: -10px !important;
 border-radius: 14px !important;
 }
 
+.feed > .pulse-feed-post-v3 .post-card-media-frame img,
+.feed > .pulse-feed-post-v3 .post-card-media-frame video {
+height: clamp(330px, 102vw, 680px) !important;
+}
+
 .feed > .pulse-feed-post-v3 .post-engagement-summary-v3 {
 font-size: 12px !important;
 gap: 6px !important;
@@ -4463,8 +4527,22 @@ font-size: 10px !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-comment-composer {
-grid-template-columns: 36px minmax(0, 1fr) 38px 38px 44px !important;
+grid-template-columns: 40px minmax(0, 1fr) 38px 38px 46px !important;
 gap: 5px !important;
+}
+
+.feed > .pulse-feed-post-v3 .post-music-player {
+grid-template-columns: 44px minmax(0, 1fr) 74px !important;
+min-height: 52px !important;
+padding: 7px 10px 7px 7px !important;
+}
+
+.feed > .pulse-feed-post-v3 .post-music-eq {
+display: none !important;
+}
+
+.feed > .pulse-feed-post-v3 .post-music-wave {
+gap: 2px !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-comment-composer input {
@@ -4489,7 +4567,15 @@ font-size: 9px !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-comment-composer {
-grid-template-columns: 34px minmax(0, 1fr) 36px 36px 42px !important;
+grid-template-columns: 38px minmax(0, 1fr) 36px 36px 44px !important;
+}
+
+.feed > .pulse-feed-post-v3 .post-music-player {
+grid-template-columns: 42px minmax(0, 1fr) !important;
+}
+
+.feed > .pulse-feed-post-v3 .post-music-wave {
+display: none !important;
 }
 }
 

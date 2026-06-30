@@ -47,8 +47,8 @@ def main() -> int:
     order_tokens = [
         "renderCreatorHeader(card, post, author, authorName, label)",
         "renderCaption(card, post)",
-        "renderPostMusic(card, post)",
         "if (media) card.appendChild(media)",
+        "renderPostMusic(card, post)",
         "renderEngagement(card, post)",
         "renderActions(card, post)",
         "renderComposer(card, post)",

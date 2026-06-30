@@ -131,7 +131,7 @@
       "passed": true
     },
     {
-      "details": "[737, 901, 1101, 1134, 1174, 1208, 1239]",
+      "details": "[737, 901, 1101, 1141, 1174, 1208, 1239]",
       "name": "Feed render order matches required structure",
       "passed": true
     },

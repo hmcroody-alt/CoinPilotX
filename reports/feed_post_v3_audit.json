@@ -7,22 +7,37 @@
     },
     {
       "details": "",
-      "name": "Pulse page loads Feed V3 CSS asset",
+      "name": "Pulse page loads Feed V3 media overlay CSS asset",
       "passed": true
     },
     {
-      "details": "[737, 901, 1101, 1134, 1174, 1208, 1239]",
+      "details": "",
+      "name": "Pulse page loads Feed V3 media overlay JS asset",
+      "passed": true
+    },
+    {
+      "details": "[737, 901, 1101, 1141, 1174, 1208, 1239]",
       "name": "Required feed hierarchy order is preserved",
       "passed": true
     },
     {
       "details": "",
-      "name": "Music is ordered before media in CSS",
+      "name": "Music overlay is inside media, not a separate card",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Music overlay is positioned inside media",
       "passed": true
     },
     {
       "details": "",
       "name": "Media is edge-to-edge inside the post",
+      "passed": true
+    },
+    {
+      "details": "",
+      "name": "Media uses immersive cover behavior",
       "passed": true
     },
     {
@@ -37,7 +52,7 @@
     },
     {
       "details": "",
-      "name": "Reaction summary excludes view metric in V3 renderer",
+      "name": "Reaction summary uses comments reposts shares saves only",
       "passed": true
     },
     {
@@ -62,7 +77,7 @@
     },
     {
       "details": "",
-      "name": "Reaction picker uses backend reaction types",
+      "name": "Reaction picker uses expanded backend reaction types",
       "passed": true
     },
     {
