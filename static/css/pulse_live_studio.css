@@ -7,6 +7,44 @@
   --live-gold: #ffd166;
 }
 
+body.pulse-live-shell-mode {
+  overflow-x: hidden;
+}
+
+body.pulse-live-shell-mode > main.wrap {
+  width: min(100% - 24px, 1760px);
+  max-width: none;
+  padding-top: clamp(10px, 1vw, 18px);
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+}
+
+body.pulse-live-shell-mode > main.wrap > .nav,
+body.pulse-live-shell-mode > main.wrap > .mobile-topbar,
+body.pulse-live-shell-mode > .mobile-bottom-nav,
+body.pulse-home-os.pulse-live-shell-mode > .mobile-bottom-nav.pulse-universal-dock,
+body.pulse-live-shell-mode > .pulse-fab {
+  display: none !important;
+}
+
+body.pulse-live-shell-mode .pulse-live-shell-layout {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 0;
+}
+
+body.pulse-live-shell-mode .pulse-live-shell-layout > div {
+  min-width: 0;
+  width: 100%;
+}
+
+body.pulse-live-shell-mode .pulse-live-shell-layout > aside {
+  display: none !important;
+}
+
+body.pulse-live-shell-mode .pulse-live-surface {
+  width: 100%;
+  margin: 0 auto;
+}
+
 .live-command-shell,
 .live-view-shell {
   display: grid;
@@ -636,7 +674,7 @@
 
 .studio-insights-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
   gap: 10px;
 }
 
@@ -656,7 +694,7 @@
 
 .studio-quick-actions {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr));
   gap: 8px;
 }
 

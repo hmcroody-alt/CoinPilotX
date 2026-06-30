@@ -20,6 +20,10 @@ def require(condition: bool, message: str) -> None:
 
 def main() -> int:
     require("studio-pro-shell" in BOT and ".studio-pro-shell" in CSS, "desktop studio shell exists")
+    require("pulse-live-shell-mode" in BOT and "data-pulse-live-shell" in BOT, "Live pages enter dedicated shell mode")
+    require("pulse-live-shell-layout" in BOT and 'shell_side_html = "" if live_shell_mode' in BOT, "Live shell removes default right rail")
+    require("body.pulse-live-shell-mode > main.wrap" in CSS and "1760px" in CSS, "Live shell widens workspace")
+    require("body.pulse-home-os.pulse-live-shell-mode > .mobile-bottom-nav.pulse-universal-dock" in CSS and "body.pulse-live-shell-mode > .pulse-fab" in CSS, "Live shell suppresses overlapping mobile dock chrome")
     require("studio-sidebar" in BOT and "studio-workspace" in BOT, "desktop studio has left rail and workspace")
     require("studio-hero-preview" in BOT and ".studio-hero-preview" in CSS, "main desktop video area is large")
     require("live-chat-panel studio-chat-panel" in BOT, "right chat panel exists")

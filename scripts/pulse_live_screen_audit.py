@@ -20,6 +20,8 @@ def require(condition: bool, message: str) -> None:
 
 def main() -> int:
     require("live-screen-v1" in BOT and ".live-screen-v1" in CSS, "shared immersive Live screen exists")
+    require("pulse-live-shell-mode" in BOT and "pulse-live-shell-layout" in BOT, "Live screen uses dedicated shell mode")
+    require("body.pulse-live-shell-mode .pulse-live-shell-layout > aside" in CSS, "Live screen hides default social shell sidebar")
     require("live-screen-grid" in BOT and "live-theater" in BOT, "Live screen uses desktop/tablet/mobile layout zones")
     require("live-badge" in BOT and "data-live-viewers" in BOT, "LIVE badge and real viewer count hook exist")
     require("live-host-identity" in BOT and "data-live-health" in BOT, "top header has host identity and health")
