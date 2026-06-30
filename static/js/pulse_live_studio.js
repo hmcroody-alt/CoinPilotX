@@ -39,7 +39,8 @@
     const state = qs(root, "[data-live-camera-state]");
     if (!state) return;
     state.textContent = message || "";
-    state.hidden = !message || root.classList.contains("is-camera-active");
+    const forceVisible = mode === "status" || mode === "warning" || mode === "error";
+    state.hidden = !message || (root.classList.contains("is-camera-active") && !forceVisible);
     state.classList.toggle("is-error", mode === "error");
   }
 
@@ -585,7 +586,11 @@
     let livekitPublishedTrackIds = new Set();
     let cameraStartPromise = null;
     let screenStartPromise = null;
+    let currentPublishKind = "";
+    let liveHealthManager = null;
+    let videoRecoveryPromise = null;
     const liveDebugSessionId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+    const LIVE_HOST_PUBLISHER = "LiveHostPublisher";
     function livekitClient() {
       return window.LivekitClient || window.LiveKitClient || window.livekitClient || null;
     }
@@ -599,13 +604,30 @@
       if (error?.pulseStage === "media-capture") return `Camera/microphone capture failed: ${message}`;
       return message;
     }
+    function mediaTrackOf(track) {
+      return track?.mediaStreamTrack || track?.track || (track && typeof track.kind === "string" && typeof track.stop === "function" ? track : null);
+    }
+    function localTrackKind(track) {
+      return String(track?.kind || mediaTrackOf(track)?.kind || "").toLowerCase();
+    }
+    function trackStableId(track) {
+      const mediaTrack = mediaTrackOf(track);
+      return mediaTrack?.id || track?.sid || track?.trackSid || "";
+    }
     function tracksToMediaStream(tracks) {
       const mediaStream = new MediaStream();
       tracks.forEach((track) => {
-        const mediaTrack = track?.mediaStreamTrack || track?.track;
+        const mediaTrack = mediaTrackOf(track);
         if (mediaTrack) mediaStream.addTrack(mediaTrack);
       });
       return mediaStream;
+    }
+    function cameraVideoProfiles() {
+      return [
+        { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } },
+        { facingMode: "user", width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 24, max: 30 } },
+        { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 20, max: 24 } },
+      ];
     }
     function livekitRoomState(room) {
       return String(room?.state || room?.connectionState || "").toLowerCase();
@@ -620,6 +642,10 @@
         live_id: root?.dataset?.liveId || "",
         room: root?.dataset?.livekitRoom || "",
         session_id: liveDebugSessionId,
+        owner: root?.dataset?.liveCameraOwner || "",
+        device: navigator.userAgentData?.platform || navigator.platform || "",
+        browser: navigator.userAgent || "",
+        timestamp: new Date().toISOString(),
         ...details,
       };
       console.info("PulseSoc LiveKit", payload);
@@ -645,6 +671,18 @@
       if (event === "publish_request_acknowledged") return "publish_request_acknowledged";
       if (event === "backend_waiting_for_tracks") return "backend_waiting_for_tracks";
       if (event === "egress_start_response") return "egress_start_response";
+      if ([
+        "live_camera_started",
+        "live_video_frame_seen",
+        "live_video_freeze_detected",
+        "live_video_recovery_started",
+        "live_video_track_reacquired",
+        "live_video_republished",
+        "live_video_recovery_success",
+        "live_video_recovery_failed",
+        "live_room_reconnect_started",
+        "live_room_reconnect_success",
+      ].includes(event)) return event;
       return "";
     }
     function sendLiveDebug(event, details = {}) {
@@ -661,14 +699,214 @@
       } catch (_) {}
     }
     function wireLocalTrackDiagnostics(track) {
-      const mediaTrack = track?.mediaStreamTrack || track?.track;
+      const mediaTrack = mediaTrackOf(track);
       if (!mediaTrack || mediaTrack.datasetPulseDiagnostics === "1") return;
       mediaTrack.datasetPulseDiagnostics = "1";
-      const kind = String(track?.kind || mediaTrack.kind || "").toLowerCase();
+      const kind = localTrackKind(track);
       const trackId = mediaTrack.id || track?.sid || "";
-      mediaTrack.addEventListener?.("ended", () => livekitLog("track_ended", { kind, track_id: trackId, ready_state: mediaTrack.readyState || "" }));
-      mediaTrack.addEventListener?.("mute", () => livekitLog("track_muted", { kind, track_id: trackId, ready_state: mediaTrack.readyState || "" }));
-      mediaTrack.addEventListener?.("unmute", () => livekitLog("track_unmuted", { kind, track_id: trackId, ready_state: mediaTrack.readyState || "" }));
+      mediaTrack.addEventListener?.("ended", () => {
+        livekitLog("track_ended", { kind, track_id: trackId, ready_state: mediaTrack.readyState || "" });
+        if (kind === "video") liveHealthManager?.trackProblem("track_ended", track);
+      });
+      mediaTrack.addEventListener?.("mute", () => {
+        livekitLog("track_muted", { kind, track_id: trackId, ready_state: mediaTrack.readyState || "" });
+        if (kind === "video") liveHealthManager?.trackProblem("track_muted", track);
+      });
+      mediaTrack.addEventListener?.("unmute", () => {
+        livekitLog("track_unmuted", { kind, track_id: trackId, ready_state: mediaTrack.readyState || "" });
+        if (kind === "video") liveHealthManager?.trackProblem("track_unmuted", track);
+      });
+    }
+    function stopLocalTrack(track) {
+      const mediaTrack = mediaTrackOf(track);
+      try { track?.detach?.().forEach((element) => element.remove?.()); } catch (_) {}
+      try { track?.stop?.(); } catch (_) {}
+      try { mediaTrack?.stop?.(); } catch (_) {}
+    }
+    function attachPreviewFromTracks(tracks) {
+      const videoTrack = tracks.find((track) => localTrackKind(track) === "video");
+      if (videoTrack?.attach) {
+        try {
+          videoTrack.attach(video);
+        } catch (_) {
+          video.srcObject = stream;
+        }
+      } else {
+        video.srcObject = stream;
+      }
+      video.muted = true;
+      video.defaultMuted = true;
+      video.volume = 0;
+      video.playsInline = true;
+      video.setAttribute("muted", "");
+      video.setAttribute("playsinline", "");
+      video.setAttribute("webkit-playsinline", "");
+      try { video.play?.().catch?.(() => {}); } catch (_) {}
+    }
+    function pauseCompetingLiveMedia() {
+      qsa(document, "video").forEach((node) => {
+        if (node === video || root.contains(node)) return;
+        try { node.pause?.(); } catch (_) {}
+        const mediaStream = node.srcObject;
+        if (mediaStream?.getTracks && node.dataset.liveCamera !== "1") {
+          mediaStream.getVideoTracks?.().forEach((track) => {
+            if (track.readyState === "live" && track.label && /camera|front|back|webcam/i.test(track.label)) {
+              try { track.stop(); } catch (_) {}
+            }
+          });
+        }
+      });
+    }
+    function claimLiveHostPublisher() {
+      const existing = window.__PulseSocLiveHostPublisher;
+      if (existing?.root && existing.root !== root) {
+        try { existing.stop?.("camera_owner_replaced_by_live_host_publisher"); } catch (_) {}
+      }
+      window.__PulseSocLiveHostPublisher = { name: LIVE_HOST_PUBLISHER, root, stop: (reason) => stop(reason) };
+      root.dataset.liveCameraOwner = LIVE_HOST_PUBLISHER;
+    }
+    function releaseLiveHostPublisher() {
+      if (window.__PulseSocLiveHostPublisher?.root === root) {
+        delete window.__PulseSocLiveHostPublisher;
+      }
+      delete root.dataset.liveCameraOwner;
+    }
+    async function collectVideoSenderStats() {
+      const stats = { fps: 0, bitrate: 0, framesEncoded: null, bytesSent: null, source: "" };
+      try {
+        for (const publication of localPublications(livekitRoom)) {
+          if (publicationKind(publication) !== "video") continue;
+          const sender = publication?.track?.sender || publication?.sender || publication?.track?.processorSender;
+          if (!sender?.getStats) continue;
+          const reports = await sender.getStats();
+          reports.forEach((report) => {
+            if (report.type === "outbound-rtp" && !report.isRemote && (report.kind === "video" || report.mediaType === "video")) {
+              stats.framesEncoded = Number(report.framesEncoded ?? report.framesSent ?? stats.framesEncoded ?? 0);
+              stats.bytesSent = Number(report.bytesSent ?? stats.bytesSent ?? 0);
+              stats.fps = Number(report.framesPerSecond || report.frameRate || stats.fps || 0);
+              stats.source = "sender.getStats";
+            }
+          });
+        }
+      } catch (_) {}
+      return stats;
+    }
+    function createLiveHealthManager() {
+      const freezeThresholdMs = 4500;
+      const checkIntervalMs = 1000;
+      let timer = 0;
+      let frameCallbackActive = false;
+      let lastFrameAt = 0;
+      let lastFrameCount = 0;
+      let lastFrameLogAt = 0;
+      let lastStats = { framesEncoded: null, bytesSent: null, sampledAt: 0 };
+      const lifecycleEvents = ["visibilitychange", "pageshow", "focus", "orientationchange", "resize"];
+      const stateDetails = (reason = "") => {
+        const videoTrack = stream?.getVideoTracks?.()[0] || null;
+        const audioTrack = stream?.getAudioTracks?.()[0] || null;
+        return {
+          reason,
+          track_state: videoTrack?.readyState || "missing",
+          track_muted: Boolean(videoTrack?.muted),
+          track_enabled: Boolean(videoTrack?.enabled),
+          audio_state: audioTrack?.readyState || "missing",
+          audio_enabled: Boolean(audioTrack?.enabled),
+          room_state: livekitRoomState(livekitRoom),
+          fps: Number(root.dataset.liveVideoFps || 0),
+          bitrate: Number(root.dataset.liveVideoBitrate || 0),
+          last_frame_age_ms: lastFrameAt ? Date.now() - lastFrameAt : null,
+          published_video_tracks: Number(root.dataset.livekitPublishedVideo || 0),
+          published_audio_tracks: Number(root.dataset.livekitPublishedAudio || 0),
+        };
+      };
+      const noteFrame = (metadata = {}) => {
+        lastFrameAt = Date.now();
+        lastFrameCount = Number(metadata.presentedFrames || lastFrameCount + 1);
+        if (lastFrameAt - lastFrameLogAt > 15000) {
+          lastFrameLogAt = lastFrameAt;
+          livekitLog("live_video_frame_seen", { ...stateDetails("requestVideoFrameCallback"), presented_frames: lastFrameCount });
+        }
+      };
+      const scheduleFrameCallback = () => {
+        if (!video.requestVideoFrameCallback || frameCallbackActive) return;
+        frameCallbackActive = true;
+        const onFrame = (_now, metadata) => {
+          if (!timer) {
+            frameCallbackActive = false;
+            return;
+          }
+          noteFrame(metadata || {});
+          try {
+            video.requestVideoFrameCallback(onFrame);
+          } catch (_) {
+            frameCallbackActive = false;
+          }
+        };
+        try {
+          video.requestVideoFrameCallback(onFrame);
+        } catch (_) {
+          frameCallbackActive = false;
+        }
+      };
+      const check = async (reason = "interval") => {
+        if (!timer || document.hidden || currentPublishKind !== "browser_camera" || !stream) return;
+        const videoTrack = stream.getVideoTracks().find((track) => track.readyState === "live") || stream.getVideoTracks()[0];
+        const audioHealthy = stream.getAudioTracks().some((track) => track.readyState === "live" && track.enabled);
+        const roomConnected = isLiveKitConnected(livekitRoom);
+        const stats = await collectVideoSenderStats();
+        if (stats.framesEncoded !== null) {
+          if (lastStats.framesEncoded !== null && stats.framesEncoded > lastStats.framesEncoded) {
+            noteFrame({ presentedFrames: stats.framesEncoded });
+          }
+          if (lastStats.bytesSent !== null && stats.bytesSent !== null && stats.bytesSent >= lastStats.bytesSent) {
+            const elapsed = Math.max(1, Date.now() - (lastStats.sampledAt || Date.now()));
+            root.dataset.liveVideoBitrate = String(Math.round(((stats.bytesSent - lastStats.bytesSent) * 8 * 1000) / elapsed));
+          }
+          if (stats.fps) root.dataset.liveVideoFps = String(Math.round(stats.fps));
+          lastStats = { framesEncoded: stats.framesEncoded, bytesSent: stats.bytesSent, sampledAt: Date.now() };
+        }
+        if (!lastFrameAt && video.readyState >= 2) lastFrameAt = Date.now();
+        const frameAge = lastFrameAt ? Date.now() - lastFrameAt : Number.POSITIVE_INFINITY;
+        const trackBroken = !videoTrack || videoTrack.readyState !== "live" || videoTrack.muted || videoTrack.enabled === false;
+        const frozen = roomConnected && audioHealthy && (trackBroken || frameAge > freezeThresholdMs);
+        if (!frozen) return;
+        livekitLog("live_video_freeze_detected", { ...stateDetails(reason), frame_age_ms: frameAge, track_broken: trackBroken });
+        await recoverFrozenVideo(reason, stateDetails(reason));
+      };
+      const onLifecycle = (event) => {
+        if (document.hidden) return;
+        showCameraState(root, "Checking camera...", "status");
+        setTimeout(() => check(event.type || "mobile_resume"), 350);
+        setTimeout(() => check(`${event.type || "mobile_resume"}_settled`), 1600);
+      };
+      return {
+        start(reason = "start") {
+          this.stop("restart");
+          lastFrameAt = Date.now();
+          lastStats = { framesEncoded: null, bytesSent: null, sampledAt: 0 };
+          scheduleFrameCallback();
+          timer = window.setInterval(() => { check("interval").catch(() => {}); }, checkIntervalMs);
+          lifecycleEvents.forEach((eventName) => window.addEventListener(eventName, onLifecycle, { passive: true }));
+          livekitLog("live_camera_started", { ...stateDetails(reason), owner: LIVE_HOST_PUBLISHER, supports_request_video_frame_callback: Boolean(video.requestVideoFrameCallback), supports_get_stats: true });
+        },
+        stop() {
+          if (timer) clearInterval(timer);
+          timer = 0;
+          frameCallbackActive = false;
+          lifecycleEvents.forEach((eventName) => window.removeEventListener(eventName, onLifecycle));
+        },
+        checkNow(reason = "manual_check") {
+          return check(reason);
+        },
+        trackProblem(reason, track) {
+          livekitLog(reason === "track_muted" ? "track_muted" : reason === "track_unmuted" ? "track_unmuted" : "track_ended", {
+            ...stateDetails(reason),
+            kind: localTrackKind(track),
+            track_id: trackStableId(track),
+          });
+          setTimeout(() => check(reason).catch(() => {}), 400);
+        },
+      };
     }
     function wait(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms));
@@ -736,16 +974,31 @@
         }
       }
     }
+    async function unpublishLocalTracksByKind(room, kind) {
+      const participant = room?.localParticipant;
+      if (!participant?.unpublishTrack) return;
+      for (const publication of localPublications(room)) {
+        if (publicationKind(publication) !== kind) continue;
+        const track = publication?.track;
+        if (!track) continue;
+        try {
+          await participant.unpublishTrack(track, true);
+          livekitLog("local_track_unpublished", { kind, sid: publication?.trackSid || publication?.sid || "", reason: "video_recovery" });
+        } catch (error) {
+          console.warn("PulseSoc LiveKit video unpublish recovery", { kind, message: error?.message || String(error) });
+        }
+      }
+    }
     function detachLiveKitTracks() {
       livekitTracks.forEach((track) => {
-        try { track.detach?.().forEach((element) => element.remove?.()); } catch (_) {}
-        try { track.stop?.(); } catch (_) {}
+        stopLocalTrack(track);
       });
       livekitTracks = [];
       livekitPublishedTrackIds = new Set();
       livekitPublishComplete = false;
     }
     async function cleanupPublisher({ disconnect = false, reason = "unspecified" } = {}) {
+      liveHealthManager?.stop(reason);
       livekitLog("cleanup_started", { reason, disconnect, local_track_count: livekitTracks.length, stream_track_count: stream?.getTracks?.().length || 0 });
       await unpublishLocalTracks(livekitRoom);
       detachLiveKitTracks();
@@ -761,6 +1014,7 @@
         livekitConnectPromise = null;
       }
       setCameraSurfaceActive(root, false);
+      releaseLiveHostPublisher();
       livekitLog("cleanup_completed", { reason, disconnect });
     }
     async function connectLiveKitRoom() {
@@ -790,6 +1044,9 @@
           try { room.on?.(LK.RoomEvent?.Reconnecting, () => livekitLog("reconnecting", { state: livekitRoomState(room) })); } catch (_) {}
           try { room.on?.(LK.RoomEvent?.Reconnected, () => livekitLog("reconnected", { state: livekitRoomState(room) })); } catch (_) {}
           try { room.on?.(LK.RoomEvent?.LocalTrackPublished, (publication) => livekitLog("local_track_published", { kind: publication?.kind || publication?.track?.kind || "", sid: publication?.trackSid || publication?.sid || "" })); } catch (_) {}
+          try { room.on?.(LK.RoomEvent?.LocalTrackUnpublished, (publication) => livekitLog("local_track_unpublished", { kind: publication?.kind || publication?.track?.kind || "", sid: publication?.trackSid || publication?.sid || "" })); } catch (_) {}
+          try { room.on?.(LK.RoomEvent?.TrackMuted, (publication) => livekitLog("track_muted", { kind: publication?.kind || publication?.track?.kind || "", sid: publication?.trackSid || publication?.sid || "" })); } catch (_) {}
+          try { room.on?.(LK.RoomEvent?.TrackUnmuted, (publication) => livekitLog("track_unmuted", { kind: publication?.kind || publication?.track?.kind || "", sid: publication?.trackSid || publication?.sid || "" })); } catch (_) {}
         }
         livekitLog("connecting", { configured: true });
         await room.connect(tokenData.livekit_url, tokenData.token);
@@ -819,10 +1076,7 @@
           trackOptions = await LK.createLocalScreenTracks({ audio: true, video: true });
         } else {
           const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-          const videoProfiles = [
-            { facingMode: "user", width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 60 } },
-            { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 60 } },
-          ];
+          const videoProfiles = cameraVideoProfiles();
           let lastCaptureError = null;
           for (const videoConstraints of videoProfiles) {
             try {
@@ -842,23 +1096,7 @@
       livekitTracks = trackOptions;
       livekitTracks.forEach(wireLocalTrackDiagnostics);
       stream = tracksToMediaStream(livekitTracks);
-      const videoTrack = livekitTracks.find((track) => track.kind === "video");
-      if (videoTrack?.attach) {
-        try {
-      videoTrack.attach(video);
-        } catch (_) {
-      video.srcObject = stream;
-        }
-      } else {
-      video.srcObject = stream;
-      }
-      video.muted = true;
-      video.defaultMuted = true;
-      video.volume = 0;
-      video.playsInline = true;
-      video.setAttribute("muted", "");
-      video.setAttribute("playsinline", "");
-      video.setAttribute("webkit-playsinline", "");
+      attachPreviewFromTracks(livekitTracks);
       setCameraSurfaceActive(root, true);
       showCameraState(root, "Camera ready. Connecting to LiveKit...");
       let room;
@@ -873,10 +1111,10 @@
       try {
         const publications = [];
         for (const track of livekitTracks) {
-          const mediaTrack = track?.mediaStreamTrack || track?.track;
-          const trackId = mediaTrack?.id || track?.sid || `${track?.kind || "track"}-${publications.length}`;
+          const mediaTrack = mediaTrackOf(track);
+          const trackId = trackStableId(track) || `${localTrackKind(track) || "track"}-${publications.length}`;
           if (livekitPublishedTrackIds.has(trackId)) continue;
-          const kindName = String(track?.kind || mediaTrack?.kind || "").toLowerCase();
+          const kindName = localTrackKind(track);
           const existingPublication = localPublications(room).find((publication) => {
             const existingTrack = publication?.track;
             return publicationKind(publication) === kindName && existingTrack && existingTrack.mediaStreamTrack?.readyState !== "ended";
@@ -907,6 +1145,108 @@
       } finally {
         livekitPublishPromise = null;
       }
+    }
+    async function createVideoOnlyTracks() {
+      const LK = livekitClient();
+      let lastCaptureError = null;
+      for (const videoConstraints of cameraVideoProfiles()) {
+        try {
+          if (LK?.createLocalTracks) {
+            const tracks = await LK.createLocalTracks({ audio: false, video: videoConstraints });
+            const videoTracks = tracks.filter((track) => localTrackKind(track) === "video");
+            if (videoTracks.length) return videoTracks;
+          }
+          const nextStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: videoConstraints });
+          const mediaTracks = nextStream.getVideoTracks();
+          if (mediaTracks.length) return mediaTracks;
+        } catch (error) {
+          lastCaptureError = error;
+        }
+      }
+      throw lastCaptureError || new Error("Camera video track could not be reacquired.");
+    }
+    function rebuildStreamWithVideo(videoTracks) {
+      const audioTracks = stream?.getAudioTracks?.().filter((track) => track.readyState === "live") || [];
+      const oldVideoTracks = livekitTracks.filter((track) => localTrackKind(track) === "video");
+      const oldVideoIds = new Set(oldVideoTracks.map(trackStableId).filter(Boolean));
+      oldVideoTracks.forEach(stopLocalTrack);
+      livekitPublishedTrackIds = new Set(Array.from(livekitPublishedTrackIds).filter((id) => !oldVideoIds.has(id)));
+      livekitTracks = livekitTracks.filter((track) => localTrackKind(track) !== "video").concat(videoTracks);
+      livekitTracks.forEach(wireLocalTrackDiagnostics);
+      const nextStream = new MediaStream();
+      audioTracks.forEach((track) => nextStream.addTrack(track));
+      videoTracks.forEach((track) => {
+        const mediaTrack = mediaTrackOf(track);
+        if (mediaTrack) nextStream.addTrack(mediaTrack);
+      });
+      stream = nextStream;
+      attachPreviewFromTracks(videoTracks);
+      return stream;
+    }
+    async function republishVideoTracks(videoTracks, reason) {
+      const room = await connectLiveKitRoom();
+      await waitForLiveKitConnected(room);
+      await unpublishLocalTracksByKind(room, "video");
+      for (const track of videoTracks) {
+        const publication = await room.localParticipant.publishTrack(track);
+        const mediaTrack = mediaTrackOf(track);
+        livekitPublishedTrackIds.add(trackStableId(track) || publication?.trackSid || publication?.sid || "");
+        livekitLog("live_video_republished", {
+          reason,
+          track_id: mediaTrack?.id || "",
+          sid: publication?.trackSid || publication?.sid || "",
+          track_state: mediaTrack?.readyState || "",
+        });
+      }
+      livekitPublishComplete = true;
+      root.dataset.livekitPublishedAudio = String(stream.getAudioTracks().filter((track) => track.readyState === "live").length);
+      root.dataset.livekitPublishedVideo = String(stream.getVideoTracks().filter((track) => track.readyState === "live").length);
+    }
+    async function recoverFrozenVideo(reason = "freeze_detected", snapshot = {}) {
+      if (videoRecoveryPromise) return videoRecoveryPromise;
+      if (currentPublishKind !== "browser_camera") return null;
+      videoRecoveryPromise = (async () => {
+        showCameraState(root, "Video recovering...", "status");
+        livekitLog("live_video_recovery_started", { reason, ...snapshot });
+        try {
+          try { video.pause?.(); } catch (_) {}
+          video.srcObject = null;
+          const videoTracks = await createVideoOnlyTracks();
+          livekitLog("live_video_track_reacquired", { reason, tracks: trackDiagnostics(tracksToMediaStream(videoTracks)) });
+          rebuildStreamWithVideo(videoTracks);
+          await republishVideoTracks(videoTracks, reason);
+          await publishTracks("browser_camera_recovery");
+          liveHealthManager?.start("video_recovery_success");
+          showCameraState(root, "Video recovered", "status");
+          notify("Video recovered");
+          livekitLog("live_video_recovery_success", { reason, tracks: trackDiagnostics(stream) });
+          return stream;
+        } catch (error) {
+          livekitLog("live_video_recovery_failed", { reason, message: error?.message || String(error), ...snapshot });
+          try {
+            showCameraState(root, "Video recovery needs reconnect...", "status");
+            livekitLog("live_room_reconnect_started", { reason, message: error?.message || String(error) });
+            await cleanupPublisher({ disconnect: true, reason: "video_recovery_reconnect" });
+            claimLiveHostPublisher();
+            currentPublishKind = "browser_camera";
+            stream = await publishToLiveKit("browser_camera");
+            await publishTracks("browser_camera_reconnect");
+            liveHealthManager?.start("room_reconnect_success");
+            livekitLog("live_room_reconnect_success", { reason, tracks: trackDiagnostics(stream) });
+            showCameraState(root, "Video recovered", "status");
+            return stream;
+          } catch (reconnectError) {
+            const message = liveStartMessage(reconnectError);
+            showCameraState(root, "Camera permission lost. Tap to retry camera.", "error");
+            notify(message || "Camera recovery failed. Tap Camera to retry.");
+            livekitLog("live_video_recovery_failed", { reason: "room_reconnect_failed", message: reconnectError?.message || String(reconnectError) });
+            throw reconnectError;
+          }
+        } finally {
+          videoRecoveryPromise = null;
+        }
+      })();
+      return videoRecoveryPromise;
     }
     async function publishTracks(kind) {
       const id = root?.dataset?.liveId;
@@ -971,16 +1311,23 @@
       cameraStartPromise = (async () => {
       try {
         setConnectButtonsBusy(true);
+        claimLiveHostPublisher();
+        pauseCompetingLiveMedia();
         await stop("start_camera_restart");
+        claimLiveHostPublisher();
         root.classList.add("is-connecting");
         showCameraState(root, "Connecting Browser Live to LiveKit...");
+        currentPublishKind = "browser_camera";
         stream = await publishToLiveKit("browser_camera");
         setCameraSurfaceActive(root, true);
         showCameraState(root, "");
         console.info("PulseSoc Live publisher local stream", { live_id: root.dataset.liveId, tracks: trackDiagnostics(stream) });
         await publishTracks("browser_camera");
+        liveHealthManager = createLiveHealthManager();
+        liveHealthManager.start("browser_camera_started");
       } catch (error) {
         const message = liveStartMessage(error);
+        liveHealthManager?.stop("start_failed");
         setCameraSurfaceActive(root, false);
         showCameraState(root, message, "error");
         console.warn("PulseSoc Browser Live start failed", { stage: error?.pulseStage || error?.name || "unknown", message: error?.message || String(error) });
@@ -1015,6 +1362,7 @@
         await stop("start_screen_restart");
         root.classList.add("is-connecting");
         showCameraState(root, "Connecting screen share through LiveKit...");
+        currentPublishKind = "screen_share";
         stream = await publishToLiveKit("screen_share");
         video.style.transform = "none";
         setCameraSurfaceActive(root, true);
