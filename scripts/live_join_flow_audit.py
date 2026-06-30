@@ -66,20 +66,25 @@ def main() -> int:
     client = bot.webhook_app.test_client()
 
     login(client, viewer_id)
+    audience = client.post(f"/api/pulse/live/{live_id}/join", json={"source": "reels", "role": "audience"})
+    audience_data = audience.get_json() or {}
+    require(audience.status_code == 200 and audience_data.get("status") == "watching" and audience_data.get("role") == "audience", "Reels visibility records real audience presence without claiming co-host join")
+    before_request = client.get(f"/api/pulse/live/{live_id}/join-status").get_json() or {}
+    require(before_request.get("status") == "none" and before_request.get("can_publish") is False, "audience presence does not create fake co-host approval")
     denied_token = client.post(f"/api/pulse/live/{live_id}/livekit/token", json={"role": "guest"})
     require(denied_token.status_code == 403, "viewer cannot get guest publish token before approval")
-    bad_request = client.post(f"/api/pulse/live/{live_id}/join-request", json={"camera_ready": False, "mic_ready": True})
+    bad_request = client.post(f"/api/pulse/live/{live_id}/join-request", json={"requested_role": "cohost", "camera_ready": False, "mic_ready": True})
     require(bad_request.status_code == 400, "join request enforces camera/mic readiness")
     request_res = client.post(
         f"/api/pulse/live/{live_id}/join-request",
-        json={"camera_ready": True, "mic_ready": True, "network_quality": "ready", "connection": {"camera_ready": True, "mic_ready": True}},
+        json={"requested_role": "cohost", "camera_ready": True, "mic_ready": True, "network_quality": "ready", "connection": {"camera_ready": True, "mic_ready": True}},
     )
     request_data = request_res.get_json() or {}
     request_id = int((request_data.get("request") or {}).get("id") or 0)
     require(request_res.status_code == 200 and request_data.get("status") == "pending" and request_id, "viewer creates real pending join request")
 
     state = client.get(f"/api/pulse/live/{live_id}/state").get_json() or {}
-    require((state.get("viewer_join_request") or {}).get("status") == "pending", "viewer state shows pending join request")
+    require((state.get("viewer_join_request") or {}).get("status") == "pending" and (state.get("viewer_join_request") or {}).get("requested_role") == "cohost", "viewer state shows pending co-host request")
 
     login(client, host_id)
     host_state = client.get(f"/api/pulse/live/{live_id}/state").get_json() or {}
@@ -88,7 +93,9 @@ def main() -> int:
     require(deny_res.status_code == 200 and (deny_res.get_json() or {}).get("status") == "denied", "host can deny request")
 
     login(client, viewer_id)
-    second = client.post(f"/api/pulse/live/{live_id}/join-request", json={"camera_ready": True, "mic_ready": True, "network_quality": "ready"})
+    denied_state = client.get(f"/api/pulse/live/{live_id}/join-status").get_json() or {}
+    require(denied_state.get("status") == "denied" and denied_state.get("can_publish") is False, "denied viewer sees denied and receives no publish permission")
+    second = client.post(f"/api/pulse/live/{live_id}/join-request", json={"requested_role": "cohost", "camera_ready": True, "mic_ready": True, "network_quality": "ready"})
     second_data = second.get_json() or {}
     second_id = int((second_data.get("request") or {}).get("id") or 0)
     require(second.status_code == 200 and second_id and second_id != request_id, "viewer can request again after denial")
@@ -98,6 +105,8 @@ def main() -> int:
     accept_data = accept_res.get_json() or {}
     guest = accept_data.get("guest") or {}
     require(accept_res.status_code == 200 and accept_data.get("status") == "accepted" and guest.get("id"), "host can accept request and create guest permission")
+    accepted_host_state = client.get(f"/api/pulse/live/{live_id}/state").get_json() or {}
+    require(any(int(item.get("user_id") or 0) == viewer_id and item.get("role") == "cohost" for item in accepted_host_state.get("guests") or []), "accepted co-host appears in host Live guest state")
 
     login(client, viewer_id)
     status = client.get(f"/api/pulse/live/{live_id}/join-status").get_json() or {}
@@ -115,6 +124,7 @@ def main() -> int:
     require(remove.status_code == 200, "host can remove guest")
 
     require("pulse_live_guest_requests" in BOT and "pulse_live_guests" in BOT and "pulse_live_audit_logs" in BOT, "co-host request, co-host, and audit tables exist")
+    require("requested_role TEXT DEFAULT 'cohost'" in BOT and '"requested_role": clean_html' in BOT, "co-host request role is persisted and returned")
     require("guest_role TEXT DEFAULT 'cohost'" in BOT and "permissions_json" in BOT, "co-host records store role and publish permissions")
     require("requested_role in {\"guest\", \"cohost\", \"co-host\"}" in BOT and "token_role = \"cohost\"" in BOT, "co-host token generation is server-side and role-gated")
     require('"cohost"' in JS and "Request to Co-host" in JS and "Accept Co-host" in JS, "co-host UI labels and token request are wired")
@@ -122,6 +132,12 @@ def main() -> int:
     require("Only the requesting viewer can cancel this request" in BOT, "viewer-only cancel check exists")
     require("pending" in BOT and "accepted" in BOT and "denied" in BOT and "cancelled" in BOT and "removed" in BOT, "request states exist")
     require("requestJoinLive" in JS and "publishGuestToLiveKit" in JS and "hostJoinRequestAction" in JS, "UI button states and handlers are wired")
+    require("data-live-join-label" in BOT and "Request to Co-host" in BOT, "Reels Live names the co-host action clearly")
+    require("recordLiveReelAudience" in BOT and "refreshLiveReelJoinStatus" in BOT and "scheduleLiveReelJoinPolling" in BOT, "Reels separates audience presence from co-host request polling")
+    require("/join-request`" in BOT and "requested_role:'cohost'" in BOT, "Reels co-host button calls the real join-request endpoint")
+    require("checking:'Checking...'" in BOT and "request_sent:'Request Sent'" in BOT and "waiting:'Waiting for Host'" in BOT and "accepted:'Accepted — Joining...'" in BOT and "denied:'Denied'" in BOT and "unavailable:'Unavailable'" in BOT, "Reels renders the required backend-driven request states")
+    require("btn.textContent=btn.classList.contains('reel-live-join')?'Joined':'✓'" not in BOT, "Reels no longer paints a fake Joined state after audience presence")
+    require('button.textContent = "Joined"' in JS and JS.index('button.textContent = "Joined"') > JS.index("await room.localParticipant.publishTrack(track)"), "Joined is rendered only after co-host tracks publish")
     require("fake join" not in BOT.lower() and "fake guest" not in BOT.lower(), "no fake join request literals")
     require('href="#"' not in BOT and "javascript:void(0)" not in BOT, "no dead href/hash or javascript void links")
     print("live join flow audit ok")

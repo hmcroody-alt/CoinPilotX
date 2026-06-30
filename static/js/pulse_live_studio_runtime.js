@@ -392,18 +392,21 @@
     const status = guest ? "accepted" : (request?.status || "none");
     panel.dataset.liveRequestStatus = status;
     if (guest) {
-      panel.innerHTML = `<button class="live-primary-action is-accepted" type="button" data-live-guest-join>Co-host approved — joining...</button><button type="button" data-live-guest-leave data-live-guest-id="${Number(guest.id || 0)}">Leave co-host seat</button><p class="muted" data-live-join-status>Publishing is server-approved for this co-host slot.</p>`;
+      const published = Boolean(root.__pulseLiveGuestPublished);
+      panel.innerHTML = `<button class="live-primary-action is-accepted" type="button" data-live-guest-join disabled>${published ? "Joined" : "Accepted — Joining..."}</button><button type="button" data-live-guest-leave data-live-guest-id="${Number(guest.id || 0)}">Leave co-host seat</button><p class="muted" data-live-join-status>${published ? "Joined as co-host. Camera and microphone are live." : "Publishing is server-approved for this co-host slot."}</p>`;
+      if (published) return;
       publishGuestToLiveKit(root).catch((error) => {
+        qsa(root, "[data-live-guest-join]").forEach((button) => { button.textContent = "Unavailable"; button.disabled = false; });
         setText(root, "[data-live-join-status]", error.message || "Co-host publishing could not start.");
       });
       return;
     }
     if (status === "pending") {
-      panel.innerHTML = `<button class="live-primary-action" type="button" data-live-join-request disabled>Waiting for host approval</button><button type="button" data-live-cancel-request data-live-request-id="${Number(request?.id || 0)}">Cancel co-host request</button><p class="muted" data-live-join-status>Request sent. The host can accept or deny from Backstage.</p>`;
+      panel.innerHTML = `<button class="live-primary-action" type="button" data-live-join-request disabled>Waiting for Host</button><button type="button" data-live-cancel-request data-live-request-id="${Number(request?.id || 0)}">Cancel co-host request</button><p class="muted" data-live-join-status>Request sent. The host can accept or deny from Backstage.</p>`;
       return;
     }
     if (status === "denied") {
-      panel.innerHTML = `<button class="live-primary-action" type="button" data-live-join-request>Request again</button><p class="muted" data-live-join-status>Your last co-host request was denied.</p>`;
+      panel.innerHTML = `<button class="live-primary-action" type="button" data-live-join-request>Denied</button><p class="muted" data-live-join-status>Your last co-host request was denied. Tap Denied to request again.</p>`;
       return;
     }
     if (status === "cancelled") {
@@ -461,10 +464,10 @@
     button.disabled = true;
     const setStatus = (message) => setText(root, "[data-live-join-status]", message);
     try {
-      button.textContent = "Checking camera...";
+      button.textContent = "Checking...";
       setStatus("Checking camera and microphone permission...");
       const readiness = await checkGuestReadiness(root);
-      button.textContent = "Sending request...";
+      button.textContent = "Checking...";
       const response = await fetch(`/api/pulse/live/${id}/join-request`, {
         method: "POST",
         credentials: "same-origin",
@@ -473,11 +476,12 @@
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data.ok === false) throw new Error(data.message || "Join request failed.");
+      button.textContent = data.status === "accepted" ? "Accepted — Joining..." : "Request Sent";
       setStatus(data.message || "Request sent. Waiting for host approval.");
       await fetchState(root);
     } catch (error) {
       button.disabled = false;
-      button.textContent = "Request to Co-host";
+      button.textContent = "Unavailable";
       setStatus(error.message || "Join Live unavailable.");
       notify(error.message || "Join Live unavailable.");
     } finally {
@@ -543,7 +547,7 @@
     if (!LK) throw new Error("LiveKit is not available in this browser.");
     root.__pulseLiveGuestPublishing = true;
     try {
-      setText(root, "[data-live-join-status]", "Co-host approved. Starting camera and microphone...");
+      setText(root, "[data-live-join-status]", "Accepted — Joining with camera and microphone...");
       const tokenResponse = await fetch(`/api/pulse/live/${id}/livekit/token`, {
         method: "POST",
         credentials: "same-origin",
@@ -567,8 +571,8 @@
       root.__pulseLiveGuestRoom = room;
       root.__pulseLiveGuestTracks = tracks;
       root.__pulseLiveGuestPublished = true;
-      setText(root, "[data-live-join-status]", "You are live as a co-host. Host controls remain server-gated.");
-      qsa(root, "[data-live-guest-join]").forEach((button) => { button.textContent = "Co-host live"; button.disabled = true; });
+      setText(root, "[data-live-join-status]", "Joined as co-host. Camera and microphone are live.");
+      qsa(root, "[data-live-guest-join]").forEach((button) => { button.textContent = "Joined"; button.disabled = true; });
       window.addEventListener("pagehide", () => {
         stopGuestMedia(root);
         try { room.disconnect?.(); } catch (_) {}
