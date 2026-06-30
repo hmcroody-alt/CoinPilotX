@@ -1770,6 +1770,7 @@
   }
 
   function cloneCreatorAvatar(card) {
+    if (card?.dataset?.contentType === "live" || card?.classList?.contains("reel-live-card")) return;
     const rail = card.querySelector(".reel-actions");
     if (!rail || rail.querySelector(".reel-action-avatar")) return;
     const avatar = card.querySelector(".reel-caption-creator .reel-avatar")?.cloneNode(true);
@@ -1788,6 +1789,7 @@
   }
 
   function ensureRemixAction(card) {
+    if (card?.dataset?.contentType === "live" || card?.classList?.contains("reel-live-card")) return;
     const rail = card.querySelector(".reel-actions");
     if (!rail || rail.querySelector("[data-reel-remix]")) return;
     const button = document.createElement("button");
@@ -1803,6 +1805,11 @@
   function enhanceMobileReelCard(card) {
     if (!card || card.dataset.mobileReelsEnhanced === "1") return;
     card.dataset.mobileReelsEnhanced = "1";
+    if (card.dataset.contentType === "live" || card.classList.contains("reel-live-card")) {
+      window.PulseReactionSystem?.hydrate?.(card);
+      ensureReelProgress(card);
+      return;
+    }
     cloneCreatorAvatar(card);
     ensureRemixAction(card);
     actionLabel(card.querySelector("[data-share-reel]"), compactCount(card.querySelector(".reel-details-stats span:nth-child(3) strong")?.textContent || "Share"));
