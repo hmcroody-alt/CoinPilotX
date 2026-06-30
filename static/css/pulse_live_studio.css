@@ -811,6 +811,51 @@ body.pulse-live-shell-mode .pulse-live-surface {
   margin-top: 8px;
 }
 
+.live-cohost-card {
+  display: grid;
+  gap: 8px;
+  border-color: rgba(54, 229, 143, 0.28);
+  background:
+    radial-gradient(circle at 12% 0, rgba(54, 229, 143, 0.12), transparent 70%),
+    rgba(255, 255, 255, 0.045);
+}
+
+.live-cohost-card.is-active {
+  border-color: rgba(105, 231, 255, 0.42);
+  box-shadow: 0 0 28px rgba(54, 229, 143, 0.12);
+}
+
+.live-cohost-card.is-closed {
+  border-color: rgba(255, 209, 102, 0.22);
+}
+
+.live-cohost-card button {
+  justify-content: center;
+  min-height: 38px;
+  border-radius: 12px;
+}
+
+.live-cohost-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.live-cohost-stats span {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 7px 8px;
+  color: rgba(226, 252, 255, 0.86);
+  background: rgba(255, 255, 255, 0.055);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.live-cohost-stats strong {
+  display: inline;
+  color: #f6ffff;
+}
+
 .live-ai-card span,
 .live-ai-card strong {
   display: block;
@@ -828,6 +873,14 @@ body.pulse-live-shell-mode .pulse-live-surface {
   margin: 6px 0 0;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.live-ai-card .live-cohost-stats span {
+  display: block;
+}
+
+.live-ai-card .live-cohost-stats strong {
+  display: inline;
 }
 
 .live-theater {

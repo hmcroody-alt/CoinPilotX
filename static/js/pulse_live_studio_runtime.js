@@ -141,6 +141,7 @@
     renderReactionBurst(root, data.reaction_cloud || []);
     renderLiveGuests(root, data.guests || []);
     renderBackstage(root, data.join_requests || [], data.guests || []);
+    renderCoHostStatus(root, data);
     renderJoinPanel(root, data.viewer_join_request, data.guest);
     ensurePublicPlayback(root, data);
   }
@@ -304,9 +305,10 @@
   }
 
   function liveGuestTileHtml(guest) {
-    const name = guest.display_name || "Guest";
+    const name = guest.display_name || "Co-host";
     const initial = String(name).trim().slice(0, 1).toUpperCase() || "G";
-    const muted = guest.audio_muted ? "Muted" : "Guest active";
+    const role = guest.role_label || (guest.role === "cohost" ? "Co-host" : "Guest");
+    const muted = guest.audio_muted ? `Muted ${role.toLowerCase()}` : `${role} live`;
     return `<article class="live-guest-tile" data-live-guest-id="${Number(guest.id || 0)}">
       <span class="live-guest-avatar">${escapeHtml(initial)}</span>
       <div><strong>${escapeHtml(name)}</strong><small>${escapeHtml(muted)}</small></div>
@@ -315,8 +317,9 @@
 
   function liveGuestControlHtml(guest) {
     const action = guest.audio_muted ? "unmute" : "mute";
+    const role = guest.role_label || (guest.role === "cohost" ? "Co-host" : "Guest");
     return `<article class="live-guest-control" data-live-guest-id="${Number(guest.id || 0)}">
-      <div><strong>${escapeHtml(guest.display_name || "Guest")}</strong><small>${guest.audio_muted ? "Muted by host" : "Audio active"} · Video ${guest.video_enabled ? "on" : "off"}</small></div>
+      <div><strong>${escapeHtml(guest.display_name || role)}</strong><small>${escapeHtml(role)} · ${guest.audio_muted ? "Muted by host" : "Audio active"} · Video ${guest.video_enabled ? "on" : "off"}</small></div>
       <div class="live-join-request-actions">
         <button type="button" data-live-guest-action="${action}" data-live-guest-id="${Number(guest.id || 0)}">${action === "unmute" ? "Unmute" : "Mute"}</button>
         <button type="button" data-live-guest-action="remove" data-live-guest-id="${Number(guest.id || 0)}">Remove</button>
@@ -328,13 +331,15 @@
     const name = request.display_name || "Viewer";
     const initial = String(name).trim().slice(0, 1).toUpperCase() || "V";
     const requestId = Number(request.id || 0);
+    const message = request.request_message ? `<p class="muted">${escapeHtml(request.request_message)}</p>` : "";
     return `<article class="live-join-request" data-live-request-id="${requestId}">
       <div class="live-join-request-main">
         <span class="live-guest-avatar">${escapeHtml(initial)}</span>
         <div><strong>${escapeHtml(name)}</strong><small>Camera ${request.camera_ready ? "ready" : "blocked"} · Mic ${request.mic_ready ? "ready" : "blocked"} · ${escapeHtml(request.network_quality || "unknown")}</small></div>
       </div>
+      ${message}
       <div class="live-join-request-actions">
-        <button type="button" data-live-request-action="accept" data-live-request-id="${requestId}">Accept</button>
+        <button type="button" data-live-request-action="accept" data-live-request-id="${requestId}">Accept Co-host</button>
         <button type="button" data-live-request-action="deny" data-live-request-id="${requestId}">Deny</button>
       </div>
     </article>`;
@@ -342,9 +347,9 @@
 
   function renderLiveGuests(root, guests) {
     const list = Array.isArray(guests) ? guests : [];
-    const html = list.length ? list.map(liveGuestTileHtml).join("") : `<article class="live-guest-tile is-empty"><span class="live-guest-avatar">+</span><div><strong>No guests</strong><small>Approved guests appear here.</small></div></article>`;
+    const html = list.length ? list.map(liveGuestTileHtml).join("") : `<article class="live-guest-tile is-empty"><span class="live-guest-avatar">+</span><div><strong>No co-hosts</strong><small>Approved co-hosts appear here.</small></div></article>`;
     qsa(root, "[data-live-guest-stack]").forEach((node) => { node.innerHTML = html; });
-    qsa(root, "[data-live-guest-sidecar]").forEach((node) => { node.innerHTML = list.length ? html : `<p class="muted">No approved guests yet.</p>`; });
+    qsa(root, "[data-live-guest-sidecar]").forEach((node) => { node.innerHTML = list.length ? html : `<p class="muted">No approved co-hosts yet.</p>`; });
   }
 
   function renderBackstage(root, requests, guests) {
@@ -353,12 +358,32 @@
     const safeRequests = Array.isArray(requests) ? requests : [];
     const safeGuests = Array.isArray(guests) ? guests : [];
     qsa(root, "[data-live-request-count]").forEach((node) => { node.textContent = String(safeRequests.length); });
+    qsa(root, "[data-live-guest-count]").forEach((node) => { node.textContent = String(safeGuests.length); });
     if (requestList) {
-      requestList.innerHTML = safeRequests.length ? safeRequests.map(liveJoinRequestHtml).join("") : `<p class="muted">No join requests. Viewers can request camera/mic access from the Live room.</p>`;
+      requestList.innerHTML = safeRequests.length ? safeRequests.map(liveJoinRequestHtml).join("") : `<p class="muted">No co-host requests. Viewers can request camera/mic access from the Live room.</p>`;
     }
     if (guestList) {
-      guestList.innerHTML = safeGuests.length ? safeGuests.map(liveGuestControlHtml).join("") : `<p class="muted">No active guests.</p>`;
+      guestList.innerHTML = safeGuests.length ? safeGuests.map(liveGuestControlHtml).join("") : `<p class="muted">No active co-hosts.</p>`;
     }
+  }
+
+  function renderCoHostStatus(root, data) {
+    const cohost = data.cohost || {};
+    const accepting = Boolean(cohost.enabled ?? data.accepting_guests ?? data.cohost_enabled);
+    const active = Number(data.guest_count ?? cohost.active_count ?? 0);
+    const pending = Number(data.join_request_count ?? cohost.pending_count ?? 0);
+    const state = active > 0 ? `${active} co-host${active === 1 ? "" : "s"} live` : accepting ? "Available" : "Closed";
+    const copy = accepting
+      ? "Viewers can request camera and microphone access. Accept them from Backstage to create a real multi-host LiveKit publisher."
+      : "This Live is not accepting new co-host requests.";
+    qsa(root, "[data-live-cohost-card]").forEach((card) => {
+      card.classList.toggle("is-active", active > 0);
+      card.classList.toggle("is-closed", !accepting);
+    });
+    qsa(root, "[data-live-cohost-state]").forEach((node) => { node.textContent = state; });
+    qsa(root, "[data-live-cohost-copy]").forEach((node) => { node.textContent = copy; });
+    qsa(root, "[data-live-guest-count]").forEach((node) => { node.textContent = String(active); });
+    qsa(root, "[data-live-request-count]").forEach((node) => { node.textContent = String(pending); });
   }
 
   function renderJoinPanel(root, request, guest) {
@@ -367,25 +392,25 @@
     const status = guest ? "accepted" : (request?.status || "none");
     panel.dataset.liveRequestStatus = status;
     if (guest) {
-      panel.innerHTML = `<button class="live-primary-action is-accepted" type="button" data-live-guest-join>Accepted — joining...</button><button type="button" data-live-guest-leave data-live-guest-id="${Number(guest.id || 0)}">Leave guest seat</button><p class="muted" data-live-join-status>Publishing is server-approved for this guest slot.</p>`;
+      panel.innerHTML = `<button class="live-primary-action is-accepted" type="button" data-live-guest-join>Co-host approved — joining...</button><button type="button" data-live-guest-leave data-live-guest-id="${Number(guest.id || 0)}">Leave co-host seat</button><p class="muted" data-live-join-status>Publishing is server-approved for this co-host slot.</p>`;
       publishGuestToLiveKit(root).catch((error) => {
-        setText(root, "[data-live-join-status]", error.message || "Guest publishing could not start.");
+        setText(root, "[data-live-join-status]", error.message || "Co-host publishing could not start.");
       });
       return;
     }
     if (status === "pending") {
-      panel.innerHTML = `<button class="live-primary-action" type="button" data-live-join-request disabled>Waiting for host approval</button><button type="button" data-live-cancel-request data-live-request-id="${Number(request?.id || 0)}">Cancel request</button><p class="muted" data-live-join-status>Request sent. The host can accept or deny from Backstage.</p>`;
+      panel.innerHTML = `<button class="live-primary-action" type="button" data-live-join-request disabled>Waiting for host approval</button><button type="button" data-live-cancel-request data-live-request-id="${Number(request?.id || 0)}">Cancel co-host request</button><p class="muted" data-live-join-status>Request sent. The host can accept or deny from Backstage.</p>`;
       return;
     }
     if (status === "denied") {
-      panel.innerHTML = `<button class="live-primary-action" type="button" data-live-join-request>Request again</button><p class="muted" data-live-join-status>Your last request was denied.</p>`;
+      panel.innerHTML = `<button class="live-primary-action" type="button" data-live-join-request>Request again</button><p class="muted" data-live-join-status>Your last co-host request was denied.</p>`;
       return;
     }
     if (status === "cancelled") {
-      panel.innerHTML = `<button class="live-primary-action" type="button" data-live-join-request>Request to Join</button><p class="muted" data-live-join-status>Request cancelled. You can request again.</p>`;
+      panel.innerHTML = `<button class="live-primary-action" type="button" data-live-join-request>Request to Co-host</button><p class="muted" data-live-join-status>Request cancelled. You can request again.</p>`;
       return;
     }
-    panel.innerHTML = `<button class="live-primary-action" type="button" data-live-join-request>Request to Join</button><p class="muted" data-live-join-status>Camera and microphone readiness will be checked before the host sees your request.</p>`;
+    panel.innerHTML = `<button class="live-primary-action" type="button" data-live-join-request>Request to Co-host</button><p class="muted" data-live-join-status>Camera and microphone readiness will be checked before the host sees your request.</p>`;
   }
 
   function livekitClient() {
@@ -444,7 +469,7 @@
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(readiness),
+        body: JSON.stringify({ ...readiness, requested_role: "cohost", request_message: readiness.request_message || "Requesting co-host camera/mic access." }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data.ok === false) throw new Error(data.message || "Join request failed.");
@@ -452,7 +477,7 @@
       await fetchState(root);
     } catch (error) {
       button.disabled = false;
-      button.textContent = "Request to Join";
+      button.textContent = "Request to Co-host";
       setStatus(error.message || "Join Live unavailable.");
       notify(error.message || "Join Live unavailable.");
     } finally {
@@ -518,15 +543,15 @@
     if (!LK) throw new Error("LiveKit is not available in this browser.");
     root.__pulseLiveGuestPublishing = true;
     try {
-      setText(root, "[data-live-join-status]", "Accepted. Starting camera and microphone...");
+      setText(root, "[data-live-join-status]", "Co-host approved. Starting camera and microphone...");
       const tokenResponse = await fetch(`/api/pulse/live/${id}/livekit/token`, {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role: "guest" }),
+        body: JSON.stringify({ role: "cohost" }),
       });
       const tokenData = await tokenResponse.json().catch(() => ({}));
-      if (!tokenResponse.ok || tokenData.ok === false) throw new Error(tokenData.message || "Guest token could not be created.");
+      if (!tokenResponse.ok || tokenData.ok === false) throw new Error(tokenData.message || "Co-host token could not be created.");
       const room = new LK.Room({ adaptiveStream: true, dynacast: true });
       await room.connect(tokenData.livekit_url, tokenData.token, { autoSubscribe: true });
       let tracks = [];
@@ -542,8 +567,8 @@
       root.__pulseLiveGuestRoom = room;
       root.__pulseLiveGuestTracks = tracks;
       root.__pulseLiveGuestPublished = true;
-      setText(root, "[data-live-join-status]", "You are live as a guest. Host controls remain server-gated.");
-      qsa(root, "[data-live-guest-join]").forEach((button) => { button.textContent = "Guest live"; button.disabled = true; });
+      setText(root, "[data-live-join-status]", "You are live as a co-host. Host controls remain server-gated.");
+      qsa(root, "[data-live-guest-join]").forEach((button) => { button.textContent = "Co-host live"; button.disabled = true; });
       window.addEventListener("pagehide", () => {
         stopGuestMedia(root);
         try { room.disconnect?.(); } catch (_) {}

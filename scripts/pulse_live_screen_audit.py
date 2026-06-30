@@ -28,6 +28,7 @@ def main() -> int:
     require("live-hero-player" in BOT and "object-fit: cover" in CSS, "video remains the hero")
     require("live-guest-stack" in BOT and "data-live-guest-sidecar" in BOT, "guest stack and panel exist")
     require("data-live-join-request" in BOT and "requestJoinLive" in JS, "Join Live action is wired")
+    require("Request to Co-host" in BOT and "Request to Co-host" in JS and "role: \"cohost\"" in JS, "public Live requests real co-host publisher access")
     require("data-live-chat-feed" in BOT and "data-live-chat-send" in BOT, "chat composer exists")
     require("live-view-action-bar" in BOT and "data-live-share" in BOT, "action bar and share action exist")
     require("data-live-gift-action disabled" in BOT and "data-live-poll-action disabled" in BOT, "gift/poll have safe unavailable states")

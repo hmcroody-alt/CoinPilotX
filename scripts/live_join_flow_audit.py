@@ -101,9 +101,12 @@ def main() -> int:
 
     login(client, viewer_id)
     status = client.get(f"/api/pulse/live/{live_id}/join-status").get_json() or {}
-    require(status.get("can_publish") is True and (status.get("guest") or {}).get("id") == guest.get("id"), "accepted viewer receives guest publish state")
-    token_res = client.post(f"/api/pulse/live/{live_id}/livekit/token", json={"role": "guest"})
-    require(token_res.status_code in {200, 503}, "accepted guest reaches server-side guest token gate")
+    require(status.get("can_publish") is True and (status.get("guest") or {}).get("id") == guest.get("id"), "accepted viewer receives co-host publish state")
+    token_res = client.post(f"/api/pulse/live/{live_id}/livekit/token", json={"role": "cohost"})
+    token_data = token_res.get_json() or {}
+    require(token_res.status_code in {200, 503}, "accepted co-host reaches server-side publish token gate")
+    if token_res.status_code == 200:
+        require(token_data.get("role") == "cohost" and token_data.get("can_publish") is True, "accepted co-host receives publish-capable cohost token")
 
     login(client, host_id)
     mute = client.post(f"/api/pulse/live/{live_id}/guests/{int(guest.get('id'))}/mute", json={})
@@ -111,8 +114,10 @@ def main() -> int:
     remove = client.post(f"/api/pulse/live/{live_id}/guests/{int(guest.get('id'))}/remove", json={})
     require(remove.status_code == 200, "host can remove guest")
 
-    require("pulse_live_guest_requests" in BOT and "pulse_live_guests" in BOT and "pulse_live_audit_logs" in BOT, "guest request, guest, and audit tables exist")
-    require("requested_role in {\"guest\", \"cohost\", \"co-host\"}" in BOT, "guest token generation is server-side and role-gated")
+    require("pulse_live_guest_requests" in BOT and "pulse_live_guests" in BOT and "pulse_live_audit_logs" in BOT, "co-host request, co-host, and audit tables exist")
+    require("guest_role TEXT DEFAULT 'cohost'" in BOT and "permissions_json" in BOT, "co-host records store role and publish permissions")
+    require("requested_role in {\"guest\", \"cohost\", \"co-host\"}" in BOT and "token_role = \"cohost\"" in BOT, "co-host token generation is server-side and role-gated")
+    require('"cohost"' in JS and "Request to Co-host" in JS and "Accept Co-host" in JS, "co-host UI labels and token request are wired")
     require("Only the live host can manage join requests" in BOT, "host permission checks exist")
     require("Only the requesting viewer can cancel this request" in BOT, "viewer-only cancel check exists")
     require("pending" in BOT and "accepted" in BOT and "denied" in BOT and "cancelled" in BOT and "removed" in BOT, "request states exist")
