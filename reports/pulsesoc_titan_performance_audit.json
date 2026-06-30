@@ -1,0 +1,3409 @@
+{
+  "css_pressure": {
+    "duplicate_selectors": [
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 24
+        },
+        "selector": ".comm-shell",
+        "total_occurrences": 24
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 24
+        },
+        "selector": ".message",
+        "total_occurrences": 24
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 17
+        },
+        "selector": ".comm-list",
+        "total_occurrences": 17
+      },
+      {
+        "files": {
+          "static/css/pulse_advertiser_portal.css": 1,
+          "static/css/pulse_camera_engine.css": 1,
+          "static/css/pulse_design_system.css": 1,
+          "static/css/pulse_desktop_feed.css": 3,
+          "static/css/pulse_messages_v2.css": 5,
+          "static/css/pulse_mobile_system.css": 2,
+          "static/css/pulse_reaction_system.css": 2,
+          "static/css/pulse_sci_fi_system.css": 1
+        },
+        "selector": ":root",
+        "total_occurrences": 16
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 16
+        },
+        "selector": ".composer",
+        "total_occurrences": 16
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 15
+        },
+        "selector": ".conversation",
+        "total_occurrences": 15
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 15
+        },
+        "selector": ".messages",
+        "total_occurrences": 15
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 14
+        },
+        "selector": ".comm-actions",
+        "total_occurrences": 14
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 13
+        },
+        "selector": ".comm-filter",
+        "total_occurrences": 13
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 11
+        },
+        "selector": ".comm-thread",
+        "total_occurrences": 11
+      },
+      {
+        "files": {
+          "static/css/pulse_advertiser_portal.css": 1,
+          "static/css/pulse_design_system.css": 2,
+          "static/css/pulse_desktop_feed.css": 1,
+          "static/css/pulse_messages_v2.css": 4,
+          "static/css/pulse_mobile_system.css": 2
+        },
+        "selector": "body",
+        "total_occurrences": 10
+      },
+      {
+        "files": {
+          "static/css/pulse_cinematic_media.css": 4,
+          "static/css/pulse_desktop_feed.css": 6
+        },
+        "selector": ".post.card",
+        "total_occurrences": 10
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 10
+        },
+        "selector": ".comm-list, .comm-thread, .comm-details",
+        "total_occurrences": 10
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 10
+        },
+        "selector": ".composer input[data-message-input]",
+        "total_occurrences": 10
+      },
+      {
+        "files": {
+          "static/css/pulse_design_system.css": 1,
+          "static/css/pulse_desktop_feed.css": 1,
+          "static/css/pulse_messages_v2.css": 7
+        },
+        "selector": "html, body",
+        "total_occurrences": 9
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 9
+        },
+        "selector": ".message.is-mine",
+        "total_occurrences": 9
+      },
+      {
+        "files": {
+          "static/css/pulse_home_os.css": 8
+        },
+        "selector": ".pulse-home-os .pulse-network-globe-card",
+        "total_occurrences": 8
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 8
+        },
+        "selector": ".reaction-row",
+        "total_occurrences": 8
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 8
+        },
+        "selector": ".voice-recorder",
+        "total_occurrences": 8
+      },
+      {
+        "files": {
+          "static/css/pulse_home_os.css": 7
+        },
+        "selector": ".pulse-home-os .pulse-network-globe-stage",
+        "total_occurrences": 7
+      },
+      {
+        "files": {
+          "static/css/pulse_home_os.css": 7
+        },
+        "selector": ".pulse-home-os .pulse-network-globe",
+        "total_occurrences": 7
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 7
+        },
+        "selector": ".comm-items",
+        "total_occurrences": 7
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 7
+        },
+        "selector": ".conversation.is-active",
+        "total_occurrences": 7
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 7
+        },
+        "selector": ".comm-details",
+        "total_occurrences": 7
+      },
+      {
+        "files": {
+          "static/css/pulse_reels_experience.css": 7
+        },
+        "selector": ".reels-top",
+        "total_occurrences": 7
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 6
+        },
+        "selector": ".composer-status",
+        "total_occurrences": 6
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 6
+        },
+        "selector": ".comm-modal-panel",
+        "total_occurrences": 6
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 6
+        },
+        "selector": ".thread-head",
+        "total_occurrences": 6
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 6
+        },
+        "selector": ".comm-action-card",
+        "total_occurrences": 6
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 6
+        },
+        "selector": ".comm-toolbar h1",
+        "total_occurrences": 6
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 6
+        },
+        "selector": ".comm-filter.is-mobile-open",
+        "total_occurrences": 6
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 6
+        },
+        "selector": ".signal-status-strip",
+        "total_occurrences": 6
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 6
+        },
+        "selector": ".attachment-sheet",
+        "total_occurrences": 6
+      },
+      {
+        "files": {
+          "static/css/pulse_reels_experience.css": 6
+        },
+        "selector": ".reel-card",
+        "total_occurrences": 6
+      },
+      {
+        "files": {
+          "static/css/pulse_reels_experience.css": 6
+        },
+        "selector": ".reels-action-rail, .reel-actions",
+        "total_occurrences": 6
+      },
+      {
+        "files": {
+          "static/css/pulse_desktop_feed.css": 5
+        },
+        "selector": ".pulse-desktop-layout",
+        "total_occurrences": 5
+      },
+      {
+        "files": {
+          "static/css/pulse_desktop_feed.css": 5
+        },
+        "selector": ".feed",
+        "total_occurrences": 5
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 5
+        },
+        "selector": ".comm-search input",
+        "total_occurrences": 5
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 5
+        },
+        "selector": ".comm-filter button",
+        "total_occurrences": 5
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 5
+        },
+        "selector": ".badge",
+        "total_occurrences": 5
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 5
+        },
+        "selector": ".message-menu-trigger",
+        "total_occurrences": 5
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 5
+        },
+        "selector": ".voice-message",
+        "total_occurrences": 5
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 5
+        },
+        "selector": ".comm-modal",
+        "total_occurrences": 5
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 5
+        },
+        "selector": ".voice-actions button",
+        "total_occurrences": 5
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 5
+        },
+        "selector": ".attachment-preview-rail",
+        "total_occurrences": 5
+      },
+      {
+        "files": {
+          "static/css/pulse_mobile_system.css": 5
+        },
+        "selector": ".mobile-bottom-nav a, .bottom-nav a",
+        "total_occurrences": 5
+      },
+      {
+        "files": {
+          "static/css/pulse_reaction_system.css": 5
+        },
+        "selector": ".pulse-feed-actions-v2 .pulse-action-chip",
+        "total_occurrences": 5
+      },
+      {
+        "files": {
+          "static/css/pulse_status_system.css": 5
+        },
+        "selector": ".pulse-status-story-actions",
+        "total_occurrences": 5
+      },
+      {
+        "files": {
+          "static/css/pulse_advertiser_portal.css": 2,
+          "static/css/pulse_desktop_feed.css": 2
+        },
+        "selector": ".hero h1",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_advertiser_portal.css": 1,
+          "static/css/pulse_desktop_feed.css": 1,
+          "static/css/pulse_messages_v2.css": 2
+        },
+        "selector": ".avatar",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_desktop_feed.css": 4
+        },
+        "selector": ".pulse-publisher-card .smart-composer-bar textarea",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_desktop_feed.css": 4
+        },
+        "selector": ".feed > .post-card-modern .post-action-row",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_desktop_feed.css": 4
+        },
+        "selector": ".feed > .post-card-modern .post-action-button",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_desktop_feed.css": 4
+        },
+        "selector": ".feed > .pulse-feed-post-v3 .post-comment-composer",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_home_os.css": 4
+        },
+        "selector": ".pulse-home-os .pulse-desktop-layout",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_home_os.css": 4
+        },
+        "selector": ".pulse-home-os .pulse-network-copy",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_home_os.css": 4
+        },
+        "selector": ".pulse-home-os .pulse-network-copy strong",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_home_os.css": 4
+        },
+        "selector": ".pulse-home-os .composer-type-row button, .pulse-home-os .composer-type-row .button",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 4
+        },
+        "selector": ".message p",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 4
+        },
+        "selector": ".empty-state",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 4
+        },
+        "selector": ".comm-search-row",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 4
+        },
+        "selector": ".voice-actions",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 4
+        },
+        "selector": ".realtime-status",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 4
+        },
+        "selector": ".active-rail",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 4
+        },
+        "selector": ".active-person",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 4
+        },
+        "selector": ".typing-pill",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 4
+        },
+        "selector": ".composer .icon-btn, .composer .send-btn",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 4
+        },
+        "selector": ".composer .send-btn",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 4
+        },
+        "selector": ".attachment-sheet button",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_messages_v2.css": 4
+        },
+        "selector": ".attachment-preview-card",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_reaction_system.css": 1,
+          "static/css/pulse_status_system.css": 3
+        },
+        "selector": ".pulse-status-story-viewer.open, [data-status-viewer].open",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_reaction_system.css": 1,
+          "static/css/pulse_status_system.css": 3
+        },
+        "selector": ".pulse-status-story-viewer.open .pulse-status-story-actions, [data-status-viewer].open .pulse-status-story-actions",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_reaction_system.css": 1,
+          "static/css/pulse_status_system.css": 3
+        },
+        "selector": ".pulse-status-story-viewer.open .pulse-status-story-footer, [data-status-viewer].open .pulse-status-story-footer",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_reels_experience.css": 4
+        },
+        "selector": ".reel-search-button",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_reels_experience.css": 4
+        },
+        "selector": ".reels-immersive",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_status_system.css": 4
+        },
+        "selector": ".pulse-status-story-shell",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_status_system.css": 4
+        },
+        "selector": ".pulse-status-story-footer",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          "static/css/pulse_status_system.css": 4
+        },
+        "selector": ".pulse-status-ring-progress",
+        "total_occurrences": 4
+      },
+      {
+        "files": {
+          ".venv/lib/python3.14/site-packages/werkzeug/debug/shared/style.css": 1,
+          "static/css/pulse_mobile_system.css": 2
+        },
+        "selector": "h1",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_advertiser_portal.css": 1,
+          "static/css/pulse_design_system.css": 1,
+          "static/css/pulse_messages_v2.css": 1
+        },
+        "selector": "*",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_advertiser_portal.css": 1,
+          "static/css/pulse_messages_v2.css": 2
+        },
+        "selector": "body::before",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_advertiser_portal.css": 1,
+          "static/css/pulse_messages_v2.css": 2
+        },
+        "selector": "button",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_advertiser_portal.css": 3
+        },
+        "selector": ".ad-portal",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_advertiser_portal.css": 3
+        },
+        "selector": ".ad-rail nav",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_advertiser_portal.css": 1,
+          "static/css/pulse_messages_v2.css": 2
+        },
+        "selector": "button:hover",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_cinematic_media.css": 2,
+          "static/css/pulse_desktop_feed.css": 1
+        },
+        "selector": ".pulse-media-wrap, .pulse-cinematic-media-shell, .pulse-media-galaxy-shell, .pulse-media-ambient-shell",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_cinematic_media.css": 2,
+          "static/css/pulse_desktop_feed.css": 1
+        },
+        "selector": ".post > .media-grid, article.card > .pulse-media-wrap",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_cinematic_media.css": 2,
+          "static/css/pulse_desktop_feed.css": 1
+        },
+        "selector": ".pulse-media-backdrop",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_cinematic_media.css": 2,
+          "static/css/pulse_desktop_feed.css": 1
+        },
+        "selector": ".pulse-cinematic-media-shell::before",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_cinematic_media.css": 1,
+          "static/css/pulse_desktop_feed.css": 2
+        },
+        "selector": ".pulse-media-wrap img, .pulse-media-wrap video",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_cinematic_media.css": 3
+        },
+        "selector": ".post:has(.pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status)), .post.is-video:has(.pulse-media-wrap.media-kind-video:not(.pulse-med",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_design_system.css": 1,
+          "static/css/pulse_messages_v2.css": 2
+        },
+        "selector": "*, *::before, *::after",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_desktop_feed.css": 3
+        },
+        "selector": ".composer.card",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_desktop_feed.css": 3
+        },
+        "selector": ".pulse-publisher-card .smart-composer-bar",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_desktop_feed.css": 3
+        },
+        "selector": ".pulse-publisher-card .smart-compose-avatar",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_desktop_feed.css": 3
+        },
+        "selector": ".composer-primary-actions",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_desktop_feed.css": 3
+        },
+        "selector": ".composer-primary-actions button, .composer-primary-actions .button",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_desktop_feed.css": 3
+        },
+        "selector": ".post h2",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_desktop_feed.css": 3
+        },
+        "selector": ".post > p",
+        "total_occurrences": 3
+      },
+      {
+        "files": {
+          "static/css/pulse_desktop_feed.css": 3
+        },
+        "selector": ".quick-actions",
+        "total_occurrences": 3
+      }
+    ],
+    "exact_duplicate_css_files": []
+  },
+  "database_pressure": {
+    "highest_query_pressure": [
+      {
+        "bytes": 6502300,
+        "commit_calls": 463,
+        "execute_calls": 2502,
+        "executemany_calls": 0,
+        "file": "bot.py",
+        "lines": 95667,
+        "select_star": 336
+      },
+      {
+        "bytes": 157340,
+        "commit_calls": 29,
+        "execute_calls": 122,
+        "executemany_calls": 0,
+        "file": "pulse_communications_v2/service.py",
+        "lines": 3307,
+        "select_star": 29
+      },
+      {
+        "bytes": 66324,
+        "commit_calls": 14,
+        "execute_calls": 64,
+        "executemany_calls": 0,
+        "file": "services/pulse_ads_service.py",
+        "lines": 1478,
+        "select_star": 10
+      },
+      {
+        "bytes": 77530,
+        "commit_calls": 14,
+        "execute_calls": 60,
+        "executemany_calls": 0,
+        "file": "services/pulsesoc_dashboard_centers.py",
+        "lines": 1519,
+        "select_star": 10
+      },
+      {
+        "bytes": 17179,
+        "commit_calls": 4,
+        "execute_calls": 30,
+        "executemany_calls": 0,
+        "file": "services/platform_treasury_service.py",
+        "lines": 330,
+        "select_star": 14
+      },
+      {
+        "bytes": 34723,
+        "commit_calls": 9,
+        "execute_calls": 37,
+        "executemany_calls": 0,
+        "file": "services/pulse_advertiser_portal.py",
+        "lines": 779,
+        "select_star": 10
+      },
+      {
+        "bytes": 68059,
+        "commit_calls": 1,
+        "execute_calls": 79,
+        "executemany_calls": 0,
+        "file": ".venv/lib/python3.14/site-packages/sqlalchemy/testing/suite/test_types.py",
+        "lines": 2148,
+        "select_star": 0
+      },
+      {
+        "bytes": 20925,
+        "commit_calls": 6,
+        "execute_calls": 28,
+        "executemany_calls": 0,
+        "file": "services/pulse_ad_payments.py",
+        "lines": 533,
+        "select_star": 10
+      },
+      {
+        "bytes": 63135,
+        "commit_calls": 9,
+        "execute_calls": 59,
+        "executemany_calls": 0,
+        "file": "services/pulse_feed_engine.py",
+        "lines": 1360,
+        "select_star": 3
+      },
+      {
+        "bytes": 41682,
+        "commit_calls": 7,
+        "execute_calls": 29,
+        "executemany_calls": 0,
+        "file": "services/alert_engine.py",
+        "lines": 987,
+        "select_star": 8
+      },
+      {
+        "bytes": 18458,
+        "commit_calls": 10,
+        "execute_calls": 24,
+        "executemany_calls": 0,
+        "file": "services/creator_economy_service.py",
+        "lines": 405,
+        "select_star": 9
+      },
+      {
+        "bytes": 38422,
+        "commit_calls": 11,
+        "execute_calls": 36,
+        "executemany_calls": 0,
+        "file": "services/dashboard_crypto_command_center.py",
+        "lines": 764,
+        "select_star": 5
+      },
+      {
+        "bytes": 28825,
+        "commit_calls": 7,
+        "execute_calls": 46,
+        "executemany_calls": 0,
+        "file": "services/premium_entitlement_service.py",
+        "lines": 769,
+        "select_star": 2
+      },
+      {
+        "bytes": 49422,
+        "commit_calls": 6,
+        "execute_calls": 40,
+        "executemany_calls": 0,
+        "file": "services/dashboard_account_command_center.py",
+        "lines": 1138,
+        "select_star": 3
+      },
+      {
+        "bytes": 62254,
+        "commit_calls": 0,
+        "execute_calls": 54,
+        "executemany_calls": 0,
+        "file": ".venv/lib/python3.14/site-packages/sqlalchemy/testing/suite/test_select.py",
+        "lines": 2011,
+        "select_star": 0
+      },
+      {
+        "bytes": 60714,
+        "commit_calls": 13,
+        "execute_calls": 36,
+        "executemany_calls": 0,
+        "file": "services/notification_service.py",
+        "lines": 1427,
+        "select_star": 3
+      },
+      {
+        "bytes": 119040,
+        "commit_calls": 0,
+        "execute_calls": 5,
+        "executemany_calls": 0,
+        "file": ".venv/lib/python3.14/site-packages/sqlalchemy/orm/query.py",
+        "lines": 3467,
+        "select_star": 9
+      },
+      {
+        "bytes": 30373,
+        "commit_calls": 6,
+        "execute_calls": 27,
+        "executemany_calls": 0,
+        "file": "services/pulsesoc_promotions.py",
+        "lines": 574,
+        "select_star": 4
+      },
+      {
+        "bytes": 13423,
+        "commit_calls": 4,
+        "execute_calls": 7,
+        "executemany_calls": 0,
+        "file": "scripts/activate_pulse_radio_ad.py",
+        "lines": 353,
+        "select_star": 7
+      },
+      {
+        "bytes": 44579,
+        "commit_calls": 7,
+        "execute_calls": 39,
+        "executemany_calls": 0,
+        "file": "services/push_service.py",
+        "lines": 986,
+        "select_star": 0
+      }
+    ],
+    "totals": {
+      "commit_calls": 935,
+      "execute_calls": 4761,
+      "executemany_calls": 27,
+      "select_star": 569
+    }
+  },
+  "generated_at": "2026-06-30T04:32:54.599397+00:00",
+  "guardrails": {
+    "analytics": {
+      "analytics_fetches_are_non_blocking": true,
+      "heartbeat_skips_hidden_tabs": true,
+      "scroll_depth_uses_raf_gate": true
+    },
+    "cache_headers": {
+      "api_private_default_no_store_present": true,
+      "service_worker_no_store_present": true,
+      "static_cache_header_present": true,
+      "static_cache_immutable_present": true
+    },
+    "live_state_polling": {
+      "static/js/pulse_live_studio.js": {
+        "guards_overlapping_state_fetches": true,
+        "legacy_unconditional_fetch_interval_absent": true,
+        "pauses_hidden_tab_polling": true,
+        "uses_schedule_live_state_polling": true
+      },
+      "static/js/pulse_live_studio_runtime.js": {
+        "guards_overlapping_state_fetches": true,
+        "legacy_unconditional_fetch_interval_absent": true,
+        "pauses_hidden_tab_polling": true,
+        "uses_schedule_live_state_polling": true
+      }
+    }
+  },
+  "javascript_pressure": {
+    "duplicate_function_names": [
+      {
+        "file_count": 8,
+        "files": [
+          "mobile/pulse-react-native/scripts/android-ui-quality-audit.js",
+          "mobile/pulse-react-native/scripts/feed-audit.js",
+          "mobile/pulse-react-native/scripts/firebase-audit.js",
+          "mobile/pulse-react-native/scripts/mobile-web-parity-audit.js",
+          "mobile/pulse-react-native/scripts/native-live-audit.js",
+          "mobile/pulse-react-native/scripts/notifications-audit.js",
+          "mobile/pulse-react-native/scripts/production-parity-audit.js",
+          "static/js/pulse_chat_recovery.js"
+        ],
+        "name": "read"
+      },
+      {
+        "file_count": 5,
+        "files": [
+          "static/analytics.js",
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js",
+          "static/js/pulse_messages_v2.js",
+          "static/notifications.js"
+        ],
+        "name": "escapeHtml"
+      },
+      {
+        "file_count": 5,
+        "files": [
+          "static/analytics.js",
+          "static/js/pulse_camera_engine.js",
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js",
+          "static/js/pulse_messages_v2.js"
+        ],
+        "name": "tick"
+      },
+      {
+        "file_count": 4,
+        "files": [
+          "static/js/pulse_home_core.js",
+          "static/js/pulse_messages_v2.js",
+          "static/js/pulse_radio.js",
+          "static/js/pulsesoc_promotions.js"
+        ],
+        "name": "api"
+      },
+      {
+        "file_count": 4,
+        "files": [
+          "static/js/pulse_media_picker.js",
+          "static/js/pulse_media_renderer.js",
+          "static/js/pulse_reaction_system.js",
+          "static/js/time.js"
+        ],
+        "name": "hydrate"
+      },
+      {
+        "file_count": 4,
+        "files": [
+          "static/js/pulse_camera_engine.js",
+          "static/js/pulse_chat_recovery.js",
+          "static/js/pulse_messages_v2.js",
+          "static/js/pulsesoc_promotions.js"
+        ],
+        "name": "setStatus"
+      },
+      {
+        "file_count": 4,
+        "files": [
+          "mobile/pulse-react-native/scripts/authentication-audit.js",
+          "mobile/pulse-react-native/scripts/feed-audit.js",
+          "mobile/scripts/authentication-audit.js",
+          "mobile/scripts/feed-audit.js"
+        ],
+        "name": "walk"
+      },
+      {
+        "file_count": 3,
+        "files": [
+          "static/js/pulse_chat_recovery.js",
+          "static/js/pulse_home_core.js",
+          "static/js/pulse_media_renderer.js"
+        ],
+        "name": "esc"
+      },
+      {
+        "file_count": 3,
+        "files": [
+          "static/js/pulse_chat_recovery.js",
+          "static/js/pulse_environment_engine.js",
+          "static/js/pulse_pwa_install.js"
+        ],
+        "name": "install"
+      },
+      {
+        "file_count": 3,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js",
+          "static/js/pulse_media_renderer.js"
+        ],
+        "name": "poll"
+      },
+      {
+        "file_count": 3,
+        "files": [
+          "static/js/pulse_search_bridge.js",
+          "static/js/pulse_status_viewer.js",
+          "static/js/pulse_upload_manager.js"
+        ],
+        "name": "render"
+      },
+      {
+        "file_count": 3,
+        "files": [
+          "static/js/pulse_ads_hooks.js",
+          "static/js/pulse_home_core.js",
+          "static/js/pulse_media_renderer.js"
+        ],
+        "name": "renderMedia"
+      },
+      {
+        "file_count": 3,
+        "files": [
+          "static/analytics.js",
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "start"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "applyState"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "mobile/babel.config.js",
+          "mobile/pulse-react-native/babel.config.js"
+        ],
+        "name": "babelConfig"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "bootCamera"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "chatMessageHtml"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "checkMuxStatus"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "cleanup"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "cleanupPublisher"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "connectLiveKitRoom"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "copyLiveValue"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_ads_hooks.js",
+          "static/js/pulse_advertiser_portal.js"
+        ],
+        "name": "csrfToken"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "detachLiveKitTracks"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_advertiser_portal.js",
+          "static/js/pulse_messages_v2.js"
+        ],
+        "name": "el"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_home_core.js",
+          "static/js/time.js"
+        ],
+        "name": "element"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "ensurePublicPlayback"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "ensureTransportDiagnostics"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "fetchSignals"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "fetchState"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "finish"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "init"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "initPublisherTransport"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "initViewerTransport"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "isLiveKitConnected"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/service-worker.js",
+          "static/sw.js"
+        ],
+        "name": "isNeverCachePath"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/service-worker.js",
+          "static/sw.js"
+        ],
+        "name": "isRuntimeAsset"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/service-worker.js",
+          "static/sw.js"
+        ],
+        "name": "isStaticAsset"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_ads_hooks.js",
+          "static/js/pulse_camera_engine.js"
+        ],
+        "name": "isVideo"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "liveDebugEventName"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "livePeerId"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "liveStartMessage"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "livekitClient"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "livekitLog"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "livekitRoomState"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "localPublications"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "makePeer"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_home_core.js",
+          "static/js/pulse_status_viewer.js"
+        ],
+        "name": "media"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_home_core.js",
+          "static/js/pulse_media_renderer.js"
+        ],
+        "name": "mediaUrl"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "notify"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/service-worker.js",
+          "static/sw.js"
+        ],
+        "name": "offlineResponse"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "onConnected"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "onState"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/service-worker.js",
+          "static/sw.js"
+        ],
+        "name": "onlineNavigationError"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "postSignal"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "publicationKind"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_camera_engine.js",
+          "static/js/pulse_upload_manager.js"
+        ],
+        "name": "publish"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "publishToLiveKit"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "publishTracks"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "qs"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "qsa"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "refreshDiagnostics"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/analytics.js",
+          "static/js/pulse_messages_v2.js"
+        ],
+        "name": "relativeTime"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "renderChat"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "renderReactionBurst"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_advertiser_portal.js",
+          "static/js/pulsesoc_promotions.js"
+        ],
+        "name": "renderReview"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "revealUnmute"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_media_renderer.js",
+          "static/js/pulse_search_bridge.js"
+        ],
+        "name": "run"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_ads_hooks.js",
+          "static/js/pulse_media_renderer.js"
+        ],
+        "name": "safeUrl"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_media_renderer.js",
+          "static/js/pulse_messages_v2.js"
+        ],
+        "name": "sample"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "scheduleLiveStatePolling"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "scheduleMuxPolling"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "sendChat"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "sendLiveDebug"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "sendReaction"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "setCameraSurfaceActive"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "setConnectButtonsBusy"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "setText"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "showCameraState"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "stop"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_home_core.js",
+          "static/js/pulse_radio.js"
+        ],
+        "name": "toast"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "trackDiagnostics"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "tracksToMediaStream"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "unpublishLocalTracks"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_environment_engine.js",
+          "static/js/pulse_media_renderer.js"
+        ],
+        "name": "update"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "updateTransportDiagnostics"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_camera_engine.js",
+          "static/notifications.js"
+        ],
+        "name": "vibrate"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "wait"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "waitForLiveKitConnected"
+      },
+      {
+        "file_count": 2,
+        "files": [
+          "static/js/pulse_live_studio.js",
+          "static/js/pulse_live_studio_runtime.js"
+        ],
+        "name": "wireLocalTrackDiagnostics"
+      }
+    ],
+    "exact_duplicate_js_files": [
+      {
+        "count": 2,
+        "files": [
+          ".venv/lib/python3.14/site-packages/pip/_vendor/urllib3/contrib/emscripten/emscripten_fetch_worker.js",
+          ".venv/lib/python3.14/site-packages/urllib3/contrib/emscripten/emscripten_fetch_worker.js"
+        ],
+        "sha256": "cf5937cd9e3f84329ddfeb4def0cf3f0b1e31c2da9c4dfeebbc07793d0fd0377"
+      },
+      {
+        "count": 2,
+        "files": [
+          "mobile/babel.config.js",
+          "mobile/pulse-react-native/babel.config.js"
+        ],
+        "sha256": "f04ca9d1629a46f39cc1d5d4f107caba3d08b8ab422cead862bd71a2085a02ba"
+      },
+      {
+        "count": 2,
+        "files": [
+          "mobile/metro.config.js",
+          "mobile/pulse-react-native/metro.config.js"
+        ],
+        "sha256": "f43ea162f01db103a51e5a17b02c3a07df303c64201930a6a5df44578b5715cd"
+      },
+      {
+        "count": 2,
+        "files": [
+          "static/service-worker.js",
+          "static/sw.js"
+        ],
+        "sha256": "7dcf214be6a79a892270f2bd46f87389ffff779b030b720b54285f60a9f4d7aa"
+      }
+    ],
+    "highest_dom_query_pressure": [
+      {
+        "add_event_listener": 62,
+        "bytes": 149599,
+        "fetch": 1,
+        "file": "static/js/pulse_home_core.js",
+        "inner_html": 21,
+        "intersection_observer": 3,
+        "lines": 3250,
+        "mutation_observer": 0,
+        "query_selector": 94,
+        "query_selector_all": 34,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 14
+      },
+      {
+        "add_event_listener": 20,
+        "bytes": 43736,
+        "fetch": 10,
+        "file": "static/analytics.js",
+        "inner_html": 10,
+        "intersection_observer": 1,
+        "lines": 1197,
+        "mutation_observer": 0,
+        "query_selector": 39,
+        "query_selector_all": 13,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 5,
+        "set_timeout": 3
+      },
+      {
+        "add_event_listener": 10,
+        "bytes": 50276,
+        "fetch": 1,
+        "file": "static/js/pulse_status_viewer.js",
+        "inner_html": 7,
+        "intersection_observer": 0,
+        "lines": 1052,
+        "mutation_observer": 1,
+        "query_selector": 48,
+        "query_selector_all": 5,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 1,
+        "set_timeout": 12
+      },
+      {
+        "add_event_listener": 13,
+        "bytes": 27586,
+        "fetch": 1,
+        "file": "static/js/pulse_advertiser_portal.js",
+        "inner_html": 0,
+        "intersection_observer": 0,
+        "lines": 650,
+        "mutation_observer": 0,
+        "query_selector": 45,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 1
+      },
+      {
+        "add_event_listener": 24,
+        "bytes": 109223,
+        "fetch": 2,
+        "file": "static/js/pulse_messages_v2.js",
+        "inner_html": 24,
+        "intersection_observer": 0,
+        "lines": 2297,
+        "mutation_observer": 0,
+        "query_selector": 16,
+        "query_selector_all": 14,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 14
+      },
+      {
+        "add_event_listener": 35,
+        "bytes": 81013,
+        "fetch": 3,
+        "file": "static/js/pulse_media_renderer.js",
+        "inner_html": 2,
+        "intersection_observer": 3,
+        "lines": 1961,
+        "mutation_observer": 2,
+        "query_selector": 32,
+        "query_selector_all": 5,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 1,
+        "set_timeout": 9
+      },
+      {
+        "add_event_listener": 25,
+        "bytes": 32680,
+        "fetch": 8,
+        "file": "static/js/pulse_camera_engine.js",
+        "inner_html": 1,
+        "intersection_observer": 0,
+        "lines": 736,
+        "mutation_observer": 0,
+        "query_selector": 1,
+        "query_selector_all": 11,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 1,
+        "set_timeout": 3
+      },
+      {
+        "add_event_listener": 9,
+        "bytes": 10068,
+        "fetch": 3,
+        "file": ".venv/lib/python3.14/site-packages/werkzeug/debug/shared/debugger.js",
+        "inner_html": 5,
+        "intersection_observer": 0,
+        "lines": 345,
+        "mutation_observer": 0,
+        "query_selector": 8,
+        "query_selector_all": 5,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 1
+      },
+      {
+        "add_event_listener": 7,
+        "bytes": 9632,
+        "fetch": 1,
+        "file": "static/js/pulsesoc_promotions.js",
+        "inner_html": 4,
+        "intersection_observer": 0,
+        "lines": 200,
+        "mutation_observer": 0,
+        "query_selector": 12,
+        "query_selector_all": 2,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 0
+      },
+      {
+        "add_event_listener": 9,
+        "bytes": 21882,
+        "fetch": 11,
+        "file": "static/notifications.js",
+        "inner_html": 1,
+        "intersection_observer": 0,
+        "lines": 473,
+        "mutation_observer": 0,
+        "query_selector": 6,
+        "query_selector_all": 4,
+        "remove_event_listener": 2,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 3
+      },
+      {
+        "add_event_listener": 11,
+        "bytes": 13694,
+        "fetch": 2,
+        "file": "static/js/pulse_ads_hooks.js",
+        "inner_html": 0,
+        "intersection_observer": 1,
+        "lines": 351,
+        "mutation_observer": 0,
+        "query_selector": 5,
+        "query_selector_all": 3,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 1
+      },
+      {
+        "add_event_listener": 8,
+        "bytes": 10262,
+        "fetch": 1,
+        "file": "static/js/pulse_radio.js",
+        "inner_html": 0,
+        "intersection_observer": 0,
+        "lines": 285,
+        "mutation_observer": 0,
+        "query_selector": 8,
+        "query_selector_all": 1,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 2
+      },
+      {
+        "add_event_listener": 19,
+        "bytes": 55263,
+        "fetch": 9,
+        "file": "static/js/pulse_live_studio_runtime.js",
+        "inner_html": 3,
+        "intersection_observer": 0,
+        "lines": 1169,
+        "mutation_observer": 0,
+        "query_selector": 4,
+        "query_selector_all": 1,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 3,
+        "set_timeout": 8
+      },
+      {
+        "add_event_listener": 17,
+        "bytes": 53483,
+        "fetch": 9,
+        "file": "static/js/pulse_live_studio.js",
+        "inner_html": 3,
+        "intersection_observer": 0,
+        "lines": 1133,
+        "mutation_observer": 0,
+        "query_selector": 3,
+        "query_selector_all": 1,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 3,
+        "set_timeout": 8
+      },
+      {
+        "add_event_listener": 2,
+        "bytes": 1579,
+        "fetch": 0,
+        "file": "static/js/pulse_media_picker.js",
+        "inner_html": 0,
+        "intersection_observer": 0,
+        "lines": 43,
+        "mutation_observer": 0,
+        "query_selector": 1,
+        "query_selector_all": 2,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 0
+      },
+      {
+        "add_event_listener": 7,
+        "bytes": 9889,
+        "fetch": 0,
+        "file": "static/js/pulse_pwa_install.js",
+        "inner_html": 1,
+        "intersection_observer": 0,
+        "lines": 250,
+        "mutation_observer": 0,
+        "query_selector": 3,
+        "query_selector_all": 1,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 1
+      },
+      {
+        "add_event_listener": 5,
+        "bytes": 5448,
+        "fetch": 0,
+        "file": "static/js/pulse_environment_engine.js",
+        "inner_html": 1,
+        "intersection_observer": 0,
+        "lines": 108,
+        "mutation_observer": 0,
+        "query_selector": 4,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 2,
+        "set_timeout": 0
+      },
+      {
+        "add_event_listener": 2,
+        "bytes": 6978,
+        "fetch": 0,
+        "file": "static/js/pulse_reaction_system.js",
+        "inner_html": 0,
+        "intersection_observer": 0,
+        "lines": 124,
+        "mutation_observer": 0,
+        "query_selector": 4,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 2
+      },
+      {
+        "add_event_listener": 3,
+        "bytes": 3778,
+        "fetch": 0,
+        "file": "static/js/pulse_chat_recovery.js",
+        "inner_html": 3,
+        "intersection_observer": 0,
+        "lines": 104,
+        "mutation_observer": 0,
+        "query_selector": 3,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 0
+      },
+      {
+        "add_event_listener": 0,
+        "bytes": 15371,
+        "fetch": 3,
+        "file": "static/js/pulse_upload_manager.js",
+        "inner_html": 0,
+        "intersection_observer": 0,
+        "lines": 315,
+        "mutation_observer": 0,
+        "query_selector": 3,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 1
+      }
+    ],
+    "highest_listener_pressure": [
+      {
+        "add_event_listener": 62,
+        "bytes": 149599,
+        "fetch": 1,
+        "file": "static/js/pulse_home_core.js",
+        "inner_html": 21,
+        "intersection_observer": 3,
+        "lines": 3250,
+        "mutation_observer": 0,
+        "query_selector": 94,
+        "query_selector_all": 34,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 14
+      },
+      {
+        "add_event_listener": 35,
+        "bytes": 81013,
+        "fetch": 3,
+        "file": "static/js/pulse_media_renderer.js",
+        "inner_html": 2,
+        "intersection_observer": 3,
+        "lines": 1961,
+        "mutation_observer": 2,
+        "query_selector": 32,
+        "query_selector_all": 5,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 1,
+        "set_timeout": 9
+      },
+      {
+        "add_event_listener": 25,
+        "bytes": 32680,
+        "fetch": 8,
+        "file": "static/js/pulse_camera_engine.js",
+        "inner_html": 1,
+        "intersection_observer": 0,
+        "lines": 736,
+        "mutation_observer": 0,
+        "query_selector": 1,
+        "query_selector_all": 11,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 1,
+        "set_timeout": 3
+      },
+      {
+        "add_event_listener": 24,
+        "bytes": 109223,
+        "fetch": 2,
+        "file": "static/js/pulse_messages_v2.js",
+        "inner_html": 24,
+        "intersection_observer": 0,
+        "lines": 2297,
+        "mutation_observer": 0,
+        "query_selector": 16,
+        "query_selector_all": 14,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 14
+      },
+      {
+        "add_event_listener": 20,
+        "bytes": 43736,
+        "fetch": 10,
+        "file": "static/analytics.js",
+        "inner_html": 10,
+        "intersection_observer": 1,
+        "lines": 1197,
+        "mutation_observer": 0,
+        "query_selector": 39,
+        "query_selector_all": 13,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 5,
+        "set_timeout": 3
+      },
+      {
+        "add_event_listener": 19,
+        "bytes": 55263,
+        "fetch": 9,
+        "file": "static/js/pulse_live_studio_runtime.js",
+        "inner_html": 3,
+        "intersection_observer": 0,
+        "lines": 1169,
+        "mutation_observer": 0,
+        "query_selector": 4,
+        "query_selector_all": 1,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 3,
+        "set_timeout": 8
+      },
+      {
+        "add_event_listener": 17,
+        "bytes": 53483,
+        "fetch": 9,
+        "file": "static/js/pulse_live_studio.js",
+        "inner_html": 3,
+        "intersection_observer": 0,
+        "lines": 1133,
+        "mutation_observer": 0,
+        "query_selector": 3,
+        "query_selector_all": 1,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 3,
+        "set_timeout": 8
+      },
+      {
+        "add_event_listener": 13,
+        "bytes": 27586,
+        "fetch": 1,
+        "file": "static/js/pulse_advertiser_portal.js",
+        "inner_html": 0,
+        "intersection_observer": 0,
+        "lines": 650,
+        "mutation_observer": 0,
+        "query_selector": 45,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 1
+      },
+      {
+        "add_event_listener": 11,
+        "bytes": 13694,
+        "fetch": 2,
+        "file": "static/js/pulse_ads_hooks.js",
+        "inner_html": 0,
+        "intersection_observer": 1,
+        "lines": 351,
+        "mutation_observer": 0,
+        "query_selector": 5,
+        "query_selector_all": 3,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 1
+      },
+      {
+        "add_event_listener": 10,
+        "bytes": 50276,
+        "fetch": 1,
+        "file": "static/js/pulse_status_viewer.js",
+        "inner_html": 7,
+        "intersection_observer": 0,
+        "lines": 1052,
+        "mutation_observer": 1,
+        "query_selector": 48,
+        "query_selector_all": 5,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 1,
+        "set_timeout": 12
+      },
+      {
+        "add_event_listener": 9,
+        "bytes": 10068,
+        "fetch": 3,
+        "file": ".venv/lib/python3.14/site-packages/werkzeug/debug/shared/debugger.js",
+        "inner_html": 5,
+        "intersection_observer": 0,
+        "lines": 345,
+        "mutation_observer": 0,
+        "query_selector": 8,
+        "query_selector_all": 5,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 1
+      },
+      {
+        "add_event_listener": 9,
+        "bytes": 21882,
+        "fetch": 11,
+        "file": "static/notifications.js",
+        "inner_html": 1,
+        "intersection_observer": 0,
+        "lines": 473,
+        "mutation_observer": 0,
+        "query_selector": 6,
+        "query_selector_all": 4,
+        "remove_event_listener": 2,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 3
+      },
+      {
+        "add_event_listener": 8,
+        "bytes": 10262,
+        "fetch": 1,
+        "file": "static/js/pulse_radio.js",
+        "inner_html": 0,
+        "intersection_observer": 0,
+        "lines": 285,
+        "mutation_observer": 0,
+        "query_selector": 8,
+        "query_selector_all": 1,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 2
+      },
+      {
+        "add_event_listener": 7,
+        "bytes": 9889,
+        "fetch": 0,
+        "file": "static/js/pulse_pwa_install.js",
+        "inner_html": 1,
+        "intersection_observer": 0,
+        "lines": 250,
+        "mutation_observer": 0,
+        "query_selector": 3,
+        "query_selector_all": 1,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 1
+      },
+      {
+        "add_event_listener": 7,
+        "bytes": 9632,
+        "fetch": 1,
+        "file": "static/js/pulsesoc_promotions.js",
+        "inner_html": 4,
+        "intersection_observer": 0,
+        "lines": 200,
+        "mutation_observer": 0,
+        "query_selector": 12,
+        "query_selector_all": 2,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 0
+      },
+      {
+        "add_event_listener": 6,
+        "bytes": 5816,
+        "fetch": 0,
+        "file": "static/js/pulse_realtime.js",
+        "inner_html": 0,
+        "intersection_observer": 0,
+        "lines": 166,
+        "mutation_observer": 0,
+        "query_selector": 0,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 3
+      },
+      {
+        "add_event_listener": 5,
+        "bytes": 5448,
+        "fetch": 0,
+        "file": "static/js/pulse_environment_engine.js",
+        "inner_html": 1,
+        "intersection_observer": 0,
+        "lines": 108,
+        "mutation_observer": 0,
+        "query_selector": 4,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 2,
+        "set_timeout": 0
+      },
+      {
+        "add_event_listener": 5,
+        "bytes": 9539,
+        "fetch": 6,
+        "file": "static/service-worker.js",
+        "inner_html": 0,
+        "intersection_observer": 0,
+        "lines": 229,
+        "mutation_observer": 0,
+        "query_selector": 0,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 0
+      },
+      {
+        "add_event_listener": 5,
+        "bytes": 9539,
+        "fetch": 6,
+        "file": "static/sw.js",
+        "inner_html": 0,
+        "intersection_observer": 0,
+        "lines": 229,
+        "mutation_observer": 0,
+        "query_selector": 0,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 0
+      },
+      {
+        "add_event_listener": 4,
+        "bytes": 5668,
+        "fetch": 1,
+        "file": "static/js/pulse_search_bridge.js",
+        "inner_html": 1,
+        "intersection_observer": 0,
+        "lines": 132,
+        "mutation_observer": 0,
+        "query_selector": 2,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 2
+      }
+    ],
+    "highest_timer_pressure": [
+      {
+        "add_event_listener": 20,
+        "bytes": 43736,
+        "fetch": 10,
+        "file": "static/analytics.js",
+        "inner_html": 10,
+        "intersection_observer": 1,
+        "lines": 1197,
+        "mutation_observer": 0,
+        "query_selector": 39,
+        "query_selector_all": 13,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 5,
+        "set_timeout": 3
+      },
+      {
+        "add_event_listener": 17,
+        "bytes": 53483,
+        "fetch": 9,
+        "file": "static/js/pulse_live_studio.js",
+        "inner_html": 3,
+        "intersection_observer": 0,
+        "lines": 1133,
+        "mutation_observer": 0,
+        "query_selector": 3,
+        "query_selector_all": 1,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 3,
+        "set_timeout": 8
+      },
+      {
+        "add_event_listener": 19,
+        "bytes": 55263,
+        "fetch": 9,
+        "file": "static/js/pulse_live_studio_runtime.js",
+        "inner_html": 3,
+        "intersection_observer": 0,
+        "lines": 1169,
+        "mutation_observer": 0,
+        "query_selector": 4,
+        "query_selector_all": 1,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 3,
+        "set_timeout": 8
+      },
+      {
+        "add_event_listener": 10,
+        "bytes": 50276,
+        "fetch": 1,
+        "file": "static/js/pulse_status_viewer.js",
+        "inner_html": 7,
+        "intersection_observer": 0,
+        "lines": 1052,
+        "mutation_observer": 1,
+        "query_selector": 48,
+        "query_selector_all": 5,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 1,
+        "set_timeout": 12
+      },
+      {
+        "add_event_listener": 62,
+        "bytes": 149599,
+        "fetch": 1,
+        "file": "static/js/pulse_home_core.js",
+        "inner_html": 21,
+        "intersection_observer": 3,
+        "lines": 3250,
+        "mutation_observer": 0,
+        "query_selector": 94,
+        "query_selector_all": 34,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 14
+      },
+      {
+        "add_event_listener": 24,
+        "bytes": 109223,
+        "fetch": 2,
+        "file": "static/js/pulse_messages_v2.js",
+        "inner_html": 24,
+        "intersection_observer": 0,
+        "lines": 2297,
+        "mutation_observer": 0,
+        "query_selector": 16,
+        "query_selector_all": 14,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 14
+      },
+      {
+        "add_event_listener": 35,
+        "bytes": 81013,
+        "fetch": 3,
+        "file": "static/js/pulse_media_renderer.js",
+        "inner_html": 2,
+        "intersection_observer": 3,
+        "lines": 1961,
+        "mutation_observer": 2,
+        "query_selector": 32,
+        "query_selector_all": 5,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 1,
+        "set_timeout": 9
+      },
+      {
+        "add_event_listener": 25,
+        "bytes": 32680,
+        "fetch": 8,
+        "file": "static/js/pulse_camera_engine.js",
+        "inner_html": 1,
+        "intersection_observer": 0,
+        "lines": 736,
+        "mutation_observer": 0,
+        "query_selector": 1,
+        "query_selector_all": 11,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 1,
+        "set_timeout": 3
+      },
+      {
+        "add_event_listener": 5,
+        "bytes": 5448,
+        "fetch": 0,
+        "file": "static/js/pulse_environment_engine.js",
+        "inner_html": 1,
+        "intersection_observer": 0,
+        "lines": 108,
+        "mutation_observer": 0,
+        "query_selector": 4,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 2,
+        "set_timeout": 0
+      },
+      {
+        "add_event_listener": 6,
+        "bytes": 5816,
+        "fetch": 0,
+        "file": "static/js/pulse_realtime.js",
+        "inner_html": 0,
+        "intersection_observer": 0,
+        "lines": 166,
+        "mutation_observer": 0,
+        "query_selector": 0,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 3
+      },
+      {
+        "add_event_listener": 1,
+        "bytes": 2867,
+        "fetch": 0,
+        "file": "static/js/time.js",
+        "inner_html": 0,
+        "intersection_observer": 0,
+        "lines": 67,
+        "mutation_observer": 0,
+        "query_selector": 0,
+        "query_selector_all": 1,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 1,
+        "set_timeout": 0
+      },
+      {
+        "add_event_listener": 9,
+        "bytes": 21882,
+        "fetch": 11,
+        "file": "static/notifications.js",
+        "inner_html": 1,
+        "intersection_observer": 0,
+        "lines": 473,
+        "mutation_observer": 0,
+        "query_selector": 6,
+        "query_selector_all": 4,
+        "remove_event_listener": 2,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 3
+      },
+      {
+        "add_event_listener": 8,
+        "bytes": 10262,
+        "fetch": 1,
+        "file": "static/js/pulse_radio.js",
+        "inner_html": 0,
+        "intersection_observer": 0,
+        "lines": 285,
+        "mutation_observer": 0,
+        "query_selector": 8,
+        "query_selector_all": 1,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 2
+      },
+      {
+        "add_event_listener": 2,
+        "bytes": 6978,
+        "fetch": 0,
+        "file": "static/js/pulse_reaction_system.js",
+        "inner_html": 0,
+        "intersection_observer": 0,
+        "lines": 124,
+        "mutation_observer": 0,
+        "query_selector": 4,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 2
+      },
+      {
+        "add_event_listener": 4,
+        "bytes": 5668,
+        "fetch": 1,
+        "file": "static/js/pulse_search_bridge.js",
+        "inner_html": 1,
+        "intersection_observer": 0,
+        "lines": 132,
+        "mutation_observer": 0,
+        "query_selector": 2,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 2
+      },
+      {
+        "add_event_listener": 9,
+        "bytes": 10068,
+        "fetch": 3,
+        "file": ".venv/lib/python3.14/site-packages/werkzeug/debug/shared/debugger.js",
+        "inner_html": 5,
+        "intersection_observer": 0,
+        "lines": 345,
+        "mutation_observer": 0,
+        "query_selector": 8,
+        "query_selector_all": 5,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 1
+      },
+      {
+        "add_event_listener": 11,
+        "bytes": 13694,
+        "fetch": 2,
+        "file": "static/js/pulse_ads_hooks.js",
+        "inner_html": 0,
+        "intersection_observer": 1,
+        "lines": 351,
+        "mutation_observer": 0,
+        "query_selector": 5,
+        "query_selector_all": 3,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 1
+      },
+      {
+        "add_event_listener": 13,
+        "bytes": 27586,
+        "fetch": 1,
+        "file": "static/js/pulse_advertiser_portal.js",
+        "inner_html": 0,
+        "intersection_observer": 0,
+        "lines": 650,
+        "mutation_observer": 0,
+        "query_selector": 45,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 1
+      },
+      {
+        "add_event_listener": 7,
+        "bytes": 9889,
+        "fetch": 0,
+        "file": "static/js/pulse_pwa_install.js",
+        "inner_html": 1,
+        "intersection_observer": 0,
+        "lines": 250,
+        "mutation_observer": 0,
+        "query_selector": 3,
+        "query_selector_all": 1,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 1
+      },
+      {
+        "add_event_listener": 0,
+        "bytes": 15371,
+        "fetch": 3,
+        "file": "static/js/pulse_upload_manager.js",
+        "inner_html": 0,
+        "intersection_observer": 0,
+        "lines": 315,
+        "mutation_observer": 0,
+        "query_selector": 3,
+        "query_selector_all": 0,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 1
+      }
+    ],
+    "totals": {
+      "add_event_listener": 311,
+      "fetch": 80,
+      "inner_html": 87,
+      "intersection_observer": 8,
+      "mutation_observer": 3,
+      "query_selector": 341,
+      "query_selector_all": 103,
+      "remove_event_listener": 2,
+      "set_interval": 17,
+      "set_timeout": 88
+    }
+  },
+  "media_patterns": {
+    "img_tags": 97,
+    "lazy_loading": 24,
+    "preload_metadata": 40,
+    "video_pause_calls": 35,
+    "video_play_calls": 49,
+    "video_tags": 40
+  },
+  "ranked_findings": [
+    {
+      "area": "startup/backend",
+      "evidence": {
+        "bytes": 6502300,
+        "file": "bot.py"
+      },
+      "finding": "bot.py remains a monolithic multi-megabyte Flask module.",
+      "rank": 1,
+      "recommended_next_step": "Split cold-start-heavy route/template/static builders into import-light modules after route parity tests exist.",
+      "severity": "critical"
+    },
+    {
+      "area": "frontend/js",
+      "evidence": {
+        "add_event_listener": 62,
+        "bytes": 149599,
+        "fetch": 1,
+        "file": "static/js/pulse_home_core.js",
+        "inner_html": 21,
+        "intersection_observer": 3,
+        "lines": 3250,
+        "mutation_observer": 0,
+        "query_selector": 94,
+        "query_selector_all": 34,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 14
+      },
+      "finding": "A single JS file exceeds the 120KB review threshold.",
+      "rank": 2,
+      "recommended_next_step": "Split route-specific logic or lazy-load below-the-fold behaviors without changing current UI.",
+      "severity": "high"
+    },
+    {
+      "area": "frontend/listeners",
+      "evidence": {
+        "add_event_listener": 62,
+        "bytes": 149599,
+        "fetch": 1,
+        "file": "static/js/pulse_home_core.js",
+        "inner_html": 21,
+        "intersection_observer": 3,
+        "lines": 3250,
+        "mutation_observer": 0,
+        "query_selector": 94,
+        "query_selector_all": 34,
+        "remove_event_listener": 0,
+        "resize_observer": 0,
+        "set_interval": 0,
+        "set_timeout": 14
+      },
+      "finding": "One script registers a high number of explicit event listeners.",
+      "rank": 3,
+      "recommended_next_step": "Consolidate repeated handlers into delegated listeners where the DOM structure is stable.",
+      "severity": "high"
+    },
+    {
+      "area": "database/api",
+      "evidence": {
+        "select_star_total": 569
+      },
+      "finding": "SELECT * usage remains present and can inflate payload and row materialization cost.",
+      "rank": 4,
+      "recommended_next_step": "Replace hot-path SELECT * calls with explicit projected columns after endpoint snapshots are captured.",
+      "severity": "high"
+    },
+    {
+      "area": "frontend/js",
+      "evidence": [
+        {
+          "file_count": 8,
+          "files": [
+            "mobile/pulse-react-native/scripts/android-ui-quality-audit.js",
+            "mobile/pulse-react-native/scripts/feed-audit.js",
+            "mobile/pulse-react-native/scripts/firebase-audit.js",
+            "mobile/pulse-react-native/scripts/mobile-web-parity-audit.js",
+            "mobile/pulse-react-native/scripts/native-live-audit.js",
+            "mobile/pulse-react-native/scripts/notifications-audit.js",
+            "mobile/pulse-react-native/scripts/production-parity-audit.js",
+            "static/js/pulse_chat_recovery.js"
+          ],
+          "name": "read"
+        },
+        {
+          "file_count": 5,
+          "files": [
+            "static/analytics.js",
+            "static/js/pulse_live_studio.js",
+            "static/js/pulse_live_studio_runtime.js",
+            "static/js/pulse_messages_v2.js",
+            "static/notifications.js"
+          ],
+          "name": "escapeHtml"
+        },
+        {
+          "file_count": 5,
+          "files": [
+            "static/analytics.js",
+            "static/js/pulse_camera_engine.js",
+            "static/js/pulse_live_studio.js",
+            "static/js/pulse_live_studio_runtime.js",
+            "static/js/pulse_messages_v2.js"
+          ],
+          "name": "tick"
+        },
+        {
+          "file_count": 4,
+          "files": [
+            "static/js/pulse_home_core.js",
+            "static/js/pulse_messages_v2.js",
+            "static/js/pulse_radio.js",
+            "static/js/pulsesoc_promotions.js"
+          ],
+          "name": "api"
+        },
+        {
+          "file_count": 4,
+          "files": [
+            "static/js/pulse_media_picker.js",
+            "static/js/pulse_media_renderer.js",
+            "static/js/pulse_reaction_system.js",
+            "static/js/time.js"
+          ],
+          "name": "hydrate"
+        },
+        {
+          "file_count": 4,
+          "files": [
+            "static/js/pulse_camera_engine.js",
+            "static/js/pulse_chat_recovery.js",
+            "static/js/pulse_messages_v2.js",
+            "static/js/pulsesoc_promotions.js"
+          ],
+          "name": "setStatus"
+        },
+        {
+          "file_count": 4,
+          "files": [
+            "mobile/pulse-react-native/scripts/authentication-audit.js",
+            "mobile/pulse-react-native/scripts/feed-audit.js",
+            "mobile/scripts/authentication-audit.js",
+            "mobile/scripts/feed-audit.js"
+          ],
+          "name": "walk"
+        },
+        {
+          "file_count": 3,
+          "files": [
+            "static/js/pulse_chat_recovery.js",
+            "static/js/pulse_home_core.js",
+            "static/js/pulse_media_renderer.js"
+          ],
+          "name": "esc"
+        },
+        {
+          "file_count": 3,
+          "files": [
+            "static/js/pulse_chat_recovery.js",
+            "static/js/pulse_environment_engine.js",
+            "static/js/pulse_pwa_install.js"
+          ],
+          "name": "install"
+        },
+        {
+          "file_count": 3,
+          "files": [
+            "static/js/pulse_live_studio.js",
+            "static/js/pulse_live_studio_runtime.js",
+            "static/js/pulse_media_renderer.js"
+          ],
+          "name": "poll"
+        }
+      ],
+      "finding": "Duplicate JS utility/function names exist across files.",
+      "rank": 5,
+      "recommended_next_step": "Move stable utilities into existing shared modules only after bundle-load boundaries are confirmed.",
+      "severity": "medium"
+    },
+    {
+      "area": "frontend/css",
+      "evidence": [
+        {
+          "files": {
+            "static/css/pulse_messages_v2.css": 24
+          },
+          "selector": ".comm-shell",
+          "total_occurrences": 24
+        },
+        {
+          "files": {
+            "static/css/pulse_messages_v2.css": 24
+          },
+          "selector": ".message",
+          "total_occurrences": 24
+        },
+        {
+          "files": {
+            "static/css/pulse_messages_v2.css": 17
+          },
+          "selector": ".comm-list",
+          "total_occurrences": 17
+        },
+        {
+          "files": {
+            "static/css/pulse_advertiser_portal.css": 1,
+            "static/css/pulse_camera_engine.css": 1,
+            "static/css/pulse_design_system.css": 1,
+            "static/css/pulse_desktop_feed.css": 3,
+            "static/css/pulse_messages_v2.css": 5,
+            "static/css/pulse_mobile_system.css": 2,
+            "static/css/pulse_reaction_system.css": 2,
+            "static/css/pulse_sci_fi_system.css": 1
+          },
+          "selector": ":root",
+          "total_occurrences": 16
+        },
+        {
+          "files": {
+            "static/css/pulse_messages_v2.css": 16
+          },
+          "selector": ".composer",
+          "total_occurrences": 16
+        },
+        {
+          "files": {
+            "static/css/pulse_messages_v2.css": 15
+          },
+          "selector": ".conversation",
+          "total_occurrences": 15
+        },
+        {
+          "files": {
+            "static/css/pulse_messages_v2.css": 15
+          },
+          "selector": ".messages",
+          "total_occurrences": 15
+        },
+        {
+          "files": {
+            "static/css/pulse_messages_v2.css": 14
+          },
+          "selector": ".comm-actions",
+          "total_occurrences": 14
+        },
+        {
+          "files": {
+            "static/css/pulse_messages_v2.css": 13
+          },
+          "selector": ".comm-filter",
+          "total_occurrences": 13
+        },
+        {
+          "files": {
+            "static/css/pulse_messages_v2.css": 11
+          },
+          "selector": ".comm-thread",
+          "total_occurrences": 11
+        }
+      ],
+      "finding": "Repeated CSS selectors exist and should be consolidated carefully.",
+      "rank": 6,
+      "recommended_next_step": "Consolidate duplicated design tokens and route-specific overrides after visual regression checks.",
+      "severity": "medium"
+    }
+  ],
+  "scope": "PulseSoc Project Titan static performance audit",
+  "static_assets": {
+    "css": {
+      "bytes": 643114,
+      "files": 16,
+      "largest": [
+        {
+          "bytes": 119642,
+          "file": "static/css/pulse_desktop_feed.css",
+          "lines": 4597
+        },
+        {
+          "bytes": 117079,
+          "file": "static/css/pulse_status_system.css",
+          "lines": 4027
+        },
+        {
+          "bytes": 95815,
+          "file": "static/css/pulse_messages_v2.css",
+          "lines": 4435
+        },
+        {
+          "bytes": 78192,
+          "file": "static/css/pulse_home_os.css",
+          "lines": 2917
+        },
+        {
+          "bytes": 56297,
+          "file": "static/css/pulse_reaction_system.css",
+          "lines": 1768
+        },
+        {
+          "bytes": 42750,
+          "file": "static/css/pulse_cinematic_media.css",
+          "lines": 1107
+        },
+        {
+          "bytes": 42036,
+          "file": "static/css/pulse_reels_experience.css",
+          "lines": 1760
+        },
+        {
+          "bytes": 18627,
+          "file": "static/css/pulse_live_studio.css",
+          "lines": 854
+        },
+        {
+          "bytes": 13834,
+          "file": "static/css/pulse_camera_engine.css",
+          "lines": 653
+        },
+        {
+          "bytes": 12309,
+          "file": "static/css/pulse_composer_premium.css",
+          "lines": 558
+        },
+        {
+          "bytes": 12096,
+          "file": "static/css/pulse_advertiser_portal.css",
+          "lines": 456
+        },
+        {
+          "bytes": 8341,
+          "file": "static/css/pulse_sci_fi_system.css",
+          "lines": 300
+        },
+        {
+          "bytes": 6861,
+          "file": "static/css/pulse_design_system.css",
+          "lines": 316
+        },
+        {
+          "bytes": 6670,
+          "file": "static/css/pulsesoc_promotions.css",
+          "lines": 346
+        },
+        {
+          "bytes": 6487,
+          "file": "static/css/pulse_mobile_system.css",
+          "lines": 342
+        },
+        {
+          "bytes": 6078,
+          "file": ".venv/lib/python3.14/site-packages/werkzeug/debug/shared/style.css",
+          "lines": 151
+        }
+      ]
+    },
+    "js": {
+      "bytes": 785570,
+      "files": 46,
+      "largest": [
+        {
+          "add_event_listener": 62,
+          "bytes": 149599,
+          "fetch": 1,
+          "file": "static/js/pulse_home_core.js",
+          "inner_html": 21,
+          "intersection_observer": 3,
+          "lines": 3250,
+          "mutation_observer": 0,
+          "query_selector": 94,
+          "query_selector_all": 34,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 0,
+          "set_timeout": 14
+        },
+        {
+          "add_event_listener": 24,
+          "bytes": 109223,
+          "fetch": 2,
+          "file": "static/js/pulse_messages_v2.js",
+          "inner_html": 24,
+          "intersection_observer": 0,
+          "lines": 2297,
+          "mutation_observer": 0,
+          "query_selector": 16,
+          "query_selector_all": 14,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 0,
+          "set_timeout": 14
+        },
+        {
+          "add_event_listener": 35,
+          "bytes": 81013,
+          "fetch": 3,
+          "file": "static/js/pulse_media_renderer.js",
+          "inner_html": 2,
+          "intersection_observer": 3,
+          "lines": 1961,
+          "mutation_observer": 2,
+          "query_selector": 32,
+          "query_selector_all": 5,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 1,
+          "set_timeout": 9
+        },
+        {
+          "add_event_listener": 19,
+          "bytes": 55263,
+          "fetch": 9,
+          "file": "static/js/pulse_live_studio_runtime.js",
+          "inner_html": 3,
+          "intersection_observer": 0,
+          "lines": 1169,
+          "mutation_observer": 0,
+          "query_selector": 4,
+          "query_selector_all": 1,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 3,
+          "set_timeout": 8
+        },
+        {
+          "add_event_listener": 17,
+          "bytes": 53483,
+          "fetch": 9,
+          "file": "static/js/pulse_live_studio.js",
+          "inner_html": 3,
+          "intersection_observer": 0,
+          "lines": 1133,
+          "mutation_observer": 0,
+          "query_selector": 3,
+          "query_selector_all": 1,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 3,
+          "set_timeout": 8
+        },
+        {
+          "add_event_listener": 10,
+          "bytes": 50276,
+          "fetch": 1,
+          "file": "static/js/pulse_status_viewer.js",
+          "inner_html": 7,
+          "intersection_observer": 0,
+          "lines": 1052,
+          "mutation_observer": 1,
+          "query_selector": 48,
+          "query_selector_all": 5,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 1,
+          "set_timeout": 12
+        },
+        {
+          "add_event_listener": 20,
+          "bytes": 43736,
+          "fetch": 10,
+          "file": "static/analytics.js",
+          "inner_html": 10,
+          "intersection_observer": 1,
+          "lines": 1197,
+          "mutation_observer": 0,
+          "query_selector": 39,
+          "query_selector_all": 13,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 5,
+          "set_timeout": 3
+        },
+        {
+          "add_event_listener": 25,
+          "bytes": 32680,
+          "fetch": 8,
+          "file": "static/js/pulse_camera_engine.js",
+          "inner_html": 1,
+          "intersection_observer": 0,
+          "lines": 736,
+          "mutation_observer": 0,
+          "query_selector": 1,
+          "query_selector_all": 11,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 1,
+          "set_timeout": 3
+        },
+        {
+          "add_event_listener": 13,
+          "bytes": 27586,
+          "fetch": 1,
+          "file": "static/js/pulse_advertiser_portal.js",
+          "inner_html": 0,
+          "intersection_observer": 0,
+          "lines": 650,
+          "mutation_observer": 0,
+          "query_selector": 45,
+          "query_selector_all": 0,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 0,
+          "set_timeout": 1
+        },
+        {
+          "add_event_listener": 9,
+          "bytes": 21882,
+          "fetch": 11,
+          "file": "static/notifications.js",
+          "inner_html": 1,
+          "intersection_observer": 0,
+          "lines": 473,
+          "mutation_observer": 0,
+          "query_selector": 6,
+          "query_selector_all": 4,
+          "remove_event_listener": 2,
+          "resize_observer": 0,
+          "set_interval": 0,
+          "set_timeout": 3
+        },
+        {
+          "add_event_listener": 0,
+          "bytes": 15371,
+          "fetch": 3,
+          "file": "static/js/pulse_upload_manager.js",
+          "inner_html": 0,
+          "intersection_observer": 0,
+          "lines": 315,
+          "mutation_observer": 0,
+          "query_selector": 3,
+          "query_selector_all": 0,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 0,
+          "set_timeout": 1
+        },
+        {
+          "add_event_listener": 11,
+          "bytes": 13694,
+          "fetch": 2,
+          "file": "static/js/pulse_ads_hooks.js",
+          "inner_html": 0,
+          "intersection_observer": 1,
+          "lines": 351,
+          "mutation_observer": 0,
+          "query_selector": 5,
+          "query_selector_all": 3,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 0,
+          "set_timeout": 1
+        },
+        {
+          "add_event_listener": 8,
+          "bytes": 10262,
+          "fetch": 1,
+          "file": "static/js/pulse_radio.js",
+          "inner_html": 0,
+          "intersection_observer": 0,
+          "lines": 285,
+          "mutation_observer": 0,
+          "query_selector": 8,
+          "query_selector_all": 1,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 0,
+          "set_timeout": 2
+        },
+        {
+          "add_event_listener": 9,
+          "bytes": 10068,
+          "fetch": 3,
+          "file": ".venv/lib/python3.14/site-packages/werkzeug/debug/shared/debugger.js",
+          "inner_html": 5,
+          "intersection_observer": 0,
+          "lines": 345,
+          "mutation_observer": 0,
+          "query_selector": 8,
+          "query_selector_all": 5,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 0,
+          "set_timeout": 1
+        },
+        {
+          "add_event_listener": 7,
+          "bytes": 9889,
+          "fetch": 0,
+          "file": "static/js/pulse_pwa_install.js",
+          "inner_html": 1,
+          "intersection_observer": 0,
+          "lines": 250,
+          "mutation_observer": 0,
+          "query_selector": 3,
+          "query_selector_all": 1,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 0,
+          "set_timeout": 1
+        },
+        {
+          "add_event_listener": 7,
+          "bytes": 9632,
+          "fetch": 1,
+          "file": "static/js/pulsesoc_promotions.js",
+          "inner_html": 4,
+          "intersection_observer": 0,
+          "lines": 200,
+          "mutation_observer": 0,
+          "query_selector": 12,
+          "query_selector_all": 2,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 0,
+          "set_timeout": 0
+        },
+        {
+          "add_event_listener": 5,
+          "bytes": 9539,
+          "fetch": 6,
+          "file": "static/service-worker.js",
+          "inner_html": 0,
+          "intersection_observer": 0,
+          "lines": 229,
+          "mutation_observer": 0,
+          "query_selector": 0,
+          "query_selector_all": 0,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 0,
+          "set_timeout": 0
+        },
+        {
+          "add_event_listener": 5,
+          "bytes": 9539,
+          "fetch": 6,
+          "file": "static/sw.js",
+          "inner_html": 0,
+          "intersection_observer": 0,
+          "lines": 229,
+          "mutation_observer": 0,
+          "query_selector": 0,
+          "query_selector_all": 0,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 0,
+          "set_timeout": 0
+        },
+        {
+          "add_event_listener": 2,
+          "bytes": 6978,
+          "fetch": 0,
+          "file": "static/js/pulse_reaction_system.js",
+          "inner_html": 0,
+          "intersection_observer": 0,
+          "lines": 124,
+          "mutation_observer": 0,
+          "query_selector": 4,
+          "query_selector_all": 0,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 0,
+          "set_timeout": 2
+        },
+        {
+          "add_event_listener": 6,
+          "bytes": 5816,
+          "fetch": 0,
+          "file": "static/js/pulse_realtime.js",
+          "inner_html": 0,
+          "intersection_observer": 0,
+          "lines": 166,
+          "mutation_observer": 0,
+          "query_selector": 0,
+          "query_selector_all": 0,
+          "remove_event_listener": 0,
+          "resize_observer": 0,
+          "set_interval": 0,
+          "set_timeout": 3
+        }
+      ]
+    }
+  }
+}

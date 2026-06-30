@@ -275,7 +275,9 @@
       // Return visit tracking is optional and must not block the page.
     }
 
-    window.addEventListener("scroll", function () {
+    var scrollDepthScheduled = false;
+    function evaluateScrollDepth() {
+      scrollDepthScheduled = false;
       var doc = document.documentElement;
       var scrollable = Math.max(doc.scrollHeight - window.innerHeight, 1);
       var depth = Math.round((window.scrollY / scrollable) * 100);
@@ -285,6 +287,17 @@
           trackFirstParty("scroll_depth", { depth: mark });
         }
       });
+    }
+    window.addEventListener("scroll", function () {
+      if (scrollDepthScheduled) {
+        return;
+      }
+      scrollDepthScheduled = true;
+      if (window.requestAnimationFrame) {
+        window.requestAnimationFrame(evaluateScrollDepth);
+      } else {
+        window.setTimeout(evaluateScrollDepth, 80);
+      }
     }, { passive: true });
 
     function sendTimeOnPage() {

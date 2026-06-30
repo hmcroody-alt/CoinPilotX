@@ -145,6 +145,24 @@
     }
   }
 
+  function scheduleLiveStatePolling(root) {
+    const interval = Math.max(2200, Number(root.dataset.livePollMs || 4500));
+    let inFlight = false;
+    const poll = async () => {
+      if (document.hidden || inFlight) return;
+      inFlight = true;
+      try {
+        await fetchState(root);
+      } finally {
+        inFlight = false;
+      }
+    };
+    setInterval(poll, interval);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) poll();
+    }, { passive: true });
+  }
+
   async function checkMuxStatus(root, options = {}) {
     const muxId = qs(root, "[data-check-mux-status]")?.dataset?.muxLiveId || "";
     if (!muxId) {
@@ -1023,8 +1041,7 @@
     bootCamera(root);
     if (!qs(root, "[data-live-camera]")) initViewerTransport(root);
     fetchState(root);
-    const interval = Number(root.dataset.livePollMs || 4500);
-    setInterval(() => fetchState(root), Math.max(2200, interval));
+    scheduleLiveStatePolling(root);
     qs(root, "[data-live-chat-send]")?.addEventListener("click", () => sendChat(root));
     qs(root, "[data-live-chat-input]")?.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) sendChat(root);
