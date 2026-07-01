@@ -76,8 +76,9 @@ def main() -> None:
             "issue_mobile_security_tokens",
             "rotate_mobile_refresh_token",
             "revoke_mobile_refresh_token",
-            "join_request_race",
+            "Join request was already handled.",
             "WHERE id=? AND live_id=? AND status='pending'",
+            "pulse_live_cohost_error",
         ],
         "Flask security boundary",
     )

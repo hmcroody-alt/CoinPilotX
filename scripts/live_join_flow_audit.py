@@ -73,8 +73,12 @@ def main() -> int:
     require(before_request.get("status") == "none" and before_request.get("can_publish") is False, "audience presence does not create fake co-host approval")
     denied_token = client.post(f"/api/pulse/live/{live_id}/livekit/token", json={"role": "guest"})
     require(denied_token.status_code == 403, "viewer cannot get guest publish token before approval")
+    denied_token_data = denied_token.get_json() or {}
+    require(denied_token_data.get("error_code") == "TOKEN_MISSING_PUBLISH_PERMISSION" and denied_token_data.get("step") == "requesting_cohost_token", "token denial returns structured co-host error")
     bad_request = client.post(f"/api/pulse/live/{live_id}/join-request", json={"requested_role": "cohost", "camera_ready": False, "mic_ready": True})
     require(bad_request.status_code == 400, "join request enforces camera/mic readiness")
+    bad_request_data = bad_request.get_json() or {}
+    require(bad_request_data.get("error_code") == "CAMERA_PERMISSION_DENIED" and bad_request_data.get("step") == "camera_permission_denied", "permission failure returns structured co-host error")
     request_res = client.post(
         f"/api/pulse/live/{live_id}/join-request",
         json={"requested_role": "cohost", "camera_ready": True, "mic_ready": True, "network_quality": "ready", "connection": {"camera_ready": True, "mic_ready": True}},
@@ -82,6 +86,7 @@ def main() -> int:
     request_data = request_res.get_json() or {}
     request_id = int((request_data.get("request") or {}).get("id") or 0)
     require(request_res.status_code == 200 and request_data.get("status") == "pending" and request_id, "viewer creates real pending join request")
+    require(request_data.get("trace_id") and request_data.get("step") == "waiting_for_host", "co-host request returns trace and waiting step")
 
     state = client.get(f"/api/pulse/live/{live_id}/state").get_json() or {}
     require((state.get("viewer_join_request") or {}).get("status") == "pending" and (state.get("viewer_join_request") or {}).get("requested_role") == "cohost", "viewer state shows pending co-host request")
@@ -116,6 +121,9 @@ def main() -> int:
     require(token_res.status_code in {200, 503}, "accepted co-host reaches server-side publish token gate")
     if token_res.status_code == 200:
         require(token_data.get("role") == "cohost" and token_data.get("can_publish") is True, "accepted co-host receives publish-capable cohost token")
+        require(token_data.get("can_subscribe") is True and token_data.get("can_publish_data") is True and token_data.get("room_join") is True, "co-host token response exposes required publish claims")
+    else:
+        require(token_data.get("error_code") == "TOKEN_GENERATION_FAILED" and token_data.get("step") == "token_failed", "token generation failure is structured")
 
     login(client, host_id)
     mute = client.post(f"/api/pulse/live/{live_id}/guests/{int(guest.get('id'))}/mute", json={})
@@ -127,6 +135,8 @@ def main() -> int:
     require("requested_role TEXT DEFAULT 'cohost'" in BOT and '"requested_role": clean_html' in BOT, "co-host request role is persisted and returned")
     require("guest_role TEXT DEFAULT 'cohost'" in BOT and "permissions_json" in BOT, "co-host records store role and publish permissions")
     require("requested_role in {\"guest\", \"cohost\", \"co-host\"}" in BOT and "token_role = \"cohost\"" in BOT, "co-host token generation is server-side and role-gated")
+    require("PULSE_COHOST_STATE_MACHINE" in BOT and "unavailable_with_reason" in BOT and "TOKEN_MISSING_PUBLISH_PERMISSION" in BOT, "shared co-host state machine and error codes exist")
+    require("/cohost-trace" in BOT and "pulse_live_cohost_trace" in BOT and "cohost_failure" in BOT, "co-host trace endpoint and structured logs exist")
     require('"cohost"' in JS and "Request to Co-host" in JS and "Accept Co-host" in JS, "co-host UI labels and token request are wired")
     require("Only the live host can manage join requests" in BOT, "host permission checks exist")
     require("Only the requesting viewer can cancel this request" in BOT, "viewer-only cancel check exists")
@@ -135,7 +145,8 @@ def main() -> int:
     require("data-live-join-label" in BOT and "Request to Co-host" in BOT, "Reels Live names the co-host action clearly")
     require("recordLiveReelAudience" in BOT and "refreshLiveReelJoinStatus" in BOT and "scheduleLiveReelJoinPolling" in BOT, "Reels separates audience presence from co-host request polling")
     require("/join-request`" in BOT and "requested_role:'cohost'" in BOT, "Reels co-host button calls the real join-request endpoint")
-    require("checking:'Checking...'" in BOT and "request_sent:'Request Sent'" in BOT and "waiting:'Waiting for Host'" in BOT and "accepted:'Accepted — Joining...'" in BOT and "denied:'Denied'" in BOT and "unavailable:'Unavailable'" in BOT, "Reels renders the required backend-driven request states")
+    require("checking_permissions:'Checking permissions...'" in BOT and "waiting_for_host:'Waiting for Host'" in BOT and "host_accepted:'Accepted" in BOT and "cohost_live:'Co-host Live'" in BOT and "unavailable_with_reason:'Unavailable'" in BOT, "Reels renders the required backend-driven request states")
+    require("liveReelErrorState" in BOT and "Unavailable: '+liveReelFailureMessage" in BOT and "Object.assign(err,d)" in BOT, "Reels preserves and displays backend co-host failure reasons")
     require("btn.textContent=btn.classList.contains('reel-live-join')?'Joined':'✓'" not in BOT, "Reels no longer paints a fake Joined state after audience presence")
     require('button.textContent = "Joined"' in JS and JS.index('button.textContent = "Joined"') > JS.index("await room.localParticipant.publishTrack(track)"), "Joined is rendered only after co-host tracks publish")
     require("fake join" not in BOT.lower() and "fake guest" not in BOT.lower(), "no fake join request literals")
