@@ -531,14 +531,18 @@ def _lock_reason(widget: dict[str, Any], caps: dict[str, Any]) -> str:
     return " + ".join(reasons) or "Locked"
 
 
-def _degraded_state(name: str, category: str, exc: Exception) -> tuple[dict[str, Any], dict[str, Any]]:
+def _degraded_state(name: str, category: str, exc: Exception, user: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     trace_id = secrets.token_hex(6)
     logging.exception(
-        "DASHBOARD_MODULE_DEGRADED trace_id=%s module=%s category=%s error=%s",
+        "DASHBOARD_MODULE_DEGRADED trace_id=%s module_id=%s module_name=%s route=/dashboard user_id=%s category=%s error_type=%s error_message=%s data_step=build_state language=%s",
         trace_id,
         name,
+        name,
+        _safe_int((user or {}).get("user_id"), 0),
         category,
         exc.__class__.__name__,
+        str(exc)[:500],
+        str((user or {}).get("preferred_language") or (user or {}).get("language") or "en")[:24],
     )
     state = {
         "ok": False,
@@ -564,7 +568,7 @@ def _build_state(name: str, category: str, builder: Any, conn: Any, user: dict[s
     try:
         return builder(conn, user), None
     except Exception as exc:
-        return _degraded_state(name, category, exc)
+        return _degraded_state(name, category, exc, user)
 
 
 def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_admin: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -596,7 +600,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
     try:
         system_state = system_mission_control.build_system_state(conn)
     except Exception as exc:
-        system_state, incident = _degraded_state("system", STATE_CATEGORY_MAP["system"], exc)
+        system_state, incident = _degraded_state("system", STATE_CATEGORY_MAP["system"], exc, user)
         degraded_modules.append(incident)
     metrics = _metrics(cur, user, caps)
     unavailable_categories = {item["category"] for item in degraded_modules}
@@ -636,11 +640,15 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             except Exception as exc:
                 trace_id = secrets.token_hex(6)
                 logging.exception(
-                    "DASHBOARD_WIDGET_DEGRADED trace_id=%s widget=%s category=%s error=%s",
+                    "DASHBOARD_WIDGET_DEGRADED trace_id=%s module_id=%s module_name=%s route=/dashboard user_id=%s category=%s error_type=%s error_message=%s data_step=widget_state language=%s",
                     trace_id,
                     item.get("widget_key"),
+                    item.get("display_name"),
+                    user_id,
                     item.get("category"),
                     exc.__class__.__name__,
+                    str(exc)[:500],
+                    str((user or {}).get("preferred_language") or (user or {}).get("language") or "en")[:24],
                 )
                 degraded_modules.append(
                     {

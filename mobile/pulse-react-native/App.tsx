@@ -12,7 +12,8 @@ import { colors, screenStyles } from "./components/theme";
 import { ensureNotificationPresentation, getInitialNotificationUrl, getNativePushToken, presentNativeDeviceAlert, setActiveConversationFromUrl, wireNotificationLinks, wireNotificationPresentation } from "./services/push";
 
 const PULSESOC_ORIGIN = "https://pulsesoc.com";
-const PULSESOC_START_URL = `${PULSESOC_ORIGIN}/login?next=/pulse`;
+const PULSESOC_HOME_URL = `${PULSESOC_ORIGIN}/pulse?app_launch=1`;
+const PULSESOC_START_URL = PULSESOC_HOME_URL;
 const PULSESOC_HOSTS = new Set(["pulsesoc.com", "www.pulsesoc.com"]);
 const PULSESOC_NATIVE_USER_AGENT = `PulseSocNativeApp/1.0 (${Platform.OS}; com.pulsesoc.app)`;
 const PULSESHELL_VERSION = "2026.06.30";
@@ -60,6 +61,18 @@ function PulseSocWebShell() {
     setSourceUrl(next);
     webViewRef.current?.injectJavaScript(`window.location.href = ${JSON.stringify(next)}; true;`);
   }, []);
+
+  const recoverToPulseSocHome = useCallback(async () => {
+    setLoading(true);
+    const reachable = await checkPulseSocReachable();
+    if (reachable) {
+      navigateToAppUrl(`${PULSESOC_ORIGIN}/pulse?offline_recovered=1&ts=${Date.now()}`);
+      setOffline(false);
+    } else {
+      setOffline(true);
+    }
+    setLoading(false);
+  }, [navigateToAppUrl]);
 
   const callWebApi = useCallback((path: string, options?: { method?: string; body?: unknown }) => {
     const requestId = `native-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -109,15 +122,19 @@ function PulseSocWebShell() {
   }, []);
 
   const verifyOfflineBeforeShowingNativeFallback = useCallback(() => {
-    fetch(`${PULSESOC_ORIGIN}/health?native_check=${Date.now()}`, { cache: "no-store" })
-      .then(response => {
-        setOffline(!response.ok);
-        if (response.ok) {
-          setLoading(false);
+    checkPulseSocReachable()
+      .then(reachable => {
+        setOffline(!reachable);
+        setLoading(false);
+        if (reachable) {
+          navigateToAppUrl(`${PULSESOC_ORIGIN}/pulse?native_recovered=1&ts=${Date.now()}`);
         }
       })
-      .catch(() => setOffline(true));
-  }, []);
+      .catch(() => {
+        setOffline(true);
+        setLoading(false);
+      });
+  }, [navigateToAppUrl]);
 
   useEffect(() => {
     ensureNotificationPresentation().catch(() => undefined);
@@ -254,10 +271,7 @@ function PulseSocWebShell() {
   }
 
   if (offline) {
-    return <OfflineScreen onRetry={() => {
-      setOffline(false);
-      webViewRef.current?.reload();
-    }} />;
+    return <OfflineScreen onRetry={recoverToPulseSocHome} />;
   }
 
   return (
@@ -352,6 +366,25 @@ function normalizeUrl(value: string) {
   } catch {
     return null;
   }
+}
+
+async function checkPulseSocReachable() {
+  const probes = [
+    `${PULSESOC_ORIGIN}/health?native_check=${Date.now()}`,
+    `${PULSESOC_ORIGIN}/pulse?native_health=${Date.now()}`
+  ];
+  for (const url of probes) {
+    try {
+      const response = await fetch(url, {
+        cache: "no-store",
+        headers: { Accept: "text/html,application/json" }
+      });
+      if (response.ok || response.status === 302 || response.status === 401) return true;
+    } catch {
+      continue;
+    }
+  }
+  return false;
 }
 
 function toPulseSocWebUrl(incomingUrl: string) {

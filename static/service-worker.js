@@ -1,4 +1,4 @@
-const CACHE_NAME = "coinplotx-cache-v19-pulse-offline-dashboard";
+const CACHE_NAME = "coinplotx-cache-v20-pulse-offline-dashboard";
 const DEBUG_SW = false;
 const STATIC_ASSETS = [
   "/manifest.json",
@@ -65,8 +65,8 @@ function isRuntimeAsset(request, pathname) {
 }
 
 function offlineResponse() {
-  return fetch("/offline?ts=" + Date.now(), { cache: "no-store" }).catch(() => new Response(
-    "<!doctype html><title>Offline</title><main style='font-family:system-ui;padding:24px'><h1>You are offline.</h1><p>PulseSoc needs an internet connection for live intelligence.</p><p><a href='/pulse'>Open PulseSoc Home</a> <a href='/reset-pwa'>Reset app cache</a></p></main>",
+  return fetch("/offline?from=service-worker&ts=" + Date.now(), { cache: "no-store" }).catch(() => new Response(
+    "<!doctype html><title>Offline</title><main style='font-family:system-ui;padding:24px'><h1>You are offline.</h1><p>PulseSoc needs an internet connection for live intelligence.</p><p><a href='/pulse?offline_recovered=1'>Open PulseSoc Home</a> <a href='/reset-pwa'>Reset app cache</a></p></main>",
     { headers: { "Content-Type": "text/html; charset=utf-8" } }
   ));
 }
@@ -125,9 +125,12 @@ self.addEventListener("fetch", (event) => {
           return response;
         })
         .catch((error) => {
-          const offline = self.navigator && self.navigator.onLine === false;
-          if (DEBUG_SW) console.log("[CoinPlotXAI SW] navigation fetch failed", url.pathname, offline ? "offline" : "online", error && error.message ? error.message : error);
-          return offline ? offlineResponse() : onlineNavigationError(url.pathname);
+          const browserOffline = self.navigator && self.navigator.onLine === false;
+          if (DEBUG_SW) console.log("[CoinPlotXAI SW] navigation fetch failed", url.pathname, browserOffline ? "offline" : "online", error && error.message ? error.message : error);
+          if (browserOffline) return offlineResponse();
+          return fetch("/health?sw_recovery=" + Date.now(), { cache: "no-store" })
+            .then((health) => health && health.ok ? onlineNavigationError(url.pathname) : offlineResponse())
+            .catch(() => onlineNavigationError(url.pathname));
         })
     );
     return;

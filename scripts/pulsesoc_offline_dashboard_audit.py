@@ -125,8 +125,9 @@ def audit_offline_recovery_targets() -> None:
 def audit_service_workers() -> None:
     for path in ("static/service-worker.js", "static/sw.js"):
         source = read(path)
-        expect("coinplotx-cache-v19-pulse-offline-dashboard" in source, f"{path} cache version bumped")
+        expect("coinplotx-cache-v20-pulse-offline-dashboard" in source, f"{path} cache version bumped")
         expect('const fallbackUrl = videoRoute ? "/pulse/videos" : "/pulse";' in source, f"{path} online fallback prefers PulseSoc Home")
+        expect("/health?sw_recovery=" in source, f"{path} verifies server reachability before true offline fallback")
         expect('href="/pulse/videos"' not in source, f"{path} no hard-coded video fallback for every route")
         expect("Open PulseSoc Home" in source, f"{path} includes PulseSoc Home fallback")
 
@@ -146,6 +147,10 @@ def audit_mobile_offline_classification() -> None:
         expect("/health?mobile_check=" in source, f"{path} checks health endpoint")
         expect("request_unreachable" in source, f"{path} treats reachable-server failures as request failures, not offline")
         expect("if (error instanceof PulseApiError) return false;" in source, f"{path} Pulse API errors are not offline")
+    shell = read("mobile/pulse-react-native/App.tsx")
+    expect("const PULSESOC_START_URL = PULSESOC_HOME_URL;" in shell, "native shell launches the new PulseSoc Home")
+    expect("checkPulseSocReachable" in shell, "native shell verifies server reachability before offline state")
+    expect("/pulse?offline_recovered=1" in shell, "native offline Retry returns to new PulseSoc Home")
 
 
 def audit_postgres_dashboard_placeholders() -> None:

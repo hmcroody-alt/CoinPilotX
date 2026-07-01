@@ -250,6 +250,13 @@ def _add_column(cur: Any, table: str, name: str, definition: str) -> None:
         cur.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
 
+def _ensure_columns(cur: Any, table: str, columns: tuple[tuple[str, str], ...]) -> None:
+    if not _table_exists(cur, table):
+        return
+    for name, definition in columns:
+        _add_column(cur, table, name, definition)
+
+
 def ensure_schema(conn: Any) -> None:
     cur = conn.cursor()
     cur.execute(
@@ -456,6 +463,156 @@ def ensure_schema(conn: Any) -> None:
         )
         """
     )
+    for table, columns in {
+        "users": (
+            ("preferred_language", "TEXT DEFAULT 'en'"),
+            ("verified_badge", "INTEGER DEFAULT 0"),
+            ("phone_verified", "INTEGER DEFAULT 0"),
+            ("two_factor_enabled", "INTEGER DEFAULT 0"),
+            ("avatar_url", "TEXT"),
+            ("cover_url", "TEXT"),
+            ("banner_url", "TEXT"),
+            ("bio", "TEXT"),
+            ("profile_visibility", "TEXT DEFAULT 'public'"),
+            ("updated_at", "TEXT"),
+        ),
+        "profile_audit_logs": (
+            ("user_id", "INTEGER"),
+            ("actor_user_id", "INTEGER"),
+            ("action", "TEXT"),
+            ("before_json", "TEXT"),
+            ("after_json", "TEXT"),
+            ("ip_hash", "TEXT"),
+            ("user_agent_hash", "TEXT"),
+            ("created_at", "TEXT"),
+        ),
+        "account_audit_logs": (
+            ("user_id", "INTEGER"),
+            ("actor_user_id", "INTEGER"),
+            ("action", "TEXT"),
+            ("target_type", "TEXT"),
+            ("target_id", "TEXT"),
+            ("details_json", "TEXT"),
+            ("created_at", "TEXT"),
+        ),
+        "verification_requests": (
+            ("user_id", "INTEGER"),
+            ("verification_type", "TEXT"),
+            ("status", "TEXT DEFAULT 'submitted'"),
+            ("notes", "TEXT"),
+            ("reviewed_by", "INTEGER"),
+            ("created_at", "TEXT"),
+            ("reviewed_at", "TEXT"),
+            ("request_payload_json", "TEXT"),
+            ("decision_reason", "TEXT"),
+            ("appeal_of_request_id", "INTEGER"),
+            ("submitted_at", "TEXT"),
+            ("decision_at", "TEXT"),
+            ("updated_at", "TEXT"),
+        ),
+        "verification_documents": (
+            ("request_id", "INTEGER"),
+            ("user_id", "INTEGER"),
+            ("document_type", "TEXT"),
+            ("storage_path", "TEXT"),
+            ("original_filename", "TEXT"),
+            ("mime_type", "TEXT"),
+            ("file_size", "INTEGER DEFAULT 0"),
+            ("checksum", "TEXT"),
+            ("moderation_status", "TEXT DEFAULT 'private_review'"),
+            ("created_at", "TEXT"),
+        ),
+        "account_health_events": (
+            ("user_id", "INTEGER"),
+            ("event_type", "TEXT"),
+            ("severity", "TEXT"),
+            ("status", "TEXT DEFAULT 'open'"),
+            ("public_summary", "TEXT"),
+            ("internal_note", "TEXT"),
+            ("actor_user_id", "INTEGER"),
+            ("expires_at", "TEXT"),
+            ("created_at", "TEXT"),
+            ("updated_at", "TEXT"),
+        ),
+        "account_strikes": (
+            ("user_id", "INTEGER"),
+            ("policy_category", "TEXT"),
+            ("severity", "TEXT"),
+            ("status", "TEXT DEFAULT 'active'"),
+            ("public_summary", "TEXT"),
+            ("internal_note", "TEXT"),
+            ("appeal_status", "TEXT"),
+            ("expires_at", "TEXT"),
+            ("created_at", "TEXT"),
+            ("updated_at", "TEXT"),
+        ),
+        "account_warnings": (
+            ("user_id", "INTEGER"),
+            ("policy_category", "TEXT"),
+            ("status", "TEXT DEFAULT 'active'"),
+            ("public_summary", "TEXT"),
+            ("internal_note", "TEXT"),
+            ("created_at", "TEXT"),
+            ("updated_at", "TEXT"),
+        ),
+        "account_restrictions": (
+            ("user_id", "INTEGER"),
+            ("restriction_type", "TEXT"),
+            ("status", "TEXT DEFAULT 'active'"),
+            ("public_summary", "TEXT"),
+            ("internal_note", "TEXT"),
+            ("expires_at", "TEXT"),
+            ("created_at", "TEXT"),
+            ("updated_at", "TEXT"),
+        ),
+        "security_login_events": (
+            ("user_id", "INTEGER"),
+            ("event_type", "TEXT"),
+            ("device_label", "TEXT"),
+            ("ip_hash", "TEXT"),
+            ("user_agent_hash", "TEXT"),
+            ("country", "TEXT"),
+            ("created_at", "TEXT"),
+        ),
+        "security_devices": (
+            ("user_id", "INTEGER"),
+            ("device_hash", "TEXT"),
+            ("device_label", "TEXT"),
+            ("platform", "TEXT"),
+            ("push_enabled", "INTEGER DEFAULT 0"),
+            ("trusted", "INTEGER DEFAULT 0"),
+            ("last_seen_at", "TEXT"),
+            ("created_at", "TEXT"),
+        ),
+        "active_sessions": (
+            ("user_id", "INTEGER"),
+            ("session_hash", "TEXT"),
+            ("device_label", "TEXT"),
+            ("ip_hash", "TEXT"),
+            ("user_agent_hash", "TEXT"),
+            ("revoked_at", "TEXT"),
+            ("last_seen_at", "TEXT"),
+            ("created_at", "TEXT"),
+        ),
+        "account_system_events": (
+            ("user_id", "INTEGER"),
+            ("subsystem_key", "TEXT"),
+            ("event_type", "TEXT"),
+            ("severity", "TEXT DEFAULT 'low'"),
+            ("public_summary", "TEXT"),
+            ("status", "TEXT DEFAULT 'open'"),
+            ("source", "TEXT"),
+            ("created_at", "TEXT"),
+            ("resolved_at", "TEXT"),
+        ),
+        "user_settings": (
+            ("user_id", "INTEGER"),
+            ("setting_key", "TEXT"),
+            ("setting_value", "TEXT"),
+            ("updated_at", "TEXT"),
+        ),
+    }.items():
+        _ensure_columns(cur, table, columns)
     for table, cols in {
         "profile_audit_logs": ("user_id", "created_at"),
         "verification_requests": ("user_id", "status"),
@@ -589,11 +746,15 @@ def get_settings(conn: Any, user_id: int) -> dict[str, str]:
         "timezone": "America/New_York",
     }
     cur = conn.cursor()
-    cur.execute("SELECT preferred_language FROM users WHERE user_id=? LIMIT 1", (int(user_id),))
-    user_row = cur.fetchone()
-    user_language = str((_row_dict(user_row).get("preferred_language") if user_row else "") or (user_row[0] if user_row else "") or "").strip().lower()
-    if user_language in SETTING_KEYS["language"]:
-        defaults["language"] = user_language
+    if _table_exists(cur, "users") and "preferred_language" in _columns(cur, "users"):
+        try:
+            cur.execute("SELECT preferred_language FROM users WHERE user_id=? LIMIT 1", (int(user_id),))
+            user_row = cur.fetchone()
+            user_language = str((_row_dict(user_row).get("preferred_language") if user_row else "") or (user_row[0] if user_row else "") or "").strip().lower()
+            if user_language in SETTING_KEYS["language"]:
+                defaults["language"] = user_language
+        except Exception:
+            defaults["language"] = "en"
     cur.execute("SELECT setting_key, setting_value FROM user_settings WHERE user_id=?", (int(user_id),))
     for row in cur.fetchall():
         item = _row_dict(row)
@@ -778,8 +939,17 @@ def _count(cur: Any, table: str, where: str, params: tuple[Any, ...]) -> int:
 def _latest_verification(cur: Any, user_id: int) -> dict[str, Any]:
     if not _table_exists(cur, "verification_requests"):
         return {}
-    cur.execute("SELECT * FROM verification_requests WHERE user_id=? ORDER BY COALESCE(updated_at, reviewed_at, created_at) DESC, id DESC LIMIT 1", (int(user_id),))
-    return _row_dict(cur.fetchone())
+    cols = _columns(cur, "verification_requests")
+    if "user_id" not in cols:
+        return {}
+    order_candidates = [column for column in ("updated_at", "reviewed_at", "created_at", "submitted_at") if column in cols]
+    order_expr = f"COALESCE({', '.join(order_candidates)})" if order_candidates else ("id" if "id" in cols else "user_id")
+    id_sort = ", id DESC" if "id" in cols else ""
+    try:
+        cur.execute(f"SELECT * FROM verification_requests WHERE user_id=? ORDER BY {order_expr} DESC{id_sort} LIMIT 1", (int(user_id),))
+        return _row_dict(cur.fetchone())
+    except Exception:
+        return {}
 
 
 def _health_summary(cur: Any, user_id: int) -> dict[str, Any]:
@@ -870,13 +1040,20 @@ def record_account_system_event(
 def _recent_audit_events(cur: Any, user_id: int, limit: int = 8) -> list[dict[str, str]]:
     if not _table_exists(cur, "account_audit_logs"):
         return []
+    cols = _columns(cur, "account_audit_logs")
+    if "user_id" not in cols:
+        return []
+    action_expr = "action" if "action" in cols else "'' AS action"
+    target_expr = "target_type" if "target_type" in cols else "'' AS target_type"
+    created_expr = "created_at" if "created_at" in cols else "'' AS created_at"
+    order_expr = "id DESC" if "id" in cols else ("created_at DESC" if "created_at" in cols else "user_id DESC")
     try:
         cur.execute(
-            """
-            SELECT action, target_type, created_at
+            f"""
+            SELECT {action_expr}, {target_expr}, {created_expr}
             FROM account_audit_logs
             WHERE user_id=?
-            ORDER BY id DESC
+            ORDER BY {order_expr}
             LIMIT ?
             """,
             (int(user_id), max(1, min(int(limit), 20))),
