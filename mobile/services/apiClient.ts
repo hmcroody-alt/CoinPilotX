@@ -37,7 +37,7 @@ export async function pulseApi<T>(path: string, options: ApiRequestOptions = {})
 
   const responseCookie = response.headers.get("set-cookie");
   if (responseCookie) {
-    await setSessionCookie(responseCookie);
+    await setSessionCookie(mergeSessionCookies(cookie, responseCookie));
   }
 
   const text = await response.text();
@@ -65,6 +65,39 @@ function parseJson(text: string): Record<string, unknown> {
   } catch {
     return { ok: false, message: "Pulse returned a non-JSON response." };
   }
+}
+
+function mergeSessionCookies(existingCookie: string, setCookieHeader: string) {
+  const cookies = new Map<string, string>();
+  existingCookie
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .forEach((part) => {
+      const eq = part.indexOf("=");
+      if (eq > 0) cookies.set(part.slice(0, eq), part.slice(eq + 1));
+    });
+
+  setCookieHeader
+    .split(/,(?=\s*[^=;,\s]+=)/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .forEach((part) => {
+      const pair = part.split(";")[0]?.trim() || "";
+      const eq = pair.indexOf("=");
+      if (eq <= 0) return;
+      const name = pair.slice(0, eq);
+      const value = pair.slice(eq + 1);
+      if (/max-age=0/i.test(part) || /expires=thu,\s*01\s+jan\s+1970/i.test(part)) {
+        cookies.delete(name);
+      } else {
+        cookies.set(name, value);
+      }
+    });
+
+  return Array.from(cookies.entries())
+    .map(([name, value]) => `${name}=${value}`)
+    .join("; ");
 }
 
 export function isOfflineError(error: unknown) {

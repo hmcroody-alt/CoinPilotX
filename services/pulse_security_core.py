@@ -58,12 +58,12 @@ HIGH_RISK_RATE_RULES: tuple[tuple[str, RateRule], ...] = (
 )
 
 STRICT_JSON_FIELDS: dict[str, set[str]] = {
-    "/api/mobile/auth/login": {"identifier", "email", "username", "password", "remember", "device_id", "device_label"},
-    "/api/pulse/mobile/auth/login": {"identifier", "email", "username", "password", "remember", "device_id", "device_label"},
-    "/api/mobile/auth/register": {"full_name", "display_name", "username", "email", "password", "phone", "country", "email_opt_in", "sms_opt_in", "age_confirmed", "device_id", "device_label"},
-    "/api/pulse/mobile/auth/register": {"full_name", "display_name", "username", "email", "password", "phone", "country", "email_opt_in", "sms_opt_in", "age_confirmed", "device_id", "device_label"},
-    "/api/mobile/auth/refresh": {"refresh_token", "device_id", "device_label"},
-    "/api/pulse/mobile/auth/refresh": {"refresh_token", "device_id", "device_label"},
+    "/api/mobile/auth/login": {"identifier", "email", "username", "password", "remember", "device_id", "device_label", "platform", "source", "preferred_language", "language"},
+    "/api/pulse/mobile/auth/login": {"identifier", "email", "username", "password", "remember", "device_id", "device_label", "platform", "source", "preferred_language", "language"},
+    "/api/mobile/auth/register": {"full_name", "display_name", "username", "email", "password", "phone", "country", "email_opt_in", "sms_opt_in", "age_confirmed", "device_id", "device_label", "platform", "source", "preferred_language", "language"},
+    "/api/pulse/mobile/auth/register": {"full_name", "display_name", "username", "email", "password", "phone", "country", "email_opt_in", "sms_opt_in", "age_confirmed", "device_id", "device_label", "platform", "source", "preferred_language", "language"},
+    "/api/mobile/auth/refresh": {"refresh_token", "device_id", "device_label", "platform", "source"},
+    "/api/pulse/mobile/auth/refresh": {"refresh_token", "device_id", "device_label", "platform", "source"},
     "/api/mobile/auth/logout": {"refresh_token", "device_id"},
     "/api/pulse/mobile/auth/logout": {"refresh_token", "device_id"},
     "/api/pulseshell/validate": {"module", "action", "request_id", "timestamp", "nonce", "payload"},

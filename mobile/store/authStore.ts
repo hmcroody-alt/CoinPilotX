@@ -60,7 +60,10 @@ export const useAuthStore = create<AuthState>((set) => ({
         set({ ready: true, signedIn: false, user: null });
         return;
       }
-      const session = cookie ? await getMobileSession() : await refreshMobileSession(refreshToken);
+      let session = cookie ? await getMobileSession() : await refreshMobileSession(refreshToken);
+      if (!session.authenticated && refreshToken) {
+        session = await refreshMobileSession(refreshToken);
+      }
       if (session.refresh_token) await setRefreshToken(session.refresh_token);
       await persistPreferredLanguage(session.user);
       set({ ready: true, signedIn: session.authenticated, user: session.user, offline: false });
