@@ -122,6 +122,11 @@
         ...(payload || {}),
         title: payload?.title || "PulseSoc",
         body: payload?.body || payload?.message || "New PulseSoc activity.",
+        sound: payload?.sound || "default",
+        priority: payload?.priority || "high",
+        category: payload?.category || payload?.type || payload?.notification_type || "notification",
+        type: payload?.type || payload?.notification_type || "notification",
+        badge: Number(payload?.badge || payload?.alert_unread_count || payload?.chat_unread_count || 0),
         url: payload?.native_url || payload?.app_url || payload?.mobile_deep_link || payload?.deepLink || payload?.url || payload?.deep_link || payload?.target_url || "/pulse/notifications"
       });
     } catch (_) {}
@@ -192,6 +197,75 @@
     `;
   }
 
+  function notificationSection(note) {
+    const type = String(note?.type || note?.notification_type || "").toLowerCase();
+    const category = String(note?.category || "").toLowerCase();
+    const priority = String(note?.priority || note?.metadata?.priority || "").toLowerCase();
+    const isPriority = ["high", "critical", "urgent"].includes(priority) || ["security_alert", "account_login", "new_device", "password_changed", "email_changed", "phone_changed", "suspicious_login", "account_locked", "crypto_price_alert", "crypto_alert_triggered", "cohost_request", "cohost_request_received", "payment_failed", "admin_security_event"].includes(type) || ["security", "system_security", "admin_security"].includes(category);
+    if (isPriority) return "Priority";
+    const created = new Date(note?.created_at || Date.now());
+    const now = new Date();
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startCreated = new Date(created.getFullYear(), created.getMonth(), created.getDate());
+    const days = Math.floor((startToday - startCreated) / 86400000);
+    if (days <= 0) return "Today";
+    if (days === 1) return "Yesterday";
+    if (days <= 7) return "Earlier This Week";
+    return "Earlier";
+  }
+
+  function groupedTitle(items) {
+    const first = items[0] || {};
+    if (items.length <= 1) return first.title || "PulseSoc update";
+    const actor = first.actor_name || "Someone";
+    const type = String(first.type || "").toLowerCase();
+    let verb = "reacted to your post";
+    if (type.includes("comment") || type.includes("reply")) verb = "commented on your content";
+    else if (type.includes("save")) verb = "saved your post";
+    else if (type.includes("share") || type.includes("repost")) verb = "shared your post";
+    else if (type.includes("follow")) verb = "followed you";
+    else if (type.includes("mention") || type.includes("tag")) verb = "mentioned you";
+    else if (type.includes("like") || type.includes("reaction")) verb = "liked your post";
+    return `${actor} and ${items.length - 1} others ${verb}.`;
+  }
+
+  function groupNotifications(notes) {
+    const socialTypes = new Set(["like", "reaction", "comment", "reply", "save", "share", "repost", "mention", "tag", "follow", "follow_request", "status_reaction", "reel_like", "reel_comment", "video_like", "video_comment", "video_save"]);
+    const groups = new Map();
+    notes.forEach(note => {
+      const type = String(note?.type || "").toLowerCase();
+      const category = String(note?.category || "").toLowerCase();
+      const section = notificationSection(note);
+      const groupable = socialTypes.has(type) || ["social", "likes", "comments", "mentions", "follows", "status"].includes(category);
+      const key = groupable
+        ? ["group", section, type || category, note?.entity_type || note?.content_type || "", note?.entity_id || note?.postId || note?.statusId || "", noteUrl(note)].join("|")
+        : `single|${Number(note?.id || 0)}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(note);
+    });
+    return [...groups.values()].map(items => items.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))));
+  }
+
+  function notificationSectionsHtml(notes, compact) {
+    const sectionOrder = ["Priority", "Today", "Yesterday", "Earlier This Week", "Earlier"];
+    const buckets = Object.fromEntries(sectionOrder.map(label => [label, []]));
+    groupNotifications(notes).forEach(items => {
+      const first = items[0] || {};
+      buckets[notificationSection(first)].push(items);
+    });
+    return sectionOrder.map(section => {
+      const groups = buckets[section] || [];
+      if (!groups.length) return "";
+      groups.sort((a, b) => String((b[0] || {}).created_at || "").localeCompare(String((a[0] || {}).created_at || "")));
+      const cards = groups.map(items => {
+        if (items.length <= 1) return notificationCard(items[0], compact);
+        const first = { ...items[0], title: groupedTitle(items), body: `Grouped repeated activity. ${items[0]?.original_preview || items[0]?.preview_text || ""}`.trim() };
+        return notificationCard(first, compact);
+      }).join("");
+      return `<section class="pulse-notification-section" data-notification-section="${escapeHtml(section)}"><h2>${escapeHtml(section)}</h2><div class="pulse-notification-list">${cards}</div></section>`;
+    }).join("");
+  }
+
   function ensureDropdownList() {
     let target = document.querySelector("[data-notification-list]");
     if (target) return target;
@@ -215,7 +289,7 @@
     targets.forEach(target => {
       const compact = target.dataset.notificationList === "dropdown";
       target.innerHTML = notes.length
-        ? notes.map(note => notificationCard(note, compact)).join("")
+        ? notificationSectionsHtml(notes, compact)
         : `<div class="empty-state">No notifications yet.</div>`;
     });
     STATE.listLoaded = true;

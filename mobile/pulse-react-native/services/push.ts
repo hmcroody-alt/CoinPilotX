@@ -146,13 +146,17 @@ export async function presentNativeDeviceAlert(payload: Record<string, unknown>)
   const data = normalizeNotificationData(payload);
   const url = typeof data.url === "string" && data.url.trim() ? data.url : "/pulse/notifications";
   const channelId = data.conversationId ? ANDROID_MESSAGES_CHANNEL_ID : ANDROID_CHANNEL_ID;
+  const badge = Number(data.badge || 0);
+  const categoryIdentifier = stringValue(data.category || data.type || data.notification_type) || "notification";
   await Notifications.scheduleNotificationAsync({
     content: {
       title,
       body,
       data,
       sound: "default",
-      priority: Notifications.AndroidNotificationPriority.HIGH
+      priority: Notifications.AndroidNotificationPriority.HIGH,
+      badge: badge > 0 ? badge : undefined,
+      categoryIdentifier
     },
     trigger: Platform.OS === "android" ? { channelId, seconds: 1 } : null
   });
@@ -186,6 +190,11 @@ function normalizeNotificationData(payload: Record<string, unknown>) {
     native_url: stringValue(payload.native_url || payload.app_url || payload.mobile_deep_link) || url,
     web_url: stringValue(payload.web_url || payload.url || payload.target_url) || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications"),
     type: stringValue(payload.type) || (conversationId ? "message" : "notification"),
+    notification_type: stringValue(payload.notification_type || payload.type) || (conversationId ? "message" : "notification"),
+    category: stringValue(payload.category || payload.notification_type || payload.type) || (conversationId ? "message" : "notification"),
+    sound: stringValue(payload.sound) || "default",
+    priority: stringValue(payload.priority) || "high",
+    badge: Number(payload.badge || 0),
     conversationId,
     conversation_id: conversationId,
     messageId,

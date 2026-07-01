@@ -587,8 +587,9 @@ def _deep_link_for_event(event_type, content_id="", deep_link="", metadata=None)
     conversation_id = metadata.get("conversation_id") or metadata.get("conversationId")
     post_id = metadata.get("post_id") or metadata.get("postId")
     status_id = metadata.get("status_id") or metadata.get("statusId")
+    profile_id = metadata.get("profile_user_id") or metadata.get("followed_user_id") or metadata.get("actor_user_id") or (content_id if event_type in {"follow", "new_follower", "follow_request"} else "")
     live_id = metadata.get("live_id") or metadata.get("liveId") or (content_id if "live" in event_type or "cohost" in event_type else "")
-    order_id = metadata.get("order_id") or metadata.get("purchase_id") or metadata.get("payment_id") or (content_id if event_type in {"purchase", "payment_succeeded", "payment_failed"} else "")
+    order_id = metadata.get("order_id") or metadata.get("purchase_id") or metadata.get("payment_id") or (content_id if event_type in {"purchase", "payment_succeeded", "payment_failed", "marketplace_order", "order_accepted", "order_shipped", "order_delivered"} else "")
     alert_id = metadata.get("alert_id") or metadata.get("alert_rule_id") or (content_id if event_type.startswith("crypto") else "")
     if conversation_id:
         return f"/pulse/messages/{conversation_id}"
@@ -596,6 +597,8 @@ def _deep_link_for_event(event_type, content_id="", deep_link="", metadata=None)
         return f"/pulse/status/{status_id}"
     if post_id:
         return f"/pulse/post/{post_id}"
+    if profile_id:
+        return f"/pulse/profile/{profile_id}"
     if live_id:
         return f"/pulse/live/{live_id}"
     if alert_id:
@@ -620,9 +623,10 @@ def _mobile_link_for_event(event_type, deep_link="", content_id="", metadata=Non
     post_id = metadata.get("post_id") or metadata.get("postId")
     status_id = metadata.get("status_id") or metadata.get("statusId")
     comment_id = metadata.get("comment_id") or metadata.get("commentId")
+    profile_id = metadata.get("profile_user_id") or metadata.get("followed_user_id") or metadata.get("actor_user_id") or (content_id if str(event_type or "") in {"follow", "new_follower", "follow_request"} else "")
     live_id = metadata.get("live_id") or metadata.get("liveId") or (content_id if "live" in str(event_type or "") or "cohost" in str(event_type or "") else "")
     alert_id = metadata.get("alert_id") or metadata.get("alert_rule_id") or (content_id if str(event_type or "").startswith("crypto") else "")
-    order_id = metadata.get("order_id") or metadata.get("purchase_id") or metadata.get("payment_id") or (content_id if str(event_type or "") in {"purchase", "payment_succeeded", "payment_failed"} else "")
+    order_id = metadata.get("order_id") or metadata.get("purchase_id") or metadata.get("payment_id") or (content_id if str(event_type or "") in {"purchase", "payment_succeeded", "payment_failed", "marketplace_order", "order_accepted", "order_shipped", "order_delivered"} else "")
     if conversation_id:
         return f"pulse://pulse/messages-v2?conversation={conversation_id}"
     if post_id:
@@ -631,6 +635,8 @@ def _mobile_link_for_event(event_type, deep_link="", content_id="", metadata=Non
         return f"pulse://post/{post_id}"
     if status_id:
         return f"pulse://status/{status_id}"
+    if profile_id:
+        return f"pulse://pulse/profile/{profile_id}"
     if live_id:
         return "pulse://pulse/live/studio" if "cohost_request" in str(event_type or "") else f"pulse://live/{live_id}"
     if alert_id:
@@ -1070,6 +1076,11 @@ def create_pulse_notification(
             push_type = str(metadata.get("push_type") or ("chat_message" if is_message_like else metadata.get("type")) or category or note_type or "notification")[:80]
             notification_type = str(metadata.get("type") or note_type or push_type)[:80]
             payload_type = push_type if is_message_like or push_type in {"chat_message", "private_message", "group_message"} else notification_type
+            try:
+                badge_counts = pulse_badge_counts(user_id)
+                badge_count = int(badge_counts.get("chat_unread_count") if is_message_like else badge_counts.get("alert_unread_count") or 0)
+            except Exception:
+                badge_count = int(metadata.get("badge") or 0)
             push_metadata = {
                 **metadata,
                 "url": metadata.get("url") or deep_link or "/pulse",
@@ -1078,6 +1089,11 @@ def create_pulse_notification(
                 "type": payload_type,
                 "notification_type": notification_type,
                 "push_type": push_type,
+                "category": metadata.get("category") or category,
+                "sound": metadata.get("sound") or "default",
+                "priority": metadata.get("priority") or ("high" if category in {"security", "system_security", "admin_security", "crypto", "live", "marketplace"} else "normal"),
+                "badge": int(metadata.get("badge") if metadata.get("badge") is not None else badge_count),
+                "vibration": metadata.get("vibration") or [200, 100, 200],
                 "channel_id": metadata.get("channel_id") or metadata.get("channelId") or ("pulse-messages-v2" if is_message_like else "default"),
                 "channelId": metadata.get("channelId") or metadata.get("channel_id") or ("pulse-messages-v2" if is_message_like else "default"),
                 "notification_id": int(notification_id),
@@ -1129,9 +1145,39 @@ def list_pulse_notifications(user_id, limit=50, category="all", unread_only=Fals
         clauses.append("(is_read=0 OR read_at IS NULL)")
     normalized_category = str(category or "all").lower()
     category_types = {
-        "social": ["like", "reaction", "comment", "reply", "save", "share", "mention", "status_mention", "follow", "follow_accept", "status_view", "status_reaction", "reel_like", "reel_comment", "reel_mention", "reel_share", "video_like", "video_comment", "video_mention", "video_share", "video_save"],
-        "security": ["security_alert", "account_login", "new_device"],
-        "premium": ["premium_alert", "marketplace_update"],
+        "priority": [
+            "security_alert", "account_login", "new_device", "password_changed", "email_changed", "phone_changed",
+            "suspicious_login", "account_locked", "crypto_price_alert", "crypto_alert_triggered", "crypto_security_alert",
+            "cohost_request", "cohost_request_received", "payment_failed", "admin_security_event",
+        ],
+        "social": [
+            "like", "reaction", "comment", "reply", "save", "share", "repost", "mention", "tag", "status_mention",
+            "follow", "follow_request", "follow_accept", "status_view", "status_reaction", "status_reply", "reel_like",
+            "reel_comment", "reel_mention", "reel_share", "video_like", "video_comment", "video_mention", "video_share",
+            "video_save",
+        ],
+        "live": [
+            "live_started", "live_reminder", "live_invite", "live_ended", "live_ended_summary", "live_replay_ready",
+            "live_highlight_ready", "replay_available", "cohost_request", "cohost_request_received", "cohost_accepted",
+            "cohost_denied", "guest_removed",
+        ],
+        "crypto": [
+            "crypto_price_alert", "crypto_alert_triggered", "crypto_percentage_alert", "crypto_volatility_alert",
+            "crypto_security_alert", "scam_security_alert", "scam_alert",
+        ],
+        "security": [
+            "security_alert", "account_login", "new_device", "password_changed", "email_changed", "phone_changed",
+            "suspicious_login", "account_locked", "two_factor_enabled", "two_factor_disabled", "admin_security_event",
+        ],
+        "marketplace": [
+            "marketplace_update", "marketplace_order", "teacher_order", "order_accepted", "order_shipped",
+            "order_delivered", "refund_issued", "payment_received", "purchase", "payment_succeeded", "payment_failed",
+            "premium_alert", "founder_premium_activated", "subscription_renewed", "subscription_canceled",
+        ],
+        "system": [
+            "system", "system_update", "system_announcement", "system_security", "security_alert", "admin_security_event",
+            "ai_alert", "ai_update", "account", "user_signup", "email_verification", "phone_verification",
+        ],
     }.get(normalized_category)
     if normalized_category in {"messages", "message", "chat"}:
         clauses.append(f"({_message_notification_where_clause()})")
@@ -1806,7 +1852,22 @@ def send_multi_channel_notification(user_id, notification_type, title, body, met
             _log_delivery(user_id, notification_id, "push", "skipped", "", "Quiet hours are active.")
             _log_pulse_delivery(notification_id, user_id, "push", "web_push", "skipped", {}, "Quiet hours are active.")
         else:
-            push_metadata = {**metadata, "notification_id": int(notification_id or metadata.get("notification_id") or 0)}
+            category = _pulse_category(_pulse_type_for_alert(notification_type))
+            try:
+                badge_count = int((pulse_badge_counts(user_id) or {}).get("alert_unread_count") or 0)
+            except Exception:
+                badge_count = int(metadata.get("badge") or 0)
+            push_metadata = {
+                **metadata,
+                "notification_id": int(notification_id or metadata.get("notification_id") or 0),
+                "category": metadata.get("category") or category,
+                "type": metadata.get("type") or notification_type,
+                "notification_type": notification_type,
+                "sound": metadata.get("sound") or "default",
+                "priority": metadata.get("priority") or ("high" if category in {"security", "system_security", "admin_security", "crypto", "live", "marketplace"} else "normal"),
+                "badge": int(metadata.get("badge") if metadata.get("badge") is not None else badge_count),
+                "vibration": metadata.get("vibration") or [200, 100, 200],
+            }
             push_result = send_push_alert(user_id, title, body, push_metadata)
             result["push"] = push_result.get("status", "failed")
             _log_delivery(user_id, notification_id, "push", result["push"], push_result, push_result.get("message"))
@@ -1871,6 +1932,10 @@ def dispatch_universal_notification(
         "native_url": mobile_deep_link,
         "app_url": mobile_deep_link,
         "deepLink": mobile_deep_link,
+        "category": _pulse_category(notification_type),
+        "sound": metadata.get("sound") or "default",
+        "vibration": metadata.get("vibration") or [200, 100, 200],
+        "badge": metadata.get("badge"),
         "channels": explicit_channels or default_channels,
         "default_channels": default_channels,
     }

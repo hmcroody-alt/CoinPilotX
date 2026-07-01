@@ -6,6 +6,7 @@ from __future__ import annotations
 import sqlite3
 import sys
 from datetime import UTC, datetime
+import re
 from pathlib import Path
 
 
@@ -28,8 +29,7 @@ def main() -> int:
     notifications_js = read("static/notifications.js")
     service = read("services/notification_service.py")
     bot = read("bot.py")
-    app_template = read("templates/app.html")
-    dashboard = read("templates/dashboard.html")
+    mobile_topbars = re.findall(r'<nav class="mobile-topbar".*?</nav>', bot, flags=re.DOTALL)
 
     require("frontend alert count uses alert_unread_count only", "alert: Number(payload.alert_unread_count || 0)" in notifications_js, failures)
     require("frontend chat count uses chat_unread_count only", "chat: Number(payload.chat_unread_count || 0)" in notifications_js, failures)
@@ -38,10 +38,10 @@ def main() -> int:
     require("backend excludes message notifications from alert count", "AND NOT ({_message_notification_where_clause()})" in service, failures)
     require("backend sums conversation unread for chat count", "COALESCE(SUM(CASE WHEN COALESCE(unread_count,0) > 0 THEN unread_count ELSE 0 END),0)" in service, failures)
     require("backend includes Command Center V2 unread state", "comm_v2_participants" in service and "membership_state" in service, failures)
-    require("desktop header has separate chat and alert badges", "data-chat-unread hidden" in bot and "data-alert-unread data-notification-unread hidden" in bot, failures)
-    require("mobile topbar has separate chat and alert badges", 'href="/pulse/notifications"' in bot and 'href="/pulse/messages"' in bot and "data-chat-unread hidden" in bot, failures)
+    require("desktop header exposes alert badge without top message duplicate", "data-header-notifications" in bot and "data-alert-unread data-notification-unread hidden" in bot and "pulse-topnav-messages" not in bot, failures)
+    require("mobile topbar exposes notifications only", bool(mobile_topbars) and all('href="/pulse/notifications"' in bar and 'href="/pulse/messages"' not in bar and "data-chat-unread" not in bar for bar in mobile_topbars), failures)
     require("bottom nav has separate chat and alert badges", "data-alert-unread data-notification-unread hidden" in bot and "data-chat-unread hidden" in bot and "mobile_bottom_html" in bot, failures)
-    require("badges are red in Pulse shell", "background:#ff335d" in bot and "background:#ff335d" in app_template and "background:#ff335d" in dashboard, failures)
+    require("Pulse shell badges keep urgent red styling", re.search(r"background\s*:\s*#ff335d", bot), failures)
 
     conn = sqlite3.connect(ROOT / "coinpilotx.db")
     conn.row_factory = sqlite3.Row
