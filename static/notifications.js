@@ -119,9 +119,10 @@
     if (!bridge || typeof bridge.notify !== "function") return;
     try {
       bridge.notify({
+        ...(payload || {}),
         title: payload?.title || "PulseSoc",
         body: payload?.body || payload?.message || "New PulseSoc activity.",
-        url: payload?.url || payload?.deep_link || payload?.target_url || "/pulse/notifications"
+        url: payload?.native_url || payload?.app_url || payload?.mobile_deep_link || payload?.deepLink || payload?.url || payload?.deep_link || payload?.target_url || "/pulse/notifications"
       });
     } catch (_) {}
   }

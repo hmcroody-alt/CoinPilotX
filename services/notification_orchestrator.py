@@ -70,6 +70,29 @@ def send_user_alert(user_id, category, title, body, data=None, channels=None, pr
     return result
 
 
+def dispatch_event(event_type, actor_user_id=0, recipient_user_id=0, content_id="", deep_link="", priority="normal", channels=None, metadata=None):
+    result = notification_service.dispatch_universal_notification(
+        event_type,
+        actor_user_id=actor_user_id,
+        recipient_user_id=recipient_user_id,
+        content_id=content_id,
+        deep_link=deep_link,
+        priority=priority,
+        channels=channels,
+        metadata=metadata or {},
+    )
+    if result.get("notification_id"):
+        log_notification(
+            recipient_user_id,
+            "orchestrator",
+            event_type,
+            result.get("status") or "created",
+            {"trace_id": result.get("trace_id"), "channels": result.get("channels")},
+            "",
+        )
+    return result
+
+
 def retry_failed(limit=25):
     conn = user_context.connect()
     conn.row_factory = __import__("sqlite3").Row

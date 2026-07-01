@@ -99,7 +99,7 @@ def send_verification_code(user_id, phone):
     )
     conn.commit()
     conn.close()
-    result = send_sms(phone, f"Your PulseSoc verification code is {code}. It expires in 10 minutes.", purpose="verification", user_id=user_id)
+    result = send_sms(phone, f"Pulse verification code: {code}. It expires in 10 minutes.", purpose="verification", user_id=user_id)
     if result.get("ok"):
         return {"ok": True, "status": "sent", "message": "Verification code sent."}
     return result
@@ -152,7 +152,7 @@ def send_test_sms(user_id):
     if not readiness.get("ready"):
         _log_delivery(user_id, "sms", readiness.get("status") or "not_configured", error=readiness.get("message"))
         return {"ok": False, **readiness}
-    return send_sms(readiness.get("phone"), "PulseSoc SMS test: your alert text channel is ready.", purpose="test", user_id=user_id)
+    return send_sms(readiness.get("phone"), "Pulse SMS test: your PulseSoc alert text channel is ready.", purpose="test", user_id=user_id)
 
 
 def send_alert_sms(user_id, alert_payload):

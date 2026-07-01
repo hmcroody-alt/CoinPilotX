@@ -218,6 +218,14 @@ function normalizeNotificationUrl(url: string, conversationId = "") {
   if (/^pulse:\/\/messages\/\d+/i.test(raw) && id) return `pulse://pulse/messages-v2?conversation=${id}`;
   if (/^https?:\/\/(?:www\.)?pulsesoc\.com\/pulse\/messages\/\d+/i.test(raw) && id) return `pulse://pulse/messages-v2?conversation=${id}`;
   if (/^\/pulse\/messages\/\d+/i.test(raw) && id) return `pulse://pulse/messages-v2?conversation=${id}`;
+  const liveMatch = raw.match(/(?:^https?:\/\/(?:www\.)?pulsesoc\.com)?\/pulse\/live\/(\d+)/i);
+  if (liveMatch) return `pulse://live/${liveMatch[1]}`;
+  if (/\/pulse\/live\/studio/i.test(raw)) return "pulse://pulse/live/studio";
+  const alertMatch = raw.match(/(?:^https?:\/\/(?:www\.)?pulsesoc\.com)?\/pulse\/alerts\/(\d+)/i);
+  if (alertMatch) return `pulse://alerts/${alertMatch[1]}`;
+  const purchaseMatch = raw.match(/(?:^https?:\/\/(?:www\.)?pulsesoc\.com)?\/pulse\/(?:purchases|orders)\/([\w-]+)/i);
+  if (purchaseMatch) return `pulse://purchase/${purchaseMatch[1]}`;
+  if (/\/account\/security/i.test(raw)) return "pulse://account/security";
   return raw || "/pulse/notifications";
 }
 

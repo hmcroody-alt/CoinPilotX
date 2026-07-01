@@ -696,8 +696,11 @@ def dispatch_alert_event(event, rule=None):
     title = f"PulseSoc Alert: {_normalize_symbol(rule.get('symbol'))} crossed {_format_money(rule.get('threshold_value'))}"
     body = event.get("message") or "Your PulseSoc alert condition was met."
     metadata = {
-        "url": "/alerts",
+        "url": f"/pulse/alerts/{event.get('id') or rule.get('id') or ''}".rstrip("/"),
+        "deep_link": f"/pulse/alerts/{event.get('id') or rule.get('id') or ''}".rstrip("/"),
+        "mobile_deep_link": f"pulse://alerts/{event.get('id') or rule.get('id') or ''}".rstrip("/"),
         "push_type": "market_alert",
+        "event_type": "crypto_alert_triggered",
         "alert_rule_id": rule.get("id"),
         "alert_event_id": event.get("id"),
         "symbol": rule.get("symbol"),
@@ -706,7 +709,16 @@ def dispatch_alert_event(event, rule=None):
     delivery = {"ok": True, "channels": {}}
     notification_id = None
     if channels.get("in_app"):
-        created = notification_service.queue_notification(user_id, title, body, "market_alerts", metadata)
+        created = notification_service.dispatch_universal_notification(
+            "crypto_alert_triggered",
+            actor_user_id=0,
+            recipient_user_id=user_id,
+            content_id=str(event.get("id") or rule.get("id") or ""),
+            deep_link=metadata["deep_link"],
+            priority="high",
+            channels=["in_app"],
+            metadata={**metadata, "title": title, "body": body},
+        )
         notification_id = created.get("notification_id")
         delivery["channels"]["in_app"] = "created" if created.get("ok") else "failed"
         _log_delivery(user_id, "in_app", "created" if created.get("ok") else "failed", "database", created, created.get("message"), notification_id, rule.get("id"), event.get("id"))
@@ -723,22 +735,17 @@ def dispatch_alert_event(event, rule=None):
             _log_delivery(user_id, channel, "skipped", channel, "", "Quiet hours are active.", notification_id, rule.get("id"), event.get("id"))
             continue
         if channel == "email":
-            if not user.get("email") or not os.getenv("BREVO_API_KEY"):
-                status = "not_configured"
-                result = {"ok": False, "message": "Email address or BREVO_API_KEY is missing."}
-            else:
-                html = f"<p>{body}</p><p><a href='https://pulsesoc.com/alerts'>Open Alerts Command Center</a></p>"
-                result = email_service.send_email(user.get("email"), title, html, body, email_type="market_alerts", user_id=user_id)
-                status = "sent" if result.get("ok") else "failed"
+            result = notification_service.send_email_notification(user_id, title, body, "crypto_alert_triggered", metadata, notification_id)
+            status = result.get("status") or ("queued" if result.get("ok") else "failed")
             delivery["channels"][channel] = status
-            external_sent = external_sent or status == "sent"
+            external_sent = external_sent or status in {"sent", "queued", "pending"}
             _log_delivery(user_id, channel, status, "brevo", result, result.get("error") or result.get("message"), notification_id, rule.get("id"), event.get("id"))
         elif channel == "push":
             if not readiness["push"].get("ready"):
                 result = {"ok": False, "status": readiness["push"].get("status") or "not_configured", "message": readiness["push"].get("message")}
                 status = "permission_denied" if result.get("status") == "permission_denied" else "not_configured"
             else:
-                result = push_service.send_push(user_id, title, body, metadata, push_type="market_alert")
+                result = notification_service.send_push_alert(user_id, title, body, metadata)
                 status = _delivery_status_from_result(result)
                 if status == "skipped":
                     status = "not_configured"
@@ -768,7 +775,16 @@ def dispatch_alert_event(event, rule=None):
             external_sent = external_sent or status == "sent"
             _log_delivery(user_id, channel, status, "telegram", result, result.get("message"), notification_id, rule.get("id"), event.get("id"))
     if external_attempted and not external_sent and not channels.get("in_app"):
-        created = notification_service.queue_notification(user_id, title, f"{body}\n\nSelected external channels need setup, so this in-app copy was created.", "market_alerts", metadata)
+        created = notification_service.dispatch_universal_notification(
+            "crypto_alert_triggered",
+            actor_user_id=0,
+            recipient_user_id=user_id,
+            content_id=str(event.get("id") or rule.get("id") or ""),
+            deep_link=metadata["deep_link"],
+            priority="high",
+            channels=["in_app"],
+            metadata={**metadata, "title": title, "body": f"{body}\n\nSelected external channels need setup, so this in-app copy was created."},
+        )
         notification_id = created.get("notification_id")
         delivery["channels"]["in_app_fallback"] = "created" if created.get("ok") else "failed"
         _log_delivery(user_id, "in_app", "created" if created.get("ok") else "failed", "database", created, created.get("message"), notification_id, rule.get("id"), event.get("id"))

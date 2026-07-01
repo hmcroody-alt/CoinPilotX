@@ -44,6 +44,7 @@ def heartbeat_once(config: WorkerConfig) -> dict:
     )
     if config.worker_enabled:
         try:
+            from services.notification_service import process_queued_email_notifications
             from services.push_service import process_expo_receipts, process_push_delivery_jobs
 
             job_result = process_push_delivery_jobs(limit=50)
@@ -68,8 +69,18 @@ def heartbeat_once(config: WorkerConfig) -> dict:
                     receipt_result.get("invalidated", 0),
                     bool(receipt_result.get("ok")),
                 )
+            email_result = process_queued_email_notifications(limit=25)
+            if email_result.get("attempted") or not email_result.get("ok"):
+                LOGGER.info(
+                    "EMAIL_JOBS attempted=%s sent=%s retry=%s dead_letter=%s ok=%s",
+                    email_result.get("attempted", 0),
+                    email_result.get("sent", 0),
+                    email_result.get("retry", 0),
+                    email_result.get("dead_letter", 0),
+                    bool(email_result.get("ok")),
+                )
         except Exception as exc:
-            LOGGER.warning("PUSH_WORKER_SKIPPED error_type=%s", exc.__class__.__name__)
+            LOGGER.warning("NOTIFICATION_WORKER_SKIPPED error_type=%s", exc.__class__.__name__)
     return payload
 
 

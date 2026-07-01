@@ -1,9 +1,11 @@
 import json
 import logging
 import os
+import hashlib
+import secrets
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from . import user_context
 from . import email_service
@@ -83,8 +85,12 @@ PULSE_NOTIFICATION_CATEGORIES = {
     "live": {"in_app": True, "push": True, "email": False, "sms": False},
     "status": {"in_app": True, "push": True, "email": False, "sms": False},
     "marketplace": {"in_app": True, "push": True, "email": True, "sms": False},
+    "purchase": {"in_app": True, "push": True, "email": True, "sms": False},
+    "payments": {"in_app": True, "push": True, "email": True, "sms": False},
     "crypto": {"in_app": True, "push": True, "email": False, "sms": False},
     "security": {"in_app": True, "push": True, "email": True, "sms": False},
+    "admin_security": {"in_app": True, "push": True, "email": True, "sms": False},
+    "marketing": {"in_app": False, "push": False, "email": False, "sms": False},
     # Legacy UI categories preserved for older saved preferences.
     "messages": {"in_app": True, "push": True, "email": False, "sms": False},
     "comments": {"in_app": True, "push": True, "email": False, "sms": False},
@@ -172,11 +178,35 @@ PULSE_TYPE_TO_CATEGORY = {
     "order_delivered": "marketplace",
     "refund_issued": "marketplace",
     "payment_received": "marketplace",
+    "purchase": "purchase",
+    "purchase_completed": "purchase",
+    "purchase_failed": "payments",
+    "payment_success": "payments",
+    "payment_failure": "payments",
+    "payment_refunded": "payments",
+    "subscription_renewal": "premium",
+    "premium_subscription": "premium",
+    "premium_purchase": "premium",
     "crypto_price_alert": "crypto",
+    "crypto_alert_triggered": "crypto",
+    "crypto_percentage_alert": "crypto",
+    "crypto_volatility_alert": "crypto",
+    "crypto_security_alert": "crypto",
     "portfolio_alert": "crypto",
     "watchlist_alert": "crypto",
     "major_market_movement": "crypto",
     "custom_crypto_alert": "crypto",
+    "cohost_request": "live",
+    "cohost_request_received": "live",
+    "cohost_accepted": "live",
+    "cohost_denied": "live",
+    "cohost_removed": "live",
+    "guest_removed": "live",
+    "live_highlight_ready": "live",
+    "admin_security_event": "admin_security",
+    "account_locked": "security",
+    "password_reset_requested": "security",
+    "marketing_update": "marketing",
 }
 
 MESSAGE_NOTIFICATION_TYPES = {
@@ -240,11 +270,141 @@ BREVO_NOTIFICATION_TEMPLATES = {
         "headline": "Security alert",
         "body": "We detected an important security event on your PulseSoc account.",
     },
+    "live_alert": {
+        "subject": "PulseSoc Live update",
+        "headline": "Live update",
+        "body": "There is an update for a PulseSoc Live session.",
+    },
+    "social_alert": {
+        "subject": "PulseSoc social update",
+        "headline": "Social update",
+        "body": "There is new activity on PulseSoc.",
+    },
+    "marketplace_alert": {
+        "subject": "PulseSoc marketplace update",
+        "headline": "Marketplace update",
+        "body": "There is an update for your PulseSoc marketplace activity.",
+    },
+}
+
+UNIVERSAL_NOTIFICATION_EVENTS = {
+    "signup_welcome": {"type": "user_signup", "title": "Welcome to PulseSoc", "body": "Your PulseSoc account is ready.", "channels": ["in_app", "email"], "entity_type": "account"},
+    "email_confirmation": {"type": "email_verification", "title": "Verify your PulseSoc email", "body": "Confirm your email to protect your account.", "channels": ["in_app", "email"], "entity_type": "account"},
+    "password_reset": {"type": "password_reset", "title": "PulseSoc password reset", "body": "A password reset was requested for your account.", "channels": ["in_app", "email", "sms"], "priority": "high", "entity_type": "security"},
+    "password_reset_requested": {"type": "password_reset_requested", "title": "PulseSoc password reset requested", "body": "A password reset was requested for your account.", "channels": ["in_app", "email", "sms"], "priority": "high", "entity_type": "security"},
+    "password_changed": {"type": "password_changed", "title": "PulseSoc password changed", "body": "Your PulseSoc password was changed.", "channels": ["in_app", "email", "push", "sms"], "priority": "critical", "entity_type": "security"},
+    "account_login": {"type": "account_login", "title": "PulseSoc login", "body": "Your PulseSoc account was accessed.", "channels": ["in_app", "email", "push"], "priority": "high", "entity_type": "security"},
+    "new_device": {"type": "new_device", "title": "New device login", "body": "A new device signed in to your PulseSoc account.", "channels": ["in_app", "email", "push", "sms"], "priority": "critical", "entity_type": "security"},
+    "suspicious_login": {"type": "suspicious_login", "title": "Suspicious login blocked", "body": "PulseSoc detected suspicious login activity.", "channels": ["in_app", "email", "push", "sms"], "priority": "critical", "entity_type": "security"},
+    "account_locked": {"type": "account_locked", "title": "PulseSoc account locked", "body": "Your account was locked for protection.", "channels": ["in_app", "email", "push", "sms"], "priority": "critical", "entity_type": "security"},
+    "email_changed": {"type": "email_changed", "title": "PulseSoc email changed", "body": "Your account email was changed.", "channels": ["in_app", "email", "push"], "priority": "critical", "entity_type": "security"},
+    "phone_changed": {"type": "phone_changed", "title": "PulseSoc phone changed", "body": "Your account phone number was changed.", "channels": ["in_app", "email", "push", "sms"], "priority": "critical", "entity_type": "security"},
+    "chat_message": {"type": "chat_message", "title": "New PulseSoc message", "body": "You received a new message.", "channels": ["in_app", "push"], "entity_type": "conversation"},
+    "message": {"type": "chat_message", "title": "New PulseSoc message", "body": "You received a new message.", "channels": ["in_app", "push"], "entity_type": "conversation"},
+    "reaction": {"type": "reaction", "title": "New reaction", "body": "Someone reacted to your PulseSoc activity.", "channels": ["in_app", "push"], "entity_type": "post"},
+    "comment": {"type": "comment", "title": "New comment", "body": "Someone commented on your PulseSoc post.", "channels": ["in_app", "push"], "entity_type": "post"},
+    "reply": {"type": "reply", "title": "New reply", "body": "Someone replied to your PulseSoc comment.", "channels": ["in_app", "push"], "entity_type": "comment"},
+    "repost": {"type": "post_repost", "title": "New repost", "body": "Someone reposted your PulseSoc post.", "channels": ["in_app", "push"], "entity_type": "post"},
+    "save": {"type": "save", "title": "Post saved", "body": "Someone saved your PulseSoc post.", "channels": ["in_app"], "entity_type": "post"},
+    "follow": {"type": "follow", "title": "New follower", "body": "Someone followed you on PulseSoc.", "channels": ["in_app", "push"], "entity_type": "profile"},
+    "mention": {"type": "mention", "title": "You were mentioned", "body": "Someone mentioned you on PulseSoc.", "channels": ["in_app", "push"], "entity_type": "mention"},
+    "tag": {"type": "mention", "title": "You were tagged", "body": "Someone tagged you on PulseSoc.", "channels": ["in_app", "push"], "entity_type": "mention"},
+    "crypto_alert": {"type": "crypto_price_alert", "title": "PulseSoc crypto alert", "body": "A crypto alert you enabled was triggered.", "channels": ["in_app", "push", "email", "sms"], "priority": "high", "entity_type": "crypto_alert"},
+    "crypto_alert_triggered": {"type": "crypto_alert_triggered", "title": "PulseSoc crypto alert", "body": "A crypto alert you enabled was triggered.", "channels": ["in_app", "push", "email", "sms"], "priority": "high", "entity_type": "crypto_alert"},
+    "live_started": {"type": "live_started", "title": "PulseSoc Live started", "body": "A creator you follow is live.", "channels": ["in_app", "push"], "entity_type": "live"},
+    "cohost_request": {"type": "cohost_request", "title": "Co-host request received", "body": "A viewer requested to co-host your Live.", "channels": ["in_app", "push"], "priority": "high", "entity_type": "live"},
+    "cohost_request_received": {"type": "cohost_request_received", "title": "Co-host request received", "body": "A viewer requested to co-host your Live.", "channels": ["in_app", "push"], "priority": "high", "entity_type": "live"},
+    "cohost_accepted": {"type": "cohost_accepted", "title": "Co-host request accepted", "body": "The host approved your co-host request.", "channels": ["in_app", "push"], "priority": "high", "entity_type": "live"},
+    "cohost_denied": {"type": "cohost_denied", "title": "Co-host request denied", "body": "The host denied your co-host request.", "channels": ["in_app", "push"], "entity_type": "live"},
+    "guest_removed": {"type": "guest_removed", "title": "Removed from Live", "body": "You were removed from the Live co-host seat.", "channels": ["in_app", "push"], "priority": "high", "entity_type": "live"},
+    "live_ended": {"type": "live_ended", "title": "PulseSoc Live ended", "body": "The Live session ended.", "channels": ["in_app", "push"], "entity_type": "live"},
+    "live_replay_ready": {"type": "live_replay_ready", "title": "Live replay ready", "body": "Your PulseSoc Live replay is ready.", "channels": ["in_app", "push", "email"], "entity_type": "live"},
+    "live_highlight_ready": {"type": "live_highlight_ready", "title": "Live highlight ready", "body": "A PulseSoc Live highlight is ready.", "channels": ["in_app", "push"], "entity_type": "live"},
+    "purchase": {"type": "purchase", "title": "Payment complete", "body": "Your PulseSoc purchase was completed.", "channels": ["in_app", "push", "email"], "priority": "high", "entity_type": "purchase"},
+    "payment_succeeded": {"type": "payment_succeeded", "title": "Payment complete", "body": "Your PulseSoc payment was completed.", "channels": ["in_app", "push", "email"], "priority": "high", "entity_type": "payment"},
+    "payment_failed": {"type": "payment_failed", "title": "Payment failed", "body": "Your PulseSoc payment did not complete.", "channels": ["in_app", "push", "email"], "priority": "high", "entity_type": "payment"},
+    "premium": {"type": "premium_alert", "title": "PulseSoc Premium update", "body": "There is a Premium account update.", "channels": ["in_app", "push", "email"], "entity_type": "premium"},
+    "marketplace_order": {"type": "marketplace_order", "title": "Marketplace order update", "body": "There is an update for your PulseSoc marketplace order.", "channels": ["in_app", "push", "email"], "entity_type": "marketplace_order"},
+    "admin_security_event": {"type": "admin_security_event", "title": "PulseSoc security event", "body": "An admin/security event needs review.", "channels": ["in_app", "push", "email"], "priority": "critical", "entity_type": "admin_security"},
+}
+
+UNIVERSAL_EVENT_ALIASES = {
+    "signup": "signup_welcome",
+    "welcome": "signup_welcome",
+    "email_confirm": "email_confirmation",
+    "email_verification": "email_confirmation",
+    "password_reset_alert": "password_reset_requested",
+    "login": "account_login",
+    "new_login": "account_login",
+    "login_new_device": "new_device",
+    "security_alert": "suspicious_login",
+    "new_message": "chat_message",
+    "private_message": "chat_message",
+    "new_reaction": "reaction",
+    "like": "reaction",
+    "post_like": "reaction",
+    "reel_reaction": "reaction",
+    "status_reaction": "reaction",
+    "feed_post_reaction": "reaction",
+    "new_comment": "comment",
+    "post_comment": "comment",
+    "comment_reply": "reply",
+    "repost": "repost",
+    "post_repost": "repost",
+    "reposts": "repost",
+    "saves": "save",
+    "follows": "follow",
+    "mentions": "mention",
+    "tags": "tag",
+    "crypto_price_alert": "crypto_alert",
+    "price_trigger": "crypto_alert",
+    "percentage_trigger": "crypto_alert",
+    "volatility_trigger": "crypto_alert",
+    "scam_security_alert": "crypto_alert",
+    "live_cohost_request": "cohost_request",
+    "live_cohost_request_created": "cohost_request",
+    "live_cohost_request_accepted": "cohost_accepted",
+    "live_cohost_request_denied": "cohost_denied",
+    "cohost_request_accepted": "cohost_accepted",
+    "cohost_request_denied": "cohost_denied",
+    "guest_removed_from_live": "guest_removed",
+    "replay_available": "live_replay_ready",
+    "purchase_payment": "purchase",
+    "purchase_completed": "purchase",
+    "payment_complete": "payment_succeeded",
+    "premium_subscription": "premium",
+    "subscription": "premium",
+    "subscription_renewed": "premium",
+    "marketplace_purchase": "marketplace_order",
+    "marketplace_order_update": "marketplace_order",
+    "admin_alert": "admin_security_event",
+}
+
+SELF_NOTIFICATION_ALLOWED_TYPES = {
+    "user_signup",
+    "email_verification",
+    "phone_verification",
+    "password_reset",
+    "password_reset_requested",
+    "password_changed",
+    "account_login",
+    "new_device",
+    "suspicious_login",
+    "account_locked",
+    "email_changed",
+    "phone_changed",
+    "payment_succeeded",
+    "payment_failed",
+    "purchase",
+    "premium_alert",
+    "marketplace_order",
+    "admin_security_event",
 }
 
 RATE_WINDOWS = {"email": 60, "sms": 300, "in_app": 20}
 RATE_LIMITS = {"email": 12, "sms": 4, "in_app": 20}
 MEMORY_DELIVERY_RATE = {}
+EMAIL_QUEUE_PROCESSOR_LOCK = threading.Lock()
 
 
 def _pulse_category(note_type):
@@ -357,8 +517,14 @@ def _template_key(note_type, category):
         return "new_message"
     if category == "crypto":
         return "crypto_alert"
-    if category == "security":
+    if category in {"security", "admin_security"}:
         return "security_alert"
+    if category == "live":
+        return "live_alert"
+    if category in {"social", "status", "comments", "likes", "mentions", "follows"}:
+        return "social_alert"
+    if category in {"marketplace", "marketplace_order", "teacher_order", "purchase", "payments"}:
+        return "marketplace_alert"
     return "welcome"
 
 
@@ -377,6 +543,334 @@ def _branded_html(headline, body, deep_link="/pulse/notifications"):
         "<p style='font-size:12px;color:#64748b'>PulseSoc is operated by CoinPlotXAI Inc. Visit PulseSoc.com.</p>"
         "</div>"
     )
+
+
+def _notification_trace_id(metadata=None):
+    metadata = metadata or {}
+    return str(metadata.get("trace_id") or metadata.get("push_trace_id") or secrets.token_hex(8))[:120]
+
+
+def _normalize_channels(channels):
+    if channels is None:
+        return []
+    if isinstance(channels, str):
+        channels = [part.strip() for part in channels.split(",")]
+    allowed = {"in_app", "push", "email", "sms", "telegram"}
+    normalized = []
+    for channel in channels or []:
+        value = str(channel or "").strip().lower()
+        if value in allowed and value not in normalized:
+            normalized.append(value)
+    return normalized
+
+
+def _event_spec(event_type):
+    event_type = str(event_type or "").strip().lower()
+    event_type = UNIVERSAL_EVENT_ALIASES.get(event_type, event_type)
+    return UNIVERSAL_NOTIFICATION_EVENTS.get(event_type) or {
+        "type": event_type if event_type in PULSE_TYPE_TO_CATEGORY else "message",
+        "title": "PulseSoc notification",
+        "body": "There is new PulseSoc activity.",
+        "channels": ["in_app", "push"],
+        "entity_type": "",
+    }
+
+
+def _deep_link_for_event(event_type, content_id="", deep_link="", metadata=None):
+    metadata = metadata or {}
+    if deep_link:
+        return str(deep_link)[:700]
+    event_type = str(event_type or "").strip().lower()
+    content_id = str(content_id or metadata.get("content_id") or metadata.get("entity_id") or "").strip()
+    if metadata.get("deep_link") or metadata.get("target_url") or metadata.get("url"):
+        return str(metadata.get("deep_link") or metadata.get("target_url") or metadata.get("url"))[:700]
+    conversation_id = metadata.get("conversation_id") or metadata.get("conversationId")
+    post_id = metadata.get("post_id") or metadata.get("postId")
+    status_id = metadata.get("status_id") or metadata.get("statusId")
+    live_id = metadata.get("live_id") or metadata.get("liveId") or (content_id if "live" in event_type or "cohost" in event_type else "")
+    order_id = metadata.get("order_id") or metadata.get("purchase_id") or metadata.get("payment_id") or (content_id if event_type in {"purchase", "payment_succeeded", "payment_failed"} else "")
+    alert_id = metadata.get("alert_id") or metadata.get("alert_rule_id") or (content_id if event_type.startswith("crypto") else "")
+    if conversation_id:
+        return f"/pulse/messages/{conversation_id}"
+    if status_id:
+        return f"/pulse/status/{status_id}"
+    if post_id:
+        return f"/pulse/post/{post_id}"
+    if live_id:
+        return f"/pulse/live/{live_id}"
+    if alert_id:
+        return f"/pulse/alerts/{alert_id}"
+    if order_id:
+        return f"/pulse/purchases/{order_id}"
+    if event_type in {"account_login", "new_device", "suspicious_login", "password_changed", "password_reset", "password_reset_requested", "email_changed", "phone_changed", "account_locked"}:
+        return "/account/security"
+    if event_type in {"premium", "premium_subscription", "premium_purchase"}:
+        return "/pulse/premium"
+    if event_type in {"marketplace_order", "order_accepted", "order_shipped", "order_delivered"}:
+        return "/pulse/marketplace/orders"
+    return "/pulse/notifications"
+
+
+def _mobile_link_for_event(event_type, deep_link="", content_id="", metadata=None):
+    metadata = metadata or {}
+    explicit = metadata.get("mobile_deep_link") or metadata.get("native_url") or metadata.get("app_url") or metadata.get("deepLink")
+    if explicit:
+        return str(explicit)[:700]
+    conversation_id = metadata.get("conversation_id") or metadata.get("conversationId")
+    post_id = metadata.get("post_id") or metadata.get("postId")
+    status_id = metadata.get("status_id") or metadata.get("statusId")
+    comment_id = metadata.get("comment_id") or metadata.get("commentId")
+    live_id = metadata.get("live_id") or metadata.get("liveId") or (content_id if "live" in str(event_type or "") or "cohost" in str(event_type or "") else "")
+    alert_id = metadata.get("alert_id") or metadata.get("alert_rule_id") or (content_id if str(event_type or "").startswith("crypto") else "")
+    order_id = metadata.get("order_id") or metadata.get("purchase_id") or metadata.get("payment_id") or (content_id if str(event_type or "") in {"purchase", "payment_succeeded", "payment_failed"} else "")
+    if conversation_id:
+        return f"pulse://pulse/messages-v2?conversation={conversation_id}"
+    if post_id:
+        if comment_id:
+            return f"pulse://post/{post_id}/comment/{comment_id}"
+        return f"pulse://post/{post_id}"
+    if status_id:
+        return f"pulse://status/{status_id}"
+    if live_id:
+        return "pulse://pulse/live/studio" if "cohost_request" in str(event_type or "") else f"pulse://live/{live_id}"
+    if alert_id:
+        return f"pulse://alerts/{alert_id}"
+    if order_id:
+        return f"pulse://purchase/{order_id}"
+    if str(event_type or "") in {"account_login", "new_device", "suspicious_login", "password_changed", "password_reset", "password_reset_requested", "email_changed", "phone_changed", "account_locked"}:
+        return "pulse://account/security"
+    if deep_link and str(deep_link).startswith("/"):
+        return f"pulse://{str(deep_link).lstrip('/')}"
+    return str(deep_link or "pulse://pulse/notifications")[:700]
+
+
+def _quiet_hours_active(user_id):
+    try:
+        experience = get_preferences(user_id).get("experience") or {}
+        if not experience.get("quiet_hours_enabled"):
+            return False
+        def minutes(value, fallback):
+            raw = str(value or fallback)
+            parts = raw.split(":")
+            return max(0, min(1439, int(parts[0]) * 60 + int(parts[1])))
+        start = minutes(experience.get("quiet_hours_start"), "22:00")
+        end = minutes(experience.get("quiet_hours_end"), "07:00")
+        now = datetime.now()
+        current = now.hour * 60 + now.minute
+        return start <= end and start <= current <= end or start > end and (current >= start or current <= end)
+    except Exception:
+        return False
+
+
+def _ensure_failed_email_queue(cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS failed_email_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            recipient_email TEXT,
+            email_type TEXT,
+            subject TEXT,
+            html_body TEXT,
+            text_body TEXT,
+            metadata TEXT,
+            status TEXT DEFAULT 'pending',
+            retry_count INTEGER DEFAULT 0,
+            max_attempts INTEGER DEFAULT 5,
+            last_error TEXT,
+            next_retry_at TEXT,
+            trace_id TEXT,
+            idempotency_key TEXT,
+            provider_status_code INTEGER,
+            provider_message_id TEXT,
+            processed_at TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_failed_email_queue_due ON failed_email_queue(status, next_retry_at, id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_failed_email_queue_idempotency ON failed_email_queue(idempotency_key)")
+
+
+def _queue_email_job(user_id, to_email, subject, html_body, text_body="", email_type="transactional", metadata=None, notification_id=0):
+    metadata = metadata or {}
+    trace_id = _notification_trace_id(metadata)
+    if not to_email:
+        return {"ok": False, "status": "skipped", "provider": "brevo", "message": "Recipient email missing.", "trace_id": trace_id}
+    now = _now()
+    digest = hashlib.sha256(
+        json.dumps(
+            {
+                "user_id": int(user_id or 0),
+                "to_email": str(to_email or "").lower(),
+                "email_type": str(email_type or "transactional"),
+                "notification_id": int(notification_id or 0),
+                "subject": str(subject or "")[:180],
+                "event_type": metadata.get("event_type") or metadata.get("legacy_alert_type") or metadata.get("type") or "",
+            },
+            sort_keys=True,
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()[:32]
+    idempotency_key = str(metadata.get("email_idempotency_key") or f"notification-email:{digest}")[:240]
+    conn = user_context.connect()
+    cur = conn.cursor()
+    _ensure_failed_email_queue(cur)
+    cur.execute("SELECT id, status, trace_id FROM failed_email_queue WHERE idempotency_key=? ORDER BY id DESC LIMIT 1", (idempotency_key,))
+    existing = cur.fetchone()
+    if existing:
+        conn.close()
+        existing_id = existing[0] if not hasattr(existing, "keys") else existing["id"]
+        existing_status = existing[1] if not hasattr(existing, "keys") else existing["status"]
+        existing_trace = existing[2] if not hasattr(existing, "keys") else existing["trace_id"]
+        return {"ok": True, "status": existing_status or "queued", "provider": "brevo", "queue_id": int(existing_id or 0), "trace_id": existing_trace or trace_id, "duplicate": True}
+    next_retry_at = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute(
+        """
+        INSERT INTO failed_email_queue
+        (user_id, recipient_email, email_type, subject, html_body, text_body, metadata, status,
+         retry_count, max_attempts, last_error, next_retry_at, trace_id, idempotency_key, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0, 5, '', ?, ?, ?, ?, ?)
+        """,
+        (
+            int(user_id or 0),
+            str(to_email or "")[:320],
+            str(email_type or "transactional")[:80],
+            str(subject or "")[:240],
+            str(html_body or "")[:12000],
+            str(text_body or "")[:4000],
+            json.dumps({**metadata, "notification_id": int(notification_id or 0), "trace_id": trace_id}, default=str)[:4000],
+            next_retry_at,
+            trace_id,
+            idempotency_key,
+            now,
+            now,
+        ),
+    )
+    queue_id = int(getattr(cur, "lastrowid", 0) or 0)
+    conn.commit()
+    conn.close()
+    logging.info("PULSE_EMAIL_JOB_QUEUED user_id=%s notification_id=%s queue_id=%s trace_id=%s", user_id, notification_id, queue_id, trace_id)
+    schedule_email_queue_processing(reason="notification_email_queued")
+    return {"ok": True, "status": "queued", "provider": "brevo", "queue_id": queue_id, "trace_id": trace_id}
+
+
+def _email_retry_at(attempts):
+    delay_seconds = min(3600, 30 * (2 ** max(0, int(attempts or 1) - 1)))
+    return (datetime.utcnow() + timedelta(seconds=delay_seconds)).isoformat(timespec="seconds")
+
+
+def process_queued_email_notifications(limit=10, provider_send=None):
+    provider_send = provider_send or email_service.send_email
+    limit = max(1, min(int(limit or 10), 50))
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = user_context.connect()
+    conn.row_factory = __import__("sqlite3").Row
+    cur = conn.cursor()
+    _ensure_failed_email_queue(cur)
+    cur.execute(
+        """
+        SELECT *
+        FROM failed_email_queue
+        WHERE status IN ('pending','failed','retry_ready')
+          AND COALESCE(retry_count,0) < COALESCE(max_attempts,5)
+          AND (next_retry_at IS NULL OR next_retry_at='' OR next_retry_at<=?)
+        ORDER BY created_at ASC, id ASC
+        LIMIT ?
+        """,
+        (now, limit),
+    )
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    sent = retry = dead_letter = 0
+    for row in rows:
+        queue_id = int(row.get("id") or 0)
+        attempts = int(row.get("retry_count") or 0) + 1
+        claim_conn = user_context.connect()
+        claim_cur = claim_conn.cursor()
+        claim_cur.execute(
+            "UPDATE failed_email_queue SET status='processing', retry_count=?, updated_at=? WHERE id=? AND status IN ('pending','failed','retry_ready')",
+            (attempts, datetime.utcnow().isoformat(timespec="seconds"), queue_id),
+        )
+        claimed = int(getattr(claim_cur, "rowcount", 0) or 0) > 0
+        claim_conn.commit()
+        claim_conn.close()
+        if not claimed:
+            continue
+        try:
+            result = provider_send(
+                row.get("recipient_email") or "",
+                row.get("subject") or "PulseSoc notification",
+                row.get("html_body") or row.get("text_body") or "",
+                text_body=row.get("text_body") or "",
+                email_type=row.get("email_type") or "transactional",
+                user_id=row.get("user_id") or 0,
+            ) or {}
+        except Exception as exc:
+            result = {"ok": False, "error": exc.__class__.__name__, "status_code": None, "response": {}}
+        ok = bool(result.get("ok"))
+        max_attempts = int(row.get("max_attempts") or 5)
+        final_status = "sent" if ok else "dead_letter" if attempts >= max_attempts else "retry_ready"
+        if ok:
+            sent += 1
+        elif final_status == "dead_letter":
+            dead_letter += 1
+        else:
+            retry += 1
+        response_body = result.get("response")
+        response_message = response_body.get("message") if isinstance(response_body, dict) else response_body
+        safe_error = "" if ok else str(result.get("error") or response_message or "Email provider unavailable.")[:1000]
+        update_conn = user_context.connect()
+        update_cur = update_conn.cursor()
+        update_cur.execute(
+            """
+            UPDATE failed_email_queue
+            SET status=?, last_error=?, next_retry_at=?, provider_status_code=?, provider_message_id=?,
+                processed_at=?, updated_at=?
+            WHERE id=?
+            """,
+            (
+                final_status,
+                safe_error,
+                "" if final_status in {"sent", "dead_letter"} else _email_retry_at(attempts),
+                result.get("status_code"),
+                str(result.get("message_id") or "")[:240],
+                datetime.utcnow().isoformat(timespec="seconds") if final_status in {"sent", "dead_letter"} else "",
+                datetime.utcnow().isoformat(timespec="seconds"),
+                queue_id,
+            ),
+        )
+        update_conn.commit()
+        update_conn.close()
+        logging.info("PULSE_EMAIL_JOB_PROCESSED queue_id=%s trace_id=%s status=%s attempts=%s", queue_id, row.get("trace_id") or "", final_status, attempts)
+    return {"ok": True, "attempted": len(rows), "sent": sent, "retry": retry, "dead_letter": dead_letter}
+
+
+def schedule_email_queue_processing(reason="enqueue"):
+    if os.getenv("EMAIL_OPPORTUNISTIC_PROCESSOR_ENABLED", "1").strip().lower() in {"0", "false", "off", "no"}:
+        return {"ok": True, "scheduled": False, "reason": "disabled"}
+    if not EMAIL_QUEUE_PROCESSOR_LOCK.acquire(blocking=False):
+        return {"ok": True, "scheduled": False, "reason": "already_running"}
+
+    def run():
+        try:
+            result = process_queued_email_notifications(limit=int(os.getenv("EMAIL_OPPORTUNISTIC_PROCESSOR_LIMIT", "10") or 10))
+            if result.get("attempted"):
+                logging.info("PULSE_EMAIL_QUEUE_PROCESSOR_COMPLETE reason=%s result=%s", reason, result)
+        except Exception as exc:
+            logging.warning("PULSE_EMAIL_QUEUE_PROCESSOR_FAILED reason=%s error=%s", reason, exc.__class__.__name__)
+        finally:
+            try:
+                EMAIL_QUEUE_PROCESSOR_LOCK.release()
+            except RuntimeError:
+                pass
+
+    timer = threading.Timer(0.5, run)
+    timer.daemon = True
+    timer.name = "pulse-email-queue-processor"
+    timer.start()
+    return {"ok": True, "scheduled": True, "reason": reason}
 
 
 def _pulse_type_for_alert(alert_type):
@@ -1211,17 +1705,20 @@ def send_email_notification(user_id, title, body, notification_type="message", m
     subject = str(title or template["subject"])[:180]
     headline = str(title or template["headline"])[:180]
     copy = str(body or template["body"])[:2000]
-    result = email_service.send_email(
+    result = _queue_email_job(
+        user_id,
         user.get("email"),
         subject,
         _branded_html(headline, copy, deep_link),
         copy,
         email_type=notification_type,
+        metadata={**(metadata or {}), "event_type": notification_type, "category": category, "deep_link": deep_link},
+        notification_id=notification_id,
     )
-    status = "sent" if result.get("ok") else "failed"
-    _log_delivery(user_id, notification_id, "email", status, result.get("provider_response") or result, result.get("error"))
-    _log_pulse_delivery(notification_id, user_id, "email", "brevo", status, result.get("provider_response") or result, result.get("error"))
-    return {"ok": result.get("ok"), "status": status, "provider": "brevo", "message_id": result.get("message_id") or ""}
+    status = result.get("status") or "queued"
+    _log_delivery(user_id, notification_id, "email", status, result, result.get("message"))
+    _log_pulse_delivery(notification_id, user_id, "email", "brevo", status, result, result.get("message"))
+    return {"ok": result.get("ok"), "status": status, "provider": "brevo", "queue_id": result.get("queue_id") or 0, "trace_id": result.get("trace_id") or ""}
 
 
 def send_sms_notification(user_id, title, body, notification_type="message", metadata=None, notification_id=None):
@@ -1257,8 +1754,11 @@ def send_in_app_channel_notification(user_id, title, body, notification_type="me
 def send_multi_channel_notification(user_id, notification_type, title, body, metadata=None, channels=None):
     metadata = metadata or {}
     prefs = _category_prefs(user_id, notification_type)
-    requested = set(channels or [])
+    normalized_channels = _normalize_channels(channels)
+    requested = set(normalized_channels)
     security = _pulse_category(_pulse_type_for_alert(notification_type)) == "security" or notification_type in SECURITY_NOTIFICATION_TYPES
+    priority = str(metadata.get("priority") or "normal").lower()
+    quiet = _quiet_hours_active(user_id) and not security and priority not in {"high", "critical", "urgent"}
     if not requested:
         requested = {"in_app"}
         for key in ("email", "sms", "push", "telegram"):
@@ -1277,7 +1777,11 @@ def send_multi_channel_notification(user_id, notification_type, title, body, met
             result["ok"] = True
             return result
     if "email" in requested:
-        if prefs.get("email") or security or "email" in (channels or []):
+        if quiet:
+            result["email"] = "skipped"
+            _log_delivery(user_id, notification_id, "email", "skipped", "", "Quiet hours are active.")
+            _log_pulse_delivery(notification_id, user_id, "email", "brevo", "skipped", {}, "Quiet hours are active.")
+        elif prefs.get("email") or security or "email" in normalized_channels:
             email_result = send_email_notification(user_id, title, body, notification_type, metadata, notification_id)
             result["email"] = email_result.get("status", "failed")
         else:
@@ -1285,7 +1789,11 @@ def send_multi_channel_notification(user_id, notification_type, title, body, met
             _log_delivery(user_id, notification_id, "email", "skipped", "", "Email alerts disabled.")
             _log_pulse_delivery(notification_id, user_id, "email", "brevo", "skipped", {}, "Email alerts disabled.")
     if "sms" in requested:
-        if prefs.get("sms") or "sms" in (channels or []):
+        if quiet:
+            result["sms"] = "skipped"
+            _log_delivery(user_id, notification_id, "sms", "skipped", "", "Quiet hours are active.")
+            _log_pulse_delivery(notification_id, user_id, "sms", "brevo_sms", "skipped", {}, "Quiet hours are active.")
+        elif prefs.get("sms") or "sms" in normalized_channels:
             sms_result = send_sms_notification(user_id, title, body, notification_type, metadata, notification_id)
             result["sms"] = sms_result.get("status", "failed")
         else:
@@ -1293,11 +1801,16 @@ def send_multi_channel_notification(user_id, notification_type, title, body, met
             _log_delivery(user_id, notification_id, "sms", "skipped", "", "SMS alerts disabled.")
             _log_pulse_delivery(notification_id, user_id, "sms", "brevo_sms", "skipped", {}, "SMS alerts disabled.")
     if "push" in requested:
-        push_metadata = {**metadata, "notification_id": int(notification_id or metadata.get("notification_id") or 0)}
-        push_result = send_push_alert(user_id, title, body, push_metadata)
-        result["push"] = push_result.get("status", "failed")
-        _log_delivery(user_id, notification_id, "push", result["push"], push_result, push_result.get("message"))
-        _log_pulse_delivery(notification_id, user_id, "push", "web_push", result["push"], push_result, push_result.get("message"))
+        if quiet:
+            result["push"] = "skipped"
+            _log_delivery(user_id, notification_id, "push", "skipped", "", "Quiet hours are active.")
+            _log_pulse_delivery(notification_id, user_id, "push", "web_push", "skipped", {}, "Quiet hours are active.")
+        else:
+            push_metadata = {**metadata, "notification_id": int(notification_id or metadata.get("notification_id") or 0)}
+            push_result = send_push_alert(user_id, title, body, push_metadata)
+            result["push"] = push_result.get("status", "failed")
+            _log_delivery(user_id, notification_id, "push", result["push"], push_result, push_result.get("message"))
+            _log_pulse_delivery(notification_id, user_id, "push", "web_push", result["push"], push_result, push_result.get("message"))
     if "telegram" in requested:
         telegram_result = send_telegram_alert(_user_record(user_id), title, body)
         result["telegram"] = telegram_result.get("status", "failed")
@@ -1305,16 +1818,114 @@ def send_multi_channel_notification(user_id, notification_type, title, body, met
     return result
 
 
+def dispatch_universal_notification(
+    event_type,
+    actor_user_id=0,
+    recipient_user_id=0,
+    content_id="",
+    deep_link="",
+    priority="normal",
+    channels=None,
+    metadata=None,
+):
+    """Central PulseSoc event-to-channel notification contract.
+
+    The caller supplies only event facts. This service resolves category,
+    defaults, deep links, preferences, duplicate suppression, and delivery logs.
+    """
+    metadata = metadata if isinstance(metadata, dict) else {}
+    recipient_user_id = int(recipient_user_id or 0)
+    actor_user_id = int(actor_user_id or 0)
+    if not recipient_user_id:
+        return {"ok": False, "status": "skipped", "error_code": "RECIPIENT_REQUIRED"}
+    spec = _event_spec(event_type)
+    notification_type = str(spec.get("type") or event_type or "message")[:80]
+    if actor_user_id and actor_user_id == recipient_user_id and notification_type not in SELF_NOTIFICATION_ALLOWED_TYPES:
+        _log_delivery(recipient_user_id, None, "orchestrator", "skipped", {"event_type": event_type}, "Self notification suppressed.")
+        return {"ok": True, "status": "skipped", "reason": "self_notification_suppressed"}
+    trace_id = _notification_trace_id(metadata)
+    resolved_priority = str(priority or spec.get("priority") or "normal").lower()[:40]
+    resolved_deep_link = _deep_link_for_event(event_type, content_id, deep_link, metadata)
+    mobile_deep_link = _mobile_link_for_event(event_type, resolved_deep_link, content_id, metadata)
+    explicit_channels = _normalize_channels(channels)
+    default_channels = _normalize_channels(spec.get("channels") or [])
+    title = str(metadata.get("title") or spec.get("title") or "PulseSoc notification")[:180]
+    body = str(metadata.get("body") or metadata.get("message") or spec.get("body") or "There is new PulseSoc activity.")[:2000]
+    enriched = {
+        **metadata,
+        "event_type": str(event_type or "")[:80],
+        "notification_type": notification_type,
+        "actor_user_id": actor_user_id,
+        "recipient_user_id": recipient_user_id,
+        "content_id": str(content_id or metadata.get("content_id") or metadata.get("entity_id") or "")[:120],
+        "entity_type": metadata.get("entity_type") or spec.get("entity_type") or "",
+        "entity_id": str(metadata.get("entity_id") or content_id or "")[:120],
+        "priority": resolved_priority,
+        "trace_id": trace_id,
+        "push_trace_id": metadata.get("push_trace_id") or trace_id,
+        "deep_link": resolved_deep_link,
+        "target_url": resolved_deep_link,
+        "url": resolved_deep_link,
+        "web_url": metadata.get("web_url") or (f"https://pulsesoc.com{resolved_deep_link}" if resolved_deep_link.startswith("/") else resolved_deep_link),
+        "mobile_deep_link": mobile_deep_link,
+        "native_url": mobile_deep_link,
+        "app_url": mobile_deep_link,
+        "deepLink": mobile_deep_link,
+        "channels": explicit_channels or default_channels,
+        "default_channels": default_channels,
+    }
+    result = send_multi_channel_notification(
+        recipient_user_id,
+        notification_type,
+        title,
+        body,
+        enriched,
+        channels=explicit_channels or None,
+    )
+    result.update({
+        "event_type": str(event_type or "")[:80],
+        "notification_type": notification_type,
+        "recipient_user_id": recipient_user_id,
+        "actor_user_id": actor_user_id,
+        "trace_id": trace_id,
+        "priority": resolved_priority,
+        "deep_link": resolved_deep_link,
+        "mobile_deep_link": mobile_deep_link,
+        "channels": explicit_channels or default_channels,
+        "explicit_channels": explicit_channels,
+        "universal": True,
+    })
+    return result
+
+
+def send_universal_notification(**kwargs):
+    return dispatch_universal_notification(**kwargs)
+
+
 class NotificationService:
     @staticmethod
     def send(user_id, notification_type, title, body, metadata=None, channels=None):
         return send_multi_channel_notification(user_id, notification_type, title, body, metadata, channels)
+
+    @staticmethod
+    def dispatch_event(event_type, actor_user_id=0, recipient_user_id=0, content_id="", deep_link="", priority="normal", channels=None, metadata=None):
+        return dispatch_universal_notification(
+            event_type,
+            actor_user_id=actor_user_id,
+            recipient_user_id=recipient_user_id,
+            content_id=content_id,
+            deep_link=deep_link,
+            priority=priority,
+            channels=channels,
+            metadata=metadata,
+        )
 
 
 sendEmailNotification = send_email_notification
 sendSmsNotification = send_sms_notification
 sendInAppNotification = send_in_app_channel_notification
 sendMultiChannelNotification = send_multi_channel_notification
+sendUniversalNotification = dispatch_universal_notification
 
 
 def send_push_alert(user_id, title, message, metadata=None):
