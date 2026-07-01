@@ -535,7 +535,9 @@
     } catch (error) {
       button.disabled = false;
       button.textContent = "Retry Co-host";
-      const diagnostic = error.error_code ? ` ${error.error_code} at ${error.step || "unknown_stage"}.` : "";
+      const dbDiagnostic = error.diagnostic?.db_error || error.diagnostic || {};
+      const sqlDiagnostic = [dbDiagnostic.sqlstate ? `SQLSTATE ${dbDiagnostic.sqlstate}` : "", dbDiagnostic.constraint_name ? `constraint ${dbDiagnostic.constraint_name}` : "", dbDiagnostic.exception_class || ""].filter(Boolean).join(" | ");
+      const diagnostic = error.error_code ? ` ${error.error_code} at ${error.step || "unknown_stage"}.${sqlDiagnostic ? ` ${sqlDiagnostic}.` : ""}` : "";
       const message = `${error.message || "The co-host request did not complete."}${diagnostic}${error.trace_id ? ` (Trace ${error.trace_id})` : ""}`;
       console.error("[PulseSoc cohost failure]", { live_id: id, error_code: error.error_code || "UNKNOWN_COHOST_ERROR", step: error.step || "client_request", trace_id: error.trace_id || "", message: error.message || "" });
       setStatus(message);
@@ -641,7 +643,7 @@
         root.dataset.liveCohostTraceId = traceId;
         try { sessionStorage.setItem(`pulseCohostTrace:${id}`, traceId); } catch (_) {}
       }
-      const requiredClaims = tokenData.token && tokenData.livekit_url && tokenData.identity && tokenData.room && tokenData.participant_name && tokenData.role === "cohost" && tokenData.can_publish === true && tokenData.can_subscribe === true && tokenData.can_publish_data === true && tokenData.room_join === true && Number(tokenData.expires_at || 0) * 1000 > Date.now();
+      const requiredClaims = tokenData.token && tokenData.livekit_url && tokenData.identity && tokenData.room && tokenData.participant_name && tokenData.role === "cohost" && tokenData.can_publish === true && tokenData.can_subscribe === true && tokenData.can_publish_data === true && tokenData.can_update_own_metadata === true && tokenData.room_join === true && Number(tokenData.expires_at || 0) * 1000 > Date.now();
       if (!requiredClaims) throw cohostStageError("TOKEN_DELIVERY_FAILED", "The co-host token response is missing required verified claims.", "token_delivery", tokenData.trace_id || traceId);
       root.__pulseLiveGuestToken = tokenData.token;
       root.__pulseLiveGuestTokenClaims = tokenData.token_claims || {};

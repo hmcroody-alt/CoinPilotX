@@ -230,6 +230,7 @@ def main() -> int:
     commit_failure_viewer_id = create_extra_viewer("livecommitfailaudit")
     login(client, commit_failure_viewer_id)
     original_db = bot.db
+    os.environ["PULSESOC_COHOST_DEBUG"] = "1"
     try:
         bot.db = lambda: FailingCommitConnection(original_db())
         failed_commit = client.post(
@@ -238,8 +239,10 @@ def main() -> int:
         )
     finally:
         bot.db = original_db
+        os.environ.pop("PULSESOC_COHOST_DEBUG", None)
     failed_commit_data = failed_commit.get_json() or {}
     require(failed_commit.status_code == 500 and failed_commit_data.get("error_code") == "DB_TRANSACTION_FAILED" and failed_commit_data.get("step") == "db_transaction" and failed_commit_data.get("trace_id") == "audit-db-commit" and failed_commit_data.get("error_type") == "OperationalError", "database commit failures return exact transaction stage, trace, and exception type")
+    require((failed_commit_data.get("diagnostic") or {}).get("exception_class") == "OperationalError", "debug co-host commit failures expose sanitized database diagnostics")
     conn = db_service.connect(); conn.row_factory = bot.sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT COUNT(*) AS total FROM pulse_live_guest_requests WHERE live_id=? AND user_id=?", (live_id, commit_failure_viewer_id))
     rolled_back_total = int(dict(cur.fetchone() or {}).get("total") or 0)
@@ -316,7 +319,7 @@ def main() -> int:
         token_res = client.post(f"/api/pulse/live/{live_id}/livekit/token", json={"role": "cohost", "trace_id": "audit-finalization"})
         token_data = token_res.get_json() or {}
         require(token_res.status_code == 200 and token_data.get("role") == "cohost" and token_data.get("can_publish") is True, "accepted co-host receives a verified publish-capable token")
-        require(token_data.get("can_subscribe") is True and token_data.get("can_publish_data") is True and token_data.get("room_join") is True and token_data.get("participant_name"), "co-host token response exposes every required participant claim")
+        require(token_data.get("can_subscribe") is True and token_data.get("can_publish_data") is True and token_data.get("can_update_own_metadata") is True and token_data.get("room_join") is True and token_data.get("participant_name"), "co-host token response exposes every required participant claim")
         claims = token_data.get("token_claims") or {}
         require(claims.get("identity") == guest.get("livekit_identity") and claims.get("room") == guest.get("livekit_room") and claims.get("role") == "cohost" and claims.get("expiration", 0) > 0, "server verifies identity, room, role, expiration, and metadata before token delivery")
         joining = client.get(f"/api/pulse/live/{live_id}/join-status").get_json() or {}
@@ -364,6 +367,7 @@ def main() -> int:
     require("api_pulse_live_cohost_debug" in BOT and "insert_possible" in BOT and "duplicate_request_check" in BOT, "authenticated co-host diagnostic endpoint exposes request prerequisites")
     require("PULSE_COHOST_PIPELINE_STAGES" in BOT and "stage_number" in BOT and "duration_ms" in BOT and "failed_stage" in BOT, "co-host trace records expose stage timing and failure detail")
     require("pulse_livekit_verify_token_claims" in BOT and "TOKEN_CLAIMS_INVALID" in BOT and "token_claims" in BOT, "LiveKit token signature and claims are verified before delivery")
+    require("canUpdateOwnMetadata" in BOT and "can_update_own_metadata" in JS, "co-host LiveKit tokens allow publish data and own metadata updates")
     require("live_cohost_token_ready" in BOT and "live_cohost_participant_joined" in BOT and "live_cohost_publish_complete" in BOT and "live_cohost_guest_live" in BOT, "co-host finalization emits every required realtime lifecycle event")
     require("status='joining'" in BOT and "status='joined'" in BOT and "status='publishing'" in BOT and "status='live'" in BOT, "co-host database state advances through joining, joined, publishing, and live")
     require('"request_id": request_id' in BOT and '"state": "pending"' in BOT and "PULSE_COHOST_FAILURE" in BOT, "co-host request endpoint has structured success and failure logging")
@@ -381,8 +385,8 @@ def main() -> int:
     require("recordLiveReelAudience" in BOT and "refreshLiveReelJoinStatus" in BOT and "scheduleLiveReelJoinPolling" in BOT, "Reels separates audience presence from co-host request polling")
     require("/cohost/request`" in BOT and "requested_role:'cohost'" in BOT, "Reels co-host button calls the hardened co-host request endpoint")
     require("cohost/request`" in JS and "INVALID_LIVE_ID" in JS and "Object.assign(error, data)" in JS, "Live Studio validates IDs and preserves structured backend failures")
-    require("checking_permissions:'Checking permissions...'" in BOT and "waiting_for_host:'Waiting for Host'" in BOT and "host_accepted:'Accepted" in BOT and "cohost_live:'Co-host Live'" in BOT and "unavailable_with_reason:'Unable to request'" in BOT, "Reels renders the required backend-driven request states")
-    require("liveReelErrorState" in BOT and "label=liveReelFailureMessage" in BOT and "Object.assign(err,d)" in BOT, "Reels preserves and displays backend co-host failure reasons")
+    require("checking_permissions:'Checking permissions...'" in BOT and "waiting_for_host:'Waiting for Host'" in BOT and "host_accepted:'Accepted" in BOT and "cohost_live:'Co-host Live'" in BOT and "unavailable_with_reason:'Request failed'" in BOT, "Reels renders the required backend-driven request states")
+    require("liveReelErrorState" in BOT and "liveReelFailureMessage" in BOT and "liveReelFailureLabel" in BOT and "Object.assign(err,d)" in BOT, "Reels preserves and displays backend co-host failure reasons")
     require("btn.textContent=btn.classList.contains('reel-live-join')?'Joined':'✓'" not in BOT, "Reels no longer paints a fake Joined state after audience presence")
     require('confirmation.state !== "live"' in JS and JS.index('button.textContent = "Joined"') > JS.index('confirmation.state !== "live"'), "Joined is rendered only after server-confirmed participant and track promotion")
     require("fake join" not in BOT.lower() and "fake guest" not in BOT.lower(), "no fake join request literals")
