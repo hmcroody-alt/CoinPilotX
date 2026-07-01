@@ -7,6 +7,7 @@ export type ProfileBootstrap = {
   premiumStatus: string;
   founderStatus: string;
   notificationCount: number;
+  preferredLanguage: string;
 };
 
 type AccountStatus = {
@@ -42,7 +43,8 @@ export async function loadProfileBootstrap(user: PulseUser | null): Promise<Prof
     avatarUrl: String(profileUser?.avatar_thumbnail_url || profileUser?.avatar_url || profile.avatar_url || ""),
     premiumStatus: String(account.premium_status || account.subscription_status || profileUser?.premium_status || "free"),
     founderStatus: String(account.founder_status || account.pro_access_type || ""),
-    notificationCount: Number(count.unread_count || count.count || 0)
+    notificationCount: Number(count.unread_count || count.count || 0),
+    preferredLanguage: String(profileUser?.preferred_language || "en")
   };
 }
 

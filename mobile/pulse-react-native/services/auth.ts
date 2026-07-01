@@ -10,6 +10,7 @@ export type PulseUser = {
   avatar_thumbnail_url?: string;
   premium_status?: string;
   account_status?: string;
+  preferred_language?: string;
 };
 
 export type SessionResponse = {
@@ -26,14 +27,17 @@ export function getMobileSession() {
   return pulseApi<SessionResponse>("/api/mobile/auth/session");
 }
 
-export function refreshMobileSession() {
-  return pulseApi<SessionResponse>("/api/mobile/auth/refresh", { method: "POST" });
+export function refreshMobileSession(refreshToken?: string | null) {
+  return pulseApi<SessionResponse>("/api/mobile/auth/refresh", {
+    method: "POST",
+    body: JSON.stringify({ refresh_token: refreshToken || "" })
+  });
 }
 
-export function loginWithPassword(identifier: string, password: string) {
+export function loginWithPassword(identifier: string, password: string, preferredLanguage?: string | null) {
   return pulseApi<SessionResponse>("/api/mobile/auth/login", {
     method: "POST",
-    body: JSON.stringify({ identifier, email: identifier, password })
+    body: JSON.stringify({ identifier, email: identifier, password, preferred_language: preferredLanguage || "" })
   });
 }
 
@@ -42,6 +46,7 @@ export function createAccount(payload: {
   username: string;
   email: string;
   password: string;
+  preferred_language?: string;
 }) {
   return pulseApi<SessionResponse>("/api/mobile/auth/register", {
     method: "POST",
@@ -95,6 +100,9 @@ export function resetPasswordWithToken(token: string, password: string) {
   });
 }
 
-export function logoutMobileSession() {
-  return pulseApi<{ ok: boolean }>("/api/mobile/auth/logout", { method: "POST" });
+export function logoutMobileSession(refreshToken?: string | null) {
+  return pulseApi<{ ok: boolean }>("/api/mobile/auth/logout", {
+    method: "POST",
+    body: JSON.stringify({ refresh_token: refreshToken || "" })
+  });
 }

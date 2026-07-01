@@ -38,7 +38,7 @@ SETTING_KEYS = {
     "ads_personalization": {"true", "false"},
     "reduced_motion": {"true", "false", "system"},
     "sci_fi_intensity": {"low", "medium", "high"},
-    "language": {"en", "es", "fr", "ht"},
+    "language": {"en", "es", "fr", "ht", "pt", "de", "it", "ar"},
     "timezone": None,
 }
 RESERVED_USERNAMES = {
@@ -589,6 +589,11 @@ def get_settings(conn: Any, user_id: int) -> dict[str, str]:
         "timezone": "America/New_York",
     }
     cur = conn.cursor()
+    cur.execute("SELECT preferred_language FROM users WHERE user_id=? LIMIT 1", (int(user_id),))
+    user_row = cur.fetchone()
+    user_language = str((_row_dict(user_row).get("preferred_language") if user_row else "") or (user_row[0] if user_row else "") or "").strip().lower()
+    if user_language in SETTING_KEYS["language"]:
+        defaults["language"] = user_language
     cur.execute("SELECT setting_key, setting_value FROM user_settings WHERE user_id=?", (int(user_id),))
     for row in cur.fetchall():
         item = _row_dict(row)
@@ -622,6 +627,8 @@ def update_settings(conn: Any, user_id: int, payload: dict[str, Any], actor_user
             """,
             (int(user_id), key, value, now),
         )
+    if "language" in changed:
+        cur.execute("UPDATE users SET preferred_language=?, updated_at=? WHERE user_id=?", (changed["language"], now, int(user_id)))
     if changed:
         record_account_audit(conn, user_id=user_id, actor_user_id=actor_user_id or user_id, action="settings_updated", target_type="settings", details={"changed_keys": sorted(changed)})
     conn.commit()

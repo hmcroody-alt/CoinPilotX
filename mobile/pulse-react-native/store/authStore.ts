@@ -16,7 +16,7 @@ import {
 import { PulseApiError, isOfflineError } from "../services/apiClient";
 import { ProfileBootstrap, loadProfileBootstrap } from "../services/profileBootstrap";
 import { unregisterPushNotifications } from "../services/push";
-import { clearPersistedSessionCookie, clearRefreshToken, clearSecureSession, getRefreshToken, getSessionCookie, setRefreshToken } from "../services/secureSession";
+import { clearPersistedSessionCookie, clearSecureSession, getPreferredLanguage, getRefreshToken, getSessionCookie, setPreferredLanguage, setRefreshToken } from "../services/secureSession";
 
 type AuthState = {
   ready: boolean;
@@ -40,6 +40,10 @@ type AuthState = {
   logout: () => Promise<void>;
 };
 
+async function persistPreferredLanguage(user: PulseUser | null | undefined) {
+  if (user?.preferred_language) await setPreferredLanguage(user.preferred_language);
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   ready: false,
   signedIn: false,
@@ -56,11 +60,13 @@ export const useAuthStore = create<AuthState>((set) => ({
         set({ ready: true, signedIn: false, user: null });
         return;
       }
-      const session = cookie ? await getMobileSession() : await refreshMobileSession();
+      const session = cookie ? await getMobileSession() : await refreshMobileSession(refreshToken);
       if (session.refresh_token) await setRefreshToken(session.refresh_token);
+      await persistPreferredLanguage(session.user);
       set({ ready: true, signedIn: session.authenticated, user: session.user, offline: false });
       if (session.authenticated) {
         const bootstrap = await loadProfileBootstrap(session.user);
+        await persistPreferredLanguage(bootstrap.user || session.user);
         set({ bootstrap, user: bootstrap.user || session.user });
       }
     } catch (error) {
@@ -70,16 +76,20 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
   async refreshSession() {
-    const session = await refreshMobileSession();
+    const refreshToken = await getRefreshToken();
+    const session = await refreshMobileSession(refreshToken);
     if (session.refresh_token) await setRefreshToken(session.refresh_token);
+    await persistPreferredLanguage(session.user);
     set({ signedIn: session.authenticated, user: session.user, error: "", offline: false });
   },
   async login(identifier, password, remember) {
     try {
-      const session = await loginWithPassword(identifier, password);
-      if (!remember) await Promise.all([clearPersistedSessionCookie(), clearRefreshToken()]);
-      if (remember && session.refresh_token) await setRefreshToken(session.refresh_token);
+      const preferredLanguage = await getPreferredLanguage();
+      const session = await loginWithPassword(identifier, password, preferredLanguage);
+      if (!remember) await clearPersistedSessionCookie();
+      if (session.refresh_token) await setRefreshToken(session.refresh_token);
       const bootstrap = session.authenticated ? await loadProfileBootstrap(session.user) : null;
+      await persistPreferredLanguage(bootstrap?.user || session.user);
       set({ signedIn: session.authenticated, user: bootstrap?.user || session.user, bootstrap, error: "", offline: false, pendingConfirmationEmail: "" });
     } catch (error) {
       if (error instanceof PulseApiError && error.code === "email_not_confirmed") {
@@ -89,9 +99,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
   async signup(payload) {
-    const session = await createAccount(payload);
+    const preferredLanguage = await getPreferredLanguage();
+    const session = await createAccount({ ...payload, preferred_language: preferredLanguage });
     if (session.refresh_token) await setRefreshToken(session.refresh_token);
     const bootstrap = session.authenticated ? await loadProfileBootstrap(session.user) : null;
+    await persistPreferredLanguage(bootstrap?.user || session.user);
     set({
       signedIn: session.authenticated,
       user: bootstrap?.user || session.user,
@@ -136,11 +148,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   async loadBootstrap() {
     const current = useAuthStore.getState().user;
     const bootstrap = await loadProfileBootstrap(current);
+    await persistPreferredLanguage(bootstrap.user || current);
     set({ bootstrap, user: bootstrap.user || current, offline: false });
   },
   async logout() {
     await unregisterPushNotifications().catch(() => undefined);
-    await logoutMobileSession().catch(() => undefined);
+    const refreshToken = await getRefreshToken();
+    await logoutMobileSession(refreshToken).catch(() => undefined);
     await clearSecureSession();
     set({ signedIn: false, user: null, bootstrap: null, pendingConfirmationEmail: "" });
   }

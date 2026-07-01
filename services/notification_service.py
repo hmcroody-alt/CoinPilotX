@@ -66,6 +66,22 @@ def _json(value, default=None):
         return default or {}
 
 
+def _preferred_language_for_user(user_id):
+    try:
+        conn = user_context.connect()
+        cur = conn.cursor()
+        cur.execute("SELECT preferred_language FROM users WHERE user_id=? LIMIT 1", (int(user_id or 0),))
+        row = cur.fetchone()
+        conn.close()
+        value = ""
+        if row is not None:
+            value = row["preferred_language"] if hasattr(row, "keys") else row[0]
+        value = str(value or "en").strip().lower().replace("_", "-")[:16]
+        return value if value in {"en", "es", "fr", "ht", "pt", "de", "it", "ar"} else "en"
+    except Exception:
+        return "en"
+
+
 PULSE_NOTIFICATION_CATEGORIES = {
     "chat_message": {"in_app": True, "push": True, "email": False, "sms": False},
     "group_message": {"in_app": True, "push": True, "email": False, "sms": False},
@@ -974,7 +990,10 @@ def create_pulse_notification(
 ):
     if not user_id:
         return {"ok": False, "message": "User required."}
-    metadata = metadata or {}
+    metadata = dict(metadata or {})
+    recipient_language = metadata.get("preferred_language") or metadata.get("language") or _preferred_language_for_user(user_id)
+    metadata.setdefault("preferred_language", recipient_language)
+    metadata.setdefault("language", recipient_language)
     existing_id = _recent_duplicate(user_id, note_type, entity_type, entity_id, deep_link, body)
     if existing_id:
         _log_pulse_delivery(existing_id, user_id, "in_app", "pulse", "duplicate_suppressed", {"dedupe": True}, "")
