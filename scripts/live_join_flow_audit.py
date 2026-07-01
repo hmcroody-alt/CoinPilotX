@@ -132,6 +132,7 @@ def main() -> int:
     require(remove.status_code == 200, "host can remove guest")
 
     require("pulse_live_guest_requests" in BOT and "pulse_live_guests" in BOT and "pulse_live_audit_logs" in BOT, "co-host request, co-host, and audit tables exist")
+    require('("host_user_id", "INTEGER DEFAULT 0")' in BOT and '("camera_ready", "INTEGER DEFAULT 0")' in BOT and '("connection_json", "TEXT")' in BOT and '("expires_at", "TEXT")' in BOT, "legacy co-host request tables migrate required request columns")
     require("requested_role TEXT DEFAULT 'cohost'" in BOT and '"requested_role": clean_html' in BOT, "co-host request role is persisted and returned")
     require("guest_role TEXT DEFAULT 'cohost'" in BOT and "permissions_json" in BOT, "co-host records store role and publish permissions")
     require("requested_role in {\"guest\", \"cohost\", \"co-host\"}" in BOT and "token_role = \"cohost\"" in BOT, "co-host token generation is server-side and role-gated")
