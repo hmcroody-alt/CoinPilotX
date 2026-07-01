@@ -314,8 +314,32 @@
     }
   }
 
+  function pulseShellPerformanceMode() {
+    try {
+      return String(document.documentElement?.dataset?.pulseshellPerformance || "").toLowerCase().replace(/_/g, "-");
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function pulseShellConstrainedMode() {
+    const mode = pulseShellPerformanceMode();
+    return mode === "battery-saver" || mode === "reduced-motion" || mode === "low-end";
+  }
+
+  function mediaRootMargin(desktop = "520px 0px", mobile = "260px 0px", constrained = "180px 0px") {
+    try {
+      if (window.PulseShellPerformance?.mediaRootMargin) return window.PulseShellPerformance.mediaRootMargin(desktop, mobile, constrained);
+      if (pulseShellConstrainedMode()) return constrained;
+      return mobilePerformanceMode() ? mobile : desktop;
+    } catch (_) {
+      return mobilePerformanceMode() ? mobile : desktop;
+    }
+  }
+
   function mobilePerformanceMode() {
     try {
+      if (pulseShellConstrainedMode()) return true;
       if (window.PulseSocNative) return true;
       if (window.matchMedia?.("(max-width: 768px)")?.matches) return true;
       const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
@@ -326,6 +350,7 @@
 
   function connectionConstrained() {
     try {
+      if (pulseShellConstrainedMode()) return true;
       const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
       if (!connection) return false;
       if (connection.saveData) return true;
@@ -1249,6 +1274,18 @@
     if (isManagedReelVideo(video)) return;
     const key = preloadKey(wrap, video);
     if (predictiveMediaCache.has(key) && priority !== "current") return;
+    if (pulseShellConstrainedMode() && priority !== "current") {
+      video.preload = "metadata";
+      video.dataset.pulsePreloadPriority = "nearby";
+      rememberPreloaded(key, {
+        type: "video",
+        url: videoSource(video) || mediaUrl(wrap),
+        priority,
+        readyState: video.readyState || 0,
+        constrained: true,
+      });
+      return;
+    }
     video.preload = connectionConstrained() && priority !== "current" ? "metadata" : "auto";
     if (priority === "current") video.dataset.pulsePreloadPriority = "current";
     else video.dataset.pulsePreloadPriority = "nearby";
@@ -1378,7 +1415,7 @@
         });
       }, {
         threshold: [0, .2, .55, 1],
-        rootMargin: mobilePerformanceMode() ? "260px 0px" : "520px 0px",
+        rootMargin: mediaRootMargin("520px 0px", "260px 0px", "180px 0px"),
       });
     }
     wraps.forEach(wrap => {
@@ -1684,7 +1721,7 @@
             observer.unobserve(entry.target);
             hydrateWrap(entry.target);
           });
-        }, { rootMargin: mobilePerformanceMode() ? "220px 0px" : "420px 0px" });
+        }, { rootMargin: mediaRootMargin("420px 0px", "220px 0px", "160px 0px") });
       }
       wraps.forEach(wrap => {
         if (wrap && typeof wrap.nodeType === "number") observer.observe(wrap);

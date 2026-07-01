@@ -17,6 +17,17 @@ const PULSESOC_HOSTS = new Set(["pulsesoc.com", "www.pulsesoc.com"]);
 const PULSESOC_NATIVE_USER_AGENT = `PulseSocNativeApp/1.0 (${Platform.OS}; com.pulsesoc.app)`;
 const PULSESHELL_VERSION = "2026.06.30";
 const PULSESHELL_PERFORMANCE_TIERS = ["ultra", "balanced", "battery-saver", "reduced-motion", "low-end"] as const;
+const PULSESHELL_SERVER_VALIDATED_ACTIONS = new Set([
+  "camera.requestPermission",
+  "microphone.requestPermission",
+  "live.startHostSession",
+  "push.registerDevice",
+  "share.openNativeShareSheet",
+  "filePicker.open",
+  "haptics.impact",
+  "deepLinks.open",
+  "permissions.request"
+]);
 
 type PulseShellPerformanceMode = typeof PULSESHELL_PERFORMANCE_TIERS[number];
 
@@ -437,20 +448,22 @@ async function handlePulseShellNativeCall(payload: Record<string, unknown>, cont
   const action = stringValue(payload.action);
   const body = (payload.payload && typeof payload.payload === "object" ? payload.payload : {}) as Record<string, unknown>;
   const key = `${moduleName}.${action}`;
-  const validation = await context.validatePulseShellCall({
-    module: moduleName,
-    action,
-    requestId: stringValue(payload.requestId),
-    payload: body
-  });
-  if (!validation.ok) {
-    return {
-      ok: false,
-      available: true,
-      serverAuthoritative: true,
-      message: stringValue(validation.message) || "PulseShell request was not approved by the server.",
-      reason: stringValue(validation.reason) || "server_validation_failed"
-    };
+  if (PULSESHELL_SERVER_VALIDATED_ACTIONS.has(key)) {
+    const validation = await context.validatePulseShellCall({
+      module: moduleName,
+      action,
+      requestId: stringValue(payload.requestId),
+      payload: body
+    });
+    if (!validation.ok) {
+      return {
+        ok: false,
+        available: true,
+        serverAuthoritative: true,
+        message: stringValue(validation.message) || "PulseShell request was not approved by the server.",
+        reason: stringValue(validation.reason) || "server_validation_failed"
+      };
+    }
   }
 
   switch (key) {

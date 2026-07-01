@@ -39,6 +39,9 @@ def main() -> int:
     app_tsx = read("mobile/pulse-react-native/App.tsx")
     app_json_text = read("mobile/pulse-react-native/app.json")
     static_bridge = read("static/js/pulseshell_bridge.js")
+    environment_engine = read("static/js/pulse_environment_engine.js")
+    media_renderer = read("static/js/pulse_media_renderer.js")
+    home_os_css = read("static/css/pulse_home_os.css")
     bot = read("bot.py")
     account = read("templates/account.html")
     terms = read("templates/terms.html")
@@ -59,6 +62,7 @@ def main() -> int:
         [
             "PULSESHELL_NATIVE_CALL",
             "PulseShellNativeResult",
+            "PULSESHELL_SERVER_VALIDATED_ACTIONS",
             "window.PulseShell",
             "PULSESHELL_PERFORMANCE_MODE",
             "PulseShellReady",
@@ -85,9 +89,44 @@ def main() -> int:
             "low-end",
             "battery-saver",
             "PulseShellPerformanceModeChanged",
+            "PulseShellPerformanceChanged",
+            "PulseShellPerformance",
+            "pulseshellPerformance",
+            "mediaRootMargin: function (desktop, mobile, constrained)",
             "navigator.share",
         ],
         "browser PulseShell fallback",
+    )
+
+    require_all(
+        environment_engine,
+        [
+            "pulseShellMode",
+            "effectsReduced",
+            "PulseShellPerformanceChanged",
+            "PULSESHELL_PERFORMANCE_MODE",
+            "activityInterval",
+        ],
+        "futuristic city performance governance",
+    )
+    require_all(
+        media_renderer,
+        [
+            "pulseShellPerformanceMode",
+            "pulseShellConstrainedMode",
+            "mediaRootMargin",
+            "constrained: true",
+        ],
+        "media renderer PulseShell performance controls",
+    )
+    require_all(
+        home_os_css,
+        [
+            'html[data-pulseshell-performance="battery-saver"]',
+            'html[data-pulseshell-performance="low-end"]',
+            'html[data-pulseshell-performance="reduced-motion"]',
+        ],
+        "PulseShell performance CSS throttles atmospheric effects",
     )
 
     require("/static/js/pulseshell_bridge.js" in bot, "PulseSoc web shells include PulseShell fallback")

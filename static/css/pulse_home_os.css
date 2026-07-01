@@ -287,6 +287,34 @@ body.pulse-home-os::before {
   animation-play-state: paused !important;
 }
 
+html[data-pulseshell-performance="battery-saver"] .pulse-home-os .pulse-environment-engine,
+html[data-pulseshell-performance="low-end"] .pulse-home-os .pulse-environment-engine,
+html[data-pulseshell-performance="reduced-motion"] .pulse-home-os .pulse-environment-engine {
+  opacity: .62;
+  filter: saturate(calc(.74 + (var(--pulseshell-blur-scale, .45) * .18)));
+}
+
+html[data-pulseshell-performance="battery-saver"] .pulse-home-os .pulse-city-traffic,
+html[data-pulseshell-performance="battery-saver"] .pulse-home-os .pulse-city-holograms,
+html[data-pulseshell-performance="low-end"] .pulse-home-os .pulse-city-traffic,
+html[data-pulseshell-performance="low-end"] .pulse-home-os .pulse-city-holograms,
+html[data-pulseshell-performance="reduced-motion"] .pulse-home-os .pulse-city-traffic,
+html[data-pulseshell-performance="reduced-motion"] .pulse-home-os .pulse-city-holograms {
+  display: none;
+}
+
+html[data-pulseshell-performance="low-end"] .pulse-home-os .pulse-city-district,
+html[data-pulseshell-performance="reduced-motion"] .pulse-home-os .pulse-city-district {
+  opacity: .3;
+}
+
+html[data-pulseshell-performance="low-end"] .pulse-home-os .pulse-media-color-orb,
+html[data-pulseshell-performance="low-end"] .pulse-home-os .pulse-media-aura,
+html[data-pulseshell-performance="reduced-motion"] .pulse-home-os .pulse-media-color-orb,
+html[data-pulseshell-performance="reduced-motion"] .pulse-home-os .pulse-media-aura {
+  display: none !important;
+}
+
 @keyframes pulseCityStars {
   from { transform: translate3d(0, 0, 0); }
   to { transform: translate3d(-96px, 88px, 0); }

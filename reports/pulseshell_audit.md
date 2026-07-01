@@ -123,6 +123,10 @@ Implemented:
 - `window.PulseShell.performance.setMode()`
 - Browser fallback auto-selects reduced-motion, low-end, battery-saver, or balanced using media query, device memory, and connection hints when available.
 - Native shell dispatches performance mode changes to the WebView.
+- The browser bridge now applies a shared PulseShell performance profile to `html[data-pulseshell-performance]`, CSS variables, and a `PulseShellPerformanceChanged` event.
+- The PulseSoc futuristic city layer now listens to PulseShell performance changes, pauses pointer-driven parallax in constrained modes, and stretches polling from 8s to 30s when reduced.
+- The shared media renderer now uses PulseShell performance state to shrink preload root margins and avoid loading nearby videos aggressively in battery-saver, low-end, or reduced-motion modes.
+- Native side-effect actions remain server-authorized, while local-only bridge reads such as device info, safe-area insets, and performance mode are available without creating auth-dependent startup failures.
 
 Strategy:
 
