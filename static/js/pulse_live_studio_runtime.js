@@ -396,8 +396,10 @@
       panel.innerHTML = `<button class="live-primary-action is-accepted" type="button" data-live-guest-join disabled>${published ? "Joined" : "Accepted — Joining..."}</button><button type="button" data-live-guest-leave data-live-guest-id="${Number(guest.id || 0)}">Leave co-host seat</button><p class="muted" data-live-join-status>${published ? "Joined as co-host. Camera and microphone are live." : "Publishing is server-approved for this co-host slot."}</p>`;
       if (published) return;
       publishGuestToLiveKit(root).catch((error) => {
-        qsa(root, "[data-live-guest-join]").forEach((button) => { button.textContent = "Unavailable"; button.disabled = false; });
-        setText(root, "[data-live-join-status]", error.message || "Co-host publishing could not start.");
+        qsa(root, "[data-live-guest-join]").forEach((button) => { button.textContent = "Retry publish"; button.disabled = false; });
+        const message = `${error.message || "Co-host publishing could not start."}${error.trace_id ? ` (Trace ${error.trace_id})` : ""}`;
+        console.error("[PulseSoc cohost publish failure]", { error_code: error.error_code || "LIVEKIT_PUBLISH_FAILED", step: error.step || "publish_failed", trace_id: error.trace_id || "", message: error.message || "" });
+        setText(root, "[data-live-join-status]", message);
       });
       return;
     }
@@ -457,9 +459,16 @@
   }
 
   async function requestJoinLive(root) {
-    const id = root?.dataset?.liveId;
+    const id = String(root?.dataset?.liveId || "").trim();
     const button = qs(root, "[data-live-join-request]");
-    if (!id || button?.dataset.busy === "1") return;
+    if (button?.dataset.busy === "1") return;
+    if (!/^[1-9]\d*$/.test(id)) {
+      const invalid = { error_code: "INVALID_LIVE_ID", step: "entry_validation", trace_id: window.crypto?.randomUUID?.() || String(Date.now()), message: "This Live has an invalid identifier. Refresh and try again." };
+      console.error("[PulseSoc cohost request blocked]", { live_id: id, endpoint: null, auth_context: "same-origin-session", payload: null, ...invalid });
+      setText(root, "[data-live-join-status]", `${invalid.message} (Trace ${invalid.trace_id})`);
+      notify(`${invalid.message} (Trace ${invalid.trace_id})`);
+      return;
+    }
     button.dataset.busy = "1";
     button.disabled = true;
     const setStatus = (message) => setText(root, "[data-live-join-status]", message);
@@ -468,22 +477,32 @@
       setStatus("Checking camera and microphone permission...");
       const readiness = await checkGuestReadiness(root);
       button.textContent = "Checking...";
-      const response = await fetch(`/api/pulse/live/${id}/join-request`, {
+      const endpoint = `/api/pulse/live/${encodeURIComponent(id)}/cohost/request`;
+      const requestPayload = { ...readiness, requested_role: "cohost", request_message: readiness.request_message || "Requesting co-host camera/mic access.", trace_id: window.crypto?.randomUUID?.() || String(Date.now()) };
+      console.info("[PulseSoc cohost request]", { live_id: id, endpoint, auth_context: "same-origin-session", payload: requestPayload });
+      const response = await fetch(endpoint, {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...readiness, requested_role: "cohost", request_message: readiness.request_message || "Requesting co-host camera/mic access." }),
+        body: JSON.stringify(requestPayload),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || data.ok === false) throw new Error(data.message || "Join request failed.");
+      if (!response.ok || data.ok === false) {
+        const error = new Error(data.message || "The co-host request did not complete.");
+        Object.assign(error, data);
+        throw error;
+      }
+      console.info("[PulseSoc cohost response]", { live_id: id, request_id: data.request_id || data.request?.id || 0, state: data.state || data.status || "", step: data.step || "", trace_id: data.trace_id || requestPayload.trace_id });
       button.textContent = data.status === "accepted" ? "Accepted — Joining..." : "Request Sent";
       setStatus(data.message || "Request sent. Waiting for host approval.");
       await fetchState(root);
     } catch (error) {
       button.disabled = false;
-      button.textContent = "Unavailable";
-      setStatus(error.message || "Join Live unavailable.");
-      notify(error.message || "Join Live unavailable.");
+      button.textContent = "Retry Co-host";
+      const message = `${error.message || "The co-host request did not complete."}${error.trace_id ? ` (Trace ${error.trace_id})` : ""}`;
+      console.error("[PulseSoc cohost failure]", { live_id: id, error_code: error.error_code || "UNKNOWN_COHOST_ERROR", step: error.step || "client_request", trace_id: error.trace_id || "", message: error.message || "" });
+      setStatus(message);
+      notify(message);
     } finally {
       delete button.dataset.busy;
     }

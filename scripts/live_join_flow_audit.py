@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import os
 from pathlib import Path
 import sys
 
@@ -61,6 +62,36 @@ def login(client, user_id: int) -> None:
         session["account_user_id"] = user_id
 
 
+class FailingInsertCursor:
+    def __init__(self, inner):
+        self.inner = inner
+
+    def execute(self, sql, params=()):
+        if "INSERT INTO PULSE_LIVE_GUEST_REQUESTS" in str(sql).upper():
+            raise bot.sqlite3.IntegrityError("audit forced co-host insert failure")
+        return self.inner.execute(sql, params)
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+
+class FailingInsertConnection:
+    def __init__(self, inner):
+        object.__setattr__(self, "inner", inner)
+
+    def cursor(self):
+        return FailingInsertCursor(self.inner.cursor())
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+    def __setattr__(self, name, value):
+        if name == "inner":
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self.inner, name, value)
+
+
 def create_initializing_live(host_id: int) -> int:
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db_service.connect()
@@ -84,7 +115,39 @@ def main() -> int:
     host_id, viewer_id, live_id = create_live()
     client = bot.webhook_app.test_client()
 
+    invalid_id = client.post(
+        "/api/pulse/live/not-a-live/cohost/request",
+        json={"requested_role": "cohost", "trace_id": "audit-invalid-live"},
+    )
+    invalid_id_data = invalid_id.get_json() or {}
+    require(invalid_id.status_code == 400 and invalid_id.is_json and invalid_id_data.get("error_code") == "INVALID_LIVE_ID" and invalid_id_data.get("step") == "entry_validation", "malformed co-host live IDs return structured JSON instead of an HTML 404")
+    anonymous = client.post(
+        f"/api/pulse/live/{live_id}/cohost/request",
+        json={"requested_role": "cohost", "trace_id": "audit-auth-failure"},
+    )
+    anonymous_data = anonymous.get_json() or {}
+    require(anonymous.status_code == 401 and anonymous_data.get("error_code") == "AUTH_FAILED" and anonymous_data.get("step") == "auth_validation" and anonymous_data.get("trace_id") == "audit-auth-failure", "missing viewer auth returns exact stage and trace")
+    invalid_payload = client.post(f"/api/pulse/live/{live_id}/cohost/request", json=["not", "an", "object"])
+    invalid_payload_data = invalid_payload.get_json() or {}
+    require(invalid_payload.status_code == 400 and invalid_payload_data.get("error_code") == "INVALID_REQUEST_PAYLOAD" and invalid_payload_data.get("step") == "entry_validation", "non-object JSON cannot crash or bypass co-host entry validation")
+    unknown_payload = client.post(f"/api/pulse/live/{live_id}/cohost/request", json={"trace_id": "audit-unknown-field", "admin_override": True})
+    unknown_payload_data = unknown_payload.get_json() or {}
+    require(unknown_payload.status_code == 400 and unknown_payload_data.get("error_code") == "INVALID_REQUEST_PAYLOAD" and unknown_payload_data.get("trace_id") == "audit-unknown-field", "unknown co-host request fields are rejected with the same trace contract")
+    os.environ["PULSESOC_DISABLE_COHOST"] = "1"
+    try:
+        disabled = client.post(f"/api/pulse/live/{live_id}/cohost/request", json={"trace_id": "audit-kill-switch"})
+    finally:
+        os.environ.pop("PULSESOC_DISABLE_COHOST", None)
+    disabled_data = disabled.get_json() or {}
+    require(disabled.status_code == 503 and disabled_data.get("error_code") == "COHOST_DISABLED" and disabled_data.get("step") == "security_gate" and disabled_data.get("trace_id") == "audit-kill-switch", "co-host kill switch failures preserve error, stage, and trace")
+
     login(client, viewer_id)
+    debug = client.get(f"/api/pulse/live/{live_id}/cohost/debug?trace_id=audit-debug")
+    debug_data = debug.get_json() or {}
+    require(debug.status_code == 200 and debug_data.get("live_id_exists") is True and debug_data.get("live_status") == "active", "co-host debug endpoint reads the authoritative live session")
+    require(debug_data.get("viewer_authenticated") is True and debug_data.get("viewer_id") == viewer_id and debug_data.get("live_owner_id") == host_id and debug_data.get("host_exists") is True, "co-host debug endpoint resolves viewer and host identity")
+    require(debug_data.get("cohost_enabled") is True and debug_data.get("viewer_is_host") is False and debug_data.get("viewer_banned") is False, "co-host debug endpoint reports permission prerequisites")
+    require(debug_data.get("db_connection_ok") is True and debug_data.get("duplicate_request_check") is False and debug_data.get("insert_possible") is True, "co-host debug endpoint verifies database and insert prerequisites")
     audience = client.post(f"/api/pulse/live/{live_id}/join", json={"source": "reels", "role": "audience"})
     audience_data = audience.get_json() or {}
     require(audience.status_code == 200 and audience_data.get("status") == "watching" and audience_data.get("role") == "audience", "Reels visibility records real audience presence without claiming co-host join")
@@ -104,7 +167,18 @@ def main() -> int:
         json={"requested_role": "cohost", "camera_ready": True, "mic_ready": True, "network_quality": "ready"},
     )
     starting_data = starting_request.get_json() or {}
-    require(starting_request.status_code == 409 and starting_data.get("error_code") == "LIVE_NOT_ACTIVE" and starting_data.get("step") == "request_creation", "initializing Live blocks co-host request with structured active-status error")
+    require(starting_request.status_code == 409 and starting_data.get("error_code") == "LIVE_NOT_ACTIVE" and starting_data.get("step") == "permission_check", "initializing Live blocks co-host request with structured active-status error")
+    original_db = bot.db
+    try:
+        bot.db = lambda: FailingInsertConnection(original_db())
+        failed_insert = client.post(
+            f"/api/pulse/live/{live_id}/cohost/request",
+            json={"requested_role": "cohost", "camera_ready": True, "mic_ready": True, "network_quality": "ready", "trace_id": "audit-db-insert"},
+        )
+    finally:
+        bot.db = original_db
+    failed_insert_data = failed_insert.get_json() or {}
+    require(failed_insert.status_code == 500 and failed_insert_data.get("error_code") == "DB_INSERT_FAILED" and failed_insert_data.get("step") == "db_insert" and failed_insert_data.get("trace_id") == "audit-db-insert", "database insert failures return their exact stage and trace")
     request_res = client.post(
         f"/api/pulse/live/{live_id}/join-request",
         json={"requested_role": "cohost", "camera_ready": True, "mic_ready": True, "network_quality": "ready", "connection": {"camera_ready": True, "mic_ready": True}},
@@ -168,6 +242,10 @@ def main() -> int:
     require("pulse_live_guest_requests" in BOT and "pulse_live_guests" in BOT and "pulse_live_audit_logs" in BOT, "co-host request, co-host, and audit tables exist")
     require('("host_user_id", "INTEGER DEFAULT 0")' in BOT and '("camera_ready", "INTEGER DEFAULT 0")' in BOT and '("connection_json", "TEXT")' in BOT and '("expires_at", "TEXT")' in BOT, "legacy co-host request tables migrate required request columns")
     require("/cohost/request" in BOT and "LIVE_NOT_ACTIVE" in BOT and "pulse_live_cohost_live_status" in BOT, "co-host request alias and active-live gate exist")
+    require("INVALID_LIVE_ID" in BOT and "AUTH_FAILED" in BOT and "api_pulse_live_join_request_invalid_id" in BOT, "co-host entry and auth failures cannot bypass the structured JSON contract")
+    require("PULSE_COHOST_STEP" in BOT and "db_insert_attempted" in BOT and "DB_INSERT_FAILED" in BOT and "DB_TRANSACTION_FAILED" in BOT, "co-host request pipeline logs exact stages and separates database failures")
+    require("pulse_cohost_guard_error" in BOT and "RATE_LIMITED" in BOT and "security_gate" in BOT, "pre-route security controls preserve the co-host diagnostic contract")
+    require("api_pulse_live_cohost_debug" in BOT and "insert_possible" in BOT and "duplicate_request_check" in BOT, "authenticated co-host diagnostic endpoint exposes request prerequisites")
     require('"request_id": request_id' in BOT and '"state": "pending"' in BOT and "PULSE_COHOST_FAILURE" in BOT, "co-host request endpoint has structured success and failure logging")
     require("requested_role TEXT DEFAULT 'cohost'" in BOT and '"requested_role": clean_html' in BOT, "co-host request role is persisted and returned")
     require("guest_role TEXT DEFAULT 'cohost'" in BOT and "permissions_json" in BOT, "co-host records store role and publish permissions")
@@ -181,7 +259,8 @@ def main() -> int:
     require("requestJoinLive" in JS and "publishGuestToLiveKit" in JS and "hostJoinRequestAction" in JS, "UI button states and handlers are wired")
     require("data-live-join-label" in BOT and "Request to Co-host" in BOT, "Reels Live names the co-host action clearly")
     require("recordLiveReelAudience" in BOT and "refreshLiveReelJoinStatus" in BOT and "scheduleLiveReelJoinPolling" in BOT, "Reels separates audience presence from co-host request polling")
-    require("/join-request`" in BOT and "requested_role:'cohost'" in BOT, "Reels co-host button calls the real join-request endpoint")
+    require("/cohost/request`" in BOT and "requested_role:'cohost'" in BOT, "Reels co-host button calls the hardened co-host request endpoint")
+    require("cohost/request`" in JS and "INVALID_LIVE_ID" in JS and "Object.assign(error, data)" in JS, "Live Studio validates IDs and preserves structured backend failures")
     require("checking_permissions:'Checking permissions...'" in BOT and "waiting_for_host:'Waiting for Host'" in BOT and "host_accepted:'Accepted" in BOT and "cohost_live:'Co-host Live'" in BOT and "unavailable_with_reason:'Unable to request'" in BOT, "Reels renders the required backend-driven request states")
     require("liveReelErrorState" in BOT and "label=liveReelFailureMessage" in BOT and "Object.assign(err,d)" in BOT, "Reels preserves and displays backend co-host failure reasons")
     require("btn.textContent=btn.classList.contains('reel-live-join')?'Joined':'✓'" not in BOT, "Reels no longer paints a fake Joined state after audience presence")
