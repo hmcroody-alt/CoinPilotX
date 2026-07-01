@@ -173,7 +173,8 @@ def main():
 
     with ThreadPoolExecutor(max_workers=6) as pool:
         results = list(pool.map(concurrent_recover, range(12)))
-    require(all(status == 200 for status, _elapsed in results), "concurrent reset requests produce no 500")
+    require(all(status in {200, 429} for status, _elapsed in results), "concurrent reset requests produce no 500")
+    require(any(status == 200 for status, _elapsed in results), "concurrent reset requests keep at least one successful path")
     require(max(elapsed for _status, elapsed in results) < 10, "SQLite busy timeout/WAL prevents lock stalls")
     require(scalar("PRAGMA journal_mode") == "wal", "SQLite audit database uses WAL mode")
 

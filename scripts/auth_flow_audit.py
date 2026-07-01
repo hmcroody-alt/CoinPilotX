@@ -64,7 +64,7 @@ def main() -> None:
 
     web_client = bot.webhook_app.test_client()
     page = web_client.get("/login").get_data(as_text=True)
-    web_blocked = web_client.post("/login", data={"csrf_token": csrf(page), "email": unconfirmed_email, "password": password})
+    web_blocked = web_client.post("/login", data={"csrf_token": csrf(page), "email": unconfirmed_email, "password": password, "terms_accepted": "on"})
     body = web_blocked.get_data(as_text=True)
     assert web_blocked.status_code == 200, web_blocked.status_code
     assert "Please confirm your email before logging in." in body, body[:500]

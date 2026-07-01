@@ -153,7 +153,8 @@ function PulseSocWebShell() {
           setPerformanceMode,
           navigateToAppUrl,
           openNativeLive: () => setNativeLiveOpen(true),
-          registerPushToken: token => injectPushTokenRegistration(webViewRef.current, token)
+          registerPushToken: token => injectPushTokenRegistration(webViewRef.current, token),
+          validatePulseShellCall: call => validatePulseShellCall(callWebApi, call)
         });
         postPulseShellResult(webViewRef.current, payload.requestId, result);
       } catch (error) {
@@ -401,6 +402,25 @@ function injectPushTokenRegistration(webView: WebViewType | null, token: string)
   `);
 }
 
+async function validatePulseShellCall(
+  callWebApi: (path: string, options?: { method?: string; body?: unknown }) => Promise<Record<string, unknown>>,
+  call: Record<string, unknown>
+) {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const nonce = `ps-${timestamp}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  return callWebApi("/api/pulseshell/validate", {
+    method: "POST",
+    body: {
+      module: stringValue(call.module),
+      action: stringValue(call.action),
+      request_id: stringValue(call.requestId),
+      timestamp,
+      nonce,
+      payload: call.payload && typeof call.payload === "object" ? call.payload : {}
+    }
+  });
+}
+
 type PulseShellCallContext = {
   sourceUrl: string;
   performanceMode: PulseShellPerformanceMode;
@@ -409,6 +429,7 @@ type PulseShellCallContext = {
   navigateToAppUrl: (url: string) => void;
   openNativeLive: () => void;
   registerPushToken: (token: string) => void;
+  validatePulseShellCall: (payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
 };
 
 async function handlePulseShellNativeCall(payload: Record<string, unknown>, context: PulseShellCallContext): Promise<Record<string, unknown>> {
@@ -416,6 +437,21 @@ async function handlePulseShellNativeCall(payload: Record<string, unknown>, cont
   const action = stringValue(payload.action);
   const body = (payload.payload && typeof payload.payload === "object" ? payload.payload : {}) as Record<string, unknown>;
   const key = `${moduleName}.${action}`;
+  const validation = await context.validatePulseShellCall({
+    module: moduleName,
+    action,
+    requestId: stringValue(payload.requestId),
+    payload: body
+  });
+  if (!validation.ok) {
+    return {
+      ok: false,
+      available: true,
+      serverAuthoritative: true,
+      message: stringValue(validation.message) || "PulseShell request was not approved by the server.",
+      reason: stringValue(validation.reason) || "server_validation_failed"
+    };
+  }
 
   switch (key) {
     case "device.getInfo":
