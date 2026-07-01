@@ -224,7 +224,7 @@ def main() -> int:
         check("Feature inventory exists", bool(inventory), f"{len(inventory)} features inventoried"),
         check("Required PulseSoc routes exist", not missing_routes, ", ".join(missing_routes)),
         check("Pulse Radio present", "pulse-radio-dock" in home and "data-pulse-radio-toggle" in home and "pulse_radio.js" in bot),
-        check("Top nav uses notification bell", "pulse-desktop-topbar" in home and "aria-label='Notifications'" in home and "PULSE_NOTIFICATION_BELL_ICON" in home and "pulse-alert-radar" not in function_body(bot, "pulse_desktop_top_nav_html")),
+        check("Top nav uses restored notification control", "pulse-desktop-topbar" in home and "aria-label='Notifications'" in home and "data-header-notifications" in home and "pulse-alert-radar" in function_body(bot, "pulse_desktop_top_nav_html")),
         check("Big P removed", "pulse-desktop-brand" in home and "pulsesoc-logo" in home and "PulseSoc</a>" in home),
         check("Create Signal exists", "Create Signal" in home and "data-pulse-create-trigger" in home),
         check("Left nav includes required features", not missing_left_nav, ", ".join(missing_left_nav)),

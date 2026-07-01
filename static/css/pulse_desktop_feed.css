@@ -226,7 +226,7 @@ position: fixed;
 inset: 0 0 auto 0;
 z-index: 42;
 display: grid;
-grid-template-columns: minmax(190px, 260px) minmax(280px, 620px) minmax(112px, 150px);
+	grid-template-columns: minmax(190px, 260px) minmax(0, 1fr) minmax(310px, 430px);
 gap: 14px;
 align-items: center;
 min-height: 66px;
@@ -266,7 +266,7 @@ background: rgba(110, 223, 246, .08);
 box-shadow: 0 0 0 3px rgba(110, 223, 246, .12), 0 0 28px rgba(54, 229, 143, .12);
 }
 .pulse-desktop-search-form {
-width: min(100%, 620px);
+	width: min(100%, 320px);
 min-width: 0;
 }
 .pulse-desktop-nav {
@@ -401,6 +401,27 @@ fill: none;
 stroke-linecap: round;
 stroke-linejoin: round;
 display: block;
+}
+.pulse-alert-radar {
+width: 23px;
+height: 23px;
+border-radius: 50%;
+border: 2px solid currentColor;
+display: block;
+position: relative;
+}
+.pulse-alert-radar::before,
+.pulse-alert-radar::after {
+content: "";
+position: absolute;
+inset: 4px;
+border-radius: inherit;
+border: 1px solid currentColor;
+opacity: .74;
+}
+.pulse-alert-radar::after {
+inset: 9px;
+background: currentColor;
 }
 .pulse-topnav-alert .pulse-notification-badge,
 .video-watch-icon .pulse-notification-badge,

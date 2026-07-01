@@ -30,6 +30,7 @@ def main() -> int:
     service = read("services/notification_service.py")
     bot = read("bot.py")
     mobile_topbars = re.findall(r'<nav class="mobile-topbar".*?</nav>', bot, flags=re.DOTALL)
+    desktop_top = bot[bot.find("def pulse_desktop_top_nav_html"):bot.find("def pulse_desktop_left_rail_html")]
 
     require("frontend alert count uses alert_unread_count only", "alert: Number(payload.alert_unread_count || 0)" in notifications_js, failures)
     require("frontend chat count uses chat_unread_count only", "chat: Number(payload.chat_unread_count || 0)" in notifications_js, failures)
@@ -38,7 +39,7 @@ def main() -> int:
     require("backend excludes message notifications from alert count", "AND NOT ({_message_notification_where_clause()})" in service, failures)
     require("backend sums conversation unread for chat count", "COALESCE(SUM(CASE WHEN COALESCE(unread_count,0) > 0 THEN unread_count ELSE 0 END),0)" in service, failures)
     require("backend includes Command Center V2 unread state", "comm_v2_participants" in service and "membership_state" in service, failures)
-    require("desktop header exposes bell badge without top message duplicate", "data-header-notifications" in bot and "pulse-bell-icon" in bot and "data-alert-unread data-notification-unread hidden" in bot and "pulse-topnav-messages" not in bot, failures)
+    require("desktop header exposes notification and chat badges without right-side message duplicate", "data-header-notifications" in desktop_top and "pulse-alert-radar" in desktop_top and "data-alert-unread data-notification-unread hidden" in desktop_top and '("Messages", "/pulse/messages")' in desktop_top and "data-chat-unread" in desktop_top and "pulse-topnav-messages" not in desktop_top, failures)
     require("mobile topbar exposes notification bell only", bool(mobile_topbars) and all('href="/pulse/notifications"' in bar and ("PULSE_NOTIFICATION_BELL_ICON" in bar or "pulse-bell-icon" in bar or "__NOTIFICATION_BELL_ICON__" in bar) and "pulse-alert-radar" not in bar and 'href="/pulse/messages"' not in bar and "data-chat-unread" not in bar for bar in mobile_topbars), failures)
     require("bottom nav has separate chat and alert badges", "data-alert-unread data-notification-unread hidden" in bot and "data-chat-unread hidden" in bot and "mobile_bottom_html" in bot, failures)
     require("Pulse shell badges keep urgent red styling", re.search(r"background\s*:\s*#ff335d", bot), failures)

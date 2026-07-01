@@ -31,13 +31,14 @@ def main() -> None:
 
     top_nav = source[source.find("def pulse_desktop_top_nav_html"):source.find("def pulse_desktop_left_rail_html")]
     expect("pulse-desktop-brand" in top_nav and "data-pulse-search-form" in top_nav, "Desktop header keeps brand and search")
-    expect("pulse-desktop-nav" not in top_nav and "pulse-desktop-more-menu" not in top_nav, "Desktop header omits destination nav and Apps menu")
-    expect('("Messages", "/pulse/messages")' not in top_nav, "Desktop header does not duplicate Messages")
-    expect("pulse-topnav-live" not in top_nav, "Desktop header does not duplicate Live")
-    expect("pulse-create-strong" not in top_nav, "Desktop header does not duplicate Create")
-    expect("PULSE_NOTIFICATION_BELL_ICON" in top_nav and "data-header-notifications" in top_nav, "Desktop header uses notification bell")
+    expect("pulse-desktop-nav" in top_nav and "pulse-desktop-more-menu" in top_nav, "Desktop header restores destination nav and Apps menu")
+    expect('("Messages", "/pulse/messages")' in top_nav and "data-chat-unread" in top_nav, "Desktop header Messages destination has independent chat badge")
+    expect("pulse-topnav-messages" not in top_nav, "Desktop header does not restore right-side duplicate Messages icon")
+    expect("pulse-topnav-live" in top_nav, "Desktop header restores Live action")
+    expect("pulse-create-strong" in top_nav, "Desktop header restores Create Signal action")
+    expect("pulse-alert-radar" in top_nav and "data-header-notifications" in top_nav, "Desktop header uses restored radar Notifications control")
 
-    expect("grid-template-columns: minmax(190px, 260px) minmax(280px, 620px) minmax(112px, 150px)" in css, "Desktop topbar reserves brand/search/bell-profile space")
+    expect("grid-template-columns: minmax(190px, 260px) minmax(0, 1fr) minmax(310px, 430px)" in css, "Desktop topbar reserves brand/nav/actions space")
     expect(".pulse-desktop-search:focus" in css and "box-shadow: 0 0 0 3px" in css, "Global search has focused glow state")
 
     expect('("Create", "#create", "＋", "create")' in source, "Mobile bottom nav opens in-page Create")
@@ -71,11 +72,11 @@ def main() -> None:
         session["account_user_id"] = 950781
 
     home = client.get("/pulse").get_data(as_text=True)
-    expect("pulse-bell-icon" in home and "data-header-notifications" in home, "Runtime Home renders notification bell")
-    expect("pulse-alert-radar" not in home, "Runtime Home does not render old radar icon")
-    expect("pulse-desktop-more-menu" not in home, "Runtime Home does not render Apps menu in header")
-    expect("class='pulse-desktop-nav'" not in home, "Runtime Home does not render destination nav in header")
-    expect("pulse-topnav-live" not in home and "pulse-create-strong" not in home, "Runtime Home header omits Live/Create actions")
+    expect("pulse-alert-radar" in home and "data-header-notifications" in home, "Runtime Home renders restored radar Notifications control")
+    expect("pulse-desktop-more-menu" in home, "Runtime Home renders Apps menu in header")
+    expect("class='pulse-desktop-nav'" in home, "Runtime Home renders destination nav in header")
+    expect("pulse-topnav-messages" not in home, "Runtime Home does not render right-side duplicate Messages icon")
+    expect("pulse-topnav-live" in home and "pulse-create-strong" in home, "Runtime Home header restores Live/Create actions")
     expect("nav-label'>Create</span>" in home and "nav-label'>Music</span>" not in home, "Runtime mobile nav is simplified")
 
     search = client.get("/api/pulse/search?q=pulse&limit=3")
