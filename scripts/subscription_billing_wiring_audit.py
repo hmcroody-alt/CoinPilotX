@@ -162,8 +162,10 @@ def run() -> None:
     assert_true((refreshed_json.get("checklist") or {}).get("subscription_benefits_reviewed") is True, "checklist state persists through backend")
 
     portal = client.get("/billing/portal")
-    assert_true(portal.status_code == 503, "GET billing portal returns explicit unavailable response when Stripe is not configured")
-    assert_true("Billing portal not configured" in portal.get_data(as_text=True), "billing portal unavailable response is explicit")
+    assert_true(portal.status_code == 200, "GET billing portal renders safe fallback page when Stripe is not configured")
+    portal_html = portal.get_data(as_text=True)
+    assert_true("Billing portal unavailable." in portal_html, "billing portal fallback page is explicit")
+    assert_true("/dashboard/economy/subscriptions" in portal_html and "/pulse/premium" in portal_html, "billing portal fallback links to safe billing destinations")
 
     portal_session = client.post("/billing/portal-session", json={}, headers={"X-CSRF-Token": "subscription-audit-csrf"})
     assert_true(portal_session.status_code == 503, "billing portal session returns explicit unavailable response when Stripe is not configured")
