@@ -356,6 +356,10 @@
       border-color: rgba(255,255,255,.2);
       background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.025));
     }
+    .module-card.unavailable {
+      border-color: rgba(255,212,90,.44);
+      background: linear-gradient(180deg, rgba(255,212,90,.08), rgba(5,17,34,.84));
+    }
     .module-card[data-accent="emerald"] { border-color: rgba(50,235,174,.38); }
     .module-card[data-accent="purple"] { border-color: rgba(169,92,255,.38); }
     .module-card[data-accent="gold"] { border-color: rgba(255,212,90,.38); }
@@ -441,6 +445,11 @@
       border-color: rgba(255,212,90,.34);
       background: rgba(255,212,90,.09);
     }
+    .module-status[data-status="limited"] {
+      color: #ffe8a1;
+      border-color: rgba(255,212,90,.42);
+      background: rgba(255,212,90,.1);
+    }
     .module-status[data-status="coming_soon"] {
       color: #b5c2cb;
       border-color: rgba(255,255,255,.18);
@@ -455,6 +464,17 @@
       border-radius: 20px;
       background: rgba(5,14,25,.72);
     }
+    .dashboard-alert {
+      display: grid;
+      gap: 6px;
+      padding: 14px 16px;
+      border: 1px solid rgba(255,212,90,.28);
+      border-radius: 18px;
+      color: #fff7d6;
+      background: linear-gradient(135deg, rgba(255,212,90,.12), rgba(91,220,255,.06));
+    }
+    .dashboard-alert strong { font-size: 15px; }
+    .dashboard-alert span { color: var(--muted); font-size: 13px; line-height: 1.35; }
     .quick-strip .rail-action { min-height: 56px; border-color: rgba(91,220,255,.16); background: rgba(255,255,255,.035); }
     .legend {
       display: flex;
@@ -596,6 +616,13 @@
           </div>
         </header>
 
+        {% if mc.degraded_modules %}
+          <section class="dashboard-alert" role="status" aria-live="polite">
+            <strong>Some dashboard modules are temporarily unavailable.</strong>
+            <span>PulseSoc kept Dashboard open. Retry is available, and the rest of the app remains usable. Trace IDs: {{ mc.degraded_modules|map(attribute='trace_id')|join(', ') }}</span>
+          </section>
+        {% endif %}
+
         <section class="metric-row" aria-label="Mission metrics">
           {% for metric in mc.metrics %}
             <article class="metric-card" data-accent="{{ metric.accent }}">
@@ -622,7 +649,7 @@
               </div>
               <div class="module-grid">
                 {% for widget in category.widgets %}
-                  <article class="module-card {{ 'locked' if widget.access == 'locked' else '' }}" data-accent="{{ widget.accent }}">
+                  <article class="module-card {{ 'locked' if widget.access == 'locked' else '' }} {{ 'unavailable' if widget.unavailable else '' }}" data-accent="{{ widget.accent }}">
                     <div>
                       <div class="module-top">
                         <span class="module-icon">{{ widget.icon }}</span>

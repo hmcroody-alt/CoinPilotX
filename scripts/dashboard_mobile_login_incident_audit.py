@@ -111,23 +111,25 @@ def audit_dashboard_routes() -> None:
             expect(payload.get("authenticated") is True, "mobile auth session sees existing account session")
 
 
-def audit_dashboard_recovery_page() -> None:
+def audit_dashboard_module_degradation() -> None:
     client = authenticated_client()
-    original = bot.pulse_dashboard_mission_control.build_mission_control_dashboard
+    original = bot.dashboard_crypto_command_center.build_crypto_state
 
-    def broken_dashboard(*_args, **_kwargs):
-        raise RuntimeError("forced dashboard audit failure")
+    def broken_crypto(*_args, **_kwargs):
+        raise RuntimeError("forced crypto dashboard audit failure")
 
-    bot.pulse_dashboard_mission_control.build_mission_control_dashboard = broken_dashboard
+    bot.dashboard_crypto_command_center.build_crypto_state = broken_crypto
     try:
         response = client.get("/dashboard")
     finally:
-        bot.pulse_dashboard_mission_control.build_mission_control_dashboard = original
-    body = assert_no_system_issue(response, "/dashboard recovery")
-    expect(response.status_code == 200, "dashboard recovery returns 200")
-    expect("Dashboard is reconnecting" in body, "dashboard recovery explains the fallback")
-    expect("Retry Dashboard" in body, "dashboard recovery includes retry button")
-    expect("/pulse?source=dashboard_recovery" in body, "dashboard recovery routes users back to PulseSoc")
+        bot.dashboard_crypto_command_center.build_crypto_state = original
+    body = assert_no_system_issue(response, "/dashboard degraded module")
+    expect(response.status_code == 200, "dashboard degraded module returns 200")
+    expect("Mission Control" in body and "Welcome Back" in body, "dashboard shell still renders")
+    expect("Some dashboard modules are temporarily unavailable." in body, "dashboard shows module unavailable banner")
+    expect("UNAVAILABLE" in body, "dashboard marks broken module unavailable")
+    expect("Dashboard is reconnecting" not in body, "dashboard does not show reconnecting fallback for module failures")
+    expect("source=dashboard_recovery" not in body, "dashboard does not auto-route away from module failures")
 
 
 def audit_mobile_login_and_refresh() -> None:
@@ -185,12 +187,21 @@ def audit_mobile_client_cookie_parsing() -> None:
         expect("if (!session.authenticated && refreshToken)" in source, f"{path} falls back to refresh token when cookie session is stale")
 
 
+def audit_native_offline_detection() -> None:
+    source = (ROOT / "mobile/pulse-react-native/App.tsx").read_text()
+    expect("verifyOfflineBeforeShowingNativeFallback" in source, "native shell verifies health before offline fallback")
+    expect("/health?native_check=" in source, "native shell checks health endpoint before showing offline")
+    expect("if (event.nativeEvent.statusCode >= 500)" in source, "native shell handles HTTP 500 separately")
+    expect("setOffline(false);" in source, "native shell does not mark HTTP 500 as offline")
+
+
 def run() -> None:
     ensure_user()
     audit_dashboard_routes()
-    audit_dashboard_recovery_page()
+    audit_dashboard_module_degradation()
     audit_mobile_login_and_refresh()
     audit_mobile_client_cookie_parsing()
+    audit_native_offline_detection()
     print("PASS: dashboard/mobile login incident audit passed")
 
 

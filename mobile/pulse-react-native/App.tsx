@@ -108,6 +108,17 @@ function PulseSocWebShell() {
     });
   }, []);
 
+  const verifyOfflineBeforeShowingNativeFallback = useCallback(() => {
+    fetch(`${PULSESOC_ORIGIN}/health?native_check=${Date.now()}`, { cache: "no-store" })
+      .then(response => {
+        setOffline(!response.ok);
+        if (response.ok) {
+          setLoading(false);
+        }
+      })
+      .catch(() => setOffline(true));
+  }, []);
+
   useEffect(() => {
     ensureNotificationPresentation().catch(() => undefined);
     Linking.getInitialURL().then(url => {
@@ -282,9 +293,12 @@ function PulseSocWebShell() {
         onNavigationStateChange={handleNavigation}
         onLoadStart={() => setLoading(true)}
         onLoadEnd={() => setLoading(false)}
-        onError={() => setOffline(true)}
+        onError={verifyOfflineBeforeShowingNativeFallback}
         onHttpError={event => {
-          if (event.nativeEvent.statusCode >= 500) setOffline(true);
+          if (event.nativeEvent.statusCode >= 500) {
+            setOffline(false);
+            setLoading(false);
+          }
         }}
         renderLoading={() => <LoadingOverlay />}
       />

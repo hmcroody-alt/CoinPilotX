@@ -6,6 +6,8 @@ renders the sanitized inventory it is allowed to show.
 
 from __future__ import annotations
 
+import logging
+import secrets
 from datetime import datetime
 from typing import Any
 
@@ -169,6 +171,17 @@ SECTION_META = {
     "Ads & Sponsorships": {"icon": "AD", "accent": "gold", "label": "Ads"},
     "PulseSoc AI": {"icon": "AI", "accent": "purple", "label": "AI"},
     "System Status": {"icon": "SYS", "accent": "cyan", "label": "System"},
+}
+
+STATE_CATEGORY_MAP = {
+    "account": "Account Command Center",
+    "network": "Pulse Network",
+    "intelligence": "Intelligence Center",
+    "economy": "Economy & Earnings",
+    "crypto": "Crypto Command Center",
+    "ads": "Ads & Sponsorships",
+    "ai": "PulseSoc AI",
+    "system": "System Status",
 }
 
 WIDGET_ICONS = {
@@ -518,41 +531,129 @@ def _lock_reason(widget: dict[str, Any], caps: dict[str, Any]) -> str:
     return " + ".join(reasons) or "Locked"
 
 
+def _degraded_state(name: str, category: str, exc: Exception) -> tuple[dict[str, Any], dict[str, Any]]:
+    trace_id = secrets.token_hex(6)
+    logging.exception(
+        "DASHBOARD_MODULE_DEGRADED trace_id=%s module=%s category=%s error=%s",
+        trace_id,
+        name,
+        category,
+        exc.__class__.__name__,
+    )
+    state = {
+        "ok": False,
+        "available": False,
+        "state": "LIMITED",
+        "generated_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "modules": [],
+        "subsystems": {},
+        "trace_id": trace_id,
+        "message": "This dashboard module is temporarily unavailable. Other Dashboard modules remain available.",
+    }
+    incident = {
+        "module": name,
+        "category": category,
+        "trace_id": trace_id,
+        "error_type": exc.__class__.__name__,
+        "message": "Module temporarily unavailable.",
+    }
+    return state, incident
+
+
+def _build_state(name: str, category: str, builder: Any, conn: Any, user: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    try:
+        return builder(conn, user), None
+    except Exception as exc:
+        return _degraded_state(name, category, exc)
+
+
 def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_admin: dict[str, Any] | None = None) -> dict[str, Any]:
     cur = conn.cursor()
     caps = _user_capabilities(cur, user, session_admin)
     user_id = caps["user_id"]
-    account_state = dashboard_account_command_center.build_account_state(conn, user)
-    network_state = dashboard_network_command_center.build_network_state(conn, user)
-    intelligence_state = dashboard_intelligence_command_center.build_intelligence_state(conn, user)
-    economy_state = dashboard_economy_command_center.build_economy_state(conn, user)
-    crypto_state = dashboard_crypto_command_center.build_crypto_state(conn, user)
-    ads_state = dashboard_ads_command_center.build_ads_state(conn, user)
-    ai_state = dashboard_ai_command_center.build_ai_state(conn, user)
-    system_state = system_mission_control.build_system_state(conn)
+    degraded_modules: list[dict[str, Any]] = []
+    account_state, incident = _build_state("account", STATE_CATEGORY_MAP["account"], dashboard_account_command_center.build_account_state, conn, user)
+    if incident:
+        degraded_modules.append(incident)
+    network_state, incident = _build_state("network", STATE_CATEGORY_MAP["network"], dashboard_network_command_center.build_network_state, conn, user)
+    if incident:
+        degraded_modules.append(incident)
+    intelligence_state, incident = _build_state("intelligence", STATE_CATEGORY_MAP["intelligence"], dashboard_intelligence_command_center.build_intelligence_state, conn, user)
+    if incident:
+        degraded_modules.append(incident)
+    economy_state, incident = _build_state("economy", STATE_CATEGORY_MAP["economy"], dashboard_economy_command_center.build_economy_state, conn, user)
+    if incident:
+        degraded_modules.append(incident)
+    crypto_state, incident = _build_state("crypto", STATE_CATEGORY_MAP["crypto"], dashboard_crypto_command_center.build_crypto_state, conn, user)
+    if incident:
+        degraded_modules.append(incident)
+    ads_state, incident = _build_state("ads", STATE_CATEGORY_MAP["ads"], dashboard_ads_command_center.build_ads_state, conn, user)
+    if incident:
+        degraded_modules.append(incident)
+    ai_state, incident = _build_state("ai", STATE_CATEGORY_MAP["ai"], dashboard_ai_command_center.build_ai_state, conn, user)
+    if incident:
+        degraded_modules.append(incident)
+    try:
+        system_state = system_mission_control.build_system_state(conn)
+    except Exception as exc:
+        system_state, incident = _degraded_state("system", STATE_CATEGORY_MAP["system"], exc)
+        degraded_modules.append(incident)
     metrics = _metrics(cur, user, caps)
+    unavailable_categories = {item["category"] for item in degraded_modules}
     widgets = []
     for widget in WIDGETS:
         access = _access_for_widget(widget, caps)
         if access == "hidden":
             continue
         item = dict(widget)
-        if item["category"] == "Pulse Network":
-            state = dashboard_network_command_center.state_for_widget(network_state, item["widget_key"])
-        elif item["category"] == "Intelligence Center":
-            state = dashboard_intelligence_command_center.state_for_widget(intelligence_state, item["widget_key"])
-        elif item["category"] == "Economy & Earnings":
-            state = dashboard_economy_command_center.state_for_widget(economy_state, item["widget_key"])
-        elif item["category"] == "Crypto Command Center":
-            state = dashboard_crypto_command_center.state_for_widget(crypto_state, item["widget_key"])
-        elif item["category"] == "Ads & Sponsorships":
-            state = dashboard_ads_command_center.state_for_widget(ads_state, item["widget_key"])
-        elif item["category"] == "PulseSoc AI":
-            state = dashboard_ai_command_center.state_for_widget(ai_state, item["widget_key"])
-        elif item["category"] == "System Status":
-            state = system_mission_control.state_for_widget(system_state, item["widget_key"])
+        if item["category"] in unavailable_categories:
+            state = {
+                "state": "LIMITED",
+                "cta_label": "Retry Dashboard",
+                "route": "/dashboard",
+                "detail": "Module temporarily unavailable.",
+            }
+            item["unavailable"] = True
+            item["description"] = "This dashboard module is temporarily unavailable. The rest of PulseSoc is still available."
         else:
-            state = dashboard_account_command_center.state_for_widget(account_state, item["widget_key"])
+            try:
+                if item["category"] == "Pulse Network":
+                    state = dashboard_network_command_center.state_for_widget(network_state, item["widget_key"])
+                elif item["category"] == "Intelligence Center":
+                    state = dashboard_intelligence_command_center.state_for_widget(intelligence_state, item["widget_key"])
+                elif item["category"] == "Economy & Earnings":
+                    state = dashboard_economy_command_center.state_for_widget(economy_state, item["widget_key"])
+                elif item["category"] == "Crypto Command Center":
+                    state = dashboard_crypto_command_center.state_for_widget(crypto_state, item["widget_key"])
+                elif item["category"] == "Ads & Sponsorships":
+                    state = dashboard_ads_command_center.state_for_widget(ads_state, item["widget_key"])
+                elif item["category"] == "PulseSoc AI":
+                    state = dashboard_ai_command_center.state_for_widget(ai_state, item["widget_key"])
+                elif item["category"] == "System Status":
+                    state = system_mission_control.state_for_widget(system_state, item["widget_key"])
+                else:
+                    state = dashboard_account_command_center.state_for_widget(account_state, item["widget_key"])
+            except Exception as exc:
+                trace_id = secrets.token_hex(6)
+                logging.exception(
+                    "DASHBOARD_WIDGET_DEGRADED trace_id=%s widget=%s category=%s error=%s",
+                    trace_id,
+                    item.get("widget_key"),
+                    item.get("category"),
+                    exc.__class__.__name__,
+                )
+                degraded_modules.append(
+                    {
+                        "module": str(item.get("widget_key") or "widget"),
+                        "category": str(item.get("category") or "Dashboard"),
+                        "trace_id": trace_id,
+                        "error_type": exc.__class__.__name__,
+                        "message": "Widget temporarily unavailable.",
+                    }
+                )
+                state = {"state": "LIMITED", "cta_label": "Retry Dashboard", "route": "/dashboard"}
+                item["unavailable"] = True
+                item["description"] = "This dashboard card is temporarily unavailable. Other Dashboard cards remain available."
         item["access"] = access
         item["lock_reason"] = _lock_reason(widget, caps) if access == "locked" else ""
         if state and state.get("route"):
@@ -581,6 +682,9 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
         item["icon"] = WIDGET_ICONS.get(item["widget_key"], "MC")
         if access == "locked":
             item["status_label"] = "LOCKED"
+        elif item.get("unavailable"):
+            item["status_label"] = "UNAVAILABLE"
+            item["status"] = "LIMITED"
         elif state and state.get("state"):
             item["status_label"] = str(state.get("state") or "").upper()
         else:
@@ -612,6 +716,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
         "economy_command_center": economy_state,
         "crypto_command_center": crypto_state,
         "system_mission_control": system_state,
+        "degraded_modules": degraded_modules,
     }
 
 
