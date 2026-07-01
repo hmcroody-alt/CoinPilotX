@@ -226,7 +226,7 @@ position: fixed;
 inset: 0 0 auto 0;
 z-index: 42;
 display: grid;
-grid-template-columns: minmax(190px, 260px) minmax(0, 1fr) minmax(310px, 430px);
+grid-template-columns: minmax(190px, 260px) minmax(280px, 620px) minmax(112px, 150px);
 gap: 14px;
 align-items: center;
 min-height: 66px;
@@ -266,7 +266,7 @@ background: rgba(110, 223, 246, .08);
 box-shadow: 0 0 0 3px rgba(110, 223, 246, .12), 0 0 28px rgba(54, 229, 143, .12);
 }
 .pulse-desktop-search-form {
-width: min(100%, 320px);
+width: min(100%, 620px);
 min-width: 0;
 }
 .pulse-desktop-nav {
@@ -392,26 +392,23 @@ border-radius: 999px;
 background: #36e58f;
 box-shadow: 0 0 0 2px rgba(5,11,20,.92), 0 0 14px rgba(54,229,143,.72);
 }
-.pulse-alert-radar {
+.pulse-bell-icon {
 width: 23px;
 height: 23px;
-border-radius: 50%;
-border: 2px solid currentColor;
+stroke: currentColor;
+stroke-width: 2;
+fill: none;
+stroke-linecap: round;
+stroke-linejoin: round;
 display: block;
-position: relative;
 }
-.pulse-alert-radar::before,
-.pulse-alert-radar::after {
-content: "";
+.pulse-topnav-alert .pulse-notification-badge,
+.video-watch-icon .pulse-notification-badge,
+.videos-mobile-icon .pulse-notification-badge {
 position: absolute;
-inset: 4px;
-border-radius: inherit;
-border: 1px solid currentColor;
-opacity: .74;
-}
-.pulse-alert-radar::after {
-inset: 9px;
-background: currentColor;
+right: -4px;
+top: -4px;
+margin: 0;
 }
 .pulse-topnav-alert:not(:has(.pulse-notification-badge[hidden])) {
 box-shadow: inset 0 0 18px rgba(255,255,255,.04), 0 0 24px rgba(255, 47, 115, .18);
@@ -1729,10 +1726,10 @@ margin-inline: auto;
 display: none;
 }
 .pulse-desktop-topbar {
-grid-template-columns: 180px minmax(0, 1fr) 240px;
+grid-template-columns: 180px minmax(240px, 1fr) 120px;
 }
 .pulse-desktop-search-form {
-width: min(100%, 210px);
+width: min(100%, 420px);
 }
 .pulse-desktop-nav a {
 padding-inline: 10px;

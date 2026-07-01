@@ -38,8 +38,8 @@ def main() -> int:
     require("backend excludes message notifications from alert count", "AND NOT ({_message_notification_where_clause()})" in service, failures)
     require("backend sums conversation unread for chat count", "COALESCE(SUM(CASE WHEN COALESCE(unread_count,0) > 0 THEN unread_count ELSE 0 END),0)" in service, failures)
     require("backend includes Command Center V2 unread state", "comm_v2_participants" in service and "membership_state" in service, failures)
-    require("desktop header exposes alert badge without top message duplicate", "data-header-notifications" in bot and "data-alert-unread data-notification-unread hidden" in bot and "pulse-topnav-messages" not in bot, failures)
-    require("mobile topbar exposes notifications only", bool(mobile_topbars) and all('href="/pulse/notifications"' in bar and 'href="/pulse/messages"' not in bar and "data-chat-unread" not in bar for bar in mobile_topbars), failures)
+    require("desktop header exposes bell badge without top message duplicate", "data-header-notifications" in bot and "pulse-bell-icon" in bot and "data-alert-unread data-notification-unread hidden" in bot and "pulse-topnav-messages" not in bot, failures)
+    require("mobile topbar exposes notification bell only", bool(mobile_topbars) and all('href="/pulse/notifications"' in bar and ("PULSE_NOTIFICATION_BELL_ICON" in bar or "pulse-bell-icon" in bar or "__NOTIFICATION_BELL_ICON__" in bar) and "pulse-alert-radar" not in bar and 'href="/pulse/messages"' not in bar and "data-chat-unread" not in bar for bar in mobile_topbars), failures)
     require("bottom nav has separate chat and alert badges", "data-alert-unread data-notification-unread hidden" in bot and "data-chat-unread hidden" in bot and "mobile_bottom_html" in bot, failures)
     require("Pulse shell badges keep urgent red styling", re.search(r"background\s*:\s*#ff335d", bot), failures)
 

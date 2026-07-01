@@ -25,13 +25,20 @@ def main() -> int:
     for index, header in enumerate(mobile_headers, start=1):
         require("/pulse/notifications" in header, f"mobile header {index} missing Notifications route", failures)
         require("data-header-notifications" in header, f"mobile header {index} missing header notification marker", failures)
+        require("PULSE_NOTIFICATION_BELL_ICON" in header or "__NOTIFICATION_BELL_ICON__" in header or "pulse-bell-icon" in header, f"mobile header {index} does not render bell icon", failures)
+        require("pulse-alert-radar" not in header, f"mobile header {index} reintroduced old radar icon", failures)
         require("data-alert-unread" in header and "data-notification-unread" in header, f"mobile header {index} missing notification unread badge", failures)
         require("/pulse/messages" not in header, f"mobile header {index} reintroduced top Messages link", failures)
         require("data-chat-unread" not in header, f"mobile header {index} reintroduced chat badge in header", failures)
         require("pulse-topnav-messages" not in header, f"mobile header {index} reintroduced pulse-topnav-messages", failures)
 
     require("data-header-notifications" in desktop_top, "desktop header missing Notifications marker", failures)
+    require("PULSE_NOTIFICATION_BELL_ICON" in desktop_top or "pulse-bell-icon" in desktop_top, "desktop header does not render bell icon", failures)
+    require("pulse-alert-radar" not in desktop_top, "desktop header reintroduced old radar icon", failures)
     require("data-alert-unread" in desktop_top, "desktop header missing notification unread badge", failures)
+    require('("Messages", "/pulse/messages")' not in desktop_top, "desktop header reintroduced Messages navigation item", failures)
+    require("pulse-topnav-live" not in desktop_top, "desktop header reintroduced top Live action", failures)
+    require("pulse-create-strong" not in desktop_top, "desktop header reintroduced top Create action", failures)
     require("pulse-topnav-messages" not in desktop_top, "desktop header reintroduced top Messages icon", failures)
 
     require("Messages\", \"/pulse/messages\"" in BOT or "Messages', '/pulse/messages'" in BOT or '"Messages", "/pulse/messages"' in BOT, "bottom/destination Messages route missing", failures)

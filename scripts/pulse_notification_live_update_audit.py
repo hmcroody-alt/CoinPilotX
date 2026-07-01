@@ -17,7 +17,7 @@ def require(condition, message):
 
 def main():
     require("data-notification-unread" in BOT, "Pulse shell exposes unread badge target")
-    require("pulse-topnav-messages" not in BOT and "data-header-notifications" in BOT, "header uses global notifications instead of duplicate messages")
+    require("pulse-topnav-messages" not in BOT and "data-header-notifications" in BOT and "pulse-bell-icon" in BOT, "header uses global bell notifications instead of duplicate messages")
     require("data-pulse-notification-list" in BOT, "notification center has a live refresh target")
     require("setBadgeNodes(\"[data-alert-unread], [data-notification-unread]\", alertCount)" in JS and "setBadgeNodes(\"[data-chat-unread]\", chatCount)" in JS, "notification JS updates all badge targets")
     require("refreshNotificationList" in JS and "/api/pulse/notifications?limit=12" in JS, "notification JS refreshes dropdown/page list")

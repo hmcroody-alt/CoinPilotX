@@ -1912,7 +1912,7 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
 @media (max-width: 1380px) {
   body.pulse-home-os .pulse-desktop-topbar {
     padding-inline: 14px !important;
-    grid-template-columns: minmax(142px, 190px) minmax(0, 1fr) minmax(160px, 220px) !important;
+    grid-template-columns: minmax(142px, 190px) minmax(220px, 1fr) minmax(112px, 140px) !important;
     gap: 8px !important;
   }
 
@@ -2930,15 +2930,14 @@ body.pulse-home-os .create-sheet-grid a {
 
 @media (min-width: 901px) and (max-width: 1380px) {
   body.pulse-home-os .pulse-desktop-topbar {
-    grid-template-columns: minmax(142px, 190px) minmax(0, 1fr) minmax(330px, 390px) !important;
+    grid-template-columns: minmax(142px, 190px) minmax(220px, 1fr) minmax(112px, 140px) !important;
   }
 
   body.pulse-home-os .pulse-desktop-search-form {
-    display: none !important;
+    display: block !important;
   }
 
   body.pulse-home-os .pulse-create-strong {
-    display: inline-flex !important;
-    min-width: max-content;
+    display: none !important;
   }
 }

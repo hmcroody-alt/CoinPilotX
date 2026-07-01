@@ -30,21 +30,17 @@ def main() -> None:
     search_bridge = SEARCH_BRIDGE_JS.read_text(encoding="utf-8")
 
     top_nav = source[source.find("def pulse_desktop_top_nav_html"):source.find("def pulse_desktop_left_rail_html")]
-    expect('("Home", "/pulse")' in top_nav, "Desktop top nav keeps Home")
-    expect('("Reels", "/pulse/reels")' in top_nav, "Desktop top nav keeps Reels")
-    expect('("Videos", "/pulse/videos")' in top_nav, "Desktop top nav keeps Videos")
-    expect('("Live", "/pulse/live")' in top_nav, "Desktop top nav keeps Live")
-    expect('("Messages", "/pulse/messages")' in top_nav, "Desktop top nav keeps Messages")
-    expect("pulse-create-strong" in top_nav and "/pulse/create" in top_nav, "Desktop top nav keeps strong Create")
-    expect("pulse-desktop-more-menu" in top_nav and "pulse-desktop-more-panel" in top_nav, "Desktop top nav exposes Apps overflow")
-    for secondary in ["Music", "Roast Battle", "Marketplace", "Creator Studio", "Portfolio", "Premium", "Profile", "Alerts", "Friends", "Groups", "Teachers", "Saved"]:
-        expect(secondary in top_nav, f"Apps menu contains {secondary}")
+    expect("pulse-desktop-brand" in top_nav and "data-pulse-search-form" in top_nav, "Desktop header keeps brand and search")
+    expect("pulse-desktop-nav" not in top_nav and "pulse-desktop-more-menu" not in top_nav, "Desktop header omits destination nav and Apps menu")
+    expect('("Messages", "/pulse/messages")' not in top_nav, "Desktop header does not duplicate Messages")
+    expect("pulse-topnav-live" not in top_nav, "Desktop header does not duplicate Live")
+    expect("pulse-create-strong" not in top_nav, "Desktop header does not duplicate Create")
+    expect("PULSE_NOTIFICATION_BELL_ICON" in top_nav and "data-header-notifications" in top_nav, "Desktop header uses notification bell")
 
-    expect("grid-template-columns: minmax(190px, 260px) minmax(0, 1fr) minmax(310px, 430px)" in css, "Desktop topbar reserves search/Create space")
-    expect(".pulse-desktop-more-panel" in css and "backdrop-filter: blur(20px)" in css, "Apps menu has sci-fi overflow styling")
+    expect("grid-template-columns: minmax(190px, 260px) minmax(280px, 620px) minmax(112px, 150px)" in css, "Desktop topbar reserves brand/search/bell-profile space")
     expect(".pulse-desktop-search:focus" in css and "box-shadow: 0 0 0 3px" in css, "Global search has focused glow state")
 
-    expect('("Create", "/pulse/create", "＋")' in source, "Mobile bottom nav includes Create")
+    expect('("Create", "#create", "＋", "create")' in source, "Mobile bottom nav opens in-page Create")
     expect('("Reels", "/pulse/reels", "▶")' in source, "Mobile bottom nav includes Reels")
     expect("grid-template-columns:repeat(5,minmax(0,1fr))" in source, "Mobile bottom nav uses five columns")
     expect(".pulse-fab{display:none!important}" in source, "Mobile duplicate floating create is hidden")
@@ -75,8 +71,11 @@ def main() -> None:
         session["account_user_id"] = 950781
 
     home = client.get("/pulse").get_data(as_text=True)
-    expect("pulse-desktop-more-menu" in home, "Runtime Home renders Apps menu")
-    expect(home.count("class='pulse-desktop-nav'") == 1, "Runtime Home renders one desktop nav")
+    expect("pulse-bell-icon" in home and "data-header-notifications" in home, "Runtime Home renders notification bell")
+    expect("pulse-alert-radar" not in home, "Runtime Home does not render old radar icon")
+    expect("pulse-desktop-more-menu" not in home, "Runtime Home does not render Apps menu in header")
+    expect("class='pulse-desktop-nav'" not in home, "Runtime Home does not render destination nav in header")
+    expect("pulse-topnav-live" not in home and "pulse-create-strong" not in home, "Runtime Home header omits Live/Create actions")
     expect("nav-label'>Create</span>" in home and "nav-label'>Music</span>" not in home, "Runtime mobile nav is simplified")
 
     search = client.get("/api/pulse/search?q=pulse&limit=3")

@@ -133,7 +133,7 @@ def main() -> int:
 
     audit.check("observeStatusPreviewVideo" in home_js and "IntersectionObserver" in home_js and "Math.min(10" in home_js, "Status video previews are visible-only first-10-second loops")
     audit.check("status-preview-image" in feed_css and "statusKenBurns" in feed_css and "status-preview-text" in status_css, "Image/text Status previews have animated fallbacks")
-    audit.check("pulse-alert-radar" in bot_source and "aria-label=\"Pulse Alert\"" in bot_source, "Pulse Alert radar replaces old alert icon")
+    audit.check("pulse-bell-icon" in bot_source and "aria-label=\"Notifications\"" in bot_source, "Header uses global notification bell")
     audit.check("pulse-topnav-avatar" in bot_source and "__SHELL_AVATAR__" in bot_source, "Top nav uses real avatar/fallback slot")
     audit.check("LogiNexus" not in bot_source[bot_source.find("def pulse_page_html") : bot_source.find("def pulse_emit_event")], "Internal design label is not exposed in Home shell")
     audit.check("a[href='/pulse/create']" in home_js and "data-pulse-create-trigger" in home_js, "Legacy create links are intercepted into current composer")

@@ -165,7 +165,7 @@ def main() -> int:
     )
     audit.check("status-preview-image" in css and "statusKenBurns" in css, "Image Status previews animate")
     audit.check("status-preview-text" in css and "statusTextPulse" in css, "Text Status previews animate")
-    audit.check("pulse-alert-radar" in bot_source and "aria-label=\"Pulse Alert\"" in bot_source, "Pulse Alert replaces exclamation icon")
+    audit.check("pulse-bell-icon" in bot_source and "aria-label=\"Notifications\"" in bot_source, "Header uses global notification bell")
     audit.check("__SHELL_AVATAR__" in bot_source and "pulse-topnav-avatar" in bot_source, "Top nav uses server-rendered avatar slot")
     audit.check("href=\"/pulse/notifications\"" in bot_source and "href=\"/pulse/messages\"" in bot_source and "href=\"/pulse/search\"" in bot_source, "Top nav routes are real PulseSoc routes")
     audit.write()
