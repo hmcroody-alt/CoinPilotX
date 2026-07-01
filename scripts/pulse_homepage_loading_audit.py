@@ -138,7 +138,7 @@ def main() -> int:
         worker = client.get(worker_url)
         worker_text = worker.get_data(as_text=True)
         require(worker.status_code == 200, f"service worker loads {worker_url}", str(worker.status_code))
-        require("coinpilotx-cache-v18-pulse-home-bandwidth" in worker_text, f"service worker cache version is current {worker_url}")
+        require("coinplotx-cache-v19-pulse-offline-dashboard" in worker_text, f"service worker cache version is current {worker_url}")
         require("no-store" in worker.headers.get("Cache-Control", ""), f"service worker is not cacheable {worker_url}")
 
     if FAILURES:

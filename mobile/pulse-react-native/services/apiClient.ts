@@ -29,11 +29,19 @@ export async function pulseApi<T>(path: string, options: ApiRequestOptions = {})
   const cookie = await getSessionCookie();
   if (cookie) headers.set("Cookie", cookie);
 
-  const response = await fetch(toApiUrl(path), {
-    ...options,
-    headers,
-    credentials: "include"
-  });
+  let response: Response;
+  try {
+    response = await fetch(toApiUrl(path), {
+      ...options,
+      headers,
+      credentials: "include"
+    });
+  } catch (error) {
+    if (await pulseHealthReachable()) {
+      throw new PulseApiError("PulseSoc is online, but this request could not be completed. Please try again.", 503, "request_unreachable");
+    }
+    throw error;
+  }
 
   const responseCookie = response.headers.get("set-cookie");
   if (responseCookie) {
@@ -103,4 +111,15 @@ function mergeSessionCookies(existingCookie: string, setCookieHeader: string) {
 export function isOfflineError(error: unknown) {
   if (error instanceof PulseApiError) return false;
   return error instanceof TypeError || String(error).toLowerCase().includes("network request failed");
+}
+
+async function pulseHealthReachable() {
+  try {
+    const response = await fetch(`${PULSE_API_BASE_URL}/health?mobile_check=${Date.now()}`, {
+      cache: "no-store"
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }

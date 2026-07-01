@@ -108,7 +108,7 @@
             failures = 0;
             if (status) status.textContent = "Connection restored. Reloading...";
             console.log("[PulseSoc PWA] offline mode exited");
-            window.location.href = "/";
+            window.location.href = "/pulse?offline_recovered=1&ts=" + Date.now();
             return true;
           }
         } catch (error) {

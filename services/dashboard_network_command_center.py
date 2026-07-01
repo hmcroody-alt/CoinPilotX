@@ -377,7 +377,7 @@ def _table_exists(cur: Any, table: str) -> bool:
     try:
         if db_service.IS_POSTGRES:
             cur.execute(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name=?",
+                "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name=%s",
                 (table,),
             )
         else:
@@ -393,7 +393,7 @@ def _columns(cur: Any, table: str) -> set[str]:
     try:
         if db_service.IS_POSTGRES:
             cur.execute(
-                "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?",
+                "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=%s",
                 (table,),
             )
             return {str(_row_value(row, "column_name", 0) or "") for row in cur.fetchall()}

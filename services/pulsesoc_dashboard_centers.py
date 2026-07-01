@@ -100,7 +100,7 @@ def _row_dict(row: Any) -> dict[str, Any]:
 def _table_exists(cur: Any, table: str) -> bool:
     try:
         if db_service.IS_POSTGRES:
-            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name=?", (table,))
+            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name=%s", (table,))
         else:
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
         return bool(cur.fetchone())
@@ -111,7 +111,7 @@ def _table_exists(cur: Any, table: str) -> bool:
 def _columns(cur: Any, table: str) -> set[str]:
     try:
         if db_service.IS_POSTGRES:
-            cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name=?", (table,))
+            cur.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=%s", (table,))
             return {str(_row_dict(row).get("column_name") or row[0]) for row in cur.fetchall()}
         cur.execute(f"PRAGMA table_info({table})")
         return {str(_row_dict(row).get("name") or row[1]) for row in cur.fetchall()}

@@ -50,7 +50,7 @@ def main() -> None:
         "static/sw.js": sw,
         "static/service-worker.js": service_worker,
     }.items():
-        require("coinpilotx-cache-v18-pulse-home-bandwidth" in source, f"{source_name} must bump cache version")
+        require("coinplotx-cache-v19-pulse-offline-dashboard" in source, f"{source_name} must bump cache version")
         require("coinpilotx-cache-v17-command-center-assets" not in source, f"{source_name} must not keep old cache name")
 
     print("Pulse Home bandwidth audit passed.")

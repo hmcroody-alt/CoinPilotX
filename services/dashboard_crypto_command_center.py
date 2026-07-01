@@ -149,7 +149,7 @@ def _table_exists(cur: Any, table: str) -> bool:
         return bool(cur.fetchone())
     except Exception:
         try:
-            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name=?", (table,))
+            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name=%s", (table,))
             return bool(cur.fetchone())
         except Exception:
             return False

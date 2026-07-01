@@ -1259,7 +1259,7 @@ def _table_exists(cur, table_name):
     table_name = str(table_name or "")
     if db_service.ENGINE_NAME == "postgresql":
         cur.execute(
-            "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=? LIMIT 1",
+            "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=%s LIMIT 1",
             (table_name,),
         )
     else:

@@ -217,7 +217,7 @@ def _row_value(row: Any, key: str, index: int = 0, default: Any = None) -> Any:
 def _table_exists(cur: Any, table: str) -> bool:
     try:
         if db_service.IS_POSTGRES:
-            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name=?", (table,))
+            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name=%s", (table,))
         else:
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
         return bool(cur.fetchone())
@@ -231,7 +231,7 @@ def _column_exists(cur: Any, table: str, column: str) -> bool:
     try:
         if db_service.IS_POSTGRES:
             cur.execute(
-                "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=? AND column_name=?",
+                "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=%s AND column_name=%s",
                 (table, column),
             )
             return bool(cur.fetchone())
