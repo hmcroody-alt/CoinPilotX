@@ -194,6 +194,8 @@ def main() -> int:
     require(debug_data.get("viewer_authenticated") is True and debug_data.get("viewer_id") == viewer_id and debug_data.get("live_owner_id") == host_id and debug_data.get("host_exists") is True, "co-host debug endpoint resolves viewer and host identity")
     require(debug_data.get("cohost_enabled") is True and debug_data.get("viewer_is_host") is False and debug_data.get("viewer_banned") is False, "co-host debug endpoint reports permission prerequisites")
     require(debug_data.get("db_connection_ok") is True and debug_data.get("duplicate_request_check") is False and debug_data.get("insert_possible") is True, "co-host debug endpoint verifies database and insert prerequisites")
+    debug_schema = debug_data.get("schema_snapshot") or {}
+    require(debug_data.get("viewer_exists") is True and debug_data.get("schema_ok") is True and debug_schema.get("primary_key") and "live_id" in (debug_schema.get("columns") or {}), "co-host debug endpoint exposes viewer FK and full request-table schema snapshot")
     audience = client.post(f"/api/pulse/live/{live_id}/join", json={"source": "reels", "role": "audience"})
     audience_data = audience.get_json() or {}
     require(audience.status_code == 200 and audience_data.get("status") == "watching" and audience_data.get("role") == "audience", "Reels visibility records real audience presence without claiming co-host join")
