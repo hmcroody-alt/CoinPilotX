@@ -1090,7 +1090,7 @@
     let liveHealthManager = null;
     let videoRecoveryPromise = null;
     const liveDebugSessionId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
-    const LIVE_HOST_PUBLISHER = "LiveHostPublisher";
+    const LIVE_HOST_PUBLISHER = "LiveStudioCameraOwner";
     function livekitClient() {
       return window.LivekitClient || window.LiveKitClient || window.livekitClient || null;
     }
@@ -1257,17 +1257,17 @@
         }
       });
     }
-    function claimLiveHostPublisher() {
-      const existing = window.__PulseSocLiveHostPublisher;
+    function claimLiveStudioCameraOwner() {
+      const existing = window.__PulseSocLiveStudioCameraOwner;
       if (existing?.root && existing.root !== root) {
-        try { existing.stop?.("camera_owner_replaced_by_live_host_publisher"); } catch (_) {}
+        try { existing.stop?.("camera_owner_replaced_by_live_studio_camera_owner"); } catch (_) {}
       }
-      window.__PulseSocLiveHostPublisher = { name: LIVE_HOST_PUBLISHER, root, stop: (reason) => stop(reason) };
+      window.__PulseSocLiveStudioCameraOwner = { name: LIVE_HOST_PUBLISHER, root, stop: (reason) => stop(reason) };
       root.dataset.liveCameraOwner = LIVE_HOST_PUBLISHER;
     }
-    function releaseLiveHostPublisher() {
-      if (window.__PulseSocLiveHostPublisher?.root === root) {
-        delete window.__PulseSocLiveHostPublisher;
+    function releaseLiveStudioCameraOwner() {
+      if (window.__PulseSocLiveStudioCameraOwner?.root === root) {
+        delete window.__PulseSocLiveStudioCameraOwner;
       }
       delete root.dataset.liveCameraOwner;
     }
@@ -1514,7 +1514,7 @@
         livekitConnectPromise = null;
       }
       setCameraSurfaceActive(root, false);
-      releaseLiveHostPublisher();
+      releaseLiveStudioCameraOwner();
       livekitLog("cleanup_completed", { reason, disconnect });
     }
     async function connectLiveKitRoom() {
@@ -1784,7 +1784,7 @@
             showCameraState(root, "Video recovery needs reconnect...", "status");
             livekitLog("live_room_reconnect_started", { reason, message: error?.message || String(error) });
             await cleanupPublisher({ disconnect: true, reason: "video_recovery_reconnect" });
-            claimLiveHostPublisher();
+            claimLiveStudioCameraOwner();
             currentPublishKind = "browser_camera";
             stream = await publishToLiveKit("browser_camera");
             await publishTracks("browser_camera_reconnect");
@@ -1811,10 +1811,10 @@
       cameraStartPromise = (async () => {
       try {
         setConnectButtonsBusy(true);
-        claimLiveHostPublisher();
+        claimLiveStudioCameraOwner();
         pauseCompetingLiveMedia();
         await stop("start_camera_restart");
-        claimLiveHostPublisher();
+        claimLiveStudioCameraOwner();
         root.classList.add("is-connecting");
         showCameraState(root, "Connecting Browser Live to LiveKit...");
         currentPublishKind = "browser_camera";

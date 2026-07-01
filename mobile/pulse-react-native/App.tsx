@@ -163,7 +163,7 @@ function PulseSocWebShell() {
           safeAreaInsets,
           setPerformanceMode,
           navigateToAppUrl,
-          openNativeLive: () => setNativeLiveOpen(true),
+          openNativeLive: () => navigateToAppUrl(`${PULSESOC_ORIGIN}/pulse/live/studio?context_type=native`),
           registerPushToken: token => injectPushTokenRegistration(webViewRef.current, token),
           validatePulseShellCall: call => validatePulseShellCall(callWebApi, call)
         });
@@ -203,7 +203,7 @@ function PulseSocWebShell() {
     }
 
     if (payload.type === "PULSESOC_OPEN_NATIVE_LIVE") {
-      setNativeLiveOpen(true);
+      navigateToAppUrl(`${PULSESOC_ORIGIN}/pulse/live/studio?context_type=native`);
       return;
     }
 
@@ -736,10 +736,10 @@ function createInjectedBridge() {
         notify: function (payload) { post(Object.assign({ type: 'PULSESOC_NOTIFY_DEVICE' }, payload || {})); }
       };
       document.addEventListener('click', function (event) {
-        var target = event.target && event.target.closest && event.target.closest('[data-go-live-native],[data-open-native-live],[href="/pulse/live"][data-native-live]');
+        var target = event.target && event.target.closest && event.target.closest('[data-go-live-native],[data-open-native-live]');
         if (!target) return;
         event.preventDefault();
-        post({ type: 'PULSESOC_OPEN_NATIVE_LIVE', source: 'web-click' });
+        post({ type: 'PULSESOC_OPEN_NATIVE_LIVE', source: 'web-click', path: '/pulse/live/studio?context_type=native' });
       }, true);
       window.dispatchEvent(new CustomEvent('PulseShellReady', { detail: { native: true, version: shellVersion, platform: ${JSON.stringify(Platform.OS)} } }));
       window.dispatchEvent(new CustomEvent('PulseSocNativeReady'));

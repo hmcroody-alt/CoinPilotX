@@ -592,7 +592,7 @@
     const mode = statusUi.mode?.value || "image";
     const musicTrackId = statusUi.musicTrack?.value || "";
     if (mode === "live" && !text && !statusUi.file) {
-      location.href = "/pulse/live";
+      location.href = "/pulse/live/studio?context_type=status";
       return;
     }
     if (!text && !statusUi.file && !musicTrackId) {
@@ -742,7 +742,7 @@
         event.preventDefault();
         event.stopImmediatePropagation();
         const action = liveAction.dataset.statusLiveAction || "go";
-        location.href = action === "schedule" ? "/pulse/live/schedule" : action === "event" ? "/pulse/live/events/new" : "/pulse/live";
+        location.href = action === "schedule" ? "/pulse/live/schedule" : action === "event" ? "/pulse/live/events/create" : "/pulse/live/studio?context_type=status";
       }
     }, true);
     statusUi.mediaInput?.addEventListener("change", event => {
@@ -2579,7 +2579,7 @@
     const liveTrigger = event.target.closest("#pulseComposer [data-composer-live]");
     if (liveTrigger) {
       event.preventDefault();
-      window.location.assign(liveTrigger.getAttribute("href") || "/pulse/live");
+      window.location.assign(liveTrigger.getAttribute("href") || "/pulse/live/studio?context_type=home");
       return;
     }
     const audienceTrigger = event.target.closest("[data-composer-audience]");

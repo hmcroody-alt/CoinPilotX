@@ -37,7 +37,10 @@ def audit_live_file(path: Path) -> None:
     require("createVideoOnlyTracks" in source and "audio: false" in source, f"{name} reacquires video without duplicating audio")
     require("republishVideoTracks" in source and "unpublishLocalTracksByKind" in source, f"{name} has video-only republish path")
     require("browser_camera_recovery" in source and "browser_camera_reconnect" in source, f"{name} escalates from video recovery to room reconnect only after failure")
-    require("LiveHostPublisher" in source and "__PulseSocLiveHostPublisher" in source, f"{name} enforces single camera owner rule")
+    require(
+        "LiveStudioCameraOwner" in source and "__PulseSocLiveStudioCameraOwner" in source,
+        f"{name} enforces single Studio camera owner rule",
+    )
     require("pauseCompetingLiveMedia" in source, f"{name} pauses competing media when host live starts")
     require("pagehide" in source and "cleanupPublisher" in source, f"{name} cleans up on live end/pagehide")
     for event_name in ("visibilitychange", "pageshow", "focus", "orientationchange", "resize"):

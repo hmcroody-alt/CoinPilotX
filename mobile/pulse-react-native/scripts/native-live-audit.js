@@ -28,7 +28,14 @@ if (!app.includes("NSCameraUsageDescription") || !app.includes("NSMicrophoneUsag
 if (!indexTs.includes("registerGlobals()")) failures.push("LiveKit registerGlobals() is missing from startup.");
 if (!appTsx.includes("PULSESOC_OPEN_NATIVE_LIVE")) failures.push("Native live WebView bridge message is missing.");
 if (!appTsx.includes("PULSESOC_WEB_API_RESULT")) failures.push("Authenticated WebView API bridge is missing.");
-if (!nativeLive.includes("useCameraDevice") || !nativeLive.includes("Room")) failures.push("Native live screen is not using VisionCamera and LiveKit.");
+if (!nativeLive.includes("/pulse/live/studio?context_type=native")) failures.push("Native live screen does not hand off to Live Studio.");
+if (!appTsx.includes("/pulse/live/studio?context_type=native")) failures.push("Native live bridge does not route to Live Studio.");
+if (nativeLive.includes("/api/pulse/live/start") || nativeLive.includes("useCameraDevice") || nativeLive.includes("Room")) {
+  failures.push("Native live screen still owns a direct camera or host publishing path.");
+}
+if (appTsx.includes('[href="/pulse/live"][data-native-live]')) {
+  failures.push("Native bridge still hijacks Live discovery into the old native camera path.");
+}
 if (/LIVEKIT_API_SECRET|LIVEKIT_API_KEY|MUX_TOKEN_SECRET|APNS_PRIVATE_KEY|FCM_PRIVATE_KEY/.test(nativeLive + appTsx + indexTs)) failures.push("A secret variable name appears in mobile source.");
 
 if (failures.length) {
