@@ -1204,6 +1204,20 @@ def list_pulse_notifications(user_id, limit=50, category="all", unread_only=Fals
     return {"ok": True, "notifications": rows}
 
 
+def get_pulse_notification(user_id, notification_id):
+    conn = user_context.connect()
+    conn.row_factory = __import__("sqlite3").Row
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM pulse_notifications WHERE id=? AND user_id=? LIMIT 1",
+        (int(notification_id or 0), int(user_id)),
+    )
+    row = cur.fetchone()
+    item = _pulse_row(row) if row else None
+    conn.close()
+    return item
+
+
 def _message_notification_where_clause():
     type_placeholders = ",".join("?" for _ in MESSAGE_NOTIFICATION_TYPES)
     return (
@@ -1311,7 +1325,8 @@ def mark_pulse_read(user_id, notification_id):
     conn.close()
     if changed:
         _dispatch_command_center_async("mark_notification_read", int(user_id), f"pulse-note-{int(notification_id or 0)}", False)
-    return {"ok": True, "updated": changed}
+    counts = pulse_badge_counts(user_id)
+    return {"ok": True, "updated": changed, "badge_counts": counts, **counts}
 
 
 def mark_all_pulse_read(user_id):
@@ -1326,7 +1341,8 @@ def mark_all_pulse_read(user_id):
     conn.close()
     if changed:
         _dispatch_command_center_async("mark_notification_read", int(user_id), "", True)
-    return {"ok": True, "updated": changed}
+    counts = pulse_badge_counts(user_id)
+    return {"ok": True, "updated": changed, "badge_counts": counts, **counts}
 
 
 def delete_pulse_notification(user_id, notification_id):
@@ -1336,7 +1352,8 @@ def delete_pulse_notification(user_id, notification_id):
     changed = cur.rowcount
     conn.commit()
     conn.close()
-    return {"ok": True, "deleted": changed}
+    counts = pulse_badge_counts(user_id)
+    return {"ok": True, "deleted": changed, "badge_counts": counts, **counts}
 
 
 def pulse_preferences(user_id):

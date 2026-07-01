@@ -10,8 +10,28 @@
     realtimeBound: false,
     lastScrollAt: 0,
     pushStatus: null,
+    notesById: new Map(),
     channel: "BroadcastChannel" in window ? new BroadcastChannel("pulse-notifications") : null
   };
+  const NOTIFICATION_ROUTE_PREFIXES = [
+    "/pulse/notifications",
+    "/pulse/messages",
+    "/pulse/live",
+    "/pulse/reels",
+    "/pulse/videos",
+    "/pulse/post",
+    "/pulse/status",
+    "/pulse/profile",
+    "/pulse/alerts",
+    "/pulse/purchases",
+    "/pulse/premium",
+    "/pulse/marketplace",
+    "/dashboard/crypto",
+    "/dashboard/account/security",
+    "/dashboard/economy",
+    "/account/security",
+    "/billing/portal"
+  ];
 
   function bool(value, fallback) {
     return typeof value === "boolean" ? value : fallback;
@@ -164,16 +184,115 @@
     });
   }
 
+  function setTextNodes(selector, count) {
+    const value = Number(count || 0);
+    document.querySelectorAll(selector).forEach(node => {
+      node.textContent = displayCount(value);
+    });
+  }
+
   function setBadges(counts) {
     const alertCount = Number(typeof counts === "number" ? counts : counts?.alert || 0);
     const chatCount = Number(typeof counts === "number" ? 0 : counts?.chat || 0);
     setBadgeNodes("[data-alert-unread], [data-notification-unread]", alertCount);
     setBadgeNodes("[data-chat-unread]", chatCount);
+    setTextNodes("[data-notification-unread-total]", alertCount);
+    setTextNodes("[data-message-unread-total]", chatCount);
     document.title = alertCount > 0 && !/^\(\d+\)/.test(document.title) ? `(${alertCount}) ${document.title}` : document.title.replace(/^\(\d+\)\s+/, alertCount > 0 ? `(${alertCount}) ` : "");
   }
 
+  function applyBadgeCounts(payload) {
+    const source = payload?.badge_counts || payload;
+    if (!source || typeof source !== "object") return;
+    if (!("alert_unread_count" in source) && !("chat_unread_count" in source)) return;
+    const counts = {
+      alert: Number(source.alert_unread_count || 0),
+      chat: Number(source.chat_unread_count || 0),
+      total: Number(source.total_unread_count || 0)
+    };
+    STATE.lastAlertUnread = counts.alert;
+    STATE.lastChatUnread = counts.chat;
+    setBadges(counts);
+  }
+
+  function noteMeta(note) {
+    return note?.metadata && typeof note.metadata === "object" ? note.metadata : {};
+  }
+
+  function noteValue(note, ...keys) {
+    const meta = noteMeta(note);
+    for (const key of keys) {
+      const value = note?.[key];
+      if (value !== undefined && value !== null && String(value) !== "") return value;
+      const metaValue = meta?.[key];
+      if (metaValue !== undefined && metaValue !== null && String(metaValue) !== "") return metaValue;
+    }
+    return "";
+  }
+
+  function safeInternalUrl(value) {
+    const raw = String(value || "").trim();
+    if (!raw || /[\r\n\t]/.test(raw) || /^(javascript|data|blob|file):/i.test(raw)) return "";
+    try {
+      const url = raw.startsWith("/") ? new URL(raw, window.location.origin) : new URL(raw);
+      if (url.origin !== window.location.origin && !/(^|\.)pulsesoc\.com$/i.test(url.hostname)) return "";
+      if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/static/") || url.pathname.startsWith("/admin/")) return "";
+      if (!NOTIFICATION_ROUTE_PREFIXES.some(prefix => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`))) return "";
+      return `${url.pathname}${url.search}${url.hash}` || "/pulse/notifications";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function localNotificationTarget(note) {
+    const type = String(noteValue(note, "type", "notification_type", "event_type") || "").toLowerCase();
+    const entityType = String(noteValue(note, "entity_type", "content_type", "source_type") || "").toLowerCase();
+    const entityId = noteValue(note, "entity_id", "content_id");
+    let conversationId = noteValue(note, "conversation_id", "conversationId", "thread_id", "threadId");
+    let postId = noteValue(note, "post_id", "postId");
+    let reelId = noteValue(note, "reel_id", "reelId");
+    let videoId = noteValue(note, "video_id", "videoId");
+    let statusId = noteValue(note, "status_id", "statusId");
+    const commentId = noteValue(note, "comment_id", "commentId", "reply_id", "replyId");
+    let profileId = noteValue(note, "profile_user_id", "profile_id", "followed_user_id", "sender_user_id", "actor_user_id");
+    let liveId = noteValue(note, "live_id", "liveId", "stream_id", "streamId");
+    let alertId = noteValue(note, "alert_id", "alert_rule_id", "rule_id", "alertId");
+    let purchaseId = noteValue(note, "order_id", "purchase_id", "payment_id", "receipt_id", "orderId", "purchaseId");
+    const symbol = String(noteValue(note, "symbol", "coin", "asset", "ticker") || "").trim().toUpperCase();
+
+    if (entityId) {
+      if (!conversationId && /(message|chat|conversation)/.test(entityType)) conversationId = entityId;
+      if (!postId && entityType.includes("post")) postId = entityId;
+      if (!reelId && entityType.includes("reel")) reelId = entityId;
+      if (!videoId && entityType.includes("video")) videoId = entityId;
+      if (!statusId && entityType.includes("status")) statusId = entityId;
+      if (!profileId && /(profile|user|follow)/.test(entityType)) profileId = entityId;
+      if (!liveId && entityType.includes("live")) liveId = entityId;
+      if (!alertId && /(alert|crypto)/.test(entityType)) alertId = entityId;
+      if (!purchaseId && /(order|purchase|payment|receipt|subscription)/.test(entityType)) purchaseId = entityId;
+    }
+
+    if (conversationId || type.includes("message") || type.includes("chat")) return conversationId ? `/pulse/messages/${encodeURIComponent(conversationId)}` : "/pulse/messages";
+    if (type.includes("cohost_request")) return liveId ? `/pulse/live/studio/${encodeURIComponent(liveId)}` : "/pulse/live/studio";
+    if (liveId || type.includes("live") || type.includes("cohost")) return liveId ? `/pulse/live/${encodeURIComponent(liveId)}` : "/pulse/live";
+    if (reelId) return `/pulse/reels/${encodeURIComponent(reelId)}`;
+    if (videoId) return `/pulse/videos/${encodeURIComponent(videoId)}`;
+    if (postId) return `/pulse/post/${encodeURIComponent(postId)}${commentId ? `#comment-${encodeURIComponent(commentId)}` : ""}`;
+    if (statusId) return `/pulse/status/${encodeURIComponent(statusId)}`;
+    if (profileId && (type.includes("follow") || entityType.includes("profile") || entityType.includes("user"))) return `/pulse/profile/${encodeURIComponent(profileId)}`;
+    if (alertId || type.includes("crypto") || type.includes("scam")) return alertId ? `/pulse/alerts/${encodeURIComponent(alertId)}` : (symbol ? `/dashboard/crypto/alerts?symbol=${encodeURIComponent(symbol)}` : "/dashboard/crypto/alerts");
+    if (type.includes("security") || ["account_login", "new_device", "suspicious_login", "password_changed", "password_reset", "password_reset_requested", "email_changed", "phone_changed", "account_locked"].includes(type)) return "/account/security";
+    if (purchaseId || /(purchase|payment|order|subscription)/.test(type)) return purchaseId ? `/pulse/purchases/${encodeURIComponent(purchaseId)}` : "/dashboard/economy/subscriptions";
+    if (type.includes("premium")) return "/pulse/premium";
+    return safeInternalUrl(note?.deep_link || note?.target_url || noteMeta(note).deep_link || noteMeta(note).target_url) || "/pulse/notifications";
+  }
+
   function noteUrl(note) {
-    return note.deep_link || note.target_url || "/pulse/notifications";
+    const semantic = localNotificationTarget(note);
+    const explicit = safeInternalUrl(note?.deep_link || note?.target_url);
+    if (semantic && semantic !== "/pulse/notifications") return semantic;
+    if (explicit && !["/", "/pulse"].includes(explicit)) return explicit;
+    return semantic || explicit || "/pulse/notifications";
   }
 
   function escapeHtml(value) {
@@ -184,14 +303,16 @@
     const unread = !note.read && note.status !== "read";
     const title = note.title || "PulseSoc update";
     const body = note.body || "";
+    const noteId = Number(note.id || 0);
     return `
-      <article class="pulse-notification-card ${unread ? "unread" : ""}" data-note-id="${Number(note.id || 0)}">
+      <article class="pulse-notification-card ${unread ? "unread" : ""}" data-note-id="${noteId}" data-note-type="${escapeHtml(note.type || note.notification_type || "")}">
         <div class="pulse-note-head"><span class="pill">${escapeHtml(note.category || note.type || "PulseSoc")}</span><small>${escapeHtml(note.created_at || "")}</small></div>
         <h${compact ? "3" : "2"}>${escapeHtml(title)}</h${compact ? "3" : "2"}>
         <p>${escapeHtml(body)}</p>
+        <p class="pulse-note-state" data-note-state hidden></p>
         <div class="actions">
-          <a class="button primary" data-open-note href="${escapeHtml(noteUrl(note))}">Open</a>
-          ${compact ? "" : `<button class="button" data-read-note="${Number(note.id || 0)}">Mark read</button><button class="button" data-delete-note="${Number(note.id || 0)}">Delete</button>`}
+          <a class="button primary" data-open-note="${noteId}" href="${escapeHtml(noteUrl(note))}">Open</a>
+          ${compact ? "" : `<button class="button" data-read-note="${noteId}">Mark read</button><button class="button" data-delete-note="${noteId}">Delete</button>`}
         </div>
       </article>
     `;
@@ -286,6 +407,8 @@
     if (!response.ok) return;
     const payload = await response.json();
     const notes = payload.notifications || [];
+    STATE.notesById = new Map();
+    notes.forEach(note => STATE.notesById.set(Number(note.id || 0), note));
     targets.forEach(target => {
       const compact = target.dataset.notificationList === "dropdown";
       target.innerHTML = notes.length
@@ -299,6 +422,201 @@
     const message = { type: "pulse-notification-refresh", reason: reason || "update", at: Date.now() };
     try { STATE.channel?.postMessage(message); } catch (_) {}
     try { localStorage.setItem("pulseNotificationRefresh", JSON.stringify(message)); } catch (_) {}
+  }
+
+  async function notificationApi(url, options = {}) {
+    const isForm = options.body instanceof FormData;
+    const response = await fetch(url, {
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: isForm ? (options.headers || {}) : { "Content-Type": "application/json", ...(options.headers || {}) },
+      ...options
+    });
+    const payload = await response.json().catch(() => ({ ok: false, message: "Notification action returned an unreadable response." }));
+    if (!response.ok || payload.ok === false) {
+      const error = new Error(payload.message || "Notification action failed.");
+      Object.assign(error, payload, { status: response.status });
+      throw error;
+    }
+    return payload;
+  }
+
+  function cardForAction(action) {
+    return action?.closest?.(".pulse-notification-card");
+  }
+
+  function noteIdForAction(action) {
+    const card = cardForAction(action);
+    return Number(action?.dataset.openNote || action?.dataset.readNote || action?.dataset.deleteNote || card?.dataset.noteId || 0);
+  }
+
+  function setCardState(card, message, mode = "") {
+    if (!card) return;
+    const state = card.querySelector("[data-note-state]");
+    if (!state) return;
+    state.textContent = message || "";
+    state.hidden = !message;
+    state.dataset.state = mode || "";
+  }
+
+  function setActionBusy(action, busy, label) {
+    if (!action) return () => {};
+    const previous = action.textContent;
+    action.setAttribute("aria-busy", busy ? "true" : "false");
+    action.classList.toggle("is-loading", Boolean(busy));
+    if ("disabled" in action) action.disabled = Boolean(busy);
+    if (busy && label) action.textContent = label;
+    return () => {
+      action.setAttribute("aria-busy", "false");
+      action.classList.remove("is-loading");
+      if ("disabled" in action) action.disabled = false;
+      if (action.dataset.readComplete === "true") action.disabled = true;
+      action.textContent = previous;
+    };
+  }
+
+  function markCardRead(card) {
+    if (!card) return;
+    card.classList.remove("unread");
+    const readButton = card.querySelector("[data-read-note]");
+    if (readButton) {
+      readButton.textContent = "Read";
+      readButton.disabled = true;
+      readButton.dataset.readComplete = "true";
+    }
+  }
+
+  function adjustVisibleNotificationCount(delta) {
+    document.querySelectorAll("[data-notification-visible-count]").forEach(node => {
+      node.textContent = displayCount(Math.max(0, Number(node.textContent || 0) + Number(delta || 0)));
+    });
+  }
+
+  function pruneEmptyNotificationSections() {
+    document.querySelectorAll(".pulse-notification-section").forEach(section => {
+      if (!section.querySelector(".pulse-notification-card")) section.remove();
+    });
+    document.querySelectorAll("[data-pulse-notification-list], [data-notification-list]").forEach(list => {
+      if (!list.querySelector(".pulse-notification-card") && !list.querySelector(".empty-state")) {
+        list.innerHTML = `<div class="empty-state">No notifications yet.</div>`;
+      }
+    });
+  }
+
+  async function openNoteAction(action) {
+    const card = cardForAction(action);
+    const noteId = noteIdForAction(action);
+    const note = STATE.notesById.get(noteId) || {};
+    const restore = setActionBusy(action, true, "Opening...");
+    setCardState(card, "Opening notification...", "loading");
+    let target = safeInternalUrl(action?.getAttribute("href")) || localNotificationTarget(note) || "/pulse/notifications";
+    try {
+      if (noteId > 0) {
+        const traceId = (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).slice(0, 80);
+        const payload = await notificationApi(`/api/pulse/notifications/${noteId}/resolve`, {
+          method: "POST",
+          headers: { "X-Trace-Id": traceId },
+          body: JSON.stringify({ mark_read: true, client_target: action?.getAttribute("href") || "" })
+        });
+        applyBadgeCounts(payload);
+        markCardRead(card);
+        target = safeInternalUrl(payload.target_url) || target || "/pulse/notifications";
+        if (payload.fallback_used) setCardState(card, "That destination was unavailable. Opening Notifications instead.", "warning");
+      }
+    } catch (error) {
+      console.warn("[PulseSoc notification open fallback]", { notification_id: noteId, type: note?.type || card?.dataset.noteType || "", target_url: target, trace_id: error.trace_id || "", error });
+      setCardState(card, "That destination was unavailable. Opening Notifications instead.", "error");
+      target = "/pulse/notifications";
+    } finally {
+      restore();
+    }
+    window.setTimeout(() => {
+      window.location.assign(safeInternalUrl(target) || "/pulse/notifications");
+    }, 40);
+  }
+
+  async function markReadAction(action) {
+    const card = cardForAction(action);
+    const noteId = noteIdForAction(action);
+    if (!noteId) return;
+    const wasUnread = card?.classList.contains("unread");
+    const restore = setActionBusy(action, true, "Saving...");
+    markCardRead(card);
+    setCardState(card, "Marked read.", "success");
+    try {
+      const payload = await notificationApi(`/api/pulse/notifications/${noteId}/read`, { method: "POST", body: JSON.stringify({ notification_id: noteId }) });
+      applyBadgeCounts(payload);
+      broadcastRefresh("mark-read");
+    } catch (error) {
+      if (wasUnread) card?.classList.add("unread");
+      setCardState(card, error.message || "Could not mark this notification read.", "error");
+    } finally {
+      restore();
+    }
+  }
+
+  async function deleteNoteAction(action) {
+    const card = cardForAction(action);
+    const parent = card?.parentNode;
+    const next = card?.nextSibling;
+    const noteId = noteIdForAction(action);
+    if (!noteId || !card || !parent) return;
+    const restore = setActionBusy(action, true, "Deleting...");
+    card.style.opacity = "0.52";
+    window.setTimeout(() => {
+      if (card.isConnected) card.remove();
+      pruneEmptyNotificationSections();
+    }, 30);
+    try {
+      const payload = await notificationApi(`/api/pulse/notifications/${noteId}`, { method: "DELETE", body: JSON.stringify({ notification_id: noteId }) });
+      applyBadgeCounts(payload);
+      STATE.notesById.delete(noteId);
+      adjustVisibleNotificationCount(-1);
+      broadcastRefresh("delete");
+    } catch (error) {
+      if (!card.isConnected) parent.insertBefore(card, next || null);
+      card.style.opacity = "";
+      setCardState(card, error.message || "Could not delete this notification.", "error");
+    } finally {
+      restore();
+    }
+  }
+
+  async function markAllReadAction(action) {
+    const restore = setActionBusy(action, true, "Saving...");
+    document.querySelectorAll(".pulse-notification-card.unread").forEach(markCardRead);
+    try {
+      const payload = await notificationApi("/api/pulse/notifications/read-all", { method: "POST", body: JSON.stringify({}) });
+      applyBadgeCounts(payload);
+      broadcastRefresh("mark-all-read");
+    } catch (error) {
+      document.querySelectorAll("[data-note-state]").forEach(node => {
+        node.textContent = error.message || "Could not mark all notifications read.";
+        node.hidden = false;
+        node.dataset.state = "error";
+      });
+    } finally {
+      restore();
+    }
+  }
+
+  function bindNotificationActions() {
+    if (window.__pulseNotificationActionsBound) return;
+    window.__pulseNotificationActionsBound = true;
+    document.addEventListener("click", event => {
+      const open = event.target.closest("[data-open-note]");
+      const read = event.target.closest("[data-read-note]");
+      const del = event.target.closest("[data-delete-note]");
+      const all = event.target.closest("[data-read-all-notes]");
+      const action = open || read || del || all;
+      if (!action) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (open) openNoteAction(open);
+      else if (read) markReadAction(read);
+      else if (del) deleteNoteAction(del);
+      else if (all) markAllReadAction(all);
+    }, true);
   }
 
   async function handleLiveNotification(payload) {
@@ -536,6 +854,7 @@
   window.CoinPilotNotifications = { loadPreferences, loadPulsePreferences, loadPushStatus, subscribePush, unsubscribePush, testNotification, playSound, vibrate, pollNotifications, refreshNotificationList, handleLiveNotification };
 
   document.addEventListener("DOMContentLoaded", async () => {
+    bindNotificationActions();
     bindSettings();
     await loadPreferences().then(renderSettings).catch(() => {});
     await loadPushStatus().catch(() => {});

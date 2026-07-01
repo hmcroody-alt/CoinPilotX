@@ -64,6 +64,15 @@ def main() -> int:
 
     require("notificationUrlFromData" in NATIVE and "native_url || payload.app_url || payload.mobile_deep_link" in NATIVE, "native tap routing must prefer native deep links", failures)
     require("noteUrl(note)" in WEB and "data-open-note" in WEB + BOT, "web notification open action must use notification deep links", failures)
+    require("pulse_notification_resolve_target" in BOT and "_pulse_notification_route_exists" in BOT, "web notification open action must validate routes before navigation", failures)
+    require("PULSE_NOTIFICATION_ALLOWED_ROUTE_PREFIXES" in BOT and "path.startswith(f\"{prefix}/\")" in BOT, "route validation must use a notification destination allowlist", failures)
+    require("/api/pulse/notifications/<int:notification_id>/resolve" in BOT, "web notification open action must use backend resolver", failures)
+    require("PULSE_NOTIFICATION_BAD_TARGET" in BOT, "bad notification targets must be logged with trace context", failures)
+    require("openNoteAction" in WEB and "safeInternalUrl" in WEB and "window.location.assign" in WEB, "web notification Open must use safe fallback navigation", failures)
+    require("NOTIFICATION_ROUTE_PREFIXES" in WEB and "url.pathname.startsWith(`${prefix}/`)" in WEB, "frontend open links must reject non-notification routes", failures)
+    require("markReadAction" in WEB and "deleteNoteAction" in WEB and "applyBadgeCounts(payload)" in WEB, "web notification Mark read/Delete must update UI and badges", failures)
+    for route in ['"/pulse/alerts/<path:alert_id>"', '"/pulse/purchases/<path:purchase_id>"', '"/account/security"', '"/pulse/status/<path:status_id>"']:
+        require(route in BOT, f"missing safe notification compatibility route {route}", failures)
 
     if failures:
         print("notification deeplink audit FAILED")
