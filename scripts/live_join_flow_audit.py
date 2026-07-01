@@ -104,6 +104,30 @@ class FailingSideEffectConnection(FailingInsertConnection):
         return FailingSideEffectCursor(self.inner.cursor())
 
 
+class FailingCommitConnection:
+    def __init__(self, inner):
+        object.__setattr__(self, "inner", inner)
+        object.__setattr__(self, "commit_calls", 0)
+
+    def cursor(self):
+        return self.inner.cursor()
+
+    def commit(self):
+        object.__setattr__(self, "commit_calls", int(getattr(self, "commit_calls", 0)) + 1)
+        if int(getattr(self, "commit_calls", 0)) == 1:
+            raise bot.sqlite3.OperationalError("audit forced co-host commit failure")
+        return self.inner.commit()
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+    def __setattr__(self, name, value):
+        if name in {"inner", "commit_calls"}:
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self.inner, name, value)
+
+
 def create_extra_viewer(prefix: str) -> int:
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db_service.connect()
@@ -201,6 +225,24 @@ def main() -> int:
         bot.db = original_db
     failed_insert_data = failed_insert.get_json() or {}
     require(failed_insert.status_code == 500 and failed_insert_data.get("error_code") == "DB_INSERT_FAILED" and failed_insert_data.get("step") == "db_insert" and failed_insert_data.get("trace_id") == "audit-db-insert", "database insert failures return their exact stage and trace")
+    commit_failure_viewer_id = create_extra_viewer("livecommitfailaudit")
+    login(client, commit_failure_viewer_id)
+    original_db = bot.db
+    try:
+        bot.db = lambda: FailingCommitConnection(original_db())
+        failed_commit = client.post(
+            f"/api/pulse/live/{live_id}/cohost/request",
+            json={"requested_role": "cohost", "camera_ready": True, "mic_ready": True, "network_quality": "ready", "trace_id": "audit-db-commit"},
+        )
+    finally:
+        bot.db = original_db
+    failed_commit_data = failed_commit.get_json() or {}
+    require(failed_commit.status_code == 500 and failed_commit_data.get("error_code") == "DB_TRANSACTION_FAILED" and failed_commit_data.get("step") == "db_transaction" and failed_commit_data.get("trace_id") == "audit-db-commit" and failed_commit_data.get("error_type") == "OperationalError", "database commit failures return exact transaction stage, trace, and exception type")
+    conn = db_service.connect(); conn.row_factory = bot.sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_live_guest_requests WHERE live_id=? AND user_id=?", (live_id, commit_failure_viewer_id))
+    rolled_back_total = int(dict(cur.fetchone() or {}).get("total") or 0)
+    conn.close()
+    require(rolled_back_total == 0, "failed co-host request commit rolls back without leaving a partial pending row")
     side_effect_viewer_id = create_extra_viewer("livesideeffectaudit")
     login(client, side_effect_viewer_id)
     original_db = bot.db
@@ -236,6 +278,7 @@ def main() -> int:
     )
     initializing_data = initializing.get_json() or {}
     require(initializing.status_code == 200 and initializing_data.get("state") == "pending", "cohost/request alias returns the same structured contract")
+    require(initializing_data.get("request_id") == request_id and initializing_data.get("step") == "already_requested", "duplicate co-host requests reuse the existing pending request instead of attempting a risky insert")
 
     state = client.get(f"/api/pulse/live/{live_id}/state").get_json() or {}
     require((state.get("viewer_join_request") or {}).get("status") == "pending" and (state.get("viewer_join_request") or {}).get("requested_role") == "cohost", "viewer state shows pending co-host request")
@@ -312,6 +355,9 @@ def main() -> int:
     require("/cohost/request" in BOT and "LIVE_NOT_ACTIVE" in BOT and "pulse_live_cohost_live_status" in BOT, "co-host request alias and active-live gate exist")
     require("INVALID_LIVE_ID" in BOT and "AUTH_FAILED" in BOT and "api_pulse_live_join_request_invalid_id" in BOT, "co-host entry and auth failures cannot bypass the structured JSON contract")
     require("PULSE_COHOST_STEP" in BOT and "db_insert_attempted" in BOT and "DB_INSERT_FAILED" in BOT and "DB_TRANSACTION_FAILED" in BOT, "co-host request pipeline logs exact stages and separates database failures")
+    require("pulse_live_db_exception_details" in BOT and "sqlstate" in BOT and "constraint_name" in BOT and "PULSE_COHOST_DB_EXCEPTION" in BOT, "co-host database failures log raw exception class, SQLSTATE, constraint, and stack context")
+    require("pulse_live_guest_request_schema_snapshot" in BOT and "DB_SCHEMA_MISMATCH" in BOT and "FOREIGN_KEY_INVALID" in BOT, "co-host request creation verifies schema and foreign-key prerequisites before insert")
+    require("duplicate_insert_race_recovered" in BOT and "duplicate_commit_race_recovered" in BOT and "pulse_live_pending_request_response" in BOT, "duplicate co-host request races return the existing pending request")
     require("pulse_cohost_guard_error" in BOT and "RATE_LIMITED" in BOT and "security_gate" in BOT, "pre-route security controls preserve the co-host diagnostic contract")
     require("api_pulse_live_cohost_debug" in BOT and "insert_possible" in BOT and "duplicate_request_check" in BOT, "authenticated co-host diagnostic endpoint exposes request prerequisites")
     require("PULSE_COHOST_PIPELINE_STAGES" in BOT and "stage_number" in BOT and "duration_ms" in BOT and "failed_stage" in BOT, "co-host trace records expose stage timing and failure detail")
