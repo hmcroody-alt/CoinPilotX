@@ -92,6 +92,28 @@ class FailingInsertConnection:
             setattr(self.inner, name, value)
 
 
+class FailingSideEffectCursor(FailingInsertCursor):
+    def execute(self, sql, params=()):
+        if "INSERT INTO PULSE_LIVE_CHAT" in str(sql).upper():
+            raise bot.sqlite3.OperationalError("audit forced optional chat failure")
+        return self.inner.execute(sql, params)
+
+
+class FailingSideEffectConnection(FailingInsertConnection):
+    def cursor(self):
+        return FailingSideEffectCursor(self.inner.cursor())
+
+
+def create_extra_viewer(prefix: str) -> int:
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db_service.connect()
+    cur = conn.cursor()
+    user_id = create_user(cur, prefix, now)
+    conn.commit()
+    conn.close()
+    return user_id
+
+
 def create_initializing_live(host_id: int) -> int:
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db_service.connect()
@@ -179,6 +201,25 @@ def main() -> int:
         bot.db = original_db
     failed_insert_data = failed_insert.get_json() or {}
     require(failed_insert.status_code == 500 and failed_insert_data.get("error_code") == "DB_INSERT_FAILED" and failed_insert_data.get("step") == "db_insert" and failed_insert_data.get("trace_id") == "audit-db-insert", "database insert failures return their exact stage and trace")
+    side_effect_viewer_id = create_extra_viewer("livesideeffectaudit")
+    login(client, side_effect_viewer_id)
+    original_db = bot.db
+    try:
+        bot.db = lambda: FailingSideEffectConnection(original_db())
+        side_effect_request = client.post(
+            f"/api/pulse/live/{live_id}/cohost/request",
+            json={"requested_role": "cohost", "camera_ready": True, "mic_ready": True, "network_quality": "ready", "trace_id": "audit-side-effect"},
+        )
+    finally:
+        bot.db = original_db
+    side_effect_data = side_effect_request.get_json() or {}
+    require(side_effect_request.status_code == 200 and side_effect_data.get("state") == "pending" and side_effect_data.get("notification_state") == "polling_fallback", "optional notification failure cannot roll back an authoritative pending request")
+    conn = db_service.connect(); conn.row_factory = bot.sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT status FROM pulse_live_guest_requests WHERE id=?", (side_effect_data.get("request_id"),))
+    persisted_side_effect_request = dict(cur.fetchone() or {})
+    conn.close()
+    require(persisted_side_effect_request.get("status") == "pending", "pending request remains committed after optional side-effect rollback")
+    login(client, viewer_id)
     request_res = client.post(
         f"/api/pulse/live/{live_id}/join-request",
         json={"requested_role": "cohost", "camera_ready": True, "mic_ready": True, "network_quality": "ready", "connection": {"camera_ready": True, "mic_ready": True}},
@@ -208,7 +249,7 @@ def main() -> int:
     login(client, viewer_id)
     denied_state = client.get(f"/api/pulse/live/{live_id}/join-status").get_json() or {}
     require(denied_state.get("status") == "denied" and denied_state.get("can_publish") is False, "denied viewer sees denied and receives no publish permission")
-    second = client.post(f"/api/pulse/live/{live_id}/join-request", json={"requested_role": "cohost", "camera_ready": True, "mic_ready": True, "network_quality": "ready"})
+    second = client.post(f"/api/pulse/live/{live_id}/join-request", json={"requested_role": "cohost", "camera_ready": True, "mic_ready": True, "network_quality": "ready", "trace_id": "audit-finalization"})
     second_data = second.get_json() or {}
     second_id = int((second_data.get("request") or {}).get("id") or 0)
     require(second.status_code == 200 and second_id and second_id != request_id, "viewer can request again after denial")
@@ -217,21 +258,48 @@ def main() -> int:
     accept_res = client.post(f"/api/pulse/live/{live_id}/join-requests/{second_id}/accept", json={})
     accept_data = accept_res.get_json() or {}
     guest = accept_data.get("guest") or {}
-    require(accept_res.status_code == 200 and accept_data.get("status") == "accepted" and guest.get("id"), "host can accept request and create guest permission")
+    require(accept_res.status_code == 200 and accept_data.get("status") == "accepted" and guest.get("id") and guest.get("status") == "accepted", "host can atomically accept request and create accepted guest permission")
     accepted_host_state = client.get(f"/api/pulse/live/{live_id}/state").get_json() or {}
     require(any(int(item.get("user_id") or 0) == viewer_id and item.get("role") == "cohost" for item in accepted_host_state.get("guests") or []), "accepted co-host appears in host Live guest state")
 
     login(client, viewer_id)
     status = client.get(f"/api/pulse/live/{live_id}/join-status").get_json() or {}
     require(status.get("can_publish") is True and (status.get("guest") or {}).get("id") == guest.get("id"), "accepted viewer receives co-host publish state")
-    token_res = client.post(f"/api/pulse/live/{live_id}/livekit/token", json={"role": "cohost"})
-    token_data = token_res.get_json() or {}
-    require(token_res.status_code in {200, 503}, "accepted co-host reaches server-side publish token gate")
-    if token_res.status_code == 200:
-        require(token_data.get("role") == "cohost" and token_data.get("can_publish") is True, "accepted co-host receives publish-capable cohost token")
-        require(token_data.get("can_subscribe") is True and token_data.get("can_publish_data") is True and token_data.get("room_join") is True, "co-host token response exposes required publish claims")
-    else:
-        require(token_data.get("error_code") == "TOKEN_GENERATION_FAILED" and token_data.get("step") == "token_failed", "token generation failure is structured")
+    original_livekit = {key: os.environ.get(key) for key in ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")}
+    os.environ.update({"LIVEKIT_URL": "wss://livekit.audit.invalid", "LIVEKIT_API_KEY": "audit-key", "LIVEKIT_API_SECRET": "audit-secret"})
+    try:
+        token_res = client.post(f"/api/pulse/live/{live_id}/livekit/token", json={"role": "cohost", "trace_id": "audit-finalization"})
+        token_data = token_res.get_json() or {}
+        require(token_res.status_code == 200 and token_data.get("role") == "cohost" and token_data.get("can_publish") is True, "accepted co-host receives a verified publish-capable token")
+        require(token_data.get("can_subscribe") is True and token_data.get("can_publish_data") is True and token_data.get("room_join") is True and token_data.get("participant_name"), "co-host token response exposes every required participant claim")
+        claims = token_data.get("token_claims") or {}
+        require(claims.get("identity") == guest.get("livekit_identity") and claims.get("room") == guest.get("livekit_room") and claims.get("role") == "cohost" and claims.get("expiration", 0) > 0, "server verifies identity, room, role, expiration, and metadata before token delivery")
+        joining = client.get(f"/api/pulse/live/{live_id}/join-status").get_json() or {}
+        require((joining.get("guest") or {}).get("status") == "joining", "verified token moves guest from accepted to joining")
+        original_inspector = bot.pulse_livekit_room_participants
+        bot.pulse_livekit_room_participants = lambda room_name, **kwargs: {"ok": True, "participants": []}
+        pending_promotion = client.post(f"/api/pulse/live/{live_id}/guests/{int(guest.get('id'))}/publish-complete", json={"trace_id": "audit-finalization"})
+        pending_promotion_data = pending_promotion.get_json() or {}
+        require(pending_promotion.status_code == 202 and pending_promotion_data.get("state") == "joining" and pending_promotion_data.get("promotion_pending") is True and pending_promotion_data.get("missing_event") == "participant_joined", "missing provider participant remains joining with an exact pending event")
+        bot.pulse_livekit_room_participants = lambda room_name, **kwargs: {"ok": True, "participants": [{"identity": guest.get("livekit_identity"), "sid": "PA_audit", "tracks": [{"sid": "TR_video", "type": "VIDEO", "muted": False}, {"sid": "TR_audio", "type": "AUDIO", "muted": False}]}]}
+        try:
+            promoted = client.post(
+                f"/api/pulse/live/{live_id}/guests/{int(guest.get('id'))}/publish-complete",
+                json={"trace_id": "audit-finalization", "participant_identity": guest.get("livekit_identity"), "room_connected": True, "video_publication_sid": "TR_video", "audio_publication_sid": "TR_audio"},
+            )
+        finally:
+            bot.pulse_livekit_room_participants = original_inspector
+        promoted_data = promoted.get_json() or {}
+        require(promoted.status_code == 200 and promoted_data.get("state") == "live" and (promoted_data.get("guest") or {}).get("status") == "live", "server inspection confirms participant and both tracks before live promotion")
+        trace_detail = client.get(f"/api/pulse/live/{live_id}/cohost/trace/audit-finalization").get_json() or {}
+        stage_numbers = {int(stage.get("stage_number") or 0) for stage in trace_detail.get("stages") or []}
+        require(trace_detail.get("ok") is True and {11, 12, 13, 14, 19, 20}.issubset(stage_numbers), "trace detail exposes acceptance, identity, token, participant, and promotion stages")
+    finally:
+        for key, value in original_livekit.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
     login(client, host_id)
     mute = client.post(f"/api/pulse/live/{live_id}/guests/{int(guest.get('id'))}/mute", json={})
@@ -246,6 +314,10 @@ def main() -> int:
     require("PULSE_COHOST_STEP" in BOT and "db_insert_attempted" in BOT and "DB_INSERT_FAILED" in BOT and "DB_TRANSACTION_FAILED" in BOT, "co-host request pipeline logs exact stages and separates database failures")
     require("pulse_cohost_guard_error" in BOT and "RATE_LIMITED" in BOT and "security_gate" in BOT, "pre-route security controls preserve the co-host diagnostic contract")
     require("api_pulse_live_cohost_debug" in BOT and "insert_possible" in BOT and "duplicate_request_check" in BOT, "authenticated co-host diagnostic endpoint exposes request prerequisites")
+    require("PULSE_COHOST_PIPELINE_STAGES" in BOT and "stage_number" in BOT and "duration_ms" in BOT and "failed_stage" in BOT, "co-host trace records expose stage timing and failure detail")
+    require("pulse_livekit_verify_token_claims" in BOT and "TOKEN_CLAIMS_INVALID" in BOT and "token_claims" in BOT, "LiveKit token signature and claims are verified before delivery")
+    require("live_cohost_token_ready" in BOT and "live_cohost_participant_joined" in BOT and "live_cohost_publish_complete" in BOT and "live_cohost_guest_live" in BOT, "co-host finalization emits every required realtime lifecycle event")
+    require("status='joining'" in BOT and "status='joined'" in BOT and "status='publishing'" in BOT and "status='live'" in BOT, "co-host database state advances through joining, joined, publishing, and live")
     require('"request_id": request_id' in BOT and '"state": "pending"' in BOT and "PULSE_COHOST_FAILURE" in BOT, "co-host request endpoint has structured success and failure logging")
     require("requested_role TEXT DEFAULT 'cohost'" in BOT and '"requested_role": clean_html' in BOT, "co-host request role is persisted and returned")
     require("guest_role TEXT DEFAULT 'cohost'" in BOT and "permissions_json" in BOT, "co-host records store role and publish permissions")
@@ -264,7 +336,7 @@ def main() -> int:
     require("checking_permissions:'Checking permissions...'" in BOT and "waiting_for_host:'Waiting for Host'" in BOT and "host_accepted:'Accepted" in BOT and "cohost_live:'Co-host Live'" in BOT and "unavailable_with_reason:'Unable to request'" in BOT, "Reels renders the required backend-driven request states")
     require("liveReelErrorState" in BOT and "label=liveReelFailureMessage" in BOT and "Object.assign(err,d)" in BOT, "Reels preserves and displays backend co-host failure reasons")
     require("btn.textContent=btn.classList.contains('reel-live-join')?'Joined':'✓'" not in BOT, "Reels no longer paints a fake Joined state after audience presence")
-    require('button.textContent = "Joined"' in JS and JS.index('button.textContent = "Joined"') > JS.index("await room.localParticipant.publishTrack(track)"), "Joined is rendered only after co-host tracks publish")
+    require('confirmation.state !== "live"' in JS and JS.index('button.textContent = "Joined"') > JS.index('confirmation.state !== "live"'), "Joined is rendered only after server-confirmed participant and track promotion")
     require("fake join" not in BOT.lower() and "fake guest" not in BOT.lower(), "no fake join request literals")
     require('href="#"' not in BOT and "javascript:void(0)" not in BOT, "no dead href/hash or javascript void links")
     print("live join flow audit ok")

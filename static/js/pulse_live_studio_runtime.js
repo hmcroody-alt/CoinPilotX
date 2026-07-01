@@ -160,7 +160,7 @@
   }
 
   function scheduleLiveStatePolling(root) {
-    const interval = Math.max(2200, Number(root.dataset.livePollMs || 4500));
+    const interval = Math.max(900, Number(root.dataset.livePollMs || 1200));
     let inFlight = false;
     const poll = async () => {
       if (document.hidden || inFlight) return;
@@ -392,12 +392,14 @@
     const status = guest ? "accepted" : (request?.status || "none");
     panel.dataset.liveRequestStatus = status;
     if (guest) {
-      const published = Boolean(root.__pulseLiveGuestPublished);
-      panel.innerHTML = `<button class="live-primary-action is-accepted" type="button" data-live-guest-join disabled>${published ? "Joined" : "Accepted — Joining..."}</button><button type="button" data-live-guest-leave data-live-guest-id="${Number(guest.id || 0)}">Leave co-host seat</button><p class="muted" data-live-join-status>${published ? "Joined as co-host. Camera and microphone are live." : "Publishing is server-approved for this co-host slot."}</p>`;
+      const published = guest.status === "live" && Boolean(root.__pulseLiveGuestPublished);
+      const joining = ["joining", "joined", "publishing"].includes(String(guest.status || ""));
+      panel.innerHTML = `<button class="live-primary-action is-accepted" type="button" data-live-guest-join disabled>${published ? "Joined" : joining ? "Publishing..." : "Accepted — Joining..."}</button><button type="button" data-live-guest-leave data-live-guest-id="${Number(guest.id || 0)}">Leave co-host seat</button><p class="muted" data-live-join-status>${published ? "Joined as co-host. Camera and microphone are live." : joining ? "Waiting for LiveKit participant and track confirmation." : "Publishing is server-approved for this co-host slot."}</p>`;
       if (published) return;
       publishGuestToLiveKit(root).catch((error) => {
         qsa(root, "[data-live-guest-join]").forEach((button) => { button.textContent = "Retry publish"; button.disabled = false; });
-        const message = `${error.message || "Co-host publishing could not start."}${error.trace_id ? ` (Trace ${error.trace_id})` : ""}`;
+        const diagnostic = error.error_code ? ` ${error.error_code} at ${error.step || "unknown_stage"}.` : "";
+        const message = `${error.message || "Co-host publishing could not start."}${diagnostic}${error.trace_id ? ` (Trace ${error.trace_id})` : ""}`;
         console.error("[PulseSoc cohost publish failure]", { error_code: error.error_code || "LIVEKIT_PUBLISH_FAILED", step: error.step || "publish_failed", trace_id: error.trace_id || "", message: error.message || "" });
         setText(root, "[data-live-join-status]", message);
       });
@@ -430,8 +432,14 @@
     root.__pulseLiveGuestStream?.getTracks?.().forEach((track) => {
       try { track.stop(); } catch (_) {}
     });
+    root.__pulseLiveGuestAudioStream?.getTracks?.().forEach((track) => {
+      try { track.stop(); } catch (_) {}
+    });
     root.__pulseLiveGuestTracks = [];
     root.__pulseLiveGuestStream = null;
+    root.__pulseLiveGuestAudioStream = null;
+    root.__pulseLiveGuestToken = null;
+    root.__pulseLiveGuestTokenClaims = null;
   }
 
   async function checkGuestReadiness(root) {
@@ -458,6 +466,33 @@
     return payload;
   }
 
+  function cohostTraceId(root) {
+    const liveId = String(root?.dataset?.liveId || "");
+    const key = `pulseCohostTrace:${liveId}`;
+    let traceId = root?.dataset?.liveCohostTraceId || "";
+    try { traceId = traceId || sessionStorage.getItem(key) || ""; } catch (_) {}
+    if (!traceId) traceId = window.crypto?.randomUUID?.() || `cohost-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    if (root) root.dataset.liveCohostTraceId = traceId;
+    try { sessionStorage.setItem(key, traceId); } catch (_) {}
+    return traceId;
+  }
+
+  function cohostStageError(code, message, step, traceId) {
+    const error = new Error(message);
+    Object.assign(error, { error_code: code, step, trace_id: traceId });
+    return error;
+  }
+
+  async function traceCohostStage(root, step, details = {}) {
+    const liveId = String(root?.dataset?.liveId || "");
+    if (!liveId) return;
+    const payload = { trace_id: cohostTraceId(root), step, request_id: Number(details.request_id || root?.dataset?.liveRequestId || 0), error_code: details.error_code || "", details };
+    console.info("[PulseSoc cohost stage]", payload);
+    try {
+      await fetch(`/api/pulse/live/${encodeURIComponent(liveId)}/cohost-trace`, { method: "POST", credentials: "same-origin", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), keepalive: true });
+    } catch (_) {}
+  }
+
   async function requestJoinLive(root) {
     const id = String(root?.dataset?.liveId || "").trim();
     const button = qs(root, "[data-live-join-request]");
@@ -478,7 +513,7 @@
       const readiness = await checkGuestReadiness(root);
       button.textContent = "Checking...";
       const endpoint = `/api/pulse/live/${encodeURIComponent(id)}/cohost/request`;
-      const requestPayload = { ...readiness, requested_role: "cohost", request_message: readiness.request_message || "Requesting co-host camera/mic access.", trace_id: window.crypto?.randomUUID?.() || String(Date.now()) };
+      const requestPayload = { ...readiness, requested_role: "cohost", request_message: readiness.request_message || "Requesting co-host camera/mic access.", trace_id: cohostTraceId(root) };
       console.info("[PulseSoc cohost request]", { live_id: id, endpoint, auth_context: "same-origin-session", payload: requestPayload });
       const response = await fetch(endpoint, {
         method: "POST",
@@ -493,13 +528,15 @@
         throw error;
       }
       console.info("[PulseSoc cohost response]", { live_id: id, request_id: data.request_id || data.request?.id || 0, state: data.state || data.status || "", step: data.step || "", trace_id: data.trace_id || requestPayload.trace_id });
+      root.dataset.liveRequestId = String(data.request_id || data.request?.id || 0);
       button.textContent = data.status === "accepted" ? "Accepted — Joining..." : "Request Sent";
       setStatus(data.message || "Request sent. Waiting for host approval.");
       await fetchState(root);
     } catch (error) {
       button.disabled = false;
       button.textContent = "Retry Co-host";
-      const message = `${error.message || "The co-host request did not complete."}${error.trace_id ? ` (Trace ${error.trace_id})` : ""}`;
+      const diagnostic = error.error_code ? ` ${error.error_code} at ${error.step || "unknown_stage"}.` : "";
+      const message = `${error.message || "The co-host request did not complete."}${diagnostic}${error.trace_id ? ` (Trace ${error.trace_id})` : ""}`;
       console.error("[PulseSoc cohost failure]", { live_id: id, error_code: error.error_code || "UNKNOWN_COHOST_ERROR", step: error.step || "client_request", trace_id: error.trace_id || "", message: error.message || "" });
       setStatus(message);
       notify(message);
@@ -533,7 +570,11 @@
       body: JSON.stringify({}),
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || data.ok === false) throw new Error(data.message || "Join request action failed.");
+    if (!response.ok || data.ok === false) {
+      const error = new Error(data.message || "Join request action failed.");
+      Object.assign(error, data);
+      throw error;
+    }
     notify(data.message || `Join request ${action}ed.`);
     await fetchState(root);
   }
@@ -560,42 +601,157 @@
 
   async function publishGuestToLiveKit(root) {
     if (root.__pulseLiveGuestPublished || root.__pulseLiveGuestPublishing) return;
-    const id = root?.dataset?.liveId;
+    const id = String(root?.dataset?.liveId || "");
     if (!id || root.dataset.liveViewerKind === "host") return;
     const LK = livekitClient();
-    if (!LK) throw new Error("LiveKit is not available in this browser.");
+    let traceId = cohostTraceId(root);
+    if (!LK) throw cohostStageError("LIVEKIT_ROOM_JOIN_FAILED", "LiveKit is not available in this browser.", "livekit_client", traceId);
     root.__pulseLiveGuestPublishing = true;
+    let room = null;
+    const pendingTracks = [];
+    const started = new Map();
+    const begin = async (step, details = {}) => {
+      started.set(step, performance.now());
+      await traceCohostStage(root, step, { ...details, result: "started", started_at: new Date().toISOString() });
+    };
+    const complete = async (step, details = {}) => {
+      const began = started.get(step) || performance.now();
+      await traceCohostStage(root, step, { ...details, result: "completed", completed_at: new Date().toISOString(), duration_ms: Math.max(0, Math.round(performance.now() - began)) });
+    };
     try {
       setText(root, "[data-live-join-status]", "Accepted — Joining with camera and microphone...");
+      await begin("cohost_token_request_started", { stage_number: 13, stage_name: "livekit_token_generation_started" });
       const tokenResponse = await fetch(`/api/pulse/live/${id}/livekit/token`, {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role: "cohost" }),
+        body: JSON.stringify({ role: "cohost", trace_id: traceId }),
       });
-      const tokenData = await tokenResponse.json().catch(() => ({}));
-      if (!tokenResponse.ok || tokenData.ok === false) throw new Error(tokenData.message || "Co-host token could not be created.");
-      const room = new LK.Room({ adaptiveStream: true, dynacast: true });
-      await room.connect(tokenData.livekit_url, tokenData.token, { autoSubscribe: true });
-      let tracks = [];
-      if (LK.createLocalTracks) {
-        tracks = await LK.createLocalTracks({ video: true, audio: true });
-        for (const track of tracks) await room.localParticipant.publishTrack(track);
-      } else {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        root.__pulseLiveGuestStream = stream;
-        tracks = stream.getTracks();
-        for (const track of tracks) await room.localParticipant.publishTrack(track);
+      const tokenText = await tokenResponse.text();
+      let tokenData = {};
+      try { tokenData = JSON.parse(tokenText || "{}"); }
+      catch (_) { throw cohostStageError("TOKEN_DELIVERY_FAILED", "The server returned an unreadable co-host token response.", "token_delivery", traceId); }
+      if (!tokenResponse.ok || tokenData.ok === false) {
+        const error = cohostStageError(tokenData.error_code || "TOKEN_DELIVERY_FAILED", tokenData.message || "Co-host token could not be created.", tokenData.step || "token_delivery", tokenData.trace_id || traceId);
+        Object.assign(error, tokenData);
+        throw error;
       }
+      if (tokenData.trace_id) {
+        traceId = String(tokenData.trace_id);
+        root.dataset.liveCohostTraceId = traceId;
+        try { sessionStorage.setItem(`pulseCohostTrace:${id}`, traceId); } catch (_) {}
+      }
+      const requiredClaims = tokenData.token && tokenData.livekit_url && tokenData.identity && tokenData.room && tokenData.participant_name && tokenData.role === "cohost" && tokenData.can_publish === true && tokenData.can_subscribe === true && tokenData.can_publish_data === true && tokenData.room_join === true && Number(tokenData.expires_at || 0) * 1000 > Date.now();
+      if (!requiredClaims) throw cohostStageError("TOKEN_DELIVERY_FAILED", "The co-host token response is missing required verified claims.", "token_delivery", tokenData.trace_id || traceId);
+      root.__pulseLiveGuestToken = tokenData.token;
+      root.__pulseLiveGuestTokenClaims = tokenData.token_claims || {};
+      root.dataset.liveGuestId = String(tokenData.guest_id || "");
+      root.dataset.liveRequestId = String(tokenData.request_id || root.dataset.liveRequestId || "");
+      await complete("cohost_token_request_started", { stage_number: 13, stage_name: "livekit_token_generated", request_id: tokenData.request_id || 0 });
+      await traceCohostStage(root, "cohost_token_delivered", { stage_number: 15, stage_name: "token_delivered_to_viewer", result: "completed", http_status: tokenResponse.status, json_parsed: true, memory_assigned: root.__pulseLiveGuestToken === tokenData.token, request_id: tokenData.request_id || 0 });
+      room = new LK.Room({ adaptiveStream: true, dynacast: true });
+      const roomEvents = LK.RoomEvent || {};
+      if (room.on) {
+        if (roomEvents.Reconnecting) room.on(roomEvents.Reconnecting, () => traceCohostStage(root, "cohost_room_join_started", { stage_number: 16, stage_name: "websocket_reconnecting", result: "started" }));
+        if (roomEvents.Reconnected) room.on(roomEvents.Reconnected, () => traceCohostStage(root, "cohost_room_joined", { stage_number: 16, stage_name: "ice_reconnected", result: "completed" }));
+        if (roomEvents.Disconnected) room.on(roomEvents.Disconnected, (reason) => traceCohostStage(root, "cohost_failure", { stage_number: 16, stage_name: "room_disconnected", result: "failed", error_code: "LIVEKIT_ROOM_JOIN_FAILED", error_message: String(reason || "Room disconnected.") }));
+      }
+      await begin("cohost_room_join_started", { stage_number: 16, stage_name: "livekit_room_join_started", dns_target: new URL(tokenData.livekit_url).hostname, websocket_url: tokenData.livekit_url.replace(/\?.*$/, "") });
+      try {
+        await Promise.race([
+          room.connect(tokenData.livekit_url, root.__pulseLiveGuestToken, { autoSubscribe: true }),
+          new Promise((_, reject) => setTimeout(() => reject(cohostStageError("ROOM_JOIN_TIMEOUT", "The LiveKit room connection timed out.", "room_join", traceId)), 12000)),
+        ]);
+      } catch (error) {
+        if (error?.error_code) throw error;
+        throw cohostStageError("LIVEKIT_ROOM_JOIN_FAILED", error?.message || "LiveKit room join failed.", "room_join", traceId);
+      }
+      await complete("cohost_room_join_started", { stage_number: 16, stage_name: "livekit_room_joined", connection_state: String(room.state || room.connectionState || "connected"), participant_identity: room.localParticipant?.identity || tokenData.identity });
+      await traceCohostStage(root, "cohost_room_joined", { stage_number: 16, stage_name: "participant_connected", result: "completed", participant_identity: room.localParticipant?.identity || tokenData.identity });
+
+      let videoTrack;
+      let audioTrack;
+      try {
+        await begin("cohost_camera_publish_started", { stage_number: 17, stage_name: "camera_get_user_media" });
+        if (LK.createLocalVideoTrack) videoTrack = await LK.createLocalVideoTrack({ resolution: { width: 1280, height: 720 }, facingMode: "user" });
+        else if (LK.createLocalTracks) videoTrack = (await LK.createLocalTracks({ video: true, audio: false })).find((track) => track.kind === "video");
+        else {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          root.__pulseLiveGuestStream = stream;
+          videoTrack = stream.getVideoTracks()[0];
+        }
+        if (!videoTrack) throw new Error("No camera track was created.");
+        pendingTracks.push(videoTrack);
+        await traceCohostStage(root, "cohost_camera_track_created", { stage_number: 17, stage_name: "camera_track_created", result: "completed", track_id: videoTrack.mediaStreamTrack?.id || videoTrack.sid || "" });
+      } catch (error) {
+        throw cohostStageError("VIDEO_TRACK_FAILED", error?.message || "The camera track could not be created.", "video_track", traceId);
+      }
+      let videoPublication;
+      try {
+        videoPublication = await room.localParticipant.publishTrack(videoTrack);
+        await complete("cohost_camera_publish_started", { stage_number: 17, stage_name: "camera_track_published", publication_sid: videoPublication?.trackSid || videoPublication?.sid || "" });
+        await traceCohostStage(root, "cohost_camera_publish_success", { stage_number: 17, stage_name: "camera_track_acknowledged", result: "completed", publication_sid: videoPublication?.trackSid || videoPublication?.sid || "" });
+      } catch (error) {
+        throw cohostStageError("VIDEO_TRACK_FAILED", error?.message || "The camera track could not be published.", "video_track", traceId);
+      }
+
+      try {
+        await begin("cohost_microphone_publish_started", { stage_number: 18, stage_name: "microphone_get_user_media" });
+        if (LK.createLocalAudioTrack) audioTrack = await LK.createLocalAudioTrack({ echoCancellation: true, noiseSuppression: true });
+        else if (LK.createLocalTracks) audioTrack = (await LK.createLocalTracks({ video: false, audio: true })).find((track) => track.kind === "audio");
+        else {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+          root.__pulseLiveGuestAudioStream = stream;
+          audioTrack = stream.getAudioTracks()[0];
+        }
+        if (!audioTrack) throw new Error("No microphone track was created.");
+        pendingTracks.push(audioTrack);
+        await traceCohostStage(root, "cohost_microphone_track_created", { stage_number: 18, stage_name: "microphone_track_created", result: "completed", track_id: audioTrack.mediaStreamTrack?.id || audioTrack.sid || "" });
+      } catch (error) {
+        throw cohostStageError("AUDIO_TRACK_FAILED", error?.message || "The microphone track could not be created.", "audio_track", traceId);
+      }
+      let audioPublication;
+      try {
+        audioPublication = await room.localParticipant.publishTrack(audioTrack);
+        await complete("cohost_microphone_publish_started", { stage_number: 18, stage_name: "microphone_track_published", publication_sid: audioPublication?.trackSid || audioPublication?.sid || "" });
+        await traceCohostStage(root, "cohost_microphone_publish_success", { stage_number: 18, stage_name: "microphone_track_acknowledged", result: "completed", publication_sid: audioPublication?.trackSid || audioPublication?.sid || "" });
+      } catch (error) {
+        throw cohostStageError("AUDIO_TRACK_FAILED", error?.message || "The microphone track could not be published.", "audio_track", traceId);
+      }
+
       root.__pulseLiveGuestRoom = room;
-      root.__pulseLiveGuestTracks = tracks;
+      root.__pulseLiveGuestTracks = [videoTrack, audioTrack];
+      setText(root, "[data-live-join-status]", "Camera and microphone published. Confirming co-host with LiveKit...");
+      const confirmationDeadline = Date.now() + 15000;
+      let confirmation = {};
+      while (Date.now() < confirmationDeadline) {
+        const response = await fetch(`/api/pulse/live/${encodeURIComponent(id)}/guests/${encodeURIComponent(tokenData.guest_id)}/publish-complete`, { method: "POST", credentials: "same-origin", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trace_id: traceId, participant_identity: tokenData.identity, room_connected: true, video_publication_sid: videoPublication?.trackSid || videoPublication?.sid || "", audio_publication_sid: audioPublication?.trackSid || audioPublication?.sid || "" }) });
+        confirmation = await response.json().catch(() => ({}));
+        if (!response.ok && response.status !== 202) {
+          const error = cohostStageError(confirmation.error_code || "COHOST_PROMOTION_FAILED", confirmation.message || "The server could not confirm the active co-host.", confirmation.step || "cohost_promotion", confirmation.trace_id || traceId);
+          Object.assign(error, confirmation);
+          throw error;
+        }
+        if (confirmation.state === "live") break;
+        setText(root, "[data-live-join-status]", confirmation.message || "Waiting for LiveKit participant confirmation...");
+        await new Promise((resolve) => setTimeout(resolve, Number(confirmation.retry_after_ms || 800)));
+      }
+      if (confirmation.state !== "live") throw cohostStageError("COHOST_PROMOTION_FAILED", `LiveKit did not confirm ${confirmation.missing_event || "participant and tracks"} before timeout.`, "cohost_promotion", traceId);
       root.__pulseLiveGuestPublished = true;
+      await traceCohostStage(root, "cohost_live_success", { stage_number: 20, stage_name: "active_cohost_live", result: "completed", guest_id: tokenData.guest_id });
       setText(root, "[data-live-join-status]", "Joined as co-host. Camera and microphone are live.");
       qsa(root, "[data-live-guest-join]").forEach((button) => { button.textContent = "Joined"; button.disabled = true; });
       window.addEventListener("pagehide", () => {
         stopGuestMedia(root);
         try { room.disconnect?.(); } catch (_) {}
       }, { once: true });
+    } catch (error) {
+      const code = error?.error_code || "COHOST_PROMOTION_FAILED";
+      await traceCohostStage(root, "cohost_failure", { stage_number: Number(error?.stage_number || 0), stage_name: error?.step || "cohost_pipeline_failure", result: "failed", error_code: code, error_message: error?.message || `${code} stopped the co-host pipeline.` });
+      pendingTracks.forEach((track) => { try { track.stop?.(); } catch (_) {} try { track.mediaStreamTrack?.stop?.(); } catch (_) {} });
+      try { await room?.disconnect?.(); } catch (_) {}
+      stopGuestMedia(root);
+      throw error;
     } finally {
       root.__pulseLiveGuestPublishing = false;
     }
