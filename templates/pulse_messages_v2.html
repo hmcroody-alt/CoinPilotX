@@ -2,96 +2,149 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="robots" content="noindex,nofollow">
-  <title>PulseSoc Messages v2 | PulseSoc</title>
-  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=pulse-command-os-20260620a">
+  <meta name="theme-color" content="#030914">
+  <title>PulseSoc Messenger V3 | PulseSoc</title>
+  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=messenger-v3-20260701d">
 </head>
 <body data-comm-v2-enabled="{{ 'true' if enabled else 'false' }}">
-  <main class="comm-shell" data-current-user-id="{{ current_user.user_id }}" data-ai-enabled="{{ 'true' if ai_enabled else 'false' }}" data-initial-conversation-id="{{ initial_conversation_id|default(0) }}">
+  <main
+    class="comm-shell"
+    data-current-user-id="{{ current_user.user_id }}"
+    data-ai-enabled="{{ 'true' if ai_enabled else 'false' }}"
+    data-initial-conversation-id="{{ initial_conversation_id|default(0) }}"
+  >
     <aside class="comm-list" aria-label="Conversations">
       <header class="comm-toolbar">
-        <a class="icon-btn" href="/pulse" title="Back to PulseSoc" aria-label="Back to PulseSoc">&lt;</a>
-        <h1>Pulse Command</h1>
+        <a class="messenger-brand" href="/pulse" aria-label="PulseSoc Home">
+          <span class="messenger-orb" aria-hidden="true"></span>
+          <span>
+            <strong>Pulse Command</strong>
+            <small>Messenger V3</small>
+          </span>
+        </a>
         <span class="comm-toolbar-spacer"></span>
-        <span class="realtime-status" data-realtime-status data-state="fallback"><span aria-hidden="true"></span>Secure fallback</span>
-        <button class="icon-btn" type="button" data-open-new-chat title="New Chat" aria-label="Start a new chat">+</button>
+        <span class="realtime-status" data-realtime-status data-state="syncing" title="Messenger connection">
+          <span aria-hidden="true"></span>
+          <b>Syncing</b>
+        </span>
+        <button class="icon-btn icon-btn-primary" type="button" data-open-new-chat title="New chat" aria-label="Start a new chat">+</button>
       </header>
+
       <div class="comm-search-row">
         <label class="comm-search">
-          <span aria-hidden="true" class="search-icon">&#9906;</span>
-          <span class="sr-only">Search conversations</span>
-          <input data-conversation-search autocomplete="off" placeholder="Search signal, people, rooms...">
-          <button class="search-filter-toggle" type="button" data-toggle-filters aria-label="Message filters" aria-expanded="false">&#9881;</button>
+          <span class="search-icon" aria-hidden="true">&#9906;</span>
+          <span class="sr-only">Search people, rooms, and messages</span>
+          <input data-conversation-search type="search" autocomplete="off" placeholder="Search people, rooms, messages...">
+          <button class="search-filter-toggle" type="button" data-toggle-filters aria-label="Conversation filters" aria-expanded="true">&#9881;</button>
         </label>
       </div>
-      <section class="active-rail" aria-label="Active now" data-active-rail></section>
-      <section data-pulse-ai-card hidden></section>
-      <section class="pinned-section" data-pinned-section hidden>
-        <header><strong>Pinned</strong><button type="button" data-manage-pins>Manage</button></header>
-        <div class="pinned-rail" data-pinned-conversations></div>
-      </section>
-      <div class="comm-filter" role="tablist" aria-label="Conversation type">
+
+      <div class="comm-filter is-mobile-open" role="tablist" aria-label="Conversation type">
         <button class="is-active" type="button" role="tab" aria-selected="true" data-filter="all">All</button>
         <button type="button" role="tab" aria-selected="false" data-filter="direct">Direct</button>
         <button type="button" role="tab" aria-selected="false" data-filter="groups">Groups</button>
         <button type="button" role="tab" aria-selected="false" data-filter="rooms">Rooms</button>
+        {% if ai_enabled %}
+        <button type="button" role="tab" aria-selected="false" data-filter="ai">AI</button>
+        {% endif %}
         <button type="button" role="tab" aria-selected="false" data-filter="unread">Unread</button>
-        <button type="button" role="tab" aria-selected="false" data-filter="shield">Shield</button>
       </div>
-      <div class="comm-actions" aria-label="Create chats">
-        <button class="comm-action-card primary" type="button" data-open-new-chat><span class="action-icon">+</span><span><strong>New Chat</strong><small>Start a direct message</small></span></button>
-        <button class="comm-action-card" type="button" data-open-new-group><span class="action-icon">&#9737;</span><span><strong>Create Group</strong><small>Bring people together</small></span></button>
-        <button class="desktop-only" type="button" data-open-new-room>New Room</button>
-      </div>
-      <section class="comm-items" data-conversations>
-        <div class="empty-state">PulseSoc Communications 2.0 is loading your conversations.</div>
+
+      <section class="active-rail" aria-label="Recent conversations" data-active-rail></section>
+
+      <section class="comm-actions" aria-label="Messenger quick actions">
+        <button class="comm-action-card primary" type="button" data-open-new-chat>
+          <span class="action-icon" aria-hidden="true">+</span>
+          <span><strong>New Chat</strong><small>Direct message</small></span>
+        </button>
+        <button class="comm-action-card" type="button" data-open-new-group>
+          <span class="action-icon" aria-hidden="true">&#9737;</span>
+          <span><strong>Create Group</strong><small>Invite members</small></span>
+        </button>
+        <button class="comm-action-card" type="button" data-open-new-room>
+          <span class="action-icon" aria-hidden="true">&#9673;</span>
+          <span><strong>Start Room</strong><small>Public or private</small></span>
+        </button>
+        {% if ai_enabled %}
+        <button class="comm-action-card" type="button" data-ai-summary>
+          <span class="action-icon ai" aria-hidden="true">AI</span>
+          <span><strong>AI Assistant</strong><small>Open a chat first</small></span>
+        </button>
+        {% endif %}
+      </section>
+
+      <section data-pulse-ai-card hidden></section>
+
+      <section class="pinned-section" data-pinned-section hidden>
+        <header>
+          <strong>Pinned</strong>
+          <button type="button" data-manage-pins>Manage</button>
+        </header>
+        <div class="pinned-rail" data-pinned-conversations></div>
+      </section>
+
+      <section class="comm-items" data-conversations aria-live="polite">
+        <div class="conversation-skeleton-list" aria-label="Loading conversations">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
       </section>
     </aside>
-
-    <div class="conversation-action-sheet" data-conversation-action-sheet hidden>
-      <button type="button" data-conversation-action="pin">Pin chat</button>
-      <button type="button" data-conversation-action="unread">Mark unread</button>
-      <button type="button" data-conversation-action="mute">Mute conversation</button>
-      <button type="button" data-conversation-action="archive">Archive conversation</button>
-      <button type="button" data-close-conversation-actions>Cancel</button>
-    </div>
 
     <section class="comm-thread" aria-label="Message thread">
       <header class="thread-head">
         <button class="icon-btn mobile-only" type="button" data-mobile-list title="Back to conversations" aria-label="Back to conversations">&lt;</button>
         <span class="thread-avatar" data-thread-avatar aria-hidden="true">P</span>
         <div class="thread-identity">
-          <h2 data-thread-title>Select a conversation</h2>
-          <p data-thread-subtitle>Search for someone or create a group to start chatting.</p>
+          <h1 data-thread-title>Choose a chat</h1>
+          <p data-thread-subtitle>Start a secure conversation.</p>
         </div>
         <nav class="thread-actions" aria-label="Conversation actions">
-          <button class="icon-btn ai-action" type="button" data-ai-summary title="Summarize chat" aria-label="Summarize chat" hidden>AI</button>
-          <button class="icon-btn call-action" type="button" data-start-call="voice" title="Audio call" aria-label="Audio call">☎</button>
-          <button class="icon-btn call-action" type="button" data-start-call="video" title="Video call" aria-label="Video call">▣</button>
-          <button class="icon-btn" type="button" data-thread-search title="Search messages" aria-label="Search messages">⌕</button>
-          <button class="icon-btn" type="button" data-toggle-details title="Conversation info" aria-label="Conversation info">i</button>
-          <button class="icon-btn" type="button" data-thread-mute title="Mute conversation" aria-label="Mute conversation">◐</button>
-          <button class="icon-btn" type="button" data-thread-more title="More actions" aria-label="More actions">⋯</button>
+          {% if ai_enabled %}
+          <button class="icon-btn ai-action" type="button" data-ai-summary title="Summarize conversation" aria-label="Summarize conversation" hidden>AI</button>
+          {% endif %}
+          <button class="icon-btn call-action is-disabled" type="button" disabled title="Voice calls coming soon" aria-label="Voice calls coming soon">&#9742;</button>
+          <button class="icon-btn call-action is-disabled" type="button" disabled title="Video calls coming soon" aria-label="Video calls coming soon">&#9635;</button>
+          <button class="icon-btn" type="button" data-thread-search title="Search messages" aria-label="Search messages">&#9906;</button>
+          <button class="icon-btn desktop-info-action" type="button" data-toggle-details title="Conversation details" aria-label="Conversation details">i</button>
+          <button class="icon-btn" type="button" data-thread-more title="More conversation actions" aria-label="More conversation actions">&#8942;</button>
         </nav>
       </header>
-      <section class="signal-status-strip" aria-label="Communication state">
-        <span data-thread-signal-state>Realtime standby</span>
-        <span data-thread-reachability>Reachability pending</span>
-        <span data-thread-shield-state>Shield calm</span>
+
+      <section class="thread-trust" data-thread-trust hidden aria-label="Conversation trust"></section>
+
+      <section class="thread-search-panel" data-thread-search-panel hidden>
+        <label>
+          <span class="sr-only">Search this conversation</span>
+          <input data-thread-search-input type="search" autocomplete="off" placeholder="Search this conversation">
+        </label>
+        <span data-thread-search-count aria-live="polite"></span>
+        <button type="button" data-close-thread-search aria-label="Close message search">x</button>
       </section>
-      <div class="messages" data-messages>
-        <div class="empty-state">Search for someone or create a group to start chatting.</div>
+
+      <div class="messages" data-messages aria-live="polite">
+        <div class="thread-welcome-state">
+          <span class="messenger-orb large" aria-hidden="true"></span>
+          <strong>Choose a chat to begin.</strong>
+          <small>Your conversations and composer open instantly here.</small>
+        </div>
       </div>
+
       <div class="typing-pill" data-typing-pill hidden></div>
+
       <section class="ai-assist-panel" data-ai-panel hidden aria-live="polite">
         <header>
           <strong>Pulse AI</strong>
-          <button type="button" data-ai-replies>Smart replies</button>
+          <button type="button" data-ai-replies>Suggest replies</button>
         </header>
-        <div data-ai-output>AI analysis is not enabled.</div>
+        <div data-ai-output>AI is ready when this conversation has enough context.</div>
       </section>
+
       <section class="attachment-preview-rail" data-attachment-preview hidden aria-label="Selected attachments"></section>
+
       <section class="voice-recorder" data-voice-panel hidden aria-live="polite">
         <div class="voice-recorder-main">
           <span class="voice-dot" aria-hidden="true"></span>
@@ -108,32 +161,56 @@
           <button type="button" data-voice-discard>Discard</button>
         </div>
       </section>
+
       <section class="attachment-sheet" data-attachment-sheet hidden aria-label="Add attachment">
-        <button type="button" data-attachment-option="camera"><span>📷</span> Camera</button>
-        <button type="button" data-attachment-option="photo"><span>🖼</span> Photo</button>
-        <button type="button" data-attachment-option="video"><span>🎬</span> Video</button>
-        <button type="button" data-attachment-option="file"><span>📎</span> File</button>
-        <button type="button" data-attachment-option="voice"><span>🎤</span> Voice</button>
+        <button type="button" data-attachment-option="photo"><span aria-hidden="true">&#9638;</span><small>Gallery</small></button>
+        <button type="button" data-attachment-option="camera"><span aria-hidden="true">&#9673;</span><small>Camera</small></button>
+        <button type="button" data-attachment-option="video"><span aria-hidden="true">&#9654;</span><small>Video</small></button>
+        <button type="button" data-attachment-option="voice"><span aria-hidden="true">&#9835;</span><small>Voice</small></button>
+        <button type="button" data-attachment-option="file"><span aria-hidden="true">&#128206;</span><small>File</small></button>
+        <button type="button" disabled title="GIF sharing is not enabled yet"><span aria-hidden="true">GIF</span><small>Unavailable</small></button>
+        <button type="button" disabled title="Location sharing is not enabled yet"><span aria-hidden="true">&#8982;</span><small>Location</small></button>
+        <button type="button" disabled title="Poll sharing is not enabled yet"><span aria-hidden="true">&#9776;</span><small>Poll</small></button>
+        <button type="button" disabled title="Music sharing is not enabled yet"><span aria-hidden="true">&#9834;</span><small>Music</small></button>
+        <button type="button" disabled title="Contact sharing is not enabled yet"><span aria-hidden="true">&#9787;</span><small>Contact</small></button>
+        <button type="button" disabled title="More attachment types are not enabled yet"><span aria-hidden="true">&#8943;</span><small>More</small></button>
       </section>
+
+      <section class="emoji-panel" data-emoji-panel hidden aria-label="Emoji picker">
+        <button type="button" data-emoji-value="😀" aria-label="Grinning face">😀</button>
+        <button type="button" data-emoji-value="😂" aria-label="Laughing face">😂</button>
+        <button type="button" data-emoji-value="😍" aria-label="Heart eyes">😍</button>
+        <button type="button" data-emoji-value="❤️" aria-label="Heart">❤️</button>
+        <button type="button" data-emoji-value="🔥" aria-label="Fire">🔥</button>
+        <button type="button" data-emoji-value="👏" aria-label="Clap">👏</button>
+        <button type="button" data-emoji-value="🙏" aria-label="Thank you">🙏</button>
+        <button type="button" data-emoji-value="👍" aria-label="Thumbs up">👍</button>
+      </section>
+
       <form class="composer" data-composer>
         <input type="file" data-file hidden multiple>
         <input type="file" data-camera-file hidden accept="image/*,video/*" capture="environment">
         <input type="file" data-photo-file hidden multiple accept="image/*">
         <input type="file" data-video-file hidden multiple accept="video/*">
         <input type="file" data-generic-file hidden multiple>
-        <button class="icon-btn attachment-trigger" type="button" data-toggle-attachments title="Attach media" aria-label="Attach media">+</button>
-        <input data-message-input autocomplete="off" placeholder="Type a message">
-        <button class="icon-btn voice-trigger" type="button" data-voice-start title="Record voice note" aria-label="Record voice note">🎤</button>
-        <button class="send-btn" type="submit" aria-label="Send message" data-send-button>➤</button>
+        <button class="icon-btn attachment-trigger" type="button" data-toggle-attachments title="Add attachment" aria-label="Add attachment">+</button>
+        <label class="composer-input-shell">
+          <span class="sr-only">Type a message</span>
+          <input data-message-input autocomplete="off" enterkeyhint="send" placeholder="Type a message...">
+          <button class="emoji-trigger" type="button" data-toggle-emoji title="Add emoji" aria-label="Add emoji">☺</button>
+        </label>
+        <button class="icon-btn voice-trigger" type="button" data-voice-start title="Record voice note" aria-label="Record voice note">&#9835;</button>
+        <button class="send-btn" type="submit" aria-label="Send message" data-send-button>&#10148;</button>
       </form>
+
       <div class="composer-status" data-status role="status" aria-live="polite"></div>
     </section>
 
     <aside class="comm-details" aria-label="Conversation details">
       <header class="details-head">
         <div>
-          <h2>Details</h2>
-          <p data-details-summary>Choose a chat to see members, safety, and rooms.</p>
+          <h2>Conversation</h2>
+          <p data-details-summary>Choose a chat to see its details.</p>
         </div>
         <button class="icon-btn" type="button" data-toggle-details aria-label="Close details">x</button>
       </header>
@@ -142,47 +219,54 @@
         <div class="member-list" data-members></div>
       </section>
       <section class="details-card">
-        <h3>Live Signal</h3>
+        <h3>Activity</h3>
         <p class="typing-state" data-typing-state>No one is typing right now.</p>
-      </section>
-      <section class="details-card signal-route-card">
-        <h3>Signal Route</h3>
-        <div class="signal-route" data-signal-route>
-          <span>DB commit</span>
-          <span>Realtime</span>
-          <span>Push</span>
-          <span>Read state</span>
-        </div>
-        <p data-delivery-summary>Open a chat to see route confidence.</p>
+        <p data-thread-reachability>Presence unavailable.</p>
       </section>
       <section class="details-card">
-        <h3>Pulse Shield</h3>
-        <p data-shield-summary>No active message risk in this thread.</p>
+        <h3>Delivery</h3>
+        <p data-delivery-summary>Open a chat to see delivery state.</p>
+        <span data-thread-signal-state hidden></span>
       </section>
       <section class="details-card">
         <h3>Safety</h3>
+        <p data-shield-summary>No active message risk in this thread.</p>
+        <span data-thread-shield-state hidden></span>
         <div class="detail-actions">
-          <button type="button" data-report-last>Report Last</button>
-          <button type="button" data-block-peer>Block Peer</button>
+          <button type="button" data-report-last>Report last message</button>
+          <button type="button" data-block-peer>Block member</button>
         </div>
       </section>
       <section class="details-card">
-        <h3>Public Rooms</h3>
+        <h3>Rooms</h3>
         <div class="room-list" data-room-list></div>
       </section>
     </aside>
 
+    <div class="conversation-action-sheet" data-conversation-action-sheet hidden>
+      <button type="button" data-conversation-action="pin">Pin chat</button>
+      <button type="button" data-conversation-action="unread">Mark unread</button>
+      <button type="button" data-conversation-action="mute">Mute conversation</button>
+      <button type="button" data-conversation-action="archive">Archive conversation</button>
+      <button type="button" data-close-conversation-actions>Cancel</button>
+    </div>
+
     <div class="comm-modal" data-modal="new-chat" aria-hidden="true" hidden>
       <div class="comm-modal-panel" role="dialog" aria-modal="true" aria-labelledby="newChatTitle">
         <header>
-          <h2 id="newChatTitle">New Chat</h2>
+          <div>
+            <span>Direct message</span>
+            <h2 id="newChatTitle">New Chat</h2>
+          </div>
           <button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button>
         </header>
         <label>
           Search people
           <input data-person-search autocomplete="off" placeholder="Name, username, or email">
         </label>
-        <div class="people-results" data-person-results></div>
+        <div class="people-results" data-person-results>
+          <div class="empty-state compact">Type at least two characters.</div>
+        </div>
         <div class="modal-status" data-modal-status role="status" aria-live="polite"></div>
         <div class="modal-actions">
           <button type="button" data-close-modal>Cancel</button>
@@ -193,20 +277,24 @@
     <div class="comm-modal" data-modal="new-group" aria-hidden="true" hidden>
       <div class="comm-modal-panel" role="dialog" aria-modal="true" aria-labelledby="newGroupTitle">
         <header>
-          <h2 id="newGroupTitle">Create Group</h2>
+          <div>
+            <span>Group conversation</span>
+            <h2 id="newGroupTitle">Create Group</h2>
+          </div>
           <button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button>
         </header>
         <label>
           Group name
           <input data-group-title autocomplete="off" placeholder="Group name">
         </label>
-        <div class="group-photo-placeholder" aria-hidden="true">Group photo</div>
         <label>
           Add members
           <input data-group-person-search autocomplete="off" placeholder="Search people">
         </label>
         <div class="people-results" data-group-person-results></div>
-        <div class="selected-people" data-selected-people></div>
+        <div class="selected-people" data-selected-people>
+          <div class="empty-state compact">Select at least one person.</div>
+        </div>
         <div class="modal-status" data-modal-status role="status" aria-live="polite"></div>
         <div class="modal-actions">
           <button type="button" data-close-modal>Cancel</button>
@@ -218,7 +306,10 @@
     <div class="comm-modal" data-modal="new-room" aria-hidden="true" hidden>
       <div class="comm-modal-panel" role="dialog" aria-modal="true" aria-labelledby="newRoomTitle">
         <header>
-          <h2 id="newRoomTitle">Create Room</h2>
+          <div>
+            <span>Conversation room</span>
+            <h2 id="newRoomTitle">Start Room</h2>
+          </div>
           <button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button>
         </header>
         <label>
@@ -244,9 +335,27 @@
       </div>
     </div>
   </main>
+
+  <nav class="pulse-messenger-dock" aria-label="PulseSoc primary navigation">
+    <a href="/pulse"><span aria-hidden="true">&#8962;</span><small>Home</small></a>
+    <a href="/pulse/reels"><span aria-hidden="true">&#9654;</span><small>Reels</small></a>
+    <a class="dock-create" href="/pulse#create"><span aria-hidden="true">+</span><small>Create</small></a>
+    <a class="is-active" href="/pulse/messages" aria-current="page"><span aria-hidden="true">&#9993;</span><small>Messages</small></a>
+    <a href="/pulse/profile" class="dock-profile">
+      <span class="dock-avatar" aria-hidden="true">
+        {% if current_user.avatar_url %}
+        <img src="{{ current_user.avatar_url }}" alt="">
+        {% else %}
+        {{ (current_user.display_name or current_user.username or 'P')[:1]|upper }}
+        {% endif %}
+      </span>
+      <small>Profile</small>
+    </a>
+  </nav>
+
   <script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script>
   <script src="/static/js/pulse_realtime.js?v=web-capacity-20260619a" defer></script>
   <script src="/static/notifications.js?v=message-live-20260606" defer></script>
-  <script src="/static/js/pulse_messages_v2.js?v=pulse-command-os-20260620a" defer></script>
+  <script src="/static/js/pulse_messages_v2.js?v=messenger-v3-20260701d" defer></script>
 </body>
 </html>

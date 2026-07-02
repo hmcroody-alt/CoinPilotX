@@ -13,6 +13,7 @@
   const state = {
     conversations: [],
     conversationCache: new Map(),
+    messageCache: new Map(),
     peopleCache: new Map(),
     active: null,
     messages: [],
@@ -28,18 +29,23 @@
     hasOlder: false,
     oldestMessageId: 0,
     loadingThread: false,
+    threadHydrating: false,
+    activeRequestToken: 0,
     initialThreadLoaded: false,
     typingTimer: 0,
     typingStopTimer: 0,
     typingSentAt: 0,
     detailsOpen: false,
     actionPending: false,
+    composerSending: false,
     mobileMode: "list",
     conversationSearch: "",
+    threadSearchQuery: "",
     actionConversationId: 0,
     attachmentQueue: [],
     attachmentSeq: 0,
     attachmentSheetOpen: false,
+    emojiOpen: false,
     aiEnabled: root?.dataset.aiEnabled === "true",
     aiBusy: false,
     aiOutput: "",
@@ -81,6 +87,38 @@
     document.body.dataset.mobileChatMode = mode;
   }
 
+  function draftStorageKey(conversationId = state.active?.conversation_id) {
+    const id = Number(conversationId || 0);
+    return id ? `pulseMessengerDraft:${currentUserId}:${id}` : "";
+  }
+
+  function saveActiveDraft() {
+    const key = draftStorageKey();
+    const input = el("[data-message-input]");
+    if (!key || !input) return;
+    try {
+      if (input.value) sessionStorage.setItem(key, input.value);
+      else sessionStorage.removeItem(key);
+    } catch (_) {}
+  }
+
+  function restoreDraft(conversationId = state.active?.conversation_id) {
+    const input = el("[data-message-input]");
+    const key = draftStorageKey(conversationId);
+    if (!input || !key) return;
+    try {
+      input.value = sessionStorage.getItem(key) || "";
+    } catch (_) {
+      input.value = "";
+    }
+  }
+
+  function clearDraft(conversationId = state.active?.conversation_id) {
+    const key = draftStorageKey(conversationId);
+    if (!key) return;
+    try { sessionStorage.removeItem(key); } catch (_) {}
+  }
+
   function setStatus(text, kind = "info") {
     if (status) {
       status.textContent = text || "";
@@ -105,13 +143,13 @@
     let data = {};
     try { data = JSON.parse(text || "{}"); } catch (_) { data = { ok: false, message: "The server returned an unexpected response." }; }
     const durationMs = Math.round(performance.now() - started);
-    console.info("PulseSoc Communications V2 timing", { metric, path, status: res.status, durationMs, serverTimingMs: data.timing_ms });
+    console.info("PulseSoc Messenger V3 timing", { metric, path, status: res.status, durationMs, serverTimingMs: data.timing_ms });
     if (!res.ok || data.ok === false) {
       const trace = data.trace_id ? ` Trace: ${data.trace_id}` : "";
       const mislabeledServerError = res.status >= 500 && /upload failed/i.test(String(data.message || ""));
       const message = mislabeledServerError
         ? `Messenger is temporarily unavailable. Refresh and try again.${trace}`
-        : data.message || (data.status === "disabled" ? "PulseSoc Communications 2.0 is not public yet." : `This request could not be completed.${trace}`);
+        : data.message || (data.status === "disabled" ? "Messenger is temporarily unavailable." : `This request could not be completed.${trace}`);
       throw Object.assign(new Error(message), { data, status: res.status, durationMs });
     }
     return data;
@@ -294,6 +332,8 @@
           ? type === "group"
           : state.filter === "rooms"
             ? type === "room" || type === "community_channel"
+            : state.filter === "ai"
+              ? Boolean(item.ai_assistant || item.is_ai || type === "ai" || type === "assistant")
             : state.filter === "unread"
               ? unread
               : state.filter === "shield"
@@ -307,10 +347,10 @@
     const target = el("[data-realtime-status]");
     if (!target) return;
     const connected = Boolean(state.realtimeConnected);
-    target.dataset.state = connected ? "connected" : "fallback";
-    target.innerHTML = `<span aria-hidden="true"></span>${connected ? "Realtime live" : "Secure fallback"}`;
+    target.dataset.state = connected ? "connected" : "syncing";
+    target.innerHTML = `<span aria-hidden="true"></span><b>${connected ? "Live" : "Refreshing"}</b>`;
     const threadSignal = el("[data-thread-signal-state]");
-    if (threadSignal) threadSignal.textContent = connected ? "Realtime live" : "Fallback polling armed";
+    if (threadSignal) threadSignal.textContent = connected ? "Realtime connected" : "Refreshing messages";
   }
 
   function messageDeliveryLabel(item) {
@@ -349,7 +389,7 @@
     const reachability = el("[data-thread-reachability]");
     if (reachability) {
       const label = presenceLabel(presence);
-      reachability.textContent = state.active ? `${label} / push policy protected` : "Reachability pending";
+      reachability.textContent = state.active ? label : "Presence unavailable.";
     }
     const risk = threadRiskSummary();
     const shieldState = el("[data-thread-shield-state]");
@@ -370,7 +410,7 @@
     }
     const route = el("[data-signal-route]");
     if (route) {
-      route.dataset.state = state.realtimeConnected ? "live" : "fallback";
+      route.dataset.state = state.realtimeConnected ? "live" : "syncing";
       route.querySelectorAll("span").forEach((node, index) => {
         node.dataset.active = index < (state.realtimeConnected ? 4 : 2) ? "true" : "false";
       });
@@ -380,19 +420,8 @@
   function renderPulseAICard() {
     const target = el("[data-pulse-ai-card]");
     if (!target) return;
-    if (!state.aiEnabled) {
-      target.hidden = true;
-      target.innerHTML = "";
-      return;
-    }
-    target.hidden = false;
-    target.innerHTML = `
-      <button class="pulse-ai-card" type="button" data-ai-summary>
-        <span class="pulse-ai-avatar" aria-hidden="true">AI</span>
-        <span><strong>Pulse AI Assistant <em>Ready</em></strong><small>Summaries and smart replies unlock inside active chats.</small></span>
-        <span class="ai-online">Live</span>
-      </button>
-    `;
+    target.hidden = true;
+    target.innerHTML = "";
   }
 
   function renderActiveRail() {
@@ -450,6 +479,8 @@
           ? "No rooms yet. Open or create a room when you are ready."
           : state.filter === "unread"
             ? "No unread chats. You are caught up."
+            : state.filter === "ai"
+              ? "No AI conversations are available."
             : state.filter === "shield"
               ? "No Shield-flagged chats. Pulse Shield is calm."
             : state.filter === "direct"
@@ -545,18 +576,33 @@
     const title = el("[data-thread-title]");
     const sub = el("[data-thread-subtitle]");
     const avatar = el("[data-thread-avatar]");
-    if (title) title.textContent = state.active ? state.active.title : "Select a conversation";
+    if (title) title.textContent = state.active ? state.active.title : "Choose a chat";
     const threadPresence = presenceForConversation(state.active || {});
-    if (sub) sub.textContent = state.active ? `${presenceLabel(threadPresence)} / ${state.active.conversation_type || "conversation"}` : "Search for someone or create a group to start chatting.";
+    if (sub) sub.textContent = state.active ? `${presenceLabel(threadPresence)} · ${typeLabel(state.active.conversation_type || "conversation")}` : "Start a secure conversation.";
     if (avatar) {
-      avatar.textContent = state.active ? initials(state.active.title) : "P";
+      const avatarUrl = state.active?.avatar_url || state.active?.avatar_thumbnail_url || "";
+      avatar.innerHTML = state.active
+        ? avatarUrl
+          ? `<img src="${escapeAttr(avatarUrl)}" alt="">`
+          : escapeHtml(initials(state.active.title))
+        : "P";
       avatar.className = `thread-avatar presence-${presenceClass(threadPresence)}`;
     }
     renderTypingPill();
     renderAIHooks();
+    renderTrustBadges();
     renderSignalIntelligence();
     if (!state.active) {
-      messages.innerHTML = `<div class="empty-state">Search for someone or create a group to start chatting.</div>`;
+      messages.innerHTML = `
+        <div class="thread-welcome-state">
+          <span class="messenger-orb large" aria-hidden="true"></span>
+          <strong>Choose a chat to begin.</strong>
+          <small>Your conversations and composer open instantly here.</small>
+        </div>`;
+      return;
+    }
+    if (state.threadHydrating && !state.messages.length) {
+      messages.innerHTML = `<div class="message-skeletons" aria-label="Loading recent messages"><span></span><span></span><span></span></div>`;
       return;
     }
     if (!state.messages.length) {
@@ -567,6 +613,29 @@
     messages.innerHTML = `${older}<div class="message-stack">${state.messages.map((item) => messageHtml(item)).join("")}</div>`;
     if (!state.preserveScroll) smoothScrollToBottom();
     state.preserveScroll = false;
+    if (state.threadSearchQuery) window.requestAnimationFrame(applyThreadSearch);
+  }
+
+  function renderTrustBadges() {
+    const target = el("[data-thread-trust]");
+    if (!target) return;
+    if (!state.active) {
+      target.hidden = true;
+      target.innerHTML = "";
+      return;
+    }
+    const badges = [];
+    if (state.active.verified || state.active.peer_verified || state.active.verified_badge) {
+      badges.push(`<span class="trust-chip verified"><b aria-hidden="true">✓</b> Verified</span>`);
+    }
+    if (state.active.end_to_end_encrypted === true || state.active.encryption_enabled === true) {
+      badges.push(`<span class="trust-chip secure"><b aria-hidden="true">●</b> End-to-end encrypted</span>`);
+    }
+    if (state.active.ai_protected === true || state.active.ai_safety_enabled === true) {
+      badges.push(`<span class="trust-chip"><b aria-hidden="true">AI</b> AI protected</span>`);
+    }
+    target.hidden = !badges.length;
+    target.innerHTML = badges.join("");
   }
 
   function renderAIHooks() {
@@ -590,7 +659,9 @@
   }
 
   async function runAIAction(kind) {
-    if (!state.aiEnabled || !state.active || state.aiBusy) return;
+    if (!state.aiEnabled) return setStatus("AI assistance is not enabled for Messenger.", "error");
+    if (!state.active) return setStatus("Open a conversation before using AI assistance.");
+    if (state.aiBusy) return;
     state.aiBusy = true;
     state.aiOutput = kind === "smart-replies" ? "Preparing smart replies..." : "Summarizing conversation...";
     renderAIHooks();
@@ -696,6 +767,7 @@
         ${attachments ? `<div class="attachments">${attachments}</div>` : ""}
         ${reactionSummary ? `<div class="reaction-summary">${reactionSummary}</div>` : ""}
         <small class="message-meta"><time>${escapeHtml(shortTime(item.created_at))}</time>${item.is_edited ? " / Edited" : ""}${mine ? ` <span class="delivery-state" data-state="${escapeAttr(messageDeliveryLabel(item).toLowerCase())}">${deliveryGlyph(messageDeliveryLabel(item))} ${escapeHtml(messageDeliveryLabel(item))}</span>` : ""}</small>
+        ${item._failed ? `<button class="message-retry" type="button" data-retry-message="${item.id}">Retry send</button>` : ""}
         <button class="message-menu-trigger" type="button" data-message-actions="${item.id}" aria-label="Message actions">...</button>
         <div class="reaction-row" data-reaction-menu="${item.id}" hidden>${reactions}<button type="button" data-reply-message="${item.id}">Reply</button><button type="button" data-copy-message="${item.id}">Copy</button><button type="button" data-pin-message="${item.id}">${item.pinned ? "Unpin" : "Pin"}</button>${mine ? `<button type="button" data-edit-message="${item.id}">Edit</button><button type="button" data-delete-message="${item.id}" data-delete-for="everyone">Delete</button>` : `<button type="button" data-delete-message="${item.id}" data-delete-for="self">Remove</button>`}<button type="button" data-forward-message="${item.id}">Forward</button></div>
       </article>
@@ -759,8 +831,9 @@
       } else if (state.active) {
         state.active = rememberConversation(state.conversations.find((c) => Number(c.conversation_id) === Number(state.active.conversation_id)) || state.active);
       }
+      if (state.active) restoreDraft(state.active.conversation_id);
       renderConversations();
-      setStatus(state.conversations.length ? "" : "No v2 conversations yet.");
+      setStatus(state.conversations.length ? "" : "No conversations yet.");
       if (state.active && !state.initialThreadLoaded && (!isMobile() || Number(state.active.conversation_id) === initialConversationId)) {
         state.initialThreadLoaded = true;
         window.requestAnimationFrame(() => loadMessages(state.active.conversation_id).catch((err) => setStatus(err.message, "error")));
@@ -772,13 +845,32 @@
   }
 
   async function loadMessages(conversationId, { beforeId = 0, appendOlder = false } = {}) {
-    if (state.loadingThread) return;
+    if (appendOlder && state.loadingThread) return;
+    const targetConversationId = Number(conversationId || 0);
+    if (!targetConversationId) return;
+    const requestToken = ++state.activeRequestToken;
     state.loadingThread = true;
+    if (!appendOlder) {
+      const cached = state.messageCache.get(targetConversationId);
+      state.threadHydrating = !cached?.length;
+      state.messages = cached ? cached.map((item) => ({ ...item })) : [];
+      renderMessages();
+      renderMembers();
+    }
     try {
       const query = `limit=${INITIAL_MESSAGE_LIMIT}${beforeId ? `&before_id=${beforeId}` : ""}`;
-      const data = await api(`/conversations/${conversationId}/messages?${query}`, {}, "selected_thread_messages");
-      state.active = rememberConversation(data.conversation || state.conversationCache.get(Number(conversationId)) || state.active);
+      const data = await api(`/conversations/${targetConversationId}/messages?${query}`, {}, "selected_thread_messages");
       const nextMessages = data.messages || [];
+      const nextConversation = rememberConversation(data.conversation || state.conversationCache.get(targetConversationId) || state.active);
+      if (appendOlder) {
+        const cached = state.messageCache.get(targetConversationId) || [];
+        const seen = new Set(nextMessages.map((message) => Number(message.id)));
+        state.messageCache.set(targetConversationId, [...nextMessages, ...cached.filter((message) => !seen.has(Number(message.id)))]);
+      } else {
+        state.messageCache.set(targetConversationId, nextMessages.map((item) => ({ ...item })));
+      }
+      if (!state.active || Number(state.active.conversation_id) !== targetConversationId) return;
+      state.active = nextConversation;
       if (appendOlder) {
         state.preserveScroll = true;
         const seen = new Set(nextMessages.map((m) => Number(m.id)));
@@ -790,7 +882,9 @@
       state.oldestMessageId = Number(data.oldest_message_id || state.messages[0]?.id || 0);
       state.members = data.members || state.members;
       state.typing = data.typing || [];
-      await loadPresence(state.active?.conversation_id || conversationId);
+      state.threadHydrating = false;
+      await loadPresence(state.active?.conversation_id || targetConversationId);
+      if (!state.active || Number(state.active.conversation_id) !== targetConversationId) return;
       renderConversations();
       renderMessages();
       renderMembers();
@@ -798,7 +892,11 @@
       document.querySelectorAll("[data-voice-message]").forEach(bindVoiceAudio);
       if (!appendOlder) connectRealtimeStream();
     } finally {
-      state.loadingThread = false;
+      if (requestToken === state.activeRequestToken) {
+        state.loadingThread = false;
+        state.threadHydrating = false;
+        renderMessages();
+      }
     }
   }
 
@@ -882,12 +980,14 @@
     const existingIndex = state.messages.findIndex((item) => Number(item.id) === Number(message.id) || (clientId && (item.client_message_id === clientId || item.client_temp_id === clientId)));
     if (existingIndex >= 0) {
       state.messages[existingIndex] = { ...state.messages[existingIndex], ...message, _pending: false, _failed: false };
+      state.messageCache.set(Number(state.active.conversation_id), state.messages.map((item) => ({ ...item })));
       renderMessages();
       document.querySelectorAll("[data-voice-message]").forEach(bindVoiceAudio);
       if (window.PulseMediaRenderer) window.PulseMediaRenderer.hydrate(messages);
       return true;
     }
     state.messages = [...state.messages, message];
+    state.messageCache.set(Number(state.active.conversation_id), state.messages.map((item) => ({ ...item })));
     renderMessages();
     document.querySelectorAll("[data-voice-message]").forEach(bindVoiceAudio);
     if (window.PulseMediaRenderer) window.PulseMediaRenderer.hydrate(messages);
@@ -1073,7 +1173,7 @@
     const text = await res.text();
     let data = {};
     try { data = JSON.parse(text || "{}"); } catch (_) { data = { ok: false, message: res.status === 403 ? "Attachment upload was blocked by site security." : "Attachment upload returned an unexpected response." }; }
-    console.info("PulseSoc Communications V2 timing", { metric: "attachment_upload", status: res.status, durationMs: Math.round(performance.now() - started) });
+    console.info("PulseSoc Messenger V3 timing", { metric: "attachment_upload", status: res.status, durationMs: Math.round(performance.now() - started) });
     if (!res.ok || data.ok === false) throw new Error(data.message || "Attachment upload failed.");
     return Number(data.media?.id || 0);
   }
@@ -1223,10 +1323,82 @@
   function toggleAttachmentSheet(force) {
     const sheet = el("[data-attachment-sheet]");
     state.attachmentSheetOpen = typeof force === "boolean" ? force : !state.attachmentSheetOpen;
+    if (state.attachmentSheetOpen) toggleEmojiPanel(false);
     if (sheet) {
       sheet.hidden = !state.attachmentSheetOpen;
       sheet.classList.toggle("is-open", state.attachmentSheetOpen);
     }
+  }
+
+  function toggleEmojiPanel(force) {
+    const panel = el("[data-emoji-panel]");
+    state.emojiOpen = typeof force === "boolean" ? force : !state.emojiOpen;
+    if (state.emojiOpen) {
+      state.attachmentSheetOpen = false;
+      const attachmentSheet = el("[data-attachment-sheet]");
+      if (attachmentSheet) {
+        attachmentSheet.hidden = true;
+        attachmentSheet.classList.remove("is-open");
+      }
+    }
+    if (panel) {
+      panel.hidden = !state.emojiOpen;
+      panel.classList.toggle("is-open", state.emojiOpen);
+    }
+  }
+
+  function insertEmoji(value) {
+    const input = el("[data-message-input]");
+    if (!input || !value) return;
+    const start = Number.isFinite(input.selectionStart) ? input.selectionStart : input.value.length;
+    const end = Number.isFinite(input.selectionEnd) ? input.selectionEnd : input.value.length;
+    input.setRangeText(value, start, end, "end");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    toggleEmojiPanel(false);
+    input.focus();
+  }
+
+  function toggleThreadSearch(force) {
+    const panel = el("[data-thread-search-panel]");
+    const input = el("[data-thread-search-input]");
+    const open = typeof force === "boolean" ? force : Boolean(panel?.hidden);
+    if (panel) panel.hidden = !open;
+    if (!open) {
+      state.threadSearchQuery = "";
+      if (input) input.value = "";
+      document.querySelectorAll("[data-message-id]").forEach((node) => {
+        node.classList.remove("is-search-match", "is-search-muted");
+      });
+      const count = el("[data-thread-search-count]");
+      if (count) count.textContent = "";
+      return;
+    }
+    window.setTimeout(() => input?.focus(), 20);
+    applyThreadSearch();
+  }
+
+  function applyThreadSearch() {
+    const input = el("[data-thread-search-input]");
+    const count = el("[data-thread-search-count]");
+    const query = String(input?.value || "").trim().toLowerCase();
+    state.threadSearchQuery = query;
+    const nodes = [...document.querySelectorAll("[data-message-id]")];
+    let matches = 0;
+    let firstMatch = null;
+    nodes.forEach((node) => {
+      const matched = Boolean(query) && node.textContent.toLowerCase().includes(query);
+      node.classList.toggle("is-search-match", matched);
+      node.classList.toggle("is-search-muted", Boolean(query) && !matched);
+      if (matched) {
+        matches += 1;
+        if (!firstMatch) firstMatch = node;
+      }
+    });
+    if (count) count.textContent = query ? `${matches} result${matches === 1 ? "" : "s"}` : "";
+    firstMatch?.scrollIntoView({
+      block: "center",
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
   }
 
   function openAttachmentOption(option) {
@@ -1439,7 +1611,7 @@
           : voiceType.includes("mp4") || voiceType.includes("m4a")
             ? "m4a"
             : "webm";
-    console.info("PulseSoc Communications V2 voice upload", {
+    console.info("PulseSoc Messenger V3 voice upload", {
       mimeType: voiceType,
       extension: ext,
       size: state.voice.blob.size,
@@ -1547,12 +1719,25 @@
         const conversation = target.closest("[data-conversation-id]");
         if (conversation) {
           const id = Number(conversation.dataset.conversationId || 0);
-          if (state.active && Number(state.active.conversation_id) === id) return;
+          if (state.composerSending) return setStatus("Finish sending the current message before switching chats.");
+          if (state.active && Number(state.active.conversation_id) === id) {
+            setMobileMode("thread");
+            restoreDraft(id);
+            el("[data-message-input]")?.focus();
+            return;
+          }
+          saveActiveDraft();
+          toggleThreadSearch(false);
+          toggleAttachmentSheet(false);
+          toggleEmojiPanel(false);
           state.active = rememberConversation(state.conversationCache.get(id) || state.conversations.find((item) => Number(item.conversation_id) === id));
           if (state.active) state.active.unread_count = 0;
-          state.messages = [];
+          const cached = state.messageCache.get(id) || [];
+          state.messages = cached.map((item) => ({ ...item }));
+          state.threadHydrating = !cached.length;
           state.members = [];
           state.hasOlder = false;
+          restoreDraft(id);
           renderMessages();
           renderMembers();
           setMobileMode("thread");
@@ -1562,6 +1747,10 @@
         }
         const filter = target.closest("[data-filter]");
         if (filter) {
+          saveActiveDraft();
+          toggleThreadSearch(false);
+          const messageInput = el("[data-message-input]");
+          if (messageInput) messageInput.value = "";
           state.filter = filter.dataset.filter;
           state.active = null;
           state.messages = [];
@@ -1572,6 +1761,8 @@
             btn.setAttribute("aria-selected", btn === filter ? "true" : "false");
           });
           renderConversations();
+          renderMessages();
+          renderMembers();
           return;
         }
         if (target.closest("[data-open-new-chat]")) return openModal("new-chat");
@@ -1579,8 +1770,8 @@
         if (target.closest("[data-open-new-room]")) return openModal("new-room");
         if (target.closest("[data-close-modal]")) return closeModals();
         if (target.closest("[data-toggle-details]")) return toggleDetails();
-        const callTrigger = target.closest("[data-start-call]");
-        if (callTrigger) return await startCall(callTrigger.dataset.startCall || "voice");
+        if (target.closest("[data-thread-search]")) return toggleThreadSearch(true);
+        if (target.closest("[data-close-thread-search]")) return toggleThreadSearch(false);
         if (target.closest("[data-thread-mute]")) {
           if (state.active?.conversation_id) {
             state.actionConversationId = Number(state.active.conversation_id);
@@ -1615,6 +1806,9 @@
         const createRoomButton = target.closest("[data-create-room]");
         if (createRoomButton) return await runAction(createRoomButton, "Creating room...", createRoom);
         if (target.closest("[data-toggle-attachments]")) return toggleAttachmentSheet();
+        if (target.closest("[data-toggle-emoji]")) return toggleEmojiPanel();
+        const emoji = target.closest("[data-emoji-value]");
+        if (emoji) return insertEmoji(emoji.dataset.emojiValue || "");
         const attachmentOption = target.closest("[data-attachment-option]");
         if (attachmentOption) return openAttachmentOption(attachmentOption.dataset.attachmentOption || "file");
         const removeAttachmentButton = target.closest("[data-attachment-remove]");
@@ -1625,6 +1819,8 @@
           if (item) await uploadAttachmentItem(item);
           return;
         }
+        const retryMessageButton = target.closest("[data-retry-message]");
+        if (retryMessageButton) return retryFailedMessage(Number(retryMessageButton.dataset.retryMessage || 0));
         const moveAttachmentButton = target.closest("[data-attachment-move]");
         if (moveAttachmentButton) return moveAttachment(moveAttachmentButton.dataset.attachmentMove, Number(moveAttachmentButton.dataset.direction || 0));
         if (target.closest("[data-voice-start]")) return await startVoiceRecording();
@@ -1659,13 +1855,17 @@
         if (target.closest("[data-report-last]")) return await reportLast();
         if (target.closest("[data-block-peer]")) return await blockPeer();
       } catch (err) {
-        console.error("PulseSoc Communications V2 action failed", err);
+        console.error("PulseSoc Messenger V3 action failed", err);
         setStatus(err?.message || "That action could not be completed. Please try again.", "error");
       }
     });
     el("[data-composer]")?.addEventListener("submit", sendMessage);
-    el("[data-message-input]")?.addEventListener("input", debounceTyping);
+    el("[data-message-input]")?.addEventListener("input", () => {
+      saveActiveDraft();
+      debounceTyping();
+    });
     el("[data-message-input]")?.addEventListener("blur", sendTypingStopped);
+    el("[data-thread-search-input]")?.addEventListener("input", applyThreadSearch);
     el("[data-person-search]")?.addEventListener("input", () => debouncePeopleSearch("direct"));
     el("[data-group-person-search]")?.addEventListener("input", () => debouncePeopleSearch("group"));
     el("[data-conversation-search]")?.addEventListener("input", (event) => {
@@ -1717,7 +1917,12 @@
       }
     });
     document.addEventListener("keydown", async (event) => {
-      if (event.key === "Escape") return closeModals();
+      if (event.key === "Escape") {
+        toggleEmojiPanel(false);
+        toggleAttachmentSheet(false);
+        toggleThreadSearch(false);
+        return closeModals();
+      }
       if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
       const roomModal = event.target.closest?.('[data-modal="new-room"]');
       const groupModal = event.target.closest?.('[data-modal="new-group"]');
@@ -1734,6 +1939,7 @@
         if (event.target === modal) closeModals();
       });
     });
+    window.addEventListener("pagehide", saveActiveDraft);
   }
 
   function debounceTyping() {
@@ -1836,8 +2042,8 @@
       if (result !== false) setStatus("");
       return result;
     } catch (err) {
-      console.error("Pulse Communications V2 action failed", err);
-      setStatus(err?.message || "Pulse Communications V2 action failed. Please try again.", "error");
+      console.error("PulseSoc Messenger V3 action failed", err);
+      setStatus(err?.message || "Messenger action failed. Please try again.", "error");
       return false;
     } finally {
       state.actionPending = false;
@@ -1884,7 +2090,7 @@
     });
     return `
       <button class="person-result" type="button" data-person-id="${Number(remembered.user_id || 0)}">
-        <span class="avatar">${initials(remembered.display_name || remembered.username)}</span>
+        ${avatarHtml({ ...remembered, title: remembered.display_name || remembered.username }, "avatar")}
         <span><strong>${escapeHtml(remembered.display_name || "PulseSoc member")}</strong><small>${escapeHtml(remembered.username ? `@${remembered.username}` : person.matched_email ? "Email match" : "PulseSoc member")}</small></span>
         <span aria-hidden="true">+</span>
       </button>
@@ -1904,6 +2110,7 @@
       setStatus("Choose someone to message.", "error");
       return false;
     }
+    saveActiveDraft();
     const data = await api("/direct/open", { method: "POST", body: JSON.stringify({ target_user_id: target }) }, "create_direct");
     state.active = rememberConversation(data.conversation);
     if (!state.active?.conversation_id) throw new Error("The chat opened without a conversation ID. Please retry.");
@@ -1911,6 +2118,7 @@
     closeModals();
     resetCreationModal("new-chat");
     await loadConversations({ selectFirst: false });
+    restoreDraft(state.active.conversation_id);
     await loadMessages(state.active.conversation_id);
     setMobileMode("thread");
     el("[data-message-input]")?.focus();
@@ -1956,6 +2164,7 @@
       el("[data-group-person-search]")?.focus();
       return false;
     }
+    saveActiveDraft();
     const data = await api("/groups", { method: "POST", body: JSON.stringify({ title, member_ids: memberIds }) }, "create_group");
     state.active = rememberConversation(data.conversation);
     if (!state.active?.conversation_id) throw new Error("The group was created without a conversation ID. Please retry.");
@@ -1965,6 +2174,7 @@
     closeModals();
     resetCreationModal("new-group");
     await loadConversations({ selectFirst: false });
+    restoreDraft(state.active.conversation_id);
     await loadMessages(state.active.conversation_id);
     setMobileMode("thread");
     el("[data-message-input]")?.focus();
@@ -1979,6 +2189,7 @@
       el("[data-room-title]")?.focus();
       return false;
     }
+    saveActiveDraft();
     const data = await api("/rooms", { method: "POST", body: JSON.stringify({ title, privacy, description }) }, "create_room");
     state.active = rememberConversation(data.conversation);
     if (!state.active?.conversation_id) throw new Error("The room was created without a conversation ID. Please retry.");
@@ -1987,19 +2198,27 @@
     resetCreationModal("new-room");
     await loadConversations({ selectFirst: false });
     await loadRooms();
+    restoreDraft(state.active.conversation_id);
     await loadMessages(state.active.conversation_id);
+    setMobileMode("thread");
     el("[data-message-input]")?.focus();
   }
 
   async function openRoom(roomId) {
     if (!roomId) return;
+    if (state.composerSending) return setStatus("Finish sending the current message before switching chats.");
+    saveActiveDraft();
     state.active = rememberConversation(state.conversationCache.get(roomId) || state.rooms.find((item) => Number(item.conversation_id) === roomId));
-    state.messages = [];
+    const cached = state.messageCache.get(roomId) || [];
+    state.messages = cached.map((item) => ({ ...item }));
+    state.threadHydrating = !cached.length;
     state.members = [];
     state.typing = [];
+    restoreDraft(roomId);
     renderConversations();
     renderMessages();
     renderMembers();
+    setMobileMode("thread");
     await loadMessages(roomId);
     connectRealtimeStream();
   }
@@ -2007,6 +2226,7 @@
   async function sendMessage(event) {
     event.preventDefault();
     if (!state.active) return setStatus("Choose a conversation first.", "error");
+    const sendingConversationId = Number(state.active.conversation_id || 0);
     const input = el("[data-message-input]");
     const body = input?.value || "";
     const hasVoice = state.voice.state === "ready" && !!state.voice.blob;
@@ -2018,7 +2238,7 @@
     const pendingMessage = {
       id: pendingId,
       message_id: pendingId,
-      conversation_id: Number(state.active.conversation_id),
+      conversation_id: sendingConversationId,
       client_message_id: clientMessageId,
       client_temp_id: clientMessageId,
       sender_user_id: currentUserId,
@@ -2038,14 +2258,16 @@
       created_at: new Date().toISOString(),
       _pending: true,
     };
+    state.composerSending = true;
     try {
       state.messages = [...state.messages, pendingMessage];
+      state.messageCache.set(sendingConversationId, state.messages.map((item) => ({ ...item })));
       renderMessages();
       setStatus(hasVoice ? "Uploading voice note..." : state.attachmentQueue.length ? "Uploading attachments..." : "Sending...");
       const mediaIds = state.attachmentQueue.length ? await uploadAttachmentQueue() : [];
       const voiceId = hasVoice ? await uploadVoiceDraft() : 0;
       const allMediaIds = [...mediaIds, ...(voiceId ? [voiceId] : [])];
-      const data = await api(`/conversations/${state.active.conversation_id}/messages`, {
+      const data = await api(`/conversations/${sendingConversationId}/messages`, {
         method: "POST",
         body: JSON.stringify({
           body,
@@ -2056,27 +2278,57 @@
         }),
       }, "send_message");
       if (input) input.value = "";
+      clearDraft(sendingConversationId);
       clearAttachmentQueue();
       if (hasVoice) discardVoiceRecording({ silent: true });
       state.replyTo = null;
       if (data.message) {
-        const index = state.messages.findIndex((item) => item.client_message_id === clientMessageId || item.client_temp_id === clientMessageId || Number(item.id) === Number(data.message.id));
-        if (index >= 0) state.messages[index] = { ...data.message, _pending: false, _failed: false };
-        else state.messages = [...state.messages, data.message];
-        renderMessages();
-        document.querySelectorAll("[data-voice-message]").forEach(bindVoiceAudio);
+        const cached = state.messageCache.get(sendingConversationId) || [];
+        const cachedIndex = cached.findIndex((item) => item.client_message_id === clientMessageId || item.client_temp_id === clientMessageId || Number(item.id) === Number(data.message.id));
+        const nextCached = [...cached];
+        if (cachedIndex >= 0) nextCached[cachedIndex] = { ...data.message, _pending: false, _failed: false };
+        else nextCached.push(data.message);
+        state.messageCache.set(sendingConversationId, nextCached);
+        if (Number(state.active?.conversation_id || 0) === sendingConversationId) {
+          state.messages = nextCached.map((item) => ({ ...item }));
+          renderMessages();
+          document.querySelectorAll("[data-voice-message]").forEach(bindVoiceAudio);
+        }
       } else {
-        await loadMessages(state.active.conversation_id);
+        await loadMessages(sendingConversationId);
       }
       setStatus("");
     } catch (err) {
-      const index = state.messages.findIndex((item) => item.client_message_id === clientMessageId || item.client_temp_id === clientMessageId);
+      const cached = state.messageCache.get(sendingConversationId) || [];
+      const index = cached.findIndex((item) => item.client_message_id === clientMessageId || item.client_temp_id === clientMessageId);
       if (index >= 0) {
-        state.messages[index] = { ...state.messages[index], delivery_status: "failed", delivery_state: "failed", _pending: false, _failed: true };
+        cached[index] = { ...cached[index], delivery_status: "failed", delivery_state: "failed", _pending: false, _failed: true };
+        state.messageCache.set(sendingConversationId, cached);
+      }
+      if (Number(state.active?.conversation_id || 0) === sendingConversationId) {
+        state.messages = cached.map((item) => ({ ...item }));
         renderMessages();
       }
       setStatus(err.message, "error");
+    } finally {
+      state.composerSending = false;
     }
+  }
+
+  function retryFailedMessage(messageId) {
+    const failed = state.messages.find((item) => Number(item.id) === Number(messageId) && item._failed);
+    if (!failed || state.composerSending) return;
+    const input = el("[data-message-input]");
+    if (input && !input.value.trim() && failed.body && !["Attachment", "Voice message"].includes(failed.body)) {
+      input.value = failed.body;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    state.messages = state.messages.filter((item) => Number(item.id) !== Number(messageId));
+    if (state.active?.conversation_id) {
+      state.messageCache.set(Number(state.active.conversation_id), state.messages.map((item) => ({ ...item })));
+    }
+    renderMessages();
+    el("[data-composer]")?.requestSubmit();
   }
 
   async function reactToMessage(messageId, reaction) {
@@ -2202,25 +2454,14 @@
   async function reportLast() {
     const last = state.messages[state.messages.length - 1];
     if (!last) return setStatus("No message is available to report.", "error");
-    await api(`/messages/${last.id}/report`, { method: "POST", body: JSON.stringify({ reason: "Reported from v2 test UI" }) }, "report");
+    await api(`/messages/${last.id}/report`, { method: "POST", body: JSON.stringify({ reason: "Reported from Messenger V3" }) }, "report");
     setStatus("Report sent to moderation.");
-  }
-
-  async function startCall(kind = "voice") {
-    if (!state.active?.conversation_id) return setStatus("Choose a conversation before starting a call.", "error");
-    const safeKind = String(kind || "voice").toLowerCase() === "video" ? "video" : "voice";
-    const label = safeKind === "video" ? "Video" : "Audio";
-    const data = await api(`/conversations/${state.active.conversation_id}/${safeKind}/start`, {
-      method: "POST",
-      body: JSON.stringify({ client_capability: "future_call_control" }),
-    }, `${safeKind}_call_gate`);
-    setStatus(data.message || `${label} calls are reserved for the next communication phase.`);
   }
 
   async function blockPeer() {
     const peer = state.members.find((m) => Number(m.user_id) !== currentUserId);
     if (!peer) return setStatus("No peer is available to block.", "error");
-    await api("/blocks", { method: "POST", body: JSON.stringify({ blocked_user_id: peer.user_id, reason: "Blocked from v2 test UI" }) }, "block");
+    await api("/blocks", { method: "POST", body: JSON.stringify({ blocked_user_id: peer.user_id, reason: "Blocked from Messenger V3" }) }, "block");
     setStatus("Member blocked.");
   }
 
