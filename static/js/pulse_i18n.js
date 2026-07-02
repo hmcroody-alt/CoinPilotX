@@ -2,7 +2,9 @@
   "use strict";
 
   const STORAGE_KEY = "pulse.preferred.language";
-  const supported = new Set(["en", "es", "fr", "ht", "pt", "de", "it", "ar"]);
+  const builtIn = new Set(["en", "es", "fr", "ht", "pt", "de", "it", "ar"]);
+  const languagePattern = /^[a-z]{2,3}(?:-[a-z0-9]{2,8}){0,3}$/;
+  const rtlLanguages = new Set(["ar", "dv", "fa", "he", "ks", "ku", "ps", "sd", "ug", "ur", "yi"]);
   const missingLogged = new Set();
 
   const messages = {
@@ -38,16 +40,20 @@
 
   function normalize(language) {
     const raw = String(language || "").trim().toLowerCase().replace("_", "-").slice(0, 16);
-    if (supported.has(raw)) return raw;
+    if (raw === "auto" || raw === "browser" || raw === "system") {
+      return normalize(navigator.languages?.[0] || navigator.language || document.documentElement.lang || "en");
+    }
+    if (builtIn.has(raw)) return raw;
     const base = raw.split("-", 1)[0];
-    return supported.has(base) ? base : "en";
+    if (builtIn.has(base)) return raw.includes("-") && languagePattern.test(raw) ? raw : base;
+    return languagePattern.test(raw) ? raw : "en";
   }
 
   function readCachedLanguage() {
     try {
-      return normalize(localStorage.getItem(STORAGE_KEY) || document.documentElement.lang || "en");
+      return normalize(localStorage.getItem(STORAGE_KEY) || navigator.languages?.[0] || navigator.language || document.documentElement.lang || "en");
     } catch (error) {
-      return normalize(document.documentElement.lang || "en");
+      return normalize(navigator.language || document.documentElement.lang || "en");
     }
   }
 
@@ -59,8 +65,11 @@
 
   function applyLanguage(language) {
     const normalized = normalize(language);
+    const base = normalized.split("-", 1)[0];
     document.documentElement.lang = normalized;
+    document.documentElement.dir = rtlLanguages.has(base) ? "rtl" : "ltr";
     document.documentElement.dataset.preferredLanguage = normalized;
+    document.documentElement.dataset.translationFallback = messages[normalized] ? "native" : messages[base] ? "base" : "english";
     document.dispatchEvent(new CustomEvent("PulseLanguageChanged", { detail: { language: normalized } }));
     translateMarkedNodes();
     return normalized;
@@ -80,8 +89,9 @@
 
   function t(key, fallback) {
     const language = normalize(document.documentElement.dataset.preferredLanguage || readCachedLanguage());
-    const value = messages[language]?.[key] || messages.en?.[key];
-    if (!messages[language]?.[key] && language !== "en") logMissing(key, language);
+    const base = language.split("-", 1)[0];
+    const value = messages[language]?.[key] || messages[base]?.[key] || messages.en?.[key];
+    if (!messages[language]?.[key] && !messages[base]?.[key] && language !== "en") logMissing(key, language);
     return value || fallback || key;
   }
 
@@ -149,7 +159,9 @@
     setLanguage,
     t,
     applyLanguage,
-    loadServerLanguage
+    loadServerLanguage,
+    supportsLanguage: (language) => languagePattern.test(String(language || "").trim().toLowerCase().replace("_", "-").slice(0, 16)),
+    builtInLanguages: () => Array.from(builtIn)
   };
 
   applyLanguage(readCachedLanguage());

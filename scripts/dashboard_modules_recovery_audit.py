@@ -157,7 +157,7 @@ def audit_registry_and_logging() -> None:
         expect(needle in dashboard_source, f"degraded module logging includes {needle}")
     offline_source = read("scripts/pulsesoc_offline_dashboard_audit.py")
     expect("checkPulseSocReachable" in offline_source, "offline audit covers native health-gated retry")
-    expect("coinplotx-cache-v20-pulse-offline-dashboard" in offline_source, "offline audit requires current service worker cache")
+    expect("coinplotx-cache-v21-remove-old-home-logout" in offline_source, "offline audit requires current service worker cache")
 
 
 def run() -> None:

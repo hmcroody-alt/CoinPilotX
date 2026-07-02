@@ -125,7 +125,7 @@ def audit_offline_recovery_targets() -> None:
 def audit_service_workers() -> None:
     for path in ("static/service-worker.js", "static/sw.js"):
         source = read(path)
-        expect("coinplotx-cache-v20-pulse-offline-dashboard" in source, f"{path} cache version bumped")
+        expect("coinplotx-cache-v21-remove-old-home-logout" in source, f"{path} cache version bumped")
         expect('const fallbackUrl = videoRoute ? "/pulse/videos" : "/pulse";' in source, f"{path} online fallback prefers PulseSoc Home")
         expect("/health?sw_recovery=" in source, f"{path} verifies server reachability before true offline fallback")
         expect('href="/pulse/videos"' not in source, f"{path} no hard-coded video fallback for every route")
@@ -134,7 +134,10 @@ def audit_service_workers() -> None:
 
 def audit_language_safety() -> None:
     source = read("static/js/pulse_i18n.js")
-    expect('return supported.has(base) ? base : "en";' in source, "language normalization falls back to English")
+    expect("languagePattern" in source, "language normalization accepts valid BCP-47-style tags")
+    expect('return languagePattern.test(raw) ? raw : "en";' in source, "invalid language values fall back to English")
+    expect("document.documentElement.dir" in source, "language normalization updates text direction")
+    expect("translationFallback" in source, "missing localized dictionaries fall back safely")
     expect('catch (error) {\n      return readCachedLanguage();\n    }' in source, "server language fetch failure falls back safely")
     expect('fetch("/api/i18n/missing"' in source, "missing translations are logged")
     expect(".catch(() => undefined)" in source, "missing translation logging never blocks boot")

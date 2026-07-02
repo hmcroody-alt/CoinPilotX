@@ -54,7 +54,7 @@ def main() -> int:
     checks = [
         check("Feed V3 card class exists", "pulse-feed-post-v3" in home_js and ".feed > .pulse-feed-post-v3" in feed_css),
         check("Pulse page loads Feed V3 media overlay CSS asset", "pulse_desktop_feed.css?v=feed-post-v3-media-overlay-20260629a" in bot and "pulse_desktop_feed.css?v=feed-actions-v2" not in bot),
-        check("Pulse page loads Feed V3 media overlay JS asset", "pulse_home_core.js?v=feed-post-v3-media-overlay-20260629a" in bot and "pulse_home_core.js?v=feed-actions-v2" not in bot),
+        check("Pulse page loads current Home core JS asset", "pulse_home_core.js?v=remove-old-home-logout-20260701" in bot and "pulse_home_core.js?v=feed-actions-v2" not in bot),
         check("Required feed hierarchy order is preserved", all(pos >= 0 for pos in positions) and positions == sorted(positions), str(positions)),
         check("Music overlay is inside media, not a separate card", "function renderPostMusicOverlay" in home_js and "frame.appendChild(player)" in home_js and "card.appendChild(player)" not in section(home_js, "function renderPostMusic(card, post)", "function renderEngagement")),
         check("Music overlay is positioned inside media", "post-media-music-overlay" in home_js and "position: absolute !important" in section(feed_css, ".feed > .pulse-feed-post-v3 .post-music-player", ".feed > .pulse-feed-post-v3 .post-music-player::before")),

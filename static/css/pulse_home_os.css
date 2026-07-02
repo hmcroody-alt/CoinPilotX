@@ -2942,3 +2942,83 @@ body.pulse-home-os .create-sheet-grid a {
     min-width: max-content;
   }
 }
+body.pulse-home-os .pulse-desktop-topbar,
+body.pulse-home-os .pulse-desktop-nav,
+body.pulse-home-os .pulse-desktop-actions {
+  overflow: visible;
+}
+
+body.pulse-home-os .pulse-desktop-more-menu,
+body.pulse-home-os .pulse-topnav-profile-menu {
+  position: relative;
+  z-index: 10020;
+}
+
+body.pulse-home-os .pulse-desktop-more-menu[open],
+body.pulse-home-os .pulse-topnav-profile-menu[open] {
+  z-index: 10080;
+}
+
+body.pulse-home-os .pulse-topnav-profile-menu summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+body.pulse-home-os .pulse-topnav-profile-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+body.pulse-home-os .pulse-topnav-profile-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  z-index: 10090;
+  width: min(240px, calc(100vw - 24px));
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid rgba(110, 223, 246, .28);
+  border-radius: 16px;
+  background: rgba(5, 13, 24, .96);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .52), 0 0 36px rgba(110, 223, 246, .16);
+  backdrop-filter: blur(18px);
+}
+
+body.pulse-home-os .pulse-topnav-profile-panel strong {
+  padding: 4px 6px 8px;
+  color: #f2fbff;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.pulse-home-os .pulse-topnav-profile-panel a,
+body.pulse-home-os .drawer-logout {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(110, 223, 246, .16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .055);
+  color: #eaffff;
+  padding: 9px 11px;
+  text-decoration: none;
+  font-weight: 900;
+}
+
+body.pulse-home-os .pulse-topnav-profile-panel a:hover,
+body.pulse-home-os .pulse-topnav-profile-panel a:focus-visible,
+body.pulse-home-os .drawer-logout:hover,
+body.pulse-home-os .drawer-logout:focus-visible {
+  border-color: rgba(110, 223, 246, .38);
+  background: rgba(110, 223, 246, .12);
+  outline: none;
+}
+
+body.pulse-home-os .pulse-topnav-profile-panel a.logout,
+body.pulse-home-os .drawer-logout {
+  color: #ffe6e9;
+  border-color: rgba(255, 107, 122, .3);
+}

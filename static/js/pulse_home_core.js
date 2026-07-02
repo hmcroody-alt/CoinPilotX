@@ -126,7 +126,7 @@
       if (mood) mood.textContent = pulseNetworkState.communityMood;
       const summary = card.querySelector("[data-network-summary]");
       if (summary) {
-        summary.textContent = `${pulseNetworkState.trendingActivity} public signals mapped. Aggregate activity only.`;
+        summary.textContent = `${pulseNetworkState.trendingActivity} public posts summarized. Aggregate activity only.`;
       }
     });
     document.querySelectorAll("[data-desktop-creators-online]").forEach(node => {

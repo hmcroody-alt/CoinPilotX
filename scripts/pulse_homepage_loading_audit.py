@@ -83,7 +83,7 @@ def main() -> int:
     require("ensureStatusViewerRuntime" in html and "dataset.pulseStatusRuntime" in html, "core-safe /pulse can reuse Status after user interaction")
     require("static/notifications.js" in html, "core-safe /pulse keeps the live badge notification runtime")
     require("data-pulse-shell-runtime" not in html, "core-safe /pulse suppresses the oversized inline controller")
-    core_script = client.get("/static/js/pulse_home_core.js?v=pulse-home-core-20260614a")
+    core_script = client.get("/static/js/pulse_home_core.js?v=remove-old-home-logout-20260701")
     core_script_text = core_script.get_data(as_text=True)
     require(core_script.status_code == 200, "compact core controller loads")
     require("AbortController" in core_script_text and "data-retry-pulse-feed" in core_script_text, "compact core controller has timeout and retry protection")
@@ -138,7 +138,7 @@ def main() -> int:
         worker = client.get(worker_url)
         worker_text = worker.get_data(as_text=True)
         require(worker.status_code == 200, f"service worker loads {worker_url}", str(worker.status_code))
-        require("coinplotx-cache-v20-pulse-offline-dashboard" in worker_text, f"service worker cache version is current {worker_url}")
+        require("coinplotx-cache-v21-remove-old-home-logout" in worker_text, f"service worker cache version is current {worker_url}")
         require("no-store" in worker.headers.get("Cache-Control", ""), f"service worker is not cacheable {worker_url}")
 
     if FAILURES:

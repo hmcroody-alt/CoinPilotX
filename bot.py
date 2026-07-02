@@ -82,7 +82,7 @@ COINPILOTX_SECRET_KEY = os.getenv("FLASK_SECRET_KEY") or os.getenv("SECRET_KEY")
 COINPILOTX_RANDOM_SECRET_USED = not bool(os.getenv("FLASK_SECRET_KEY") or os.getenv("SECRET_KEY") or os.getenv("SESSION_SECRET"))
 COINPILOTX_SESSION_COOKIE_SECURE = _env_bool("SESSION_COOKIE_SECURE", _deployment_environment_enabled())
 PERSISTENT_SESSION_COOKIE = os.getenv("PULSESOC_REFRESH_COOKIE_NAME", "pulse_refresh_session")
-PERSISTENT_SESSION_DAYS = max(30, int(os.getenv("PULSESOC_PERSISTENT_SESSION_DAYS", "365")))
+PERSISTENT_SESSION_DAYS = max(3650, int(os.getenv("PULSESOC_PERSISTENT_SESSION_DAYS", "3650")))
 PERSISTENT_SESSION_MAX_AGE = PERSISTENT_SESSION_DAYS * 24 * 60 * 60
 PERSISTENT_SESSION_SAMESITE = os.getenv("PULSESOC_REFRESH_COOKIE_SAMESITE", "Lax")
 PERSISTENT_REFRESH_REUSE_GRACE_SECONDS = max(30, int(os.getenv("PULSESOC_REFRESH_REUSE_GRACE_SECONDS", "180")))
@@ -1164,7 +1164,7 @@ def inject_seo_runtime_config():
 def home():
     user = load_account_by_id(account_user_id())
     if user:
-        return redirect(url_for("pulse_page"))
+        return redirect("/pulse")
     greeting = "Welcome to PulseSoc — your AI intelligence command center."
     response = render_template("index.html", current_user=user or {}, homepage_greeting=greeting)
     response_obj = webhook_app.make_response(response)
@@ -2863,17 +2863,59 @@ SUPPORTED_LANGUAGE_CODES = {
     "de": "German",
     "it": "Italian",
     "ar": "Arabic",
+    "af": "Afrikaans",
+    "am": "Amharic",
+    "bn": "Bengali",
+    "bg": "Bulgarian",
+    "ca": "Catalan",
+    "zh": "Chinese",
+    "hr": "Croatian",
+    "cs": "Czech",
+    "da": "Danish",
+    "nl": "Dutch",
+    "et": "Estonian",
+    "fi": "Finnish",
+    "el": "Greek",
+    "he": "Hebrew",
+    "hi": "Hindi",
+    "hu": "Hungarian",
+    "id": "Indonesian",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "lt": "Lithuanian",
+    "ms": "Malay",
+    "no": "Norwegian",
+    "pl": "Polish",
+    "ro": "Romanian",
+    "ru": "Russian",
+    "sk": "Slovak",
+    "sl": "Slovenian",
+    "sw": "Swahili",
+    "sv": "Swedish",
+    "ta": "Tamil",
+    "te": "Telugu",
+    "th": "Thai",
+    "tr": "Turkish",
+    "uk": "Ukrainian",
+    "ur": "Urdu",
+    "vi": "Vietnamese",
+    "yo": "Yoruba",
 }
 DEFAULT_LANGUAGE_CODE = "en"
+LANGUAGE_CODE_RE = re.compile(r"^[a-z]{2,3}(?:-[a-z0-9]{2,8}){0,3}$")
 
 
 def normalize_preferred_language(value, default=DEFAULT_LANGUAGE_CODE):
     raw = str(value or "").strip().lower().replace("_", "-")[:16]
+    if raw in {"auto", "browser", "system"}:
+        return default
     if raw in SUPPORTED_LANGUAGE_CODES:
         return raw
     base = raw.split("-", 1)[0]
     if base in SUPPORTED_LANGUAGE_CODES:
-        return base
+        return raw if "-" in raw and LANGUAGE_CODE_RE.match(raw) else base
+    if LANGUAGE_CODE_RE.match(raw):
+        return raw
     return default
 
 
@@ -3908,11 +3950,36 @@ def require_account():
     return user
 
 
+LEGACY_PULSESOC_HOME_TARGETS = {
+    "/home",
+    "/feed",
+    "/pulse/home",
+    "/pulse/legacy-home",
+    "/pulse/home-legacy",
+    "/pulse/old-home",
+    "/pulse/legacy",
+}
+
+
+def is_legacy_pulsesoc_home_target(target):
+    raw = str(target or "").strip()
+    if not raw or raw.startswith("//"):
+        return False
+    path = raw.split("?", 1)[0].split("#", 1)[0].rstrip("/") or "/"
+    lowered = path.lower()
+    if lowered in LEGACY_PULSESOC_HOME_TARGETS:
+        return True
+    query = raw.split("?", 1)[1].lower() if "?" in raw else ""
+    return lowered == "/pulse" and any(marker in query for marker in ("legacy", "old_home", "old-home", "global_pulsesoc_feed"))
+
+
 def safe_redirect_target(default_endpoint="dashboard_page"):
     target = request.args.get("next") or request.form.get("next") or ""
     if target and target.startswith("/") and not target.startswith("//"):
+        if is_legacy_pulsesoc_home_target(target):
+            return "/pulse"
         return target
-    return url_for(default_endpoint)
+    return "/pulse" if default_endpoint == "pulse_page" else url_for(default_endpoint)
 
 
 def public_app_base_url():
@@ -4866,7 +4933,7 @@ def signup_page():
             session.pop("account_user_id", None)
             return render_account_page("login", "Login", message="Account created. Check your email to confirm your account before logging in.", resend_email=email)
         token_payload = issue_mobile_security_tokens(user, {"source": "web_signup", "device_label": presence_device_label()})
-        response = redirect(url_for("pulse_page", signup_completed="1"))
+        response = redirect("/pulse?signup_completed=1")
         return set_persistent_session_cookie(response, token_payload.get("refresh_token") or "")
     return render_account_page("signup", "Create Account")
 
@@ -4875,7 +4942,7 @@ def signup_page():
 def login_page():
     init_db()
     if request.method == "GET" and require_account():
-        return redirect(url_for("pulse_page"))
+        return redirect("/pulse")
     if request.method == "POST":
         if not verify_csrf():
             return render_account_page("login", "Login", error="Security check failed. Please try again.")
@@ -5373,13 +5440,13 @@ def api_account_language():
     if request.method == "GET":
         fresh = load_account_by_id(user["user_id"]) or user
         language = account_language(fresh)
-        return jsonify({"ok": True, "preferred_language": language, "language": language, "supported_languages": SUPPORTED_LANGUAGE_CODES})
+        return jsonify({"ok": True, "preferred_language": language, "language": language, "supported_languages": SUPPORTED_LANGUAGE_CODES, "any_language_supported": True})
     payload = request.get_json(silent=True) or {}
     try:
         language = save_user_preferred_language(user["user_id"], payload.get("preferred_language") or payload.get("language"), user["user_id"])
     except ValueError as exc:
         return api_error(str(exc), 400, error="unsupported_language")
-    return jsonify({"ok": True, "message": "Language preference saved.", "preferred_language": language, "language": language, "supported_languages": SUPPORTED_LANGUAGE_CODES})
+    return jsonify({"ok": True, "message": "Language preference saved.", "preferred_language": language, "language": language, "supported_languages": SUPPORTED_LANGUAGE_CODES, "any_language_supported": True})
 
 
 @webhook_app.route("/api/i18n/missing", methods=["POST"])
@@ -19312,7 +19379,7 @@ def api_account_user():
 
 
 MOBILE_ACCESS_TOKEN_TTL_SECONDS = int(os.getenv("PULSESOC_MOBILE_ACCESS_TOKEN_TTL_SECONDS", "900"))
-MOBILE_REFRESH_TOKEN_TTL_SECONDS = int(os.getenv("PULSESOC_MOBILE_REFRESH_TOKEN_TTL_SECONDS", str(60 * 60 * 24 * 30)))
+MOBILE_REFRESH_TOKEN_TTL_SECONDS = int(os.getenv("PULSESOC_MOBILE_REFRESH_TOKEN_TTL_SECONDS", str(60 * 60 * 24 * 3650)))
 
 
 def mobile_security_device_context(payload=None):
@@ -27149,7 +27216,7 @@ def pulse_desktop_top_nav_html(user=None):
         "<a class='pulse-topnav-control pulse-topnav-search' href='/pulse/search' aria-label='Open PulseSoc search'><span aria-hidden='true'>⌕</span></a>"
         "<a class='pulse-topnav-control pulse-topnav-alert' data-header-notifications href='/pulse/notifications' aria-label='Notifications'><span class='pulse-alert-radar' aria-hidden='true'></span><span class='pulse-notification-badge' data-alert-unread data-notification-unread hidden>0</span></a>"
         "<a class='pulse-topnav-control pulse-topnav-live' href='/pulse/live' aria-label='Open Live Network'><span aria-hidden='true'>LIVE</span></a>"
-        f"<a class='pulse-topnav-avatar' href='/pulse/profile' aria-label='Profile'>{avatar_html}<span class='pulse-topnav-presence' aria-hidden='true'></span></a>"
+        f"<details class='pulse-topnav-profile-menu'><summary class='pulse-topnav-avatar' aria-label='Open account menu'>{avatar_html}<span class='pulse-topnav-presence' aria-hidden='true'></span></summary><div class='pulse-topnav-profile-panel' role='menu' aria-label='Account menu'><strong>{clean_html(display_name)}</strong><a href='/pulse/profile' role='menuitem'>Profile</a><a href='/dashboard' role='menuitem'>Dashboard</a><a href='/account/settings' role='menuitem'>Account Settings</a><a class='logout' href='/logout' role='menuitem'>Log Out</a></div></details>"
         "<a class='button primary pulse-create-strong' href='#create' data-pulse-create-trigger='1'>Create Signal</a></div>"
         "</header>"
     )
@@ -27200,6 +27267,7 @@ def pulse_desktop_left_rail_html(is_admin=False, user=None):
         "<div class='pulse-rail-today-grid'>"
         "<a href='/dashboard'><strong>Dashboard</strong><small class='muted'>Account command center</small></a>"
         "<a href='/pulse/promote'><strong>Promote</strong><small class='muted'>Owner tools</small></a>"
+        "<a href='/logout'><strong>Log Out</strong><small class='muted'>End this session</small></a>"
         "</div>"
         "</section>"
         f"<section class='desktop-rail-card desktop-rail-nav'>{links}</section>"
@@ -27859,7 +27927,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
         ("Social", [("Friends", "/pulse/friends"), ("Communities", "/pulse/communities"), ("Groups", "/pulse/groups"), ("Messenger", "/pulse/messages"), ("Notifications", "/pulse/notifications"), ("My Posts", "/pulse/my-posts"), ("Profile", "/pulse/profile")]),
         ("Creator / Business", [("Creator Studio", "/pulse/creator-studio"), ("Seller Tools", "/pulse/seller-tools"), ("Marketplace", "/pulse/marketplace"), ("Promote", "/pulse/promote"), ("Premium", "/pulse/premium"), ("Portfolio", "/pulse/portfolio")]),
         ("Content", [("Events", "/pulse/events"), ("Scam Alerts", "/pulse/scam-alerts"), ("Arena Highlights", "/pulse/arena"), ("Roast Clips", "/pulse/roast-clips"), ("Saved", "/pulse/saved"), ("Collections", "/pulse/collections")]),
-        ("Utility", [("Dashboard", "/dashboard"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/camera/post"), ("Settings", "/pulse/settings"), ("Help", "/help"), ("Logout", "/logout")]),
+        ("Utility", [("Dashboard", "/dashboard"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/camera/post"), ("Settings", "/pulse/settings"), ("Help", "/help"), ("Log Out", "/logout")]),
     ]
     drawer_html = "".join(
         "<section><h3>{}</h3>{}</section>".format(
@@ -27941,7 +28009,7 @@ textarea,input,select{width:100%;border:1px solid var(--line);border-radius:10px
 	</style><link rel="stylesheet" href="/static/css/pulse_composer_premium.css?v=music-modal-20260621c"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=global-media-ui-20260614a"><link rel="stylesheet" href="/static/css/pulse_sci_fi_system.css?v=sci-fi-system-20260617a"><link rel="stylesheet" href="/static/css/pulsesoc_promotions.css"></head><body>
 __DESKTOP_TOP_NAV__
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
-<aside class="pulse-drawer" id="pulseDrawer" aria-hidden="true"><header><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-logo-20260606.png" alt="">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button" aria-label="Close menu">×</button></header>__DRAWER__</aside>
+<aside class="pulse-drawer" id="pulseDrawer" aria-hidden="true"><header><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-logo-20260606.png" alt="">PulseSoc</a><a class="drawer-logout" href="/logout">Log Out</a><button class="icon-btn" id="drawerClose" type="button" aria-label="Close menu">×</button></header>__DRAWER__</aside>
 <main class="wrap pulse-shell" data-feed="__ACTIVE_FEED__" data-topic="__TOPIC__" data-profile="__PROFILE__">
 <nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-logo-20260606.png" alt="">PulseSoc</a><div class="mobile-actions"><button class="icon-btn pulse-topnav-control pulse-topnav-search" id="pulseMobileSearch" type="button" aria-label="Search PulseSoc">⌕</button><a class="icon-btn pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">__NOTIFICATION_BELL_ICON__<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="avatar pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">__SHELL_AVATAR__<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav>
 <nav class="top"><a class="brand" href="/dashboard"><img src="/static/brand/pulsesoc-logo-20260606.png" alt="PulseSoc logo">PulseSoc</a><div class="actions pulse-actions"><a class="button" href="/dashboard">Dashboard</a><a class="button" href="/pulse/my-posts">My Posts</a><a class="button pulse-status-glow-link" href="/pulse?create_status=1">Create Status</a><a class="button" href="/pulse/live">Live Network</a><a class="button primary" href="#create" data-pulse-create-trigger="1">Create Signal</a></div></nav>
@@ -27949,7 +28017,7 @@ __DESKTOP_TOP_NAV__
 <section class="pulse-desktop-layout">
 __DESKTOP_LEFT_RAIL__
 <div class="pulse-desktop-center">
-<section class="card hero pulse-home-hero"><div class="pulse-home-hero-copy"><span class="badge live">PulseSoc Universe / Network Is Alive</span><h1>__TITLE__</h1><p>Post questions, scam warnings, ideas, and creator updates. New approved posts appear immediately.</p><div class="pulse-hero-metrics" aria-label="Live PulseSoc network summary"><span><strong data-desktop-posts-today>0</strong><small>signals mapped</small></span><span><strong data-desktop-creators-online>0</strong><small>online now</small></span><span><strong data-desktop-live-count>0</strong><small>live now</small></span></div><div class="actions pulse-hero-actions"><a class="button primary" href="/pulse/live">Explore Live Network</a><button class="button" type="button" data-pulse-radio-toggle>Pulse Radio</button><a class="button" href="/pulse/discover">Discover</a></div><details><summary>Learn more</summary><p class="muted">__DISCLAIMER__</p></details></div><div class="pulse-home-hero-visual" aria-hidden="true"><div class="pulse-orbit-stage"><span class="pulse-orbit-ring"></span><span class="pulse-orbit-ring ring-two"></span><span class="pulse-orbit-core">PulseSoc</span><span class="pulse-orbit-dot dot-one"></span><span class="pulse-orbit-dot dot-two"></span><span class="pulse-orbit-dot dot-three"></span></div><div class="pulse-hero-signal-card signal-one"><strong>Live</strong><span>Creator signals</span></div><div class="pulse-hero-signal-card signal-two"><strong>AI</strong><span>Safety scan ready</span></div></div></section>
+<section class="card hero pulse-home-hero pulse-current-home" data-current-pulsesoc-home="true"><div class="pulse-home-hero-copy"><span class="badge live">PulseSoc Home OS</span><h1>__TITLE__</h1><p>Your live command layer for creators, conversations, safety, media, discovery, and account control.</p><div class="pulse-hero-metrics" aria-label="PulseSoc Home readiness summary"><span><strong data-desktop-posts-today>0</strong><small>posts today</small></span><span><strong data-desktop-creators-online>0</strong><small>online now</small></span><span><strong data-desktop-live-count>0</strong><small>live now</small></span></div><div class="actions pulse-hero-actions"><a class="button primary" href="#create" data-pulse-create-trigger="1">Create Signal</a><a class="button" href="/dashboard">Dashboard</a><button class="button" type="button" data-pulse-radio-toggle>Open Radio</button><a class="button" href="/logout">Log Out</a></div><p class="muted">__DISCLAIMER__</p></div><div class="pulse-home-hero-visual" aria-hidden="true"><div class="pulse-orbit-stage"><span class="pulse-orbit-ring"></span><span class="pulse-orbit-ring ring-two"></span><span class="pulse-orbit-core">PulseSoc</span><span class="pulse-orbit-dot dot-one"></span><span class="pulse-orbit-dot dot-two"></span><span class="pulse-orbit-dot dot-three"></span></div><div class="pulse-hero-signal-card signal-one"><strong>Home</strong><span>Unified layer ready</span></div><div class="pulse-hero-signal-card signal-two"><strong>Safety</strong><span>Session protected</span></div></div></section>
 <section class="layout pulse-grid"><div>
 __PULSE_STATUS_RAIL__
 __MOBILE_INLINE_AD__
@@ -28513,7 +28581,7 @@ document.addEventListener('click',e=>{const chip=e.target.closest('[data-pulse-s
 const pulseConnection=navigator.connection||navigator.mozConnection||navigator.webkitConnection||{};const pulsePrefersReducedData=!!pulseConnection.saveData||/(^|-)2g$/i.test(String(pulseConnection.effectiveType||''));function pulseFeedPageLimit(){return pulsePrefersReducedData?5:(window.innerWidth<=760?6:10)}
 const pulseNetworkState={creatorsOnline:0,liveStreams:0,aiAlerts:0,trendingActivity:0,communityMood:'Warming up'};
 function pulseNetworkNumber(value,fallback=0){return Math.max(0,Math.min(999,Number(value||fallback)||0))}
-function pulseNetworkUpdate(next={}){Object.assign(pulseNetworkState,{creatorsOnline:pulseNetworkNumber(next.creatorsOnline,pulseNetworkState.creatorsOnline),liveStreams:pulseNetworkNumber(next.liveStreams,pulseNetworkState.liveStreams),aiAlerts:pulseNetworkNumber(next.aiAlerts,pulseNetworkState.aiAlerts),trendingActivity:pulseNetworkNumber(next.trendingActivity,pulseNetworkState.trendingActivity),communityMood:String(next.communityMood||pulseNetworkState.communityMood||'Warming up').slice(0,48)});document.querySelectorAll('[data-pulse-network-globe]').forEach(card=>{card.dataset.creatorsOnline=String(pulseNetworkState.creatorsOnline);card.dataset.liveStreams=String(pulseNetworkState.liveStreams);card.dataset.aiAlerts=String(pulseNetworkState.aiAlerts);card.dataset.trendingActivity=String(pulseNetworkState.trendingActivity);card.querySelector('[data-network-count="creators"]')?.replaceChildren(document.createTextNode(String(pulseNetworkState.creatorsOnline)));card.querySelector('[data-network-count="live"]')?.replaceChildren(document.createTextNode(String(pulseNetworkState.liveStreams)));card.querySelector('[data-network-count="ai"]')?.replaceChildren(document.createTextNode(String(pulseNetworkState.aiAlerts)));const mood=card.querySelector('[data-network-mood]');if(mood)mood.textContent=pulseNetworkState.communityMood;const summary=card.querySelector('[data-network-summary]');if(summary)summary.textContent=`${pulseNetworkState.trendingActivity} public signals mapped. Aggregate activity only.`})}
+function pulseNetworkUpdate(next={}){Object.assign(pulseNetworkState,{creatorsOnline:pulseNetworkNumber(next.creatorsOnline,pulseNetworkState.creatorsOnline),liveStreams:pulseNetworkNumber(next.liveStreams,pulseNetworkState.liveStreams),aiAlerts:pulseNetworkNumber(next.aiAlerts,pulseNetworkState.aiAlerts),trendingActivity:pulseNetworkNumber(next.trendingActivity,pulseNetworkState.trendingActivity),communityMood:String(next.communityMood||pulseNetworkState.communityMood||'Warming up').slice(0,48)});document.querySelectorAll('[data-pulse-network-globe]').forEach(card=>{card.dataset.creatorsOnline=String(pulseNetworkState.creatorsOnline);card.dataset.liveStreams=String(pulseNetworkState.liveStreams);card.dataset.aiAlerts=String(pulseNetworkState.aiAlerts);card.dataset.trendingActivity=String(pulseNetworkState.trendingActivity);card.querySelector('[data-network-count="creators"]')?.replaceChildren(document.createTextNode(String(pulseNetworkState.creatorsOnline)));card.querySelector('[data-network-count="live"]')?.replaceChildren(document.createTextNode(String(pulseNetworkState.liveStreams)));card.querySelector('[data-network-count="ai"]')?.replaceChildren(document.createTextNode(String(pulseNetworkState.aiAlerts)));const mood=card.querySelector('[data-network-mood]');if(mood)mood.textContent=pulseNetworkState.communityMood;const summary=card.querySelector('[data-network-summary]');if(summary)summary.textContent=`${pulseNetworkState.trendingActivity} public posts summarized. Aggregate activity only.`})}
 function pulseNetworkPaused(paused){document.querySelectorAll('[data-pulse-network-globe]').forEach(card=>card.classList.toggle('is-paused',!!paused))}
 async function pulseNetworkRefreshLive(){if(document.hidden)return;try{const data=await api('/api/pulse/live-now?limit=3',{timeoutMs:5000});pulseNetworkUpdate({liveStreams:(data.items||[]).length})}catch(_){}}
 document.addEventListener('visibilitychange',()=>pulseNetworkPaused(document.hidden));if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)pulseNetworkPaused(true);
@@ -28637,7 +28705,7 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js" defer></script>', "")
         rendered_html = rendered_html.replace(
             "</body>",
-            '<script src="/static/js/pulse_home_core.js?v=feed-post-v3-media-overlay-20260629a" defer></script></body>',
+            '<script src="/static/js/pulse_home_core.js?v=remove-old-home-logout-20260701" defer></script></body>',
             1,
         )
     if boot_profile == "shell_only":
@@ -28652,6 +28720,19 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
         1,
     )
     return Response(rendered_html)
+
+
+@webhook_app.route("/home", methods=["GET"])
+@webhook_app.route("/feed", methods=["GET"])
+@webhook_app.route("/pulse/home", methods=["GET"])
+@webhook_app.route("/pulse/legacy-home", methods=["GET"])
+@webhook_app.route("/pulse/home-legacy", methods=["GET"])
+@webhook_app.route("/pulse/old-home", methods=["GET"])
+@webhook_app.route("/pulse/legacy", methods=["GET"])
+def legacy_pulsesoc_home_redirect():
+    if require_account():
+        return redirect("/pulse")
+    return redirect(url_for("login_page", next="/pulse"))
 
 
 @webhook_app.route("/pulse", methods=["GET"])
@@ -28682,7 +28763,7 @@ def pulse_page():
         feed = "roast_clips"
     else:
         feed = request.args.get("feed") or "for_you"
-    return pulse_page_html("My PulseSoc Posts" if feed == "my_posts" else "Global PulseSoc Feed", feed, topic=request.args.get("topic") or "", profile_id=request.args.get("profile") or "")
+    return pulse_page_html("My PulseSoc Posts" if feed == "my_posts" else "PulseSoc Home", feed, topic=request.args.get("topic") or "", profile_id=request.args.get("profile") or "")
 
 
 @webhook_app.route("/pulse/labs", methods=["GET"])
@@ -33410,6 +33491,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
         ("Live", "/pulse/live"),
         ("Messages", "/pulse/messages"),
         ("Create", "/pulse#create"),
+        ("Log Out", "/logout"),
     ]
     apps_nav = [
         ("Discover", "/pulse/discover"),
@@ -33436,7 +33518,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     if user_is_super_user(user):
         apps_nav.insert(0, ("PulseSoc Labs", "/pulse/labs"))
     nav_html = "".join(f"<a class='button {'primary' if request.path == href else ''}' href='{href}'>{label}</a>" for label, href in nav)
-    drawer_html = "".join(f"<a class='drawer-link' href='{href}'>{label}</a>" for label, href in nav + apps_nav + [("Status", "/pulse/status"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/camera"), ("Settings", "/pulse/profile/edit"), ("Help", "/help"), ("Logout", "/logout")])
+    drawer_html = "".join(f"<a class='drawer-link' href='{href}'>{label}</a>" for label, href in nav + apps_nav + [("Status", "/pulse/status"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/camera"), ("Settings", "/pulse/profile/edit"), ("Help", "/help"), ("Log Out", "/logout")])
     chat_icon_svg = "<svg viewBox='0 0 24 24' aria-hidden='true' focusable='false'><path d='M5.5 18.5c-1.7-1.45-2.5-3.24-2.5-5.37C3 8.12 7.03 4.5 12 4.5s9 3.62 9 8.63-4.03 8.62-9 8.62c-1.05 0-2.05-.16-2.98-.47L4.5 22l1-3.5Z'/><path d='M8 12.5h8M8 9.5h6'/></svg>"
     mobile_bottom_icons = {"chat": chat_icon_svg, "profile": shell_avatar_html}
     mobile_bottom_html = ""

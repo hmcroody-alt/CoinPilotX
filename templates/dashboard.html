@@ -179,6 +179,12 @@
       text-transform: uppercase;
       background: rgba(255,79,114,.06);
     }
+    .header-logout {
+      min-width: 88px;
+      padding: 0 14px;
+      text-decoration: none;
+      white-space: nowrap;
+    }
     .main { display: grid; gap: 16px; min-width: 0; }
     .command-header {
       display: grid;
@@ -538,7 +544,7 @@
       .app-shell { width: min(100% - 22px, 1500px); padding-top: calc(12px + env(safe-area-inset-top)); }
       .rail { display: none; }
       .command-header { grid-template-columns: 1fr; padding: 18px; border-radius: 22px; }
-      .header-tools { display: grid; grid-template-columns: 1fr auto auto; }
+      .header-tools { display: grid; grid-template-columns: 1fr auto auto auto auto; }
       .search { width: 100%; }
       .avatar-chip { grid-template-columns: 44px; padding: 4px; }
       .avatar-name { display: none; }
@@ -550,8 +556,10 @@
     @media (max-width: 520px) {
       .app-shell { width: min(100% - 18px, 1500px); }
       .command-header { min-height: auto; }
-      .header-tools { grid-template-columns: 1fr auto; }
+      .header-tools { grid-template-columns: 1fr auto auto; }
       .header-tools .icon-btn:nth-of-type(2) { display: none; }
+      .header-logout { min-width: 74px; min-height: 44px; padding: 0 10px; font-size: 11px; }
+      .avatar-chip { display: none; }
       .metric-row, .module-grid { grid-template-columns: 1fr; }
       .module-card { min-height: 138px; }
       .section-head { align-items: flex-start; flex-direction: column; }
@@ -585,7 +593,7 @@
             {% endfor %}
           {% endfor %}
         </nav>
-        <a class="logout" href="/logout">Logout</a>
+        <a class="logout" href="/logout">Log Out</a>
       </aside>
 
       <section class="main">
@@ -602,6 +610,7 @@
             </form>
             <a class="icon-btn" href="/pulse/notifications" aria-label="Notifications">AL</a>
             <a class="icon-btn" href="/pulse" aria-label="Create">+</a>
+            <a class="logout header-logout" href="/logout">Log Out</a>
             <a class="avatar-chip" href="/pulse/profile" aria-label="Open profile">
               {% if profile.avatar_url %}
                 <img class="avatar" src="{{ profile.avatar_url }}" alt="">
