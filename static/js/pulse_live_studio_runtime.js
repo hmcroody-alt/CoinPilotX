@@ -17,8 +17,7 @@
   }
 
   function setText(root, selector, value) {
-    const node = qs(root, selector);
-    if (node) node.textContent = value;
+    qsa(root, selector).forEach((node) => { node.textContent = value; });
   }
 
   function setCameraSurfaceActive(root, active) {
@@ -45,7 +44,27 @@
   }
 
   function notify(message) {
-    if (typeof window.toast === "function") window.toast(message);
+    const safeMessage = String(message || "").trim();
+    if (!safeMessage) return;
+    if (typeof window.toast === "function") {
+      window.toast(safeMessage);
+      return;
+    }
+    let toast = document.querySelector("[data-live-runtime-toast]");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.className = "live-runtime-toast";
+      toast.setAttribute("data-live-runtime-toast", "");
+      toast.setAttribute("role", "status");
+      toast.setAttribute("aria-live", "polite");
+      document.body.appendChild(toast);
+    }
+    toast.textContent = safeMessage;
+    toast.hidden = false;
+    clearTimeout(toast._pulseLiveTimer);
+    toast._pulseLiveTimer = setTimeout(() => {
+      toast.hidden = true;
+    }, 3200);
   }
 
   function chatMessageHtml(message) {
@@ -80,13 +99,25 @@
     }).join("");
   }
 
-  function friendlyStreamHealth(value, status) {
+  function friendlyStreamHealth(value, status, publishState, health = {}) {
+    const sessionState = String(status || publishState || "").toLowerCase();
+    const publish = String(publishState || "").toLowerCase();
+    const fps = Number(health.fps || 0);
+    const bitrate = Number(health.bitrate_kbps || 0);
+    if (
+      ["idle", "starting", "pending", "waiting"].includes(sessionState) ||
+      ["", "ready", "starting", "pending", "livekit_waiting_for_tracks", "mux_idle"].includes(publish)
+    ) {
+      if (fps <= 0 && bitrate <= 0) return "Waiting to start";
+    }
     const raw = String(value || status || "").toLowerCase();
     if (["ended", "offline", "complete", "finished"].includes(raw)) return "Offline";
     if (["excellent", "stable", "live", "active"].includes(raw)) return "Excellent";
     if (["good", "ready", "broadcasting"].includes(raw)) return "Good";
-    if (["fair", "warning", "starting", "reconnecting"].includes(raw)) return "Fair";
-    return raw ? "Connection Issue" : "Good";
+    if (["idle", "starting", "pending", "waiting", "mux_idle", "livekit_waiting_for_tracks"].includes(raw)) return "Waiting to start";
+    if (["reconnecting", "egress_starting"].includes(raw)) return "Reconnecting";
+    if (["fair", "warning"].includes(raw)) return "Needs attention";
+    return raw ? "Needs attention" : "Waiting to start";
   }
 
   function ensurePublicPlayback(root, data) {
@@ -117,10 +148,12 @@
     const health = data.health || {};
     const pulse = data.presence?.pulse || data.presence || {};
     setText(root, "[data-live-viewers]", data.viewer_count ?? 0);
-    setText(root, "[data-live-health]", friendlyStreamHealth(health.level, data.status));
+    setText(root, "[data-live-health]", friendlyStreamHealth(health.level, data.status, data.publish_state, health));
     setText(root, "[data-live-score]", health.score ?? 0);
-    setText(root, "[data-live-bitrate]", health.bitrate_label || `${health.bitrate_kbps || 0} kbps`);
-    setText(root, "[data-live-fps]", health.fps_label || `${health.fps || 0} FPS`);
+    const bitrate = Number(health.bitrate_kbps || 0);
+    const fps = Number(health.fps || 0);
+    setText(root, "[data-live-bitrate]", health.bitrate_label || (bitrate > 0 ? `${bitrate} kbps` : "Waiting"));
+    setText(root, "[data-live-fps]", health.fps_label || (fps > 0 ? `${fps} FPS` : "Waiting"));
     setText(root, "[data-live-latency]", health.latency_ms ? `${health.latency_ms} ms` : "ready");
     setText(root, "[data-live-pulse]", pulse.label || "ready");
     if (data.mux?.live_status) setText(root, "[data-mux-live-status]", `Status ${data.mux.live_status}`);
@@ -1089,6 +1122,7 @@
     let cameraStartPromise = null;
     let screenStartPromise = null;
     let currentPublishKind = "";
+    let preferredFacingMode = "user";
     let liveHealthManager = null;
     let videoRecoveryPromise = null;
     const liveDebugSessionId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
@@ -1126,9 +1160,9 @@
     }
     function cameraVideoProfiles() {
       return [
-        { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } },
-        { facingMode: "user", width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 24, max: 30 } },
-        { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 20, max: 24 } },
+        { facingMode: preferredFacingMode, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } },
+        { facingMode: preferredFacingMode, width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 24, max: 30 } },
+        { facingMode: preferredFacingMode, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 20, max: 24 } },
       ];
     }
     function livekitRoomState(room) {
@@ -1462,6 +1496,26 @@
         button.setAttribute("aria-busy", busy ? "true" : "false");
       });
     }
+    function updateMicButtons(enabled, available = true) {
+      qsa(root, "[data-live-mute]").forEach((button) => {
+        button.textContent = available ? (enabled ? "Mute Mic" : "Unmute Mic") : "Mic";
+        button.setAttribute("aria-pressed", available && !enabled ? "true" : "false");
+        button.setAttribute("aria-label", available ? (enabled ? "Mute microphone" : "Unmute microphone") : "Microphone control");
+      });
+    }
+    function updateSpeakerButtons(enabled) {
+      qsa(root, "[data-live-speaker]").forEach((button) => {
+        button.textContent = enabled ? "Speaker On" : "Speaker Off";
+        button.setAttribute("aria-pressed", enabled ? "true" : "false");
+        button.setAttribute("aria-label", enabled ? "Turn speaker monitoring off" : "Turn speaker monitoring on");
+      });
+    }
+    function browserSupportsScreenShare() {
+      return Boolean(navigator.mediaDevices?.getDisplayMedia || livekitClient()?.createLocalScreenTracks);
+    }
+    function isMobileLikeDevice() {
+      return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "") || window.matchMedia?.("(max-width: 820px)")?.matches;
+    }
     async function unpublishLocalTracks(room) {
       const participant = room?.localParticipant;
       if (!participant?.unpublishTrack) return;
@@ -1516,6 +1570,9 @@
         livekitConnectPromise = null;
       }
       setCameraSurfaceActive(root, false);
+      setText(root, "[data-live-camera-ready]", "Waiting to start");
+      setText(root, "[data-live-mic-ready]", "Waiting to start");
+      updateMicButtons(false, false);
       releaseLiveStudioCameraOwner();
       livekitLog("cleanup_completed", { reason, disconnect });
     }
@@ -1598,6 +1655,9 @@
       livekitTracks = trackOptions;
       livekitTracks.forEach(wireLocalTrackDiagnostics);
       stream = tracksToMediaStream(livekitTracks);
+      setText(root, "[data-live-camera-ready]", stream.getVideoTracks().some((track) => track.readyState === "live") ? "Camera ready" : "Camera not connected");
+      setText(root, "[data-live-mic-ready]", stream.getAudioTracks().some((track) => track.readyState === "live") ? "Mic ready" : "Mic not connected");
+      updateMicButtons(stream.getAudioTracks().some((track) => track.enabled), stream.getAudioTracks().length > 0);
       attachPreviewFromTracks(livekitTracks);
       setCameraSurfaceActive(root, true);
       showCameraState(root, "Camera ready. Connecting to LiveKit...");
@@ -1845,8 +1905,14 @@
         cameraStartPromise = null;
       }
     };
+    updateMicButtons(false, false);
+    updateSpeakerButtons(false);
     qsa(root, "[data-live-start-camera]").forEach((button) => button.addEventListener("click", start));
-    qs(root, "[data-live-mute]")?.addEventListener("click", (event) => {
+    qsa(root, "[data-live-mute]").forEach((button) => button.addEventListener("click", () => {
+      if (!stream?.getAudioTracks?.().length) {
+        notify("Start Live first to use the microphone control.");
+        return;
+      }
       const currentlyEnabled = stream?.getAudioTracks().some((track) => track.enabled) !== false;
       const nextEnabled = !currentlyEnabled;
       stream?.getAudioTracks().forEach((track) => { track.enabled = nextEnabled; });
@@ -1854,9 +1920,51 @@
         try { track.mediaStreamTrack.enabled = nextEnabled; } catch (_) {}
       });
       const enabled = stream?.getAudioTracks().some((track) => track.enabled);
-      event.currentTarget.textContent = enabled ? "Mute Mic" : "Unmute Mic";
-    });
-    qs(root, "[data-live-screen]")?.addEventListener("click", async () => {
+      updateMicButtons(Boolean(enabled));
+      setText(root, "[data-live-mic-ready]", enabled ? "Mic ready" : "Mic muted");
+      notify(enabled ? "Microphone on." : "Microphone muted.");
+    }));
+    qsa(root, "[data-live-speaker]").forEach((button) => button.addEventListener("click", () => {
+      if (!stream) {
+        notify("Start Live first to use speaker monitoring.");
+        return;
+      }
+      const currentlyMuted = video.muted !== false;
+      const nextEnabled = currentlyMuted;
+      video.muted = !nextEnabled;
+      video.volume = nextEnabled ? 1 : 0;
+      updateSpeakerButtons(nextEnabled);
+      notify(nextEnabled ? "Speaker monitoring on." : "Speaker monitoring off.");
+    }));
+    qsa(root, "[data-live-flip]").forEach((button) => button.addEventListener("click", async () => {
+      button.disabled = true;
+      preferredFacingMode = preferredFacingMode === "user" ? "environment" : "user";
+      try {
+        if (currentPublishKind === "browser_camera" && stream) {
+          showCameraState(root, preferredFacingMode === "environment" ? "Switching to rear camera..." : "Switching to front camera...");
+          await recoverFrozenVideo("camera_flip_requested", { facing_mode: preferredFacingMode });
+          showCameraState(root, "");
+        }
+        notify(preferredFacingMode === "environment" ? "Rear camera selected." : "Front camera selected.");
+      } catch (error) {
+        preferredFacingMode = preferredFacingMode === "user" ? "environment" : "user";
+        notify(error?.message || "Camera could not be flipped on this device.");
+      } finally {
+        button.disabled = false;
+      }
+    }));
+    qsa(root, "[data-live-effects]").forEach((button) => button.addEventListener("click", () => {
+      button.setAttribute("aria-pressed", "false");
+      notify("Effects coming soon. Your camera remains clean for this Live.");
+    }));
+    qsa(root, "[data-live-unavailable]").forEach((button) => button.addEventListener("click", () => {
+      notify(button.dataset.liveUnavailable || "This Live control is not available yet.");
+    }));
+    qsa(root, "[data-live-screen]").forEach((button) => button.addEventListener("click", async () => {
+      if (isMobileLikeDevice() || !browserSupportsScreenShare()) {
+        notify("Screen share is not supported on this device.");
+        return;
+      }
       if (screenStartPromise) return screenStartPromise;
       screenStartPromise = (async () => {
       try {
@@ -1883,7 +1991,7 @@
       } finally {
         screenStartPromise = null;
       }
-    });
+    }));
     window.addEventListener("pagehide", () => { stop("pagehide").catch(() => {}); });
   }
 

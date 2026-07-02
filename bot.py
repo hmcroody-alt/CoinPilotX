@@ -35752,31 +35752,54 @@ def pulse_live_page():
     studio_title = clean_html(request.args.get("title") or "PulseSoc Live")[:140]
     studio_category = clean_html(request.args.get("category") or "Crypto Education")[:80]
     studio_thumbnail = clean_html(request.args.get("thumbnail_url") or "")[:600]
+    live_category_options = ["Crypto Education", "Scam Shield Lesson", "Arena Training", "Market Psychology", "Other"]
+    custom_studio_category = "" if studio_category in set(live_category_options[:-1]) else studio_category[:60]
+    category_select_value = "Other" if custom_studio_category else studio_category
+    category_options_html = "".join(
+        f"<option value='{clean_html(option)}' {'selected' if category_select_value == option else ''}>{clean_html(option)}</option>"
+        for option in live_category_options
+    )
+    destination_cards = [
+        ("pulse", "PulseSoc Live", "Ready", "Native PulseSoc LiveKit/Mux path is available.", "ready", True, False),
+        ("facebook", "Facebook Live", "Connect required", "Connect your Facebook Live destination before selecting it.", "setup_required", False, True),
+        ("youtube", "YouTube Live", "Connect required", "Connect YouTube Live before selecting it.", "setup_required", False, True),
+        ("twitch", "Twitch", "Connect required", "Connect Twitch before selecting it.", "setup_required", False, True),
+        ("kick", "Kick", "Setup required", "Kick restreaming requires a connected destination.", "setup_required", False, True),
+        ("tiktok", "TikTok", "Setup required", "TikTok Live requires platform approval and setup.", "setup_required", False, True),
+        ("x_twitter", "X/Twitter", "Setup required", "X/Twitter live destination setup is required first.", "setup_required", False, True),
+        ("linkedin", "LinkedIn", "Setup required", "LinkedIn Live requires account connection before streaming.", "setup_required", False, True),
+        ("custom_rtmp", "Custom RTMP", "Restream setup required", "Custom RTMP can be saved after restream infrastructure is enabled.", "setup_required", False, False),
+    ]
+    destination_cards_html = "".join(
+        f"""<label class='live-destination-card is-{clean_html(state)} {'is-selected' if selected else ''}' data-live-destination-card='{clean_html(platform)}' data-live-destination-state='{clean_html(state)}'>
+              <input type='checkbox' data-live-destination value='{clean_html(platform)}' {'checked' if selected else ''} {'disabled' if locked else ''}>
+              <span><strong>{clean_html(label)}</strong><small>{clean_html(detail)}</small></span>
+              <em>{clean_html(status)}</em>
+            </label>"""
+        for platform, label, status, detail, state, selected, locked in destination_cards
+    )
     if refs["livestream_status"] == "suspended":
         live_card = "<section class='card'><h2>Live Suspended</h2><p>Your Live access is paused. Review the safety reason and contact support to appeal.</p><a class='button' href='/support'>Appeal</a></section>"
     elif privileges["can_go_live"]:
         live_card = f"""
+        <link rel='stylesheet' href='/static/css/pulse_live_studio.css?v=live-studio-destination-20260702a'>
         <section class='card live-ready'>
           <h2>Go Live Setup</h2>
           <input id='liveTitle' placeholder='Live title' value='{studio_title}'>
-          <select id='liveCategory'><option {'selected' if studio_category == 'Crypto Education' else ''}>Crypto Education</option><option {'selected' if studio_category == 'Scam Shield Lesson' else ''}>Scam Shield Lesson</option><option {'selected' if studio_category == 'Arena Training' else ''}>Arena Training</option><option {'selected' if studio_category == 'Market Psychology' else ''}>Market Psychology</option><option {'selected' if studio_category not in {'Crypto Education','Scam Shield Lesson','Arena Training','Market Psychology'} else ''}>{studio_category}</option></select>
+          <label class='live-setup-field'><span>Category</span><select id='liveCategory'>{category_options_html}</select></label>
+          <label class='live-setup-field' id='liveCustomCategoryField' {'hidden' if not custom_studio_category else ''}><span>Custom category</span><input id='liveCustomCategory' maxlength='60' placeholder='Custom category' value='{clean_html(custom_studio_category)}'></label>
           <input id='liveThumb' placeholder='Optional thumbnail URL' value='{studio_thumbnail}'>
           <input id='liveContextType' type='hidden' value='{studio_context_type}'>
           <input id='liveContextId' type='hidden' value='{studio_context_id}'>
-          <fieldset class='live-destination-picker'>
+          <fieldset class='live-destination-picker live-destination-card-picker' data-live-destination-picker>
             <legend>Go live to...</legend>
-            <label><input type='checkbox' data-live-destination value='pulse' checked disabled> PulseSoc Live</label>
-            <label><input type='checkbox' data-live-destination value='facebook'> Facebook Live</label>
-            <label><input type='checkbox' data-live-destination value='youtube'> YouTube Live</label>
-            <label><input type='checkbox' data-live-destination value='twitch'> Twitch</label>
-            <label><input type='checkbox' data-live-destination value='kick'> Kick</label>
-            <label><input type='checkbox' data-live-destination value='tiktok'> TikTok</label>
-            <label><input type='checkbox' data-live-destination value='x_twitter'> X/Twitter</label>
-            <label><input type='checkbox' data-live-destination value='linkedin'> LinkedIn</label>
-            <label><input type='checkbox' data-live-destination value='custom_rtmp'> Custom RTMP</label>
-            <input id='customRtmpUrl' placeholder='Custom RTMP URL (optional)'>
-            <input id='customStreamKey' placeholder='Custom stream key (stored securely)' type='password'>
-            <p class='muted'>PulseSoc stays live even if an external destination fails.</p>
+            <div class='live-destination-grid'>{destination_cards_html}</div>
+            <section class='live-custom-rtmp-panel' data-custom-rtmp-panel hidden>
+              <input id='customRtmpUrl' placeholder='RTMP URL (rtmp:// or rtmps://)'>
+              <input id='customStreamKey' placeholder='Stream key (stored securely)' type='password' autocomplete='new-password'>
+              <p class='muted'>Stream keys are encrypted server-side and never returned to the browser. This destination stays unavailable until restream infrastructure is enabled.</p>
+            </section>
+            <p class='muted' id='liveDestinationStatus'>PulseSoc Live is ready. External destinations require account connection before they can be selected.</p>
           </fieldset>
           <p class='muted'>Live safety rules: no financial advice, no doxxing, no harassment, no scam promotion.</p>
           <div class='card' data-mux-live-setup-panel style='background:rgba(110,223,246,.06);border-color:rgba(110,223,246,.2);margin:12px 0'>
@@ -35798,6 +35821,8 @@ def pulse_live_page():
     stream_cards = "".join(f"<article class='card'><span class='pill' style='border-color:rgba(255,77,109,.45);color:#ffd6dc'>LIVE NOW</span><h2>{clean_html(s.get('title') or 'PulseSoc Live')}</h2><p>{clean_html(s.get('creator_name') or '')} · {clean_html(s.get('category') or '')}</p><p><span class='pill'>{int(s.get('viewer_count') or 0)} viewers</span> <span class='pill'>{clean_html(s.get('stream_health') or s.get('status') or '')}</span></p><a class='button primary' href='/pulse/live/{int(s.get('id') or 0)}'>Watch</a></article>" for s in active_streams)
     main = f"{live_card}<section class='grid'><article class='card'><h2>Trust Level</h2><p>{safe_int(profile.get('trust_score'), 0)}/100 · {clean_html(profile.get('trust_band') or '')}</p></article><article class='card'><h2>Invite Progress</h2><p>{completed}/{required} real members</p></article><article class='card'><h2>Creator Rank</h2><p>{clean_html(privileges.get('current_level') or 'New User')}</p></article></section><section class='card'><h2>Live Discovery</h2><p class='muted'>Trending streams, category filters, creator profiles, and live viewer counts are connected here.</p></section><section class='grid'>{stream_cards or '<article class=\"card\"><h2>No one is live right now.</h2><p>Start the next PulseSoc Live session or check back soon.</p></article>'}</section><section class='card'><h2>Benefits of Going Live</h2><p>Host lessons, creator rooms, Scam Shield breakdowns, Arena training, and community Q&A with stronger safety controls.</p></section>"
     script = """
+    const LIVE_ALLOWED_CATEGORIES = new Set(['Crypto Education','Scam Shield Lesson','Arena Training','Market Psychology']);
+    const LIVE_SETUP_REQUIRED_PLATFORMS = new Set(['facebook','youtube','twitch','kick','tiktok','x_twitter','linkedin','custom_rtmp']);
     function liveError(message) {
       const box = document.getElementById('liveErrorBox');
       const fallback = 'Live Studio could not open. Please try again.';
@@ -35806,6 +35831,61 @@ def pulse_live_page():
       if (status) status.textContent = message || fallback;
       toast(message || fallback);
     }
+    function liveToast(message) {
+      if (typeof toast === 'function') toast(message);
+      else console.info(message);
+    }
+    function liveCategoryPayload() {
+      const category = (document.getElementById('liveCategory')?.value || '').trim();
+      const custom = (document.getElementById('liveCustomCategory')?.value || '').trim().replace(/\\s+/g, ' ').slice(0, 60);
+      if (category === 'Other') {
+        if (!custom) throw new Error('Custom category is required when Other is selected.');
+        return { category, custom_category: custom };
+      }
+      if (!LIVE_ALLOWED_CATEGORIES.has(category)) throw new Error('Choose a valid Live category.');
+      return { category, custom_category: '' };
+    }
+    function selectedLiveDestinations() {
+      const inputs = [...document.querySelectorAll('[data-live-destination]')];
+      const selected = inputs.filter(input => input.checked).map(input => ({ platform: input.value }));
+      if (!selected.length) throw new Error('Select at least one live destination.');
+      const blocked = selected.find(item => LIVE_SETUP_REQUIRED_PLATFORMS.has(item.platform) && item.platform !== 'custom_rtmp');
+      if (blocked) throw new Error(`${blocked.platform.replace('_', '/')} requires account connection before Start Live.`);
+      const custom = selected.find(item => item.platform === 'custom_rtmp');
+      if (custom) {
+        const url = (document.getElementById('customRtmpUrl')?.value || '').trim();
+        const key = (document.getElementById('customStreamKey')?.value || '').trim();
+        if (!url || !key) throw new Error('Custom RTMP requires both RTMP URL and stream key.');
+        if (!/^rtmps?:\\/\\//i.test(url)) throw new Error('Custom RTMP URL must start with rtmp:// or rtmps://.');
+      }
+      return selected;
+    }
+    function updateLiveSetupUi() {
+      const category = document.getElementById('liveCategory')?.value || '';
+      const customField = document.getElementById('liveCustomCategoryField');
+      if (customField) customField.hidden = category !== 'Other';
+      const customCard = document.querySelector('[data-live-destination-card="custom_rtmp"] input');
+      const customPanel = document.querySelector('[data-custom-rtmp-panel]');
+      if (customPanel) customPanel.hidden = !customCard?.checked;
+      document.querySelectorAll('[data-live-destination-card]').forEach(card => {
+        const input = card.querySelector('input');
+        card.classList.toggle('is-selected', !!input?.checked);
+      });
+    }
+    document.getElementById('liveCategory')?.addEventListener('change', updateLiveSetupUi);
+    document.querySelectorAll('[data-live-destination-card]').forEach(card => {
+      card.addEventListener('click', event => {
+        const input = card.querySelector('[data-live-destination]');
+        if (!input) return;
+        if (input.disabled || card.dataset.liveDestinationState === 'setup_required') {
+          event.preventDefault();
+          liveToast(card.querySelector('small')?.textContent || 'This destination needs setup before it can be selected.');
+          return;
+        }
+        window.setTimeout(updateLiveSetupUi, 0);
+      });
+    });
+    updateLiveSetupUi();
     document.getElementById('startLiveBtn')?.addEventListener('click', async () => {
       const btn = document.getElementById('startLiveBtn');
       const status = document.getElementById('liveStartStatus');
@@ -35817,10 +35897,12 @@ def pulse_live_page():
         setState('Checking eligibility...');
         await new Promise(resolve => setTimeout(resolve, 120));
         setState('Preparing Live Studio...');
-        const destinations = [...document.querySelectorAll('[data-live-destination]')].filter(input => input.checked).map(input => ({ platform: input.value }));
+        const categoryPayload = liveCategoryPayload();
+        const destinations = selectedLiveDestinations();
         const payload = {
           title: document.getElementById('liveTitle')?.value || '',
-          category: document.getElementById('liveCategory')?.value || '',
+          category: categoryPayload.category,
+          custom_category: categoryPayload.custom_category,
           thumbnail_url: document.getElementById('liveThumb')?.value || '',
           context_type: document.getElementById('liveContextType')?.value || 'general',
           context_id: document.getElementById('liveContextId')?.value || '',
@@ -35912,10 +35994,14 @@ def pulse_live_studio_page(stream_id):
         friendly_health = "Excellent"
     elif health_level_raw in {"ready", "good", "broadcasting"}:
         friendly_health = "Good"
-    elif health_level_raw in {"warning", "fair", "starting", "reconnecting"}:
-        friendly_health = "Fair"
+    elif health_level_raw in {"idle", "starting", "pending", "waiting", "mux_idle", "livekit_waiting_for_tracks"} or live_status in {"idle", "starting"}:
+        friendly_health = "Waiting to start"
+    elif health_level_raw in {"reconnecting", "egress_starting"}:
+        friendly_health = "Reconnecting"
+    elif health_level_raw in {"warning", "fair"}:
+        friendly_health = "Needs attention"
     else:
-        friendly_health = "Connection Issue"
+        friendly_health = "Waiting to start"
     comments_count = len(chat)
     likes_count = len(reactions)
     shares_count = int(live.get("share_count") or 0)
@@ -35986,7 +36072,7 @@ def pulse_live_studio_page(stream_id):
           </div>
         """
     main = f"""
-    <link rel='stylesheet' href='/static/css/pulse_live_studio.css?v=live-studio-owner-20260701a'>
+    <link rel='stylesheet' href='/static/css/pulse_live_studio.css?v=live-studio-owner-20260702d'>
     <section class='pulse-live-surface live-command-shell studio-pro-shell' data-pulse-live-shell data-live-id='{stream_id}' data-live-poll-ms='3500' data-live-role='host' data-live-camera-owner='LiveStudioCameraOwner' data-studio-desktop-layout='command-center' data-studio-mobile-layout='vertical-cockpit'>
       <aside class='studio-sidebar' aria-label='Live Studio navigation'>
         <div class='studio-brand'><span class='studio-brand-mark'>P</span><strong>PulseSoc Studio</strong></div>
@@ -36038,11 +36124,6 @@ def pulse_live_studio_page(stream_id):
                 <span class='live-chat-avatar'>{clean_html((user.get('display_name') or user.get('username') or 'P')[:1].upper())}</span>
                 <div><strong>{clean_html(user.get('display_name') or user.get('username') or 'PulseSoc Creator')}</strong><small>{clean_html(live.get('category') or 'Live')} · Host cockpit</small></div>
               </div>
-              <div class='live-stream-health-card' data-live-stream-health>
-                <span>Health <strong data-live-health>{clean_html(friendly_health)}</strong></span>
-                <span>FPS <strong data-live-fps>{int(live.get('fps') or 0)} FPS</strong></span>
-                <span>Bitrate <strong data-live-bitrate>{int(live.get('bitrate_kbps') or 0)} kbps</strong></span>
-              </div>
               <div class='live-guest-stack' data-live-guest-stack>{guest_tiles_html or "<article class='live-guest-tile is-empty'><span class='live-guest-avatar'>+</span><div><strong>No co-hosts</strong><small>Approved co-hosts appear here.</small></div></article>"}</div>
               <div class='live-ready-state' data-live-idle-overlay>
                 <div>
@@ -36058,10 +36139,10 @@ def pulse_live_studio_page(stream_id):
             <div class='studio-bottom-controls' aria-label='Live controls'>
               <button class='primary' data-live-start-camera type='button'>Start Live</button>
               <button data-live-mute type='button'>Mic</button>
-              <button type='button' disabled title='Local preview stays muted to prevent echo.'>Speaker Off</button>
+              <button data-live-speaker type='button' aria-pressed='false'>Speaker Off</button>
               <button data-live-screen type='button'>Share Screen</button>
-              <button type='button' disabled title='Coming soon'>Flip Camera</button>
-              <button type='button' disabled title='Coming soon'>Effects</button>
+              <button data-live-flip type='button'>Flip Camera</button>
+              <button data-live-effects type='button'>Effects</button>
               <button type='button' data-live-settings-toggle>Settings</button>
               <button id='studioEnd' class='danger' type='button'>End Stream</button>
             </div>
@@ -36075,9 +36156,9 @@ def pulse_live_studio_page(stream_id):
 
             <section class='studio-quick-actions'>
               <button type='button' data-live-open-backstage>Manage Co-hosts</button>
-              <button type='button' disabled title='Coming soon'>Go Live Alert</button>
-              <button type='button' disabled title='Coming soon'>Clip Highlight</button>
-              <button type='button' disabled title='Coming soon'>Poll Audience</button>
+              <button type='button' data-live-unavailable='Go Live alerts are not enabled for this account yet.'>Go Live Alert</button>
+              <button type='button' data-live-unavailable='Clip highlights are coming soon.'>Clip Highlight</button>
+              <button type='button' data-live-unavailable='Audience polls are coming soon.'>Poll Audience</button>
             </section>
           </div>
 
@@ -36113,13 +36194,23 @@ def pulse_live_studio_page(stream_id):
         <section class='studio-advanced-drawer' data-live-advanced-panel hidden aria-hidden='true' style='display:none'>
           <div class='studio-advanced-head'><h2>Advanced Streaming</h2><button type='button' data-live-settings-toggle>Close</button></div>
           <p class='muted'>Technical details are hidden from the creator view. Use this only for OBS/RTMP backup and diagnostics.</p>
+          <section class='live-settings-health-card' data-live-stream-health>
+            <h3>Stream Health</h3>
+            <div class='live-settings-health-grid'>
+              <span>Camera <strong data-live-camera-ready>Waiting to start</strong></span>
+              <span>Microphone <strong data-live-mic-ready>Waiting to start</strong></span>
+              <span>Connection <strong data-live-health>{clean_html(friendly_health)}</strong></span>
+              <span>FPS <strong data-live-fps>{'Waiting' if not int(live.get('fps') or 0) else str(int(live.get('fps') or 0)) + ' FPS'}</strong></span>
+              <span>Bitrate <strong data-live-bitrate>{'Waiting' if not int(live.get('bitrate_kbps') or 0) else str(int(live.get('bitrate_kbps') or 0)) + ' kbps'}</strong></span>
+            </div>
+          </section>
           {mux_panel}
         </section>
       </div>
-      <div class='live-mobile-controls' data-mobile-studio-controls><button class='primary' data-live-start-camera type='button'>Start Live</button><button data-live-mute type='button'>Mic</button><button type='button' disabled title='Flip camera after reconnect support lands.'>Flip</button><button data-live-open-backstage type='button'>Co-hosts</button><button id='studioEndMobile' class='danger' type='button'>End Live</button></div>
+      <div class='live-mobile-controls' data-mobile-studio-controls><button class='primary' data-live-start-camera type='button'>Start Live</button><button data-live-mute type='button'>Mic</button><button data-live-flip type='button'>Flip</button><button data-live-settings-toggle type='button'>Settings</button><button data-live-open-backstage type='button'>Backstage</button><button id='studioEndMobile' class='danger' type='button'>End</button></div>
     </section>
     <script src='/static/vendor/livekit-client.umd.js?v=20260610-livekit-bridge-v2' defer></script>
-    <script src='/static/js/pulse_live_studio_runtime.js?v=live-studio-owner-20260701a' defer></script>
+    <script src='/static/js/pulse_live_studio_runtime.js?v=live-studio-owner-20260702d' defer></script>
     """
     script = f"""
     document.getElementById('studioEnd').onclick=async()=>{{if(!confirm('End this live stream?'))return;try{{await pulseApi('/api/pulse/live/{stream_id}/end',{{method:'POST',body:JSON.stringify({{}})}});toast('Live ended.');location.href='/pulse/live';}}catch(err){{toast(err.message)}}}};
@@ -36211,7 +36302,7 @@ def pulse_live_room_page(live_id):
     else:
         join_panel = "<button class='live-primary-action' type='button' data-live-join-request>Request to Co-host</button><p class='muted' data-live-join-status>Camera and microphone readiness will be checked before the host sees your request.</p>"
     main = f"""
-    <link rel='stylesheet' href='/static/css/pulse_live_studio.css?v=live-studio-owner-20260701a'>
+    <link rel='stylesheet' href='/static/css/pulse_live_studio.css?v=live-studio-owner-20260702d'>
     <section class='pulse-live-surface live-view-shell live-screen-v1' data-pulse-live-shell data-live-id='{live_id}' data-live-poll-ms='3200' data-live-role='viewer' data-live-viewer-kind='{'host' if is_host_viewer else 'viewer'}'>
       <section class='live-screen-grid'>
         <aside class='live-discovery-rail' aria-label='Live discovery'>
@@ -36265,7 +36356,7 @@ def pulse_live_room_page(live_id):
       </section>
     </section>
     <script src='/static/vendor/livekit-client.umd.js?v=20260610-livekit-bridge-v2' defer></script>
-    <script src='/static/js/pulse_live_studio_runtime.js?v=live-studio-owner-20260701a' defer></script>
+    <script src='/static/js/pulse_live_studio_runtime.js?v=live-studio-owner-20260702d' defer></script>
     """
     script = f"""
     async function joinLive(){{try{{const d=await pulseApi('/api/pulse/live/{live_id}/join',{{method:'POST',body:JSON.stringify({{}})}});document.getElementById('viewerCount').textContent=d.viewer_count||0;}}catch(err){{console.error('Live join failed',err)}}}}
@@ -36284,7 +36375,77 @@ def api_pulse_live_start():
     trace_id = request.headers.get("X-Trace-Id") or secrets.token_hex(6)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
-        selected_destinations = payload.get("destinations") or ["pulse"]
+        allowed_live_categories = {"Crypto Education", "Scam Shield Lesson", "Arena Training", "Market Psychology"}
+        category_raw = re.sub(r"\s+", " ", str(payload.get("category") or "Crypto Education")).strip()[:80]
+        custom_category = re.sub(r"\s+", " ", str(payload.get("custom_category") or "")).strip()[:60]
+        if category_raw == "Other":
+            if not custom_category:
+                conn.rollback(); conn.close()
+                return jsonify({"ok": False, "message": "Custom category is required when Other is selected.", "error": "custom_category_required", "trace_id": trace_id}), 400
+            category = clean_html(custom_category)[:60]
+        elif category_raw in allowed_live_categories:
+            category = clean_html(category_raw)[:80]
+            custom_category = ""
+        elif category_raw:
+            custom_category = clean_html(category_raw)[:60]
+            category = custom_category
+        else:
+            category = "Crypto Education"
+            custom_category = ""
+        raw_destinations = payload.get("destinations") or ["pulse"]
+        if not isinstance(raw_destinations, list):
+            raw_destinations = ["pulse"]
+        selected_platforms = []
+        selected_destinations = []
+        for item in raw_destinations:
+            platform_value = item.get("platform") if isinstance(item, dict) else item
+            platform = live_destination_service.normalize_platform(platform_value)
+            if platform in selected_platforms:
+                continue
+            selected_platforms.append(platform)
+            selected_destinations.append({"platform": platform})
+        if "pulse" not in selected_platforms:
+            selected_platforms.insert(0, "pulse")
+            selected_destinations.insert(0, {"platform": "pulse"})
+        if not selected_destinations:
+            conn.rollback(); conn.close()
+            return jsonify({"ok": False, "message": "Select at least one live destination.", "error": "destination_required", "trace_id": trace_id}), 400
+        custom_rtmp_url = clean_html(payload.get("custom_rtmp_url") or "")[:700]
+        custom_stream_key = str(payload.get("custom_stream_key") or "").strip()[:700]
+        if "custom_rtmp" in selected_platforms:
+            if not live_destination_service.restream_enabled():
+                conn.rollback(); conn.close()
+                return jsonify({"ok": False, "message": "Custom RTMP setup is saved for later, but restreaming is not enabled yet.", "error": "custom_rtmp_setup_required", "trace_id": trace_id}), 400
+            valid_rtmp, rtmp_reason = live_destination_service.validate_rtmp_url(custom_rtmp_url)
+            if not valid_rtmp:
+                conn.rollback(); conn.close()
+                return jsonify({"ok": False, "message": rtmp_reason, "error": "invalid_custom_rtmp_url", "trace_id": trace_id}), 400
+            if not custom_stream_key:
+                conn.rollback(); conn.close()
+                return jsonify({"ok": False, "message": "Custom RTMP stream key is required.", "error": "custom_rtmp_key_required", "trace_id": trace_id}), 400
+        blocked_platforms = []
+        for platform in selected_platforms:
+            if platform not in live_destination_service.EXTERNAL_OAUTH_PLATFORMS:
+                continue
+            cur.execute(
+                """
+                SELECT id FROM pulse_live_destinations
+                WHERE user_id=? AND platform=? AND status IN ('ready','connected')
+                ORDER BY id DESC LIMIT 1
+                """,
+                (safe_int(user.get("user_id"), 0), platform),
+            )
+            if not cur.fetchone():
+                blocked_platforms.append(live_destination_service.platform_label(platform))
+        if blocked_platforms:
+            conn.rollback(); conn.close()
+            return jsonify({
+                "ok": False,
+                "message": f"{', '.join(blocked_platforms)} requires account connection before Start Live.",
+                "error": "destination_setup_required",
+                "trace_id": trace_id,
+                "setup_required": blocked_platforms,
+            }), 400
         logging.info(
             "PULSE_LIVE_START_TRACE trace_id=%s step=received user_id=%s destinations=%s title=%s category=%s custom_rtmp=%s",
             trace_id, user.get("user_id"), selected_destinations, payload.get("title"), payload.get("category"), bool(payload.get("custom_rtmp_url")),
@@ -36333,7 +36494,6 @@ def api_pulse_live_start():
             conn.rollback(); conn.close()
             return jsonify({"ok": False, "message": denial}), 403
         title = clean_html(payload.get("title") or "PulseSoc Live")[:140]
-        category = clean_html(payload.get("category") or "Crypto Education")[:80]
         thumbnail_url = clean_html(payload.get("thumbnail_url") or "")[:600]
         context_type = clean_html(payload.get("context_type") or "general")[:40]
         context_id = clean_html(payload.get("context_id") or "")[:120]
@@ -36398,11 +36558,13 @@ def api_pulse_live_start():
                 chat_conversation_id,
                 json.dumps(audio_engine.default_audio_chain(), default=str),
                 json.dumps(selected_destinations, default=str)[:2500],
-                json.dumps({"viewer_peak": 0, "chat_messages": 0, "reports": 0, "source": "live_studio", "context_type": context_type, "context_id": context_id}, default=str),
+                json.dumps({"viewer_peak": 0, "chat_messages": 0, "reports": 0, "source": "live_studio", "context_type": context_type, "context_id": context_id, "custom_category": custom_category}, default=str),
                 now,
             ),
         )
         live_id = int(cur.lastrowid)
+        if custom_category:
+            cur.execute("UPDATE pulse_live_sessions SET custom_category=? WHERE id=?", (custom_category, live_id))
         logging.info("PULSE_LIVE_START_TRACE trace_id=%s step=session_insert_ok live_id=%s", trace_id, live_id)
         studio_url = f"/pulse/live/studio/{live_id}"
         cur.execute(
@@ -36437,6 +36599,8 @@ def api_pulse_live_start():
             ),
         )
         stream_row_id = int(cur.lastrowid)
+        if custom_category:
+            cur.execute("UPDATE pulse_live_streams SET custom_category=? WHERE id=?", (custom_category, stream_row_id))
         if mux_setup.get("ok"):
             cur.execute(
                 """
@@ -36474,8 +36638,8 @@ def api_pulse_live_start():
                 live_id=live_id,
                 user_id=user_id,
                 destinations=selected_destinations,
-                custom_rtmp_url=clean_html(payload.get("custom_rtmp_url") or "")[:700],
-                custom_stream_key=clean_html(payload.get("custom_stream_key") or "")[:700],
+                custom_rtmp_url=custom_rtmp_url,
+                custom_stream_key=custom_stream_key,
             )
         except Exception as restream_exc:
             logging.exception(
@@ -36547,6 +36711,8 @@ def api_pulse_live_start():
             "webrtc_room_id": stream_setup.get("webrtc_room_id") or "",
             "feed_post_id": feed_post_id,
             "destinations": restream_targets,
+            "category": category,
+            "custom_category": custom_category,
             "live_url": f"/pulse/live/{live_id}",
             "studio_url": studio_url,
             "websocket_channel": channel,
@@ -90844,6 +91010,7 @@ def _init_db_impl():
         ("replay_asset_id", "INTEGER DEFAULT 0"),
         ("recording_status", "TEXT DEFAULT 'pending'"),
         ("recording_error", "TEXT"),
+        ("custom_category", "TEXT"),
         ("mux_live_stream_id", "TEXT"),
         ("mux_stream_key", "TEXT"),
         ("mux_playback_id", "TEXT"),
@@ -90893,6 +91060,7 @@ def _init_db_impl():
         ("livekit_egress_id", "TEXT"),
         ("livekit_egress_status", "TEXT"),
         ("livekit_egress_error", "TEXT"),
+        ("custom_category", "TEXT"),
     ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_live_chat (

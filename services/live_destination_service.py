@@ -10,6 +10,7 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 SUPPORTED_PLATFORMS = {"pulse", "facebook", "youtube", "twitch", "kick", "custom_rtmp", "tiktok", "x_twitter", "linkedin"}
+EXTERNAL_OAUTH_PLATFORMS = {"facebook", "youtube", "twitch", "kick", "tiktok", "x_twitter", "linkedin"}
 
 
 def now_iso() -> str:
@@ -19,6 +20,25 @@ def now_iso() -> str:
 def normalize_platform(value: str) -> str:
     platform = str(value or "pulse").strip().lower().replace("-", "_")
     return platform if platform in SUPPORTED_PLATFORMS else "pulse"
+
+
+def restream_enabled() -> bool:
+    return str(os.getenv("PULSE_LIVE_RESTREAM_ENABLED") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def platform_label(platform: str) -> str:
+    labels = {
+        "pulse": "PulseSoc Live",
+        "facebook": "Facebook Live",
+        "youtube": "YouTube Live",
+        "twitch": "Twitch",
+        "kick": "Kick",
+        "tiktok": "TikTok",
+        "x_twitter": "X/Twitter",
+        "linkedin": "LinkedIn",
+        "custom_rtmp": "Custom RTMP",
+    }
+    return labels.get(normalize_platform(platform), "PulseSoc Live")
 
 
 def encrypt_secret(value: str) -> str:
@@ -59,14 +79,14 @@ def validate_rtmp_url(value: str) -> tuple[bool, str]:
 def upsert_destination(cur, *, user_id: int, platform: str, label: str = "", rtmp_url: str = "", stream_key: str = "", oauth_token: str = "") -> int:
     platform = normalize_platform(platform)
     now = now_iso()
-    label = (label or platform.replace("_", " ").title())[:120]
+    label = (label or platform_label(platform))[:120]
     encrypted_key = encrypt_secret(stream_key)
     encrypted_token = encrypt_secret(oauth_token)
     cur.execute(
         """
         INSERT INTO pulse_live_destinations
         (user_id, platform, label, rtmp_url, stream_key_encrypted, oauth_token_encrypted, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'connected', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, ?)
         """,
         (int(user_id), platform, label, str(rtmp_url or "")[:700], encrypted_key, encrypted_token, now, now),
     )
@@ -78,8 +98,8 @@ def public_destination(row) -> dict:
     return {
         "id": int(item.get("id") or 0),
         "platform": normalize_platform(item.get("platform")),
-        "label": item.get("label") or normalize_platform(item.get("platform")).replace("_", " ").title(),
-        "status": item.get("status") or "connected",
+        "label": item.get("label") or platform_label(item.get("platform")),
+        "status": item.get("status") or "ready",
         "rtmp_url": item.get("rtmp_url") or "",
         "stream_key_preview": mask_secret(item.get("stream_key_encrypted") or ""),
         "updated_at": item.get("updated_at") or "",

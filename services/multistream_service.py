@@ -37,11 +37,13 @@ def prepare_targets(cur, *, live_id: int, user_id: int, destinations=None, custo
 def health_summary(targets: list[dict] | None = None) -> dict:
     targets = targets or []
     failed = [item for item in targets if item.get("status") == "failed"]
+    setup_required = [item for item in targets if item.get("status") == "setup_required"]
     live = [item for item in targets if item.get("status") in {"live", "connecting"}]
     return {
         "total": len(targets),
         "active_or_connecting": len(live),
         "failed": len(failed),
+        "setup_required": len(setup_required),
         "pulse_safe": any(item.get("platform") == "pulse" and item.get("status") == "live" for item in targets),
         "destination_isolation": True,
         "bitrate_balancing": "planned",

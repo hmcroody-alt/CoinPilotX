@@ -257,6 +257,120 @@ body.pulse-live-shell-mode .pulse-live-surface {
   grid-column: 1 / -1;
 }
 
+.live-setup-field {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+  color: #dffcff;
+  font-weight: 900;
+}
+
+.live-setup-field[hidden],
+.live-custom-rtmp-panel[hidden] {
+  display: none !important;
+}
+
+.live-destination-card-picker {
+  grid-template-columns: 1fr;
+}
+
+.live-destination-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 10px;
+}
+
+.live-destination-card {
+  position: relative;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  min-height: 98px !important;
+  border: 1px solid rgba(110, 223, 246, 0.2);
+  border-radius: 16px;
+  padding: 12px !important;
+  background: rgba(255, 255, 255, 0.045);
+  cursor: pointer;
+}
+
+.live-destination-card input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.live-destination-card strong,
+.live-destination-card small,
+.live-destination-card em {
+  display: block;
+}
+
+.live-destination-card small {
+  margin-top: 5px;
+  color: rgba(216, 241, 246, 0.72);
+  line-height: 1.35;
+}
+
+.live-destination-card em {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: #dffcff;
+  background: rgba(255, 255, 255, 0.055);
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.live-destination-card.is-ready,
+.live-destination-card.is-selected {
+  border-color: rgba(54, 229, 143, 0.4);
+  background:
+    radial-gradient(circle at 0 0, rgba(54, 229, 143, 0.16), transparent 70%),
+    rgba(255, 255, 255, 0.05);
+}
+
+.live-destination-card.is-ready em,
+.live-destination-card.is-selected em {
+  color: #06101b;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--live-green), var(--live-cyan));
+}
+
+.live-destination-card.is-setup_required {
+  cursor: not-allowed;
+  border-color: rgba(255, 209, 102, 0.28);
+  background:
+    radial-gradient(circle at 0 0, rgba(255, 209, 102, 0.1), transparent 70%),
+    rgba(255, 255, 255, 0.035);
+}
+
+.live-destination-card.is-setup_required em {
+  color: #ffe6a6;
+  border-color: rgba(255, 209, 102, 0.34);
+  background: rgba(255, 209, 102, 0.1);
+}
+
+.live-custom-rtmp-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 9px;
+  border: 1px solid rgba(110, 223, 246, 0.18);
+  border-radius: 16px;
+  padding: 10px;
+  background: rgba(3, 10, 18, 0.34);
+}
+
+.live-custom-rtmp-panel .muted {
+  grid-column: 1 / -1;
+}
+
 .live-ready-state {
   position: absolute;
   inset: 0;
@@ -304,6 +418,28 @@ body.pulse-live-shell-mode .pulse-live-surface {
   color: #ffd8df;
   border-color: rgba(255, 107, 122, 0.45);
   background: rgba(55, 8, 18, 0.72);
+}
+
+.live-runtime-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(94px + env(safe-area-inset-bottom));
+  z-index: 120;
+  transform: translateX(-50%);
+  width: min(92vw, 420px);
+  border: 1px solid rgba(110, 223, 246, 0.3);
+  border-radius: 14px;
+  padding: 12px 14px;
+  color: #eaffff;
+  background: rgba(4, 12, 22, 0.92);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.42), 0 0 28px rgba(110, 223, 246, 0.14);
+  backdrop-filter: blur(16px);
+  text-align: center;
+  font-weight: 900;
+}
+
+.live-runtime-toast[hidden] {
+  display: none !important;
 }
 
 .live-preview-stage:not(.is-connecting) .live-camera-toast:empty {
@@ -742,6 +878,54 @@ body.pulse-live-shell-mode .pulse-live-surface {
 .studio-quick-actions button[disabled],
 .studio-bottom-controls button[disabled] {
   opacity: 0.72;
+}
+
+.studio-bottom-controls button[aria-pressed="true"],
+.live-mobile-controls button[aria-pressed="true"] {
+  border-color: rgba(54, 229, 143, 0.44);
+  color: #06101b;
+  background: linear-gradient(135deg, var(--live-green), var(--live-cyan));
+  box-shadow: 0 0 26px rgba(54, 229, 143, 0.2);
+}
+
+.studio-quick-actions [data-live-unavailable] {
+  border-color: rgba(255, 209, 102, 0.26);
+  color: #ffe6a6;
+  background: rgba(255, 209, 102, 0.08);
+}
+
+.live-settings-health-card {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  border: 1px solid rgba(110, 223, 246, 0.2);
+  border-radius: 18px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.live-settings-health-card h3 {
+  margin: 0;
+}
+
+.live-settings-health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 8px;
+}
+
+.live-settings-health-grid span {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 9px;
+  color: rgba(226, 252, 255, 0.74);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.live-settings-health-grid strong {
+  display: block;
+  margin-top: 3px;
+  color: #f6ffff;
 }
 
 .studio-advanced-drawer[hidden] {
@@ -1388,7 +1572,7 @@ body.pulse-live-shell-mode .pulse-live-surface {
     bottom: calc(10px + env(safe-area-inset-bottom));
     z-index: 40;
     display: grid;
-    grid-template-columns: 1.25fr .8fr .8fr 1fr 1fr;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 8px;
     padding: 8px;
     border: 1px solid var(--live-line);
@@ -1402,7 +1586,7 @@ body.pulse-live-shell-mode .pulse-live-surface {
     min-height: 50px;
     padding: 8px 6px;
     border-radius: 14px;
-    font-size: 12px;
+    font-size: 11px;
   }
   .live-mobile-controls .danger {
     background: rgba(255, 67, 92, .22);

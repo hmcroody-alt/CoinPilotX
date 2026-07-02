@@ -54,11 +54,15 @@ def prepare_restream_targets(cur, *, live_id: int, user_id: int, destinations=No
             status = "live" if platform == "pulse" else "connecting"
             error = ""
             if platform in {"facebook", "youtube", "twitch", "kick", "tiktok", "x_twitter", "linkedin"} and not stream_key and not rtmp_url:
-                status = "failed"
-                error = "Destination is selected but no OAuth or stream key is configured."
+                status = "setup_required"
+                error = "Connect this destination before starting a multi-destination Live."
             if platform == "custom_rtmp":
-                valid, error = live_destination_service.validate_rtmp_url(rtmp_url)
-                status = "connecting" if valid else "failed"
+                if not live_destination_service.restream_enabled():
+                    status = "setup_required"
+                    error = "Custom RTMP restreaming is not enabled yet."
+                else:
+                    valid, error = live_destination_service.validate_rtmp_url(rtmp_url)
+                    status = "connecting" if valid else "failed"
             destination_id = 0
             if platform != "pulse":
                 destination_id = live_destination_service.upsert_destination(

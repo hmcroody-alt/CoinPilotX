@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit Pulse-only live survives failed external multistream destinations."""
+"""Audit Live multi-destination setup blocks fake external starts."""
 
 from __future__ import annotations
 
@@ -41,19 +41,17 @@ def main():
         headers={"X-Trace-Id": "audit-multistream"},
         json={
             "title": "Multistream Audit",
-            "category": "Creator QA",
-            "destinations": [{"platform": "pulse"}, {"platform": "facebook"}, {"platform": "youtube"}, {"platform": "custom_rtmp"}],
-            "custom_rtmp_url": "https://not-rtmp.example/live",
+            "category": "Crypto Education",
+            "destinations": [{"platform": "pulse"}, {"platform": "facebook"}, {"platform": "youtube"}],
         },
     )
     data = response.get_json() or {}
-    require(response.status_code == 200 and data.get("ok"), "Pulse Live starts even when external targets fail")
-    destinations = data.get("destinations") or []
-    require(any(d.get("platform") == "pulse" and d.get("status") == "live" for d in destinations), "Pulse destination remains live")
-    require(any(d.get("platform") in {"facebook", "youtube", "custom_rtmp"} and d.get("status") == "failed" for d in destinations), "external destination failures are isolated")
+    require(response.status_code == 400 and data.get("error") == "destination_setup_required", "unconnected external targets block Start Live")
+    require("Facebook Live" in ",".join(data.get("setup_required") or []) and "YouTube Live" in ",".join(data.get("setup_required") or []), "setup-required platforms are named clearly")
     require({"facebook", "youtube", "twitch", "kick", "tiktok", "x_twitter", "linkedin", "custom_rtmp"}.issubset(set(multistream_service.supported_platforms())), "multistream service supports major creator platforms")
+    destinations = [{"platform": "pulse", "status": "live"}, {"platform": "youtube", "status": "setup_required"}]
     require(multistream_service.health_summary(destinations)["pulse_safe"], "multistream health confirms Pulse is safe")
-    require(data.get("live_url"), "live URL is exposed after multistream setup")
+    require(multistream_service.health_summary(destinations)["setup_required"] == 1, "multistream health counts setup-required destinations")
     print("live multistream audit ok")
 
 
