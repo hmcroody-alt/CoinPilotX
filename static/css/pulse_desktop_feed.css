@@ -4441,7 +4441,7 @@ outline-offset: 2px !important;
 
 .feed > .pulse-feed-post-v3 .post-comment-composer {
 display: grid !important;
-grid-template-columns: 44px minmax(0, 1fr) 42px 42px 50px !important;
+grid-template-columns: 44px minmax(0, 1fr) repeat(4, 42px) 50px !important;
 align-items: center !important;
 gap: 8px !important;
 min-height: 52px !important;
@@ -4545,8 +4545,24 @@ font-size: 10px !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-comment-composer {
-grid-template-columns: 40px minmax(0, 1fr) 38px 38px 46px !important;
+grid-template-columns: 36px minmax(0, 1fr) repeat(4, 34px) 42px !important;
 gap: 5px !important;
+}
+
+.feed > .pulse-feed-post-v3 .post-comment-composer .pulse-comment-avatar,
+.feed > .pulse-feed-post-v3 .post-comment-composer .post-card-avatar,
+.feed > .pulse-feed-post-v3 .post-comment-composer .pulse-comment-action {
+width: 34px !important;
+height: 34px !important;
+min-width: 34px !important;
+min-height: 34px !important;
+}
+
+.feed > .pulse-feed-post-v3 .post-comment-composer [data-comment-send] {
+width: 42px !important;
+height: 42px !important;
+min-width: 42px !important;
+min-height: 42px !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-music-player {
@@ -4585,7 +4601,23 @@ font-size: 9px !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-comment-composer {
-grid-template-columns: 38px minmax(0, 1fr) 36px 36px 44px !important;
+grid-template-columns: 32px minmax(0, 1fr) repeat(4, 32px) 40px !important;
+}
+
+.feed > .pulse-feed-post-v3 .post-comment-composer .pulse-comment-avatar,
+.feed > .pulse-feed-post-v3 .post-comment-composer .post-card-avatar,
+.feed > .pulse-feed-post-v3 .post-comment-composer .pulse-comment-action {
+width: 32px !important;
+height: 32px !important;
+min-width: 32px !important;
+min-height: 32px !important;
+}
+
+.feed > .pulse-feed-post-v3 .post-comment-composer [data-comment-send] {
+width: 40px !important;
+height: 40px !important;
+min-width: 40px !important;
+min-height: 40px !important;
 }
 
 .feed > .pulse-feed-post-v3 .post-music-player {

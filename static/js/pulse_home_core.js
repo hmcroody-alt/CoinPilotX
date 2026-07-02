@@ -857,12 +857,37 @@
     return type.includes("video") || /\.(mp4|mov|webm|m4v|m3u8)(\?|$)/i.test(url || "");
   }
 
+  const PULSESOC_MEMBER_000_AVATAR = "/static/brand/pulsesoc-member-000-avatar.png";
+
+  function ensureFeedUiStylesheet() {
+    if (document.querySelector("[data-pulse-feed-ui-css='post-comment-dock-20260702a']")) return;
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "/static/css/pulse_reaction_system.css?v=post-comment-dock-20260702a";
+    link.dataset.pulseFeedUiCss = "post-comment-dock-20260702a";
+    document.head?.appendChild(link);
+  }
+
+  ensureFeedUiStylesheet();
+
+  function isMember000(author, fallbackName) {
+    const values = [
+      author?.display_name,
+      author?.name,
+      author?.public_player_id,
+      fallbackName,
+    ].map(value => String(value || "").toLowerCase());
+    return values.some(value => value.includes("member #000") || value === "pulsesoc-member-000");
+  }
+
   function avatarNode(author, fallbackName) {
-    const name = author?.display_name || fallbackName || "PulseSoc";
-    const avatar = element("span", "post-card-avatar avatar", name.slice(0, 1).toUpperCase());
-    const avatarUrl = author?.avatar_url || author?.avatar_thumbnail_url || author?.photo_url || "";
+    const name = author?.display_name || author?.name || fallbackName || "PulseSoc";
+    const generatedAvatar = isMember000(author, fallbackName) ? PULSESOC_MEMBER_000_AVATAR : "";
+    const avatarUrl = author?.avatar_url || author?.avatar_thumbnail_url || author?.photo_url || generatedAvatar;
+    const avatar = element("span", `post-card-avatar avatar${avatarUrl ? " has-image" : " pulse-avatar-orb"}`, "");
+    avatar.setAttribute("aria-label", `${name} avatar`);
+    avatar.dataset.avatarFallback = avatarUrl ? "image" : "orb";
     if (avatarUrl) {
-      avatar.textContent = "";
       const image = document.createElement("img");
       image.src = avatarUrl;
       image.alt = "";
@@ -965,7 +990,9 @@
     if (attrs.reportPost) return "more";
     if (attrs.commentSend) return "send";
     if (attrs.commentMedia) return "media";
+    if (attrs.commentVoice) return "voice";
     if (attrs.commentEmoji) return "emoji";
+    if (attrs.commentAttach) return "attach";
     return "action";
   }
 
@@ -1046,6 +1073,12 @@
     button.dataset.action = action;
     applyDataset(button, attrs);
     button.setAttribute("aria-label", label || `${action} comment`);
+    if (attrs.unavailable) {
+      button.classList.add("is-disabled");
+      button.dataset.unavailable = attrs.unavailable;
+      button.setAttribute("aria-disabled", "true");
+      button.title = attrs.unavailable;
+    }
     const iconNode = element("span", "pulse-action-icon", icon);
     iconNode.setAttribute("aria-hidden", "true");
     button.appendChild(iconNode);
@@ -1448,7 +1481,7 @@
   }
 
   function renderComposer(card, post) {
-    const composer = element("section", "pulse-comment-composer-v2 post-comment-composer");
+    const composer = element("section", "pulse-comment-composer-v2 post-comment-composer pulse-comment-dock");
     const avatarWrap = element("div", "pulse-comment-avatar", "");
     avatarWrap.appendChild(currentViewerAvatar(post));
     composer.appendChild(avatarWrap);
@@ -1458,9 +1491,27 @@
     input.setAttribute("aria-label", "Write a comment");
     input.dataset.commentInput = post.id;
     composer.appendChild(input);
-    composer.appendChild(commentComposerButton("▣", "Add comment media", { commentMedia: post.id, action: "comment-media" }));
+    composer.appendChild(commentComposerButton("▣", "Add photo to comment", {
+      commentMedia: post.id,
+      action: "comment-photo",
+      unavailable: "Photo comments are not enabled on feed cards yet.",
+    }));
+    composer.appendChild(commentComposerButton("◉", "Record voice comment", {
+      commentVoice: post.id,
+      action: "comment-voice",
+      unavailable: "Voice comments are coming soon.",
+    }));
     composer.appendChild(commentComposerButton("☺", "Add emoji", { commentEmoji: post.id, action: "comment-emoji" }));
-    composer.appendChild(commentComposerButton("➤", "Send comment", { commentSend: post.id, action: "send" }));
+    composer.appendChild(commentComposerButton("＋", "Attach to comment", {
+      commentAttach: post.id,
+      action: "comment-attach",
+      unavailable: "Comment attachments are coming soon.",
+    }));
+    const send = commentComposerButton("➤", "Send comment", { commentSend: post.id, action: "send" });
+    send.classList.add("pulse-composer-send", "is-disabled");
+    send.disabled = true;
+    send.setAttribute("aria-disabled", "true");
+    composer.appendChild(send);
     card.appendChild(composer);
   }
 
@@ -1732,11 +1783,18 @@
 
   async function sendComment(postId) {
     const input = document.querySelector(`[data-comment-input="${postId}"]`);
+    const sendButtons = document.querySelectorAll(`[data-comment-send="${postId}"]`);
     const body = input?.value || "";
     if (!body.trim()) {
       input?.focus();
+      updateCommentSendState(postId);
       return;
     }
+    sendButtons.forEach(button => {
+      button.disabled = true;
+      button.classList.add("is-loading");
+      button.setAttribute("aria-busy", "true");
+    });
     try {
       await api(`/api/pulse/posts/${postId}/comments`, {
         method: "POST",
@@ -1751,7 +1809,24 @@
       toast("Comment posted.");
     } catch (error) {
       toast(error.message);
+    } finally {
+      sendButtons.forEach(button => {
+        button.classList.remove("is-loading");
+        button.removeAttribute("aria-busy");
+      });
+      updateCommentSendState(postId);
     }
+  }
+
+  function updateCommentSendState(postId) {
+    const input = document.querySelector(`[data-comment-input="${postId}"]`);
+    const ready = !!String(input?.value || "").trim();
+    document.querySelectorAll(`[data-comment-send="${postId}"]`).forEach(button => {
+      if (button.classList.contains("is-loading")) return;
+      button.disabled = !ready;
+      button.classList.toggle("is-disabled", !ready);
+      button.setAttribute("aria-disabled", ready ? "false" : "true");
+    });
   }
 
   function openLightbox(trigger) {
@@ -2815,6 +2890,11 @@
       document.querySelector(`[data-comment-input="${comment.dataset.postComment}"]`)?.focus();
       return;
     }
+    const unavailableAction = event.target.closest("[data-unavailable]");
+    if (unavailableAction) {
+      toast(unavailableAction.dataset.unavailable || "This comment tool is not available yet.");
+      return;
+    }
     const send = event.target.closest("[data-comment-send]");
     if (send) return sendComment(send.dataset.commentSend);
     const emoji = event.target.closest("[data-comment-emoji]");
@@ -2823,6 +2903,7 @@
       if (input) {
         input.value = `${input.value || ""}🔥`;
         input.focus();
+        updateCommentSendState(emoji.dataset.commentEmoji);
       }
       return;
     }
@@ -2957,6 +3038,21 @@
       sendComment(input.dataset.commentInput);
     }
     if (event.key === "Escape") closeLightbox();
+  });
+
+  document.addEventListener("input", event => {
+    const input = event.target.closest("[data-comment-input]");
+    if (input) updateCommentSendState(input.dataset.commentInput);
+  });
+
+  document.addEventListener("change", event => {
+    const input = event.target.closest("[data-comment-input]");
+    if (input) updateCommentSendState(input.dataset.commentInput);
+  });
+
+  document.addEventListener("keyup", event => {
+    const input = event.target.closest("[data-comment-input]");
+    if (input) updateCommentSendState(input.dataset.commentInput);
   });
 
   document.addEventListener("pointerdown", event => {
