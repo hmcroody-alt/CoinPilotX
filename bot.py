@@ -73006,9 +73006,24 @@ def api_messages_media_download(attachment_id):
     conn = None
     try:
         conn, cur = _messenger_media_open_db()
-        path, mime_type, filename = messenger_media_foundation.local_download_path(cur, user, attachment_id)
+        target = messenger_media_foundation.attachment_download_target(cur, user, attachment_id)
         conn.close()
-        return send_file(path, mimetype=mime_type, download_name=filename, as_attachment=False, conditional=True)
+        if target.get("kind") == "signed_redirect":
+            response = redirect(target["url"], code=302)
+        else:
+            response = send_file(
+                target["path"],
+                mimetype=target["mime_type"],
+                download_name=target["filename"],
+                as_attachment=False,
+                conditional=True,
+                max_age=0,
+            )
+        response.headers["Cache-Control"] = "private, no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
     except Exception as exc:
         return _messenger_media_json_error(conn, exc)
 

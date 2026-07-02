@@ -898,18 +898,20 @@
     const bars = waveform.slice(0, 56).map((level) => `<i style="--level:${Math.max(8, Math.min(100, Number(level) || 18))}"></i>`).join("");
     const duration = Number(item.duration_seconds || item.duration || 0);
     return `
-      <div class="voice-message" data-voice-message>
-        <div class="voice-message-controls">
-          <button type="button" data-voice-play aria-label="Play voice note">Play</button>
-          <progress data-voice-progress max="100" value="0"></progress>
-          <select data-voice-speed aria-label="Playback speed">
-            <option value="1">1x</option>
-            <option value="1.5">1.5x</option>
-            <option value="2">2x</option>
-          </select>
+      <div class="voice-message" data-voice-message data-playing="false">
+        <button class="voice-message-play" type="button" data-voice-play aria-label="Play voice note" title="Play voice note">
+          <span data-voice-play-icon aria-hidden="true">▶</span>
+        </button>
+        <div class="voice-message-timeline">
+          <div class="voice-waveform" data-voice-playback-waveform aria-hidden="true">${bars}</div>
+          <input class="voice-message-seek" type="range" data-voice-progress min="0" max="100" value="0" step="0.1" aria-label="Voice message position">
+          <small class="voice-message-time"><span data-voice-current>0:00</span><span data-voice-duration>${formatDuration(duration)}</span></small>
         </div>
-        <div class="voice-waveform" data-voice-playback-waveform>${bars}</div>
-        <small><span data-voice-current>0:00</span> / <span data-voice-duration>${formatDuration(duration)}</span></small>
+        <select class="voice-message-speed" data-voice-speed aria-label="Playback speed">
+          <option value="1">1x</option>
+          <option value="1.5">1.5x</option>
+          <option value="2">2x</option>
+        </select>
         <audio data-voice-audio preload="metadata" src="${escapeAttr(url)}"></audio>
       </div>
     `;
@@ -1856,23 +1858,49 @@
     document.querySelectorAll("[data-voice-audio]").forEach((item) => {
       if (item !== audio) {
         item.pause();
-        const otherButton = item.closest("[data-voice-message]")?.querySelector("[data-voice-play]");
-        if (otherButton) {
-          otherButton.textContent = "Play";
-          otherButton.dataset.playing = "false";
-        }
+        setVoicePlayState(item.closest("[data-voice-message]"), false);
       }
     });
     if (audio.paused) {
-      audio.play().catch(() => setStatus("Tap again to play this voice note.", "error"));
-      button.textContent = "Pause";
-      button.dataset.playing = "true";
+      if (container.dataset.loadError === "true") {
+        container.dataset.loadError = "false";
+        audio.load();
+      }
+      audio.play().then(() => {
+        container.dataset.playbackError = "";
+        container.dataset.loadError = "false";
+        setStatus("");
+        setVoicePlayState(container, true);
+      }).catch((error) => {
+        container.dataset.playbackError = error?.name || "PlaybackError";
+        console.warn("PulseSoc voice playback failed", {
+          name: error?.name || "PlaybackError",
+          message: error?.message || "Voice playback was rejected.",
+          readyState: audio.readyState,
+          networkState: audio.networkState,
+        });
+        setVoicePlayState(container, false);
+        const browserBlocked = error?.name === "NotAllowedError";
+        container.dataset.loadError = browserBlocked ? "false" : "true";
+        setStatus(browserBlocked ? "Browser sound is blocked. Allow sound, then tap play again." : "Voice message could not load. Tap play to retry.", "error");
+      });
     } else {
       audio.pause();
-      button.textContent = "Play";
-      button.dataset.playing = "false";
+      setVoicePlayState(container, false);
     }
     bindVoiceAudio(container);
+  }
+
+  function setVoicePlayState(container, playing) {
+    if (!container) return;
+    const button = container.querySelector("[data-voice-play]");
+    const icon = container.querySelector("[data-voice-play-icon]");
+    container.dataset.playing = playing ? "true" : "false";
+    if (!button) return;
+    button.dataset.playing = playing ? "true" : "false";
+    button.setAttribute("aria-label", playing ? "Pause voice note" : "Play voice note");
+    button.title = playing ? "Pause voice note" : "Play voice note";
+    if (icon) icon.textContent = playing ? "❚❚" : "▶";
   }
 
   function setVoicePlaybackSpeed(container, speed) {
@@ -1892,19 +1920,21 @@
     });
     audio.addEventListener("timeupdate", () => {
       if (current) current.textContent = formatDuration(audio.currentTime || 0);
-      if (progress) progress.value = audio.duration ? Math.round((audio.currentTime / audio.duration) * 100) : 0;
+      const percent = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
+      if (progress) progress.value = String(percent);
+      container.style.setProperty("--voice-progress", `${percent}%`);
     });
     audio.addEventListener("ended", () => {
-      const button = container.querySelector("[data-voice-play]");
-      if (button) {
-        button.textContent = "Play";
-        button.dataset.playing = "false";
-      }
+      setVoicePlayState(container, false);
+      container.style.setProperty("--voice-progress", "0%");
     });
-    progress?.addEventListener("click", (event) => {
+    audio.addEventListener("error", () => {
+      setVoicePlayState(container, false);
+      container.dataset.loadError = "true";
+    });
+    progress?.addEventListener("input", () => {
       if (!audio.duration) return;
-      const box = progress.getBoundingClientRect();
-      audio.currentTime = ((event.clientX - box.left) / Math.max(1, box.width)) * audio.duration;
+      audio.currentTime = (Number(progress.value || 0) / 100) * audio.duration;
     });
   }
 

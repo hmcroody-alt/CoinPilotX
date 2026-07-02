@@ -9,6 +9,7 @@ import sqlite3
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +37,7 @@ def static_checks():
     js = (ROOT / "static/js/pulse_messages_v2.js").read_text(encoding="utf-8")
     service = (ROOT / "pulse_communications_v2/service.py").read_text(encoding="utf-8")
     foundation = (ROOT / "services/messenger_media_foundation.py").read_text(encoding="utf-8")
+    css = (ROOT / "static/css/pulse_messages_v2.css").read_text(encoding="utf-8")
     template = (ROOT / "templates/pulse_messages_v2.html").read_text(encoding="utf-8")
     assert_true('const MEDIA_API = "/api/messages/media"' in js, "composer does not target media foundation API")
     assert_true('fetch(`${API}/attachments/upload`' not in js, "composer still calls legacy comm_v2 attachment upload")
@@ -45,6 +47,12 @@ def static_checks():
         assert_true(token in service, f"comm_v2 send missing foundation bridge token {token}")
     for token in ("comm_v2_participants", "comm_v2_conversations", "comm_v2_messages"):
         assert_true(token in foundation, f"media foundation missing comm_v2 access token {token}")
+    assert_true("attachment_download_target" in foundation, "media foundation does not resolve local and object-storage delivery")
+    for token in ("data-voice-play-icon", 'type="range" data-voice-progress', "setVoicePlayState"):
+        assert_true(token in js, f"voice player missing {token}")
+    for token in (".voice-message-play", ".voice-message-seek", ".voice-message-time"):
+        assert_true(token in css, f"voice player styling missing {token}")
+    assert_true('data-voice-play aria-label="Play voice note">Play</button>' not in js, "voice player still uses the stacked Play text button")
     assert_true("data-composer-shell" in template and "data-attachment-preview" in template and "data-voice-panel" in template, "composer shell/accessory structure missing")
 
 
@@ -182,6 +190,7 @@ def runtime_checks(tmp_path):
         send_with_attachment(sender, conversation_id, attachment_id, message_type)
         download = recipient.get(f"/api/messages/media/{attachment_id}/download")
         assert_true(download.status_code == 200 and download.data, f"recipient download failed for {media_type}")
+        assert_true("no-store" in (download.headers.get("Cache-Control") or ""), f"private {media_type} download is cacheable")
         outsider_download = outsider.get(f"/api/messages/media/{attachment_id}/download")
         outsider_data = json_body(outsider_download)
         assert_true(outsider_download.status_code == 403 and outsider_data["error"] == "not_conversation_member", f"outsider download was not blocked: {outsider_data}")
@@ -197,6 +206,26 @@ def runtime_checks(tmp_path):
     ]
     for attachment_id in attachment_ids:
         assert_true(any(f"/api/messages/media/{attachment_id}/download" in url for url in found_private_urls), f"recipient fetch missing attachment {attachment_id}")
+
+    remote_attachment_id = attachment_ids[1]
+    conn = bot.db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT storage_key FROM message_attachments WHERE id=?", (remote_attachment_id,))
+    remote_row = dict(cur.fetchone() or {})
+    remote_path = Path(os.environ["MESSENGER_MEDIA_LOCAL_DIR"]) / remote_row["storage_key"]
+    remote_path.unlink(missing_ok=True)
+    cur.execute("UPDATE message_attachments SET signed_url_strategy='signed' WHERE id=?", (remote_attachment_id,))
+    conn.commit()
+    conn.close()
+    signed_url = "https://private-media.example.test/expiring-object"
+    with patch("services.messenger_media_foundation.signed_or_private_url", return_value=signed_url):
+        remote_download = recipient.get(f"/api/messages/media/{remote_attachment_id}/download")
+        assert_true(remote_download.status_code == 302 and remote_download.headers.get("Location") == signed_url, "authorized object-storage attachment did not use signed delivery")
+        assert_true("no-store" in (remote_download.headers.get("Cache-Control") or ""), "signed media redirect is cacheable")
+        outsider_remote = outsider.get(f"/api/messages/media/{remote_attachment_id}/download")
+        outsider_remote_data = json_body(outsider_remote)
+        assert_true(outsider_remote.status_code == 403 and outsider_remote_data["error"] == "not_conversation_member", "non-member reached signed media delivery")
 
 
 def main():

@@ -1418,26 +1418,91 @@ select:focus-visible {
 }
 
 .voice-message {
+  --voice-progress: 0%;
   display: grid;
-  min-width: min(360px, 70vw);
-  gap: 8px;
-  padding: 8px;
-  border: 1px solid rgba(105, 218, 240, .13);
-  border-radius: 10px;
-  background: rgba(2, 7, 17, .2);
-}
-
-.voice-message-controls {
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  min-width: min(360px, 76vw);
+  max-width: min(440px, 100%);
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(105, 218, 240, .13);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(8, 23, 39, .88), rgba(2, 10, 20, .72));
 }
 
-.voice-message progress {
+.voice-message-play {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(105, 218, 240, .28);
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(52, 230, 157, .95), rgba(105, 218, 240, .92));
+  color: #03131d;
+  font-size: 18px;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(52, 230, 157, .16);
+}
+
+.voice-message-play span {
+  display: block;
+  transform: translateX(1px);
+  line-height: 1;
+}
+
+.voice-message[data-playing="true"] .voice-message-play span {
+  transform: none;
+  font-size: 14px;
+}
+
+.voice-message-timeline {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.voice-message .voice-waveform {
+  height: 28px;
+  gap: 2px;
+  opacity: .72;
+}
+
+.voice-message[data-playing="true"] .voice-waveform {
+  opacity: 1;
+}
+
+.voice-message-seek {
   width: 100%;
-  height: 8px;
+  height: 14px;
+  margin: -2px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
   accent-color: var(--green);
+  cursor: pointer;
+}
+
+.voice-message-time {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-message-speed {
+  width: auto;
+  min-width: 54px;
+  min-height: 36px;
+  padding: 5px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .attachment-sheet,
@@ -2114,7 +2179,8 @@ select:focus-visible {
   }
 
   .voice-message {
-    min-width: min(290px, 74vw);
+    min-width: min(280px, 78vw);
+    grid-template-columns: 44px minmax(0, 1fr) auto;
   }
 
   .comm-details {

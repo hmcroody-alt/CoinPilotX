@@ -933,3 +933,21 @@ def local_download_path(cur: Any, user: dict[str, Any], attachment_id: int) -> t
     if not path.exists():
         raise MessengerMediaError("file_not_available", "Attachment file is not available from local storage.", 404)
     return path, str(_row_get(row, "mime_type", "") or "application/octet-stream"), str(_row_get(row, "original_filename", "") or path.name)
+
+
+def attachment_download_target(cur: Any, user: dict[str, Any], attachment_id: int) -> dict[str, Any]:
+    """Resolve an authorized attachment to local bytes or an expiring object URL."""
+    user_id = int(user.get("user_id") or user.get("id") or 0)
+    row = _fetch_attachment(cur, attachment_id)
+    _require_attachment_access(cur, row, user_id, require_sender=False)
+    storage_key = str(_row_get(row, "storage_key", "") or "")
+    mime_type = str(_row_get(row, "mime_type", "") or "application/octet-stream")
+    filename = str(_row_get(row, "original_filename", "") or f"attachment-{attachment_id}")
+    if storage_key:
+        local_path = _local_path(storage_key)
+        if local_path.exists():
+            return {"kind": "local", "path": local_path, "mime_type": mime_type, "filename": filename}
+    signed_url = signed_or_private_url(row)
+    if signed_url:
+        return {"kind": "signed_redirect", "url": signed_url, "mime_type": mime_type, "filename": filename}
+    raise MessengerMediaError("file_not_available", "Attachment file is temporarily unavailable.", 404)
