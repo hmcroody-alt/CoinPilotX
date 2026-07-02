@@ -38,6 +38,9 @@ SETTING_KEYS = {
     "ads_personalization": {"true", "false"},
     "reduced_motion": {"true", "false", "system"},
     "sci_fi_intensity": {"low", "medium", "high"},
+    "welcome_experience": {"true", "false"},
+    "welcome_sound": {"true", "false"},
+    "welcome_haptics": {"true", "false"},
     "language": {"en", "es", "fr", "ht", "pt", "de", "it", "ar"},
     "timezone": None,
 }
@@ -742,6 +745,9 @@ def get_settings(conn: Any, user_id: int) -> dict[str, str]:
         "ads_personalization": "true",
         "reduced_motion": "system",
         "sci_fi_intensity": "medium",
+        "welcome_experience": "true",
+        "welcome_sound": "false",
+        "welcome_haptics": "true",
         "language": "en",
         "timezone": "America/New_York",
     }

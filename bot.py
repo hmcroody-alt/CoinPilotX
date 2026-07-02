@@ -86,6 +86,8 @@ PERSISTENT_SESSION_DAYS = max(3650, int(os.getenv("PULSESOC_PERSISTENT_SESSION_D
 PERSISTENT_SESSION_MAX_AGE = PERSISTENT_SESSION_DAYS * 24 * 60 * 60
 PERSISTENT_SESSION_SAMESITE = os.getenv("PULSESOC_REFRESH_COOKIE_SAMESITE", "Lax")
 PERSISTENT_REFRESH_REUSE_GRACE_SECONDS = max(30, int(os.getenv("PULSESOC_REFRESH_REUSE_GRACE_SECONDS", "180")))
+PULSESOC_WELCOME_APP_VERSION = (os.getenv("PULSESOC_WELCOME_APP_VERSION") or os.getenv("PULSESOC_APP_VERSION") or "2026.07").strip()[:32]
+PULSESOC_WELCOME_COOLDOWN_DAYS = max(1, int(os.getenv("PULSESOC_WELCOME_COOLDOWN_DAYS", "7")))
 
 print("CoinPilotX web boot starting", flush=True)
 print("PORT=", os.environ.get("PORT"), flush=True)
@@ -2685,6 +2687,7 @@ def restore_account_from_persistent_cookie():
         return None
     session.permanent = True
     session["account_user_id"] = user["user_id"]
+    session.setdefault("pulse_welcome_reason", "session_return")
     if token_payload.get("refresh_token"):
         g.persistent_session_refresh_token = token_payload["refresh_token"]
     return user["user_id"]
@@ -2852,6 +2855,282 @@ def api_error(message, status=400, trace_id=None, **extra):
     payload = {"ok": False, "success": False, "message": message, "trace_id": trace_id}
     payload.update(extra)
     return jsonify(payload), status
+
+
+PULSE_WELCOME_TYPES = {"first_login", "welcome_back", "session_return", "version_update", "manual", "generic"}
+PULSE_WELCOME_COPY = {
+    "first_login": {
+        "title": "Welcome to PulseSoc, Explorer 🌌",
+        "body": "Your journey begins now.",
+        "subtext": "The galaxy is waiting for your first signal.",
+        "cta": "Enter the Galaxy 🚀",
+    },
+    "welcome_back": {
+        "title": "Welcome back to the Galaxy, {name} 👋",
+        "body": "The galaxy is better with you in it.",
+        "subtext": "New adventures. New opportunities. Let's build something extraordinary. 🚀",
+        "cta": "Let's Go! ✨",
+    },
+    "session_return": {
+        "title": "Mission resumed, {name} 🚀",
+        "body": "Your universe kept moving while you were away.",
+        "subtext": "Let's continue.",
+        "cta": "Resume Mission",
+    },
+    "version_update": {
+        "title": "PulseSoc just leveled up ⚡",
+        "body": "New systems are online.",
+        "subtext": "Explore what's new in the galaxy.",
+        "cta": "Explore PulseSoc",
+    },
+    "manual": {
+        "title": "You belong here, {name} ✨",
+        "body": "Let's make today legendary.",
+        "subtext": "Your PulseSoc galaxy is ready.",
+        "cta": "Enter the Galaxy",
+    },
+    "generic": {
+        "title": "You belong here, {name} ✨",
+        "body": "Let's make today legendary.",
+        "subtext": "Your PulseSoc galaxy is ready.",
+        "cta": "Enter the Galaxy",
+    },
+}
+
+
+def pulse_welcome_now():
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def pulse_welcome_parse_time(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def pulse_welcome_safe_name(user):
+    raw = (user or {}).get("display_name") or (user or {}).get("full_name") or (user or {}).get("username") or "Explorer"
+    name = re.sub(r"\s+", " ", clean_html(str(raw))).strip()[:48] or "Explorer"
+    if "@" in name and not name.startswith("@"):
+        name = name.split("@", 1)[0]
+    return name.split(" ", 1)[0][:24] or "Explorer"
+
+
+def ensure_pulse_welcome_schema(cur, conn=None):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_welcome_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            welcome_type TEXT NOT NULL,
+            last_shown_at TEXT,
+            app_version_shown TEXT,
+            show_count INTEGER DEFAULT 0,
+            cooldown_days INTEGER DEFAULT 7,
+            dismissed_at TEXT,
+            pending INTEGER DEFAULT 0,
+            triggered_by INTEGER DEFAULT 0,
+            trigger_reason TEXT,
+            device_label TEXT,
+            platform TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            setting_key TEXT,
+            setting_value TEXT,
+            updated_at TEXT,
+            UNIQUE(user_id, setting_key)
+        )
+        """
+    )
+    try:
+        safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_user_welcome_events_user_type ON user_welcome_events(user_id, welcome_type, updated_at)")
+        safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_user_welcome_events_pending ON user_welcome_events(user_id, pending, dismissed_at)")
+    except NameError:
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_welcome_events_user_type ON user_welcome_events(user_id, welcome_type, updated_at)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_welcome_events_pending ON user_welcome_events(user_id, pending, dismissed_at)")
+
+
+def pulse_welcome_settings(cur, user_id):
+    settings = {
+        "welcome_experience": "true",
+        "welcome_sound": "false",
+        "welcome_haptics": "true",
+        "reduced_motion": "system",
+    }
+    try:
+        cur.execute(
+            "SELECT setting_key, setting_value FROM user_settings WHERE user_id=? AND setting_key IN ('welcome_experience','welcome_sound','welcome_haptics','reduced_motion')",
+            (int(user_id),),
+        )
+        for row in cur.fetchall():
+            item = dict(row) if hasattr(row, "keys") else {"setting_key": row[0], "setting_value": row[1]}
+            key = str(item.get("setting_key") or "")
+            if key in settings:
+                settings[key] = str(item.get("setting_value") or settings[key]).strip().lower()[:32]
+    except Exception:
+        pass
+    return settings
+
+
+def pulse_welcome_latest_event(cur, user_id, welcome_type, app_version=""):
+    if welcome_type == "version_update":
+        cur.execute(
+            """
+            SELECT * FROM user_welcome_events
+            WHERE user_id=? AND welcome_type=? AND COALESCE(app_version_shown,'')=?
+            ORDER BY updated_at DESC, id DESC LIMIT 1
+            """,
+            (int(user_id), welcome_type, app_version),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT * FROM user_welcome_events
+            WHERE user_id=? AND welcome_type=?
+            ORDER BY updated_at DESC, id DESC LIMIT 1
+            """,
+            (int(user_id), welcome_type),
+        )
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def pulse_welcome_pending_event(cur, user_id):
+    cur.execute(
+        """
+        SELECT * FROM user_welcome_events
+        WHERE user_id=? AND COALESCE(pending,0)=1 AND COALESCE(dismissed_at,'')=''
+        ORDER BY updated_at DESC, id DESC LIMIT 1
+        """,
+        (int(user_id),),
+    )
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def pulse_welcome_latest_any_event(cur, user_id):
+    cur.execute(
+        """
+        SELECT * FROM user_welcome_events
+        WHERE user_id=? AND COALESCE(last_shown_at,'')!=''
+        ORDER BY COALESCE(last_shown_at, updated_at) DESC, id DESC LIMIT 1
+        """,
+        (int(user_id),),
+    )
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def pulse_welcome_due(row, cooldown_days):
+    if not row:
+        return True
+    last = pulse_welcome_parse_time(row.get("last_shown_at") or row.get("dismissed_at") or row.get("updated_at"))
+    if not last:
+        return True
+    now = datetime.now(timezone.utc)
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return (now - last) >= timedelta(days=max(1, int(cooldown_days or PULSESOC_WELCOME_COOLDOWN_DAYS)))
+
+
+def pulse_welcome_pick_event(cur, user):
+    user_id = int((user or {}).get("user_id") or 0)
+    session_reason = str(session.pop("pulse_welcome_reason", "") or "").strip().lower() if has_request_context() else ""
+    if session_reason not in PULSE_WELCOME_TYPES:
+        session_reason = ""
+    pending = pulse_welcome_pending_event(cur, user_id)
+    if pending:
+        return pending.get("welcome_type") or "manual", pending, int(pending.get("cooldown_days") or PULSESOC_WELCOME_COOLDOWN_DAYS)
+
+    first_login = pulse_welcome_latest_event(cur, user_id, "first_login")
+    if session_reason == "first_login" and not first_login:
+        return "first_login", None, PULSESOC_WELCOME_COOLDOWN_DAYS
+
+    recent_any = pulse_welcome_latest_any_event(cur, user_id)
+    if recent_any and not pulse_welcome_due(recent_any, PULSESOC_WELCOME_COOLDOWN_DAYS):
+        return "", None, PULSESOC_WELCOME_COOLDOWN_DAYS
+
+    if session_reason in {"welcome_back", "session_return"}:
+        row = pulse_welcome_latest_event(cur, user_id, session_reason)
+        if pulse_welcome_due(row, PULSESOC_WELCOME_COOLDOWN_DAYS):
+            return session_reason, row, PULSESOC_WELCOME_COOLDOWN_DAYS
+
+    version_row = pulse_welcome_latest_event(cur, user_id, "version_update", PULSESOC_WELCOME_APP_VERSION)
+    if not version_row:
+        return "version_update", None, PULSESOC_WELCOME_COOLDOWN_DAYS
+
+    welcome_back = pulse_welcome_latest_event(cur, user_id, "welcome_back")
+    if pulse_welcome_due(welcome_back, PULSESOC_WELCOME_COOLDOWN_DAYS):
+        return "welcome_back", welcome_back, PULSESOC_WELCOME_COOLDOWN_DAYS
+    return "", None, PULSESOC_WELCOME_COOLDOWN_DAYS
+
+
+def pulse_welcome_claim_event(cur, user_id, welcome_type, row=None, cooldown_days=None, app_version=""):
+    now = pulse_welcome_now()
+    cooldown_days = int(cooldown_days or PULSESOC_WELCOME_COOLDOWN_DAYS)
+    app_version = app_version if welcome_type == "version_update" else (app_version or PULSESOC_WELCOME_APP_VERSION)
+    if row and row.get("id"):
+        cur.execute(
+            """
+            UPDATE user_welcome_events
+            SET last_shown_at=?, show_count=COALESCE(show_count,0)+1, cooldown_days=?,
+                app_version_shown=?, dismissed_at=NULL, pending=0,
+                device_label=?, platform=?, updated_at=?
+            WHERE id=? AND user_id=?
+            """,
+            (now, cooldown_days, app_version, presence_device_label(), native_app_request_context().get("platform") or "web", now, int(row["id"]), int(user_id)),
+        )
+        return int(row["id"])
+    cur.execute(
+        """
+        INSERT INTO user_welcome_events
+            (user_id, welcome_type, last_shown_at, app_version_shown, show_count,
+             cooldown_days, dismissed_at, pending, device_label, platform, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 1, ?, NULL, 0, ?, ?, ?, ?)
+        """,
+        (
+            int(user_id),
+            welcome_type,
+            now,
+            app_version,
+            cooldown_days,
+            presence_device_label(),
+            native_app_request_context().get("platform") or "web",
+            now,
+            now,
+        ),
+    )
+    return int(getattr(cur, "lastrowid", 0) or 0)
+
+
+def pulse_welcome_copy_payload(user, welcome_type):
+    name = pulse_welcome_safe_name(user)
+    copy = PULSE_WELCOME_COPY.get(welcome_type) or PULSE_WELCOME_COPY["generic"]
+    return {
+        "name": name,
+        "title": clean_html(copy["title"].format(name=name)),
+        "body": clean_html(copy["body"].format(name=name)),
+        "subtext": clean_html(copy["subtext"].format(name=name)),
+        "cta": clean_html(copy["cta"].format(name=name)),
+        "i18n": {
+            "title": f"welcome.{welcome_type}.title",
+            "body": f"welcome.{welcome_type}.body",
+            "subtext": f"welcome.{welcome_type}.subtext",
+            "cta": f"welcome.{welcome_type}.cta",
+        },
+    }
 
 
 SUPPORTED_LANGUAGE_CODES = {
@@ -4933,6 +5212,7 @@ def signup_page():
             session.pop("account_user_id", None)
             return render_account_page("login", "Login", message="Account created. Check your email to confirm your account before logging in.", resend_email=email)
         token_payload = issue_mobile_security_tokens(user, {"source": "web_signup", "device_label": presence_device_label()})
+        session["pulse_welcome_reason"] = "first_login"
         response = redirect("/pulse?signup_completed=1")
         return set_persistent_session_cookie(response, token_payload.get("refresh_token") or "")
     return render_account_page("signup", "Create Account")
@@ -4995,6 +5275,7 @@ def login_page():
             register_failed_login(email, user.get("user_id") if user else 0, "invalid_password")
             return render_account_page("login", "Login", error="Email or password is incorrect.")
         session["account_user_id"] = user["user_id"]
+        session["pulse_welcome_reason"] = "welcome_back" if user.get("last_login_at") else "first_login"
         log_auth_event("login_success", email, user["user_id"], status="success", details={"db_engine": db_service.ENGINE_NAME})
         conn = db()
         cur = conn.cursor()
@@ -5122,6 +5403,8 @@ def api_mobile_auth_refresh():
     if user:
         session.permanent = True
         session["account_user_id"] = user["user_id"]
+        if explicit_refresh_token:
+            session["pulse_welcome_reason"] = "session_return"
     fresh_user = load_account_by_id(user["user_id"]) or user
     if not token_payload:
         token_payload = issue_mobile_security_tokens(fresh_user, {**payload, "source": payload.get("source") or "mobile_refresh"}, rotate_from=refresh_token)
@@ -5174,6 +5457,7 @@ def api_mobile_auth_login():
         register_failed_login(email, user.get("user_id") if user else 0, "mobile_invalid_password")
         return api_error("Email or password is incorrect.", 401)
     session["account_user_id"] = user["user_id"]
+    session["pulse_welcome_reason"] = "welcome_back" if user.get("last_login_at") else "first_login"
     conn = db()
     cur = conn.cursor()
     now = datetime.now().isoformat()
@@ -5259,6 +5543,7 @@ def api_mobile_auth_register():
         return jsonify(unverified_signup_delivery_response(email, "Account created successfully but verification email could not be delivered.", result.get("trace_id") or "")), 200
     session.permanent = True
     session["account_user_id"] = user["user_id"]
+    session["pulse_welcome_reason"] = "first_login"
     fresh_user = load_account_by_id(user["user_id"]) or user
     token_payload = issue_mobile_security_tokens(fresh_user, {**payload, "source": "mobile_signup"})
     response = jsonify({"ok": True, "authenticated": True, "user": pulse_mobile_user_payload(fresh_user), **token_payload})
@@ -8714,7 +8999,8 @@ def dashboard_account_settings_page():
     <section class="account-command-grid">
       <article class="account-command-card"><strong>Privacy</strong><label>Profile visibility<select data-setting="profile_visibility"><option value="public"{selected('profile_visibility','public')}>Public</option><option value="private"{selected('profile_visibility','private')}>Private</option></select></label><label>Message requests<select data-setting="message_requests"><option value="everyone"{selected('message_requests','everyone')}>Everyone</option><option value="followers"{selected('message_requests','followers')}>Followers</option><option value="none"{selected('message_requests','none')}>None</option></select></label></article>
       <article class="account-command-card"><strong>Notifications</strong><label>Notifications<select data-setting="notifications_enabled"><option value="true"{selected('notifications_enabled','true')}>Enabled</option><option value="false"{selected('notifications_enabled','false')}>Disabled</option></select></label><label>Status replies<select data-setting="status_replies"><option value="everyone"{selected('status_replies','everyone')}>Everyone</option><option value="followers"{selected('status_replies','followers')}>Followers</option><option value="none"{selected('status_replies','none')}>None</option></select></label></article>
-      <article class="account-command-card"><strong>Ads and experience</strong><label>Ads personalization<select data-setting="ads_personalization"><option value="true"{selected('ads_personalization','true')}>Allowed</option><option value="false"{selected('ads_personalization','false')}>Off</option></select></label><label>Sci-fi intensity<select data-setting="sci_fi_intensity"><option value="low"{selected('sci_fi_intensity','low')}>Low</option><option value="medium"{selected('sci_fi_intensity','medium')}>Medium</option><option value="high"{selected('sci_fi_intensity','high')}>High</option></select></label></article>
+      <article class="account-command-card"><strong>Ads and experience</strong><label>Ads personalization<select data-setting="ads_personalization"><option value="true"{selected('ads_personalization','true')}>Allowed</option><option value="false"{selected('ads_personalization','false')}>Off</option></select></label><label>Sci-fi intensity<select data-setting="sci_fi_intensity"><option value="low"{selected('sci_fi_intensity','low')}>Low</option><option value="medium"{selected('sci_fi_intensity','medium')}>Medium</option><option value="high"{selected('sci_fi_intensity','high')}>High</option></select></label><label>Welcome Experience<select data-setting="welcome_experience"><option value="true"{selected('welcome_experience','true')}>On</option><option value="false"{selected('welcome_experience','false')}>Off</option></select></label></article>
+      <article class="account-command-card"><strong>Welcome controls</strong><label>Welcome Sound<select data-setting="welcome_sound"><option value="false"{selected('welcome_sound','false')}>Off</option><option value="true"{selected('welcome_sound','true')}>On</option></select></label><label>Haptics<select data-setting="welcome_haptics"><option value="true"{selected('welcome_haptics','true')}>On when supported</option><option value="false"{selected('welcome_haptics','false')}>Off</option></select></label></article>
       <article class="account-command-card"><strong>Accessibility</strong><label>Reduced motion<select data-setting="reduced_motion"><option value="system"{selected('reduced_motion','system')}>Use system</option><option value="true"{selected('reduced_motion','true')}>Reduce motion</option><option value="false"{selected('reduced_motion','false')}>Full motion</option></select></label><label>Language<select data-setting="language"><option value="en"{selected('language','en')}>English</option><option value="es"{selected('language','es')}>Spanish</option><option value="fr"{selected('language','fr')}>French</option><option value="ht"{selected('language','ht')}>Haitian Creole</option><option value="pt"{selected('language','pt')}>Portuguese</option><option value="de"{selected('language','de')}>German</option><option value="it"{selected('language','it')}>Italian</option><option value="ar"{selected('language','ar')}>Arabic</option></select></label></article>
     </section>
     <div class="account-command-actions"><button class="primary" data-save-settings>Save Settings</button><a class="button account-command-danger" href="/account/delete">Delete Account</a></div>
@@ -19378,6 +19664,193 @@ def api_account_user():
     return user
 
 
+@webhook_app.route("/api/pulse/welcome-state", methods=["GET"])
+def api_pulse_welcome_state():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    try:
+        ensure_pulse_welcome_schema(cur, conn)
+        settings = pulse_welcome_settings(cur, int(user["user_id"]))
+        if settings.get("welcome_experience") == "false":
+            conn.commit()
+            return jsonify({
+                "ok": True,
+                "should_show": False,
+                "reason": "user_disabled",
+                "settings": {
+                    "welcome_experience": False,
+                    "welcome_sound": settings.get("welcome_sound") == "true",
+                    "welcome_haptics": settings.get("welcome_haptics") != "false",
+                    "reduced_motion": settings.get("reduced_motion") or "system",
+                },
+            })
+        welcome_type, row, cooldown_days = pulse_welcome_pick_event(cur, user)
+        if not welcome_type:
+            conn.commit()
+            return jsonify({
+                "ok": True,
+                "should_show": False,
+                "reason": "cooldown_active",
+                "cooldown_days": cooldown_days,
+                "app_version": PULSESOC_WELCOME_APP_VERSION,
+            })
+        event_id = pulse_welcome_claim_event(cur, int(user["user_id"]), welcome_type, row, cooldown_days, PULSESOC_WELCOME_APP_VERSION)
+        conn.commit()
+        copy = pulse_welcome_copy_payload(user, welcome_type)
+        payload = {
+            "ok": True,
+            "should_show": True,
+            "welcome_type": welcome_type,
+            "event_id": event_id,
+            "name": copy["name"],
+            "title": copy["title"],
+            "body": copy["body"],
+            "subtext": copy["subtext"],
+            "cta": copy["cta"],
+            "i18n": copy["i18n"],
+            "cooldown_days": cooldown_days,
+            "animation": "ufo",
+            "app_version": PULSESOC_WELCOME_APP_VERSION,
+            "settings": {
+                "welcome_experience": True,
+                "welcome_sound": settings.get("welcome_sound") == "true",
+                "welcome_haptics": settings.get("welcome_haptics") != "false",
+                "reduced_motion": settings.get("reduced_motion") or "system",
+            },
+        }
+        response = jsonify(payload)
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+    except Exception as exc:
+        logging.info("PULSE_WELCOME_STATE_SKIPPED user_id=%s error=%s", user.get("user_id"), exc.__class__.__name__)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return jsonify({"ok": True, "should_show": False, "reason": "welcome_unavailable"}), 200
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/welcome-dismiss", methods=["POST"])
+def api_pulse_welcome_dismiss():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    welcome_type = clean_html(payload.get("welcome_type") or "welcome_back")[:40]
+    if welcome_type not in PULSE_WELCOME_TYPES:
+        welcome_type = "welcome_back"
+    event_id = safe_int(payload.get("event_id"), 0)
+    now = pulse_welcome_now()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    try:
+        ensure_pulse_welcome_schema(cur, conn)
+        if event_id:
+            cur.execute("SELECT * FROM user_welcome_events WHERE id=? AND user_id=? LIMIT 1", (event_id, int(user["user_id"])))
+        else:
+            cur.execute(
+                "SELECT * FROM user_welcome_events WHERE user_id=? AND welcome_type=? ORDER BY updated_at DESC, id DESC LIMIT 1",
+                (int(user["user_id"]), welcome_type),
+            )
+        row = cur.fetchone()
+        if row:
+            cur.execute(
+                "UPDATE user_welcome_events SET dismissed_at=?, pending=0, updated_at=? WHERE id=? AND user_id=?",
+                (now, now, int(dict(row).get("id") or event_id), int(user["user_id"])),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO user_welcome_events
+                    (user_id, welcome_type, last_shown_at, app_version_shown, show_count,
+                     cooldown_days, dismissed_at, pending, device_label, platform, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 1, ?, ?, 0, ?, ?, ?, ?)
+                """,
+                (
+                    int(user["user_id"]),
+                    welcome_type,
+                    now,
+                    PULSESOC_WELCOME_APP_VERSION,
+                    PULSESOC_WELCOME_COOLDOWN_DAYS,
+                    now,
+                    presence_device_label(),
+                    native_app_request_context().get("platform") or "web",
+                    now,
+                    now,
+                ),
+            )
+        conn.commit()
+        return jsonify({"ok": True, "dismissed": True, "dismissed_at": now})
+    except Exception as exc:
+        conn.rollback()
+        logging.info("PULSE_WELCOME_DISMISS_SKIPPED user_id=%s error=%s", user.get("user_id"), exc.__class__.__name__)
+        return jsonify({"ok": True, "dismissed": False, "reason": "dismiss_unavailable"}), 200
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/welcome-trigger", methods=["POST"])
+def api_pulse_welcome_trigger():
+    init_db()
+    payload = request.get_json(silent=True) or {}
+    user = api_account_user()
+    admin = admin_current_user()
+    allowed = bool(user and user_is_super_user(user))
+    if admin and admin_has_permission(admin, "settings.edit"):
+        allowed = True
+    if not allowed:
+        return api_error("Owner or admin permission required.", 403)
+    target_user_id = safe_int(payload.get("user_id") or payload.get("target_user_id"), 0) or int((user or {}).get("user_id") or 0)
+    if target_user_id <= 0:
+        return api_error("Choose a target user.", 400)
+    welcome_type = clean_html(payload.get("welcome_type") or "manual")[:40]
+    if welcome_type not in PULSE_WELCOME_TYPES:
+        welcome_type = "manual"
+    now = pulse_welcome_now()
+    conn = db()
+    cur = conn.cursor()
+    try:
+        ensure_pulse_welcome_schema(cur, conn)
+        cur.execute(
+            """
+            INSERT INTO user_welcome_events
+                (user_id, welcome_type, last_shown_at, app_version_shown, show_count,
+                 cooldown_days, dismissed_at, pending, triggered_by, trigger_reason,
+                 device_label, platform, created_at, updated_at)
+            VALUES (?, ?, NULL, ?, 0, ?, NULL, 1, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                target_user_id,
+                welcome_type,
+                PULSESOC_WELCOME_APP_VERSION,
+                PULSESOC_WELCOME_COOLDOWN_DAYS,
+                int((user or {}).get("user_id") or (admin or {}).get("id") or 0),
+                clean_html(payload.get("reason") or "manual_trigger")[:240],
+                presence_device_label(),
+                native_app_request_context().get("platform") or "web",
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        return jsonify({"ok": True, "triggered": True, "user_id": target_user_id, "welcome_type": welcome_type})
+    except Exception as exc:
+        conn.rollback()
+        logging.info("PULSE_WELCOME_TRIGGER_FAILED target_user_id=%s error=%s", target_user_id, exc.__class__.__name__)
+        return api_error("Welcome trigger could not be saved.", 500)
+    finally:
+        conn.close()
+
+
 MOBILE_ACCESS_TOKEN_TTL_SECONDS = int(os.getenv("PULSESOC_MOBILE_ACCESS_TOKEN_TTL_SECONDS", "900"))
 MOBILE_REFRESH_TOKEN_TTL_SECONDS = int(os.getenv("PULSESOC_MOBILE_REFRESH_TOKEN_TTL_SECONDS", str(60 * 60 * 24 * 3650)))
 
@@ -27973,7 +28446,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
 <link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-logo-20260606.png">
 <link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=feed-post-v3-media-overlay-20260629a">
 <link rel="stylesheet" href="/static/css/pulse_status_system.css?v=logi-unified-20260629b">
-<link rel="stylesheet" href="/static/css/pulse_home_os.css?v=pulse-home-os-20260629-universal-dock">
+<link rel="stylesheet" href="/static/css/pulse_home_os.css?v=pulse-home-os-20260629-universal-dock-ufo-welcome">
 <link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=status-v3-20260629b">
 <script src="/static/js/pulse_reaction_system.js?v=feed-actions-v2-20260629b" defer></script>
 <script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g" defer></script>
@@ -28029,7 +28502,7 @@ __LIVE_NOW_HUB__
 </div>
 __DESKTOP_RIGHT_RAIL__
 </section>
-</main><nav class="mobile-bottom-nav">__MOBILE_BOTTOM__</nav><button class="pulse-fab" id="pulseFab" type="button" aria-label="Create PulseSoc">+</button><section class="create-sheet" id="createSheet"><h3>Create Signal</h3><div class="create-sheet-grid"><button data-sheet-type="text" data-pulse-create-trigger="1">Post</button><button data-open-composer-picker="image" data-pulse-create-trigger="1">Photo</button><button data-open-composer-picker="video" data-pulse-create-trigger="1">Video</button><button data-sheet-type="video" data-pulse-create-trigger="1">Reel</button><a class="button" href="/pulse/live/studio?context_type=home">Live</a><button data-status-card data-status-intent="create">Status</button><a class="button" href="/pulse/marketplace/create">Marketplace Listing</a><a class="button" href="/pulse/music">Music Release</a><a class="button" href="/pulse/events">Event</a><a class="button" href="/pulse/communities">Community Post</a><button data-sheet-type="poll" data-pulse-create-trigger="1">Poll</button><button data-sheet-type="poll" data-pulse-create-trigger="1">Question</button><button data-sheet-type="scam_report" data-pulse-create-trigger="1">Scam Alert</button><a class="button primary" href="#create" data-pulse-create-trigger="1">Full composer</a></div></section><section class="pulse-search-overlay" id="pulseSearchOverlay" aria-hidden="true"><div class="pulse-search-panel" role="dialog" aria-modal="true" aria-label="Search PulseSoc"><header class="pulse-search-head"><div><span class="badge">PulseSoc Search</span><h2>Find people, posts, reels, videos, music, marketplace listings, events, communities, creators, businesses, live streams, hashtags, and topics.</h2></div><button class="icon-btn" type="button" data-close-pulse-search aria-label="Close search">×</button></header><form class="pulse-search-box" data-pulse-search-overlay-form role="search" action="/pulse/search" method="get"><input id="pulseSearchOverlayInput" data-pulse-search-input name="q" type="search" placeholder="Search PulseSoc" autocomplete="off" aria-label="Search PulseSoc"><button class="primary" type="submit">Search</button></form><section class="pulse-search-shelf" data-pulse-search-starter><div><h3>Recent searches</h3><div class="pulse-search-chips" data-pulse-search-recent></div></div><div><h3>Rising searches</h3><div class="pulse-search-chips" data-pulse-search-trending></div></div></section><div class="pulse-search-results" data-pulse-search-results><p class="muted">Search public PulseSoc posts, creators, videos, reels, statuses, marketplace listings, music, groups, rooms, comments, hashtags, topics, and live activity.</p></div></div></section>__PULSE_STATUS_HOME_CREATOR__<section class="pulse-status-story-viewer" id="pulseStatusStoryViewer" aria-hidden="true" role="dialog" aria-modal="true" aria-label="PulseSoc Status viewer"><article class="pulse-status-story-shell"><div class="pulse-status-story-progress" data-story-progress aria-hidden="true"><span></span></div><button class="pulse-status-story-close" type="button" data-status-story-close aria-label="Close PulseSoc Status">×</button><button class="pulse-status-story-nav prev" type="button" data-status-story-prev aria-label="Previous PulseSoc Status">‹</button><button class="pulse-status-story-nav next" type="button" data-status-story-next aria-label="Next PulseSoc Status">›</button><div class="pulse-status-story-media" data-status-story-media></div><footer class="pulse-status-story-footer"><span class="pulse-status-story-avatar" data-status-story-avatar>P</span><div><strong data-status-story-author>PulseSoc creator</strong><small data-status-story-time>Active story</small><span data-status-story-body>PulseSoc Status</span><small data-status-story-count>0 views</small></div></footer><div class="pulse-status-story-actions"><button type="button" data-status-story-react="love">Like</button><button type="button" data-status-story-comment>Comment</button><button type="button" data-status-story-share>Share</button><button type="button" data-status-story-save>Save</button><button type="button" data-status-story-more>More</button><button type="button" data-status-story-mute>Sound</button><input data-status-story-reply placeholder="Reply to this Status" aria-label="Reply to this Status"><button type="button" data-status-story-send-reply>Send</button></div></article></section>__PROMOTION_MODAL__<div class="toast" id="toast"></div><section class="pulse-media-lightbox" id="pulseMediaLightbox" aria-hidden="true"><button class="pulse-media-lightbox-close" type="button" data-close-media-lightbox aria-label="Close media preview">×</button><div class="pulse-media-lightbox-stage" data-lightbox-stage></div></section>
+</main><nav class="mobile-bottom-nav">__MOBILE_BOTTOM__</nav><button class="pulse-fab" id="pulseFab" type="button" aria-label="Create PulseSoc">+</button><section class="create-sheet" id="createSheet"><h3>Create Signal</h3><div class="create-sheet-grid"><button data-sheet-type="text" data-pulse-create-trigger="1">Post</button><button data-open-composer-picker="image" data-pulse-create-trigger="1">Photo</button><button data-open-composer-picker="video" data-pulse-create-trigger="1">Video</button><button data-sheet-type="video" data-pulse-create-trigger="1">Reel</button><a class="button" href="/pulse/live/studio?context_type=home">Live</a><button data-status-card data-status-intent="create">Status</button><a class="button" href="/pulse/marketplace/create">Marketplace Listing</a><a class="button" href="/pulse/music">Music Release</a><a class="button" href="/pulse/events">Event</a><a class="button" href="/pulse/communities">Community Post</a><button data-sheet-type="poll" data-pulse-create-trigger="1">Poll</button><button data-sheet-type="poll" data-pulse-create-trigger="1">Question</button><button data-sheet-type="scam_report" data-pulse-create-trigger="1">Scam Alert</button><a class="button primary" href="#create" data-pulse-create-trigger="1">Full composer</a></div></section><section class="pulse-search-overlay" id="pulseSearchOverlay" aria-hidden="true"><div class="pulse-search-panel" role="dialog" aria-modal="true" aria-label="Search PulseSoc"><header class="pulse-search-head"><div><span class="badge">PulseSoc Search</span><h2>Find people, posts, reels, videos, music, marketplace listings, events, communities, creators, businesses, live streams, hashtags, and topics.</h2></div><button class="icon-btn" type="button" data-close-pulse-search aria-label="Close search">×</button></header><form class="pulse-search-box" data-pulse-search-overlay-form role="search" action="/pulse/search" method="get"><input id="pulseSearchOverlayInput" data-pulse-search-input name="q" type="search" placeholder="Search PulseSoc" autocomplete="off" aria-label="Search PulseSoc"><button class="primary" type="submit">Search</button></form><section class="pulse-search-shelf" data-pulse-search-starter><div><h3>Recent searches</h3><div class="pulse-search-chips" data-pulse-search-recent></div></div><div><h3>Rising searches</h3><div class="pulse-search-chips" data-pulse-search-trending></div></div></section><div class="pulse-search-results" data-pulse-search-results><p class="muted">Search public PulseSoc posts, creators, videos, reels, statuses, marketplace listings, music, groups, rooms, comments, hashtags, topics, and live activity.</p></div></div></section>__PULSE_STATUS_HOME_CREATOR__<section class="pulse-status-story-viewer" id="pulseStatusStoryViewer" aria-hidden="true" role="dialog" aria-modal="true" aria-label="PulseSoc Status viewer"><article class="pulse-status-story-shell"><div class="pulse-status-story-progress" data-story-progress aria-hidden="true"><span></span></div><button class="pulse-status-story-close" type="button" data-status-story-close aria-label="Close PulseSoc Status">×</button><button class="pulse-status-story-nav prev" type="button" data-status-story-prev aria-label="Previous PulseSoc Status">‹</button><button class="pulse-status-story-nav next" type="button" data-status-story-next aria-label="Next PulseSoc Status">›</button><div class="pulse-status-story-media" data-status-story-media></div><footer class="pulse-status-story-footer"><span class="pulse-status-story-avatar" data-status-story-avatar>P</span><div><strong data-status-story-author>PulseSoc creator</strong><small data-status-story-time>Active story</small><span data-status-story-body>PulseSoc Status</span><small data-status-story-count>0 views</small></div></footer><div class="pulse-status-story-actions"><button type="button" data-status-story-react="love">Like</button><button type="button" data-status-story-comment>Comment</button><button type="button" data-status-story-share>Share</button><button type="button" data-status-story-save>Save</button><button type="button" data-status-story-more>More</button><button type="button" data-status-story-mute>Sound</button><input data-status-story-reply placeholder="Reply to this Status" aria-label="Reply to this Status"><button type="button" data-status-story-send-reply>Send</button></div></article></section>__PROMOTION_MODAL__<section class="ufo-welcome-overlay" id="ufoWelcomeOverlay" data-ufo-welcome-overlay hidden aria-hidden="true"><div class="ufo-welcome-stars" aria-hidden="true"></div><article class="ufo-welcome-panel" role="dialog" aria-modal="true" aria-labelledby="ufoWelcomeTitle" aria-describedby="ufoWelcomeBody"><button class="ufo-welcome-close" type="button" data-ufo-welcome-dismiss aria-label="Dismiss welcome">×</button><div class="ufo-welcome-ship" aria-hidden="true"><span></span></div><div class="ufo-welcome-beam" aria-hidden="true"></div><div class="ufo-welcome-copy"><span class="ufo-welcome-kicker" data-ufo-welcome-type>PulseSoc Galaxy</span><h2 id="ufoWelcomeTitle" data-ufo-welcome-title>Welcome back to the Galaxy</h2><p id="ufoWelcomeBody" data-ufo-welcome-body>The galaxy is better with you in it.</p><p data-ufo-welcome-subtext>New adventures. New opportunities.</p><button class="ufo-welcome-cta" type="button" data-ufo-welcome-dismiss>Enter the Galaxy</button></div></article></section><div class="toast" id="toast"></div><section class="pulse-media-lightbox" id="pulseMediaLightbox" aria-hidden="true"><button class="pulse-media-lightbox-close" type="button" data-close-media-lightbox aria-label="Close media preview">×</button><div class="pulse-media-lightbox-stage" data-lightbox-stage></div></section>
 <script data-pulse-instant-core>
 (function(){
   const mark=name=>{window.__pulseInstantMarks=window.__pulseInstantMarks||{};window.__pulseInstantMarks[name]=(window.__pulseInstantMarks[name]||0)+1;try{document.documentElement.dataset[name.replace(/_/g,'-')]=String(window.__pulseInstantMarks[name])}catch(_){ }try{window.performance?.mark?.(name)}catch(_){ }};
@@ -28705,7 +29178,7 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js" defer></script>', "")
         rendered_html = rendered_html.replace(
             "</body>",
-            '<script src="/static/js/pulse_home_core.js?v=remove-old-home-logout-20260701" defer></script></body>',
+            '<script src="/static/js/pulse_home_core.js?v=remove-old-home-logout-20260701-ufo-welcome" defer></script></body>',
             1,
         )
     if boot_profile == "shell_only":

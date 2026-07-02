@@ -3201,6 +3201,179 @@
     openCorePulseSearch(chip.dataset.pulseSearchChip || chip.textContent || "");
   });
 
+  const UfoWelcomeOverlay = (() => {
+    const overlay = document.querySelector("[data-ufo-welcome-overlay]");
+    if (!overlay) return { boot: () => {} };
+    const title = overlay.querySelector("[data-ufo-welcome-title]");
+    const body = overlay.querySelector("[data-ufo-welcome-body]");
+    const subtext = overlay.querySelector("[data-ufo-welcome-subtext]");
+    const cta = overlay.querySelector(".ufo-welcome-cta");
+    const type = overlay.querySelector("[data-ufo-welcome-type]");
+    let currentPayload = null;
+    let autoTimer = 0;
+    let booted = false;
+    let dismissed = false;
+
+    function reducedMotion(payload = {}) {
+      const userSetting = String(payload.settings?.reduced_motion || "").toLowerCase();
+      if (userSetting === "true") return true;
+      const shellMode = String(document.documentElement?.dataset?.pulseshellPerformance || "").toLowerCase();
+      return userSetting !== "false" && (
+        window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ||
+        shellMode === "reduced-motion" ||
+        shellMode === "low-end" ||
+        shellMode === "battery-saver" ||
+        window.PulseShellPerformance?.shouldThrottleEffects?.()
+      );
+    }
+
+    function translate(payload, field) {
+      const fallback = payload[field] || "";
+      const key = payload.i18n?.[field] || "";
+      const value = key && window.PulseI18n?.t ? window.PulseI18n.t(key, fallback) : fallback;
+      return String(value || fallback || "").replace(/\{name\}/g, payload.name || "Explorer");
+    }
+
+    function cacheKey(payload) {
+      return `pulse.ufoWelcome.claimed.${payload.event_id || payload.welcome_type || "welcome"}.${payload.app_version || "current"}`;
+    }
+
+    function alreadyShownLocally(payload) {
+      try {
+        return sessionStorage.getItem(cacheKey(payload)) === "1";
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function rememberShownLocally(payload) {
+      try {
+        sessionStorage.setItem(cacheKey(payload), "1");
+      } catch (_) {}
+    }
+
+    function playSoftChime(payload) {
+      if (!payload?.settings?.welcome_sound || reducedMotion(payload)) return;
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.035, ctx.currentTime + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.55);
+        gain.connect(ctx.destination);
+        [440, 660].forEach((frequency, index) => {
+          const oscillator = ctx.createOscillator();
+          oscillator.type = "sine";
+          oscillator.frequency.value = frequency;
+          oscillator.connect(gain);
+          oscillator.start(ctx.currentTime + index * 0.08);
+          oscillator.stop(ctx.currentTime + 0.5 + index * 0.08);
+        });
+        window.setTimeout(() => ctx.close?.().catch?.(() => {}), 900);
+      } catch (_) {}
+    }
+
+    function pulseHaptic(payload) {
+      if (!payload?.settings?.welcome_haptics || reducedMotion(payload)) return;
+      try {
+        window.PulseShell?.haptics?.impact?.({ style: "light", source: "ufo_welcome" })?.catch?.(() => {});
+      } catch (_) {}
+      try {
+        if (!window.PulseShell?.isNative && navigator.vibrate) navigator.vibrate(18);
+      } catch (_) {}
+    }
+
+    function removeOverlay() {
+      window.clearTimeout(autoTimer);
+      overlay.classList.remove("open");
+      overlay.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("pulse-ufo-welcome-open");
+      window.setTimeout(() => {
+        if (!overlay.classList.contains("open")) overlay.remove();
+      }, 260);
+    }
+
+    async function dismiss(source = "button") {
+      if (dismissed) return;
+      dismissed = true;
+      removeOverlay();
+      if (!currentPayload) return;
+      try {
+        await api("/api/pulse/welcome-dismiss", {
+          method: "POST",
+          timeoutMs: 5000,
+          body: JSON.stringify({
+            event_id: currentPayload.event_id,
+            welcome_type: currentPayload.welcome_type,
+            source,
+            app_version: currentPayload.app_version || "",
+          }),
+        });
+      } catch (_) {}
+    }
+
+    function show(payload) {
+      currentPayload = payload;
+      if (alreadyShownLocally(payload)) {
+        dismiss("local_cache");
+        return;
+      }
+      rememberShownLocally(payload);
+      const isReduced = reducedMotion(payload);
+      overlay.dataset.welcomeType = payload.welcome_type || "welcome_back";
+      overlay.dataset.reducedMotion = isReduced ? "true" : "false";
+      if (type) type.textContent = String(payload.welcome_type || "welcome_back").replace(/_/g, " ");
+      if (title) title.textContent = translate(payload, "title");
+      if (body) body.textContent = translate(payload, "body");
+      if (subtext) subtext.textContent = translate(payload, "subtext");
+      if (cta) cta.textContent = translate(payload, "cta");
+      overlay.hidden = false;
+      requestAnimationFrame(() => {
+        overlay.classList.add("open");
+        overlay.setAttribute("aria-hidden", "false");
+        document.body.classList.add("pulse-ufo-welcome-open");
+        cta?.focus?.({ preventScroll: true });
+        pulseHaptic(payload);
+        playSoftChime(payload);
+      });
+      autoTimer = window.setTimeout(() => dismiss("auto"), isReduced ? 6500 : 7600);
+    }
+
+    async function boot() {
+      if (booted || document.body.classList.contains("pulse-search-open")) return;
+      booted = true;
+      try {
+        const payload = await api("/api/pulse/welcome-state", { timeoutMs: 6000 });
+        if (!payload?.should_show) {
+          overlay.remove();
+          return;
+        }
+        show(payload);
+      } catch (_) {
+        overlay.remove();
+      }
+    }
+
+    overlay.addEventListener("click", event => {
+      if (event.target === overlay || event.target.closest("[data-ufo-welcome-dismiss]")) dismiss("tap");
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && overlay.classList.contains("open")) dismiss("escape");
+    });
+    document.addEventListener("PulseLanguageChanged", () => {
+      if (currentPayload && overlay.isConnected) {
+        if (title) title.textContent = translate(currentPayload, "title");
+        if (body) body.textContent = translate(currentPayload, "body");
+        if (subtext) subtext.textContent = translate(currentPayload, "subtext");
+        if (cta) cta.textContent = translate(currentPayload, "cta");
+      }
+    });
+
+    return { boot };
+  })();
+
   function bindTouchDiagnostics() {
     const enabled = new URLSearchParams(location.search).get("touch_debug") === "1" || localStorage.getItem("pulseTouchDebug") === "1";
     if (!enabled || window.__pulseTouchDiagnosticsBound) return;
@@ -3245,5 +3418,5 @@
     sheet.classList.toggle("open");
   });
 
-  load(true);
+  load(true).finally(() => window.setTimeout(() => UfoWelcomeOverlay.boot(), 120));
 })();
