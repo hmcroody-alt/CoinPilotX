@@ -341,7 +341,7 @@ def run_static_audit() -> None:
     require("alert_type: str = \"price_target_reached\"" in notification_source, "crypto helper supports alert_type")
     require("trigger_price" in notification_source and "target_price" in notification_source, "crypto helper stores trigger and target prices")
     require("trigger_window" in notification_source, "crypto helper has dedupe trigger window")
-    require("/pulse/alerts/" in notification_source, "crypto helper uses an alert-specific deep link")
+    require("/dashboard/crypto/alerts?alert_id=" in notification_source, "crypto helper uses the Manage Alerts deep link")
     require("crypto_alert" in locked_audit_source and "notify_crypto_alert" in locked_audit_source, "existing locked-device social audit still covers crypto helper compatibility")
 
 
@@ -358,7 +358,7 @@ def run_runtime_audit() -> None:
     require(notification_id > 0, "eligible crypto alert creates a central notification")
     require(notification.get("category") == "crypto", "eligible crypto alert category is crypto")
     require(notification.get("priority") == "high", "eligible price target crypto alert priority is high")
-    require(notification.get("deep_link") == "/pulse/alerts/88001", "eligible crypto alert deep link targets the alert route")
+    require(notification.get("deep_link") == "/dashboard/crypto/alerts?alert_id=88001", "eligible crypto alert deep link targets Manage Alerts")
     require("push" in channels, "eligible crypto alert creates a push delivery job")
     require("in_app" in channels, "eligible crypto alert creates an in-app delivery job")
     require(bool(notification.get("sound_key")), "eligible crypto alert includes sound metadata")

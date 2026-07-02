@@ -6240,6 +6240,18 @@ def api_crypto_alert_detail(alert_id):
     return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.update_alert(conn, user["user_id"], alert_id, payload))
 
 
+@webhook_app.route("/api/crypto/alerts/<int:alert_id>/duplicate", methods=["POST"])
+def api_crypto_alert_duplicate(alert_id):
+    init_db()
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.duplicate_alert(conn, user["user_id"], alert_id))
+
+
+@webhook_app.route("/api/crypto/alerts/<int:alert_id>/history", methods=["GET"])
+def api_crypto_alert_history(alert_id):
+    init_db()
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.alert_history(conn, user["user_id"], alert_id))
+
+
 @webhook_app.route("/api/crypto/watchlists", methods=["GET", "POST"])
 def api_crypto_watchlists():
     init_db()
@@ -7601,6 +7613,25 @@ def dashboard_crypto_shell(title, subtitle, body, script=""):
       .crypto-command-card small,.crypto-command-muted{{color:#a9bbc3}}
       .crypto-command-actions{{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}}
       .crypto-command-actions .button,.crypto-command-actions button,.crypto-command-card button{{min-height:44px}}
+      .crypto-alert-grid{{display:grid;gap:12px;margin-top:14px}}
+      .crypto-alert-card{{position:relative;border:1px solid rgba(110,223,246,.2);border-radius:16px;background:radial-gradient(circle at 0 0,rgba(54,229,143,.13),transparent 18rem),linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.025));padding:14px;box-shadow:0 18px 58px rgba(0,0,0,.24);min-width:0}}
+      .crypto-alert-card.is-highlighted{{border-color:rgba(54,229,143,.72);box-shadow:0 0 0 1px rgba(54,229,143,.22),0 0 38px rgba(54,229,143,.16)}}
+      .crypto-alert-top{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}
+      .crypto-alert-symbol{{font-size:clamp(1.4rem,4vw,2.15rem);line-height:1;font-weight:950;color:#f7fbff}}
+      .crypto-alert-condition{{margin:6px 0 0;color:#dffcff;font-weight:850}}
+      .crypto-alert-meta{{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:8px;margin-top:12px}}
+      .crypto-alert-meta span{{display:grid;gap:3px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.16);padding:9px;color:#f7fbff;min-width:0;overflow-wrap:anywhere}}
+      .crypto-alert-meta small{{color:#a9bbc3;text-transform:uppercase;letter-spacing:.04em;font-weight:900;font-size:.72rem}}
+      .crypto-alert-channels{{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}}
+      .crypto-alert-channel{{border:1px solid rgba(110,223,246,.24);border-radius:999px;padding:5px 8px;color:#c8f8ff;background:rgba(110,223,246,.06);font-size:.82rem;font-weight:850}}
+      .crypto-alert-actions{{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}}
+      .crypto-alert-actions button{{border:1px solid rgba(110,223,246,.22);border-radius:12px;background:rgba(255,255,255,.055);color:#f7fbff;font-weight:900;padding:9px 11px;cursor:pointer}}
+      .crypto-alert-actions button:hover,.crypto-alert-actions button:focus-visible{{border-color:rgba(54,229,143,.52);box-shadow:0 0 0 3px rgba(54,229,143,.12);outline:0}}
+      .crypto-alert-actions button[data-alert-action='delete']{{border-color:rgba(255,96,126,.34);color:#ffc8d2}}
+      .crypto-alert-history{{margin-top:14px;border:1px solid rgba(110,223,246,.18);border-radius:14px;background:rgba(4,13,24,.72);padding:12px;display:none}}
+      .crypto-alert-history.is-open{{display:block}}
+      .crypto-alert-history-item{{border-bottom:1px solid rgba(255,255,255,.08);padding:9px 0;color:#dffcff}}
+      .crypto-alert-history-item:last-child{{border-bottom:0}}
       .crypto-command-status,.crypto-command-pill{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(255,209,102,.28);border-radius:999px;padding:6px 10px;color:#ffd166;background:rgba(255,209,102,.08);font-weight:900;letter-spacing:.05em;text-transform:uppercase}}
       .crypto-command-pill.ready{{border-color:rgba(54,229,143,.34);color:#88ffc2;background:rgba(54,229,143,.08)}}
       .crypto-command-pill.warning{{border-color:rgba(255,96,126,.42);color:#ff91a8;background:rgba(255,96,126,.08)}}
@@ -7613,7 +7644,7 @@ def dashboard_crypto_shell(title, subtitle, body, script=""):
       .crypto-command-form label{{display:grid;gap:5px;color:#a9bbc3;font-weight:850}}
       .crypto-command-checks{{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}}
       .crypto-command-checks label{{display:flex;align-items:center;gap:8px;border:1px solid rgba(110,223,246,.16);border-radius:12px;padding:10px;background:rgba(255,255,255,.03)}}
-      @media(max-width:760px){{.crypto-command-hero{{padding:14px}}.crypto-command-actions{{display:grid}}.crypto-command-grid{{grid-template-columns:1fr}}.crypto-command-table{{display:block;overflow-x:auto}}}}
+      @media(max-width:760px){{.crypto-command-hero{{padding:14px}}.crypto-command-actions{{display:grid}}.crypto-command-grid{{grid-template-columns:1fr}}.crypto-command-table{{display:block;overflow-x:auto}}.crypto-alert-actions{{display:grid;grid-template-columns:1fr 1fr}}.crypto-alert-meta{{grid-template-columns:1fr}}}}
     </style>
     <section class="crypto-command-shell">
       <section class="crypto-command-hero">
@@ -7707,18 +7738,52 @@ def _crypto_market_table(markets, limit=12):
 def _crypto_alert_rows(alerts):
     if not alerts:
         return "<p class='crypto-command-muted'>No crypto alerts yet. Create your first alert for BTC, ETH, SOL, or any supported asset.</p>"
-    rows = []
+    def condition_label(value):
+        return {
+            "above": "crosses above",
+            "below": "crosses below",
+            "moves_up_percent": "moves up at least",
+            "moves_down_percent": "moves down at least",
+            "volatility_above": "24h movement reaches",
+        }.get(str(value or "").lower(), str(value or "condition").replace("_", " "))
+    cards = []
     for alert in alerts:
         alert_id = int(alert.get("id") or 0)
-        rows.append(
-            "<tr>"
-            f"<td><strong>{_crypto_clean(alert.get('asset_symbol') or '')}</strong><br><small>{_crypto_clean(alert.get('note') or '')}</small></td>"
-            f"<td>{_crypto_clean(alert.get('condition_type') or '')} {_crypto_clean(alert.get('target_value') or '')}</td>"
-            f"<td>{_crypto_clean(alert.get('status') or '')}</td>"
-            f"<td><button data-alert-action='pause' data-alert-id='{alert_id}'>Pause</button> <button data-alert-action='resume' data-alert-id='{alert_id}'>Resume</button> <button data-alert-action='delete' data-alert-id='{alert_id}'>Delete</button></td>"
-            "</tr>"
+        status = str(alert.get("status") or "active").lower()
+        symbol = _crypto_clean(alert.get("asset_symbol") or alert.get("symbol") or "")
+        condition = str(alert.get("condition_type") or alert.get("condition") or "")
+        target = _crypto_clean(alert.get("target_value") or alert.get("threshold_value") or "")
+        channels = alert.get("channels") if isinstance(alert.get("channels"), dict) else {}
+        enabled_channels = [name.replace("_", " ").title() for name, enabled in channels.items() if enabled]
+        if not enabled_channels:
+            enabled_channels = ["In App"]
+        source = _crypto_clean(alert.get("source") or "user_created")
+        channels_html = "".join("<span class='crypto-alert-channel'>" + _crypto_clean(channel) + "</span>" for channel in enabled_channels)
+        cards.append(
+            f"<article class='crypto-alert-card' id='crypto-alert-{alert_id}' data-alert-card data-alert-id='{alert_id}'>"
+            "<div class='crypto-alert-top'>"
+            f"<div><div class='crypto-alert-symbol'>{symbol}</div><p class='crypto-alert-condition'>{_crypto_clean(condition_label(condition))} {target}</p></div>"
+            f"<span class='crypto-command-pill{' ready' if status == 'active' else ' warning'}'>{_crypto_clean(status.title())}</span>"
+            "</div>"
+            "<div class='crypto-alert-meta'>"
+            f"<span><small>Last triggered</small>{_crypto_clean(alert.get('last_triggered_at') or 'Never')}</span>"
+            f"<span><small>Triggers</small>{_crypto_clean(alert.get('trigger_count') or 0)}</span>"
+            f"<span><small>Cooldown</small>{_crypto_clean(str(alert.get('cooldown_seconds') or 900))}s</span>"
+            f"<span><small>Source</small>{source}</span>"
+            "</div>"
+            f"<div class='crypto-alert-channels'>{channels_html}</div>"
+            "<div class='crypto-alert-actions'>"
+            f"<button type='button' data-alert-action='pause' data-alert-id='{alert_id}' {'disabled' if status != 'active' else ''}>Pause</button>"
+            f"<button type='button' data-alert-action='resume' data-alert-id='{alert_id}' {'disabled' if status == 'active' else ''}>Resume</button>"
+            f"<button type='button' data-alert-action='edit' data-alert-id='{alert_id}' data-alert-symbol='{symbol}' data-alert-condition='{_crypto_clean(condition)}' data-alert-target='{target}'>Edit</button>"
+            f"<button type='button' data-alert-action='duplicate' data-alert-id='{alert_id}'>Duplicate</button>"
+            f"<button type='button' data-alert-action='history' data-alert-id='{alert_id}'>History ({_crypto_clean(alert.get('history_count') or 0)})</button>"
+            f"<button type='button' data-alert-action='delete' data-alert-id='{alert_id}'>Delete</button>"
+            "</div>"
+            f"<div class='crypto-alert-history' id='crypto-alert-history-{alert_id}' aria-live='polite'></div>"
+            "</article>"
         )
-    return "<table class='crypto-command-table'><thead><tr><th>Asset</th><th>Condition</th><th>Status</th><th>Actions</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+    return "<div class='crypto-alert-grid'>" + "".join(cards) + "</div>"
 
 
 def _crypto_watchlist_html(watchlists):
@@ -7815,7 +7880,7 @@ def _crypto_create_alert_body():
       <p class="crypto-command-muted">Create owner-scoped alerts. Notification routing respects your preferences and platform availability.</p>
       <form class="crypto-command-form" id="cryptoAlertForm" data-crypto-alert-form method="post" action="/api/crypto/alerts">
         <label>Asset symbol<input name="assetSymbol" placeholder="BTC" required></label>
-        <label>Condition<select name="condition" required><option value="above">Above</option><option value="below">Below</option><option value="percent_change">Percent change</option><option value="volume_spike">Volume spike</option><option value="market_cap_change">Market cap change</option></select></label>
+        <label>Condition<select name="condition" required><option value="above">Crosses above price</option><option value="below">Crosses below price</option><option value="moves_up_percent">24h move up at least %</option><option value="moves_down_percent">24h move down at least %</option><option value="volatility_above">24h movement reaches %</option></select></label>
         <label>Target value<input name="targetValue" type="number" step="any" min="0" placeholder="150000" required></label>
         <label>Note<textarea name="note" placeholder="Why this alert matters"></textarea></label>
         <div class="crypto-command-checks">
@@ -7882,7 +7947,103 @@ def _crypto_alert_create_script():
 
 def _crypto_alert_script():
     return """
-    (()=>{document.addEventListener('click',async e=>{const b=e.target.closest('[data-alert-action]');if(!b)return;const action=b.dataset.alertAction;const id=b.dataset.alertId;if(action==='delete'){if(!confirm('Delete this alert?'))return;const r=await fetch(`/api/crypto/alerts/${id}`,{method:'DELETE',credentials:'same-origin'});const d=await r.json();if(!d.ok)alert(d.message||'Alert update failed.');location.reload();return;}const status=action==='pause'?'paused':'active';const r=await fetch(`/api/crypto/alerts/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({status})});const d=await r.json();if(!d.ok)alert(d.message||'Alert update failed.');location.reload();});})();
+    (() => {
+      const qs = new URLSearchParams(location.search);
+      const highlightId = qs.get('alert_id') || qs.get('alert');
+      if (highlightId) {
+        const card = document.getElementById(`crypto-alert-${CSS.escape(highlightId)}`);
+        if (card) {
+          card.classList.add('is-highlighted');
+          setTimeout(() => card.scrollIntoView({block: 'center', behavior: 'smooth'}), 80);
+        }
+      }
+      const requestJson = async (url, options = {}) => {
+        const response = await fetch(url, {
+          credentials: 'same-origin',
+          headers: {'Content-Type': 'application/json', ...(options.headers || {})},
+          ...options
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.ok === false) throw new Error(data.message || data.error || 'Alert action failed.');
+        return data;
+      };
+      const setBusy = (button, busy) => {
+        if (!button) return;
+        button.disabled = Boolean(busy);
+        button.dataset.busy = busy ? '1' : '0';
+      };
+      const editAlert = async (button, id) => {
+        const currentSymbol = button.dataset.alertSymbol || 'BTC';
+        const currentCondition = button.dataset.alertCondition || 'above';
+        const currentTarget = button.dataset.alertTarget || '';
+        const symbol = prompt('Asset symbol', currentSymbol);
+        if (symbol === null) return;
+        const condition = prompt('Condition: above, below, moves_up_percent, moves_down_percent, volatility_above', currentCondition);
+        if (condition === null) return;
+        const targetValue = prompt('Target value', currentTarget);
+        if (targetValue === null) return;
+        await requestJson(`/api/crypto/alerts/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({assetSymbol: symbol, condition, targetValue: Number(targetValue)})
+        });
+        location.reload();
+      };
+      const loadHistory = async (id) => {
+        const panel = document.getElementById(`crypto-alert-history-${id}`);
+        if (!panel) return;
+        panel.classList.toggle('is-open');
+        if (!panel.classList.contains('is-open')) return;
+        panel.textContent = 'Loading trigger history...';
+        try {
+          const data = await requestJson(`/api/crypto/alerts/${encodeURIComponent(id)}/history`);
+          const events = data.events || [];
+          panel.innerHTML = events.length ? events.map(event => {
+            const observed = event.observed_value == null ? 'Unavailable' : event.observed_value;
+            const status = event.delivery_status || event.status || 'recorded';
+            return `<div class="crypto-alert-history-item"><strong>${event.created_at || ''}</strong><br>${event.symbol || ''} ${event.condition || ''} target ${event.threshold_value || ''}, observed ${observed}.<br><small>${status}</small></div>`;
+          }).join('') : '<p class="crypto-command-muted">No trigger history yet.</p>';
+        } catch (error) {
+          panel.textContent = error.message || 'History could not load.';
+        }
+      };
+      document.addEventListener('click', async event => {
+        const button = event.target.closest('[data-alert-action]');
+        if (!button || button.dataset.busy === '1') return;
+        const action = button.dataset.alertAction;
+        const id = button.dataset.alertId;
+        if (!id) return;
+        try {
+          setBusy(button, true);
+          if (action === 'history') {
+            await loadHistory(id);
+            return;
+          }
+          if (action === 'edit') {
+            await editAlert(button, id);
+            return;
+          }
+          if (action === 'delete') {
+            if (!confirm('Delete this alert? It will stop future triggers.')) return;
+            await requestJson(`/api/crypto/alerts/${encodeURIComponent(id)}`, {method: 'DELETE'});
+            location.reload();
+            return;
+          }
+          if (action === 'duplicate') {
+            await requestJson(`/api/crypto/alerts/${encodeURIComponent(id)}/duplicate`, {method: 'POST'});
+            location.reload();
+            return;
+          }
+          const status = action === 'pause' ? 'paused' : action === 'resume' ? 'active' : '';
+          if (!status) return;
+          await requestJson(`/api/crypto/alerts/${encodeURIComponent(id)}`, {method: 'PATCH', body: JSON.stringify({status})});
+          location.reload();
+        } catch (error) {
+          alert(error.message || 'Alert action failed.');
+        } finally {
+          setBusy(button, false);
+        }
+      });
+    })();
     """
 
 
@@ -26887,7 +27048,7 @@ def _pulse_notification_semantic_targets(note):
     if profile_id and ("follow" in note_type or "profile" in entity_type or "user" in entity_type):
         targets.append(f"/pulse/profile/{quote(str(profile_id))}")
     if alert_id or "crypto" in note_type or "scam" in note_type:
-        targets.append(f"/pulse/alerts/{quote(str(alert_id))}" if alert_id else (f"/dashboard/crypto/alerts?symbol={quote(symbol)}" if symbol else "/dashboard/crypto/alerts"))
+        targets.append(f"/dashboard/crypto/alerts?alert_id={quote(str(alert_id))}" if alert_id else (f"/dashboard/crypto/alerts?symbol={quote(symbol)}" if symbol else "/dashboard/crypto/alerts"))
     if note_type in {"account_login", "new_device", "suspicious_login", "password_changed", "password_reset", "password_reset_requested", "email_changed", "phone_changed", "account_locked", "security_alert"} or "security" in note_type:
         targets.append("/account/security")
     if purchase_id or any(token in note_type for token in ("purchase", "payment", "order", "subscription")):
@@ -92898,12 +93059,19 @@ def _init_db_impl():
     add_columns_if_missing(cur, "alert_rules", [
         ("target", "TEXT"),
         ("threshold_value", "REAL"),
+        ("target_value", "REAL"),
+        ("channels", "TEXT"),
         ("channels_json", "TEXT"),
         ("status", "TEXT DEFAULT 'active'"),
+        ("active", "INTEGER DEFAULT 1"),
         ("cooldown_seconds", "INTEGER DEFAULT 900"),
         ("last_checked_at", "TEXT"),
         ("last_triggered_at", "TEXT"),
         ("trigger_count", "INTEGER DEFAULT 0"),
+        ("source", "TEXT DEFAULT 'user_created'"),
+        ("source_ref", "TEXT"),
+        ("metadata", "TEXT"),
+        ("deleted_at", "TEXT"),
     ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS watch_rules (
@@ -92941,11 +93109,16 @@ def _init_db_impl():
     """)
     add_columns_if_missing(cur, "alert_events", [
         ("alert_rule_id", "INTEGER"),
+        ("alert_type", "TEXT"),
         ("symbol", "TEXT"),
         ("condition", "TEXT"),
         ("threshold_value", "REAL"),
         ("observed_value", "REAL"),
         ("message", "TEXT"),
+        ("metadata", "TEXT"),
+        ("notification_id", "INTEGER"),
+        ("delivery_job_id", "INTEGER"),
+        ("delivery_status", "TEXT"),
     ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS alert_worker_heartbeat (

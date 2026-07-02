@@ -15,6 +15,7 @@ import json
 import os
 import re
 
+from services import alert_engine
 from services import market_data as market_data_service
 
 
@@ -31,13 +32,13 @@ STRICT_STATES = {
     "ADMIN",
 }
 
-ALERT_CONDITIONS = {"above", "below", "percent_change", "volume_spike", "market_cap_change"}
+ALERT_CONDITIONS = {"above", "below", "moves_up_percent", "moves_down_percent", "volatility_above"}
 CRYPTO_SYMBOL_RE = re.compile(r"^[A-Z0-9]{2,12}$")
 CRYPTO_AI_DISCLAIMER = "Educational information only. This is not financial advice. PulseSoc does not guarantee returns or tell users to buy or sell assets."
 
 MODULES: tuple[dict[str, Any], ...] = (
     {"key": "market_pulse", "widget_key": "crypto_market_pulse", "label": "Market Pulse", "route": "/dashboard/crypto/market-pulse", "action": "View Market Pulse", "description": "BTC, ETH, SOL, market health, sentiment, and provider freshness."},
-    {"key": "create_alert", "widget_key": "crypto_create_alert", "label": "Create Alert", "route": "/dashboard/crypto/alerts/create", "action": "Create Alert", "description": "Create owner-scoped price, percentage, volume, and market cap alerts."},
+    {"key": "create_alert", "widget_key": "crypto_create_alert", "label": "Create Alert", "route": "/dashboard/crypto/alerts/create", "action": "Create Alert", "description": "Create owner-scoped price and 24h movement alerts."},
     {"key": "my_alerts", "widget_key": "crypto_my_alerts", "label": "My Alerts", "route": "/dashboard/crypto/alerts", "action": "Manage Alerts", "description": "Pause, resume, edit, delete, duplicate, and inspect your crypto alerts."},
     {"key": "watchlists", "widget_key": "crypto_watchlists", "label": "Watchlists", "route": "/dashboard/crypto/watchlists", "action": "View Watchlists", "description": "Track assets, notes, position, and quick alert context."},
     {"key": "ask_ai", "widget_key": "crypto_ask_ai", "label": "Ask Crypto AI", "route": "/dashboard/crypto/ask-ai", "action": "Ask Crypto AI", "description": "Educational crypto questions with safety boundaries and no guaranteed advice.", "state": "PARTIAL"},
@@ -167,6 +168,7 @@ def _count(cur: Any, table: str, where: str = "1=1", params: tuple[Any, ...] = (
 
 def ensure_tables(conn: Any) -> None:
     cur = conn.cursor()
+    alert_engine.ensure_alert_schema(conn)
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS crypto_alerts (
@@ -352,12 +354,13 @@ def _format_money(value: Any) -> str:
 
 def build_crypto_state(conn: Any, user: dict[str, Any]) -> dict[str, Any]:
     ensure_tables(conn)
+    alert_engine.reconcile_legacy_alerts(user_id=_safe_int(user.get("user_id"), 0))
     cur = conn.cursor()
     user_id = _safe_int(user.get("user_id"), 0)
     pulse = market_pulse()
     provider_ready = bool(pulse.get("provider_ready"))
-    active_alerts = _count(cur, "crypto_alerts", "user_id=? AND status='active'", (user_id,))
-    total_alerts = _count(cur, "crypto_alerts", "user_id=?", (user_id,))
+    active_alerts = _count(cur, "alert_rules", "user_id=? AND COALESCE(status, 'active')='active' AND deleted_at IS NULL", (user_id,))
+    total_alerts = _count(cur, "alert_rules", "user_id=? AND COALESCE(status, 'active')!='deleted' AND deleted_at IS NULL", (user_id,))
     watchlists = _count(cur, "crypto_watchlists", "user_id=?", (user_id,))
     watchlist_assets = _count(cur, "crypto_watchlist_assets", "user_id=?", (user_id,))
     favorite_count = _count(cur, "crypto_favorite_assets", "user_id=?", (user_id,))
@@ -435,9 +438,30 @@ def state_for_widget(state: dict[str, Any], widget_key: str) -> dict[str, Any]:
 
 def list_alerts(conn: Any, user_id: int) -> list[dict[str, Any]]:
     ensure_tables(conn)
+    result = alert_engine.list_alert_rules(int(user_id), limit=200)
+    alerts = result.get("alerts") or []
+    history_counts = _alert_history_counts(conn, int(user_id), [int(alert.get("id") or 0) for alert in alerts])
+    for alert in alerts:
+        alert["history_count"] = history_counts.get(int(alert.get("id") or 0), 0)
+    return alerts
+
+
+def _alert_history_counts(conn: Any, user_id: int, alert_ids: list[int]) -> dict[int, int]:
+    alert_ids = [alert_id for alert_id in alert_ids if alert_id]
+    if not alert_ids:
+        return {}
     cur = conn.cursor()
-    cur.execute("SELECT * FROM crypto_alerts WHERE user_id=? ORDER BY created_at DESC, id DESC LIMIT 100", (int(user_id),))
-    return _rows(cur)
+    placeholders = ",".join(["?"] * len(alert_ids))
+    cur.execute(
+        f"""
+        SELECT alert_rule_id, COUNT(*) AS total
+        FROM alert_events
+        WHERE user_id=? AND alert_rule_id IN ({placeholders})
+        GROUP BY alert_rule_id
+        """,
+        (int(user_id), *alert_ids),
+    )
+    return {int((_row_dict(row) or {}).get("alert_rule_id") or 0): _safe_int((_row_dict(row) or {}).get("total"), 0) for row in cur.fetchall()}
 
 
 def create_alert(conn: Any, user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
@@ -453,31 +477,31 @@ def create_alert(conn: Any, user_id: int, payload: dict[str, Any]) -> dict[str, 
     if target <= 0:
         raise ValueError("Target value must be greater than zero.")
     cur = conn.cursor()
-    active_count = _count(cur, "crypto_alerts", "user_id=? AND status='active'", (int(user_id),))
+    alert_engine.reconcile_legacy_alerts(user_id=int(user_id))
+    active_count = _count(cur, "alert_rules", "user_id=? AND COALESCE(status, 'active')='active' AND deleted_at IS NULL", (int(user_id),))
     if active_count >= 100:
         raise ValueError("Alert limit reached. Pause or delete older alerts first.")
-    now = _now()
-    cur.execute(
-        """
-        INSERT INTO crypto_alerts
-        (user_id, asset_symbol, condition_type, target_value, status, notify_push, notify_email, notify_sms, notify_in_app, note, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            int(user_id),
-            symbol,
-            condition,
-            float(target),
-            1 if payload.get("notifyPush", True) else 0,
-            1 if payload.get("notifyEmail", False) else 0,
-            1 if payload.get("notifySMS", False) else 0,
-            1 if payload.get("notifyInApp", True) else 0,
-            str(payload.get("note") or "")[:240],
-            now,
-            now,
-        ),
+    channels = {
+        "push": bool(payload.get("notifyPush", True)),
+        "email": bool(payload.get("notifyEmail", False)),
+        "sms": bool(payload.get("notifySMS", False)),
+        "in_app": bool(payload.get("notifyInApp", True)),
+    }
+    alert_type = "move_24h" if condition in {"moves_up_percent", "moves_down_percent", "volatility_above"} else "coin_price"
+    result = alert_engine.create_alert_rule(
+        int(user_id),
+        alert_type=alert_type,
+        symbol=symbol,
+        condition=condition,
+        threshold=float(target),
+        channels=channels,
+        target=symbol,
+        source="user_created",
+        metadata={"note": str(payload.get("note") or "")[:240], "created_from": "crypto_command_center"},
     )
-    alert_id = int(cur.lastrowid)
+    if not result.get("ok"):
+        raise ValueError(result.get("message") or "Alert could not be created.")
+    alert_id = int(result.get("alert_id") or 0)
     _audit(conn, user_id, "create_alert", "crypto_alert", alert_id, {"asset": symbol, "condition": condition})
     conn.commit()
     return {"ok": True, "alert_id": alert_id, "message": f"{symbol} alert created."}
@@ -486,26 +510,46 @@ def create_alert(conn: Any, user_id: int, payload: dict[str, Any]) -> dict[str, 
 def update_alert(conn: Any, user_id: int, alert_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     ensure_tables(conn)
     status = str(payload.get("status") or "").strip().lower()
-    if status not in {"active", "paused", "expired", "triggered"}:
-        raise ValueError("Unsupported alert status.")
-    cur = conn.cursor()
-    cur.execute("UPDATE crypto_alerts SET status=?, updated_at=? WHERE id=? AND user_id=?", (status, _now(), int(alert_id), int(user_id)))
-    if cur.rowcount == 0:
-        raise ValueError("Alert not found.")
-    _audit(conn, user_id, "update_alert", "crypto_alert", alert_id, {"status": status})
+    if status:
+        if status not in {"active", "paused"}:
+            raise ValueError("Unsupported alert status.")
+        result = alert_engine.resume_alert(int(alert_id), int(user_id)) if status == "active" else alert_engine.pause_alert(int(alert_id), int(user_id))
+    else:
+        result = alert_engine.update_alert_rule(int(alert_id), int(user_id), payload)
+    if not result.get("ok"):
+        raise ValueError(result.get("message") or "Alert not found.")
+    _audit(conn, user_id, "update_alert", "crypto_alert", alert_id, {"status": status or "edited"})
     conn.commit()
-    return {"ok": True, "message": "Alert updated."}
+    return {"ok": True, "message": result.get("message") or "Alert updated.", "alert_id": int(alert_id)}
 
 
 def delete_alert(conn: Any, user_id: int, alert_id: int) -> dict[str, Any]:
     ensure_tables(conn)
-    cur = conn.cursor()
-    cur.execute("DELETE FROM crypto_alerts WHERE id=? AND user_id=?", (int(alert_id), int(user_id)))
-    if cur.rowcount == 0:
-        raise ValueError("Alert not found.")
+    result = alert_engine.delete_alert(int(alert_id), int(user_id))
+    if not result.get("ok"):
+        raise ValueError(result.get("message") or "Alert not found.")
     _audit(conn, user_id, "delete_alert", "crypto_alert", alert_id, {})
     conn.commit()
     return {"ok": True, "message": "Alert deleted."}
+
+
+def duplicate_alert(conn: Any, user_id: int, alert_id: int) -> dict[str, Any]:
+    ensure_tables(conn)
+    result = alert_engine.duplicate_alert_rule(int(alert_id), int(user_id))
+    if not result.get("ok"):
+        raise ValueError(result.get("message") or "Alert could not be duplicated.")
+    _audit(conn, user_id, "duplicate_alert", "crypto_alert", alert_id, {"new_alert_id": result.get("alert_id")})
+    conn.commit()
+    return {"ok": True, "message": "Alert duplicated.", "alert_id": result.get("alert_id")}
+
+
+def alert_history(conn: Any, user_id: int, alert_id: int, limit: int = 30) -> dict[str, Any]:
+    ensure_tables(conn)
+    rule = alert_engine.get_alert_rule(int(alert_id), int(user_id))
+    if not rule:
+        raise ValueError("Alert not found.")
+    result = alert_engine.list_alert_events(int(user_id), limit=limit, alert_id=int(alert_id))
+    return {"ok": True, "alert": rule, "events": result.get("events") or []}
 
 
 def list_watchlists(conn: Any, user_id: int) -> list[dict[str, Any]]:
@@ -748,8 +792,8 @@ def admin_overview(conn: Any) -> dict[str, Any]:
         "market_provider_ready": bool(pulse.get("provider_ready")),
         "sections": list(ADMIN_SECTIONS),
         "metrics": {
-            "alerts": _count(cur, "crypto_alerts"),
-            "active_alerts": _count(cur, "crypto_alerts", "status='active'"),
+            "alerts": _count(cur, "alert_rules", "COALESCE(status, 'active')!='deleted' AND deleted_at IS NULL"),
+            "active_alerts": _count(cur, "alert_rules", "COALESCE(status, 'active')='active' AND deleted_at IS NULL"),
             "watchlists": _count(cur, "crypto_watchlists"),
             "watchlist_assets": _count(cur, "crypto_watchlist_assets"),
             "ai_queries": _count(cur, "crypto_ai_queries"),

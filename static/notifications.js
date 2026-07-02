@@ -307,7 +307,7 @@
     if (postId) return `/pulse/post/${encodeURIComponent(postId)}${commentId ? `#comment-${encodeURIComponent(commentId)}` : ""}`;
     if (statusId) return `/pulse/status/${encodeURIComponent(statusId)}`;
     if (profileId && (type.includes("follow") || entityType.includes("profile") || entityType.includes("user"))) return `/pulse/profile/${encodeURIComponent(profileId)}`;
-    if (alertId || type.includes("crypto") || type.includes("scam")) return alertId ? `/pulse/alerts/${encodeURIComponent(alertId)}` : (symbol ? `/dashboard/crypto/alerts?symbol=${encodeURIComponent(symbol)}` : "/dashboard/crypto/alerts");
+    if (alertId || type.includes("crypto") || type.includes("scam")) return alertId ? `/dashboard/crypto/alerts?alert_id=${encodeURIComponent(alertId)}` : (symbol ? `/dashboard/crypto/alerts?symbol=${encodeURIComponent(symbol)}` : "/dashboard/crypto/alerts");
     if (type.includes("security") || ["account_login", "new_device", "suspicious_login", "password_changed", "password_reset", "password_reset_requested", "email_changed", "phone_changed", "account_locked"].includes(type)) return "/account/security";
     if (purchaseId || /(purchase|payment|order|subscription)/.test(type)) return purchaseId ? `/pulse/purchases/${encodeURIComponent(purchaseId)}` : "/dashboard/economy/subscriptions";
     if (type.includes("premium")) return "/pulse/premium";

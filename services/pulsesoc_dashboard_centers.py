@@ -930,7 +930,7 @@ def build_ai_advisor(conn: Any, user: dict[str, Any]) -> dict[str, Any]:
             "profile_strength": checklist["completion_percent"],
             "creator_progress": min(100, posts * 10),
             "business_progress": 0,
-            "wallet_crypto_alerts": _count(cur, "crypto_alerts", "user_id=?", (user_id,)),
+            "wallet_crypto_alerts": _count(cur, "alert_rules", "user_id=? AND COALESCE(status, 'active')!='deleted'", (user_id,)),
             "marketplace_activity": _count(cur, "pulsesoc_seller_products", "user_id=?", (user_id,)),
             "messages_needing_response": messages,
             "important_notifications": _count(cur, "notifications", "user_id=? AND COALESCE(read_at,'')=''", (user_id,)),

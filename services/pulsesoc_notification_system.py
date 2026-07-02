@@ -1706,7 +1706,7 @@ def notify_crypto_alert(
     requested_channels = _coerce_channels(channels, default_channels)
     link = sanitize_deep_link(
         deep_link
-        or (f"/pulse/alerts/{alert_id}" if alert_id not in (None, "") else "")
+        or (f"/dashboard/crypto/alerts?alert_id={alert_id}" if alert_id not in (None, "") else "")
         or (f"/pulse/crypto?asset={symbol}" if symbol else "/dashboard/crypto/alerts")
     )
     metadata_payload = _event_metadata(
