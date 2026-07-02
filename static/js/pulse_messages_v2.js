@@ -84,6 +84,8 @@
     controlSaving: false,
     controlSearch: "",
     controlData: null,
+    controlConversationId: 0,
+    controlEntry: "thread",
     controlExpanded: new Set(["conversation", "notifications", "appearance", "privacy"]),
     tabChannel: "BroadcastChannel" in window ? new BroadcastChannel("pulse-comm-v2") : null,
   };
@@ -865,6 +867,9 @@
   }
 
   function activeControlConversationId() {
+    if (state.controlEntry === "inbox") {
+      return Number(state.controlConversationId || state.controlData?.conversation?.conversation_id || state.controlData?.conversation?.id || 0);
+    }
     return Number(state.active?.conversation_id || state.controlData?.conversation?.conversation_id || state.controlData?.conversation?.id || 0);
   }
 
@@ -910,7 +915,7 @@
       return;
     }
     if (!state.controlData?.conversation) {
-      content.innerHTML = `<div class="control-empty"><strong>No conversation selected.</strong><small>Open a chat before managing controls.</small></div>`;
+      renderControlConversationChooser(content);
       return;
     }
     const conversation = state.controlData.conversation;
@@ -933,6 +938,7 @@
       { label: "Archive", icon: "▤", action: "archive", dangerConfirm: "Archive this conversation?" },
     ];
     content.innerHTML = `
+      ${state.controlEntry === "inbox" ? `<button class="control-conversation-back" type="button" data-control-choose-another aria-label="Choose another conversation"><span aria-hidden="true">&larr;</span> Choose another conversation</button>` : ""}
       <section class="control-profile">
         ${avatarHtml(conversation, "control-avatar")}
         <div>
@@ -965,6 +971,34 @@
       </label>
       <section class="control-section-list" data-control-sections>
         ${sections.length ? sections.map((section) => renderControlSection(section, query)).join("") : `<div class="control-empty"><strong>No settings found.</strong><small>Try a different search.</small></div>`}
+      </section>
+    `;
+  }
+
+  function renderControlConversationChooser(content) {
+    const conversations = state.conversations
+      .filter((conversation) => Number(conversation.conversation_id || conversation.id || 0))
+      .slice(0, 30);
+    content.innerHTML = `
+      <section class="control-conversation-chooser" aria-labelledby="controlConversationChooserTitle">
+        <header>
+          <span class="control-chooser-orb" aria-hidden="true">&#9881;</span>
+          <div>
+            <h3 id="controlConversationChooserTitle">Choose a conversation</h3>
+            <p>Select the chat whose controls you want to manage.</p>
+          </div>
+        </header>
+        <div class="control-conversation-list" role="list">
+          ${conversations.length ? conversations.map((conversation) => {
+            const id = Number(conversation.conversation_id || conversation.id || 0);
+            const presence = presenceForConversation(conversation);
+            return `<button class="control-conversation-choice" type="button" data-control-select-conversation="${id}" role="listitem" aria-label="Manage ${escapeAttr(conversation.title || "conversation")}">
+              ${avatarHtml(conversation, `control-choice-avatar presence-${presenceClass(presence)}`)}
+              <span><strong>${escapeHtml(conversation.title || "Conversation")}</strong><small>${escapeHtml(presenceLabel(presence))} · ${escapeHtml(typeLabel(conversation.conversation_type || "conversation"))}</small></span>
+              ${Number(conversation.unread_count || 0) ? `<em>${Number(conversation.unread_count)}</em>` : `<i aria-hidden="true">&rsaquo;</i>`}
+            </button>`;
+          }).join("") : `<div class="control-empty"><strong>No conversations available.</strong><small>Start a chat, then return here to manage its controls.</small></div>`}
+        </div>
       </section>
     `;
   }
@@ -1033,8 +1067,11 @@
     return "Coming Soon";
   }
 
-  async function openConversationControlCenter() {
-    if (!state.active?.conversation_id) {
+  async function openConversationControlCenter({ entry = "thread" } = {}) {
+    state.controlEntry = entry === "inbox" ? "inbox" : "thread";
+    state.controlConversationId = state.controlEntry === "thread" ? Number(state.active?.conversation_id || 0) : 0;
+    if (state.controlEntry === "inbox") state.controlData = null;
+    if (state.controlEntry === "thread" && !state.controlConversationId) {
       setStatus("Open a conversation before using the Control Center.", "error");
       return;
     }
@@ -1053,7 +1090,9 @@
       requestAnimationFrame(() => backdrop.classList.add("is-open"));
     }
     renderControlCenter();
-    await loadConversationControlCenter(true);
+    if (activeControlConversationId()) await loadConversationControlCenter(true);
+    else state.controlLoading = false;
+    renderControlCenter();
     window.setTimeout(() => panel?.querySelector("[data-control-search], [data-close-control-center]")?.focus(), 40);
   }
 
@@ -2488,14 +2527,6 @@
         if (target.closest("[data-close-conversation-actions]")) return closeConversationActions();
         const conversationAction = target.closest("[data-conversation-action]");
         if (conversationAction && !conversationAction.disabled) return await updateConversationPreference(conversationAction.dataset.conversationAction);
-        if (target.closest("[data-toggle-filters]")) {
-          const filterBar = el(".comm-filter");
-          const toggle = el("[data-toggle-filters]");
-          const open = !filterBar?.classList.contains("is-mobile-open");
-          filterBar?.classList.toggle("is-mobile-open", open);
-          toggle?.setAttribute("aria-expanded", open ? "true" : "false");
-          return;
-        }
         if (target.closest("[data-manage-pins]")) {
           const firstPinned = state.conversations.find((item) => item.pinned);
           if (firstPinned) openConversationActions(firstPinned.conversation_id);
@@ -2561,8 +2592,32 @@
         if (target.closest("[data-open-new-group]")) return openModal("new-group");
         if (target.closest("[data-open-new-room]")) return openModal("new-room");
         if (target.closest("[data-close-modal]")) return closeModals();
-        if (target.closest("[data-open-control-center]")) return await openConversationControlCenter();
+        const controlCenterTrigger = target.closest("[data-open-control-center]");
+        if (controlCenterTrigger) return await openConversationControlCenter({ entry: controlCenterTrigger.dataset.controlCenterEntry || "thread" });
         if (target.closest("[data-close-control-center]") || target.closest("[data-conversation-control-backdrop]")) return closeConversationControlCenter();
+        const controlConversation = target.closest("[data-control-select-conversation]");
+        if (controlConversation) {
+          const id = Number(controlConversation.dataset.controlSelectConversation || 0);
+          const conversation = state.conversationCache.get(id) || state.conversations.find((item) => Number(item.conversation_id || item.id || 0) === id);
+          if (!id || !conversation) {
+            controlStatus("That conversation is no longer available.", "error");
+            return;
+          }
+          state.controlConversationId = id;
+          state.controlData = null;
+          state.active = rememberConversation(conversation);
+          state.controlSearch = "";
+          await loadConversationControlCenter(true);
+          return;
+        }
+        if (target.closest("[data-control-choose-another]")) {
+          state.controlConversationId = 0;
+          state.controlData = null;
+          state.controlSearch = "";
+          controlStatus("");
+          renderControlCenter();
+          return;
+        }
         const controlSectionToggle = target.closest("[data-control-section-toggle]");
         if (controlSectionToggle) {
           const id = controlSectionToggle.dataset.controlSectionToggle;

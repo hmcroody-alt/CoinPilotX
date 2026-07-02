@@ -50,7 +50,11 @@ def main() -> int:
         "Danger Zone",
     ]
 
-    require(checks, "gear button opens control center", "data-open-control-center" in template)
+    require(checks, "thread gear opens control center", "control-center-action" in template and "data-open-control-center" in template)
+    require(checks, "inbox gear opens control center", 'data-control-center-entry="inbox"' in template and 'aria-label="Open Conversation Control Center"' in template)
+    require(checks, "inbox gear is not a legacy filter toggle", "data-toggle-filters" not in template and "data-toggle-filters" not in js)
+    require(checks, "inbox conversation chooser exists", "data-control-select-conversation" in js and "renderControlConversationChooser" in js)
+    require(checks, "search and gear have separate accessible names", 'aria-label="Search people, rooms, and messages"' in template)
     require(checks, "dialog shell exists", "data-conversation-control-center" in template and 'role="dialog"' in template)
     require(checks, "backdrop exists", "data-conversation-control-backdrop" in template)
     require(checks, "settings js exists", "openConversationControlCenter" in js and "renderControlCenter" in js)

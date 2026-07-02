@@ -2,7 +2,7 @@
 
 ## What Was Built
 
-PulseSoc Messenger V3 now has a real Conversation Control Center opened from the gear button in the chat header. Desktop opens a right-side slide panel. Mobile opens a safe-area-aware bottom sheet. The panel uses real conversation data, member counts, unread counts, media counts, storage totals, participant role, mute/pin state, and persisted per-user conversation settings.
+PulseSoc Messenger V3 now has a real Conversation Control Center opened from both the inbox search-bar gear and the gear button in the chat header. On a fresh inbox, the panel first shows the user's real conversations so they can choose which chat to manage without an ambiguous default. Desktop opens a right-side slide panel. Mobile opens a safe-area-aware bottom sheet. The panel uses real conversation data, member counts, unread counts, media counts, storage totals, participant role, mute/pin state, and persisted per-user conversation settings.
 
 ## Files Changed
 
@@ -50,11 +50,11 @@ The UI explicitly marks unsupported controls as Coming Soon, Requires Setup, or 
 
 ## Mobile QA Result
 
-Passed in QA browser at 390x844 on `http://127.0.0.1:5077/pulse/messages/235`: the gear opened the bottom sheet, the drag handle rendered, the sheet filled the viewport width, there was no horizontal overflow, the conversation stayed in thread mode, and no console errors were reported.
+Passed in QA browser at 390x844 on `http://127.0.0.1:5077/pulse/messages`: the inbox search-bar gear opened the bottom sheet directly, the sheet presented real conversations, selecting `Roody Cherie` loaded the full Control Center, the sheet measured 390px in a 390px viewport, there was no horizontal overflow, and no console errors were reported. The existing in-thread gear remains available.
 
 ## Desktop QA Result
 
-Passed in QA browser at 1280x900 on `http://127.0.0.1:5077/pulse/messages/235`: the gear opened a 435px right slide panel, Escape closed it, settings search filtered sections, a notification setting saved through the backend and was restored, there was no horizontal overflow, and no console errors were reported.
+Passed in QA browser at 1280x900 on `http://127.0.0.1:5077/pulse/messages`: the inbox gear opened the chooser, selecting `Roody Cherie` loaded a 435px right slide panel with a 12px edge offset, and both the page and panel content had no horizontal overflow or console errors. Existing thread-level checks still cover Escape close, settings search, persisted notification settings, and group gating.
 
 Group gating was also verified on `V2 Public Audit Room`: direct chat hid Group Settings, and the room conversation showed Group Settings with unavailable/coming-soon states for controls that are not production wired.
 

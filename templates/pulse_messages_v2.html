@@ -6,7 +6,7 @@
   <meta name="robots" content="noindex,nofollow">
   <meta name="theme-color" content="#030914">
   <title>PulseSoc Messenger V3 | PulseSoc</title>
-  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=messenger-v3-control-center-20260702">
+  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=messenger-v3-control-center-inbox-20260702">
 </head>
 <body data-comm-v2-enabled="{{ 'true' if enabled else 'false' }}">
   <main
@@ -33,12 +33,11 @@
       </header>
 
       <div class="comm-search-row">
-        <label class="comm-search">
+        <div class="comm-search">
           <span class="search-icon" aria-hidden="true">&#9906;</span>
-          <span class="sr-only">Search people, rooms, and messages</span>
-          <input data-conversation-search type="search" autocomplete="off" placeholder="Search people, rooms, messages...">
-          <button class="search-filter-toggle" type="button" data-toggle-filters aria-label="Conversation filters" aria-expanded="true">&#9881;</button>
-        </label>
+          <input data-conversation-search type="search" autocomplete="off" placeholder="Search people, rooms, messages..." aria-label="Search people, rooms, and messages">
+          <button class="search-filter-toggle control-center-entry" type="button" data-open-control-center data-control-center-entry="inbox" title="Conversation Control Center" aria-label="Open Conversation Control Center">&#9881;</button>
+        </div>
       </div>
 
       <div class="comm-filter is-mobile-open" role="tablist" aria-label="Conversation type">
@@ -387,6 +386,6 @@
   <script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script>
   <script src="/static/js/pulse_realtime.js?v=web-capacity-20260619a" defer></script>
   <script src="/static/notifications.js?v=message-live-20260606" defer></script>
-  <script src="/static/js/pulse_messages_v2.js?v=messenger-v3-control-center-20260702" defer></script>
+  <script src="/static/js/pulse_messages_v2.js?v=messenger-v3-control-center-inbox-20260702" defer></script>
 </body>
 </html>
