@@ -1674,14 +1674,59 @@ def notify_creator_event(
 def notify_crypto_alert(
     recipient_user_id: int,
     alert_id: int | str,
-    title: str,
-    body: str,
+    title: str = "",
+    body: str = "",
     coin_symbol: str = "",
     critical: bool = False,
     metadata: dict[str, Any] | None = None,
+    *,
+    alert_type: str = "price_target_reached",
+    trigger_price: float | str | None = None,
+    target_price: float | str | None = None,
+    direction: str = "",
+    priority: str = "",
+    deep_link: str = "",
+    channels: list[str] | tuple[str, ...] | None = None,
+    trigger_window: str = "",
 ) -> dict[str, Any]:
     symbol = _compact_text(coin_symbol, 20).upper()
-    link = f"/pulse/crypto?asset={symbol}" if symbol else "/pulse/crypto/alerts"
+    crypto_alert_type = normalize_type(alert_type or "price_target_reached")
+    supported_alert_types = {
+        "price_target_reached",
+        "large_market_movement",
+        "portfolio_milestone",
+        "wallet_activity",
+        "bot_signal",
+        "critical_market_alert",
+    }
+    if crypto_alert_type not in supported_alert_types:
+        crypto_alert_type = "price_target_reached"
+    normalized_priority = normalize_priority(priority or ("urgent" if critical or crypto_alert_type == "critical_market_alert" else "high"), "crypto_alert_triggered")
+    default_channels = ("in_app", "push", "sms") if normalized_priority == "urgent" or critical else ("in_app", "push")
+    requested_channels = _coerce_channels(channels, default_channels)
+    link = sanitize_deep_link(
+        deep_link
+        or (f"/pulse/alerts/{alert_id}" if alert_id not in (None, "") else "")
+        or (f"/pulse/crypto?asset={symbol}" if symbol else "/dashboard/crypto/alerts")
+    )
+    metadata_payload = _event_metadata(
+        metadata,
+        alert_id=str(alert_id or ""),
+        alert_type=crypto_alert_type,
+        coin_symbol=symbol,
+        trigger_price=trigger_price,
+        target_price=target_price,
+        direction=_compact_text(direction, 80),
+        user_configured=True,
+    )
+    dedupe_window = _compact_text(
+        trigger_window
+        or metadata_payload.get("alert_event_id")
+        or metadata_payload.get("trigger_window")
+        or metadata_payload.get("trigger_bucket")
+        or now_iso()[:16],
+        80,
+    )
     return intake_event(
         event_type="crypto_alert_triggered",
         recipient_user_id=int(recipient_user_id),
@@ -1692,12 +1737,12 @@ def notify_crypto_alert(
         body=_compact_text(body, 300) or "A configured crypto alert was triggered.",
         preview=_compact_text(body, 180) or "Crypto alert triggered.",
         deep_link=link,
-        metadata=_event_metadata(metadata, alert_id=str(alert_id or ""), coin_symbol=symbol, user_configured=True),
+        metadata=metadata_payload,
         category="crypto",
-        priority="urgent" if critical else "high",
+        priority=normalized_priority,
         urgency="immediate",
-        channels=["in_app", "push", "sms"] if critical else ["in_app", "push"],
-        dedupe_key=f"crypto-alert:{recipient_user_id}:{alert_id}:{symbol}",
+        channels=requested_channels,
+        dedupe_key=f"crypto-alert:{recipient_user_id}:{alert_id}:{symbol}:{crypto_alert_type}:{dedupe_window}",
     )
 
 

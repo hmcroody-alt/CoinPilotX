@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 
 import requests
 
-from . import email_service, live_market_service, notification_service, push_service, sms_service, user_context
+from . import email_service, live_market_service, notification_service, pulsesoc_notification_system, push_service, sms_service, user_context
 
 
 SUPPORTED_ALERT_TYPES = {
@@ -293,7 +293,8 @@ def _public_rule(row):
     rule = dict(row or {})
     channels = _json_loads(rule.get("channels_json"), None)
     if channels is None:
-        channels = _normalize_channels((rule.get("channels") or "").split(",") if rule.get("channels") else None)
+        raw_channels = rule.get("channels")
+        channels = _normalize_channels(raw_channels if isinstance(raw_channels, (dict, list)) else (raw_channels or "").split(",") if raw_channels else None)
     rule["channels"] = channels
     rule["threshold_value"] = rule.get("threshold_value") if rule.get("threshold_value") is not None else rule.get("target_value")
     rule["threshold"] = rule["threshold_value"]
@@ -592,10 +593,55 @@ def _delivery_status_from_result(result):
     return "sent" if result.get("ok") else "failed"
 
 
+def _central_crypto_alert_type(rule):
+    alert_type = _normalize_alert_type((rule or {}).get("alert_type"))
+    condition = _normalize_condition((rule or {}).get("condition"))
+    if alert_type in PRICE_ALERT_TYPES:
+        return "price_target_reached"
+    if alert_type in CHANGE_ALERT_TYPES or condition in {"moves_up_percent", "moves_down_percent", "volatility_above"}:
+        return "large_market_movement"
+    if alert_type == "prediction":
+        return "bot_signal"
+    if alert_type == "arena":
+        return "portfolio_milestone"
+    if alert_type in {"news", "scam_keyword"}:
+        return "critical_market_alert"
+    return "price_target_reached"
+
+
+def _central_crypto_priority(rule, channels):
+    alert_type = _central_crypto_alert_type(rule)
+    if alert_type == "critical_market_alert" or channels.get("sms"):
+        return "urgent"
+    return "high"
+
+
+def _central_crypto_channels(channels, priority):
+    requested = ["in_app"]
+    if channels.get("push"):
+        requested.append("push")
+    if channels.get("email"):
+        requested.append("email")
+    if channels.get("sms") and priority == "urgent":
+        requested.append("sms")
+    return requested
+
+
+def _central_status_for_channel(result, channel):
+    if result.get("suppressed"):
+        return "skipped_by_preference" if result.get("reason") == "channel_preferences_disabled" else result.get("reason") or "suppressed"
+    if result.get("deduped"):
+        return "duplicate"
+    for job in result.get("delivery_jobs") or []:
+        if job.get("channel") == channel:
+            return job.get("status") or "queued"
+    return "failed" if not result.get("ok") else "skipped_by_preference"
+
+
 def _log_delivery(user_id, channel, status, provider="", provider_response="", error_message="", notification_id=None, alert_rule_id=None, alert_event_id=None):
     conn = user_context.connect()
     cur = conn.cursor()
-    setup_status = status in {"not_configured", "permission_denied", "disabled"}
+    setup_status = status in {"not_configured", "permission_denied", "disabled", "config_missing", "skipped_by_preference", "skipped_no_device", "suppressed", "duplicate"}
     if setup_status and alert_rule_id:
         cutoff = (_utcnow() - timedelta(days=1)).isoformat(timespec="seconds")
         cur.execute(
@@ -695,99 +741,102 @@ def dispatch_alert_event(event, rule=None):
     channels = _normalize_channels(rule.get("channels") or _json_loads(rule.get("channels_json"), {}))
     title = f"PulseSoc Alert: {_normalize_symbol(rule.get('symbol'))} crossed {_format_money(rule.get('threshold_value'))}"
     body = event.get("message") or "Your PulseSoc alert condition was met."
+    alert_id = rule.get("id") or event.get("alert_rule_id") or event.get("id") or ""
+    event_id = event.get("id") or ""
     metadata = {
-        "url": f"/pulse/alerts/{event.get('id') or rule.get('id') or ''}".rstrip("/"),
-        "deep_link": f"/pulse/alerts/{event.get('id') or rule.get('id') or ''}".rstrip("/"),
-        "mobile_deep_link": f"pulse://alerts/{event.get('id') or rule.get('id') or ''}".rstrip("/"),
+        "url": f"/pulse/alerts/{alert_id}".rstrip("/"),
+        "deep_link": f"/pulse/alerts/{alert_id}".rstrip("/"),
+        "mobile_deep_link": f"pulse://alerts/{alert_id}".rstrip("/"),
         "push_type": "market_alert",
         "event_type": "crypto_alert_triggered",
         "alert_rule_id": rule.get("id"),
-        "alert_event_id": event.get("id"),
+        "alert_event_id": event_id,
         "symbol": rule.get("symbol"),
         "observed_value": event.get("observed_value"),
+        "target_price": rule.get("threshold_value"),
+        "trigger_window": str(event_id or alert_id or _now()),
     }
     delivery = {"ok": True, "channels": {}}
     notification_id = None
-    if channels.get("in_app"):
-        created = notification_service.dispatch_universal_notification(
-            "crypto_alert_triggered",
-            actor_user_id=0,
-            recipient_user_id=user_id,
-            content_id=str(event.get("id") or rule.get("id") or ""),
+    alert_type = _central_crypto_alert_type(rule)
+    priority = _central_crypto_priority(rule, channels)
+    central_channels = _central_crypto_channels(channels, priority)
+    if central_channels:
+        created = pulsesoc_notification_system.notify_crypto_alert(
+            int(user_id),
+            alert_id,
+            title,
+            body,
+            _normalize_symbol(rule.get("symbol")),
+            critical=priority == "urgent",
+            metadata=metadata,
+            alert_type=alert_type,
+            trigger_price=event.get("observed_value"),
+            target_price=rule.get("threshold_value"),
+            direction=_normalize_condition(rule.get("condition")),
+            priority=priority,
             deep_link=metadata["deep_link"],
-            priority="high",
-            channels=["in_app"],
-            metadata={**metadata, "title": title, "body": body},
+            channels=central_channels,
+            trigger_window=str(event_id or alert_id or _now()),
         )
         notification_id = created.get("notification_id")
-        delivery["channels"]["in_app"] = "created" if created.get("ok") else "failed"
-        _log_delivery(user_id, "in_app", "created" if created.get("ok") else "failed", "database", created, created.get("message"), notification_id, rule.get("id"), event.get("id"))
-    quiet = _quiet_hours_active(user_id)
-    external_sent = False
-    external_attempted = False
+        delivery["central_notification"] = {
+            "ok": bool(created.get("ok")),
+            "notification_id": notification_id,
+            "deduped": bool(created.get("deduped")),
+            "suppressed": bool(created.get("suppressed")),
+            "reason": created.get("reason") or "",
+        }
+        for channel in central_channels:
+            status = _central_status_for_channel(created, channel)
+            delivery["channels"][channel] = "created" if channel == "in_app" and status == "ready" else status
+            _log_delivery(
+                user_id,
+                channel,
+                delivery["channels"][channel],
+                "pulsesoc_notification_system",
+                created,
+                created.get("message") or created.get("reason") or "",
+                notification_id,
+                rule.get("id"),
+                event.get("id"),
+            )
+    external_sent = any(status in {"sent", "queued", "ready", "created", "duplicate", "scheduled"} for status in delivery["channels"].values())
+    external_attempted = any(channels.get(channel) for channel in ("email", "push", "sms", "telegram"))
     readiness = channel_readiness(user_id)
-    for channel in ("email", "push", "sms", "telegram"):
+    for channel in ("telegram",):
         if not channels.get(channel):
             continue
         external_attempted = True
-        if quiet:
-            delivery["channels"][channel] = "skipped"
-            _log_delivery(user_id, channel, "skipped", channel, "", "Quiet hours are active.", notification_id, rule.get("id"), event.get("id"))
-            continue
-        if channel == "email":
-            result = notification_service.send_email_notification(user_id, title, body, "crypto_alert_triggered", metadata, notification_id)
-            status = result.get("status") or ("queued" if result.get("ok") else "failed")
-            delivery["channels"][channel] = status
-            external_sent = external_sent or status in {"sent", "queued", "pending"}
-            _log_delivery(user_id, channel, status, "brevo", result, result.get("error") or result.get("message"), notification_id, rule.get("id"), event.get("id"))
-        elif channel == "push":
-            if not readiness["push"].get("ready"):
-                result = {"ok": False, "status": readiness["push"].get("status") or "not_configured", "message": readiness["push"].get("message")}
-                status = "permission_denied" if result.get("status") == "permission_denied" else "not_configured"
-            else:
-                result = notification_service.send_push_alert(user_id, title, body, metadata)
-                status = _delivery_status_from_result(result)
-                if status == "skipped":
-                    status = "not_configured"
-            delivery["channels"][channel] = status
-            external_sent = external_sent or status == "sent"
-            _log_delivery(user_id, channel, status, "web_push", result, result.get("message"), notification_id, rule.get("id"), event.get("id"))
-        elif channel == "sms":
-            if not readiness["sms"].get("ready"):
-                result = {"ok": False, "status": "not_configured", "message": readiness["sms"].get("message")}
-                status = "not_configured"
-            else:
-                result = sms_service.send_alert_sms(user_id, {"message": f"{title}: {body}", "alert_rule_id": rule.get("id"), "alert_event_id": event.get("id")})
-                status = _delivery_status_from_result(result)
-                if status == "skipped":
-                    status = "not_configured"
-            delivery["channels"][channel] = status
-            external_sent = external_sent or status == "sent"
-            _log_delivery(user_id, channel, status, "brevo_sms", result, result.get("message"), notification_id, rule.get("id"), event.get("id"))
-        elif channel == "telegram":
-            if not readiness["telegram"].get("ready"):
-                result = {"ok": False, "status": "not_configured", "message": readiness["telegram"].get("message")}
-                status = "not_configured"
-            else:
-                result = _telegram_send(user, title, body, metadata)
-                status = _delivery_status_from_result(result)
-            delivery["channels"][channel] = status
-            external_sent = external_sent or status == "sent"
-            _log_delivery(user_id, channel, status, "telegram", result, result.get("message"), notification_id, rule.get("id"), event.get("id"))
+        if not readiness["telegram"].get("ready"):
+            result = {"ok": False, "status": "not_configured", "message": readiness["telegram"].get("message")}
+            status = "not_configured"
+        else:
+            result = _telegram_send(user, title, body, metadata)
+            status = _delivery_status_from_result(result)
+        delivery["channels"][channel] = status
+        external_sent = external_sent or status == "sent"
+        _log_delivery(user_id, channel, status, "telegram", result, result.get("message"), notification_id, rule.get("id"), event.get("id"))
     if external_attempted and not external_sent and not channels.get("in_app"):
-        created = notification_service.dispatch_universal_notification(
-            "crypto_alert_triggered",
-            actor_user_id=0,
-            recipient_user_id=user_id,
-            content_id=str(event.get("id") or rule.get("id") or ""),
+        created = pulsesoc_notification_system.notify_crypto_alert(
+            int(user_id),
+            alert_id,
+            title,
+            f"{body}\n\nSelected external channels need setup, so this in-app copy was created.",
+            _normalize_symbol(rule.get("symbol")),
+            metadata=metadata,
+            alert_type=alert_type,
+            trigger_price=event.get("observed_value"),
+            target_price=rule.get("threshold_value"),
+            direction=_normalize_condition(rule.get("condition")),
+            priority=priority,
             deep_link=metadata["deep_link"],
-            priority="high",
             channels=["in_app"],
-            metadata={**metadata, "title": title, "body": f"{body}\n\nSelected external channels need setup, so this in-app copy was created."},
+            trigger_window=str(event_id or alert_id or _now()),
         )
         notification_id = created.get("notification_id")
         delivery["channels"]["in_app_fallback"] = "created" if created.get("ok") else "failed"
-        _log_delivery(user_id, "in_app", "created" if created.get("ok") else "failed", "database", created, created.get("message"), notification_id, rule.get("id"), event.get("id"))
+        _log_delivery(user_id, "in_app", delivery["channels"]["in_app_fallback"], "pulsesoc_notification_system", created, created.get("message"), notification_id, rule.get("id"), event.get("id"))
     return delivery
 
 
