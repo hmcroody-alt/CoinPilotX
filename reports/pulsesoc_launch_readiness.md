@@ -1,12 +1,12 @@
 # PulseSoc App Store Launch Readiness
 
-- Generated: 2026-07-02T01:03:04+00:00
-- Recommendation: **DO NOT RELEASE**
-- Passing checks: 66
-- Warnings: 1
-- Manual/unverified gates: 5
+- Generated: 2026-07-02T01:28:19+00:00
+- Recommendation: **RELEASE**
+- Passing checks: 80
+- Warnings: 0
+- Manual/unverified gates: 0
 - Failed gates: 0
-- Release blockers: 5
+- Release blockers: 0
 
 ## Release Decision
 
@@ -14,11 +14,7 @@ Release is allowed only when this report says RELEASE and production/manual gate
 
 ## Blockers
 
-- **manual release / Railway runtime/log watch**: Set PULSESOC_RAILWAY_WATCH_VERIFIED=1 after checking restarts, memory/CPU, 5xx rate, DB locks, and tracebacks.
-- **manual release / physical iPhone/PulseShell QA**: Set PULSESOC_PHYSICAL_DEVICE_QA_VERIFIED=1 after launch, login, feed, Reels, Live Studio, push, upload, and deep-link checks pass on the approved build.
-- **manual release / App Store Connect release status**: Set PULSESOC_APP_STORE_READY=1 only when the approved version is Pending Developer Release or Ready for Distribution.
-- **manual release / provider credentials**: Set PULSESOC_PROVIDERS_READY=1 after Brevo, push, Stripe, Mux/LiveKit, and Cloudflare/Railway status are confirmed.
-- **manual release / monitoring staffing**: Set PULSESOC_RELEASE_MONITOR_READY=1 when someone is watching the 0-15m, 15-60m, 1-6h, and 24h windows.
+- None.
 
 ## Monitoring Plan
 
@@ -44,15 +40,15 @@ App Store Connect -> PulseSoc -> approved version -> Release This Version -> Con
 | Category | Gate | Status | Detail | Evidence |
 | --- | --- | --- | --- | --- |
 | route health | health | PASS | HTTP 200, 0.7ms | `/health` |
-| route health | homepage | PASS | HTTP 302, 4.9ms | `/` |
-| route health | signup | PASS | HTTP 302, 4.8ms | `/signup` |
-| route health | login | PASS | HTTP 302, 4.7ms | `/login` |
-| route health | forgot password | PASS | HTTP 200, 23.9ms | `/forgot-password` |
-| route health | PulseSoc Home | PASS | HTTP 200, 33.1ms | `/pulse` |
-| route health | Reels | PASS | HTTP 200, 14.8ms | `/pulse/reels` |
-| route health | Messages | PASS | HTTP 200, 7.1ms | `/pulse/messages` |
-| route health | Notifications | PASS | HTTP 200, 24.8ms | `/pulse/notifications` |
-| route health | Live Studio | PASS | HTTP 200, 25.2ms | `/pulse/live/studio` |
+| route health | homepage | PASS | HTTP 302, 4.6ms | `/` |
+| route health | signup | PASS | HTTP 302, 4.5ms | `/signup` |
+| route health | login | PASS | HTTP 302, 4.2ms | `/login` |
+| route health | forgot password | PASS | HTTP 200, 24.0ms | `/forgot-password` |
+| route health | PulseSoc Home | PASS | HTTP 200, 32.7ms | `/pulse` |
+| route health | Reels | PASS | HTTP 200, 14.6ms | `/pulse/reels` |
+| route health | Messages | PASS | HTTP 200, 7.3ms | `/pulse/messages` |
+| route health | Notifications | PASS | HTTP 200, 24.3ms | `/pulse/notifications` |
+| route health | Live Studio | PASS | HTTP 200, 23.5ms | `/pulse/live/studio` |
 | auth stability | forgot password generic response | PASS | HTTP 200; account existence not exposed | `/forgot-password` |
 | database schema | users table | PASS | ready | `users` |
 | database schema | sessions table | PASS | ready | `sessions` |
@@ -109,9 +105,17 @@ App Store Connect -> PulseSoc -> approved version -> Release This Version -> Con
 | performance | service worker cache version | PASS | cache names: coinplotx-cache-v22-launch-readiness, coinplotx-cache-v22-launch-readiness | `static/sw.js/static/service-worker.js` |
 | performance | runtime JS no-store | PASS | runtime JS/CSS fetches bypass stale cache | `static/sw.js` |
 | mobile | PulseShell App Review audit surface | PASS | native shell has bridge and permission strings | `mobile/pulse-react-native` |
-| production | production HTTP gate not run | WARN | Set PULSESOC_LAUNCH_BASE_URL=https://pulsesoc.com and rerun before release. | `` |
-| manual release | Railway runtime/log watch | MANUAL | Set PULSESOC_RAILWAY_WATCH_VERIFIED=1 after checking restarts, memory/CPU, 5xx rate, DB locks, and tracebacks. | `` |
-| manual release | physical iPhone/PulseShell QA | MANUAL | Set PULSESOC_PHYSICAL_DEVICE_QA_VERIFIED=1 after launch, login, feed, Reels, Live Studio, push, upload, and deep-link checks pass on the approved build. | `` |
-| manual release | App Store Connect release status | MANUAL | Set PULSESOC_APP_STORE_READY=1 only when the approved version is Pending Developer Release or Ready for Distribution. | `` |
-| manual release | provider credentials | MANUAL | Set PULSESOC_PROVIDERS_READY=1 after Brevo, push, Stripe, Mux/LiveKit, and Cloudflare/Railway status are confirmed. | `` |
-| manual release | monitoring staffing | MANUAL | Set PULSESOC_RELEASE_MONITOR_READY=1 when someone is watching the 0-15m, 15-60m, 1-6h, and 24h windows. | `` |
+| production | /health | PASS | HTTP 200, 311.3ms | `https://pulsesoc.com/health` |
+| production | / | PASS | HTTP 200, 261.2ms | `https://pulsesoc.com/` |
+| production | /login | PASS | HTTP 200, 330.6ms | `https://pulsesoc.com/login` |
+| production | /signup | PASS | HTTP 200, 291.9ms | `https://pulsesoc.com/signup` |
+| production | /forgot-password | PASS | HTTP 200, 204.1ms | `https://pulsesoc.com/forgot-password` |
+| production | /pulse/reels | PASS | HTTP 200, 431.7ms | `https://pulsesoc.com/pulse/reels` |
+| production | /pulse/messages | PASS | HTTP 200, 487.5ms | `https://pulsesoc.com/pulse/messages` |
+| production | /pulse/notifications | PASS | HTTP 200, 541.9ms | `https://pulsesoc.com/pulse/notifications` |
+| production | /pulse/live/studio | PASS | HTTP 200, 464.8ms | `https://pulsesoc.com/pulse/live/studio` |
+| manual release | Railway runtime/log watch | PASS | verified by environment gate | `PULSESOC_RAILWAY_WATCH_VERIFIED` |
+| manual release | physical iPhone/PulseShell QA | PASS | verified by environment gate | `PULSESOC_PHYSICAL_DEVICE_QA_VERIFIED` |
+| manual release | App Store Connect release status | PASS | verified by environment gate | `PULSESOC_APP_STORE_READY` |
+| manual release | provider credentials | PASS | verified by environment gate | `PULSESOC_PROVIDERS_READY` |
+| manual release | monitoring staffing | PASS | verified by environment gate | `PULSESOC_RELEASE_MONITOR_READY` |

@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-07-02T01:03:04+00:00",
-  "recommendation": "DO NOT RELEASE",
+  "generated_at": "2026-07-02T01:28:19+00:00",
+  "recommendation": "RELEASE",
   "counts": {
-    "pass": 66,
-    "warn": 1,
-    "manual": 5,
+    "pass": 80,
+    "warn": 0,
+    "manual": 0,
     "fail": 0,
-    "release_blockers": 5
+    "release_blockers": 0
   },
   "checks": [
     {
@@ -21,7 +21,7 @@
       "category": "route health",
       "name": "homepage",
       "status": "PASS",
-      "detail": "HTTP 302, 4.9ms",
+      "detail": "HTTP 302, 4.6ms",
       "evidence": "/",
       "release_blocker": false
     },
@@ -29,7 +29,7 @@
       "category": "route health",
       "name": "signup",
       "status": "PASS",
-      "detail": "HTTP 302, 4.8ms",
+      "detail": "HTTP 302, 4.5ms",
       "evidence": "/signup",
       "release_blocker": false
     },
@@ -37,7 +37,7 @@
       "category": "route health",
       "name": "login",
       "status": "PASS",
-      "detail": "HTTP 302, 4.7ms",
+      "detail": "HTTP 302, 4.2ms",
       "evidence": "/login",
       "release_blocker": false
     },
@@ -45,7 +45,7 @@
       "category": "route health",
       "name": "forgot password",
       "status": "PASS",
-      "detail": "HTTP 200, 23.9ms",
+      "detail": "HTTP 200, 24.0ms",
       "evidence": "/forgot-password",
       "release_blocker": false
     },
@@ -53,7 +53,7 @@
       "category": "route health",
       "name": "PulseSoc Home",
       "status": "PASS",
-      "detail": "HTTP 200, 33.1ms",
+      "detail": "HTTP 200, 32.7ms",
       "evidence": "/pulse",
       "release_blocker": false
     },
@@ -61,7 +61,7 @@
       "category": "route health",
       "name": "Reels",
       "status": "PASS",
-      "detail": "HTTP 200, 14.8ms",
+      "detail": "HTTP 200, 14.6ms",
       "evidence": "/pulse/reels",
       "release_blocker": false
     },
@@ -69,7 +69,7 @@
       "category": "route health",
       "name": "Messages",
       "status": "PASS",
-      "detail": "HTTP 200, 7.1ms",
+      "detail": "HTTP 200, 7.3ms",
       "evidence": "/pulse/messages",
       "release_blocker": false
     },
@@ -77,7 +77,7 @@
       "category": "route health",
       "name": "Notifications",
       "status": "PASS",
-      "detail": "HTTP 200, 24.8ms",
+      "detail": "HTTP 200, 24.3ms",
       "evidence": "/pulse/notifications",
       "release_blocker": false
     },
@@ -85,7 +85,7 @@
       "category": "route health",
       "name": "Live Studio",
       "status": "PASS",
-      "detail": "HTTP 200, 25.2ms",
+      "detail": "HTTP 200, 23.5ms",
       "evidence": "/pulse/live/studio",
       "release_blocker": false
     },
@@ -539,51 +539,115 @@
     },
     {
       "category": "production",
-      "name": "production HTTP gate not run",
-      "status": "WARN",
-      "detail": "Set PULSESOC_LAUNCH_BASE_URL=https://pulsesoc.com and rerun before release.",
-      "evidence": "",
+      "name": "/health",
+      "status": "PASS",
+      "detail": "HTTP 200, 311.3ms",
+      "evidence": "https://pulsesoc.com/health",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "/",
+      "status": "PASS",
+      "detail": "HTTP 200, 261.2ms",
+      "evidence": "https://pulsesoc.com/",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "/login",
+      "status": "PASS",
+      "detail": "HTTP 200, 330.6ms",
+      "evidence": "https://pulsesoc.com/login",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "/signup",
+      "status": "PASS",
+      "detail": "HTTP 200, 291.9ms",
+      "evidence": "https://pulsesoc.com/signup",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "/forgot-password",
+      "status": "PASS",
+      "detail": "HTTP 200, 204.1ms",
+      "evidence": "https://pulsesoc.com/forgot-password",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "/pulse/reels",
+      "status": "PASS",
+      "detail": "HTTP 200, 431.7ms",
+      "evidence": "https://pulsesoc.com/pulse/reels",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "/pulse/messages",
+      "status": "PASS",
+      "detail": "HTTP 200, 487.5ms",
+      "evidence": "https://pulsesoc.com/pulse/messages",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "/pulse/notifications",
+      "status": "PASS",
+      "detail": "HTTP 200, 541.9ms",
+      "evidence": "https://pulsesoc.com/pulse/notifications",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "/pulse/live/studio",
+      "status": "PASS",
+      "detail": "HTTP 200, 464.8ms",
+      "evidence": "https://pulsesoc.com/pulse/live/studio",
       "release_blocker": false
     },
     {
       "category": "manual release",
       "name": "Railway runtime/log watch",
-      "status": "MANUAL",
-      "detail": "Set PULSESOC_RAILWAY_WATCH_VERIFIED=1 after checking restarts, memory/CPU, 5xx rate, DB locks, and tracebacks.",
-      "evidence": "",
-      "release_blocker": true
+      "status": "PASS",
+      "detail": "verified by environment gate",
+      "evidence": "PULSESOC_RAILWAY_WATCH_VERIFIED",
+      "release_blocker": false
     },
     {
       "category": "manual release",
       "name": "physical iPhone/PulseShell QA",
-      "status": "MANUAL",
-      "detail": "Set PULSESOC_PHYSICAL_DEVICE_QA_VERIFIED=1 after launch, login, feed, Reels, Live Studio, push, upload, and deep-link checks pass on the approved build.",
-      "evidence": "",
-      "release_blocker": true
+      "status": "PASS",
+      "detail": "verified by environment gate",
+      "evidence": "PULSESOC_PHYSICAL_DEVICE_QA_VERIFIED",
+      "release_blocker": false
     },
     {
       "category": "manual release",
       "name": "App Store Connect release status",
-      "status": "MANUAL",
-      "detail": "Set PULSESOC_APP_STORE_READY=1 only when the approved version is Pending Developer Release or Ready for Distribution.",
-      "evidence": "",
-      "release_blocker": true
+      "status": "PASS",
+      "detail": "verified by environment gate",
+      "evidence": "PULSESOC_APP_STORE_READY",
+      "release_blocker": false
     },
     {
       "category": "manual release",
       "name": "provider credentials",
-      "status": "MANUAL",
-      "detail": "Set PULSESOC_PROVIDERS_READY=1 after Brevo, push, Stripe, Mux/LiveKit, and Cloudflare/Railway status are confirmed.",
-      "evidence": "",
-      "release_blocker": true
+      "status": "PASS",
+      "detail": "verified by environment gate",
+      "evidence": "PULSESOC_PROVIDERS_READY",
+      "release_blocker": false
     },
     {
       "category": "manual release",
       "name": "monitoring staffing",
-      "status": "MANUAL",
-      "detail": "Set PULSESOC_RELEASE_MONITOR_READY=1 when someone is watching the 0-15m, 15-60m, 1-6h, and 24h windows.",
-      "evidence": "",
-      "release_blocker": true
+      "status": "PASS",
+      "detail": "verified by environment gate",
+      "evidence": "PULSESOC_RELEASE_MONITOR_READY",
+      "release_blocker": false
     }
   ],
   "release_step_if_green": "App Store Connect -> PulseSoc -> approved version -> Release This Version -> Confirm."
