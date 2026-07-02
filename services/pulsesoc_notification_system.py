@@ -1,39 +1,67 @@
-"""PulseSoc notification operating-system foundation.
+"""PulseSoc notification operating-system foundation and delivery adapters.
 
-Phase 1 keeps delivery safe and queue-ready: events are normalized, user rules
-are applied, in-app records are stored, delivery jobs are created, and push
-provider adapters remain placeholders until Phase 2.
+Phase 1 normalized events and created server-authoritative notification records.
+Phase 2 keeps that intake model and adds real, queue-safe adapter routing for
+Web Push/PWA, Brevo email/SMS, and honest APNs/FCM readiness states.
 """
 
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import logging
 import os
 import re
 import secrets
+import threading
 from datetime import datetime, timedelta
 from typing import Any
 
+import requests
+
 from services import db as db_service
+from services import email_service, push_service, sms_service
 
 
 PRIORITY_LEVELS = {"urgent", "high", "normal", "low"}
 URGENCY_LEVELS = {"immediate", "standard", "deferred", "silent"}
 DELIVERY_CHANNELS = {"in_app", "push", "email", "sms", "call", "system"}
 PROVIDER_PLACEHOLDERS = {
-    "push": "apns_fcm_web_push_phase2",
-    "email": "brevo_email_phase2",
-    "sms": "brevo_sms_twilio_phase2",
+    "push": "pulse_push_router",
+    "email": "brevo_email",
+    "sms": "brevo_sms",
     "call": "callkit_android_call_phase2",
     "system": "internal",
     "in_app": "pulse_in_app",
 }
+ADAPTER_CHANNEL_ALIASES = {
+    "web_push": "push",
+    "pwa_push": "push",
+    "fcm": "push",
+    "apns": "push",
+    "brevo_email": "email",
+    "brevo_sms": "sms",
+}
 NOISY_CHANNELS = {"push", "email", "sms", "call"}
 SOCIAL_CATEGORIES = {"social", "messages", "comments", "mentions", "follows", "live"}
 SENSITIVE_CATEGORIES = {"security", "payments", "billing"}
+EMAIL_DEFAULT_CATEGORIES = {"security", "payments", "billing", "verification", "marketplace", "creator", "premium"}
+SMS_DEFAULT_CATEGORIES = {"security", "payments", "billing", "crypto", "system"}
+TEMPORARY_FAILURE_STATUSES = {"failed", "timeout", "rate_limited", "provider_error", "temporary_failure"}
+PERMANENT_SKIP_STATUSES = {
+    "sent",
+    "ready",
+    "config_missing",
+    "skipped",
+    "skipped_by_preference",
+    "skipped_no_device",
+    "skipped_no_contact",
+    "skipped_policy",
+    "invalid_device",
+}
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+DELIVERY_LOCK = threading.Lock()
 
 
 EVENT_DEFINITIONS: dict[str, dict[str, str]] = {
@@ -198,6 +226,8 @@ def ensure_schema(conn: Any | None = None) -> None:
             icon_url TEXT,
             avatar_url TEXT,
             metadata_json TEXT,
+            sound_key TEXT,
+            vibration_json TEXT,
             seen_at TEXT,
             delivered_at TEXT,
             opened_at TEXT,
@@ -226,6 +256,8 @@ def ensure_schema(conn: Any | None = None) -> None:
         ("icon_url", "TEXT"),
         ("avatar_url", "TEXT"),
         ("metadata_json", "TEXT"),
+        ("sound_key", "TEXT"),
+        ("vibration_json", "TEXT"),
         ("seen_at", "TEXT"),
         ("delivered_at", "TEXT"),
         ("opened_at", "TEXT"),
@@ -272,6 +304,10 @@ def ensure_schema(conn: Any | None = None) -> None:
             scheduled_at TEXT,
             next_retry_at TEXT,
             failed_reason TEXT,
+            failure_reason TEXT,
+            attempted_at TEXT,
+            failed_at TEXT,
+            provider_response_json TEXT,
             provider_message_id TEXT,
             payload_json TEXT,
             created_at TEXT,
@@ -293,6 +329,8 @@ def ensure_schema(conn: Any | None = None) -> None:
             auth TEXT,
             user_agent TEXT,
             app_version TEXT,
+            push_provider TEXT,
+            environment TEXT,
             enabled INTEGER DEFAULT 1,
             token_hash TEXT,
             last_seen_at TEXT,
@@ -333,6 +371,23 @@ def ensure_schema(conn: Any | None = None) -> None:
         )
         """
     )
+    for column, definition in [
+        ("failure_reason", "TEXT"),
+        ("attempted_at", "TEXT"),
+        ("failed_at", "TEXT"),
+        ("provider_response_json", "TEXT"),
+    ]:
+        _add_column_if_missing(cur, "notification_delivery_jobs", column, definition)
+    for column, definition in [
+        ("sound_key", "TEXT"),
+        ("vibration_json", "TEXT"),
+    ]:
+        _add_column_if_missing(cur, "notifications", column, definition)
+    for column, definition in [
+        ("push_provider", "TEXT"),
+        ("environment", "TEXT"),
+    ]:
+        _add_column_if_missing(cur, "notification_device_tokens", column, definition)
     for column, definition in [
         ("sms", "INTEGER DEFAULT 0"),
         ("sound", "INTEGER DEFAULT 1"),
@@ -410,6 +465,124 @@ def sanitize_deep_link(value: Any) -> str:
     if link.startswith(("/api/", "/static/", "/admin/")):
         return "/pulse/notifications"
     return link
+
+
+def _env_value(*keys: str) -> str:
+    for key in keys:
+        value = os.getenv(key)
+        if value:
+            return value.strip()
+    return ""
+
+
+def _web_push_configured() -> bool:
+    return bool(_env_value("WEB_PUSH_PUBLIC_KEY", "VAPID_PUBLIC_KEY") and _env_value("WEB_PUSH_PRIVATE_KEY", "VAPID_PRIVATE_KEY"))
+
+
+def _fcm_configured() -> bool:
+    return bool(
+        _env_value("FCM_SERVER_KEY")
+        or (
+            _env_value("FCM_PROJECT_ID")
+            and _env_value("FCM_CLIENT_EMAIL")
+            and _env_value("FCM_PRIVATE_KEY")
+        )
+    )
+
+
+def _apns_configured() -> bool:
+    return bool(
+        _env_value("APNS_TEAM_ID")
+        and _env_value("APNS_KEY_ID")
+        and _env_value("APNS_PRIVATE_KEY")
+        and _env_value("APNS_BUNDLE_ID")
+    )
+
+
+def _brevo_email_configured() -> bool:
+    return bool(email_service.provider_status().get("ready"))
+
+
+def _brevo_sms_configured() -> bool:
+    return bool(sms_service.is_sms_configured())
+
+
+def _sound_key(category: str, priority: str, prefs: dict[str, Any] | None = None) -> str:
+    prefs = prefs or {}
+    if not _bool((prefs.get("experience") or {}).get("enable_notification_sound", True), True):
+        return "silent"
+    if priority == "urgent":
+        return "pulse_urgent"
+    return {
+        "messages": "pulse_message",
+        "live": "pulse_live",
+        "security": "pulse_security",
+        "payments": "pulse_payment",
+        "billing": "pulse_payment",
+        "crypto": "pulse_crypto",
+        "system": "pulse_system",
+    }.get(category, "pulse_soft")
+
+
+def _vibration_pattern(category: str, priority: str, prefs: dict[str, Any] | None = None) -> list[int]:
+    prefs = prefs or {}
+    if not _bool((prefs.get("experience") or {}).get("enable_notification_vibration", True), True):
+        return []
+    if priority == "urgent":
+        return [240, 90, 240, 90, 320]
+    if category in {"messages", "live"}:
+        return [180, 80, 180]
+    if category in {"security", "payments", "billing"}:
+        return [220, 100, 260]
+    return [120, 70, 120]
+
+
+def _notification_public_preview(notification: dict[str, Any], prefs: dict[str, Any] | None = None) -> str:
+    prefs = prefs or {}
+    category = str(notification.get("category") or "")
+    priority = str(notification.get("priority") or "normal")
+    lock_screen_preview = True
+    try:
+        lock_screen_preview = bool((prefs.get("preferences") or {}).get(category, {}).get("lock_screen_preview", True))
+    except Exception:
+        lock_screen_preview = True
+    if not lock_screen_preview or category in SENSITIVE_CATEGORIES or priority == "urgent":
+        return "Open PulseSoc to review this secure alert."
+    return str(notification.get("preview") or notification.get("body") or "Open PulseSoc for the latest update.")[:240]
+
+
+def _provider_ready_summary() -> dict[str, Any]:
+    email_status = email_service.provider_status()
+    return {
+        "web_push": {
+            "ready": _web_push_configured(),
+            "status": "ready" if _web_push_configured() else "config_missing",
+            "required_env": ["WEB_PUSH_PUBLIC_KEY", "WEB_PUSH_PRIVATE_KEY", "WEB_PUSH_SUBJECT"],
+            "legacy_env_supported": ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"],
+        },
+        "fcm": {
+            "ready": _fcm_configured(),
+            "status": "ready" if _fcm_configured() else "config_missing",
+            "required_env": ["FCM_PROJECT_ID", "FCM_CLIENT_EMAIL", "FCM_PRIVATE_KEY"],
+            "legacy_env_supported": ["FCM_SERVER_KEY"],
+        },
+        "apns": {
+            "ready": _apns_configured(),
+            "status": "ready" if _apns_configured() else "config_missing",
+            "required_env": ["APNS_TEAM_ID", "APNS_KEY_ID", "APNS_PRIVATE_KEY", "APNS_BUNDLE_ID", "APNS_USE_SANDBOX"],
+        },
+        "brevo_email": {
+            "ready": bool(email_status.get("ready")),
+            "status": "ready" if email_status.get("ready") else "config_missing",
+            "missing_fields": email_status.get("missing_fields") or [],
+            "sender_email": email_status.get("sender_email") or "",
+        },
+        "brevo_sms": {
+            "ready": _brevo_sms_configured(),
+            "status": "ready" if _brevo_sms_configured() else "config_missing",
+            "required_env": ["BREVO_API_KEY", "BREVO_SMS_SENDER", "SMS_SENDER_NAME"],
+        },
+    }
 
 
 def make_dedupe_key(
@@ -730,8 +903,12 @@ def _rules_check(cur: Any, payload: dict[str, Any], prefs: dict[str, Any]) -> di
     if conversation_id and conversation_id in set(experience.get("muted_conversation_ids") or []) and priority != "urgent":
         return {"allowed": False, "reason": "muted_conversation", "channels": []}
     category_pref = (prefs.get("preferences") or {}).get(category) or {}
-    requested = set(payload.get("channels") or ["in_app"])
-    requested = {channel for channel in requested if channel in DELIVERY_CHANNELS} or {"in_app"}
+    requested = set()
+    for raw_channel in payload.get("channels") or ["in_app"]:
+        channel = ADAPTER_CHANNEL_ALIASES.get(str(raw_channel or "").strip().lower(), str(raw_channel or "").strip().lower())
+        if channel in DELIVERY_CHANNELS:
+            requested.add(channel)
+    requested = requested or {"in_app"}
     if priority == "urgent":
         requested.add("in_app")
     allowed_channels = []
@@ -794,7 +971,18 @@ def _insert_delivery_jobs(cur: Any, notification_id: int, payload: dict[str, Any
                 dedupe,
                 scheduled_at,
                 scheduled_at if status == "scheduled" else "",
-                _json_dumps({"title": payload["title"], "body": payload["body"], "deep_link": payload["deep_link"], "metadata": payload["metadata"]}),
+                _json_dumps({
+                    "title": payload["title"],
+                    "body": payload["body"],
+                    "preview": payload["preview"],
+                    "deep_link": payload["deep_link"],
+                    "category": payload["category"],
+                    "priority": payload["priority"],
+                    "urgency": payload["urgency"],
+                    "sound_key": payload.get("sound_key") or "",
+                    "vibration": payload.get("vibration") or [],
+                    "metadata": payload["metadata"],
+                }),
                 now,
                 now,
                 now if status == "ready" else "",
@@ -910,16 +1098,18 @@ def intake_event(
             )
             conn.commit()
             return {"ok": True, "suppressed": True, "reason": rules.get("reason"), "event_id": event_id, "notification_id": 0}
+        payload["sound_key"] = _sound_key(category, priority, prefs)
+        payload["vibration"] = _vibration_pattern(category, priority, prefs)
         payload["event_id"] = event_id
         metadata_json = _json_dumps({**metadata, "event_id": event_id, "dedupe_key": payload["dedupe_key"]})
         cur.execute(
             """
             INSERT INTO notifications
-            (user_id, notification_type, title, message, status, metadata, created_at, read_at,
+             (user_id, notification_type, title, message, status, metadata, created_at, read_at,
              recipient_user_id, actor_user_id, type, category, priority, urgency, body, preview, deep_link,
-             source_type, source_id, icon_url, avatar_url, metadata_json, seen_at, delivered_at, opened_at,
+             source_type, source_id, icon_url, avatar_url, metadata_json, sound_key, vibration_json, seen_at, delivered_at, opened_at,
              failed_at, failure_reason, updated_at, deleted_at, dedupe_key, event_id, delivery_status)
-            VALUES (?, ?, ?, ?, 'unread', ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, '', ?, NULL, ?, ?, 'created')
+            VALUES (?, ?, ?, ?, 'unread', ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, '', ?, NULL, ?, ?, 'created')
             """,
             (
                 recipient_user_id,
@@ -942,6 +1132,8 @@ def intake_event(
                 payload["icon_url"],
                 payload["avatar_url"],
                 metadata_json,
+                payload["sound_key"],
+                _json_dumps(payload["vibration"]),
                 created_at,
                 payload["dedupe_key"],
                 event_id,
@@ -958,6 +1150,7 @@ def intake_event(
                 (_json_dumps({**metadata, "event_id": event_id, "dedupe_key": payload["dedupe_key"], "pulse_notification_id": pulse_id}), _json_dumps(metadata), notification_id),
             )
         conn.commit()
+        schedule_delivery_processing(reason="notification_intake")
         notification = get_notification(recipient_user_id, notification_id) or {"id": notification_id}
         logging.info(
             "PULSESOC_NOTIFICATION_CREATED user_id=%s type=%s category=%s priority=%s notification_id=%s channels=%s",
@@ -1018,6 +1211,8 @@ def format_notification(row: Any) -> dict[str, Any]:
         "failed_at": _row_get(row, "failed_at", "") or "",
         "failure_reason": _row_get(row, "failure_reason", "") or "",
         "delivery_status": _row_get(row, "delivery_status", "") or "created",
+        "sound_key": _row_get(row, "sound_key", "") or "",
+        "vibration": _json_loads(_row_get(row, "vibration_json", ""), []),
         "created_at": _row_get(row, "created_at", "") or "",
         "updated_at": _row_get(row, "updated_at", "") or "",
         "dedupe_key": _row_get(row, "dedupe_key", "") or "",
@@ -1170,13 +1365,19 @@ def register_device_token(user_id: int, payload: dict[str, Any], user_agent: str
     subscription = payload.get("subscription") if isinstance(payload.get("subscription"), dict) else {}
     endpoint = str(payload.get("endpoint") or subscription.get("endpoint") or "")[:1000]
     keys = subscription.get("keys") if isinstance(subscription.get("keys"), dict) else {}
+    provider = str(
+        payload.get("push_provider")
+        or payload.get("provider")
+        or ("fcm" if platform == "android" and push_token else "apns" if platform == "ios" and push_token else "web_push" if endpoint else "push")
+    ).strip().lower()[:40]
+    environment = str(payload.get("environment") or os.getenv("PUSH_ENVIRONMENT") or os.getenv("RAILWAY_ENVIRONMENT_NAME") or "production")[:80]
     now = now_iso()
     token_hash = _token_hash(push_token, endpoint)
     cur.execute(
         """
         INSERT INTO notification_device_tokens
-        (user_id, device_id, platform, push_token, endpoint, p256dh, auth, user_agent, app_version, enabled, token_hash, last_seen_at, created_at, updated_at, deleted_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, NULL)
+        (user_id, device_id, platform, push_token, endpoint, p256dh, auth, user_agent, app_version, push_provider, environment, enabled, token_hash, last_seen_at, created_at, updated_at, deleted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, NULL)
         ON CONFLICT(user_id, device_id, platform) DO UPDATE SET
             push_token=excluded.push_token,
             endpoint=excluded.endpoint,
@@ -1184,6 +1385,8 @@ def register_device_token(user_id: int, payload: dict[str, Any], user_agent: str
             auth=excluded.auth,
             user_agent=excluded.user_agent,
             app_version=excluded.app_version,
+            push_provider=excluded.push_provider,
+            environment=excluded.environment,
             enabled=1,
             token_hash=excluded.token_hash,
             last_seen_at=excluded.last_seen_at,
@@ -1200,6 +1403,8 @@ def register_device_token(user_id: int, payload: dict[str, Any], user_agent: str
             str(payload.get("auth") or keys.get("auth") or "")[:1000],
             str(user_agent or payload.get("user_agent") or "")[:1000],
             str(payload.get("app_version") or payload.get("appVersion") or "")[:80],
+            provider,
+            environment,
             token_hash,
             now,
             now,
@@ -1208,7 +1413,7 @@ def register_device_token(user_id: int, payload: dict[str, Any], user_agent: str
     )
     conn.commit()
     cur.execute(
-        "SELECT id, platform, device_id, enabled, last_seen_at FROM notification_device_tokens WHERE user_id=? AND device_id=? AND platform=? LIMIT 1",
+        "SELECT id, platform, device_id, push_provider, enabled, last_seen_at FROM notification_device_tokens WHERE user_id=? AND device_id=? AND platform=? LIMIT 1",
         (int(user_id), device_id, platform),
     )
     row = cur.fetchone()
@@ -1219,6 +1424,7 @@ def register_device_token(user_id: int, payload: dict[str, Any], user_agent: str
             "id": _int(_row_get(row, "id", 0)),
             "platform": platform,
             "device_id": device_id,
+            "provider": _row_get(row, "push_provider", provider) if row else provider,
             "enabled": True,
             "last_seen_at": _row_get(row, "last_seen_at", now) if row else now,
         },
@@ -1256,23 +1462,481 @@ def device_status(user_id: int) -> dict[str, Any]:
     return {"ok": True, "notification_os_active_devices": active, "device_token_foundation": True}
 
 
+def _delivery_autoprocess_enabled() -> bool:
+    return str(os.getenv("PULSESOC_NOTIFICATION_DELIVERY_AUTOPROCESS_ENABLED", "1")).strip().lower() not in {"0", "false", "off", "no"}
+
+
+def schedule_delivery_processing(reason: str = "queued") -> dict[str, Any]:
+    if not _delivery_autoprocess_enabled():
+        return {"ok": True, "scheduled": False, "reason": "disabled"}
+    if not DELIVERY_LOCK.acquire(blocking=False):
+        return {"ok": True, "scheduled": False, "reason": "already_running"}
+
+    def _run() -> None:
+        try:
+            process_delivery_jobs(limit=_int(os.getenv("PULSESOC_NOTIFICATION_DELIVERY_BATCH_SIZE"), 20))
+        except Exception:
+            logging.exception("PULSESOC_NOTIFICATION_DELIVERY_PROCESSOR_FAILED reason=%s", reason)
+        finally:
+            try:
+                DELIVERY_LOCK.release()
+            except RuntimeError:
+                pass
+
+    threading.Timer(0.25, _run).start()
+    return {"ok": True, "scheduled": True, "reason": reason}
+
+
+def _delivery_retry_at(retry_count: int) -> str:
+    delay = min(3600, 30 * (2 ** max(0, int(retry_count or 1) - 1)))
+    return (datetime.utcnow() + timedelta(seconds=delay)).replace(microsecond=0).isoformat() + "Z"
+
+
+def _get_user_contact(cur: Any, user_id: int) -> dict[str, Any]:
+    if not _table_exists(cur, "users"):
+        return {"user_id": int(user_id), "email": "", "phone": "", "phone_verified": False, "sms_opt_in": False}
+    cols = _columns(cur, "users")
+    if "user_id" in cols:
+        id_col = "user_id"
+    elif "id" in cols:
+        id_col = "id"
+    else:
+        return {"user_id": int(user_id), "email": "", "phone": "", "phone_verified": False, "sms_opt_in": False}
+    wanted = [
+        "email",
+        "phone",
+        "phone_number",
+        "phone_verified",
+        "sms_opt_in",
+        "display_name",
+        "username",
+    ]
+    select_cols = [column for column in wanted if column in cols]
+    cur.execute(f"SELECT {', '.join(select_cols) if select_cols else id_col} FROM users WHERE {id_col}=? LIMIT 1", (int(user_id),))
+    row = cur.fetchone()
+    return {
+        "user_id": int(user_id),
+        "email": _row_get(row, "email", "") or "",
+        "phone": _row_get(row, "phone_number", "") or _row_get(row, "phone", "") or "",
+        "phone_verified": _bool(_row_get(row, "phone_verified", 0), False),
+        "sms_opt_in": _bool(_row_get(row, "sms_opt_in", 0), False),
+        "display_name": _row_get(row, "display_name", "") or _row_get(row, "username", "") or "PulseSoc member",
+    }
+
+
+def _active_device_tokens(cur: Any, user_id: int) -> list[dict[str, Any]]:
+    cur.execute(
+        """
+        SELECT *
+        FROM notification_device_tokens
+        WHERE user_id=? AND COALESCE(enabled,1)=1 AND deleted_at IS NULL
+        ORDER BY last_seen_at DESC, id DESC
+        """,
+        (int(user_id),),
+    )
+    return [dict(row) if hasattr(row, "keys") else {
+        "id": row[0],
+        "user_id": row[1],
+        "device_id": row[2],
+        "platform": row[3],
+        "push_token": row[4],
+        "endpoint": row[5],
+    } for row in cur.fetchall()]
+
+
+def _legacy_push_subscription_count(cur: Any, user_id: int) -> int:
+    if not _table_exists(cur, "push_subscriptions"):
+        return 0
+    try:
+        cur.execute(
+            "SELECT COUNT(*) FROM push_subscriptions WHERE user_id=? AND COALESCE(is_active, active, 1)=1",
+            (int(user_id),),
+        )
+        return _int((cur.fetchone() or [0])[0])
+    except Exception:
+        return 0
+
+
+def _push_payload(notification: dict[str, Any], prefs: dict[str, Any]) -> dict[str, Any]:
+    category = str(notification.get("category") or "system")
+    priority = str(notification.get("priority") or "normal")
+    metadata = notification.get("metadata") if isinstance(notification.get("metadata"), dict) else {}
+    deep_link = sanitize_deep_link(notification.get("deep_link") or metadata.get("deep_link") or "/pulse/notifications")
+    return {
+        "notification_id": int(notification.get("id") or 0),
+        "type": notification.get("type") or notification.get("notification_type") or "system_announcement",
+        "category": category,
+        "priority": priority,
+        "urgency": notification.get("urgency") or "standard",
+        "deep_link": deep_link,
+        "target_url": deep_link,
+        "url": deep_link,
+        "web_url": deep_link,
+        "sound_key": notification.get("sound_key") or _sound_key(category, priority, prefs),
+        "sound": notification.get("sound_key") or _sound_key(category, priority, prefs),
+        "vibrate": notification.get("vibration") or _vibration_pattern(category, priority, prefs),
+        "badge": badge_counts(int(notification.get("recipient_user_id") or notification.get("user_id") or 0)).get("total_unread_count", 0),
+        **metadata,
+    }
+
+
+def _send_fcm_token(token: str, notification: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    token = str(token or "").strip()
+    if not token:
+        return {"ok": False, "status": "skipped_no_device", "message": "FCM token missing."}
+    server_key = _env_value("FCM_SERVER_KEY")
+    project_id = _env_value("FCM_PROJECT_ID")
+    if server_key:
+        try:
+            response = requests.post(
+                "https://fcm.googleapis.com/fcm/send",
+                headers={"Authorization": f"key={server_key}", "Content-Type": "application/json"},
+                json={
+                    "to": token,
+                    "priority": "high" if notification.get("priority") in {"urgent", "high"} else "normal",
+                    "notification": {
+                        "title": notification.get("title") or "PulseSoc",
+                        "body": payload.get("body") or notification.get("preview") or "Open PulseSoc.",
+                    },
+                    "data": payload,
+                },
+                timeout=10,
+            )
+            data = response.json() if response.content else {}
+            if response.ok and int(data.get("success") or 0) > 0:
+                return {"ok": True, "status": "sent", "provider": "fcm", "provider_message_id": str(((data.get("results") or [{}])[0] or {}).get("message_id") or "")}
+            error = str(((data.get("results") or [{}])[0] or {}).get("error") or data.get("error") or response.text[:300])
+            if error in {"NotRegistered", "InvalidRegistration", "MismatchSenderId"}:
+                return {"ok": False, "status": "invalid_device", "provider": "fcm", "message": error}
+            return {"ok": False, "status": "failed", "provider": "fcm", "message": error, "http_status": response.status_code}
+        except Exception as exc:
+            return {"ok": False, "status": "failed", "provider": "fcm", "message": str(exc)[:300], "error_type": type(exc).__name__}
+    if project_id and _env_value("FCM_CLIENT_EMAIL") and _env_value("FCM_PRIVATE_KEY"):
+        try:
+            from google.auth.transport.requests import Request
+            from google.oauth2 import service_account
+            info = {
+                "type": "service_account",
+                "project_id": project_id,
+                "client_email": _env_value("FCM_CLIENT_EMAIL"),
+                "private_key": _env_value("FCM_PRIVATE_KEY").replace("\\n", "\n"),
+                "token_uri": "https://oauth2.googleapis.com/token",
+            }
+            credentials = service_account.Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/firebase.messaging"])
+            credentials.refresh(Request())
+            response = requests.post(
+                f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send",
+                headers={"Authorization": f"Bearer {credentials.token}", "Content-Type": "application/json"},
+                json={"message": {"token": token, "notification": {"title": notification.get("title") or "PulseSoc", "body": payload.get("body") or ""}, "data": {key: str(value) for key, value in payload.items() if value is not None}}},
+                timeout=10,
+            )
+            data = response.json() if response.content else {}
+            if response.ok:
+                return {"ok": True, "status": "sent", "provider": "fcm", "provider_message_id": str(data.get("name") or "")}
+            return {"ok": False, "status": "failed", "provider": "fcm", "message": data.get("error", {}).get("message") or response.text[:300], "http_status": response.status_code}
+        except Exception as exc:
+            return {"ok": False, "status": "config_missing", "provider": "fcm", "message": f"FCM v1 dependency/config error: {type(exc).__name__}"}
+    return {"ok": False, "status": "config_missing", "provider": "fcm", "message": "FCM credentials are not configured."}
+
+
+def _send_apns_token(token: str, notification: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    token = str(token or "").strip()
+    if not token:
+        return {"ok": False, "status": "skipped_no_device", "message": "APNs token missing."}
+    if not _apns_configured():
+        return {"ok": False, "status": "config_missing", "provider": "apns", "message": "APNs credentials are not configured."}
+    try:
+        import httpx
+        import jwt
+    except Exception as exc:
+        return {"ok": False, "status": "config_missing", "provider": "apns", "message": f"APNs dependency missing: {type(exc).__name__}"}
+    team_id = _env_value("APNS_TEAM_ID")
+    key_id = _env_value("APNS_KEY_ID")
+    private_key = _env_value("APNS_PRIVATE_KEY").replace("\\n", "\n")
+    bundle_id = _env_value("APNS_BUNDLE_ID")
+    sandbox = str(os.getenv("APNS_USE_SANDBOX", "")).strip().lower() in {"1", "true", "yes", "on"}
+    host = "https://api.sandbox.push.apple.com" if sandbox else "https://api.push.apple.com"
+    try:
+        auth_token = jwt.encode({"iss": team_id, "iat": int(datetime.utcnow().timestamp())}, private_key, algorithm="ES256", headers={"kid": key_id})
+        body = {
+            "aps": {
+                "alert": {"title": notification.get("title") or "PulseSoc", "body": payload.get("body") or ""},
+                "sound": "default" if payload.get("sound_key") != "silent" else None,
+                "badge": _int(payload.get("badge"), 0),
+                "category": str(payload.get("category") or "system")[:80],
+            },
+            "deep_link": payload.get("deep_link") or "/pulse/notifications",
+            "notification_id": str(notification.get("id") or ""),
+        }
+        if body["aps"]["sound"] is None:
+            body["aps"].pop("sound", None)
+        with httpx.Client(http2=True, timeout=10) as client:
+            response = client.post(
+                f"{host}/3/device/{token}",
+                headers={"authorization": f"bearer {auth_token}", "apns-topic": bundle_id, "apns-push-type": "alert", "apns-priority": "10" if notification.get("priority") in {"urgent", "high"} else "5"},
+                json=body,
+            )
+        if 200 <= response.status_code < 300:
+            return {"ok": True, "status": "sent", "provider": "apns", "provider_message_id": response.headers.get("apns-id", "")}
+        status = "invalid_device" if response.status_code in {400, 410} and "BadDeviceToken" in response.text or "Unregistered" in response.text else "failed"
+        return {"ok": False, "status": status, "provider": "apns", "message": response.text[:300], "http_status": response.status_code}
+    except Exception as exc:
+        return {"ok": False, "status": "failed", "provider": "apns", "message": str(exc)[:300], "error_type": type(exc).__name__}
+
+
+def _dispatch_push(cur: Any, notification: dict[str, Any], prefs: dict[str, Any]) -> dict[str, Any]:
+    user_id = int(notification.get("recipient_user_id") or notification.get("user_id") or 0)
+    devices = _active_device_tokens(cur, user_id)
+    legacy_count = _legacy_push_subscription_count(cur, user_id)
+    if not devices and not legacy_count:
+        return {"ok": False, "status": "skipped_no_device", "provider": "push_router", "message": "No active push device or subscription."}
+    payload = _push_payload(notification, prefs)
+    preview_body = _notification_public_preview(notification, prefs)
+    results = []
+    if legacy_count:
+        results.append(push_service.send_push(user_id, notification.get("title") or "PulseSoc", preview_body, payload, push_type=str(notification.get("type") or "notification")))
+    fcm_tokens = [d for d in devices if (str(d.get("push_provider") or "").lower() == "fcm" or str(d.get("platform") or "").lower() == "android") and d.get("push_token")]
+    apns_tokens = [d for d in devices if (str(d.get("push_provider") or "").lower() == "apns" or str(d.get("platform") or "").lower() == "ios") and d.get("push_token")]
+    for device in fcm_tokens:
+        results.append(_send_fcm_token(str(device.get("push_token") or ""), notification, {**payload, "body": preview_body}))
+    for device in apns_tokens:
+        results.append(_send_apns_token(str(device.get("push_token") or ""), notification, {**payload, "body": preview_body}))
+    if not results:
+        return {"ok": False, "status": "skipped_no_device", "provider": "push_router", "message": "No deliverable push token was found."}
+    if any(result.get("ok") for result in results):
+        return {"ok": True, "status": "sent", "provider": "push_router", "provider_response": results, "sent": sum(1 for r in results if r.get("ok"))}
+    statuses = {str(result.get("status") or "") for result in results}
+    if statuses <= {"config_missing", "not_configured"}:
+        return {"ok": False, "status": "config_missing", "provider": "push_router", "message": "Push providers are not configured.", "provider_response": results}
+    if "invalid_device" in statuses or "invalid" in statuses:
+        return {"ok": False, "status": "invalid_device", "provider": "push_router", "message": "One or more push tokens are invalid.", "provider_response": results}
+    if "not_configured" in statuses and not _web_push_configured() and not _fcm_configured() and not _apns_configured():
+        return {"ok": False, "status": "config_missing", "provider": "push_router", "message": "Push provider variables are missing.", "provider_response": results}
+    return {"ok": False, "status": "failed", "provider": "push_router", "message": "Push delivery failed.", "provider_response": results}
+
+
+def _notification_email_html(notification: dict[str, Any], body: str) -> str:
+    title = html.escape(str(notification.get("title") or "PulseSoc update"))
+    safe_body = html.escape(body).replace("\n", "<br>")
+    link = sanitize_deep_link(notification.get("deep_link") or "/pulse/notifications")
+    return (
+        "<div style='font-family:Inter,system-ui,sans-serif;background:#050b14;color:#f2fbff;padding:24px'>"
+        "<div style='max-width:620px;margin:auto;border:1px solid rgba(110,223,246,.28);border-radius:18px;padding:22px;background:#081323'>"
+        f"<h1 style='margin:0 0 12px'>{title}</h1><p style='line-height:1.55;color:#cfe8f4'>{safe_body}</p>"
+        f"<p><a href='https://pulsesoc.com{html.escape(link)}' style='display:inline-block;background:#36e58f;color:#041019;text-decoration:none;font-weight:800;padding:12px 16px;border-radius:12px'>Open PulseSoc</a></p>"
+        "<p style='font-size:12px;color:#9fb5c0'>You received this because your PulseSoc notification settings allow this alert.</p>"
+        "</div></div>"
+    )
+
+
+def _dispatch_email(cur: Any, notification: dict[str, Any], prefs: dict[str, Any]) -> dict[str, Any]:
+    category = str(notification.get("category") or "system")
+    priority = str(notification.get("priority") or "normal")
+    metadata = notification.get("metadata") if isinstance(notification.get("metadata"), dict) else {}
+    if category not in EMAIL_DEFAULT_CATEGORIES and priority not in {"urgent", "high"} and not metadata.get("email_allowed"):
+        return {"ok": False, "status": "skipped_policy", "provider": "brevo_email", "message": "Email is limited to important notification categories."}
+    if not _brevo_email_configured():
+        return {"ok": False, "status": "config_missing", "provider": "brevo_email", "message": "Brevo email is not configured.", "provider_response": email_service.provider_status()}
+    contact = _get_user_contact(cur, int(notification.get("recipient_user_id") or notification.get("user_id") or 0))
+    if not contact.get("email"):
+        return {"ok": False, "status": "skipped_no_contact", "provider": "brevo_email", "message": "Recipient email is missing."}
+    body = _notification_public_preview(notification, prefs)
+    result = email_service.send_email(
+        contact["email"],
+        str(notification.get("title") or "PulseSoc update")[:180],
+        _notification_email_html(notification, body),
+        body,
+        email_type=str(notification.get("type") or "notification"),
+        user_id=int(notification.get("recipient_user_id") or notification.get("user_id") or 0),
+        metadata={"notification_id": notification.get("id"), "category": category},
+        channel="security" if category == "security" else "transactional",
+    )
+    if result.get("ok"):
+        return {"ok": True, "status": "sent", "provider": "brevo_email", "provider_message_id": result.get("message_id") or "", "provider_response": result}
+    status = "config_missing" if result.get("error_code") == "brevo_not_configured" else "failed"
+    return {"ok": False, "status": status, "provider": "brevo_email", "message": result.get("error") or "Brevo email failed.", "provider_response": result}
+
+
+def _dispatch_sms(cur: Any, notification: dict[str, Any], prefs: dict[str, Any]) -> dict[str, Any]:
+    category = str(notification.get("category") or "system")
+    priority = str(notification.get("priority") or "normal")
+    metadata = notification.get("metadata") if isinstance(notification.get("metadata"), dict) else {}
+    if category not in SMS_DEFAULT_CATEGORIES and priority != "urgent" and not metadata.get("sms_allowed"):
+        return {"ok": False, "status": "skipped_policy", "provider": "brevo_sms", "message": "SMS is limited to urgent or explicitly enabled notification categories."}
+    contact = _get_user_contact(cur, int(notification.get("recipient_user_id") or notification.get("user_id") or 0))
+    phone = sms_service.normalize_phone(contact.get("phone") or "")
+    if not phone or not contact.get("phone_verified") or not contact.get("sms_opt_in"):
+        return {"ok": False, "status": "skipped_no_contact", "provider": "brevo_sms", "message": "Verified SMS opt-in phone number is missing."}
+    if not _brevo_sms_configured():
+        return {"ok": False, "status": "config_missing", "provider": "brevo_sms", "message": "Brevo SMS is not configured."}
+    text = f"PulseSoc: {_notification_public_preview(notification, prefs)} {sanitize_deep_link(notification.get('deep_link') or '/pulse/notifications')}"[:480]
+    result = sms_service.send_sms(phone, text, purpose=str(notification.get("type") or "notification"), user_id=int(notification.get("recipient_user_id") or notification.get("user_id") or 0))
+    if result.get("ok"):
+        return {"ok": True, "status": "sent", "provider": "brevo_sms", "provider_response": result}
+    status = result.get("status") or "failed"
+    mapped = "config_missing" if status in {"not_configured"} else "skipped_no_contact" if status in {"invalid_phone"} else "failed"
+    return {"ok": False, "status": mapped, "provider": "brevo_sms", "message": result.get("message") or "Brevo SMS failed.", "provider_response": result}
+
+
+def _dispatch_job(cur: Any, job: dict[str, Any], notification: dict[str, Any], prefs: dict[str, Any]) -> dict[str, Any]:
+    channel = str(job.get("channel") or "in_app")
+    if channel == "in_app":
+        return {"ok": True, "status": "sent", "provider": "pulse_in_app", "message": "In-app notification is available."}
+    if channel == "push":
+        return _dispatch_push(cur, notification, prefs)
+    if channel == "email":
+        return _dispatch_email(cur, notification, prefs)
+    if channel == "sms":
+        return _dispatch_sms(cur, notification, prefs)
+    if channel == "system":
+        return {"ok": True, "status": "sent", "provider": "internal", "message": "System notification recorded."}
+    return {"ok": False, "status": "config_missing", "provider": PROVIDER_PLACEHOLDERS.get(channel, channel), "message": f"{channel} adapter is not enabled yet."}
+
+
+def _update_notification_delivery_state(cur: Any, notification_id: int) -> None:
+    cur.execute("SELECT status FROM notification_delivery_jobs WHERE notification_id=?", (int(notification_id),))
+    statuses = [str(_row_get(row, "status", row[0] if row else "") or "") for row in cur.fetchall()]
+    if not statuses:
+        return
+    remaining = [status for status in statuses if status in {"queued", "scheduled", "retry"}]
+    sent = [status for status in statuses if status in {"sent", "ready"}]
+    skipped = [status for status in statuses if status.startswith("skipped") or status == "config_missing"]
+    failed = [status for status in statuses if status in {"failed", "invalid_device"}]
+    if remaining:
+        state = "queued"
+    elif sent and not failed:
+        state = "delivered"
+    elif sent:
+        state = "partial"
+    elif skipped and not failed:
+        state = "skipped"
+    else:
+        state = "failed"
+    now = now_iso()
+    cur.execute(
+        """
+        UPDATE notifications
+        SET delivery_status=?, delivered_at=CASE WHEN ? IN ('delivered','partial') THEN COALESCE(delivered_at, ?) ELSE delivered_at END,
+            failed_at=CASE WHEN ?='failed' THEN COALESCE(failed_at, ?) ELSE failed_at END,
+            updated_at=?
+        WHERE id=?
+        """,
+        (state, state, now, state, now, now, int(notification_id)),
+    )
+
+
+def _record_job_result(cur: Any, job: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    now = now_iso()
+    status = str(result.get("status") or ("sent" if result.get("ok") else "failed"))
+    retry_count = _int(job.get("retry_count"), 0)
+    max_attempts = max(1, _int(job.get("max_attempts"), 3))
+    if status in TEMPORARY_FAILURE_STATUSES and retry_count + 1 < max_attempts:
+        final_status = "retry"
+        next_retry_at = _delivery_retry_at(retry_count + 1)
+        failed_at = ""
+    else:
+        final_status = status
+        next_retry_at = ""
+        failed_at = now if not result.get("ok") and final_status not in {"sent", "ready"} else ""
+    provider = str(result.get("provider") or job.get("provider") or PROVIDER_PLACEHOLDERS.get(str(job.get("channel") or ""), ""))[:80]
+    provider_message_id = str(result.get("provider_message_id") or "")[:240]
+    message = str(result.get("message") or result.get("error") or result.get("failure_reason") or "")[:1000]
+    cur.execute(
+        """
+        UPDATE notification_delivery_jobs
+        SET status=?, provider=?, retry_count=?, next_retry_at=?, attempted_at=?, sent_at=?,
+            failed_at=?, failed_reason=?, failure_reason=?, provider_message_id=?, provider_response_json=?, updated_at=?
+        WHERE id=?
+        """,
+        (
+            final_status,
+            provider,
+            retry_count + (0 if final_status in {"sent", "ready"} else 1),
+            next_retry_at,
+            now,
+            now if final_status == "sent" else "",
+            failed_at,
+            message,
+            message,
+            provider_message_id,
+            _json_dumps(result),
+            now,
+            int(job.get("id") or 0),
+        ),
+    )
+    _update_notification_delivery_state(cur, int(job.get("notification_id") or 0))
+    return {"job_id": int(job.get("id") or 0), "channel": job.get("channel"), "status": final_status, "provider": provider}
+
+
+def process_delivery_jobs(limit: int = 50, channels: list[str] | tuple[str, ...] | None = None) -> dict[str, Any]:
+    conn = db_service.connect()
+    ensure_schema(conn)
+    cur = conn.cursor()
+    now = now_iso()
+    normalized_channels = [ADAPTER_CHANNEL_ALIASES.get(str(channel).lower(), str(channel).lower()) for channel in (channels or [])]
+    clauses = ["status IN ('queued','scheduled','retry')", "(scheduled_at IS NULL OR scheduled_at='' OR scheduled_at<=?)", "(next_retry_at IS NULL OR next_retry_at='' OR next_retry_at<=?)"]
+    params: list[Any] = [now, now]
+    if normalized_channels:
+        placeholders = ",".join(["?"] * len(normalized_channels))
+        clauses.append(f"channel IN ({placeholders})")
+        params.extend(normalized_channels)
+    params.append(max(1, min(int(limit or 50), 100)))
+    cur.execute(
+        f"""
+        SELECT *
+        FROM notification_delivery_jobs
+        WHERE {' AND '.join(clauses)}
+        ORDER BY id ASC
+        LIMIT ?
+        """,
+        tuple(params),
+    )
+    jobs = [dict(row) if hasattr(row, "keys") else {
+        "id": row[0],
+        "notification_id": row[1],
+        "user_id": row[2],
+        "recipient_user_id": row[3],
+        "channel": row[4],
+        "provider": row[5],
+        "status": row[6],
+        "retry_count": row[8],
+        "max_attempts": row[9],
+    } for row in cur.fetchall()]
+    processed = []
+    for job in jobs:
+        cur.execute("SELECT * FROM notifications WHERE id=? AND recipient_user_id=? AND deleted_at IS NULL LIMIT 1", (int(job.get("notification_id") or 0), int(job.get("recipient_user_id") or job.get("user_id") or 0)))
+        row = cur.fetchone()
+        if not row:
+            processed.append(_record_job_result(cur, job, {"ok": False, "status": "skipped", "provider": job.get("provider"), "message": "Notification no longer exists."}))
+            conn.commit()
+            continue
+        notification = format_notification(row)
+        prefs = _get_preferences_with_cursor(cur, int(notification.get("recipient_user_id") or notification.get("user_id") or 0))
+        try:
+            result = _dispatch_job(cur, job, notification, prefs)
+        except Exception as exc:
+            logging.exception("PULSESOC_NOTIFICATION_DELIVERY_JOB_FAILED job_id=%s", job.get("id"))
+            result = {"ok": False, "status": "failed", "provider": job.get("provider"), "message": str(exc)[:300], "error_type": type(exc).__name__}
+        processed.append(_record_job_result(cur, job, result))
+        conn.commit()
+    conn.close()
+    counts: dict[str, int] = {}
+    for item in processed:
+        counts[item["status"]] = counts.get(item["status"], 0) + 1
+    return {"ok": True, "processed": len(processed), "results": processed, "counts": counts, "provider_status": _provider_ready_summary()}
+
+
 def delivery_router_status() -> dict[str, Any]:
     return {
         "ok": True,
         "channels": sorted(DELIVERY_CHANNELS),
         "in_app": "ready",
-        "push": "phase2_adapter_placeholder",
-        "email": "phase2_adapter_placeholder",
-        "sms": "phase2_adapter_placeholder",
+        "push": "ready" if any(_provider_ready_summary()[provider]["ready"] for provider in ("web_push", "fcm", "apns")) else "config_missing",
+        "email": "ready" if _provider_ready_summary()["brevo_email"]["ready"] else "config_missing",
+        "sms": "ready" if _provider_ready_summary()["brevo_sms"]["ready"] else "config_missing",
         "call": "phase2_adapter_placeholder",
-        "providers_configured": {
-            "apns": bool(os.getenv("APNS_KEY_ID") and os.getenv("APNS_TEAM_ID")),
-            "fcm": bool(os.getenv("FCM_SERVER_KEY") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")),
-            "web_push": bool(os.getenv("VAPID_PUBLIC_KEY") and os.getenv("VAPID_PRIVATE_KEY")),
-            "brevo_email": bool(os.getenv("BREVO_API_KEY")),
-            "brevo_sms": bool(os.getenv("BREVO_API_KEY") and os.getenv("BREVO_SMS_SENDER")),
-            "twilio": bool(os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AUTH_TOKEN")),
-        },
+        "adapters": _provider_ready_summary(),
+        "providers_configured": {key: value["ready"] for key, value in _provider_ready_summary().items()},
     }
 
 
@@ -1284,10 +1948,12 @@ def admin_simulate_notification(
     body: str | None = None,
     deep_link: str | None = None,
     metadata: dict[str, Any] | None = None,
+    channels: list[str] | tuple[str, ...] | None = None,
+    deliver_now: bool = False,
 ) -> dict[str, Any]:
     metadata = dict(metadata or {})
     metadata.update({"admin_test": True, "admin_user_id": int(admin_user_id or 0)})
-    return intake_event(
+    result = intake_event(
         event_type=event_type,
         recipient_user_id=int(recipient_user_id),
         actor_user_id=0,
@@ -1297,6 +1963,9 @@ def admin_simulate_notification(
         body=body or "This is a PulseSoc notification foundation test.",
         deep_link=deep_link or "/pulse/notifications",
         metadata=metadata,
-        channels=["in_app"],
+        channels=list(channels or ["in_app"]),
         dedupe_key=f"admin-test-{admin_user_id}-{recipient_user_id}-{event_type}-{secrets.token_hex(4)}",
     )
+    if deliver_now:
+        result["delivery_processing"] = process_delivery_jobs(limit=20)
+    return result

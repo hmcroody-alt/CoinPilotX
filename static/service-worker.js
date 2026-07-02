@@ -1,4 +1,4 @@
-const CACHE_NAME = "coinplotx-cache-v22-launch-readiness";
+const CACHE_NAME = "coinplotx-cache-v23-notification-delivery-adapters";
 const DEBUG_SW = false;
 const STATIC_ASSETS = [
   "/manifest.json",
@@ -193,17 +193,17 @@ self.addEventListener("push", (event) => {
   }
   const data = payload.data || {};
   const conversationId = data.conversationId || data.conversation_id || payload.conversationId || payload.conversation_id;
-  const targetUrl = data.web_url || data.url || data.target_url || data.deep_link || payload.web_url || payload.url || payload.target_url || payload.deep_link || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications");
+  const targetUrl = safeNotificationUrl(data.web_url || data.url || data.target_url || data.deep_link || payload.web_url || payload.url || payload.target_url || payload.deep_link || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications"));
   const title = payload.title || "PulseSoc Alert";
   const options = {
-    body: payload.body || payload.message || "New CoinPlotXAI intelligence update.",
+    body: payload.body || payload.message || "New PulseSoc update.",
     icon: payload.icon || "/static/brand/pulsesoc-icon-192-20260606.png",
     badge: payload.badge || "/static/brand/pulsesoc-icon-192-20260606.png",
-    vibrate: payload.vibrate || [200, 100, 200],
-    data: { ...data, url: targetUrl, web_url: targetUrl, deepLink: targetUrl },
+    vibrate: payload.vibrate || payload.vibration || data.vibrate || data.vibration || [200, 100, 200],
+    data: { ...data, url: targetUrl, web_url: targetUrl, deepLink: targetUrl, deep_link: targetUrl, notification_id: payload.notification_id || data.notification_id || "" },
     tag: payload.tag || (conversationId ? `pulsesoc-message-${conversationId}` : "coinplotxai-alert"),
     renotify: payload.renotify !== false,
-    silent: payload.silent === true ? true : false,
+    silent: payload.silent === true || payload.sound === "silent" || data.sound_key === "silent",
     timestamp: payload.timestamp || Date.now(),
     actions: payload.actions || [
       { action: "open", title: conversationId ? "Open Chat" : "Open Alerts" },
@@ -213,12 +213,31 @@ self.addEventListener("push", (event) => {
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
+function safeNotificationUrl(rawUrl) {
+  try {
+    const value = String(rawUrl || "/pulse/notifications").trim();
+    if (!value || /[\r\n\t]/.test(value) || /^(javascript|data|blob|file):/i.test(value) || value.startsWith("//")) {
+      return "/pulse/notifications";
+    }
+    const url = value.startsWith("/") ? new URL(value, self.location.origin) : new URL(value);
+    if (url.origin !== self.location.origin && !/(^|\.)pulsesoc\.com$/i.test(url.hostname)) {
+      return "/pulse/notifications";
+    }
+    if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/static/") || url.pathname.startsWith("/admin/")) {
+      return "/pulse/notifications";
+    }
+    return `${url.pathname}${url.search}${url.hash}` || "/pulse/notifications";
+  } catch (error) {
+    return "/pulse/notifications";
+  }
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   if (event.action === "dismiss") return;
   const data = event.notification.data || {};
   const conversationId = data.conversationId || data.conversation_id;
-  const url = data.web_url || data.url || data.target_url || data.deep_link || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications");
+  const url = safeNotificationUrl(data.web_url || data.url || data.target_url || data.deep_link || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications"));
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {

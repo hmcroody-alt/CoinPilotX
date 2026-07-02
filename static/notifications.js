@@ -692,6 +692,59 @@
     return outputArray;
   }
 
+  function showPushPermissionOnboarding() {
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector("[data-pulse-push-onboarding]");
+      if (existing) existing.remove();
+      const overlay = document.createElement("div");
+      overlay.dataset.pulsePushOnboarding = "true";
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute("aria-label", "Enable PulseSoc notifications");
+      overlay.innerHTML = `
+        <div class="pulse-push-onboarding__panel">
+          <span class="pulse-push-onboarding__kicker">PulseSoc Signal Lock</span>
+          <h2>Turn on notifications?</h2>
+          <p>PulseSoc can alert you about messages, calls, Live invites, security alerts, creator payouts, and important account updates.</p>
+          <p class="pulse-push-onboarding__fine">You control channels in Settings. We will ask the browser permission only after you choose Enable.</p>
+          <div class="pulse-push-onboarding__actions">
+            <button type="button" data-push-onboarding-cancel>Not now</button>
+            <button type="button" data-push-onboarding-enable>Enable alerts</button>
+          </div>
+        </div>
+      `;
+      const style = document.createElement("style");
+      style.textContent = `
+        [data-pulse-push-onboarding]{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:end center;padding:18px;background:rgba(2,8,18,.62);backdrop-filter:blur(16px)}
+        .pulse-push-onboarding__panel{width:min(100%,460px);border:1px solid rgba(110,223,246,.32);border-radius:22px;background:linear-gradient(145deg,rgba(7,19,33,.97),rgba(12,28,48,.94));box-shadow:0 24px 90px rgba(0,0,0,.45),0 0 42px rgba(54,229,143,.11);padding:18px;color:#f2fbff}
+        .pulse-push-onboarding__kicker{display:inline-flex;border:1px solid rgba(54,229,143,.32);border-radius:999px;padding:5px 9px;color:#baffdf;background:rgba(54,229,143,.1);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}
+        .pulse-push-onboarding__panel h2{font-size:26px;line-height:1;margin:14px 0 8px;letter-spacing:0}
+        .pulse-push-onboarding__panel p{margin:0 0 10px;color:#c7dbe6;line-height:1.45}
+        .pulse-push-onboarding__fine{font-size:13px;color:#9fb5c0!important}
+        .pulse-push-onboarding__actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+        .pulse-push-onboarding__actions button{min-height:46px;border-radius:14px;border:1px solid rgba(110,223,246,.24);background:rgba(255,255,255,.06);color:#f2fbff;font:inherit;font-weight:900}
+        .pulse-push-onboarding__actions [data-push-onboarding-enable]{background:linear-gradient(135deg,#36e58f,#6edff6);color:#03121b;border-color:transparent}
+        @media(min-width:720px){[data-pulse-push-onboarding]{place-items:center}.pulse-push-onboarding__panel{padding:22px}}
+      `;
+      overlay.appendChild(style);
+      function cleanup() {
+        overlay.remove();
+      }
+      overlay.addEventListener("click", event => {
+        if (event.target === overlay || event.target.closest("[data-push-onboarding-cancel]")) {
+          cleanup();
+          reject(new Error("Notification permission request was cancelled."));
+        }
+        if (event.target.closest("[data-push-onboarding-enable]")) {
+          cleanup();
+          resolve(true);
+        }
+      });
+      document.body.appendChild(overlay);
+      overlay.querySelector("[data-push-onboarding-enable]")?.focus();
+    });
+  }
+
   async function subscribePush() {
     if (window.PulseSocNative && typeof window.PulseSocNative.registerPush === "function") {
       const pendingNativeResult = waitForNativePushResult();
@@ -711,8 +764,9 @@
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
       throw new Error("This browser does not support web push here.");
     }
+    await showPushPermissionOnboarding();
     const permission = await Notification.requestPermission();
-    if (permission !== "granted") throw new Error("Push permission was not granted.");
+    if (permission !== "granted") throw new Error("Push permission was not granted. Re-enable notifications in your browser or device settings, then try again.");
     const keyPayload = await fetch("/api/push/public-key", { cache: "no-store", credentials: "same-origin" }).then(r => r.json());
     if (!keyPayload.public_key) throw new Error("Push keys are not configured yet.");
     const registration = await navigator.serviceWorker.register("/static/service-worker.js");
@@ -724,7 +778,13 @@
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
-      body: JSON.stringify(subscription)
+      body: JSON.stringify({
+        ...subscription.toJSON(),
+        platform: "pwa",
+        push_provider: "web_push",
+        permission,
+        app_version: document.documentElement.dataset.appVersion || ""
+      })
     });
     const payload = await response.json();
     if (!response.ok || !payload.ok) throw new Error(payload.message || "Push subscription failed.");

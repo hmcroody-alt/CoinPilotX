@@ -26585,6 +26585,8 @@ def api_admin_notifications_test_event():
         body=payload.get("body"),
         deep_link=payload.get("deep_link") or payload.get("url") or "/pulse/notifications",
         metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+        channels=payload.get("channels") if isinstance(payload.get("channels"), list) else ["in_app"],
+        deliver_now=bool(payload.get("deliver_now")),
     )
     log_admin_audit(
         admin.get("id"),
@@ -26592,6 +26594,28 @@ def api_admin_notifications_test_event():
         "notification",
         str(result.get("notification_id") or ""),
         {"recipient_user_id": recipient_user_id, "event_type": event_type, "ok": result.get("ok")},
+    )
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response, (200 if result.get("ok") else 400)
+
+
+@webhook_app.route("/api/admin/notifications/process-delivery", methods=["POST"])
+def api_admin_notifications_process_delivery():
+    admin, denied = require_admin_api("system.view")
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result = pulsesoc_notification_system.process_delivery_jobs(
+        limit=safe_int(payload.get("limit"), 50),
+        channels=payload.get("channels") if isinstance(payload.get("channels"), list) else None,
+    )
+    log_admin_audit(
+        admin.get("id"),
+        "notification_delivery_jobs_processed",
+        "notification",
+        "delivery_jobs",
+        {"ok": result.get("ok"), "processed": result.get("processed"), "counts": result.get("counts")},
     )
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
@@ -27126,7 +27150,7 @@ def api_push_subscribe():
 
 @webhook_app.route("/api/push/public-key", methods=["GET"])
 def api_push_public_key():
-    response = jsonify({"ok": True, "public_key": os.getenv("VAPID_PUBLIC_KEY") or ""})
+    response = jsonify({"ok": True, "public_key": os.getenv("WEB_PUSH_PUBLIC_KEY") or os.getenv("VAPID_PUBLIC_KEY") or ""})
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
@@ -27185,7 +27209,7 @@ def api_push_status():
         "active_subscriptions": active_subscriptions,
         "active_devices": max(active_devices, int(os_device_status.get("notification_os_active_devices") or 0)),
         "notification_os_active_devices": int(os_device_status.get("notification_os_active_devices") or 0),
-        "web_push_configured": bool(os.getenv("VAPID_PUBLIC_KEY")),
+        "web_push_configured": bool((os.getenv("WEB_PUSH_PUBLIC_KEY") or os.getenv("VAPID_PUBLIC_KEY")) and (os.getenv("WEB_PUSH_PRIVATE_KEY") or os.getenv("VAPID_PRIVATE_KEY"))),
         "expo_supported": True,
     })
     response.headers["Cache-Control"] = "no-store, max-age=0"

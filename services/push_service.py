@@ -34,6 +34,18 @@ def _push_trace_enabled():
     return str(os.getenv("PUSH_TRACE_ENABLED", "1")).lower() not in {"0", "false", "off", "no"}
 
 
+def _vapid_public_key():
+    return (os.getenv("WEB_PUSH_PUBLIC_KEY") or os.getenv("VAPID_PUBLIC_KEY") or "").strip()
+
+
+def _vapid_private_key():
+    return (os.getenv("WEB_PUSH_PRIVATE_KEY") or os.getenv("VAPID_PRIVATE_KEY") or "").strip()
+
+
+def _vapid_subject():
+    return (os.getenv("WEB_PUSH_SUBJECT") or os.getenv("VAPID_SUBJECT") or "mailto:support@pulsesoc.com").strip()
+
+
 def _endpoint_hash(endpoint):
     return hashlib.sha256(str(endpoint or "").encode("utf-8")).hexdigest()[:16] if endpoint else ""
 
@@ -693,7 +705,7 @@ def send_push(user_id, title, body, data=None, push_type="general"):
             else:
                 failures.append(expo_result.get("message", "Expo push failed."))
             continue
-        if not os.getenv("VAPID_PUBLIC_KEY") or not os.getenv("VAPID_PRIVATE_KEY"):
+        if not _vapid_public_key() or not _vapid_private_key():
             failures.append("VAPID push variables are not configured.")
             _trace("provider_response", trace_id=trace_id, user_id=int(user_id or 0), subscription_id=int(sub_id or 0), endpoint_hash=_endpoint_hash(endpoint), provider="webpush", status="not_configured", provider_error="missing_vapid")
             continue
@@ -709,8 +721,8 @@ def send_push(user_id, title, body, data=None, push_type="general"):
             webpush(
                 subscription_info=subscription,
                 data=json.dumps(payload),
-                vapid_private_key=os.getenv("VAPID_PRIVATE_KEY"),
-                vapid_claims={"sub": os.getenv("VAPID_SUBJECT", "mailto:support@pulsesoc.com")},
+                vapid_private_key=_vapid_private_key(),
+                vapid_claims={"sub": _vapid_subject()},
                 timeout=10,
             )
             sent += 1
