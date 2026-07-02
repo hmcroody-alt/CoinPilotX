@@ -223,6 +223,7 @@ from services import (
     mobile_ux_engine,
     news_service,
     notification_service,
+    pulsesoc_notification_system,
     notification_health_engine,
     notification_orchestrator as notification_orchestrator_service,
     portfolio_service,
@@ -9620,7 +9621,7 @@ def notifications_page():
     user = require_account()
     if not user:
         return redirect(url_for("login_page", next="/notifications"))
-    payload = notification_service.list_notifications(user["user_id"])
+    payload = pulsesoc_notification_system.list_notifications(user["user_id"])
     rows = "".join(
         f"<article class='profile-card'><h3>{clean_html(item.get('title') or 'Notification')}</h3><p>{clean_html(item.get('message') or '')}</p><p class='muted'>{smart_time_html(item.get('created_at'))}</p></article>"
         for item in payload.get("notifications", [])
@@ -26438,6 +26439,43 @@ def admin_alerts_run_check_api():
     return jsonify(result)
 
 
+def _pulse_notification_os_badge_counts(user_id):
+    legacy_counts = notification_service.pulse_badge_counts(user_id)
+    counts = pulsesoc_notification_system.badge_counts(
+        user_id,
+        chat_unread_count=int((legacy_counts or {}).get("chat_unread_count") or 0),
+    )
+    if command_center_client_service.is_enabled():
+        pipeline = command_center_client_service.get_notification_unread_count(user_id)
+        if pipeline.get("available"):
+            pipeline_count = int(pipeline.get("alert_unread_count") or pipeline.get("unread_count") or 0)
+            alert_count = max(int(counts.get("alert_unread_count") or 0), pipeline_count)
+            counts.update({
+                "alert_unread_count": alert_count,
+                "count": alert_count,
+                "unread_count": alert_count,
+                "total_unread_count": alert_count + int(counts.get("chat_unread_count") or 0),
+                "notification_pipeline_available": True,
+            })
+    return counts
+
+
+def _pulse_notification_os_get_or_legacy(user_id, notification_id):
+    note = pulsesoc_notification_system.get_notification(user_id, notification_id)
+    if note:
+        return note, "notification_os"
+    return notification_service.get_pulse_notification(user_id, notification_id), "legacy_pulse"
+
+
+def _pulse_notification_os_mark_read_or_legacy(user_id, notification_id):
+    if pulsesoc_notification_system.get_notification(user_id, notification_id):
+        result = pulsesoc_notification_system.mark_read(user_id, notification_id)
+        result["badge_counts"] = _pulse_notification_os_badge_counts(user_id)
+        result.update(result["badge_counts"])
+        return result
+    return notification_service.mark_pulse_read(user_id, notification_id)
+
+
 @webhook_app.route("/alerts", methods=["GET"])
 def alerts_page():
     user = require_account()
@@ -26454,7 +26492,7 @@ def api_notifications():
         response = jsonify({"ok": False, "message": "Login required."})
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 401
-    response = jsonify(notification_service.list_notifications(user["user_id"]))
+    response = jsonify(pulsesoc_notification_system.list_notifications(user["user_id"]))
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
@@ -26468,7 +26506,7 @@ def api_notifications_read():
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 401
     payload = request.get_json(silent=True) or {}
-    result = notification_service.mark_read(user["user_id"], int(payload.get("notification_id") or payload.get("id") or 0))
+    result = pulsesoc_notification_system.mark_read(user["user_id"], int(payload.get("notification_id") or payload.get("id") or 0))
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
@@ -26482,7 +26520,7 @@ def api_notifications_read_all():
         response = jsonify({"ok": False, "message": "Login required."})
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 401
-    response = jsonify(notification_service.mark_all_read(user["user_id"]))
+    response = jsonify(pulsesoc_notification_system.mark_all_read(user["user_id"]))
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
@@ -26495,13 +26533,15 @@ def api_notifications_test():
         response = jsonify({"ok": False, "message": "Login required."})
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 401
-    result = notification_service.send_user_alert(
-        user["user_id"],
-        "product_updates",
-        "PulseSoc test notification",
-        "Your notification sound, vibration, in-app badge, and PWA push settings are ready to test.",
-        {"url": "/pulse/notifications", "test": True},
+    result = pulsesoc_notification_system.intake_event(
+        event_type="system_announcement",
+        recipient_user_id=user["user_id"],
+        title="PulseSoc test notification",
+        body="Your notification sound, vibration, in-app badge, and PWA push settings are ready to test.",
+        deep_link="/pulse/notifications",
+        metadata={"test": True, "source": "self_test"},
         channels=["in_app", "push"],
+        dedupe_key=f"self-test-{user['user_id']}-{secrets.token_hex(4)}",
     )
     log_product_event(user["user_id"], "test_notification_sent", {"result": result})
     response = jsonify(result)
@@ -26525,6 +26565,39 @@ def api_notifications_test_push():
     return response
 
 
+@webhook_app.route("/api/admin/notifications/test-event", methods=["POST"])
+def api_admin_notifications_test_event():
+    admin, denied = require_admin_api("system.view")
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    recipient_user_id = safe_int(payload.get("recipient_user_id") or payload.get("user_id"), 0)
+    if recipient_user_id <= 0:
+        response = jsonify({"ok": False, "message": "recipient_user_id is required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 400
+    event_type = payload.get("type") or payload.get("event_type") or "system_announcement"
+    result = pulsesoc_notification_system.admin_simulate_notification(
+        admin_user_id=admin.get("id") or 0,
+        recipient_user_id=recipient_user_id,
+        event_type=event_type,
+        title=payload.get("title"),
+        body=payload.get("body"),
+        deep_link=payload.get("deep_link") or payload.get("url") or "/pulse/notifications",
+        metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+    )
+    log_admin_audit(
+        admin.get("id"),
+        "notification_test_event_created",
+        "notification",
+        str(result.get("notification_id") or ""),
+        {"recipient_user_id": recipient_user_id, "event_type": event_type, "ok": result.get("ok")},
+    )
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response, (200 if result.get("ok") else 400)
+
+
 @webhook_app.route("/api/notification-preferences", methods=["GET", "POST"])
 def api_notification_preferences():
     init_db()
@@ -26534,10 +26607,10 @@ def api_notification_preferences():
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 401
     if request.method == "GET":
-        result = notification_service.get_preferences(user["user_id"])
+        result = pulsesoc_notification_system.get_preferences(user["user_id"])
     else:
         payload = request.get_json(silent=True) or {}
-        result = notification_service.update_preferences(user["user_id"], payload.get("preferences") or payload)
+        result = pulsesoc_notification_system.update_preferences(user["user_id"], payload.get("preferences") or payload)
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
@@ -26551,7 +26624,7 @@ def api_pulse_notifications():
         response = jsonify({"ok": False, "message": "Login required."})
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 401
-    result = notification_service.list_pulse_notifications(
+    result = pulsesoc_notification_system.list_notifications(
         user["user_id"],
         limit=safe_int(request.args.get("limit"), 50),
         category=request.args.get("filter") or request.args.get("category") or "all",
@@ -26570,7 +26643,7 @@ def api_pulse_notifications_unread_count():
         response = jsonify({"ok": False, "message": "Login required.", "count": 0})
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 401
-    counts = notification_service.pulse_unread_count(user["user_id"])
+    counts = _pulse_notification_os_badge_counts(user["user_id"])
     if command_center_client_service.is_enabled():
         pipeline = command_center_client_service.get_notification_unread_count(user["user_id"])
         if pipeline.get("available"):
@@ -26596,7 +26669,7 @@ def api_pulse_badge_counts():
         response = jsonify({"ok": False, "message": "Login required.", "alert_unread_count": 0, "chat_unread_count": 0})
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 401
-    counts = notification_service.pulse_badge_counts(user["user_id"])
+    counts = _pulse_notification_os_badge_counts(user["user_id"])
     if command_center_client_service.is_enabled():
         pipeline = command_center_client_service.get_notification_unread_count(user["user_id"])
         if pipeline.get("available"):
@@ -26889,7 +26962,7 @@ def api_pulse_notification_resolve(notification_id):
         response = jsonify({"ok": False, "message": "Login required.", "target_url": PULSE_NOTIFICATION_SAFE_FALLBACK, "trace_id": trace_id})
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 401
-    note = notification_service.get_pulse_notification(user["user_id"], notification_id)
+    note, note_source = _pulse_notification_os_get_or_legacy(user["user_id"], notification_id)
     if not note:
         logging.warning(
             "PULSE_NOTIFICATION_BAD_TARGET trace_id=%s notification_id=%s type=%s target_url=%s user_id=%s fallback=%s",
@@ -26901,8 +26974,9 @@ def api_pulse_notification_resolve(notification_id):
     result = pulse_notification_resolve_target(note, user["user_id"], trace_id)
     payload = request.get_json(silent=True) or {}
     if request.method == "POST" and payload.get("mark_read", True):
-        result["read"] = notification_service.mark_pulse_read(user["user_id"], notification_id)
-        result["badge_counts"] = result["read"].get("badge_counts") or notification_service.pulse_badge_counts(user["user_id"])
+        result["read"] = _pulse_notification_os_mark_read_or_legacy(user["user_id"], notification_id)
+        result["badge_counts"] = result["read"].get("badge_counts") or _pulse_notification_os_badge_counts(user["user_id"])
+    result["source"] = note_source
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
@@ -26963,7 +27037,7 @@ def api_pulse_notifications_read(notification_id=0):
         return response, 401
     payload = request.get_json(silent=True) or {}
     note_id = notification_id or safe_int(payload.get("notification_id") or payload.get("id"), 0)
-    response = jsonify(notification_service.mark_pulse_read(user["user_id"], note_id))
+    response = jsonify(_pulse_notification_os_mark_read_or_legacy(user["user_id"], note_id))
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
@@ -26976,7 +27050,12 @@ def api_pulse_notifications_read_all():
         response = jsonify({"ok": False, "message": "Login required."})
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 401
-    response = jsonify(notification_service.mark_all_pulse_read(user["user_id"]))
+    result = pulsesoc_notification_system.mark_all_read(user["user_id"])
+    legacy = notification_service.mark_all_pulse_read(user["user_id"])
+    result["legacy_pulse"] = legacy.get("updated", 0)
+    result["badge_counts"] = _pulse_notification_os_badge_counts(user["user_id"])
+    result.update(result["badge_counts"])
+    response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
@@ -26992,7 +27071,13 @@ def api_pulse_notifications_delete(notification_id=0):
         return response, 401
     payload = request.get_json(silent=True) or {}
     note_id = notification_id or safe_int(payload.get("notification_id") or payload.get("id"), 0)
-    response = jsonify(notification_service.delete_pulse_notification(user["user_id"], note_id))
+    if pulsesoc_notification_system.get_notification(user["user_id"], note_id):
+        result = pulsesoc_notification_system.delete_notification(user["user_id"], note_id)
+        result["badge_counts"] = _pulse_notification_os_badge_counts(user["user_id"])
+        result.update(result["badge_counts"])
+    else:
+        result = notification_service.delete_pulse_notification(user["user_id"], note_id)
+    response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
@@ -27006,9 +27091,11 @@ def api_pulse_notifications_preferences():
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 401
     if request.method == "PATCH":
-        result = notification_service.update_pulse_preferences(user["user_id"], request.get_json(silent=True) or {})
+        payload = request.get_json(silent=True) or {}
+        result = pulsesoc_notification_system.update_preferences(user["user_id"], payload.get("preferences") or payload)
+        notification_service.update_pulse_preferences(user["user_id"], payload)
     else:
-        result = notification_service.pulse_preferences(user["user_id"])
+        result = pulsesoc_notification_system.get_preferences(user["user_id"])
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
@@ -27025,8 +27112,12 @@ def api_push_subscribe():
         return response, 401
     payload = request.get_json(silent=True) or {}
     result = notification_service.save_pulse_device(user["user_id"], payload, request.headers.get("User-Agent", ""))
+    os_device_result = pulsesoc_notification_system.register_device_token(user["user_id"], payload, request.headers.get("User-Agent", ""))
     if result.get("ok"):
         notification_service.update_preferences(user["user_id"], {"enable_push_notifications": True})
+        pulsesoc_notification_system.update_preferences(user["user_id"], {"enable_push_notifications": True})
+    if os_device_result.get("ok"):
+        result["notification_os_device"] = os_device_result.get("device")
     log_product_event(user["user_id"], "push_subscription_saved", {"ok": result.get("ok")})
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
@@ -27051,7 +27142,10 @@ def api_push_unsubscribe():
         return response, 401
     payload = request.get_json(silent=True) or {}
     result = notification_service.unsubscribe_push(user["user_id"], payload.get("endpoint") or "")
+    os_device_result = pulsesoc_notification_system.disable_device_token(user["user_id"], payload.get("endpoint") or payload.get("device_id") or payload.get("token") or "")
     notification_service.update_preferences(user["user_id"], {"enable_push_notifications": False})
+    pulsesoc_notification_system.update_preferences(user["user_id"], {"enable_push_notifications": False})
+    result["notification_os_device"] = os_device_result
     log_product_event(user["user_id"], "push_subscription_removed", {"ok": result.get("ok")})
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
@@ -27084,11 +27178,13 @@ def api_push_status():
     except Exception:
         active_devices = active_subscriptions
     conn.close()
+    os_device_status = pulsesoc_notification_system.device_status(user["user_id"])
     response = jsonify({
         "ok": True,
         "push_enabled": active_subscriptions > 0,
         "active_subscriptions": active_subscriptions,
-        "active_devices": active_devices,
+        "active_devices": max(active_devices, int(os_device_status.get("notification_os_active_devices") or 0)),
+        "notification_os_active_devices": int(os_device_status.get("notification_os_active_devices") or 0),
         "web_push_configured": bool(os.getenv("VAPID_PUBLIC_KEY")),
         "expo_supported": True,
     })
@@ -66020,14 +66116,14 @@ def pulse_notifications_page():
     active_filter = (request.args.get("filter") or "all").strip().lower()
     if active_filter not in allowed_filters:
         active_filter = "all"
-    payload = notification_service.list_pulse_notifications(user["user_id"], limit=80, category=active_filter, unread_only=False)
+    payload = pulsesoc_notification_system.list_notifications(user["user_id"], limit=80, category=active_filter, unread_only=False)
     notes = payload.get("notifications") or []
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT * FROM pulse_friend_requests WHERE (receiver_user_id=? OR recipient_user_id=?) AND status='pending' ORDER BY created_at DESC", (user["user_id"], user["user_id"]))
     requests = [dict(row) for row in cur.fetchall()]
     conn.close()
     filters = [("all", "All"), ("priority", "Priority"), ("social", "Social"), ("live", "Live"), ("crypto", "Crypto"), ("security", "Security"), ("marketplace", "Marketplace"), ("system", "System")]
-    badge_counts = notification_service.pulse_badge_counts(user["user_id"])
+    badge_counts = _pulse_notification_os_badge_counts(user["user_id"])
     unread_total = int(badge_counts.get("alert_unread_count") or 0)
     chat_unread_total = int(badge_counts.get("chat_unread_count") or 0)
     filter_html = "".join(
@@ -66244,7 +66340,7 @@ def pulse_notification_settings_page():
     user = require_account()
     if not user:
         return redirect(url_for("login_page", next=request.path))
-    prefs = notification_service.pulse_preferences(user["user_id"]).get("preferences", {})
+    prefs = pulsesoc_notification_system.get_preferences(user["user_id"]).get("preferences", {})
     labels = {
         "chat_message": "Chat Messages",
         "group_message": "Group Messages",
@@ -92704,6 +92800,7 @@ def _init_db_impl():
         sent_at TEXT
     )
     """)
+    pulsesoc_notification_system.ensure_schema(conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS alert_delivery_jobs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
