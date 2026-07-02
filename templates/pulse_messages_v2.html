@@ -6,7 +6,7 @@
   <meta name="robots" content="noindex,nofollow">
   <meta name="theme-color" content="#030914">
   <title>PulseSoc Messenger V3 | PulseSoc</title>
-  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=messenger-v3-20260701d">
+  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=messenger-v3-20260701e">
 </head>
 <body data-comm-v2-enabled="{{ 'true' if enabled else 'false' }}">
   <main
@@ -143,67 +143,75 @@
         <div data-ai-output>AI is ready when this conversation has enough context.</div>
       </section>
 
-      <section class="attachment-preview-rail" data-attachment-preview hidden aria-label="Selected attachments"></section>
+      <section class="pulse-message-composer-shell" data-composer-shell data-composer-state="idle" aria-label="Message composer">
+        <div class="pulse-composer-accessory" data-composer-accessory>
+          <section class="attachment-preview-rail" data-attachment-preview hidden aria-label="Selected attachments"></section>
 
-      <section class="voice-recorder" data-voice-panel hidden aria-live="polite">
-        <div class="voice-recorder-main">
-          <span class="voice-dot" aria-hidden="true"></span>
-          <strong data-voice-state>Ready to record</strong>
-          <span data-voice-timer>0:00</span>
+          <section class="voice-recorder" data-voice-panel hidden aria-live="polite">
+            <div class="voice-recorder-main">
+              <span class="voice-dot" aria-hidden="true"></span>
+              <strong data-voice-state>Ready to record</strong>
+              <span data-voice-timer>0:00</span>
+            </div>
+            <div class="voice-waveform" data-voice-waveform aria-label="Voice waveform"></div>
+            <audio data-voice-preview controls preload="metadata" hidden></audio>
+            <div class="voice-actions">
+              <button type="button" data-voice-pause aria-label="Pause voice recording">Pause</button>
+              <button type="button" data-voice-resume aria-label="Resume voice recording" hidden>Resume</button>
+              <button type="button" data-voice-stop aria-label="Preview voice recording">Preview</button>
+              <button type="button" data-voice-discard aria-label="Discard voice recording">Discard</button>
+            </div>
+          </section>
+
+          <section class="attachment-sheet" data-attachment-sheet hidden aria-label="Add attachment">
+            <button type="button" data-attachment-option="photo"><span aria-hidden="true">&#9638;</span><small>Gallery</small></button>
+            <button type="button" data-attachment-option="camera"><span aria-hidden="true">&#9673;</span><small>Camera</small></button>
+            <button type="button" data-attachment-option="video"><span aria-hidden="true">&#9654;</span><small>Video</small></button>
+            <button type="button" data-attachment-option="voice"><span aria-hidden="true">&#9835;</span><small>Voice</small></button>
+            <button type="button" data-attachment-option="file"><span aria-hidden="true">&#128206;</span><small>File</small></button>
+            <button type="button" disabled title="GIF sharing is not enabled yet"><span aria-hidden="true">GIF</span><small>Unavailable</small></button>
+            <button type="button" disabled title="Location sharing is not enabled yet"><span aria-hidden="true">&#8982;</span><small>Location</small></button>
+            <button type="button" disabled title="Poll sharing is not enabled yet"><span aria-hidden="true">&#9776;</span><small>Poll</small></button>
+            <button type="button" disabled title="Music sharing is not enabled yet"><span aria-hidden="true">&#9834;</span><small>Music</small></button>
+            <button type="button" disabled title="Contact sharing is not enabled yet"><span aria-hidden="true">&#9787;</span><small>Contact</small></button>
+            <button type="button" disabled title="More attachment types are not enabled yet"><span aria-hidden="true">&#8943;</span><small>More</small></button>
+          </section>
+
+          <section class="emoji-panel" data-emoji-panel hidden aria-label="Emoji picker">
+            <button type="button" data-emoji-value="😀" aria-label="Grinning face">😀</button>
+            <button type="button" data-emoji-value="😂" aria-label="Laughing face">😂</button>
+            <button type="button" data-emoji-value="😍" aria-label="Heart eyes">😍</button>
+            <button type="button" data-emoji-value="❤️" aria-label="Heart">❤️</button>
+            <button type="button" data-emoji-value="🔥" aria-label="Fire">🔥</button>
+            <button type="button" data-emoji-value="👏" aria-label="Clap">👏</button>
+            <button type="button" data-emoji-value="🙏" aria-label="Thank you">🙏</button>
+            <button type="button" data-emoji-value="👍" aria-label="Thumbs up">👍</button>
+          </section>
         </div>
-        <div class="voice-waveform" data-voice-waveform aria-label="Voice waveform"></div>
-        <audio data-voice-preview controls preload="metadata" hidden></audio>
-        <div class="voice-actions">
-          <button type="button" data-voice-pause>Pause</button>
-          <button type="button" data-voice-resume hidden>Resume</button>
-          <button type="button" data-voice-stop>Stop</button>
-          <button class="primary" type="button" data-voice-send hidden>Send voice note</button>
-          <button type="button" data-voice-discard>Discard</button>
-        </div>
+
+        <form class="composer pulse-message-composer" data-composer>
+          <input type="file" data-file hidden multiple>
+          <input type="file" data-camera-file hidden accept="image/*,video/*" capture="environment">
+          <input type="file" data-photo-file hidden multiple accept="image/*">
+          <input type="file" data-video-file hidden multiple accept="video/*">
+          <input type="file" data-generic-file hidden multiple>
+          <button class="icon-btn attachment-trigger" type="button" data-toggle-attachments title="Add attachment" aria-label="Add attachment">+</button>
+          <label class="composer-input-shell">
+            <span class="sr-only">Type a message</span>
+            <input data-message-input autocomplete="off" enterkeyhint="send" placeholder="Type a message...">
+            <span class="composer-voice-inline" data-composer-voice-inline hidden aria-live="polite">
+              <span class="voice-dot" aria-hidden="true"></span>
+              <strong data-composer-voice-label>Recording</strong>
+              <span data-composer-voice-timer>0:00</span>
+            </span>
+          </label>
+          <button class="icon-btn emoji-trigger" type="button" data-toggle-emoji title="Add emoji" aria-label="Add emoji">☺</button>
+          <button class="icon-btn voice-trigger" type="button" data-voice-start title="Record voice note" aria-label="Record voice note">&#9835;</button>
+          <button class="send-btn" type="submit" aria-label="Send message" data-send-button>&#10148;</button>
+        </form>
+
+        <div class="composer-status" data-status role="status" aria-live="polite"></div>
       </section>
-
-      <section class="attachment-sheet" data-attachment-sheet hidden aria-label="Add attachment">
-        <button type="button" data-attachment-option="photo"><span aria-hidden="true">&#9638;</span><small>Gallery</small></button>
-        <button type="button" data-attachment-option="camera"><span aria-hidden="true">&#9673;</span><small>Camera</small></button>
-        <button type="button" data-attachment-option="video"><span aria-hidden="true">&#9654;</span><small>Video</small></button>
-        <button type="button" data-attachment-option="voice"><span aria-hidden="true">&#9835;</span><small>Voice</small></button>
-        <button type="button" data-attachment-option="file"><span aria-hidden="true">&#128206;</span><small>File</small></button>
-        <button type="button" disabled title="GIF sharing is not enabled yet"><span aria-hidden="true">GIF</span><small>Unavailable</small></button>
-        <button type="button" disabled title="Location sharing is not enabled yet"><span aria-hidden="true">&#8982;</span><small>Location</small></button>
-        <button type="button" disabled title="Poll sharing is not enabled yet"><span aria-hidden="true">&#9776;</span><small>Poll</small></button>
-        <button type="button" disabled title="Music sharing is not enabled yet"><span aria-hidden="true">&#9834;</span><small>Music</small></button>
-        <button type="button" disabled title="Contact sharing is not enabled yet"><span aria-hidden="true">&#9787;</span><small>Contact</small></button>
-        <button type="button" disabled title="More attachment types are not enabled yet"><span aria-hidden="true">&#8943;</span><small>More</small></button>
-      </section>
-
-      <section class="emoji-panel" data-emoji-panel hidden aria-label="Emoji picker">
-        <button type="button" data-emoji-value="😀" aria-label="Grinning face">😀</button>
-        <button type="button" data-emoji-value="😂" aria-label="Laughing face">😂</button>
-        <button type="button" data-emoji-value="😍" aria-label="Heart eyes">😍</button>
-        <button type="button" data-emoji-value="❤️" aria-label="Heart">❤️</button>
-        <button type="button" data-emoji-value="🔥" aria-label="Fire">🔥</button>
-        <button type="button" data-emoji-value="👏" aria-label="Clap">👏</button>
-        <button type="button" data-emoji-value="🙏" aria-label="Thank you">🙏</button>
-        <button type="button" data-emoji-value="👍" aria-label="Thumbs up">👍</button>
-      </section>
-
-      <form class="composer" data-composer>
-        <input type="file" data-file hidden multiple>
-        <input type="file" data-camera-file hidden accept="image/*,video/*" capture="environment">
-        <input type="file" data-photo-file hidden multiple accept="image/*">
-        <input type="file" data-video-file hidden multiple accept="video/*">
-        <input type="file" data-generic-file hidden multiple>
-        <button class="icon-btn attachment-trigger" type="button" data-toggle-attachments title="Add attachment" aria-label="Add attachment">+</button>
-        <label class="composer-input-shell">
-          <span class="sr-only">Type a message</span>
-          <input data-message-input autocomplete="off" enterkeyhint="send" placeholder="Type a message...">
-          <button class="emoji-trigger" type="button" data-toggle-emoji title="Add emoji" aria-label="Add emoji">☺</button>
-        </label>
-        <button class="icon-btn voice-trigger" type="button" data-voice-start title="Record voice note" aria-label="Record voice note">&#9835;</button>
-        <button class="send-btn" type="submit" aria-label="Send message" data-send-button>&#10148;</button>
-      </form>
-
-      <div class="composer-status" data-status role="status" aria-live="polite"></div>
     </section>
 
     <aside class="comm-details" aria-label="Conversation details">
@@ -356,6 +364,6 @@
   <script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script>
   <script src="/static/js/pulse_realtime.js?v=web-capacity-20260619a" defer></script>
   <script src="/static/notifications.js?v=message-live-20260606" defer></script>
-  <script src="/static/js/pulse_messages_v2.js?v=messenger-v3-20260701d" defer></script>
+  <script src="/static/js/pulse_messages_v2.js?v=messenger-v3-20260701e" defer></script>
 </body>
 </html>

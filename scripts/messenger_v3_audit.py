@@ -49,7 +49,10 @@ def run_checks() -> None:
             "thread-head",
             "data-thread-trust",
             "data-messages",
+            "pulse-message-composer-shell",
+            "pulse-composer-accessory",
             "data-composer",
+            "pulse-message-composer",
             "data-toggle-attachments",
             "data-message-input",
             "data-toggle-emoji",
@@ -60,7 +63,13 @@ def run_checks() -> None:
         "Messenger V3 template",
     )
     require(template.index("thread-head") < template.index("data-messages"), "thread header must render before the timeline")
-    require(template.index("data-messages") < template.index("data-composer"), "composer must be part of the initial thread shell")
+    composer_form_index = template.index('class="composer pulse-message-composer"')
+    require(template.index("data-messages") < composer_form_index, "composer must be part of the initial thread shell")
+    require(template.index("pulse-composer-accessory") < composer_form_index, "accessory layer must render above the permanent composer")
+    require(template.index("data-attachment-preview") < composer_form_index, "attachment preview must not replace the composer")
+    require(template.index("data-voice-panel") < composer_form_index, "voice recorder must not replace the composer")
+    require(template.index("data-emoji-panel") < composer_form_index, "emoji panel must not replace the composer")
+    require("data-voice-send" not in template, "voice send must use the permanent composer send button")
     require("href=\"#\"" not in template, "template must not contain href=#")
     require("javascript:void" not in template, "template must not contain javascript:void")
     require("LogiNexus" not in template, "internal design language must not be exposed to users")
@@ -82,6 +91,24 @@ def run_checks() -> None:
             "applyThreadSearch",
             "toggleEmojiPanel",
             "insertEmoji",
+            "COMPOSER_STATES",
+            "currentComposerState",
+            "syncComposerState",
+            "attachment_selected",
+            "attachment_uploading",
+            "recording_voice",
+            "recording_paused",
+            "voice_preview",
+            "voice_uploading",
+            "ensureVoiceReadyForSend",
+            "state.voice.stopResolve",
+            'window.matchMedia("(max-width: 840px)")',
+            "window.visualViewport",
+            'addEventListener("paste"',
+            'addEventListener("drop"',
+            "URL.createObjectURL",
+            "URL.revokeObjectURL",
+            "getTracks?.().forEach",
             "retryFailedMessage",
             'target.closest("[data-conversation-id]")',
             'addEventListener("submit", sendMessage)',
@@ -96,6 +123,11 @@ def run_checks() -> None:
         "Messenger V3 JavaScript",
     )
     require("data-start-call" not in script, "JavaScript must not wire placeholder call routes")
+    require("data-voice-send" not in script, "JavaScript must not wire a separate voice-send panel")
+    require("state.voice.state === \"voice_preview\"" in script, "send path must recognize voice preview state")
+    require("[\"recording_voice\", \"recording_locked\", \"recording_paused\"].includes(state.voice.state)" in script, "send path must stop active recordings before sending")
+    require("pendingVoiceAttachment" in script, "voice messages must render an optimistic voice bubble")
+    require("discardVoiceRecording({ silent: true });" in script, "voice cleanup must run on navigation/conversation changes")
     require("Communications V2 action failed" not in script, "legacy V2 action copy must be removed")
     require("v2 test UI" not in script, "test-only Messenger copy must be removed")
     require("LogiNexus" not in script, "internal design language must not be exposed by JavaScript")
@@ -105,6 +137,14 @@ def run_checks() -> None:
         (
             "overflow-x: hidden",
             "env(safe-area-inset-bottom",
+            ".pulse-message-composer-shell",
+            "position: sticky",
+            "bottom: calc(var(--safe-bottom) + var(--messenger-keyboard-offset, 0px))",
+            ".pulse-composer-accessory",
+            "max-height: min(38vh, 320px)",
+            ".pulse-message-composer",
+            "grid-template-columns: auto minmax(0, 1fr) auto auto auto",
+            ".composer-voice-inline",
             ".conversation-skeleton-list",
             ".message-skeletons",
             ".message.is-mine",
