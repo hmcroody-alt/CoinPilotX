@@ -10,7 +10,7 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import embed_service, media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_moderation_engine, user_context
+from . import embed_service, media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_moderation_engine, pulsesoc_notification_system, user_context
 
 
 REACTIONS = {
@@ -246,6 +246,29 @@ def _public_author(row):
         "premium_verified": bool(premium_mark),
         "premium_mark": premium_mark,
     }
+
+
+def _notification_actor(cur, user_id):
+    try:
+        cur.execute(
+            """
+            SELECT u.user_id, u.display_name AS user_display_name, u.full_name, u.username,
+                   ap.public_player_id AS author_public_player_id
+            FROM users u
+            LEFT JOIN arena_profiles ap ON ap.user_id=u.user_id
+            WHERE u.user_id=?
+            LIMIT 1
+            """,
+            (int(user_id),),
+        )
+        row = _row(cur.fetchone()) or {"user_id": int(user_id)}
+        author = _public_author(row)
+        return {
+            "display_name": author.get("display_name") or f"PulseSoc Member #{int(user_id)}",
+            "public_player_id": author.get("public_player_id") or "",
+        }
+    except Exception:
+        return {"display_name": f"PulseSoc Member #{int(user_id)}", "public_player_id": ""}
 
 
 def _media_for_posts(post_ids):
@@ -1071,6 +1094,15 @@ def add_comment(user_id, post_id, body, parent_comment_id=None, media_ids=None):
         return {"ok": False, "message": "Your comment needs changes before it can be published."}, 400
     conn = user_context.connect()
     cur = conn.cursor()
+    cur.execute("SELECT user_id FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (int(post_id),))
+    owner_row = _row(cur.fetchone()) or {}
+    post_owner_id = int(owner_row.get("user_id") or 0)
+    parent_owner_id = 0
+    if parent_comment_id:
+        cur.execute("SELECT user_id FROM pulse_comments WHERE id=? AND deleted_at IS NULL LIMIT 1", (int(parent_comment_id),))
+        parent_row = _row(cur.fetchone()) or {}
+        parent_owner_id = int(parent_row.get("user_id") or 0)
+    actor = _notification_actor(cur, user_id)
     cur.execute(
         "INSERT INTO pulse_comments (post_id, user_id, parent_comment_id, body, media_ids_json, moderation_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (int(post_id), int(user_id), int(parent_comment_id or 0) or None, body, json.dumps(media_ids or []), moderation.get("status"), _now()),
@@ -1080,6 +1112,30 @@ def add_comment(user_id, post_id, body, parent_comment_id=None, media_ids=None):
     conn.commit()
     conn.close()
     media_service.attach_media_to_message(user_id, comment_id, media_ids or [], context_type="pulse_comment", context_id=str(comment_id))
+    notified = set()
+    for recipient_id in [post_owner_id, parent_owner_id]:
+        if not recipient_id or int(recipient_id) == int(user_id) or recipient_id in notified:
+            continue
+        notified.add(recipient_id)
+        try:
+            pulsesoc_notification_system.notify_post_comment(
+                recipient_user_id=recipient_id,
+                actor_user_id=int(user_id),
+                post_id=int(post_id),
+                comment_id=comment_id,
+                body=body,
+                parent_comment_id=int(parent_comment_id or 0) or None,
+                actor_name=actor.get("display_name") or "",
+                metadata={"media_count": len(media_ids or [])},
+            )
+        except Exception as exc:
+            logging.warning(
+                "PULSE_FEED_COMMENT_NOTIFICATION_FAILED post_id=%s comment_id=%s recipient_user_id=%s error=%s",
+                post_id,
+                comment_id,
+                recipient_id,
+                exc,
+            )
     comments = list_comments(post_id).get("comments", [])
     comment = next((item for item in comments if int(item.get("id") or 0) == comment_id), None)
     return {"ok": True, "comment_id": comment_id, "comment": comment, "comments_count": len(comments), "message": "Comment posted."}, 200
@@ -1159,10 +1215,13 @@ def react(user_id, post_id, reaction_type):
         return {"ok": False, "message": "Choose a supported PulseSoc reaction."}, 400
     conn = user_context.connect()
     cur = conn.cursor()
-    cur.execute("SELECT id FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (int(post_id),))
-    if not cur.fetchone():
+    cur.execute("SELECT id, user_id FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (int(post_id),))
+    post_row = _row(cur.fetchone())
+    if not post_row:
         conn.close()
         return {"ok": False, "message": "Post not found."}, 404
+    post_owner_id = int(post_row.get("user_id") or 0)
+    actor = _notification_actor(cur, user_id)
     cur.execute("SELECT reaction_type FROM pulse_reactions WHERE post_id=? AND user_id=? LIMIT 1", (int(post_id), int(user_id)))
     existing = _row(cur.fetchone())
     if existing and existing.get("reaction_type") == reaction_type:
@@ -1184,6 +1243,23 @@ def react(user_id, post_id, reaction_type):
     conn.commit()
     reactions = _reaction_counts(cur, [int(post_id)]).get(int(post_id), {})
     conn.close()
+    if post_owner_id and int(post_owner_id) != int(user_id):
+        try:
+            pulsesoc_notification_system.notify_post_like(
+                recipient_user_id=post_owner_id,
+                actor_user_id=int(user_id),
+                post_id=int(post_id),
+                reaction_type=reaction_type,
+                actor_name=actor.get("display_name") or "",
+            )
+        except Exception as exc:
+            logging.warning(
+                "PULSE_FEED_REACTION_NOTIFICATION_FAILED post_id=%s recipient_user_id=%s reaction=%s error=%s",
+                post_id,
+                post_owner_id,
+                reaction_type,
+                exc,
+            )
     return {"ok": True, "message": "Reaction added.", "reaction_type": reaction_type, "post_id": int(post_id), "reaction_counts": reactions, "reactions_count": sum(int(v or 0) for v in reactions.values())}, 200
 
 
@@ -1199,12 +1275,29 @@ def follow(follower_user_id, followed_user_id=None, followed_public_player_id=""
         return {"ok": False, "message": "Choose another creator to follow."}, 400
     conn = user_context.connect()
     cur = conn.cursor()
+    actor = _notification_actor(cur, follower_user_id)
     cur.execute(
         "INSERT OR IGNORE INTO pulse_follows (follower_user_id, followed_user_id, followed_public_player_id, created_at) VALUES (?, ?, ?, ?)",
         (int(follower_user_id), int(followed_user_id), followed_public_player_id or "", _now()),
     )
+    inserted = getattr(cur, "rowcount", 0) > 0
     conn.commit()
     conn.close()
+    if inserted:
+        try:
+            pulsesoc_notification_system.notify_follow(
+                recipient_user_id=int(followed_user_id),
+                actor_user_id=int(follower_user_id),
+                actor_name=actor.get("display_name") or "",
+                actor_profile_id=actor.get("public_player_id") or "",
+            )
+        except Exception as exc:
+            logging.warning(
+                "PULSE_FEED_FOLLOW_NOTIFICATION_FAILED follower_user_id=%s followed_user_id=%s error=%s",
+                follower_user_id,
+                followed_user_id,
+                exc,
+            )
     return {"ok": True, "message": "Creator followed."}, 200
 
 

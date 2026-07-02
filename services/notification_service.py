@@ -12,6 +12,7 @@ from . import email_service
 from . import push_service
 from . import sms_service
 from . import db as db_service
+from . import pulsesoc_notification_system
 
 
 def _now():
@@ -1038,6 +1039,32 @@ def create_pulse_notification(
     )
     conn.commit()
     conn.close()
+    try:
+        central = pulsesoc_notification_system.notify_legacy_event(
+            int(user_id),
+            note_type,
+            title,
+            body,
+            deep_link=deep_link,
+            actor_user_id=int(actor_user_id or 0),
+            source_type=entity_type or "legacy_notification",
+            source_id=str(entity_id or notification_id or ""),
+            metadata={
+                **metadata,
+                "legacy_pulse_notification_id": int(notification_id or 0),
+                "delivery_status": delivery_status,
+            },
+        )
+        if central.get("notification_id"):
+            metadata["central_notification_id"] = central.get("notification_id")
+    except Exception as exc:
+        logging.info(
+            "PULSESOC_CENTRAL_LEGACY_BRIDGE_SKIPPED user_id=%s note_type=%s notification_id=%s error=%s",
+            user_id,
+            note_type,
+            notification_id,
+            exc.__class__.__name__,
+        )
     if not _message_like_notification(note_type, entity_type, deep_link):
         _dispatch_command_center_async(
             "enqueue_notification_event",
@@ -1497,6 +1524,26 @@ def queue_notification(user_id, title, message, notification_type="general", met
     conn.commit()
     notification_id = cur.lastrowid
     conn.close()
+    try:
+        pulsesoc_notification_system.notify_legacy_event(
+            int(user_id),
+            notification_type,
+            title,
+            message,
+            deep_link=(metadata or {}).get("deep_link") or (metadata or {}).get("target_url") or "/pulse/notifications",
+            actor_user_id=int((metadata or {}).get("actor_user_id") or 0),
+            source_type=(metadata or {}).get("entity_type") or (metadata or {}).get("source_type") or "queued_notification",
+            source_id=str((metadata or {}).get("entity_id") or notification_id or ""),
+            metadata={**(metadata or {}), "legacy_notification_id": int(notification_id or 0)},
+        )
+    except Exception as exc:
+        logging.info(
+            "PULSESOC_CENTRAL_QUEUE_BRIDGE_SKIPPED user_id=%s type=%s notification_id=%s error=%s",
+            user_id,
+            notification_type,
+            notification_id,
+            exc.__class__.__name__,
+        )
     return {"ok": True, "notification_id": notification_id}
 
 

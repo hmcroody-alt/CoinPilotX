@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 
-from . import media_service, user_context
+from . import media_service, pulsesoc_notification_system, user_context
 
 
 def now_iso():
@@ -44,6 +45,21 @@ def _public_profile(cur, user_id):
         "faction": row.get("faction") or "",
         "recently_active": bool(row.get("last_seen_at")),
     }
+
+
+def _notification_media_type(attached_media):
+    if not attached_media:
+        return ""
+    first = attached_media[0] or {}
+    media_type = str(first.get("media_type") or "").lower()
+    mime_type = str(first.get("mime_type") or "").lower()
+    if media_type in {"image", "photo"} or mime_type.startswith("image/"):
+        return "photo"
+    if media_type == "video" or mime_type.startswith("video/"):
+        return "video"
+    if media_type == "audio" or mime_type.startswith("audio/"):
+        return "voice"
+    return "file"
 
 
 def direct_thread(cur, user_id, other_user_id):
@@ -213,9 +229,13 @@ def send_message(user_id, thread_id, body, media_ids=None, source_context="priva
         return {"ok": False, "message": "Messaging is blocked for this conversation."}, 403
     created_at = now_iso()
     sender_public = _public_profile(cur, user_id)
-    cur.execute("SELECT user_id FROM conversation_members WHERE conversation_id=? AND user_id != ? LIMIT 1", (int(thread_id), int(user_id)))
-    other_row = cur.fetchone()
+    cur.execute("SELECT user_id FROM conversation_members WHERE conversation_id=? AND user_id != ?", (int(thread_id), int(user_id)))
+    recipient_rows = [dict(row) for row in cur.fetchall()]
+    other_row = recipient_rows[0] if recipient_rows else None
     receiver_public = _public_profile(cur, int(other_row["user_id"])) if other_row else {}
+    cur.execute("SELECT conversation_type FROM conversations WHERE id=? LIMIT 1", (int(thread_id),))
+    conversation_row = _row(cur.fetchone()) or {}
+    conversation_type = conversation_row.get("conversation_type") or "direct"
     cur.execute(
         "INSERT INTO private_messages (conversation_id, sender_user_id, body, created_at, public_sender_display_name, public_receiver_display_name, source_context, call_sign_snapshot) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (int(thread_id), int(user_id), body, created_at, sender_public.get("display_name"), receiver_public.get("display_name"), source_context, sender_public.get("call_sign") or sender_public.get("display_name")),
@@ -225,6 +245,32 @@ def send_message(user_id, thread_id, body, media_ids=None, source_context="priva
     conn.commit()
     conn.close()
     attached_media = media_service.attach_media_to_message(user_id, message_id, media_ids, context_type="private_chat", context_id=thread_id)
+    media_type = _notification_media_type(attached_media)
+    for recipient in recipient_rows:
+        try:
+            pulsesoc_notification_system.notify_new_message(
+                recipient_user_id=int(recipient.get("user_id") or 0),
+                actor_user_id=int(user_id),
+                conversation_id=int(thread_id),
+                message_id=message_id,
+                body=body,
+                media_type=media_type,
+                conversation_type=conversation_type,
+                actor_name=sender_public.get("display_name") or sender_public.get("call_sign") or "",
+                metadata={
+                    "source_context": source_context,
+                    "media_count": len(attached_media or []),
+                    "media_ids": [int(item.get("id") or 0) for item in attached_media or [] if item.get("id")],
+                },
+            )
+        except Exception as exc:
+            logging.warning(
+                "PULSESOC_MESSAGE_NOTIFICATION_FAILED thread_id=%s message_id=%s recipient_user_id=%s error=%s",
+                thread_id,
+                message_id,
+                recipient.get("user_id"),
+                exc,
+            )
     return {
         "ok": True,
         "message": {

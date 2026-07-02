@@ -66,29 +66,49 @@ DELIVERY_LOCK = threading.Lock()
 
 EVENT_DEFINITIONS: dict[str, dict[str, str]] = {
     "new_message": {"category": "messages", "priority": "high", "urgency": "immediate", "title": "New message"},
+    "group_message": {"category": "messages", "priority": "high", "urgency": "immediate", "title": "New group message"},
+    "image_message": {"category": "messages", "priority": "high", "urgency": "immediate", "title": "Photo message"},
+    "video_message": {"category": "messages", "priority": "high", "urgency": "immediate", "title": "Video message"},
+    "voice_message": {"category": "messages", "priority": "high", "urgency": "immediate", "title": "Voice message"},
+    "file_message": {"category": "messages", "priority": "high", "urgency": "immediate", "title": "File message"},
     "missed_call": {"category": "messages", "priority": "urgent", "urgency": "immediate", "title": "Missed call"},
     "incoming_call": {"category": "messages", "priority": "urgent", "urgency": "immediate", "title": "Incoming call"},
     "friend_request": {"category": "social", "priority": "normal", "urgency": "standard", "title": "New friend request"},
+    "friend_request_accepted": {"category": "social", "priority": "normal", "urgency": "standard", "title": "Friend request accepted"},
     "follow": {"category": "social", "priority": "normal", "urgency": "standard", "title": "New follower"},
     "like": {"category": "social", "priority": "normal", "urgency": "silent", "title": "New like"},
     "comment": {"category": "comments", "priority": "normal", "urgency": "standard", "title": "New comment"},
+    "reply": {"category": "comments", "priority": "normal", "urgency": "standard", "title": "New reply"},
     "mention": {"category": "mentions", "priority": "high", "urgency": "immediate", "title": "You were mentioned"},
+    "tag": {"category": "mentions", "priority": "high", "urgency": "immediate", "title": "You were tagged"},
     "repost": {"category": "social", "priority": "normal", "urgency": "standard", "title": "New repost"},
     "quote": {"category": "social", "priority": "normal", "urgency": "standard", "title": "New quote"},
     "live_started": {"category": "live", "priority": "high", "urgency": "immediate", "title": "Live started"},
     "live_invite": {"category": "live", "priority": "high", "urgency": "immediate", "title": "Live invite"},
     "cohost_request": {"category": "live", "priority": "high", "urgency": "immediate", "title": "Co-host request"},
+    "live_ended": {"category": "live", "priority": "normal", "urgency": "standard", "title": "Live ended"},
     "creator_payout": {"category": "creator", "priority": "high", "urgency": "standard", "title": "Creator payout update"},
+    "creator_payout_failed": {"category": "creator", "priority": "high", "urgency": "standard", "title": "Creator payout issue"},
     "verification_approved": {"category": "verification", "priority": "high", "urgency": "standard", "title": "Verification approved"},
     "verification_rejected": {"category": "verification", "priority": "high", "urgency": "standard", "title": "Verification update"},
+    "verification_needs_info": {"category": "verification", "priority": "high", "urgency": "standard", "title": "Verification needs info"},
     "subscription_renewal": {"category": "premium", "priority": "normal", "urgency": "standard", "title": "Subscription renewed"},
+    "subscription_canceled": {"category": "premium", "priority": "high", "urgency": "standard", "title": "Subscription canceled"},
+    "payment_method_issue": {"category": "payments", "priority": "high", "urgency": "immediate", "title": "Payment method issue"},
     "payment_failed": {"category": "payments", "priority": "urgent", "urgency": "immediate", "title": "Payment failed"},
     "founder_premium_activated": {"category": "premium", "priority": "high", "urgency": "standard", "title": "Founder Premium activated"},
     "security_login_alert": {"category": "security", "priority": "urgent", "urgency": "immediate", "title": "Security login alert"},
     "new_device_login": {"category": "security", "priority": "urgent", "urgency": "immediate", "title": "New device login"},
     "password_changed": {"category": "security", "priority": "urgent", "urgency": "immediate", "title": "Password changed"},
+    "email_changed": {"category": "security", "priority": "urgent", "urgency": "immediate", "title": "Email changed"},
+    "phone_changed": {"category": "security", "priority": "urgent", "urgency": "immediate", "title": "Phone changed"},
+    "suspicious_login": {"category": "security", "priority": "urgent", "urgency": "immediate", "title": "Suspicious login"},
     "crypto_price_alert": {"category": "crypto", "priority": "high", "urgency": "immediate", "title": "Crypto price alert"},
+    "crypto_alert_triggered": {"category": "crypto", "priority": "high", "urgency": "immediate", "title": "Crypto alert"},
     "marketplace_order": {"category": "marketplace", "priority": "high", "urgency": "standard", "title": "Marketplace order"},
+    "admin_warning": {"category": "system", "priority": "high", "urgency": "immediate", "title": "Account notice"},
+    "account_restriction": {"category": "system", "priority": "urgent", "urgency": "immediate", "title": "Account restriction"},
+    "content_removed": {"category": "system", "priority": "high", "urgency": "standard", "title": "Content removed"},
     "system_announcement": {"category": "system", "priority": "normal", "urgency": "standard", "title": "PulseSoc announcement"},
 }
 
@@ -1142,7 +1162,9 @@ def intake_event(
         notification_id = _int(getattr(cur, "lastrowid", 0))
         payload["notification_id"] = notification_id
         jobs = _insert_delivery_jobs(cur, notification_id, payload, list(rules.get("channels") or ["in_app"]), bool(rules.get("quiet_hours")))
-        pulse_id = _mirror_pulse_notification(cur, notification_id, payload)
+        pulse_id = 0
+        if not metadata.get("skip_pulse_legacy_mirror"):
+            pulse_id = _mirror_pulse_notification(cur, notification_id, payload)
         if pulse_id:
             metadata["pulse_notification_id"] = pulse_id
             cur.execute(
@@ -1171,6 +1193,476 @@ def intake_event(
         return {"ok": False, "error": "notification_intake_failed", "message": "Notification could not be created safely."}
     finally:
         conn.close()
+
+
+def _compact_text(value: Any, limit: int = 180) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip())[:limit]
+
+
+def _actor_name(actor_name: str | None = None) -> str:
+    return _compact_text(actor_name or "Someone", 80) or "Someone"
+
+
+def _coerce_channels(channels: list[str] | tuple[str, ...] | None, default: tuple[str, ...] = ("in_app",)) -> list[str]:
+    normalized: list[str] = []
+    for raw in channels or default:
+        channel = ADAPTER_CHANNEL_ALIASES.get(str(raw or "").strip().lower(), str(raw or "").strip().lower())
+        if channel in DELIVERY_CHANNELS and channel not in normalized:
+            normalized.append(channel)
+    return normalized or list(default)
+
+
+def _event_metadata(base: dict[str, Any] | None = None, **extra: Any) -> dict[str, Any]:
+    metadata = dict(base or {})
+    for key, value in extra.items():
+        if value not in (None, ""):
+            metadata[key] = value
+    return metadata
+
+
+def _message_event_type(conversation_type: str = "direct", media_type: str = "") -> str:
+    media = str(media_type or "").strip().lower()
+    if media in {"photo", "image", "jpeg", "jpg", "png", "webp"}:
+        return "image_message"
+    if media in {"video", "mp4", "webm", "mov"}:
+        return "video_message"
+    if media in {"voice", "audio", "audio_message", "webm_audio", "voice_message"}:
+        return "voice_message"
+    if media in {"file", "document", "attachment"}:
+        return "file_message"
+    if str(conversation_type or "").strip().lower() in {"group", "room", "community"}:
+        return "group_message"
+    return "new_message"
+
+
+def _message_preview(body: str = "", media_type: str = "") -> str:
+    text = _compact_text(body, 180)
+    if text:
+        return text
+    media = str(media_type or "").strip().lower()
+    if media in {"photo", "image", "jpeg", "jpg", "png", "webp"}:
+        return "Sent you a photo"
+    if media in {"video", "mp4", "webm", "mov"}:
+        return "Sent you a video"
+    if media in {"voice", "audio", "audio_message", "webm_audio", "voice_message"}:
+        return "Sent you a voice message"
+    if media in {"file", "document", "attachment"}:
+        return "Sent you a file"
+    return "Sent you a message"
+
+
+def notify_new_message(
+    recipient_user_id: int,
+    actor_user_id: int,
+    conversation_id: int,
+    message_id: int,
+    body: str = "",
+    media_type: str = "",
+    conversation_type: str = "direct",
+    actor_name: str = "",
+    channels: list[str] | tuple[str, ...] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Create the central notification for a real Messenger message event."""
+
+    event_type = _message_event_type(conversation_type, media_type)
+    preview = _message_preview(body, media_type)
+    actor = _actor_name(actor_name)
+    return intake_event(
+        event_type=event_type,
+        recipient_user_id=int(recipient_user_id),
+        actor_user_id=int(actor_user_id or 0),
+        source_type="message",
+        source_id=str(int(message_id or 0)),
+        title=f"New message from {actor}",
+        body=preview,
+        preview=preview,
+        deep_link=f"/pulse/messages/{int(conversation_id or 0)}",
+        metadata=_event_metadata(
+            metadata,
+            conversation_id=int(conversation_id or 0),
+            thread_id=int(conversation_id or 0),
+            message_id=int(message_id or 0),
+            media_type=str(media_type or ""),
+            conversation_type=str(conversation_type or "direct"),
+            actor_name=actor,
+        ),
+        category="messages",
+        priority="high",
+        urgency="immediate",
+        channels=_coerce_channels(channels, ("in_app", "push")),
+        dedupe_key=f"message:{int(conversation_id or 0)}:{int(message_id or 0)}:{int(recipient_user_id or 0)}",
+    )
+
+
+def notify_missed_call(
+    recipient_user_id: int,
+    actor_user_id: int,
+    conversation_id: int,
+    call_id: str | int,
+    actor_name: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    actor = _actor_name(actor_name)
+    return intake_event(
+        event_type="missed_call",
+        recipient_user_id=int(recipient_user_id),
+        actor_user_id=int(actor_user_id or 0),
+        source_type="call",
+        source_id=str(call_id or ""),
+        title=f"Missed call from {actor}",
+        body="You missed a PulseSoc call.",
+        preview="Missed call",
+        deep_link=f"/pulse/messages/{int(conversation_id or 0)}?tab=calls",
+        metadata=_event_metadata(metadata, conversation_id=int(conversation_id or 0), call_id=str(call_id or ""), actor_name=actor),
+        channels=["in_app", "push", "call"],
+        dedupe_key=f"missed-call:{conversation_id}:{call_id}:{recipient_user_id}",
+    )
+
+
+def notify_live_started(
+    recipient_user_id: int,
+    actor_user_id: int,
+    live_session_id: int | str,
+    actor_name: str = "",
+    title: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    actor = _actor_name(actor_name)
+    body = _compact_text(title, 180) or f"{actor} is live now."
+    return intake_event(
+        event_type="live_started",
+        recipient_user_id=int(recipient_user_id),
+        actor_user_id=int(actor_user_id or 0),
+        source_type="live_session",
+        source_id=str(live_session_id or ""),
+        title=f"{actor} went live",
+        body=body,
+        preview=body,
+        deep_link=f"/pulse/live/{live_session_id}",
+        metadata=_event_metadata(metadata, live_session_id=str(live_session_id or ""), actor_name=actor),
+        channels=["in_app", "push"],
+        dedupe_key=f"live-started:{live_session_id}:{recipient_user_id}",
+    )
+
+
+def notify_live_invite(
+    recipient_user_id: int,
+    actor_user_id: int,
+    live_session_id: int | str,
+    actor_name: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    actor = _actor_name(actor_name)
+    return intake_event(
+        event_type="live_invite",
+        recipient_user_id=int(recipient_user_id),
+        actor_user_id=int(actor_user_id or 0),
+        source_type="live_session",
+        source_id=str(live_session_id or ""),
+        title=f"Live invite from {actor}",
+        body="You were invited to join a PulseSoc Live.",
+        preview="Live invite",
+        deep_link=f"/pulse/live/{live_session_id}",
+        metadata=_event_metadata(metadata, live_session_id=str(live_session_id or ""), actor_name=actor),
+        channels=["in_app", "push"],
+        dedupe_key=f"live-invite:{live_session_id}:{recipient_user_id}:{actor_user_id}",
+    )
+
+
+def notify_cohost_request(
+    recipient_user_id: int,
+    actor_user_id: int,
+    live_session_id: int | str,
+    actor_name: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    actor = _actor_name(actor_name)
+    return intake_event(
+        event_type="cohost_request",
+        recipient_user_id=int(recipient_user_id),
+        actor_user_id=int(actor_user_id or 0),
+        source_type="live_session",
+        source_id=str(live_session_id or ""),
+        title=f"Co-host request from {actor}",
+        body="Review this PulseSoc Live co-host request.",
+        preview="Co-host request",
+        deep_link=f"/pulse/live/{live_session_id}?panel=backstage",
+        metadata=_event_metadata(metadata, live_session_id=str(live_session_id or ""), actor_name=actor),
+        channels=["in_app", "push"],
+        dedupe_key=f"cohost-request:{live_session_id}:{recipient_user_id}:{actor_user_id}",
+    )
+
+
+def notify_follow(
+    recipient_user_id: int,
+    actor_user_id: int,
+    actor_name: str = "",
+    actor_profile_id: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    actor = _actor_name(actor_name)
+    profile_link = f"/pulse/profile/{actor_profile_id}" if actor_profile_id else f"/pulse/user/{int(actor_user_id or 0)}"
+    return intake_event(
+        event_type="follow",
+        recipient_user_id=int(recipient_user_id),
+        actor_user_id=int(actor_user_id or 0),
+        source_type="profile",
+        source_id=str(actor_user_id or ""),
+        title="New follower",
+        body=f"{actor} followed you.",
+        preview=f"{actor} followed you.",
+        deep_link=profile_link,
+        metadata=_event_metadata(metadata, actor_name=actor, actor_profile_id=actor_profile_id),
+        channels=["in_app", "push"],
+        dedupe_key=f"follow:{int(recipient_user_id or 0)}:{int(actor_user_id or 0)}",
+    )
+
+
+def notify_post_like(
+    recipient_user_id: int,
+    actor_user_id: int,
+    post_id: int,
+    reaction_type: str = "like",
+    actor_name: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    actor = _actor_name(actor_name)
+    reaction = _compact_text(reaction_type or "like", 40)
+    return intake_event(
+        event_type="like",
+        recipient_user_id=int(recipient_user_id),
+        actor_user_id=int(actor_user_id or 0),
+        source_type="post",
+        source_id=str(int(post_id or 0)),
+        title="New reaction",
+        body=f"{actor} reacted to your post.",
+        preview=f"{actor} reacted to your post.",
+        deep_link=f"/pulse/post/{int(post_id or 0)}",
+        metadata=_event_metadata(metadata, post_id=int(post_id or 0), reaction_type=reaction, actor_name=actor),
+        channels=["in_app", "push"],
+        dedupe_key=f"post-reaction:{int(post_id or 0)}:{int(actor_user_id or 0)}:{reaction}:{int(recipient_user_id or 0)}",
+    )
+
+
+def notify_post_comment(
+    recipient_user_id: int,
+    actor_user_id: int,
+    post_id: int,
+    comment_id: int,
+    body: str = "",
+    parent_comment_id: int | None = None,
+    actor_name: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    actor = _actor_name(actor_name)
+    is_reply = bool(parent_comment_id)
+    event_type = "reply" if is_reply else "comment"
+    preview = _compact_text(body, 180) or ("Replied to a comment." if is_reply else "Commented on your post.")
+    return intake_event(
+        event_type=event_type,
+        recipient_user_id=int(recipient_user_id),
+        actor_user_id=int(actor_user_id or 0),
+        source_type="comment",
+        source_id=str(int(comment_id or 0)),
+        title="New reply" if is_reply else "New comment",
+        body=f"{actor}: {preview}",
+        preview=preview,
+        deep_link=f"/pulse/post/{int(post_id or 0)}#comment-{int(comment_id or 0)}",
+        metadata=_event_metadata(
+            metadata,
+            post_id=int(post_id or 0),
+            comment_id=int(comment_id or 0),
+            parent_comment_id=int(parent_comment_id or 0),
+            actor_name=actor,
+        ),
+        channels=["in_app", "push"],
+        dedupe_key=f"post-comment:{int(comment_id or 0)}:{int(recipient_user_id or 0)}",
+    )
+
+
+def notify_security_event(
+    recipient_user_id: int,
+    event_type: str = "security_login_alert",
+    title: str = "Security alert",
+    body: str = "Review recent account activity.",
+    source_id: str | int = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    normalized = normalize_type(event_type or "security_login_alert")
+    preview = "Open PulseSoc to review this secure alert."
+    return intake_event(
+        event_type=normalized,
+        recipient_user_id=int(recipient_user_id),
+        actor_user_id=0,
+        source_type="security",
+        source_id=str(source_id or normalized),
+        title=_compact_text(title, 200) or "Security alert",
+        body=_compact_text(body, 300) or "Review recent account activity.",
+        preview=preview,
+        deep_link="/dashboard/security",
+        metadata=_event_metadata(metadata, secure_preview=True),
+        category="security",
+        priority="urgent",
+        urgency="immediate",
+        channels=["in_app", "push", "email", "sms"],
+        dedupe_key=f"security:{normalized}:{recipient_user_id}:{source_id or metadata or now_iso()}",
+    )
+
+
+def notify_payment_event(
+    recipient_user_id: int,
+    event_type: str,
+    title: str,
+    body: str,
+    source_id: str | int = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    normalized = normalize_type(event_type or "payment_failed")
+    urgent = normalized in {"payment_failed", "payment_method_issue"}
+    return intake_event(
+        event_type=normalized,
+        recipient_user_id=int(recipient_user_id),
+        actor_user_id=0,
+        source_type="billing",
+        source_id=str(source_id or normalized),
+        title=_compact_text(title, 200) or _definition(normalized).get("title") or "Billing update",
+        body=_compact_text(body, 300) or "Review your PulseSoc billing status.",
+        preview="Open PulseSoc to review this billing update.",
+        deep_link="/pulse/premium?panel=billing",
+        metadata=_event_metadata(metadata, secure_preview=True),
+        category=normalize_category(None, normalized),
+        priority="urgent" if urgent else normalize_priority(None, normalized),
+        urgency="immediate" if urgent else "standard",
+        channels=["in_app", "push", "email", "sms"] if urgent else ["in_app", "push", "email"],
+        dedupe_key=f"payment:{normalized}:{recipient_user_id}:{source_id or metadata or now_iso()}",
+    )
+
+
+def notify_creator_event(
+    recipient_user_id: int,
+    event_type: str,
+    title: str,
+    body: str,
+    source_id: str | int = "",
+    deep_link: str = "/pulse/dashboard/creator",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    normalized = normalize_type(event_type or "creator_payout")
+    return intake_event(
+        event_type=normalized,
+        recipient_user_id=int(recipient_user_id),
+        actor_user_id=0,
+        source_type="creator",
+        source_id=str(source_id or normalized),
+        title=_compact_text(title, 200) or _definition(normalized).get("title") or "Creator update",
+        body=_compact_text(body, 300) or "Review your creator update in PulseSoc.",
+        preview=_compact_text(body, 180) or "Creator update",
+        deep_link=deep_link,
+        metadata=_event_metadata(metadata),
+        category=normalize_category(None, normalized),
+        priority=normalize_priority(None, normalized),
+        urgency=normalize_urgency(None, normalized, normalize_priority(None, normalized)),
+        channels=["in_app", "push", "email"],
+        dedupe_key=f"creator:{normalized}:{recipient_user_id}:{source_id or metadata or now_iso()}",
+    )
+
+
+def notify_crypto_alert(
+    recipient_user_id: int,
+    alert_id: int | str,
+    title: str,
+    body: str,
+    coin_symbol: str = "",
+    critical: bool = False,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    symbol = _compact_text(coin_symbol, 20).upper()
+    link = f"/pulse/crypto?asset={symbol}" if symbol else "/pulse/crypto/alerts"
+    return intake_event(
+        event_type="crypto_alert_triggered",
+        recipient_user_id=int(recipient_user_id),
+        actor_user_id=0,
+        source_type="crypto_alert",
+        source_id=str(alert_id or ""),
+        title=_compact_text(title, 200) or "Crypto alert",
+        body=_compact_text(body, 300) or "A configured crypto alert was triggered.",
+        preview=_compact_text(body, 180) or "Crypto alert triggered.",
+        deep_link=link,
+        metadata=_event_metadata(metadata, alert_id=str(alert_id or ""), coin_symbol=symbol, user_configured=True),
+        category="crypto",
+        priority="urgent" if critical else "high",
+        urgency="immediate",
+        channels=["in_app", "push", "sms"] if critical else ["in_app", "push"],
+        dedupe_key=f"crypto-alert:{recipient_user_id}:{alert_id}:{symbol}",
+    )
+
+
+def notify_system_announcement(
+    recipient_user_id: int,
+    title: str,
+    body: str,
+    announcement_id: int | str = "",
+    deep_link: str = "/pulse/notifications",
+    priority: str = "normal",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    normalized_priority = normalize_priority(priority, "system_announcement")
+    return intake_event(
+        event_type="system_announcement",
+        recipient_user_id=int(recipient_user_id),
+        actor_user_id=0,
+        source_type="system_announcement",
+        source_id=str(announcement_id or ""),
+        title=_compact_text(title, 200) or "PulseSoc announcement",
+        body=_compact_text(body, 500) or "Open PulseSoc for the latest update.",
+        preview=_compact_text(body, 180) or "PulseSoc announcement",
+        deep_link=deep_link,
+        metadata=_event_metadata(metadata, announcement_id=str(announcement_id or "")),
+        category="system",
+        priority=normalized_priority,
+        urgency="immediate" if normalized_priority in {"urgent", "high"} else "standard",
+        channels=["in_app", "push"],
+        dedupe_key=f"system:{recipient_user_id}:{announcement_id or hashlib.sha256((_compact_text(title, 120) + _compact_text(body, 120)).encode('utf-8')).hexdigest()}",
+    )
+
+
+def notify_legacy_event(
+    recipient_user_id: int,
+    note_type: str,
+    title: str,
+    body: str,
+    deep_link: str = "/pulse/notifications",
+    actor_user_id: int | None = None,
+    source_type: str = "",
+    source_id: str | int = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compatibility bridge for older PulseSoc call sites.
+
+    Legacy code may already have push/email side effects, so this bridge only
+    guarantees central in-app record creation unless callers explicitly move to
+    the typed helpers above.
+    """
+
+    normalized = normalize_type(note_type or "system_announcement")
+    return intake_event(
+        event_type=normalized,
+        recipient_user_id=int(recipient_user_id),
+        actor_user_id=int(actor_user_id or 0),
+        source_type=source_type or metadata.get("source_type") if isinstance(metadata, dict) else source_type,
+        source_id=str(source_id or (metadata or {}).get("source_id") or ""),
+        title=_compact_text(title, 200) or _definition(normalized).get("title") or "PulseSoc update",
+        body=_compact_text(body, 500) or "Open PulseSoc for the latest update.",
+        preview=_compact_text(body, 180),
+        deep_link=deep_link,
+        metadata=_event_metadata(metadata, legacy_notification=True, skip_pulse_legacy_mirror=True),
+        category=normalize_category((metadata or {}).get("category") if isinstance(metadata, dict) else None, normalized),
+        priority=normalize_priority((metadata or {}).get("priority") if isinstance(metadata, dict) else None, normalized),
+        urgency=normalize_urgency(None, normalized, normalize_priority((metadata or {}).get("priority") if isinstance(metadata, dict) else None, normalized)),
+        channels=["in_app"],
+        dedupe_key=f"legacy:{recipient_user_id}:{normalized}:{source_type}:{source_id}:{hashlib.sha256((_compact_text(title, 120) + _compact_text(body, 120)).encode('utf-8')).hexdigest()}",
+    )
 
 
 def format_notification(row: Any) -> dict[str, Any]:
