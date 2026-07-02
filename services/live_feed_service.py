@@ -114,5 +114,5 @@ def live_post_payload(session: dict | None = None, post_id: int = 0) -> dict:
         "preview_url": session.get("preview_url") or session.get("thumbnail_url") or "",
         "replay_url": session.get("replay_url") or "",
         "viewer_count": int(session.get("viewer_count") or 0),
-        "live_url": f"/pulse/live/{live_id}" if live_id else "",
+        "live_url": f"/pulse/reels?live={live_id}" if live_id else "",
     }

@@ -1,0 +1,60 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "shared_open_live_in_reels_function",
+      "passed": true,
+      "detail": "Home and shared shell JS expose openLiveInReels(liveId)."
+    },
+    {
+      "name": "public_live_watch_route_redirects",
+      "passed": true,
+      "detail": "/pulse/live/<id> redirects to the Reels live target."
+    },
+    {
+      "name": "watch_url_helper_exists",
+      "passed": true,
+      "detail": "Server helper centralizes Live watch URLs."
+    },
+    {
+      "name": "reels_feed_accepts_live_id",
+      "passed": true,
+      "detail": "Reels feed API accepts live=<id> and prioritizes it."
+    },
+    {
+      "name": "reels_page_loads_live_query",
+      "passed": true,
+      "detail": "Reels page chooses the Live lane when opened with live=<id>."
+    },
+    {
+      "name": "home_live_cards_are_gateways",
+      "passed": true,
+      "detail": "Home feed Live cards render a gateway and do not mount feed media players."
+    },
+    {
+      "name": "live_payloads_route_to_reels",
+      "passed": true,
+      "detail": "Feed/live service payloads use Reels watch URLs."
+    },
+    {
+      "name": "live_notifications_route_to_reels",
+      "passed": true,
+      "detail": "Notification fallback and central helpers route Live alerts to Reels."
+    },
+    {
+      "name": "live_start_notifications_route_to_reels",
+      "passed": true,
+      "detail": "Live start follower notifications use the Reels URL and mobile deep link."
+    },
+    {
+      "name": "no_old_live_watch_links",
+      "passed": true,
+      "detail": "No old public watch links remain."
+    },
+    {
+      "name": "no_fake_join_live_links",
+      "passed": true,
+      "detail": "Join Live links do not use # or javascript:void(0)."
+    }
+  ]
+}

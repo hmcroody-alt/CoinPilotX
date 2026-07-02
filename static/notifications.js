@@ -33,6 +33,33 @@
     "/billing/portal"
   ];
 
+  function liveInReelsUrl(liveId) {
+    const value = String(liveId || "").trim();
+    if (!value) return "";
+    return `/pulse/reels?live=${encodeURIComponent(value)}`;
+  }
+
+  if (typeof window.openLiveInReels !== "function") {
+    window.openLiveInReels = function openLiveInReels(liveId) {
+      const url = liveInReelsUrl(liveId);
+      if (!url) {
+        if (typeof window.toast === "function") window.toast("This Live is unavailable.");
+        return false;
+      }
+      window.location.assign(url);
+      return true;
+    };
+  }
+
+  document.addEventListener("click", event => {
+    const trigger = event.target?.closest?.("[data-open-live-in-reels]");
+    if (!trigger) return;
+    const liveId = trigger.dataset.openLiveInReels || trigger.dataset.liveId || "";
+    if (!liveId) return;
+    event.preventDefault();
+    window.openLiveInReels(liveId);
+  }, true);
+
   function bool(value, fallback) {
     return typeof value === "boolean" ? value : fallback;
   }
@@ -274,7 +301,7 @@
 
     if (conversationId || type.includes("message") || type.includes("chat")) return conversationId ? `/pulse/messages/${encodeURIComponent(conversationId)}` : "/pulse/messages";
     if (type.includes("cohost_request")) return liveId ? `/pulse/live/studio/${encodeURIComponent(liveId)}` : "/pulse/live/studio";
-    if (liveId || type.includes("live") || type.includes("cohost")) return liveId ? `/pulse/live/${encodeURIComponent(liveId)}` : "/pulse/live";
+    if (liveId || type.includes("live") || type.includes("cohost")) return liveId ? `/pulse/reels?live=${encodeURIComponent(liveId)}` : "/pulse/reels";
     if (reelId) return `/pulse/reels/${encodeURIComponent(reelId)}`;
     if (videoId) return `/pulse/videos/${encodeURIComponent(videoId)}`;
     if (postId) return `/pulse/post/${encodeURIComponent(postId)}${commentId ? `#comment-${encodeURIComponent(commentId)}` : ""}`;

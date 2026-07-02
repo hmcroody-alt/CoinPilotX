@@ -460,7 +460,7 @@ def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=No
             "preview_url": item.get("preview_url") or "",
             "replay_url": item.get("replay_url") or "",
             "viewer_count": int(item.get("live_viewer_count") or 0),
-            "live_url": f"/pulse/live/{live_session_id}" if live_session_id else f"/pulse/post/{item.get('id')}",
+            "live_url": f"/pulse/reels?live={live_session_id}" if live_session_id else f"/pulse/post/{item.get('id')}",
         }
     return {
         "id": item.get("id"),

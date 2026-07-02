@@ -9610,7 +9610,7 @@ def message_thread_page(conversation_id):
         }});
         loadThread();
       </script>
-      <script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js" defer></script>
+      <script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=live-reels-only-20260702a" defer></script>
     """
     return render_account_page("custom", "Messages", current_user=user, custom_body=body)
 
@@ -12751,7 +12751,7 @@ def admin_page_html(title, body, admin=None):
 <body>
   <header><div class="wrap"><strong>CoinPlotXAI Inc. Admin</strong><div class="muted">{clean_html((admin or {}).get('email') or '')}</div><nav>{nav}</nav></div></header>
   <main class="wrap">{body}</main>
-  <script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js" defer></script>
+  <script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=live-reels-only-20260702a" defer></script>
   <script>window.CoinPilotTime?.hydrate(document);</script>
 </body>
 </html>"""
@@ -26784,7 +26784,7 @@ def _pulse_notification_native_to_web(raw):
         return f"/pulse/status/{quote(status_id)}" if status_id else "/pulse/status"
     if host == "live":
         live_id = path.split("/")[0] if path else ""
-        return f"/pulse/live/{quote(live_id)}" if live_id else "/pulse/live"
+        return f"/pulse/reels?live={quote(live_id)}" if live_id else "/pulse/reels"
     if host == "alerts":
         alert_id = path.split("/")[0] if path else ""
         return f"/pulse/alerts/{quote(alert_id)}" if alert_id else "/pulse/alerts"
@@ -26874,7 +26874,7 @@ def _pulse_notification_semantic_targets(note):
     if "cohost_request" in note_type:
         targets.append(f"/pulse/live/studio/{quote(str(live_id))}" if live_id else "/pulse/live/studio")
     elif live_id or "live" in note_type or "cohost" in note_type:
-        targets.append(f"/pulse/live/{quote(str(live_id))}" if live_id else "/pulse/live")
+        targets.append(f"/pulse/reels?live={quote(str(live_id))}" if live_id else "/pulse/reels")
     if reel_id:
         targets.append(f"/pulse/reels/{quote(str(reel_id))}")
     if video_id:
@@ -28459,7 +28459,7 @@ def pulse_live_now_homepage_html(user_id=0):
         f"<div class='pulse-live-preview'><span class='live-dot'>LIVE</span><strong>{clean_html(card.get('ai_rating') or 'Ready')}</strong></div>"
         f"<div><h3>{clean_html('No creators live yet. Start the first broadcast.' if not int(card.get('id') or 0) else card.get('title') or 'PulseSoc Live')}</h3><p>{clean_html(card.get('creator_name') or 'CoinPilotXAI')} · {clean_html(card.get('category') or 'Community')}</p>"
         f"<p><span>{int(card.get('viewer_count') or 0)} viewers</span><span>{clean_html(card.get('momentum') or 'warming')}</span><span>AI {clean_html(card.get('ai_rating') or 'Ready')}</span></p></div>"
-        f"<a class='button primary' href='/pulse/live/{int(card.get('id') or 0)}'>{'Watch Live' if int(card.get('id') or 0) else 'Start Live'}</a>"
+        f"<a class='button primary' href='{pulse_live_watch_url(int(card.get('id') or 0)) if int(card.get('id') or 0) else '/pulse/live/studio?context_type=home'}' data-open-live-in-reels='{int(card.get('id') or 0)}'>{'Join Live in Reels' if int(card.get('id') or 0) else 'Start Live'}</a>"
         "</article>"
         for card in cards
     )
@@ -28996,7 +28996,7 @@ __DESKTOP_RIGHT_RAIL__
   }));
 })();
 </script>
-<script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js" defer></script>
+<script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=live-reels-only-20260702a" defer></script>
 <script src="/static/js/pulse_environment_engine.js?v=galactic-city-20260621a" defer></script>
 <script src="/static/js/pulse_media_picker.js" defer></script>
 <script src="/static/js/pulse_upload_manager.js?v=composer-premium-20260617a"></script>
@@ -29294,14 +29294,14 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
     if boot_profile in {"core", "media_off", "optional_off", "shell_only"}:
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g" defer></script>', "")
     if boot_profile in {"notifications_off", "optional_off", "shell_only"}:
-        rendered_html = rendered_html.replace('<script src="/static/notifications.js" defer></script>', "")
+        rendered_html = rendered_html.replace('<script src="/static/notifications.js?v=live-reels-only-20260702a" defer></script>', "")
     if boot_profile == "core":
         rendered_html = re.sub(r'<script data-pulse-shell-runtime>.*?</script>', "", rendered_html, count=1, flags=re.S)
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js" defer></script>', "")
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js" defer></script>', "")
         rendered_html = rendered_html.replace(
             "</body>",
-            '<script src="/static/js/pulse_home_core.js?v=remove-old-home-logout-20260701-ufo-welcome" defer></script></body>',
+            '<script src="/static/js/pulse_home_core.js?v=live-reels-only-20260702a" defer></script></body>',
             1,
         )
     if boot_profile == "shell_only":
@@ -34153,7 +34153,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
   </div>
 </section>
 """
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulse_design_system.css"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=global-media-ui-20260614a"><link rel="stylesheet" href="/static/css/pulse_home_os.css?v=pulse-home-os-20260629-universal-dock"><link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=status-v3-20260629b"><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.layout>div,.layout>aside{{min-width:0}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar,.pulse-topnav-avatar{{width:44px;height:44px;border-radius:14px;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);display:grid;place-items:center;color:#f2fbff;font-weight:950;overflow:hidden;flex:0 0 auto;text-decoration:none;position:relative;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.avatar img,.pulse-topnav-avatar img{{width:100%;height:100%;object-fit:cover}}.pulse-topnav-control{{position:relative;width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;display:grid;place-items:center;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);color:#f2fbff;text-decoration:none;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.pulse-bell-icon{{width:21px;height:21px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}.pulse-topnav-presence{{position:absolute;right:4px;bottom:4px;width:10px;height:10px;border-radius:999px;background:#36e58f;box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 14px rgba(54,229,143,.72)}}.mobile-actions{{display:flex;align-items:center;gap:6px}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a,.mobile-bottom-nav button{{min-width:0;min-height:50px;border:0;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;padding:0}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:none!important}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}</style></head><body class="{shell_body_class}"><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-logo-20260606.png" alt="">PulseSoc</a><div class="mobile-actions"><a class="pulse-topnav-control" href="/pulse/search" aria-label="Search PulseSoc">⌕</a><a class="pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">{PULSE_NOTIFICATION_BELL_ICON}<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">{shell_avatar_html}<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav><nav class="nav">{nav_html}</nav>{shell_intro_html}<section class="{shell_layout_class}"><div>{main_html}</div>{shell_side_html}</section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse#create" aria-label="Create PulseSoc">+</a>{create_sheet_html}<div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js" defer></script><script src="/static/js/pulse_reaction_system.js?v=feed-actions-v2-20260629a"></script><script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script><script src="/static/js/pulse_status_viewer.js?v=status-v3-20260629b"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false){{const err=new Error(d.message||d.error||'Request failed.');Object.assign(err,d);throw err}}return d}}{script_html};window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);window.PulseReactionSystem?.hydrate(document);</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulse_design_system.css"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=global-media-ui-20260614a"><link rel="stylesheet" href="/static/css/pulse_home_os.css?v=pulse-home-os-20260629-universal-dock"><link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=status-v3-20260629b"><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.layout>div,.layout>aside{{min-width:0}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar,.pulse-topnav-avatar{{width:44px;height:44px;border-radius:14px;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);display:grid;place-items:center;color:#f2fbff;font-weight:950;overflow:hidden;flex:0 0 auto;text-decoration:none;position:relative;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.avatar img,.pulse-topnav-avatar img{{width:100%;height:100%;object-fit:cover}}.pulse-topnav-control{{position:relative;width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;display:grid;place-items:center;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);color:#f2fbff;text-decoration:none;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.pulse-bell-icon{{width:21px;height:21px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}.pulse-topnav-presence{{position:absolute;right:4px;bottom:4px;width:10px;height:10px;border-radius:999px;background:#36e58f;box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 14px rgba(54,229,143,.72)}}.mobile-actions{{display:flex;align-items:center;gap:6px}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a,.mobile-bottom-nav button{{min-width:0;min-height:50px;border:0;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;padding:0}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:none!important}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}</style></head><body class="{shell_body_class}"><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-logo-20260606.png" alt="">PulseSoc</a><div class="mobile-actions"><a class="pulse-topnav-control" href="/pulse/search" aria-label="Search PulseSoc">⌕</a><a class="pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">{PULSE_NOTIFICATION_BELL_ICON}<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">{shell_avatar_html}<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav><nav class="nav">{nav_html}</nav>{shell_intro_html}<section class="{shell_layout_class}"><div>{main_html}</div>{shell_side_html}</section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse#create" aria-label="Create PulseSoc">+</a>{create_sheet_html}<div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=live-reels-only-20260702a" defer></script><script src="/static/js/pulse_reaction_system.js?v=feed-actions-v2-20260629a"></script><script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script><script src="/static/js/pulse_status_viewer.js?v=status-v3-20260629b"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false){{const err=new Error(d.message||d.error||'Request failed.');Object.assign(err,d);throw err}}return d}}{script_html};window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);window.PulseReactionSystem?.hydrate(document);</script></body></html>""")
 
 
 def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
@@ -34637,7 +34637,7 @@ def pulse_reels_page():
       const chat=(reel.live_chat_preview||[]).slice(0,3);
       const chatHtml=chat.length?chat.map(c=>`<div class="reel-live-chat-line"><strong>${esc(c.display_name||'Viewer')}</strong><span>${esc(c.body||'')}</span></div>`).join(''):'<div class="reel-live-chat-line"><strong>Live chat</strong><span>Messages appear here as viewers participate.</span></div>';
       const followButton=author.user_id?`<button class="reel-follow" data-follow-creator="${esc(author.user_id)}" aria-label="Follow ${esc(author.display_name||'creator')}">Follow</button>`:'<button class="reel-follow" disabled title="Creator follow is unavailable for this Live.">Follow</button>';
-      const liveUrl=live.live_url||(`/pulse/live/${encodeURIComponent(liveId)}`);
+      const liveUrl=live.live_url||(`/pulse/reels?live=${encodeURIComponent(liveId)}`);
       const video=src?`<div class="pulse-media-wrap pulse-reel-live-wrap" data-reel-media data-reel-id="${esc(reelDomId)}" data-live-session-id="${esc(liveId)}" data-reel-url="${esc(src)}" data-reel-mime="${esc(mime)}"><video class="reel-media pulse-reel-live-media" data-live-reel-media data-reel-id="${esc(reelDomId)}" data-live-session-id="${esc(liveId)}" poster="${esc(poster)}" autoplay muted playsinline webkit-playsinline preload="metadata" controlsList="nodownload noplaybackrate noremoteplayback" disablepictureinpicture><source src="${esc(src)}" type="${esc(mime)}"></video></div>`:'';
       return `<article class="reel-card reel-live-card smart ${src?'':'is-broken'}" data-content-type="live" data-reel-id="${esc(reelDomId)}" data-live-reel-id="${esc(liveId)}" data-live-url="${esc(liveUrl)}" data-live-join-state="idle" data-reel-has-audio="true" data-comments-disabled="0" data-reactions-disabled="0"><div class="reels-media-stage" data-reels-media-stage>${video}<div class="reel-fallback"><span class="reel-chip">${src?'Live stream is reconnecting.':'Live playback is not available yet.'}</span></div><div class="reel-scrim"></div><div class="reel-live-host"><span class="reel-live-badge">Live</span><div class="reel-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'PulseSoc creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||author.rank||'Creator')} · ${esc(reel.human_time||'Now')}</small></div>${followButton}</div><span class="reel-live-viewers"><span data-live-viewer-count="${esc(liveId)}">${viewerCount}</span> watching</span></div><aside class="reel-live-actions reel-actions pulse-reaction-bar" data-reels-action-rail><button class="reel-live-action reel-action primary" type="button" data-live-join-reel="${esc(liveId)}" data-live-join-state="idle" aria-label="Request to co-host this live"><span aria-hidden="true">＋</span><small data-live-join-label>Co-host</small></button><button class="reel-live-action reel-action" type="button" data-live-reaction="${esc(liveId)}" data-reaction-type="🔥" aria-label="React to live"><span aria-hidden="true">🔥</span><small data-live-reaction-count="${esc(liveId)}">${Number(reel.reactions_count||0)}</small></button><button class="reel-live-action reel-action" type="button" data-live-share-reel="${esc(liveId)}" data-live-url="${esc(liveUrl)}" aria-label="Share live"><span aria-hidden="true">↗</span><small>Share</small></button><button class="reel-live-action reel-action is-unavailable" type="button" disabled aria-disabled="true" title="Pulse Gifts are not configured for this Live yet." aria-label="Pulse Gifts unavailable"><span aria-hidden="true">💎</span><small>Gift</small></button><button class="reel-live-action reel-action" type="button" data-live-more-reel="${esc(liveId)}" data-live-url="${esc(liveUrl)}" aria-label="More live options"><span aria-hidden="true">•••</span><small>More</small></button><button class="reel-live-action reel-action" type="button" data-toggle-reel-sound="${esc(reelDomId)}" aria-label="Mute or unmute live"><span aria-hidden="true">🔊</span><small data-reel-sound-label="${esc(reelDomId)}">Audio</small></button></aside><section class="reel-live-overlay-copy"><h2>${esc(title)}</h2><p>${esc(category)} · Real-time broadcast inside Reels</p><div class="reel-live-chat-preview" data-live-chat-preview="${esc(liveId)}">${chatHtml}</div></section><button class="reel-live-join" type="button" data-live-join-reel="${esc(liveId)}" data-live-join-state="idle" aria-label="Request to co-host this live"><span data-live-join-label>Request to Co-host</span></button><div class="reel-sound-badge is-hidden" data-reel-sound-badge aria-live="polite">Sound on</div><div class="reel-progress"><span data-reel-progress="${esc(reelDomId)}"></span></div></div><aside class="reel-details-panel reels-desktop-intel" data-reel-details-panel><div class="reel-details-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'PulseSoc creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||author.rank||'Creator')} · Live now</small></div>${followButton}</div><div class="reel-details-copy"><span class="reel-ai-hint">Live · ${esc(live.stream_health||'active')}</span><h2>${esc(title)}</h2><p>${esc(category)} · ${viewerCount} watching</p></div><div class="reel-comments-preview"><strong>Live chat preview</strong>${chatHtml}</div></aside></article>`;
     }
@@ -34741,7 +34741,7 @@ def pulse_reels_page():
         if(data.guest?.request_id)card.dataset.liveJoinRequestId=String(data.guest.request_id);
         traceLiveReelCohost(card,'cohost_host_accepted',{request_id:data.guest?.request_id||0});
         setLiveReelJoinState(card,'host_accepted','Host approved co-host access.');
-        if(navigate)setTimeout(()=>{location.href=card.dataset.liveUrl||`/pulse/live/${encodeURIComponent(liveId)}`},350);
+        if(navigate)setTimeout(()=>{location.href=card.dataset.liveUrl||`/pulse/reels?live=${encodeURIComponent(liveId)}`},350);
       }else if(status==='pending'){
         if(data.request?.id)card.dataset.liveJoinRequestId=String(data.request.id);
         setLiveReelJoinState(card,'waiting_for_host','The host can accept or deny this request from Backstage.');
@@ -34798,7 +34798,7 @@ def pulse_reels_page():
         if(data.status==='accepted'){
           traceLiveReelCohost(card,'cohost_host_accepted',{request_id:data.guest?.request_id||0});
           setLiveReelJoinState(card,'host_accepted');
-          setTimeout(()=>{location.href=card.dataset.liveUrl||`/pulse/live/${encodeURIComponent(liveId)}`},350);
+          setTimeout(()=>{location.href=card.dataset.liveUrl||`/pulse/reels?live=${encodeURIComponent(liveId)}`},350);
           return data;
         }
         if(data.status!=='pending')throw new Error(data.message||'The co-host request was not confirmed.');
@@ -34829,7 +34829,7 @@ def pulse_reels_page():
     function preloadNextReel(activeCard){const active=activeCard||[...document.querySelectorAll('.reel-card')].find(card=>{const r=card.getBoundingClientRect();return r.top<innerHeight/2&&r.bottom>innerHeight/2});if(!active)return;[active.nextElementSibling,active.nextElementSibling?.nextElementSibling].filter(Boolean).forEach((next,idx)=>{const flag='reelLightPreloaded'+(idx+1);if(next.dataset[flag]==='1')return;next.dataset[flag]='1';next.querySelectorAll('img[loading="lazy"],video').forEach(media=>{if(media.tagName==='VIDEO'){media.preload='auto';media.autoplay=false;media.playsInline=true;if(media.readyState===0)media.load()}else if(media.dataset.src&&!media.src)media.src=media.dataset.src;});});}
     function renderRail(activeLane='for_you',categories=[]){const seen=new Set();const tabs=[...reelTabs,...(categories||[]).map(c=>['category:'+c,c])].filter(([key])=>{if(seen.has(key))return false;seen.add(key);return true});rail.innerHTML=`<button class="reels-mobile-title" type="button" aria-current="page" data-reels-title>Reels</button>`+tabs.map(([key,label])=>`<button class="${key===activeLane?'active':''}" data-reel-lane="${esc(key)}" aria-pressed="${key===activeLane?'true':'false'}">${esc(label)}</button>`).join('');rail.querySelector('.active')?.scrollIntoView({block:'nearest',inline:'center'});}
     function setEmpty(lane){const copy=emptyCopy[lane]||['No Reels in this lane yet.','Creators are still warming this category up.'];reelsEmpty.querySelector('h2').textContent=copy[0];reelsEmpty.querySelector('p').textContent=copy[1];}
-    function setTabUrl(lane){const u=new URL(location.href);u.searchParams.set('tab',lane);history.replaceState({tab:lane},'',u.pathname+'?'+u.searchParams.toString())}
+    function setTabUrl(lane,{preserveLive=false}={}){const u=new URL(location.href);u.searchParams.set('tab',lane);if(!preserveLive)u.searchParams.delete('live');history.replaceState({tab:lane},'',u.pathname+'?'+u.searchParams.toString())}
 	    function reelPoster(reel){const media=(reel.media||[])[0]||{};const mux=media.mux_playback_id?`https://image.mux.com/${media.mux_playback_id}/thumbnail.jpg?time=1&width=720&fit_mode=smartcrop`:'';return media.poster_url||media.mux_thumbnail_url||media.thumbnail_url||reel.poster_url||mux||''}
 	    function reelPreviewSrc(reel){const media=(reel.media||[])[0]||{};const mux=media.mux_playback_id?`https://stream.mux.com/${media.mux_playback_id}.m3u8`:'';return mux||media.playback_url||media.valid_url||media.cdn_url||media.media_url||reel.video_url||''}
 	    function reelDurationLabel(reel){const media=(reel.media||[])[0]||{};return formatReelDuration(media.duration||reel.duration_seconds||0)}
@@ -34837,12 +34837,12 @@ def pulse_reels_page():
 	    function syncReelsInfoPanel(activeId=''){if(!reelsInfoPanel)return;const card=document.querySelector(`[data-reel-id="${CSS.escape(String(activeId||''))}"]`)||document.querySelector('.reel-card.is-active')||document.querySelector('.reel-card');const panel=card?.querySelector('.reel-details-panel');reelsInfoPanel.innerHTML=panel?panel.innerHTML:''}
 	    function syncReelsSidebars(activeId=''){document.querySelectorAll('[data-reels-desktop-sidebar] [data-reel-lane]').forEach(btn=>btn.classList.toggle('active',btn.dataset.reelLane===currentLane));syncReelsInfoPanel(activeId);renderUpNext(activeId)}
     async function loadMoreReels(){if(reelsLoadingMore||!reelsCache.length)return;reelsLoadingMore=true;try{const isCategory=currentLane.startsWith('category:');const url='/api/pulse/reels/feed?limit=12&offset='+encodeURIComponent(reelsOffset)+'&tab='+encodeURIComponent(isCategory?'category':currentLane)+(isCategory?'&category='+encodeURIComponent(currentLane.slice(9)):'');const d=await pulseApi(url);const next=(d.reels||[]).filter(reel=>!reelsCache.some(existing=>String(existing.reel_id||existing.id)===String(reel.reel_id||reel.id)));if(next.length){reelsCache=[...reelsCache,...next];reelsOffset+=next.length;reelsFeed.insertAdjacentHTML('beforeend',next.map(reelHtml).join(''));bindReelDiagnostics(reelsFeed);renderUpNext(document.querySelector('.reel-card.is-active')?.dataset.reelId||'')}}catch(err){console.warn('PulseSoc Reels recommendation load failed',err)}finally{reelsLoadingMore=false}}
-    async function loadReels(lane='for_you'){const loadVersion=++reelsLoadVersion;currentLane=lane;reelsCache=[];reelsOffset=0;renderRail(lane);syncReelsSidebars('');setTabUrl(lane);reelsLoading?.classList.add('open');try{const isCategory=lane.startsWith('category:');const url='/api/pulse/reels/feed?limit=12&tab='+encodeURIComponent(isCategory?'category':lane)+(isCategory?'&category='+encodeURIComponent(lane.slice(9)):'');const d=await pulseApi(url);if(loadVersion!==reelsLoadVersion)return;const reels=d.reels||[];reelsCache=reels;reelsOffset=reels.length;renderRail(d.lane||lane,d.categories||[]);reelsFeed.innerHTML=reels.map(reelHtml).join('');bindReelDiagnostics(reelsFeed);setEmpty(d.lane||lane);reelsEmpty.style.display=reels.length?'none':'grid';renderUpNext(reels[0]?.reel_id||reels[0]?.id||'');scheduleReelsPlayback('loadReels')}catch(e){if(loadVersion!==reelsLoadVersion)return;setEmpty(lane);reelsEmpty.style.display='grid';reelsEmpty.querySelector('p').textContent=e.message||'Reels are temporarily unavailable.'}finally{if(loadVersion===reelsLoadVersion)reelsLoading?.classList.remove('open')}}
+    async function loadReels(lane='for_you',opts={}){const loadVersion=++reelsLoadVersion;currentLane=lane;reelsCache=[];reelsOffset=0;renderRail(lane);syncReelsSidebars('');setTabUrl(lane,{preserveLive:!!opts.liveId});reelsLoading?.classList.add('open');try{const isCategory=lane.startsWith('category:');let url='/api/pulse/reels/feed?limit=12&tab='+encodeURIComponent(isCategory?'category':lane)+(isCategory?'&category='+encodeURIComponent(lane.slice(9)):'');if(opts.liveId)url+='&live='+encodeURIComponent(opts.liveId);const d=await pulseApi(url);if(loadVersion!==reelsLoadVersion)return;const reels=d.reels||[];reelsCache=reels;reelsOffset=reels.length;renderRail(d.lane||lane,d.categories||[]);reelsFeed.innerHTML=reels.map(reelHtml).join('');bindReelDiagnostics(reelsFeed);setEmpty(d.lane||lane);reelsEmpty.style.display=reels.length?'none':'grid';renderUpNext(reels[0]?.reel_id||reels[0]?.id||'');scheduleReelsPlayback('loadReels');if(opts.liveId){const target=document.querySelector(`[data-live-reel-id="${CSS.escape(String(opts.liveId))}"]`);if(target)target.scrollIntoView({block:'center'});else toast('That Live is unavailable in Reels right now.')}}catch(e){if(loadVersion!==reelsLoadVersion)return;setEmpty(lane);reelsEmpty.style.display='grid';reelsEmpty.querySelector('p').textContent=e.message||'Reels are temporarily unavailable.'}finally{if(loadVersion===reelsLoadVersion)reelsLoading?.classList.remove('open')}}
     reelsFeed.addEventListener('scroll',()=>requestAnimationFrame(()=>{syncPlayback();preloadNextReel();if(reelsFeed.scrollTop+reelsFeed.clientHeight>reelsFeed.scrollHeight-900)loadMoreReels();}),{passive:true});document.addEventListener('visibilitychange',()=>scheduleReelsPlayback('visibilitychange'));window.addEventListener('pageshow',()=>scheduleReelsPlayback('pageshow'));window.addEventListener('resize',()=>scheduleReelsPlayback('resize'));
 	    function spawnFloatingEmoji(x,y,emoji='🔥'){const burst=document.createElement('div');burst.className='reel-fire-burst reel-floating-emoji';burst.textContent=emoji;burst.style.left=x+'px';burst.style.top=y+'px';burst.style.setProperty('--drift',(Math.random()*80-40)+'px');document.body.appendChild(burst);setTimeout(()=>burst.remove(),860)}
 	    function fireBurst(x,y){['🔥','💚','✨','⚡'].forEach((emoji,i)=>setTimeout(()=>spawnFloatingEmoji(x+(i-1.5)*12,y-(i%2)*10,emoji),i*45))}
 	    async function fireReel(id,origin){const card=document.querySelector(`[data-reel-id="${CSS.escape(String(id))}"]`);if(card?.dataset.contentType==='live'||card?.dataset.liveReelId||String(id||'').startsWith('live-'))return reactToLiveReel(card||id,'🔥',origin);const button=document.querySelector(`[data-reel-react="${CSS.escape(String(id))}"]`);if(card?.dataset.reactionsDisabled==='1'){toast('Reactions are disabled for this Reel.');return {ok:false}}if(button?.dataset.busy==='1')return {ok:false,busy:true};if(button){button.dataset.busy='1';button.classList.add('is-pending')}const wasActive=button?.classList.contains('active');button?.classList.toggle('active',!wasActive);button?.setAttribute('aria-pressed',!wasActive?'true':'false');button?.classList.add('is-popping');setTimeout(()=>button?.classList.remove('is-popping'),320);document.querySelectorAll(`[data-fire-count="${CSS.escape(String(id))}"]`).forEach(n=>n.textContent=Math.max(0,Number(n.textContent||0)+(wasActive?-1:1)));if(origin)fireBurst(origin.clientX||innerWidth/2,origin.clientY||innerHeight/2);try{const d=await pulseApi(`/api/pulse/reels/${id}/react`,{method:'POST',body:JSON.stringify({reaction_type:'fire'})});button?.classList.toggle('active',!d.removed);button?.setAttribute('aria-pressed',d.removed?'false':'true');const counts=d.reaction_counts||d.reactions||{};document.querySelectorAll(`[data-fire-count="${CSS.escape(String(id))}"]`).forEach(n=>n.textContent=Number(counts.fire||d.fire_count||0));return d}catch(err){button?.classList.toggle('active',wasActive);button?.setAttribute('aria-pressed',wasActive?'true':'false');document.querySelectorAll(`[data-fire-count="${CSS.escape(String(id))}"]`).forEach(n=>n.textContent=Math.max(0,Number(n.textContent||0)+(wasActive?1:-1)));throw err}finally{if(button){button.classList.remove('is-pending');delete button.dataset.busy}}}
-	    document.addEventListener('click',async e=>{const join=e.target.closest('[data-live-join-reel]'),react=e.target.closest('[data-live-reaction]'),share=e.target.closest('[data-live-share-reel]'),more=e.target.closest('[data-live-more-reel]');if(!join&&!react&&!share&&!more)return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();if(join){await joinLiveReel(join);return}if(react){await reactToLiveReel(react,react.dataset.reactionType||'🔥',e);return}if(share){const url=new URL(share.dataset.liveUrl||(`/pulse/live/${share.dataset.liveShareReel}`),location.origin).href;try{if(navigator.share)await navigator.share({title:'PulseSoc Live',url});else{await navigator.clipboard.writeText(url);toast('Live link copied.')}}catch(err){toast('Live share was cancelled.')}return}if(more){location.href=more.dataset.liveUrl||(`/pulse/live/${more.dataset.liveMoreReel}`);return}},true);
+	    document.addEventListener('click',async e=>{const join=e.target.closest('[data-live-join-reel]'),react=e.target.closest('[data-live-reaction]'),share=e.target.closest('[data-live-share-reel]'),more=e.target.closest('[data-live-more-reel]');if(!join&&!react&&!share&&!more)return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();if(join){await joinLiveReel(join);return}if(react){await reactToLiveReel(react,react.dataset.reactionType||'🔥',e);return}if(share){const url=new URL(share.dataset.liveUrl||(`/pulse/reels?live=${share.dataset.liveShareReel}`),location.origin).href;try{if(navigator.share)await navigator.share({title:'PulseSoc Live',url});else{await navigator.clipboard.writeText(url);toast('Live link copied.')}}catch(err){toast('Live share was cancelled.')}return}if(more){location.href=more.dataset.liveUrl||(`/pulse/reels?live=${more.dataset.liveMoreReel}`);return}},true);
 	    function commentAvatar(a){return a.avatar_url?`<span class="reel-comment-avatar"><img src="${esc(a.avatar_url)}" alt=""></span>`:`<span class="reel-comment-avatar">${esc((a.display_name||a.name||'P').slice(0,1))}</span>`}
 	    function renderComment(c,depth=0){const a=c.author||{},replies=(c.replies||[]).map(r=>renderComment(r,depth+1)).join(''),actions=`<div class="reel-comment-actions"><button type="button" data-reel-comment-like="${esc(c.id||'')}">😀 ${c.like_count?`(${esc(c.like_count)})`:''}</button><button type="button" data-reel-comment-reply="${esc(c.id||'')}">Reply</button>${c.can_edit?`<button type="button" data-reel-comment-edit="${esc(c.id||'')}">Edit</button>`:''}${c.can_delete?`<button type="button" data-reel-comment-delete="${esc(c.id||'')}">Delete</button>`:''}</div>`;return `<article class="reel-comment ${depth?'reply':''}" data-reel-comment="${esc(c.id||'')}">${commentAvatar(a)}<div><strong>${esc(a.display_name||a.name||'PulseSoc user')}</strong><p>${esc(c.body||'')}</p><small>${esc(c.human_time||c.created_at||'Recently')}${c.edited_at?' · edited':''}</small>${actions}${replies}</div></article>`}
 		    function updatePreviewAfterComment(id,comment){const boxes=document.querySelectorAll(`[data-reel-comment-preview="${CSS.escape(String(id))}"]`);if(!boxes.length||!comment)return;const a=comment.author||{};const mini=`<button class="reel-comment-mini is-new" type="button" data-open-comment-thread="${id}" data-comment-id="${esc(comment.id||'')}">${commentAvatar(a)}<span><strong>${esc(a.display_name||a.name||'You')}</strong><small>${esc(comment.body||'')}</small></span></button>`;boxes.forEach(box=>{const first=box.querySelector('.reel-comment-mini');if(first)first.insertAdjacentHTML('beforebegin',mini);else box.insertAdjacentHTML('beforeend',mini);box.querySelectorAll('.reel-comment-mini').forEach((node,i)=>{if(i>2)node.remove()})})}
@@ -34973,7 +34973,7 @@ def pulse_reels_page():
       window.history.replaceState(null,'',location.pathname);
       toast('Reel creator opened.');
     })();
-	    loadReels(new URLSearchParams(location.search).get('tab')||'for_you');
+	    {const params=new URLSearchParams(location.search),liveId=params.get('live')||'';loadReels(params.get('tab')||(liveId?'live':'for_you'),{liveId});}
 	    """
     script = script.replace(
         'data-author-id="${author.user_id||reel.user_id||\'\'}" data-orientation=',
@@ -35323,7 +35323,15 @@ def pulse_live_reel_playback_url(live):
     return media_service.normalize_url(playback_url or "")
 
 
-def pulse_live_reel_items(viewer_user_id=0, lane="for_you", limit=3, category=""):
+def pulse_live_watch_url(live_id, mode=""):
+    live_id = safe_int(live_id, 0)
+    if live_id <= 0:
+        return "/pulse/reels"
+    suffix = f"&mode={quote(str(mode))}" if mode else ""
+    return f"/pulse/reels?live={live_id}{suffix}"
+
+
+def pulse_live_reel_items(viewer_user_id=0, lane="for_you", limit=3, category="", focus_live_id=0):
     """Adapt active, playable PulseSoc Live sessions into Reels-feed items."""
     lane = normalize_reel_lane(lane)
     if lane == "category" and category and "live" not in str(category).lower():
@@ -35333,6 +35341,7 @@ def pulse_live_reel_items(viewer_user_id=0, lane="for_you", limit=3, category=""
     requested = max(0, min(int(limit or 0), 6))
     if requested <= 0:
         return []
+    focus_live_id = safe_int(focus_live_id, 0)
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -35351,29 +35360,34 @@ def pulse_live_reel_items(viewer_user_id=0, lane="for_you", limit=3, category=""
             FROM pulse_live_sessions l
             WHERE LOWER(COALESCE(l.audience,'public'))='public'
               AND (
-                LOWER(COALESCE(l.status,'')) IN ('live','starting','broadcasting','active')
+                l.id=?
+                OR LOWER(COALESCE(l.status,'')) IN ('live','starting','broadcasting','active')
                 OR LOWER(COALESCE(l.publish_state,'')) IN ('live','starting','broadcasting','active','browser_live_livekit_direct','livekit_direct')
                 OR COALESCE(l.is_live,0)=1
               )
-              AND LOWER(COALESCE(l.status,'')) NOT IN ('ended','offline','archived','deleted')
+              AND LOWER(COALESCE(l.status,'')) NOT IN ('archived','deleted')
               AND (
-                COALESCE(l.playback_url,'')!=''
+                l.id=?
+                OR COALESCE(l.replay_url,'')!=''
+                OR COALESCE(l.playback_url,'')!=''
                 OR COALESCE(l.hls_url,'')!=''
                 OR COALESCE(l.mux_playback_id,'')!=''
               )
-            ORDER BY COALESCE(l.engagement_score,0) DESC,
+            ORDER BY CASE WHEN l.id=? THEN 0 ELSE 1 END,
+                     COALESCE(l.engagement_score,0) DESC,
                      COALESCE(l.viewer_count,0) DESC,
                      COALESCE(l.started_at,l.created_at,'') DESC,
                      l.id DESC
             LIMIT ?
             """,
-            (safe_int(viewer_user_id, 0), requested * 3),
+            (safe_int(viewer_user_id, 0), focus_live_id, focus_live_id, focus_live_id, requested * 3),
         )
         rows = [dict(row) for row in cur.fetchall()]
         items = []
         for live in rows:
             playback_url = pulse_live_reel_playback_url(live)
-            if not reel_media_source_is_playable(playback_url):
+            live_id = safe_int(live.get("id"), 0)
+            if not reel_media_source_is_playable(playback_url) and live_id != focus_live_id:
                 continue
             author = pulse_identity_for_user(cur, safe_int(live.get("user_id"), 0))
             if lane == "following" and not bool(live.get("viewer_follows_author")):
@@ -35384,7 +35398,6 @@ def pulse_live_reel_items(viewer_user_id=0, lane="for_you", limit=3, category=""
                 blob = (str(live.get("category") or "") + " " + str(live.get("title") or "")).lower()
                 if not any(token in blob for token in ["learn", "lesson", "teacher", "education", "tutorial", "safety", "scam", "course", "crypto", "cyber"]):
                     continue
-            live_id = safe_int(live.get("id"), 0)
             preview_url = media_service.normalize_url(live.get("preview_url") or live.get("thumbnail_url") or "")
             chat_preview = []
             try:
@@ -35437,7 +35450,7 @@ def pulse_live_reel_items(viewer_user_id=0, lane="for_you", limit=3, category=""
                     "playback_url": playback_url,
                     "preview_url": preview_url,
                     "viewer_count": safe_int(live.get("viewer_count"), 0),
-                    "live_url": f"/pulse/live/{live_id}",
+                    "live_url": pulse_live_watch_url(live_id),
                     "stream_health": live.get("stream_health") or "",
                 },
                 "media": [
@@ -35541,11 +35554,12 @@ def pulse_reel_matches_lane(reel, lane, viewer_user_id=0, category=""):
     return True
 
 
-def pulse_reel_feed_payload(viewer_user_id=0, category="", limit=12, offset=0, lane="for_you"):
+def pulse_reel_feed_payload(viewer_user_id=0, category="", limit=12, offset=0, lane="for_you", focus_live_id=0):
     lane = normalize_reel_lane(lane)
     requested_limit = max(1, min(int(limit or 12), 20))
+    focus_live_id = safe_int(focus_live_id, 0)
     if lane == "live":
-        selected = pulse_live_reel_items(viewer_user_id=viewer_user_id, lane=lane, category=category, limit=requested_limit)
+        selected = pulse_live_reel_items(viewer_user_id=viewer_user_id, lane=lane, category=category, limit=requested_limit, focus_live_id=focus_live_id)
         if has_request_context():
             try:
                 g.rows_returned = int(getattr(g, "rows_returned", 0) or 0) + len(selected)
@@ -35748,6 +35762,7 @@ def pulse_reel_feed_payload(viewer_user_id=0, category="", limit=12, offset=0, l
         lane=lane,
         category=category,
         limit=(max(1, min(3, requested_limit // 4 or 1)) if offset == 0 or lane == "live" else 0),
+        focus_live_id=(focus_live_id if offset == 0 else 0),
     )
     ranked = pulse_merge_live_reel_items(ranked, live_items, lane=lane)
     hidden_reel_ids = pulse_hidden_reel_ids(viewer_user_id)
@@ -35938,7 +35953,7 @@ def pulse_live_page():
     cur.execute("SELECT s.*, COALESCE(u.display_name,u.username,'PulseSoc Creator') AS creator_name FROM pulse_live_sessions s LEFT JOIN users u ON u.user_id=s.user_id WHERE s.status='live' AND COALESCE(s.mux_live_status,'') IN ('active','live') ORDER BY s.started_at DESC, s.id DESC LIMIT 20")
     active_streams = [dict(row) for row in cur.fetchall()]
     conn.close()
-    stream_cards = "".join(f"<article class='card'><span class='pill' style='border-color:rgba(255,77,109,.45);color:#ffd6dc'>LIVE NOW</span><h2>{clean_html(s.get('title') or 'PulseSoc Live')}</h2><p>{clean_html(s.get('creator_name') or '')} · {clean_html(s.get('category') or '')}</p><p><span class='pill'>{int(s.get('viewer_count') or 0)} viewers</span> <span class='pill'>{clean_html(s.get('stream_health') or s.get('status') or '')}</span></p><a class='button primary' href='/pulse/live/{int(s.get('id') or 0)}'>Watch</a></article>" for s in active_streams)
+    stream_cards = "".join(f"<article class='card' data-live-gateway-card='{int(s.get('id') or 0)}'><span class='pill' style='border-color:rgba(255,77,109,.45);color:#ffd6dc'>LIVE NOW</span><h2>{clean_html(s.get('title') or 'PulseSoc Live')}</h2><p>{clean_html(s.get('creator_name') or '')} · {clean_html(s.get('category') or '')}</p><p><span class='pill'>{int(s.get('viewer_count') or 0)} viewers</span> <span class='pill'>{clean_html(s.get('stream_health') or s.get('status') or '')}</span></p><a class='button primary' href='{pulse_live_watch_url(int(s.get('id') or 0))}' data-open-live-in-reels='{int(s.get('id') or 0)}'>Join Live in Reels</a></article>" for s in active_streams)
     main = f"{live_card}<section class='grid'><article class='card'><h2>Trust Level</h2><p>{safe_int(profile.get('trust_score'), 0)}/100 · {clean_html(profile.get('trust_band') or '')}</p></article><article class='card'><h2>Invite Progress</h2><p>{completed}/{required} real members</p></article><article class='card'><h2>Creator Rank</h2><p>{clean_html(privileges.get('current_level') or 'New User')}</p></article></section><section class='card'><h2>Live Discovery</h2><p class='muted'>Trending streams, category filters, creator profiles, and live viewer counts are connected here.</p></section><section class='grid'>{stream_cards or '<article class=\"card\"><h2>No one is live right now.</h2><p>Start the next PulseSoc Live session or check back soon.</p></article>'}</section><section class='card'><h2>Benefits of Going Live</h2><p>Host lessons, creator rooms, Scam Shield breakdowns, Arena training, and community Q&A with stronger safety controls.</p></section>"
     script = """
     const LIVE_ALLOWED_CATEGORIES = new Set(['Crypto Education','Scam Shield Lesson','Arena Training','Market Psychology']);
@@ -36227,7 +36242,7 @@ def pulse_live_studio_page(stream_id):
           </div>
           <div class='live-status-metrics'>
             <span class='live-health-pill' data-live-health>{clean_html(friendly_health)}</span>
-            <a class='button' href='/pulse/live/{stream_id}'>Public View</a>
+            <a class='button' href='{pulse_live_watch_url(stream_id)}' data-open-live-in-reels='{stream_id}'>View in Reels</a>
           </div>
         </div>
 
@@ -36341,148 +36356,7 @@ def pulse_live_studio_page(stream_id):
 
 @webhook_app.route("/pulse/live/<int:live_id>", methods=["GET"])
 def pulse_live_room_page(live_id):
-    init_db()
-    user = require_account()
-    if not user:
-        return redirect(url_for("login_page", next=request.path))
-    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT s.*, COALESCE(u.display_name,u.username,'PulseSoc Creator') AS creator_name FROM pulse_live_sessions s LEFT JOIN users u ON u.user_id=s.user_id WHERE s.id=? LIMIT 1", (live_id,))
-    live = dict(cur.fetchone() or {})
-    if not live:
-        conn.close()
-        return pulse_social_shell("PulseSoc Live", "Live session not found.", "<section class='card'><a class='button primary' href='/pulse/live'>Back to Live</a></section>")
-    cur.execute("""
-        SELECT c.*, COALESCE(u.display_name,u.username,'Viewer') AS display_name
-        FROM pulse_live_chat c
-        LEFT JOIN users u ON u.user_id=c.user_id
-        WHERE c.live_id=? AND COALESCE(c.deleted_at,'')=''
-        ORDER BY c.id DESC
-        LIMIT 80
-    """, (live_id,))
-    chat = [dict(row) for row in cur.fetchall()]
-    cur.execute("SELECT COUNT(*) AS total FROM pulse_live_viewers WHERE live_id=? AND status IN ('watching','hosting')", (live_id,))
-    viewers = int(dict(cur.fetchone() or {}).get("total") or live.get("viewer_count") or 0)
-    cur.execute("SELECT reaction_type FROM pulse_live_reactions WHERE live_id=? ORDER BY id DESC LIMIT 12", (live_id,))
-    reactions = [dict(row) for row in cur.fetchall()]
-    health = live_stream_health_service.score_stream(live, viewer_count=viewers, chat_count=len(chat))
-    presence = live_presence_engine.stream_energy_state(live, chat, reactions, [{"id": i} for i in range(viewers)])
-    playback = live_distribution_service.playback_manifest(live)
-    is_host_viewer = int(live.get("user_id") or 0) == int(user.get("user_id") or 0)
-    viewer_request = pulse_live_latest_guest_request(cur, live_id, user["user_id"]) if not is_host_viewer else {}
-    viewer_guest = pulse_live_active_guest(cur, live_id, user["user_id"]) if not is_host_viewer else {}
-    active_guests = pulse_live_active_guests(cur, live_id)
-    conn.close()
-    chat_html = "".join(
-        f"""<article class='live-chat-message' data-message-id='{int(c.get('id') or 0)}'>
-        <div class='live-chat-avatar'>{clean_html((c.get('display_name') or 'P')[:1].upper())}</div>
-        <div><strong>{clean_html(c.get('display_name') or 'Viewer')}</strong> <span class='pill'>{clean_html(c.get('message_type') or 'Live')}</span><p>{clean_html(c.get('body') or '')}</p></div>
-        </article>"""
-        for c in reversed(chat)
-    )
-    reaction_cloud = live_presence_engine.reaction_cloud(reactions)
-    reaction_html = "".join(f"<span style='--x:{int(r.get('x') or 60)}%;--delay:{int(r.get('delay_ms') or 0)}ms'>{clean_html(r.get('emoji') or '🔥')}</span>" for r in reaction_cloud)
-    health_score = int(health.get("score") or 0)
-    live_status = clean_html(live.get("status") or "idle")
-    mux_status = clean_html(live.get("mux_live_status") or live.get("stream_health") or "idle")
-    playback_url = clean_html(playback.get("playback_url") or playback.get("hls_url") or "")
-    poster_url = clean_html(playback.get("poster_url") or live.get("preview_url") or live.get("thumbnail_url") or "")
-    mux_active = mux_status.lower() in {"active", "live"}
-    is_active_live = mux_active and bool(playback_url)
-    if is_active_live:
-        host_attrs = " data-live-host-viewer='1'" if is_host_viewer else ""
-        player_src = f" src='{playback_url}'" if playback_url else ""
-        player_inner = (
-            f"<video class='live-public-video' data-live-player{host_attrs}{player_src} poster='{poster_url}' "
-            "autoplay muted playsinline webkit-playsinline preload='metadata' controlsList='nodownload noplaybackrate noremoteplayback' disablepictureinpicture></video>"
-            "<button class='live-unmute-button' type='button' data-live-unmute aria-label='Enable live audio'>Tap to unmute</button>"
-        )
-    else:
-        waiting_copy = "Live video is connecting through LiveKit and Mux. Playback will appear automatically." if is_active_live else "Stream has not started yet. The host can start Browser Live to publish through LiveKit and forward to Mux."
-        player_inner = (
-            "<div class='live-ready-state'><div><div class='live-ready-orb'>●</div>"
-            f"<h2>{clean_html(live.get('title') or 'PulseSoc Live')}</h2>"
-            f"<p>{clean_html(waiting_copy)}</p></div></div>"
-        )
-    guest_tiles_html = "".join(
-        f"""<article class='live-guest-tile' data-live-guest-id='{int(g.get('id') or 0)}'>
-          <span class='live-guest-avatar'>{clean_html((g.get('display_name') or 'G')[:1].upper())}</span>
-          <div><strong>{clean_html(g.get('display_name') or 'Co-host')}</strong><small>{'Muted co-host' if g.get('audio_muted') else 'Co-host live'}</small></div>
-        </article>"""
-        for g in active_guests
-    )
-    request_status = clean_html((viewer_request or {}).get("status") or ("accepted" if viewer_guest else "none"))
-    if is_host_viewer:
-        join_panel = f"<a class='live-primary-action' href='/pulse/live/studio/{live_id}'>Open Studio</a>"
-    elif viewer_guest:
-        join_panel = f"<button class='live-primary-action is-accepted' type='button' data-live-guest-join>Co-host approved — joining...</button><button type='button' data-live-guest-leave data-live-guest-id='{int(viewer_guest.get('id') or 0)}'>Leave co-host seat</button>"
-    elif request_status == "pending":
-        join_panel = f"<button class='live-primary-action' type='button' data-live-join-request disabled>Waiting for host approval</button><button type='button' data-live-cancel-request data-live-request-id='{int((viewer_request or {}).get('id') or 0)}'>Cancel co-host request</button>"
-    elif request_status == "denied":
-        join_panel = "<button class='live-primary-action' type='button' data-live-join-request>Request again</button><p class='muted' data-live-join-status>Your last co-host request was denied.</p>"
-    else:
-        join_panel = "<button class='live-primary-action' type='button' data-live-join-request>Request to Co-host</button><p class='muted' data-live-join-status>Camera and microphone readiness will be checked before the host sees your request.</p>"
-    main = f"""
-    <link rel='stylesheet' href='/static/css/pulse_live_studio.css?v=live-studio-owner-20260702d'>
-    <section class='pulse-live-surface live-view-shell live-screen-v1' data-pulse-live-shell data-live-id='{live_id}' data-live-poll-ms='3200' data-live-role='viewer' data-live-viewer-kind='{'host' if is_host_viewer else 'viewer'}'>
-      <section class='live-screen-grid'>
-        <aside class='live-discovery-rail' aria-label='Live discovery'>
-          <div class='studio-brand'><span class='studio-brand-mark'>P</span><strong>PulseSoc Live</strong></div>
-          <a href='/pulse'>Home</a><a href='/pulse/reels'>Reels</a><a class='is-active' href='/pulse/live'>Broadcasts</a><a href='/pulse/discover'>Discover</a><a href='/pulse/messages'>Messages</a><a href='/pulse/profile'>Profile</a>
-          <section class='live-ai-card live-cohost-card' data-live-cohost-card><span>Live Co-host</span><strong data-live-cohost-state>{'Available' if pulse_live_session_accepts_guest_requests(live) else 'Closed'}</strong><p data-live-cohost-copy>Request camera and microphone access to join this Live as a real co-host.</p><div class='live-cohost-stats'><span><strong data-live-guest-count>{len(active_guests)}</strong> active</span><span><strong data-live-request-count>0</strong> pending</span></div></section>
-        </aside>
-        <main class='live-theater'>
-          <div class='live-top-overlay'>
-            <div class='live-host-identity'>
-              <span class='live-chat-avatar'>{clean_html((live.get('creator_name') or 'P')[:1].upper())}</span>
-              <div><strong>{clean_html(live.get('creator_name') or 'PulseSoc Creator')}</strong><small>{clean_html(live.get('category') or 'Live')} · <span data-live-health>{clean_html(health.get('level') or 'ready')}</span></small></div>
-            </div>
-            <div class='live-status-primary'><span class='live-badge'>LIVE</span><span class='live-metric'><span data-live-viewers>{viewers}</span> viewers</span><button type='button' data-live-share>Share</button><a class='button' href='/pulse/live'>Close</a></div>
-          </div>
-          <div class='live-public-player live-hero-player'>
-          {player_inner}
-          <div class='live-floating-reactions' data-live-reactions>{reaction_html}</div>
-          <div class='live-topic-pill'>{clean_html(live.get('category') or 'Community Live')}</div>
-          <div class='live-guest-stack' data-live-guest-stack>{guest_tiles_html or "<article class='live-guest-tile is-empty'><span class='live-guest-avatar'>+</span><div><strong>Host only</strong><small>Co-hosts appear here after approval.</small></div></article>"}</div>
-          </div>
-          <div class='live-view-action-bar' aria-label='Live actions'>
-            <button type='button' data-live-reaction='❤️'>React</button>
-            <button type='button' data-live-pulse-action disabled title='Pulse Sync is not enabled for this Live.'>Pulse</button>
-            <button type='button' data-live-gift-action disabled title='Gifts require the wallet/billing system.'>Gift</button>
-            <button type='button' data-live-poll-action disabled title='No active poll is available.'>Poll</button>
-            <button type='button' data-live-share>Share</button>
-            <button type='button' data-live-more disabled title='More live tools are unavailable for this session.'>More</button>
-          </div>
-          <section class='live-join-panel' data-live-join-panel data-live-request-status='{request_status}'>
-            {join_panel}
-          </section>
-        </main>
-        <aside class='live-chat-panel live-room-panel'>
-          <div class='live-status-primary'><h2>Live Chat</h2><span class='pill'>Realtime</span><span class='pill'>Safe Mode</span></div>
-          <div class='live-chat-feed' data-live-chat-feed>{chat_html or "<article class='live-chat-message'><div class='live-chat-avatar'>P</div><div><strong>PulseSoc</strong><p>Be first in chat.</p></div></article>"}</div>
-          <div class='live-mode-row'><button type='button' data-live-reaction='🔥'>🔥</button><button type='button' data-live-reaction='💚'>💚</button><button type='button' data-live-reaction='😂'>😂</button><button type='button' data-live-reaction='👏'>👏</button></div>
-          <div class='live-chat-composer'><textarea data-live-chat-input placeholder='Chat respectfully'></textarea><button class='primary' data-live-chat-send type='button'>Send</button></div>
-          <section class='live-guest-sidecar'>
-            <h3>Co-hosts</h3>
-            <div data-live-guest-sidecar>{guest_tiles_html or "<p class='muted'>No approved co-hosts yet.</p>"}</div>
-          </section>
-        </aside>
-      </section>
-      <section class='live-analytics-panel'>
-        <div class='live-analytics-grid'>
-          <div><h2>Viewer Counter</h2><p class='metric' id='viewerCount' data-live-viewers>{viewers}</p></div>
-          <div><h2>Audience PulseSoc</h2><p class='metric'>{int((presence.get('pulse') or {}).get('score') or 0)}</p><p class='muted'>{clean_html((presence.get('pulse') or {}).get('label') or 'ready')}</p></div>
-          <div><h2>Safety</h2><p class='metric'>Clear</p><p class='muted'>Report abuse, scams, harassment, or unsafe financial claims.</p></div>
-        </div>
-      </section>
-    </section>
-    <script src='/static/vendor/livekit-client.umd.js?v=20260610-livekit-bridge-v2' defer></script>
-    <script src='/static/js/pulse_live_studio_runtime.js?v=live-studio-owner-20260702d' defer></script>
-    """
-    script = f"""
-    async function joinLive(){{try{{const d=await pulseApi('/api/pulse/live/{live_id}/join',{{method:'POST',body:JSON.stringify({{}})}});document.getElementById('viewerCount').textContent=d.viewer_count||0;}}catch(err){{console.error('Live join failed',err)}}}}
-    joinLive();
-    """
-    return pulse_social_shell("PulseSoc Live Room", "Realtime live session with viewer tracking, chat, reactions, and safety controls.", main, "", script)
+    return redirect(pulse_live_watch_url(live_id), code=302)
 
 
 @webhook_app.route("/api/pulse/live/start", methods=["POST"])
@@ -36788,13 +36662,14 @@ def api_pulse_live_start():
             "INSERT INTO pulse_live_events (event_type, actor_user_id, post_id, payload_json, created_at) VALUES (?, ?, ?, ?, ?)",
             ("live_start_trace", user_id, feed_post_id, json.dumps({"trace_id": trace_id, "live_id": live_id, "destinations": restream_targets}, default=str), now),
         )
+        live_watch_url = pulse_live_watch_url(live_id)
         follower_notifications = pulse_notify_followers(
             cur,
             user,
             "live_started",
             f"{pulse_actor_display_name(user)} is live",
             f"{title} is live on PulseSoc.",
-            f"/pulse/live/{live_id}",
+            live_watch_url,
             entity_type="live",
             entity_id=str(live_id),
             metadata={
@@ -36803,15 +36678,15 @@ def api_pulse_live_start():
                 "feed_post_id": feed_post_id,
                 "trace_id": trace_id,
                 "priority": "high",
-                "mobile_deep_link": f"pulse://live/{live_id}",
-                "deep_link": f"/pulse/live/{live_id}",
+                "mobile_deep_link": f"pulse://reels?live={live_id}",
+                "deep_link": live_watch_url,
             },
             limit=250,
         )
         logging.info("PULSE_LIVE_START_NOTIFICATIONS trace_id=%s live_id=%s count=%s", trace_id, live_id, follower_notifications)
         conn.commit(); conn.close()
         try:
-            pulse_emit_event("livestream_created", {"live_id": live_id, "title": title, "live_url": f"/pulse/live/{live_id}", "studio_url": studio_url}, user_id, None)
+            pulse_emit_event("livestream_created", {"live_id": live_id, "title": title, "live_url": live_watch_url, "studio_url": studio_url}, user_id, None)
         except Exception:
             logging.exception("PULSE_LIVE_REALTIME_EMIT_FAILED live_id=%s user_id=%s", live_id, user_id)
         logging.info("PULSE_LIVE_START_OK trace_id=%s user_id=%s live_id=%s feed_post_id=%s", trace_id, user_id, live_id, feed_post_id)
@@ -36833,7 +36708,7 @@ def api_pulse_live_start():
             "destinations": restream_targets,
             "category": category,
             "custom_category": custom_category,
-            "live_url": f"/pulse/live/{live_id}",
+            "live_url": live_watch_url,
             "studio_url": studio_url,
             "websocket_channel": channel,
             "chat_room_id": chat_room,
@@ -39549,7 +39424,7 @@ def api_pulse_live_join(live_id):
     if feed_post_id:
         cur.execute("UPDATE pulse_posts SET live_viewer_count=?, updated_at=? WHERE id=?", (viewers, now, feed_post_id))
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "status": "watching", "role": "audience", "viewer_count": viewers, "next_url": f"/pulse/live/{live_id}", "message": "Watching live stream."})
+    return jsonify({"ok": True, "status": "watching", "role": "audience", "viewer_count": viewers, "next_url": pulse_live_watch_url(live_id), "message": "Watching live stream in Reels."})
 
 
 @webhook_app.route("/api/pulse/live/<int:live_id>/join-request", methods=["POST"])
@@ -40164,7 +40039,7 @@ def api_pulse_live_join_request_action(live_id, request_id, action):
                 "cohost_denied",
                 "Co-host request denied",
                 reason or "The host denied your co-host request.",
-                f"/pulse/live/{live_id}",
+                pulse_live_watch_url(live_id),
                 actor_user_id=user["user_id"],
                 entity_type="live",
                 entity_id=str(live_id),
@@ -40174,8 +40049,8 @@ def api_pulse_live_join_request_action(live_id, request_id, action):
                     "request_id": request_id,
                     "trace_id": trace_id,
                     "priority": "normal",
-                    "mobile_deep_link": f"pulse://live/{live_id}",
-                    "deep_link": f"/pulse/live/{live_id}",
+                    "mobile_deep_link": f"pulse://reels?live={live_id}",
+                    "deep_link": pulse_live_watch_url(live_id),
                 },
             )
             conn.commit(); conn.close()
@@ -40239,7 +40114,7 @@ def api_pulse_live_join_request_action(live_id, request_id, action):
                 "cohost_accepted",
                 "Co-host request accepted",
                 "The host approved your co-host request. Join the Live now.",
-                f"/pulse/live/{live_id}",
+                pulse_live_watch_url(live_id),
                 actor_user_id=user["user_id"],
                 entity_type="live",
                 entity_id=str(live_id),
@@ -40250,8 +40125,8 @@ def api_pulse_live_join_request_action(live_id, request_id, action):
                     "guest_id": guest_id,
                     "trace_id": trace_id,
                     "priority": "high",
-                    "mobile_deep_link": f"pulse://live/{live_id}",
-                    "deep_link": f"/pulse/live/{live_id}",
+                    "mobile_deep_link": f"pulse://reels?live={live_id}",
+                    "deep_link": pulse_live_watch_url(live_id),
                 },
             )
             conn.commit()
@@ -40420,7 +40295,7 @@ def api_pulse_live_end(live_id):
                 "replay_available",
                 "Live replay available",
                 f"{pulse_actor_display_name(user)} has a new PulseSoc Live replay.",
-                f"/pulse/live/{live_id}",
+                pulse_live_watch_url(live_id, "replay"),
                 entity_type="live_replay",
                 entity_id=str(live_id),
                 metadata={"live_id": live_id, "replay_url_present": True},
@@ -68389,7 +68264,7 @@ def pulse_video_payload(row):
     row["ready"] = str(row.get("processing_status") or "").lower() == "ready" or str(row.get("mux_status") or "").lower() in {"ready", "asset_ready", "available"}
     row["tags"] = str(row.get("tags") or "")
     row["category"] = str(row.get("category") or "")
-    row["source_url"] = f"/pulse/reels/{row.get('source_id')}" if row.get("source_type") == "reel" else f"/pulse/post/{row.get('source_id')}" if row.get("source_type") == "feed_video" else f"/pulse/live/{row.get('source_id')}"
+    row["source_url"] = f"/pulse/reels/{row.get('source_id')}" if row.get("source_type") == "reel" else f"/pulse/post/{row.get('source_id')}" if row.get("source_type") == "feed_video" else pulse_live_watch_url(row.get("source_id"))
     row["permalink"] = f"/pulse/videos/{row.get('id')}"
     return row
 
@@ -69842,6 +69717,7 @@ def api_pulse_reels_feed():
             limit=safe_int(request.args.get("limit"), 12),
             offset=safe_int(request.args.get("offset"), 0),
             lane=request.args.get("tab") or request.args.get("lane") or request.args.get("feed") or "for_you",
+            focus_live_id=safe_int(request.args.get("live"), 0),
         )
         pulse_mark_online(user["user_id"], "reels", request.path)
         return jsonify({"ok": True, "data": {"reels": payload.get("reels", [])}, "lane": payload.get("lane") or "for_you", "lane_label": payload.get("lane_label") or "For You", "reels": payload.get("reels", []), "categories": payload.get("categories", []), "has_more": payload.get("has_more", False), "next_offset": payload.get("next_offset", 0)})

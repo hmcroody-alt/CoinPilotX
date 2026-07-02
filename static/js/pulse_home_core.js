@@ -6,6 +6,29 @@
   const loadMore = document.getElementById("loadMore");
   const tabs = document.getElementById("tabs");
   const toastNode = document.getElementById("toast");
+
+  function liveInReelsUrl(liveId) {
+    const value = String(liveId || "").trim();
+    if (!/^[1-9]\d*$/.test(value)) return "";
+    return `/pulse/reels?live=${encodeURIComponent(value)}`;
+  }
+
+  window.openLiveInReels = function openLiveInReels(liveId) {
+    const url = liveInReelsUrl(liveId);
+    if (!url) return false;
+    window.location.assign(url);
+    return true;
+  };
+
+  document.addEventListener("click", event => {
+    const trigger = event.target.closest("[data-open-live-in-reels]");
+    if (!trigger) return;
+    const liveId = trigger.dataset.openLiveInReels || trigger.dataset.liveId || trigger.getAttribute("data-live-id") || "";
+    if (!liveInReelsUrl(liveId)) return;
+    event.preventDefault();
+    window.openLiveInReels(liveId);
+  }, true);
+
   if (!main || !feed || !tabs) return;
 
   const state = {
@@ -1447,10 +1470,12 @@
     const label = author.primary_label || author.rank || (author.badges || ["Member"])[0] || "PulseSoc member";
     const mediaItems = post.media || [];
     const kind = mediaTypeLabel(post, mediaItems);
+    const isLiveGateway = !!(post.live?.live_session_id || String(post.post_type || "").toLowerCase() === "live");
     const card = element("article", `card post post-card-modern pulse-feed-post-v3 post-card-${kind}`);
     card.dataset.postId = post.id;
     card.dataset.postType = post.post_type || kind;
     card.dataset.mediaKind = kind;
+    if (isLiveGateway) card.classList.add("pulse-live-gateway-card");
     if (author.public_player_id) card.dataset.authorPublicPlayerId = author.public_player_id;
 
     const media = renderMedia(post, mediaItems);
@@ -1459,15 +1484,34 @@
     renderMenu(card, post, author);
     renderCaption(card, post);
     if (post.live?.live_url) {
-      const live = element("a", "button primary", "Join live");
+      const gateway = element("section", "pulse-live-gateway");
+      if (post.live.preview_url) {
+        const preview = document.createElement("img");
+        preview.src = post.live.preview_url;
+        preview.alt = "PulseSoc Live preview";
+        preview.loading = "lazy";
+        gateway.appendChild(preview);
+      }
+      const summary = element("div", "pulse-live-gateway-summary");
+      summary.innerHTML = `<span class="badge live">${String(post.live.status || "live").toLowerCase().includes("ended") ? "ENDED" : "LIVE"}</span><strong>${esc(post.title || "PulseSoc Live")}</strong><small>${Number(post.live.viewer_count || 0)} watching · ${esc(post.live.stream_health || "Reels watch surface")}</small>`;
+      gateway.appendChild(summary);
+      const live = element("a", "button primary", String(post.live.status || "").toLowerCase().includes("ended") ? "Live Ended" : "Join Live in Reels");
       live.href = post.live.live_url;
-      card.appendChild(live);
+      if (post.live.live_session_id) live.dataset.openLiveInReels = post.live.live_session_id;
+      if (String(post.live.status || "").toLowerCase().includes("ended")) {
+        live.classList.remove("primary");
+        live.setAttribute("aria-disabled", "true");
+      }
+      gateway.appendChild(live);
+      card.appendChild(gateway);
     }
-    if (media) card.appendChild(media);
+    if (media && !isLiveGateway) card.appendChild(media);
     renderPostMusic(card, post);
     renderEngagement(card, post);
-    renderActions(card, post);
-    renderComposer(card, post);
+    if (!isLiveGateway) {
+      renderActions(card, post);
+      renderComposer(card, post);
+    }
     window.PulseReactionSystem?.hydrate?.(card);
     return card;
   }

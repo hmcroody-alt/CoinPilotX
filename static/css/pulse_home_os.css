@@ -3329,3 +3329,52 @@ html[data-pulseshell-performance="low-end"] body.pulse-home-os .ufo-welcome-beam
   opacity: .62;
   transform: translateX(-50%) scaleY(1);
 }
+
+body.pulse-home-os .pulse-live-gateway-card {
+  border-color: rgba(255, 70, 112, .24);
+}
+
+body.pulse-home-os .pulse-live-gateway {
+  display: grid;
+  grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+  gap: 12px;
+  align-items: center;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(255, 62, 112, .18), transparent 34%),
+    linear-gradient(135deg, rgba(10, 20, 35, .72), rgba(4, 10, 20, .9));
+  overflow: hidden;
+}
+
+body.pulse-home-os .pulse-live-gateway img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  background: #02050b;
+}
+
+body.pulse-home-os .pulse-live-gateway-summary {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+body.pulse-home-os .pulse-live-gateway-summary strong {
+  font-size: clamp(18px, 3vw, 28px);
+  line-height: 1.08;
+}
+
+body.pulse-home-os .pulse-live-gateway .button {
+  justify-self: start;
+}
+
+@media (max-width: 680px) {
+  body.pulse-home-os .pulse-live-gateway {
+    grid-template-columns: 1fr;
+  }
+}
