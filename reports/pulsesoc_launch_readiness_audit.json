@@ -1,0 +1,590 @@
+{
+  "generated_at": "2026-07-02T01:03:04+00:00",
+  "recommendation": "DO NOT RELEASE",
+  "counts": {
+    "pass": 66,
+    "warn": 1,
+    "manual": 5,
+    "fail": 0,
+    "release_blockers": 5
+  },
+  "checks": [
+    {
+      "category": "route health",
+      "name": "health",
+      "status": "PASS",
+      "detail": "HTTP 200, 0.7ms",
+      "evidence": "/health",
+      "release_blocker": false
+    },
+    {
+      "category": "route health",
+      "name": "homepage",
+      "status": "PASS",
+      "detail": "HTTP 302, 4.9ms",
+      "evidence": "/",
+      "release_blocker": false
+    },
+    {
+      "category": "route health",
+      "name": "signup",
+      "status": "PASS",
+      "detail": "HTTP 302, 4.8ms",
+      "evidence": "/signup",
+      "release_blocker": false
+    },
+    {
+      "category": "route health",
+      "name": "login",
+      "status": "PASS",
+      "detail": "HTTP 302, 4.7ms",
+      "evidence": "/login",
+      "release_blocker": false
+    },
+    {
+      "category": "route health",
+      "name": "forgot password",
+      "status": "PASS",
+      "detail": "HTTP 200, 23.9ms",
+      "evidence": "/forgot-password",
+      "release_blocker": false
+    },
+    {
+      "category": "route health",
+      "name": "PulseSoc Home",
+      "status": "PASS",
+      "detail": "HTTP 200, 33.1ms",
+      "evidence": "/pulse",
+      "release_blocker": false
+    },
+    {
+      "category": "route health",
+      "name": "Reels",
+      "status": "PASS",
+      "detail": "HTTP 200, 14.8ms",
+      "evidence": "/pulse/reels",
+      "release_blocker": false
+    },
+    {
+      "category": "route health",
+      "name": "Messages",
+      "status": "PASS",
+      "detail": "HTTP 200, 7.1ms",
+      "evidence": "/pulse/messages",
+      "release_blocker": false
+    },
+    {
+      "category": "route health",
+      "name": "Notifications",
+      "status": "PASS",
+      "detail": "HTTP 200, 24.8ms",
+      "evidence": "/pulse/notifications",
+      "release_blocker": false
+    },
+    {
+      "category": "route health",
+      "name": "Live Studio",
+      "status": "PASS",
+      "detail": "HTTP 200, 25.2ms",
+      "evidence": "/pulse/live/studio",
+      "release_blocker": false
+    },
+    {
+      "category": "auth stability",
+      "name": "forgot password generic response",
+      "status": "PASS",
+      "detail": "HTTP 200; account existence not exposed",
+      "evidence": "/forgot-password",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "users table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "users",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "sessions table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "sessions",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "password_reset_tokens table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "password_reset_tokens",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "email_verification_tokens table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "email_verification_tokens",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "failed_email_queue table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "failed_email_queue",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "pulse_notifications table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "pulse_notifications",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "notification_delivery_logs table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "notification_delivery_logs",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "push_delivery_jobs table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "push_delivery_jobs",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "user_device_tokens table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "user_device_tokens",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "conversations table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "conversations",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "pulse_conversations table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "pulse_conversations",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "pulse_messages table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "pulse_messages",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "comm_v2_conversations table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "comm_v2_conversations",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "comm_v2_messages table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "comm_v2_messages",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "pulse_live_sessions table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "pulse_live_sessions",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "pulse_live_guest_requests table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "pulse_live_guest_requests",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "pulse_live_viewers table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "pulse_live_viewers",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "pulse_live_chat table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "pulse_live_chat",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "pulse_posts table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "pulse_posts",
+      "release_blocker": false
+    },
+    {
+      "category": "database schema",
+      "name": "crypto_alerts table",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "crypto_alerts",
+      "release_blocker": false
+    },
+    {
+      "category": "database indexes",
+      "name": "push_delivery_jobs hot indexes",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "push_delivery_jobs",
+      "release_blocker": false
+    },
+    {
+      "category": "database indexes",
+      "name": "failed_email_queue hot indexes",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "failed_email_queue",
+      "release_blocker": false
+    },
+    {
+      "category": "database indexes",
+      "name": "pulse_live_sessions hot indexes",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "pulse_live_sessions",
+      "release_blocker": false
+    },
+    {
+      "category": "database indexes",
+      "name": "pulse_live_guest_requests hot indexes",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "pulse_live_guest_requests",
+      "release_blocker": false
+    },
+    {
+      "category": "database indexes",
+      "name": "pulse_notifications hot indexes",
+      "status": "PASS",
+      "detail": "ready",
+      "evidence": "pulse_notifications",
+      "release_blocker": false
+    },
+    {
+      "category": "queue safety",
+      "name": "SMS launch posture",
+      "status": "PASS",
+      "detail": "SMS outbox exists or SMS provider is disabled-safe",
+      "evidence": "BREVO_SMS_ENABLED",
+      "release_blocker": false
+    },
+    {
+      "category": "security",
+      "name": "production debug mode",
+      "status": "PASS",
+      "detail": "Flask run path does not enable debug=True",
+      "evidence": "bot.py",
+      "release_blocker": false
+    },
+    {
+      "category": "security",
+      "name": "no obvious committed secrets",
+      "status": "PASS",
+      "detail": "secret-like assignment patterns were not found",
+      "evidence": "static scan",
+      "release_blocker": false
+    },
+    {
+      "category": "security",
+      "name": "Stripe webhook signature",
+      "status": "PASS",
+      "detail": "unsigned live webhooks are rejected",
+      "evidence": "bot.py/services/payment_provider.py",
+      "release_blocker": false
+    },
+    {
+      "category": "security",
+      "name": "PulseShell secrets",
+      "status": "PASS",
+      "detail": "mobile shell does not expose server secrets",
+      "evidence": "mobile/pulse-react-native/App.tsx",
+      "release_blocker": false
+    },
+    {
+      "category": "security",
+      "name": "account deletion reachable",
+      "status": "PASS",
+      "detail": "delete account UI/API are present",
+      "evidence": "templates/account.html",
+      "release_blocker": false
+    },
+    {
+      "category": "security",
+      "name": "report/block reachable",
+      "status": "PASS",
+      "detail": "report/block surfaces remain wired",
+      "evidence": "bot.py/pulse_communications_v2/routes.py",
+      "release_blocker": false
+    },
+    {
+      "category": "kill switches",
+      "name": "signup",
+      "status": "PASS",
+      "detail": "PULSESOC_DISABLE_SIGNUP is referenced",
+      "evidence": "PULSESOC_DISABLE_SIGNUP",
+      "release_blocker": false
+    },
+    {
+      "category": "kill switches",
+      "name": "live",
+      "status": "PASS",
+      "detail": "PULSESOC_DISABLE_LIVE is referenced",
+      "evidence": "PULSESOC_DISABLE_LIVE",
+      "release_blocker": false
+    },
+    {
+      "category": "kill switches",
+      "name": "cohost",
+      "status": "PASS",
+      "detail": "PULSESOC_DISABLE_COHOST is referenced",
+      "evidence": "PULSESOC_DISABLE_COHOST",
+      "release_blocker": false
+    },
+    {
+      "category": "kill switches",
+      "name": "payments",
+      "status": "PASS",
+      "detail": "PULSESOC_FREEZE_PAYMENTS is referenced",
+      "evidence": "PULSESOC_FREEZE_PAYMENTS",
+      "release_blocker": false
+    },
+    {
+      "category": "kill switches",
+      "name": "messaging",
+      "status": "PASS",
+      "detail": "PULSESOC_THROTTLE_MESSAGING is referenced",
+      "evidence": "PULSESOC_THROTTLE_MESSAGING",
+      "release_blocker": false
+    },
+    {
+      "category": "kill switches",
+      "name": "uploads",
+      "status": "PASS",
+      "detail": "PULSESOC_DISABLE_UPLOADS is referenced",
+      "evidence": "PULSESOC_DISABLE_UPLOADS",
+      "release_blocker": false
+    },
+    {
+      "category": "kill switches",
+      "name": "premium",
+      "status": "PASS",
+      "detail": "PULSE_PREMIUM_DISABLED is referenced",
+      "evidence": "PULSE_PREMIUM_DISABLED",
+      "release_blocker": false
+    },
+    {
+      "category": "kill switches",
+      "name": "ai",
+      "status": "PASS",
+      "detail": "PULSE_AI_ENABLED is referenced",
+      "evidence": "PULSE_AI_ENABLED",
+      "release_blocker": false
+    },
+    {
+      "category": "kill switches",
+      "name": "sms",
+      "status": "PASS",
+      "detail": "BREVO_SMS_ENABLED is referenced",
+      "evidence": "BREVO_SMS_ENABLED",
+      "release_blocker": false
+    },
+    {
+      "category": "kill switches",
+      "name": "email",
+      "status": "PASS",
+      "detail": "BREVO_EMAIL_ENABLED is referenced",
+      "evidence": "BREVO_EMAIL_ENABLED",
+      "release_blocker": false
+    },
+    {
+      "category": "kill switches",
+      "name": "push",
+      "status": "PASS",
+      "detail": "PUSH_ASYNC_DELIVERY_ENABLED is referenced",
+      "evidence": "PUSH_ASYNC_DELIVERY_ENABLED",
+      "release_blocker": false
+    },
+    {
+      "category": "kill switches",
+      "name": "marketplace billing",
+      "status": "PASS",
+      "detail": "PULSE_ADS_BILLING_ENABLED is referenced",
+      "evidence": "PULSE_ADS_BILLING_ENABLED",
+      "release_blocker": false
+    },
+    {
+      "category": "kill switches",
+      "name": "crypto AI",
+      "status": "PASS",
+      "detail": "PULSE_CRYPTO_AI_ENABLED is referenced",
+      "evidence": "PULSE_CRYPTO_AI_ENABLED",
+      "release_blocker": false
+    },
+    {
+      "category": "kill switches",
+      "name": "server kill switch map",
+      "status": "PASS",
+      "detail": "high-risk request switches are enforced in before_request",
+      "evidence": "services/pulse_security_core.py",
+      "release_blocker": false
+    },
+    {
+      "category": "notification safety",
+      "name": "durable push queue",
+      "status": "PASS",
+      "detail": "push uses durable queued worker with bounded retries",
+      "evidence": "services/push_service.py",
+      "release_blocker": false
+    },
+    {
+      "category": "notification safety",
+      "name": "durable email queue",
+      "status": "PASS",
+      "detail": "email uses outbox queue with bounded retries and idempotency",
+      "evidence": "bot.py",
+      "release_blocker": false
+    },
+    {
+      "category": "notification safety",
+      "name": "push payload deep links",
+      "status": "PASS",
+      "detail": "push payloads support badge/sound/deep links",
+      "evidence": "static/sw.js/services/push_service.py",
+      "release_blocker": false
+    },
+    {
+      "category": "live safety",
+      "name": "Live Studio route",
+      "status": "PASS",
+      "detail": "Studio and start API exist",
+      "evidence": "bot.py",
+      "release_blocker": false
+    },
+    {
+      "category": "live safety",
+      "name": "co-host launch flag",
+      "status": "PASS",
+      "detail": "co-host can be disabled without deploy",
+      "evidence": "services/pulse_security_core.py",
+      "release_blocker": false
+    },
+    {
+      "category": "live safety",
+      "name": "server-generated LiveKit tokens",
+      "status": "PASS",
+      "detail": "LiveKit JWT generation/claim logging stays server-side",
+      "evidence": "bot.py",
+      "release_blocker": false
+    },
+    {
+      "category": "performance",
+      "name": "service worker cache version",
+      "status": "PASS",
+      "detail": "cache names: coinplotx-cache-v22-launch-readiness, coinplotx-cache-v22-launch-readiness",
+      "evidence": "static/sw.js/static/service-worker.js",
+      "release_blocker": false
+    },
+    {
+      "category": "performance",
+      "name": "runtime JS no-store",
+      "status": "PASS",
+      "detail": "runtime JS/CSS fetches bypass stale cache",
+      "evidence": "static/sw.js",
+      "release_blocker": false
+    },
+    {
+      "category": "mobile",
+      "name": "PulseShell App Review audit surface",
+      "status": "PASS",
+      "detail": "native shell has bridge and permission strings",
+      "evidence": "mobile/pulse-react-native",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "production HTTP gate not run",
+      "status": "WARN",
+      "detail": "Set PULSESOC_LAUNCH_BASE_URL=https://pulsesoc.com and rerun before release.",
+      "evidence": "",
+      "release_blocker": false
+    },
+    {
+      "category": "manual release",
+      "name": "Railway runtime/log watch",
+      "status": "MANUAL",
+      "detail": "Set PULSESOC_RAILWAY_WATCH_VERIFIED=1 after checking restarts, memory/CPU, 5xx rate, DB locks, and tracebacks.",
+      "evidence": "",
+      "release_blocker": true
+    },
+    {
+      "category": "manual release",
+      "name": "physical iPhone/PulseShell QA",
+      "status": "MANUAL",
+      "detail": "Set PULSESOC_PHYSICAL_DEVICE_QA_VERIFIED=1 after launch, login, feed, Reels, Live Studio, push, upload, and deep-link checks pass on the approved build.",
+      "evidence": "",
+      "release_blocker": true
+    },
+    {
+      "category": "manual release",
+      "name": "App Store Connect release status",
+      "status": "MANUAL",
+      "detail": "Set PULSESOC_APP_STORE_READY=1 only when the approved version is Pending Developer Release or Ready for Distribution.",
+      "evidence": "",
+      "release_blocker": true
+    },
+    {
+      "category": "manual release",
+      "name": "provider credentials",
+      "status": "MANUAL",
+      "detail": "Set PULSESOC_PROVIDERS_READY=1 after Brevo, push, Stripe, Mux/LiveKit, and Cloudflare/Railway status are confirmed.",
+      "evidence": "",
+      "release_blocker": true
+    },
+    {
+      "category": "manual release",
+      "name": "monitoring staffing",
+      "status": "MANUAL",
+      "detail": "Set PULSESOC_RELEASE_MONITOR_READY=1 when someone is watching the 0-15m, 15-60m, 1-6h, and 24h windows.",
+      "evidence": "",
+      "release_blocker": true
+    }
+  ],
+  "release_step_if_green": "App Store Connect -> PulseSoc -> approved version -> Release This Version -> Confirm."
+}

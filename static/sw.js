@@ -1,4 +1,4 @@
-const CACHE_NAME = "coinplotx-cache-v21-remove-old-home-logout";
+const CACHE_NAME = "coinplotx-cache-v22-launch-readiness";
 const DEBUG_SW = false;
 const STATIC_ASSETS = [
   "/manifest.json",

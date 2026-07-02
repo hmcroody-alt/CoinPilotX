@@ -1,0 +1,464 @@
+{
+  "generated_at": "2026-07-02T01:03:05+00:00",
+  "total": 65,
+  "failures": 0,
+  "max_elapsed_ms": 499.17,
+  "results": [
+    {
+      "name": "cohost-disabled",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 60.28,
+      "detail": "co-host kill switch returned safe disabled state"
+    },
+    {
+      "name": "feed-/pulse-0",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 477.06,
+      "detail": "/pulse"
+    },
+    {
+      "name": "feed-/pulse-1",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 478.66,
+      "detail": "/pulse"
+    },
+    {
+      "name": "feed-/pulse-2",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 478.71,
+      "detail": "/pulse"
+    },
+    {
+      "name": "feed-/pulse-3",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 476.32,
+      "detail": "/pulse"
+    },
+    {
+      "name": "feed-/pulse/live/studio-0",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 487.01,
+      "detail": "/pulse/live/studio"
+    },
+    {
+      "name": "feed-/pulse/live/studio-1",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 482.16,
+      "detail": "/pulse/live/studio"
+    },
+    {
+      "name": "feed-/pulse/live/studio-2",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 499.17,
+      "detail": "/pulse/live/studio"
+    },
+    {
+      "name": "feed-/pulse/live/studio-3",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 482.65,
+      "detail": "/pulse/live/studio"
+    },
+    {
+      "name": "feed-/pulse/messages-0",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 171.71,
+      "detail": "/pulse/messages"
+    },
+    {
+      "name": "feed-/pulse/messages-1",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 172.72,
+      "detail": "/pulse/messages"
+    },
+    {
+      "name": "feed-/pulse/messages-2",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 171.98,
+      "detail": "/pulse/messages"
+    },
+    {
+      "name": "feed-/pulse/messages-3",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 169.32,
+      "detail": "/pulse/messages"
+    },
+    {
+      "name": "feed-/pulse/notifications-0",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 454.57,
+      "detail": "/pulse/notifications"
+    },
+    {
+      "name": "feed-/pulse/notifications-1",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 450.74,
+      "detail": "/pulse/notifications"
+    },
+    {
+      "name": "feed-/pulse/notifications-2",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 446.05,
+      "detail": "/pulse/notifications"
+    },
+    {
+      "name": "feed-/pulse/notifications-3",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 455.41,
+      "detail": "/pulse/notifications"
+    },
+    {
+      "name": "feed-/pulse/reels-0",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 261.28,
+      "detail": "/pulse/reels"
+    },
+    {
+      "name": "feed-/pulse/reels-1",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 267.02,
+      "detail": "/pulse/reels"
+    },
+    {
+      "name": "feed-/pulse/reels-2",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 267.46,
+      "detail": "/pulse/reels"
+    },
+    {
+      "name": "feed-/pulse/reels-3",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 267.74,
+      "detail": "/pulse/reels"
+    },
+    {
+      "name": "health-0",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 13.25,
+      "detail": "/health"
+    },
+    {
+      "name": "health-1",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 10.53,
+      "detail": "/health"
+    },
+    {
+      "name": "health-10",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 2.7,
+      "detail": "/health"
+    },
+    {
+      "name": "health-11",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 3.48,
+      "detail": "/health"
+    },
+    {
+      "name": "health-12",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 3.65,
+      "detail": "/health"
+    },
+    {
+      "name": "health-13",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 4.19,
+      "detail": "/health"
+    },
+    {
+      "name": "health-14",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 4.79,
+      "detail": "/health"
+    },
+    {
+      "name": "health-15",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 5.16,
+      "detail": "/health"
+    },
+    {
+      "name": "health-2",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 15.14,
+      "detail": "/health"
+    },
+    {
+      "name": "health-3",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 14.27,
+      "detail": "/health"
+    },
+    {
+      "name": "health-4",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 15.29,
+      "detail": "/health"
+    },
+    {
+      "name": "health-5",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 14.23,
+      "detail": "/health"
+    },
+    {
+      "name": "health-6",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 17.05,
+      "detail": "/health"
+    },
+    {
+      "name": "health-7",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 12.6,
+      "detail": "/health"
+    },
+    {
+      "name": "health-8",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 0.44,
+      "detail": "/health"
+    },
+    {
+      "name": "health-9",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 0.53,
+      "detail": "/health"
+    },
+    {
+      "name": "login-0",
+      "ok": true,
+      "status_code": 302,
+      "elapsed_ms": 394.15,
+      "detail": "login valid"
+    },
+    {
+      "name": "login-1",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 488.43,
+      "detail": "login invalid"
+    },
+    {
+      "name": "login-2",
+      "ok": true,
+      "status_code": 302,
+      "elapsed_ms": 465.76,
+      "detail": "login valid"
+    },
+    {
+      "name": "login-3",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 498.26,
+      "detail": "login invalid"
+    },
+    {
+      "name": "login-4",
+      "ok": true,
+      "status_code": 302,
+      "elapsed_ms": 458.59,
+      "detail": "login valid"
+    },
+    {
+      "name": "login-5",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 465.49,
+      "detail": "login invalid"
+    },
+    {
+      "name": "login-6",
+      "ok": true,
+      "status_code": 302,
+      "elapsed_ms": 456.19,
+      "detail": "login valid"
+    },
+    {
+      "name": "login-7",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 451.17,
+      "detail": "login invalid"
+    },
+    {
+      "name": "notify-0",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 84.69,
+      "detail": "notification queued"
+    },
+    {
+      "name": "notify-1",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 84.9,
+      "detail": "notification queued"
+    },
+    {
+      "name": "notify-10",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 71.29,
+      "detail": "notification queued"
+    },
+    {
+      "name": "notify-11",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 63.24,
+      "detail": "notification queued"
+    },
+    {
+      "name": "notify-2",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 84.12,
+      "detail": "notification queued"
+    },
+    {
+      "name": "notify-3",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 79.48,
+      "detail": "notification queued"
+    },
+    {
+      "name": "notify-4",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 82.73,
+      "detail": "notification queued"
+    },
+    {
+      "name": "notify-5",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 84.69,
+      "detail": "notification queued"
+    },
+    {
+      "name": "notify-6",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 81.64,
+      "detail": "notification queued"
+    },
+    {
+      "name": "notify-7",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 81.53,
+      "detail": "notification queued"
+    },
+    {
+      "name": "notify-8",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 80.15,
+      "detail": "notification queued"
+    },
+    {
+      "name": "notify-9",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 81.89,
+      "detail": "notification queued"
+    },
+    {
+      "name": "reset-0",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 492.32,
+      "detail": "forgot-password generic"
+    },
+    {
+      "name": "reset-1",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 159.73,
+      "detail": "forgot-password generic"
+    },
+    {
+      "name": "reset-2",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 409.45,
+      "detail": "forgot-password generic"
+    },
+    {
+      "name": "reset-3",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 169.67,
+      "detail": "forgot-password generic"
+    },
+    {
+      "name": "reset-4",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 371.89,
+      "detail": "forgot-password generic"
+    },
+    {
+      "name": "reset-5",
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 169.97,
+      "detail": "forgot-password generic"
+    },
+    {
+      "name": "reset-6",
+      "ok": true,
+      "status_code": 429,
+      "elapsed_ms": 2.39,
+      "detail": "forgot-password generic"
+    },
+    {
+      "name": "reset-7",
+      "ok": true,
+      "status_code": 429,
+      "elapsed_ms": 1.22,
+      "detail": "forgot-password generic"
+    }
+  ],
+  "provider_safe": true
+}
