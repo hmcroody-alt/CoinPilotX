@@ -214,6 +214,7 @@ from services import (
     market_data as market_data_service,
     media_service,
     media_storage,
+    messenger_media_foundation,
     mux_live_service,
     music_service,
     native_push_readiness,
@@ -2523,6 +2524,8 @@ def interactive_security_guard():
         max_request_mb = 30.0
         if request.path.startswith("/api/pulse/communications/v2/attachments/upload"):
             max_request_mb = float(os.getenv("PULSE_COMM_V2_MAX_REQUEST_MB", os.getenv("COMM_V2_FILE_MAX_MB", "1024")))
+        elif request.path == "/api/messages/media/upload":
+            max_request_mb = float(os.getenv("MESSENGER_MEDIA_MAX_REQUEST_MB", os.getenv("MESSENGER_VIDEO_MAX_MB", "200")))
         elif request.path == "/api/pulse/media/upload":
             max_request_mb = float(os.getenv("PULSE_MEDIA_MAX_REQUEST_MB", os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "150")))
         max_request_bytes = int(max_request_mb * 1024 * 1024)
@@ -72711,6 +72714,169 @@ def api_pulse_messages_upload():
     }), 200
 
 
+def _messenger_media_open_db():
+    init_db()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    messenger_media_foundation.ensure_schema(cur, conn)
+    return conn, cur
+
+
+def _messenger_media_user():
+    user = api_account_user()
+    if not user:
+        return None, (jsonify({"ok": False, "error": "login_required", "message": "Login required."}), 401)
+    return user, None
+
+
+def _messenger_media_json_error(conn, exc, trace_id=""):
+    try:
+        if conn:
+            conn.rollback()
+            conn.close()
+    except Exception:
+        pass
+    if isinstance(exc, messenger_media_foundation.MessengerMediaError):
+        payload, status = messenger_media_foundation.error_response(exc, trace_id=trace_id)
+        return jsonify(payload), status
+    logging.exception("MESSENGER_MEDIA_API_FAILED trace_id=%s error=%s", trace_id, exc)
+    return jsonify({"ok": False, "error": "server_error", "message": "Messenger media is temporarily unavailable.", "trace_id": trace_id}), 500
+
+
+@webhook_app.route("/api/messages/media/init", methods=["POST"])
+def api_messages_media_init():
+    user, auth_error = _messenger_media_user()
+    if auth_error:
+        return auth_error
+    conn = None
+    try:
+        payload = request.get_json(silent=True) or {}
+        conn, cur = _messenger_media_open_db()
+        result, status = messenger_media_foundation.init_upload(cur, conn, user, payload)
+        conn.close()
+        return jsonify(result), status
+    except Exception as exc:
+        return _messenger_media_json_error(conn, exc)
+
+
+@webhook_app.route("/api/messages/media/upload", methods=["POST"])
+def api_messages_media_upload():
+    user, auth_error = _messenger_media_user()
+    if auth_error:
+        return auth_error
+    conn = None
+    try:
+        attachment_id = safe_int(request.form.get("attachment_id") or request.args.get("attachment_id"), 0)
+        if not attachment_id:
+            raise messenger_media_foundation.MessengerMediaError("attachment_required", "Attachment is required.", 400)
+        file_storage = request.files.get("file") or request.files.get("media") or request.files.get("upload")
+        metadata = {
+            "duration_ms": request.form.get("duration_ms"),
+            "width": request.form.get("width"),
+            "height": request.form.get("height"),
+            "waveform_json": request.form.get("waveform_json") or request.form.get("waveform"),
+        }
+        conn, cur = _messenger_media_open_db()
+        result, status = messenger_media_foundation.upload_file(cur, conn, user, attachment_id, file_storage, metadata)
+        conn.close()
+        return jsonify(result), status
+    except Exception as exc:
+        return _messenger_media_json_error(conn, exc)
+
+
+@webhook_app.route("/api/messages/media/complete", methods=["POST"])
+def api_messages_media_complete():
+    user, auth_error = _messenger_media_user()
+    if auth_error:
+        return auth_error
+    conn = None
+    try:
+        payload = request.get_json(silent=True) or {}
+        conn, cur = _messenger_media_open_db()
+        result, status = messenger_media_foundation.complete_upload(cur, conn, user, payload)
+        conn.close()
+        return jsonify(result), status
+    except Exception as exc:
+        return _messenger_media_json_error(conn, exc)
+
+
+@webhook_app.route("/api/messages/media/attach", methods=["POST"])
+def api_messages_media_attach():
+    user, auth_error = _messenger_media_user()
+    if auth_error:
+        return auth_error
+    conn = None
+    try:
+        payload = request.get_json(silent=True) or {}
+        conn, cur = _messenger_media_open_db()
+        result, status = messenger_media_foundation.attach_to_message(cur, conn, user, payload)
+        conn.close()
+        return jsonify(result), status
+    except Exception as exc:
+        return _messenger_media_json_error(conn, exc)
+
+
+@webhook_app.route("/api/messages/media/<int:attachment_id>", methods=["GET"])
+def api_messages_media_get(attachment_id):
+    user, auth_error = _messenger_media_user()
+    if auth_error:
+        return auth_error
+    conn = None
+    try:
+        conn, cur = _messenger_media_open_db()
+        result, status = messenger_media_foundation.get_attachment(cur, user, attachment_id, include_url=True)
+        conn.close()
+        return jsonify(result), status
+    except Exception as exc:
+        return _messenger_media_json_error(conn, exc)
+
+
+@webhook_app.route("/api/messages/media/<int:attachment_id>/download", methods=["GET"])
+def api_messages_media_download(attachment_id):
+    user, auth_error = _messenger_media_user()
+    if auth_error:
+        return auth_error
+    conn = None
+    try:
+        conn, cur = _messenger_media_open_db()
+        path, mime_type, filename = messenger_media_foundation.local_download_path(cur, user, attachment_id)
+        conn.close()
+        return send_file(path, mimetype=mime_type, download_name=filename, as_attachment=False, conditional=True)
+    except Exception as exc:
+        return _messenger_media_json_error(conn, exc)
+
+
+@webhook_app.route("/api/messages/media/<int:attachment_id>/retry", methods=["POST"])
+def api_messages_media_retry(attachment_id):
+    user, auth_error = _messenger_media_user()
+    if auth_error:
+        return auth_error
+    conn = None
+    try:
+        conn, cur = _messenger_media_open_db()
+        result, status = messenger_media_foundation.retry_attachment(cur, conn, user, attachment_id)
+        conn.close()
+        return jsonify(result), status
+    except Exception as exc:
+        return _messenger_media_json_error(conn, exc)
+
+
+@webhook_app.route("/api/messages/media/<int:attachment_id>", methods=["DELETE"])
+def api_messages_media_delete(attachment_id):
+    user, auth_error = _messenger_media_user()
+    if auth_error:
+        return auth_error
+    conn = None
+    try:
+        conn, cur = _messenger_media_open_db()
+        result, status = messenger_media_foundation.delete_attachment(cur, conn, user, attachment_id)
+        conn.close()
+        return jsonify(result), status
+    except Exception as exc:
+        return _messenger_media_json_error(conn, exc)
+
+
 @webhook_app.route("/api/pulse/messages/<int:conversation_id>/messages", methods=["GET"])
 def api_pulse_conversation_messages(conversation_id):
     init_db()
@@ -88602,6 +88768,7 @@ def _init_db_impl():
         created_at TEXT
     )
     """)
+    messenger_media_foundation.ensure_schema(cur, conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS chat_media_uploads (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

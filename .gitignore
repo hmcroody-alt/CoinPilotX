@@ -10,6 +10,7 @@ undx_execution_log.jsonl
 coinpilotx.db
 *.sqlite
 *.sqlite3
+storage/messenger_uploads/
 
 __pycache__/
 *.py[cod]
