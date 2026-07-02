@@ -297,7 +297,16 @@ def _size_message(media_type: str, limit: int) -> str:
 
 
 def _members_for_conversation(cur: Any, conversation_id: int, model: str) -> list[int]:
-    if model == "pulse":
+    if model == "comm_v2":
+        cur.execute(
+            """
+            SELECT user_id
+            FROM comm_v2_participants
+            WHERE conversation_id=? AND membership_state='active' AND (left_at IS NULL OR left_at='')
+            """,
+            (conversation_id,),
+        )
+    elif model == "pulse":
         cur.execute(
             """
             SELECT user_id
@@ -337,6 +346,30 @@ def _conversation_blocked(cur: Any, user_id: int, conversation_id: int, model: s
 
 
 def require_conversation_access(cur: Any, user_id: int, conversation_id: int) -> str:
+    try:
+        cur.execute(
+            """
+            SELECT c.id, c.status, c.deleted_at
+            FROM comm_v2_participants p
+            JOIN comm_v2_conversations c ON c.id=p.conversation_id
+            WHERE p.conversation_id=? AND p.user_id=?
+              AND p.membership_state='active'
+              AND (p.left_at IS NULL OR p.left_at='')
+            LIMIT 1
+            """,
+            (conversation_id, user_id),
+        )
+        comm_v2_row = cur.fetchone()
+    except Exception as exc:
+        logging.info("MESSENGER_MEDIA_COMM_V2_ACCESS_CHECK_SKIPPED conversation_id=%s error=%s", conversation_id, exc)
+        comm_v2_row = None
+    if comm_v2_row:
+        status = str(_row_get(comm_v2_row, "status", "active") or "active").lower()
+        if status not in {"active", "open", ""} or _row_get(comm_v2_row, "deleted_at"):
+            raise MessengerMediaError("conversation_inactive", "This conversation is not active.", 403)
+        if _conversation_blocked(cur, user_id, conversation_id, "comm_v2"):
+            raise MessengerMediaError("messaging_blocked", "Messaging is blocked for this conversation.", 403)
+        return "comm_v2"
     cur.execute(
         """
         SELECT c.id, c.status, c.deleted_at
@@ -787,6 +820,11 @@ def _validate_message_for_attachment(cur: Any, message_id: int, attachment_row: 
     if model == "pulse":
         cur.execute(
             "SELECT id FROM pulse_messages WHERE id=? AND conversation_id=? AND sender_user_id=? LIMIT 1",
+            (message_id, conversation_id, user_id),
+        )
+    elif model == "comm_v2":
+        cur.execute(
+            "SELECT id FROM comm_v2_messages WHERE id=? AND conversation_id=? AND sender_user_id=? LIMIT 1",
             (message_id, conversation_id, user_id),
         )
     else:

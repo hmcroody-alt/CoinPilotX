@@ -1,5 +1,6 @@
 (() => {
   const API = "/api/pulse/communications/v2";
+  const MEDIA_API = "/api/messages/media";
   const INITIAL_MESSAGE_LIMIT = 40;
   const el = (sel) => document.querySelector(sel);
   const root = el(".comm-shell");
@@ -53,10 +54,10 @@
     aiOutput: "",
     maxAttachments: 8,
     uploadLimits: {
-      image: 100 * 1024 * 1024,
-      video: 1024 * 1024 * 1024,
-      audio: 100 * 1024 * 1024,
-      file: 1024 * 1024 * 1024,
+      image: 15 * 1024 * 1024,
+      video: 200 * 1024 * 1024,
+      audio: 25 * 1024 * 1024,
+      file: 50 * 1024 * 1024,
     },
     voice: {
       stream: null,
@@ -80,6 +81,23 @@
     realtimeConnected: false,
     tabChannel: "BroadcastChannel" in window ? new BroadcastChannel("pulse-comm-v2") : null,
   };
+  const MEDIA_FOUNDATION_MIME_BY_EXT = {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+    heic: "image/heic",
+    heif: "image/heif",
+    mp4: "video/mp4",
+    m4v: "video/mp4",
+    webm: "video/webm",
+    mp3: "audio/mpeg",
+    m4a: "audio/mp4",
+    wav: "audio/wav",
+    ogg: "audio/ogg",
+    oga: "audio/ogg",
+  };
+  const MEDIA_FOUNDATION_MIMES = new Set(Object.values(MEDIA_FOUNDATION_MIME_BY_EXT));
 
   function isMobile() {
     return mobileQuery.matches;
@@ -200,6 +218,24 @@
         ? `Messenger is temporarily unavailable. Refresh and try again.${trace}`
         : data.message || (data.status === "disabled" ? "Messenger is temporarily unavailable." : `This request could not be completed.${trace}`);
       throw Object.assign(new Error(message), { data, status: res.status, durationMs });
+    }
+    return data;
+  }
+
+  async function mediaApi(path, options = {}, metric = "media_foundation") {
+    const started = performance.now();
+    const res = await fetch(MEDIA_API + path, {
+      credentials: "same-origin",
+      headers: options.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
+      ...options,
+    });
+    const text = await res.text();
+    let data = {};
+    try { data = JSON.parse(text || "{}"); } catch (_) { data = { ok: false, message: "Media upload returned an unexpected response." }; }
+    console.info("PulseSoc Messenger V3 timing", { metric, path, status: res.status, durationMs: Math.round(performance.now() - started) });
+    if (!res.ok || data.ok === false) {
+      const trace = data.trace_id ? ` Trace: ${data.trace_id}` : "";
+      throw Object.assign(new Error((data.message || "Media upload failed.") + trace), { data, status: res.status });
     }
     return data;
   }
@@ -663,6 +699,14 @@
     if (!state.preserveScroll) smoothScrollToBottom();
     state.preserveScroll = false;
     if (state.threadSearchQuery) window.requestAnimationFrame(applyThreadSearch);
+    hydrateRenderedMessages();
+  }
+
+  function hydrateRenderedMessages() {
+    window.requestAnimationFrame(() => {
+      document.querySelectorAll("[data-voice-message]").forEach(bindVoiceAudio);
+      if (window.PulseMediaRenderer) window.PulseMediaRenderer.hydrate(messages);
+    });
   }
 
   function renderTrustBadges() {
@@ -836,6 +880,7 @@
         poster_url: item.poster_url || item.thumbnail_url || "",
         media_type: item.media_type || "file",
         mime_type: item.mime_type || (String(url).includes(".m3u8") ? "application/vnd.apple.mpegurl" : ""),
+        preload_priority: "high",
         title: item.filename || "PulseSoc attachment",
       }, { surface: "messages-v2", className: "comm-v2-media-attachment" });
     }
@@ -845,7 +890,11 @@
   }
 
   function voiceAttachmentHtml(item, url) {
-    const waveform = Array.isArray(item.waveform) && item.waveform.length ? item.waveform : Array.from({ length: 36 }, (_, index) => 22 + ((index * 17) % 54));
+    const rawWaveform = Array.isArray(item.waveform) && item.waveform.length ? item.waveform : Array.from({ length: 36 }, (_, index) => 22 + ((index * 17) % 54));
+    const waveform = rawWaveform.map((level) => {
+      const value = Number(level) || 0;
+      return value > 0 && value <= 1 ? value * 100 : value;
+    });
     const bars = waveform.slice(0, 56).map((level) => `<i style="--level:${Math.max(8, Math.min(100, Number(level) || 18))}"></i>`).join("");
     const duration = Number(item.duration_seconds || item.duration || 0);
     return `
@@ -1211,21 +1260,40 @@
 
   async function uploadSelectedFile(file, metadata = {}) {
     if (!file) return 0;
+    if (!state.active?.conversation_id) throw new Error("Choose a conversation before uploading media.");
+    const mimeType = mediaFoundationMimeType(file);
+    const mediaType = mediaFoundationType(file);
+    const init = await mediaApi("/init", {
+      method: "POST",
+      body: JSON.stringify({
+        conversation_id: Number(state.active.conversation_id || 0),
+        media_type: mediaType,
+        filename: file.name || `pulse-${mediaType}-${Date.now()}`,
+        mime_type: mimeType,
+        size_bytes: Number(file.size || 0),
+      }),
+    }, "media_init");
+    const attachmentId = Number(init.attachment_id || 0);
+    if (!attachmentId) throw new Error("Media upload did not return an attachment id.");
+    const uploadFile = file.type === mimeType ? file : new File([file], file.name || `pulse-${mediaType}-${Date.now()}`, { type: mimeType });
     const fd = new FormData();
-    fd.append("file", file);
-    fd.append("context_type", "pulse_comm_v2");
-    fd.append("conversation_id", state.active?.conversation_id || "");
+    fd.append("attachment_id", String(attachmentId));
+    fd.append("file", uploadFile);
     Object.entries(metadata || {}).forEach(([key, value]) => {
       if (value !== undefined && value !== null) fd.append(key, typeof value === "string" ? value : JSON.stringify(value));
     });
-    const started = performance.now();
-    const res = await fetch(`${API}/attachments/upload`, { method: "POST", credentials: "same-origin", body: fd });
-    const text = await res.text();
-    let data = {};
-    try { data = JSON.parse(text || "{}"); } catch (_) { data = { ok: false, message: res.status === 403 ? "Attachment upload was blocked by site security." : "Attachment upload returned an unexpected response." }; }
-    console.info("PulseSoc Messenger V3 timing", { metric: "attachment_upload", status: res.status, durationMs: Math.round(performance.now() - started) });
-    if (!res.ok || data.ok === false) throw new Error(data.message || "Attachment upload failed.");
-    return Number(data.media?.id || 0);
+    await mediaApi("/upload", { method: "POST", body: fd }, "media_upload");
+    await mediaApi("/complete", {
+      method: "POST",
+      body: JSON.stringify({
+        attachment_id: attachmentId,
+        duration_ms: metadata.duration_ms || "",
+        width: metadata.width || "",
+        height: metadata.height || "",
+        waveform_json: metadata.waveform_json || "",
+      }),
+    }, "media_complete");
+    return attachmentId;
   }
 
   function attachmentKind(file) {
@@ -1240,12 +1308,29 @@
     return "file";
   }
 
+  function mediaFoundationMimeType(file) {
+    const provided = String(file?.type || "").split(";", 1)[0].toLowerCase();
+    if (MEDIA_FOUNDATION_MIMES.has(provided)) return provided;
+    const ext = String(file?.name || "").split(".").pop()?.toLowerCase() || "";
+    return MEDIA_FOUNDATION_MIME_BY_EXT[ext] || provided || "application/octet-stream";
+  }
+
+  function mediaFoundationType(file) {
+    const kind = attachmentKind(file);
+    if (kind === "image") return "photo";
+    if (kind === "video") return "video";
+    if (kind === "audio") return "voice";
+    return "file";
+  }
+
   function validateAttachment(file) {
     if (!file) return "Choose a file first.";
     const name = file.name || "attachment";
     const kind = attachmentKind(file);
     const blocked = /\.(exe|dll|bat|cmd|com|scr|js|jar|msi|ps1|sh)$/i;
     if (blocked.test(name)) return "That file type is blocked for safety.";
+    const mimeType = mediaFoundationMimeType(file);
+    if (!MEDIA_FOUNDATION_MIMES.has(mimeType)) return `${name} is not supported for Messenger media yet.`;
     const limit = state.uploadLimits[kind] || state.uploadLimits.file;
     if (file.size > limit) return `${name} is too large for Messenger. Limit: ${formatBytes(limit)}.`;
     if (state.attachmentQueue.length >= state.maxAttachments) return `You can send up to ${state.maxAttachments} attachments at once.`;
@@ -1268,7 +1353,7 @@
         kind: attachmentKind(file),
         status: "queued",
         progress: 0,
-        mediaId: 0,
+        attachmentId: 0,
         error: "",
         previewUrl: file.type?.startsWith("image/") || file.type?.startsWith("video/") ? URL.createObjectURL(file) : "",
       });
@@ -1334,18 +1419,18 @@
   }
 
   async function uploadAttachmentItem(item) {
-    if (!item || item.status === "uploaded") return item?.mediaId || 0;
+    if (!item || item.status === "uploaded") return item?.attachmentId || 0;
     item.status = "uploading";
     item.progress = 10;
     item.error = "";
     renderAttachmentPreview();
     try {
-      const mediaId = await uploadSelectedFile(item.file, { attachment_kind: item.kind });
+      const attachmentId = await uploadSelectedFile(item.file, { attachment_kind: item.kind });
       item.status = "uploaded";
       item.progress = 100;
-      item.mediaId = mediaId;
+      item.attachmentId = attachmentId;
       renderAttachmentPreview();
-      return mediaId;
+      return attachmentId;
     } catch (error) {
       item.status = "failed";
       item.error = error.message || "Upload failed.";
@@ -1687,11 +1772,11 @@
     if (!options.silent) setStatus("Voice note discarded.");
   }
 
-  function messageTypeForSend(hasVoice, mediaIds) {
+  function messageTypeForSend(hasVoice, attachmentIds) {
     if (hasVoice) return "voice";
-    if (!mediaIds.length) return "text";
+    if (!attachmentIds.length) return "text";
     const kinds = state.attachmentQueue
-      .filter((item) => item.mediaId && mediaIds.includes(item.mediaId))
+      .filter((item) => item.attachmentId && attachmentIds.includes(item.attachmentId))
       .map((item) => item.kind);
     if (kinds.includes("video")) return "video";
     if (kinds.includes("audio")) return "audio";
@@ -1729,19 +1814,39 @@
       durationSeconds: Math.max(1, Math.round((state.voice.elapsedMs || 0) / 1000)),
     });
     const file = new File([state.voice.blob], `pulse-voice-note-${Date.now()}.${ext}`, { type: voiceType });
+    const durationMs = Math.max(1, Math.round(state.voice.elapsedMs || 0));
+    const waveform = (state.voice.waveform || []).map((level) => Math.max(0, Math.min(1, (Number(level) || 0) / 100)));
     state.voice.state = "voice_uploading";
     updateVoicePanel();
     try {
       return await uploadSelectedFile(file, {
         attachment_kind: "voice_note",
-        duration_seconds: Math.max(1, Math.round((state.voice.elapsedMs || 0) / 1000)),
-        waveform_json: JSON.stringify(state.voice.waveform || []),
+        duration_ms: durationMs,
+        duration_seconds: Math.max(1, Math.round(durationMs / 1000)),
+        waveform_json: JSON.stringify(waveform),
       });
     } catch (error) {
       state.voice.state = "voice_preview";
       updateVoicePanel();
       throw error;
     }
+  }
+
+  function pendingAttachmentPreviews() {
+    return state.attachmentQueue.map((item) => {
+      const mediaType = item.kind === "image" ? "image" : item.kind === "audio" ? "voice" : item.kind;
+      return {
+        media_type: mediaType,
+        mime_type: mediaFoundationMimeType(item.file),
+        filename: item.file?.name || "Attachment",
+        file_size: Number(item.file?.size || 0),
+        file_size_bytes: Number(item.file?.size || 0),
+        url: item.previewUrl || "",
+        playback_url: item.kind === "video" ? item.previewUrl || "" : "",
+        thumbnail_url: "",
+        _local: true,
+      };
+    });
   }
 
   function toggleVoicePlayback(container) {
@@ -2425,6 +2530,7 @@
       waveform: state.voice.waveform || [],
       _local: true,
     }] : [];
+    const pendingAttachments = [...pendingAttachmentPreviews(), ...pendingVoiceAttachment];
     const pendingMessage = {
       id: pendingId,
       message_id: pendingId,
@@ -2443,7 +2549,7 @@
       delivery_status: "sending",
       delivery_state: "sending",
       moderation_status: "approved",
-      attachments: pendingVoiceAttachment,
+      attachments: pendingAttachments,
       reactions: [],
       created_at: new Date().toISOString(),
       _pending: true,
@@ -2456,15 +2562,15 @@
       toggleAttachmentSheet(false);
       toggleEmojiPanel(false);
       setStatus(hasVoice ? "Uploading voice note..." : state.attachmentQueue.length ? "Uploading attachments..." : "Sending...");
-      const mediaIds = state.attachmentQueue.length ? await uploadAttachmentQueue() : [];
+      const attachmentIds = state.attachmentQueue.length ? await uploadAttachmentQueue() : [];
       const voiceId = hasVoice ? await uploadVoiceDraft() : 0;
-      const allMediaIds = [...mediaIds, ...(voiceId ? [voiceId] : [])];
+      const allAttachmentIds = [...attachmentIds, ...(voiceId ? [voiceId] : [])];
       const data = await api(`/conversations/${sendingConversationId}/messages`, {
         method: "POST",
         body: JSON.stringify({
           body,
-          message_type: messageTypeForSend(hasVoice, allMediaIds),
-          media_ids: allMediaIds,
+          message_type: messageTypeForSend(hasVoice, allAttachmentIds),
+          attachment_ids: allAttachmentIds,
           reply_to_message_id: state.replyTo?.id || 0,
           client_message_id: clientMessageId,
         }),

@@ -945,10 +945,11 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
     if message_type not in ALLOWED_MESSAGE_TYPES:
         message_type = "text"
     media_ids = [int(x) for x in payload.get("media_ids") or payload.get("attachment_media_ids") or [] if int(x or 0)]
+    attachment_ids = _message_attachment_ids(payload)
     max_attachments = int(os.getenv("COMM_V2_MAX_ATTACHMENTS", "8") or 8)
-    if len(media_ids) > max_attachments:
+    if len(media_ids) + len(attachment_ids) > max_attachments:
         return _err(f"Send up to {max_attachments} attachments at once.", 400, "too_many_attachments")
-    if not body and not media_ids:
+    if not body and not media_ids and not attachment_ids:
         return _err("Write a message or attach a file before sending.", 400, "empty_message")
     conn, cur = _open_db()
     step = "open_db"
@@ -968,6 +969,10 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
         if media_error:
             return media_error
         media_ids = valid_media_ids
+        valid_attachment_ids, attachment_error = _validate_foundation_attachment_ids(cur, user_id, conversation_id, attachment_ids)
+        if attachment_error:
+            return attachment_error
+        attachment_ids = valid_attachment_ids
         client_id = _clean(payload.get("client_message_id") or "", 120)
         if client_id:
             cur.execute(
@@ -1004,6 +1009,7 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
         message_id = int(cur.lastrowid)
         step = "attach_media"
         attachments = _attach_media(cur, user_id, conversation_id, message_id, media_ids)
+        attachments.extend(_attach_foundation_media(cur, user_id, conversation_id, message_id, attachment_ids))
         step = "update_conversation"
         cur.execute(
             "UPDATE comm_v2_conversations SET last_message_id=?, last_message_at=?, last_activity_at=?, updated_at=? WHERE id=?",
@@ -1154,6 +1160,82 @@ def _validate_message_media_ids(cur, user_id: int, conversation_id: int, media_i
     if invalid:
         logging.warning(
             "COMM_V2_ATTACHMENT_VERIFY_FAILED user_id=%s conversation_id=%s invalid=%s",
+            int(user_id),
+            int(conversation_id),
+            invalid,
+        )
+        return [], _err("Attachment could not be verified. Please upload it again.", 400, "attachment_verification_failed")
+    return unique_ids, None
+
+
+def _message_attachment_ids(payload: dict | None) -> list[int]:
+    payload = payload or {}
+    raw = payload.get("attachment_ids")
+    if raw is None:
+        raw = payload.get("attachments")
+    if raw is None:
+        raw = payload.get("message_attachment_ids")
+    if isinstance(raw, (str, int)):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    ids: list[int] = []
+    seen = set()
+    for item in raw:
+        value = item.get("attachment_id") if isinstance(item, dict) else item
+        try:
+            attachment_id = int(value or 0)
+        except (TypeError, ValueError):
+            attachment_id = 0
+        if attachment_id and attachment_id not in seen:
+            ids.append(attachment_id)
+            seen.add(attachment_id)
+    return ids
+
+
+def _validate_foundation_attachment_ids(cur, user_id: int, conversation_id: int, attachment_ids: list[int]) -> tuple[list[int], dict | None]:
+    ids = [int(x) for x in (attachment_ids or []) if int(x or 0)]
+    if not ids:
+        return [], None
+    unique_ids = []
+    seen = set()
+    for attachment_id in ids:
+        if attachment_id not in seen:
+            unique_ids.append(attachment_id)
+            seen.add(attachment_id)
+    placeholders = ",".join(["?"] * len(unique_ids))
+    cur.execute(
+        f"""
+        SELECT id, upload_status, processing_status, error_code
+        FROM message_attachments
+        WHERE id IN ({placeholders})
+          AND sender_id=?
+          AND conversation_id=?
+          AND conversation_model='comm_v2'
+          AND COALESCE(deleted_at,'')=''
+        """,
+        (*unique_ids, int(user_id), int(conversation_id)),
+    )
+    rows = {_row(row).get("id"): _row(row) for row in cur.fetchall()}
+    missing = [attachment_id for attachment_id in unique_ids if attachment_id not in rows]
+    if missing:
+        logging.warning(
+            "COMM_V2_FOUNDATION_ATTACHMENT_INVALID user_id=%s conversation_id=%s missing_attachment_ids=%s requested_attachment_ids=%s",
+            int(user_id),
+            int(conversation_id),
+            missing,
+            unique_ids,
+        )
+        return [], _err("Attachment invalid or expired. Please upload it again.", 400, "attachment_invalid")
+    invalid = []
+    for attachment_id, row in rows.items():
+        upload_status = str(row.get("upload_status") or "").lower()
+        processing_status = str(row.get("processing_status") or "").lower()
+        if upload_status != "uploaded" or processing_status in {"failed", "blocked"}:
+            invalid.append({"attachment_id": int(attachment_id), "upload_status": upload_status, "processing_status": processing_status})
+    if invalid:
+        logging.warning(
+            "COMM_V2_FOUNDATION_ATTACHMENT_VERIFY_FAILED user_id=%s conversation_id=%s invalid=%s",
             int(user_id),
             int(conversation_id),
             invalid,
@@ -1637,6 +1719,96 @@ def _attach_media(cur, user_id: int, conversation_id: int, message_id: int, medi
         )
         attachment_id = int(cur.lastrowid)
         out.append(_attachment_payload(_row({**media, "id": attachment_id, "media_upload_id": media_id})))
+    return out
+
+
+def _attach_foundation_media(cur, user_id: int, conversation_id: int, message_id: int, attachment_ids: list[int]) -> list[dict]:
+    out = []
+    max_attachments = int(os.getenv("COMM_V2_MAX_ATTACHMENTS", "8") or 8)
+    for foundation_id in attachment_ids[:max_attachments]:
+        cur.execute(
+            """
+            SELECT *
+            FROM message_attachments
+            WHERE id=? AND sender_id=? AND conversation_id=? AND conversation_model='comm_v2'
+              AND upload_status='uploaded' AND COALESCE(deleted_at,'')=''
+            LIMIT 1
+            """,
+            (int(foundation_id), int(user_id), int(conversation_id)),
+        )
+        media = _row(cur.fetchone())
+        if not media:
+            logging.warning("COMM_V2_FOUNDATION_ATTACHMENT_MISSING user_id=%s conversation_id=%s message_id=%s attachment_id=%s", int(user_id), int(conversation_id), int(message_id), int(foundation_id))
+            continue
+        raw_type = str(media.get("media_type") or "file").lower()
+        media_type = "image" if raw_type == "photo" else "voice" if raw_type == "voice" else raw_type
+        download_url = f"/api/messages/media/{int(foundation_id)}/download"
+        duration_seconds = max(0.0, float(media.get("duration_ms") or 0) / 1000.0)
+        attachment_public_id = _public_id("att")
+        now = _now()
+        cur.execute(
+            """
+            INSERT INTO comm_v2_attachments
+            (attachment_public_id, message_id, conversation_id, media_upload_id, uploader_user_id, media_type, storage_provider, storage_key, url, cdn_url, playback_url, thumbnail_url, mime_type, file_size, file_size_bytes, duration_seconds, waveform_json, voice_note, width, height, mux_asset_id, mux_playback_id, mux_status, scan_status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                attachment_public_id,
+                int(message_id),
+                int(conversation_id),
+                int(foundation_id),
+                int(user_id),
+                media_type,
+                "messenger_media_foundation",
+                "",
+                download_url,
+                "",
+                download_url if media_type in {"video", "voice", "audio"} else "",
+                "",
+                media.get("mime_type") or "",
+                int(media.get("size_bytes") or 0),
+                int(media.get("size_bytes") or 0),
+                duration_seconds,
+                media.get("waveform_json") or "",
+                1 if media_type == "voice" else 0,
+                int(media.get("width") or 0),
+                int(media.get("height") or 0),
+                "",
+                "",
+                "",
+                "approved",
+                now,
+            ),
+        )
+        attachment_row = {
+            "id": int(cur.lastrowid),
+            "attachment_public_id": attachment_public_id,
+            "message_id": int(message_id),
+            "conversation_id": int(conversation_id),
+            "media_upload_id": int(foundation_id),
+            "uploader_user_id": int(user_id),
+            "media_type": media_type,
+            "storage_provider": "messenger_media_foundation",
+            "storage_key": "",
+            "url": download_url,
+            "cdn_url": "",
+            "playback_url": download_url if media_type in {"video", "voice", "audio"} else "",
+            "thumbnail_url": "",
+            "mime_type": media.get("mime_type") or "",
+            "file_size": int(media.get("size_bytes") or 0),
+            "file_size_bytes": int(media.get("size_bytes") or 0),
+            "duration_seconds": duration_seconds,
+            "waveform_json": media.get("waveform_json") or "",
+            "voice_note": 1 if media_type == "voice" else 0,
+            "width": int(media.get("width") or 0),
+            "height": int(media.get("height") or 0),
+            "foundation_attachment_id": int(foundation_id),
+        }
+        cur.execute(
+            "UPDATE message_attachments SET message_id=?, upload_status='attached', updated_at=? WHERE id=?",
+            (int(message_id), now, int(foundation_id)),
+        )
+        out.append(_attachment_payload(attachment_row))
     return out
 
 
