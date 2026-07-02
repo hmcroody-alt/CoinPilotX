@@ -46,6 +46,24 @@ ADAPTER_CHANNEL_ALIASES = {
 NOISY_CHANNELS = {"push", "email", "sms", "call"}
 SOCIAL_CATEGORIES = {"social", "messages", "comments", "mentions", "follows", "live"}
 SENSITIVE_CATEGORIES = {"security", "payments", "billing"}
+LOCKED_DEVICE_PUSH_DEFAULT_CATEGORIES = {
+    "messages",
+    "calls",
+    "comments",
+    "mentions",
+    "follows",
+    "live",
+    "security",
+    "payments",
+    "billing",
+    "verification",
+    "marketplace",
+    "creator",
+    "premium",
+    "crypto",
+    "system",
+}
+PREFERENCE_CONTROLLED_PUSH_CATEGORIES = {"social", "likes", "reposts", "suggestions", "digest", "marketing"}
 EMAIL_DEFAULT_CATEGORIES = {"security", "payments", "billing", "verification", "marketplace", "creator", "premium"}
 SMS_DEFAULT_CATEGORIES = {"security", "payments", "billing", "crypto", "system"}
 TEMPORARY_FAILURE_STATUSES = {"failed", "timeout", "rate_limited", "provider_error", "temporary_failure"}
@@ -71,18 +89,18 @@ EVENT_DEFINITIONS: dict[str, dict[str, str]] = {
     "video_message": {"category": "messages", "priority": "high", "urgency": "immediate", "title": "Video message"},
     "voice_message": {"category": "messages", "priority": "high", "urgency": "immediate", "title": "Voice message"},
     "file_message": {"category": "messages", "priority": "high", "urgency": "immediate", "title": "File message"},
-    "missed_call": {"category": "messages", "priority": "urgent", "urgency": "immediate", "title": "Missed call"},
-    "incoming_call": {"category": "messages", "priority": "urgent", "urgency": "immediate", "title": "Incoming call"},
-    "friend_request": {"category": "social", "priority": "normal", "urgency": "standard", "title": "New friend request"},
-    "friend_request_accepted": {"category": "social", "priority": "normal", "urgency": "standard", "title": "Friend request accepted"},
-    "follow": {"category": "social", "priority": "normal", "urgency": "standard", "title": "New follower"},
-    "like": {"category": "social", "priority": "normal", "urgency": "silent", "title": "New like"},
+    "missed_call": {"category": "calls", "priority": "urgent", "urgency": "immediate", "title": "Missed call"},
+    "incoming_call": {"category": "calls", "priority": "urgent", "urgency": "immediate", "title": "Incoming call"},
+    "friend_request": {"category": "follows", "priority": "normal", "urgency": "standard", "title": "New friend request"},
+    "friend_request_accepted": {"category": "follows", "priority": "normal", "urgency": "standard", "title": "Friend request accepted"},
+    "follow": {"category": "follows", "priority": "normal", "urgency": "standard", "title": "New follower"},
+    "like": {"category": "likes", "priority": "normal", "urgency": "silent", "title": "New like"},
     "comment": {"category": "comments", "priority": "normal", "urgency": "standard", "title": "New comment"},
     "reply": {"category": "comments", "priority": "normal", "urgency": "standard", "title": "New reply"},
     "mention": {"category": "mentions", "priority": "high", "urgency": "immediate", "title": "You were mentioned"},
     "tag": {"category": "mentions", "priority": "high", "urgency": "immediate", "title": "You were tagged"},
-    "repost": {"category": "social", "priority": "normal", "urgency": "standard", "title": "New repost"},
-    "quote": {"category": "social", "priority": "normal", "urgency": "standard", "title": "New quote"},
+    "repost": {"category": "reposts", "priority": "normal", "urgency": "standard", "title": "New repost"},
+    "quote": {"category": "reposts", "priority": "normal", "urgency": "standard", "title": "New quote"},
     "live_started": {"category": "live", "priority": "high", "urgency": "immediate", "title": "Live started"},
     "live_invite": {"category": "live", "priority": "high", "urgency": "immediate", "title": "Live invite"},
     "cohost_request": {"category": "live", "priority": "high", "urgency": "immediate", "title": "Co-host request"},
@@ -115,8 +133,12 @@ EVENT_DEFINITIONS: dict[str, dict[str, str]] = {
 DEFAULT_CATEGORIES = sorted({definition["category"] for definition in EVENT_DEFINITIONS.values()} | {
     "system",
     "messages",
+    "calls",
     "security",
     "social",
+    "likes",
+    "reposts",
+    "follows",
     "crypto",
     "marketplace",
     "premium",
@@ -535,11 +557,18 @@ def _sound_key(category: str, priority: str, prefs: dict[str, Any] | None = None
         return "pulse_urgent"
     return {
         "messages": "pulse_message",
+        "calls": "pulse_call",
         "live": "pulse_live",
+        "comments": "pulse_social",
+        "mentions": "pulse_social",
+        "follows": "pulse_social",
         "security": "pulse_security",
         "payments": "pulse_payment",
         "billing": "pulse_payment",
         "crypto": "pulse_crypto",
+        "creator": "pulse_creator",
+        "verification": "pulse_creator",
+        "premium": "pulse_creator",
         "system": "pulse_system",
     }.get(category, "pulse_soft")
 
@@ -550,7 +579,7 @@ def _vibration_pattern(category: str, priority: str, prefs: dict[str, Any] | Non
         return []
     if priority == "urgent":
         return [240, 90, 240, 90, 320]
-    if category in {"messages", "live"}:
+    if category in {"messages", "calls", "live"}:
         return [180, 80, 180]
     if category in {"security", "payments", "billing"}:
         return [220, 100, 260]
@@ -725,11 +754,82 @@ def _actor_blocked(cur: Any, recipient_user_id: int, actor_user_id: int) -> bool
     return False
 
 
-def _preferences_from_rows(rows: list[Any]) -> dict[str, Any]:
-    defaults = {
-        category: {"in_app": True, "push": False, "email": False, "sms": False, "sound": True, "vibration": True, "lock_screen_preview": True}
-        for category in DEFAULT_CATEGORIES
+def _default_category_preferences(category: str) -> dict[str, bool]:
+    normalized = str(category or "system").strip().lower()
+    push_default = normalized in LOCKED_DEVICE_PUSH_DEFAULT_CATEGORIES
+    if normalized in PREFERENCE_CONTROLLED_PUSH_CATEGORIES:
+        push_default = False
+    return {
+        "in_app": normalized != "marketing",
+        "push": push_default,
+        "email": normalized in EMAIL_DEFAULT_CATEGORIES,
+        "sms": normalized in SMS_DEFAULT_CATEGORIES,
+        "sound": True,
+        "vibration": True,
+        "lock_screen_preview": normalized not in SENSITIVE_CATEGORIES,
     }
+
+
+def _default_channels_for_event(
+    event_type: str,
+    category: str | None = None,
+    priority: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> list[str]:
+    normalized = normalize_type(event_type or "system_announcement")
+    resolved_category = normalize_category(category, normalized)
+    resolved_priority = normalize_priority(priority, normalized)
+    metadata = metadata if isinstance(metadata, dict) else {}
+    channels = ["in_app"]
+    wants_locked_push = (
+        resolved_category in LOCKED_DEVICE_PUSH_DEFAULT_CATEGORIES
+        or resolved_priority in {"urgent", "high"}
+        or normalized in {
+            "new_message",
+            "group_message",
+            "image_message",
+            "video_message",
+            "voice_message",
+            "file_message",
+            "chat_message",
+            "message",
+            "private_message",
+            "missed_call",
+            "incoming_call",
+            "live_invite",
+            "cohost_request",
+            "security_login_alert",
+            "new_device_login",
+            "password_changed",
+            "email_changed",
+            "phone_changed",
+            "suspicious_login",
+            "payment_failed",
+            "payment_method_issue",
+            "verification_approved",
+            "verification_rejected",
+            "verification_needs_info",
+            "creator_payout",
+            "creator_payout_failed",
+            "crypto_alert_triggered",
+            "crypto_price_alert",
+            "system_announcement",
+            "admin_warning",
+            "account_restriction",
+        }
+    )
+    push_requested = metadata.get("push_allowed") or metadata.get("push_enabled") or metadata.get("force_push")
+    if wants_locked_push or push_requested or resolved_category in PREFERENCE_CONTROLLED_PUSH_CATEGORIES:
+        channels.append("push")
+    if resolved_category in EMAIL_DEFAULT_CATEGORIES or resolved_priority == "urgent" or metadata.get("email_allowed"):
+        channels.append("email")
+    if resolved_category in SMS_DEFAULT_CATEGORIES and (resolved_priority == "urgent" or metadata.get("sms_allowed")):
+        channels.append("sms")
+    return list(dict.fromkeys(channels))
+
+
+def _preferences_from_rows(rows: list[Any]) -> dict[str, Any]:
+    defaults = {category: _default_category_preferences(category) for category in DEFAULT_CATEGORIES}
     experience = {
         "enable_push_notifications": False,
         "enable_notification_sound": True,
@@ -922,7 +1022,10 @@ def _rules_check(cur: Any, payload: dict[str, Any], prefs: dict[str, Any]) -> di
     conversation_id = _int(metadata.get("conversation_id") or metadata.get("thread_id") or metadata.get("conversationId"), 0)
     if conversation_id and conversation_id in set(experience.get("muted_conversation_ids") or []) and priority != "urgent":
         return {"allowed": False, "reason": "muted_conversation", "channels": []}
-    category_pref = (prefs.get("preferences") or {}).get(category) or {}
+    preference_map = prefs.get("preferences") or {}
+    category_pref = preference_map.get(category) or {}
+    if category in {"likes", "reposts"} and not category_pref.get("push") and (preference_map.get("social") or {}).get("push"):
+        category_pref = {**category_pref, "push": True}
     requested = set()
     for raw_channel in payload.get("channels") or ["in_app"]:
         channel = ADAPTER_CHANNEL_ALIASES.get(str(raw_channel or "").strip().lower(), str(raw_channel or "").strip().lower())
@@ -1640,27 +1743,35 @@ def notify_legacy_event(
 ) -> dict[str, Any]:
     """Compatibility bridge for older PulseSoc call sites.
 
-    Legacy code may already have push/email side effects, so this bridge only
-    guarantees central in-app record creation unless callers explicitly move to
-    the typed helpers above.
+    Legacy code may already have push/email side effects, but many older
+    call sites only mirrored into the central OS. Infer safe delivery channels
+    from the normalized event so locked-device push does not stop at in-app.
     """
 
     normalized = normalize_type(note_type or "system_announcement")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    category = normalize_category(metadata.get("category"), normalized)
+    priority = normalize_priority(metadata.get("priority"), normalized)
+    channels = metadata.get("channels") or metadata.get("notification_channels")
+    if isinstance(channels, str):
+        channels = [part.strip() for part in channels.split(",") if part.strip()]
+    if not isinstance(channels, (list, tuple, set)):
+        channels = _default_channels_for_event(normalized, category, priority, metadata)
     return intake_event(
         event_type=normalized,
         recipient_user_id=int(recipient_user_id),
         actor_user_id=int(actor_user_id or 0),
-        source_type=source_type or metadata.get("source_type") if isinstance(metadata, dict) else source_type,
-        source_id=str(source_id or (metadata or {}).get("source_id") or ""),
+        source_type=source_type or metadata.get("source_type") or "",
+        source_id=str(source_id or metadata.get("source_id") or ""),
         title=_compact_text(title, 200) or _definition(normalized).get("title") or "PulseSoc update",
         body=_compact_text(body, 500) or "Open PulseSoc for the latest update.",
         preview=_compact_text(body, 180),
         deep_link=deep_link,
         metadata=_event_metadata(metadata, legacy_notification=True, skip_pulse_legacy_mirror=True),
-        category=normalize_category((metadata or {}).get("category") if isinstance(metadata, dict) else None, normalized),
-        priority=normalize_priority((metadata or {}).get("priority") if isinstance(metadata, dict) else None, normalized),
-        urgency=normalize_urgency(None, normalized, normalize_priority((metadata or {}).get("priority") if isinstance(metadata, dict) else None, normalized)),
-        channels=["in_app"],
+        category=category,
+        priority=priority,
+        urgency=normalize_urgency(metadata.get("urgency"), normalized, priority),
+        channels=list(channels),
         dedupe_key=f"legacy:{recipient_user_id}:{normalized}:{source_type}:{source_id}:{hashlib.sha256((_compact_text(title, 120) + _compact_text(body, 120)).encode('utf-8')).hexdigest()}",
     )
 
@@ -2176,6 +2287,30 @@ def _send_apns_token(token: str, notification: dict[str, Any], payload: dict[str
         return {"ok": False, "status": "failed", "provider": "apns", "message": str(exc)[:300], "error_type": type(exc).__name__}
 
 
+def _disable_invalid_push_token(cur: Any, user_id: int, device: dict[str, Any], reason: str) -> None:
+    try:
+        token = str(device.get("push_token") or "")
+        endpoint = str(device.get("endpoint") or "")
+        device_id = str(device.get("device_id") or "")
+        cur.execute(
+            """
+            UPDATE notification_device_tokens
+            SET enabled=0, deleted_at=?, updated_at=?
+            WHERE user_id=? AND (push_token=? OR endpoint=? OR device_id=?)
+            """,
+            (now_iso(), now_iso(), int(user_id), token, endpoint, device_id),
+        )
+        logging.info(
+            "PULSESOC_NOTIFICATION_INVALID_PUSH_TOKEN_DISABLED user_id=%s device_id=%s provider=%s reason=%s",
+            user_id,
+            device_id[:80],
+            str(device.get("push_provider") or device.get("platform") or "")[:40],
+            str(reason or "invalid_device")[:120],
+        )
+    except Exception:
+        logging.exception("PULSESOC_NOTIFICATION_INVALID_PUSH_TOKEN_DISABLE_FAILED user_id=%s", user_id)
+
+
 def _dispatch_push(cur: Any, notification: dict[str, Any], prefs: dict[str, Any]) -> dict[str, Any]:
     user_id = int(notification.get("recipient_user_id") or notification.get("user_id") or 0)
     devices = _active_device_tokens(cur, user_id)
@@ -2190,9 +2325,15 @@ def _dispatch_push(cur: Any, notification: dict[str, Any], prefs: dict[str, Any]
     fcm_tokens = [d for d in devices if (str(d.get("push_provider") or "").lower() == "fcm" or str(d.get("platform") or "").lower() == "android") and d.get("push_token")]
     apns_tokens = [d for d in devices if (str(d.get("push_provider") or "").lower() == "apns" or str(d.get("platform") or "").lower() == "ios") and d.get("push_token")]
     for device in fcm_tokens:
-        results.append(_send_fcm_token(str(device.get("push_token") or ""), notification, {**payload, "body": preview_body}))
+        result = _send_fcm_token(str(device.get("push_token") or ""), notification, {**payload, "body": preview_body})
+        if result.get("status") == "invalid_device":
+            _disable_invalid_push_token(cur, user_id, device, result.get("message") or "invalid_fcm_token")
+        results.append(result)
     for device in apns_tokens:
-        results.append(_send_apns_token(str(device.get("push_token") or ""), notification, {**payload, "body": preview_body}))
+        result = _send_apns_token(str(device.get("push_token") or ""), notification, {**payload, "body": preview_body})
+        if result.get("status") == "invalid_device":
+            _disable_invalid_push_token(cur, user_id, device, result.get("message") or "invalid_apns_token")
+        results.append(result)
     if not results:
         return {"ok": False, "status": "skipped_no_device", "provider": "push_router", "message": "No deliverable push token was found."}
     if any(result.get("ok") for result in results):
