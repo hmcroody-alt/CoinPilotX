@@ -62,6 +62,10 @@ FEED_ALIASES = {
 }
 POST_TYPE_ALIASES = {"scam_warning": "scam_report", "question": "poll", "roast": "roast_clip", "roast_battle": "roast_clip"}
 POST_TYPES = {"text", "image", "video", "gif", "poll", "replay", "scam_report", "arena_result", "roast_clip", "live"}
+MEMBER_000_PUBLIC_PLAYER_ID = "pulsesoc-member-000"
+MEMBER_000_DISPLAY_NAME = "PULSESOC MEMBER #000"
+MEMBER_000_AVATAR_URL = "/static/brand/pulsesoc-member-000-avatar.png"
+_MEMBER_000_PROFILE_READY = False
 
 
 def _now():
@@ -183,17 +187,88 @@ def _public_feed_where(alias="p"):
     ]
 
 
+def _ensure_member_000_profile():
+    """Seed the official system profile used by legacy user_id=0 feed posts."""
+    global _MEMBER_000_PROFILE_READY
+    if _MEMBER_000_PROFILE_READY:
+        return
+    try:
+        conn = user_context.connect()
+        cur = conn.cursor()
+        now = _now()
+        cur.execute(
+            """
+            SELECT id, avatar_url
+            FROM arena_profiles
+            WHERE user_id=0 OR public_player_id=?
+            ORDER BY CASE WHEN public_player_id=? THEN 0 ELSE 1 END
+            LIMIT 1
+            """,
+            (MEMBER_000_PUBLIC_PLAYER_ID, MEMBER_000_PUBLIC_PLAYER_ID),
+        )
+        row = _row(cur.fetchone())
+        if row:
+            avatar_url = row.get("avatar_url") or MEMBER_000_AVATAR_URL
+            cur.execute(
+                """
+                UPDATE arena_profiles
+                SET user_id=0, username=?, public_player_id=?, display_name=?, avatar_url=?, rank=?, updated_at=?
+                WHERE id=?
+                """,
+                (
+                    MEMBER_000_PUBLIC_PLAYER_ID,
+                    MEMBER_000_PUBLIC_PLAYER_ID,
+                    MEMBER_000_DISPLAY_NAME,
+                    avatar_url,
+                    "Genesis Member",
+                    now,
+                    row.get("id"),
+                ),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO arena_profiles
+                    (user_id, username, public_player_id, display_name, avatar_url, rank, created_at, updated_at)
+                VALUES
+                    (0, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    MEMBER_000_PUBLIC_PLAYER_ID,
+                    MEMBER_000_PUBLIC_PLAYER_ID,
+                    MEMBER_000_DISPLAY_NAME,
+                    MEMBER_000_AVATAR_URL,
+                    "Genesis Member",
+                    now,
+                    now,
+                ),
+            )
+        conn.commit()
+        conn.close()
+        _MEMBER_000_PROFILE_READY = True
+    except Exception:
+        logging.getLogger(__name__).exception("member_000_profile_seed_failed")
+
+
 def _public_author(row):
     item = dict(row or {})
-    public_player_id = row.get("public_player_id") or row.get("author_public_player_id") or ""
-    user_id = int(row.get("user_id") or 0)
-    display = (
-        row.get("user_display_name")
-        or row.get("display_name")
-        or row.get("username")
-        or f"PulseSoc Member #{str(public_player_id or row.get('user_id') or '000')[-4:]}"
+    public_player_id = item.get("public_player_id") or item.get("author_public_player_id") or ""
+    user_id = int(item.get("user_id") or 0)
+    is_member_000 = user_id <= 0 and not (
+        item.get("user_display_name") or item.get("display_name") or item.get("username") or public_player_id
     )
-    avatar_url = row.get("user_avatar_url") or row.get("avatar_url") or ""
+    if is_member_000:
+        _ensure_member_000_profile()
+        public_player_id = MEMBER_000_PUBLIC_PLAYER_ID
+    display = (
+        item.get("user_display_name")
+        or item.get("display_name")
+        or item.get("username")
+        or (MEMBER_000_DISPLAY_NAME if is_member_000 else f"PulseSoc Member #{str(public_player_id or item.get('user_id') or '000')[-4:]}")
+    )
+    avatar_url = item.get("user_avatar_url") or item.get("avatar_url") or item.get("arena_avatar_url") or ""
+    if is_member_000 and not avatar_url:
+        avatar_url = MEMBER_000_AVATAR_URL
     badges = ["Member"]
     badge_keys = []
     try:
