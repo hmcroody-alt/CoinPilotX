@@ -222,6 +222,28 @@ COMM_V2_TABLES: tuple[TableSpec, ...] = (
         """,
     ),
     TableSpec(
+        "comm_v2_conversation_settings",
+        """
+        CREATE TABLE IF NOT EXISTS comm_v2_conversation_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            notification_json TEXT,
+            appearance_json TEXT,
+            privacy_json TEXT,
+            media_json TEXT,
+            accessibility_json TEXT,
+            productivity_json TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            UNIQUE(conversation_id, user_id)
+        )
+        """,
+        (
+            "CREATE INDEX IF NOT EXISTS idx_comm_v2_conversation_settings_user ON comm_v2_conversation_settings(user_id, conversation_id)",
+        ),
+    ),
+    TableSpec(
         "comm_v2_presence",
         """
         CREATE TABLE IF NOT EXISTS comm_v2_presence (

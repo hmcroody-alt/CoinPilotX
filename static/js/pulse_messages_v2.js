@@ -79,6 +79,12 @@
     realtimePolling: false,
     realtimeBound: false,
     realtimeConnected: false,
+    controlOpen: false,
+    controlLoading: false,
+    controlSaving: false,
+    controlSearch: "",
+    controlData: null,
+    controlExpanded: new Set(["conversation", "notifications", "appearance", "privacy"]),
     tabChannel: "BroadcastChannel" in window ? new BroadcastChannel("pulse-comm-v2") : null,
   };
   const MEDIA_FOUNDATION_MIME_BY_EXT = {
@@ -98,6 +104,200 @@
     oga: "audio/ogg",
   };
   const MEDIA_FOUNDATION_MIMES = new Set(Object.values(MEDIA_FOUNDATION_MIME_BY_EXT));
+  const CONTROL_SECTIONS = [
+    {
+      id: "conversation",
+      icon: "💬",
+      title: "Conversation",
+      desc: "Info, members, media and search.",
+      items: [
+        { label: "View Members", icon: "👥", action: "members" },
+        { label: "Shared Media", icon: "🖼", action: "shared-media" },
+        { label: "Pinned Messages", icon: "📌", status: "soon" },
+        { label: "Search Chat", icon: "⌕", action: "search-chat" },
+        { label: "Message Stats", icon: "▥", action: "message-stats" },
+        { label: "Media Storage", icon: "◉", action: "storage" },
+        { label: "Export Chat", icon: "⇧", status: "soon" },
+      ],
+    },
+    {
+      id: "notifications",
+      icon: "🔔",
+      title: "Notifications",
+      desc: "Alerts, sounds, previews and badges.",
+      items: [
+        { label: "Mute Conversation", icon: "🔕", setting: "mute_choice", kind: "select", options: [["off", "Off"], ["1_hour", "1 hour"], ["8_hours", "8 hours"], ["today", "Today"], ["1_week", "1 week"], ["forever", "Forever"]] },
+        { label: "Notification Sound", icon: "♪", setting: "sound", kind: "select", options: [["pulse_beam", "Pulse Beam"], ["soft_orbit", "Soft Orbit"], ["deep_signal", "Deep Signal"], ["crystal_ping", "Crystal Ping"], ["silent", "Silent"]] },
+        { label: "Show on Lock Screen", icon: "▣", setting: "lock_screen", kind: "toggle" },
+        { label: "Show Message Preview", icon: "◉", setting: "message_preview", kind: "toggle" },
+        { label: "Mention Notifications", icon: "@", setting: "mentions", kind: "toggle" },
+        { label: "Reaction Notifications", icon: "✦", setting: "reactions", kind: "toggle" },
+        { label: "Typing Notifications", icon: "...", setting: "typing", kind: "toggle" },
+        { label: "Read Receipt Notifications", icon: "✓", setting: "read_receipts", kind: "toggle" },
+        { label: "More Notification Settings", icon: "⚙", status: "soon" },
+      ],
+    },
+    {
+      id: "appearance",
+      icon: "🖌",
+      title: "Appearance",
+      desc: "Themes, colors, density and motion.",
+      items: [
+        { label: "Theme", icon: "◌", setting: "theme", kind: "select", options: [["dark_galaxy", "Dark Galaxy"], ["nebula", "Nebula"], ["deep_space", "Deep Space"], ["pulse_green", "Pulse Green"], ["cyber_night", "Cyber Night"]] },
+        { label: "Wallpaper", icon: "▧", status: "soon" },
+        { label: "Bubble Color", icon: "●", setting: "bubble_color", kind: "select", options: [["cyan", "Cyan"], ["purple", "Purple"], ["rose", "Rose"], ["orange", "Orange"], ["green", "Green"]] },
+        { label: "Font Size", icon: "Aa", setting: "font_size", kind: "select", options: [["small", "Small"], ["medium", "Medium"], ["large", "Large"], ["extra_large", "Extra Large"]] },
+        { label: "Chat Density", icon: "↕", setting: "density", kind: "select", options: [["compact", "Compact"], ["balanced", "Balanced"], ["relaxed", "Relaxed"]] },
+        { label: "Animation Level", icon: "✺", setting: "animation_level", kind: "select", options: [["full", "Full"], ["balanced", "Balanced"], ["reduced", "Reduced"], ["off", "Off"]] },
+        { label: "Reduce Particles", icon: "·", setting: "reduce_particles", kind: "toggle" },
+        { label: "High Contrast", icon: "◐", setting: "high_contrast", kind: "toggle" },
+      ],
+    },
+    {
+      id: "privacy",
+      icon: "🔒",
+      title: "Privacy",
+      desc: "Visibility and private conversation behavior.",
+      items: [
+        { label: "Read Receipts", icon: "✓✓", setting: "read_receipts", kind: "toggle" },
+        { label: "Typing Indicator", icon: "...", setting: "typing_indicator", kind: "toggle" },
+        { label: "Online Status", icon: "●", setting: "online_status", kind: "toggle" },
+        { label: "Last Seen", icon: "◷", setting: "last_seen", kind: "toggle" },
+        { label: "Show Message Preview", icon: "◉", setting: "message_preview", kind: "toggle" },
+        { label: "Disappearing Messages", icon: "⌛", status: "soon" },
+        { label: "Privacy Lock", icon: "▣", status: "requires_setup" },
+        { label: "Hidden Conversation", icon: "◌", setting: "hidden_conversation", kind: "toggle" },
+      ],
+    },
+    {
+      id: "ai",
+      icon: "✦",
+      title: "AI Assistant",
+      desc: "Private actions only run after you tap.",
+      items: [
+        { label: "Summarize Conversation", icon: "✦", action: "ai-summary", requiresAi: true },
+        { label: "Translate Messages", icon: "⇄", status: "soon" },
+        { label: "Smart Replies", icon: "↻", action: "ai-replies", requiresAi: true },
+        { label: "Rewrite Draft", icon: "✎", status: "soon" },
+        { label: "Search with AI", icon: "⌕", status: "soon" },
+        { label: "Extract Tasks", icon: "☑", status: "soon" },
+        { label: "Important Moments", icon: "◇", status: "soon" },
+      ],
+    },
+    {
+      id: "media",
+      icon: "🖼",
+      title: "Media",
+      desc: "Downloads, uploads, links and files.",
+      items: [
+        { label: "Auto Download Photos", icon: "▧", setting: "auto_download_photos", kind: "toggle" },
+        { label: "Auto Download Videos", icon: "▶", setting: "auto_download_videos", kind: "toggle" },
+        { label: "Auto Download Voice Messages", icon: "🎤", setting: "auto_download_voice", kind: "toggle" },
+        { label: "Upload Quality", icon: "HD", setting: "upload_quality", kind: "select", options: [["standard", "Standard"], ["high", "High"], ["original", "Original"]] },
+        { label: "Auto Save Camera Photos", icon: "◎", setting: "auto_save_camera", kind: "toggle" },
+        { label: "Clear Media Cache", icon: "⌫", action: "clear-cache", dangerConfirm: "Clear local media cache for this device?" },
+        { label: "Shared Links", icon: "↗", status: "soon" },
+        { label: "Shared Files", icon: "▤", status: "soon" },
+      ],
+    },
+    {
+      id: "security",
+      icon: "🛡",
+      title: "Security",
+      desc: "Safety, reports, sessions and trust.",
+      items: [
+        { label: "Encryption Status", icon: "🛡", action: "security-status" },
+        { label: "Verify Contact", icon: "◇", status: "soon" },
+        { label: "Trusted Devices", icon: "▣", status: "soon" },
+        { label: "Active Sessions", icon: "◉", status: "soon" },
+        { label: "Security Log", icon: "▤", status: "soon" },
+        { label: "Report Conversation", icon: "!", action: "report-conversation", dangerConfirm: "Send the latest message to moderation review?" },
+        { label: "Block User", icon: "⊘", action: "block-user", directOnly: true, dangerConfirm: "Block this member?" },
+      ],
+    },
+    {
+      id: "productivity",
+      icon: "✓",
+      title: "Productivity",
+      desc: "Pins, archive, reminders and tasks.",
+      items: [
+        { label: "Pin Conversation", icon: "📌", action: "pin" },
+        { label: "Archive Conversation", icon: "▤", action: "archive", dangerConfirm: "Archive this conversation?" },
+        { label: "Mark Unread", icon: "◌", action: "mark-unread" },
+        { label: "Favorite Conversation", icon: "★", setting: "favorite", kind: "toggle" },
+        { label: "Reminder", icon: "⏱", setting: "reminder", kind: "select", options: [["off", "Off"], ["today", "Today"], ["tomorrow", "Tomorrow"], ["next_week", "Next week"]] },
+        { label: "Schedule Message", icon: "◷", status: "soon" },
+        { label: "Create Note", icon: "✎", status: "soon" },
+        { label: "Create Task", icon: "☑", status: "soon" },
+      ],
+    },
+    {
+      id: "group",
+      icon: "👥",
+      title: "Group Settings",
+      desc: "Members, roles and permissions.",
+      groupOnly: true,
+      items: [
+        { label: "Members", icon: "👥", action: "members" },
+        { label: "Admins", icon: "♛", status: "soon", adminOnly: true },
+        { label: "Roles", icon: "▣", status: "soon", adminOnly: true },
+        { label: "Invite Link", icon: "↗", status: "soon", adminOnly: true },
+        { label: "Join Requests", icon: "＋", status: "soon", adminOnly: true },
+        { label: "Permissions", icon: "⚙", status: "soon", adminOnly: true },
+        { label: "Mute Members", icon: "🔕", status: "soon", adminOnly: true },
+        { label: "Announcements", icon: "▣", status: "soon" },
+        { label: "Polls", icon: "▥", status: "soon" },
+        { label: "Events", icon: "◷", status: "soon" },
+      ],
+    },
+    {
+      id: "storage",
+      icon: "◉",
+      title: "Storage",
+      desc: "Conversation size, media and cache.",
+      items: [
+        { label: "Conversation Size", icon: "◉", stat: "storage_used" },
+        { label: "Photos", icon: "▧", stat: "photos" },
+        { label: "Videos", icon: "▶", stat: "videos" },
+        { label: "Voice Messages", icon: "🎤", stat: "voice" },
+        { label: "Files", icon: "▤", stat: "media_files" },
+        { label: "Links", icon: "↗", status: "soon" },
+        { label: "Largest Files", icon: "⇅", status: "soon" },
+        { label: "Clear Cache", icon: "⌫", action: "clear-cache", dangerConfirm: "Clear local cache for this conversation?" },
+      ],
+    },
+    {
+      id: "accessibility",
+      icon: "♿",
+      title: "Accessibility",
+      desc: "Display, motion, audio and haptics.",
+      items: [
+        { label: "Large Text", icon: "Aa", setting: "large_text", kind: "toggle" },
+        { label: "Reduce Motion", icon: "↘", setting: "reduce_motion", kind: "toggle" },
+        { label: "High Contrast", icon: "◐", setting: "high_contrast", kind: "toggle" },
+        { label: "Voice Reader", icon: "◉", setting: "voice_reader", kind: "toggle" },
+        { label: "Speech-to-Text", icon: "🎤", setting: "speech_to_text", kind: "toggle" },
+        { label: "Text-to-Speech", icon: "◌", setting: "text_to_speech", kind: "toggle" },
+        { label: "Haptic Feedback", icon: "✦", setting: "haptic_feedback", kind: "toggle" },
+      ],
+    },
+    {
+      id: "danger",
+      icon: "!",
+      title: "Danger Zone",
+      desc: "Destructive actions require confirmation.",
+      danger: true,
+      items: [
+        { label: "Clear Conversation", icon: "⌫", status: "soon" },
+        { label: "Delete Conversation", icon: "×", status: "soon" },
+        { label: "Leave Group", icon: "⇠", status: "soon", groupOnly: true },
+        { label: "Block User", icon: "⊘", action: "block-user", directOnly: true, dangerConfirm: "Block this member?" },
+        { label: "Report Spam", icon: "!", action: "report-conversation", dangerConfirm: "Send this conversation to moderation review?" },
+        { label: "Delete Media", icon: "⌧", status: "soon" },
+        { label: "Reset Conversation Settings", icon: "↺", status: "soon" },
+      ],
+    },
+  ];
 
   function isMobile() {
     return mobileQuery.matches;
@@ -654,6 +854,337 @@
       renderMembers();
     }
     closeConversationActions();
+  }
+
+  function controlStatus(text, kind = "info") {
+    const node = el("[data-control-status]");
+    if (!node) return;
+    node.textContent = text || "";
+    node.dataset.kind = kind;
+    node.hidden = !text;
+  }
+
+  function activeControlConversationId() {
+    return Number(state.active?.conversation_id || state.controlData?.conversation?.conversation_id || state.controlData?.conversation?.id || 0);
+  }
+
+  function isControlGroup() {
+    const conversation = state.controlData?.conversation || state.active || {};
+    return Boolean(conversation.is_group || ["group", "room", "community_channel"].includes(String(conversation.conversation_type || "").toLowerCase()));
+  }
+
+  function controlSettingValue(sectionId, item) {
+    const settings = state.controlData?.settings || {};
+    return settings?.[sectionId]?.[item.setting];
+  }
+
+  function controlItemAvailable(section, item) {
+    const conversation = state.controlData?.conversation || state.active || {};
+    if (item.groupOnly && !isControlGroup()) return false;
+    if (item.directOnly && String(conversation.conversation_type || "") !== "direct") return false;
+    if (item.adminOnly && !conversation.is_admin) return false;
+    if (item.requiresAi && !state.aiEnabled) return false;
+    return true;
+  }
+
+  function controlItemStatus(section, item) {
+    if (!controlItemAvailable(section, item)) return "unavailable";
+    if (item.requiresAi && !state.aiEnabled) return "requires_setup";
+    return item.status || "ready";
+  }
+
+  function formatControlStat(item, stats = {}) {
+    if (item.stat === "storage_used") return formatBytes(stats.storage_used_bytes || 0);
+    if (item.stat === "media_files") return String(Number(stats.media_files || 0));
+    if (item.stat === "photos" || item.stat === "videos" || item.stat === "voice") return "Tracked in media files";
+    return "";
+  }
+
+  function renderControlCenter() {
+    const panel = el("[data-conversation-control-center]");
+    const content = el("[data-control-content]");
+    if (!panel || !content) return;
+    if (!state.controlOpen) return;
+    if (state.controlLoading) {
+      content.innerHTML = `<div class="control-loading"><span></span><strong>Loading controls...</strong></div>`;
+      return;
+    }
+    if (!state.controlData?.conversation) {
+      content.innerHTML = `<div class="control-empty"><strong>No conversation selected.</strong><small>Open a chat before managing controls.</small></div>`;
+      return;
+    }
+    const conversation = state.controlData.conversation;
+    const stats = state.controlData.stats || conversation.stats || {};
+    const query = state.controlSearch.trim().toLowerCase();
+    const sections = CONTROL_SECTIONS.filter((section) => {
+      if (section.groupOnly && !isControlGroup()) return false;
+      const haystack = `${section.title} ${section.desc} ${(section.items || []).map((item) => item.label).join(" ")}`.toLowerCase();
+      return !query || haystack.includes(query);
+    });
+    const statusText = conversation.conversation_type === "direct"
+      ? `${stats.connection || "Unknown"} · Direct Conversation`
+      : `${Number(stats.members || conversation.member_count || 0)} members · ${typeLabel(conversation.conversation_type)} Conversation`;
+    const quickActions = [
+      { label: "Search", icon: "⌕", action: "search-chat" },
+      { label: "Call", icon: "☎", status: "soon" },
+      { label: "Video", icon: "▣", status: "soon" },
+      { label: stats.muted ? "Unmute" : "Mute", icon: "🔕", action: "mute" },
+      { label: stats.pinned || conversation.pinned ? "Unpin" : "Pin", icon: "📌", action: "pin" },
+      { label: "Archive", icon: "▤", action: "archive", dangerConfirm: "Archive this conversation?" },
+    ];
+    content.innerHTML = `
+      <section class="control-profile">
+        ${avatarHtml(conversation, "control-avatar")}
+        <div>
+          <h3>${escapeHtml(conversation.title || "Conversation")}</h3>
+          <p>${escapeHtml(statusText)}</p>
+        </div>
+        <div class="control-profile-actions" aria-label="Conversation shortcuts">
+          <button type="button" data-control-action="search-chat" aria-label="Search chat">⌕</button>
+          <button type="button" disabled title="Voice calls coming soon" aria-label="Voice calls coming soon">☎</button>
+          <button type="button" disabled title="Video calls coming soon" aria-label="Video calls coming soon">▣</button>
+        </div>
+      </section>
+      <section class="control-quick-actions" aria-label="Quick actions">
+        ${quickActions.map((item) => renderControlActionButton(item)).join("")}
+      </section>
+      <section class="control-info-grid" aria-label="Conversation status">
+        ${[
+          ["🛡", "Protected", stats.security_label || "Secured session"],
+          ["👥", "Members", Number(stats.members || conversation.member_count || 0)],
+          ["🖼", "Media Files", Number(stats.media_files || 0)],
+          ["◉", "Storage Used", formatBytes(stats.storage_used_bytes || 0)],
+          ["●", "Unread", Number(stats.unread || conversation.unread_count || 0)],
+          ["↔", "Connection", stats.connection || "Unknown"],
+        ].map(([icon, label, value]) => `<article><span>${icon}</span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(String(value))}</small></article>`).join("")}
+      </section>
+      <label class="control-search">
+        <span aria-hidden="true">⌕</span>
+        <input data-control-search type="search" autocomplete="off" placeholder="Search settings..." aria-label="Search settings" value="${escapeAttr(state.controlSearch)}">
+        ${state.controlSearch ? `<button type="button" data-control-search-clear aria-label="Clear settings search">x</button>` : ""}
+      </label>
+      <section class="control-section-list" data-control-sections>
+        ${sections.length ? sections.map((section) => renderControlSection(section, query)).join("") : `<div class="control-empty"><strong>No settings found.</strong><small>Try a different search.</small></div>`}
+      </section>
+    `;
+  }
+
+  function renderControlActionButton(item) {
+    const status = item.status || "ready";
+    const disabled = status !== "ready";
+    return `<button class="control-quick-action ${disabled ? "is-disabled" : ""}" type="button" ${disabled ? "disabled" : `data-control-action="${escapeAttr(item.action)}"`} ${item.dangerConfirm ? `data-control-confirm="${escapeAttr(item.dangerConfirm)}"` : ""} aria-label="${escapeAttr(item.label)}" title="${disabled ? controlBadgeLabel(status) : escapeAttr(item.label)}">
+      <span>${item.icon || "•"}</span><small>${escapeHtml(item.label)}</small>${disabled ? `<em>${controlBadgeLabel(status)}</em>` : ""}
+    </button>`;
+  }
+
+  function renderControlSection(section, query) {
+    const expanded = state.controlExpanded.has(section.id) || Boolean(query);
+    const sectionMatches = !query || `${section.title} ${section.desc}`.toLowerCase().includes(query);
+    const visibleItems = (section.items || []).filter((item) => {
+      if (item.groupOnly && !isControlGroup()) return false;
+      const text = `${item.label} ${section.title}`.toLowerCase();
+      return sectionMatches || text.includes(query);
+    });
+    if (!visibleItems.length) return "";
+    return `<article class="control-section ${section.danger ? "is-danger" : ""}" data-control-section="${escapeAttr(section.id)}">
+      <button class="control-section-head" type="button" data-control-section-toggle="${escapeAttr(section.id)}" aria-expanded="${expanded ? "true" : "false"}">
+        <span class="control-section-icon">${section.icon || "•"}</span>
+        <span><strong>${escapeHtml(section.title)}</strong><small>${escapeHtml(section.desc || "")}</small></span>
+        <em>${expanded ? "⌃" : "⌄"}</em>
+      </button>
+      <div class="control-section-body" ${expanded ? "" : "hidden"}>
+        ${visibleItems.map((item) => renderControlItem(section, item)).join("")}
+      </div>
+    </article>`;
+  }
+
+  function renderControlItem(section, item) {
+    const status = controlItemStatus(section, item);
+    const disabled = status !== "ready";
+    const badge = disabled ? `<span class="control-badge">${controlBadgeLabel(status)}</span>` : "";
+    const confirm = item.dangerConfirm ? `data-control-confirm="${escapeAttr(item.dangerConfirm)}"` : "";
+    const statValue = item.stat ? formatControlStat(item, state.controlData?.stats || {}) : "";
+    if (item.stat) {
+      return `<div class="control-option is-stat"><span>${item.icon || "•"}</span><strong>${escapeHtml(item.label)}</strong><em>${escapeHtml(statValue)}</em></div>`;
+    }
+    if (item.kind === "toggle" && item.setting) {
+      const value = Boolean(controlSettingValue(section.id, item));
+      return `<button class="control-option" type="button" data-control-toggle="${escapeAttr(section.id)}:${escapeAttr(item.setting)}" ${disabled ? "disabled" : ""} aria-pressed="${value ? "true" : "false"}" aria-label="${escapeAttr(item.label)}">
+        <span>${item.icon || "•"}</span><strong>${escapeHtml(item.label)}</strong>${badge}<i class="control-switch ${value ? "is-on" : ""}" aria-hidden="true"></i>
+      </button>`;
+    }
+    if (item.kind === "select" && item.setting) {
+      const value = String(controlSettingValue(section.id, item) || "");
+      return `<label class="control-option has-select ${disabled ? "is-disabled" : ""}">
+        <span>${item.icon || "•"}</span><strong>${escapeHtml(item.label)}</strong>${badge}
+        <select data-control-select="${escapeAttr(section.id)}:${escapeAttr(item.setting)}" ${disabled ? "disabled" : ""} aria-label="${escapeAttr(item.label)}">
+          ${(item.options || []).map(([optionValue, optionLabel]) => `<option value="${escapeAttr(optionValue)}" ${String(optionValue) === value ? "selected" : ""}>${escapeHtml(optionLabel)}</option>`).join("")}
+        </select>
+      </label>`;
+    }
+    return `<button class="control-option" type="button" ${disabled ? "disabled" : `data-control-action="${escapeAttr(item.action || "")}"`} ${confirm} aria-label="${escapeAttr(item.label)}" title="${disabled ? controlBadgeLabel(status) : escapeAttr(item.label)}">
+      <span>${item.icon || "•"}</span><strong>${escapeHtml(item.label)}</strong>${badge}<em>${disabled ? "" : "›"}</em>
+    </button>`;
+  }
+
+  function controlBadgeLabel(status) {
+    if (status === "requires_setup") return "Requires Setup";
+    if (status === "unavailable") return "Unavailable";
+    return "Coming Soon";
+  }
+
+  async function openConversationControlCenter() {
+    if (!state.active?.conversation_id) {
+      setStatus("Open a conversation before using the Control Center.", "error");
+      return;
+    }
+    state.controlOpen = true;
+    state.controlLoading = true;
+    state.controlSearch = "";
+    document.body.classList.add("conversation-control-open");
+    const panel = el("[data-conversation-control-center]");
+    const backdrop = el("[data-conversation-control-backdrop]");
+    if (panel) {
+      panel.hidden = false;
+      requestAnimationFrame(() => panel.classList.add("is-open"));
+    }
+    if (backdrop) {
+      backdrop.hidden = false;
+      requestAnimationFrame(() => backdrop.classList.add("is-open"));
+    }
+    renderControlCenter();
+    await loadConversationControlCenter(true);
+    window.setTimeout(() => panel?.querySelector("[data-control-search], [data-close-control-center]")?.focus(), 40);
+  }
+
+  function closeConversationControlCenter() {
+    state.controlOpen = false;
+    state.controlSearch = "";
+    document.body.classList.remove("conversation-control-open");
+    const panel = el("[data-conversation-control-center]");
+    const backdrop = el("[data-conversation-control-backdrop]");
+    panel?.classList.remove("is-open");
+    backdrop?.classList.remove("is-open");
+    window.setTimeout(() => {
+      if (!state.controlOpen) {
+        if (panel) panel.hidden = true;
+        if (backdrop) backdrop.hidden = true;
+      }
+    }, 260);
+  }
+
+  async function loadConversationControlCenter(force = false) {
+    const id = activeControlConversationId();
+    if (!id) return;
+    if (!force && state.controlData?.conversation?.conversation_id === id) {
+      state.controlLoading = false;
+      renderControlCenter();
+      return;
+    }
+    state.controlLoading = true;
+    controlStatus("");
+    renderControlCenter();
+    try {
+      const data = await api(`/conversations/${id}/control-center`, {}, "conversation_control_center");
+      state.controlData = data;
+      if (data.conversation) rememberConversation(data.conversation);
+      state.controlLoading = false;
+      renderControlCenter();
+    } catch (error) {
+      state.controlLoading = false;
+      renderControlCenter();
+      controlStatus(error?.message || "Conversation controls could not load.", "error");
+    }
+  }
+
+  async function saveControlSetting(section, key, value) {
+    const id = activeControlConversationId();
+    if (!id) return;
+    state.controlSaving = true;
+    controlStatus("Saving...", "info");
+    try {
+      const data = await api(`/conversations/${id}/control-center`, {
+        method: "PATCH",
+        body: JSON.stringify({ section, key, value }),
+      }, "conversation_control_center_update");
+      state.controlData = { ...(state.controlData || {}), settings: data.settings || state.controlData?.settings };
+      if (section === "notifications" && key === "mute_choice") {
+        const item = state.conversationCache.get(id);
+        if (item) item.muted = value !== "off";
+        renderConversations();
+      }
+      controlStatus(data.message || "Saved.", "success");
+      renderControlCenter();
+    } finally {
+      state.controlSaving = false;
+    }
+  }
+
+  async function runControlAction(action, confirmText = "") {
+    if (!action) return;
+    if (confirmText && !window.confirm(confirmText)) return;
+    const id = activeControlConversationId();
+    if (["pin", "archive", "mark-unread", "mute"].includes(action)) {
+      state.actionConversationId = id;
+      const mapped = action === "mark-unread" ? "unread" : action;
+      await updateConversationPreference(mapped);
+      if (action === "archive") closeConversationControlCenter();
+      else await loadConversationControlCenter(true);
+      return;
+    }
+    if (action === "search-chat") {
+      closeConversationControlCenter();
+      toggleThreadSearch(true);
+      return;
+    }
+    if (action === "members" || action === "shared-media") {
+      closeConversationControlCenter();
+      if (!state.detailsOpen) toggleDetails();
+      return;
+    }
+    if (action === "storage") {
+      state.controlExpanded.add("storage");
+      state.controlSearch = "";
+      renderControlCenter();
+      el('[data-control-section="storage"]')?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (action === "message-stats" || action === "security-status") {
+      controlStatus(action === "security-status" ? "This conversation is protected by authenticated PulseSoc access controls." : "Conversation stats are shown in the live status cards.", "info");
+      return;
+    }
+    if (action === "ai-summary") return await runAIAction("summary");
+    if (action === "ai-replies") return await runAIAction("smart-replies");
+    if (action === "clear-cache") {
+      try {
+        clearDraft(id);
+        state.messageCache.delete(id);
+        controlStatus("Local cache cleared for this device.", "success");
+      } catch (_) {
+        controlStatus("Local cache could not be cleared.", "error");
+      }
+      return;
+    }
+    if (action === "report-conversation") return await reportLast();
+    if (action === "block-user") return await blockPeer();
+    controlStatus("That control is not available yet.", "error");
+  }
+
+  function trapControlFocus(event) {
+    if (!state.controlOpen || event.key !== "Tab") return;
+    const panel = el("[data-conversation-control-center]");
+    if (!panel) return;
+    const focusable = Array.from(panel.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter((node) => node.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   function renderMessages() {
@@ -1986,6 +2517,7 @@
           toggleEmojiPanel(false);
           discardVoiceRecording({ silent: true });
           clearAttachmentQueue();
+          closeConversationControlCenter();
           state.active = rememberConversation(state.conversationCache.get(id) || state.conversations.find((item) => Number(item.conversation_id) === id));
           if (state.active) state.active.unread_count = 0;
           const cached = state.messageCache.get(id) || [];
@@ -2029,6 +2561,35 @@
         if (target.closest("[data-open-new-group]")) return openModal("new-group");
         if (target.closest("[data-open-new-room]")) return openModal("new-room");
         if (target.closest("[data-close-modal]")) return closeModals();
+        if (target.closest("[data-open-control-center]")) return await openConversationControlCenter();
+        if (target.closest("[data-close-control-center]") || target.closest("[data-conversation-control-backdrop]")) return closeConversationControlCenter();
+        const controlSectionToggle = target.closest("[data-control-section-toggle]");
+        if (controlSectionToggle) {
+          const id = controlSectionToggle.dataset.controlSectionToggle;
+          if (state.controlExpanded.has(id)) state.controlExpanded.delete(id);
+          else state.controlExpanded.add(id);
+          renderControlCenter();
+          return;
+        }
+        const controlSearchClear = target.closest("[data-control-search-clear]");
+        if (controlSearchClear) {
+          state.controlSearch = "";
+          renderControlCenter();
+          window.setTimeout(() => el("[data-control-search]")?.focus(), 20);
+          return;
+        }
+        const controlToggle = target.closest("[data-control-toggle]");
+        if (controlToggle) {
+          const [section, key] = String(controlToggle.dataset.controlToggle || "").split(":");
+          const current = controlToggle.getAttribute("aria-pressed") === "true";
+          await saveControlSetting(section, key, !current);
+          return;
+        }
+        const controlAction = target.closest("[data-control-action]");
+        if (controlAction && controlAction.closest("[data-conversation-control-center]")) {
+          await runControlAction(controlAction.dataset.controlAction || "", controlAction.dataset.controlConfirm || "");
+          return;
+        }
         if (target.closest("[data-toggle-details]")) return toggleDetails();
         if (target.closest("[data-thread-search]")) return toggleThreadSearch(true);
         if (target.closest("[data-close-thread-search]")) return toggleThreadSearch(false);
@@ -2144,6 +2705,13 @@
       state.conversationSearch = event.target.value || "";
       renderConversations();
     });
+    document.addEventListener("input", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target?.matches("[data-control-search]")) return;
+      state.controlSearch = target.value || "";
+      renderControlCenter();
+      window.setTimeout(() => el("[data-control-search]")?.focus(), 0);
+    });
     let pressTimer = 0;
     let swipeMessage = null;
     document.addEventListener("pointerdown", (event) => {
@@ -2182,6 +2750,15 @@
     }, { passive: true }));
     document.addEventListener("change", (event) => {
       const target = event.target instanceof Element ? event.target : null;
+      const controlSelect = target?.closest("[data-control-select]");
+      if (controlSelect) {
+        const [section, key] = String(controlSelect.dataset.controlSelect || "").split(":");
+        saveControlSetting(section, key, controlSelect.value).catch((err) => {
+          console.error("PulseSoc Messenger V3 control setting failed", err);
+          controlStatus(err?.message || "That setting could not be saved.", "error");
+        });
+        return;
+      }
       const speed = target?.closest("[data-voice-speed]");
       if (speed) setVoicePlaybackSpeed(speed.closest("[data-voice-message]"), speed.value);
       if (target?.matches("[data-file], [data-camera-file], [data-photo-file], [data-video-file], [data-generic-file]")) {
@@ -2212,7 +2789,12 @@
       addAttachmentFiles(event.dataTransfer.files);
     });
     document.addEventListener("keydown", async (event) => {
+      trapControlFocus(event);
       if (event.key === "Escape") {
+        if (state.controlOpen) {
+          closeConversationControlCenter();
+          return;
+        }
         toggleEmojiPanel(false);
         toggleAttachmentSheet(false);
         toggleThreadSearch(false);

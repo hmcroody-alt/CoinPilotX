@@ -6,7 +6,7 @@
   <meta name="robots" content="noindex,nofollow">
   <meta name="theme-color" content="#030914">
   <title>PulseSoc Messenger V3 | PulseSoc</title>
-  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=messenger-v3-20260702e">
+  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=messenger-v3-control-center-20260702">
 </head>
 <body data-comm-v2-enabled="{{ 'true' if enabled else 'false' }}">
   <main
@@ -109,6 +109,7 @@
           <button class="icon-btn call-action is-disabled" type="button" disabled title="Voice calls coming soon" aria-label="Voice calls coming soon">&#9742;</button>
           <button class="icon-btn call-action is-disabled" type="button" disabled title="Video calls coming soon" aria-label="Video calls coming soon">&#9635;</button>
           <button class="icon-btn" type="button" data-thread-search title="Search messages" aria-label="Search messages">&#9906;</button>
+          <button class="icon-btn control-center-action" type="button" data-open-control-center title="Conversation Control Center" aria-label="Open Conversation Control Center">&#9881;</button>
           <button class="icon-btn desktop-info-action" type="button" data-toggle-details title="Conversation details" aria-label="Conversation details">i</button>
           <button class="icon-btn" type="button" data-thread-more title="More conversation actions" aria-label="More conversation actions">&#8942;</button>
         </nav>
@@ -167,7 +168,7 @@
             <button type="button" data-attachment-option="photo"><span aria-hidden="true">&#9638;</span><small>Gallery</small></button>
             <button type="button" data-attachment-option="camera"><span aria-hidden="true">&#9673;</span><small>Camera</small></button>
             <button type="button" data-attachment-option="video"><span aria-hidden="true">&#9654;</span><small>Video</small></button>
-            <button type="button" data-attachment-option="voice"><span aria-hidden="true">&#9835;</span><small>Voice</small></button>
+            <button type="button" data-attachment-option="voice"><span aria-hidden="true">&#127908;</span><small>Voice</small></button>
             <button type="button" data-attachment-option="file"><span aria-hidden="true">&#128206;</span><small>File</small></button>
             <button type="button" disabled title="GIF sharing is not enabled yet"><span aria-hidden="true">GIF</span><small>Unavailable</small></button>
             <button type="button" disabled title="Location sharing is not enabled yet"><span aria-hidden="true">&#8982;</span><small>Location</small></button>
@@ -206,7 +207,7 @@
             </span>
           </label>
           <button class="icon-btn emoji-trigger" type="button" data-toggle-emoji title="Add emoji" aria-label="Add emoji">☺</button>
-          <button class="icon-btn voice-trigger" type="button" data-voice-start title="Record voice note" aria-label="Record voice note">&#9835;</button>
+          <button class="icon-btn voice-trigger" type="button" data-voice-start title="Record voice note" aria-label="Record voice note">&#127908;</button>
           <button class="send-btn" type="submit" aria-label="Send message" data-send-button>&#10148;</button>
         </form>
 
@@ -258,6 +259,28 @@
       <button type="button" data-conversation-action="archive">Archive conversation</button>
       <button type="button" data-close-conversation-actions>Cancel</button>
     </div>
+
+    <div class="conversation-control-backdrop" data-conversation-control-backdrop hidden></div>
+    <aside class="conversation-control-center" data-conversation-control-center hidden role="dialog" aria-modal="true" aria-labelledby="conversationControlTitle" aria-describedby="conversationControlSubtitle">
+      <span class="control-drag-handle" aria-hidden="true"></span>
+      <header class="control-panel-head">
+        <div class="control-title-lockup">
+          <span class="control-gear-orb" aria-hidden="true">&#9881;</span>
+          <div>
+            <h2 id="conversationControlTitle">Conversation Control Center</h2>
+            <p id="conversationControlSubtitle">Manage this chat experience.</p>
+          </div>
+        </div>
+        <button class="icon-btn control-close" type="button" data-close-control-center aria-label="Close Conversation Control Center">x</button>
+      </header>
+      <div class="control-panel-status" data-control-status role="status" aria-live="polite" hidden></div>
+      <div class="control-panel-content" data-control-content>
+        <div class="control-loading">
+          <span></span>
+          <strong>Loading controls...</strong>
+        </div>
+      </div>
+    </aside>
 
     <div class="comm-modal" data-modal="new-chat" aria-hidden="true" hidden>
       <div class="comm-modal-panel" role="dialog" aria-modal="true" aria-labelledby="newChatTitle">
@@ -364,6 +387,6 @@
   <script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script>
   <script src="/static/js/pulse_realtime.js?v=web-capacity-20260619a" defer></script>
   <script src="/static/notifications.js?v=message-live-20260606" defer></script>
-  <script src="/static/js/pulse_messages_v2.js?v=messenger-v3-20260702e" defer></script>
+  <script src="/static/js/pulse_messages_v2.js?v=messenger-v3-control-center-20260702" defer></script>
 </body>
 </html>

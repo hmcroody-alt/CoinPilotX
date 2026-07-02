@@ -345,6 +345,18 @@ def _ensure_columns(bot, cur, conn) -> None:
         ("message_preview_privacy", "TEXT DEFAULT 'show'"),
         ("updated_at", "TEXT"),
     ], conn=conn)
+    add(cur, "comm_v2_conversation_settings", [
+        ("conversation_id", "INTEGER"),
+        ("user_id", "INTEGER"),
+        ("notification_json", "TEXT"),
+        ("appearance_json", "TEXT"),
+        ("privacy_json", "TEXT"),
+        ("media_json", "TEXT"),
+        ("accessibility_json", "TEXT"),
+        ("productivity_json", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
     add(cur, "comm_v2_presence", [
         ("user_id", "INTEGER"),
         ("status", "TEXT DEFAULT 'offline'"),
@@ -490,6 +502,205 @@ def _settings(cur, user_id: int) -> dict:
         "read_receipts_enabled": 1 if int(row.get("read_receipts_enabled") or 0) else 0,
         "message_preview_privacy": row.get("message_preview_privacy") or "show",
     }
+
+
+CONTROL_SETTING_DEFAULTS = {
+    "notifications": {
+        "mute_choice": "off",
+        "sound": "pulse_beam",
+        "lock_screen": True,
+        "message_preview": True,
+        "mentions": True,
+        "reactions": True,
+        "typing": True,
+        "read_receipts": True,
+    },
+    "appearance": {
+        "theme": "dark_galaxy",
+        "wallpaper": "default",
+        "bubble_color": "cyan",
+        "font_size": "medium",
+        "density": "balanced",
+        "animation_level": "balanced",
+        "reduce_particles": False,
+        "high_contrast": False,
+    },
+    "privacy": {
+        "read_receipts": True,
+        "typing_indicator": True,
+        "online_status": True,
+        "last_seen": True,
+        "message_preview": True,
+        "disappearing_messages": "off",
+        "privacy_lock": False,
+        "hidden_conversation": False,
+    },
+    "media": {
+        "auto_download_photos": True,
+        "auto_download_videos": False,
+        "auto_download_voice": True,
+        "upload_quality": "standard",
+        "auto_save_camera": False,
+    },
+    "accessibility": {
+        "large_text": False,
+        "reduce_motion": False,
+        "high_contrast": False,
+        "voice_reader": False,
+        "speech_to_text": False,
+        "text_to_speech": False,
+        "haptic_feedback": True,
+    },
+    "productivity": {
+        "favorite": False,
+        "reminder": "off",
+    },
+}
+
+CONTROL_SETTING_ALLOWED = {
+    "notifications": {
+        "mute_choice": {"off", "1_hour", "8_hours", "today", "1_week", "forever"},
+        "sound": {"pulse_beam", "soft_orbit", "deep_signal", "crystal_ping", "silent"},
+        "lock_screen": "bool",
+        "message_preview": "bool",
+        "mentions": "bool",
+        "reactions": "bool",
+        "typing": "bool",
+        "read_receipts": "bool",
+    },
+    "appearance": {
+        "theme": {"dark_galaxy", "nebula", "deep_space", "pulse_green", "cyber_night"},
+        "wallpaper": {"default", "nebula", "deep_space"},
+        "bubble_color": {"cyan", "purple", "rose", "orange", "green"},
+        "font_size": {"small", "medium", "large", "extra_large"},
+        "density": {"compact", "balanced", "relaxed"},
+        "animation_level": {"full", "balanced", "reduced", "off"},
+        "reduce_particles": "bool",
+        "high_contrast": "bool",
+    },
+    "privacy": {
+        "read_receipts": "bool",
+        "typing_indicator": "bool",
+        "online_status": "bool",
+        "last_seen": "bool",
+        "message_preview": "bool",
+        "disappearing_messages": {"off", "24_hours", "7_days", "30_days"},
+        "privacy_lock": "bool",
+        "hidden_conversation": "bool",
+    },
+    "media": {
+        "auto_download_photos": "bool",
+        "auto_download_videos": "bool",
+        "auto_download_voice": "bool",
+        "upload_quality": {"standard", "high", "original"},
+        "auto_save_camera": "bool",
+    },
+    "accessibility": {
+        "large_text": "bool",
+        "reduce_motion": "bool",
+        "high_contrast": "bool",
+        "voice_reader": "bool",
+        "speech_to_text": "bool",
+        "text_to_speech": "bool",
+        "haptic_feedback": "bool",
+    },
+    "productivity": {
+        "favorite": "bool",
+        "reminder": {"off", "today", "tomorrow", "next_week"},
+    },
+}
+
+
+def _control_defaults() -> dict:
+    return json.loads(json.dumps(CONTROL_SETTING_DEFAULTS))
+
+
+def _merge_control_settings(row: dict | None = None) -> dict:
+    settings = _control_defaults()
+    row = row or {}
+    for section in CONTROL_SETTING_DEFAULTS:
+        stored = _json_loads(row.get(f"{section[:-1] if section == 'notifications' else section}_json"), None)
+        if stored is None:
+            stored = _json_loads(row.get(f"{section}_json"), {})
+        if isinstance(stored, dict):
+            settings[section].update({key: value for key, value in stored.items() if key in settings[section]})
+    return settings
+
+
+def _load_conversation_settings(cur, conversation_id: int, user_id: int) -> tuple[dict, dict]:
+    cur.execute(
+        "SELECT * FROM comm_v2_conversation_settings WHERE conversation_id=? AND user_id=? LIMIT 1",
+        (int(conversation_id), int(user_id)),
+    )
+    row = _row(cur.fetchone())
+    return row, _merge_control_settings(row)
+
+
+def _coerce_control_value(section: str, key: str, value: Any) -> tuple[bool, Any, str]:
+    allowed = (CONTROL_SETTING_ALLOWED.get(section) or {}).get(key)
+    if not allowed:
+        return False, None, "unsupported_setting"
+    if allowed == "bool":
+        if isinstance(value, str):
+            normalized = value.strip().lower() not in {"0", "false", "off", "no", "disabled"}
+        else:
+            normalized = bool(value)
+        return True, normalized, ""
+    normalized = _clean(value, 80).lower()
+    if normalized not in allowed:
+        return False, None, "invalid_value"
+    return True, normalized, ""
+
+
+def _mute_until_for_choice(choice: str) -> tuple[str, str]:
+    normalized = str(choice or "off").lower()
+    now_dt = datetime.now(timezone.utc)
+    if normalized == "off":
+        return "", "all"
+    if normalized == "1_hour":
+        return (now_dt + timedelta(hours=1)).isoformat(timespec="seconds"), "muted"
+    if normalized == "8_hours":
+        return (now_dt + timedelta(hours=8)).isoformat(timespec="seconds"), "muted"
+    if normalized == "today":
+        end = now_dt.replace(hour=23, minute=59, second=59, microsecond=0)
+        if end <= now_dt:
+            end = now_dt + timedelta(hours=8)
+        return end.isoformat(timespec="seconds"), "muted"
+    if normalized == "1_week":
+        return (now_dt + timedelta(days=7)).isoformat(timespec="seconds"), "muted"
+    if normalized == "forever":
+        return (now_dt + timedelta(days=3650)).isoformat(timespec="seconds"), "muted"
+    return "", "all"
+
+
+def _save_conversation_settings(cur, conversation_id: int, user_id: int, settings: dict) -> None:
+    now = _now()
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO comm_v2_conversation_settings
+        (conversation_id, user_id, notification_json, appearance_json, privacy_json, media_json, accessibility_json, productivity_json, created_at, updated_at)
+        VALUES (?, ?, '{}', '{}', '{}', '{}', '{}', '{}', ?, ?)
+        """,
+        (int(conversation_id), int(user_id), now, now),
+    )
+    cur.execute(
+        """
+        UPDATE comm_v2_conversation_settings
+        SET notification_json=?, appearance_json=?, privacy_json=?, media_json=?, accessibility_json=?, productivity_json=?, updated_at=?
+        WHERE conversation_id=? AND user_id=?
+        """,
+        (
+            json.dumps(settings.get("notifications") or {}, default=str)[:6000],
+            json.dumps(settings.get("appearance") or {}, default=str)[:6000],
+            json.dumps(settings.get("privacy") or {}, default=str)[:6000],
+            json.dumps(settings.get("media") or {}, default=str)[:6000],
+            json.dumps(settings.get("accessibility") or {}, default=str)[:6000],
+            json.dumps(settings.get("productivity") or {}, default=str)[:6000],
+            now,
+            int(conversation_id),
+            int(user_id),
+        ),
+    )
 
 
 def _touch_presence(cur, user_id: int, status: str = "online") -> dict:
@@ -2621,6 +2832,210 @@ def get_settings(user_id: int) -> dict:
                 "message_preview_privacy": settings.get("message_preview_privacy") or "show",
             }
         })
+    finally:
+        conn.close()
+
+
+def _conversation_control_stats(cur, conversation: dict, user_id: int) -> dict:
+    conversation_id = int(conversation.get("id") or 0)
+    cur.execute(
+        """
+        SELECT COUNT(*) AS total
+        FROM comm_v2_participants
+        WHERE conversation_id=? AND membership_state='active' AND COALESCE(left_at,'')=''
+        """,
+        (conversation_id,),
+    )
+    member_count = int(_row(cur.fetchone()).get("total") or conversation.get("member_count") or 0)
+    cur.execute(
+        """
+        SELECT unread_count, role, muted_until, notifications_level, pinned_at, membership_state
+        FROM comm_v2_participants
+        WHERE conversation_id=? AND user_id=? LIMIT 1
+        """,
+        (conversation_id, int(user_id)),
+    )
+    mine = _row(cur.fetchone())
+    cur.execute(
+        """
+        SELECT COUNT(*) AS total,
+               COALESCE(SUM(COALESCE(NULLIF(file_size_bytes,0), file_size, 0)), 0) AS bytes
+        FROM comm_v2_attachments
+        WHERE conversation_id=? AND COALESCE(scan_status,'approved')!='blocked'
+        """,
+        (conversation_id,),
+    )
+    media = _row(cur.fetchone())
+    cur.execute(
+        """
+        SELECT COUNT(*) AS total
+        FROM comm_v2_messages
+        WHERE conversation_id=? AND COALESCE(deleted_at,'')='' AND message_type IN ('file','media','image','video','audio','voice')
+        """,
+        (conversation_id,),
+    )
+    media_message_count = int(_row(cur.fetchone()).get("total") or 0)
+    participant_ids = _participant_ids(cur, conversation_id)
+    online_count = 0
+    if participant_ids:
+        placeholders = ",".join(["?"] * len(participant_ids))
+        cur.execute(
+            f"""
+            SELECT COUNT(*) AS total
+            FROM comm_v2_presence
+            WHERE user_id IN ({placeholders}) AND COALESCE(active_until,'')>=?
+            """,
+            (*participant_ids, _now()),
+        )
+        online_count = int(_row(cur.fetchone()).get("total") or 0)
+    connection = "Online" if online_count > 1 or (conversation.get("conversation_type") != "direct" and online_count > 0) else "Unknown"
+    return {
+        "encrypted": "Protected",
+        "security_label": "Secured session",
+        "members": member_count,
+        "media_files": int(media.get("total") or 0) or media_message_count,
+        "storage_used_bytes": int(media.get("bytes") or 0),
+        "unread": int(mine.get("unread_count") or 0),
+        "connection": connection,
+        "online_count": online_count,
+        "role": mine.get("role") or "member",
+        "pinned": bool(mine.get("pinned_at")),
+        "muted": bool(mine.get("muted_until") and str(mine.get("muted_until")) > _now()) or str(mine.get("notifications_level") or "").lower() in {"none", "off", "muted", "silent"},
+    }
+
+
+def conversation_control_center(user_id: int, conversation_ref: int | str) -> dict:
+    disabled = _disabled("conversation_control_center")
+    if disabled:
+        return disabled
+    conn, cur = _open_db()
+    try:
+        _touch_presence(cur, user_id, "online")
+        conversation, access = _conversation_access(cur, user_id, conversation_ref)
+        if access == "missing":
+            return _err("Conversation not found.", 404, "not_found")
+        if access != "ok":
+            return _err("You do not have access to this conversation.", 403, "forbidden")
+        conversation_id = int(conversation["id"])
+        payload = _conversation_payload(cur, conversation, user_id)
+        cur.execute(
+            """
+            SELECT p.user_id, p.role, p.joined_at, p.last_seen_at,
+                   COALESCE(u.display_name,u.username,'Pulse member') AS display_name,
+                   COALESCE(u.avatar_url,'') AS avatar_url
+            FROM comm_v2_participants p
+            LEFT JOIN users u ON u.user_id=p.user_id
+            WHERE p.conversation_id=? AND p.membership_state='active' AND COALESCE(p.left_at,'')=''
+            ORDER BY CASE p.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'moderator' THEN 2 ELSE 3 END, p.id ASC
+            LIMIT 24
+            """,
+            (conversation_id,),
+        )
+        members = [dict(row) for row in cur.fetchall()]
+        presence_by_user = _user_presence_by_ids(cur, [int(member.get("user_id") or 0) for member in members])
+        for member in members:
+            presence = presence_by_user.get(int(member.get("user_id") or 0), {})
+            member["presence"] = presence.get("status") or "unknown"
+            member["active_now"] = bool(presence.get("active_now") or presence.get("status") == "online")
+        _, settings = _load_conversation_settings(cur, conversation_id, user_id)
+        participant_stats = _conversation_control_stats(cur, conversation, user_id)
+        actor_role = str(participant_stats.get("role") or "member").lower()
+        payload.update({
+            "is_group": payload.get("conversation_type") in {"group", "room", "community_channel"},
+            "is_admin": actor_role in {"owner", "admin", "moderator"},
+            "viewer_role": actor_role,
+            "members": members,
+            "stats": participant_stats,
+            "settings": settings,
+            "capabilities": {
+                "search": True,
+                "members": True,
+                "shared_media": True,
+                "message_stats": True,
+                "pin": True,
+                "archive": True,
+                "mark_unread": True,
+                "mute": True,
+                "report": True,
+                "block": payload.get("conversation_type") == "direct",
+                "voice_call": False,
+                "video_call": False,
+                "effects": False,
+                "export_chat": False,
+                "schedule_message": False,
+                "privacy_lock": False,
+                "disappearing_messages": False,
+            },
+        })
+        conn.commit()
+        return _ok({"conversation": payload, "settings": settings, "stats": participant_stats})
+    finally:
+        conn.close()
+
+
+def update_conversation_control_center(user_id: int, conversation_ref: int | str, payload: dict | None = None) -> dict:
+    disabled = _disabled("update_conversation_control_center")
+    if disabled:
+        return disabled
+    payload = payload or {}
+    section = _clean(payload.get("section") or "", 40).lower()
+    key = _clean(payload.get("key") or "", 80).lower()
+    if section not in CONTROL_SETTING_ALLOWED:
+        return _err("Choose a supported settings section.", 400, "invalid_section")
+    if key not in CONTROL_SETTING_ALLOWED[section]:
+        return _err("Choose a supported setting.", 400, "invalid_setting")
+    ok, value, reason = _coerce_control_value(section, key, payload.get("value"))
+    if not ok:
+        return _err("Choose a valid setting value.", 400, reason or "invalid_value")
+    conn, cur = _open_db()
+    try:
+        conversation, access = _conversation_access(cur, user_id, conversation_ref)
+        if access == "missing":
+            return _err("Conversation not found.", 404, "not_found")
+        if access != "ok":
+            return _err("You do not have access to this conversation.", 403, "forbidden")
+        conversation_id = int(conversation["id"])
+        _, settings = _load_conversation_settings(cur, conversation_id, user_id)
+        settings[section][key] = value
+        if section == "notifications" and key == "mute_choice":
+            muted_until, notifications_level = _mute_until_for_choice(str(value))
+            cur.execute(
+                """
+                UPDATE comm_v2_participants
+                SET muted_until=?, notifications_level=?, updated_at=?
+                WHERE conversation_id=? AND user_id=?
+                """,
+                (muted_until, notifications_level, _now(), conversation_id, int(user_id)),
+            )
+        if section == "privacy" and key in {"read_receipts", "message_preview"}:
+            current = _settings(cur, user_id)
+            if key == "read_receipts":
+                current["read_receipts_enabled"] = 1 if value else 0
+            if key == "message_preview":
+                current["message_preview_privacy"] = "show" if value else "hide"
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO comm_v2_user_settings (user_id, presence_privacy, read_receipts_enabled, message_preview_privacy, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    int(user_id),
+                    current.get("presence_privacy") or "everyone",
+                    int(current.get("read_receipts_enabled", 1) or 0),
+                    current.get("message_preview_privacy") or "show",
+                    _now(),
+                ),
+            )
+            cur.execute(
+                "UPDATE comm_v2_user_settings SET read_receipts_enabled=?, message_preview_privacy=?, updated_at=? WHERE user_id=?",
+                (int(current.get("read_receipts_enabled", 1) or 0), current.get("message_preview_privacy") or "show", _now(), int(user_id)),
+            )
+        _save_conversation_settings(cur, conversation_id, user_id, settings)
+        conn.commit()
+        return _ok({"conversation_id": conversation_id, "section": section, "key": key, "value": value, "settings": settings}, "Conversation setting saved.")
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 

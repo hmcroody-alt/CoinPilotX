@@ -346,6 +346,22 @@ def members(conversation_ref):
     return _json(service.list_members(user["user_id"], conversation_ref))
 
 
+@comm_v2_blueprint.get(f"{API_PREFIX}/conversations/<path:conversation_ref>/control-center")
+def conversation_control_center(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("conversation_control_center", lambda: service.conversation_control_center(user["user_id"], conversation_ref))
+
+
+@comm_v2_blueprint.patch(f"{API_PREFIX}/conversations/<path:conversation_ref>/control-center")
+def update_conversation_control_center(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("conversation_control_center_update", lambda: service.update_conversation_control_center(user["user_id"], conversation_ref, request.get_json(silent=True) or {}))
+
+
 @comm_v2_blueprint.get(f"{API_PREFIX}/search")
 @comm_v2_blueprint.get("/api/pulse/comm/v2/search")
 def search_messages():
