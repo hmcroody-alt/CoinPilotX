@@ -248,6 +248,117 @@ def api_admin_pulse_ai_learning():
     return _json(pulse_ai_service.admin_learning_dashboard())
 
 
+@comm_v2_blueprint.get("/pulse/intelligence")
+@comm_v2_blueprint.get("/pulse/settings/intelligence")
+def galaxy_intelligence_center_page():
+    user = _current_user()
+    if not user:
+        return _bot().redirect(_bot().url_for("login_page", next=request.path))
+    from services import pulsesoc_intelligence_engine
+
+    return render_template(
+        "pulsesoc_intelligence_center.html",
+        current_user=user,
+        initial_state=pulsesoc_intelligence_engine.center_state(int(user["user_id"])),
+    )
+
+
+@comm_v2_blueprint.get("/api/pulse/intelligence/state")
+def api_galaxy_intelligence_state():
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulsesoc_intelligence_engine
+
+        return pulsesoc_intelligence_engine.center_state(int(user["user_id"]), int(request.args.get("limit") or 40))
+
+    return _timed_json("galaxy_intelligence_state", run)
+
+
+@comm_v2_blueprint.patch("/api/pulse/intelligence/streams/<path:stream_key>")
+def api_galaxy_intelligence_stream_update(stream_key):
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulsesoc_intelligence_engine
+
+        return pulsesoc_intelligence_engine.update_stream(int(user["user_id"]), stream_key, request.get_json(silent=True) or {})
+
+    return _timed_json("galaxy_intelligence_stream_update", run)
+
+
+@comm_v2_blueprint.post("/api/pulse/intelligence/feedback")
+def api_galaxy_intelligence_feedback():
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulsesoc_intelligence_engine
+
+        return pulsesoc_intelligence_engine.record_feedback(int(user["user_id"]), request.get_json(silent=True) or {})
+
+    return _timed_json("galaxy_intelligence_feedback", run)
+
+
+@comm_v2_blueprint.get("/admin/intelligence")
+def admin_galaxy_intelligence_page():
+    admin = _current_admin()
+    if not admin:
+        return _bot().redirect(_bot().url_for("admin_login_page", next=request.path))
+    from services import pulsesoc_intelligence_engine
+
+    return render_template(
+        "admin_galaxy_intelligence_center.html",
+        admin=admin,
+        dashboard=pulsesoc_intelligence_engine.admin_dashboard(),
+        collect_result={},
+    )
+
+
+@comm_v2_blueprint.get("/api/admin/intelligence/health")
+def api_admin_galaxy_intelligence_health():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    from services import pulsesoc_intelligence_engine
+
+    return _json(pulsesoc_intelligence_engine.health())
+
+
+@comm_v2_blueprint.get("/api/admin/intelligence/state")
+def api_admin_galaxy_intelligence_state():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    from services import pulsesoc_intelligence_engine
+
+    return _json(pulsesoc_intelligence_engine.admin_dashboard())
+
+
+@comm_v2_blueprint.post("/api/admin/intelligence/collect")
+def api_admin_galaxy_intelligence_collect():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+
+    def run():
+        from services import pulsesoc_intelligence_engine
+
+        payload = request.get_json(silent=True) or {}
+        return pulsesoc_intelligence_engine.run_internal_collector(
+            payload.get("stream_key") or "pulsesoc_discoveries",
+            target_user_id=int(payload.get("target_user_id") or 0),
+            deliver=bool(payload.get("deliver")),
+        )
+
+    return _timed_json("admin_galaxy_intelligence_collect", run)
+
+
 def _sse_response(generator):
     response = Response(stream_with_context(generator()), mimetype="text/event-stream")
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"

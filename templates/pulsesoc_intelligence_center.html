@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Galaxy Intelligence Center | PulseSoc</title>
+  <link rel="stylesheet" href="/static/css/pulsesoc_intelligence_center.css?v=20260703a">
+</head>
+<body class="galaxy-intelligence-page">
+  <main class="galaxy-intelligence-shell" data-intelligence-root>
+    <header class="galaxy-intelligence-hero">
+      <nav class="galaxy-intelligence-nav" aria-label="PulseSoc navigation">
+        <a href="/pulse">PulseSoc</a>
+        <a href="/pulse/messages">Messenger</a>
+        <a href="/pulse/notifications">Signal Center</a>
+        <a href="/account">Settings</a>
+      </nav>
+      <div>
+        <p class="eyebrow">PulseSoc Intelligence Layer</p>
+        <h1>Galaxy Intelligence Center</h1>
+        <p class="hero-copy">Streams scan trusted sources, score signal quality, and deliver only the Pulses worth your attention.</p>
+      </div>
+      <section class="hero-stats" aria-label="Intelligence summary">
+        <article><strong data-summary="streams_enabled">0</strong><span>Streams</span></article>
+        <article><strong data-summary="signals">0</strong><span>Signals</span></article>
+        <article><strong data-summary="forecasts">0</strong><span>Forecasts</span></article>
+        <article><strong data-summary="avg_confidence">0%</strong><span>Confidence</span></article>
+      </section>
+    </header>
+
+    <section class="intelligence-section">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Default Pack</p>
+          <h2>Intelligence Streams</h2>
+        </div>
+        <p data-intelligence-status>Loaded from cached PulseSoc state.</p>
+      </div>
+      <div class="stream-grid" data-stream-list></div>
+    </section>
+
+    <section class="intelligence-layout">
+      <div class="intelligence-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Signals</p>
+            <h2>Latest Pulses</h2>
+          </div>
+          <button type="button" data-refresh-intelligence>Refresh</button>
+        </div>
+        <div class="signal-list" data-signal-list></div>
+      </div>
+      <aside class="intelligence-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Forecasts</p>
+            <h2>What May Matter Next</h2>
+          </div>
+        </div>
+        <div class="forecast-list" data-forecast-list></div>
+        <div class="privacy-card">
+          <strong>Privacy-first intelligence</strong>
+          <p>Private messages, calls, media, payment data, passwords, tokens, and secrets are not used by collectors. Personalization comes from stream settings, engagement, and explicit feedback.</p>
+        </div>
+      </aside>
+    </section>
+  </main>
+  <script type="application/json" id="galaxy-intelligence-state">{{ initial_state|tojson }}</script>
+  <script src="/static/js/pulsesoc_intelligence_center.js?v=20260703a" defer></script>
+</body>
+</html>

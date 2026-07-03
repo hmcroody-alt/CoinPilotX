@@ -61,6 +61,7 @@ LOCKED_DEVICE_PUSH_DEFAULT_CATEGORIES = {
     "creator",
     "premium",
     "crypto",
+    "intelligence",
     "system",
 }
 PREFERENCE_CONTROLLED_PUSH_CATEGORIES = {"social", "likes", "reposts", "suggestions", "digest", "marketing"}
@@ -123,6 +124,9 @@ EVENT_DEFINITIONS: dict[str, dict[str, str]] = {
     "suspicious_login": {"category": "security", "priority": "urgent", "urgency": "immediate", "title": "Suspicious login"},
     "crypto_price_alert": {"category": "crypto", "priority": "high", "urgency": "immediate", "title": "Crypto price alert"},
     "crypto_alert_triggered": {"category": "crypto", "priority": "high", "urgency": "immediate", "title": "Crypto alert"},
+    "intelligence_pulse": {"category": "intelligence", "priority": "normal", "urgency": "standard", "title": "Intelligence Pulse"},
+    "intelligence_forecast": {"category": "intelligence", "priority": "normal", "urgency": "standard", "title": "Intelligence Forecast"},
+    "intelligence_digest": {"category": "intelligence", "priority": "low", "urgency": "deferred", "title": "Intelligence Digest"},
     "marketplace_order": {"category": "marketplace", "priority": "high", "urgency": "standard", "title": "Marketplace order"},
     "admin_warning": {"category": "system", "priority": "high", "urgency": "immediate", "title": "Account notice"},
     "account_restriction": {"category": "system", "priority": "urgent", "urgency": "immediate", "title": "Account restriction"},

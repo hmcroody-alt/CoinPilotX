@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Galaxy Intelligence Center | PulseSoc Admin</title>
+  <link rel="stylesheet" href="/static/css/pulsesoc_intelligence_center.css?v=20260703a">
+</head>
+<body class="galaxy-intelligence-page is-admin">
+  <main class="galaxy-intelligence-shell">
+    <header class="galaxy-intelligence-hero">
+      <nav class="galaxy-intelligence-nav" aria-label="Admin navigation">
+        <a href="/admin">Dashboard</a>
+        <a href="/admin/notifications">Notifications</a>
+        <a href="/admin/notification-delivery">Delivery</a>
+        <a href="/admin/intelligence" class="is-active">Intelligence</a>
+        <a href="/admin/calls">Calls</a>
+        <a href="/admin/pulse-ai/learning">Pulse AI</a>
+        <a href="/admin/system">System</a>
+      </nav>
+      <div>
+        <p class="eyebrow">Admin Command Center</p>
+        <h1>Galaxy Intelligence Center</h1>
+        <p class="hero-copy">Backend truth for streams, collectors, confidence scoring, forecasts, delivery, feedback, and source readiness. Secrets are never rendered.</p>
+      </div>
+      <section class="hero-stats" aria-label="Admin intelligence summary">
+        <article><strong>{{ dashboard.counts.streams }}</strong><span>Streams</span></article>
+        <article><strong>{{ dashboard.counts.accepted_events }}</strong><span>Accepted</span></article>
+        <article><strong>{{ dashboard.counts.suppressed_events }}</strong><span>Suppressed</span></article>
+        <article><strong>{{ dashboard.counts.forecasts }}</strong><span>Forecasts</span></article>
+      </section>
+    </header>
+
+    <section class="intelligence-section admin-actions">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Collectors</p>
+          <h2>Safe Collector Trigger</h2>
+        </div>
+        <a class="button" href="/api/admin/intelligence/state">View API</a>
+      </div>
+      <form data-admin-intel-collect>
+        <label>
+          Stream
+          <select name="stream_key">
+            <option value="pulsesoc_discoveries">PulseSoc Discoveries</option>
+            <option value="security_pulse">Security Pulse</option>
+            <option value="crypto_pulse">Crypto Pulse</option>
+            <option value="market_pulse">Market Pulse</option>
+            <option value="world_pulse">World Pulse</option>
+            <option value="technology_pulse">Technology Pulse</option>
+            <option value="creator_pulse">Creator Pulse</option>
+            <option value="music_pulse">Music Pulse</option>
+          </select>
+        </label>
+        <label>
+          Target user id
+          <input name="target_user_id" inputmode="numeric" placeholder="Optional">
+        </label>
+        <label class="check"><input type="checkbox" name="deliver"> Deliver to target user</label>
+        <button type="submit">Run internal collector</button>
+      </form>
+      <pre data-admin-intel-result>{{ collect_result|tojson(indent=2) }}</pre>
+    </section>
+
+    <section class="intelligence-layout">
+      <div class="intelligence-section">
+        <div class="section-heading"><div><p class="eyebrow">Events</p><h2>Recent Signals</h2></div></div>
+        <div class="signal-list">
+          {% for event in dashboard.events %}
+          <article class="signal-card">
+            <span class="signal-pill">{{ event.stream_key }}</span>
+            <h3>{{ event.headline }}</h3>
+            <p>{{ event.summary }}</p>
+            <small>{{ event.confidence_label }} · {{ event.confidence_score }}% · {{ event.priority }}</small>
+          </article>
+          {% else %}
+          <p class="empty">No intelligence events yet.</p>
+          {% endfor %}
+        </div>
+      </div>
+      <aside class="intelligence-section">
+        <div class="section-heading"><div><p class="eyebrow">Sources</p><h2>Source Readiness</h2></div></div>
+        <div class="source-list">
+          {% for source in dashboard.source_health %}
+          <article>
+            <strong>{{ source.display_name }}</strong>
+            <span>{{ source.stream_key }}</span>
+            <b class="{{ 'ready' if source.configured else 'missing' }}">{{ 'ready' if source.configured else 'config missing' }}</b>
+          </article>
+          {% endfor %}
+        </div>
+      </aside>
+    </section>
+
+    <section class="intelligence-section">
+      <div class="section-heading"><div><p class="eyebrow">Runs</p><h2>Collector History</h2></div></div>
+      <div class="run-table">
+        {% for run in dashboard.collector_runs %}
+        <article><strong>{{ run.collector_key }}</strong><span>{{ run.stream_key }}</span><span>{{ run.status }}</span><span>{{ run.duration_ms }}ms</span></article>
+        {% else %}
+        <p class="empty">No collector runs yet.</p>
+        {% endfor %}
+      </div>
+    </section>
+  </main>
+  <script src="/static/js/pulsesoc_intelligence_center.js?v=20260703a" defer></script>
+</body>
+</html>

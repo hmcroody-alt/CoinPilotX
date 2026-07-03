@@ -442,6 +442,15 @@ AUTO_PK_TABLES = {
     "crypto_recent_assets": "id",
     "crypto_favorite_assets": "id",
     "crypto_audit_logs": "id",
+    "intelligence_streams": "id",
+    "user_intelligence_streams": "id",
+    "intelligence_sources": "id",
+    "intelligence_events": "id",
+    "intelligence_forecasts": "id",
+    "intelligence_feedback": "id",
+    "intelligence_collector_runs": "id",
+    "intelligence_digest_jobs": "id",
+    "intelligence_delivery_log": "id",
 }
 
 
