@@ -5003,16 +5003,139 @@ def create_password_reset(email):
     if not user:
         return None, None
     token = secrets.token_urlsafe(32)
+    token_hash = password_reset_token_hash(token)
     now = datetime.now()
-    conn = db()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO password_reset_tokens (user_id, token, expires_at, created_at) VALUES (?, ?, ?, ?)",
-        (user["user_id"], token, (now + timedelta(hours=1)).isoformat(), now.isoformat())
-    )
-    conn.commit()
-    conn.close()
+    conn = None
+    try:
+        conn = db()
+        cur = conn.cursor()
+        ensure_password_reset_token_columns(cur, conn)
+        cur.execute(
+            """
+            INSERT INTO password_reset_tokens
+            (user_id, token, token_hash, expires_at, delivery_status, created_at)
+            VALUES (?, NULL, ?, ?, 'pending', ?)
+            """,
+            (user["user_id"], token_hash, (now + timedelta(hours=1)).isoformat(), now.isoformat()),
+        )
+        conn.commit()
+    except Exception:
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        logging.exception("PASSWORD_RESET_TOKEN_CREATE_FAILED email=%s", mask_email(email))
+        return user, None
+    finally:
+        if conn is not None:
+            conn.close()
     return user, token
+
+
+def ensure_password_reset_token_columns(cur, conn=None):
+    add_columns_if_missing(cur, "password_reset_tokens", [
+        ("token_hash", "TEXT"),
+        ("delivery_status", "TEXT"),
+        ("request_ip_hash", "TEXT"),
+    ], conn=conn)
+
+
+def password_reset_token_hash(token):
+    token = str(token or "")
+    secret = (os.getenv("SECRET_KEY") or os.getenv("FLASK_SECRET_KEY") or webhook_app.secret_key or "pulse-reset-token").encode("utf-8")
+    return hmac.new(secret, token.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _row_value(row, key, index, default=None):
+    if row is None:
+        return default
+    try:
+        if hasattr(row, "keys") and key in row.keys():
+            return row[key]
+    except Exception:
+        pass
+    try:
+        return row[index]
+    except Exception:
+        return default
+
+
+def load_password_reset_record(cur, token):
+    token = clean_html(token or "")
+    ensure_password_reset_token_columns(cur)
+    token_hash = password_reset_token_hash(token)
+    cur.execute(
+        "SELECT id, user_id, expires_at, used_at, token_hash FROM password_reset_tokens WHERE token_hash=? ORDER BY id DESC LIMIT 1",
+        (token_hash,),
+    )
+    row = cur.fetchone()
+    if row:
+        return row
+    cur.execute(
+        "SELECT id, user_id, expires_at, used_at, token_hash FROM password_reset_tokens WHERE token=? ORDER BY id DESC LIMIT 1",
+        (token,),
+    )
+    return cur.fetchone()
+
+
+def safe_password_reset_request(email, source="web"):
+    """Create and queue a password reset without allowing provider failures to break the route."""
+    email = normalize_email(clean_html(email or ""))
+    result = {"ok": True, "generic_message": "If that email has an account, a password reset link will be sent.", "email": mask_email(email), "source": source}
+    if not email or not is_valid_email(email):
+        try:
+            log_auth_event("forgot_password_invalid_email", email, status="invalid", details={"source": source, "db_engine": db_service.ENGINE_NAME})
+        except Exception:
+            logging.warning("PASSWORD_RESET_INVALID_EMAIL_LOG_FAILED source=%s", source)
+        return result
+    try:
+        user, token = create_password_reset(email)
+        if user and token:
+            reset_link = public_url_for("reset_password_page", token=token)
+            sent = False
+            try:
+                sent = bool(send_password_reset_email(user, reset_link))
+            except Exception as exc:
+                logging.exception("PASSWORD_RESET_EMAIL_QUEUE_FAILED user_id=%s source=%s error=%s", user.get("user_id"), source, exc.__class__.__name__)
+            conn = None
+            try:
+                conn = db()
+                cur = conn.cursor()
+                ensure_password_reset_token_columns(cur, conn)
+                cur.execute(
+                    "UPDATE password_reset_tokens SET delivery_status=? WHERE user_id=? AND token_hash=?",
+                    ("queued" if sent else "queue_failed", user.get("user_id"), password_reset_token_hash(token)),
+                )
+                conn.commit()
+            except Exception as exc:
+                if conn is not None:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                logging.warning("PASSWORD_RESET_DELIVERY_STATUS_FAILED user_id=%s source=%s error=%s", user.get("user_id"), source, exc.__class__.__name__)
+            finally:
+                if conn is not None:
+                    conn.close()
+            try:
+                log_product_event(user.get("user_id"), "forgot_password_requested", {"source": source, "email_queued": bool(sent)})
+                log_auth_event("forgot_password_token_created", email, user.get("user_id"), status="success", details={"db_engine": db_service.ENGINE_NAME, "source": source, "email_queued": bool(sent)})
+            except Exception as exc:
+                logging.warning("PASSWORD_RESET_AUDIT_LOG_FAILED user_id=%s source=%s error=%s", user.get("user_id"), source, exc.__class__.__name__)
+        else:
+            try:
+                log_auth_event("forgot_password_no_match", email, status="not_found", details={"db_engine": db_service.ENGINE_NAME, "source": source})
+            except Exception:
+                logging.warning("PASSWORD_RESET_NO_MATCH_LOG_FAILED source=%s", source)
+    except Exception as exc:
+        logging.exception("PASSWORD_RESET_REQUEST_FAILED source=%s email=%s error=%s", source, mask_email(email), exc.__class__.__name__)
+        try:
+            log_auth_event("forgot_password_request_failed", email, status="failed", details={"source": source, "error_type": exc.__class__.__name__})
+        except Exception:
+            pass
+        result["degraded"] = True
+    return result
 
 
 def create_email_verification(user_id):
@@ -5637,11 +5760,7 @@ def api_mobile_auth_recover():
     init_db()
     payload = request.get_json(silent=True) or {}
     email = normalize_email(clean_html(payload.get("email") or ""))
-    if email and is_valid_email(email):
-        user, token = create_password_reset(email)
-        if user and token:
-            reset_link = public_url_for("reset_password_page", token=token)
-            send_password_reset_email(user, reset_link)
+    safe_password_reset_request(email, source="mobile_api")
     return jsonify({"ok": True, "message": "If an account exists, password recovery has been sent."})
 
 
@@ -5656,16 +5775,17 @@ def api_mobile_auth_reset_password():
         return api_error("This reset link is invalid.", 400, error="invalid_token")
     if len(password) < 8:
         return api_error("Use at least 8 characters for your password.", 400)
-    conn = db()
-    cur = conn.cursor()
-    cur.execute("SELECT user_id, expires_at, used_at FROM password_reset_tokens WHERE token=? ORDER BY id DESC LIMIT 1", (token,))
-    row = cur.fetchone()
-    if not row or row[2] or row[1] < datetime.now().isoformat():
-        conn.close()
-        return api_error("This reset link is invalid or expired.", 400, error="invalid_or_expired_token")
-    user_id = row[0]
+    conn = None
     now = datetime.now().isoformat()
     try:
+        conn = db()
+        cur = conn.cursor()
+        row = load_password_reset_record(cur, token)
+        if not row or _row_value(row, "used_at", 3) or str(_row_value(row, "expires_at", 2) or "") < datetime.now().isoformat():
+            conn.close()
+            conn = None
+            return api_error("This reset link is invalid or expired.", 400, error="invalid_or_expired_token")
+        user_id = int(_row_value(row, "user_id", 1) or 0)
         save_reset_password_and_verify(cur, user_id, password, now)
         close_active_password_reset_tokens(cur, user_id, now)
         notify_user(
@@ -5682,15 +5802,26 @@ def api_mobile_auth_reset_password():
         )
         conn.commit()
     except Exception as exc:
-        conn.rollback()
-        conn.close()
-        logging.exception("MOBILE_PASSWORD_RESET_SAVE_FAILED user_id=%s reason=%s", user_id, exc)
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        logging.exception("MOBILE_PASSWORD_RESET_SAVE_FAILED reason=%s", exc)
         return api_error("Password reset could not be completed. Please request a fresh reset link.", 500, error="password_reset_save_failed")
-    conn.close()
+    finally:
+        if conn is not None:
+            conn.close()
     changed_user = load_account_by_id(user_id)
     if changed_user:
-        send_password_changed_email(changed_user)
-        log_product_event(user_id, "password_reset_completed", {"source": "mobile_api"})
+        try:
+            send_password_changed_email(changed_user)
+        except Exception as exc:
+            logging.warning("MOBILE_PASSWORD_CHANGED_EMAIL_QUEUE_FAILED user_id=%s error=%s", user_id, exc.__class__.__name__)
+        try:
+            log_product_event(user_id, "password_reset_completed", {"source": "mobile_api"})
+        except Exception as exc:
+            logging.warning("MOBILE_PASSWORD_RESET_COMPLETED_LOG_FAILED user_id=%s error=%s", user_id, exc.__class__.__name__)
     return jsonify({"ok": True, "message": "Password reset. You can log in with your new password."})
 
 
@@ -11003,14 +11134,7 @@ def forgot_password_page():
             return render_account_page("forgot", "Forgot Password", error="Security check failed. Please try again.")
         email = normalize_email(clean_html(request.form.get("email", "")))
         logging.info("forgot password requested email=%s db_engine=%s", mask_email(email), db_service.ENGINE_NAME)
-        user, token = create_password_reset(email)
-        if user and token:
-            reset_link = public_url_for("reset_password_page", token=token)
-            send_password_reset_email(user, reset_link)
-            log_product_event(user.get("user_id"), "forgot_password_requested", {})
-            log_auth_event("forgot_password_token_created", email, user.get("user_id"), status="success", details={"db_engine": db_service.ENGINE_NAME})
-        else:
-            log_auth_event("forgot_password_no_match", email, status="not_found", details={"db_engine": db_service.ENGINE_NAME})
+        safe_password_reset_request(email, source="web")
         message = "If that email has an account, a password reset link will be sent."
     return render_account_page("forgot", "Forgot Password", message=message)
 
@@ -11073,16 +11197,17 @@ def reset_password_page(token=""):
         password = request.form.get("password", "")
         if len(password) < 8:
             return render_account_page("reset", "Reset Password", token=token, error="Use at least 8 characters for your password.")
-        conn = db()
-        cur = conn.cursor()
-        cur.execute("SELECT user_id, expires_at, used_at FROM password_reset_tokens WHERE token=? ORDER BY id DESC LIMIT 1", (token,))
-        row = cur.fetchone()
-        if not row or row[2] or row[1] < datetime.now().isoformat():
-            conn.close()
-            return render_account_page("reset", "Reset Password", token=token, error="This reset link is invalid or expired.")
-        user_id = row[0]
+        conn = None
         now = datetime.now().isoformat()
         try:
+            conn = db()
+            cur = conn.cursor()
+            row = load_password_reset_record(cur, token)
+            if not row or _row_value(row, "used_at", 3) or str(_row_value(row, "expires_at", 2) or "") < datetime.now().isoformat():
+                conn.close()
+                conn = None
+                return render_account_page("reset", "Reset Password", token=token, error="This reset link is invalid or expired.")
+            user_id = int(_row_value(row, "user_id", 1) or 0)
             save_reset_password_and_verify(cur, user_id, password, now)
             close_active_password_reset_tokens(cur, user_id, now)
             notify_user(
@@ -11099,15 +11224,26 @@ def reset_password_page(token=""):
             )
             conn.commit()
         except Exception as exc:
-            conn.rollback()
-            conn.close()
-            logging.exception("PASSWORD_RESET_SAVE_FAILED user_id=%s reason=%s", user_id, exc)
+            if conn is not None:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            logging.exception("PASSWORD_RESET_SAVE_FAILED reason=%s", exc)
             return render_account_page("reset", "Reset Password", token=token, error="Password reset could not be completed. Please request a fresh reset link.")
-        conn.close()
+        finally:
+            if conn is not None:
+                conn.close()
         changed_user = load_account_by_id(user_id)
         if changed_user:
-            send_password_changed_email(changed_user)
-            log_product_event(user_id, "password_reset_completed", {})
+            try:
+                send_password_changed_email(changed_user)
+            except Exception as exc:
+                logging.warning("PASSWORD_CHANGED_EMAIL_QUEUE_FAILED user_id=%s error=%s", user_id, exc.__class__.__name__)
+            try:
+                log_product_event(user_id, "password_reset_completed", {})
+            except Exception as exc:
+                logging.warning("PASSWORD_RESET_COMPLETED_LOG_FAILED user_id=%s error=%s", user_id, exc.__class__.__name__)
         return redirect(url_for("login_page"))
     return render_account_page("reset", "Reset Password", token=token)
 
@@ -88894,6 +89030,11 @@ def _init_db_impl():
         created_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "password_reset_tokens", [
+        ("token_hash", "TEXT"),
+        ("delivery_status", "TEXT"),
+        ("request_ip_hash", "TEXT"),
+    ], conn=conn)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS email_verification_tokens (
@@ -95758,6 +95899,7 @@ def _init_db_impl():
         "CREATE INDEX IF NOT EXISTS idx_user_device_tokens_device ON user_device_tokens(device_id)",
         "CREATE INDEX IF NOT EXISTS idx_provider_health_status ON provider_health(status, updated_at)",
         "CREATE INDEX IF NOT EXISTS idx_delivery_logs_provider ON delivery_logs(provider, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_hash ON password_reset_tokens(token_hash)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_user_badges_user ON pulse_user_badges(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_user_privileges_user ON pulse_user_privileges(user_id, enabled)",
         "CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_code ON telegram_link_codes(code)",

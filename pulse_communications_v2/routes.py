@@ -11,6 +11,7 @@ from flask import Blueprint, Response, jsonify, render_template, request, stream
 
 from . import flags, service
 from services import pulsesoc_communications_engine as call_engine
+from services import pulsesoc_reliability
 
 
 comm_v2_blueprint = Blueprint("pulse_communications_v2", __name__)
@@ -113,6 +114,30 @@ def messages_v2_page():
 @comm_v2_blueprint.get("/api/pulse/comm/v2/health")
 def health():
     return jsonify({"enabled": flags.is_enabled(), "status": "ready" if flags.is_enabled() else "disabled"})
+
+
+@comm_v2_blueprint.get("/health/live")
+def health_live():
+    return jsonify({
+        "ok": True,
+        "status": "alive",
+        "service": "coinpilotx-web",
+        "optional_provider_failures_block_startup": False,
+    })
+
+
+@comm_v2_blueprint.get("/health/ready")
+def health_ready():
+    payload = pulsesoc_reliability.readiness_snapshot()
+    return jsonify(payload), 200 if payload.get("ok") else 503
+
+
+@comm_v2_blueprint.get("/admin/health/deep")
+def admin_health_deep():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    return jsonify(pulsesoc_reliability.deep_health_snapshot())
 
 
 def _sse_response(generator):
