@@ -75,6 +75,13 @@
       share: "↗",
       spark: "✦",
       music: "♪",
+      chart: "▥",
+      trend: "⌁",
+      shield: "◇",
+      globe: "◎",
+      chip: "◈",
+      creator: "✧",
+      system: "◌",
     }[String(icon || "").toLowerCase()] || "✦";
   }
 
@@ -144,28 +151,47 @@
   function renderSignals(events = []) {
     const list = document.querySelector("[data-signal-list]");
     if (!list) return;
-    list.innerHTML = events.map((event) => `
-      <article class="signal-card" data-event-id="${Number(event.id || 0)}">
-        <div class="signal-meta">
-          <span class="signal-pill">${esc(streamLabel(event.stream_key))}</span>
-          <span class="confidence-ring">${Number(event.confidence_score || 0)}%</span>
-        </div>
-        <h3>${esc(event.headline)}</h3>
-        <p>${esc(event.summary)}</p>
-        <small>${esc(event.confidence_label)} confidence · ${esc(event.priority)} · ${Number(event.read_time_seconds || 30)}s read</small>
-        <p><strong>Why it matters:</strong> ${esc(event.why_it_matters)}</p>
-        ${event.expected_impact ? `<p><strong>Expected impact:</strong> ${esc(event.expected_impact)}</p>` : ""}
-        ${renderSignalCtas(event.actions || [], event.id)}
-        <div class="signal-actions">
-          <button type="button" data-feedback="opened" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Useful</button>
-          <button type="button" data-feedback="saved" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Save</button>
-          <button type="button" data-feedback="not_helpful" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Not helpful</button>
-          <button type="button" data-feedback="wrong" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Wrong</button>
-          <button type="button" data-feedback="outdated" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Outdated</button>
-          <button type="button" data-feedback="too_frequent" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Too frequent</button>
+    list.innerHTML = events.map((event) => {
+      const copy = event.alert_copy || {};
+      const headline = copy.card_headline || event.headline;
+      const summary = copy.card_summary || event.summary;
+      const category = copy.card_category || streamLabel(event.stream_key);
+      const priority = copy.card_priority_badge || String(event.priority || "watch").toUpperCase();
+      const label = copy.card_label || "PULSESOC ALERT";
+      const icon = copy.card_icon || "spark";
+      const accent = copy.accent || "cyan";
+      return `
+      <article class="signal-card signal-card-v2" data-event-id="${Number(event.id || 0)}" data-signal-accent="${esc(accent)}">
+        <div class="signal-icon" aria-hidden="true">${esc(actionIcon(icon))}</div>
+        <div class="signal-card-body">
+          <div class="signal-kicker">
+            <span class="signal-source-label">${esc(label)}</span>
+            <span class="signal-category">${esc(category)}</span>
+            <span class="signal-priority">${esc(priority)}</span>
+          </div>
+          <div class="signal-meta">
+            <span class="signal-pill">${esc(streamLabel(event.stream_key))}</span>
+            <span class="confidence-ring">${Number(event.confidence_score || 0)}%</span>
+          </div>
+          <h3>${esc(headline)}</h3>
+          <p>${esc(summary)}</p>
+          <small>${esc(event.confidence_label)} confidence · ${Number(event.read_time_seconds || 30)}s read</small>
+          <p><strong>Why it matters:</strong> ${esc(event.why_it_matters)}</p>
+          ${event.expected_impact ? `<p><strong>Expected impact:</strong> ${esc(event.expected_impact)}</p>` : ""}
+          ${renderSignalCtas(event.actions || [], event.id)}
+          <div class="signal-actions">
+            <button type="button" data-feedback="opened" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Mark read</button>
+            <button type="button" data-feedback="saved" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Save</button>
+            <button type="button" data-ask-pulse-ai="${Number(event.id || 0)}">Ask Pulse AI</button>
+            <button type="button" data-feedback="not_helpful" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Not helpful</button>
+            <button type="button" data-feedback="wrong" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Wrong</button>
+            <button type="button" data-feedback="outdated" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Outdated</button>
+            <button type="button" data-feedback="too_frequent" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Too frequent</button>
+            <button type="button" data-feedback="dismissed" data-delete-signal="true" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Delete</button>
+          </div>
         </div>
       </article>
-    `).join("") || `<p class="empty">No Pulses yet. Your streams are ready and waiting for high-confidence signals.</p>`;
+    `; }).join("") || `<p class="empty">No Pulses yet. Your streams are ready and waiting for high-confidence signals.</p>`;
   }
 
   function renderForecasts(forecasts = []) {
@@ -238,10 +264,21 @@
             feedback_type: feedback.dataset.feedback,
           }),
         });
-        setStatus("Feedback saved.");
+        if (feedback.dataset.deleteSignal === "true") {
+          feedback.closest(".signal-card")?.remove();
+          setStatus("Signal deleted from your view.");
+        } else {
+          setStatus(feedback.dataset.feedback === "opened" ? "Signal marked read." : "Feedback saved.");
+        }
       } catch (error) {
         setStatus(error.message, "error");
       }
+      return;
+    }
+    const askAi = event.target.closest("[data-ask-pulse-ai]");
+    if (askAi) {
+      const eventId = Number(askAi.dataset.askPulseAi || 0);
+      window.location.assign(`/pulse/messages?pulse_ai=1&signal_id=${encodeURIComponent(String(eventId || ""))}`);
       return;
     }
     const signalAction = event.target.closest("[data-signal-action]");

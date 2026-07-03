@@ -2329,7 +2329,11 @@ def _send_apns_token(token: str, notification: dict[str, Any], payload: dict[str
         auth_token = jwt.encode({"iss": team_id, "iat": int(datetime.utcnow().timestamp())}, private_key, algorithm="ES256", headers={"kid": key_id})
         body = {
             "aps": {
-                "alert": {"title": notification.get("title") or "PulseSoc", "body": payload.get("body") or ""},
+                "alert": {
+                    "title": notification.get("title") or "PulseSoc",
+                    "subtitle": str(payload.get("headline") or "")[:80],
+                    "body": payload.get("body") or "",
+                },
                 "sound": "default" if payload.get("sound_key") != "silent" else None,
                 "badge": _int(payload.get("badge"), 0),
                 "category": str(payload.get("category") or "system")[:80],

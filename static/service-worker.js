@@ -198,7 +198,11 @@ self.addEventListener("push", (event) => {
   const isIntelligence = /^intelligence_/.test(String(notificationType)) || notificationCategory === "intelligence";
   const defaultUrl = conversationId ? `/pulse/messages/${conversationId}` : (isIntelligence ? "/pulse/alerts" : "/pulse/notifications");
   const targetUrl = safeNotificationUrl(data.web_url || data.url || data.target_url || data.deep_link || payload.web_url || payload.url || payload.target_url || payload.deep_link || defaultUrl);
-  const title = payload.title || "PulseSoc Alert";
+  const title = isIntelligence ? "PULSESOC ALERT" : (payload.title || "PulseSoc Alert");
+  const intelligenceHeadline = isIntelligence ? String(payload.headline || data.headline || "").trim().toUpperCase().slice(0, 64) : "";
+  const displayBody = isIntelligence && intelligenceHeadline
+    ? `${intelligenceHeadline}\n${payload.body || payload.message || "Open PulseSoc to review this signal."}`
+    : (payload.body || payload.message || "New PulseSoc update.");
   const defaultBadge = "/static/brand/pulsesoc-icon-192-20260606.png";
   const badgeAsset = typeof payload.badge === "string" && payload.badge.trim().startsWith("/") ? payload.badge : defaultBadge;
   const notificationTag = payload.tag || (
@@ -209,7 +213,7 @@ self.addEventListener("push", (event) => {
         : "coinplotxai-alert"
   );
   const options = {
-    body: payload.body || payload.message || "New PulseSoc update.",
+    body: displayBody,
     icon: payload.icon || "/static/brand/pulsesoc-icon-192-20260606.png",
     badge: badgeAsset,
     vibrate: payload.vibrate || payload.vibration || data.vibrate || data.vibration || [200, 100, 200],
@@ -221,6 +225,7 @@ self.addEventListener("push", (event) => {
       deep_link: targetUrl,
       type: notificationType,
       category: notificationCategory,
+      headline: intelligenceHeadline || data.headline || payload.headline || "",
       notification_id: payload.notification_id || data.notification_id || "",
       signal_id: payload.signal_id || data.signal_id || data.event_id || ""
     },

@@ -95,6 +95,58 @@ MARKET_INTELLIGENCE_SIGNAL_RULES = [
     "Unusual volume confirms a move",
     "Market close recap is due",
 ]
+ALERT_CATEGORY_LABELS = {
+    "crypto_pulse": "Crypto Signal",
+    "market_pulse": "Market Signal",
+    "security_pulse": "Security Signal",
+    "world_pulse": "World Event",
+    "pulsesoc_pulse": "PulseSoc Update",
+    "pulsesoc_discoveries": "PulseSoc Update",
+    "technology_pulse": "Tech Signal",
+    "creator_pulse": "Creator Signal",
+    "music_pulse": "Music Signal",
+    "system_pulse": "System Pulse",
+}
+ALERT_CATEGORY_ICONS = {
+    "crypto_pulse": "chart",
+    "market_pulse": "trend",
+    "security_pulse": "shield",
+    "world_pulse": "globe",
+    "pulsesoc_pulse": "spark",
+    "pulsesoc_discoveries": "spark",
+    "technology_pulse": "chip",
+    "creator_pulse": "creator",
+    "music_pulse": "music",
+    "system_pulse": "system",
+}
+ALERT_ACCENTS = {
+    "crypto_pulse": "gold",
+    "market_pulse": "gold",
+    "security_pulse": "green",
+    "world_pulse": "violet",
+    "pulsesoc_pulse": "cyan",
+    "pulsesoc_discoveries": "cyan",
+    "technology_pulse": "blue",
+    "creator_pulse": "violet",
+    "music_pulse": "violet",
+    "system_pulse": "green",
+}
+FINANCIAL_UNSAFE_PHRASES = (
+    "buy now",
+    "sell now",
+    "guaranteed profit",
+    "easy money",
+    "will pump",
+    "will crash",
+)
+CYBER_UNSAFE_PHRASES = (
+    "exploit code",
+    "malware",
+    "bypass mfa",
+    "credential theft",
+    "phishing kit",
+    "unauthorized hacking",
+)
 
 USER_SURFACES: dict[str, dict[str, Any]] = {
     "alerts": {
@@ -305,6 +357,180 @@ def _confidence_label(score: int) -> str:
         if score >= threshold:
             return label
     return "Low"
+
+
+def _clean_alert_text(value: Any, limit: int = 170, fallback: str = "Open PulseSoc to review this signal.") -> str:
+    text = _compact(value, 700)
+    if not text:
+        return fallback[:limit]
+    text = re.sub(r"https?://\S+", "", text)
+    text = re.sub(r"\b[\w./-]+\.(?:md|py|sql|json|js|css|html|sh)\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b(?:script|migration|collector|dedupe|debug|backend|route|payload|source id|provider error)\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+", " ", text).strip(" .:-")
+    if not text or "recorded a platform update from" in str(value or "").lower():
+        text = fallback
+    pieces = re.split(r"(?<=[.!?])\s+", text, maxsplit=1)
+    text = pieces[0] if pieces else text
+    return _compact(text, limit).strip(" .:-") or fallback[:limit]
+
+
+def _headline_safe(value: Any, limit: int = 44) -> str:
+    text = _clean_alert_text(value, limit=120, fallback="PULSESOC SIGNAL").upper()
+    text = re.sub(r"[^A-Z0-9&$%+ .:/-]", "", text)
+    text = re.sub(r"\s+", " ", text).strip(" .:-")
+    return (text or "PULSESOC SIGNAL")[:limit].rstrip(" .:-")
+
+
+def _priority_badge(priority: str, delivery_type: str = "") -> str:
+    delivery = _slug(delivery_type or "", 30)
+    if delivery == "digest":
+        return "DIGEST"
+    if delivery == "forecast":
+        return "FORECAST"
+    priority = _slug(priority or "normal", 20)
+    if priority in {"breaking", "urgent"}:
+        return "CRITICAL"
+    if priority == "high":
+        return "HIGH PRIORITY"
+    if priority == "low":
+        return "INFO"
+    return "WATCH"
+
+
+def _asset_from_event(event: dict[str, Any]) -> str:
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    normalized = metadata.get("normalized_candidate") if isinstance(metadata.get("normalized_candidate"), dict) else {}
+    status_card = metadata.get("status_card") if isinstance(metadata.get("status_card"), dict) else {}
+    return _compact(
+        status_card.get("asset")
+        or metadata.get("asset")
+        or metadata.get("asset_symbol")
+        or normalized.get("asset_symbol")
+        or event.get("asset_symbol")
+        or "",
+        40,
+    )
+
+
+def _financially_safe_body(stream_key: str, body: str) -> str:
+    if stream_key not in {"crypto_pulse", "market_pulse"}:
+        return body
+    lowered = body.lower()
+    if any(phrase in lowered for phrase in FINANCIAL_UNSAFE_PHRASES):
+        return "A market intelligence signal is ready for review. This is not financial advice."
+    return body
+
+
+def _cyber_safe_body(stream_key: str, body: str) -> str:
+    if stream_key != "security_pulse":
+        return body
+    lowered = body.lower()
+    if any(phrase in lowered for phrase in CYBER_UNSAFE_PHRASES):
+        return "A security signal is ready. Review safe protection guidance before taking action."
+    return body
+
+
+def normalize_intelligence_alert_copy(signal: dict[str, Any], delivery_type: str = "") -> dict[str, Any]:
+    """Return user-facing alert copy for lock screen and in-app cards."""
+    event = dict(signal or {})
+    stream_key = event.get("stream_key") or "pulsesoc_discoveries"
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    status_card = metadata.get("status_card") if isinstance(metadata.get("status_card"), dict) else {}
+    priority = event.get("priority") or "normal"
+    category = ALERT_CATEGORY_LABELS.get(stream_key, "Pulse Signal")
+    asset = _asset_from_event(event)
+    raw_headline = event.get("headline") or event.get("title") or category
+    raw_summary = event.get("summary") or event.get("body") or raw_headline
+    event_type = _slug(event.get("event_type") or "", 80)
+
+    if delivery_type == "digest":
+        headline = "DAILY BRIEFING READY"
+        body = "Your top PulseSoc signals for today are ready."
+        category = "Daily Briefing"
+    elif delivery_type == "forecast":
+        headline = "FORECAST READY"
+        body = _clean_alert_text(event.get("forecast", {}).get("forecast_body") if isinstance(event.get("forecast"), dict) else raw_summary, fallback="A confidence-labeled forecast is ready.")
+        category = "Forecast"
+    elif stream_key == "crypto_pulse":
+        upper_asset = (asset or "CRYPTO").upper()
+        text = f"{raw_headline} {raw_summary}".lower()
+        if any(token in text for token in ["breakout", "above", "higher", "+", "rising"]):
+            headline = f"{upper_asset} BREAKOUT DETECTED"
+        elif any(token in text for token in ["below", "lower", "pullback", "down", "-"]):
+            headline = f"{upper_asset} PULLBACK WATCH"
+        else:
+            headline = f"{upper_asset} MARKET SIGNAL"
+        body = _clean_alert_text(raw_summary, fallback=f"{upper_asset} market intelligence is ready for review.")
+    elif stream_key == "market_pulse":
+        signal_label = _compact(status_card.get("signal") or "", 40).lower()
+        if asset and "momentum" in str(status_card.get("status") or "").lower():
+            headline = f"{asset.upper()} MOMENTUM RISING"
+        elif asset and "breakout" in signal_label:
+            headline = f"{asset.upper()} BREAKOUT WATCH"
+        elif asset and "support" in signal_label:
+            headline = f"{asset.upper()} SUPPORT TEST"
+        elif asset and "vix" in asset.lower():
+            headline = "VIX VOLATILITY SPIKE"
+        else:
+            headline = "MARKET SHIFT DETECTED"
+        body = _clean_alert_text(raw_summary, fallback="A major market signal is ready for review.")
+    elif stream_key == "security_pulse":
+        headline = "SECURITY SIGNAL"
+        body = _clean_alert_text(raw_summary, fallback="A security update is ready. Review protection guidance.")
+    elif stream_key == "world_pulse":
+        headline = "WORLD EVENT"
+        body = _clean_alert_text(raw_summary, fallback="A major world event is ready for review.")
+    elif stream_key == "pulsesoc_discoveries":
+        headline = "NEW DISCOVERY AVAILABLE"
+        body = _clean_alert_text(raw_summary, fallback="Pulse AI found a PulseSoc feature you may want to explore.")
+    elif stream_key == "pulsesoc_pulse":
+        text = f"{raw_headline} {raw_summary} {event_type}".lower()
+        if "app_store" in text or "app store" in text or "download" in text:
+            headline = "APP STORE UPDATE"
+            body = _clean_alert_text(raw_summary, fallback="A PulseSoc app update is ready to explore.")
+        else:
+            headline = "PULSESOC UPDATE"
+            body = _clean_alert_text(raw_summary, fallback="A PulseSoc platform update is ready to explore.")
+    elif stream_key == "technology_pulse":
+        headline = "TECH SIGNAL"
+        body = _clean_alert_text(raw_summary, fallback="A major technology signal is ready for review.")
+    elif stream_key == "creator_pulse":
+        headline = "CREATOR SIGNAL"
+        body = _clean_alert_text(raw_summary, fallback="A creator signal is ready for review.")
+    elif stream_key == "music_pulse":
+        headline = "MUSIC SIGNAL"
+        body = _clean_alert_text(raw_summary, fallback="A music signal is ready for review.")
+    elif stream_key == "system_pulse":
+        headline = "SYSTEM PULSE"
+        body = _clean_alert_text(raw_summary, fallback="A PulseSoc system signal is ready for review.")
+    else:
+        headline = _headline_safe(raw_headline)
+        body = _clean_alert_text(raw_summary)
+
+    headline = _headline_safe(headline)
+    body = _cyber_safe_body(stream_key, _financially_safe_body(stream_key, body))
+    detail = _clean_alert_text(event.get("why_it_matters") or body, limit=260, fallback=body)
+    return {
+        "lock_title": "PULSESOC ALERT",
+        "lock_headline": headline,
+        "lock_body": body,
+        "card_label": "PULSESOC ALERT",
+        "card_category": category,
+        "card_priority_badge": _priority_badge(priority, delivery_type),
+        "card_headline": headline,
+        "card_summary": body,
+        "card_detail": detail,
+        "card_icon": ALERT_CATEGORY_ICONS.get(stream_key, "spark"),
+        "accent": ALERT_ACCENTS.get(stream_key, "cyan"),
+        "ask_ai_prompts": [
+            "Explain this",
+            "Why does it matter?",
+            "What should I do?",
+            "Am I affected?",
+            "Summarize in one minute",
+            "How do I stay safe?",
+        ],
+    }
 
 
 def _source_env_present(source: dict[str, Any]) -> bool:
@@ -1052,7 +1278,7 @@ def format_stream(row: Any, user_row: Any | None = None) -> dict[str, Any]:
 def format_event(row: Any) -> dict[str, Any]:
     confidence = _int(_row_get(row, "confidence_score"))
     metadata = _json_loads(_row_get(row, "metadata_json"), {})
-    return {
+    event = {
         "id": _int(_row_get(row, "id")),
         "event_key": _row_get(row, "event_key") or "",
         "stream_key": _row_get(row, "stream_key") or "",
@@ -1083,6 +1309,8 @@ def format_event(row: Any) -> dict[str, Any]:
         "updated_at": _row_get(row, "updated_at") or "",
         "read_time_seconds": max(15, min(120, int(len(str(_row_get(row, "summary") or "")) / 9) + 15)),
     }
+    event["alert_copy"] = normalize_intelligence_alert_copy(event)
+    return event
 
 
 def format_forecast(row: Any) -> dict[str, Any]:
@@ -1935,13 +2163,9 @@ def _send_delivery_job(cur: Any, job: Any) -> dict[str, Any]:
     if not isinstance(channels, list) or not channels:
         channels = ["in_app"]
     notification_type = _notification_type_for_delivery(delivery_type)
-    title = event["headline"]
-    body = event["summary"]
-    if delivery_type == "forecast" and event.get("forecast"):
-        title = event["forecast"].get("title") or title
-        body = event["forecast"].get("forecast_body") or body
-    if delivery_type == "feature_discovery":
-        title = f"Pulse Discovery: {title}"
+    alert_copy = normalize_intelligence_alert_copy(event, delivery_type)
+    title = alert_copy["lock_title"]
+    body = alert_copy["lock_body"]
     priority = "urgent" if event["priority"] in {"breaking", "urgent"} else ("high" if event["priority"] == "high" else "normal")
     deep_link = _intelligence_deep_link(event, delivery_type)
     sound_key = "alert" if priority == "urgent" else "pulse_signal"
@@ -1967,6 +2191,15 @@ def _send_delivery_job(cur: Any, job: Any) -> dict[str, Any]:
             "stream_name": subscription.get("display_name"),
             "delivery_type": delivery_type,
             "signal_id": event_id,
+            "alert_copy": alert_copy,
+            "headline": alert_copy["lock_headline"],
+            "card_label": alert_copy["card_label"],
+            "card_category": alert_copy["card_category"],
+            "priority_badge": alert_copy["card_priority_badge"],
+            "card_summary": alert_copy["card_summary"],
+            "card_icon": alert_copy["card_icon"],
+            "accent": alert_copy["accent"],
+            "ask_ai_prompts": alert_copy["ask_ai_prompts"],
             "source_type": "intelligence_event",
             "source_id": str(event_id),
             "type": notification_type,
@@ -2113,6 +2346,13 @@ def process_digest_jobs(limit: int = 50) -> dict[str, Any]:
             subscription = _subscription_for_user(cur, user_id, stream_key)
             if subscription:
                 channels = _channels_for_subscription(subscription, {"priority": "normal"}, "digest")
+            digest_copy = normalize_intelligence_alert_copy({
+                "stream_key": stream_key,
+                "event_type": "daily_briefing",
+                "priority": "normal",
+                "headline": "Daily Briefing",
+                "summary": "Your top signals for today are ready.",
+            }, "digest")
             conn.commit()
             result = pulsesoc_notification_system.intake_event(
                 event_type="intelligence_digest",
@@ -2120,15 +2360,24 @@ def process_digest_jobs(limit: int = 50) -> dict[str, Any]:
                 actor_user_id=0,
                 source_type="intelligence_digest",
                 source_id=str(job_id),
-                title=headline,
-                body=body,
-                preview=body,
+                title=digest_copy["lock_title"],
+                body=digest_copy["lock_body"],
+                preview=digest_copy["lock_body"],
                 deep_link="/pulse/briefing",
                 metadata={
                     "delivery_type": "digest",
                     "stream_key": stream_key,
                     "event_ids": event_ids[:25],
                     "signal_count": len(events),
+                    "alert_copy": digest_copy,
+                    "headline": digest_copy["lock_headline"],
+                    "card_label": digest_copy["card_label"],
+                    "card_category": digest_copy["card_category"],
+                    "priority_badge": digest_copy["card_priority_badge"],
+                    "card_summary": digest_copy["card_summary"],
+                    "card_icon": digest_copy["card_icon"],
+                    "accent": digest_copy["accent"],
+                    "ask_ai_prompts": digest_copy["ask_ai_prompts"],
                     "actions": default_actions_for_signal("pulsesoc_discoveries", "digest", "/pulse/briefing"),
                     "deep_link": "/pulse/briefing",
                     "show_on_lock_screen": True,
@@ -2247,6 +2496,29 @@ def center_state(user_id: int, limit: int = 40) -> dict[str, Any]:
                 (*enabled_streams, int(limit or 40)),
             )
             events = [format_event(row) for row in cur.fetchall()]
+            if events:
+                event_ids = [int(event.get("id") or 0) for event in events if int(event.get("id") or 0)]
+                if event_ids:
+                    placeholders_feedback = ",".join("?" for _ in event_ids)
+                    cur.execute(
+                        f"""
+                        SELECT event_id, feedback_type
+                        FROM intelligence_feedback
+                        WHERE user_id=? AND event_id IN ({placeholders_feedback})
+                        """,
+                        (int(user_id), *event_ids),
+                    )
+                    feedback_by_event: dict[int, set[str]] = {}
+                    for feedback_row in cur.fetchall():
+                        feedback_by_event.setdefault(_int(_row_get(feedback_row, "event_id")), set()).add(_row_get(feedback_row, "feedback_type") or "")
+                    filtered_events: list[dict[str, Any]] = []
+                    for event in events:
+                        flags = feedback_by_event.get(int(event.get("id") or 0), set())
+                        if flags.intersection({"dismissed", "deleted"}):
+                            continue
+                        event["user_feedback"] = sorted(flags)
+                        filtered_events.append(event)
+                    events = filtered_events
         forecasts: list[dict[str, Any]] = []
         if enabled_streams:
             placeholders = ",".join("?" for _ in enabled_streams)
