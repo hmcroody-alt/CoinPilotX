@@ -694,6 +694,78 @@ def api_call_quality(call_id):
     return _timed_json("api_call_quality", lambda: call_engine.submit_quality_report(user["user_id"], call_id, request.get_json(silent=True) or {}))
 
 
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/connected")
+def api_call_connected(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_connected", lambda: call_engine.mark_connected(user["user_id"], call_id, request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.get("/api/calls/<path:call_id>/events")
+def api_call_events(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_events", lambda: call_engine.call_events(user["user_id"], call_id))
+
+
+@comm_v2_blueprint.get("/api/conversations/<path:conversation_ref>/calls")
+def api_conversation_calls(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_conversation_calls", lambda: call_engine.conversation_calls(user["user_id"], conversation_ref, int(request.args.get("limit") or 40)))
+
+
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/mute-audio")
+def api_call_mute_audio(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_mute_audio", lambda: call_engine.update_participant_control(user["user_id"], call_id, "mute-audio", request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/unmute-audio")
+def api_call_unmute_audio(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_unmute_audio", lambda: call_engine.update_participant_control(user["user_id"], call_id, "unmute-audio", request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/enable-video")
+def api_call_enable_video(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_enable_video", lambda: call_engine.update_participant_control(user["user_id"], call_id, "enable-video", request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/disable-video")
+def api_call_disable_video(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_disable_video", lambda: call_engine.update_participant_control(user["user_id"], call_id, "disable-video", request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/screen-share/start")
+def api_call_screen_share_start(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_screen_share_start", lambda: call_engine.update_participant_control(user["user_id"], call_id, "screen-share-start", request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/screen-share/stop")
+def api_call_screen_share_stop(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_screen_share_stop", lambda: call_engine.update_participant_control(user["user_id"], call_id, "screen-share-stop", request.get_json(silent=True) or {}))
+
+
 @comm_v2_blueprint.post("/api/livekit/webhook")
 def api_livekit_webhook():
     raw = request.get_data(cache=True) or b""

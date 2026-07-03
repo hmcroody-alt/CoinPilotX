@@ -202,8 +202,9 @@ def _require_livekit() -> dict[str, Any] | None:
     status = livekit_config_status()
     if status["configured"]:
         return None
+    logging.info("PULSESOC_CALL_CONFIG_MISSING missing=%s", ",".join(status.get("missing") or []))
     return _err(
-        "LiveKit is not configured yet. Add LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET to enable calls.",
+        "Calling is temporarily unavailable. Please try again later.",
         503,
         "config_missing",
         provider="livekit",
@@ -242,6 +243,7 @@ def _generate_livekit_token(room_name: str, user_id: int, call_type: str = "audi
         "ok": True,
         "provider": "livekit",
         "token": f"{signing_input}.{_base64url(signature)}",
+        "livekit_url": os.getenv("LIVEKIT_URL", "").strip(),
         "room_name": room_name,
         "expires_at": datetime.fromtimestamp(payload["exp"], timezone.utc).isoformat(timespec="seconds"),
     }
@@ -288,8 +290,18 @@ def _get_call(cur: Any, call_ref: str | int) -> dict[str, Any]:
 
 def _serialize_call(cur: Any, call: dict[str, Any], user_id: int = 0, include_token: bool = False) -> dict[str, Any]:
     call_id = int(call.get("id") or 0)
-    cur.execute("SELECT * FROM communication_call_participants WHERE call_id=? ORDER BY id ASC", (call_id,))
+    cur.execute(
+        """
+        SELECT p.*, COALESCE(u.display_name,u.username,'Pulse member') AS display_name, COALESCE(u.avatar_url,'') AS avatar_url
+        FROM communication_call_participants p
+        LEFT JOIN users u ON u.user_id=p.user_id
+        WHERE p.call_id=?
+        ORDER BY p.id ASC
+        """,
+        (call_id,),
+    )
     participants = [dict(row) for row in cur.fetchall()]
+    me = next((item for item in participants if int(item.get("user_id") or 0) == int(user_id or 0)), {}) if user_id else {}
     payload = {
         "call_id": call_id,
         "public_id": call.get("public_id"),
@@ -306,6 +318,7 @@ def _serialize_call(cur: Any, call: dict[str, Any], user_id: int = 0, include_to
         "duration_seconds": int(call.get("duration_seconds") or 0),
         "end_reason": call.get("end_reason") or "",
         "participants": participants,
+        "participant": me,
         "livekit": livekit_config_status(),
     }
     if include_token and user_id:
@@ -352,6 +365,62 @@ def _transition(cur: Any, call: dict[str, Any], new_status: str, user_id: int = 
     cur.execute(f"UPDATE communication_calls SET {', '.join(updates)} WHERE id=?", values)
     _event(cur, int(call["id"]), int(user_id or 0), new_status, {"from": current, "to": new_status, "reason": reason})
     return {"ok": True, "status": new_status}
+
+
+def _safe_transition(cur: Any, call: dict[str, Any], new_status: str, user_id: int = 0, reason: str = "") -> dict[str, Any]:
+    result = _transition(cur, call, new_status, user_id, reason)
+    if result.get("ok"):
+        return _get_call(cur, call.get("public_id") or call.get("id") or "")
+    return call
+
+
+def _participant_for_call(cur: Any, call_id: int, user_id: int) -> dict[str, Any]:
+    cur.execute(
+        "SELECT * FROM communication_call_participants WHERE call_id=? AND user_id=? LIMIT 1",
+        (int(call_id), int(user_id)),
+    )
+    return _row(cur.fetchone())
+
+
+def _require_call_access(cur: Any, user_id: int, call_ref: str | int) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
+    call = _get_call(cur, call_ref)
+    if not call:
+        return {}, {}, _err("Call not found.", 404, "missing_call")
+    if not _participant_allowed(cur, int(call.get("conversation_id") or 0), int(user_id)):
+        return call, {}, _err("You do not have access to this call.", 403, "forbidden")
+    participant = _participant_for_call(cur, int(call["id"]), int(user_id))
+    if not participant:
+        return call, {}, _err("Only call participants can access this call.", 403, "not_participant")
+    return call, participant, None
+
+
+def _mark_missed_stale_calls_cur(cur: Any, timeout_seconds: int = 45) -> int:
+    threshold = time.time() - max(5, int(timeout_seconds or 45))
+    cur.execute("SELECT * FROM communication_calls WHERE status='ringing' ORDER BY id ASC")
+    updated = 0
+    for row in cur.fetchall():
+        call = dict(row)
+        try:
+            created_ts = datetime.fromisoformat(str(call.get("created_at") or "").replace("Z", "+00:00")).timestamp()
+        except Exception:
+            continue
+        if created_ts > threshold:
+            continue
+        cur.execute(
+            "SELECT user_id FROM communication_call_participants WHERE call_id=? AND role='callee' AND status='ringing'",
+            (int(call["id"]),),
+        )
+        recipients = [int(item["user_id"]) for item in cur.fetchall()]
+        _transition(cur, call, "missed", int(call.get("created_by_user_id") or 0), "ring_timeout")
+        cur.execute(
+            "UPDATE communication_call_participants SET status='missed', left_at=?, updated_at=? WHERE call_id=? AND role='callee' AND status='ringing'",
+            (_now(), _now(), int(call["id"])),
+        )
+        caller_name = comm_service._user_summary(cur, int(call.get("created_by_user_id") or 0)).get("display_name") or "Someone"
+        for recipient_id in recipients:
+            _notify_missed_call(cur, call, int(call.get("created_by_user_id") or 0), recipient_id, caller_name)
+        updated += 1
+    return updated
 
 
 def _notify_incoming_call(cur: Any, call: dict[str, Any], actor_id: int, recipients: list[int], actor_name: str = "") -> list[dict[str, Any]]:
@@ -517,15 +586,9 @@ def start_call(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
 def join_token(user_id: int, call_ref: str | int) -> dict[str, Any]:
     conn, cur = _open_db()
     try:
-        call = _get_call(cur, call_ref)
-        if not call:
-            return _err("Call not found.", 404, "missing_call")
-        if not _participant_allowed(cur, int(call.get("conversation_id") or 0), int(user_id)):
-            return _err("You do not have access to this call.", 403, "forbidden")
-        cur.execute("SELECT * FROM communication_call_participants WHERE call_id=? AND user_id=? LIMIT 1", (int(call["id"]), int(user_id)))
-        participant = _row(cur.fetchone())
-        if not participant:
-            return _err("Only call participants can join this call.", 403, "not_participant")
+        call, participant, denied = _require_call_access(cur, int(user_id), call_ref)
+        if denied:
+            return denied
         if str(call.get("status") or "") in FINAL_STATUSES:
             return _err("This call has ended.", 409, "call_final")
         token = _generate_livekit_token(call.get("room_name") or "", int(user_id), call.get("call_type") or "audio")
@@ -551,13 +614,9 @@ def join_token(user_id: int, call_ref: str | int) -> dict[str, Any]:
 def accept_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | None = None) -> dict[str, Any]:
     conn, cur = _open_db()
     try:
-        call = _get_call(cur, call_ref)
-        if not call:
-            return _err("Call not found.", 404, "missing_call")
-        cur.execute("SELECT * FROM communication_call_participants WHERE call_id=? AND user_id=? LIMIT 1", (int(call["id"]), int(user_id)))
-        participant = _row(cur.fetchone())
-        if not participant:
-            return _err("Only invited participants can accept this call.", 403, "not_participant")
+        call, participant, denied = _require_call_access(cur, int(user_id), call_ref)
+        if denied:
+            return denied
         if str(call.get("status") or "") in FINAL_STATUSES:
             return _err("This call has ended.", 409, "call_final")
         now = _now()
@@ -586,12 +645,9 @@ def accept_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | Non
 def decline_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | None = None) -> dict[str, Any]:
     conn, cur = _open_db()
     try:
-        call = _get_call(cur, call_ref)
-        if not call:
-            return _err("Call not found.", 404, "missing_call")
-        cur.execute("SELECT * FROM communication_call_participants WHERE call_id=? AND user_id=? LIMIT 1", (int(call["id"]), int(user_id)))
-        if not cur.fetchone():
-            return _err("Only invited participants can decline this call.", 403, "not_participant")
+        call, participant, denied = _require_call_access(cur, int(user_id), call_ref)
+        if denied:
+            return denied
         now = _now()
         cur.execute("UPDATE communication_call_participants SET status='declined', left_at=?, updated_at=? WHERE call_id=? AND user_id=?", (now, now, int(call["id"]), int(user_id)))
         _event(cur, int(call["id"]), int(user_id), "declined", payload or {})
@@ -611,12 +667,9 @@ def decline_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | No
 def end_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | None = None) -> dict[str, Any]:
     conn, cur = _open_db()
     try:
-        call = _get_call(cur, call_ref)
-        if not call:
-            return _err("Call not found.", 404, "missing_call")
-        cur.execute("SELECT * FROM communication_call_participants WHERE call_id=? AND user_id=? LIMIT 1", (int(call["id"]), int(user_id)))
-        if not cur.fetchone():
-            return _err("Only call participants can end this call.", 403, "not_participant")
+        call, participant, denied = _require_call_access(cur, int(user_id), call_ref)
+        if denied:
+            return denied
         now = _now()
         cur.execute("UPDATE communication_call_participants SET status='left', left_at=?, updated_at=? WHERE call_id=? AND user_id=?", (now, now, int(call["id"]), int(user_id)))
         _event(cur, int(call["id"]), int(user_id), "left", payload or {})
@@ -636,6 +689,8 @@ def end_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | None =
 def call_status(user_id: int, call_ref: str | int) -> dict[str, Any]:
     conn, cur = _open_db()
     try:
+        _mark_missed_stale_calls_cur(cur)
+        conn.commit()
         call = _get_call(cur, call_ref)
         if not call:
             return _err("Call not found.", 404, "missing_call")
@@ -649,6 +704,9 @@ def call_status(user_id: int, call_ref: str | int) -> dict[str, Any]:
 def active_calls(user_id: int) -> dict[str, Any]:
     conn, cur = _open_db()
     try:
+        missed = _mark_missed_stale_calls_cur(cur)
+        if missed:
+            conn.commit()
         placeholders = ",".join(["?"] * len(ACTIVE_STATUSES))
         cur.execute(
             f"""
@@ -660,7 +718,7 @@ def active_calls(user_id: int) -> dict[str, Any]:
             """,
             (int(user_id), *sorted(ACTIVE_STATUSES)),
         )
-        return _ok({"calls": [_serialize_call(cur, dict(row), int(user_id)) for row in cur.fetchall()]})
+        return _ok({"calls": [_serialize_call(cur, dict(row), int(user_id)) for row in cur.fetchall()], "missed_marked": missed})
     finally:
         conn.close()
 
@@ -698,6 +756,109 @@ def submit_quality_report(user_id: int, call_ref: str | int, payload: dict[str, 
         _event(cur, int(call["id"]), int(user_id), "quality_report", {"quality_score": payload.get("quality_score")})
         conn.commit()
         return _ok({"message": "Quality report saved."})
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def mark_connected(user_id: int, call_ref: str | int, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    conn, cur = _open_db()
+    try:
+        call, participant, denied = _require_call_access(cur, int(user_id), call_ref)
+        if denied:
+            return denied
+        if str(call.get("status") or "") in FINAL_STATUSES:
+            return _err("This call has ended.", 409, "call_final")
+        now = _now()
+        cur.execute(
+            "UPDATE communication_call_participants SET status='joined', last_seen_at=?, device_info_json=?, updated_at=? WHERE call_id=? AND user_id=?",
+            (now, _json_dumps((payload or {}).get("device_info") or {}), now, int(call["id"]), int(user_id)),
+        )
+        refreshed = call
+        if str(refreshed.get("status") or "") in {"ringing", "accepted"}:
+            refreshed = _safe_transition(cur, refreshed, "connecting", int(user_id), "client_joined_room")
+        if str(refreshed.get("status") or "") == "connecting":
+            refreshed = _safe_transition(cur, refreshed, "connected", int(user_id), "client_connected")
+        _event(cur, int(call["id"]), int(user_id), "client_connected", payload or {})
+        conn.commit()
+        return _ok({"call": _serialize_call(cur, _get_call(cur, call_ref), int(user_id))})
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def call_events(user_id: int, call_ref: str | int) -> dict[str, Any]:
+    conn, cur = _open_db()
+    try:
+        call, participant, denied = _require_call_access(cur, int(user_id), call_ref)
+        if denied:
+            return denied
+        cur.execute(
+            "SELECT id, user_id, event_type, event_payload_json, created_at FROM communication_call_events WHERE call_id=? ORDER BY id ASC LIMIT 200",
+            (int(call["id"]),),
+        )
+        events = []
+        for row in cur.fetchall():
+            item = dict(row)
+            item["event_payload"] = json.loads(item.pop("event_payload_json") or "{}")
+            events.append(item)
+        return _ok({"call": _serialize_call(cur, call, int(user_id)), "events": events})
+    finally:
+        conn.close()
+
+
+def conversation_calls(user_id: int, conversation_ref: str | int, limit: int = 40) -> dict[str, Any]:
+    conn, cur = _open_db()
+    try:
+        conversation, access = comm_service._conversation_access(cur, int(user_id), conversation_ref)
+        if access != "ok":
+            return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403, access)
+        conversation_id = int(conversation["id"])
+        cur.execute(
+            """
+            SELECT * FROM communication_calls
+            WHERE conversation_id=?
+            ORDER BY id DESC LIMIT ?
+            """,
+            (conversation_id, max(1, min(int(limit or 40), 100))),
+        )
+        return _ok({"conversation_id": conversation_id, "calls": [_serialize_call(cur, dict(row), int(user_id)) for row in cur.fetchall()]})
+    finally:
+        conn.close()
+
+
+def update_participant_control(user_id: int, call_ref: str | int, action: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    action = str(action or "").strip().lower()
+    control_map = {
+        "mute-audio": ("muted_audio", 1, "muted_audio"),
+        "unmute-audio": ("muted_audio", 0, "unmuted_audio"),
+        "enable-video": ("muted_video", 0, "video_enabled"),
+        "disable-video": ("muted_video", 1, "video_disabled"),
+        "screen-share-start": ("screen_sharing", 1, "screen_share_started"),
+        "screen-share-stop": ("screen_sharing", 0, "screen_share_stopped"),
+    }
+    if action not in control_map:
+        return _err("Unsupported call control.", 400, "unsupported_control")
+    conn, cur = _open_db()
+    try:
+        call, participant, denied = _require_call_access(cur, int(user_id), call_ref)
+        if denied:
+            return denied
+        if str(call.get("status") or "") in FINAL_STATUSES:
+            return _err("This call has ended.", 409, "call_final")
+        column, value, event_type = control_map[action]
+        now = _now()
+        cur.execute(
+            f"UPDATE communication_call_participants SET {column}=?, last_seen_at=?, updated_at=? WHERE call_id=? AND user_id=?",
+            (int(value), now, now, int(call["id"]), int(user_id)),
+        )
+        _event(cur, int(call["id"]), int(user_id), event_type, payload or {})
+        conn.commit()
+        return _ok({"call": _serialize_call(cur, _get_call(cur, call_ref), int(user_id)), "control": action})
     except Exception:
         conn.rollback()
         raise
@@ -764,24 +925,7 @@ def test_config() -> dict[str, Any]:
 def mark_missed_stale_calls(timeout_seconds: int = 45) -> dict[str, Any]:
     conn, cur = _open_db()
     try:
-        threshold = time.time() - max(5, int(timeout_seconds or 45))
-        cur.execute("SELECT * FROM communication_calls WHERE status='ringing' ORDER BY id ASC")
-        updated = 0
-        for row in cur.fetchall():
-            call = dict(row)
-            try:
-                created_ts = datetime.fromisoformat(str(call.get("created_at") or "").replace("Z", "+00:00")).timestamp()
-            except Exception:
-                continue
-            if created_ts > threshold:
-                continue
-            cur.execute("SELECT user_id FROM communication_call_participants WHERE call_id=? AND role='callee' AND status='ringing'", (int(call["id"]),))
-            recipients = [int(item["user_id"]) for item in cur.fetchall()]
-            _transition(cur, call, "missed", int(call.get("created_by_user_id") or 0), "ring_timeout")
-            caller_name = comm_service._user_summary(cur, int(call.get("created_by_user_id") or 0)).get("display_name") or "Someone"
-            for recipient_id in recipients:
-                _notify_missed_call(cur, call, int(call.get("created_by_user_id") or 0), recipient_id, caller_name)
-            updated += 1
+        updated = _mark_missed_stale_calls_cur(cur, timeout_seconds)
         conn.commit()
         return _ok({"missed_calls": updated})
     except Exception:

@@ -3568,10 +3568,11 @@ select:focus-visible {
 
 .pulsesoc-call-shell {
   position: fixed;
-  right: max(18px, env(safe-area-inset-right));
-  bottom: calc(88px + env(safe-area-inset-bottom));
+  inset: 0;
   z-index: 1800;
-  max-width: min(420px, calc(100vw - 28px));
+  display: grid;
+  place-items: center;
+  padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) calc(96px + env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
   color: #ecfffd;
   pointer-events: none;
 }
@@ -3580,40 +3581,84 @@ select:focus-visible {
   display: none;
 }
 
-.pulsesoc-call-card {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-  padding: 14px;
-  border: 1px solid rgba(54, 235, 213, .32);
-  border-radius: 22px;
+.pulsesoc-call-backdrop {
+  position: absolute;
+  inset: 0;
   background:
-    radial-gradient(circle at top left, rgba(55, 255, 203, .2), transparent 38%),
-    linear-gradient(145deg, rgba(7, 20, 34, .94), rgba(10, 14, 31, .92));
-  box-shadow: 0 22px 60px rgba(0, 0, 0, .44), 0 0 32px rgba(42, 236, 210, .14);
-  backdrop-filter: blur(18px);
+    radial-gradient(circle at 20% 12%, rgba(46, 240, 209, .16), transparent 34%),
+    radial-gradient(circle at 84% 18%, rgba(136, 83, 255, .2), transparent 36%),
+    rgba(0, 5, 13, .64);
+  backdrop-filter: blur(14px);
   pointer-events: auto;
 }
 
+.pulsesoc-call-card {
+  position: relative;
+  width: min(540px, calc(100vw - 28px));
+  max-height: min(82vh, 720px);
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(54, 235, 213, .34);
+  border-radius: 28px;
+  background:
+    linear-gradient(145deg, rgba(7, 20, 34, .94), rgba(10, 14, 31, .94)),
+    radial-gradient(circle at top left, rgba(55, 255, 203, .2), transparent 38%);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, .54), 0 0 46px rgba(42, 236, 210, .16);
+  backdrop-filter: blur(20px);
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+.pulsesoc-call-card::before {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  background:
+    radial-gradient(circle, rgba(255,255,255,.16) 0 1px, transparent 1.8px),
+    radial-gradient(circle, rgba(43,238,210,.18) 0 1px, transparent 2px);
+  background-size: 86px 86px, 132px 132px;
+  opacity: .2;
+  pointer-events: none;
+}
+
+.pulsesoc-call-head,
+.pulsesoc-call-stage,
+.pulsesoc-call-actions,
+.pulsesoc-call-controls {
+  position: relative;
+  z-index: 1;
+}
+
+.pulsesoc-call-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
 .pulsesoc-call-shell[data-mode="success"] .pulsesoc-call-card {
-  border-color: rgba(49, 244, 169, .5);
+  border-color: rgba(49, 244, 169, .54);
 }
 
 .pulsesoc-call-shell[data-mode="warn"] .pulsesoc-call-card {
-  border-color: rgba(255, 202, 92, .56);
+  border-color: rgba(255, 202, 92, .6);
 }
 
 .pulsesoc-call-shell[data-mode="error"] .pulsesoc-call-card {
-  border-color: rgba(255, 95, 142, .58);
+  border-color: rgba(255, 95, 142, .64);
 }
 
 .pulsesoc-call-orb {
-  width: 44px;
-  height: 44px;
-  border-radius: 16px;
+  width: 54px;
+  height: 54px;
+  border-radius: 19px;
   background: radial-gradient(circle at 35% 30%, #b9fff6, #29ebc6 42%, #584fff 100%);
-  box-shadow: 0 0 24px rgba(41, 235, 198, .35);
+  box-shadow: 0 0 34px rgba(41, 235, 198, .42);
+}
+
+.pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-orb {
+  animation: pulseCallRing 1.2s ease-in-out infinite;
 }
 
 .pulsesoc-call-copy {
@@ -3628,46 +3673,140 @@ select:focus-visible {
   white-space: nowrap;
 }
 
+.pulsesoc-call-copy strong {
+  font-size: 18px;
+}
+
 .pulsesoc-call-copy span {
   margin-top: 3px;
   color: rgba(210, 228, 236, .78);
   font-size: 13px;
 }
 
-.pulsesoc-call-controls {
-  grid-column: 1 / -1;
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.pulsesoc-call-controls button,
-.pulsesoc-call-pill {
-  min-height: 38px;
-  border: 1px solid rgba(133, 222, 255, .2);
-  border-radius: 14px;
-  color: #ecfffd;
-  background: rgba(255, 255, 255, .06);
+.pulsesoc-call-quality {
+  min-height: 34px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(85, 239, 218, .28);
+  background: rgba(42, 236, 210, .08);
+  color: #9ffcf0;
+  font-size: 12px;
   font-weight: 900;
 }
 
-.pulsesoc-call-controls button {
-  flex: 1 1 auto;
-  padding: 0 12px;
+.pulsesoc-call-stage {
+  position: relative;
+  min-height: 240px;
+  border-radius: 24px;
+  border: 1px solid rgba(133, 222, 255, .18);
+  background:
+    radial-gradient(circle at center, rgba(47, 244, 194, .14), transparent 34%),
+    linear-gradient(180deg, rgba(0, 7, 17, .5), rgba(0, 0, 0, .24));
+  overflow: hidden;
 }
 
+.pulsesoc-call-remote {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(217, 241, 247, .74);
+  font-weight: 800;
+}
+
+.pulsesoc-call-remote-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #020811;
+}
+
+.pulsesoc-call-local {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: min(32%, 150px);
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .42);
+  transform: scaleX(-1);
+}
+
+.pulsesoc-call-actions,
+.pulsesoc-call-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pulsesoc-call-controls {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.pulsesoc-call-actions[hidden],
+.pulsesoc-call-controls[hidden],
+.pulsesoc-call-controls button[hidden] {
+  display: none;
+}
+
+.pulsesoc-call-controls button,
+.pulsesoc-call-actions button,
+.pulsesoc-call-pill {
+  min-height: 46px;
+  border: 1px solid rgba(133, 222, 255, .22);
+  border-radius: 16px;
+  color: #ecfffd;
+  background: rgba(255, 255, 255, .07);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.pulsesoc-call-controls button:hover,
+.pulsesoc-call-actions button:hover,
+.pulsesoc-call-controls button:focus-visible,
+.pulsesoc-call-actions button:focus-visible,
+.pulsesoc-call-pill:focus-visible {
+  outline: 2px solid rgba(43, 236, 211, .55);
+  outline-offset: 2px;
+  transform: translateY(-1px);
+}
+
+.pulsesoc-call-actions .is-accept {
+  border-color: rgba(49, 244, 169, .5);
+  color: #042017;
+  background: linear-gradient(135deg, #33efa9, #62e8ff);
+  box-shadow: 0 0 26px rgba(49, 244, 169, .24);
+}
+
+.pulsesoc-call-actions .is-decline,
 .pulsesoc-call-controls [data-call-end] {
-  border-color: rgba(255, 95, 142, .38);
+  border-color: rgba(255, 95, 142, .44);
   color: #ffd7e2;
-  background: rgba(255, 77, 128, .14);
+  background: rgba(255, 77, 128, .16);
+}
+
+.pulsesoc-call-controls .is-muted {
+  border-color: rgba(255, 202, 92, .42);
+  color: #ffe8a8;
+  background: rgba(255, 202, 92, .12);
 }
 
 .pulsesoc-call-pill {
+  position: fixed;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: calc(88px + env(safe-area-inset-bottom));
+  z-index: 1801;
   display: none;
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
   pointer-events: auto;
+  background: rgba(5, 18, 30, .92);
+  backdrop-filter: blur(16px);
 }
 
 .pulsesoc-call-pill span {
@@ -3678,10 +3817,47 @@ select:focus-visible {
   box-shadow: 0 0 16px rgba(49, 244, 169, .5);
 }
 
+.pulsesoc-call-shell.is-minimized {
+  inset: auto;
+  display: block;
+  padding: 0;
+}
+
+.pulsesoc-call-shell.is-minimized .pulsesoc-call-backdrop,
 .pulsesoc-call-shell.is-minimized .pulsesoc-call-card {
   display: none;
 }
 
 .pulsesoc-call-shell.is-minimized .pulsesoc-call-pill {
   display: inline-flex;
+}
+
+@keyframes pulseCallRing {
+  0%, 100% { box-shadow: 0 0 28px rgba(41, 235, 198, .38), 0 0 0 0 rgba(49, 244, 169, .2); }
+  50% { box-shadow: 0 0 44px rgba(41, 235, 198, .55), 0 0 0 14px rgba(49, 244, 169, 0); }
+}
+
+@media (max-width: 720px) {
+  .pulsesoc-call-shell {
+    align-items: end;
+    padding: max(14px, env(safe-area-inset-top)) 12px calc(104px + env(safe-area-inset-bottom));
+  }
+
+  .pulsesoc-call-card {
+    width: 100%;
+    max-height: 84vh;
+    border-radius: 24px;
+  }
+
+  .pulsesoc-call-stage {
+    min-height: min(48vh, 420px);
+  }
+
+  .pulsesoc-call-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pulsesoc-call-copy strong {
+    font-size: 16px;
+  }
 }

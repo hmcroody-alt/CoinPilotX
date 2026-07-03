@@ -17,6 +17,7 @@ MESSENGER_JS = ROOT / "static" / "js" / "pulse_messages_v2.js"
 CSS = ROOT / "static" / "css" / "pulse_messages_v2.css"
 MIGRATION = ROOT / "migrations" / "pulsesoc_communications_engine.sql"
 REPORT = ROOT / "reports" / "pulsesoc_communications_engine_foundation.md"
+PHASE2_REPORT = ROOT / "reports" / "pulsesoc_real_call_experience_phase2.md"
 
 
 def read(path: Path) -> str:
@@ -37,6 +38,7 @@ def main() -> int:
     css = read(CSS)
     migration = read(MIGRATION)
     report = read(REPORT) if REPORT.exists() else ""
+    phase2_report = read(PHASE2_REPORT) if PHASE2_REPORT.exists() else ""
 
     for table in [
         "communication_calls",
@@ -83,21 +85,27 @@ def main() -> int:
     require(checks, "call state transitions exist", "ALLOWED_TRANSITIONS" in service and "ACTIVE_STATUSES" in service and "FINAL_STATUSES" in service)
     require(checks, "participant validation exists", "_conversation_access" in service and "_participant_allowed" in service and "Every recipient must be a conversation participant" in service)
     require(checks, "self-call blocked", "You cannot call yourself" in service)
-    require(checks, "join token validates participant", "Only call participants can join this call" in service and "_generate_livekit_token" in service)
-    require(checks, "config missing is explicit", "config_missing" in service and "LiveKit is not configured yet" in service)
+    require(checks, "join token validates participant", "Only call participants can access this call" in service and "_generate_livekit_token" in service)
+    require(checks, "config missing is explicit", "config_missing" in service and "Calling is temporarily unavailable" in service)
     require(checks, "incoming call notification hook exists", "incoming_call" in service and "pulsesoc_notification_system.intake_event" in service)
     require(checks, "missed call notification hook exists", "notify_missed_call" in service and "missed_call" in service)
     require(checks, "webhook verification exists", "LIVEKIT_WEBHOOK_SECRET" in service and "hmac.new" in service)
     require(checks, "quality telemetry endpoint saves metrics", "communication_call_quality_reports" in service and "quality_score" in service)
+    require(checks, "phase 2 connected route exists", '"/api/calls/<path:call_id>/connected"' in routes and "mark_connected" in service)
+    require(checks, "phase 2 call events route exists", '"/api/calls/<path:call_id>/events"' in routes and "call_events" in service)
+    require(checks, "phase 2 call history route exists", '"/api/conversations/<path:conversation_ref>/calls"' in routes and "conversation_calls" in service)
+    require(checks, "phase 2 participant controls exist", "mute-audio" in routes and "screen-share/start" in routes and "update_participant_control" in service)
     require(checks, "frontend call service exists", "window.PulseSocCalls" in js and "startAudioCall" in js and "startVideoCall" in js)
-    require(checks, "permission readiness checks exist", "getUserMedia" in js and "permission_denied" in js)
-    require(checks, "messenger loads call service", "pulsesoc_calls.js" in template)
+    require(checks, "frontend LiveKit join flow exists", "new LK.Room" in js and "publishLocalTracks" in js and "TrackSubscribed" in js)
+    require(checks, "permission readiness checks exist", "getUserMedia" in js and "NotAllowedError" in js)
+    require(checks, "messenger loads call service and LiveKit bundle", "pulsesoc_calls.js" in template and "livekit-client.umd.js" in template)
     require(checks, "messenger header call buttons exist", "data-thread-call-audio" in template and "data-thread-call-video" in template)
     require(checks, "messenger buttons use central call service", "PulseSocCalls.startAudioCall" in messenger_js and "PulseSocCalls.startVideoCall" in messenger_js)
     require(checks, "control center call quick actions wired", "start-audio-call" in messenger_js and "start-video-call" in messenger_js)
     require(checks, "call overlay styles exist", ".pulsesoc-call-shell" in css and ".pulsesoc-call-card" in css)
     require(checks, "secrets not exposed to frontend", "LIVEKIT_API_SECRET" not in js and "LIVEKIT_API_SECRET" not in messenger_js)
     require(checks, "completion report exists", "PulseSoc Communications Engine" in report and "Phase 2" in report)
+    require(checks, "phase 2 report exists", "PulseSoc Real Call Experience" in phase2_report and "Phase 2" in phase2_report)
 
     passed = sum(1 for check in checks if check["passed"])
     failed = [check for check in checks if not check["passed"]]
