@@ -101,13 +101,23 @@
   },
   {
     "feature": "Market alerts",
-    "summary": "Market alerts and Market Pulse surface macro, stock, ETF, and economic signals when configured and supported.",
+    "summary": "Market alerts and Market Pulse surface major index, macro, ETF, volatility, Treasury, dollar, commodity, Fed, CPI, jobs, and earnings signals when configured and supported.",
     "where_to_find_it": "Open Market Signals, then use Signal Preferences to manage delivery.",
-    "how_to_use_it": "Use Market Pulse for major market signals and confidence-labeled forecasts; manage delivery frequency and thresholds.",
-    "common_questions": ["What is Market Pulse?", "Can I get stock market news?"],
-    "troubleshooting": ["If live market sources are unavailable, Pulse AI can still explain general market concepts."],
+    "how_to_use_it": "Use Market Pulse for major market signals and confidence-labeled forecasts; manage delivery frequency, thresholds, followed assets, and urgent-only preferences.",
+    "common_questions": ["What is Market Pulse?", "Can I get stock market news?", "What is the S&P 500 doing today?", "Is the market risky right now?", "What does VIX mean?"],
+    "troubleshooting": ["If live market sources are unavailable, Pulse AI can still explain general market concepts.", "If signals feel noisy, use urgent-only alerts or raise your confidence threshold."],
     "related_features": ["Market Signals", "Pulse Forecasts", "Notifications", "Pulse AI chat"],
-    "safety_notes": ["Market content is informational and not financial advice."]
+    "safety_notes": ["Market content is educational and not financial advice.", "Pulse AI must not tell users to buy now, sell now, or promise profit."]
+  },
+  {
+    "feature": "S&P 500 and Major Market Intelligence",
+    "summary": "Pulse AI can explain broad market conditions for S&P 500, NASDAQ, Dow Jones, Russell 2000, VIX, Treasury yields, USD index, gold, oil, sector ETFs, Fed/CPI/jobs reports, and major earnings events.",
+    "where_to_find_it": "Open Market Signals, Pulse Alerts, Pulse Forecasts, or ask Pulse AI in Messenger.",
+    "how_to_use_it": "Ask questions like 'What is the S&P 500 doing today?', 'Is the market risky right now?', 'Explain today's market signal', or 'What does VIX mean?'. Pulse AI should use safe terms like breakout watch, support test, momentum improving, risk elevated, pullback risk rising, and confirmation needed.",
+    "common_questions": ["What is the S&P 500 doing today?", "Is the market risky right now?", "Why did I get this S&P 500 alert?", "What should beginners watch in the market?", "What does VIX mean?"],
+    "troubleshooting": ["If live market data is unavailable, Pulse AI should say live sources are unavailable and explain general concepts.", "If a user asks for buy/sell advice, Pulse AI should redirect to educational market intelligence."],
+    "related_features": ["Market Signals", "Pulse Forecasts", "Pulse Alerts", "Pulse AI chat", "Signal Preferences"],
+    "safety_notes": ["Use 'market intelligence' language, not trading commands.", "Do not promise profit or personalized investment outcomes.", "Say: Pulse AI provides educational market intelligence only. This is not financial advice."]
   },
   {
     "feature": "Pulse Signals",

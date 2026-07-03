@@ -108,6 +108,15 @@
     "related": ["pulse_ai.chat", "notifications.center", "crypto.alerts.manage"]
   },
   {
+    "id": "intelligence.market_signals",
+    "name": "Market Signals",
+    "status": "active",
+    "entry_points": ["/pulse/intelligence?surface=market", "/pulse/alerts", "/pulse/forecasts", "Pulse AI chat"],
+    "description": "Major market intelligence for S&P 500, NASDAQ, Dow Jones, Russell 2000, VIX, Treasury yields, USD index, gold, oil, sector ETFs, Fed/CPI/jobs reports, and earnings events.",
+    "user_help": "Open Market Signals or ask Pulse AI questions like 'What is the S&P 500 doing today?' Pulse AI should explain conditions as educational market intelligence and avoid buy/sell commands.",
+    "related": ["intelligence.pulse_signals", "notifications.push", "pulse_ai.chat"]
+  },
+  {
     "id": "conversation.control_center",
     "name": "Conversation Control Center",
     "status": "active",

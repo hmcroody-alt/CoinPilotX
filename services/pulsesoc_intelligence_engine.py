@@ -59,6 +59,42 @@ ALERT_CADENCE_PRIORITY_STREAMS = [
     "pulsesoc_discoveries",
     "pulsesoc_pulse",
 ]
+MARKET_INTELLIGENCE_DISCLAIMER = "Pulse AI provides educational market intelligence only. This is not financial advice."
+MARKET_INTELLIGENCE_ALERT_SCHEDULE = {
+    "normal_users": [
+        {"name": "Pre-Market Brief", "time_et": "08:30", "max_per_day": 1},
+        {"name": "Market Close Recap", "time_et": "16:15", "max_per_day": 1},
+    ],
+    "active_market_users": [
+        {"name": "Pre-Market Brief", "time_et": "08:30"},
+        {"name": "Market Open Pulse", "time_et": "09:35", "condition": "sharp S&P 500, NASDAQ, or VIX move only"},
+        {"name": "Power Hour Alert", "time_et": "15:15", "condition": "volatility, breakout, selloff, reversal, or unusual volume"},
+        {"name": "Market Close Recap", "time_et": "16:15"},
+    ],
+    "urgent_only": "Fed, CPI, jobs report, emergency market move, VIX spike, crash risk, or major geopolitical event.",
+    "global_three_hour_rotation": "Market Pulse participates only when the signal is a major market event or high-priority accepted event.",
+}
+MARKET_INTELLIGENCE_TRACKED_ASSETS = [
+    "S&P 500",
+    "NASDAQ",
+    "Dow Jones",
+    "Russell 2000",
+    "VIX",
+    "10Y Treasury Yield",
+    "USD Index",
+    "Gold",
+    "Oil",
+    "Major sector ETFs",
+]
+MARKET_INTELLIGENCE_SIGNAL_RULES = [
+    "S&P 500 moves 1%+ intraday",
+    "NASDAQ moves 1.5%+ intraday",
+    "VIX jumps 8%+",
+    "Fed, CPI, PPI, or jobs report occurs",
+    "Major support/resistance break is confirmed",
+    "Unusual volume confirms a move",
+    "Market close recap is due",
+]
 
 USER_SURFACES: dict[str, dict[str, Any]] = {
     "alerts": {
@@ -409,14 +445,40 @@ DEFAULT_STREAMS: list[dict[str, Any]] = [
     {
         "stream_key": "market_pulse",
         "display_name": "Market Pulse",
-        "purpose": "Watch major market events and macroeconomic signals.",
+        "purpose": "Watch major index, volatility, Treasury, dollar, commodity, sector, Fed, CPI, jobs, and earnings signals without financial advice.",
         "category": "markets",
         "default_frequency": "digest",
-        "default_priority": "normal",
+        "default_priority": "high",
         "default_enabled": True,
         "default_push": True,
-        "threshold": 72,
-        "examples": ["Federal Reserve announcement.", "Inflation report released.", "NASDAQ opens higher."],
+        "threshold": 76,
+        "examples": [
+            "S&P 500 breakout watch.",
+            "VIX volatility spike.",
+            "Market pullback risk increasing.",
+            "Federal Reserve announcement.",
+            "Inflation report released.",
+        ],
+        "config": {
+            "tracked_assets": MARKET_INTELLIGENCE_TRACKED_ASSETS,
+            "alert_schedule": MARKET_INTELLIGENCE_ALERT_SCHEDULE,
+            "signal_rules": MARKET_INTELLIGENCE_SIGNAL_RULES,
+            "safe_language": [
+                "Market strength increasing",
+                "Risk elevated",
+                "Pullback risk rising",
+                "Momentum improving",
+                "Volatility expanding",
+                "Defensive conditions",
+                "Watch zone",
+                "Research zone",
+                "Confirmation needed",
+                "Overextended market",
+                "Support test",
+                "Breakout watch",
+            ],
+            "disclaimer": MARKET_INTELLIGENCE_DISCLAIMER,
+        },
     },
     {
         "stream_key": "world_pulse",
@@ -514,6 +576,7 @@ SOURCE_CATALOG: list[dict[str, Any]] = [
     {"source_key": "coinmarketcap", "display_name": "CoinMarketCap", "stream_key": "crypto_pulse", "provider_type": "market_api", "trust_score": 78, "cache_seconds": 60, "required_env": ["COINMARKETCAP_API_KEY"]},
     {"source_key": "yahoo_finance", "display_name": "Yahoo Finance Public Market Data", "stream_key": "market_pulse", "provider_type": "market_api", "trust_score": 70, "cache_seconds": 90, "required_env": []},
     {"source_key": "polygon", "display_name": "Polygon", "stream_key": "market_pulse", "provider_type": "market_api", "trust_score": 78, "cache_seconds": 60, "required_env": ["POLYGON_API_KEY"]},
+    {"source_key": "finnhub", "display_name": "Finnhub", "stream_key": "market_pulse", "provider_type": "market_api", "trust_score": 76, "cache_seconds": 60, "required_env": ["FINNHUB_API_KEY"]},
     {"source_key": "alpha_vantage", "display_name": "Alpha Vantage", "stream_key": "market_pulse", "provider_type": "market_api", "trust_score": 74, "cache_seconds": 60, "required_env": ["ALPHA_VANTAGE_API_KEY"]},
     {"source_key": "reuters", "display_name": "Reuters", "stream_key": "world_pulse", "provider_type": "news", "trust_score": 86, "cache_seconds": 300, "required_env": ["REUTERS_API_KEY"]},
     {"source_key": "ap_news", "display_name": "Associated Press", "stream_key": "world_pulse", "provider_type": "news", "trust_score": 86, "cache_seconds": 300, "required_env": ["AP_NEWS_API_KEY"]},
@@ -795,6 +858,7 @@ def seed_defaults(conn: Any | None = None) -> None:
     cur = conn.cursor()
     now = now_iso()
     for stream in DEFAULT_STREAMS:
+        stream_config = {"examples": stream.get("examples") or [], **(stream.get("config") or {})}
         cur.execute(
             """
             INSERT OR IGNORE INTO intelligence_streams
@@ -812,7 +876,7 @@ def seed_defaults(conn: Any | None = None) -> None:
                 1 if stream.get("default_enabled") else 0,
                 1 if stream.get("default_push") else 0,
                 int(stream.get("threshold") or 70),
-                _json_dumps({"examples": stream.get("examples") or []}),
+                _json_dumps(stream_config),
                 now,
                 now,
             ),
@@ -833,7 +897,7 @@ def seed_defaults(conn: Any | None = None) -> None:
                 1 if stream.get("default_enabled") else 0,
                 1 if stream.get("default_push") else 0,
                 int(stream.get("threshold") or 70),
-                _json_dumps({"examples": stream.get("examples") or []}),
+                _json_dumps(stream_config),
                 now,
                 stream["stream_key"],
             ),
@@ -1167,7 +1231,9 @@ def ingest_signal(payload: dict[str, Any], *, deliver: bool = False, target_user
         metadata = {
             **payload_metadata,
             "collector": payload.get("collector") or "",
-            "no_investment_advice": stream_key == "crypto_pulse",
+            "no_investment_advice": stream_key in {"crypto_pulse", "market_pulse"},
+            "financial_advice": False if stream_key in {"crypto_pulse", "market_pulse"} else payload_metadata.get("financial_advice"),
+            "financial_disclaimer": MARKET_INTELLIGENCE_DISCLAIMER if stream_key == "market_pulse" else payload_metadata.get("financial_disclaimer"),
             "ai_summary_status": "queued" if payload.get("ai_summary_requested") else "not_required",
             "source_payload_hash": hashlib.sha256(_json_dumps(payload).encode("utf-8")).hexdigest()[:24],
             "actions": actions,
@@ -1464,6 +1530,29 @@ def _cadence_fallback_signal(bucket: int | None = None) -> dict[str, Any]:
     }
 
 
+def _cadence_event_allowed(event: dict[str, Any]) -> bool:
+    stream_key = event.get("stream_key") or ""
+    if stream_key != "market_pulse":
+        return True
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    event_type = _slug(event.get("event_type") or "", 80)
+    if metadata.get("major_market_event") or metadata.get("cadence_eligible"):
+        return True
+    if event_type in {
+        "major_market_event",
+        "fed_event",
+        "cpi_report",
+        "ppi_report",
+        "jobs_report",
+        "market_close_recap",
+        "market_open_pulse",
+        "power_hour_alert",
+        "vix_volatility_spike",
+    } and _int(event.get("confidence_score")) >= 76:
+        return True
+    return (event.get("priority") in {"breaking", "urgent", "high"}) and _int(event.get("confidence_score")) >= 80
+
+
 def _select_cadence_event(cur: Any) -> dict[str, Any] | None:
     now = now_iso()
     for index, stream_key in enumerate(ALERT_CADENCE_PRIORITY_STREAMS):
@@ -1488,13 +1577,14 @@ def _select_cadence_event(cur: Any) -> dict[str, Any] | None:
               END DESC,
               e.confidence_score DESC,
               e.created_at DESC
-            LIMIT 1
+            LIMIT 8
             """,
             (stream_key, now),
         )
-        row = cur.fetchone()
-        if row:
+        for row in cur.fetchall():
             event = format_event(row)
+            if not _cadence_event_allowed(event):
+                continue
             event["cadence_rank"] = index + 1
             return event
     return None
@@ -2658,6 +2748,7 @@ def admin_dashboard(stream_key: str = "") -> dict[str, Any]:
         ]
         sources = source_health()
         cadence = cadence_status(conn)
+        market_events = [event for event in events if event.get("stream_key") == "market_pulse"]
         return {
             "ok": True,
             "center_name": ADMIN_CENTER_NAME,
@@ -2671,6 +2762,15 @@ def admin_dashboard(stream_key: str = "") -> dict[str, Any]:
             "collector_runs": runs,
             "delivery_jobs": delivery_jobs,
             "delivery_logs": delivery_logs,
+            "market_intelligence": {
+                "tracked_assets": MARKET_INTELLIGENCE_TRACKED_ASSETS,
+                "alert_schedule": MARKET_INTELLIGENCE_ALERT_SCHEDULE,
+                "signal_rules": MARKET_INTELLIGENCE_SIGNAL_RULES,
+                "disclaimer": MARKET_INTELLIGENCE_DISCLAIMER,
+                "source_health": [source for source in sources if source.get("stream_key") == "market_pulse"],
+                "latest_signals": market_events[:8],
+                "threshold_note": "S&P 500 1%+, NASDAQ 1.5%+, VIX 8%+, Fed/CPI/jobs events, confirmed support/resistance, unusual volume, or close recap.",
+            },
             "queue": {
                 "digest_jobs_pending": counts.get("digest_jobs_pending", 0),
                 "delivery_log_entries": counts.get("deliveries", 0),

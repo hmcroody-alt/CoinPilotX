@@ -172,6 +172,44 @@
       <pre data-admin-intel-delivery-result>{}</pre>
     </section>
 
+    <section class="intelligence-section" id="market-intelligence">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Market Intelligence</p>
+          <h2>S&amp;P 500 + Major Markets</h2>
+        </div>
+        <span class="signal-pill">Educational only</span>
+      </div>
+      <div class="hero-stats">
+        <article><strong>{{ dashboard.market_intelligence.tracked_assets|length }}</strong><span>Tracked assets</span></article>
+        <article><strong>2/day</strong><span>Normal user max</span></article>
+        <article><strong>4/day</strong><span>Active user max</span></article>
+        <article><strong>High only</strong><span>3h rotation</span></article>
+      </div>
+      <p class="empty">{{ dashboard.market_intelligence.disclaimer }}</p>
+      <div class="admin-command-grid" aria-label="Tracked market assets">
+        {% for asset in dashboard.market_intelligence.tracked_assets %}
+          <span>{{ asset }}</span>
+        {% endfor %}
+      </div>
+      <div class="run-table">
+        {% for rule in dashboard.market_intelligence.signal_rules %}
+          <article><strong>{{ rule }}</strong><span>Alert rule</span></article>
+        {% endfor %}
+      </div>
+      <div class="source-list">
+        {% for source in dashboard.market_intelligence.source_health %}
+        <article>
+          <strong>{{ source.display_name }}</strong>
+          <span>{{ source.provider_type }}</span>
+          <b class="{{ 'ready' if source.configured else 'missing' }}">{{ 'ready' if source.configured else 'config missing' }}</b>
+        </article>
+        {% else %}
+        <p class="empty">No market source rows available.</p>
+        {% endfor %}
+      </div>
+    </section>
+
     <section class="intelligence-layout">
       <div class="intelligence-section" id="signal-queue">
         <div class="section-heading">
