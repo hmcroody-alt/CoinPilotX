@@ -836,6 +836,46 @@ def api_call_disable_video(call_id):
     return _timed_json("api_call_disable_video", lambda: call_engine.update_participant_control(user["user_id"], call_id, "disable-video", request.get_json(silent=True) or {}))
 
 
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/switch-camera")
+def api_call_switch_camera(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_switch_camera", lambda: call_engine.update_participant_control(user["user_id"], call_id, "switch-camera", request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/speaker")
+def api_call_speaker(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_speaker", lambda: call_engine.update_participant_control(user["user_id"], call_id, "speaker", request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/minimize")
+def api_call_minimize(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_minimize", lambda: call_engine.update_participant_control(user["user_id"], call_id, "minimize", request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/restore")
+def api_call_restore(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_restore", lambda: call_engine.update_participant_control(user["user_id"], call_id, "restore", request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/visibility")
+def api_call_visibility(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_visibility", lambda: call_engine.update_participant_control(user["user_id"], call_id, "visibility", request.get_json(silent=True) or {}))
+
+
 @comm_v2_blueprint.post("/api/calls/<path:call_id>/screen-share/start")
 def api_call_screen_share_start(call_id):
     user, denied = _require_user()

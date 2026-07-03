@@ -17,8 +17,15 @@
     realtimeBindTimer: null,
     statusTimer: null,
     qualityTimer: null,
+    statusSequenceTimers: [],
     seenIncomingCalls: new Set(),
     facingMode: "user",
+    speakerMode: "device",
+    audioOutputDeviceId: "",
+    reconnectCount: 0,
+    visibilityWasHidden: false,
+    toneTimer: null,
+    toneContext: null,
     lastQualityAt: 0,
     lastFailure: null,
     controlsVisible: false,
@@ -30,6 +37,11 @@
 
   const qs = (sel, root = document) => root.querySelector(sel);
   const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+  function t(key, fallback = "", vars = {}) {
+    const value = window.PulseI18n?.t ? window.PulseI18n.t(key, fallback || key) : (fallback || key);
+    return String(value || fallback || key).replace(/\{([a-z0-9_]+)\}/gi, (_, name) => vars[name] ?? "");
+  }
 
   function livekitClient() {
     return window.LivekitClient || window.LiveKitClient || window.livekitClient || null;
@@ -72,17 +84,17 @@
 
   function outgoingDeliveryMessage(data = {}) {
     const notifications = Array.isArray(data.notifications) ? data.notifications : Array.isArray(data.call?.notifications) ? data.call.notifications : [];
-    if (!notifications.length) return "Call started, but recipient could not be notified.";
+    if (!notifications.length) return t("pulse.call.notification_failed", "Pulse started, but recipient could not be notified.");
     const created = notifications.some((item) => item?.notification_id || item?.deduped);
     const suppressed = notifications.every((item) => item?.suppressed || item?.reason || item?.status === "suppressed");
-    if (!created || suppressed) return "Call started, but recipient could not be notified.";
+    if (!created || suppressed) return t("pulse.call.notification_failed", "Pulse started, but recipient could not be notified.");
     const jobs = notifications.flatMap((item) => Array.isArray(item?.delivery_jobs) ? item.delivery_jobs : []);
     const pushJob = jobs.find((job) => job?.channel === "push");
-    if (!pushJob) return "Waiting for recipient. Push delivery unavailable.";
+    if (!pushJob) return t("pulse.call.push_unavailable", "Waiting for recipient. Push delivery unavailable.");
     if (["skipped_no_device", "skipped_by_preference", "config_missing"].includes(String(pushJob.status || ""))) {
-      return "Waiting for recipient. Push delivery unavailable.";
+      return t("pulse.call.push_unavailable", "Waiting for recipient. Push delivery unavailable.");
     }
-    return "Ringing...";
+    return t("pulse.call.recipient_notified", "Recipient notified.");
   }
 
   function diagnosticsAllowed() {
@@ -160,9 +172,9 @@
         <header class="pulsesoc-call-head" aria-live="polite">
           <span class="pulsesoc-call-orb" aria-hidden="true"></span>
           <div class="pulsesoc-call-copy">
-            <strong data-call-title>PulseSoc Call</strong>
-            <span data-call-meta>Audio Call · 00:00</span>
-            <small data-call-status>Preparing secure room...</small>
+            <strong data-call-title>${t("pulse.call.default_title", "PulseSoc")}</strong>
+            <span data-call-meta>${t("pulse.call.audio_meta", "Voice Connection")} · 00:00</span>
+            <small data-call-status>${t("pulse.call.preparing_voice", "Preparing communication channel...")}</small>
           </div>
           <span class="pulsesoc-call-quality" data-call-quality>Standby</span>
         </header>
@@ -171,12 +183,12 @@
             <div class="pulsesoc-call-audio-visual" data-call-audio-visual aria-hidden="true">
               <span></span><span></span><span></span>
             </div>
-            <span data-call-remote-fallback>Waiting for the other person...</span>
+            <span data-call-remote-fallback>${t("pulse.call.waiting", "Waiting for response...")}</span>
           </div>
           <div class="pulsesoc-call-audio" data-call-audio></div>
           <div class="pulsesoc-call-local-wrap" data-call-local-wrap hidden>
             <video class="pulsesoc-call-local" data-call-local muted playsinline autoplay></video>
-            <span data-call-local-fallback hidden>Camera off</span>
+            <span data-call-local-fallback hidden>${t("pulse.call.local_camera_off", "Camera off")}</span>
           </div>
         </div>
         <div class="pulsesoc-call-actions" data-call-incoming-actions hidden>
@@ -218,7 +230,17 @@
     });
     shell.addEventListener("mousemove", () => showControls(true));
     shell.addEventListener("keydown", (event) => {
+      const tag = String(event.target?.tagName || "").toLowerCase();
+      if (["input", "textarea", "select"].includes(tag) || event.target?.isContentEditable) return;
       if (event.key === "Escape") return showControls(false, true);
+      if (event.key?.toLowerCase?.() === "m") {
+        event.preventDefault();
+        return toggleMicrophone();
+      }
+      if (event.key?.toLowerCase?.() === "v" && callType() === "video") {
+        event.preventDefault();
+        return toggleCamera();
+      }
       if (event.key === " " && event.target === shell) {
         event.preventDefault();
         toggleControls();
@@ -284,7 +306,9 @@
     const shell = qs("[data-pulsesoc-call-shell]");
     if (!shell || shell.hidden) return;
     const meta = qs("[data-call-meta]", shell);
-    if (meta) meta.textContent = `${callType() === "video" ? "Video Call" : "Audio Call"} · ${durationLabel()}`;
+    const key = callType() === "video" ? "pulse.call.video_meta" : "pulse.call.audio_meta";
+    const fallback = callType() === "video" ? "Video Connection" : "Voice Connection";
+    if (meta) meta.textContent = `${t(key, fallback)} · ${durationLabel()}`;
   }
 
   function startDurationTimer() {
@@ -319,7 +343,7 @@
     const q = qs("[data-call-quality]", shell);
     if (q) q.textContent = quality || qualityLabel();
     const pill = qs("[data-call-pill-title]", shell);
-    if (pill) pill.textContent = state.activeCall ? `${callType() === "video" ? "Video" : "Audio"} call active` : "PulseSoc call";
+    if (pill) pill.textContent = state.activeCall ? `${t("pulse.call.connected", "Pulse Connected")} · ${durationLabel()}` : t("pulse.call.default_title", "PulseSoc");
   }
 
   function qualityLabel() {
@@ -327,11 +351,28 @@
     if (shell?.dataset.callMode === "failed") return "Unavailable";
     if (!navigator.onLine) return "Offline";
     const roomState = String(state.room?.state || state.room?.connectionState || "").toLowerCase();
-    if (roomState.includes("reconnect")) return "Reconnecting";
-    if (roomState.includes("connected")) return "Good";
-    if (state.activeCall?.status === "ringing") return "Ringing";
-    if (state.activeCall?.status === "connecting") return "Connecting";
-    return state.activeCall ? "Standby" : "Idle";
+    if (roomState.includes("reconnect")) return t("pulse.call.restoring", "Restoring Pulse...");
+    if (roomState.includes("connected")) return t("pulse.call.excellent", "Excellent Connection");
+    if (state.activeCall?.status === "ringing") return t("pulse.call.waiting", "Waiting for response...");
+    if (state.activeCall?.status === "connecting") return t("pulse.call.synchronizing", "Synchronizing...");
+    return state.activeCall ? t("pulse.call.outgoing", "Pulsing...") : "Idle";
+  }
+
+  function clearStatusSequence() {
+    state.statusSequenceTimers.forEach((timer) => window.clearTimeout(timer));
+    state.statusSequenceTimers = [];
+  }
+
+  function statusSequence(steps = []) {
+    clearStatusSequence();
+    let delay = 0;
+    steps.forEach((step) => {
+      delay += Number(step.delay || 0);
+      const timer = window.setTimeout(() => {
+        if (state.activeCall) setStatus(step.message, step.mode || "info", step.quality || "");
+      }, delay);
+      state.statusSequenceTimers.push(timer);
+    });
   }
 
   function renderMode(mode, message) {
@@ -359,16 +400,19 @@
     const fallback = qs("[data-call-remote-fallback]", shell);
     if (fallback && mode === "failed") {
       fallback.hidden = false;
-      fallback.textContent = message || "Call unavailable.";
+      fallback.textContent = message || t("pulse.call.interrupted", "Pulse Interrupted");
     } else if (fallback && mode === "outgoing") {
       fallback.hidden = false;
-      fallback.textContent = "Waiting for recipient to answer...";
+      fallback.textContent = t("pulse.call.waiting", "Waiting for response...");
     } else if (fallback && mode === "incoming") {
       fallback.hidden = false;
-      fallback.textContent = "Incoming call.";
+      fallback.textContent = `${displayNameFor(state.activeCall)} ${t("pulse.call.incoming_suffix", "is Pulsing You...")}`;
     } else if (fallback && !isVideo) {
       fallback.hidden = false;
       fallback.textContent = displayNameFor(state.activeCall) || "Audio call";
+    } else if (fallback && isVideo && !state.remoteTrackEls.size) {
+      fallback.hidden = false;
+      fallback.textContent = t("pulse.call.waiting_video", "Waiting for video...");
     }
     setStatus(message || "", mode === "failed" ? "error" : mode === "incoming" ? "success" : "info", mode === "failed" ? "Unavailable" : "");
     if (["active", "outgoing"].includes(mode)) {
@@ -378,6 +422,7 @@
   }
 
   function renderFailure(payload = {}, fallback = {}) {
+    stopCallTone();
     const failure = structuredFailure(payload, fallback);
     state.lastFailure = failure;
     if (failure.call) state.activeCall = failure.call;
@@ -425,6 +470,63 @@
     shell.classList.toggle("is-minimized", state.minimized);
     const pill = qs("[data-call-restore]", shell);
     if (pill) pill.hidden = !state.minimized;
+    setControl(state.minimized ? "minimize" : "restore", { minimized: state.minimized })?.catch?.(() => {});
+  }
+
+  function stopCallTone() {
+    if (state.toneTimer) window.clearInterval(state.toneTimer);
+    state.toneTimer = null;
+  }
+
+  function toneContext() {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return null;
+    if (!state.toneContext) state.toneContext = new AudioContext();
+    if (state.toneContext.state === "suspended") state.toneContext.resume?.().catch(() => {});
+    return state.toneContext;
+  }
+
+  function playPulseTone(frequencies = [440], duration = 0.34, volume = 0.035) {
+    const ctx = toneContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    frequencies.forEach((frequency, index) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = index % 2 ? "triangle" : "sine";
+      osc.frequency.setValueAtTime(frequency, now);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(volume, now + 0.035);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + duration + 0.04);
+    });
+  }
+
+  function startCallTone(kind) {
+    stopCallTone();
+    if (kind === "incoming") {
+      playPulseTone([620, 930], 0.28, 0.032);
+      state.toneTimer = window.setInterval(() => playPulseTone([620, 930], 0.28, 0.032), 1450);
+      if (navigator.vibrate) navigator.vibrate([120, 70, 120]);
+      return;
+    }
+    playPulseTone([350], 0.46, 0.028);
+    state.toneTimer = window.setInterval(() => playPulseTone([350], 0.46, 0.028), 1850);
+  }
+
+  function showRemoteFallback(message = "") {
+    const host = qs("[data-call-remote]");
+    if (!host) return;
+    const fallback = qs("[data-call-remote-fallback]", host);
+    if (fallback) {
+      fallback.hidden = false;
+      fallback.textContent = message || (callType() === "video" ? t("pulse.call.remote_camera_off", "Camera Off") : displayNameFor(state.activeCall));
+    }
+    const audioVisual = qs("[data-call-audio-visual]", host);
+    if (audioVisual) audioVisual.hidden = callType() === "video";
   }
 
   function clearRemoteTracks() {
@@ -432,32 +534,63 @@
       try { el.remove(); } catch (_) {}
     });
     state.remoteTrackEls.clear();
+    showRemoteFallback(callType() === "video" ? t("pulse.call.remote_camera_off", "Camera Off") : displayNameFor(state.activeCall));
   }
 
-  function stopLocalTracks() {
-    state.localTracks.forEach((track) => {
+  async function unpublishLocalTrack(track, stop = false) {
+    try {
+      const participant = state.room?.localParticipant;
+      if (participant?.unpublishTrack) {
+        const raw = track?.mediaStreamTrack || track;
+        await Promise.resolve(participant.unpublishTrack(track)).catch(() => {});
+        if (raw !== track) await Promise.resolve(participant.unpublishTrack(raw)).catch(() => {});
+      }
+    } catch (_) {}
+    try { track.detach?.().forEach((el) => el.remove()); } catch (_) {}
+    if (stop) {
       try { track.stop?.(); } catch (_) {}
       try { track.mediaStreamTrack?.stop?.(); } catch (_) {}
-      try { track.detach?.().forEach((el) => el.remove()); } catch (_) {}
-    });
-    state.localTracks = [];
+      try { if (track instanceof MediaStreamTrack) track.stop(); } catch (_) {}
+    }
+  }
+
+  function mediaTrack(track) {
+    return track?.mediaStreamTrack || (track instanceof MediaStreamTrack ? track : null);
+  }
+
+  function tracksByKind(kind) {
+    return state.localTracks.filter((item) => localTrackKind(item) === kind || mediaTrack(item)?.kind === kind);
+  }
+
+  async function stopLocalTracks(kind = "") {
+    const selected = kind ? tracksByKind(kind) : [...state.localTracks];
+    await Promise.all(selected.map((track) => unpublishLocalTrack(track, true)));
+    state.localTracks = kind ? state.localTracks.filter((track) => !selected.includes(track)) : [];
     const local = qs("[data-call-local]");
-    if (local) {
+    if (local && (!kind || kind === "video")) {
       local.srcObject = null;
     }
     const wrap = qs("[data-call-local-wrap]");
     const fallback = qs("[data-call-local-fallback]");
-    if (wrap) wrap.hidden = true;
-    if (fallback) fallback.hidden = true;
+    if (!kind || kind === "video") {
+      if (wrap) wrap.hidden = kind === "video" ? false : true;
+      if (fallback) {
+        fallback.hidden = kind !== "video";
+        fallback.textContent = t("pulse.call.local_camera_off", "Camera off");
+      }
+    }
   }
 
   async function disconnectRoom(reason = "client_disconnect") {
+    stopCallTone();
+    clearStatusSequence();
     stopQualityTimer();
     stopStatusPolling();
     stopDurationTimer();
     clearControlsTimer();
-    stopLocalTracks();
+    await stopLocalTracks();
     clearRemoteTracks();
+    try { state.room?.removeAllListeners?.(); } catch (_) {}
     try { await state.room?.disconnect?.(); } catch (_) {}
     state.room = null;
     state.connecting = null;
@@ -465,9 +598,14 @@
     state.mutedVideo = false;
   }
 
-  function hideCallShell() {
-    disconnectRoom("hide");
+  async function hideCallShell() {
+    await disconnectRoom("hide");
     state.activeCall = null;
+    state.lastFailure = null;
+    state.ending = false;
+    state.minimized = false;
+    state.controlsVisible = false;
+    state.pointerOverControls = false;
     const shell = ensureShell();
     shell.hidden = true;
     shell.classList.remove("is-minimized");
@@ -492,6 +630,20 @@
     }
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     return stream.getTracks();
+  }
+
+  async function createSingleLocalTrack(kind) {
+    const LK = livekitClient();
+    const audio = kind === "audio" ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true } : false;
+    const video = kind === "video" ? { facingMode: state.facingMode, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } : false;
+    if (kind === "video" && LK?.createLocalVideoTrack) return LK.createLocalVideoTrack(video);
+    if (kind === "audio" && LK?.createLocalAudioTrack) return LK.createLocalAudioTrack(audio);
+    if (LK?.createLocalTracks) {
+      const tracks = await LK.createLocalTracks({ audio, video });
+      return tracks.find((track) => localTrackKind(track) === kind || mediaTrack(track)?.kind === kind) || tracks[0];
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio, video });
+    return stream.getTracks().find((track) => track.kind === kind);
   }
 
   function attachLocalPreview(track) {
@@ -533,6 +685,33 @@
     }
   }
 
+  async function publishSingleLocalTrack(kind) {
+    if (!state.room?.localParticipant) throw new Error("Call room is not connected.");
+    const track = await createSingleLocalTrack(kind);
+    if (!track) throw new Error(`${kind} track could not be created.`);
+    if (kind === "video") attachLocalPreview(track);
+    await state.room.localParticipant.publishTrack?.(track);
+    state.localTracks.push(track);
+    return track;
+  }
+
+  async function ensureLocalAudioTrack() {
+    const existing = tracksByKind("audio").find((track) => mediaTrack(track)?.readyState !== "ended");
+    if (existing) {
+      const raw = mediaTrack(existing);
+      if (raw && !state.mutedAudio) raw.enabled = true;
+      return existing;
+    }
+    if (!state.room) return null;
+    const track = await publishSingleLocalTrack("audio");
+    if (state.mutedAudio) {
+      try { await track.mute?.(); } catch (_) {}
+      const raw = mediaTrack(track);
+      if (raw) raw.enabled = false;
+    }
+    return track;
+  }
+
   function attachRemoteTrack(track) {
     const kind = localTrackKind(track);
     const host = kind === "audio" ? qs("[data-call-audio]") : qs("[data-call-remote]");
@@ -548,7 +727,12 @@
         if (audioVisual) audioVisual.hidden = true;
         el.classList.add("pulsesoc-call-remote-video");
       }
-      if (kind === "audio") el.hidden = true;
+      if (kind === "audio") {
+        el.hidden = true;
+        if (state.audioOutputDeviceId && typeof el.setSinkId === "function") {
+          el.setSinkId(state.audioOutputDeviceId).catch(() => {});
+        }
+      }
       host.appendChild(el);
       state.remoteTrackEls.add(el);
       el.play?.().catch(() => {});
@@ -559,11 +743,13 @@
 
   function detachRemoteTrack(track) {
     try {
+      const kind = localTrackKind(track);
       const els = track.detach ? track.detach() : [];
       els.forEach((el) => {
         state.remoteTrackEls.delete(el);
         el.remove();
       });
+      if (kind === "video") showRemoteFallback(t("pulse.call.remote_camera_off", "Camera Off"));
     } catch (_) {}
   }
 
@@ -576,13 +762,17 @@
       try { room.on(name, handler); } catch (_) {}
     };
     on(event.Connected || "connected", () => {
-      setStatus("Connected to the secure call room.", "success", "Good");
+      stopCallTone();
+      setStatus(t("pulse.call.connected", "Pulse Connected"), "success", t("pulse.call.excellent", "Excellent Connection"));
       startQualityTimer();
     });
-    on(event.Reconnecting || "reconnecting", () => setStatus("Connection is recovering...", "warn", "Reconnecting"));
-    on(event.Reconnected || "reconnected", () => setStatus("Connection restored.", "success", "Good"));
-    on(event.Disconnected || "disconnected", () => setStatus("Call disconnected.", "warn", "Disconnected"));
-    on(event.ParticipantConnected || "participantConnected", () => setStatus("Participant joined.", "success", "Good"));
+    on(event.Reconnecting || "reconnecting", () => {
+      state.reconnectCount += 1;
+      setStatus(t("pulse.call.restoring", "Restoring Pulse..."), "warn", t("pulse.call.restoring", "Restoring Pulse..."));
+    });
+    on(event.Reconnected || "reconnected", () => setStatus(t("pulse.call.restored", "Pulse Restored"), "success", t("pulse.call.excellent", "Excellent Connection")));
+    on(event.Disconnected || "disconnected", () => setStatus(t("pulse.call.lost", "Pulse Lost"), "warn", "Offline"));
+    on(event.ParticipantConnected || "participantConnected", () => setStatus(t("pulse.call.accepted", "Pulse Accepted"), "success", t("pulse.call.excellent", "Excellent Connection")));
     on(event.ParticipantDisconnected || "participantDisconnected", () => setStatus("Participant left.", "info", qualityLabel()));
     on(event.TrackSubscribed || "trackSubscribed", (track) => attachRemoteTrack(track));
     on(event.TrackUnsubscribed || "trackUnsubscribed", (track) => detachRemoteTrack(track));
@@ -616,7 +806,7 @@
     state.connecting = (async () => {
       try {
         await disconnectRoom("reconnect");
-        renderMode(options.mode || "active", options.connectingMessage || "Connecting secure call room...");
+        renderMode(options.mode || "active", options.connectingMessage || t("pulse.call.establishing", "Establishing Secure Connection..."));
         const room = new LK.Room({ adaptiveStream: true, dynacast: true });
         state.room = room;
         wireRoomEvents(room, LK);
@@ -626,7 +816,7 @@
           const connected = await postJson(`${API}/${encodeURIComponent(callId(call))}/connected`, { device_info: deviceInfo() });
           state.activeCall = connected.call || state.activeCall;
         }
-        renderMode(options.mode === "outgoing" ? "outgoing" : "active", options.readyMessage || (options.mode === "outgoing" ? "Ringing..." : "Call connected."));
+        renderMode(options.mode === "outgoing" ? "outgoing" : "active", options.readyMessage || (options.mode === "outgoing" ? t("pulse.call.waiting", "Waiting for response...") : t("pulse.call.connected", "Pulse Connected")));
         startStatusPolling();
         startQualityTimer();
         return { ok: true, call: state.activeCall };
@@ -675,7 +865,13 @@
       });
     }
     try {
-      renderMode("outgoing", `Starting ${type} call...`);
+      startCallTone("outgoing");
+      renderMode("outgoing", t("pulse.call.outgoing", "Pulsing..."));
+      statusSequence([
+        { delay: 700, message: t("pulse.call.searching", "Searching for secure connection...") },
+        { delay: 1000, message: type === "video" ? t("pulse.call.preparing_video", "Synchronizing video channel...") : t("pulse.call.preparing_voice", "Preparing communication channel...") },
+        { delay: 1200, message: t("pulse.call.waiting", "Waiting for response...") },
+      ]);
       const data = await postJson(`${API}/start`, { ...normalized, call_type: type, device_info: deviceInfo() });
       const { call } = normalizeCallPayload(data);
       state.activeCall = call;
@@ -683,7 +879,7 @@
       const connected = await connectCallRoom(data, {
         mode: "outgoing",
         markConnected: false,
-        connectingMessage: "Preparing secure room...",
+        connectingMessage: type === "video" ? t("pulse.call.preparing_video", "Synchronizing video channel...") : t("pulse.call.preparing_voice", "Preparing communication channel..."),
         readyMessage,
       });
       if (connected?.ok === false) return connected;
@@ -712,7 +908,11 @@
   function showIncoming(call) {
     state.activeCall = call;
     minimizeCall(false);
-    renderMode("incoming", `Incoming ${callType(call)} call from ${displayNameFor(call)}.`);
+    startCallTone("incoming");
+    const name = displayNameFor(call);
+    renderMode("incoming", `${name} ${t("pulse.call.incoming_suffix", "is Pulsing You...")}`);
+    const meta = qs("[data-call-meta]", ensureShell());
+    if (meta) meta.textContent = callType(call) === "video" ? t("pulse.call.incoming_video", "Video Connection") : t("pulse.call.incoming_voice", "Voice Connection");
     const id = callId(call);
     if (id && !state.seenIncomingCalls.has(id)) {
       state.seenIncomingCalls.add(id);
@@ -746,9 +946,14 @@
   async function acceptCall(id) {
     if (!id) return { ok: false, status: "missing_call" };
     try {
-      renderMode("active", "Accepting call...");
+      stopCallTone();
+      renderMode("active", t("pulse.call.accepted", "Pulse Accepted"));
+      statusSequence([
+        { delay: 550, message: t("pulse.call.synchronizing", "Synchronizing...") },
+        { delay: 900, message: t("pulse.call.establishing", "Establishing Secure Connection...") },
+      ]);
       const data = await postJson(`${API}/${encodeURIComponent(id)}/accept`, { device_info: deviceInfo() });
-      const connected = await connectCallRoom(data, { mode: "active", markConnected: true, connectingMessage: "Joining call...", readyMessage: "Call connected." });
+      const connected = await connectCallRoom(data, { mode: "active", markConnected: true, connectingMessage: t("pulse.call.synchronizing", "Synchronizing..."), readyMessage: t("pulse.call.connected", "Pulse Connected") });
       if (connected?.ok === false) return connected;
       return data;
     } catch (error) {
@@ -762,7 +967,8 @@
     if (!id) return { ok: false, status: "missing_call" };
     try {
       const data = await postJson(`${API}/${encodeURIComponent(id)}/decline`, {});
-      hideCallShell();
+      stopCallTone();
+      await hideCallShell();
       return data;
     } catch (error) {
       renderMode("failed", error.payload?.message || "Could not decline this call.");
@@ -779,30 +985,31 @@
       endButton.setAttribute("aria-label", "Ending call");
     }
     if (!id) {
-      hideCallShell();
+      await hideCallShell();
       state.ending = false;
       return { ok: true };
     }
+    const endRequest = postJson(`${API}/${encodeURIComponent(id)}/end`, { reason: "ended_by_user" }).catch((error) => error.payload || { ok: false, message: error.message });
     try {
-      const data = await postJson(`${API}/${encodeURIComponent(id)}/end`, { reason: "ended_by_user" });
-      hideCallShell();
+      await disconnectRoom("ended_by_user");
+      state.activeCall = null;
+      const shell = ensureShell();
+      shell.hidden = true;
+      shell.classList.remove("is-minimized", "controls-visible");
+      showControls(false, true);
       state.ending = false;
-      return data;
+      const data = await endRequest;
+      return data?.ok === false ? data : { ok: true, ...(data || {}) };
     } catch (error) {
       state.ending = false;
-      if (endButton) {
-        endButton.disabled = false;
-        endButton.classList.remove("is-ending");
-        endButton.setAttribute("aria-label", "End call");
-      }
-      renderMode("failed", error.payload?.message || "Could not end call cleanly.");
+      await hideCallShell();
       return error.payload || { ok: false, message: error.message };
     }
   }
 
   async function joinCallRoom(id) {
     const data = await postJson(`${API}/${encodeURIComponent(id)}/join-token`, { device_info: deviceInfo() });
-    const connected = await connectCallRoom(data, { mode: "active", markConnected: true, connectingMessage: "Joining call...", readyMessage: "Call connected." });
+    const connected = await connectCallRoom(data, { mode: "active", markConnected: true, connectingMessage: t("pulse.call.synchronizing", "Synchronizing..."), readyMessage: t("pulse.call.connected", "Pulse Connected") });
     if (connected?.ok === false) return connected;
     return data;
   }
@@ -823,8 +1030,10 @@
         else if (track instanceof MediaStreamTrack) track.enabled = !state.mutedAudio;
       } catch (_) {}
     }
-    await setControl(state.mutedAudio ? "mute-audio" : "unmute-audio");
-    setStatus(state.mutedAudio ? "Microphone muted." : "Microphone on.", "info");
+    await setControl(state.mutedAudio ? "mute-audio" : "unmute-audio", {
+      local_track_count: tracksByKind("audio").length,
+    });
+    setStatus(state.mutedAudio ? t("pulse.call.mic_muted", "Microphone muted.") : t("pulse.call.mic_on", "Microphone on."), "info");
     const btn = qs("[data-call-toggle-mic]");
     if (btn) {
       btn.classList.toggle("is-muted", state.mutedAudio);
@@ -836,17 +1045,22 @@
 
   async function toggleCamera() {
     if (callType() !== "video") return false;
-    state.mutedVideo = !state.mutedVideo;
-    for (const track of state.localTracks.filter((item) => localTrackKind(item) === "video")) {
+    const turningOff = !state.mutedVideo;
+    state.mutedVideo = turningOff;
+    if (turningOff) {
+      await stopLocalTracks("video");
+      await setControl("disable-video", { unpublished: true });
+    } else {
       try {
-        if (state.mutedVideo && track.mute) await track.mute();
-        else if (!state.mutedVideo && track.unmute) await track.unmute();
-        else if (track.mediaStreamTrack) track.mediaStreamTrack.enabled = !state.mutedVideo;
-        else if (track instanceof MediaStreamTrack) track.enabled = !state.mutedVideo;
-      } catch (_) {}
+        await publishSingleLocalTrack("video");
+        await setControl("enable-video", { republished: true, facing_mode: state.facingMode });
+      } catch (error) {
+        state.mutedVideo = true;
+        await setControl("disable-video", { republish_failed: true, error: error?.name || error?.message || "video_failed" });
+        setStatus(error?.name === "NotAllowedError" ? "Camera permission needed." : "Camera could not turn on.", "error");
+      }
     }
-    await setControl(state.mutedVideo ? "disable-video" : "enable-video");
-    setStatus(state.mutedVideo ? "Camera off." : "Camera on.", "info");
+    setStatus(state.mutedVideo ? t("pulse.call.camera_off", "Camera off.") : t("pulse.call.camera_on", "Camera on."), "info");
     const wrap = qs("[data-call-local-wrap]");
     const fallback = qs("[data-call-local-fallback]");
     if (wrap) wrap.hidden = false;
@@ -868,10 +1082,19 @@
       if (video?.restartTrack) {
         await video.restartTrack({ facingMode: state.facingMode, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } });
         attachLocalPreview(video);
-        setStatus("Camera switched.", "success");
+        await setControl("switch-camera", { facing_mode: state.facingMode, method: "restartTrack" });
+        setStatus(t("pulse.call.camera_switched", "Camera switched."), "success");
         return { ok: true };
       }
-      setStatus("Camera switching is not supported by this browser session.", "warn");
+      if (state.room?.localParticipant) {
+        await stopLocalTracks("video");
+        await publishSingleLocalTrack("video");
+        await setControl("switch-camera", { facing_mode: state.facingMode, method: "republish" });
+        setStatus(t("pulse.call.camera_switched", "Camera switched."), "success");
+        return { ok: true };
+      }
+      setStatus(t("pulse.call.camera_switch_unsupported", "Camera switching is not supported by this browser session."), "warn");
+      await setControl("switch-camera", { facing_mode: state.facingMode, unsupported: true });
       return { ok: false, status: "unsupported" };
     } catch (error) {
       setStatus("Camera could not switch.", "error");
@@ -879,9 +1102,35 @@
     }
   }
 
-  function switchSpeaker() {
-    setStatus("Speaker output follows your device settings in this browser.", "info");
-    return { ok: true, status: "device_controlled" };
+  async function switchSpeaker() {
+    const audioEls = qsa("[data-call-audio] audio");
+    const canSink = audioEls.some((el) => typeof el.setSinkId === "function");
+    if (!canSink || !navigator.mediaDevices?.enumerateDevices) {
+      state.speakerMode = "device";
+      await setControl("speaker", { mode: "device_controlled", supported: false });
+      setStatus(t("pulse.call.speaker_device", "Audio output follows this device."), "info");
+      return { ok: true, status: "device_controlled" };
+    }
+    try {
+      const outputs = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "audiooutput");
+      if (!outputs.length) {
+        await setControl("speaker", { mode: "device_controlled", supported: true, outputs: 0 });
+        setStatus(t("pulse.call.speaker_device", "Audio output follows this device."), "info");
+        return { ok: true, status: "device_controlled" };
+      }
+      const currentIndex = outputs.findIndex((device) => device.deviceId === state.audioOutputDeviceId);
+      const next = outputs[(currentIndex + 1) % outputs.length];
+      await Promise.all(audioEls.map((el) => el.setSinkId(next.deviceId).catch(() => {})));
+      state.audioOutputDeviceId = next.deviceId;
+      state.speakerMode = next.label || "selected";
+      await setControl("speaker", { mode: "selected_output", device_label: next.label || "audiooutput" });
+      setStatus(t("pulse.call.speaker_changed", "Audio output switched."), "success");
+      return { ok: true, status: "selected", device_id: next.deviceId };
+    } catch (error) {
+      await setControl("speaker", { mode: "failed", error: error?.name || error?.message || "speaker_failed" });
+      setStatus("Speaker output could not switch on this device.", "warn");
+      return { ok: false, status: "speaker_failed", message: error.message };
+    }
   }
 
   async function startScreenShare() {
@@ -911,11 +1160,19 @@
       const now = Date.now();
       if (!callId() || now - state.lastQualityAt < QUALITY_MS - 1000) return;
       state.lastQualityAt = now;
-      const score = qualityLabel() === "Good" ? 92 : qualityLabel() === "Reconnecting" ? 42 : 70;
+      const roomState = String(state.room?.state || state.room?.connectionState || "").toLowerCase();
+      const score = roomState.includes("connected") ? 92 : roomState.includes("reconnect") ? 42 : 70;
       submitQualityReport(callId(), {
         quality_score: score,
         network_type: navigator.connection?.effectiveType || "",
         resolution: `${window.innerWidth}x${window.innerHeight}`,
+        reconnect_count: state.reconnectCount,
+        speaker_mode: state.speakerMode,
+        muted_audio: state.mutedAudio,
+        muted_video: state.mutedVideo,
+        hidden: document.hidden,
+        local_audio_tracks: tracksByKind("audio").length,
+        local_video_tracks: tracksByKind("video").length,
       }).catch(() => {});
     }, QUALITY_MS);
   }
@@ -937,13 +1194,14 @@
         state.activeCall = call;
         const status = String(call.status || "");
         if (["ended", "missed", "declined", "failed", "canceled"].includes(status)) {
-          renderMode("failed", status === "declined" ? "Call declined." : status === "missed" ? "No answer." : "Call ended.");
-          window.setTimeout(hideCallShell, 1400);
+          stopCallTone();
+          renderMode("failed", status === "declined" ? t("pulse.call.declined", "Pulse Declined") : status === "missed" ? t("pulse.call.missed", "Missed Pulse") : status === "failed" ? t("pulse.call.interrupted", "Pulse Interrupted") : t("pulse.call.ended", "Pulse Ended"));
+          window.setTimeout(() => hideCallShell(), 1400);
           return;
         }
         if (isIncoming(call)) showIncoming(call);
-        else if (status === "ringing") renderMode("outgoing", "Ringing...");
-        else renderMode("active", status === "reconnecting" ? "Reconnecting..." : "Call active.");
+        else if (status === "ringing") renderMode("outgoing", t("pulse.call.waiting", "Waiting for response..."));
+        else renderMode("active", status === "reconnecting" ? t("pulse.call.restoring", "Restoring Pulse...") : t("pulse.call.connected", "Pulse Connected"));
       } catch (_) {}
     }, STATUS_MS);
   }
@@ -999,23 +1257,39 @@
       else if (["connecting", "connected", "reconnecting"].includes(String(call.status || ""))) joinCallRoom(id).catch(() => {});
       else {
         state.activeCall = call;
-        renderMode("outgoing", call.status === "ringing" ? "Ringing..." : `Call ${call.status || "ready"}.`);
+        renderMode("outgoing", call.status === "ringing" ? t("pulse.call.waiting", "Waiting for response...") : t("pulse.call.outgoing", "Pulsing..."));
       }
     }).catch(() => {});
   }
 
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) return;
+  async function handleAppVisibility() {
+    if (!state.activeCall) return;
+    if (document.hidden) {
+      state.visibilityWasHidden = true;
+      await setControl("visibility", { state: "background", tracks: state.localTracks.map((track) => ({ kind: localTrackKind(track), ready_state: mediaTrack(track)?.readyState || "" })) });
+      setStatus(t("pulse.call.background_limited", "Device background mode may pause microphone. PulseSoc will restore it when possible."), "info");
+      return;
+    }
+    if (!state.visibilityWasHidden) return;
+    state.visibilityWasHidden = false;
+    await setControl("visibility", { state: "foreground" });
+    if (!state.mutedAudio) await ensureLocalAudioTrack().catch(() => {});
+    if (callType() === "video" && !state.mutedVideo && !tracksByKind("video").length) await publishSingleLocalTrack("video").catch(() => {});
+    setStatus(t("pulse.call.restored", "Pulse Restored"), "success", qualityLabel());
     wakeCallPolling();
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    handleAppVisibility().catch(() => {});
   });
 
   window.addEventListener("focus", wakeCallPolling);
   window.addEventListener("pageshow", wakeCallPolling);
   window.addEventListener("online", () => {
-    setStatus("Connection restored.", "success", qualityLabel());
+    setStatus(t("pulse.call.restored", "Pulse Restored"), "success", qualityLabel());
     wakeCallPolling();
   });
-  window.addEventListener("offline", () => setStatus("Network offline. Call will reconnect when possible.", "warn", "Offline"));
+  window.addEventListener("offline", () => setStatus(`${t("pulse.call.lost", "Pulse Lost")}. Attempting recovery...`, "warn", "Offline"));
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {

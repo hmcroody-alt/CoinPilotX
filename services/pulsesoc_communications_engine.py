@@ -857,9 +857,9 @@ def _notify_incoming_call(cur: Any, call: dict[str, Any], actor_id: int, recipie
                 actor_user_id=int(actor_id),
                 source_type="communication_call",
                 source_id=str(call.get("public_id") or call.get("id") or ""),
-                title=f"Incoming PulseSoc {call.get('call_type') or 'audio'} call",
-                body=f"{actor_name or 'Someone'} is calling you.",
-                preview="Incoming call",
+                title=f"{actor_name or 'Someone'} is Pulsing You",
+                body="Video Connection" if str(call.get("call_type") or "audio").lower() == "video" else "Voice Connection",
+                preview="Incoming voice call" if str(call.get("call_type") or "audio").lower() != "video" else "Incoming video call",
                 deep_link=f"/pulse/messages/{conversation_id}?call_id={call.get('public_id') or call.get('id')}",
                 metadata={
                     "conversation_id": conversation_id,
@@ -1330,6 +1330,11 @@ def update_participant_control(user_id: int, call_ref: str | int, action: str, p
         "disable-video": ("muted_video", 1, "video_disabled"),
         "screen-share-start": ("screen_sharing", 1, "screen_share_started"),
         "screen-share-stop": ("screen_sharing", 0, "screen_share_stopped"),
+        "switch-camera": (None, None, "camera_switched"),
+        "speaker": (None, None, "speaker_changed"),
+        "minimize": (None, None, "call_minimized"),
+        "restore": (None, None, "call_restored"),
+        "visibility": (None, None, "client_visibility_changed"),
     }
     if action not in control_map:
         return _err("Unsupported call control.", 400, "unsupported_control")
@@ -1342,10 +1347,16 @@ def update_participant_control(user_id: int, call_ref: str | int, action: str, p
             return _err("This call has ended.", 409, "call_final")
         column, value, event_type = control_map[action]
         now = _now()
-        cur.execute(
-            f"UPDATE communication_call_participants SET {column}=?, last_seen_at=?, updated_at=? WHERE call_id=? AND user_id=?",
-            (int(value), now, now, int(call["id"]), int(user_id)),
-        )
+        if column:
+            cur.execute(
+                f"UPDATE communication_call_participants SET {column}=?, last_seen_at=?, updated_at=? WHERE call_id=? AND user_id=?",
+                (int(value), now, now, int(call["id"]), int(user_id)),
+            )
+        else:
+            cur.execute(
+                "UPDATE communication_call_participants SET last_seen_at=?, updated_at=? WHERE call_id=? AND user_id=?",
+                (now, now, int(call["id"]), int(user_id)),
+            )
         _event(cur, int(call["id"]), int(user_id), event_type, payload or {})
         conn.commit()
         return _ok({"call": _serialize_call(cur, _get_call(cur, call_ref), int(user_id)), "control": action})

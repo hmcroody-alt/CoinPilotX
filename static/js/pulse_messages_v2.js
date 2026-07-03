@@ -909,7 +909,7 @@
       return;
     }
     if (!window.PulseSocCalls) {
-      const message = "Call controls are still loading. Try again in a moment.";
+      const message = "Pulse controls are still loading. Try again in a moment.";
       if (source === "control") controlStatus(message, "error");
       else setStatus(message);
       return;
@@ -917,7 +917,7 @@
     const starter = callType === "video" ? window.PulseSocCalls.startVideoCall : window.PulseSocCalls.startAudioCall;
     const result = await starter(callOptionsForConversation(conversationId));
     const ok = result?.ok !== false;
-    const message = ok ? `${callType === "video" ? "Video" : "Audio"} call request sent.` : (result?.message || "Call could not start.");
+    const message = ok ? (callType === "video" ? "Video Pulse sent." : "Voice Pulse sent.") : (result?.message || "Pulse could not start.");
     if (source === "control") controlStatus(message, ok ? "success" : "error");
     else setStatus(message);
   }
