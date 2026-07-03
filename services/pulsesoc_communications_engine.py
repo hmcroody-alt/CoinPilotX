@@ -511,6 +511,54 @@ def _mark_missed_stale_calls_cur(cur: Any, timeout_seconds: int = 45) -> int:
     return updated
 
 
+def _publish_call_realtime(
+    cur: Any,
+    call: dict[str, Any],
+    actor_id: int,
+    recipient_id: int,
+    event_type: str,
+    notification_result: dict[str, Any] | None = None,
+    policy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    try:
+        from services import realtime_engine
+
+        call_payload = _serialize_call(cur, call, int(recipient_id))
+        payload = {
+            "conversation_id": int(call.get("conversation_id") or 0),
+            "call_id": call.get("public_id") or call.get("id"),
+            "public_id": call.get("public_id") or "",
+            "sender_user_id": int(actor_id or 0),
+            "caller_user_id": int(actor_id or 0),
+            "recipient_user_id": int(recipient_id),
+            "call": call_payload,
+            "notification": (notification_result or {}).get("notification") or {},
+            "notification_id": int((notification_result or {}).get("notification_id") or 0),
+            "delivery_jobs": (notification_result or {}).get("delivery_jobs") or [],
+            "push_policy": (policy or {}).get("reason") or "deliver",
+            "suppress_push": bool((policy or {}).get("suppress_push")),
+        }
+        channels = [
+            (f"comm_v2:user:{int(recipient_id)}", event_type),
+            (f"comm_v2:user:{int(recipient_id)}", "communication_call_incoming"),
+            (f"comm_v2:user:{int(recipient_id)}", "call_started"),
+            (f"cc:user:{int(recipient_id)}", event_type),
+            (f"pulse:user:{int(recipient_id)}", "notification_created"),
+        ]
+        for channel, kind in channels:
+            realtime_engine.publish_event(channel, kind, payload)
+        return {"ok": True, "published": len(channels)}
+    except Exception as exc:
+        logging.warning(
+            "PULSESOC_CALL_REALTIME_PUBLISH_FAILED call_id=%s recipient=%s error=%s",
+            call.get("id"),
+            recipient_id,
+            exc.__class__.__name__,
+        )
+        _event(cur, int(call["id"]), int(recipient_id), "incoming_call_realtime_failed", {"error": exc.__class__.__name__})
+        return {"ok": False, "status": "realtime_failed", "message": exc.__class__.__name__}
+
+
 def _notify_incoming_call(cur: Any, call: dict[str, Any], actor_id: int, recipients: list[int], actor_name: str = "") -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     conversation_id = int(call.get("conversation_id") or 0)
@@ -527,7 +575,7 @@ def _notify_incoming_call(cur: Any, call: dict[str, Any], actor_id: int, recipie
                 event_type="incoming_call",
                 recipient_user_id=int(recipient_id),
                 actor_user_id=int(actor_id),
-                source_type="call",
+                source_type="communication_call",
                 source_id=str(call.get("public_id") or call.get("id") or ""),
                 title=f"Incoming PulseSoc {call.get('call_type') or 'audio'} call",
                 body=f"{actor_name or 'Someone'} is calling you.",
@@ -537,6 +585,8 @@ def _notify_incoming_call(cur: Any, call: dict[str, Any], actor_id: int, recipie
                     "conversation_id": conversation_id,
                     "call_id": call.get("public_id") or call.get("id"),
                     "call_type": call.get("call_type") or "audio",
+                    "source_type": "communication_call",
+                    "source_id": str(call.get("public_id") or call.get("id") or ""),
                     "sound_key": "call",
                     "vibration": [120, 80, 120, 80, 240],
                 },
@@ -545,6 +595,22 @@ def _notify_incoming_call(cur: Any, call: dict[str, Any], actor_id: int, recipie
                 urgency="immediate",
                 channels=channels,
                 dedupe_key=f"incoming-call:{call.get('public_id') or call.get('id')}:{recipient_id}",
+            )
+            realtime = _publish_call_realtime(cur, call, int(actor_id), int(recipient_id), "incoming_call", result, policy)
+            result = {**result, "realtime": realtime, "push_policy": policy.get("reason") or "deliver"}
+            _event(
+                cur,
+                int(call["id"]),
+                int(recipient_id),
+                "incoming_call_delivery_attempt",
+                {
+                    "notification_id": result.get("notification_id") or 0,
+                    "suppressed": bool(result.get("suppressed")),
+                    "deduped": bool(result.get("deduped")),
+                    "delivery_jobs": result.get("delivery_jobs") or [],
+                    "realtime": realtime,
+                    "policy": policy,
+                },
             )
             results.append(result)
         except Exception as exc:
@@ -562,7 +628,7 @@ def _notify_missed_call(cur: Any, call: dict[str, Any], actor_id: int, recipient
             call_id=call.get("public_id") or call.get("id"),
             actor_name=actor_name or "Someone",
             metadata={
-                "source_type": "call",
+                "source_type": "communication_call",
                 "call_type": call.get("call_type") or "audio",
                 "sound_key": "missed_call",
                 "vibration": [180, 120, 180],
@@ -986,6 +1052,118 @@ def recent_calls(limit: int = 40) -> dict[str, Any]:
     try:
         cur.execute("SELECT * FROM communication_calls ORDER BY id DESC LIMIT ?", (max(1, min(int(limit or 40), 100)),))
         return _ok({"calls": [_serialize_call(cur, dict(row), 0) for row in cur.fetchall()], "livekit": livekit_config_status()})
+    finally:
+        conn.close()
+
+
+def call_delivery_diagnostics(call_ref: str | int) -> dict[str, Any]:
+    conn, cur = _open_db()
+    try:
+        call = _get_call(cur, call_ref)
+        if not call:
+            return _err("Call not found.", 404, "missing_call")
+        try:
+            pulsesoc_notification_system.ensure_schema(conn)
+        except Exception:
+            logging.warning("PULSESOC_CALL_DELIVERY_NOTIFICATION_SCHEMA_CHECK_FAILED call_ref=%s", call_ref)
+        call_id = int(call.get("id") or 0)
+        public_id = str(call.get("public_id") or call_id)
+        conversation_id = int(call.get("conversation_id") or 0)
+        cur.execute("SELECT * FROM communication_call_participants WHERE call_id=? ORDER BY id ASC", (call_id,))
+        participants = [dict(row) for row in cur.fetchall()]
+        caller_id = int(call.get("created_by_user_id") or 0)
+        callees = [item for item in participants if str(item.get("role") or "") == "callee"]
+        cur.execute(
+            """
+            SELECT * FROM notifications
+            WHERE source_id IN (?, ?) AND type IN ('incoming_call','missed_call')
+              AND COALESCE(source_type,'') IN ('communication_call','call')
+            ORDER BY id DESC
+            """,
+            (public_id, str(call_id)),
+        )
+        notifications = [dict(row) for row in cur.fetchall()]
+        notification_ids = [int(item.get("id") or 0) for item in notifications if int(item.get("id") or 0)]
+        delivery_jobs: list[dict[str, Any]] = []
+        if notification_ids:
+            placeholders = ",".join(["?"] * len(notification_ids))
+            cur.execute(
+                f"SELECT * FROM notification_delivery_jobs WHERE notification_id IN ({placeholders}) ORDER BY id DESC",
+                tuple(notification_ids),
+            )
+            delivery_jobs = [dict(row) for row in cur.fetchall()]
+        device_status: dict[str, Any] = {}
+        for participant in callees:
+            recipient_id = int(participant.get("user_id") or 0)
+            policy = comm_service._participant_push_policy(cur, recipient_id, caller_id, conversation_id)
+            counts = {"notification_device_tokens": 0, "push_subscriptions": 0}
+            try:
+                cur.execute("SELECT COUNT(*) AS total FROM notification_device_tokens WHERE user_id=? AND enabled=1 AND deleted_at IS NULL", (recipient_id,))
+                counts["notification_device_tokens"] = int(_row(cur.fetchone()).get("total") or 0)
+            except Exception:
+                counts["notification_device_tokens"] = 0
+            try:
+                cur.execute("SELECT COUNT(*) AS total FROM push_subscriptions WHERE user_id=? AND COALESCE(is_active, active, 1)=1", (recipient_id,))
+                counts["push_subscriptions"] = int(_row(cur.fetchone()).get("total") or 0)
+            except Exception:
+                counts["push_subscriptions"] = 0
+            recipient_jobs = [job for job in delivery_jobs if int(job.get("recipient_user_id") or job.get("user_id") or 0) == recipient_id]
+            recipient_notifications = [note for note in notifications if int(note.get("recipient_user_id") or note.get("user_id") or 0) == recipient_id]
+            device_status[str(recipient_id)] = {
+                "recipient_user_id": recipient_id,
+                "participant_created": True,
+                "participant_status": participant.get("status") or "",
+                "incoming_notification_created": any((note.get("type") or note.get("notification_type")) == "incoming_call" for note in recipient_notifications),
+                "missed_notification_created": any((note.get("type") or note.get("notification_type")) == "missed_call" for note in recipient_notifications),
+                "push_job_created": any((job.get("channel") == "push") for job in recipient_jobs),
+                "call_job_created": any((job.get("channel") == "call") for job in recipient_jobs),
+                "push_job_statuses": [
+                    {
+                        "id": int(job.get("id") or 0),
+                        "channel": job.get("channel") or "",
+                        "status": job.get("status") or "",
+                        "provider": job.get("provider") or "",
+                        "failed_reason": job.get("failed_reason") or job.get("failure_reason") or "",
+                    }
+                    for job in recipient_jobs
+                ],
+                "recipient_push_token_exists": bool(counts["notification_device_tokens"] or counts["push_subscriptions"]),
+                "recipient_device_counts": counts,
+                "recipient_muted_conversation": bool(policy.get("suppress_push")),
+                "recipient_blocked_caller": policy.get("reason") == "blocked",
+                "recipient_policy": policy,
+            }
+        cur.execute(
+            "SELECT event_type, event_payload_json, user_id, created_at FROM communication_call_events WHERE call_id=? ORDER BY id DESC LIMIT 40",
+            (call_id,),
+        )
+        events = []
+        last_error = ""
+        for row in cur.fetchall():
+            item = dict(row)
+            payload = json.loads(item.pop("event_payload_json") or "{}")
+            item["event_payload"] = payload
+            if not last_error and ("failed" in str(item.get("event_type") or "") or payload.get("error")):
+                last_error = str(payload.get("error") or item.get("event_type") or "")[:200]
+            events.append(item)
+        return _ok({
+            "call": _serialize_call(cur, call, 0),
+            "diagnostics": {
+                "call_created": True,
+                "caller_participant": any(int(item.get("user_id") or 0) == caller_id and str(item.get("role") or "") == "caller" for item in participants),
+                "callee_participants": len(callees),
+                "incoming_notification_created": any((note.get("type") or note.get("notification_type")) == "incoming_call" for note in notifications),
+                "push_job_created": any(job.get("channel") == "push" for job in delivery_jobs),
+                "call_job_created": any(job.get("channel") == "call" for job in delivery_jobs),
+                "livekit_configured": bool(livekit_config_status().get("configured")),
+                "last_call_error": last_error,
+            },
+            "recipient_delivery": device_status,
+            "notifications": notifications,
+            "delivery_jobs": delivery_jobs,
+            "events": events,
+            "livekit": livekit_config_status(),
+        })
     finally:
         conn.close()
 

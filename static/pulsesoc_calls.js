@@ -14,6 +14,7 @@
     minimized: false,
     connecting: null,
     activePollTimer: null,
+    realtimeBindTimer: null,
     statusTimer: null,
     qualityTimer: null,
     facingMode: "user",
@@ -60,6 +61,21 @@
     const join = data.join || call.join || {};
     if (call && !call.join && join?.token) call.join = join;
     return { call, join };
+  }
+
+  function outgoingDeliveryMessage(data = {}) {
+    const notifications = Array.isArray(data.notifications) ? data.notifications : Array.isArray(data.call?.notifications) ? data.call.notifications : [];
+    if (!notifications.length) return "Call started, but recipient could not be notified.";
+    const created = notifications.some((item) => item?.notification_id || item?.deduped);
+    const suppressed = notifications.every((item) => item?.suppressed || item?.reason || item?.status === "suppressed");
+    if (!created || suppressed) return "Call started, but recipient could not be notified.";
+    const jobs = notifications.flatMap((item) => Array.isArray(item?.delivery_jobs) ? item.delivery_jobs : []);
+    const pushJob = jobs.find((job) => job?.channel === "push");
+    if (!pushJob) return "Waiting for recipient. Push delivery unavailable.";
+    if (["skipped_no_device", "skipped_by_preference", "config_missing"].includes(String(pushJob.status || ""))) {
+      return "Waiting for recipient. Push delivery unavailable.";
+    }
+    return "Ringing...";
   }
 
   async function postJson(url, body = {}) {
@@ -116,7 +132,7 @@
             <strong data-call-title>PulseSoc Call</strong>
             <span data-call-status>Preparing secure room...</span>
           </div>
-          <span class="pulsesoc-call-quality" data-call-quality>Ready</span>
+          <span class="pulsesoc-call-quality" data-call-quality>Standby</span>
         </header>
         <div class="pulsesoc-call-stage" data-call-stage>
           <div class="pulsesoc-call-remote" data-call-remote>
@@ -178,13 +194,15 @@
   }
 
   function qualityLabel() {
+    const shell = qs("[data-pulsesoc-call-shell]");
+    if (shell?.dataset.callMode === "failed") return "Unavailable";
     if (!navigator.onLine) return "Offline";
     const roomState = String(state.room?.state || state.room?.connectionState || "").toLowerCase();
     if (roomState.includes("reconnect")) return "Reconnecting";
     if (roomState.includes("connected")) return "Good";
     if (state.activeCall?.status === "ringing") return "Ringing";
     if (state.activeCall?.status === "connecting") return "Connecting";
-    return "Ready";
+    return state.activeCall ? "Standby" : "Idle";
   }
 
   function renderMode(mode, message) {
@@ -199,7 +217,18 @@
     const isVideo = callType() === "video";
     if (cameraButton) cameraButton.hidden = !isVideo;
     if (flipButton) flipButton.hidden = !isVideo;
-    setStatus(message || "", mode === "failed" ? "error" : mode === "incoming" ? "success" : "info");
+    const fallback = qs("[data-call-remote-fallback]", shell);
+    if (fallback && mode === "failed") {
+      fallback.hidden = false;
+      fallback.textContent = message || "Call unavailable.";
+    } else if (fallback && mode === "outgoing") {
+      fallback.hidden = false;
+      fallback.textContent = "Waiting for recipient to answer...";
+    } else if (fallback && mode === "incoming") {
+      fallback.hidden = false;
+      fallback.textContent = "Incoming call.";
+    }
+    setStatus(message || "", mode === "failed" ? "error" : mode === "incoming" ? "success" : "info", mode === "failed" ? "Unavailable" : "");
   }
 
   function minimizeCall(value) {
@@ -425,18 +454,22 @@
       const data = await postJson(`${API}/start`, { ...normalized, call_type: type, device_info: deviceInfo() });
       const { call } = normalizeCallPayload(data);
       state.activeCall = call;
+      const readyMessage = outgoingDeliveryMessage(data);
       const connected = await connectCallRoom(data, {
         mode: "outgoing",
         markConnected: false,
         connectingMessage: "Preparing secure room...",
-        readyMessage: "Ringing...",
+        readyMessage,
       });
       if (connected?.ok === false) return connected;
       minimizeCall(false);
       return data;
     } catch (error) {
       const payload = error.payload || {};
-      renderMode("failed", payload.message || error.message || "Call could not start.");
+      const message = payload.status === "config_missing"
+        ? "Calling is not configured yet."
+        : payload.message || error.message || "Call could not start.";
+      renderMode("failed", message);
       return payload.ok === false ? payload : { ok: false, status: "error", message: error.message };
     }
   }
@@ -453,6 +486,24 @@
     state.activeCall = call;
     minimizeCall(false);
     renderMode("incoming", `Incoming ${callType(call)} call from ${displayNameFor(call)}.`);
+  }
+
+  function realtimePayload(event) {
+    return event?.payload || event?.detail || event || {};
+  }
+
+  function handleIncomingRealtime(event) {
+    const payload = realtimePayload(event);
+    const call = payload.call || payload.data?.call || payload;
+    if (!call || !callId(call)) {
+      pollActiveCalls();
+      return;
+    }
+    if (isIncoming(call)) {
+      showIncoming(call);
+      return;
+    }
+    if (String(call.status || "") === "ringing") pollActiveCalls();
   }
 
   async function acceptCall(id) {
@@ -667,6 +718,22 @@
     state.activePollTimer = window.setInterval(pollActiveCalls, POLL_MS);
   }
 
+  function bindRealtimeCalls() {
+    if (window.PulseRealtime?.on) {
+      window.PulseRealtime.on("incoming_call", handleIncomingRealtime);
+      window.PulseRealtime.on("communication_call_incoming", handleIncomingRealtime);
+      window.PulseRealtime.on("call_started", handleIncomingRealtime);
+      window.PulseRealtime.on("notification_created", (event) => {
+        const payload = realtimePayload(event);
+        const type = String(payload.type || payload.notification_type || payload.notification?.type || payload.event_type || "").toLowerCase();
+        if (type === "incoming_call") handleIncomingRealtime(event);
+      });
+      return;
+    }
+    window.clearTimeout(state.realtimeBindTimer);
+    state.realtimeBindTimer = window.setTimeout(bindRealtimeCalls, 1200);
+  }
+
   function handleDeepLinkedCall() {
     const params = new URLSearchParams(window.location.search || "");
     const id = params.get("call_id");
@@ -694,10 +761,12 @@
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
       startActivePolling();
+      bindRealtimeCalls();
       handleDeepLinkedCall();
     }, { once: true });
   } else {
     startActivePolling();
+    bindRealtimeCalls();
     handleDeepLinkedCall();
   }
 

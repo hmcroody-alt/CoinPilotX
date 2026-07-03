@@ -1411,7 +1411,7 @@ def notify_missed_call(
         event_type="missed_call",
         recipient_user_id=int(recipient_user_id),
         actor_user_id=int(actor_user_id or 0),
-        source_type="call",
+        source_type=str((metadata or {}).get("source_type") or "call"),
         source_id=str(call_id or ""),
         title=f"Missed call from {actor}",
         body="You missed a PulseSoc call.",

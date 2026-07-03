@@ -56,11 +56,15 @@ def main() -> int:
         '"/api/calls/<path:call_id>/events"',
         '"/api/calls/<path:call_id>/quality"',
         '"/api/conversations/<path:conversation_ref>/calls"',
+        '"/api/admin/calls/<path:call_id>/delivery"',
     ]:
         require(checks, f"{route} route exists", route in routes)
 
     require(checks, "join-token validates participant", "_require_call_access" in service and "Only call participants can access this call" in service)
     require(checks, "incoming call notification hook exists", "incoming_call" in service and "priority=\"urgent\"" in service and "sound_key" in service)
+    require(checks, "incoming call uses communication_call source", 'source_type="communication_call"' in service and '"source_type": "communication_call"' in service)
+    require(checks, "incoming call realtime publish exists", "_publish_call_realtime" in service and "communication_call_incoming" in service and "call_started" in service)
+    require(checks, "call delivery diagnostics exist", "call_delivery_diagnostics" in service and "push_job_created" in service and "recipient_push_token_exists" in service)
     require(checks, "missed-call cleanup exists", "_mark_missed_stale_calls_cur" in service and "missed_call" in service)
     require(checks, "call history route exists", "conversation_calls" in service and "/api/conversations/" in routes)
     require(checks, "quality reporting route exists", "submit_quality_report" in service and "communication_call_quality_reports" in service)
@@ -70,6 +74,8 @@ def main() -> int:
     require(checks, "frontend joins LiveKit room", "new LK.Room" in call_js and ".connect(join.livekit_url, join.token)" in call_js)
     require(checks, "frontend handles remote tracks", "TrackSubscribed" in call_js and "attachRemoteTrack" in call_js)
     require(checks, "frontend handles reconnect states", "Reconnecting" in call_js and "Reconnected" in call_js)
+    require(checks, "frontend listens for incoming call realtime events", "communication_call_incoming" in call_js and "handleIncomingRealtime" in call_js)
+    require(checks, "frontend config missing copy is explicit", "Calling is not configured yet." in call_js and "Unavailable" in call_js)
     require(checks, "frontend quality reporter exists", "QUALITY_MS" in call_js and "submitQualityReport" in call_js)
     require(checks, "Phase 3 report exists", "PulseSoc Calls Phase 3" in report and "two-user" in report)
 

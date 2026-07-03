@@ -73,10 +73,11 @@ def _timed_json(metric: str, action):
             request.content_type or "",
             type(exc).__name__,
         )
+        call_route = str(metric or "").startswith(("api_call", "conversation_call", "admin_call"))
         return _json({
             "ok": False,
             "status": "server_error",
-            "message": "Messenger is temporarily unavailable. Please try again.",
+            "message": "Calling is temporarily unavailable. Please try again." if call_route else "Messenger is temporarily unavailable. Please try again.",
             "trace_id": trace_id,
             "http_status": 500,
             "timing_ms": elapsed_ms,
@@ -778,6 +779,14 @@ def api_admin_recent_calls():
     if not admin:
         return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
     return _timed_json("admin_recent_calls", lambda: call_engine.recent_calls(int(request.args.get("limit") or 40)))
+
+
+@comm_v2_blueprint.get("/api/admin/calls/<path:call_id>/delivery")
+def api_admin_call_delivery(call_id):
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    return _timed_json("admin_call_delivery", lambda: call_engine.call_delivery_diagnostics(call_id))
 
 
 @comm_v2_blueprint.get("/api/admin/calls/<path:call_id>")
