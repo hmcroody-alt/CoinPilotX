@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from services import pulse_ai_knowledge, pulse_ai_provider_router
+from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search
 
 
 LOGGER = logging.getLogger(__name__)
@@ -201,6 +201,58 @@ def ensure_schema(cur=None, conn=None) -> None:
             )
             """
         )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pulse_ai_web_search_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                query_hash TEXT NOT NULL,
+                provider TEXT,
+                status TEXT NOT NULL,
+                result_count INTEGER DEFAULT 0,
+                latency_ms INTEGER DEFAULT 0,
+                reason TEXT,
+                metadata_json TEXT,
+                created_at TEXT
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_ai_web_search_logs_user ON pulse_ai_web_search_logs(user_id, created_at)")
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pulse_ai_provider_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                provider TEXT,
+                model TEXT,
+                task TEXT,
+                status TEXT NOT NULL,
+                latency_ms INTEGER DEFAULT 0,
+                error_reason TEXT,
+                correlation_id TEXT,
+                metadata_json TEXT,
+                created_at TEXT
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_ai_provider_events_user ON pulse_ai_provider_events(user_id, created_at)")
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pulse_ai_safety_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                event_type TEXT NOT NULL,
+                category TEXT,
+                mode TEXT,
+                action TEXT NOT NULL,
+                reasons_json TEXT,
+                correlation_id TEXT,
+                metadata_json TEXT,
+                created_at TEXT
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_ai_safety_events_user ON pulse_ai_safety_events(user_id, created_at)")
         _seed_foundation(cur)
         if conn:
             conn.commit()
@@ -379,7 +431,7 @@ def _messages_for_conversation(cur, conversation: dict, user_id: int, limit: int
 
 def _retrieve_knowledge(cur, query: str, limit: int = 8) -> list[dict]:
     terms = [term for term in re.findall(r"[a-z0-9]{3,}", query.lower()) if term not in {"the", "and", "how", "what", "with", "pulse", "pulsesoc"}]
-    cur.execute("SELECT * FROM pulse_ai_knowledge_items WHERE status='approved' ORDER BY updated_at DESC, id DESC LIMIT 80")
+    cur.execute("SELECT * FROM pulse_ai_knowledge_items WHERE status='approved' ORDER BY updated_at DESC, id DESC LIMIT 220")
     rows = [dict(row) for row in cur.fetchall()]
     scored = []
     for row in rows:
@@ -425,6 +477,77 @@ def _record_learning_event(cur, user_id: int | None, event_type: str, source: st
     )
 
 
+def _record_safety_event(cur, user_id: int, classification: dict[str, Any], action: str, correlation_id: str) -> None:
+    cur.execute(
+        """
+        INSERT INTO pulse_ai_safety_events
+        (user_id, event_type, category, mode, action, reasons_json, correlation_id, metadata_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(user_id),
+            "request_classified",
+            _clean(classification.get("category") or "", 80),
+            _clean(classification.get("mode") or "", 80),
+            _clean(action, 80),
+            json.dumps(classification.get("reasons") or [], default=str)[:2000],
+            correlation_id,
+            json.dumps({"disallowed": bool(classification.get("disallowed"))}, default=str),
+            _now(),
+        ),
+    )
+
+
+def _record_web_search(cur, user_id: int, query: str, result: dict[str, Any]) -> None:
+    import hashlib
+
+    query_hash = hashlib.sha256(str(query or "").strip().lower().encode("utf-8")).hexdigest()[:24]
+    cur.execute(
+        """
+        INSERT INTO pulse_ai_web_search_logs
+        (user_id, query_hash, provider, status, result_count, latency_ms, reason, metadata_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(user_id),
+            query_hash,
+            _clean(result.get("provider") or "", 80),
+            "success" if result.get("ok") else "failed",
+            len(result.get("results") or []),
+            int(result.get("latency_ms") or 0),
+            _clean(result.get("error") or result.get("reason") or "", 120),
+            json.dumps({"attempts": result.get("attempts") or [], "cache_hit": bool(result.get("cache_hit"))}, default=str)[:8000],
+            _now(),
+        ),
+    )
+
+
+def _record_provider_events(cur, user_id: int, task: str, result: dict[str, Any], correlation_id: str) -> None:
+    attempts = result.get("attempts") or []
+    if not attempts and result.get("provider"):
+        attempts = [{"provider": result.get("provider"), "ok": bool(result.get("ok")), "latency_ms": result.get("latency_ms")}]
+    for attempt in attempts:
+        cur.execute(
+            """
+            INSERT INTO pulse_ai_provider_events
+            (user_id, provider, model, task, status, latency_ms, error_reason, correlation_id, metadata_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(user_id),
+                _clean(attempt.get("provider") or result.get("provider") or "", 80),
+                _clean(result.get("model") or "", 120),
+                _clean(task, 80),
+                "success" if attempt.get("ok") else "failed",
+                int(attempt.get("latency_ms") or 0),
+                _clean(attempt.get("reason") or result.get("reason") or "", 120),
+                correlation_id,
+                json.dumps({"status_code": int(attempt.get("status_code") or 0)}, default=str),
+                _now(),
+            ),
+        )
+
+
 def _rate_limit_ok(cur, user_id: int) -> tuple[bool, int]:
     cutoff = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat(timespec="seconds")
     cur.execute(
@@ -468,7 +591,8 @@ def get_conversation(user_id: int, limit: int = 80) -> dict:
 
 def send_message(user_id: int, payload: dict | None = None) -> dict:
     payload = payload or {}
-    body = _clean(payload.get("message") or payload.get("body") or payload.get("content") or "", MAX_MESSAGE_CHARS)
+    raw_body = payload.get("message") or payload.get("body") or payload.get("content") or ""
+    body = _clean(pulse_ai_safety.redact_sensitive_text(raw_body, MAX_MESSAGE_CHARS), MAX_MESSAGE_CHARS)
     correlation_id = _trace()
     if not body:
         return {"ok": False, "error": "empty_message", "message": "Ask Pulse AI something first.", "correlation_id": correlation_id, "http_status": 400}
@@ -483,11 +607,56 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
             conn.commit()
             return {"ok": False, "error": "rate_limited", "message": "Pulse AI is receiving too many messages. Pause for a moment and try again.", "correlation_id": correlation_id, "http_status": 429}
         user_message_id = _insert_message(cur, int(conversation["id"]), int(user_id), "user", body, metadata={"client_message_id": payload.get("client_message_id") or ""})
+
+        route = pulse_ai_router.classify(body)
+        safety = route.get("safety") or pulse_ai_safety.classify_request(body)
+        _record_safety_event(cur, int(user_id), safety, "blocked" if safety.get("disallowed") else "allowed", correlation_id)
+        if safety.get("disallowed"):
+            safe_reply = pulse_ai_safety.refusal_message(safety)
+            assistant_id = _insert_message(
+                cur,
+                int(conversation["id"]),
+                int(user_id),
+                "assistant",
+                safe_reply,
+                provider="pulse_ai_safety",
+                provider_model="policy",
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                correlation_id=correlation_id,
+                metadata={"safety": safety},
+            )
+            _record_learning_event(cur, int(user_id), "safety_refusal", "pulse_ai_safety", {"message_id": assistant_id, "reasons": safety.get("reasons") or []})
+            conn.commit()
+            refreshed = get_conversation(int(user_id))
+            return {
+                "ok": True,
+                "message_id": assistant_id,
+                "user_message_id": user_message_id,
+                "reply": safe_reply,
+                "provider": "pulse_ai_safety",
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "correlation_id": correlation_id,
+                **refreshed,
+            }
+
         current_messages = _messages_for_conversation(cur, conversation, int(user_id), limit=40)
         knowledge = _retrieve_knowledge(cur, body)
+        search_result = {}
+        if route.get("needs_web_search"):
+            search_result = pulse_ai_web_search.search(body, purpose="pulse_ai_messenger")
+            _record_web_search(cur, int(user_id), body, search_result)
+            web_context = pulse_ai_web_search.context_block(search_result)
+            if web_context:
+                knowledge.insert(0, {"id": 0, "title": "Live web search context", "category": "web_search", "body": web_context})
         user_memory = _user_memory(cur, int(user_id), settings)
         prompt_messages = pulse_ai_knowledge.build_messages(body, _history_for_prompt(current_messages[:-1], settings), knowledge, user_memory)
-        result = pulse_ai_provider_router.generate_response(prompt_messages, correlation_id=correlation_id, task="pulse_ai_messenger")
+        if safety.get("category") == "cyber":
+            prompt_messages.insert(1, {"role": "system", "content": pulse_ai_safety.safety_prompt_addendum(safety.get("mode") or "")})
+        if search_result and not search_result.get("ok"):
+            prompt_messages.insert(1, {"role": "system", "content": search_result.get("message") or "Live search was unavailable; answer with general guidance only and be clear that live facts may have changed."})
+        task = "cybersecurity" if safety.get("category") == "cyber" else "web_search" if search_result else route.get("task") or "pulse_ai_messenger"
+        result = pulse_ai_provider_router.generate_response(prompt_messages, correlation_id=correlation_id, task=task)
+        _record_provider_events(cur, int(user_id), task, result, correlation_id)
         if result.get("ok"):
             assistant_id = _insert_message(
                 cur,
@@ -499,9 +668,19 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
                 provider_model=result.get("model") or "",
                 latency_ms=int(result.get("latency_ms") or 0),
                 correlation_id=correlation_id,
-                metadata={"attempts": result.get("attempts") or [], "knowledge_ids": [item.get("id") for item in knowledge]},
+                metadata={
+                    "attempts": result.get("attempts") or [],
+                    "knowledge_ids": [item.get("id") for item in knowledge if item.get("id")],
+                    "web_search": {
+                        "used": bool(search_result),
+                        "ok": bool(search_result.get("ok")) if search_result else False,
+                        "provider": search_result.get("provider") or "",
+                        "result_count": len(search_result.get("results") or []),
+                    },
+                    "safety": {"category": safety.get("category"), "mode": safety.get("mode")},
+                },
             )
-            _record_learning_event(cur, int(user_id), "message_answered", "pulse_ai_messenger", {"provider": result.get("provider"), "latency_ms": result.get("latency_ms"), "message_id": assistant_id})
+            _record_learning_event(cur, int(user_id), "message_answered", "pulse_ai_messenger", {"provider": result.get("provider"), "latency_ms": result.get("latency_ms"), "message_id": assistant_id, "task": task, "web_search_used": bool(search_result)})
             conn.commit()
             refreshed = get_conversation(int(user_id))
             return {
@@ -563,6 +742,7 @@ def reset_conversation(user_id: int) -> dict:
 
 def status() -> dict:
     provider_status = pulse_ai_provider_router.provider_status()
+    web_status = pulse_ai_web_search.provider_status()
     return {
         "ok": True,
         "assistant": "Pulse AI",
@@ -570,7 +750,9 @@ def status() -> dict:
         "providers": provider_status.get("providers") or [],
         "configured_count": provider_status.get("configured_count") or 0,
         "fallback_order": provider_status.get("fallback_order") or [],
+        "web_search": web_status,
         "learning_modes": ["global_knowledge", "user_personalization", "contextual_assist", "admin_reviewed_learning"],
+        "cybersecurity_modes": list(pulse_ai_safety.CYBER_MODES.values()),
     }
 
 
@@ -687,6 +869,9 @@ def admin_learning_dashboard() -> dict:
             ("pulse_ai_safety_reviews", "safety_reviews"),
             ("pulse_ai_feature_registry", "features"),
             ("pulse_ai_messages", "messages"),
+            ("pulse_ai_web_search_logs", "web_searches"),
+            ("pulse_ai_provider_events", "provider_events"),
+            ("pulse_ai_safety_events", "safety_events"),
         ]:
             cur.execute(f"SELECT COUNT(*) AS total FROM {table}")
             stats[key] = int(dict(cur.fetchone() or {}).get("total") or 0)
@@ -698,14 +883,24 @@ def admin_learning_dashboard() -> dict:
         knowledge = [dict(row) for row in cur.fetchall()]
         cur.execute("SELECT * FROM pulse_ai_safety_reviews ORDER BY id DESC LIMIT 40")
         reviews = [dict(row) for row in cur.fetchall()]
+        cur.execute("SELECT provider, status, COUNT(*) AS total FROM pulse_ai_provider_events GROUP BY provider, status ORDER BY total DESC LIMIT 20")
+        provider_events = [dict(row) for row in cur.fetchall()]
+        cur.execute("SELECT provider, status, COUNT(*) AS total FROM pulse_ai_web_search_logs GROUP BY provider, status ORDER BY total DESC LIMIT 20")
+        web_search_usage = [dict(row) for row in cur.fetchall()]
+        cur.execute("SELECT category, mode, action, COUNT(*) AS total FROM pulse_ai_safety_events GROUP BY category, mode, action ORDER BY total DESC LIMIT 20")
+        safety_events = [dict(row) for row in cur.fetchall()]
         return {
             "ok": True,
             "stats": stats,
             "provider_status": pulse_ai_provider_router.provider_status(),
+            "web_search_status": pulse_ai_web_search.provider_status(),
             "feedback_trends": feedback_trends,
             "recent_feedback": feedback,
             "knowledge_items": knowledge,
             "safety_reviews": reviews,
+            "provider_events": provider_events,
+            "web_search_usage": web_search_usage,
+            "safety_events": safety_events,
         }
     finally:
         conn.close()

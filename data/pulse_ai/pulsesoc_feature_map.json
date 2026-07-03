@@ -1,0 +1,200 @@
+[
+  {
+    "id": "home.feed",
+    "name": "Home Feed",
+    "status": "active",
+    "entry_points": ["/pulse", "Bottom navigation: Home"],
+    "description": "Main PulseSoc social feed for posts, discovery, reactions, comments, creators, and quick app navigation.",
+    "user_help": "Tap Home in the bottom navigation and scroll the feed.",
+    "related": ["reels.viewer", "status.viewer", "messenger.inbox", "search.global"]
+  },
+  {
+    "id": "reels.viewer",
+    "name": "Reels",
+    "status": "active",
+    "entry_points": ["/pulse/reels", "Bottom navigation: Reels", "Join Live links"],
+    "description": "Immersive vertical video and Live watching surface.",
+    "user_help": "Tap Reels or tap Join Live anywhere to open that Live inside Reels.",
+    "related": ["live.watch.reels_only", "music.discovery", "status.viewer"]
+  },
+  {
+    "id": "status.creator",
+    "name": "Create Status",
+    "status": "active",
+    "entry_points": ["Create button", "/pulse/status"],
+    "description": "Create short-lived photo, video, text, or music Status posts.",
+    "user_help": "Tap Create, choose Status, add media or music, choose privacy, then post.",
+    "related": ["status.viewer", "music.discovery", "privacy.status"]
+  },
+  {
+    "id": "messenger.inbox",
+    "name": "Messenger",
+    "status": "active",
+    "entry_points": ["/pulse/messages", "Bottom navigation: Messages"],
+    "description": "Conversation inbox for direct chats, groups, Pulse AI, media messages, voice messages, and Pulses.",
+    "user_help": "Tap Messages, then choose a conversation or Pulse AI.",
+    "related": ["messenger.calls.audio", "messenger.calls.video", "pulse_ai.chat"]
+  },
+  {
+    "id": "messenger.calls.audio",
+    "name": "Audio Pulses",
+    "status": "active",
+    "entry_points": ["/pulse/messages", "Messenger conversation header phone icon"],
+    "description": "Start a voice connection from a Messenger conversation.",
+    "user_help": "Open a conversation and tap the phone icon.",
+    "related": ["messenger.inbox", "notifications.push", "privacy.notifications"]
+  },
+  {
+    "id": "messenger.calls.video",
+    "name": "Video Pulses",
+    "status": "active",
+    "entry_points": ["/pulse/messages", "Messenger conversation header video icon"],
+    "description": "Start a video connection from a Messenger conversation.",
+    "user_help": "Open a conversation and tap the video icon.",
+    "related": ["messenger.inbox", "messenger.calls.audio", "notifications.push"]
+  },
+  {
+    "id": "pulse_ai.chat",
+    "name": "Pulse AI",
+    "status": "active",
+    "entry_points": ["/pulse/messages", "Messenger conversation row: Pulse AI"],
+    "description": "PulseSoc's assistant for platform help, feature guidance, safety education, and current information when web search is needed.",
+    "user_help": "Open Messenger and tap the Pulse AI conversation.",
+    "related": ["intelligence.center", "security.account", "crypto.alerts.manage"]
+  },
+  {
+    "id": "music.discovery",
+    "name": "PulseSoc Music",
+    "status": "active",
+    "entry_points": ["Music surfaces", "Status music picker", "Status music signature"],
+    "description": "Music identity, trending songs, Status soundtracks, and creator audio discovery.",
+    "user_help": "Use the music controls in Status or music discovery surfaces.",
+    "related": ["status.creator", "reels.viewer", "intelligence.music_pulse"]
+  },
+  {
+    "id": "notifications.center",
+    "name": "Notification Center",
+    "status": "active",
+    "entry_points": ["Notification bell", "/api/notifications"],
+    "description": "In-app notifications, unread counts, deep links, and read state.",
+    "user_help": "Tap the notification bell to view and manage notifications.",
+    "related": ["notifications.push", "privacy.notifications", "intelligence.center"]
+  },
+  {
+    "id": "notifications.push",
+    "name": "Push Notifications",
+    "status": "active",
+    "entry_points": ["Notification onboarding", "Browser/PWA permission prompt", "Settings"],
+    "description": "Device/browser push delivery for messages, comments, calls, crypto alerts, security alerts, and other eligible events.",
+    "user_help": "Enable notifications after PulseSoc explains the value, then manage channels in settings.",
+    "related": ["notifications.center", "privacy.notifications", "messenger.calls.audio"]
+  },
+  {
+    "id": "crypto.alerts.manage",
+    "name": "Manage My Alerts",
+    "status": "active",
+    "entry_points": ["Crypto Command Center", "/pulse/crypto/alerts"],
+    "description": "Manage every crypto alert that can fire for the user.",
+    "user_help": "Open Crypto Command Center, then Manage My Alerts.",
+    "related": ["intelligence.crypto_pulse", "notifications.push", "pulse_ai.chat"]
+  },
+  {
+    "id": "intelligence.center",
+    "name": "Galaxy Intelligence Center",
+    "status": "active",
+    "entry_points": ["/pulse/intelligence", "/pulse/settings/intelligence"],
+    "description": "Subscribe to Intelligence Streams, set confidence thresholds, use digest modes, and provide feedback.",
+    "user_help": "Open Galaxy Intelligence Center and choose streams such as Crypto Pulse, Security Pulse, or World Pulse.",
+    "related": ["pulse_ai.chat", "notifications.center", "crypto.alerts.manage"]
+  },
+  {
+    "id": "conversation.control_center",
+    "name": "Conversation Control Center",
+    "status": "active",
+    "entry_points": ["Messenger conversation More menu"],
+    "description": "Control settings for a Messenger conversation.",
+    "user_help": "Open a conversation, tap More, then choose Conversation Control Center.",
+    "related": ["messenger.inbox", "privacy.notifications", "security.account"]
+  },
+  {
+    "id": "privacy.notifications",
+    "name": "Notification Privacy",
+    "status": "active",
+    "entry_points": ["Conversation Control Center", "Settings"],
+    "description": "Manage lock-screen previews, muted conversations, quiet hours, and channel preferences.",
+    "user_help": "Open settings or a conversation control center and adjust notification/privacy toggles.",
+    "related": ["notifications.push", "notifications.center", "messenger.inbox"]
+  },
+  {
+    "id": "security.account",
+    "name": "Account Security",
+    "status": "active",
+    "entry_points": ["Security settings", "Account settings"],
+    "description": "Protect account access, sessions, password resets, devices, and security alerts.",
+    "user_help": "Use a strong password, enable available protections, review sessions, and respond to security alerts.",
+    "related": ["pulse_ai.chat", "notifications.push", "account.recovery"]
+  },
+  {
+    "id": "account.recovery",
+    "name": "Account Recovery",
+    "status": "active",
+    "entry_points": ["Login page", "Forgot password", "Security settings"],
+    "description": "Official flows for resetting password or recovering access.",
+    "user_help": "Use Forgot Password from the official PulseSoc login page.",
+    "related": ["security.account", "notifications.center"]
+  },
+  {
+    "id": "creator.tools",
+    "name": "Creator Tools",
+    "status": "active",
+    "entry_points": ["Profile", "Creator dashboard", "Premium"],
+    "description": "Creator insights, recommendations, verification, and Premium creator workflows.",
+    "user_help": "Open Profile or Creator surfaces to access creator tools.",
+    "related": ["intelligence.center", "premium.founder", "verification.badges"]
+  },
+  {
+    "id": "premium.founder",
+    "name": "Premium / Founder Access",
+    "status": "active",
+    "entry_points": ["Premium", "Billing", "Profile upgrade surfaces"],
+    "description": "Premium identity, creator, profile, and advanced platform enhancements.",
+    "user_help": "Open Premium to review benefits and billing options.",
+    "related": ["creator.tools", "verification.badges"]
+  },
+  {
+    "id": "verification.badges",
+    "name": "Verification Badges",
+    "status": "active",
+    "entry_points": ["Profile", "Verification center"],
+    "description": "Verification surfaces for trusted or approved accounts.",
+    "user_help": "Use the verification center if eligible.",
+    "related": ["profile.identity", "creator.tools"]
+  },
+  {
+    "id": "live.watch.reels_only",
+    "name": "PulseSoc Live",
+    "status": "active",
+    "entry_points": ["/pulse/reels?live=<live_id>", "Join Live buttons"],
+    "description": "PulseSoc Live is watched only inside Reels.",
+    "user_help": "Tap Join Live anywhere or open Reels to encounter Live streams.",
+    "related": ["reels.viewer", "creator.tools", "notifications.push"]
+  },
+  {
+    "id": "search.global",
+    "name": "Search",
+    "status": "active",
+    "entry_points": ["Search bars", "Messenger search", "Home search"],
+    "description": "Find people, rooms, posts, conversations, and relevant PulseSoc surfaces.",
+    "user_help": "Use the search field and type a name, topic, room, or conversation.",
+    "related": ["home.feed", "messenger.inbox", "profile.identity"]
+  },
+  {
+    "id": "profile.identity",
+    "name": "Profile",
+    "status": "active",
+    "entry_points": ["Bottom navigation: Profile", "/pulse/profile"],
+    "description": "Identity, avatar, creator information, posts, and profile preferences.",
+    "user_help": "Tap Profile in the bottom navigation.",
+    "related": ["privacy.notifications", "verification.badges", "creator.tools"]
+  }
+]

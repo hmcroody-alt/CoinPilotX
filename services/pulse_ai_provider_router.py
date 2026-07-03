@@ -89,7 +89,26 @@ def provider_status() -> dict[str, Any]:
 
 
 def configured_providers() -> list[ProviderConfig]:
+    return configured_providers_for_task("general")
+
+
+def _task_preference(task: str = "general") -> list[str]:
+    task = (task or "general").lower()
+    if "cyber" in task or "security" in task or "safety" in task:
+        return ["claude", "openai", "gemini", "deepseek", "groq"]
+    if "technical" in task or "code" in task or "developer" in task:
+        return ["deepseek", "openai", "claude", "gemini", "groq"]
+    if "web" in task or "current" in task or "search" in task:
+        return ["openai", "gemini", "claude", "groq", "deepseek"]
+    if "fast" in task:
+        return ["groq", "openai", "gemini", "claude", "deepseek"]
+    return []
+
+
+def configured_providers_for_task(task: str = "general") -> list[ProviderConfig]:
     preferred = [item.strip().lower() for item in _env_text("PULSE_AI_PROVIDER_ORDER").split(",") if item.strip()]
+    if not preferred:
+        preferred = _task_preference(task)
     ordered = list(PROVIDERS)
     if preferred:
         by_name = {item.name: item for item in PROVIDERS}
@@ -194,7 +213,7 @@ def _call_provider(config: ProviderConfig, messages: list[dict[str, str]]) -> st
 
 def generate_response(messages: list[dict[str, str]], correlation_id: str = "", task: str = "general") -> dict[str, Any]:
     attempts: list[dict[str, Any]] = []
-    providers = configured_providers()
+    providers = configured_providers_for_task(task)
     if not providers:
         return {
             "ok": False,

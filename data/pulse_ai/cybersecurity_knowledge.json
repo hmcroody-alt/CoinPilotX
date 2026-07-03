@@ -1,0 +1,162 @@
+[
+  {
+    "topic": "password safety",
+    "mode": "Account Protection",
+    "summary": "Use a unique, long password for every important account and store it in a reputable password manager.",
+    "safe_guidance": ["Use at least 14 characters or a passphrase.", "Never reuse passwords across email, banking, crypto, or PulseSoc.", "Change passwords immediately after suspected compromise."],
+    "warning_signs": ["Unexpected password reset emails", "Login alerts from unknown devices", "Password reuse across leaked sites"],
+    "do_not_help_with": ["password cracking", "credential stuffing", "stealing accounts"]
+  },
+  {
+    "topic": "phishing prevention",
+    "mode": "Beginner Safety",
+    "summary": "Phishing tries to trick users into giving away passwords, codes, payment details, crypto keys, or account access.",
+    "safe_guidance": ["Pause before clicking urgent links.", "Check the domain carefully.", "Use bookmarks or the official app for sensitive actions.", "Never share one-time codes."],
+    "warning_signs": ["Urgent threats", "Gift or prize claims", "Slightly misspelled domains", "Requests for codes or passwords"],
+    "do_not_help_with": ["phishing kits", "credential harvesting", "bypassing MFA"]
+  },
+  {
+    "topic": "scam detection",
+    "mode": "Scam Shield",
+    "summary": "Scams often rely on urgency, secrecy, fake authority, emotional pressure, or guaranteed returns.",
+    "safe_guidance": ["Verify through official channels.", "Do not send money or crypto under pressure.", "Save evidence before blocking/reporting.", "Ask a trusted person to review suspicious offers."],
+    "warning_signs": ["Guaranteed profit", "Support asking for seed phrases", "Romance requests for money", "Impersonation of staff or creators"],
+    "do_not_help_with": ["creating scams", "social engineering scripts", "fraud"]
+  },
+  {
+    "topic": "two-factor authentication",
+    "mode": "Account Protection",
+    "summary": "Two-factor authentication adds a second proof beyond a password and can stop many account takeovers.",
+    "safe_guidance": ["Use authenticator apps or security keys when available.", "Save recovery codes securely offline.", "Do not share codes with support or friends."],
+    "warning_signs": ["Repeated code prompts", "A caller asking for a code", "Unknown device login alert"],
+    "do_not_help_with": ["MFA bypass", "SIM swap abuse", "OTP interception"]
+  },
+  {
+    "topic": "device security",
+    "mode": "Beginner Safety",
+    "summary": "Secure devices reduce the chance that attackers can steal sessions, media, passwords, or private data.",
+    "safe_guidance": ["Keep operating systems and browsers updated.", "Use screen lock.", "Remove unused apps/extensions.", "Install apps only from trusted stores."],
+    "warning_signs": ["Unexpected popups", "Battery drain after unknown install", "Browser redirects", "New apps you did not install"],
+    "do_not_help_with": ["malware creation", "persistence", "unauthorized monitoring"]
+  },
+  {
+    "topic": "public Wi-Fi risks",
+    "mode": "Beginner Safety",
+    "summary": "Public Wi-Fi can expose users to spoofed networks, tracking, or insecure sites.",
+    "safe_guidance": ["Use HTTPS sites.", "Avoid sensitive financial changes on unknown Wi-Fi.", "Use a reputable VPN if needed.", "Forget suspicious networks after use."],
+    "warning_signs": ["Wi-Fi names imitating hotels or airports", "Certificate warnings", "Forced downloads"],
+    "do_not_help_with": ["Wi-Fi cracking", "man-in-the-middle attacks", "credential capture"]
+  },
+  {
+    "topic": "malware prevention",
+    "mode": "Beginner Safety",
+    "summary": "Malware can steal passwords, files, crypto keys, browser sessions, or device control.",
+    "safe_guidance": ["Do not open unexpected attachments.", "Keep backups.", "Update software.", "Use built-in OS protections and reputable security tools."],
+    "warning_signs": ["Unexpected macros", "Fake updates", "Cracked software downloads", "Antivirus disabled"],
+    "do_not_help_with": ["malware building", "evasion", "payloads"]
+  },
+  {
+    "topic": "social engineering",
+    "mode": "Scam Shield",
+    "summary": "Social engineering manipulates trust, urgency, fear, greed, or authority to make people bypass normal safety.",
+    "safe_guidance": ["Verify identity through a separate channel.", "Slow down urgent requests.", "Use written policies for money or account changes."],
+    "warning_signs": ["Do not tell anyone", "Act right now", "I am support/admin", "Send this code"],
+    "do_not_help_with": ["impersonation scripts", "pretexting attacks", "fraudulent persuasion"]
+  },
+  {
+    "topic": "crypto wallet safety",
+    "mode": "Scam Shield",
+    "summary": "Crypto wallet safety starts with protecting seed phrases, private keys, approvals, and device integrity.",
+    "safe_guidance": ["Never share seed phrases or private keys.", "Use hardware wallets for significant funds.", "Review token approvals.", "Verify contract and site URLs."],
+    "warning_signs": ["Support asks for seed phrase", "Airdrop asks to connect wallet urgently", "Unknown token approval", "Guaranteed returns"],
+    "do_not_help_with": ["wallet draining", "seed phrase theft", "malicious contracts"]
+  },
+  {
+    "topic": "fake investment scams",
+    "mode": "Scam Shield",
+    "summary": "Fake investment scams promise easy gains, pressure users to deposit more, and often block withdrawals.",
+    "safe_guidance": ["Verify licenses and official domains.", "Be skeptical of guaranteed returns.", "Test withdrawals before trusting platforms.", "Avoid investments from strangers in DMs."],
+    "warning_signs": ["Guaranteed profit", "Tax or fee required to withdraw", "Celebrity impersonation", "Unsolicited investment coach"],
+    "do_not_help_with": ["investment fraud", "pump manipulation", "fake exchange setup"]
+  },
+  {
+    "topic": "romance scams",
+    "mode": "Scam Shield",
+    "summary": "Romance scams build emotional trust, then ask for money, crypto, gift cards, documents, or account access.",
+    "safe_guidance": ["Never send money to someone you have not met and verified.", "Reverse image search profile photos.", "Talk to someone you trust before sending funds."],
+    "warning_signs": ["Too fast intimacy", "Emergency money requests", "Crypto investment pitch", "Avoids video calls"],
+    "do_not_help_with": ["romance scam scripts", "identity deception", "fraud"]
+  },
+  {
+    "topic": "SIM swapping",
+    "mode": "Account Protection",
+    "summary": "SIM swapping moves a phone number to an attacker's SIM so they can intercept SMS codes.",
+    "safe_guidance": ["Use app-based 2FA or security keys instead of SMS when possible.", "Set a carrier PIN.", "Watch for sudden loss of cell service."],
+    "warning_signs": ["Phone suddenly loses service", "Carrier change alerts", "Password resets you did not request"],
+    "do_not_help_with": ["SIM swap instructions", "carrier impersonation", "OTP theft"]
+  },
+  {
+    "topic": "email security",
+    "mode": "Account Protection",
+    "summary": "Email is often the recovery key for other accounts, so it must be protected first.",
+    "safe_guidance": ["Use a unique password.", "Enable strong 2FA.", "Review forwarding rules and recovery options.", "Check active sessions."],
+    "warning_signs": ["Unknown forwarding rule", "Login from a new country", "Missing emails", "Password reset emails"],
+    "do_not_help_with": ["email takeover", "credential theft", "mailbox scraping"]
+  },
+  {
+    "topic": "browser safety",
+    "mode": "Beginner Safety",
+    "summary": "Browsers hold sessions, passwords, extensions, downloads, and permission access.",
+    "safe_guidance": ["Remove suspicious extensions.", "Do not ignore certificate warnings.", "Use official domains.", "Clear site permissions if a site feels suspicious."],
+    "warning_signs": ["New toolbar", "Search engine changed", "Popups asking to allow notifications", "Unexpected downloads"],
+    "do_not_help_with": ["browser exploit chains", "session stealing", "credential harvesting"]
+  },
+  {
+    "topic": "app permissions",
+    "mode": "Beginner Safety",
+    "summary": "App permissions control access to camera, microphone, location, notifications, contacts, and files.",
+    "safe_guidance": ["Grant only what a feature needs.", "Review permissions regularly.", "Disable unused camera/mic/location permissions."],
+    "warning_signs": ["App asks for unrelated permissions", "Camera/mic indicator appears unexpectedly"],
+    "do_not_help_with": ["permission bypass", "surveillance", "unauthorized access"]
+  },
+  {
+    "topic": "incident response basics",
+    "mode": "Incident Response",
+    "summary": "After suspected compromise, preserve evidence, secure accounts, isolate devices, and recover in order.",
+    "safe_guidance": ["Disconnect suspicious device from the network if needed.", "Change passwords from a clean device.", "Revoke sessions/tokens.", "Save logs/screenshots.", "Contact platform support or professionals for serious incidents."],
+    "warning_signs": ["Unauthorized logins", "Unexpected transactions", "Unknown devices", "Security tools disabled"],
+    "do_not_help_with": ["retaliation hacking", "unauthorized tracing", "counterattacks"]
+  },
+  {
+    "topic": "small business cybersecurity",
+    "mode": "Small Business Security",
+    "summary": "Small businesses should prioritize identity security, backups, updates, least privilege, and phishing training.",
+    "safe_guidance": ["Use MFA everywhere.", "Keep offline backups.", "Patch systems.", "Limit admin access.", "Train staff on phishing and payment-change verification."],
+    "warning_signs": ["Invoice change requests", "Unknown admin accounts", "Unpatched public services", "No tested backups"],
+    "do_not_help_with": ["unauthorized testing", "exploitation", "credential harvesting"]
+  },
+  {
+    "topic": "WordPress security basics",
+    "mode": "Small Business Security",
+    "summary": "WordPress security depends on updates, strong admin controls, reputable plugins, backups, and monitoring.",
+    "safe_guidance": ["Update core/plugins/themes.", "Remove unused plugins.", "Use strong admin passwords and MFA.", "Back up the site.", "Use a reputable security plugin or managed host."],
+    "warning_signs": ["Unknown admin user", "Injected links", "Defaced pages", "Unexpected redirects"],
+    "do_not_help_with": ["WordPress exploitation", "plugin weaponization", "webshell deployment"]
+  },
+  {
+    "topic": "secure backups",
+    "mode": "Incident Response",
+    "summary": "Backups protect against ransomware, mistakes, device loss, and account compromise.",
+    "safe_guidance": ["Keep at least one offline or immutable backup.", "Test restores.", "Protect backup accounts with MFA.", "Separate backup credentials from daily accounts."],
+    "warning_signs": ["Backups never tested", "Backups connected to infected systems", "Single copy only"],
+    "do_not_help_with": ["backup destruction", "ransomware", "data theft"]
+  },
+  {
+    "topic": "update hygiene",
+    "mode": "Beginner Safety",
+    "summary": "Updates close known vulnerabilities in operating systems, browsers, apps, routers, and plugins.",
+    "safe_guidance": ["Enable automatic updates where practical.", "Prioritize browser, OS, password manager, and security updates.", "Install from official update channels."],
+    "warning_signs": ["Fake update popups", "Unsupported device/software", "Critical security advisory"],
+    "do_not_help_with": ["weaponized CVE exploitation", "patch bypass", "exploit code"]
+  }
+]

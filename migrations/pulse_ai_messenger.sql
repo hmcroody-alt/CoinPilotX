@@ -125,3 +125,52 @@ CREATE TABLE IF NOT EXISTS pulse_ai_conversation_context_permissions (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS pulse_ai_web_search_logs (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT,
+    query_hash TEXT NOT NULL,
+    provider TEXT,
+    status TEXT NOT NULL,
+    result_count INTEGER DEFAULT 0,
+    latency_ms INTEGER DEFAULT 0,
+    reason TEXT,
+    metadata_json JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pulse_ai_web_search_logs_user
+    ON pulse_ai_web_search_logs(user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS pulse_ai_provider_events (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT,
+    provider TEXT,
+    model TEXT,
+    task TEXT,
+    status TEXT NOT NULL,
+    latency_ms INTEGER DEFAULT 0,
+    error_reason TEXT,
+    correlation_id TEXT,
+    metadata_json JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pulse_ai_provider_events_user
+    ON pulse_ai_provider_events(user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS pulse_ai_safety_events (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT,
+    event_type TEXT NOT NULL,
+    category TEXT,
+    mode TEXT,
+    action TEXT NOT NULL,
+    reasons_json JSONB DEFAULT '[]'::jsonb,
+    correlation_id TEXT,
+    metadata_json JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pulse_ai_safety_events_user
+    ON pulse_ai_safety_events(user_id, created_at);

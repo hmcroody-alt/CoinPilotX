@@ -73,6 +73,9 @@
       <article class="card"><strong>Messages</strong><p class="metric">{{ stats.messages or 0 }}</p></article>
       <article class="card"><strong>Learning Events</strong><p class="metric">{{ stats.learning_events or 0 }}</p></article>
       <article class="card"><strong>Features</strong><p class="metric">{{ stats.features or 0 }}</p></article>
+      <article class="card"><strong>Web Searches</strong><p class="metric">{{ stats.web_searches or 0 }}</p></article>
+      <article class="card"><strong>Provider Events</strong><p class="metric">{{ stats.provider_events or 0 }}</p></article>
+      <article class="card"><strong>Safety Events</strong><p class="metric">{{ stats.safety_events or 0 }}</p></article>
     </section>
 
     <section class="card" style="margin-top:14px">
@@ -81,6 +84,25 @@
         <span class="pill {{ '' if provider.configured else 'warn' }}">{{ provider.provider }} {{ 'configured' if provider.configured else 'missing' }} · {{ provider.model }}</span>
       {% endfor %}
       <p class="muted">Only presence/missing state is shown. Provider secrets are never rendered.</p>
+    </section>
+
+    <section class="split" style="margin-top:14px">
+      <article class="card">
+        <h2>Web Search Status</h2>
+        {% for provider in dashboard.web_search_status.providers or [] %}
+          <span class="pill {{ '' if provider.configured else 'warn' }}">{{ provider.provider }} {{ 'configured' if provider.configured else 'missing' }}</span>
+        {% endfor %}
+        <p class="muted">Live search runs only for current/latest questions and uses short timeouts plus cache.</p>
+      </article>
+      <article class="card">
+        <h2>Cyber Safety Modes</h2>
+        <span class="pill">Beginner Safety</span>
+        <span class="pill">Account Protection</span>
+        <span class="pill">Scam Shield</span>
+        <span class="pill">Small Business Security</span>
+        <span class="pill">Incident Response</span>
+        <span class="pill">Learning Mode</span>
+      </article>
     </section>
 
     <section class="split" style="margin-top:14px">
@@ -119,6 +141,34 @@
           </table>
         </div>
       </article>
+    </section>
+
+    <section class="split" style="margin-top:14px">
+      <article class="card">
+        <h2>Provider Events</h2>
+        {% for item in dashboard.provider_events or [] %}
+          <span class="pill {{ '' if item.status == 'success' else 'warn' }}">{{ item.provider or 'provider' }} · {{ item.status }} · {{ item.total }}</span>
+        {% else %}
+          <p class="muted">No provider events recorded yet.</p>
+        {% endfor %}
+      </article>
+      <article class="card">
+        <h2>Web Search Usage</h2>
+        {% for item in dashboard.web_search_usage or [] %}
+          <span class="pill {{ '' if item.status == 'success' else 'warn' }}">{{ item.provider or 'search' }} · {{ item.status }} · {{ item.total }}</span>
+        {% else %}
+          <p class="muted">No live web searches recorded yet.</p>
+        {% endfor %}
+      </article>
+    </section>
+
+    <section class="card" style="margin-top:14px">
+      <h2>Safety Event Trends</h2>
+      {% for item in dashboard.safety_events or [] %}
+        <span class="pill {{ 'danger' if item.action == 'blocked' else '' }}">{{ item.category or 'general' }} · {{ item.mode or 'standard' }} · {{ item.action }} · {{ item.total }}</span>
+      {% else %}
+        <p class="muted">No safety events recorded yet.</p>
+      {% endfor %}
     </section>
 
     <section class="card" style="margin-top:14px">

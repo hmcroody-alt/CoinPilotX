@@ -1,0 +1,322 @@
+[
+  {
+    "feature": "Home feed",
+    "summary": "The PulseSoc Home feed is the main social surface for posts, creator updates, discovery, and quick navigation into the wider PulseSoc galaxy.",
+    "where_to_find_it": "Open PulseSoc and tap Home in the bottom navigation.",
+    "how_to_use_it": "Scroll the feed, open posts, react, comment, share, save, follow creators, and use entry points for Reels, Status, Messenger, Search, and Profile.",
+    "common_questions": ["Where do I see posts?", "How do I react to a post?", "How do I find creators?"],
+    "troubleshooting": ["If the feed looks stale, refresh the page or reopen PulseSoc.", "If media does not load, check network connectivity and app permissions."],
+    "related_features": ["Reels", "Status / Stories", "Search", "Profile"],
+    "safety_notes": ["Do not share passwords, recovery phrases, or private keys in posts or comments."]
+  },
+  {
+    "feature": "Reels",
+    "summary": "Reels is PulseSoc's immersive vertical video surface and the only live-watching surface for PulseSoc Live.",
+    "where_to_find_it": "Tap Reels in the bottom navigation or tap Join Live anywhere in PulseSoc.",
+    "how_to_use_it": "Swipe vertically through videos and Live items, react, comment, share, save, follow creators, and join active Live sessions inside Reels.",
+    "common_questions": ["Where do I watch Live?", "How do I join a Live?", "Why did Join Live open Reels?"],
+    "troubleshooting": ["If playback is silent, check mute state and device volume.", "If a Live has ended, use replay if available."],
+    "related_features": ["Live streaming", "Status / Stories", "PulseSoc Music"],
+    "safety_notes": ["Report harmful Live content using the More or report control."]
+  },
+  {
+    "feature": "Status / Stories",
+    "summary": "Status is PulseSoc's cinematic story surface for short-lived photo, video, music, and text updates.",
+    "where_to_find_it": "Tap Create and choose Status, or open the Status viewer from a creator's story.",
+    "how_to_use_it": "Add a photo, video, text, or music, choose privacy, then publish. Status is designed around one creator identity and one soundtrack.",
+    "common_questions": ["How do I create a Status?", "How long does a Status last?", "How do I add music?"],
+    "troubleshooting": ["If a video does not play, check browser autoplay and network.", "If upload fails, retry from a stable connection."],
+    "related_features": ["PulseSoc Music", "Profile", "Privacy settings"],
+    "safety_notes": ["Review privacy before posting sensitive personal moments."]
+  },
+  {
+    "feature": "Messenger",
+    "summary": "Messenger V3 is the secure conversation hub for direct chats, group chats, media, voice messages, Pulse AI, and audio or video Pulses.",
+    "where_to_find_it": "Tap Messages in the bottom navigation.",
+    "how_to_use_it": "Open a conversation, type a message, attach media, send voice messages, start audio/video Pulses, or open the Conversation Control Center from the More menu.",
+    "common_questions": ["How do I send a voice message?", "Where is Pulse AI?", "How do I search a chat?"],
+    "troubleshooting": ["If messages do not send, check connection and retry.", "If media cannot load, retry the media or reopen the conversation."],
+    "related_features": ["Conversation Control Center", "Audio calls", "Video calls", "Pulse AI chat"],
+    "safety_notes": ["Only share sensitive information with trusted contacts."]
+  },
+  {
+    "feature": "Audio calls",
+    "summary": "Audio communication starts as a Pulse from Messenger and uses the PulseSoc Communications Engine.",
+    "where_to_find_it": "Open a Messenger conversation and tap the phone icon in the header.",
+    "how_to_use_it": "Tap the phone icon, wait for the recipient to answer, then use mic, speaker, minimize, and end controls during the Pulse.",
+    "common_questions": ["How do I start an audio call?", "Why does it say Pulse?", "How do I mute?"],
+    "troubleshooting": ["If the Pulse cannot start, check the displayed error reason.", "Allow microphone permission when prompted."],
+    "related_features": ["Messenger", "Notifications", "Lock-screen notifications"],
+    "safety_notes": ["Do not accept unexpected calls from suspicious accounts."]
+  },
+  {
+    "feature": "Video calls",
+    "summary": "Video Pulses allow face-to-face communication from Messenger with camera, mic, speaker, and flip-camera controls.",
+    "where_to_find_it": "Open a Messenger conversation and tap the video icon in the header.",
+    "how_to_use_it": "Tap the video icon, allow camera and microphone permissions, and use the call controls during the Pulse.",
+    "common_questions": ["How do I start a video call?", "How do I turn camera off?", "How do I flip camera?"],
+    "troubleshooting": ["If camera does not start, check browser permissions.", "If camera state looks wrong, end and start a new Pulse after permissions are corrected."],
+    "related_features": ["Messenger", "Conversation Control Center", "Audio calls"],
+    "safety_notes": ["Video only with people you trust; report harassment or abuse."]
+  },
+  {
+    "feature": "Pulse AI chat",
+    "summary": "Pulse AI is a normal Messenger conversation with the Galaxy Assistant. It helps users understand PulseSoc, troubleshoot features, and learn safety practices.",
+    "where_to_find_it": "Open Messenger and choose the Pulse AI conversation row.",
+    "how_to_use_it": "Ask questions naturally. Pulse AI can answer PulseSoc navigation questions, explain features, help with security education, and search live sources when current information is needed.",
+    "common_questions": ["What can Pulse AI do?", "Can Pulse AI read my chats?", "How do I clear Pulse AI memory?"],
+    "troubleshooting": ["If Pulse AI is unavailable, try again later; normal Messenger remains unaffected.", "If memory is disabled, personalization will be limited."],
+    "related_features": ["Messenger", "Galaxy Intelligence Center", "Security settings"],
+    "safety_notes": ["Pulse AI does not secretly read private chats or learn from private conversations without explicit opt-in."]
+  },
+  {
+    "feature": "PulseSoc Music",
+    "summary": "PulseSoc Music powers sounds, songs, emerging artists, Status soundtracks, and music identity across PulseSoc.",
+    "where_to_find_it": "Open Music surfaces, Status music controls, or music signatures inside content.",
+    "how_to_use_it": "Discover songs, use sounds in Status, save audio, and explore music trends where available.",
+    "common_questions": ["How do I add music to Status?", "Where do trending songs appear?"],
+    "troubleshooting": ["If music does not play, check mute state and browser autoplay.", "If a sound is missing, it may not be available yet."],
+    "related_features": ["Status / Stories", "Reels", "Music Pulse"],
+    "safety_notes": ["Respect creator and music rights when sharing audio."]
+  },
+  {
+    "feature": "Notifications",
+    "summary": "PulseSoc notifications are centralized records with preferences, mute rules, privacy previews, delivery jobs, and deep links.",
+    "where_to_find_it": "Use the notification bell, notification center, Messenger settings, or device notification settings.",
+    "how_to_use_it": "Open notifications, mark them read, use deep links, and manage push, email, SMS, preview, and quiet-hour preferences.",
+    "common_questions": ["How do I turn off lock-screen notifications?", "Why did I not get a push?", "How do unread badges work?"],
+    "troubleshooting": ["Check browser/PWA notification permission.", "Check muted conversations and push settings."],
+    "related_features": ["Messenger", "Crypto alerts", "Galaxy Intelligence Center"],
+    "safety_notes": ["Disable previews on lock screen if privacy matters."]
+  },
+  {
+    "feature": "Crypto alerts",
+    "summary": "Crypto alerts notify users when their own configured alert conditions trigger.",
+    "where_to_find_it": "Open Crypto Command Center and choose Manage My Alerts.",
+    "how_to_use_it": "Create alerts for assets and thresholds, then pause, resume, edit, duplicate, delete, or inspect history.",
+    "common_questions": ["How do I manage crypto alerts?", "Why did an alert fire?", "How do I stop duplicates?"],
+    "troubleshooting": ["If an alert fires but is not visible, use Manage My Alerts and check source-of-truth records.", "If push is missing, check notification permission and device token status."],
+    "related_features": ["Manage My Alerts", "Crypto Pulse", "Notifications"],
+    "safety_notes": ["Crypto alerts are educational signals, not investment advice."]
+  },
+  {
+    "feature": "Market alerts",
+    "summary": "Market alerts and Market Pulse surface macro, stock, ETF, and economic signals when configured and supported.",
+    "where_to_find_it": "Open Galaxy Intelligence Center and subscribe to Market Pulse.",
+    "how_to_use_it": "Use Market Pulse for major market signals and confidence-labeled forecasts; manage delivery frequency and thresholds.",
+    "common_questions": ["What is Market Pulse?", "Can I get stock market news?"],
+    "troubleshooting": ["If live market sources are unavailable, Pulse AI can still explain general market concepts."],
+    "related_features": ["Galaxy Intelligence Center", "Notifications", "Pulse AI chat"],
+    "safety_notes": ["Market content is informational and not financial advice."]
+  },
+  {
+    "feature": "Intelligence Streams",
+    "summary": "Intelligence Streams filter world, market, crypto, security, technology, creator, music, and PulseSoc signals into useful Pulses.",
+    "where_to_find_it": "Open Galaxy Intelligence Center from PulseSoc navigation or settings.",
+    "how_to_use_it": "Enable streams, set frequency, choose confidence thresholds, and give feedback so PulseSoc learns what matters.",
+    "common_questions": ["What are Intelligence Streams?", "How do I mute a stream?", "What does confidence mean?"],
+    "troubleshooting": ["If a stream feels noisy, raise confidence threshold or switch to digest mode."],
+    "related_features": ["Notifications", "Pulse AI chat", "Crypto alerts"],
+    "safety_notes": ["The engine does not learn from private conversations without explicit permission."]
+  },
+  {
+    "feature": "Manage My Alerts",
+    "summary": "Manage My Alerts is the control surface for every crypto alert that can fire for the user.",
+    "where_to_find_it": "Open Crypto Command Center, then My Alerts or Manage My Alerts.",
+    "how_to_use_it": "View alert cards, pause/resume, edit, duplicate, delete, and inspect trigger history.",
+    "common_questions": ["Why do I see only one alert?", "How do I pause SOL alerts?", "How do I inspect history?"],
+    "troubleshooting": ["If notifications show ghost alerts, report it; firing alerts should always be manageable."],
+    "related_features": ["Crypto alerts", "Notifications", "Crypto Pulse"],
+    "safety_notes": ["Avoid trading decisions based only on alerts."]
+  },
+  {
+    "feature": "Conversation Control Center",
+    "summary": "The Conversation Control Center is the settings console for a Messenger conversation.",
+    "where_to_find_it": "Open a Messenger conversation and use the More menu to open the control center.",
+    "how_to_use_it": "Manage search, members, notifications, appearance, privacy, media, security, productivity, storage, accessibility, and danger-zone actions.",
+    "common_questions": ["Where are chat settings?", "How do I mute a chat?", "How do I change theme?"],
+    "troubleshooting": ["If a setting is unavailable, check whether the current chat type or device supports it."],
+    "related_features": ["Messenger", "Notifications", "Privacy settings"],
+    "safety_notes": ["Destructive actions require confirmation."]
+  },
+  {
+    "feature": "Profile",
+    "summary": "Profile controls identity, avatar, presence, posts, creator information, and user-facing preferences.",
+    "where_to_find_it": "Tap Profile in the bottom navigation.",
+    "how_to_use_it": "Update avatar, bio, profile information, privacy, creator status, and related settings where available.",
+    "common_questions": ["How do I change my avatar?", "Where is my profile?"],
+    "troubleshooting": ["If an avatar does not update, reload after upload and check image format."],
+    "related_features": ["Privacy settings", "Creator tools", "Verification badges"],
+    "safety_notes": ["Avoid posting private contact or recovery details in your public bio."]
+  },
+  {
+    "feature": "Privacy settings",
+    "summary": "Privacy settings control previews, read receipts, typing, visibility, lock-screen content, and conversation privacy where supported.",
+    "where_to_find_it": "Open Settings, Messenger conversation controls, or notification preferences.",
+    "how_to_use_it": "Adjust previews, lock-screen visibility, read receipts, online status, and privacy options according to your needs.",
+    "common_questions": ["How do I hide message previews?", "How do I turn off read receipts?"],
+    "troubleshooting": ["If device lock-screen previews still appear, check both PulseSoc and OS notification settings."],
+    "related_features": ["Notifications", "Messenger", "Security settings"],
+    "safety_notes": ["Use private previews on shared or public devices."]
+  },
+  {
+    "feature": "Security settings",
+    "summary": "Security settings help protect account login, sessions, password changes, devices, and recovery.",
+    "where_to_find_it": "Open account settings or security center surfaces where available.",
+    "how_to_use_it": "Use a strong password, enable 2FA if available, review devices, sign out unknown sessions, and respond to security alerts.",
+    "common_questions": ["How do I secure my account?", "What if I got a login alert?"],
+    "troubleshooting": ["If you suspect compromise, change your password, sign out other sessions, and contact support."],
+    "related_features": ["Notifications", "Account recovery", "Pulse AI chat"],
+    "safety_notes": ["PulseSoc will never ask for passwords, private keys, seed phrases, or one-time codes in chat."]
+  },
+  {
+    "feature": "Creator tools",
+    "summary": "Creator tools support content growth, insights, Premium workflows, verification, and future creator monetization features.",
+    "where_to_find_it": "Open Profile, Creator Dashboard, Premium, or relevant creator surfaces.",
+    "how_to_use_it": "Track growth, use best posting-time insights, manage creator settings, and explore creator recommendations where available.",
+    "common_questions": ["How do I grow on PulseSoc?", "Where are creator insights?"],
+    "troubleshooting": ["If analytics are unavailable, the account may not have creator access yet."],
+    "related_features": ["Creator Pulse", "Premium / Founder access", "Verification badges"],
+    "safety_notes": ["Avoid engagement manipulation or misleading promotions."]
+  },
+  {
+    "feature": "Premium / Founder access",
+    "summary": "Premium and Founder access unlock higher-value PulseSoc identity, creator, profile, and platform enhancements where available.",
+    "where_to_find_it": "Open Premium, billing, or profile upgrade surfaces.",
+    "how_to_use_it": "Review plan benefits, complete checkout only through official PulseSoc flows, and manage billing or subscription status.",
+    "common_questions": ["What is Founder Premium?", "How do I manage billing?"],
+    "troubleshooting": ["If payment status is wrong, rely on verified provider/webhook status rather than frontend success alone."],
+    "related_features": ["Creator tools", "Profile", "Notifications"],
+    "safety_notes": ["Do not trust payment links sent by strangers."]
+  },
+  {
+    "feature": "Verification badges",
+    "summary": "Verification badges help identify approved or trusted accounts according to PulseSoc verification rules.",
+    "where_to_find_it": "Profile, creator surfaces, or account verification center where available.",
+    "how_to_use_it": "Submit verification information if eligible and check status in the verification center.",
+    "common_questions": ["How do I get verified?", "Why was verification rejected?"],
+    "troubleshooting": ["If verification needs more information, follow the official request in the verification center."],
+    "related_features": ["Profile", "Creator tools", "Security settings"],
+    "safety_notes": ["PulseSoc will not ask for passwords or payment secrets for verification."]
+  },
+  {
+    "feature": "Live streaming",
+    "summary": "PulseSoc Live starts from creator/live setup tools and is watched only inside Reels.",
+    "where_to_find_it": "Start Live from creator/live tools; watch Live from Reels or Join Live links.",
+    "how_to_use_it": "Creators configure title, category, destination, camera, mic, and readiness before starting. Viewers join in Reels.",
+    "common_questions": ["Where do I watch Live?", "Why does Join Live open Reels?"],
+    "troubleshooting": ["If a destination requires setup, connect the platform or use PulseSoc Live when ready."],
+    "related_features": ["Reels", "Notifications", "Creator tools"],
+    "safety_notes": ["Do not expose stream keys or private broadcast credentials."]
+  },
+  {
+    "feature": "Search",
+    "summary": "Search helps users find people, conversations, rooms, posts, and platform surfaces.",
+    "where_to_find_it": "Use search bars in Home, Messenger, or relevant PulseSoc surfaces.",
+    "how_to_use_it": "Type a name, topic, room, or query and use filters where available.",
+    "common_questions": ["How do I find Pulse AI?", "How do I find a chat?"],
+    "troubleshooting": ["If search fails, check spelling or use a broader term."],
+    "related_features": ["Messenger", "Home feed", "Communities / groups / rooms"],
+    "safety_notes": ["Do not search for or share private data that belongs to others."]
+  },
+  {
+    "feature": "Trending content",
+    "summary": "Trending content surfaces popular posts, music, topics, creators, and communities where supported.",
+    "where_to_find_it": "Home, Reels, Music, Discovery, or Galaxy Intelligence Center surfaces.",
+    "how_to_use_it": "Explore trends, follow creators, save content, and use insights for creator planning.",
+    "common_questions": ["Where are trends?", "How do I use trending music?"],
+    "troubleshooting": ["If trends look stale, refresh or check network connection."],
+    "related_features": ["Reels", "PulseSoc Music", "Creator Pulse"],
+    "safety_notes": ["Trend visibility does not guarantee quality or safety; use judgment."]
+  },
+  {
+    "feature": "Communities / groups / rooms",
+    "summary": "PulseSoc communities, groups, and rooms support shared conversations and topic-based collaboration.",
+    "where_to_find_it": "Messenger groups, Rooms tabs, communities, or relevant navigation entries.",
+    "how_to_use_it": "Join or create groups, chat with members, manage group settings, and follow room rules.",
+    "common_questions": ["How do I create a group?", "Where are rooms?"],
+    "troubleshooting": ["If you cannot access a group, check invite, membership, or admin permissions."],
+    "related_features": ["Messenger", "Conversation Control Center", "Reporting users"],
+    "safety_notes": ["Report abuse and avoid sharing sensitive information in group spaces."]
+  },
+  {
+    "feature": "Reporting users",
+    "summary": "Reporting lets users flag harassment, spam, scams, impersonation, harmful content, or abuse.",
+    "where_to_find_it": "Use More menus on profiles, posts, messages, Live, or conversations where available.",
+    "how_to_use_it": "Choose report, select a reason, include safe context, and submit. Admin/moderation review can follow.",
+    "common_questions": ["How do I report spam?", "How do I report a scam?"],
+    "troubleshooting": ["If report submission fails, retry or use support."],
+    "related_features": ["Blocking users", "Security settings", "Messenger"],
+    "safety_notes": ["If immediate danger exists, contact local emergency or trusted authorities."]
+  },
+  {
+    "feature": "Blocking users",
+    "summary": "Blocking helps prevent unwanted contact, messages, and noisy notifications from a user.",
+    "where_to_find_it": "Open user profile, conversation controls, or safety options.",
+    "how_to_use_it": "Choose Block User, confirm, and PulseSoc should suppress normal social notifications/messages where supported.",
+    "common_questions": ["How do I block someone?", "Will they know?"],
+    "troubleshooting": ["If blocked content still appears, refresh and report the issue."],
+    "related_features": ["Reporting users", "Privacy settings", "Messenger"],
+    "safety_notes": ["Block and report threatening or suspicious accounts."]
+  },
+  {
+    "feature": "Account recovery",
+    "summary": "Account recovery helps users regain access safely after forgotten passwords, suspicious logins, or device loss.",
+    "where_to_find_it": "Use login, password reset, or security/account settings.",
+    "how_to_use_it": "Use official recovery flows, verify email or phone when required, change password, and review active sessions.",
+    "common_questions": ["How do I reset my password?", "What if I lost access?"],
+    "troubleshooting": ["If reset email is missing, check spam, wait a minute, and retry only through official PulseSoc pages."],
+    "related_features": ["Password reset", "Security settings", "Notifications"],
+    "safety_notes": ["Never share reset links, one-time codes, or passwords with anyone."]
+  },
+  {
+    "feature": "Password reset",
+    "summary": "Password reset lets a user change account access through official verified flows.",
+    "where_to_find_it": "Use Forgot Password on the login page.",
+    "how_to_use_it": "Enter the account email, open the official reset link, choose a strong new password, and sign in again.",
+    "common_questions": ["Where is forgot password?", "Why did reset fail?"],
+    "troubleshooting": ["If reset fails, check link expiration and request a new reset link."],
+    "related_features": ["Account recovery", "Security settings"],
+    "safety_notes": ["PulseSoc support will not ask for your password."]
+  },
+  {
+    "feature": "App Store availability",
+    "summary": "PulseSoc iOS availability depends on App Store Connect status, pricing/availability, agreements, and Apple propagation.",
+    "where_to_find_it": "Use the App Store app or direct App Store link once the app is live.",
+    "how_to_use_it": "Search for PulseSoc in the correct country storefront or use the public link after release.",
+    "common_questions": ["Why is the app not visible?", "What does Ready for Distribution mean?"],
+    "troubleshooting": ["Check Ready for Sale, manual release, pricing/availability, agreements, and regional availability."],
+    "related_features": ["Mobile PWA behavior", "Push notifications"],
+    "safety_notes": ["Install only from official PulseSoc/App Store links."]
+  },
+  {
+    "feature": "Mobile PWA behavior",
+    "summary": "PulseSoc can run as a PWA/browser app with mobile-safe UI, service worker support, and push readiness where supported.",
+    "where_to_find_it": "Open PulseSoc in a supported mobile browser and install/add to home screen if available.",
+    "how_to_use_it": "Use the app from browser or home screen; enable notifications when prompted after reading the explanation.",
+    "common_questions": ["How do I install the PWA?", "Why does it feel like an app?"],
+    "troubleshooting": ["If old UI appears, clear cache or use reset/reload tools when provided."],
+    "related_features": ["Push notifications", "Lock-screen notifications", "App Store availability"],
+    "safety_notes": ["Only grant browser permissions from official PulseSoc domains."]
+  },
+  {
+    "feature": "Push notifications",
+    "summary": "Push notifications use device/browser tokens and provider adapters to reach users outside the open app.",
+    "where_to_find_it": "Notification settings, browser/PWA permission prompts, device settings.",
+    "how_to_use_it": "Enable notifications, keep device token registered, and manage channel preferences.",
+    "common_questions": ["Why no push?", "How do I enable notifications?"],
+    "troubleshooting": ["Check browser permission, PWA install state, device token, quiet hours, muted chats, and push provider configuration."],
+    "related_features": ["Notifications", "Lock-screen notifications", "Messenger"],
+    "safety_notes": ["Use privacy previews if lock-screen content is sensitive."]
+  },
+  {
+    "feature": "Lock-screen notifications",
+    "summary": "Lock-screen notifications appear when push delivery is configured, user preferences allow it, and the device/browser supports it.",
+    "where_to_find_it": "Device notification settings and PulseSoc notification preferences.",
+    "how_to_use_it": "Enable push and lock-screen display, choose preview privacy, and keep device subscriptions active.",
+    "common_questions": ["How do I turn off lock-screen previews?", "Why did only comments appear?"],
+    "troubleshooting": ["If only some notifications appear, check whether each event creates a push delivery job."],
+    "related_features": ["Push notifications", "Notifications", "Privacy settings"],
+    "safety_notes": ["Turn off previews for private chats on shared devices."]
+  }
+]

@@ -6,11 +6,14 @@ read private messages, calls, media, payment data, secrets, or account tokens.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 
 ASSISTANT_NAME = "Pulse AI"
 ASSISTANT_TITLE = "Galaxy Assistant"
+DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "pulse_ai"
 
 CORE_SYSTEM_PROMPT = """You are Pulse AI, the intelligent assistant inside PulseSoc.
 
@@ -32,6 +35,16 @@ When provider knowledge is uncertain, say what the user can check in the app.
 When a request is sensitive, privacy-related, financial, legal, medical, or
 security-related, provide safe high-level guidance and route the user to the
 appropriate PulseSoc settings or support surface.
+
+For fresh/current/latest questions, use supplied live web search context when
+available. Do not invent current prices, news, vulnerabilities, App Store status,
+regulations, or breaking events. If live sources are unavailable, say so and give
+general guidance.
+
+For cybersecurity, help with defensive education, account protection, scam
+detection, incident response, and safe hardening. Refuse requests for hacking,
+credential theft, malware, phishing kits, evasion, bypassing MFA, or unauthorized
+access.
 """
 
 DEFAULT_FEATURE_REGISTRY: list[dict[str, str]] = [
@@ -99,6 +112,115 @@ def compact_text(value: Any, limit: int = 5000) -> str:
     return text[:limit]
 
 
+def _load_json(name: str) -> list[dict[str, Any]]:
+    path = DATA_DIR / name
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _slug(value: Any) -> str:
+    text = compact_text(value, 120).lower()
+    slug = "".join(char if char.isalnum() else "_" for char in text)
+    while "__" in slug:
+        slug = slug.replace("__", "_")
+    return slug.strip("_") or "knowledge"
+
+
+def _feature_docs() -> list[dict[str, Any]]:
+    return _load_json("pulsesoc_knowledge.json")
+
+
+def _cyber_docs() -> list[dict[str, Any]]:
+    return _load_json("cybersecurity_knowledge.json")
+
+
+def _feature_map_docs() -> list[dict[str, Any]]:
+    return _load_json("pulsesoc_feature_map.json")
+
+
+def _derived_feature_registry() -> list[dict[str, str]]:
+    registry: list[dict[str, str]] = []
+    for item in _feature_docs():
+        registry.append({
+            "key": _slug(item.get("feature")),
+            "name": compact_text(item.get("feature"), 120),
+            "summary": compact_text(item.get("summary"), 700),
+        })
+    for item in _feature_map_docs():
+        registry.append({
+            "key": compact_text(item.get("id"), 120).replace(".", "_"),
+            "name": compact_text(item.get("name"), 120),
+            "summary": compact_text(item.get("description") or item.get("user_help"), 700),
+        })
+    return [item for item in registry if item.get("key") and item.get("name") and item.get("summary")]
+
+
+def _derived_knowledge_items() -> list[dict[str, str]]:
+    items: list[dict[str, str]] = []
+    for doc in _feature_docs():
+        title = compact_text(doc.get("feature"), 140)
+        body_parts = [
+            compact_text(doc.get("summary"), 700),
+            f"Where to find it: {compact_text(doc.get('where_to_find_it'), 500)}",
+            f"How to use it: {compact_text(doc.get('how_to_use_it'), 700)}",
+        ]
+        questions = doc.get("common_questions") or []
+        troubleshooting = doc.get("troubleshooting") or []
+        safety = doc.get("safety_notes") or []
+        if questions:
+            body_parts.append("Common questions: " + "; ".join(compact_text(item, 160) for item in questions[:6]))
+        if troubleshooting:
+            body_parts.append("Troubleshooting: " + "; ".join(compact_text(item, 180) for item in troubleshooting[:6]))
+        if safety:
+            body_parts.append("Safety notes: " + "; ".join(compact_text(item, 180) for item in safety[:4]))
+        items.append({"title": title, "category": _slug(title), "body": " ".join(part for part in body_parts if part)})
+    for doc in _cyber_docs():
+        topic = compact_text(doc.get("topic"), 140)
+        body_parts = [
+            compact_text(doc.get("summary"), 700),
+            f"Cybersecurity mode: {compact_text(doc.get('mode'), 120)}.",
+            "Safe guidance: " + "; ".join(compact_text(item, 180) for item in (doc.get("safe_guidance") or [])[:8]),
+            "Warning signs: " + "; ".join(compact_text(item, 160) for item in (doc.get("warning_signs") or [])[:6]),
+            "Do not help with: " + "; ".join(compact_text(item, 120) for item in (doc.get("do_not_help_with") or [])[:5]),
+        ]
+        items.append({"title": f"Cybersecurity: {topic}", "category": "cybersecurity", "body": " ".join(part for part in body_parts if part)})
+    for doc in _feature_map_docs():
+        name = compact_text(doc.get("name"), 140)
+        body = (
+            f"{compact_text(doc.get('description'), 700)} "
+            f"Entry points: {'; '.join(compact_text(item, 180) for item in (doc.get('entry_points') or [])[:6])}. "
+            f"User help: {compact_text(doc.get('user_help'), 700)} "
+            f"Status: {compact_text(doc.get('status'), 80)}."
+        )
+        items.append({"title": f"Feature map: {name}", "category": "feature_registry", "body": body})
+    return [item for item in items if item.get("title") and item.get("body")]
+
+
+def _dedupe_registry(items: list[dict[str, str]]) -> list[dict[str, str]]:
+    by_key: dict[str, dict[str, str]] = {}
+    for item in items:
+        key = compact_text(item.get("key"), 140)
+        if key and key not in by_key:
+            by_key[key] = item
+    return list(by_key.values())
+
+
+def _dedupe_knowledge(items: list[dict[str, str]]) -> list[dict[str, str]]:
+    by_key: dict[str, dict[str, str]] = {}
+    for item in items:
+        key = f"{_slug(item.get('category'))}:{_slug(item.get('title'))}"
+        if key not in by_key:
+            by_key[key] = item
+    return list(by_key.values())
+
+
+DEFAULT_FEATURE_REGISTRY = _dedupe_registry(DEFAULT_FEATURE_REGISTRY + _derived_feature_registry())
+DEFAULT_KNOWLEDGE_ITEMS = _dedupe_knowledge(DEFAULT_KNOWLEDGE_ITEMS + _derived_knowledge_items())
+
+
 def quick_prompts() -> list[str]:
     return [
         "What is PulseSoc?",
@@ -106,6 +228,9 @@ def quick_prompts() -> list[str]:
         "How do I manage crypto alerts?",
         "How do I start a video Pulse?",
         "How do notifications work?",
+        "How do I secure my PulseSoc account?",
+        "What is phishing?",
+        "Search the web for current Bitcoin news.",
         "Help me explore PulseSoc Music.",
     ]
 
