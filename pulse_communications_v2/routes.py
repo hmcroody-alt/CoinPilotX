@@ -7,7 +7,7 @@ import json
 import os
 import time
 
-from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
+from flask import Blueprint, Response, jsonify, redirect, render_template, request, stream_with_context
 
 from . import flags, service
 from services import pulsesoc_communications_engine as call_engine
@@ -773,6 +773,106 @@ def api_livekit_webhook():
     return _json(call_engine.livekit_webhook(dict(request.headers), raw, request.get_json(silent=True) or {}))
 
 
+def _admin_calls_page(view: str = "recent", call_id: str = "", panel: str = "overview", test_result: dict | None = None):
+    admin = _current_admin()
+    if not admin:
+        return _bot().redirect(_bot().url_for("admin_login_page", next=request.path))
+    summary = call_engine.calls_dashboard_summary()
+    calls = call_engine.admin_calls_list(view, int(request.args.get("limit") or 60))
+    detail = {}
+    delivery = {}
+    timeline = {}
+    inspector = {}
+    if call_id:
+        if panel == "delivery":
+            delivery = call_engine.call_delivery_diagnostics(call_id)
+            detail = call_engine.admin_call_detail(call_id)
+        elif panel == "timeline":
+            timeline = call_engine.call_timeline(call_id)
+            detail = call_engine.admin_call_detail(call_id)
+        elif panel == "inspector":
+            inspector = call_engine.call_inspector(call_id)
+            detail = inspector
+        else:
+            detail = call_engine.admin_call_detail(call_id)
+    return render_template(
+        "admin_calls_command_center.html",
+        admin=admin,
+        view=view,
+        panel=panel,
+        summary=summary,
+        calls=calls,
+        detail=detail,
+        delivery=delivery,
+        timeline=timeline,
+        inspector=inspector,
+        test_result=test_result or {},
+    )
+
+
+@comm_v2_blueprint.get("/admin/calls")
+def admin_calls_page():
+    return _admin_calls_page("recent")
+
+
+@comm_v2_blueprint.get("/admin/calls/recent")
+def admin_calls_recent_page():
+    return _admin_calls_page("recent")
+
+
+@comm_v2_blueprint.get("/admin/calls/active")
+def admin_calls_active_page():
+    return _admin_calls_page("active")
+
+
+@comm_v2_blueprint.get("/admin/calls/failed")
+def admin_calls_failed_page():
+    return _admin_calls_page("failed")
+
+
+@comm_v2_blueprint.get("/admin/calls/missed")
+def admin_calls_missed_page():
+    return _admin_calls_page("missed")
+
+
+@comm_v2_blueprint.route("/admin/calls/test-config", methods=["GET", "POST"])
+def admin_calls_test_config_page():
+    admin = _current_admin()
+    if not admin:
+        return _bot().redirect(_bot().url_for("admin_login_page", next=request.path))
+    result = call_engine.test_config({}) if request.method == "POST" else {}
+    return _admin_calls_page("recent", panel="test-config", test_result=result)
+
+
+@comm_v2_blueprint.get("/admin/calls/<path:call_id>/timeline")
+def admin_calls_timeline_page(call_id):
+    return _admin_calls_page("recent", call_id, "timeline")
+
+
+@comm_v2_blueprint.get("/admin/calls/<path:call_id>/delivery")
+def admin_calls_delivery_page(call_id):
+    return _admin_calls_page("recent", call_id, "delivery")
+
+
+@comm_v2_blueprint.get("/admin/calls/<path:call_id>/inspector")
+def admin_calls_inspector_page(call_id):
+    return _admin_calls_page("recent", call_id, "inspector")
+
+
+@comm_v2_blueprint.post("/admin/calls/<path:call_id>/force-end")
+def admin_calls_force_end_page(call_id):
+    admin = _current_admin()
+    if not admin:
+        return _bot().redirect(_bot().url_for("admin_login_page", next=request.path))
+    call_engine.admin_force_end_call(call_id, int(admin.get("id") or 0), "admin_command_center_force_end")
+    return redirect(f"/admin/calls/{call_id}/inspector")
+
+
+@comm_v2_blueprint.get("/admin/calls/<path:call_id>")
+def admin_calls_detail_page(call_id):
+    return _admin_calls_page("recent", call_id, "detail")
+
+
 @comm_v2_blueprint.get("/api/admin/calls/recent")
 def api_admin_recent_calls():
     admin = _current_admin()
@@ -781,12 +881,52 @@ def api_admin_recent_calls():
     return _timed_json("admin_recent_calls", lambda: call_engine.recent_calls(int(request.args.get("limit") or 40)))
 
 
+@comm_v2_blueprint.get("/api/admin/calls/active")
+def api_admin_active_calls():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    return _timed_json("admin_active_calls", lambda: call_engine.admin_calls_list("active", int(request.args.get("limit") or 60)))
+
+
+@comm_v2_blueprint.get("/api/admin/calls/failed")
+def api_admin_failed_calls():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    return _timed_json("admin_failed_calls", lambda: call_engine.admin_calls_list("failed", int(request.args.get("limit") or 60)))
+
+
 @comm_v2_blueprint.get("/api/admin/calls/<path:call_id>/delivery")
 def api_admin_call_delivery(call_id):
     admin = _current_admin()
     if not admin:
         return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
     return _timed_json("admin_call_delivery", lambda: call_engine.call_delivery_diagnostics(call_id))
+
+
+@comm_v2_blueprint.get("/api/admin/calls/<path:call_id>/timeline")
+def api_admin_call_timeline(call_id):
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    return _timed_json("admin_call_timeline", lambda: call_engine.call_timeline(call_id))
+
+
+@comm_v2_blueprint.get("/api/admin/calls/<path:call_id>/inspector")
+def api_admin_call_inspector(call_id):
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    return _timed_json("admin_call_inspector", lambda: call_engine.call_inspector(call_id))
+
+
+@comm_v2_blueprint.post("/api/admin/calls/<path:call_id>/force-end")
+def api_admin_call_force_end(call_id):
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    return _timed_json("admin_call_force_end", lambda: call_engine.admin_force_end_call(call_id, int(admin.get("id") or 0), "admin_api_force_end"))
 
 
 @comm_v2_blueprint.get("/api/admin/calls/<path:call_id>")

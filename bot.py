@@ -12983,6 +12983,7 @@ def admin_page_html(title, body, admin=None):
         "<a href='/admin/command-logs'>Command Logs</a>"
         "<a href='/admin/visitors'>Visitors</a>"
         "<a href='/admin/notifications'>Notifications</a>"
+        "<a href='/admin/calls'>Calls</a>"
         "<a href='/admin/notification-delivery'>Delivery</a>"
         "<a href='/admin/pulse-moderation'>PulseSoc Mod</a>"
         "<a href='/admin/pulse-ads-review-board'>Ads Review Board</a>"

@@ -403,6 +403,8 @@ def _serialize_call(cur: Any, call: dict[str, Any], user_id: int = 0, include_to
         "started_at": call.get("started_at") or "",
         "answered_at": call.get("answered_at") or "",
         "ended_at": call.get("ended_at") or "",
+        "created_at": call.get("created_at") or "",
+        "updated_at": call.get("updated_at") or "",
         "duration_seconds": int(call.get("duration_seconds") or 0),
         "end_reason": call.get("end_reason") or "",
         "participants": participants,
@@ -547,6 +549,7 @@ def _publish_call_realtime(
         ]
         for channel, kind in channels:
             realtime_engine.publish_event(channel, kind, payload)
+        _event(cur, int(call["id"]), int(recipient_id), "incoming_call_realtime_emitted", {"channels": len(channels), "event_type": event_type})
         return {"ok": True, "published": len(channels)}
     except Exception as exc:
         logging.warning(
@@ -1056,6 +1059,191 @@ def recent_calls(limit: int = 40) -> dict[str, Any]:
         conn.close()
 
 
+def _decode_payload(value: Any) -> dict[str, Any]:
+    try:
+        return json.loads(value or "{}")
+    except Exception:
+        return {}
+
+
+def _call_last_error(cur: Any, call_id: int) -> str:
+    cur.execute(
+        """
+        SELECT event_type, event_payload_json
+        FROM communication_call_events
+        WHERE call_id=? AND (event_type LIKE '%failed%' OR event_type LIKE '%error%' OR event_payload_json LIKE '%error%')
+        ORDER BY id DESC LIMIT 1
+        """,
+        (int(call_id),),
+    )
+    row = _row(cur.fetchone())
+    if not row:
+        return ""
+    payload = _decode_payload(row.get("event_payload_json"))
+    return str(payload.get("error") or payload.get("message") or row.get("event_type") or "")[:220]
+
+
+def _serialize_admin_call(cur: Any, call: dict[str, Any]) -> dict[str, Any]:
+    data = _serialize_call(cur, call, 0)
+    participants = data.get("participants") or []
+    caller = next((item for item in participants if str(item.get("role") or "") == "caller"), None)
+    callees = [item for item in participants if str(item.get("role") or "") == "callee"]
+    data["caller"] = caller or {}
+    data["callees"] = callees
+    data["last_error"] = _call_last_error(cur, int(call.get("id") or 0))
+    return data
+
+
+def admin_calls_list(kind: str = "recent", limit: int = 60) -> dict[str, Any]:
+    kind = str(kind or "recent").lower()
+    limit_value = max(1, min(int(limit or 60), 200))
+    status_map = {
+        "active": tuple(sorted(ACTIVE_STATUSES)),
+        "failed": ("failed",),
+        "missed": ("missed",),
+    }
+    conn, cur = _open_db()
+    try:
+        if kind in status_map:
+            statuses = status_map[kind]
+            placeholders = ",".join(["?"] * len(statuses))
+            cur.execute(
+                f"SELECT * FROM communication_calls WHERE status IN ({placeholders}) ORDER BY id DESC LIMIT ?",
+                (*statuses, limit_value),
+            )
+        else:
+            cur.execute("SELECT * FROM communication_calls ORDER BY id DESC LIMIT ?", (limit_value,))
+        return _ok({"kind": kind, "calls": [_serialize_admin_call(cur, dict(row)) for row in cur.fetchall()], "livekit": livekit_config_status()})
+    finally:
+        conn.close()
+
+
+def calls_dashboard_summary() -> dict[str, Any]:
+    conn, cur = _open_db()
+    try:
+        now = datetime.now(timezone.utc)
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
+
+        def count(where: str = "", params: tuple[Any, ...] = ()) -> int:
+            cur.execute(f"SELECT COUNT(*) AS total FROM communication_calls {where}", params)
+            return int(_row(cur.fetchone()).get("total") or 0)
+
+        active_total = count(f"WHERE status IN ({','.join(['?'] * len(ACTIVE_STATUSES))})", tuple(sorted(ACTIVE_STATUSES)))
+        calls_today = count("WHERE created_at>=?", (day_start,))
+        failed_total = count("WHERE status='failed'")
+        missed_total = count("WHERE status='missed'")
+        cur.execute("SELECT AVG(duration_seconds) AS avg_duration FROM communication_calls WHERE COALESCE(duration_seconds,0)>0")
+        avg_duration = int(float(_row(cur.fetchone()).get("avg_duration") or 0))
+        cur.execute("SELECT AVG(quality_score) AS avg_quality FROM communication_call_quality_reports")
+        avg_quality = round(float(_row(cur.fetchone()).get("avg_quality") or 0), 2)
+        cur.execute(
+            """
+            SELECT event_type, event_payload_json, created_at
+            FROM communication_call_events
+            WHERE event_type LIKE '%failed%' OR event_type LIKE '%error%' OR event_payload_json LIKE '%error%'
+            ORDER BY id DESC LIMIT 1
+            """
+        )
+        error_row = _row(cur.fetchone())
+        error_payload = _decode_payload(error_row.get("event_payload_json"))
+        last_error = {
+            "event_type": error_row.get("event_type") or "",
+            "message": str(error_payload.get("error") or error_payload.get("message") or "")[:220],
+            "created_at": error_row.get("created_at") or "",
+        } if error_row else {}
+        delivery_counts: dict[str, int] = {}
+        try:
+            pulsesoc_notification_system.ensure_schema(conn)
+            cur.execute(
+                """
+                SELECT COALESCE(j.status,'unknown') AS status, COUNT(*) AS total
+                FROM notification_delivery_jobs j
+                JOIN notifications n ON n.id=j.notification_id
+                WHERE COALESCE(n.source_type,'') IN ('communication_call','call')
+                GROUP BY COALESCE(j.status,'unknown')
+                """
+            )
+            delivery_counts = {str(row["status"]): int(row["total"] or 0) for row in cur.fetchall()}
+        except Exception:
+            delivery_counts = {}
+        return _ok({
+            "summary": {
+                "livekit_config": "Configured" if livekit_config_status().get("configured") else "Missing",
+                "active_calls": active_total,
+                "calls_today": calls_today,
+                "failed_calls": failed_total,
+                "missed_calls": missed_total,
+                "average_duration_seconds": avg_duration,
+                "average_quality": avg_quality,
+                "notification_delivery": delivery_counts,
+                "last_error": last_error,
+            },
+            "livekit": livekit_config_status(),
+        })
+    finally:
+        conn.close()
+
+
+def call_timeline(call_ref: str | int) -> dict[str, Any]:
+    conn, cur = _open_db()
+    try:
+        call = _get_call(cur, call_ref)
+        if not call:
+            return _err("Call not found.", 404, "missing_call")
+        cur.execute("SELECT * FROM communication_call_events WHERE call_id=? ORDER BY id ASC LIMIT 300", (int(call["id"]),))
+        events = []
+        for row in cur.fetchall():
+            item = dict(row)
+            item["event_payload"] = _decode_payload(item.pop("event_payload_json", "") or "")
+            events.append(item)
+        return _ok({"call": _serialize_admin_call(cur, call), "events": events, "livekit": livekit_config_status()})
+    finally:
+        conn.close()
+
+
+def call_inspector(call_ref: str | int) -> dict[str, Any]:
+    detail = admin_call_detail(call_ref)
+    if not detail.get("ok"):
+        return detail
+    delivery = call_delivery_diagnostics(call_ref)
+    timeline = call_timeline(call_ref)
+    detail["delivery"] = delivery if delivery.get("ok") else {}
+    detail["timeline"] = timeline.get("events") if timeline.get("ok") else []
+    return detail
+
+
+def admin_force_end_call(call_ref: str | int, admin_user_id: int = 0, reason: str = "admin_force_end") -> dict[str, Any]:
+    conn, cur = _open_db()
+    try:
+        call = _get_call(cur, call_ref)
+        if not call:
+            return _err("Call not found.", 404, "missing_call")
+        if str(call.get("status") or "") in FINAL_STATUSES:
+            return _ok({"message": "Call was already final.", "call": _serialize_admin_call(cur, call)})
+        updated = _transition(cur, call, "ended", int(admin_user_id or 0), reason or "admin_force_end")
+        if not updated.get("ok"):
+            return updated
+        now = _now()
+        cur.execute(
+            """
+            UPDATE communication_call_participants
+            SET status=CASE WHEN status IN ('joined','ringing','invited') THEN 'left' ELSE status END,
+                left_at=COALESCE(NULLIF(left_at,''), ?),
+                updated_at=?
+            WHERE call_id=?
+            """,
+            (now, now, int(call["id"])),
+        )
+        _event(cur, int(call["id"]), int(admin_user_id or 0), "admin_force_end", {"reason": reason or "admin_force_end"})
+        conn.commit()
+        return _ok({"message": "Call ended by admin.", "call": _serialize_admin_call(cur, _get_call(cur, call_ref))})
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def call_delivery_diagnostics(call_ref: str | int) -> dict[str, Any]:
     conn, cur = _open_db()
     try:
@@ -1139,10 +1327,16 @@ def call_delivery_diagnostics(call_ref: str | int) -> dict[str, Any]:
         )
         events = []
         last_error = ""
+        realtime_emitted = False
+        realtime_failed = False
         for row in cur.fetchall():
             item = dict(row)
             payload = json.loads(item.pop("event_payload_json") or "{}")
             item["event_payload"] = payload
+            if item.get("event_type") == "incoming_call_realtime_emitted":
+                realtime_emitted = True
+            if item.get("event_type") == "incoming_call_realtime_failed":
+                realtime_failed = True
             if not last_error and ("failed" in str(item.get("event_type") or "") or payload.get("error")):
                 last_error = str(payload.get("error") or item.get("event_type") or "")[:200]
             events.append(item)
@@ -1156,6 +1350,11 @@ def call_delivery_diagnostics(call_ref: str | int) -> dict[str, Any]:
                 "push_job_created": any(job.get("channel") == "push" for job in delivery_jobs),
                 "call_job_created": any(job.get("channel") == "call" for job in delivery_jobs),
                 "livekit_configured": bool(livekit_config_status().get("configured")),
+                "realtime_event_emitted": realtime_emitted,
+                "realtime_event_failed": realtime_failed,
+                "recipient_online": "not_tracked",
+                "recipient_overlay_opened": "not_tracked",
+                "media_tracks_published": "provider_event_required",
                 "last_call_error": last_error,
             },
             "recipient_delivery": device_status,

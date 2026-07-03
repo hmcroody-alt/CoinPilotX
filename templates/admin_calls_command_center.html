@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Calls Command Center | PulseSoc Admin</title>
+  <style>
+    :root { color-scheme: dark; --bg:#050b14; --panel:#0d1627; --line:rgba(110,223,246,.22); --text:#f2fbff; --muted:#9fb5c0; --accent:#36e58f; --cyan:#6edff6; --violet:#9b5cff; --danger:#ff6b8a; --warn:#ffd166; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif; background:radial-gradient(circle at 16% 0,rgba(110,223,246,.16),transparent 30rem),radial-gradient(circle at 92% 4%,rgba(155,92,255,.15),transparent 28rem),linear-gradient(180deg,#050b14,#07111e); color:var(--text); }
+    a { color:var(--cyan); text-decoration:none; }
+    .wrap { width:min(100% - 30px, 1440px); margin:auto; padding:22px 0 70px; }
+    header { position:sticky; top:0; z-index:5; backdrop-filter:blur(16px); background:rgba(5,11,20,.88); border-bottom:1px solid var(--line); }
+    .topline { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+    .nav { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
+    .button, .nav a, button { min-height:42px; display:inline-flex; align-items:center; justify-content:center; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,.045); color:var(--text); padding:9px 12px; font-weight:850; cursor:pointer; }
+    .button.primary, .nav a.active { color:#06101b; border-color:transparent; background:linear-gradient(135deg,var(--accent),var(--cyan)); box-shadow:0 0 24px rgba(54,229,143,.22); }
+    .button.danger, button.danger { border-color:rgba(255,107,138,.38); background:rgba(255,107,138,.12); color:#ffdbe4; }
+    .hero { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:16px; align-items:end; margin:24px 0 16px; }
+    h1 { font-size:clamp(34px,5vw,64px); line-height:.95; margin:0 0 10px; letter-spacing:0; }
+    h2 { margin:0 0 10px; }
+    h3 { margin:12px 0 8px; }
+    .muted { color:var(--muted); }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
+    .card { border:1px solid var(--line); border-radius:16px; background:linear-gradient(180deg,rgba(255,255,255,.065),rgba(255,255,255,.028)); box-shadow:0 24px 80px rgba(0,0,0,.25); padding:16px; min-width:0; overflow:hidden; }
+    .card.glow { border-color:rgba(54,229,143,.36); box-shadow:0 0 28px rgba(54,229,143,.10),0 24px 80px rgba(0,0,0,.25); }
+    .metric { font-size:2rem; line-height:1; font-weight:950; color:var(--accent); }
+    .pill { display:inline-flex; align-items:center; gap:6px; margin:3px 4px 3px 0; padding:6px 9px; border:1px solid var(--line); border-radius:999px; color:#dffcff; background:rgba(110,223,246,.08); font-size:.86rem; }
+    .pill.warn { color:#fff3c4; border-color:rgba(255,209,102,.36); background:rgba(255,209,102,.09); }
+    .pill.danger { color:#ffdbe4; border-color:rgba(255,107,138,.38); background:rgba(255,107,138,.10); }
+    .status-dot { width:9px; height:9px; border-radius:999px; background:var(--accent); box-shadow:0 0 14px rgba(54,229,143,.75); display:inline-block; }
+    .status-dot.warn { background:var(--warn); box-shadow:0 0 14px rgba(255,209,102,.8); }
+    .status-dot.danger { background:var(--danger); box-shadow:0 0 14px rgba(255,107,138,.8); }
+    .table-wrap { overflow:auto; border-radius:14px; border:1px solid rgba(255,255,255,.08); }
+    table { width:100%; border-collapse:collapse; min-width:980px; }
+    th, td { padding:10px; border-bottom:1px solid rgba(255,255,255,.075); text-align:left; vertical-align:top; }
+    th { color:#dffcff; font-size:.82rem; text-transform:uppercase; letter-spacing:.06em; }
+    code, pre { color:#dffcff; white-space:pre-wrap; word-break:break-word; }
+    pre { max-height:360px; overflow:auto; border:1px solid rgba(255,255,255,.08); border-radius:12px; background:rgba(0,0,0,.22); padding:12px; }
+    .split { display:grid; grid-template-columns:minmax(0,1.05fr) minmax(320px,.95fr); gap:14px; align-items:start; }
+    .timeline { display:grid; gap:10px; }
+    .event { border:1px solid rgba(255,255,255,.10); border-radius:12px; background:rgba(0,0,0,.16); padding:10px; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; }
+    form.inline { display:inline; }
+    .call-card { display:none; }
+    @media(max-width:860px) {
+      .wrap { width:min(100% - 20px, 1440px); padding-bottom:92px; }
+      .hero, .split { grid-template-columns:1fr; }
+      table { display:none; }
+      .call-card { display:block; margin-bottom:10px; }
+      .nav { overflow:auto; flex-wrap:nowrap; padding-bottom:4px; }
+      .nav a { white-space:nowrap; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap" style="padding-bottom:16px">
+      <div class="topline">
+        <strong>PulseSoc Admin</strong>
+        <span class="muted">{{ admin.email }}</span>
+      </div>
+      <nav class="nav" aria-label="Admin navigation">
+        <a href="/admin/dashboard">Dashboard</a>
+        <a href="/admin/notifications">Notifications</a>
+        <a href="/admin/notification-delivery">Delivery</a>
+        <a class="active" href="/admin/calls">Calls</a>
+        <a href="/admin/pulse-infrastructure">PulseSoc Infra</a>
+        <a href="/admin/performance">Performance</a>
+        <a href="/admin/audit-logs">Audit</a>
+        <a href="/admin/system">System</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <div>
+        <p class="pill"><span class="status-dot {{ '' if summary.livekit.configured else 'warn' }}"></span> LiveKit {{ summary.summary.livekit_config if summary.ok else 'Unavailable' }}</p>
+        <h1>Calls Command Center</h1>
+        <p class="muted">Backend truth for active calls, participants, LiveKit readiness, call notifications, push delivery, quality reports, and failures. Secret values are never rendered.</p>
+      </div>
+      <form method="post" action="/admin/calls/test-config">
+        <button type="submit">Run LiveKit Config Test</button>
+      </form>
+    </section>
+
+    {% set s = summary.summary or {} %}
+    <section class="grid" aria-label="Call dashboard cards">
+      <article class="card glow"><strong>LiveKit Config</strong><p class="metric">{{ s.livekit_config or 'Missing' }}</p><p class="muted">{{ (summary.livekit.missing or [])|join(', ') if not summary.livekit.configured else 'Required provider variables are present.' }}</p></article>
+      <article class="card"><strong>Active Calls</strong><p class="metric">{{ s.active_calls or 0 }}</p></article>
+      <article class="card"><strong>Calls Today</strong><p class="metric">{{ s.calls_today or 0 }}</p></article>
+      <article class="card"><strong>Failed Calls</strong><p class="metric">{{ s.failed_calls or 0 }}</p></article>
+      <article class="card"><strong>Missed Calls</strong><p class="metric">{{ s.missed_calls or 0 }}</p></article>
+      <article class="card"><strong>Average Duration</strong><p class="metric">{{ s.average_duration_seconds or 0 }}s</p></article>
+      <article class="card"><strong>Average Quality</strong><p class="metric">{{ s.average_quality or 0 }}</p></article>
+      <article class="card"><strong>Notification Delivery</strong><p>{% for key, value in (s.notification_delivery or {}).items() %}<span class="pill">{{ key }} {{ value }}</span>{% else %}<span class="pill warn">No call jobs yet</span>{% endfor %}</p></article>
+      <article class="card"><strong>Last Error</strong><p class="muted">{{ (s.last_error or {}).message or (s.last_error or {}).event_type or 'No call errors recorded.' }}</p></article>
+    </section>
+
+    <section class="card" style="margin-top:14px">
+      <div class="actions">
+        <a class="button {{ 'primary' if view == 'recent' else '' }}" href="/admin/calls/recent">Recent Calls</a>
+        <a class="button {{ 'primary' if view == 'active' else '' }}" href="/admin/calls/active">Active Calls</a>
+        <a class="button {{ 'primary' if view == 'failed' else '' }}" href="/admin/calls/failed">Failed Calls</a>
+        <a class="button {{ 'primary' if view == 'missed' else '' }}" href="/admin/calls/missed">Missed Calls</a>
+        <a class="button" href="/api/admin/calls/recent">Recent API</a>
+        <a class="button" href="/admin/calls/test-config">Config Test</a>
+      </div>
+    </section>
+
+    {% if test_result %}
+      <section class="card glow" style="margin-top:14px">
+        <h2>LiveKit Config Test Result</h2>
+        <p><span class="pill {{ '' if test_result.configured else 'warn' }}">Configured: {{ test_result.configured }}</span><span class="pill">Generate token: {{ test_result.can_generate_token }}</span><span class="pill">Create room: {{ test_result.can_create_test_room }}</span><span class="pill">Cleanup: {{ test_result.can_cleanup_test_room }}</span></p>
+        <pre>{{ test_result|tojson(indent=2) }}</pre>
+      </section>
+    {% endif %}
+
+    <section class="split" style="margin-top:14px">
+      <article class="card">
+        <h2>{{ view|title }} Calls</h2>
+        {% for call in calls.calls or [] %}
+          <div class="card call-card">
+            <strong>#{{ call.call_id }} · {{ call.call_type }} · {{ call.status }}</strong>
+            <p class="muted">{{ call.room_name }} · conversation {{ call.conversation_id }}</p>
+            <p>{% for p in call.participants %}<span class="pill">{{ p.role }} {{ p.display_name or p.user_id }} · {{ p.status }}</span>{% endfor %}</p>
+            <div class="actions">
+              <a class="button" href="/admin/calls/{{ call.public_id or call.call_id }}/inspector">Inspect</a>
+              <a class="button" href="/admin/calls/{{ call.public_id or call.call_id }}/timeline">Timeline</a>
+              <a class="button" href="/admin/calls/{{ call.public_id or call.call_id }}/delivery">Delivery</a>
+            </div>
+          </div>
+        {% endfor %}
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Call</th><th>Conversation</th><th>Caller</th><th>Participants</th><th>Status</th><th>Room</th><th>Timing</th><th>Error</th><th>Actions</th></tr></thead>
+            <tbody>
+              {% for call in calls.calls or [] %}
+              <tr>
+                <td><strong>#{{ call.call_id }}</strong><br><small>{{ call.public_id }}</small><br><span class="pill">{{ call.call_type }}</span><span class="pill">{{ call.provider }}</span></td>
+                <td>{{ call.conversation_id }}</td>
+                <td>{{ call.caller.display_name or call.created_by_user_id }}</td>
+                <td>{% for p in call.participants %}<span class="pill">{{ p.role }} {{ p.display_name or p.user_id }} · {{ p.status }}</span>{% endfor %}</td>
+                <td><span class="pill {{ 'danger' if call.status in ['failed'] else 'warn' if call.status in ['missed','declined'] else '' }}">{{ call.status }}</span></td>
+                <td><code>{{ call.room_name }}</code></td>
+                <td><small>created {{ call.created_at or '' }}<br>started {{ call.started_at or '' }}<br>ended {{ call.ended_at or '' }}<br>{{ call.duration_seconds }}s</small></td>
+                <td>{{ call.last_error or '—' }}</td>
+                <td><div class="actions"><a class="button" href="/admin/calls/{{ call.public_id or call.call_id }}/inspector">Inspect</a><a class="button" href="/admin/calls/{{ call.public_id or call.call_id }}/timeline">Timeline</a><a class="button" href="/admin/calls/{{ call.public_id or call.call_id }}/delivery">Delivery</a><a class="button" href="/admin/calls/{{ call.public_id or call.call_id }}/inspector#quality">Quality</a><form class="inline" method="post" action="/admin/calls/{{ call.public_id or call.call_id }}/force-end" onsubmit="return confirm('Force end this call?');"><button class="danger" type="submit">Force End</button></form></div></td>
+              </tr>
+              {% else %}
+              <tr><td colspan="9">No calls found for this view.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <aside class="card">
+        <h2>Provider Config Status</h2>
+        <p><span class="pill {{ '' if summary.livekit.configured else 'warn' }}">LIVEKIT_URL {{ 'present' if summary.livekit.url_configured else 'missing' }}</span><span class="pill {{ '' if 'LIVEKIT_API_KEY' not in (summary.livekit.missing or []) else 'warn' }}">LIVEKIT_API_KEY {{ 'present' if 'LIVEKIT_API_KEY' not in (summary.livekit.missing or []) else 'missing' }}</span><span class="pill {{ '' if 'LIVEKIT_API_SECRET' not in (summary.livekit.missing or []) else 'warn' }}">LIVEKIT_API_SECRET {{ 'present' if 'LIVEKIT_API_SECRET' not in (summary.livekit.missing or []) else 'missing' }}</span><span class="pill {{ '' if summary.livekit.webhook_secret_configured else 'warn' }}">LIVEKIT_WEBHOOK_SECRET {{ 'present' if summary.livekit.webhook_secret_configured else 'missing' }}</span></p>
+        <p class="muted">Only presence/missing state is shown. Provider secrets and token values are hidden.</p>
+      </aside>
+    </section>
+
+    {% set active_detail = inspector if inspector else detail %}
+    {% if active_detail and active_detail.ok %}
+      {% set call = active_detail.call %}
+      <section class="card glow" style="margin-top:14px">
+        <h2>Call Inspector: #{{ call.call_id }}</h2>
+        <p><span class="pill">{{ call.status }}</span><span class="pill">{{ call.call_type }}</span><span class="pill">{{ call.provider }}</span><span class="pill">conversation {{ call.conversation_id }}</span></p>
+        <div class="grid">
+          <article class="card"><strong>Call Summary</strong><pre>{{ call|tojson(indent=2) }}</pre></article>
+          <article class="card"><strong>Participants</strong>{% for p in call.participants %}<p><span class="pill">{{ p.role }}</span> {{ p.display_name or p.user_id }} · {{ p.status }} · audio muted {{ p.muted_audio }} · video muted {{ p.muted_video }}</p>{% endfor %}</article>
+        </div>
+      </section>
+    {% endif %}
+
+    {% if delivery and delivery.ok %}
+      <section class="card" style="margin-top:14px">
+        <h2>Call Delivery Diagnostics</h2>
+        <div class="grid">
+          {% for key, value in delivery.diagnostics.items() %}
+            <article class="card"><strong>{{ key.replace('_',' ')|title }}</strong><p>{{ value }}</p></article>
+          {% endfor %}
+        </div>
+        <h3>Recipient Delivery</h3>
+        <pre>{{ delivery.recipient_delivery|tojson(indent=2) }}</pre>
+        <h3>Notification Records</h3>
+        <pre>{{ delivery.notifications|tojson(indent=2) }}</pre>
+        <h3>Push Delivery Jobs</h3>
+        <pre>{{ delivery.delivery_jobs|tojson(indent=2) }}</pre>
+      </section>
+    {% endif %}
+
+    {% if timeline and timeline.ok %}
+      <section class="card" style="margin-top:14px">
+        <h2>Call Timeline</h2>
+        <div class="timeline">
+          {% for event in timeline.events %}
+            <article class="event"><strong>{{ event.event_type }}</strong><span class="muted"> · user {{ event.user_id }} · {{ event.created_at }}</span><pre>{{ event.event_payload|tojson(indent=2) }}</pre></article>
+          {% endfor %}
+        </div>
+      </section>
+    {% endif %}
+
+    {% if inspector and inspector.ok %}
+      <section class="card" id="quality" style="margin-top:14px">
+        <h2>Quality Reports</h2>
+        <pre>{{ inspector.quality_reports|tojson(indent=2) }}</pre>
+      </section>
+      <section class="card" style="margin-top:14px">
+        <h2>Raw Safe Metadata</h2>
+        <pre>{{ inspector|tojson(indent=2) }}</pre>
+      </section>
+    {% endif %}
+  </main>
+</body>
+</html>
