@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 from datetime import datetime, timedelta
 
@@ -31,6 +32,8 @@ SUPPORTED_ALERT_TYPES = {
 PRICE_ALERT_TYPES = {"coin_price", "price"}
 CHANGE_ALERT_TYPES = {"move_24h", "volatility"}
 DEFAULT_COOLDOWN_SECONDS = int(os.getenv("ALERT_DEFAULT_COOLDOWN_SECONDS", "900"))
+_ALERT_SCHEMA_READY = False
+_ALERT_SCHEMA_LOCK = threading.Lock()
 
 
 def _now():
@@ -82,15 +85,39 @@ def _table_exists(cur, table_name):
 
 
 def _add_columns_if_missing(cur, table_name, columns):
+    if db_service.IS_POSTGRES:
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?",
+            (table_name,),
+        )
+        existing = {str(row[0]) for row in cur.fetchall()}
+    else:
+        cur.execute(f"PRAGMA table_info({table_name})")
+        existing = {str(row[1]) for row in cur.fetchall()}
     for column_name, definition in columns:
+        if column_name in existing:
+            continue
         try:
             cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+            existing.add(column_name)
         except Exception as exc:
             if not _sql_error_is_duplicate_column(exc):
                 raise
 
 
 def ensure_alert_schema(conn=None):
+    global _ALERT_SCHEMA_READY
+    if _ALERT_SCHEMA_READY:
+        return {"ok": True}
+    with _ALERT_SCHEMA_LOCK:
+        if _ALERT_SCHEMA_READY:
+            return {"ok": True}
+        result = _ensure_alert_schema_impl(conn)
+        _ALERT_SCHEMA_READY = True
+        return result
+
+
+def _ensure_alert_schema_impl(conn=None):
     """Keep the alert engine schema additive and shared by workers + dashboards."""
     owns_connection = conn is None
     conn = conn or user_context.connect()
@@ -474,8 +501,11 @@ def create_alert_rule(
     source="user_created",
     source_ref="",
     metadata=None,
+    connection=None,
+    schema_ready=False,
 ):
-    ensure_alert_schema()
+    if not schema_ready:
+        ensure_alert_schema(connection)
     alert_type = _normalize_alert_type(alert_type)
     symbol = _normalize_symbol(symbol or target)
     condition = _normalize_condition(condition)
@@ -486,38 +516,47 @@ def create_alert_rule(
     channel_map = _normalize_channels(channels)
     cooldown = int(cooldown_seconds or DEFAULT_COOLDOWN_SECONDS)
     now = _now()
-    conn = user_context.connect()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO alert_rules
-        (user_id, alert_type, symbol, target, condition, threshold_value, target_value, channels_json, channels,
-         status, active, cooldown_seconds, trigger_count, source, source_ref, metadata, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, ?, 0, ?, ?, ?, ?, ?)
-        """,
-        (
-            user_id,
-            alert_type,
-            symbol,
-            target or symbol,
-            condition,
-            threshold_value,
-            threshold_value,
-            json.dumps(channel_map),
-            ",".join([channel for channel, enabled in channel_map.items() if enabled]),
-            cooldown,
-            str(source or "user_created")[:80],
-            str(source_ref or "")[:160],
-            json.dumps(metadata or {})[:4000],
-            now,
-            now,
-        ),
-    )
-    alert_id = cur.lastrowid
-    conn.commit()
-    cur.execute("SELECT * FROM alert_rules WHERE id=? AND user_id=? LIMIT 1", (alert_id, user_id))
-    rule = _public_rule(_row_to_dict(cur.fetchone()))
-    conn.close()
+    owns_connection = connection is None
+    conn = connection or user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO alert_rules
+            (user_id, alert_type, symbol, target, condition, threshold_value, target_value, channels_json, channels,
+             status, active, cooldown_seconds, trigger_count, source, source_ref, metadata, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, ?, 0, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                alert_type,
+                symbol,
+                target or symbol,
+                condition,
+                threshold_value,
+                threshold_value,
+                json.dumps(channel_map),
+                ",".join([channel for channel, enabled in channel_map.items() if enabled]),
+                cooldown,
+                str(source or "user_created")[:80],
+                str(source_ref or "")[:160],
+                json.dumps(metadata or {})[:4000],
+                now,
+                now,
+            ),
+        )
+        alert_id = cur.lastrowid
+        if owns_connection:
+            conn.commit()
+        cur.execute("SELECT * FROM alert_rules WHERE id=? AND user_id=? LIMIT 1", (alert_id, user_id))
+        rule = _public_rule(_row_to_dict(cur.fetchone()))
+    except Exception:
+        if owns_connection:
+            conn.rollback()
+        raise
+    finally:
+        if owns_connection:
+            conn.close()
     return {"ok": True, "alert_id": alert_id, "alert": rule, "message": "Alert activated.", "warnings": channel_warnings(user_id, channel_map)}
 
 

@@ -14,8 +14,10 @@ import hashlib
 import json
 import os
 import re
+import threading
 
 from services import alert_engine
+from services import db as db_service
 from services import market_data as market_data_service
 
 
@@ -35,6 +37,8 @@ STRICT_STATES = {
 ALERT_CONDITIONS = {"above", "below", "moves_up_percent", "moves_down_percent", "volatility_above"}
 CRYPTO_SYMBOL_RE = re.compile(r"^[A-Z0-9]{2,12}$")
 CRYPTO_AI_DISCLAIMER = "Educational information only. This is not financial advice. PulseSoc does not guarantee returns or tell users to buy or sell assets."
+_TABLES_READY = False
+_TABLES_LOCK = threading.Lock()
 
 MODULES: tuple[dict[str, Any], ...] = (
     {"key": "market_pulse", "widget_key": "crypto_market_pulse", "label": "Market Pulse", "route": "/dashboard/crypto/market-pulse", "action": "View Market Pulse", "description": "BTC, ETH, SOL, market health, sentiment, and provider freshness."},
@@ -146,14 +150,13 @@ def _validate_url_path(path: Any) -> str:
 
 def _table_exists(cur: Any, table: str) -> bool:
     try:
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+        if db_service.IS_POSTGRES:
+            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name=%s", (table,))
+        else:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
         return bool(cur.fetchone())
     except Exception:
-        try:
-            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name=%s", (table,))
-            return bool(cur.fetchone())
-        except Exception:
-            return False
+        return False
 
 
 def _count(cur: Any, table: str, where: str = "1=1", params: tuple[Any, ...] = ()) -> int:
@@ -167,6 +170,17 @@ def _count(cur: Any, table: str, where: str = "1=1", params: tuple[Any, ...] = (
 
 
 def ensure_tables(conn: Any) -> None:
+    global _TABLES_READY
+    if _TABLES_READY:
+        return
+    with _TABLES_LOCK:
+        if _TABLES_READY:
+            return
+        _ensure_tables_impl(conn)
+        _TABLES_READY = True
+
+
+def _ensure_tables_impl(conn: Any) -> None:
     cur = conn.cursor()
     alert_engine.ensure_alert_schema(conn)
     cur.execute(
@@ -477,7 +491,6 @@ def create_alert(conn: Any, user_id: int, payload: dict[str, Any]) -> dict[str, 
     if target <= 0:
         raise ValueError("Target value must be greater than zero.")
     cur = conn.cursor()
-    alert_engine.reconcile_legacy_alerts(user_id=int(user_id))
     active_count = _count(cur, "alert_rules", "user_id=? AND COALESCE(status, 'active')='active' AND deleted_at IS NULL", (int(user_id),))
     if active_count >= 100:
         raise ValueError("Alert limit reached. Pause or delete older alerts first.")
@@ -498,6 +511,8 @@ def create_alert(conn: Any, user_id: int, payload: dict[str, Any]) -> dict[str, 
         target=symbol,
         source="user_created",
         metadata={"note": str(payload.get("note") or "")[:240], "created_from": "crypto_command_center"},
+        connection=conn,
+        schema_ready=True,
     )
     if not result.get("ok"):
         raise ValueError(result.get("message") or "Alert could not be created.")

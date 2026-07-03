@@ -6294,7 +6294,6 @@ def api_dashboard_economy_state():
 
 @webhook_app.route("/api/dashboard/crypto/state", methods=["GET"])
 def api_dashboard_crypto_state():
-    init_db()
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
@@ -6330,32 +6329,53 @@ def _crypto_api_payload():
 
 
 def _crypto_api_result(callback):
-    user, conn, error = _crypto_api_user_conn()
-    if error:
-        return error
+    correlation_id = secrets.token_hex(6)
+    conn = None
     try:
+        user, conn, error = _crypto_api_user_conn()
+        if error:
+            return error
         return jsonify(callback(conn, user))
     except ValueError as exc:
+        if conn is not None:
+            conn.rollback()
         return api_error(str(exc), 400)
+    except Exception as exc:
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        logging.exception(
+            "CRYPTO_API_REQUEST_FAILED correlation_id=%s path=%s method=%s error=%s",
+            correlation_id,
+            request.path,
+            request.method,
+            exc,
+        )
+        return jsonify({
+            "ok": False,
+            "error": "crypto_request_failed",
+            "message": "Crypto alerts are temporarily unavailable. Please try again.",
+            "correlation_id": correlation_id,
+        }), 503
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 @webhook_app.route("/api/crypto/summary", methods=["GET"])
 def api_crypto_summary():
-    init_db()
     return _crypto_api_result(lambda conn, user: {"ok": True, "crypto": dashboard_crypto_command_center.build_crypto_state(conn, user)})
 
 
 @webhook_app.route("/api/crypto/market-pulse", methods=["GET"])
 def api_crypto_market_pulse():
-    init_db()
     return jsonify({"ok": True, "market_pulse": dashboard_crypto_command_center.market_pulse()})
 
 
 @webhook_app.route("/api/crypto/alerts", methods=["GET", "POST"])
 def api_crypto_alerts():
-    init_db()
     if request.method == "POST":
         payload = _crypto_api_payload()
         return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.create_alert(conn, user["user_id"], payload))
@@ -6364,7 +6384,6 @@ def api_crypto_alerts():
 
 @webhook_app.route("/api/crypto/alerts/<int:alert_id>", methods=["PATCH", "DELETE"])
 def api_crypto_alert_detail(alert_id):
-    init_db()
     payload = _crypto_api_payload()
     if request.method == "DELETE":
         return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.delete_alert(conn, user["user_id"], alert_id))
@@ -6373,19 +6392,16 @@ def api_crypto_alert_detail(alert_id):
 
 @webhook_app.route("/api/crypto/alerts/<int:alert_id>/duplicate", methods=["POST"])
 def api_crypto_alert_duplicate(alert_id):
-    init_db()
     return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.duplicate_alert(conn, user["user_id"], alert_id))
 
 
 @webhook_app.route("/api/crypto/alerts/<int:alert_id>/history", methods=["GET"])
 def api_crypto_alert_history(alert_id):
-    init_db()
     return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.alert_history(conn, user["user_id"], alert_id))
 
 
 @webhook_app.route("/api/crypto/watchlists", methods=["GET", "POST"])
 def api_crypto_watchlists():
-    init_db()
     if request.method == "POST":
         payload = _crypto_api_payload()
         return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.create_watchlist(conn, user["user_id"], payload))
@@ -6394,21 +6410,18 @@ def api_crypto_watchlists():
 
 @webhook_app.route("/api/crypto/watchlists/<int:watchlist_id>/assets", methods=["POST"])
 def api_crypto_watchlist_assets(watchlist_id):
-    init_db()
     payload = _crypto_api_payload()
     return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.add_watchlist_asset(conn, user["user_id"], watchlist_id, payload))
 
 
 @webhook_app.route("/api/crypto/watchlists/<int:watchlist_id>/assets/<int:asset_id>", methods=["DELETE"])
 def api_crypto_watchlist_asset_delete(watchlist_id, asset_id):
-    init_db()
     return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.delete_watchlist_asset(conn, user["user_id"], watchlist_id, asset_id))
 
 
 @webhook_app.route("/api/crypto/ask-ai", methods=["POST"])
 @webhook_app.route("/api/crypto/ask", methods=["POST"])
 def api_crypto_ask_ai():
-    init_db()
     payload = _crypto_api_payload()
     user, conn, error = _crypto_api_user_conn()
     if error:
@@ -6425,50 +6438,42 @@ def api_crypto_ask_ai():
 
 @webhook_app.route("/api/crypto/token-scan", methods=["POST"])
 def api_crypto_token_scan():
-    init_db()
     payload = _crypto_api_payload()
     return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.scan_token(conn, user["user_id"], payload))
 
 
 @webhook_app.route("/api/crypto/trending", methods=["GET"])
 def api_crypto_trending():
-    init_db()
     return jsonify({"ok": True, "state": "BETA", "assets": dashboard_crypto_command_center.market_board("top_volume", 30).get("markets") or []})
 
 
 @webhook_app.route("/api/crypto/gainers", methods=["GET"])
 def api_crypto_gainers():
-    init_db()
     return jsonify({"ok": True, "state": "BETA", "assets": dashboard_crypto_command_center.market_board("gainers", 30).get("markets") or []})
 
 
 @webhook_app.route("/api/crypto/losers", methods=["GET"])
 def api_crypto_losers():
-    init_db()
     return jsonify({"ok": True, "state": "BETA", "assets": dashboard_crypto_command_center.market_board("losers", 30).get("markets") or []})
 
 
 @webhook_app.route("/api/crypto/news", methods=["GET"])
 def api_crypto_news():
-    init_db()
     return jsonify({"ok": True, "state": "PARTIAL", "items": [], "message": "Crypto news provider is prepared but not connected. No fake headlines are shown."})
 
 
 @webhook_app.route("/api/crypto/calendar", methods=["GET"])
 def api_crypto_calendar():
-    init_db()
     return jsonify({"ok": True, "state": "PARTIAL", "items": [], "message": "Economic calendar provider is prepared for CPI, FOMC, ETF, unlock, and crypto event data."})
 
 
 @webhook_app.route("/api/crypto/recent", methods=["GET"])
 def api_crypto_recent_assets():
-    init_db()
     return _crypto_api_result(lambda conn, user: {"ok": True, "recent": dashboard_crypto_command_center.list_recent_assets(conn, user["user_id"])})
 
 
 @webhook_app.route("/api/crypto/favorites", methods=["GET"])
 def api_crypto_favorite_assets():
-    init_db()
     return _crypto_api_result(lambda conn, user: {"ok": True, "favorites": dashboard_crypto_command_center.list_favorite_assets(conn, user["user_id"])})
 
 
