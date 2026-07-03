@@ -1,6 +1,9 @@
 (() => {
   const API = "/api/pulse/communications/v2";
   const MEDIA_API = "/api/messages/media";
+  const PULSE_AI_API = "/api/pulse-ai";
+  const PULSE_AI_CONVERSATION_ID = -9001001;
+  const PULSE_AI_USER_ID = -9001001;
   const INITIAL_MESSAGE_LIMIT = 40;
   const el = (sel) => document.querySelector(sel);
   const root = el(".comm-shell");
@@ -50,6 +53,9 @@
     composerState: "idle",
     reactionOpen: false,
     aiEnabled: root?.dataset.aiEnabled === "true",
+    pulseAIEnabled: true,
+    pulseAITyping: false,
+    pulseAISettings: null,
     aiBusy: false,
     aiOutput: "",
     maxAttachments: 8,
@@ -460,6 +466,24 @@
     return data;
   }
 
+  async function pulseAiApi(path, options = {}, metric = "pulse_ai") {
+    const started = performance.now();
+    const res = await fetch(PULSE_AI_API + path, {
+      credentials: "same-origin",
+      headers: options.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
+      ...options,
+    });
+    const text = await res.text();
+    let data = {};
+    try { data = JSON.parse(text || "{}"); } catch (_) { data = { ok: false, message: "Pulse AI returned an unexpected response." }; }
+    console.info("Pulse AI timing", { metric, path, status: res.status, durationMs: Math.round(performance.now() - started), serverTimingMs: data.timing_ms });
+    if (!res.ok || data.ok === false) {
+      const trace = data.correlation_id || data.trace_id ? ` Trace: ${data.correlation_id || data.trace_id}` : "";
+      throw Object.assign(new Error((data.message || "Pulse AI is temporarily unavailable.") + trace), { data, status: res.status });
+    }
+    return data;
+  }
+
   function rememberConversation(item) {
     if (!item) return null;
     const id = Number(item.conversation_id || item.id || 0);
@@ -467,6 +491,44 @@
     const merged = { ...(state.conversationCache.get(id) || {}), ...item, conversation_id: id };
     state.conversationCache.set(id, merged);
     return merged;
+  }
+
+  function isPulseAIId(conversationId) {
+    return Number(conversationId || 0) === PULSE_AI_CONVERSATION_ID;
+  }
+
+  function isPulseAIConversation(item = state.active) {
+    return Boolean(item?.ai_assistant || item?.is_ai || isPulseAIId(item?.conversation_id || item?.id));
+  }
+
+  function pulseAIConversation(overrides = {}) {
+    return rememberConversation({
+      conversation_id: PULSE_AI_CONVERSATION_ID,
+      id: PULSE_AI_CONVERSATION_ID,
+      public_id: "pulse-ai",
+      conversation_type: "assistant",
+      type: "ai",
+      is_ai: true,
+      ai_assistant: true,
+      title: "Pulse AI",
+      description: "Galaxy Assistant",
+      member_count: 2,
+      pinned: true,
+      muted: false,
+      verified: true,
+      presence: { status: "online", active_now: true, presence_visible: true },
+      last_message_preview: "Ask me anything about PulseSoc.",
+      last_activity_at: new Date().toISOString(),
+      ...overrides,
+    });
+  }
+
+  function ensurePulseAIConversation(overrides = {}) {
+    const existing = state.conversationCache.get(PULSE_AI_CONVERSATION_ID);
+    const ai = pulseAIConversation({ ...(existing || {}), ...overrides });
+    const withoutAI = state.conversations.filter((item) => !isPulseAIConversation(item));
+    state.conversations = [ai, ...withoutAI];
+    return ai;
   }
 
   function sortConversations() {
@@ -620,6 +682,9 @@
   }
 
   function avatarHtml(item, className = "avatar") {
+    if (isPulseAIConversation(item)) {
+      return `<span class="${className} pulse-ai-avatar" aria-hidden="true">AI</span>`;
+    }
     const url = item?.avatar_url || item?.avatar_thumbnail_url || "";
     return `<span class="${className}">${url ? `<img src="${escapeAttr(url)}" alt="">` : escapeHtml(initials(item?.title))}</span>`;
   }
@@ -744,8 +809,8 @@
           </button>
         `;
       }).join("");
-    rail.innerHTML = `${state.aiEnabled ? `
-      <button class="active-person active-ai" type="button" data-ai-summary title="Pulse AI">
+    rail.innerHTML = `${state.pulseAIEnabled ? `
+      <button class="active-person active-ai" type="button" data-conversation-id="${PULSE_AI_CONVERSATION_ID}" title="Pulse AI">
         <span class="active-avatar pulse-ai-avatar" aria-hidden="true">AI</span>
         <span>Pulse AI</span>
         <b>AI</b>
@@ -1572,32 +1637,86 @@
     }
   }
 
+  function pulseAIQuickPromptsHtml(prompts = []) {
+    const items = (prompts.length ? prompts : [
+      "What is PulseSoc?",
+      "How do I create a Status?",
+      "How do I manage crypto alerts?",
+      "How do I start a video Pulse?",
+      "How do notifications work?",
+    ]).slice(0, 6);
+    return `<div class="pulse-ai-quick-prompts" aria-label="Pulse AI quick prompts">${items.map((prompt) => `<button type="button" data-pulse-ai-prompt="${escapeAttr(prompt)}">${escapeHtml(prompt)}</button>`).join("")}</div>`;
+  }
+
+  function pulseAIPrivacyPanelHtml() {
+    const settings = state.pulseAISettings || {};
+    const rows = [
+      ["remember_preferences", "Remember my preferences"],
+      ["use_pulse_ai_chat_history", "Use my Pulse AI chat history"],
+      ["assist_with_messages_when_asked", "Help with my messages when I ask"],
+      ["improve_from_feedback", "Improve from my feedback"],
+    ];
+    return `
+      <details class="pulse-ai-privacy-panel">
+        <summary>Pulse AI privacy controls</summary>
+        <div>
+          ${rows.map(([key, label]) => {
+            const enabled = Boolean(settings[key]);
+            return `<button type="button" data-pulse-ai-setting="${key}" aria-pressed="${enabled ? "true" : "false"}"><span>${escapeHtml(label)}</span><b>${enabled ? "On" : "Off"}</b></button>`;
+          }).join("")}
+          <button type="button" data-pulse-ai-memory-clear><span>Clear Pulse AI memory</span><b>Clear</b></button>
+          <button type="button" data-pulse-ai-memory-export><span>Export Pulse AI memory</span><b>Export</b></button>
+        </div>
+      </details>`;
+  }
+
+  function syncPulseAIComposerControls() {
+    const isAI = isPulseAIConversation();
+    const input = el("[data-message-input]");
+    if (input) input.placeholder = isAI ? "Ask Pulse AI..." : "Type a message...";
+    const attachment = el("[data-toggle-attachments]");
+    const voice = el("[data-voice-start]");
+    [attachment, voice].forEach((button) => {
+      if (!button) return;
+      button.disabled = isAI;
+      button.classList.toggle("is-disabled", isAI);
+      button.title = isAI ? "Pulse AI supports text conversation first." : (button === attachment ? "Add attachment" : "Record voice note");
+    });
+  }
+
   function renderMessages() {
     if (!messages) return;
     const title = el("[data-thread-title]");
     const sub = el("[data-thread-subtitle]");
     const avatar = el("[data-thread-avatar]");
+    const activeIsAI = isPulseAIConversation(state.active);
     if (title) title.textContent = state.active ? state.active.title : "Choose a chat";
     const threadPresence = presenceForConversation(state.active || {});
     const presenceText = state.active ? presenceLabel(threadPresence) : "Standby";
     if (sub) {
-      sub.textContent = state.active ? `${presenceText} · ${typeLabel(state.active.conversation_type || "conversation")}` : "Start a secure conversation.";
+      sub.textContent = state.active
+        ? activeIsAI ? "Online · Galaxy Assistant" : `${presenceText} · ${typeLabel(state.active.conversation_type || "conversation")}`
+        : "Start a secure conversation.";
       sub.setAttribute("data-presence", presenceClass(threadPresence));
-      sub.setAttribute("data-presence-label", presenceText);
+      sub.setAttribute("data-presence-label", activeIsAI ? "Online" : presenceText);
     }
     if (avatar) {
       const avatarUrl = state.active?.avatar_url || state.active?.avatar_thumbnail_url || "";
-      avatar.innerHTML = state.active
+      avatar.innerHTML = activeIsAI
+        ? "AI"
+        : state.active
         ? avatarUrl
           ? `<img src="${escapeAttr(avatarUrl)}" alt="">`
           : escapeHtml(initials(state.active.title))
         : "P";
-      avatar.className = `thread-avatar presence-${presenceClass(threadPresence)}`;
+      avatar.className = `thread-avatar ${activeIsAI ? "pulse-ai-avatar" : ""} presence-${presenceClass(threadPresence)}`;
     }
     document.querySelectorAll("[data-thread-call-audio], [data-thread-call-video], [data-thread-more]").forEach((button) => {
-      button.disabled = !state.active;
-      button.classList.toggle("is-disabled", !state.active);
+      const disabled = !state.active || activeIsAI;
+      button.disabled = disabled;
+      button.classList.toggle("is-disabled", disabled);
     });
+    syncPulseAIComposerControls();
     renderTypingPill();
     renderAIHooks();
     renderTrustBadges();
@@ -1616,11 +1735,14 @@
       return;
     }
     if (!state.messages.length) {
-      messages.innerHTML = `<div class="empty-state">No messages here yet. Send the first one.</div>`;
+      messages.innerHTML = activeIsAI
+        ? `<div class="thread-welcome-state pulse-ai-welcome"><span class="messenger-orb large" aria-hidden="true"></span><strong>Pulse AI is ready.</strong><small>Ask about Messenger, Reels, Status, calls, music, alerts, notifications, privacy, or how to explore PulseSoc.</small>${pulseAIQuickPromptsHtml()}${pulseAIPrivacyPanelHtml()}</div>`
+        : `<div class="empty-state">No messages here yet. Send the first one.</div>`;
       return;
     }
     const older = state.hasOlder ? `<button class="load-older" type="button" data-load-older>Load older messages</button>` : "";
-    messages.innerHTML = `${older}<div class="message-stack">${state.messages.map((item) => messageHtml(item)).join("")}</div>`;
+    const typing = activeIsAI && state.pulseAITyping ? `<article class="message is-ai-assistant is-typing-message"><strong>Pulse AI</strong><p><span class="typing-dots"><i></i><i></i><i></i></span></p></article>` : "";
+    messages.innerHTML = `${activeIsAI ? pulseAIPrivacyPanelHtml() : ""}${older}<div class="message-stack">${state.messages.map((item) => messageHtml(item)).join("")}${typing}</div>`;
     if (!state.preserveScroll) smoothScrollToBottom();
     state.preserveScroll = false;
     if (state.threadSearchQuery) window.requestAnimationFrame(applyThreadSearch);
@@ -1660,8 +1782,9 @@
     const summaryButton = el("[data-ai-summary]");
     const panel = el("[data-ai-panel]");
     const output = el("[data-ai-output]");
-    if (summaryButton) summaryButton.hidden = !(state.aiEnabled && state.active);
-    if (panel) panel.hidden = !(state.aiEnabled && state.active);
+    const showHooks = Boolean(state.aiEnabled && state.active && !isPulseAIConversation(state.active));
+    if (summaryButton) summaryButton.hidden = !showHooks;
+    if (panel) panel.hidden = !showHooks;
     if (output) {
       output.textContent = state.aiOutput || (state.aiEnabled ? "AI is ready when this conversation has enough context." : "AI analysis is not enabled.");
     }
@@ -1763,6 +1886,7 @@
 
   function messageHtml(item) {
     const mine = Number(item.sender_user_id || 0) === currentUserId || item.is_mine;
+    const aiMessage = Boolean(item.is_ai || Number(item.sender_user_id || 0) === PULSE_AI_USER_ID);
     const attachments = (item.attachments || []).map(attachmentHtml).join("");
     const shield = riskScan(item.body || "");
     const reactionLabels = { heart: "❤️", fire: "🔥", check: "✓" };
@@ -1776,7 +1900,7 @@
     const reactionSummary = summaryEntries.filter(([reaction, count]) => reaction && Number(count || 0) > 0).map(([reaction, count]) => `<span>${escapeHtml(reactionLabels[normalizeReaction(reaction)] || reaction)} ${Number(count || 0)}</span>`).join("");
     const reply = item.reply_preview ? `<button class="reply-preview" type="button" data-jump-message="${Number(item.reply_preview.id || 0)}">Replying to ${escapeHtml(item.reply_preview.sender?.display_name || "message")}: ${escapeHtml(item.reply_preview.body || item.reply_preview.message_type || "")}</button>` : "";
     return `
-      <article class="message ${mine ? "is-mine" : ""} ${item.pinned ? "is-pinned" : ""}" data-message-id="${item.id}">
+      <article class="message ${mine ? "is-mine" : ""} ${aiMessage ? "is-ai-assistant" : ""} ${item.pinned ? "is-pinned" : ""}" data-message-id="${item.id}">
         ${item.pinned ? `<span class="message-pin-badge">Pinned</span>` : ""}
         ${!mine ? `<strong>${escapeHtml(item.sender?.display_name || "PulseSoc member")}</strong>` : ""}
         ${reply}
@@ -1785,6 +1909,7 @@
         ${attachments ? `<div class="attachments">${attachments}</div>` : ""}
         ${reactionSummary ? `<div class="reaction-summary">${reactionSummary}</div>` : ""}
         <small class="message-meta"><time>${escapeHtml(shortTime(item.created_at))}</time>${item.is_edited ? " / Edited" : ""}${mine ? ` <span class="delivery-state" data-state="${escapeAttr(messageDeliveryLabel(item).toLowerCase())}">${deliveryGlyph(messageDeliveryLabel(item))} ${escapeHtml(messageDeliveryLabel(item))}</span>` : ""}</small>
+        ${aiMessage ? `<div class="pulse-ai-feedback" aria-label="Pulse AI feedback"><button type="button" data-pulse-ai-feedback="helpful" data-message-id="${item.id}">Helpful</button><button type="button" data-pulse-ai-feedback="not_helpful" data-message-id="${item.id}">Not helpful</button><button type="button" data-pulse-ai-feedback="wrong" data-message-id="${item.id}">Wrong</button><button type="button" data-pulse-ai-feedback="unsafe" data-message-id="${item.id}">Unsafe</button><button type="button" data-pulse-ai-feedback="outdated" data-message-id="${item.id}">Outdated</button></div>` : ""}
         ${item._failed ? `<button class="message-retry" type="button" data-retry-message="${item.id}">Retry send</button>` : ""}
         <button class="message-menu-trigger" type="button" data-message-actions="${item.id}" aria-label="Message actions">...</button>
         <div class="reaction-row" data-reaction-menu="${item.id}" hidden>${reactions}<button type="button" data-reply-message="${item.id}">Reply</button><button type="button" data-copy-message="${item.id}">Copy</button><button type="button" data-pin-message="${item.id}">${item.pinned ? "Unpin" : "Pin"}</button>${mine ? `<button type="button" data-edit-message="${item.id}">Edit</button><button type="button" data-delete-message="${item.id}" data-delete-for="everyone">Delete</button>` : `<button type="button" data-delete-message="${item.id}" data-delete-for="self">Remove</button>`}<button type="button" data-forward-message="${item.id}">Forward</button></div>
@@ -1859,13 +1984,14 @@
     try {
       const data = await api("/conversations", {}, "conversations_list");
       state.conversations = (data.items || data.conversations || []).map(rememberConversation);
+      ensurePulseAIConversation();
       sortConversations();
       const initialTarget = initialConversationId ? state.conversations.find((item) => Number(item.conversation_id) === initialConversationId || Number(item.id) === initialConversationId) : null;
       if (!state.active && initialTarget) {
         state.active = initialTarget;
         if (isMobile()) setMobileMode("thread");
       } else if (selectFirst && !state.active && state.conversations.length) {
-        state.active = state.conversations[0];
+        state.active = state.conversations.find((item) => !isPulseAIConversation(item)) || state.conversations[0];
       } else if (state.active) {
         state.active = rememberConversation(state.conversations.find((c) => Number(c.conversation_id) === Number(state.active.conversation_id)) || state.active);
       }
@@ -1887,6 +2013,7 @@
   }
 
   async function loadMessages(conversationId, { beforeId = 0, appendOlder = false } = {}) {
+    if (isPulseAIId(conversationId)) return loadPulseAIConversation({ appendOlder });
     if (appendOlder && state.loadingThread) return;
     const targetConversationId = Number(conversationId || 0);
     if (!targetConversationId) return;
@@ -1935,6 +2062,38 @@
       if (window.PulseMediaRenderer) window.PulseMediaRenderer.hydrate(messages);
       document.querySelectorAll("[data-voice-message]").forEach(bindVoiceAudio);
       if (!appendOlder) connectRealtimeStream();
+    } finally {
+      if (requestToken === state.activeRequestToken) {
+        state.loadingThread = false;
+        state.threadHydrating = false;
+        renderMessages();
+      }
+    }
+  }
+
+  async function loadPulseAIConversation({ appendOlder = false } = {}) {
+    if (appendOlder) return;
+    const requestToken = ++state.activeRequestToken;
+    state.loadingThread = true;
+    state.threadHydrating = !(state.messageCache.get(PULSE_AI_CONVERSATION_ID) || []).length;
+    state.messages = (state.messageCache.get(PULSE_AI_CONVERSATION_ID) || []).map((item) => ({ ...item }));
+    state.members = [];
+    state.typing = [];
+    state.hasOlder = false;
+    renderMessages();
+    try {
+      const data = await pulseAiApi("/conversation?limit=80", {}, "pulse_ai_conversation");
+      state.pulseAISettings = data.settings || state.pulseAISettings;
+      const conversation = ensurePulseAIConversation(data.conversation || {});
+      state.active = conversation;
+      state.messages = (data.messages || []).map((item) => ({ ...item, conversation_id: PULSE_AI_CONVERSATION_ID }));
+      state.messageCache.set(PULSE_AI_CONVERSATION_ID, state.messages.map((item) => ({ ...item })));
+      state.threadHydrating = false;
+      renderConversations();
+      renderMessages();
+      renderMembers();
+    } catch (err) {
+      setStatus(err?.message || "Pulse AI could not load.", "error");
     } finally {
       if (requestToken === state.activeRequestToken) {
         state.loadingThread = false;
@@ -2923,6 +3082,21 @@
           discardVoiceRecording({ silent: true });
           clearAttachmentQueue();
           closeConversationControlCenter();
+          if (isPulseAIId(id)) {
+            state.active = ensurePulseAIConversation();
+            const cached = state.messageCache.get(PULSE_AI_CONVERSATION_ID) || [];
+            state.messages = cached.map((item) => ({ ...item }));
+            state.threadHydrating = !cached.length;
+            state.members = [];
+            state.hasOlder = false;
+            restoreDraft(PULSE_AI_CONVERSATION_ID);
+            renderMessages();
+            renderMembers();
+            setMobileMode("thread");
+            await loadPulseAIConversation();
+            el("[data-message-input]")?.focus();
+            return;
+          }
           state.active = rememberConversation(state.conversationCache.get(id) || state.conversations.find((item) => Number(item.conversation_id) === id));
           if (state.active) state.active.unread_count = 0;
           applyControlAppearanceSettings(readCachedControlSettings(id), id);
@@ -3051,6 +3225,23 @@
         }
         if (target.closest("[data-ai-summary]")) return await runAIAction("summary");
         if (target.closest("[data-ai-replies]")) return await runAIAction("smart-replies");
+        const aiPrompt = target.closest("[data-pulse-ai-prompt]");
+        if (aiPrompt) {
+          const input = el("[data-message-input]");
+          if (input) {
+            input.value = aiPrompt.dataset.pulseAiPrompt || "";
+            input.focus();
+            syncComposerState();
+            el("[data-composer]")?.requestSubmit();
+          }
+          return;
+        }
+        const aiFeedback = target.closest("[data-pulse-ai-feedback]");
+        if (aiFeedback) return await sendPulseAIFeedback(aiFeedback.dataset.messageId, aiFeedback.dataset.pulseAiFeedback);
+        const aiSetting = target.closest("[data-pulse-ai-setting]");
+        if (aiSetting) return await togglePulseAISetting(aiSetting.dataset.pulseAiSetting);
+        if (target.closest("[data-pulse-ai-memory-clear]")) return await clearPulseAIMemory();
+        if (target.closest("[data-pulse-ai-memory-export]")) return await exportPulseAIMemory();
         if (target.closest("[data-mobile-list]")) {
           setMobileMode("list");
           return;
@@ -3280,7 +3471,7 @@
   }
 
   function debounceTyping() {
-    if (!state.active) return;
+    if (!state.active || isPulseAIConversation(state.active)) return;
     window.clearTimeout(state.typingTimer);
     window.clearTimeout(state.typingStopTimer);
     state.typingTimer = window.setTimeout(sendTypingIndicator, 450);
@@ -3288,7 +3479,7 @@
   }
 
   async function sendTypingIndicator() {
-    if (!state.active) return;
+    if (!state.active || isPulseAIConversation(state.active)) return;
     const now = Date.now();
     if (now - state.typingSentAt < 2500) return;
     state.typingSentAt = now;
@@ -3303,7 +3494,7 @@
   async function sendTypingStopped() {
     window.clearTimeout(state.typingTimer);
     window.clearTimeout(state.typingStopTimer);
-    if (!state.active) return;
+    if (!state.active || isPulseAIConversation(state.active)) return;
     try {
       await api(`/conversations/${state.active.conversation_id}/typing`, {
         method: "POST",
@@ -3564,10 +3755,154 @@
     connectRealtimeStream();
   }
 
+  async function sendPulseAIMessage(event) {
+    event.preventDefault();
+    if (state.composerSending) return;
+    const input = el("[data-message-input]");
+    const body = (input?.value || "").trim();
+    if (!body) return setStatus("Ask Pulse AI something first.", "error");
+    if (state.attachmentQueue.length || state.voice.state !== "idle") {
+      return setStatus("Pulse AI supports text conversation first. Remove attachments or voice notes before sending.", "error");
+    }
+    const clientMessageId = `pulse-ai-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const pendingUser = {
+      id: -Date.now(),
+      message_id: -Date.now(),
+      conversation_id: PULSE_AI_CONVERSATION_ID,
+      client_message_id: clientMessageId,
+      sender_user_id: currentUserId,
+      sender_id: currentUserId,
+      sender: { user_id: currentUserId, display_name: "You", avatar_url: "" },
+      is_mine: true,
+      message_type: "text",
+      body,
+      delivery_status: "sending",
+      delivery_state: "sending",
+      created_at: new Date().toISOString(),
+      attachments: [],
+      reactions: [],
+      _pending: true,
+    };
+    state.composerSending = true;
+    state.pulseAITyping = true;
+    state.messages = [...state.messages, pendingUser];
+    state.messageCache.set(PULSE_AI_CONVERSATION_ID, state.messages.map((item) => ({ ...item })));
+    if (input) input.value = "";
+    clearDraft(PULSE_AI_CONVERSATION_ID);
+    renderMessages();
+    setStatus("Pulse AI is thinking...");
+    try {
+      const data = await pulseAiApi("/message", {
+        method: "POST",
+        body: JSON.stringify({ message: body, client_message_id: clientMessageId }),
+      }, "pulse_ai_message");
+      state.pulseAITyping = false;
+      state.messages = (data.messages || []).map((item) => ({ ...item, conversation_id: PULSE_AI_CONVERSATION_ID }));
+      state.messageCache.set(PULSE_AI_CONVERSATION_ID, state.messages.map((item) => ({ ...item })));
+      ensurePulseAIConversation(data.conversation || {});
+      renderConversations();
+      renderMessages();
+      setStatus("");
+    } catch (err) {
+      state.pulseAITyping = false;
+      const serverMessages = err?.data?.messages || [];
+      if (serverMessages.length) {
+        state.messages = serverMessages.map((item) => ({ ...item, conversation_id: PULSE_AI_CONVERSATION_ID }));
+      } else {
+        const failed = {
+          id: -Date.now() - 1,
+          message_id: -Date.now() - 1,
+          conversation_id: PULSE_AI_CONVERSATION_ID,
+          sender_user_id: PULSE_AI_USER_ID,
+          sender: { user_id: PULSE_AI_USER_ID, display_name: "Pulse AI", avatar_url: "" },
+          is_mine: false,
+          is_ai: true,
+          message_type: "text",
+          body: err?.data?.message || "Pulse AI is temporarily unavailable. Please try again soon.",
+          delivery_status: "failed",
+          delivery_state: "failed",
+          error_code: err?.data?.error || "ai_unavailable",
+          correlation_id: err?.data?.correlation_id || err?.data?.trace_id || "",
+          created_at: new Date().toISOString(),
+          attachments: [],
+          reactions: [],
+        };
+        state.messages = state.messages.map((item) => item.client_message_id === clientMessageId ? { ...item, _pending: false, delivery_status: "sent", delivery_state: "sent" } : item);
+        state.messages = [...state.messages, failed];
+      }
+      state.messageCache.set(PULSE_AI_CONVERSATION_ID, state.messages.map((item) => ({ ...item })));
+      renderMessages();
+      setStatus(err?.message || "Pulse AI is temporarily unavailable.", "error");
+    } finally {
+      state.composerSending = false;
+      state.pulseAITyping = false;
+      renderMessages();
+    }
+  }
+
+  async function sendPulseAIFeedback(messageId, rating) {
+    try {
+      const data = await pulseAiApi("/feedback", {
+        method: "POST",
+        body: JSON.stringify({ message_id: Number(messageId || 0), rating }),
+      }, "pulse_ai_feedback");
+      setStatus(data.message || "Feedback saved.");
+    } catch (err) {
+      setStatus(err?.message || "Pulse AI feedback could not be saved.", "error");
+    }
+  }
+
+  async function togglePulseAISetting(key) {
+    const current = Boolean((state.pulseAISettings || {})[key]);
+    const next = { ...(state.pulseAISettings || {}), [key]: !current };
+    state.pulseAISettings = next;
+    renderMessages();
+    try {
+      const data = await pulseAiApi("/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ [key]: !current }),
+      }, "pulse_ai_settings_update");
+      state.pulseAISettings = data.settings || next;
+      setStatus("Pulse AI privacy setting saved.");
+    } catch (err) {
+      state.pulseAISettings = { ...(state.pulseAISettings || {}), [key]: current };
+      setStatus(err?.message || "Pulse AI setting could not be saved.", "error");
+    } finally {
+      renderMessages();
+    }
+  }
+
+  async function clearPulseAIMemory() {
+    if (!window.confirm("Clear Pulse AI personalization memory? This does not delete your messages.")) return;
+    try {
+      const data = await pulseAiApi("/memory/clear", { method: "POST", body: "{}" }, "pulse_ai_memory_clear");
+      setStatus(data.message || "Pulse AI memory cleared.");
+    } catch (err) {
+      setStatus(err?.message || "Pulse AI memory could not be cleared.", "error");
+    }
+  }
+
+  async function exportPulseAIMemory() {
+    try {
+      const data = await pulseAiApi("/memory/export", {}, "pulse_ai_memory_export");
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "pulse-ai-memory.json";
+      a.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setStatus("Pulse AI memory export prepared.");
+    } catch (err) {
+      setStatus(err?.message || "Pulse AI memory could not be exported.", "error");
+    }
+  }
+
   async function sendMessage(event) {
     event.preventDefault();
     if (state.composerSending) return;
     if (!state.active) return setStatus("Choose a conversation first.", "error");
+    if (isPulseAIConversation(state.active)) return sendPulseAIMessage(event);
     const sendingConversationId = Number(state.active.conversation_id || 0);
     const input = el("[data-message-input]");
     const body = input?.value || "";

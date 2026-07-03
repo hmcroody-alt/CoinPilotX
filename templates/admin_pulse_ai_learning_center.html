@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Pulse AI Learning Center | PulseSoc Admin</title>
+  <style>
+    :root { color-scheme: dark; --bg:#050b14; --panel:#0d1627; --line:rgba(110,223,246,.22); --text:#f2fbff; --muted:#9fb5c0; --accent:#36e58f; --cyan:#6edff6; --violet:#9b5cff; --danger:#ff6b8a; --warn:#ffd166; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif; color:var(--text); background:radial-gradient(circle at 18% 0,rgba(110,223,246,.14),transparent 30rem),radial-gradient(circle at 92% 8%,rgba(155,92,255,.14),transparent 28rem),linear-gradient(180deg,#050b14,#07111e); }
+    a { color:var(--cyan); text-decoration:none; }
+    header { position:sticky; top:0; z-index:5; border-bottom:1px solid var(--line); background:rgba(5,11,20,.9); backdrop-filter:blur(16px); }
+    .wrap { width:min(100% - 30px,1440px); margin:auto; padding:22px 0 70px; }
+    .topline { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+    .nav { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
+    .nav a, .button { min-height:42px; display:inline-flex; align-items:center; justify-content:center; padding:9px 12px; border:1px solid var(--line); border-radius:10px; color:var(--text); background:rgba(255,255,255,.045); font-weight:850; }
+    .nav a.active, .button.primary { color:#06101b; border-color:transparent; background:linear-gradient(135deg,var(--accent),var(--cyan)); box-shadow:0 0 24px rgba(54,229,143,.22); }
+    h1 { margin:0 0 10px; font-size:clamp(34px,5vw,64px); line-height:.95; letter-spacing:0; }
+    h2 { margin:0 0 10px; }
+    .muted { color:var(--muted); }
+    .hero { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:16px; align-items:end; margin:24px 0 16px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
+    .split { display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:start; }
+    .card { min-width:0; overflow:hidden; padding:16px; border:1px solid var(--line); border-radius:16px; background:linear-gradient(180deg,rgba(255,255,255,.065),rgba(255,255,255,.028)); box-shadow:0 24px 80px rgba(0,0,0,.25); }
+    .metric { color:var(--accent); font-size:2rem; line-height:1; font-weight:950; }
+    .pill { display:inline-flex; align-items:center; gap:6px; margin:3px 4px 3px 0; padding:6px 9px; border:1px solid var(--line); border-radius:999px; color:#dffcff; background:rgba(110,223,246,.08); font-size:.86rem; }
+    .pill.warn { color:#fff3c4; border-color:rgba(255,209,102,.36); background:rgba(255,209,102,.09); }
+    .pill.danger { color:#ffdbe4; border-color:rgba(255,107,138,.38); background:rgba(255,107,138,.10); }
+    .table-wrap { overflow:auto; border:1px solid rgba(255,255,255,.08); border-radius:14px; }
+    table { width:100%; min-width:760px; border-collapse:collapse; }
+    th, td { padding:10px; border-bottom:1px solid rgba(255,255,255,.075); text-align:left; vertical-align:top; }
+    th { color:#dffcff; font-size:.82rem; text-transform:uppercase; letter-spacing:.06em; }
+    @media(max-width:880px) { .wrap { width:min(100% - 20px,1440px); } .hero,.split { grid-template-columns:1fr; } .nav { flex-wrap:nowrap; overflow:auto; padding-bottom:4px; } .nav a { white-space:nowrap; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap" style="padding-bottom:16px">
+      <div class="topline">
+        <strong>PulseSoc Admin</strong>
+        <span class="muted">{{ admin.email }}</span>
+      </div>
+      <nav class="nav" aria-label="Admin navigation">
+        <a href="/admin/dashboard">Dashboard</a>
+        <a href="/admin/notifications">Notifications</a>
+        <a href="/admin/notification-delivery">Delivery</a>
+        <a href="/admin/calls">Calls</a>
+        <a class="active" href="/admin/pulse-ai/learning">Pulse AI</a>
+        <a href="/admin/pulse-infrastructure">PulseSoc Infra</a>
+        <a href="/admin/performance">Performance</a>
+        <a href="/admin/audit-logs">Audit</a>
+        <a href="/admin/system">System</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">
+    <section class="hero">
+      <div>
+        <p class="pill">Privacy-safe learning</p>
+        <h1>Pulse AI Learning Center</h1>
+        <p class="muted">Backend truth for approved knowledge, provider readiness, feedback trends, unanswered questions, and safety review queue. Private chats are not used for hidden training.</p>
+      </div>
+      <a class="button primary" href="/api/admin/pulse-ai/learning">View API</a>
+    </section>
+
+    {% set stats = dashboard.stats or {} %}
+    <section class="grid">
+      <article class="card"><strong>Knowledge Items</strong><p class="metric">{{ stats.knowledge_items or 0 }}</p></article>
+      <article class="card"><strong>Feedback</strong><p class="metric">{{ stats.feedback or 0 }}</p></article>
+      <article class="card"><strong>Safety Reviews</strong><p class="metric">{{ stats.safety_reviews or 0 }}</p></article>
+      <article class="card"><strong>Messages</strong><p class="metric">{{ stats.messages or 0 }}</p></article>
+      <article class="card"><strong>Learning Events</strong><p class="metric">{{ stats.learning_events or 0 }}</p></article>
+      <article class="card"><strong>Features</strong><p class="metric">{{ stats.features or 0 }}</p></article>
+    </section>
+
+    <section class="card" style="margin-top:14px">
+      <h2>Provider Status</h2>
+      {% for provider in dashboard.provider_status.providers or [] %}
+        <span class="pill {{ '' if provider.configured else 'warn' }}">{{ provider.provider }} {{ 'configured' if provider.configured else 'missing' }} · {{ provider.model }}</span>
+      {% endfor %}
+      <p class="muted">Only presence/missing state is shown. Provider secrets are never rendered.</p>
+    </section>
+
+    <section class="split" style="margin-top:14px">
+      <article class="card">
+        <h2>Feedback Trends</h2>
+        {% for item in dashboard.feedback_trends or [] %}
+          <span class="pill">{{ item.rating }} {{ item.total }}</span>
+        {% else %}
+          <p class="muted">No feedback submitted yet.</p>
+        {% endfor %}
+        <div class="table-wrap" style="margin-top:12px">
+          <table>
+            <thead><tr><th>Rating</th><th>Message</th><th>Status</th><th>Created</th></tr></thead>
+            <tbody>
+              {% for item in dashboard.recent_feedback or [] %}
+                <tr><td>{{ item.rating }}</td><td>#{{ item.message_id }}</td><td>{{ item.status }}</td><td>{{ item.created_at }}</td></tr>
+              {% else %}
+                <tr><td colspan="4" class="muted">No recent feedback.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </article>
+      <article class="card">
+        <h2>Safety Review Queue</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Review</th><th>Status</th><th>Notes</th><th>Created</th></tr></thead>
+            <tbody>
+              {% for item in dashboard.safety_reviews or [] %}
+                <tr><td>#{{ item.id }}</td><td>{{ item.review_status }}</td><td>{{ item.notes }}</td><td>{{ item.created_at }}</td></tr>
+              {% else %}
+                <tr><td colspan="4" class="muted">No safety reviews queued.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+
+    <section class="card" style="margin-top:14px">
+      <h2>Approved Knowledge</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Title</th><th>Category</th><th>Status</th><th>Summary</th></tr></thead>
+          <tbody>
+            {% for item in dashboard.knowledge_items or [] %}
+              <tr><td>{{ item.title }}</td><td>{{ item.category }}</td><td>{{ item.status }}</td><td>{{ item.body }}</td></tr>
+            {% else %}
+              <tr><td colspan="4" class="muted">No knowledge items found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

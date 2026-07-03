@@ -685,6 +685,19 @@ select:focus-visible {
   height: 48px;
 }
 
+.pulse-ai-avatar {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(105, 218, 240, .42);
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255, 255, 255, .5), transparent 18%),
+    conic-gradient(from 160deg, rgba(56, 221, 160, .95), rgba(105, 218, 240, .92), rgba(155, 108, 244, .9), rgba(56, 221, 160, .95));
+  color: #04111b;
+  font-weight: 950;
+  letter-spacing: .04em;
+  box-shadow: 0 0 24px rgba(105, 218, 240, .22), inset 0 0 20px rgba(255, 255, 255, .22);
+}
+
 .conversation-main {
   display: grid;
   min-width: 0;
@@ -1079,6 +1092,65 @@ select:focus-visible {
   color: var(--muted);
 }
 
+.pulse-ai-welcome {
+  width: min(100%, 560px);
+  border-color: rgba(155, 108, 244, .28);
+  background:
+    radial-gradient(circle at 50% 0, rgba(105, 218, 240, .12), transparent 44%),
+    linear-gradient(135deg, rgba(155, 108, 244, .095), rgba(56, 221, 160, .055)),
+    rgba(8, 20, 35, .66);
+}
+
+.pulse-ai-quick-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.pulse-ai-privacy-panel {
+  width: min(100%, 520px);
+  margin: 0 auto 10px;
+  text-align: left;
+}
+
+.pulse-ai-privacy-panel summary {
+  cursor: pointer;
+  color: #dffcff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.pulse-ai-privacy-panel > div {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.pulse-ai-privacy-panel button {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  border: 1px solid rgba(105, 218, 240, .16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .035);
+  color: var(--text);
+  text-align: left;
+}
+
+.pulse-ai-privacy-panel button b {
+  color: var(--green);
+  font-size: 11px;
+}
+
+.pulse-ai-privacy-panel button[aria-pressed="false"] b {
+  color: var(--muted);
+}
+
 .empty-state.compact {
   width: 100%;
   min-height: 54px;
@@ -1139,6 +1211,15 @@ select:focus-visible {
   border-color: rgba(244, 202, 103, .32);
 }
 
+.message.is-ai-assistant {
+  max-width: min(760px, 82%);
+  border-color: rgba(155, 108, 244, .28);
+  background:
+    radial-gradient(circle at 10% 0, rgba(155, 108, 244, .18), transparent 42%),
+    linear-gradient(135deg, rgba(105, 218, 240, .085), rgba(155, 108, 244, .07));
+  box-shadow: 0 0 28px rgba(105, 218, 240, .06), 0 14px 34px rgba(0, 0, 0, .22);
+}
+
 .message.is-highlighted,
 .message.is-search-match {
   border-color: rgba(244, 202, 103, .68);
@@ -1173,6 +1254,34 @@ select:focus-visible {
   gap: 6px;
   color: rgba(220, 239, 247, .62);
   font-size: 9px;
+}
+
+.pulse-ai-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.pulse-ai-feedback button,
+.pulse-ai-quick-prompts button {
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid rgba(105, 218, 240, .18);
+  border-radius: 999px;
+  background: rgba(105, 218, 240, .07);
+  color: #dffcff;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.pulse-ai-feedback button:hover,
+.pulse-ai-quick-prompts button:hover,
+.pulse-ai-feedback button:focus-visible,
+.pulse-ai-quick-prompts button:focus-visible {
+  border-color: rgba(56, 221, 160, .5);
+  background: rgba(56, 221, 160, .12);
+  outline: none;
 }
 
 .delivery-state {
@@ -1345,6 +1454,31 @@ select:focus-visible {
 
 .typing-pill[hidden] {
   display: none;
+}
+
+.typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 44px;
+  min-height: 16px;
+}
+
+.typing-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--green), var(--cyan));
+  box-shadow: 0 0 12px rgba(105, 218, 240, .45);
+  animation: pulseTypingDot 1s ease-in-out infinite;
+}
+
+.typing-dots i:nth-child(2) { animation-delay: .14s; }
+.typing-dots i:nth-child(3) { animation-delay: .28s; }
+
+@keyframes pulseTypingDot {
+  0%, 100% { opacity: .35; transform: translateY(0) scale(.82); }
+  50% { opacity: 1; transform: translateY(-3px) scale(1); }
 }
 
 .ai-assist-panel {

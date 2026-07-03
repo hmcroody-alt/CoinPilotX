@@ -218,6 +218,36 @@ def admin_health_deep():
     return jsonify(pulsesoc_reliability.deep_health_snapshot())
 
 
+@comm_v2_blueprint.get("/admin/pulse-ai/learning")
+def admin_pulse_ai_learning_page():
+    admin = _current_admin()
+    if not admin:
+        return _bot().redirect(_bot().url_for("admin_login_page", next=request.path))
+    from services import pulse_ai_service
+
+    return render_template("admin_pulse_ai_learning_center.html", admin=admin, dashboard=pulse_ai_service.admin_learning_dashboard())
+
+
+@comm_v2_blueprint.get("/api/admin/pulse-ai/health")
+def api_admin_pulse_ai_health():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    from services import pulse_ai_service
+
+    return _json(pulse_ai_service.status())
+
+
+@comm_v2_blueprint.get("/api/admin/pulse-ai/learning")
+def api_admin_pulse_ai_learning():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    from services import pulse_ai_service
+
+    return _json(pulse_ai_service.admin_learning_dashboard())
+
+
 def _sse_response(generator):
     response = Response(stream_with_context(generator()), mimetype="text/event-stream")
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -244,6 +274,132 @@ def diagnostics():
     if not admin:
         return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
     return _json(service.infrastructure_diagnostics())
+
+
+@comm_v2_blueprint.get("/api/pulse-ai/conversation")
+def pulse_ai_conversation():
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulse_ai_service
+
+        return pulse_ai_service.get_conversation(user["user_id"], int(request.args.get("limit") or 80))
+
+    return _timed_json("pulse_ai_conversation", run)
+
+
+@comm_v2_blueprint.post("/api/pulse-ai/message")
+def pulse_ai_message():
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulse_ai_service
+
+        return pulse_ai_service.send_message(user["user_id"], request.get_json(silent=True) or {})
+
+    return _timed_json("pulse_ai_message", run)
+
+
+@comm_v2_blueprint.post("/api/pulse-ai/reset")
+def pulse_ai_reset():
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulse_ai_service
+
+        return pulse_ai_service.reset_conversation(user["user_id"])
+
+    return _timed_json("pulse_ai_reset", run)
+
+
+@comm_v2_blueprint.get("/api/pulse-ai/status")
+def pulse_ai_status():
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulse_ai_service
+
+        return pulse_ai_service.status()
+
+    return _timed_json("pulse_ai_status", run)
+
+
+@comm_v2_blueprint.get("/api/pulse-ai/settings")
+def pulse_ai_settings():
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulse_ai_service
+
+        return pulse_ai_service.get_settings(user["user_id"])
+
+    return _timed_json("pulse_ai_settings", run)
+
+
+@comm_v2_blueprint.patch("/api/pulse-ai/settings")
+def pulse_ai_settings_update():
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulse_ai_service
+
+        return pulse_ai_service.update_settings(user["user_id"], request.get_json(silent=True) or {})
+
+    return _timed_json("pulse_ai_settings_update", run)
+
+
+@comm_v2_blueprint.post("/api/pulse-ai/feedback")
+def pulse_ai_feedback():
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulse_ai_service
+
+        return pulse_ai_service.record_feedback(user["user_id"], request.get_json(silent=True) or {})
+
+    return _timed_json("pulse_ai_feedback", run)
+
+
+@comm_v2_blueprint.post("/api/pulse-ai/memory/clear")
+def pulse_ai_clear_memory():
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulse_ai_service
+
+        return pulse_ai_service.clear_memory(user["user_id"])
+
+    return _timed_json("pulse_ai_clear_memory", run)
+
+
+@comm_v2_blueprint.get("/api/pulse-ai/memory/export")
+def pulse_ai_export_memory():
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulse_ai_service
+
+        return pulse_ai_service.export_memory(user["user_id"])
+
+    return _timed_json("pulse_ai_export_memory", run)
 
 
 @comm_v2_blueprint.get(f"{API_PREFIX}/realtime/stream")
