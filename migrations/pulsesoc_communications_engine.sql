@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS communication_calls (
     duration_seconds INTEGER DEFAULT 0,
     end_reason TEXT,
     metadata JSONB DEFAULT '{}'::jsonb,
+    metadata_json TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -41,6 +42,8 @@ CREATE TABLE IF NOT EXISTS communication_call_participants (
     last_seen_at TIMESTAMPTZ,
     device_info JSONB DEFAULT '{}'::jsonb,
     metadata JSONB DEFAULT '{}'::jsonb,
+    device_info_json TEXT,
+    metadata_json TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(call_id, user_id)
@@ -55,6 +58,7 @@ CREATE TABLE IF NOT EXISTS communication_call_events (
     user_id INTEGER,
     event_type TEXT,
     event_payload JSONB DEFAULT '{}'::jsonb,
+    event_payload_json TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -74,6 +78,7 @@ CREATE TABLE IF NOT EXISTS communication_call_quality_reports (
     resolution TEXT,
     network_type TEXT,
     device_info JSONB DEFAULT '{}'::jsonb,
+    device_info_json TEXT,
     quality_score NUMERIC,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -89,7 +94,15 @@ CREATE TABLE IF NOT EXISTS communication_call_device_sessions (
     platform TEXT,
     browser TEXT,
     permissions JSONB DEFAULT '{}'::jsonb,
+    permissions_json TEXT,
     connection_state TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE communication_calls ADD COLUMN IF NOT EXISTS metadata_json TEXT;
+ALTER TABLE communication_call_participants ADD COLUMN IF NOT EXISTS device_info_json TEXT;
+ALTER TABLE communication_call_participants ADD COLUMN IF NOT EXISTS metadata_json TEXT;
+ALTER TABLE communication_call_events ADD COLUMN IF NOT EXISTS event_payload_json TEXT;
+ALTER TABLE communication_call_quality_reports ADD COLUMN IF NOT EXISTS device_info_json TEXT;
+ALTER TABLE communication_call_device_sessions ADD COLUMN IF NOT EXISTS permissions_json TEXT;

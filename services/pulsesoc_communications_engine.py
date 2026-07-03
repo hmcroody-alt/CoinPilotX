@@ -283,9 +283,113 @@ def _open_db():
     return conn, cur
 
 
+CALL_COMPAT_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
+    "communication_calls": (
+        ("public_id", "TEXT"),
+        ("conversation_id", "INTEGER"),
+        ("room_name", "TEXT"),
+        ("provider", "TEXT DEFAULT 'livekit'"),
+        ("call_type", "TEXT"),
+        ("call_scope", "TEXT"),
+        ("status", "TEXT"),
+        ("created_by_user_id", "INTEGER"),
+        ("started_at", "TEXT"),
+        ("answered_at", "TEXT"),
+        ("ended_at", "TEXT"),
+        ("duration_seconds", "INTEGER DEFAULT 0"),
+        ("end_reason", "TEXT"),
+        ("metadata_json", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ),
+    "communication_call_participants": (
+        ("call_id", "INTEGER"),
+        ("user_id", "INTEGER"),
+        ("role", "TEXT"),
+        ("status", "TEXT"),
+        ("muted_audio", "INTEGER DEFAULT 0"),
+        ("muted_video", "INTEGER DEFAULT 0"),
+        ("screen_sharing", "INTEGER DEFAULT 0"),
+        ("joined_at", "TEXT"),
+        ("left_at", "TEXT"),
+        ("last_seen_at", "TEXT"),
+        ("device_info_json", "TEXT"),
+        ("metadata_json", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ),
+    "communication_call_events": (
+        ("call_id", "INTEGER"),
+        ("user_id", "INTEGER"),
+        ("event_type", "TEXT"),
+        ("event_payload_json", "TEXT"),
+        ("created_at", "TEXT"),
+    ),
+    "communication_call_quality_reports": (
+        ("call_id", "INTEGER"),
+        ("user_id", "INTEGER"),
+        ("latency_ms", "INTEGER"),
+        ("jitter_ms", "INTEGER"),
+        ("packet_loss", "REAL"),
+        ("bitrate_audio", "INTEGER"),
+        ("bitrate_video", "INTEGER"),
+        ("fps", "REAL"),
+        ("resolution", "TEXT"),
+        ("network_type", "TEXT"),
+        ("device_info_json", "TEXT"),
+        ("quality_score", "REAL"),
+        ("created_at", "TEXT"),
+    ),
+    "communication_call_device_sessions": (
+        ("call_id", "INTEGER"),
+        ("user_id", "INTEGER"),
+        ("device_id", "TEXT"),
+        ("platform", "TEXT"),
+        ("browser", "TEXT"),
+        ("permissions_json", "TEXT"),
+        ("connection_state", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ),
+}
+
+
+def _table_columns(cur: Any, table: str) -> set[str]:
+    try:
+        from services import db as db_service
+
+        if getattr(db_service, "IS_POSTGRES", False):
+            cur.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema='public' AND table_name=?
+                """,
+                (table,),
+            )
+            return {str(row["column_name"]) for row in cur.fetchall()}
+    except Exception:
+        return set()
+    cur.execute(f"PRAGMA table_info({table})")
+    return {str(row["name"]) for row in cur.fetchall()}
+
+
+def _ensure_compat_columns(cur: Any) -> None:
+    for table, columns in CALL_COMPAT_COLUMNS.items():
+        existing = _table_columns(cur, table)
+        if not existing:
+            continue
+        for name, definition in columns:
+            if name in existing:
+                continue
+            cur.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+            existing.add(name)
+
+
 def ensure_schema(cur: Any) -> None:
     for sql in CALL_TABLES:
         cur.execute(sql)
+    _ensure_compat_columns(cur)
     for sql in CALL_INDEXES:
         cur.execute(sql)
 
@@ -486,6 +590,17 @@ def _get_call(cur: Any, call_ref: str | int) -> dict[str, Any]:
     where, params = _call_ref_where(call_ref)
     cur.execute(f"SELECT * FROM communication_calls WHERE {where} LIMIT 1", params)
     return _row(cur.fetchone())
+
+
+def _inserted_call_id(cur: Any, public_id: str) -> int:
+    call_id = int(getattr(cur, "lastrowid", None) or 0)
+    if call_id:
+        return call_id
+    cur.execute("SELECT id FROM communication_calls WHERE public_id=? LIMIT 1", (public_id,))
+    row = _row(cur.fetchone())
+    if row.get("id"):
+        return int(row["id"])
+    raise RuntimeError("communication_calls insert did not return an id")
 
 
 def _serialize_call(cur: Any, call: dict[str, Any], user_id: int = 0, include_token: bool = False) -> dict[str, Any]:
@@ -866,7 +981,7 @@ def start_call(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
             """,
             (public_id, conversation_id, room_name, call_type, call_scope, int(user_id), _json_dumps(metadata), now, now),
         )
-        call_id = int(cur.lastrowid)
+        call_id = _inserted_call_id(cur, public_id)
         cur.execute(
             """
             INSERT INTO communication_call_participants

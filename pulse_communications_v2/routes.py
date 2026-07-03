@@ -42,6 +42,57 @@ def _json(payload: dict):
     return response, status
 
 
+def _redact_for_log(value, depth: int = 0):
+    if depth > 5:
+        return "[truncated]"
+    secret_keys = {"password", "token", "secret", "api_key", "authorization", "cookie", "stream_key"}
+    if isinstance(value, dict):
+        output = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if any(secret in key_text.lower() for secret in secret_keys):
+                output[key_text] = "[redacted]"
+            else:
+                output[key_text] = _redact_for_log(item, depth + 1)
+        return output
+    if isinstance(value, (list, tuple)):
+        return [_redact_for_log(item, depth + 1) for item in list(value)[:50]]
+    if isinstance(value, str):
+        return value if len(value) <= 500 else f"{value[:500]}...[truncated]"
+    return value
+
+
+def _request_debug_context(metric: str) -> dict:
+    user = None
+    try:
+        user = _current_user()
+    except Exception:
+        user = None
+    payload = request.get_json(silent=True) if request.content_type and "json" in request.content_type.lower() else None
+    if payload is None and request.form:
+        payload = dict(request.form)
+    payload = payload if isinstance(payload, dict) else {}
+    conversation_id = payload.get("conversation_id") or payload.get("conversation_ref") or payload.get("thread_id")
+    if not conversation_id and request.view_args:
+        conversation_id = request.view_args.get("conversation_id")
+    return {
+        "metric": metric,
+        "method": request.method,
+        "path": request.path,
+        "remote_addr": request.headers.get("X-Forwarded-For") or request.remote_addr or "",
+        "user_id": (user or {}).get("user_id") if isinstance(user, dict) else None,
+        "account_id": (user or {}).get("account_id") if isinstance(user, dict) else None,
+        "conversation_id": conversation_id,
+        "recipient_user_ids": payload.get("recipient_user_ids") if isinstance(payload.get("recipient_user_ids"), list) else [],
+        "call_type": payload.get("call_type") or request.args.get("call_type") or "",
+        "content_type": request.content_type or "",
+        "payload": _redact_for_log(payload),
+        "railway_service": os.getenv("RAILWAY_SERVICE_NAME", ""),
+        "railway_deployment": os.getenv("RAILWAY_DEPLOYMENT_ID", ""),
+        "git_commit": os.getenv("RAILWAY_GIT_COMMIT_SHA", "") or os.getenv("GIT_SHA", ""),
+    }
+
+
 def _timed_json(metric: str, action):
     started = time.perf_counter()
     trace_id = service._trace()
@@ -72,8 +123,9 @@ def _timed_json(metric: str, action):
         return _json(payload)
     except Exception as exc:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
+        context = _request_debug_context(metric)
         logging.exception(
-            "PULSE_COMM_V2_ROUTE_EXCEPTION metric=%s duration_ms=%s method=%s path=%s trace_id=%s content_type=%s error_type=%s",
+            "PULSE_COMM_V2_ROUTE_EXCEPTION metric=%s duration_ms=%s method=%s path=%s trace_id=%s content_type=%s error_type=%s request_context=%s",
             metric,
             elapsed_ms,
             request.method,
@@ -81,6 +133,7 @@ def _timed_json(metric: str, action):
             trace_id,
             request.content_type or "",
             type(exc).__name__,
+            json.dumps(context, default=str, sort_keys=True),
         )
         call_route = str(metric or "").startswith(("api_call", "conversation_call", "admin_call"))
         if call_route:
