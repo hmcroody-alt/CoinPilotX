@@ -51,7 +51,7 @@ def main():
     require("display: none !important" in CSS and ".pulse-status-story-nav" in CSS, "visible next/back buttons are hidden")
     require("button.hidden = false" in JS, "Sound control stays available after unmuting")
     require("revealStatusChrome" in JS, "viewer can briefly reveal lightweight controls")
-    require("status-gesture-command-20260621c" in BOT, "status CSS/JS cache keys are bumped")
+    require("status-v4-20260703b" in BOT, "status CSS/JS cache keys are bumped")
     require("padding:42px16px16px" not in compact and "linear-gradient(180deg,transparent,rgba(2,6,23,.88))" not in compact, "old large bottom metadata panel styling is removed")
 
 

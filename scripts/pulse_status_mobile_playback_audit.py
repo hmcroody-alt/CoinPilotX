@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BOT = ROOT / "bot.py"
 RENDERER = ROOT / "static/js/pulse_media_renderer.js"
+VIEWER = ROOT / "static/js/pulse_status_viewer.js"
 
 
 def expect(condition: bool, label: str) -> None:
@@ -20,6 +21,7 @@ def expect(condition: bool, label: str) -> None:
 def main() -> None:
     bot = BOT.read_text(encoding="utf-8")
     renderer = RENDERER.read_text(encoding="utf-8")
+    viewer = VIEWER.read_text(encoding="utf-8")
 
     for token in [
         "data-status-viewer",
@@ -27,10 +29,10 @@ def main() -> None:
         "PulseMediaRenderer.renderMedia",
         "PulseMediaRenderer?.hydrate(viewer)",
         "status-viewer-autoplay",
-        "status-media-tap",
     ]:
         expect(token in bot, f"Status viewer includes {token}")
 
+    expect("status-tap-toggle-sound" in viewer, "shared Status viewer includes tap sound toggle")
     expect("media.mux_playback_id?`https://stream.mux.com/${media.mux_playback_id}.m3u8`" in bot, "Status viewer forces Mux HLS before raw media")
     expect("pulse-status-card-media" in bot, "photo/video status cards still render previews")
     expect("pulse-status-card-text" in bot and "text-story" in bot, "text status remains readable")

@@ -162,10 +162,12 @@
   function ensureStatusV3Structure(viewer) {
     if (!viewer) return;
     viewer.classList.add("pulse-status-v3-viewer");
+    viewer.classList.add("pulse-status-v4-viewer");
     viewer.dataset.contentViewerMode = "status";
     const shell = viewer.querySelector?.(".pulse-status-story-shell");
     if (!shell) return;
     shell.classList.add("pulse-status-v3-shell");
+    shell.classList.add("pulse-status-v4-shell");
     const progress = shell.querySelector(".pulse-status-story-progress");
     if (progress) progress.classList.add("pulse-status-segmented-progress-v3");
 
@@ -221,7 +223,10 @@
     const footer = shell.querySelector(".pulse-status-story-footer");
     if (footer) {
       footer.classList.add("pulse-status-bottom-strip-v3");
+      footer.classList.add("pulse-status-legacy-identity");
       footer.dataset.statusV3BottomStrip = "1";
+      footer.dataset.statusLegacyIdentity = "1";
+      footer.setAttribute("aria-hidden", "true");
       if (!footer.querySelector("[data-status-v3-follow]")) {
         const follow = document.createElement("button");
         follow.type = "button";
@@ -235,6 +240,21 @@
     }
   }
 
+  function statusStoryTypeLabel(viewer) {
+    const media = viewer?.querySelector?.("[data-status-story-media],[data-status-viewer-media]");
+    if (media?.querySelector?.("video")) return "Video Story";
+    if (media?.querySelector?.("img")) return "Photo Story";
+    const rawType = String(viewer?.dataset.statusType || viewer?.querySelector?.("[data-status-viewer-body],[data-status-story-body]")?.textContent || "").toLowerCase();
+    if (rawType.includes("video")) return "Video Story";
+    if (rawType.includes("photo") || rawType.includes("image")) return "Photo Story";
+    return "Status";
+  }
+
+  function statusHeaderMeta(viewer, time) {
+    const cleanTime = String(time || "").trim();
+    return cleanTime ? `${statusStoryTypeLabel(viewer)} • ${cleanTime}` : statusStoryTypeLabel(viewer);
+  }
+
   function syncStatusV3Metadata(viewer) {
     if (!viewer) return;
     ensureStatusV3Structure(viewer);
@@ -243,8 +263,7 @@
       "PulseSoc creator";
     const role =
       viewer.dataset.statusCreatorRole ||
-      viewer.querySelector("[data-status-viewer-body],[data-status-story-body]")?.textContent?.trim() ||
-      "PulseSoc Status";
+      "";
     const time =
       viewer.querySelector("[data-status-story-time]")?.textContent?.trim() ||
       viewer.querySelector("[data-status-viewer-count],[data-status-story-count]")?.textContent?.trim()?.split("·").pop()?.trim() ||
@@ -255,14 +274,18 @@
     const roleNode = viewer.querySelector("[data-status-v3-role]");
     const timeNode = viewer.querySelector("[data-status-v3-time]");
     if (authorNode) authorNode.textContent = author;
-    if (roleNode) roleNode.textContent = role;
-    if (timeNode) timeNode.textContent = time;
+    if (roleNode) roleNode.textContent = role || statusHeaderMeta(viewer, time);
+    if (timeNode) {
+      timeNode.textContent = statusHeaderMeta(viewer, time);
+      timeNode.hidden = true;
+    }
   }
 
   const storyRuntime = {
     viewer: null,
     timer: 0,
     progressTimer: 0,
+    musicSignatureTimer: 0,
     startedAt: 0,
     durationMs: 5000,
     paused: false,
@@ -367,10 +390,12 @@
     window.clearTimeout(storyRuntime.timer);
     window.clearTimeout(storyRuntime.pressTimer);
     window.clearTimeout(storyRuntime.controlHideTimer);
+    window.clearTimeout(storyRuntime.musicSignatureTimer);
     window.clearInterval(storyRuntime.progressTimer);
     storyRuntime.timer = 0;
     storyRuntime.pressTimer = 0;
     storyRuntime.controlHideTimer = 0;
+    storyRuntime.musicSignatureTimer = 0;
     storyRuntime.progressTimer = 0;
   }
 
@@ -488,6 +513,18 @@
     updateStatusMiniPlayer(viewer, media);
   }
 
+  function expandStatusMusicSignature(viewer = activeViewer()) {
+    const mini = viewer?.querySelector?.("[data-status-mini-player]");
+    if (!viewer || !mini || mini.hidden) return;
+    window.clearTimeout(storyRuntime.musicSignatureTimer);
+    viewer.classList.add("is-music-expanded");
+    mini.classList.add("is-expanded");
+    storyRuntime.musicSignatureTimer = window.setTimeout(() => {
+      viewer.classList.remove("is-music-expanded");
+      mini.classList.remove("is-expanded");
+    }, 3000);
+  }
+
   function unmuteViewerVideo(viewer = activeViewer()) {
     const media = viewerSoundMedia(viewer);
     if (!media) return false;
@@ -530,6 +567,7 @@
         window.PulseMediaRenderer.pauseAttachedAudio?.(media);
       }
       updateViewerSoundButton(viewer, media);
+      expandStatusMusicSignature(viewer);
       revealStatusChrome(viewer, { timeout: 900 });
       return true;
     }
@@ -549,6 +587,7 @@
     }
     else media.pause?.();
     updateViewerSoundButton(viewer, media);
+    expandStatusMusicSignature(viewer);
     revealStatusChrome(viewer, { timeout: 900 });
     return true;
   }
@@ -613,7 +652,7 @@
     let sound = shell.querySelector("[data-status-now-playing]");
     if (!sound) {
       sound = document.createElement("div");
-      sound.className = "pulse-status-now-playing pulse-status-music-mini-v3 lnx-music-controller";
+      sound.className = "pulse-status-now-playing pulse-status-music-mini-v3 pulse-status-music-signature-v4 lnx-music-controller";
       sound.dataset.statusNowPlaying = "1";
       sound.dataset.statusMiniPlayer = "1";
       sound.innerHTML = `
@@ -625,6 +664,9 @@
         <span class="pulse-status-now-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
         <span class="pulse-status-now-progress" aria-hidden="true"><i data-status-now-progress></i></span>
         <button class="pulse-status-now-play" type="button" data-status-music-toggle aria-label="Play or pause Status music">▶</button>
+        <span class="pulse-status-music-expanded-actions" aria-hidden="true">
+          <span>Add</span><span>Save</span><span>Lyrics</span><span>Use</span>
+        </span>
       `;
       shell.insertBefore(sound, shell.querySelector(".pulse-status-story-footer") || null);
     }
@@ -632,16 +674,25 @@
     const hasAttachedMusic = !!viewer.querySelector("[data-status-music-audio]") || !!(activeMedia && window.PulseMediaRenderer?.hasAttachedAudio?.(activeMedia));
     sound.hidden = !hasAttachedMusic;
     viewer.classList.toggle("has-status-music", hasAttachedMusic);
-    const body =
-      viewer.dataset.statusMusicTitle ||
-      viewer.querySelector("[data-status-viewer-body],[data-status-story-body]")?.textContent?.trim() ||
-      "PulseSoc Status";
-    const artist =
-      viewer.dataset.statusMusicArtist ||
-      viewer.querySelector("[data-status-viewer-author],[data-status-story-author]")?.textContent?.trim() ||
-      "PulseSoc Music";
     const title = sound.querySelector("[data-status-now-title]");
     const artistNode = sound.querySelector("[data-status-now-artist]");
+    if (!hasAttachedMusic) {
+      if (title) title.textContent = "";
+      if (artistNode) artistNode.textContent = "";
+      updateStatusMiniPlayer(viewer, activeMedia);
+      return;
+    }
+    const audioWrap = activeMedia?.closest?.("[data-audio-title],[data-attached-audio-url],.pulse-media-wrap");
+    const body =
+      viewer.dataset.statusMusicTitle ||
+      audioWrap?.dataset?.audioTitle ||
+      activeMedia?.dataset?.audioTitle ||
+      "PulseSoc Sound";
+    const artist =
+      viewer.dataset.statusMusicArtist ||
+      audioWrap?.dataset?.audioArtist ||
+      activeMedia?.dataset?.audioArtist ||
+      "PulseSoc Music";
     if (title) title.textContent = body;
     if (artistNode) artistNode.textContent = artist;
     updateStatusMiniPlayer(viewer, activeMedia);
