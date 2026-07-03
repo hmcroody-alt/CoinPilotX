@@ -818,6 +818,18 @@ select:focus-visible {
   font-weight: 900;
 }
 
+.thread-actions .call-action {
+  border-color: rgba(48, 255, 205, .24);
+  color: rgba(221, 255, 252, .96);
+  background: linear-gradient(145deg, rgba(27, 255, 191, .13), rgba(111, 87, 255, .1));
+}
+
+.thread-actions .call-action:hover,
+.thread-actions .call-action:focus-visible {
+  border-color: rgba(61, 245, 214, .58);
+  box-shadow: 0 0 22px rgba(40, 234, 212, .2);
+}
+
 .thread-trust {
   display: flex;
   min-width: 0;
@@ -3270,8 +3282,7 @@ select:focus-visible {
   }
 
   .thread-actions .ai-action,
-  .thread-actions .desktop-info-action,
-  .thread-actions .call-action:nth-of-type(3) {
+  .thread-actions .desktop-info-action {
     display: none;
   }
 
@@ -3553,4 +3564,124 @@ select:focus-visible {
     scroll-behavior: auto !important;
     transition-duration: .001ms !important;
   }
+}
+
+.pulsesoc-call-shell {
+  position: fixed;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: calc(88px + env(safe-area-inset-bottom));
+  z-index: 1800;
+  max-width: min(420px, calc(100vw - 28px));
+  color: #ecfffd;
+  pointer-events: none;
+}
+
+.pulsesoc-call-shell[hidden] {
+  display: none;
+}
+
+.pulsesoc-call-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid rgba(54, 235, 213, .32);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top left, rgba(55, 255, 203, .2), transparent 38%),
+    linear-gradient(145deg, rgba(7, 20, 34, .94), rgba(10, 14, 31, .92));
+  box-shadow: 0 22px 60px rgba(0, 0, 0, .44), 0 0 32px rgba(42, 236, 210, .14);
+  backdrop-filter: blur(18px);
+  pointer-events: auto;
+}
+
+.pulsesoc-call-shell[data-mode="success"] .pulsesoc-call-card {
+  border-color: rgba(49, 244, 169, .5);
+}
+
+.pulsesoc-call-shell[data-mode="warn"] .pulsesoc-call-card {
+  border-color: rgba(255, 202, 92, .56);
+}
+
+.pulsesoc-call-shell[data-mode="error"] .pulsesoc-call-card {
+  border-color: rgba(255, 95, 142, .58);
+}
+
+.pulsesoc-call-orb {
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  background: radial-gradient(circle at 35% 30%, #b9fff6, #29ebc6 42%, #584fff 100%);
+  box-shadow: 0 0 24px rgba(41, 235, 198, .35);
+}
+
+.pulsesoc-call-copy {
+  min-width: 0;
+}
+
+.pulsesoc-call-copy strong,
+.pulsesoc-call-copy span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pulsesoc-call-copy span {
+  margin-top: 3px;
+  color: rgba(210, 228, 236, .78);
+  font-size: 13px;
+}
+
+.pulsesoc-call-controls {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pulsesoc-call-controls button,
+.pulsesoc-call-pill {
+  min-height: 38px;
+  border: 1px solid rgba(133, 222, 255, .2);
+  border-radius: 14px;
+  color: #ecfffd;
+  background: rgba(255, 255, 255, .06);
+  font-weight: 900;
+}
+
+.pulsesoc-call-controls button {
+  flex: 1 1 auto;
+  padding: 0 12px;
+}
+
+.pulsesoc-call-controls [data-call-end] {
+  border-color: rgba(255, 95, 142, .38);
+  color: #ffd7e2;
+  background: rgba(255, 77, 128, .14);
+}
+
+.pulsesoc-call-pill {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  pointer-events: auto;
+}
+
+.pulsesoc-call-pill span {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #31f4a9;
+  box-shadow: 0 0 16px rgba(49, 244, 169, .5);
+}
+
+.pulsesoc-call-shell.is-minimized .pulsesoc-call-card {
+  display: none;
+}
+
+.pulsesoc-call-shell.is-minimized .pulsesoc-call-pill {
+  display: inline-flex;
 }

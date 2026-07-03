@@ -10,6 +10,7 @@ import time
 from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
 
 from . import flags, service
+from services import pulsesoc_communications_engine as call_engine
 
 
 comm_v2_blueprint = Blueprint("pulse_communications_v2", __name__)
@@ -592,13 +593,110 @@ def moderate_message(message_id):
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/voice/start")
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/video/start")
-def call_provider_not_configured(conversation_ref):
+def start_conversation_call(conversation_ref):
     user, denied = _require_user()
     if denied:
         return denied
     if not flags.is_enabled():
         return _json({"ok": False, "status": "disabled", "message": service.DISABLED_MESSAGE, "trace_id": service._trace()})
-    return _json({"ok": False, "status": "not_configured", "conversation_id": conversation_ref, "message": "Messenger calls need the native call provider before they can start.", "trace_id": service._trace(), "http_status": 503})
+    payload = request.get_json(silent=True) or {}
+    payload["conversation_id"] = conversation_ref
+    payload["call_type"] = "video" if request.path.endswith("/video/start") else "audio"
+    return _timed_json("conversation_call_start", lambda: call_engine.start_call(user["user_id"], payload))
+
+
+@comm_v2_blueprint.post("/api/calls/start")
+def api_start_call():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_start", lambda: call_engine.start_call(user["user_id"], request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/accept")
+def api_accept_call(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_accept", lambda: call_engine.accept_call(user["user_id"], call_id, request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/decline")
+def api_decline_call(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_decline", lambda: call_engine.decline_call(user["user_id"], call_id, request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/end")
+def api_end_call(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_end", lambda: call_engine.end_call(user["user_id"], call_id, request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/join-token")
+def api_call_join_token(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_join_token", lambda: call_engine.join_token(user["user_id"], call_id))
+
+
+@comm_v2_blueprint.get("/api/calls/<path:call_id>/status")
+def api_call_status(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_status", lambda: call_engine.call_status(user["user_id"], call_id))
+
+
+@comm_v2_blueprint.get("/api/calls/active")
+def api_active_calls():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_active_calls", lambda: call_engine.active_calls(user["user_id"]))
+
+
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/quality")
+def api_call_quality(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_quality", lambda: call_engine.submit_quality_report(user["user_id"], call_id, request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post("/api/livekit/webhook")
+def api_livekit_webhook():
+    raw = request.get_data(cache=True) or b""
+    return _json(call_engine.livekit_webhook(dict(request.headers), raw, request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.get("/api/admin/calls/recent")
+def api_admin_recent_calls():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    return _timed_json("admin_recent_calls", lambda: call_engine.recent_calls(int(request.args.get("limit") or 40)))
+
+
+@comm_v2_blueprint.get("/api/admin/calls/<path:call_id>")
+def api_admin_call_detail(call_id):
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    return _timed_json("admin_call_detail", lambda: call_engine.admin_call_detail(call_id))
+
+
+@comm_v2_blueprint.post("/api/admin/calls/test-config")
+def api_admin_call_test_config():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    return _timed_json("admin_call_test_config", call_engine.test_config)
 
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/live/mux/create")

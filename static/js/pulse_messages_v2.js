@@ -891,6 +891,37 @@
     return Number(state.active?.conversation_id || state.controlData?.conversation?.conversation_id || state.controlData?.conversation?.id || 0);
   }
 
+  function callOptionsForConversation(conversationId) {
+    const conversation = state.conversationCache.get(Number(conversationId)) || state.active || state.controlData?.conversation || {};
+    const groupLike = Boolean(conversation.is_group || ["group", "room", "community_channel"].includes(String(conversation.conversation_type || "").toLowerCase()));
+    return {
+      conversationId: Number(conversationId || conversation.conversation_id || conversation.id || 0),
+      callScope: groupLike ? "group" : "direct",
+    };
+  }
+
+  async function startConversationCall(callType = "audio", source = "thread") {
+    const conversationId = source === "control" ? activeControlConversationId() : Number(state.active?.conversation_id || activeControlConversationId() || 0);
+    if (!conversationId) {
+      const message = "Choose a conversation before starting a call.";
+      if (source === "control") controlStatus(message, "error");
+      else setStatus(message);
+      return;
+    }
+    if (!window.PulseSocCalls) {
+      const message = "Call controls are still loading. Try again in a moment.";
+      if (source === "control") controlStatus(message, "error");
+      else setStatus(message);
+      return;
+    }
+    const starter = callType === "video" ? window.PulseSocCalls.startVideoCall : window.PulseSocCalls.startAudioCall;
+    const result = await starter(callOptionsForConversation(conversationId));
+    const ok = result?.ok !== false;
+    const message = ok ? `${callType === "video" ? "Video" : "Audio"} call request sent.` : (result?.message || "Call could not start.");
+    if (source === "control") controlStatus(message, ok ? "success" : "error");
+    else setStatus(message);
+  }
+
   function isControlGroup() {
     const conversation = state.controlData?.conversation || state.active || {};
     return Boolean(conversation.is_group || ["group", "room", "community_channel"].includes(String(conversation.conversation_type || "").toLowerCase()));
@@ -950,6 +981,8 @@
       : `${Number(stats.members || conversation.member_count || 0)} members · ${typeLabel(conversation.conversation_type)} Conversation`;
     const quickActions = [
       { label: "Search", icon: "⌕", action: "search-chat" },
+      { label: "Call", icon: "☎", action: "start-audio-call" },
+      { label: "Video", icon: "▣", action: "start-video-call" },
       { label: stats.muted ? "Unmute" : "Mute", icon: "🔕", action: "mute" },
       { label: stats.pinned || conversation.pinned ? "Unpin" : "Pin", icon: "📌", action: "pin" },
       { label: "Archive", icon: "▤", action: "archive", dangerConfirm: "Archive this conversation?" },
@@ -1386,6 +1419,10 @@
     if (!action) return;
     if (confirmText && !window.confirm(confirmText)) return;
     const id = activeControlConversationId();
+    if (action === "start-audio-call" || action === "start-video-call") {
+      await startConversationCall(action === "start-video-call" ? "video" : "audio", "control");
+      return;
+    }
     if (["pin", "archive", "mark-unread", "mute"].includes(action)) {
       state.actionConversationId = id;
       const mapped = action === "mark-unread" ? "unread" : action;
@@ -2990,6 +3027,8 @@
           return;
         }
         if (target.closest("[data-toggle-details]")) return toggleDetails();
+        if (target.closest("[data-thread-call-audio]")) return await startConversationCall("audio", "thread");
+        if (target.closest("[data-thread-call-video]")) return await startConversationCall("video", "thread");
         if (target.closest("[data-thread-search]")) return toggleThreadSearch(true);
         if (target.closest("[data-close-thread-search]")) return toggleThreadSearch(false);
         if (target.closest("[data-thread-mute]")) {
