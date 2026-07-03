@@ -54,6 +54,7 @@ def main() -> int:
     for route in [
         '"/api/calls/start"',
         '"/api/calls/<path:call_id>/accept"',
+        '"/api/calls/<path:call_id>/ring-seen"',
         '"/api/calls/<path:call_id>/decline"',
         '"/api/calls/<path:call_id>/end"',
         '"/api/calls/<path:call_id>/join-token"',
@@ -79,11 +80,13 @@ def main() -> int:
     require(checks, "frontend publishes local tracks", "publishLocalTracks" in call_js and "publishTrack" in call_js)
     require(checks, "frontend subscribes remote tracks", "TrackSubscribed" in call_js and "attachRemoteTrack" in call_js)
     require(checks, "incoming call UI exists", "data-call-incoming-actions" in call_js and "showIncoming" in call_js)
+    require(checks, "incoming call overlay acknowledgement exists", "mark_ring_seen" in service and "incoming_call_overlay_opened" in service and "ring-seen" in call_js)
     require(checks, "active/outgoing call UI exists", "data-call-active-controls" in call_js and "renderMode(\"outgoing\"" in call_js)
     require(checks, "permissions handled by track creation", "getUserMedia" in call_js and "NotAllowedError" in call_js)
     require(checks, "mic/camera controls update backend", "mute-audio" in call_js and "disable-video" in call_js)
     require(checks, "camera flip exists", "switchCamera" in call_js and "restartTrack" in call_js)
     require(checks, "incoming polling exists", "/active" in call_js and "pollActiveCalls" in call_js)
+    require(checks, "incoming polling resumes on app return", "wakeCallPolling" in call_js and "pageshow" in call_js and "focus" in call_js)
     require(checks, "deep link call handling exists", "call_id" in call_js and "handleDeepLinkedCall" in call_js)
     require(checks, "quality reporting exists", "submitQualityReport" in call_js and "QUALITY_MS" in call_js)
     require(checks, "config missing is user safe", "Calling is temporarily unavailable. Please try again later." in service and "config_missing" in service)

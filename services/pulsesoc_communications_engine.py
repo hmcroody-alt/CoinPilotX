@@ -426,6 +426,56 @@ def _event(cur: Any, call_id: int, user_id: int, event_type: str, payload: dict[
     )
 
 
+def _recipient_online_state(cur: Any, user_id: int) -> dict[str, Any]:
+    """Best-effort recipient availability used only for call diagnostics."""
+    now = _now()
+    try:
+        cur.execute(
+            """
+            SELECT status, last_seen_at, active_until, updated_at
+            FROM comm_v2_presence
+            WHERE user_id=?
+            LIMIT 1
+            """,
+            (int(user_id),),
+        )
+        row = _row(cur.fetchone())
+        if row:
+            active_until = str(row.get("active_until") or "")
+            return {
+                "tracked": True,
+                "online": str(row.get("status") or "").lower() == "online" and (not active_until or active_until >= now),
+                "status": row.get("status") or "offline",
+                "last_seen_at": row.get("last_seen_at") or "",
+                "source": "comm_v2_presence",
+            }
+    except Exception:
+        pass
+    try:
+        cur.execute(
+            """
+            SELECT status, last_seen_at, last_active_at, updated_at
+            FROM user_presence
+            WHERE user_id=?
+            LIMIT 1
+            """,
+            (int(user_id),),
+        )
+        row = _row(cur.fetchone())
+        if row:
+            status = str(row.get("status") or "").lower()
+            return {
+                "tracked": True,
+                "online": status in {"online", "active", "active_now"},
+                "status": row.get("status") or "offline",
+                "last_seen_at": row.get("last_seen_at") or row.get("last_active_at") or "",
+                "source": "user_presence",
+            }
+    except Exception:
+        pass
+    return {"tracked": False, "online": False, "status": "unknown", "last_seen_at": "", "source": ""}
+
+
 def _transition(cur: Any, call: dict[str, Any], new_status: str, user_id: int = 0, reason: str = "") -> dict[str, Any]:
     current = str(call.get("status") or "created")
     new_status = str(new_status or "").strip().lower()
@@ -792,6 +842,35 @@ def accept_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | Non
         _transition(cur, refreshed, "connecting", int(user_id), "accepted_joining")
         conn.commit()
         return _ok({"call": _serialize_call(cur, _get_call(cur, call_ref), int(user_id)), "join": token})
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def mark_ring_seen(user_id: int, call_ref: str | int, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    conn, cur = _open_db()
+    try:
+        call, participant, denied = _require_call_access(cur, int(user_id), call_ref)
+        if denied:
+            return denied
+        if str(call.get("status") or "") in FINAL_STATUSES:
+            return _err("This call has ended.", 409, "call_final")
+        if str(participant.get("role") or "") != "callee":
+            return _err("Only the recipient can acknowledge incoming ringing.", 403, "not_callee")
+        now = _now()
+        cur.execute(
+            """
+            UPDATE communication_call_participants
+            SET last_seen_at=?, device_info_json=?, updated_at=?
+            WHERE call_id=? AND user_id=?
+            """,
+            (now, _json_dumps((payload or {}).get("device_info") or {}), now, int(call["id"]), int(user_id)),
+        )
+        _event(cur, int(call["id"]), int(user_id), "incoming_call_overlay_opened", payload or {})
+        conn.commit()
+        return _ok({"call": _serialize_call(cur, _get_call(cur, call_ref), int(user_id)), "message": "Incoming call ring acknowledged."})
     except Exception:
         conn.rollback()
         raise
@@ -1295,12 +1374,24 @@ def call_delivery_diagnostics(call_ref: str | int) -> dict[str, Any]:
                 counts["push_subscriptions"] = int(_row(cur.fetchone()).get("total") or 0)
             except Exception:
                 counts["push_subscriptions"] = 0
+            cur.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM communication_call_events
+                WHERE call_id=? AND user_id=? AND event_type='incoming_call_overlay_opened'
+                """,
+                (call_id, recipient_id),
+            )
+            overlay_opened = int(_row(cur.fetchone()).get("total") or 0) > 0
+            presence = _recipient_online_state(cur, recipient_id)
             recipient_jobs = [job for job in delivery_jobs if int(job.get("recipient_user_id") or job.get("user_id") or 0) == recipient_id]
             recipient_notifications = [note for note in notifications if int(note.get("recipient_user_id") or note.get("user_id") or 0) == recipient_id]
             device_status[str(recipient_id)] = {
                 "recipient_user_id": recipient_id,
                 "participant_created": True,
                 "participant_status": participant.get("status") or "",
+                "recipient_online": presence,
+                "recipient_overlay_opened": overlay_opened,
                 "incoming_notification_created": any((note.get("type") or note.get("notification_type")) == "incoming_call" for note in recipient_notifications),
                 "missed_notification_created": any((note.get("type") or note.get("notification_type")) == "missed_call" for note in recipient_notifications),
                 "push_job_created": any((job.get("channel") == "push") for job in recipient_jobs),
@@ -1352,8 +1443,8 @@ def call_delivery_diagnostics(call_ref: str | int) -> dict[str, Any]:
                 "livekit_configured": bool(livekit_config_status().get("configured")),
                 "realtime_event_emitted": realtime_emitted,
                 "realtime_event_failed": realtime_failed,
-                "recipient_online": "not_tracked",
-                "recipient_overlay_opened": "not_tracked",
+                "recipient_online": any(bool(item.get("recipient_online", {}).get("online")) for item in device_status.values()),
+                "recipient_overlay_opened": any(bool(item.get("recipient_overlay_opened")) for item in device_status.values()),
                 "media_tracks_published": "provider_event_required",
                 "last_call_error": last_error,
             },

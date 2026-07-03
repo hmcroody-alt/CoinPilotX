@@ -17,6 +17,7 @@
     realtimeBindTimer: null,
     statusTimer: null,
     qualityTimer: null,
+    seenIncomingCalls: new Set(),
     facingMode: "user",
     lastQualityAt: 0,
   };
@@ -486,6 +487,11 @@
     state.activeCall = call;
     minimizeCall(false);
     renderMode("incoming", `Incoming ${callType(call)} call from ${displayNameFor(call)}.`);
+    const id = callId(call);
+    if (id && !state.seenIncomingCalls.has(id)) {
+      state.seenIncomingCalls.add(id);
+      postJson(`${API}/${encodeURIComponent(id)}/ring-seen`, { device_info: deviceInfo() }).catch(() => {});
+    }
   }
 
   function realtimePayload(event) {
@@ -504,6 +510,11 @@
       return;
     }
     if (String(call.status || "") === "ringing") pollActiveCalls();
+  }
+
+  function wakeCallPolling() {
+    pollActiveCalls();
+    if (state.activeCall && !state.statusTimer) startStatusPolling();
   }
 
   async function acceptCall(id) {
@@ -752,10 +763,15 @@
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) return;
-    pollActiveCalls();
+    wakeCallPolling();
   });
 
-  window.addEventListener("online", () => setStatus("Connection restored.", "success", qualityLabel()));
+  window.addEventListener("focus", wakeCallPolling);
+  window.addEventListener("pageshow", wakeCallPolling);
+  window.addEventListener("online", () => {
+    setStatus("Connection restored.", "success", qualityLabel());
+    wakeCallPolling();
+  });
   window.addEventListener("offline", () => setStatus("Network offline. Call will reconnect when possible.", "warn", "Offline"));
 
   if (document.readyState === "loading") {
