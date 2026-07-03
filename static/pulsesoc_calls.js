@@ -20,6 +20,7 @@
     seenIncomingCalls: new Set(),
     facingMode: "user",
     lastQualityAt: 0,
+    lastFailure: null,
   };
 
   const qs = (sel, root = document) => root.querySelector(sel);
@@ -79,6 +80,29 @@
     return "Ringing...";
   }
 
+  function diagnosticsAllowed() {
+    const host = String(window.location.hostname || "").toLowerCase();
+    return ["localhost", "127.0.0.1", "::1"].includes(host) || new URLSearchParams(window.location.search || "").get("call_debug") === "1" || localStorage.getItem("pulsesocCallDiagnostics") === "1";
+  }
+
+  function callDiagnosticsUrl(call = state.activeCall) {
+    const id = callId(call);
+    return id ? `/admin/calls/${encodeURIComponent(id)}/delivery` : "";
+  }
+
+  function structuredFailure(payload = {}, fallback = {}) {
+    return {
+      ok: false,
+      status: payload.status || fallback.status || "error",
+      error_code: payload.error_code || fallback.error_code || "UNKNOWN_ERROR",
+      error_title: payload.error_title || fallback.error_title || "Call could not start",
+      error_description: payload.error_description || payload.message || fallback.error_description || "PulseSoc could not complete this call request.",
+      remediation: payload.remediation || fallback.remediation || "Try again. If this repeats, inspect the correlation ID in Calls Command Center.",
+      correlation_id: payload.correlation_id || payload.trace_id || fallback.correlation_id || "",
+      call: payload.call || fallback.call || state.activeCall || null,
+    };
+  }
+
   async function postJson(url, body = {}) {
     const response = await fetch(url, {
       method: "POST",
@@ -88,7 +112,7 @@
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data.ok === false) {
-      const error = new Error(data.message || "Call request failed.");
+      const error = new Error(data.error_title || data.message || "Call request failed.");
       error.payload = data;
       throw error;
     }
@@ -99,7 +123,7 @@
     const response = await fetch(url, { credentials: "same-origin", headers: { Accept: "application/json" } });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data.ok === false) {
-      const error = new Error(data.message || "Call request failed.");
+      const error = new Error(data.error_title || data.message || "Call request failed.");
       error.payload = data;
       throw error;
     }
@@ -151,6 +175,7 @@
           <button type="button" data-call-toggle-camera aria-label="Turn camera off">Camera</button>
           <button type="button" data-call-switch-camera aria-label="Switch camera">Flip</button>
           <button type="button" data-call-switch-speaker aria-label="Switch speaker">Speaker</button>
+          <button type="button" data-call-diagnostics hidden aria-label="View call diagnostics">View Diagnostics</button>
           <button type="button" data-call-minimize aria-label="Minimize call">Minimize</button>
           <button type="button" data-call-end aria-label="End call">End</button>
         </div>
@@ -172,6 +197,7 @@
       if (target.closest("[data-call-toggle-camera]")) return toggleCamera();
       if (target.closest("[data-call-switch-camera]")) return switchCamera();
       if (target.closest("[data-call-switch-speaker]")) return switchSpeaker();
+      if (target.closest("[data-call-diagnostics]")) return openDiagnostics();
     });
     return shell;
   }
@@ -230,6 +256,48 @@
       fallback.textContent = "Incoming call.";
     }
     setStatus(message || "", mode === "failed" ? "error" : mode === "incoming" ? "success" : "info", mode === "failed" ? "Unavailable" : "");
+  }
+
+  function renderFailure(payload = {}, fallback = {}) {
+    const failure = structuredFailure(payload, fallback);
+    state.lastFailure = failure;
+    if (failure.call) state.activeCall = failure.call;
+    const shell = ensureShell();
+    renderMode("failed", failure.error_title);
+    const fallbackEl = qs("[data-call-remote-fallback]", shell);
+    if (fallbackEl) {
+      fallbackEl.hidden = false;
+      fallbackEl.textContent = "";
+      const title = document.createElement("strong");
+      title.textContent = failure.error_title;
+      const description = document.createElement("span");
+      description.textContent = failure.error_description;
+      const remediation = document.createElement("small");
+      remediation.textContent = `Next step: ${failure.remediation}`;
+      fallbackEl.append(title, document.createElement("br"), description, document.createElement("br"), remediation);
+      if (failure.correlation_id) {
+        const correlation = document.createElement("small");
+        correlation.textContent = `Correlation ID: ${failure.correlation_id}`;
+        fallbackEl.append(document.createElement("br"), correlation);
+      }
+    }
+    const diagnostics = qs("[data-call-diagnostics]", shell);
+    const url = callDiagnosticsUrl(failure.call);
+    if (diagnostics) diagnostics.hidden = !(diagnosticsAllowed() && url);
+    if (failure.correlation_id || failure.error_code) {
+      console.warn("PulseSoc call failure", {
+        error_code: failure.error_code,
+        correlation_id: failure.correlation_id,
+        status: failure.status,
+      });
+    }
+    return failure;
+  }
+
+  function openDiagnostics() {
+    const url = callDiagnosticsUrl(state.lastFailure?.call || state.activeCall);
+    if (!url || !diagnosticsAllowed()) return;
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   function minimizeCall(value) {
@@ -394,13 +462,25 @@
     const { call, join } = normalizeCallPayload(data);
     state.activeCall = call;
     if (!join?.token || !join?.livekit_url) {
-      renderMode("failed", "Calling is temporarily unavailable. Please try again later.");
-      return { ok: false, status: "missing_join_token" };
+      return renderFailure(data, {
+        status: "missing_join_token",
+        error_code: "LIVEKIT_TOKEN_FAILED",
+        error_title: "Call token missing",
+        error_description: "The backend created a call response without a usable LiveKit token or URL.",
+        remediation: "Open Calls Command Center and inspect this call's startup diagnostics.",
+        call,
+      });
     }
     const LK = livekitClient();
     if (!LK?.Room) {
-      renderMode("failed", "Calling is still loading. Try again in a moment.");
-      return { ok: false, status: "livekit_client_missing" };
+      return renderFailure({}, {
+        status: "livekit_client_missing",
+        error_code: "LIVEKIT_CLIENT_NOT_LOADED",
+        error_title: "Call client is still loading",
+        error_description: "The LiveKit browser client was not available when the call started.",
+        remediation: "Refresh the app or check whether the LiveKit client bundle loaded successfully.",
+        call,
+      });
     }
     if (state.connecting) return state.connecting;
     state.connecting = (async () => {
@@ -422,12 +502,21 @@
         return { ok: true, call: state.activeCall };
       } catch (error) {
         const name = error?.name || "";
-        const message = name === "NotAllowedError"
-          ? (callType(call) === "video" ? "Camera or microphone permission is required for video calls." : "Microphone permission is required for calls.")
-          : (error?.message || "Could not connect this call.");
-        renderMode("failed", message);
-        await postJson(`${API}/${encodeURIComponent(callId(call))}/end`, { reason: "client_connect_failed", error: name }).catch(() => {});
-        return { ok: false, status: "connect_failed", message };
+        const permissionDenied = name === "NotAllowedError";
+        const failure = renderFailure({}, {
+          status: "connect_failed",
+          error_code: permissionDenied ? "MEDIA_PERMISSION_DENIED" : "LIVEKIT_ROOM_CONNECT_FAILED",
+          error_title: permissionDenied ? "Microphone or camera permission blocked" : "Could not connect to LiveKit room",
+          error_description: permissionDenied
+            ? (callType(call) === "video" ? "Camera or microphone permission is required for video calls." : "Microphone permission is required for audio calls.")
+            : (error?.message || "The browser could not connect to the LiveKit room."),
+          remediation: permissionDenied
+            ? "Allow microphone/camera access in the browser or app settings, then start the call again."
+            : "Run the LiveKit config test, check provider connectivity, and inspect this call in Calls Command Center.",
+          call,
+        });
+        await postJson(`${API}/${encodeURIComponent(callId(call))}/end`, { reason: "client_connect_failed", error: name, error_code: failure.error_code }).catch(() => {});
+        return failure;
       } finally {
         state.connecting = null;
       }
@@ -447,8 +536,13 @@
   async function startCall(type, options = {}) {
     const normalized = normalizeOptions(options);
     if (!normalized.conversation_id) {
-      renderMode("failed", "Choose a conversation before starting a call.");
-      return { ok: false, status: "missing_conversation" };
+      return renderFailure({}, {
+        status: "missing_conversation",
+        error_code: "MISSING_CONVERSATION",
+        error_title: "No conversation selected",
+        error_description: "PulseSoc could not identify which conversation should receive this call.",
+        remediation: "Open a conversation and try the call again.",
+      });
     }
     try {
       renderMode("outgoing", `Starting ${type} call...`);
@@ -467,11 +561,13 @@
       return data;
     } catch (error) {
       const payload = error.payload || {};
-      const message = payload.status === "config_missing"
-        ? "Calling is not configured yet."
-        : payload.message || error.message || "Call could not start.";
-      renderMode("failed", message);
-      return payload.ok === false ? payload : { ok: false, status: "error", message: error.message };
+      return renderFailure(payload, {
+        status: payload.status || "error",
+        error_code: "UNKNOWN_ERROR",
+        error_title: error.message || "Call could not start",
+        error_description: payload.message || "PulseSoc could not start this call.",
+        remediation: "Inspect the correlation ID in Calls Command Center.",
+      });
     }
   }
 

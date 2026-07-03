@@ -140,6 +140,104 @@ def _trace() -> str:
     return secrets.token_hex(6)
 
 
+ERROR_CATALOG = {
+    "config_missing": (
+        "LIVEKIT_CONFIG_MISSING",
+        "Calling provider is not configured",
+        "PulseSoc is missing one or more LiveKit provider settings.",
+        "Check LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET in the active deployment.",
+    ),
+    "livekit_token_failed": (
+        "LIVEKIT_TOKEN_FAILED",
+        "Call token could not be generated",
+        "PulseSoc could not create a LiveKit access token for this call.",
+        "Run the Calls Command Center config test and verify the LiveKit key and secret.",
+    ),
+    "missing_conversation": (
+        "MISSING_CONVERSATION",
+        "No conversation selected",
+        "PulseSoc could not identify which conversation should receive this call.",
+        "Open a conversation and try the call again.",
+    ),
+    "missing_recipient": (
+        "RECIPIENT_OFFLINE",
+        "No recipient is available",
+        "This conversation does not currently have another active recipient to call.",
+        "Choose a direct or group conversation with another member.",
+    ),
+    "self_call_blocked": (
+        "SELF_CALL_BLOCKED",
+        "Self-calls are not allowed",
+        "PulseSoc blocked a call where the caller and recipient are the same user.",
+        "Choose another recipient.",
+    ),
+    "invalid_recipient": (
+        "RECIPIENT_NOT_IN_CONVERSATION",
+        "Recipient is not in this conversation",
+        "PulseSoc blocked the call because one recipient is not an active participant.",
+        "Refresh the conversation members and try again.",
+    ),
+    "blocked": (
+        "RECIPIENT_BLOCKED",
+        "Call blocked",
+        "This call is blocked by the conversation safety or block settings.",
+        "Review the conversation privacy and block settings.",
+    ),
+    "active_call_exists": (
+        "CALL_ALREADY_ACTIVE",
+        "A call is already active",
+        "This conversation already has an active call.",
+        "Join, end, or wait for the current call to finish.",
+    ),
+    "missing_call": (
+        "CALL_NOT_FOUND",
+        "Call not found",
+        "PulseSoc could not find this call record.",
+        "Refresh Messenger and try again.",
+    ),
+    "forbidden": (
+        "CALL_ACCESS_DENIED",
+        "Call access denied",
+        "This account is not allowed to access that call.",
+        "Use the account that belongs to the conversation.",
+    ),
+    "not_participant": (
+        "CALL_PARTICIPANT_REQUIRED",
+        "Call participant required",
+        "Only invited call participants can access this call.",
+        "Start a new call from the conversation.",
+    ),
+    "call_final": (
+        "CALL_ALREADY_ENDED",
+        "Call already ended",
+        "This call is no longer active.",
+        "Start a new call if you still need to connect.",
+    ),
+    "server_error": (
+        "BACKEND_EXCEPTION",
+        "Call backend error",
+        "PulseSoc hit an unexpected backend error while handling the call.",
+        "Open Calls Command Center and search the correlation ID in logs.",
+    ),
+}
+
+
+def _error_details(code: str, message: str, correlation_id: str, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    error_code, title, description, remediation = ERROR_CATALOG.get(
+        code,
+        ("UNKNOWN_ERROR", "Call could not start", message or "PulseSoc could not complete this call request.", "Try again, then inspect the correlation ID if it repeats."),
+    )
+    details = {
+        "error_code": error_code,
+        "error_title": title,
+        "error_description": description,
+        "remediation": remediation,
+        "correlation_id": correlation_id,
+    }
+    details.update(overrides or {})
+    return details
+
+
 def _json_dumps(value: Any) -> str:
     try:
         return json.dumps(value or {}, separators=(",", ":"), sort_keys=True)
@@ -152,7 +250,17 @@ def _row(row: Any) -> dict[str, Any]:
 
 
 def _err(message: str, status: int = 400, code: str = "error", **extra: Any) -> dict[str, Any]:
-    payload = {"ok": False, "status": code, "message": message, "http_status": status, "trace_id": _trace()}
+    correlation_id = str(extra.pop("correlation_id", "") or _trace())
+    detail_overrides = extra.pop("error_overrides", None)
+    details = _error_details(code, message, correlation_id, detail_overrides if isinstance(detail_overrides, dict) else None)
+    payload = {
+        "ok": False,
+        "status": code,
+        "message": message,
+        "http_status": status,
+        "trace_id": correlation_id,
+        **details,
+    }
     payload.update(extra)
     return payload
 
@@ -205,11 +313,15 @@ def _require_livekit() -> dict[str, Any] | None:
         return None
     logging.info("PULSESOC_CALL_CONFIG_MISSING missing=%s", ",".join(status.get("missing") or []))
     return _err(
-        "Calling is temporarily unavailable. Please try again later.",
+        "Calling provider is not configured.",
         503,
         "config_missing",
         provider="livekit",
         livekit=status,
+        error_overrides={
+            "missing": status.get("missing") or [],
+            "provider": "livekit",
+        },
     )
 
 
@@ -777,10 +889,37 @@ def start_call(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         _event(cur, call_id, int(user_id), "ringing_started", {"recipient_user_ids": recipient_ids})
         cur.execute("SELECT * FROM communication_calls WHERE id=? LIMIT 1", (call_id,))
         call = _row(cur.fetchone())
+        serialized = _serialize_call(cur, call, int(user_id), include_token=True)
+        join = serialized.get("join") if isinstance(serialized.get("join"), dict) else {}
+        if not join.get("ok") or not join.get("token") or not join.get("livekit_url"):
+            _event(
+                cur,
+                call_id,
+                int(user_id),
+                "livekit_token_failed",
+                {
+                    "token_status": join.get("status") or "missing_join_payload",
+                    "token_error_code": join.get("error_code") or "",
+                    "token_trace_id": join.get("trace_id") or join.get("correlation_id") or "",
+                },
+            )
+            _transition(cur, call, "failed", int(user_id), "livekit_token_failed")
+            conn.commit()
+            return _err(
+                "Call token could not be generated.",
+                503,
+                "livekit_token_failed",
+                call=_serialize_call(cur, _get_call(cur, public_id), int(user_id)),
+                provider="livekit",
+                error_overrides={
+                    "token_status": join.get("status") or "missing_join_payload",
+                    "provider": "livekit",
+                },
+            )
         caller_name = comm_service._user_summary(cur, int(user_id)).get("display_name") or "Someone"
         notifications = _notify_incoming_call(cur, call, int(user_id), recipient_ids, caller_name)
+        _event(cur, call_id, int(user_id), "call_start_response_ready", {"notifications": len(notifications), "join_token": True})
         conn.commit()
-        serialized = _serialize_call(cur, call, int(user_id), include_token=True)
         serialized["notifications"] = notifications
         return _ok({"call": serialized, **serialized})
     except Exception:
@@ -1491,14 +1630,17 @@ def test_config(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         "livekit": status,
     }
     if not status.get("configured"):
+        error = _err(
+            "Calling provider is not configured.",
+            200,
+            "config_missing",
+            error_overrides={"missing": missing, "provider": "livekit"},
+        )
         return {
-            "ok": False,
-            "status": "config_missing",
-            "message": "Calling is temporarily unavailable. Please try again later.",
+            **error,
             "can_generate_token": False,
             "can_create_test_room": False,
             "can_cleanup_test_room": False,
-            "http_status": 200,
             **base,
         }
 

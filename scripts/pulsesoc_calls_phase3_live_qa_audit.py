@@ -38,7 +38,7 @@ def main() -> int:
         require(checks, f"{env_name} presence is checked", env_name in service)
 
     require(checks, "LiveKit config check exists", "def livekit_config_status" in service and "missing" in service)
-    require(checks, "safe config_missing still works", "safe_mode" in service and "Calling is temporarily unavailable. Please try again later." in service)
+    require(checks, "safe config_missing still works with structured error", "safe_mode" in service and "LIVEKIT_CONFIG_MISSING" in service and "error_description" in service)
     require(checks, "admin test-config route exists", '"/api/admin/calls/test-config"' in routes and "api_admin_call_test_config" in routes)
     require(checks, "test-config route is admin-only", "admin = _current_admin()" in routes and "Admin access required" in routes)
     require(checks, "test-config returns provider flags", "url_present" in service and "api_key_present" in service and "api_secret_present" in service)
@@ -78,7 +78,7 @@ def main() -> int:
     require(checks, "frontend handles reconnect states", "Reconnecting" in call_js and "Reconnected" in call_js)
     require(checks, "frontend listens for incoming call realtime events", "communication_call_incoming" in call_js and "handleIncomingRealtime" in call_js)
     require(checks, "frontend wakes polling on browser resume", "pageshow" in call_js and "focus" in call_js and "wakeCallPolling" in call_js)
-    require(checks, "frontend config missing copy is explicit", "Calling is not configured yet." in call_js and "Unavailable" in call_js)
+    require(checks, "frontend call failures are structured", "structuredFailure" in call_js and "correlation_id" in call_js and "View Diagnostics" in call_js)
     require(checks, "frontend quality reporter exists", "QUALITY_MS" in call_js and "submitQualityReport" in call_js)
     require(checks, "Phase 3 report exists", "PulseSoc Calls Phase 3" in report and "two-user" in report)
 

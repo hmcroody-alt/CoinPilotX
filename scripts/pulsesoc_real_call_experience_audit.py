@@ -89,7 +89,7 @@ def main() -> int:
     require(checks, "incoming polling resumes on app return", "wakeCallPolling" in call_js and "pageshow" in call_js and "focus" in call_js)
     require(checks, "deep link call handling exists", "call_id" in call_js and "handleDeepLinkedCall" in call_js)
     require(checks, "quality reporting exists", "submitQualityReport" in call_js and "QUALITY_MS" in call_js)
-    require(checks, "config missing is user safe", "Calling is temporarily unavailable. Please try again later." in service and "config_missing" in service)
+    require(checks, "config missing is user safe and structured", "LIVEKIT_CONFIG_MISSING" in service and "error_title" in service and "config_missing" in service)
     require(checks, "incoming call notification hook exists", "incoming_call" in service and "sound_key" in service and "vibration" in service)
     require(checks, "missed call timeout exists", "_mark_missed_stale_calls_cur" in service and "ring_timeout" in service)
     require(checks, "call overlay CSS exists", ".pulsesoc-call-shell" in css and ".pulsesoc-call-stage" in css and ".pulsesoc-call-actions .is-accept" in css)

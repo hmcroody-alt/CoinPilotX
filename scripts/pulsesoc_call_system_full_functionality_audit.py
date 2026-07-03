@@ -57,7 +57,8 @@ def main() -> int:
     require(checks, "frontend joins LiveKit room", "new LK.Room" in call_js and ".connect(join.livekit_url, join.token)" in call_js)
     require(checks, "frontend handles local and remote media tracks", "publishLocalTracks" in call_js and "TrackSubscribed" in call_js and "attachRemoteTrack" in call_js)
     require(checks, "quality telemetry is throttled", "QUALITY_MS = 30000" in call_js and "lastQualityAt" in call_js)
-    require(checks, "explicit config-missing UX exists", "Calling is not configured yet." in call_js and "config_missing" in service)
+    require(checks, "generic unavailable copy is removed from call runtime", "Calling is temporarily unavailable" not in service and "Calling is temporarily unavailable" not in routes and "Calling is temporarily unavailable" not in call_js)
+    require(checks, "structured call failures exist", "structuredFailure" in call_js and "error_code" in service and "correlation_id" in service)
     require(checks, "report exists", "PulseSoc Call System Full Functionality Audit" in report)
 
     passed = sum(1 for check in checks if check["passed"])

@@ -86,7 +86,7 @@ def main() -> int:
     require(checks, "participant validation exists", "_conversation_access" in service and "_participant_allowed" in service and "Every recipient must be a conversation participant" in service)
     require(checks, "self-call blocked", "You cannot call yourself" in service)
     require(checks, "join token validates participant", "Only call participants can access this call" in service and "_generate_livekit_token" in service)
-    require(checks, "config missing is explicit", "config_missing" in service and "Calling is temporarily unavailable" in service)
+    require(checks, "config missing is structured", "config_missing" in service and "LIVEKIT_CONFIG_MISSING" in service and "error_code" in service)
     require(checks, "incoming call notification hook exists", "incoming_call" in service and "pulsesoc_notification_system.intake_event" in service)
     require(checks, "missed call notification hook exists", "notify_missed_call" in service and "missed_call" in service)
     require(checks, "webhook verification exists", "LIVEKIT_WEBHOOK_SECRET" in service and "hmac.new" in service)

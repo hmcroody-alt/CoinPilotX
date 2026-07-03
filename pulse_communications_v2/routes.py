@@ -60,6 +60,15 @@ def _timed_json(metric: str, action):
         )
         if isinstance(payload, dict):
             payload.setdefault("timing_ms", elapsed_ms)
+            if str(metric or "").startswith(("api_call", "conversation_call")) and payload.get("ok") is False:
+                logging.warning(
+                    "PULSESOC_CALL_ROUTE_FAILED metric=%s status=%s error_code=%s correlation_id=%s path=%s",
+                    metric,
+                    payload.get("status") or "",
+                    payload.get("error_code") or "",
+                    payload.get("correlation_id") or payload.get("trace_id") or trace_id,
+                    request.path,
+                )
         return _json(payload)
     except Exception as exc:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
@@ -74,10 +83,25 @@ def _timed_json(metric: str, action):
             type(exc).__name__,
         )
         call_route = str(metric or "").startswith(("api_call", "conversation_call", "admin_call"))
+        if call_route:
+            payload = call_engine._err(
+                "Call backend error.",
+                500,
+                "server_error",
+                correlation_id=trace_id,
+                error_overrides={"exception_type": type(exc).__name__},
+            )
+            payload["timing_ms"] = elapsed_ms
+            return _json(payload)
         return _json({
             "ok": False,
             "status": "server_error",
-            "message": "Calling is temporarily unavailable. Please try again." if call_route else "Messenger is temporarily unavailable. Please try again.",
+            "message": "Messenger request failed.",
+            "error_code": "BACKEND_EXCEPTION",
+            "error_title": "Messenger backend error",
+            "error_description": "PulseSoc hit an unexpected backend error while handling this Messenger request.",
+            "remediation": "Refresh Messenger and retry. If it repeats, inspect the correlation ID in logs.",
+            "correlation_id": trace_id,
             "trace_id": trace_id,
             "http_status": 500,
             "timing_ms": elapsed_ms,
