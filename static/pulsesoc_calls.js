@@ -192,8 +192,8 @@
           </div>
         </div>
         <div class="pulsesoc-call-actions" data-call-incoming-actions hidden>
-          <button type="button" class="is-accept" data-call-accept aria-label="Accept call">Accept</button>
-          <button type="button" class="is-decline" data-call-decline aria-label="Decline call">Decline</button>
+          <button type="button" class="is-decline" data-call-decline aria-label="Decline call"><span aria-hidden="true">&#9742;</span><b>Decline</b></button>
+          <button type="button" class="is-accept" data-call-accept aria-label="Accept call"><span aria-hidden="true">&#9742;</span><b>Accept</b></button>
         </div>
         <button type="button" class="pulsesoc-call-end-primary" data-call-end aria-label="End call"><span aria-hidden="true">&#9742;</span><b>End</b></button>
         <div class="pulsesoc-call-controls" data-call-active-controls data-call-controls-panel hidden>
@@ -398,6 +398,7 @@
     const audioVisual = qs("[data-call-audio-visual]", shell);
     if (audioVisual) audioVisual.hidden = isVideo;
     const fallback = qs("[data-call-remote-fallback]", shell);
+    fallback?.classList.remove("pulsesoc-call-incoming-copy");
     if (fallback && mode === "failed") {
       fallback.hidden = false;
       fallback.textContent = message || t("pulse.call.interrupted", "Pulse Interrupted");
@@ -406,7 +407,7 @@
       fallback.textContent = t("pulse.call.waiting", "Waiting for response...");
     } else if (fallback && mode === "incoming") {
       fallback.hidden = false;
-      fallback.textContent = `${displayNameFor(state.activeCall)} ${t("pulse.call.incoming_suffix", "is Pulsing You...")}`;
+      renderIncomingFallback(fallback);
     } else if (fallback && !isVideo) {
       fallback.hidden = false;
       fallback.textContent = displayNameFor(state.activeCall) || "Audio call";
@@ -419,6 +420,21 @@
       startDurationTimer();
       scheduleControlsHide();
     }
+  }
+
+  function renderIncomingFallback(fallback) {
+    if (!fallback) return;
+    const name = displayNameFor(state.activeCall);
+    const typeText = callType() === "video" ? t("pulse.call.incoming_video", "Video Connection") : t("pulse.call.incoming_voice", "Voice Connection");
+    fallback.textContent = "";
+    fallback.classList.add("pulsesoc-call-incoming-copy");
+    const pulse = document.createElement("strong");
+    pulse.textContent = t("pulse.call.outgoing", "Pulsing...");
+    const caller = document.createElement("span");
+    caller.textContent = name;
+    const kind = document.createElement("small");
+    kind.textContent = typeText;
+    fallback.append(pulse, caller, kind);
   }
 
   function renderFailure(payload = {}, fallback = {}) {
