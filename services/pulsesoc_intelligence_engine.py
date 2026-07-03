@@ -376,7 +376,7 @@ DEFAULT_STREAMS: list[dict[str, Any]] = [
         "default_frequency": "digest",
         "default_priority": "normal",
         "default_enabled": True,
-        "default_push": False,
+        "default_push": True,
         "threshold": 62,
         "examples": [
             "Pulse AI can help you explore PulseSoc.",
@@ -404,7 +404,7 @@ DEFAULT_STREAMS: list[dict[str, Any]] = [
         "default_frequency": "digest",
         "default_priority": "normal",
         "default_enabled": True,
-        "default_push": False,
+        "default_push": True,
         "threshold": 72,
         "examples": ["Federal Reserve announcement.", "Inflation report released.", "NASDAQ opens higher."],
     },
@@ -416,7 +416,7 @@ DEFAULT_STREAMS: list[dict[str, Any]] = [
         "default_frequency": "digest",
         "default_priority": "normal",
         "default_enabled": True,
-        "default_push": False,
+        "default_push": True,
         "threshold": 80,
         "examples": ["NASA launch.", "Major earthquake.", "Global cybersecurity incident."],
     },
@@ -452,7 +452,7 @@ DEFAULT_STREAMS: list[dict[str, Any]] = [
         "default_frequency": "digest",
         "default_priority": "normal",
         "default_enabled": True,
-        "default_push": False,
+        "default_push": True,
         "threshold": 60,
         "examples": ["New features.", "Maintenance.", "Creator spotlight."],
     },
@@ -488,7 +488,7 @@ DEFAULT_STREAMS: list[dict[str, Any]] = [
         "default_frequency": "realtime",
         "default_priority": "high",
         "default_enabled": True,
-        "default_push": False,
+        "default_push": True,
         "threshold": 82,
         "examples": ["Maintenance notice.", "New app version.", "Incident resolved."],
     },
@@ -848,19 +848,22 @@ def ensure_user_pack(user_id: int, conn: Any | None = None) -> None:
     cur = conn.cursor()
     now = now_iso()
     for stream in DEFAULT_STREAMS:
+        default_push = 1 if stream.get("default_push") else 0
+        breaking_push_only = 0 if default_push else 1
         cur.execute(
             """
             INSERT OR IGNORE INTO user_intelligence_streams
             (user_id, stream_key, enabled, frequency, digest_mode, push_enabled, email_enabled, sms_enabled,
              breaking_push_only, confidence_threshold, priority_filter, metadata_json, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'daily', ?, 0, 0, 1, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, 'daily', ?, 0, 0, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(user_id),
                 stream["stream_key"],
                 1 if stream.get("default_enabled") else 0,
                 stream.get("default_frequency") or "digest",
-                1 if stream.get("default_push") else 0,
+                default_push,
+                breaking_push_only,
                 int(stream.get("threshold") or 70),
                 stream.get("default_priority") or "normal",
                 _json_dumps({"source": "default_intelligence_pack"}),
@@ -868,6 +871,27 @@ def ensure_user_pack(user_id: int, conn: Any | None = None) -> None:
                 now,
             ),
         )
+        if default_push:
+            cur.execute(
+                """
+                SELECT metadata_json, push_enabled, breaking_push_only
+                FROM user_intelligence_streams
+                WHERE user_id=? AND stream_key=?
+                LIMIT 1
+                """,
+                (int(user_id), stream["stream_key"]),
+            )
+            row = cur.fetchone()
+            metadata = _json_loads(_row_get(row, "metadata_json"), {})
+            if metadata.get("source") == "default_intelligence_pack" and not metadata.get("push_user_set"):
+                cur.execute(
+                    """
+                    UPDATE user_intelligence_streams
+                    SET push_enabled=1, breaking_push_only=0, updated_at=?
+                    WHERE user_id=? AND stream_key=?
+                    """,
+                    (now, int(user_id), stream["stream_key"]),
+                )
     conn.commit()
     if owns_conn:
         conn.close()
@@ -1193,11 +1217,13 @@ def _priority_allowed(event_priority: str, filter_value: str) -> bool:
     return order.get(event_priority, 1) >= order.get(filter_value or "normal", 1)
 
 
-def _channels_for_subscription(subscription: dict[str, Any], event: dict[str, Any]) -> list[str]:
+def _channels_for_subscription(subscription: dict[str, Any], event: dict[str, Any], delivery_type: str = "") -> list[str]:
     channels = ["in_app"]
     priority = event.get("priority") or "normal"
+    resolved_delivery_type = _slug(delivery_type or "", 30)
+    push_due_now = resolved_delivery_type in {"instant", "forecast", "feature_discovery", "digest"}
     if subscription.get("push_enabled") and (
-        _priority_allowed(priority, "high") or not subscription.get("breaking_push_only")
+        push_due_now or _priority_allowed(priority, "high") or not subscription.get("breaking_push_only")
     ):
         channels.append("push")
     if subscription.get("email_enabled") and _priority_allowed(priority, "high"):
@@ -1445,7 +1471,7 @@ def queue_event_delivery(
                 jobs.append(_queue_digest_job(cur, event, user_id, subscription.get("digest_mode") or "daily"))
                 digest_queued += 1
                 continue
-            channels = _channels_for_subscription(subscription, event)
+            channels = _channels_for_subscription(subscription, event, resolved_delivery_type)
             scheduled_at = _compact(schedule_at, 80) if schedule_at else _quiet_hours_schedule(subscription, event)
             dedupe = f"intelligence:{resolved_delivery_type}:{user_id}:{event['id']}:{event['stream_key']}"
             cur.execute("SELECT id FROM intelligence_delivery_jobs WHERE dedupe_key=? LIMIT 1", (dedupe,))
@@ -1515,6 +1541,10 @@ def _send_delivery_job(cur: Any, job: Any) -> dict[str, Any]:
         body = event["forecast"].get("forecast_body") or body
     if delivery_type == "feature_discovery":
         title = f"Pulse Discovery: {title}"
+    priority = "urgent" if event["priority"] in {"breaking", "urgent"} else ("high" if event["priority"] == "high" else "normal")
+    deep_link = _intelligence_deep_link(event, delivery_type)
+    sound_key = "alert" if priority == "urgent" else "pulse_signal"
+    vibration_key = "strong" if priority == "urgent" else "standard"
     try:
         connection = getattr(cur, "connection", None)
         if connection is not None:
@@ -1530,12 +1560,16 @@ def _send_delivery_job(cur: Any, job: Any) -> dict[str, Any]:
         title=title,
         body=body,
         preview=body,
-        deep_link=_intelligence_deep_link(event, delivery_type),
+        deep_link=deep_link,
         metadata={
             "stream_key": event["stream_key"],
             "stream_name": subscription.get("display_name"),
             "delivery_type": delivery_type,
             "signal_id": event_id,
+            "source_type": "intelligence_event",
+            "source_id": str(event_id),
+            "type": notification_type,
+            "category": "intelligence",
             "confidence": event["confidence_score"],
             "confidence_score": event["confidence_score"],
             "confidence_label": event["confidence_label"],
@@ -1546,13 +1580,18 @@ def _send_delivery_job(cur: Any, job: Any) -> dict[str, Any]:
             "sources": event["sources"],
             "forecast": event["forecast"],
             "actions": event.get("actions") or [],
+            "deep_link": deep_link,
+            "show_on_lock_screen": True,
+            "badge": True,
+            "sound_key": sound_key,
+            "vibration": vibration_key,
             "dedupe_key": _row_get(job, "dedupe_key") or f"intelligence:{delivery_type}:{user_id}:{event_id}",
             "push_allowed": "push" in channels,
             "email_allowed": "email" in channels,
             "sms_allowed": "sms" in channels,
         },
         category="intelligence",
-        priority="urgent" if event["priority"] in {"breaking", "urgent"} else ("high" if event["priority"] == "high" else "normal"),
+        priority=priority,
         urgency="immediate" if event["priority"] in {"breaking", "urgent", "high"} else "standard",
         channels=channels,
         dedupe_key=_row_get(job, "dedupe_key") or f"intelligence:{delivery_type}:{user_id}:{event_id}",
@@ -1671,8 +1710,8 @@ def process_digest_jobs(limit: int = 50) -> dict[str, Any]:
             stream_key = _row_get(job, "stream_key") or events[0].get("stream_key") or "pulsesoc_discoveries"
             channels = ["in_app"]
             subscription = _subscription_for_user(cur, user_id, stream_key)
-            if subscription and subscription.get("push_enabled") and any(_priority_allowed(event.get("priority"), "high") for event in events):
-                channels.append("push")
+            if subscription:
+                channels = _channels_for_subscription(subscription, {"priority": "normal"}, "digest")
             conn.commit()
             result = pulsesoc_notification_system.intake_event(
                 event_type="intelligence_digest",
@@ -1690,6 +1729,12 @@ def process_digest_jobs(limit: int = 50) -> dict[str, Any]:
                     "event_ids": event_ids[:25],
                     "signal_count": len(events),
                     "actions": default_actions_for_signal("pulsesoc_discoveries", "digest", "/pulse/briefing"),
+                    "deep_link": "/pulse/briefing",
+                    "show_on_lock_screen": True,
+                    "badge": True,
+                    "sound_key": "pulse_signal",
+                    "vibration": "standard",
+                    "push_allowed": "push" in channels,
                 },
                 category="intelligence",
                 priority="normal",
@@ -1911,6 +1956,16 @@ def update_stream(user_id: int, stream_key: str, payload: dict[str, Any]) -> dic
                 return {"ok": False, "error": "invalid_priority_filter", "message": "Unsupported priority filter.", "http_status": 400}
             fields.append("priority_filter=?")
             values.append(priority)
+        if "push_enabled" in payload:
+            cur.execute(
+                "SELECT metadata_json FROM user_intelligence_streams WHERE user_id=? AND stream_key=? LIMIT 1",
+                (int(user_id), stream_key),
+            )
+            metadata = _json_loads(_row_get(cur.fetchone(), "metadata_json"), {})
+            metadata["push_user_set"] = True
+            metadata["push_user_set_at"] = now_iso()
+            fields.append("metadata_json=?")
+            values.append(_json_dumps(metadata))
         if not fields:
             return {"ok": False, "error": "no_changes", "message": "No stream settings changed.", "http_status": 400}
         fields.append("updated_at=?")
@@ -2131,7 +2186,51 @@ def delivery_diagnostics(limit: int = 50) -> dict[str, Any]:
                 "channels": _json_loads(_row_get(row, "channels_json"), []),
                 "updated_at": _row_get(row, "updated_at") or "",
             })
-        return {"ok": True, "jobs": jobs, "logs": logs}
+        notification_ids = sorted({
+            int(item.get("notification_id") or 0)
+            for item in [*jobs, *logs]
+            if int(item.get("notification_id") or 0)
+        })
+        notification_delivery_jobs: list[dict[str, Any]] = []
+        if notification_ids:
+            try:
+                pulsesoc_notification_system.ensure_schema(conn)
+                placeholders = ",".join("?" for _ in notification_ids[:100])
+                cur.execute(
+                    f"""
+                    SELECT id, notification_id, user_id, recipient_user_id, channel, provider, status,
+                           failed_reason, failure_reason, provider_response_json, scheduled_at,
+                           attempted_at, sent_at, failed_at, created_at
+                    FROM notification_delivery_jobs
+                    WHERE notification_id IN ({placeholders})
+                    ORDER BY id DESC
+                    LIMIT ?
+                    """,
+                    tuple(notification_ids[:100]) + (max(1, min(int(limit or 50), 200)),),
+                )
+                for row in cur.fetchall():
+                    notification_delivery_jobs.append({
+                        "id": _int(_row_get(row, "id")),
+                        "notification_id": _int(_row_get(row, "notification_id")),
+                        "user_id": _int(_row_get(row, "user_id")),
+                        "recipient_user_id": _int(_row_get(row, "recipient_user_id")),
+                        "channel": _row_get(row, "channel") or "",
+                        "provider": _row_get(row, "provider") or "",
+                        "status": _row_get(row, "status") or "",
+                        "failed_reason": _row_get(row, "failed_reason") or _row_get(row, "failure_reason") or "",
+                        "provider_response": _json_loads(_row_get(row, "provider_response_json"), {}),
+                        "scheduled_at": _row_get(row, "scheduled_at") or "",
+                        "attempted_at": _row_get(row, "attempted_at") or "",
+                        "sent_at": _row_get(row, "sent_at") or "",
+                        "failed_at": _row_get(row, "failed_at") or "",
+                        "created_at": _row_get(row, "created_at") or "",
+                    })
+            except Exception as exc:
+                notification_delivery_jobs.append({
+                    "status": "diagnostic_unavailable",
+                    "failed_reason": str(exc)[:240],
+                })
+        return {"ok": True, "jobs": jobs, "logs": logs, "notification_delivery_jobs": notification_delivery_jobs}
     finally:
         conn.close()
 

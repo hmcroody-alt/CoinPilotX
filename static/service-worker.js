@@ -1,4 +1,4 @@
-const CACHE_NAME = "coinplotx-cache-v23-notification-delivery-adapters";
+const CACHE_NAME = "coinplotx-cache-v24-intelligence-push";
 const DEBUG_SW = false;
 const STATIC_ASSETS = [
   "/manifest.json",
@@ -193,20 +193,43 @@ self.addEventListener("push", (event) => {
   }
   const data = payload.data || {};
   const conversationId = data.conversationId || data.conversation_id || payload.conversationId || payload.conversation_id;
-  const targetUrl = safeNotificationUrl(data.web_url || data.url || data.target_url || data.deep_link || payload.web_url || payload.url || payload.target_url || payload.deep_link || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications"));
+  const notificationType = data.type || data.notification_type || payload.type || payload.notification_type || "";
+  const notificationCategory = data.category || payload.category || "";
+  const isIntelligence = /^intelligence_/.test(String(notificationType)) || notificationCategory === "intelligence";
+  const defaultUrl = conversationId ? `/pulse/messages/${conversationId}` : (isIntelligence ? "/pulse/alerts" : "/pulse/notifications");
+  const targetUrl = safeNotificationUrl(data.web_url || data.url || data.target_url || data.deep_link || payload.web_url || payload.url || payload.target_url || payload.deep_link || defaultUrl);
   const title = payload.title || "PulseSoc Alert";
+  const defaultBadge = "/static/brand/pulsesoc-icon-192-20260606.png";
+  const badgeAsset = typeof payload.badge === "string" && payload.badge.trim().startsWith("/") ? payload.badge : defaultBadge;
+  const notificationTag = payload.tag || (
+    conversationId
+      ? `pulsesoc-message-${conversationId}`
+      : isIntelligence
+        ? `pulsesoc-intelligence-${payload.notification_id || data.notification_id || data.signal_id || data.event_id || "pulse"}`
+        : "coinplotxai-alert"
+  );
   const options = {
     body: payload.body || payload.message || "New PulseSoc update.",
     icon: payload.icon || "/static/brand/pulsesoc-icon-192-20260606.png",
-    badge: payload.badge || "/static/brand/pulsesoc-icon-192-20260606.png",
+    badge: badgeAsset,
     vibrate: payload.vibrate || payload.vibration || data.vibrate || data.vibration || [200, 100, 200],
-    data: { ...data, url: targetUrl, web_url: targetUrl, deepLink: targetUrl, deep_link: targetUrl, notification_id: payload.notification_id || data.notification_id || "" },
-    tag: payload.tag || (conversationId ? `pulsesoc-message-${conversationId}` : "coinplotxai-alert"),
+    data: {
+      ...data,
+      url: targetUrl,
+      web_url: targetUrl,
+      deepLink: targetUrl,
+      deep_link: targetUrl,
+      type: notificationType,
+      category: notificationCategory,
+      notification_id: payload.notification_id || data.notification_id || "",
+      signal_id: payload.signal_id || data.signal_id || data.event_id || ""
+    },
+    tag: notificationTag,
     renotify: payload.renotify !== false,
     silent: payload.silent === true || payload.sound === "silent" || data.sound_key === "silent",
     timestamp: payload.timestamp || Date.now(),
     actions: payload.actions || [
-      { action: "open", title: conversationId ? "Open Chat" : "Open Alerts" },
+      { action: "open", title: conversationId ? "Open Chat" : (isIntelligence ? "Open Alerts" : "Open Alerts") },
       { action: "dismiss", title: "Dismiss" }
     ]
   };

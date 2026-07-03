@@ -557,6 +557,8 @@ def _sound_key(category: str, priority: str, prefs: dict[str, Any] | None = None
     prefs = prefs or {}
     if not _bool((prefs.get("experience") or {}).get("enable_notification_sound", True), True):
         return "silent"
+    if category == "intelligence":
+        return "alert" if priority == "urgent" else "pulse_signal"
     if priority == "urgent":
         return "pulse_urgent"
     return {
@@ -581,6 +583,8 @@ def _vibration_pattern(category: str, priority: str, prefs: dict[str, Any] | Non
     prefs = prefs or {}
     if not _bool((prefs.get("experience") or {}).get("enable_notification_vibration", True), True):
         return []
+    if category == "intelligence":
+        return [240, 90, 240, 90, 320] if priority == "urgent" else [160, 80, 160]
     if priority == "urgent":
         return [240, 90, 240, 90, 320]
     if category in {"messages", "calls", "live"}:
@@ -817,6 +821,9 @@ def _default_channels_for_event(
             "creator_payout_failed",
             "crypto_alert_triggered",
             "crypto_price_alert",
+            "intelligence_pulse",
+            "intelligence_forecast",
+            "intelligence_digest",
             "system_announcement",
             "admin_warning",
             "account_restriction",
@@ -2214,12 +2221,18 @@ def _push_payload(notification: dict[str, Any], prefs: dict[str, Any]) -> dict[s
     priority = str(notification.get("priority") or "normal")
     metadata = notification.get("metadata") if isinstance(notification.get("metadata"), dict) else {}
     deep_link = sanitize_deep_link(notification.get("deep_link") or metadata.get("deep_link") or "/pulse/notifications")
+    body = str(notification.get("body") or notification.get("message") or notification.get("preview") or "New PulseSoc update.")
+    badge_count = badge_counts(int(notification.get("recipient_user_id") or notification.get("user_id") or 0)).get("total_unread_count", 0)
     return {
         "notification_id": int(notification.get("id") or 0),
         "type": notification.get("type") or notification.get("notification_type") or "system_announcement",
         "category": category,
         "priority": priority,
         "urgency": notification.get("urgency") or "standard",
+        "title": notification.get("title") or "PulseSoc Alert",
+        "body": body,
+        "message": body,
+        "preview": notification.get("preview") or body,
         "deep_link": deep_link,
         "target_url": deep_link,
         "url": deep_link,
@@ -2227,7 +2240,11 @@ def _push_payload(notification: dict[str, Any], prefs: dict[str, Any]) -> dict[s
         "sound_key": notification.get("sound_key") or _sound_key(category, priority, prefs),
         "sound": notification.get("sound_key") or _sound_key(category, priority, prefs),
         "vibrate": notification.get("vibration") or _vibration_pattern(category, priority, prefs),
-        "badge": badge_counts(int(notification.get("recipient_user_id") or notification.get("user_id") or 0)).get("total_unread_count", 0),
+        "vibration": notification.get("vibration") or _vibration_pattern(category, priority, prefs),
+        "badge": True,
+        "badge_count": badge_count,
+        "show_on_lock_screen": True,
+        "lock_screen": True,
         **metadata,
     }
 
