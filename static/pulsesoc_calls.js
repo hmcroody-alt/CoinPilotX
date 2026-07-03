@@ -21,6 +21,11 @@
     facingMode: "user",
     lastQualityAt: 0,
     lastFailure: null,
+    controlsVisible: false,
+    controlsTimer: null,
+    durationTimer: null,
+    pointerOverControls: false,
+    ending: false,
   };
 
   const qs = (sel, root = document) => root.querySelector(sel);
@@ -148,36 +153,45 @@
     shell.hidden = true;
     shell.setAttribute("data-pulsesoc-call-shell", "");
     shell.setAttribute("aria-live", "polite");
+    shell.setAttribute("tabindex", "-1");
     shell.innerHTML = `
-      <div class="pulsesoc-call-backdrop" data-call-minimize aria-hidden="true"></div>
-      <div class="pulsesoc-call-card" role="dialog" aria-modal="false" aria-label="PulseSoc call">
-        <header class="pulsesoc-call-head">
+      <div class="pulsesoc-call-backdrop" aria-hidden="true"></div>
+      <div class="pulsesoc-call-card" role="dialog" aria-modal="false" aria-label="PulseSoc call" data-call-interaction-zone>
+        <header class="pulsesoc-call-head" aria-live="polite">
           <span class="pulsesoc-call-orb" aria-hidden="true"></span>
           <div class="pulsesoc-call-copy">
             <strong data-call-title>PulseSoc Call</strong>
-            <span data-call-status>Preparing secure room...</span>
+            <span data-call-meta>Audio Call · 00:00</span>
+            <small data-call-status>Preparing secure room...</small>
           </div>
           <span class="pulsesoc-call-quality" data-call-quality>Standby</span>
         </header>
         <div class="pulsesoc-call-stage" data-call-stage>
           <div class="pulsesoc-call-remote" data-call-remote>
+            <div class="pulsesoc-call-audio-visual" data-call-audio-visual aria-hidden="true">
+              <span></span><span></span><span></span>
+            </div>
             <span data-call-remote-fallback>Waiting for the other person...</span>
           </div>
           <div class="pulsesoc-call-audio" data-call-audio></div>
-          <video class="pulsesoc-call-local" data-call-local muted playsinline autoplay hidden></video>
+          <div class="pulsesoc-call-local-wrap" data-call-local-wrap hidden>
+            <video class="pulsesoc-call-local" data-call-local muted playsinline autoplay></video>
+            <span data-call-local-fallback hidden>Camera off</span>
+          </div>
         </div>
         <div class="pulsesoc-call-actions" data-call-incoming-actions hidden>
           <button type="button" class="is-accept" data-call-accept aria-label="Accept call">Accept</button>
           <button type="button" class="is-decline" data-call-decline aria-label="Decline call">Decline</button>
         </div>
-        <div class="pulsesoc-call-controls" data-call-active-controls>
-          <button type="button" data-call-toggle-mic aria-label="Mute microphone">Mic</button>
-          <button type="button" data-call-toggle-camera aria-label="Turn camera off">Camera</button>
-          <button type="button" data-call-switch-camera aria-label="Switch camera">Flip</button>
-          <button type="button" data-call-switch-speaker aria-label="Switch speaker">Speaker</button>
+        <button type="button" class="pulsesoc-call-end-primary" data-call-end aria-label="End call"><span aria-hidden="true">&#9742;</span><b>End</b></button>
+        <div class="pulsesoc-call-controls" data-call-active-controls data-call-controls-panel hidden>
+          <button type="button" data-call-toggle-mic aria-label="Mute microphone"><span aria-hidden="true">&#127908;</span><b>Mic</b></button>
+          <button type="button" data-call-toggle-camera aria-label="Turn camera off"><span aria-hidden="true">&#128247;</span><b>Camera</b></button>
+          <button type="button" data-call-switch-camera aria-label="Flip camera"><span aria-hidden="true">&#8635;</span><b>Flip</b></button>
+          <button type="button" data-call-switch-speaker aria-label="Speaker"><span aria-hidden="true">&#128266;</span><b>Speaker</b></button>
           <button type="button" data-call-diagnostics hidden aria-label="View call diagnostics">View Diagnostics</button>
-          <button type="button" data-call-minimize aria-label="Minimize call">Minimize</button>
-          <button type="button" data-call-end aria-label="End call">End</button>
+          <button type="button" data-call-minimize aria-label="Minimize call"><span aria-hidden="true">&#8722;</span><b>Minimize</b></button>
+          <button type="button" data-call-more aria-label="More call options"><span aria-hidden="true">&#8942;</span><b>More</b></button>
         </div>
       </div>
       <button class="pulsesoc-call-pill" type="button" data-call-restore hidden aria-label="Restore call">
@@ -188,6 +202,7 @@
     shell.addEventListener("click", async (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
+      if (target.closest("[data-call-controls-panel]")) state.pointerOverControls = true;
       if (target.closest("[data-call-accept]")) return acceptCall(callId());
       if (target.closest("[data-call-decline]")) return declineCall(callId());
       if (target.closest("[data-call-end]")) return endCall();
@@ -198,22 +213,109 @@
       if (target.closest("[data-call-switch-camera]")) return switchCamera();
       if (target.closest("[data-call-switch-speaker]")) return switchSpeaker();
       if (target.closest("[data-call-diagnostics]")) return openDiagnostics();
+      if (target.closest("[data-call-more]")) return showControls(true, true);
+      if (target.closest("[data-call-interaction-zone]")) return toggleControls();
+    });
+    shell.addEventListener("mousemove", () => showControls(true));
+    shell.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") return showControls(false, true);
+      if (event.key === " " && event.target === shell) {
+        event.preventDefault();
+        toggleControls();
+      }
+    });
+    const controls = qs("[data-call-controls-panel]", shell);
+    controls?.addEventListener("pointerenter", () => {
+      state.pointerOverControls = true;
+      showControls(true, true);
+    });
+    controls?.addEventListener("pointerleave", () => {
+      state.pointerOverControls = false;
+      scheduleControlsHide();
     });
     return shell;
+  }
+
+  function clearControlsTimer() {
+    if (state.controlsTimer) window.clearTimeout(state.controlsTimer);
+    state.controlsTimer = null;
+  }
+
+  function scheduleControlsHide() {
+    clearControlsTimer();
+    if (!state.activeCall || state.pointerOverControls) return;
+    state.controlsTimer = window.setTimeout(() => {
+      if (!state.pointerOverControls) showControls(false, true);
+    }, 3000);
+  }
+
+  function showControls(visible = true, sticky = false) {
+    const shell = ensureShell();
+    const panel = qs("[data-call-controls-panel]", shell);
+    state.controlsVisible = Boolean(visible);
+    if (state.controlsVisible && shell.dataset.callMode !== "incoming") {
+      if (panel) panel.hidden = false;
+      window.requestAnimationFrame(() => shell.classList.add("controls-visible"));
+      if (!sticky) scheduleControlsHide();
+    } else {
+      shell.classList.remove("controls-visible");
+      window.setTimeout(() => {
+        if (!state.controlsVisible && panel) panel.hidden = true;
+      }, 220);
+      clearControlsTimer();
+    }
+  }
+
+  function toggleControls() {
+    showControls(!state.controlsVisible, state.controlsVisible ? true : false);
+  }
+
+  function durationLabel() {
+    const call = state.activeCall || {};
+    const source = call.answered_at || call.started_at || call.created_at || "";
+    const started = source ? Date.parse(String(source).replace("Z", "+00:00")) : 0;
+    const elapsed = started ? Math.max(0, Math.floor((Date.now() - started) / 1000)) : 0;
+    const mins = Math.floor(elapsed / 60);
+    const secs = elapsed % 60;
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+
+  function updateDurationDisplay() {
+    const shell = qs("[data-pulsesoc-call-shell]");
+    if (!shell || shell.hidden) return;
+    const meta = qs("[data-call-meta]", shell);
+    if (meta) meta.textContent = `${callType() === "video" ? "Video Call" : "Audio Call"} · ${durationLabel()}`;
+  }
+
+  function startDurationTimer() {
+    stopDurationTimer();
+    updateDurationDisplay();
+    state.durationTimer = window.setInterval(updateDurationDisplay, 1000);
+  }
+
+  function stopDurationTimer() {
+    if (state.durationTimer) window.clearInterval(state.durationTimer);
+    state.durationTimer = null;
+  }
+
+  function setControlButton(button, icon, label) {
+    if (!button) return;
+    button.innerHTML = `<span aria-hidden="true">${icon}</span><b>${label}</b>`;
   }
 
   function setStatus(message, mode = "info", quality = "") {
     const shell = ensureShell();
     shell.hidden = false;
     shell.dataset.mode = mode;
+    shell.dataset.callType = callType();
     const status = qs("[data-call-status]", shell);
     if (status) status.textContent = message || "";
     const title = qs("[data-call-title]", shell);
     if (title) {
-      const label = callType() === "video" ? "Video call" : "Audio call";
       const subject = state.activeCall ? displayNameFor(state.activeCall) : "PulseSoc";
-      title.textContent = `${label} - ${subject}`;
+      title.textContent = subject;
     }
+    updateDurationDisplay();
     const q = qs("[data-call-quality]", shell);
     if (q) q.textContent = quality || qualityLabel();
     const pill = qs("[data-call-pill-title]", shell);
@@ -235,15 +337,25 @@
   function renderMode(mode, message) {
     const shell = ensureShell();
     shell.dataset.callMode = mode;
+    shell.dataset.callType = callType();
     const incoming = qs("[data-call-incoming-actions]", shell);
     const controls = qs("[data-call-active-controls]", shell);
     if (incoming) incoming.hidden = mode !== "incoming";
-    if (controls) controls.hidden = mode === "incoming";
+    if (controls) controls.hidden = mode === "incoming" || !state.controlsVisible;
+    const primaryEnd = qs(".pulsesoc-call-end-primary", shell);
+    if (primaryEnd) {
+      primaryEnd.hidden = mode === "incoming";
+      primaryEnd.disabled = Boolean(state.ending);
+      primaryEnd.classList.toggle("is-ending", Boolean(state.ending));
+      primaryEnd.setAttribute("aria-label", state.ending ? "Ending call" : "End call");
+    }
     const cameraButton = qs("[data-call-toggle-camera]", shell);
     const flipButton = qs("[data-call-switch-camera]", shell);
     const isVideo = callType() === "video";
     if (cameraButton) cameraButton.hidden = !isVideo;
     if (flipButton) flipButton.hidden = !isVideo;
+    const audioVisual = qs("[data-call-audio-visual]", shell);
+    if (audioVisual) audioVisual.hidden = isVideo;
     const fallback = qs("[data-call-remote-fallback]", shell);
     if (fallback && mode === "failed") {
       fallback.hidden = false;
@@ -254,8 +366,15 @@
     } else if (fallback && mode === "incoming") {
       fallback.hidden = false;
       fallback.textContent = "Incoming call.";
+    } else if (fallback && !isVideo) {
+      fallback.hidden = false;
+      fallback.textContent = displayNameFor(state.activeCall) || "Audio call";
     }
     setStatus(message || "", mode === "failed" ? "error" : mode === "incoming" ? "success" : "info", mode === "failed" ? "Unavailable" : "");
+    if (["active", "outgoing"].includes(mode)) {
+      startDurationTimer();
+      scheduleControlsHide();
+    }
   }
 
   function renderFailure(payload = {}, fallback = {}) {
@@ -325,13 +444,18 @@
     const local = qs("[data-call-local]");
     if (local) {
       local.srcObject = null;
-      local.hidden = true;
     }
+    const wrap = qs("[data-call-local-wrap]");
+    const fallback = qs("[data-call-local-fallback]");
+    if (wrap) wrap.hidden = true;
+    if (fallback) fallback.hidden = true;
   }
 
   async function disconnectRoom(reason = "client_disconnect") {
     stopQualityTimer();
     stopStatusPolling();
+    stopDurationTimer();
+    clearControlsTimer();
     stopLocalTracks();
     clearRemoteTracks();
     try { await state.room?.disconnect?.(); } catch (_) {}
@@ -347,6 +471,7 @@
     const shell = ensureShell();
     shell.hidden = true;
     shell.classList.remove("is-minimized");
+    showControls(false, true);
   }
 
   function localTrackKind(track) {
@@ -372,6 +497,8 @@
   function attachLocalPreview(track) {
     if (localTrackKind(track) !== "video") return;
     const local = qs("[data-call-local]");
+    const wrap = qs("[data-call-local-wrap]");
+    const fallback = qs("[data-call-local-fallback]");
     if (!local) return;
     try {
       if (track.attach) {
@@ -384,10 +511,11 @@
       } else if (track.mediaStreamTrack) {
         local.srcObject = new MediaStream([track.mediaStreamTrack]);
       }
-      local.hidden = false;
+      if (wrap) wrap.hidden = false;
+      if (fallback) fallback.hidden = true;
       local.play?.().catch(() => {});
     } catch (_) {
-      local.hidden = true;
+      if (wrap) wrap.hidden = true;
     }
   }
 
@@ -416,6 +544,8 @@
         qsa("video", host).forEach((node) => node.remove());
         const fallback = qs("[data-call-remote-fallback]", host);
         if (fallback) fallback.hidden = true;
+        const audioVisual = qs("[data-call-audio-visual]", host);
+        if (audioVisual) audioVisual.hidden = true;
         el.classList.add("pulsesoc-call-remote-video");
       }
       if (kind === "audio") el.hidden = true;
@@ -641,15 +771,30 @@
   }
 
   async function endCall(id = callId()) {
+    state.ending = true;
+    const endButton = qs("[data-call-end]");
+    if (endButton) {
+      endButton.disabled = true;
+      endButton.classList.add("is-ending");
+      endButton.setAttribute("aria-label", "Ending call");
+    }
     if (!id) {
       hideCallShell();
+      state.ending = false;
       return { ok: true };
     }
     try {
       const data = await postJson(`${API}/${encodeURIComponent(id)}/end`, { reason: "ended_by_user" });
       hideCallShell();
+      state.ending = false;
       return data;
     } catch (error) {
+      state.ending = false;
+      if (endButton) {
+        endButton.disabled = false;
+        endButton.classList.remove("is-ending");
+        endButton.setAttribute("aria-label", "End call");
+      }
       renderMode("failed", error.payload?.message || "Could not end call cleanly.");
       return error.payload || { ok: false, message: error.message };
     }
@@ -684,7 +829,7 @@
     if (btn) {
       btn.classList.toggle("is-muted", state.mutedAudio);
       btn.setAttribute("aria-label", state.mutedAudio ? "Unmute microphone" : "Mute microphone");
-      btn.textContent = state.mutedAudio ? "Unmute" : "Mic";
+      setControlButton(btn, state.mutedAudio ? "&#127908;" : "&#127908;", state.mutedAudio ? "Unmute" : "Mic");
     }
     return state.mutedAudio;
   }
@@ -702,13 +847,15 @@
     }
     await setControl(state.mutedVideo ? "disable-video" : "enable-video");
     setStatus(state.mutedVideo ? "Camera off." : "Camera on.", "info");
-    const local = qs("[data-call-local]");
-    if (local) local.hidden = state.mutedVideo;
+    const wrap = qs("[data-call-local-wrap]");
+    const fallback = qs("[data-call-local-fallback]");
+    if (wrap) wrap.hidden = false;
+    if (fallback) fallback.hidden = !state.mutedVideo;
     const btn = qs("[data-call-toggle-camera]");
     if (btn) {
       btn.classList.toggle("is-muted", state.mutedVideo);
       btn.setAttribute("aria-label", state.mutedVideo ? "Turn camera on" : "Turn camera off");
-      btn.textContent = state.mutedVideo ? "Camera On" : "Camera";
+      setControlButton(btn, state.mutedVideo ? "&#128247;" : "&#128247;", state.mutedVideo ? "Camera On" : "Camera");
     }
     return state.mutedVideo;
   }

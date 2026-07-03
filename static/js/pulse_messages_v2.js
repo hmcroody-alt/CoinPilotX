@@ -1579,7 +1579,12 @@
     const avatar = el("[data-thread-avatar]");
     if (title) title.textContent = state.active ? state.active.title : "Choose a chat";
     const threadPresence = presenceForConversation(state.active || {});
-    if (sub) sub.textContent = state.active ? `${presenceLabel(threadPresence)} · ${typeLabel(state.active.conversation_type || "conversation")}` : "Start a secure conversation.";
+    const presenceText = state.active ? presenceLabel(threadPresence) : "Standby";
+    if (sub) {
+      sub.textContent = state.active ? `${presenceText} · ${typeLabel(state.active.conversation_type || "conversation")}` : "Start a secure conversation.";
+      sub.setAttribute("data-presence", presenceClass(threadPresence));
+      sub.setAttribute("data-presence-label", presenceText);
+    }
     if (avatar) {
       const avatarUrl = state.active?.avatar_url || state.active?.avatar_thumbnail_url || "";
       avatar.innerHTML = state.active
@@ -1589,6 +1594,10 @@
         : "P";
       avatar.className = `thread-avatar presence-${presenceClass(threadPresence)}`;
     }
+    document.querySelectorAll("[data-thread-call-audio], [data-thread-call-video], [data-thread-more]").forEach((button) => {
+      button.disabled = !state.active;
+      button.classList.toggle("is-disabled", !state.active);
+    });
     renderTypingPill();
     renderAIHooks();
     renderTrustBadges();
