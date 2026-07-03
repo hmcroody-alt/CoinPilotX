@@ -140,6 +140,28 @@ CREATE TABLE IF NOT EXISTS intelligence_digest_jobs (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS intelligence_delivery_jobs (
+    id BIGSERIAL PRIMARY KEY,
+    event_id BIGINT REFERENCES intelligence_events(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL,
+    stream_key TEXT NOT NULL,
+    delivery_type TEXT DEFAULT 'instant',
+    status TEXT DEFAULT 'queued',
+    channels_json JSONB DEFAULT '[]'::jsonb,
+    dedupe_key TEXT UNIQUE,
+    scheduled_at TIMESTAMPTZ,
+    next_retry_at TIMESTAMPTZ,
+    attempts INTEGER DEFAULT 0,
+    max_attempts INTEGER DEFAULT 3,
+    notification_id BIGINT DEFAULT 0,
+    failure_reason TEXT,
+    metadata_json JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    sent_at TIMESTAMPTZ,
+    canceled_at TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS intelligence_delivery_log (
     id BIGSERIAL PRIMARY KEY,
     event_id BIGINT REFERENCES intelligence_events(id) ON DELETE CASCADE,
@@ -179,7 +201,7 @@ VALUES
      '{"examples":["Apple emergency update.","Critical Android vulnerability.","Major password leak."]}'::jsonb, NOW()),
     ('technology_pulse', 'Technology Pulse',
      'Major AI, device, software, and scientific breakthroughs.',
-     'technology', 'normal', 'digest', TRUE, FALSE, 70,
+     'technology', 'normal', 'digest', FALSE, FALSE, 70,
      '{"examples":["Major AI release.","Apple keynote.","New scientific breakthrough."]}'::jsonb, NOW()),
     ('pulsesoc_pulse', 'PulseSoc Pulse',
      'Platform improvements, maintenance, creator spotlights, and trending communities.',
@@ -187,11 +209,11 @@ VALUES
      '{"examples":["New features.","Maintenance.","Creator spotlight."]}'::jsonb, NOW()),
     ('creator_pulse', 'Creator Pulse',
      'Personal creator timing, growth, trends, audience, and content recommendations.',
-     'creator', 'normal', 'digest', TRUE, FALSE, 58,
+     'creator', 'normal', 'digest', FALSE, FALSE, 58,
      '{"examples":["Best posting time.","Weekly growth.","Trending topics."]}'::jsonb, NOW()),
     ('music_pulse', 'Music Pulse',
      'Trending songs, emerging artists, PulseSoc Music releases, and popular audio.',
-     'music', 'low', 'digest', TRUE, FALSE, 58,
+     'music', 'low', 'digest', FALSE, FALSE, 58,
      '{"examples":["Trending songs.","Emerging artists.","Popular audio."]}'::jsonb, NOW()),
     ('system_pulse', 'System Pulse',
      'Maintenance, app version, incident, and rollout intelligence from PulseSoc system events.',
@@ -256,6 +278,12 @@ CREATE INDEX IF NOT EXISTS idx_intel_sources_stream_status
     ON intelligence_sources(stream_key, status);
 CREATE INDEX IF NOT EXISTS idx_intel_forecasts_stream_created
     ON intelligence_forecasts(stream_key, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_intel_digest_jobs_status
+    ON intelligence_digest_jobs(status, scheduled_at, user_id);
+CREATE INDEX IF NOT EXISTS idx_intel_delivery_jobs_status
+    ON intelligence_delivery_jobs(status, scheduled_at, next_retry_at);
+CREATE INDEX IF NOT EXISTS idx_intel_delivery_jobs_event
+    ON intelligence_delivery_jobs(event_id, user_id, stream_key);
 CREATE INDEX IF NOT EXISTS idx_intel_delivery_user
     ON intelligence_delivery_log(user_id, stream_key, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_intel_feedback_user

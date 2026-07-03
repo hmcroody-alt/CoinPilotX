@@ -28,6 +28,8 @@
         <article><strong>{{ dashboard.counts.accepted_events }}</strong><span>Accepted</span></article>
         <article><strong>{{ dashboard.counts.suppressed_events }}</strong><span>Suppressed</span></article>
         <article><strong>{{ dashboard.counts.forecasts }}</strong><span>Forecasts</span></article>
+        <article><strong>{{ dashboard.queue.delivery_jobs_queued }}</strong><span>Queued Delivery</span></article>
+        <article><strong>{{ dashboard.queue.delivery_jobs_failed }}</strong><span>Failed Delivery</span></article>
       </section>
     </header>
 
@@ -84,6 +86,71 @@
         <button type="submit">Run collectors</button>
       </form>
       <pre data-admin-intel-result>{{ collect_result|tojson(indent=2) }}</pre>
+    </section>
+
+    <section class="intelligence-section admin-actions" id="delivery-engine">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Delivery Engine</p>
+          <h2>Alert Delivery Controls</h2>
+        </div>
+        <a class="button" href="/api/admin/intelligence/delivery/logs">View delivery API</a>
+      </div>
+      <form data-admin-intel-test-alert>
+        <label>
+          Test stream
+          <select name="stream_key">
+            <option value="pulsesoc_discoveries">PulseSoc Discoveries</option>
+            <option value="pulsesoc_pulse">PulseSoc Pulse</option>
+            <option value="security_pulse">Security Pulse</option>
+            <option value="crypto_pulse">Crypto Pulse</option>
+            <option value="market_pulse">Market Pulse</option>
+            <option value="world_pulse">World Pulse</option>
+            <option value="system_pulse">System Pulse</option>
+          </select>
+        </label>
+        <label>
+          Target user id
+          <input name="target_user_id" inputmode="numeric" placeholder="Admin user if blank">
+        </label>
+        <button type="submit">Send test alert</button>
+        <button type="button" data-admin-intel-process-delivery>Process queue</button>
+        <button type="button" data-admin-intel-generate-digest>Generate digests</button>
+      </form>
+      <form data-admin-intel-send-event>
+        <label>
+          Event id
+          <input name="event_id" inputmode="numeric" placeholder="Accepted event id">
+        </label>
+        <label>
+          Mode
+          <select name="mode">
+            <option value="selected_user">Selected user</option>
+            <option value="subscribers">Stream subscribers</option>
+            <option value="all">All eligible users</option>
+          </select>
+        </label>
+        <label>
+          Target user id
+          <input name="target_user_id" inputmode="numeric" placeholder="Required for selected user">
+        </label>
+        <label>
+          Type
+          <select name="delivery_type">
+            <option value="">Auto</option>
+            <option value="instant">Instant alert</option>
+            <option value="forecast">Forecast alert</option>
+            <option value="feature_discovery">Feature discovery</option>
+            <option value="digest">Digest queue</option>
+          </select>
+        </label>
+        <label>
+          Schedule at
+          <input name="schedule_at" placeholder="UTC ISO optional">
+        </label>
+        <button type="submit">Queue alert</button>
+      </form>
+      <pre data-admin-intel-delivery-result>{}</pre>
     </section>
 
     <section class="intelligence-layout">
@@ -146,6 +213,38 @@
         <article><strong>{{ dashboard.counts.deliveries }}</strong><span>Delivery records</span></article>
         <article><strong>{{ dashboard.counts.accepted_events }}</strong><span>Accepted signals</span></article>
         <article><strong>{{ dashboard.counts.suppressed_events }}</strong><span>Suppressed signals</span></article>
+      </div>
+    </section>
+
+    <section class="intelligence-section" id="notification-delivery">
+      <div class="section-heading">
+        <div><p class="eyebrow">Delivery</p><h2>Queue and Logs</h2></div>
+        <span class="signal-pill">{{ dashboard.counts.deliveries }} records</span>
+      </div>
+      <div class="run-table">
+        {% for job in dashboard.delivery_jobs %}
+        <article>
+          <strong>#{{ job.id }} · {{ job.delivery_type }}</strong>
+          <span>{{ job.stream_key }}</span>
+          <span>User {{ job.user_id }}</span>
+          <span>{{ job.status }}</span>
+          {% if job.status in ['queued', 'retry'] %}<button type="button" data-admin-intel-cancel-job="{{ job.id }}">Cancel</button>{% endif %}
+        </article>
+        {% else %}
+        <p class="empty">No delivery jobs yet.</p>
+        {% endfor %}
+      </div>
+      <div class="run-table">
+        {% for log in dashboard.delivery_logs %}
+        <article>
+          <strong>Event {{ log.event_id }}</strong>
+          <span>{{ log.stream_key }}</span>
+          <span>User {{ log.user_id }}</span>
+          <span>{{ log.delivery_status }}</span>
+        </article>
+        {% else %}
+        <p class="empty">No delivery log entries yet.</p>
+        {% endfor %}
       </div>
     </section>
 

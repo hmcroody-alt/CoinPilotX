@@ -265,6 +265,7 @@ def _render_pulse_signal_surface(surface_key):
 
 @comm_v2_blueprint.get("/pulse/intelligence")
 @comm_v2_blueprint.get("/pulse/signals")
+@comm_v2_blueprint.get("/pulse/alerts")
 def pulse_alerts_page():
     return _render_pulse_signal_surface("alerts")
 
@@ -395,6 +396,139 @@ def api_admin_galaxy_intelligence_collect():
         )
 
     return _timed_json("admin_galaxy_intelligence_collect", run)
+
+
+def _admin_can_mass_send(admin: dict) -> bool:
+    role = str((admin or {}).get("role") or (admin or {}).get("admin_role") or "").strip().lower()
+    if role in {"readonly", "read_only", "viewer", "support", "analyst"}:
+        return False
+    if bool((admin or {}).get("readonly") or (admin or {}).get("read_only")):
+        return False
+    return True
+
+
+def _log_intelligence_admin_action(admin: dict, action: str, metadata: dict) -> None:
+    try:
+        _bot().log_admin_audit(
+            (admin or {}).get("id") or (admin or {}).get("user_id") or 0,
+            action,
+            "intelligence_delivery",
+            str((metadata or {}).get("event_id") or (metadata or {}).get("job_id") or ""),
+            metadata,
+        )
+    except Exception:
+        logging.info("INTELLIGENCE_ADMIN_AUDIT_SKIPPED action=%s", action)
+
+
+@comm_v2_blueprint.post("/api/admin/intelligence/delivery/test")
+def api_admin_intelligence_delivery_test():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+
+    def run():
+        from services import pulsesoc_intelligence_engine
+
+        payload = request.get_json(silent=True) or {}
+        target_user_id = int(payload.get("target_user_id") or (admin.get("user_id") or admin.get("id") or 0) or 0)
+        result = pulsesoc_intelligence_engine.send_test_alert(
+            int(admin.get("user_id") or admin.get("id") or 0),
+            target_user_id=target_user_id,
+            stream_key=payload.get("stream_key") or "pulsesoc_discoveries",
+        )
+        _log_intelligence_admin_action(admin, "intelligence_test_alert", {"target_user_id": target_user_id, "stream_key": payload.get("stream_key") or "pulsesoc_discoveries", "event_id": result.get("event_id")})
+        return result
+
+    return _timed_json("admin_intelligence_delivery_test", run)
+
+
+@comm_v2_blueprint.post("/api/admin/intelligence/delivery/send")
+def api_admin_intelligence_delivery_send():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    payload = request.get_json(silent=True) or {}
+    mode = str(payload.get("mode") or "subscribers").strip().lower()
+    if mode in {"all", "subscribers"} and not _admin_can_mass_send(admin):
+        return jsonify({"ok": False, "error": "mass_send_forbidden", "message": "This admin role cannot mass-send Intelligence alerts."}), 403
+
+    def run():
+        from services import pulsesoc_intelligence_engine
+
+        result = pulsesoc_intelligence_engine.admin_send_event(payload)
+        _log_intelligence_admin_action(admin, "intelligence_manual_send", {"mode": mode, "event_id": payload.get("event_id"), "result": result})
+        return result
+
+    return _timed_json("admin_intelligence_delivery_send", run)
+
+
+@comm_v2_blueprint.post("/api/admin/intelligence/delivery/process")
+def api_admin_intelligence_delivery_process():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+
+    def run():
+        from services import pulsesoc_intelligence_engine
+
+        payload = request.get_json(silent=True) or {}
+        delivery = pulsesoc_intelligence_engine.process_delivery_queue(limit=int(payload.get("limit") or 100))
+        digests = pulsesoc_intelligence_engine.process_digest_jobs(limit=int(payload.get("digest_limit") or 50))
+        _log_intelligence_admin_action(admin, "intelligence_process_queue", {"delivery": delivery, "digests": digests})
+        return {"ok": True, "delivery": delivery, "digests": digests}
+
+    return _timed_json("admin_intelligence_delivery_process", run)
+
+
+@comm_v2_blueprint.post("/api/admin/intelligence/delivery/digests")
+def api_admin_intelligence_delivery_generate_digests():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    if not _admin_can_mass_send(admin):
+        return jsonify({"ok": False, "error": "digest_forbidden", "message": "This admin role cannot generate digest delivery."}), 403
+
+    def run():
+        from services import pulsesoc_intelligence_engine
+
+        payload = request.get_json(silent=True) or {}
+        result = pulsesoc_intelligence_engine.generate_digest_jobs(
+            int(payload.get("target_user_id") or 0),
+            stream_key=payload.get("stream_key") or "",
+            limit=int(payload.get("limit") or 500),
+            digest_type=payload.get("digest_type") or "daily",
+        )
+        _log_intelligence_admin_action(admin, "intelligence_generate_digest", {"payload": payload, "result": result})
+        return result
+
+    return _timed_json("admin_intelligence_delivery_digests", run)
+
+
+@comm_v2_blueprint.post("/api/admin/intelligence/delivery/cancel")
+def api_admin_intelligence_delivery_cancel():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+
+    def run():
+        from services import pulsesoc_intelligence_engine
+
+        payload = request.get_json(silent=True) or {}
+        result = pulsesoc_intelligence_engine.cancel_delivery_job(int(payload.get("job_id") or 0))
+        _log_intelligence_admin_action(admin, "intelligence_cancel_delivery", {"job_id": payload.get("job_id"), "result": result})
+        return result
+
+    return _timed_json("admin_intelligence_delivery_cancel", run)
+
+
+@comm_v2_blueprint.get("/api/admin/intelligence/delivery/logs")
+def api_admin_intelligence_delivery_logs():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    from services import pulsesoc_intelligence_engine
+
+    return _json(pulsesoc_intelligence_engine.delivery_diagnostics(int(request.args.get("limit") or 50)))
 
 
 def _sse_response(generator):

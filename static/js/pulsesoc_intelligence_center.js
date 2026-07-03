@@ -1,6 +1,8 @@
 (() => {
   const root = document.querySelector("[data-intelligence-root]");
   const adminForm = document.querySelector("[data-admin-intel-collect]");
+  const adminTestForm = document.querySelector("[data-admin-intel-test-alert]");
+  const adminSendForm = document.querySelector("[data-admin-intel-send-event]");
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
   let state = {};
 
@@ -156,6 +158,9 @@
         <div class="signal-actions">
           <button type="button" data-feedback="opened" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Useful</button>
           <button type="button" data-feedback="saved" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Save</button>
+          <button type="button" data-feedback="not_helpful" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Not helpful</button>
+          <button type="button" data-feedback="wrong" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Wrong</button>
+          <button type="button" data-feedback="outdated" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Outdated</button>
           <button type="button" data-feedback="too_frequent" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Too frequent</button>
         </div>
       </article>
@@ -301,6 +306,80 @@
       if (result) result.textContent = JSON.stringify(data, null, 2);
     } catch (error) {
       if (result) result.textContent = error.message;
+    }
+  });
+
+  adminTestForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const payload = {
+      stream_key: form.elements.stream_key.value,
+      target_user_id: form.elements.target_user_id.value || 0,
+    };
+    const result = document.querySelector("[data-admin-intel-delivery-result]");
+    if (result) result.textContent = "Sending test alert...";
+    try {
+      const data = await json("/api/admin/intelligence/delivery/test", { method: "POST", body: JSON.stringify(payload) });
+      if (result) result.textContent = JSON.stringify(data, null, 2);
+    } catch (error) {
+      if (result) result.textContent = error.message;
+    }
+  });
+
+  adminSendForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const payload = {
+      event_id: form.elements.event_id.value,
+      mode: form.elements.mode.value,
+      target_user_id: form.elements.target_user_id.value || 0,
+      delivery_type: form.elements.delivery_type.value,
+      schedule_at: form.elements.schedule_at.value,
+      process_now: true,
+    };
+    const result = document.querySelector("[data-admin-intel-delivery-result]");
+    if (result) result.textContent = "Queueing alert...";
+    try {
+      const data = await json("/api/admin/intelligence/delivery/send", { method: "POST", body: JSON.stringify(payload) });
+      if (result) result.textContent = JSON.stringify(data, null, 2);
+    } catch (error) {
+      if (result) result.textContent = error.message;
+    }
+  });
+
+  document.addEventListener("click", async (event) => {
+    const result = document.querySelector("[data-admin-intel-delivery-result]");
+    const process = event.target.closest("[data-admin-intel-process-delivery]");
+    if (process) {
+      if (result) result.textContent = "Processing Intelligence delivery queue...";
+      try {
+        const data = await json("/api/admin/intelligence/delivery/process", { method: "POST", body: JSON.stringify({ limit: 100, digest_limit: 50 }) });
+        if (result) result.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        if (result) result.textContent = error.message;
+      }
+      return;
+    }
+    const digest = event.target.closest("[data-admin-intel-generate-digest]");
+    if (digest) {
+      if (result) result.textContent = "Generating digest jobs...";
+      try {
+        const data = await json("/api/admin/intelligence/delivery/digests", { method: "POST", body: JSON.stringify({ limit: 500, digest_type: "daily" }) });
+        if (result) result.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        if (result) result.textContent = error.message;
+      }
+      return;
+    }
+    const cancel = event.target.closest("[data-admin-intel-cancel-job]");
+    if (cancel) {
+      if (result) result.textContent = "Canceling delivery job...";
+      try {
+        const data = await json("/api/admin/intelligence/delivery/cancel", { method: "POST", body: JSON.stringify({ job_id: cancel.dataset.adminIntelCancelJob }) });
+        if (result) result.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        if (result) result.textContent = error.message;
+      }
     }
   });
 
