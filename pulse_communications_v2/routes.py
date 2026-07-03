@@ -531,6 +531,40 @@ def api_admin_intelligence_delivery_logs():
     return _json(pulsesoc_intelligence_engine.delivery_diagnostics(int(request.args.get("limit") or 50)))
 
 
+@comm_v2_blueprint.get("/api/admin/intelligence/cadence/status")
+def api_admin_intelligence_cadence_status():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    from services import pulsesoc_intelligence_engine
+
+    return _json({"ok": True, "cadence": pulsesoc_intelligence_engine.cadence_status()})
+
+
+@comm_v2_blueprint.post("/api/admin/intelligence/cadence/send-now")
+def api_admin_intelligence_cadence_send_now():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    payload = request.get_json(silent=True) or {}
+    target_user_id = int(payload.get("target_user_id") or 0)
+    if not target_user_id and not _admin_can_mass_send(admin):
+        return jsonify({"ok": False, "error": "cadence_send_forbidden", "message": "This admin role cannot send cadence alerts to subscribers."}), 403
+
+    def run():
+        from services import pulsesoc_intelligence_engine
+
+        result = pulsesoc_intelligence_engine.run_alert_cadence(
+            force=True,
+            target_user_id=target_user_id,
+            limit=int(payload.get("limit") or 500),
+        )
+        _log_intelligence_admin_action(admin, "intelligence_cadence_send_now", {"target_user_id": target_user_id, "result": result, "event_id": result.get("event_id")})
+        return result
+
+    return _timed_json("admin_intelligence_cadence_send_now", run)
+
+
 def _sse_response(generator):
     response = Response(stream_with_context(generator()), mimetype="text/event-stream")
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"

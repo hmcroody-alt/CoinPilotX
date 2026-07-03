@@ -175,6 +175,32 @@ CREATE TABLE IF NOT EXISTS intelligence_delivery_log (
     UNIQUE(event_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS intelligence_alert_cadence (
+    id BIGSERIAL PRIMARY KEY,
+    cadence_key TEXT UNIQUE NOT NULL,
+    interval_seconds INTEGER DEFAULT 10800,
+    status TEXT DEFAULT 'idle',
+    last_run_at TIMESTAMPTZ,
+    next_run_at TIMESTAMPTZ DEFAULT NOW(),
+    last_event_id BIGINT DEFAULT 0,
+    last_delivery_status TEXT,
+    locked_at TIMESTAMPTZ,
+    metadata_json JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_intel_alert_cadence_next
+    ON intelligence_alert_cadence(cadence_key, next_run_at, status);
+
+INSERT INTO intelligence_alert_cadence
+    (cadence_key, interval_seconds, status, next_run_at, metadata_json, created_at, updated_at)
+VALUES
+    ('global_three_hour_intelligence_alert', 10800, 'idle', NOW(),
+     '{"rule":"one_intelligence_alert_every_three_hours","fallback":"pulsesoc_discovery_or_daily_briefing"}'::jsonb,
+     NOW(), NOW())
+ON CONFLICT (cadence_key) DO NOTHING;
+
 INSERT INTO intelligence_streams
     (stream_key, display_name, purpose, category, default_priority, default_frequency,
      default_enabled, default_push, confidence_threshold, config_json, updated_at)

@@ -96,6 +96,25 @@
         </div>
         <a class="button" href="/api/admin/intelligence/delivery/logs">View delivery API</a>
       </div>
+      <section class="hero-stats cadence-panel" aria-label="Intelligence alert cadence">
+        <article><strong>3h</strong><span>Cadence</span></article>
+        <article><strong>{{ 'Due now' if dashboard.cadence.due_now else 'Scheduled' }}</strong><span>State</span></article>
+        <article><strong>{{ dashboard.cadence.next_run_at or 'Now' }}</strong><span>Next alert</span></article>
+        <article><strong>{{ dashboard.cadence.last_run_at or 'Not run yet' }}</strong><span>Last run</span></article>
+        <article><strong>{{ dashboard.cadence.last_event_id or 0 }}</strong><span>Last event</span></article>
+      </section>
+      <form data-admin-intel-cadence>
+        <label>
+          Target user id
+          <input name="target_user_id" inputmode="numeric" placeholder="All eligible subscribers if blank">
+        </label>
+        <label>
+          Delivery limit
+          <input name="limit" inputmode="numeric" value="500">
+        </label>
+        <button type="submit">Send next alert now</button>
+        <a class="button" href="/api/admin/intelligence/cadence/status">View cadence API</a>
+      </form>
       <form data-admin-intel-test-alert>
         <label>
           Test stream

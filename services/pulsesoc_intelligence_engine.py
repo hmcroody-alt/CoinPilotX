@@ -49,6 +49,16 @@ STREAM_KEYS = {
 }
 PRIORITIES = {"breaking", "urgent", "high", "normal", "low"}
 FREQUENCIES = {"realtime", "digest", "morning", "afternoon", "evening", "weekly", "monthly", "muted"}
+ALERT_CADENCE_KEY = "global_three_hour_intelligence_alert"
+ALERT_CADENCE_SECONDS = 3 * 60 * 60
+ALERT_CADENCE_PRIORITY_STREAMS = [
+    "security_pulse",
+    "world_pulse",
+    "crypto_pulse",
+    "market_pulse",
+    "pulsesoc_discoveries",
+    "pulsesoc_pulse",
+]
 
 USER_SURFACES: dict[str, dict[str, Any]] = {
     "alerts": {
@@ -739,6 +749,24 @@ def ensure_schema(conn: Any | None = None) -> None:
         )
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS intelligence_alert_cadence (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cadence_key TEXT UNIQUE,
+            interval_seconds INTEGER DEFAULT 10800,
+            status TEXT DEFAULT 'idle',
+            last_run_at TEXT,
+            next_run_at TEXT,
+            last_event_id INTEGER DEFAULT 0,
+            last_delivery_status TEXT,
+            locked_at TEXT,
+            metadata_json TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+        """
+    )
     indexes = [
         "CREATE INDEX IF NOT EXISTS idx_user_intel_streams_user ON user_intelligence_streams(user_id, enabled, stream_key)",
         "CREATE INDEX IF NOT EXISTS idx_intel_events_stream_created ON intelligence_events(stream_key, status, created_at)",
@@ -750,11 +778,13 @@ def ensure_schema(conn: Any | None = None) -> None:
         "CREATE INDEX IF NOT EXISTS idx_intel_delivery_jobs_event ON intelligence_delivery_jobs(event_id, user_id, stream_key)",
         "CREATE INDEX IF NOT EXISTS idx_intel_delivery_user ON intelligence_delivery_log(user_id, stream_key, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_intel_feedback_user ON intelligence_feedback(user_id, stream_key, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_intel_alert_cadence_next ON intelligence_alert_cadence(cadence_key, next_run_at, status)",
     ]
     for sql in indexes:
         cur.execute(sql)
     conn.commit()
     seed_defaults(conn)
+    seed_cadence(conn)
     if owns_conn:
         conn.close()
 
@@ -834,6 +864,35 @@ def seed_defaults(conn: Any | None = None) -> None:
             "UPDATE intelligence_sources SET status=?, updated_at=? WHERE source_key=?",
             (status, now, source["source_key"]),
         )
+    conn.commit()
+    if owns_conn:
+        conn.close()
+
+
+def seed_cadence(conn: Any | None = None) -> None:
+    owns_conn = conn is None
+    conn = conn or connect()
+    cur = conn.cursor()
+    now = now_iso()
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO intelligence_alert_cadence
+        (cadence_key, interval_seconds, status, next_run_at, metadata_json, created_at, updated_at)
+        VALUES (?, ?, 'idle', ?, ?, ?, ?)
+        """,
+        (
+            ALERT_CADENCE_KEY,
+            ALERT_CADENCE_SECONDS,
+            now,
+            _json_dumps({
+                "rule": "one_intelligence_alert_every_three_hours",
+                "priority_order": ALERT_CADENCE_PRIORITY_STREAMS,
+                "fallback": "pulsesoc_discovery_or_daily_briefing",
+            }),
+            now,
+            now,
+        ),
+    )
     conn.commit()
     if owns_conn:
         conn.close()
@@ -1327,6 +1386,258 @@ def _notification_type_for_delivery(delivery_type: str) -> str:
     if delivery_type == "forecast":
         return "intelligence_forecast"
     return "intelligence_pulse"
+
+
+def _parse_iso(value: Any) -> datetime | None:
+    try:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)
+    except Exception:
+        return None
+
+
+def _cadence_bucket(now: datetime | None = None) -> int:
+    current = now or datetime.utcnow()
+    return int(current.timestamp() // ALERT_CADENCE_SECONDS)
+
+
+def _cadence_fallback_signal(bucket: int | None = None) -> dict[str, Any]:
+    bucket = int(bucket if bucket is not None else _cadence_bucket())
+    fallbacks = [
+        {
+            "event_type": "feature_discovery",
+            "headline": "Pulse AI can explain your Intelligence Streams",
+            "summary": "Ask Pulse AI to summarize your signals, explain an alert, focus Crypto Pulse on Bitcoin, or mute a noisy stream.",
+            "why_it_matters": "Users can control Intelligence naturally without exposing private conversations to the learning loop.",
+            "expected_impact": "More users can get value from Pulse Alerts without repeated onboarding popups.",
+            "deep_link": "/pulse/alerts",
+        },
+        {
+            "event_type": "feature_discovery",
+            "headline": "Manage My Alerts keeps every signal under your control",
+            "summary": "You can pause streams, change frequency, save useful Pulses, and lower noisy categories from Pulse Alerts.",
+            "why_it_matters": "Intelligence should feel useful, not loud. Controls stay close to every signal.",
+            "expected_impact": "Users can tune delivery without missing important Security, World, Crypto, or Market signals.",
+            "deep_link": "/pulse/alerts",
+        },
+        {
+            "event_type": "daily_briefing",
+            "headline": "Daily Briefing turns many signals into one clean Pulse",
+            "summary": "Lower-priority Intelligence can wait for a briefing while urgent Security and World signals stay immediate.",
+            "why_it_matters": "Digest mode reduces noise while preserving important updates.",
+            "expected_impact": "PulseSoc can keep users informed without flooding the lock screen.",
+            "deep_link": "/pulse/briefing",
+        },
+        {
+            "event_type": "feature_discovery",
+            "headline": "PulseSoc feature alerts now use real locked-screen delivery",
+            "summary": "Eligible Intelligence Pulses use the same central push route as messages, comments, and reactions.",
+            "why_it_matters": "Important signals can reach users even when PulseSoc is not open.",
+            "expected_impact": "Reliable alerts make Intelligence feel present without adding another notification system.",
+            "deep_link": "/pulse/alerts",
+        },
+    ]
+    item = fallbacks[bucket % len(fallbacks)]
+    return {
+        "stream_key": "pulsesoc_discoveries",
+        "event_type": item["event_type"],
+        "event_key": f"cadence:fallback:{bucket}:{item['event_type']}",
+        "headline": item["headline"],
+        "summary": item["summary"],
+        "why_it_matters": item["why_it_matters"],
+        "expected_impact": item["expected_impact"],
+        "source_keys": ["pulsesoc_feature_registry"],
+        "importance_score": 72,
+        "freshness_score": 92,
+        "global_impact": 44,
+        "duplicate_confidence": 50,
+        "spam_probability": 4,
+        "priority": "normal",
+        "metadata": {
+            "cadence_fallback": True,
+            "cadence_bucket": bucket,
+            "deep_link": item["deep_link"],
+            "actions": default_actions_for_signal("pulsesoc_discoveries", item["event_type"], item["deep_link"]),
+        },
+    }
+
+
+def _select_cadence_event(cur: Any) -> dict[str, Any] | None:
+    now = now_iso()
+    for index, stream_key in enumerate(ALERT_CADENCE_PRIORITY_STREAMS):
+        cur.execute(
+            """
+            SELECT e.*
+            FROM intelligence_events e
+            WHERE e.stream_key=? AND e.status='accepted'
+              AND COALESCE(e.confidence_score, 0) >= 62
+              AND (COALESCE(e.expires_at, '')='' OR e.expires_at > ?)
+              AND NOT EXISTS (
+                SELECT 1 FROM intelligence_delivery_log l
+                WHERE l.event_id=e.id AND l.delivery_status IN ('sent', 'digest_sent')
+              )
+            ORDER BY
+              CASE e.priority
+                WHEN 'breaking' THEN 5
+                WHEN 'urgent' THEN 4
+                WHEN 'high' THEN 3
+                WHEN 'normal' THEN 2
+                ELSE 1
+              END DESC,
+              e.confidence_score DESC,
+              e.created_at DESC
+            LIMIT 1
+            """,
+            (stream_key, now),
+        )
+        row = cur.fetchone()
+        if row:
+            event = format_event(row)
+            event["cadence_rank"] = index + 1
+            return event
+    return None
+
+
+def cadence_status(conn: Any | None = None) -> dict[str, Any]:
+    owns_conn = conn is None
+    conn = conn or connect()
+    try:
+        ensure_schema(conn)
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM intelligence_alert_cadence WHERE cadence_key=? LIMIT 1", (ALERT_CADENCE_KEY,))
+        row = cur.fetchone()
+        if not row:
+            seed_cadence(conn)
+            cur.execute("SELECT * FROM intelligence_alert_cadence WHERE cadence_key=? LIMIT 1", (ALERT_CADENCE_KEY,))
+            row = cur.fetchone()
+        next_run_at = _row_get(row, "next_run_at") or now_iso()
+        due = (_parse_iso(next_run_at) or datetime.utcnow()) <= datetime.utcnow()
+        return {
+            "cadence_key": ALERT_CADENCE_KEY,
+            "interval_seconds": _int(_row_get(row, "interval_seconds"), ALERT_CADENCE_SECONDS),
+            "interval_hours": 3,
+            "status": _row_get(row, "status") or "idle",
+            "last_run_at": _row_get(row, "last_run_at") or "",
+            "next_run_at": next_run_at,
+            "last_event_id": _int(_row_get(row, "last_event_id")),
+            "last_delivery_status": _row_get(row, "last_delivery_status") or "",
+            "due_now": bool(due),
+            "priority_order": ALERT_CADENCE_PRIORITY_STREAMS,
+            "metadata": _json_loads(_row_get(row, "metadata_json"), {}),
+        }
+    finally:
+        if owns_conn:
+            conn.close()
+
+
+def run_alert_cadence(*, force: bool = False, target_user_id: int = 0, limit: int = 500) -> dict[str, Any]:
+    conn = connect()
+    event: dict[str, Any] | None = None
+    cadence_started = datetime.utcnow()
+    now = now_iso()
+    try:
+        ensure_schema(conn)
+        state = cadence_status(conn)
+        if not force and not state.get("due_now"):
+            return {"ok": True, "status": "not_due", "cadence": state, "message": "Next Intelligence alert is not due yet."}
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE intelligence_alert_cadence
+            SET status='running', locked_at=?, updated_at=?
+            WHERE cadence_key=?
+            """,
+            (now, now, ALERT_CADENCE_KEY),
+        )
+        event = _select_cadence_event(cur)
+        conn.commit()
+    finally:
+        conn.close()
+
+    source = "accepted_signal"
+    delivery_type = "instant"
+    if not event:
+        source = "pulsesoc_discovery_fallback"
+        fallback = ingest_signal(_cadence_fallback_signal(_cadence_bucket(cadence_started)), deliver=False)
+        if not fallback.get("ok"):
+            _finish_alert_cadence(0, "failed_fallback_ingest", {"fallback": fallback, "source": source})
+            return {"ok": False, "status": "failed", "error": "fallback_ingest_failed", "fallback": fallback}
+        event_id = _int(fallback.get("event_id"))
+        conn = connect()
+        try:
+            ensure_schema(conn)
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM intelligence_events WHERE id=? LIMIT 1", (event_id,))
+            row = cur.fetchone()
+            event = format_event(row) if row else None
+        finally:
+            conn.close()
+        delivery_type = "feature_discovery"
+    if not event:
+        _finish_alert_cadence(0, "failed_no_event", {"source": source})
+        return {"ok": False, "status": "failed", "error": "no_event_available"}
+
+    event_id = int(event.get("id") or 0)
+    queued = queue_event_delivery(
+        event_id,
+        target_user_id=int(target_user_id or 0),
+        limit=max(1, min(int(limit or 500), 5000)),
+        delivery_type=delivery_type,
+        all_users=not bool(target_user_id),
+    )
+    processed = process_delivery_queue(limit=max(1, min(int(limit or 500), 5000)))
+    status = "sent" if (processed.get("sent") or 0) > 0 else ("queued" if (queued.get("queued") or queued.get("digest_queued") or 0) > 0 else "skipped")
+    cadence = _finish_alert_cadence(event_id, status, {
+        "source": source,
+        "delivery_type": delivery_type,
+        "queue": queued,
+        "processing": processed,
+        "target_user_id": int(target_user_id or 0),
+        "limit": int(limit or 500),
+    })
+    return {
+        "ok": True,
+        "status": status,
+        "event_id": event_id,
+        "source": source,
+        "delivery_type": delivery_type,
+        "event": {"headline": event.get("headline"), "stream_key": event.get("stream_key"), "priority": event.get("priority"), "confidence_score": event.get("confidence_score")},
+        "queue": queued,
+        "processing": processed,
+        "cadence": cadence,
+    }
+
+
+def _finish_alert_cadence(event_id: int, delivery_status: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        now_dt = datetime.utcnow().replace(microsecond=0)
+        next_dt = now_dt + timedelta(seconds=ALERT_CADENCE_SECONDS)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE intelligence_alert_cadence
+            SET status='idle', last_run_at=?, next_run_at=?, last_event_id=?, last_delivery_status=?,
+                locked_at='', metadata_json=?, updated_at=?
+            WHERE cadence_key=?
+            """,
+            (
+                now_dt.isoformat() + "Z",
+                next_dt.isoformat() + "Z",
+                int(event_id or 0),
+                _compact(delivery_status or "unknown", 80),
+                _json_dumps(metadata or {}),
+                now_dt.isoformat() + "Z",
+                ALERT_CADENCE_KEY,
+            ),
+        )
+        conn.commit()
+        return cadence_status(conn)
+    finally:
+        conn.close()
 
 
 def _target_user_ids(cur: Any, stream_key: str, target_user_id: int = 0, limit: int = 500, conn: Any | None = None, all_users: bool = False) -> list[int]:
@@ -2346,6 +2657,7 @@ def admin_dashboard(stream_key: str = "") -> dict[str, Any]:
             for row in cur.fetchall()
         ]
         sources = source_health()
+        cadence = cadence_status(conn)
         return {
             "ok": True,
             "center_name": ADMIN_CENTER_NAME,
@@ -2365,6 +2677,7 @@ def admin_dashboard(stream_key: str = "") -> dict[str, Any]:
                 "delivery_jobs_queued": counts.get("delivery_jobs_queued", 0),
                 "delivery_jobs_failed": counts.get("delivery_jobs_failed", 0),
             },
+            "cadence": cadence,
             "privacy": {
                 "private_conversation_learning": "opt_in_only",
                 "private_messages_used_by_collectors": False,

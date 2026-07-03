@@ -3,6 +3,7 @@
   const adminForm = document.querySelector("[data-admin-intel-collect]");
   const adminTestForm = document.querySelector("[data-admin-intel-test-alert]");
   const adminSendForm = document.querySelector("[data-admin-intel-send-event]");
+  const adminCadenceForm = document.querySelector("[data-admin-intel-cadence]");
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
   let state = {};
 
@@ -341,6 +342,23 @@
     if (result) result.textContent = "Queueing alert...";
     try {
       const data = await json("/api/admin/intelligence/delivery/send", { method: "POST", body: JSON.stringify(payload) });
+      if (result) result.textContent = JSON.stringify(data, null, 2);
+    } catch (error) {
+      if (result) result.textContent = error.message;
+    }
+  });
+
+  adminCadenceForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const payload = {
+      target_user_id: form.elements.target_user_id.value || 0,
+      limit: Number(form.elements.limit.value || 500),
+    };
+    const result = document.querySelector("[data-admin-intel-delivery-result]");
+    if (result) result.textContent = "Sending next cadence alert...";
+    try {
+      const data = await json("/api/admin/intelligence/cadence/send-now", { method: "POST", body: JSON.stringify(payload) });
       if (result) result.textContent = JSON.stringify(data, null, 2);
     } catch (error) {
       if (result) result.textContent = error.message;
