@@ -192,7 +192,11 @@ VALUES
     ('music_pulse', 'Music Pulse',
      'Trending songs, emerging artists, PulseSoc Music releases, and popular audio.',
      'music', 'low', 'digest', TRUE, FALSE, 58,
-     '{"examples":["Trending songs.","Emerging artists.","Popular audio."]}'::jsonb, NOW())
+     '{"examples":["Trending songs.","Emerging artists.","Popular audio."]}'::jsonb, NOW()),
+    ('system_pulse', 'System Pulse',
+     'Maintenance, app version, incident, and rollout intelligence from PulseSoc system events.',
+     'system', 'high', 'realtime', TRUE, FALSE, 82,
+     '{"examples":["Maintenance notice.","New app version.","Incident resolved."]}'::jsonb, NOW())
 ON CONFLICT (stream_key) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     purpose = EXCLUDED.purpose,
@@ -211,11 +215,14 @@ VALUES
     ('pulsesoc_feature_registry', 'PulseSoc Feature Registry', 'pulsesoc_discoveries', 'internal', 92, 'configured', 60, '[]'::jsonb, NOW()),
     ('pulsesoc_telemetry', 'PulseSoc Telemetry', 'pulsesoc_pulse', 'internal', 88, 'configured', 15, '[]'::jsonb, NOW()),
     ('coingecko', 'CoinGecko', 'crypto_pulse', 'market_api', 78, 'configured', 60, '[]'::jsonb, NOW()),
-    ('coinmarketcap', 'CoinMarketCap', 'crypto_pulse', 'market_api', 78, 'requires_setup', 60, '["COINMARKETCAP_API_KEY"]'::jsonb, NOW()),
-    ('polygon', 'Polygon', 'market_pulse', 'market_api', 78, 'requires_setup', 60, '["POLYGON_API_KEY"]'::jsonb, NOW()),
-    ('alpha_vantage', 'Alpha Vantage', 'market_pulse', 'market_api', 74, 'requires_setup', 60, '["ALPHA_VANTAGE_API_KEY"]'::jsonb, NOW()),
-    ('reuters', 'Reuters', 'world_pulse', 'news', 86, 'requires_setup', 300, '["REUTERS_API_KEY"]'::jsonb, NOW()),
-    ('ap_news', 'Associated Press', 'world_pulse', 'news', 86, 'requires_setup', 300, '["AP_NEWS_API_KEY"]'::jsonb, NOW()),
+    ('binance', 'Binance Public Market Data', 'crypto_pulse', 'market_api', 74, 'configured', 30, '[]'::jsonb, NOW()),
+    ('kraken', 'Kraken Public Market Data', 'crypto_pulse', 'market_api', 74, 'configured', 30, '[]'::jsonb, NOW()),
+    ('coinmarketcap', 'CoinMarketCap', 'crypto_pulse', 'market_api', 78, 'config_missing', 60, '["COINMARKETCAP_API_KEY"]'::jsonb, NOW()),
+    ('yahoo_finance', 'Yahoo Finance Public Market Data', 'market_pulse', 'market_api', 70, 'configured', 90, '[]'::jsonb, NOW()),
+    ('polygon', 'Polygon', 'market_pulse', 'market_api', 78, 'config_missing', 60, '["POLYGON_API_KEY"]'::jsonb, NOW()),
+    ('alpha_vantage', 'Alpha Vantage', 'market_pulse', 'market_api', 74, 'config_missing', 60, '["ALPHA_VANTAGE_API_KEY"]'::jsonb, NOW()),
+    ('reuters', 'Reuters', 'world_pulse', 'news', 86, 'config_missing', 300, '["REUTERS_API_KEY"]'::jsonb, NOW()),
+    ('ap_news', 'Associated Press', 'world_pulse', 'news', 86, 'config_missing', 300, '["AP_NEWS_API_KEY"]'::jsonb, NOW()),
     ('nasa', 'NASA', 'world_pulse', 'official', 90, 'configured', 300, '[]'::jsonb, NOW()),
     ('noaa', 'NOAA', 'world_pulse', 'official', 90, 'configured', 300, '[]'::jsonb, NOW()),
     ('usgs', 'USGS', 'world_pulse', 'official', 90, 'configured', 300, '[]'::jsonb, NOW()),
@@ -224,8 +231,11 @@ VALUES
     ('microsoft_security', 'Microsoft Security', 'security_pulse', 'official', 88, 'configured', 600, '[]'::jsonb, NOW()),
     ('apple_security', 'Apple Security', 'security_pulse', 'official', 88, 'configured', 600, '[]'::jsonb, NOW()),
     ('google_security', 'Google Security', 'security_pulse', 'official', 88, 'configured', 600, '[]'::jsonb, NOW()),
+    ('openai_updates', 'OpenAI Official Updates', 'technology_pulse', 'official', 86, 'configured', 900, '[]'::jsonb, NOW()),
+    ('apple_newsroom', 'Apple Newsroom', 'technology_pulse', 'official', 84, 'configured', 900, '[]'::jsonb, NOW()),
     ('creator_analytics', 'Creator Analytics', 'creator_pulse', 'internal', 84, 'configured', 900, '[]'::jsonb, NOW()),
-    ('pulse_music', 'PulseSoc Music', 'music_pulse', 'internal', 82, 'configured', 300, '[]'::jsonb, NOW())
+    ('pulse_music', 'PulseSoc Music', 'music_pulse', 'internal', 82, 'configured', 300, '[]'::jsonb, NOW()),
+    ('pulsesoc_system', 'PulseSoc System Events', 'system_pulse', 'internal', 92, 'configured', 60, '[]'::jsonb, NOW())
 ON CONFLICT (source_key) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     stream_key = EXCLUDED.stream_key,

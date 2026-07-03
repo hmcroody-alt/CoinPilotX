@@ -281,13 +281,13 @@
   },
   {
     "feature": "App Store availability",
-    "summary": "PulseSoc iOS availability depends on App Store Connect status, pricing/availability, agreements, and Apple propagation.",
-    "where_to_find_it": "Use the App Store app or direct App Store link once the app is live.",
-    "how_to_use_it": "Search for PulseSoc in the correct country storefront or use the public link after release.",
-    "common_questions": ["Why is the app not visible?", "What does Ready for Distribution mean?"],
-    "troubleshooting": ["Check Ready for Sale, manual release, pricing/availability, agreements, and regional availability."],
-    "related_features": ["Mobile PWA behavior", "Push notifications"],
-    "safety_notes": ["Install only from official PulseSoc/App Store links."]
+    "summary": "PulseSoc iOS availability uses the official App Store page and PulseSoc action buttons for download/share prompts.",
+    "where_to_find_it": "Use the App Store app, PulseSoc Intelligence action buttons, or Pulse AI guidance.",
+    "how_to_use_it": "Tap Download PulseSoc, Open PulseSoc, Share PulseSoc, Invite Friends, or Join the Galaxy when those buttons appear. Pulse AI should show or describe the official download action instead of dumping a raw URL unless the user explicitly asks.",
+    "common_questions": ["Where can I download PulseSoc?", "How do I share PulseSoc?", "Why is the app not visible?"],
+    "troubleshooting": ["If the app is not visible, check storefront region, release status, pricing/availability, agreements, and propagation delay."],
+    "related_features": ["Mobile PWA behavior", "Push notifications", "Galaxy Intelligence Center"],
+    "safety_notes": ["Install only from official PulseSoc/App Store links.", "Do not trust random download links sent by strangers."]
   },
   {
     "feature": "Mobile PWA behavior",

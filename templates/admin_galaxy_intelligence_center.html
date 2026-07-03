@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Galaxy Intelligence Center | PulseSoc Admin</title>
-  <link rel="stylesheet" href="/static/css/pulsesoc_intelligence_center.css?v=20260703a">
+  <link rel="stylesheet" href="/static/css/pulsesoc_intelligence_center.css?v=20260703b">
 </head>
 <body class="galaxy-intelligence-page is-admin">
   <main class="galaxy-intelligence-shell">
@@ -44,6 +44,7 @@
           Stream
           <select name="stream_key">
             <option value="pulsesoc_discoveries">PulseSoc Discoveries</option>
+            <option value="pulsesoc_pulse">PulseSoc Pulse</option>
             <option value="security_pulse">Security Pulse</option>
             <option value="crypto_pulse">Crypto Pulse</option>
             <option value="market_pulse">Market Pulse</option>
@@ -51,14 +52,21 @@
             <option value="technology_pulse">Technology Pulse</option>
             <option value="creator_pulse">Creator Pulse</option>
             <option value="music_pulse">Music Pulse</option>
+            <option value="system_pulse">System Pulse</option>
           </select>
+        </label>
+        <label>
+          Limit
+          <input name="limit" inputmode="numeric" value="20">
         </label>
         <label>
           Target user id
           <input name="target_user_id" inputmode="numeric" placeholder="Optional">
         </label>
+        <label class="check"><input type="checkbox" name="all_streams"> Run all streams</label>
+        <label class="check"><input type="checkbox" name="dry_run" checked> Dry run only</label>
         <label class="check"><input type="checkbox" name="deliver"> Deliver to target user</label>
-        <button type="submit">Run internal collector</button>
+        <button type="submit">Run collectors</button>
       </form>
       <pre data-admin-intel-result>{{ collect_result|tojson(indent=2) }}</pre>
     </section>
@@ -104,6 +112,6 @@
       </div>
     </section>
   </main>
-  <script src="/static/js/pulsesoc_intelligence_center.js?v=20260703a" defer></script>
+  <script src="/static/js/pulsesoc_intelligence_center.js?v=20260703b" defer></script>
 </body>
 </html>

@@ -347,11 +347,14 @@ def api_admin_galaxy_intelligence_collect():
         return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
 
     def run():
-        from services import pulsesoc_intelligence_engine
+        from services.intelligence_collectors import run_collectors
 
         payload = request.get_json(silent=True) or {}
-        return pulsesoc_intelligence_engine.run_internal_collector(
-            payload.get("stream_key") or "pulsesoc_discoveries",
+        return run_collectors(
+            stream_key=payload.get("stream_key") or "pulsesoc_discoveries",
+            all_streams=bool(payload.get("all_streams")),
+            dry_run=bool(payload.get("dry_run", True)),
+            limit=int(payload.get("limit") or 20),
             target_user_id=int(payload.get("target_user_id") or 0),
             deliver=bool(payload.get("deliver")),
         )

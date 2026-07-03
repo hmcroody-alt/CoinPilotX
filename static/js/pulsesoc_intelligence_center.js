@@ -33,6 +33,55 @@
     node.dataset.kind = kind;
   }
 
+  function isSafeExternalUrl(url) {
+    try {
+      const parsed = new URL(String(url || ""), window.location.origin);
+      return parsed.protocol === "https:" && ["apps.apple.com", "pulsesoc.com"].includes(parsed.hostname);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function isSafeInternalUrl(url) {
+    const value = String(url || "");
+    return value.startsWith("/") && !value.startsWith("//") && !value.toLowerCase().startsWith("/javascript:");
+  }
+
+  function actionIcon(icon) {
+    return {
+      apple: "▣",
+      share: "↗",
+      spark: "✦",
+      music: "♪",
+    }[String(icon || "").toLowerCase()] || "✦";
+  }
+
+  function renderSignalCtas(actions = [], eventId = 0) {
+    const safe = actions.filter((action) => {
+      if (!action || !action.label || !action.type) return false;
+      if (action.type === "deep_link") return isSafeInternalUrl(action.url);
+      if (action.type === "app_store") return isSafeExternalUrl(action.url);
+      if (action.type === "share") return isSafeExternalUrl(action.share_url || action.url);
+      return false;
+    }).slice(0, 3);
+    if (!safe.length) return "";
+    return `
+      <div class="signal-cta-row" aria-label="Pulse actions">
+        ${safe.map((action, index) => `
+          <button type="button"
+            class="signal-cta ${esc(action.style || "primary")}"
+            data-signal-action="${esc(action.type)}"
+            data-action-index="${index}"
+            data-event-id="${Number(eventId || 0)}"
+            aria-label="${esc(action.label)}">
+            <span aria-hidden="true">${esc(actionIcon(action.icon))}</span>
+            ${esc(action.label)}
+          </button>
+        `).join("")}
+      </div>
+    `;
+  }
+
   function renderSummary(summary = {}) {
     document.querySelectorAll("[data-summary]").forEach((node) => {
       const key = node.dataset.summary;
@@ -84,6 +133,7 @@
         <small>${esc(event.confidence_label)} confidence · ${esc(event.priority)} · ${Number(event.read_time_seconds || 30)}s read</small>
         <p><strong>Why it matters:</strong> ${esc(event.why_it_matters)}</p>
         ${event.expected_impact ? `<p><strong>Expected impact:</strong> ${esc(event.expected_impact)}</p>` : ""}
+        ${renderSignalCtas(event.actions || [], event.id)}
         <div class="signal-actions">
           <button type="button" data-feedback="opened" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Useful</button>
           <button type="button" data-feedback="saved" data-event-id="${Number(event.id || 0)}" data-stream-key="${esc(event.stream_key)}">Save</button>
@@ -167,6 +217,41 @@
       } catch (error) {
         setStatus(error.message, "error");
       }
+      return;
+    }
+    const signalAction = event.target.closest("[data-signal-action]");
+    if (signalAction) {
+      const eventId = Number(signalAction.dataset.eventId || 0);
+      const index = Number(signalAction.dataset.actionIndex || 0);
+      const signal = (state.events || []).find((item) => Number(item.id || 0) === eventId);
+      const action = signal && Array.isArray(signal.actions) ? signal.actions[index] : null;
+      if (!action) return;
+      if (action.type === "deep_link" && isSafeInternalUrl(action.url)) {
+        window.location.assign(action.url);
+        return;
+      }
+      if (action.type === "app_store" && isSafeExternalUrl(action.url)) {
+        window.open(action.url, "_blank", "noopener,noreferrer");
+        return;
+      }
+      if (action.type === "share" && isSafeExternalUrl(action.share_url || action.url)) {
+        const shareUrl = action.share_url || action.url;
+        if (navigator.share) {
+          try {
+            await navigator.share({ title: action.share_title || "PulseSoc", text: action.share_text || "Join me on PulseSoc.", url: shareUrl });
+            setStatus("Share sheet opened.");
+          } catch (_) {
+            setStatus("Share canceled.");
+          }
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          setStatus("PulseSoc link copied.");
+        } catch (_) {
+          setStatus("Share link could not be copied.", "error");
+        }
+      }
     }
   });
 
@@ -185,6 +270,9 @@
     const payload = {
       stream_key: form.elements.stream_key.value,
       target_user_id: form.elements.target_user_id.value || 0,
+      limit: Number(form.elements.limit.value || 20),
+      all_streams: Boolean(form.elements.all_streams.checked),
+      dry_run: Boolean(form.elements.dry_run.checked),
       deliver: Boolean(form.elements.deliver.checked),
     };
     const result = document.querySelector("[data-admin-intel-result]");

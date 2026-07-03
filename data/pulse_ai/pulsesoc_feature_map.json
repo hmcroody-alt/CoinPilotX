@@ -196,5 +196,14 @@
     "description": "Identity, avatar, creator information, posts, and profile preferences.",
     "user_help": "Tap Profile in the bottom navigation.",
     "related": ["privacy.notifications", "verification.badges", "creator.tools"]
+  },
+  {
+    "id": "app_store.download_share",
+    "name": "Download and Share PulseSoc",
+    "status": "active",
+    "entry_points": ["PulseSoc Pulse action buttons", "Pulse AI guidance", "Share PulseSoc actions"],
+    "description": "Official download and sharing actions use polished PulseSoc buttons instead of raw links.",
+    "user_help": "Use Download PulseSoc, Open PulseSoc, Share PulseSoc, Invite Friends, or Join the Galaxy buttons when they appear. Pulse AI can guide users to the official App Store page without dumping the raw link unless asked.",
+    "related": ["intelligence.center", "pulse_ai.chat", "notifications.center"]
   }
 ]

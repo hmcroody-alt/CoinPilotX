@@ -14,6 +14,7 @@ import os
 import re
 import secrets
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 from typing import Any
 
 from services import db as db_service
@@ -22,6 +23,11 @@ from services import pulsesoc_notification_system
 
 INTERNAL_CODENAME = "LogiNexus Intelligence Engine"
 PUBLIC_CENTER_NAME = "Galaxy Intelligence Center"
+PULSESOC_APP_STORE_URL = os.getenv(
+    "PULSESOC_APP_STORE_URL",
+    "https://apps.apple.com/us/app/pulsesoc/id6777591572",
+).strip()
+ALLOWED_ACTION_DOMAINS = {"apps.apple.com", "pulsesoc.com"}
 CONFIDENCE_LABELS = [
     (88, "Very High"),
     (74, "High"),
@@ -38,6 +44,7 @@ STREAM_KEYS = {
     "pulsesoc_pulse",
     "creator_pulse",
     "music_pulse",
+    "system_pulse",
 }
 PRIORITIES = {"breaking", "urgent", "high", "normal", "low"}
 FREQUENCIES = {"realtime", "digest", "morning", "afternoon", "evening", "weekly", "monthly", "muted"}
@@ -108,6 +115,107 @@ def _confidence_label(score: int) -> str:
 def _source_env_present(source: dict[str, Any]) -> bool:
     env = source.get("required_env") or []
     return all(os.getenv(str(key or "").strip(), "").strip() for key in env)
+
+
+def _safe_external_url(value: Any) -> str:
+    url = str(value or "").strip()
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.netloc.lower() not in ALLOWED_ACTION_DOMAINS:
+        return ""
+    return url
+
+
+def _safe_internal_url(value: Any) -> str:
+    url = str(value or "").strip()
+    if not url.startswith("/") or url.startswith("//"):
+        return ""
+    lowered = url.lower().strip()
+    if lowered.startswith("/javascript:") or "\x00" in lowered:
+        return ""
+    return url[:500]
+
+
+def _action(label: str, action_type: str, *, url: str = "", style: str = "primary", icon: str = "spark", **extra: Any) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "label": _compact(label, 42),
+        "type": _slug(action_type, 30),
+        "style": _slug(style, 20),
+        "icon": _slug(icon, 24),
+    }
+    if url:
+        item["url"] = url
+    for key, value in extra.items():
+        if value not in (None, ""):
+            item[key] = _compact(value, 500) if isinstance(value, str) else value
+    return item
+
+
+def validate_actions(actions: Any) -> list[dict[str, Any]]:
+    if not isinstance(actions, list):
+        return []
+    safe: list[dict[str, Any]] = []
+    for raw in actions[:4]:
+        if not isinstance(raw, dict):
+            continue
+        action_type = _slug(raw.get("type"), 30)
+        label = _compact(raw.get("label"), 42)
+        if not label or action_type not in {"app_store", "share", "deep_link"}:
+            continue
+        item = _action(label, action_type, style=raw.get("style") or "primary", icon=raw.get("icon") or "spark")
+        if action_type == "deep_link":
+            url = _safe_internal_url(raw.get("url"))
+            if not url:
+                continue
+            item["url"] = url
+        elif action_type == "app_store":
+            url = _safe_external_url(raw.get("url") or PULSESOC_APP_STORE_URL)
+            if not url:
+                continue
+            item["url"] = url
+            item["visibility"] = _slug(raw.get("visibility") or "external_or_not_installed", 40)
+        elif action_type == "share":
+            share_url = _safe_external_url(raw.get("share_url") or raw.get("url") or PULSESOC_APP_STORE_URL)
+            if not share_url:
+                continue
+            item["share_url"] = share_url
+            item["share_title"] = _compact(raw.get("share_title") or "PulseSoc", 90)
+            item["share_text"] = _compact(raw.get("share_text") or "Join me on PulseSoc and explore the galaxy.", 220)
+        safe.append(item)
+    return safe
+
+
+def default_actions_for_signal(stream_key: str, event_type: str = "", deep_link: str = "") -> list[dict[str, Any]]:
+    stream_key = _slug(stream_key)
+    event_type = _slug(event_type, 40)
+    deep = _safe_internal_url(deep_link) or "/pulse/intelligence"
+    if stream_key == "pulsesoc_pulse":
+        return validate_actions([
+            _action("Explore Feature", "deep_link", url=deep, icon="spark", style="primary"),
+            _action("Share PulseSoc", "share", icon="share", style="secondary", share_url=PULSESOC_APP_STORE_URL, share_title="PulseSoc", share_text="Join me on PulseSoc and explore the galaxy."),
+        ])
+    if stream_key == "pulsesoc_discoveries":
+        return validate_actions([
+            _action("Try It", "deep_link", url=deep, icon="spark", style="primary"),
+            _action("Invite Friends", "share", icon="share", style="secondary", share_url=PULSESOC_APP_STORE_URL, share_title="PulseSoc", share_text="Join me on PulseSoc and explore the galaxy."),
+        ])
+    if stream_key == "system_pulse" and event_type in {"app_update", "launch", "release", "new_version", "system_update"}:
+        return validate_actions([
+            _action("Open PulseSoc", "deep_link", url=deep, icon="spark", style="primary"),
+            _action("Download PulseSoc", "app_store", url=PULSESOC_APP_STORE_URL, icon="apple", style="secondary"),
+        ])
+    if stream_key == "music_pulse":
+        return validate_actions([
+            _action("Explore Music", "deep_link", url="/pulse/music", icon="music", style="primary"),
+            _action("Share PulseSoc", "share", icon="share", style="secondary", share_url=PULSESOC_APP_STORE_URL, share_title="PulseSoc", share_text="Discover PulseSoc Music with me."),
+        ])
+    if stream_key == "creator_pulse":
+        return validate_actions([
+            _action("Open Creator Tools", "deep_link", url="/pulse/creator/dashboard", icon="spark", style="primary"),
+            _action("Invite Friends", "share", icon="share", style="secondary", share_url=PULSESOC_APP_STORE_URL, share_title="PulseSoc", share_text="Join me on PulseSoc and explore creator tools."),
+        ])
+    return []
 
 
 DEFAULT_STREAMS: list[dict[str, Any]] = [
@@ -223,6 +331,18 @@ DEFAULT_STREAMS: list[dict[str, Any]] = [
         "threshold": 58,
         "examples": ["Trending songs.", "Emerging artists.", "Popular audio."],
     },
+    {
+        "stream_key": "system_pulse",
+        "display_name": "System Pulse",
+        "purpose": "Maintenance, app version, incident, and rollout intelligence from PulseSoc system events.",
+        "category": "system",
+        "default_frequency": "realtime",
+        "default_priority": "high",
+        "default_enabled": True,
+        "default_push": False,
+        "threshold": 82,
+        "examples": ["Maintenance notice.", "New app version.", "Incident resolved."],
+    },
 ]
 
 
@@ -230,7 +350,10 @@ SOURCE_CATALOG: list[dict[str, Any]] = [
     {"source_key": "pulsesoc_feature_registry", "display_name": "PulseSoc Feature Registry", "stream_key": "pulsesoc_discoveries", "provider_type": "internal", "trust_score": 92, "cache_seconds": 60, "required_env": []},
     {"source_key": "pulsesoc_telemetry", "display_name": "PulseSoc Telemetry", "stream_key": "pulsesoc_pulse", "provider_type": "internal", "trust_score": 88, "cache_seconds": 15, "required_env": []},
     {"source_key": "coingecko", "display_name": "CoinGecko", "stream_key": "crypto_pulse", "provider_type": "market_api", "trust_score": 78, "cache_seconds": 60, "required_env": []},
+    {"source_key": "binance", "display_name": "Binance Public Market Data", "stream_key": "crypto_pulse", "provider_type": "market_api", "trust_score": 74, "cache_seconds": 30, "required_env": []},
+    {"source_key": "kraken", "display_name": "Kraken Public Market Data", "stream_key": "crypto_pulse", "provider_type": "market_api", "trust_score": 74, "cache_seconds": 30, "required_env": []},
     {"source_key": "coinmarketcap", "display_name": "CoinMarketCap", "stream_key": "crypto_pulse", "provider_type": "market_api", "trust_score": 78, "cache_seconds": 60, "required_env": ["COINMARKETCAP_API_KEY"]},
+    {"source_key": "yahoo_finance", "display_name": "Yahoo Finance Public Market Data", "stream_key": "market_pulse", "provider_type": "market_api", "trust_score": 70, "cache_seconds": 90, "required_env": []},
     {"source_key": "polygon", "display_name": "Polygon", "stream_key": "market_pulse", "provider_type": "market_api", "trust_score": 78, "cache_seconds": 60, "required_env": ["POLYGON_API_KEY"]},
     {"source_key": "alpha_vantage", "display_name": "Alpha Vantage", "stream_key": "market_pulse", "provider_type": "market_api", "trust_score": 74, "cache_seconds": 60, "required_env": ["ALPHA_VANTAGE_API_KEY"]},
     {"source_key": "reuters", "display_name": "Reuters", "stream_key": "world_pulse", "provider_type": "news", "trust_score": 86, "cache_seconds": 300, "required_env": ["REUTERS_API_KEY"]},
@@ -243,8 +366,11 @@ SOURCE_CATALOG: list[dict[str, Any]] = [
     {"source_key": "microsoft_security", "display_name": "Microsoft Security", "stream_key": "security_pulse", "provider_type": "official", "trust_score": 88, "cache_seconds": 600, "required_env": []},
     {"source_key": "apple_security", "display_name": "Apple Security", "stream_key": "security_pulse", "provider_type": "official", "trust_score": 88, "cache_seconds": 600, "required_env": []},
     {"source_key": "google_security", "display_name": "Google Security", "stream_key": "security_pulse", "provider_type": "official", "trust_score": 88, "cache_seconds": 600, "required_env": []},
+    {"source_key": "openai_updates", "display_name": "OpenAI Official Updates", "stream_key": "technology_pulse", "provider_type": "official", "trust_score": 86, "cache_seconds": 900, "required_env": []},
+    {"source_key": "apple_newsroom", "display_name": "Apple Newsroom", "stream_key": "technology_pulse", "provider_type": "official", "trust_score": 84, "cache_seconds": 900, "required_env": []},
     {"source_key": "creator_analytics", "display_name": "Creator Analytics", "stream_key": "creator_pulse", "provider_type": "internal", "trust_score": 84, "cache_seconds": 900, "required_env": []},
     {"source_key": "pulse_music", "display_name": "PulseSoc Music", "stream_key": "music_pulse", "provider_type": "internal", "trust_score": 82, "cache_seconds": 300, "required_env": []},
+    {"source_key": "pulsesoc_system", "display_name": "PulseSoc System Events", "stream_key": "system_pulse", "provider_type": "internal", "trust_score": 92, "cache_seconds": 60, "required_env": []},
 ]
 
 
@@ -580,6 +706,7 @@ def format_stream(row: Any, user_row: Any | None = None) -> dict[str, Any]:
 
 def format_event(row: Any) -> dict[str, Any]:
     confidence = _int(_row_get(row, "confidence_score"))
+    metadata = _json_loads(_row_get(row, "metadata_json"), {})
     return {
         "id": _int(_row_get(row, "id")),
         "event_key": _row_get(row, "event_key") or "",
@@ -604,7 +731,8 @@ def format_event(row: Any) -> dict[str, Any]:
         "sources": _json_loads(_row_get(row, "sources_json"), []),
         "evidence": _json_loads(_row_get(row, "evidence_json"), []),
         "forecast": _json_loads(_row_get(row, "forecast_json"), {}),
-        "metadata": _json_loads(_row_get(row, "metadata_json"), {}),
+        "metadata": metadata,
+        "actions": validate_actions(metadata.get("actions")),
         "published_at": _row_get(row, "published_at") or _row_get(row, "created_at") or "",
         "created_at": _row_get(row, "created_at") or "",
         "updated_at": _row_get(row, "updated_at") or "",
@@ -747,11 +875,21 @@ def ingest_signal(payload: dict[str, Any], *, deliver: bool = False, target_user
         forecast = _forecast_for_event(stream_key, headline, impact, scores["confidence_score"], priority)
         sources_json = _json_dumps(source_rows)
         evidence_json = _json_dumps(payload.get("evidence") or [])
+        payload_metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        actions = validate_actions(payload_metadata.get("actions") or payload.get("actions"))
+        if not actions:
+            actions = default_actions_for_signal(
+                stream_key,
+                payload.get("event_type") or "signal",
+                payload_metadata.get("deep_link") or payload.get("deep_link") or "/pulse/intelligence",
+            )
         metadata = {
+            **payload_metadata,
             "collector": payload.get("collector") or "",
             "no_investment_advice": stream_key == "crypto_pulse",
             "ai_summary_status": "queued" if payload.get("ai_summary_requested") else "not_required",
             "source_payload_hash": hashlib.sha256(_json_dumps(payload).encode("utf-8")).hexdigest()[:24],
+            "actions": actions,
         }
         cur.execute("SELECT * FROM intelligence_events WHERE event_key=? LIMIT 1", (event_key,))
         existing = cur.fetchone()
@@ -948,6 +1086,7 @@ def deliver_event(event_id: int, *, target_user_id: int = 0, limit: int = 500) -
                     "expected_impact": event["expected_impact"],
                     "sources": event["sources"],
                     "forecast": event["forecast"],
+                    "actions": event.get("actions") or [],
                     "dedupe_key": dedupe,
                     "push_allowed": "push" in channels,
                     "email_allowed": "email" in channels,
@@ -1092,7 +1231,7 @@ def record_feedback(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     event_id = _int(payload.get("event_id"))
     stream_key = _slug(payload.get("stream_key") or "")
     feedback_type = _slug(payload.get("feedback_type") or payload.get("type") or "", 40)
-    if feedback_type not in {"opened", "dismissed", "saved", "shared", "liked", "muted", "helpful", "not_helpful", "wrong", "too_frequent"}:
+    if feedback_type not in {"opened", "dismissed", "saved", "shared", "liked", "muted", "helpful", "not_helpful", "wrong", "too_frequent", "outdated", "not_interested"}:
         return {"ok": False, "error": "invalid_feedback", "message": "Unsupported feedback type.", "http_status": 400}
     conn = connect()
     try:
