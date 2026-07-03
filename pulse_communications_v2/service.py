@@ -9,6 +9,7 @@ import re
 import secrets
 import threading
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 from typing import Any
 
 from . import flags, infrastructure, twilio_service
@@ -106,6 +107,24 @@ def _safe_preview(value: Any = "", message_type: str = "", fallback: str = "") -
     if _preview_has_local_path(text):
         return label
     return text
+
+
+def _extract_urls(value: Any) -> list[str]:
+    text = str(value or "")
+    urls = re.findall(r"https?://[^\s<>\")']+", text, flags=re.I)
+    clean_urls: list[str] = []
+    seen = set()
+    for raw in urls:
+        url = raw.rstrip(".,;:!?")
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            continue
+        key = url.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        clean_urls.append(url[:500])
+    return clean_urls
 
 
 def _message_security_classification(body: str) -> dict:
@@ -407,6 +426,21 @@ def _ensure_columns(bot, cur, conn) -> None:
         ("metadata_json", "TEXT"),
         ("created_at", "TEXT"),
     ], conn=conn)
+    add(cur, "comm_v2_conversation_items", [
+        ("public_id", "TEXT"),
+        ("conversation_id", "INTEGER"),
+        ("user_id", "INTEGER"),
+        ("item_type", "TEXT"),
+        ("title", "TEXT"),
+        ("body", "TEXT"),
+        ("status", "TEXT DEFAULT 'active'"),
+        ("due_at", "TEXT"),
+        ("completed_at", "TEXT"),
+        ("metadata_json", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+        ("deleted_at", "TEXT"),
+    ], conn=conn)
     add(cur, "comm_v2_communities", [
         ("public_id", "TEXT"),
         ("name", "TEXT"),
@@ -483,6 +517,7 @@ def _user_presence_by_ids(cur, user_ids: list[int]) -> dict[int, dict]:
                 "last_seen_at": row["last_seen_at"] or "",
                 "last_active_at": row["last_active_at"] or "",
                 "updated_at": row["updated_at"] or "",
+                "active_now": str(row["status"] or "").lower() in {"online", "active", "active_now"},
                 "available": True,
             }
             for row in cur.fetchall()
@@ -745,7 +780,11 @@ def _presence_visible(cur, viewer_user_id: int, target_user_id: int) -> bool:
     return True
 
 
-def _read_receipts_allowed(cur, user_id: int) -> bool:
+def _read_receipts_allowed(cur, user_id: int, conversation_id: int = 0) -> bool:
+    if conversation_id:
+        _, conversation_settings = _load_conversation_settings(cur, int(conversation_id), int(user_id))
+        if (conversation_settings.get("privacy") or {}).get("read_receipts") is False:
+            return False
     return bool(int(_settings(cur, user_id).get("read_receipts_enabled") or 0))
 
 
@@ -802,10 +841,20 @@ def _participant_push_policy(cur, recipient_id: int, sender_id: int, conversatio
     muted_until = _parse_dt(participant.get("muted_until"))
     if level in {"none", "off", "muted", "silent"} or (muted_until and muted_until > now_dt):
         return {"skip": False, "suppress_push": True, "reason": "muted"}
+    _, conversation_settings = _load_conversation_settings(cur, int(conversation_id), int(recipient_id))
+    notifications = conversation_settings.get("notifications") or {}
+    if notifications.get("lock_screen") is False:
+        return {"skip": False, "suppress_push": True, "reason": "lock_screen_disabled"}
     return {"skip": False, "suppress_push": False, "reason": "deliver"}
 
 
-def _message_preview_hidden(cur, user_id: int) -> bool:
+def _message_preview_hidden(cur, user_id: int, conversation_id: int = 0) -> bool:
+    if conversation_id:
+        _, conversation_settings = _load_conversation_settings(cur, int(conversation_id), int(user_id))
+        notifications = conversation_settings.get("notifications") or {}
+        privacy = conversation_settings.get("privacy") or {}
+        if notifications.get("message_preview") is False or privacy.get("message_preview") is False:
+            return True
     value = str(_settings(cur, int(user_id)).get("message_preview_privacy") or "show").lower()
     return value in {"hide", "hidden", "private", "generic", "off"}
 
@@ -1490,7 +1539,7 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
                 policy_conn, policy_cur = _open_db()
                 try:
                     policy = _participant_push_policy(policy_cur, int(recipient_id), int(user_id), int(conversation_id))
-                    hide_preview = _message_preview_hidden(policy_cur, int(recipient_id))
+                    hide_preview = _message_preview_hidden(policy_cur, int(recipient_id), int(conversation_id))
                 finally:
                     policy_conn.close()
                 if policy.get("skip"):
@@ -2619,7 +2668,7 @@ def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, com
             "UPDATE comm_v2_participants SET last_read_message_id=?, last_read_at=?, unread_count=0, last_seen_at=?, updated_at=? WHERE conversation_id=? AND user_id=?",
             (max_id, now, now, now, conversation_id, int(user_id)),
         )
-        if _read_receipts_allowed(cur, user_id):
+        if _read_receipts_allowed(cur, user_id, conversation_id):
             cur.execute("SELECT id FROM comm_v2_messages WHERE conversation_id=? AND id<=? AND sender_user_id!=? AND COALESCE(deleted_at,'')=''", (conversation_id, max_id, int(user_id)))
             for row in cur.fetchall():
                 cur.execute(
@@ -2868,6 +2917,19 @@ def _conversation_control_stats(cur, conversation: dict, user_id: int) -> dict:
     media = _row(cur.fetchone())
     cur.execute(
         """
+        SELECT
+          SUM(CASE WHEN LOWER(COALESCE(media_type,'')) IN ('image','photo','gif') OR LOWER(COALESCE(mime_type,'')) LIKE 'image/%' THEN 1 ELSE 0 END) AS photos,
+          SUM(CASE WHEN LOWER(COALESCE(media_type,''))='video' OR LOWER(COALESCE(mime_type,'')) LIKE 'video/%' THEN 1 ELSE 0 END) AS videos,
+          SUM(CASE WHEN LOWER(COALESCE(media_type,'')) IN ('voice','audio') OR LOWER(COALESCE(mime_type,'')) LIKE 'audio/%' THEN 1 ELSE 0 END) AS voice,
+          SUM(CASE WHEN LOWER(COALESCE(media_type,'')) NOT IN ('image','photo','gif','video','voice','audio') AND LOWER(COALESCE(mime_type,'')) NOT LIKE 'image/%' AND LOWER(COALESCE(mime_type,'')) NOT LIKE 'video/%' AND LOWER(COALESCE(mime_type,'')) NOT LIKE 'audio/%' THEN 1 ELSE 0 END) AS files
+        FROM comm_v2_attachments
+        WHERE conversation_id=? AND COALESCE(scan_status,'approved')!='blocked'
+        """,
+        (conversation_id,),
+    )
+    media_types = _row(cur.fetchone())
+    cur.execute(
+        """
         SELECT COUNT(*) AS total
         FROM comm_v2_messages
         WHERE conversation_id=? AND COALESCE(deleted_at,'')='' AND message_type IN ('file','media','image','video','audio','voice')
@@ -2875,8 +2937,14 @@ def _conversation_control_stats(cur, conversation: dict, user_id: int) -> dict:
         (conversation_id,),
     )
     media_message_count = int(_row(cur.fetchone()).get("total") or 0)
+    cur.execute(
+        "SELECT body FROM comm_v2_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' AND body LIKE '%http%' ORDER BY id DESC LIMIT 250",
+        (conversation_id,),
+    )
+    link_count = sum(len(_extract_urls(row["body"] or "")) for row in cur.fetchall())
     participant_ids = _participant_ids(cur, conversation_id)
     online_count = 0
+    activity_status = "Offline"
     if participant_ids:
         placeholders = ",".join(["?"] * len(participant_ids))
         cur.execute(
@@ -2888,20 +2956,47 @@ def _conversation_control_stats(cur, conversation: dict, user_id: int) -> dict:
             (*participant_ids, _now()),
         )
         online_count = int(_row(cur.fetchone()).get("total") or 0)
-    connection = "Online" if online_count > 1 or (conversation.get("conversation_type") != "direct" and online_count > 0) else "Unknown"
+        if conversation.get("conversation_type") == "direct":
+            peer_ids = [int(pid) for pid in participant_ids if int(pid) != int(user_id)]
+            if peer_ids:
+                peer_presence = _user_presence_by_ids(cur, peer_ids).get(peer_ids[0], {})
+                if peer_presence.get("active_now"):
+                    activity_status = "Online"
+                elif peer_presence.get("last_seen_at") or peer_presence.get("last_active_at") or peer_presence.get("updated_at"):
+                    activity_status = "Recently active"
+                else:
+                    activity_status = "Offline"
+        else:
+            activity_status = "Online" if online_count > 0 else "Offline"
+    connection = "Connected"
     return {
         "encrypted": "Protected",
         "security_label": "Secured session",
         "members": member_count,
         "media_files": int(media.get("total") or 0) or media_message_count,
         "storage_used_bytes": int(media.get("bytes") or 0),
+        "photos": int(media_types.get("photos") or 0),
+        "videos": int(media_types.get("videos") or 0),
+        "voice": int(media_types.get("voice") or 0),
+        "files": int(media_types.get("files") or 0),
+        "links": int(link_count or 0),
+        "messages": _conversation_message_count(cur, conversation_id),
         "unread": int(mine.get("unread_count") or 0),
         "connection": connection,
+        "activity_status": activity_status,
         "online_count": online_count,
         "role": mine.get("role") or "member",
         "pinned": bool(mine.get("pinned_at")),
         "muted": bool(mine.get("muted_until") and str(mine.get("muted_until")) > _now()) or str(mine.get("notifications_level") or "").lower() in {"none", "off", "muted", "silent"},
     }
+
+
+def _conversation_message_count(cur, conversation_id: int) -> int:
+    cur.execute(
+        "SELECT COUNT(*) AS total FROM comm_v2_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')=''",
+        (int(conversation_id),),
+    )
+    return int(_row(cur.fetchone()).get("total") or 0)
 
 
 def conversation_control_center(user_id: int, conversation_ref: int | str) -> dict:
@@ -2935,7 +3030,7 @@ def conversation_control_center(user_id: int, conversation_ref: int | str) -> di
         presence_by_user = _user_presence_by_ids(cur, [int(member.get("user_id") or 0) for member in members])
         for member in members:
             presence = presence_by_user.get(int(member.get("user_id") or 0), {})
-            member["presence"] = presence.get("status") or "unknown"
+            member["presence"] = presence.get("status") or "offline"
             member["active_now"] = bool(presence.get("active_now") or presence.get("status") == "online")
         _, settings = _load_conversation_settings(cur, conversation_id, user_id)
         participant_stats = _conversation_control_stats(cur, conversation, user_id)
@@ -2997,6 +3092,12 @@ def update_conversation_control_center(user_id: int, conversation_ref: int | str
         conversation_id = int(conversation["id"])
         _, settings = _load_conversation_settings(cur, conversation_id, user_id)
         settings[section][key] = value
+        if key == "message_preview" and section in {"notifications", "privacy"}:
+            settings["notifications"]["message_preview"] = bool(value)
+            settings["privacy"]["message_preview"] = bool(value)
+        if key == "read_receipts" and section in {"notifications", "privacy"}:
+            settings["notifications"]["read_receipts"] = bool(value)
+            settings["privacy"]["read_receipts"] = bool(value)
         if section == "notifications" and key == "mute_choice":
             muted_until, notifications_level = _mute_until_for_choice(str(value))
             cur.execute(
@@ -3007,12 +3108,15 @@ def update_conversation_control_center(user_id: int, conversation_ref: int | str
                 """,
                 (muted_until, notifications_level, _now(), conversation_id, int(user_id)),
             )
-        if section == "privacy" and key in {"read_receipts", "message_preview"}:
+        if section == "privacy" and key in {"read_receipts", "message_preview", "online_status", "last_seen"}:
             current = _settings(cur, user_id)
             if key == "read_receipts":
                 current["read_receipts_enabled"] = 1 if value else 0
             if key == "message_preview":
                 current["message_preview_privacy"] = "show" if value else "hide"
+            if key in {"online_status", "last_seen"}:
+                both_visible = bool(settings["privacy"].get("online_status", True)) and bool(settings["privacy"].get("last_seen", True))
+                current["presence_privacy"] = "everyone" if both_visible else "nobody"
             cur.execute(
                 """
                 INSERT OR IGNORE INTO comm_v2_user_settings (user_id, presence_privacy, read_receipts_enabled, message_preview_privacy, updated_at)
@@ -3027,8 +3131,8 @@ def update_conversation_control_center(user_id: int, conversation_ref: int | str
                 ),
             )
             cur.execute(
-                "UPDATE comm_v2_user_settings SET read_receipts_enabled=?, message_preview_privacy=?, updated_at=? WHERE user_id=?",
-                (int(current.get("read_receipts_enabled", 1) or 0), current.get("message_preview_privacy") or "show", _now(), int(user_id)),
+                "UPDATE comm_v2_user_settings SET presence_privacy=?, read_receipts_enabled=?, message_preview_privacy=?, updated_at=? WHERE user_id=?",
+                (current.get("presence_privacy") or "everyone", int(current.get("read_receipts_enabled", 1) or 0), current.get("message_preview_privacy") or "show", _now(), int(user_id)),
             )
         _save_conversation_settings(cur, conversation_id, user_id, settings)
         conn.commit()
@@ -3040,6 +3144,319 @@ def update_conversation_control_center(user_id: int, conversation_ref: int | str
         conn.close()
 
 
+def _control_conversation(cur, user_id: int, conversation_ref: int | str) -> tuple[dict, int, dict | None]:
+    conversation, access = _conversation_access(cur, user_id, conversation_ref)
+    if access == "missing":
+        return {}, 0, _err("Conversation not found.", 404, "not_found")
+    if access != "ok":
+        return {}, 0, _err("You do not have access to this conversation.", 403, "forbidden")
+    return conversation, int(conversation["id"]), None
+
+
+def _attachment_filter_clause(kind: str) -> str:
+    normalized = str(kind or "").lower()
+    if normalized in {"photo", "photos", "image", "images"}:
+        return "AND (LOWER(COALESCE(a.media_type,'')) IN ('image','photo','gif') OR LOWER(COALESCE(a.mime_type,'')) LIKE 'image/%')"
+    if normalized in {"video", "videos"}:
+        return "AND (LOWER(COALESCE(a.media_type,''))='video' OR LOWER(COALESCE(a.mime_type,'')) LIKE 'video/%')"
+    if normalized in {"voice", "voices", "audio"}:
+        return "AND (LOWER(COALESCE(a.media_type,'')) IN ('voice','audio') OR LOWER(COALESCE(a.mime_type,'')) LIKE 'audio/%')"
+    if normalized in {"file", "files"}:
+        return "AND LOWER(COALESCE(a.mime_type,'')) NOT LIKE 'image/%' AND LOWER(COALESCE(a.mime_type,'')) NOT LIKE 'video/%' AND LOWER(COALESCE(a.mime_type,'')) NOT LIKE 'audio/%'"
+    return ""
+
+
+def _attachment_payload(row: dict) -> dict:
+    url = row.get("playback_url") or row.get("cdn_url") or row.get("url") or row.get("thumbnail_url") or ""
+    return {
+        "id": int(row.get("id") or 0),
+        "message_id": int(row.get("message_id") or 0),
+        "media_type": row.get("media_type") or "file",
+        "mime_type": row.get("mime_type") or "",
+        "file_size_bytes": int(row.get("file_size_bytes") or row.get("file_size") or 0),
+        "duration_seconds": float(row.get("duration_seconds") or 0),
+        "url": url,
+        "thumbnail_url": row.get("thumbnail_url") or "",
+        "created_at": row.get("created_at") or row.get("message_created_at") or "",
+        "sender_user_id": int(row.get("sender_user_id") or 0),
+        "sender_display_name": row.get("sender_display_name") or "Pulse member",
+        "body_preview": _safe_preview(row.get("body") or "", row.get("message_type") or "", "")[:180],
+    }
+
+
+def conversation_control_media(user_id: int, conversation_ref: int | str, filters: dict | None = None) -> dict:
+    disabled = _disabled("conversation_control_media")
+    if disabled:
+        return disabled
+    filters = filters or {}
+    kind = _clean(filters.get("kind") or filters.get("type") or "all", 30).lower()
+    limit = max(1, min(int(filters.get("limit") or 60), 120))
+    conn, cur = _open_db()
+    try:
+        conversation, conversation_id, error = _control_conversation(cur, user_id, conversation_ref)
+        if error:
+            return error
+        clause = _attachment_filter_clause(kind)
+        cur.execute(
+            f"""
+            SELECT a.*, m.body, m.message_type, m.created_at AS message_created_at, m.sender_user_id,
+                   COALESCE(u.display_name,u.username,'Pulse member') AS sender_display_name
+            FROM comm_v2_attachments a
+            JOIN comm_v2_messages m ON m.id=a.message_id
+            LEFT JOIN comm_v2_message_deletions d ON d.message_id=m.id AND d.user_id=?
+            LEFT JOIN users u ON u.user_id=m.sender_user_id
+            WHERE a.conversation_id=?
+              AND COALESCE(a.scan_status,'approved')!='blocked'
+              AND COALESCE(m.deleted_at,'')=''
+              AND d.id IS NULL
+              {clause}
+            ORDER BY a.id DESC
+            LIMIT ?
+            """,
+            (int(user_id), conversation_id, limit),
+        )
+        items = [_attachment_payload(_row(row)) for row in cur.fetchall()]
+        return _ok({"conversation": _conversation_payload(cur, conversation, user_id), "items": items, "kind": kind, "count": len(items)})
+    finally:
+        conn.close()
+
+
+def conversation_control_links(user_id: int, conversation_ref: int | str, filters: dict | None = None) -> dict:
+    disabled = _disabled("conversation_control_links")
+    if disabled:
+        return disabled
+    filters = filters or {}
+    limit = max(1, min(int(filters.get("limit") or 80), 160))
+    conn, cur = _open_db()
+    try:
+        conversation, conversation_id, error = _control_conversation(cur, user_id, conversation_ref)
+        if error:
+            return error
+        cur.execute(
+            """
+            SELECT m.id, m.body, m.created_at, m.sender_user_id,
+                   COALESCE(u.display_name,u.username,'Pulse member') AS sender_display_name
+            FROM comm_v2_messages m
+            LEFT JOIN comm_v2_message_deletions d ON d.message_id=m.id AND d.user_id=?
+            LEFT JOIN users u ON u.user_id=m.sender_user_id
+            WHERE m.conversation_id=? AND COALESCE(m.deleted_at,'')='' AND d.id IS NULL AND m.body LIKE '%http%'
+            ORDER BY m.id DESC LIMIT ?
+            """,
+            (int(user_id), conversation_id, limit),
+        )
+        links = []
+        for row in cur.fetchall():
+            item = _row(row)
+            for url in _extract_urls(item.get("body") or ""):
+                parsed = urlparse(url)
+                links.append({
+                    "message_id": int(item.get("id") or 0),
+                    "url": url,
+                    "domain": parsed.netloc,
+                    "created_at": item.get("created_at") or "",
+                    "sender_user_id": int(item.get("sender_user_id") or 0),
+                    "sender_display_name": item.get("sender_display_name") or "Pulse member",
+                })
+        return _ok({"conversation": _conversation_payload(cur, conversation, user_id), "items": links[:limit], "count": len(links[:limit])})
+    finally:
+        conn.close()
+
+
+def conversation_control_pins(user_id: int, conversation_ref: int | str, filters: dict | None = None) -> dict:
+    disabled = _disabled("conversation_control_pins")
+    if disabled:
+        return disabled
+    filters = filters or {}
+    limit = max(1, min(int(filters.get("limit") or 50), 100))
+    conn, cur = _open_db()
+    try:
+        conversation, conversation_id, error = _control_conversation(cur, user_id, conversation_ref)
+        if error:
+            return error
+        cur.execute(
+            """
+            SELECT m.*
+            FROM comm_v2_messages m
+            LEFT JOIN comm_v2_message_deletions d ON d.message_id=m.id AND d.user_id=?
+            WHERE m.conversation_id=? AND COALESCE(m.deleted_at,'')='' AND d.id IS NULL
+              AND COALESCE(m.metadata_json,'') LIKE '%pinned_by_user_ids%'
+            ORDER BY m.id DESC LIMIT ?
+            """,
+            (int(user_id), conversation_id, limit * 3),
+        )
+        rows = []
+        for row in cur.fetchall():
+            message = _row(row)
+            metadata = _json_loads(message.get("metadata_json"), {}) or {}
+            pinned_by = _safe_int_list(metadata.get("pinned_by_user_ids"))
+            if int(user_id) in pinned_by:
+                rows.append(message)
+            if len(rows) >= limit:
+                break
+        return _ok({"conversation": _conversation_payload(cur, conversation, user_id), "items": _message_payloads(cur, rows, user_id), "count": len(rows)})
+    finally:
+        conn.close()
+
+
+def conversation_control_export(user_id: int, conversation_ref: int | str, filters: dict | None = None) -> dict:
+    disabled = _disabled("conversation_control_export")
+    if disabled:
+        return disabled
+    filters = filters or {}
+    limit = max(1, min(int(filters.get("limit") or 500), 1000))
+    conn, cur = _open_db()
+    try:
+        conversation, conversation_id, error = _control_conversation(cur, user_id, conversation_ref)
+        if error:
+            return error
+        cur.execute(
+            """
+            SELECT m.id, m.sender_user_id, COALESCE(u.display_name,u.username,'Pulse member') AS sender_display_name,
+                   m.message_type, m.body, m.created_at, m.edited_at
+            FROM comm_v2_messages m
+            LEFT JOIN comm_v2_message_deletions d ON d.message_id=m.id AND d.user_id=?
+            LEFT JOIN users u ON u.user_id=m.sender_user_id
+            WHERE m.conversation_id=? AND COALESCE(m.deleted_at,'')='' AND d.id IS NULL
+            ORDER BY m.id ASC LIMIT ?
+            """,
+            (int(user_id), conversation_id, limit),
+        )
+        messages = []
+        for row in cur.fetchall():
+            item = _row(row)
+            messages.append({
+                "id": int(item.get("id") or 0),
+                "sender_user_id": int(item.get("sender_user_id") or 0),
+                "sender_display_name": item.get("sender_display_name") or "Pulse member",
+                "message_type": item.get("message_type") or "text",
+                "body": _safe_preview(item.get("body") or "", item.get("message_type") or "", "")[:4000],
+                "created_at": item.get("created_at") or "",
+                "edited_at": item.get("edited_at") or "",
+            })
+        return _ok({
+            "conversation": _conversation_payload(cur, conversation, user_id),
+            "export": {
+                "conversation_id": conversation_id,
+                "generated_at": _now(),
+                "message_count": len(messages),
+                "messages": messages,
+            },
+            "filename": f"pulsesoc-conversation-{conversation_id}.json",
+        })
+    finally:
+        conn.close()
+
+
+def conversation_control_action(user_id: int, conversation_ref: int | str, payload: dict | None = None) -> dict:
+    disabled = _disabled("conversation_control_action")
+    if disabled:
+        return disabled
+    payload = payload or {}
+    action = _clean(payload.get("action") or "", 60).lower().replace("_", "-")
+    conn, cur = _open_db()
+    try:
+        conversation, conversation_id, error = _control_conversation(cur, user_id, conversation_ref)
+        if error:
+            return error
+        now = _now()
+        if action == "report-conversation":
+            reason = _clean(payload.get("reason") or "Reported from Conversation Control Center", 500)
+            target_id = _conversation_peer_user_id(cur, conversation_id, user_id)
+            cur.execute(
+                "INSERT INTO comm_v2_reports (conversation_id, message_id, reporter_user_id, reported_user_id, reason, status, created_at) VALUES (?, 0, ?, ?, ?, 'open', ?)",
+                (conversation_id, int(user_id), int(target_id or 0), reason, now),
+            )
+            report_id = int(cur.lastrowid)
+            cur.execute(
+                "INSERT INTO comm_v2_moderation_events (conversation_id, actor_user_id, target_user_id, event_type, reason, created_at) VALUES (?, ?, ?, 'conversation_reported', ?, ?)",
+                (conversation_id, int(user_id), int(target_id or 0), reason, now),
+            )
+            conn.commit()
+            return _ok({"conversation_id": conversation_id, "report_id": report_id}, "Conversation sent to moderation.")
+        if action == "block-user":
+            if conversation.get("conversation_type") != "direct":
+                return _err("Block is available from direct conversations only.", 400, "group_block_not_supported")
+            target_id = _conversation_peer_user_id(cur, conversation_id, user_id)
+            if not target_id:
+                return _err("No peer is available to block.", 400, "missing_peer")
+            conn.commit()
+            return block_user(user_id, target_id, payload.get("reason") or "Blocked from Conversation Control Center")
+        if action == "clear-conversation":
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO comm_v2_message_deletions (message_id, conversation_id, user_id, deleted_at)
+                SELECT id, conversation_id, ?, ? FROM comm_v2_messages
+                WHERE conversation_id=? AND COALESCE(deleted_at,'')=''
+                """,
+                (int(user_id), now, conversation_id),
+            )
+            cur.execute("UPDATE comm_v2_participants SET unread_count=0, last_read_at=?, updated_at=? WHERE conversation_id=? AND user_id=?", (now, now, conversation_id, int(user_id)))
+            conn.commit()
+            return _ok({"conversation_id": conversation_id}, "Conversation cleared on this device and account.")
+        if action == "delete-conversation":
+            cur.execute("UPDATE comm_v2_participants SET membership_state='deleted', left_at=?, unread_count=0, updated_at=? WHERE conversation_id=? AND user_id=?", (now, now, conversation_id, int(user_id)))
+            conn.commit()
+            return _ok({"conversation_id": conversation_id, "deleted": True}, "Conversation removed from your inbox.")
+        if action == "leave-group":
+            if conversation.get("conversation_type") == "direct":
+                return _err("Direct conversations cannot be left. Use Archive or Block.", 400, "not_group")
+            cur.execute("UPDATE comm_v2_participants SET membership_state='left', left_at=?, unread_count=0, updated_at=? WHERE conversation_id=? AND user_id=?", (now, now, conversation_id, int(user_id)))
+            conn.commit()
+            return _ok({"conversation_id": conversation_id, "left": True}, "You left the conversation.")
+        if action == "delete-media":
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO comm_v2_message_deletions (message_id, conversation_id, user_id, deleted_at)
+                SELECT DISTINCT m.id, m.conversation_id, ?, ?
+                FROM comm_v2_messages m
+                JOIN comm_v2_attachments a ON a.message_id=m.id
+                WHERE m.conversation_id=? AND COALESCE(m.deleted_at,'')=''
+                """,
+                (int(user_id), now, conversation_id),
+            )
+            conn.commit()
+            return _ok({"conversation_id": conversation_id}, "Shared media hidden from your conversation view.")
+        if action == "reset-settings":
+            defaults = _control_defaults()
+            _save_conversation_settings(cur, conversation_id, user_id, defaults)
+            cur.execute("UPDATE comm_v2_participants SET muted_until='', notifications_level='all', updated_at=? WHERE conversation_id=? AND user_id=?", (now, conversation_id, int(user_id)))
+            conn.commit()
+            return _ok({"conversation_id": conversation_id, "settings": defaults}, "Conversation settings reset.")
+        if action in {"create-note", "create-task"}:
+            body = _clean(payload.get("body") or payload.get("title") or "", 1000)
+            if not body:
+                return _err("Add text before saving.", 400, "empty_item")
+            item_type = "task" if action == "create-task" else "note"
+            cur.execute(
+                """
+                INSERT INTO comm_v2_conversation_items
+                (public_id, conversation_id, user_id, item_type, title, body, status, due_at, metadata_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'active', ?, '{}', ?, ?)
+                """,
+                (_public_id("item"), conversation_id, int(user_id), item_type, body[:120], body, payload.get("due_at") or "", now, now),
+            )
+            conn.commit()
+            return _ok({"conversation_id": conversation_id, "item_id": int(cur.lastrowid), "item_type": item_type}, "Saved to this conversation.")
+        return _err("Choose a supported control action.", 400, "unsupported_action")
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _conversation_peer_user_id(cur, conversation_id: int, viewer_user_id: int) -> int:
+    cur.execute(
+        """
+        SELECT user_id FROM comm_v2_participants
+        WHERE conversation_id=? AND user_id!=? AND membership_state='active' AND COALESCE(left_at,'')=''
+        ORDER BY id ASC LIMIT 1
+        """,
+        (int(conversation_id), int(viewer_user_id)),
+    )
+    return int(_row(cur.fetchone()).get("user_id") or 0)
+
+
 def set_typing(user_id: int, conversation_ref: int | str, is_typing: bool = True) -> dict:
     disabled = _disabled("set_typing")
     if disabled:
@@ -3049,6 +3466,9 @@ def set_typing(user_id: int, conversation_ref: int | str, is_typing: bool = True
         conversation, access = _conversation_access(cur, user_id, conversation_ref)
         if access != "ok":
             return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403)
+        _, conversation_settings = _load_conversation_settings(cur, int(conversation["id"]), int(user_id))
+        if (conversation_settings.get("privacy") or {}).get("typing_indicator") is False:
+            is_typing = False
         now_dt = datetime.now(timezone.utc)
         expires = (now_dt + timedelta(seconds=5)).isoformat(timespec="seconds")
         now = now_dt.isoformat(timespec="seconds")

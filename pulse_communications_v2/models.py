@@ -338,6 +338,30 @@ COMM_V2_TABLES: tuple[TableSpec, ...] = (
         """,
     ),
     TableSpec(
+        "comm_v2_conversation_items",
+        """
+        CREATE TABLE IF NOT EXISTS comm_v2_conversation_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            public_id TEXT UNIQUE,
+            conversation_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            item_type TEXT NOT NULL,
+            title TEXT,
+            body TEXT,
+            status TEXT DEFAULT 'active',
+            due_at TEXT,
+            completed_at TEXT,
+            metadata_json TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            deleted_at TEXT
+        )
+        """,
+        (
+            "CREATE INDEX IF NOT EXISTS idx_comm_v2_items_user ON comm_v2_conversation_items(user_id, conversation_id, item_type, status)",
+        ),
+    ),
+    TableSpec(
         "comm_v2_communities",
         """
         CREATE TABLE IF NOT EXISTS comm_v2_communities (

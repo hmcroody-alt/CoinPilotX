@@ -362,6 +362,46 @@ def update_conversation_control_center(conversation_ref):
     return _timed_json("conversation_control_center_update", lambda: service.update_conversation_control_center(user["user_id"], conversation_ref, request.get_json(silent=True) or {}))
 
 
+@comm_v2_blueprint.get(f"{API_PREFIX}/conversations/<path:conversation_ref>/control-center/media")
+def conversation_control_media(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("conversation_control_media", lambda: service.conversation_control_media(user["user_id"], conversation_ref, request.args))
+
+
+@comm_v2_blueprint.get(f"{API_PREFIX}/conversations/<path:conversation_ref>/control-center/links")
+def conversation_control_links(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("conversation_control_links", lambda: service.conversation_control_links(user["user_id"], conversation_ref, request.args))
+
+
+@comm_v2_blueprint.get(f"{API_PREFIX}/conversations/<path:conversation_ref>/control-center/pins")
+def conversation_control_pins(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("conversation_control_pins", lambda: service.conversation_control_pins(user["user_id"], conversation_ref, request.args))
+
+
+@comm_v2_blueprint.get(f"{API_PREFIX}/conversations/<path:conversation_ref>/control-center/export")
+def conversation_control_export(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("conversation_control_export", lambda: service.conversation_control_export(user["user_id"], conversation_ref, request.args))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/control-center/action")
+def conversation_control_action(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("conversation_control_action", lambda: service.conversation_control_action(user["user_id"], conversation_ref, request.get_json(silent=True) or {}))
+
+
 @comm_v2_blueprint.get(f"{API_PREFIX}/search")
 @comm_v2_blueprint.get("/api/pulse/comm/v2/search")
 def search_messages():
@@ -552,13 +592,13 @@ def moderate_message(message_id):
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/voice/start")
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/video/start")
-def phase_two_placeholder(conversation_ref):
+def call_provider_not_configured(conversation_ref):
     user, denied = _require_user()
     if denied:
         return denied
     if not flags.is_enabled():
         return _json({"ok": False, "status": "disabled", "message": service.DISABLED_MESSAGE, "trace_id": service._trace()})
-    return _json({"ok": True, "status": "placeholder", "conversation_id": conversation_ref, "message": "Voice and video are reserved for Phase 2.", "trace_id": service._trace()})
+    return _json({"ok": False, "status": "not_configured", "conversation_id": conversation_ref, "message": "Messenger calls need the native call provider before they can start.", "trace_id": service._trace(), "http_status": 503})
 
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/live/mux/create")

@@ -87,6 +87,7 @@
     controlConversationId: 0,
     controlEntry: "thread",
     controlExpanded: new Set(["conversation", "notifications", "appearance", "privacy"]),
+    controlDetail: null,
     tabChannel: "BroadcastChannel" in window ? new BroadcastChannel("pulse-comm-v2") : null,
   };
   const MEDIA_FOUNDATION_MIME_BY_EXT = {
@@ -115,11 +116,11 @@
       items: [
         { label: "View Members", icon: "👥", action: "members" },
         { label: "Shared Media", icon: "🖼", action: "shared-media" },
-        { label: "Pinned Messages", icon: "📌", status: "soon" },
+        { label: "Pinned Messages", icon: "📌", action: "pinned-messages" },
         { label: "Search Chat", icon: "⌕", action: "search-chat" },
         { label: "Message Stats", icon: "▥", action: "message-stats" },
         { label: "Media Storage", icon: "◉", action: "storage" },
-        { label: "Export Chat", icon: "⇧", status: "soon" },
+        { label: "Export Chat", icon: "⇧", action: "export-chat", dangerConfirm: "Export this conversation to a local JSON file?" },
       ],
     },
     {
@@ -136,7 +137,7 @@
         { label: "Reaction Notifications", icon: "✦", setting: "reactions", kind: "toggle" },
         { label: "Typing Notifications", icon: "...", setting: "typing", kind: "toggle" },
         { label: "Read Receipt Notifications", icon: "✓", setting: "read_receipts", kind: "toggle" },
-        { label: "More Notification Settings", icon: "⚙", status: "soon" },
+        { label: "More Notification Settings", icon: "⚙", action: "open-notification-settings" },
       ],
     },
     {
@@ -146,7 +147,7 @@
       desc: "Themes, colors, density and motion.",
       items: [
         { label: "Theme", icon: "◌", setting: "theme", kind: "select", options: [["dark_galaxy", "Dark Galaxy"], ["nebula", "Nebula"], ["deep_space", "Deep Space"], ["pulse_green", "Pulse Green"], ["cyber_night", "Cyber Night"]] },
-        { label: "Wallpaper", icon: "▧", status: "soon" },
+        { label: "Wallpaper", icon: "▧", setting: "wallpaper", kind: "select", options: [["default", "Default"], ["nebula", "Nebula"], ["deep_space", "Deep Space"]] },
         { label: "Bubble Color", icon: "●", setting: "bubble_color", kind: "select", options: [["cyan", "Cyan"], ["purple", "Purple"], ["rose", "Rose"], ["orange", "Orange"], ["green", "Green"]] },
         { label: "Font Size", icon: "Aa", setting: "font_size", kind: "select", options: [["small", "Small"], ["medium", "Medium"], ["large", "Large"], ["extra_large", "Extra Large"]] },
         { label: "Chat Density", icon: "↕", setting: "density", kind: "select", options: [["compact", "Compact"], ["balanced", "Balanced"], ["relaxed", "Relaxed"]] },
@@ -166,9 +167,6 @@
         { label: "Online Status", icon: "●", setting: "online_status", kind: "toggle" },
         { label: "Last Seen", icon: "◷", setting: "last_seen", kind: "toggle" },
         { label: "Show Message Preview", icon: "◉", setting: "message_preview", kind: "toggle" },
-        { label: "Disappearing Messages", icon: "⌛", status: "soon" },
-        { label: "Privacy Lock", icon: "▣", status: "requires_setup" },
-        { label: "Hidden Conversation", icon: "◌", setting: "hidden_conversation", kind: "toggle" },
       ],
     },
     {
@@ -178,12 +176,7 @@
       desc: "Private actions only run after you tap.",
       items: [
         { label: "Summarize Conversation", icon: "✦", action: "ai-summary", requiresAi: true },
-        { label: "Translate Messages", icon: "⇄", status: "soon" },
         { label: "Smart Replies", icon: "↻", action: "ai-replies", requiresAi: true },
-        { label: "Rewrite Draft", icon: "✎", status: "soon" },
-        { label: "Search with AI", icon: "⌕", status: "soon" },
-        { label: "Extract Tasks", icon: "☑", status: "soon" },
-        { label: "Important Moments", icon: "◇", status: "soon" },
       ],
     },
     {
@@ -198,8 +191,8 @@
         { label: "Upload Quality", icon: "HD", setting: "upload_quality", kind: "select", options: [["standard", "Standard"], ["high", "High"], ["original", "Original"]] },
         { label: "Auto Save Camera Photos", icon: "◎", setting: "auto_save_camera", kind: "toggle" },
         { label: "Clear Media Cache", icon: "⌫", action: "clear-cache", dangerConfirm: "Clear local media cache for this device?" },
-        { label: "Shared Links", icon: "↗", status: "soon" },
-        { label: "Shared Files", icon: "▤", status: "soon" },
+        { label: "Shared Links", icon: "↗", action: "shared-links" },
+        { label: "Shared Files", icon: "▤", action: "shared-files" },
       ],
     },
     {
@@ -209,10 +202,10 @@
       desc: "Safety, reports, sessions and trust.",
       items: [
         { label: "Encryption Status", icon: "🛡", action: "security-status" },
-        { label: "Verify Contact", icon: "◇", status: "soon" },
-        { label: "Trusted Devices", icon: "▣", status: "soon" },
-        { label: "Active Sessions", icon: "◉", status: "soon" },
-        { label: "Security Log", icon: "▤", status: "soon" },
+        { label: "Verify Contact", icon: "◇", action: "verify-contact", directOnly: true },
+        { label: "Trusted Devices", icon: "▣", action: "trusted-devices" },
+        { label: "Active Sessions", icon: "◉", action: "active-sessions" },
+        { label: "Security Log", icon: "▤", action: "security-log" },
         { label: "Report Conversation", icon: "!", action: "report-conversation", dangerConfirm: "Send the latest message to moderation review?" },
         { label: "Block User", icon: "⊘", action: "block-user", directOnly: true, dangerConfirm: "Block this member?" },
       ],
@@ -228,9 +221,8 @@
         { label: "Mark Unread", icon: "◌", action: "mark-unread" },
         { label: "Favorite Conversation", icon: "★", setting: "favorite", kind: "toggle" },
         { label: "Reminder", icon: "⏱", setting: "reminder", kind: "select", options: [["off", "Off"], ["today", "Today"], ["tomorrow", "Tomorrow"], ["next_week", "Next week"]] },
-        { label: "Schedule Message", icon: "◷", status: "soon" },
-        { label: "Create Note", icon: "✎", status: "soon" },
-        { label: "Create Task", icon: "☑", status: "soon" },
+        { label: "Create Note", icon: "✎", action: "create-note" },
+        { label: "Create Task", icon: "☑", action: "create-task" },
       ],
     },
     {
@@ -241,15 +233,6 @@
       groupOnly: true,
       items: [
         { label: "Members", icon: "👥", action: "members" },
-        { label: "Admins", icon: "♛", status: "soon", adminOnly: true },
-        { label: "Roles", icon: "▣", status: "soon", adminOnly: true },
-        { label: "Invite Link", icon: "↗", status: "soon", adminOnly: true },
-        { label: "Join Requests", icon: "＋", status: "soon", adminOnly: true },
-        { label: "Permissions", icon: "⚙", status: "soon", adminOnly: true },
-        { label: "Mute Members", icon: "🔕", status: "soon", adminOnly: true },
-        { label: "Announcements", icon: "▣", status: "soon" },
-        { label: "Polls", icon: "▥", status: "soon" },
-        { label: "Events", icon: "◷", status: "soon" },
       ],
     },
     {
@@ -263,8 +246,8 @@
         { label: "Videos", icon: "▶", stat: "videos" },
         { label: "Voice Messages", icon: "🎤", stat: "voice" },
         { label: "Files", icon: "▤", stat: "media_files" },
-        { label: "Links", icon: "↗", status: "soon" },
-        { label: "Largest Files", icon: "⇅", status: "soon" },
+        { label: "Links", icon: "↗", action: "shared-links" },
+        { label: "Largest Files", icon: "⇅", action: "largest-files" },
         { label: "Clear Cache", icon: "⌫", action: "clear-cache", dangerConfirm: "Clear local cache for this conversation?" },
       ],
     },
@@ -277,9 +260,6 @@
         { label: "Large Text", icon: "Aa", setting: "large_text", kind: "toggle" },
         { label: "Reduce Motion", icon: "↘", setting: "reduce_motion", kind: "toggle" },
         { label: "High Contrast", icon: "◐", setting: "high_contrast", kind: "toggle" },
-        { label: "Voice Reader", icon: "◉", setting: "voice_reader", kind: "toggle" },
-        { label: "Speech-to-Text", icon: "🎤", setting: "speech_to_text", kind: "toggle" },
-        { label: "Text-to-Speech", icon: "◌", setting: "text_to_speech", kind: "toggle" },
         { label: "Haptic Feedback", icon: "✦", setting: "haptic_feedback", kind: "toggle" },
       ],
     },
@@ -290,19 +270,23 @@
       desc: "Destructive actions require confirmation.",
       danger: true,
       items: [
-        { label: "Clear Conversation", icon: "⌫", status: "soon" },
-        { label: "Delete Conversation", icon: "×", status: "soon" },
-        { label: "Leave Group", icon: "⇠", status: "soon", groupOnly: true },
+        { label: "Clear Conversation", icon: "⌫", action: "clear-conversation", dangerConfirm: "Clear this conversation from your view? Other members keep their messages." },
+        { label: "Delete Conversation", icon: "×", action: "delete-conversation", dangerConfirm: "Remove this conversation from your inbox? Other members keep their messages." },
+        { label: "Leave Group", icon: "⇠", action: "leave-group", groupOnly: true, dangerConfirm: "Leave this group conversation?" },
         { label: "Block User", icon: "⊘", action: "block-user", directOnly: true, dangerConfirm: "Block this member?" },
         { label: "Report Spam", icon: "!", action: "report-conversation", dangerConfirm: "Send this conversation to moderation review?" },
-        { label: "Delete Media", icon: "⌧", status: "soon" },
-        { label: "Reset Conversation Settings", icon: "↺", status: "soon" },
+        { label: "Delete Media", icon: "⌧", action: "delete-media", dangerConfirm: "Hide shared media from your view in this conversation?" },
+        { label: "Reset Conversation Settings", icon: "↺", action: "reset-settings", dangerConfirm: "Reset this conversation's controls to defaults?" },
       ],
     },
   ];
 
   function isMobile() {
     return mobileQuery.matches;
+  }
+
+  function prefersReducedMotion() {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches || root?.classList.contains("control-reduce-motion");
   }
 
   function setMobileMode(mode) {
@@ -893,15 +877,15 @@
   }
 
   function controlItemStatus(section, item) {
-    if (!controlItemAvailable(section, item)) return "unavailable";
-    if (item.requiresAi && !state.aiEnabled) return "requires_setup";
+    if (!controlItemAvailable(section, item)) return "hidden";
+    if (item.requiresAi && !state.aiEnabled) return "hidden";
     return item.status || "ready";
   }
 
   function formatControlStat(item, stats = {}) {
     if (item.stat === "storage_used") return formatBytes(stats.storage_used_bytes || 0);
     if (item.stat === "media_files") return String(Number(stats.media_files || 0));
-    if (item.stat === "photos" || item.stat === "videos" || item.stat === "voice") return "Tracked in media files";
+    if (["photos", "videos", "voice", "files", "links", "messages"].includes(item.stat)) return String(Number(stats[item.stat] || 0));
     return "";
   }
 
@@ -926,13 +910,12 @@
       const haystack = `${section.title} ${section.desc} ${(section.items || []).map((item) => item.label).join(" ")}`.toLowerCase();
       return !query || haystack.includes(query);
     });
+    applyControlAppearanceSettings();
     const statusText = conversation.conversation_type === "direct"
-      ? `${stats.connection || "Unknown"} · Direct Conversation`
+      ? `${stats.activity_status || "Offline"} · Direct Conversation`
       : `${Number(stats.members || conversation.member_count || 0)} members · ${typeLabel(conversation.conversation_type)} Conversation`;
     const quickActions = [
       { label: "Search", icon: "⌕", action: "search-chat" },
-      { label: "Call", icon: "☎", status: "soon" },
-      { label: "Video", icon: "▣", status: "soon" },
       { label: stats.muted ? "Unmute" : "Mute", icon: "🔕", action: "mute" },
       { label: stats.pinned || conversation.pinned ? "Unpin" : "Pin", icon: "📌", action: "pin" },
       { label: "Archive", icon: "▤", action: "archive", dangerConfirm: "Archive this conversation?" },
@@ -947,8 +930,8 @@
         </div>
         <div class="control-profile-actions" aria-label="Conversation shortcuts">
           <button type="button" data-control-action="search-chat" aria-label="Search chat">⌕</button>
-          <button type="button" disabled title="Voice calls coming soon" aria-label="Voice calls coming soon">☎</button>
-          <button type="button" disabled title="Video calls coming soon" aria-label="Video calls coming soon">▣</button>
+          <button type="button" data-control-action="shared-media" aria-label="Shared media">🖼</button>
+          <button type="button" data-control-action="members" aria-label="Members">👥</button>
         </div>
       </section>
       <section class="control-quick-actions" aria-label="Quick actions">
@@ -961,7 +944,7 @@
           ["🖼", "Media Files", Number(stats.media_files || 0)],
           ["◉", "Storage Used", formatBytes(stats.storage_used_bytes || 0)],
           ["●", "Unread", Number(stats.unread || conversation.unread_count || 0)],
-          ["↔", "Connection", stats.connection || "Unknown"],
+          ["↔", "Connection", stats.connection || "Connected"],
         ].map(([icon, label, value]) => `<article><span>${icon}</span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(String(value))}</small></article>`).join("")}
       </section>
       <label class="control-search">
@@ -970,6 +953,7 @@
         ${state.controlSearch ? `<button type="button" data-control-search-clear aria-label="Clear settings search">x</button>` : ""}
       </label>
       <section class="control-section-list" data-control-sections>
+        ${state.controlDetail ? renderControlDetail() : ""}
         ${sections.length ? sections.map((section) => renderControlSection(section, query)).join("") : `<div class="control-empty"><strong>No settings found.</strong><small>Try a different search.</small></div>`}
       </section>
     `;
@@ -1003,6 +987,83 @@
     `;
   }
 
+  function renderControlDetail() {
+    const detail = state.controlDetail || {};
+    return `<article class="control-detail" data-control-detail>
+      <header>
+        <div><strong>${escapeHtml(detail.title || "Conversation detail")}</strong><small>${escapeHtml(detail.subtitle || "")}</small></div>
+        <button type="button" data-control-detail-close aria-label="Close detail">x</button>
+      </header>
+      <div class="control-detail-body">${detail.html || ""}</div>
+    </article>`;
+  }
+
+  function controlEmptyHtml(title, body = "") {
+    return `<div class="control-empty"><strong>${escapeHtml(title)}</strong>${body ? `<small>${escapeHtml(body)}</small>` : ""}</div>`;
+  }
+
+  function controlMemberListHtml(members = []) {
+    if (!members.length) return controlEmptyHtml("No members found.");
+    return `<div class="control-detail-list">${members.map((member) => `<article>
+      ${avatarHtml({ title: member.display_name, avatar_url: member.avatar_url }, "control-detail-avatar")}
+      <span><strong>${escapeHtml(member.display_name || "Pulse member")}</strong><small>${escapeHtml(member.role || "member")} · ${member.active_now ? "Online" : "Offline"}</small></span>
+    </article>`).join("")}</div>`;
+  }
+
+  function controlMediaListHtml(items = [], kind = "media") {
+    if (!items.length) return controlEmptyHtml(`No shared ${kind === "all" ? "media" : kind} found.`);
+    return `<div class="control-detail-list">${items.map((item) => {
+      const type = item.media_type || item.mime_type || "file";
+      const size = formatBytes(item.file_size_bytes || 0);
+      const preview = item.thumbnail_url || item.url || "";
+      return `<article>
+        <span class="control-file-icon">${type.includes("video") ? "▶" : type.includes("voice") || type.includes("audio") ? "🎤" : type.includes("image") || type.includes("photo") ? "🖼" : "▤"}</span>
+        <span><strong>${escapeHtml(typeLabel(type))}</strong><small>${escapeHtml(size)} · ${escapeHtml(item.sender_display_name || "Pulse member")} · ${escapeHtml(shortTime(item.created_at || ""))}</small>${item.body_preview ? `<small>${escapeHtml(item.body_preview)}</small>` : ""}</span>
+        ${preview ? `<a href="${escapeAttr(preview)}" target="_blank" rel="noopener" aria-label="Open shared media">Open</a>` : ""}
+      </article>`;
+    }).join("")}</div>`;
+  }
+
+  function controlLinksHtml(items = []) {
+    if (!items.length) return controlEmptyHtml("No shared links found.");
+    return `<div class="control-detail-list">${items.map((item) => `<article>
+      <span class="control-file-icon">↗</span>
+      <span><strong>${escapeHtml(item.domain || "Shared link")}</strong><small>${escapeHtml(item.sender_display_name || "Pulse member")} · ${escapeHtml(shortTime(item.created_at || ""))}</small><small>${escapeHtml(item.url || "")}</small></span>
+      <a href="${escapeAttr(item.url || "#")}" target="_blank" rel="noopener" aria-label="Open shared link">Open</a>
+    </article>`).join("")}</div>`;
+  }
+
+  function controlPinnedHtml(items = []) {
+    if (!items.length) return controlEmptyHtml("No pinned messages yet.", "Pin a message from the message actions menu.");
+    return `<div class="control-detail-list">${items.map((item) => `<article>
+      <span class="control-file-icon">📌</span>
+      <span><strong>${escapeHtml(item.sender_display_name || item.sender?.display_name || "Pulse member")}</strong><small>${escapeHtml(shortTime(item.created_at || ""))}</small><small>${escapeHtml(item.body || item.preview || typeLabel(item.message_type || "message"))}</small></span>
+      <button type="button" data-jump-message="${escapeAttr(item.id)}" aria-label="Jump to pinned message">View</button>
+    </article>`).join("")}</div>`;
+  }
+
+  function controlStatsHtml(stats = {}) {
+    const rows = [
+      ["Messages", stats.messages || 0],
+      ["Media files", stats.media_files || 0],
+      ["Photos", stats.photos || 0],
+      ["Videos", stats.videos || 0],
+      ["Voice messages", stats.voice || 0],
+      ["Files", stats.files || 0],
+      ["Links", stats.links || 0],
+      ["Storage", formatBytes(stats.storage_used_bytes || 0)],
+      ["Unread", stats.unread || 0],
+      ["Connection", stats.connection || "Connected"],
+    ];
+    return `<div class="control-detail-grid">${rows.map(([label, value]) => `<article><strong>${escapeHtml(String(value))}</strong><small>${escapeHtml(label)}</small></article>`).join("")}</div>`;
+  }
+
+  function setControlDetail(title, html, subtitle = "") {
+    state.controlDetail = { title, html, subtitle };
+    renderControlCenter();
+    window.setTimeout(() => el("[data-control-detail]")?.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" }), 20);
+  }
+
   function renderControlActionButton(item) {
     const status = item.status || "ready";
     const disabled = status !== "ready";
@@ -1015,7 +1076,8 @@
     const expanded = state.controlExpanded.has(section.id) || Boolean(query);
     const sectionMatches = !query || `${section.title} ${section.desc}`.toLowerCase().includes(query);
     const visibleItems = (section.items || []).filter((item) => {
-      if (item.groupOnly && !isControlGroup()) return false;
+      if (!controlItemAvailable(section, item)) return false;
+      if (controlItemStatus(section, item) === "hidden") return false;
       const text = `${item.label} ${section.title}`.toLowerCase();
       return sectionMatches || text.includes(query);
     });
@@ -1034,6 +1096,7 @@
 
   function renderControlItem(section, item) {
     const status = controlItemStatus(section, item);
+    if (status === "hidden") return "";
     const disabled = status !== "ready";
     const badge = disabled ? `<span class="control-badge">${controlBadgeLabel(status)}</span>` : "";
     const confirm = item.dangerConfirm ? `data-control-confirm="${escapeAttr(item.dangerConfirm)}"` : "";
@@ -1062,9 +1125,7 @@
   }
 
   function controlBadgeLabel(status) {
-    if (status === "requires_setup") return "Requires Setup";
-    if (status === "unavailable") return "Unavailable";
-    return "Coming Soon";
+    return status === "blocked" ? "Blocked" : "Hidden";
   }
 
   async function openConversationControlCenter({ entry = "thread" } = {}) {
@@ -1078,6 +1139,7 @@
     state.controlOpen = true;
     state.controlLoading = true;
     state.controlSearch = "";
+    state.controlDetail = null;
     document.body.classList.add("conversation-control-open");
     const panel = el("[data-conversation-control-center]");
     const backdrop = el("[data-conversation-control-backdrop]");
@@ -1099,6 +1161,7 @@
   function closeConversationControlCenter() {
     state.controlOpen = false;
     state.controlSearch = "";
+    state.controlDetail = null;
     document.body.classList.remove("conversation-control-open");
     const panel = el("[data-conversation-control-center]");
     const backdrop = el("[data-conversation-control-backdrop]");
@@ -1127,6 +1190,7 @@
       const data = await api(`/conversations/${id}/control-center`, {}, "conversation_control_center");
       state.controlData = data;
       if (data.conversation) rememberConversation(data.conversation);
+      applyControlAppearanceSettings();
       state.controlLoading = false;
       renderControlCenter();
     } catch (error) {
@@ -1147,16 +1211,37 @@
         body: JSON.stringify({ section, key, value }),
       }, "conversation_control_center_update");
       state.controlData = { ...(state.controlData || {}), settings: data.settings || state.controlData?.settings };
+      applyControlAppearanceSettings();
       if (section === "notifications" && key === "mute_choice") {
         const item = state.conversationCache.get(id);
         if (item) item.muted = value !== "off";
         renderConversations();
+      }
+      if ((data.settings?.accessibility || {}).haptic_feedback && "vibrate" in navigator) {
+        try { navigator.vibrate(12); } catch (_) {}
       }
       controlStatus(data.message || "Saved.", "success");
       renderControlCenter();
     } finally {
       state.controlSaving = false;
     }
+  }
+
+  function applyControlAppearanceSettings() {
+    const settings = state.controlData?.settings || {};
+    const appearance = settings.appearance || {};
+    const accessibility = settings.accessibility || {};
+    if (!root) return;
+    root.dataset.controlTheme = appearance.theme || "dark_galaxy";
+    root.dataset.controlWallpaper = appearance.wallpaper || "default";
+    root.dataset.controlBubble = appearance.bubble_color || "cyan";
+    root.dataset.controlDensity = appearance.density || "balanced";
+    root.dataset.controlFont = accessibility.large_text ? "large" : (appearance.font_size || "medium");
+    root.classList.toggle("control-reduce-motion", Boolean(accessibility.reduce_motion || appearance.reduce_particles || appearance.animation_level === "reduced" || appearance.animation_level === "off"));
+    root.classList.toggle("control-high-contrast", Boolean(accessibility.high_contrast || appearance.high_contrast));
+    root.classList.toggle("control-large-text", Boolean(accessibility.large_text || ["large", "extra_large"].includes(String(appearance.font_size || ""))));
+    root.classList.toggle("control-compact-density", appearance.density === "compact");
+    root.classList.toggle("control-relaxed-density", appearance.density === "relaxed");
   }
 
   async function runControlAction(action, confirmText = "") {
@@ -1176,9 +1261,35 @@
       toggleThreadSearch(true);
       return;
     }
-    if (action === "members" || action === "shared-media") {
-      closeConversationControlCenter();
-      if (!state.detailsOpen) toggleDetails();
+    if (action === "members") {
+      controlStatus("Loading members...", "info");
+      const data = await api(`/conversations/${id}/members`, {}, "conversation_members");
+      setControlDetail("Members", controlMemberListHtml(data.members || []), `${(data.members || []).length} participant${(data.members || []).length === 1 ? "" : "s"}`);
+      controlStatus("");
+      return;
+    }
+    if (action === "shared-media" || action === "shared-files" || action === "largest-files") {
+      controlStatus("Loading shared media...", "info");
+      const kind = action === "shared-files" || action === "largest-files" ? "files" : "all";
+      const data = await api(`/conversations/${id}/control-center/media?kind=${encodeURIComponent(kind)}&limit=${action === "largest-files" ? 100 : 60}`, {}, "conversation_control_media");
+      let items = data.items || [];
+      if (action === "largest-files") items = items.slice().sort((a, b) => Number(b.file_size_bytes || 0) - Number(a.file_size_bytes || 0)).slice(0, 20);
+      setControlDetail(action === "largest-files" ? "Largest Files" : action === "shared-files" ? "Shared Files" : "Shared Media", controlMediaListHtml(items, kind), `${items.length} item${items.length === 1 ? "" : "s"}`);
+      controlStatus("");
+      return;
+    }
+    if (action === "shared-links") {
+      controlStatus("Loading shared links...", "info");
+      const data = await api(`/conversations/${id}/control-center/links`, {}, "conversation_control_links");
+      setControlDetail("Shared Links", controlLinksHtml(data.items || []), `${(data.items || []).length} link${(data.items || []).length === 1 ? "" : "s"}`);
+      controlStatus("");
+      return;
+    }
+    if (action === "pinned-messages") {
+      controlStatus("Loading pinned messages...", "info");
+      const data = await api(`/conversations/${id}/control-center/pins`, {}, "conversation_control_pins");
+      setControlDetail("Pinned Messages", controlPinnedHtml(data.items || []), `${(data.items || []).length} pinned`);
+      controlStatus("");
       return;
     }
     if (action === "storage") {
@@ -1189,11 +1300,48 @@
       return;
     }
     if (action === "message-stats" || action === "security-status") {
-      controlStatus(action === "security-status" ? "This conversation is protected by authenticated PulseSoc access controls." : "Conversation stats are shown in the live status cards.", "info");
+      if (action === "message-stats") {
+        setControlDetail("Message Stats", controlStatsHtml(state.controlData?.stats || {}), "Live counts from this conversation");
+      } else {
+        setControlDetail("Security Status", `<div class="control-detail-copy"><p>This conversation uses authenticated PulseSoc access, participant checks, block rules, media scan state, and server-side read boundaries.</p><p>True end-to-end encryption is not claimed here; the current status is a protected channel.</p></div>`, "Protected channel");
+      }
       return;
     }
     if (action === "ai-summary") return await runAIAction("summary");
     if (action === "ai-replies") return await runAIAction("smart-replies");
+    if (action === "open-notification-settings") {
+      window.location.href = "/pulse/settings/notifications";
+      return;
+    }
+    if (action === "trusted-devices" || action === "active-sessions") {
+      window.location.href = "/pulse/settings/devices";
+      return;
+    }
+    if (action === "security-log") {
+      window.location.href = "/pulse/settings/security";
+      return;
+    }
+    if (action === "verify-contact") {
+      const members = state.controlData?.members || state.controlData?.conversation?.participants_preview || state.members || [];
+      const peer = members.find((member) => Number(member.user_id) !== currentUserId);
+      setControlDetail("Verify Contact", peer ? `<div class="control-detail-copy"><p>${escapeHtml(peer.display_name || "This member")} is verified through PulseSoc authenticated participant access for this direct conversation.</p><p>Cryptographic fingerprint verification is not exposed because this chat does not claim true end-to-end encryption.</p></div>` : controlEmptyHtml("No direct peer found."), "Protected participant");
+      return;
+    }
+    if (action === "export-chat") {
+      controlStatus("Preparing export...", "info");
+      const data = await api(`/conversations/${id}/control-center/export`, {}, "conversation_control_export");
+      const blob = new Blob([JSON.stringify(data.export || {}, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = data.filename || `pulsesoc-conversation-${id}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      controlStatus("Export downloaded.", "success");
+      return;
+    }
     if (action === "clear-cache") {
       try {
         clearDraft(id);
@@ -1204,9 +1352,32 @@
       }
       return;
     }
-    if (action === "report-conversation") return await reportLast();
-    if (action === "block-user") return await blockPeer();
-    controlStatus("That control is not available yet.", "error");
+    if (action === "create-note" || action === "create-task") {
+      const body = window.prompt(action === "create-note" ? "Conversation note" : "Conversation task");
+      if (!body) return;
+      const data = await api(`/conversations/${id}/control-center/action`, { method: "POST", body: JSON.stringify({ action, body }) }, "conversation_control_action");
+      controlStatus(data.message || "Saved.", "success");
+      return;
+    }
+    if (["report-conversation", "block-user", "clear-conversation", "delete-conversation", "leave-group", "delete-media", "reset-settings"].includes(action)) {
+      const data = await api(`/conversations/${id}/control-center/action`, { method: "POST", body: JSON.stringify({ action }) }, "conversation_control_action");
+      controlStatus(data.message || "Done.", "success");
+      if (action === "reset-settings") {
+        state.controlData = { ...(state.controlData || {}), settings: data.settings || state.controlData?.settings };
+        applyControlAppearanceSettings();
+      }
+      if (["delete-conversation", "leave-group"].includes(action)) {
+        closeConversationControlCenter();
+        await loadConversations({ selectFirst: false });
+      } else if (["clear-conversation", "delete-media"].includes(action)) {
+        state.messageCache.delete(id);
+        if (Number(state.active?.conversation_id || 0) === id) await loadMessages(id);
+      } else {
+        await loadConversationControlCenter(true);
+      }
+      return;
+    }
+    controlStatus("That control is hidden until its backend is ready.", "error");
   }
 
   function trapControlFocus(event) {
@@ -1440,6 +1611,10 @@
   function attachmentHtml(item) {
     const url = item.playback_url || item.url || item.cdn_url || item.thumbnail_url || "";
     if (!url) return "";
+    if (!shouldAutoLoadAttachment(item)) {
+      const label = (item.media_type || item.mime_type || "attachment").replace("/", " ");
+      return `<a class="attachment-manual-load" href="${escapeAttr(url)}" target="_blank" rel="noopener">Open ${escapeHtml(label)}</a>`;
+    }
     if (item.voice_note || (item.media_type || "").match(/audio|voice/)) return voiceAttachmentHtml(item, url);
     if (window.PulseMediaRenderer && (item.media_type || "").match(/image|gif|video|audio/)) {
       return window.PulseMediaRenderer.renderMedia({
@@ -1457,6 +1632,15 @@
     if ((item.media_type || "").match(/image|gif/)) return `<img src="${escapeAttr(url)}" alt="Attached media">`;
     if ((item.media_type || "").match(/video/)) return `<video src="${escapeAttr(url)}" controls playsinline webkit-playsinline preload="metadata" poster="${escapeAttr(item.thumbnail_url || "")}"></video>`;
     return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener">Open attachment</a>`;
+  }
+
+  function shouldAutoLoadAttachment(item) {
+    const media = (state.controlData?.settings?.media || {});
+    const type = String(item.media_type || item.mime_type || "").toLowerCase();
+    if ((type.includes("image") || type.includes("photo") || type.includes("gif")) && media.auto_download_photos === false) return false;
+    if (type.includes("video") && media.auto_download_videos === false) return false;
+    if ((type.includes("audio") || type.includes("voice")) && media.auto_download_voice === false) return false;
+    return true;
   }
 
   function voiceAttachmentHtml(item, url) {
@@ -2631,6 +2815,20 @@
           state.controlSearch = "";
           renderControlCenter();
           window.setTimeout(() => el("[data-control-search]")?.focus(), 20);
+          return;
+        }
+        if (target.closest("[data-control-detail-close]")) {
+          state.controlDetail = null;
+          renderControlCenter();
+          return;
+        }
+        const jumpMessage = target.closest("[data-jump-message]");
+        if (jumpMessage) {
+          closeConversationControlCenter();
+          const node = document.querySelector(`[data-message-id="${CSS.escape(String(jumpMessage.dataset.jumpMessage || ""))}"]`);
+          node?.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+          node?.classList.add("is-search-match");
+          window.setTimeout(() => node?.classList.remove("is-search-match"), 1400);
           return;
         }
         const controlToggle = target.closest("[data-control-toggle]");

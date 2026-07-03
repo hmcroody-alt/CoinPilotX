@@ -15,7 +15,7 @@ CSS = ROOT / "static" / "css" / "pulse_messages_v2.css"
 ROUTES = ROOT / "pulse_communications_v2" / "routes.py"
 SERVICE = ROOT / "pulse_communications_v2" / "service.py"
 MODELS = ROOT / "pulse_communications_v2" / "models.py"
-REPORT = ROOT / "reports" / "conversation_control_center.md"
+REPORT = ROOT / "reports" / "conversation_control_center_v2_wiring.md"
 
 
 def read(path: Path) -> str:
@@ -64,15 +64,25 @@ def main() -> int:
     require(checks, "required sections present", all(section in js for section in required_sections), ", ".join(section for section in required_sections if section not in js))
     require(checks, "danger zone present", "Danger Zone" in js and "is-danger" in css)
     require(checks, "no internal architecture name exposed", "LogiNexus" not in template + js + css)
+    require(checks, "no visible coming soon labels in control center js", "Coming Soon" not in js and "Requires Setup" not in js and "Unavailable" not in js)
+    require(checks, "no unknown control status", '"Unknown"' not in js and '"Unknown"' not in service)
+    require(checks, "dead call buttons removed", "Voice calls coming soon" not in template + js and "Video calls coming soon" not in template + js)
     require(checks, "microphone icon used for voice attachment", 'data-attachment-option="voice"><span aria-hidden="true">&#127908;' in template)
     require(checks, "microphone icon used for recorder", 'data-voice-start title="Record voice note" aria-label="Record voice note">&#127908;' in template)
     require(checks, "control center endpoints exist", "control-center" in routes and "conversation_control_center" in routes)
     require(checks, "patch endpoint exists", "@comm_v2_blueprint.patch" in routes and "update_conversation_control_center" in routes)
+    require(checks, "detail endpoints exist", "conversation_control_media" in routes and "conversation_control_links" in routes and "conversation_control_pins" in routes and "conversation_control_export" in routes)
+    require(checks, "action endpoint exists", "conversation_control_action" in routes and "control-center/action" in routes)
     require(checks, "participant permission checks exist", "_conversation_access(cur, user_id, conversation_ref)" in service)
     require(checks, "settings table exists", "comm_v2_conversation_settings" in models and "UNIQUE(conversation_id, user_id)" in models)
+    require(checks, "conversation item table exists", "comm_v2_conversation_items" in models)
     require(checks, "group-only controls are gated", "groupOnly: true" in js and "isControlGroup" in js)
-    require(checks, "admin group controls are gated", "adminOnly" in js and "conversation.is_admin" in js)
-    require(checks, "coming soon states are explicit", "Coming Soon" in js and "Requires Setup" in js and "Unavailable" in js)
+    require(checks, "quick actions wired", all(token in js for token in ['action: "search-chat"', 'action: "mute"', 'action: "pin"', 'action: "archive"']))
+    require(checks, "notification toggles persist and affect push", "lock_screen_disabled" in service and "_message_preview_hidden(policy_cur" in service)
+    require(checks, "privacy toggles affect behavior", "_read_receipts_allowed(cur, user_id, conversation_id)" in service and "typing_indicator" in service)
+    require(checks, "appearance toggles affect UI", "applyControlAppearanceSettings" in js and "control-high-contrast" in css and "data-control-theme" in css)
+    require(checks, "media and storage use real data", "conversation_control_media" in service and "conversation_control_links" in service and "storage_used_bytes" in service)
+    require(checks, "danger actions require confirmation", "clear-conversation" in js and "data-control-confirm" in js and "conversation_control_action" in service)
     require(checks, "report file exists", REPORT.exists())
 
     failed = [check for check in checks if not check["passed"]]
