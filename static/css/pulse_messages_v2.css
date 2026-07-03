@@ -2553,78 +2553,396 @@ select:focus-visible {
   color: #8fffe3;
 }
 
+.comm-shell {
+  --control-accent: #66e7ff;
+  --control-accent-2: #35f4b6;
+  --control-accent-3: #9b67ff;
+  --control-warm: #f6cb63;
+  --control-theme-border: rgba(102, 231, 255, .28);
+  --control-theme-border-strong: rgba(102, 231, 255, .48);
+  --control-theme-glow: rgba(58, 220, 255, .20);
+  --control-theme-thread:
+    radial-gradient(circle at 16% 10%, rgba(53, 244, 182, .10), transparent 28rem),
+    radial-gradient(circle at 84% 16%, rgba(102, 231, 255, .08), transparent 28rem),
+    rgba(3, 9, 19, .90);
+  --control-theme-header:
+    linear-gradient(110deg, rgba(4, 16, 32, .90), rgba(7, 20, 33, .80)),
+    rgba(2, 7, 15, .76);
+  --control-theme-panel:
+    radial-gradient(circle at 12% 5%, rgba(53, 244, 182, .18), transparent 16rem),
+    radial-gradient(circle at 92% 18%, rgba(155, 103, 255, .20), transparent 17rem),
+    linear-gradient(145deg, rgba(4, 12, 26, .96), rgba(5, 8, 18, .98));
+  --control-wallpaper:
+    radial-gradient(circle at 15% 18%, rgba(53, 244, 182, .08), transparent 30%),
+    radial-gradient(circle at 82% 22%, rgba(102, 231, 255, .06), transparent 28%),
+    linear-gradient(rgba(102, 231, 255, .018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(102, 231, 255, .018) 1px, transparent 1px);
+  --control-wallpaper-size: auto, auto, 48px 48px, 48px 48px;
+  --control-wallpaper-overlay:
+    linear-gradient(180deg, rgba(0, 6, 14, .58), rgba(0, 4, 12, .72));
+  --control-received-bg: linear-gradient(135deg, rgba(255, 255, 255, .070), rgba(255, 255, 255, .035));
+  --control-received-border: rgba(102, 231, 255, .16);
+  --control-sent-bg: linear-gradient(135deg, rgba(34, 171, 119, .58), rgba(26, 113, 122, .66));
+  --control-sent-border: rgba(53, 244, 182, .32);
+  --control-input-glow: 0 0 0 1px rgba(102, 231, 255, .10), 0 0 22px rgba(58, 220, 255, .08);
+  --control-read-receipt: #baffec;
+  --control-online: #37f6ae;
+  --control-density-gap: 8px;
+}
+
+.comm-shell[data-control-theme="pulse_green"] {
+  --control-accent: #49ffc8;
+  --control-accent-2: #23dd93;
+  --control-accent-3: #79ffe5;
+  --control-theme-border: rgba(65, 255, 200, .30);
+  --control-theme-border-strong: rgba(65, 255, 200, .55);
+  --control-theme-glow: rgba(37, 221, 147, .23);
+  --control-theme-thread:
+    radial-gradient(circle at 14% 14%, rgba(48, 255, 184, .14), transparent 30rem),
+    radial-gradient(circle at 78% 18%, rgba(44, 147, 116, .11), transparent 26rem),
+    rgba(3, 17, 16, .92);
+  --control-theme-header: linear-gradient(110deg, rgba(2, 28, 25, .92), rgba(4, 37, 32, .80));
+  --control-theme-panel: radial-gradient(circle at 20% 0, rgba(49, 246, 182, .22), transparent 24rem), linear-gradient(180deg, rgba(5, 25, 24, .96), rgba(5, 16, 25, .94));
+  --control-sent-bg: linear-gradient(135deg, rgba(35, 221, 147, .68), rgba(15, 123, 100, .68));
+  --control-sent-border: rgba(73, 255, 200, .48);
+}
+
+.comm-shell[data-control-theme="deep_space"] {
+  --control-accent: #7bd7ff;
+  --control-accent-2: #5887ff;
+  --control-accent-3: #9f78ff;
+  --control-theme-border: rgba(123, 215, 255, .26);
+  --control-theme-glow: rgba(88, 135, 255, .18);
+  --control-theme-thread:
+    radial-gradient(circle at 76% 12%, rgba(88, 135, 255, .12), transparent 30rem),
+    radial-gradient(circle at 18% 80%, rgba(123, 215, 255, .08), transparent 26rem),
+    rgba(2, 7, 22, .94);
+  --control-theme-header: linear-gradient(110deg, rgba(4, 10, 30, .92), rgba(5, 14, 34, .82));
+  --control-theme-panel: radial-gradient(circle at 80% 0, rgba(88, 135, 255, .18), transparent 24rem), linear-gradient(180deg, rgba(3, 8, 27, .98), rgba(4, 7, 21, .96));
+  --control-sent-bg: linear-gradient(135deg, rgba(42, 105, 190, .66), rgba(52, 71, 151, .70));
+  --control-sent-border: rgba(123, 215, 255, .44);
+}
+
+.comm-shell[data-control-theme="nebula"] {
+  --control-accent: #b774ff;
+  --control-accent-2: #59eaff;
+  --control-accent-3: #ff66bd;
+  --control-theme-border: rgba(183, 116, 255, .30);
+  --control-theme-glow: rgba(183, 116, 255, .22);
+  --control-theme-thread:
+    radial-gradient(circle at 25% 12%, rgba(183, 116, 255, .15), transparent 30rem),
+    radial-gradient(circle at 84% 26%, rgba(255, 102, 189, .10), transparent 27rem),
+    rgba(8, 7, 25, .94);
+  --control-theme-header: linear-gradient(110deg, rgba(18, 9, 42, .92), rgba(16, 7, 31, .82));
+  --control-theme-panel: radial-gradient(circle at 28% 0, rgba(164, 91, 255, .24), transparent 24rem), linear-gradient(180deg, rgba(8, 10, 30, .96), rgba(10, 6, 28, .94));
+  --control-sent-bg: linear-gradient(135deg, rgba(133, 73, 217, .68), rgba(73, 62, 169, .72));
+  --control-sent-border: rgba(183, 116, 255, .48);
+}
+
+.comm-shell[data-control-theme="cyber_night"] {
+  --control-accent: #5ff4ff;
+  --control-accent-2: #2fb7ff;
+  --control-accent-3: #7c5cff;
+  --control-theme-border: rgba(95, 244, 255, .30);
+  --control-theme-glow: rgba(47, 183, 255, .20);
+  --control-theme-thread:
+    radial-gradient(circle at 90% 9%, rgba(78, 222, 255, .12), transparent 28rem),
+    radial-gradient(circle at 16% 80%, rgba(124, 92, 255, .10), transparent 25rem),
+    rgba(1, 7, 18, .96);
+  --control-theme-header: linear-gradient(110deg, rgba(1, 8, 22, .94), rgba(3, 17, 36, .84));
+  --control-theme-panel: radial-gradient(circle at 80% 0, rgba(78, 222, 255, .22), transparent 24rem), linear-gradient(180deg, rgba(2, 8, 18, .98), rgba(4, 8, 28, .94));
+  --control-sent-bg: linear-gradient(135deg, rgba(35, 157, 210, .66), rgba(28, 82, 160, .70));
+  --control-sent-border: rgba(95, 244, 255, .48);
+}
+
+.comm-shell[data-control-theme="solar_flame"] {
+  --control-accent: #ffbb5d;
+  --control-accent-2: #ff5c86;
+  --control-accent-3: #ffd879;
+  --control-theme-border: rgba(255, 187, 93, .32);
+  --control-theme-glow: rgba(255, 92, 134, .20);
+  --control-theme-thread: radial-gradient(circle at 18% 12%, rgba(255, 153, 72, .13), transparent 30rem), radial-gradient(circle at 86% 22%, rgba(255, 68, 114, .10), transparent 26rem), rgba(19, 8, 8, .94);
+  --control-theme-header: linear-gradient(110deg, rgba(35, 13, 11, .92), rgba(31, 13, 20, .82));
+  --control-theme-panel: radial-gradient(circle at 18% 0, rgba(255, 166, 65, .22), transparent 24rem), linear-gradient(180deg, rgba(24, 10, 13, .98), rgba(12, 6, 14, .95));
+  --control-sent-bg: linear-gradient(135deg, rgba(207, 111, 48, .66), rgba(164, 54, 87, .70));
+  --control-sent-border: rgba(255, 187, 93, .50);
+}
+
+.comm-shell[data-control-theme="ocean_signal"] {
+  --control-accent: #69e7ff;
+  --control-accent-2: #2de0c0;
+  --control-accent-3: #3a8dff;
+  --control-theme-border: rgba(105, 231, 255, .32);
+  --control-theme-glow: rgba(45, 224, 192, .18);
+  --control-theme-thread: radial-gradient(circle at 17% 19%, rgba(45, 224, 192, .12), transparent 28rem), radial-gradient(circle at 82% 82%, rgba(58, 141, 255, .10), transparent 28rem), rgba(2, 13, 23, .94);
+  --control-theme-header: linear-gradient(110deg, rgba(3, 24, 34, .92), rgba(3, 19, 35, .82));
+  --control-theme-panel: radial-gradient(circle at 12% 0, rgba(45, 224, 192, .20), transparent 24rem), linear-gradient(180deg, rgba(2, 18, 28, .98), rgba(2, 9, 20, .96));
+  --control-sent-bg: linear-gradient(135deg, rgba(38, 157, 177, .66), rgba(28, 103, 154, .70));
+  --control-sent-border: rgba(105, 231, 255, .50);
+}
+
+.comm-shell[data-control-theme="royal_purple"] {
+  --control-accent: #c083ff;
+  --control-accent-2: #7a5cff;
+  --control-accent-3: #f0c6ff;
+  --control-theme-border: rgba(192, 131, 255, .32);
+  --control-theme-glow: rgba(122, 92, 255, .21);
+  --control-theme-thread: radial-gradient(circle at 23% 14%, rgba(192, 131, 255, .14), transparent 30rem), radial-gradient(circle at 82% 18%, rgba(122, 92, 255, .10), transparent 28rem), rgba(10, 6, 24, .95);
+  --control-theme-header: linear-gradient(110deg, rgba(20, 9, 40, .94), rgba(18, 8, 35, .82));
+  --control-theme-panel: radial-gradient(circle at 72% 0, rgba(192, 131, 255, .22), transparent 24rem), linear-gradient(180deg, rgba(12, 7, 28, .98), rgba(8, 5, 22, .96));
+  --control-sent-bg: linear-gradient(135deg, rgba(122, 80, 198, .68), rgba(75, 55, 150, .72));
+  --control-sent-border: rgba(192, 131, 255, .50);
+}
+
+.comm-shell[data-control-theme="haiti_night"] {
+  --control-accent: #4f8cff;
+  --control-accent-2: #ff4f70;
+  --control-accent-3: #f6f2ff;
+  --control-theme-border: rgba(79, 140, 255, .31);
+  --control-theme-glow: rgba(255, 79, 112, .18);
+  --control-theme-thread: radial-gradient(circle at 16% 10%, rgba(79, 140, 255, .14), transparent 28rem), radial-gradient(circle at 88% 22%, rgba(255, 79, 112, .10), transparent 26rem), rgba(4, 7, 23, .95);
+  --control-theme-header: linear-gradient(110deg, rgba(5, 11, 40, .94), rgba(32, 6, 21, .82));
+  --control-theme-panel: radial-gradient(circle at 10% 0, rgba(79, 140, 255, .22), transparent 24rem), radial-gradient(circle at 95% 15%, rgba(255, 79, 112, .16), transparent 22rem), linear-gradient(180deg, rgba(5, 8, 26, .98), rgba(7, 5, 20, .96));
+  --control-sent-bg: linear-gradient(135deg, rgba(44, 91, 190, .66), rgba(145, 45, 76, .69));
+  --control-sent-border: rgba(246, 242, 255, .38);
+}
+
+.comm-shell[data-control-theme="creator_gold"] {
+  --control-accent: #ffd86b;
+  --control-accent-2: #38dda0;
+  --control-accent-3: #fff2b6;
+  --control-theme-border: rgba(255, 216, 107, .34);
+  --control-theme-glow: rgba(255, 216, 107, .18);
+  --control-theme-thread: radial-gradient(circle at 18% 12%, rgba(255, 216, 107, .13), transparent 30rem), radial-gradient(circle at 82% 18%, rgba(56, 221, 160, .09), transparent 27rem), rgba(15, 11, 4, .94);
+  --control-theme-header: linear-gradient(110deg, rgba(33, 24, 8, .94), rgba(16, 19, 14, .82));
+  --control-theme-panel: radial-gradient(circle at 25% 0, rgba(255, 216, 107, .22), transparent 24rem), linear-gradient(180deg, rgba(18, 13, 5, .98), rgba(8, 9, 10, .96));
+  --control-sent-bg: linear-gradient(135deg, rgba(173, 129, 43, .68), rgba(90, 121, 77, .68));
+  --control-sent-border: rgba(255, 216, 107, .52);
+  --control-read-receipt: #ffe9a6;
+}
+
+.comm-shell[data-control-wallpaper="neon_planet"] {
+  --control-wallpaper: radial-gradient(circle at 75% 26%, rgba(102, 231, 255, .22) 0 6rem, rgba(102, 231, 255, .08) 6.2rem 8.8rem, transparent 9rem), radial-gradient(circle at 75% 26%, rgba(155, 103, 255, .18), transparent 18rem), linear-gradient(120deg, rgba(1, 9, 21, .95), rgba(5, 11, 27, .96));
+  --control-wallpaper-size: auto, auto, auto;
+}
+
+.comm-shell[data-control-wallpaper="galaxy_grid"] {
+  --control-wallpaper: linear-gradient(rgba(102, 231, 255, .05) 1px, transparent 1px), linear-gradient(90deg, rgba(102, 231, 255, .05) 1px, transparent 1px), radial-gradient(circle at 30% 18%, rgba(155, 103, 255, .10), transparent 22rem), rgba(1, 8, 18, .95);
+  --control-wallpaper-size: 54px 54px, 54px 54px, auto, auto;
+}
+
+.comm-shell[data-control-wallpaper="pulse_horizon"] {
+  --control-wallpaper: linear-gradient(180deg, transparent 0 52%, rgba(53, 244, 182, .13) 53%, transparent 61%), radial-gradient(ellipse at 50% 57%, rgba(102, 231, 255, .14), transparent 28rem), linear-gradient(180deg, rgba(1, 8, 19, .95), rgba(3, 14, 20, .97));
+  --control-wallpaper-size: auto, auto, auto;
+}
+
+.comm-shell[data-control-wallpaper="alien_city"] {
+  --control-wallpaper: linear-gradient(180deg, transparent 0 55%, rgba(2, 9, 18, .86) 55% 100%), linear-gradient(90deg, transparent 0 7%, rgba(102, 231, 255, .10) 7% 8%, transparent 8% 20%, rgba(53, 244, 182, .08) 20% 21%, transparent 21% 38%, rgba(155, 103, 255, .08) 38% 39%, transparent 39%), radial-gradient(circle at 75% 20%, rgba(53, 244, 182, .13), transparent 20rem), rgba(2, 8, 18, .96);
+  --control-wallpaper-size: auto, 220px 100%, auto, auto;
+}
+
+.comm-shell[data-control-wallpaper="cosmic_ocean"] {
+  --control-wallpaper: radial-gradient(ellipse at 42% 105%, rgba(45, 224, 192, .18), transparent 28rem), radial-gradient(circle at 88% 18%, rgba(58, 141, 255, .14), transparent 24rem), linear-gradient(180deg, rgba(1, 10, 20, .96), rgba(1, 18, 27, .98));
+  --control-wallpaper-size: auto, auto, auto;
+}
+
+.comm-shell[data-control-wallpaper="aurora_signal"] {
+  --control-wallpaper: linear-gradient(115deg, transparent 0 18%, rgba(53, 244, 182, .11) 24%, transparent 38%, rgba(155, 103, 255, .10) 48%, transparent 66%), radial-gradient(circle at 50% 0, rgba(102, 231, 255, .10), transparent 28rem), rgba(3, 8, 18, .96);
+  --control-wallpaper-size: auto, auto, auto;
+}
+
+.comm-shell[data-control-wallpaper="dark_nebula"] {
+  --control-wallpaper: radial-gradient(circle at 26% 24%, rgba(155, 103, 255, .12), transparent 24rem), radial-gradient(circle at 72% 30%, rgba(255, 102, 189, .08), transparent 22rem), radial-gradient(circle at 55% 80%, rgba(102, 231, 255, .07), transparent 26rem), rgba(4, 5, 15, .97);
+  --control-wallpaper-size: auto, auto, auto, auto;
+}
+
+.comm-shell[data-control-wallpaper="star_tunnel"] {
+  --control-wallpaper: repeating-radial-gradient(circle at 50% 50%, rgba(102, 231, 255, .08) 0 1px, transparent 2px 18px), radial-gradient(circle at 50% 50%, transparent 0 6rem, rgba(102, 231, 255, .06) 6rem 16rem, transparent 27rem), rgba(2, 7, 16, .97);
+  --control-wallpaper-size: auto, auto, auto;
+}
+
+.comm-shell[data-control-wallpaper="minimal_black"] {
+  --control-wallpaper: linear-gradient(180deg, rgba(2, 6, 13, .98), rgba(0, 2, 6, .99));
+  --control-wallpaper-size: auto;
+  --control-wallpaper-overlay: linear-gradient(180deg, rgba(0, 0, 0, .52), rgba(0, 0, 0, .72));
+}
+
+.comm-shell .comm-thread {
+  background: var(--control-theme-thread);
+}
+
+.comm-shell .thread-head {
+  border-color: var(--control-theme-border);
+  background: var(--control-theme-header);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, .18), inset 0 -1px 0 var(--control-theme-border);
+}
+
+.comm-shell .conversation-control-center {
+  border-color: var(--control-theme-border);
+  background: var(--control-theme-panel);
+  box-shadow: 0 24px 90px rgba(0, 0, 0, .55), 0 0 38px var(--control-theme-glow);
+}
+
+.comm-shell .messages,
+.comm-shell [data-messages] {
+  gap: var(--control-density-gap);
+  background: var(--control-wallpaper);
+  background-size: var(--control-wallpaper-size);
+}
+
+.comm-shell .messages::before {
+  background:
+    var(--control-wallpaper-overlay),
+    radial-gradient(circle at 15% 18%, color-mix(in srgb, var(--control-accent-2) 9%, transparent), transparent 30%),
+    radial-gradient(circle at 82% 22%, color-mix(in srgb, var(--control-accent) 8%, transparent), transparent 28%);
+}
+
+.comm-shell .message {
+  border-color: var(--control-received-border);
+  background: var(--control-received-bg);
+}
+
+.comm-shell .message.is-mine {
+  border-color: var(--control-sent-border);
+  background: var(--control-sent-bg);
+}
+
+.comm-shell .message strong,
+.comm-shell .control-info-grid span,
+.comm-shell .control-detail > header strong {
+  color: var(--control-accent);
+}
+
+.comm-shell .delivery-state,
+.comm-shell .delivery-mark {
+  color: var(--control-read-receipt);
+}
+
+.comm-shell .presence-online,
+.comm-shell .control-profile p,
+.comm-shell .thread-identity p,
+.comm-shell .conversation-state {
+  color: var(--control-online);
+}
+
+.comm-shell .composer {
+  background:
+    linear-gradient(180deg, rgba(2, 7, 15, .10), rgba(2, 7, 15, .78)),
+    color-mix(in srgb, var(--control-accent) 6%, transparent);
+  box-shadow: 0 -18px 45px rgba(0, 0, 0, .24), 0 -1px 0 var(--control-theme-border);
+}
+
+.comm-shell .composer-status {
+  background: color-mix(in srgb, var(--control-accent) 7%, rgba(2, 7, 15, .94));
+}
+
+.comm-shell .composer-input-shell input,
+.comm-shell .composer-voice-inline,
+.comm-shell .control-search,
+.comm-shell .control-option.has-select select {
+  border-color: var(--control-theme-border);
+  box-shadow: var(--control-input-glow);
+}
+
+.comm-shell .send-btn,
+.comm-shell button.primary,
+.comm-shell .icon-btn-primary {
+  background: linear-gradient(135deg, var(--control-accent-2), var(--control-accent));
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--control-accent) 24%, transparent);
+}
+
+.comm-shell .control-quick-action:not(:disabled):hover,
+.comm-shell .control-option:not(:disabled):hover,
+.comm-shell .control-section-head:hover,
+.comm-shell button:hover:not(:disabled) {
+  border-color: var(--control-theme-border-strong);
+  box-shadow: 0 0 24px var(--control-theme-glow), inset 0 0 20px color-mix(in srgb, var(--control-accent) 8%, transparent);
+}
+
+.comm-shell[data-control-bubble="purple"] {
+  --control-sent-bg: linear-gradient(135deg, rgba(132, 84, 224, .72), rgba(80, 64, 172, .70));
+  --control-sent-border: rgba(184, 122, 255, .56);
+}
+
+.comm-shell[data-control-bubble="rose"] {
+  --control-sent-bg: linear-gradient(135deg, rgba(232, 83, 140, .70), rgba(143, 54, 105, .70));
+  --control-sent-border: rgba(255, 119, 170, .58);
+}
+
+.comm-shell[data-control-bubble="orange"] {
+  --control-sent-bg: linear-gradient(135deg, rgba(230, 142, 55, .72), rgba(164, 88, 47, .70));
+  --control-sent-border: rgba(255, 184, 87, .58);
+}
+
+.comm-shell[data-control-bubble="green"] {
+  --control-sent-bg: linear-gradient(135deg, rgba(55, 214, 145, .72), rgba(37, 126, 101, .70));
+  --control-sent-border: rgba(72, 240, 156, .58);
+}
+
+.comm-shell[data-control-bubble="gold"] {
+  --control-sent-bg: linear-gradient(135deg, rgba(211, 159, 50, .72), rgba(121, 106, 53, .70));
+  --control-sent-border: rgba(255, 218, 108, .60);
+}
+
+.comm-shell[data-control-bubble="blue"] {
+  --control-sent-bg: linear-gradient(135deg, rgba(58, 139, 235, .72), rgba(42, 82, 162, .70));
+  --control-sent-border: rgba(100, 190, 255, .60);
+}
+
 .comm-shell.control-large-text,
-.comm-shell[data-control-font="large"],
-.comm-shell[data-control-font="extra_large"] {
+.comm-shell[data-control-font="large"] {
   font-size: 106%;
 }
 
+.comm-shell[data-control-font="extra_large"] {
+  font-size: 113%;
+}
+
+.comm-shell.control-compact-density {
+  --control-density-gap: 4px;
+}
+
+.comm-shell.control-relaxed-density {
+  --control-density-gap: 14px;
+}
+
 .comm-shell.control-compact-density .message {
-  margin-block: 4px;
+  padding: 8px 10px;
 }
 
 .comm-shell.control-relaxed-density .message {
-  margin-block: 12px;
+  padding: 13px 15px;
+}
+
+.comm-shell.control-high-contrast {
+  --control-received-bg: linear-gradient(135deg, rgba(15, 35, 54, .92), rgba(7, 18, 31, .95));
+  --control-received-border: rgba(215, 255, 255, .48);
+  --control-theme-border: rgba(222, 255, 255, .42);
+  --control-theme-border-strong: rgba(255, 255, 255, .72);
+  --control-wallpaper-overlay: linear-gradient(180deg, rgba(0, 0, 0, .76), rgba(0, 0, 0, .88));
 }
 
 .comm-shell.control-high-contrast .conversation-control-center,
 .comm-shell.control-high-contrast .message,
 .comm-shell.control-high-contrast .conversation-card {
-  border-color: rgba(190, 255, 250, .42);
-  box-shadow: 0 0 0 1px rgba(160, 255, 245, .12);
+  border-color: var(--control-theme-border-strong);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .16);
 }
 
 .comm-shell.control-reduce-motion *,
 .comm-shell.control-reduce-motion *::before,
-.comm-shell.control-reduce-motion *::after {
+.comm-shell.control-reduce-motion *::after,
+.comm-shell[data-control-animation="off"] *,
+.comm-shell[data-control-animation="off"] *::before,
+.comm-shell[data-control-animation="off"] *::after {
   scroll-behavior: auto !important;
   transition-duration: .01ms !important;
   animation-duration: .01ms !important;
   animation-iteration-count: 1 !important;
 }
 
-.comm-shell[data-control-theme="nebula"] .conversation-control-center {
-  background:
-    radial-gradient(circle at 28% 0, rgba(164, 91, 255, .22), transparent 24rem),
-    linear-gradient(180deg, rgba(8, 10, 30, .96), rgba(10, 6, 28, .94));
-}
-
-.comm-shell[data-control-theme="pulse_green"] .conversation-control-center {
-  background:
-    radial-gradient(circle at 20% 0, rgba(49, 246, 182, .2), transparent 24rem),
-    linear-gradient(180deg, rgba(5, 25, 24, .96), rgba(5, 16, 25, .94));
-}
-
-.comm-shell[data-control-theme="cyber_night"] .conversation-control-center {
-  background:
-    radial-gradient(circle at 80% 0, rgba(78, 222, 255, .2), transparent 24rem),
-    linear-gradient(180deg, rgba(2, 8, 18, .98), rgba(4, 8, 28, .94));
-}
-
-.comm-shell[data-control-wallpaper="nebula"] .messages,
-.comm-shell[data-control-wallpaper="nebula"] [data-messages] {
-  background-image: radial-gradient(circle at 80% 20%, rgba(151, 91, 255, .12), transparent 18rem);
-}
-
-.comm-shell[data-control-wallpaper="deep_space"] .messages,
-.comm-shell[data-control-wallpaper="deep_space"] [data-messages] {
-  background-image: radial-gradient(circle at 20% 80%, rgba(82, 226, 255, .09), transparent 20rem);
-}
-
-.comm-shell[data-control-bubble="purple"] .message.is-mine {
-  border-color: rgba(174, 107, 255, .45);
-}
-
-.comm-shell[data-control-bubble="rose"] .message.is-mine {
-  border-color: rgba(255, 99, 155, .45);
-}
-
-.comm-shell[data-control-bubble="orange"] .message.is-mine {
-  border-color: rgba(255, 174, 72, .48);
-}
-
-.comm-shell[data-control-bubble="green"] .message.is-mine {
-  border-color: rgba(72, 240, 156, .48);
+.comm-shell[data-control-particles="reduced"] .messages::before {
+  opacity: .18;
 }
 
 .comm-modal {

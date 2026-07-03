@@ -88,6 +88,7 @@
     controlEntry: "thread",
     controlExpanded: new Set(["conversation", "notifications", "appearance", "privacy"]),
     controlDetail: null,
+    controlSettingsCache: new Map(),
     tabChannel: "BroadcastChannel" in window ? new BroadcastChannel("pulse-comm-v2") : null,
   };
   const MEDIA_FOUNDATION_MIME_BY_EXT = {
@@ -107,6 +108,39 @@
     oga: "audio/ogg",
   };
   const MEDIA_FOUNDATION_MIMES = new Set(Object.values(MEDIA_FOUNDATION_MIME_BY_EXT));
+  const CONTROL_THEME_OPTIONS = [
+    ["dark_galaxy", "Dark Galaxy"],
+    ["pulse_green", "Pulse Green"],
+    ["deep_space", "Deep Space"],
+    ["nebula", "Nebula"],
+    ["cyber_night", "Cyber Night"],
+    ["solar_flame", "Solar Flame"],
+    ["ocean_signal", "Ocean Signal"],
+    ["royal_purple", "Royal Purple"],
+    ["haiti_night", "Haiti Night"],
+    ["creator_gold", "Creator Gold"],
+  ];
+  const CONTROL_WALLPAPER_OPTIONS = [
+    ["deep_space", "Deep Space"],
+    ["neon_planet", "Neon Planet"],
+    ["galaxy_grid", "Galaxy Grid"],
+    ["pulse_horizon", "Pulse Horizon"],
+    ["alien_city", "Alien City"],
+    ["cosmic_ocean", "Cosmic Ocean"],
+    ["aurora_signal", "Aurora Signal"],
+    ["dark_nebula", "Dark Nebula"],
+    ["star_tunnel", "Star Tunnel"],
+    ["minimal_black", "Minimal Black"],
+  ];
+  const CONTROL_BUBBLE_OPTIONS = [
+    ["cyan", "Cyan"],
+    ["purple", "Purple"],
+    ["rose", "Rose"],
+    ["orange", "Orange"],
+    ["green", "Green"],
+    ["gold", "Gold"],
+    ["blue", "Blue"],
+  ];
   const CONTROL_SECTIONS = [
     {
       id: "conversation",
@@ -146,9 +180,9 @@
       title: "Appearance",
       desc: "Themes, colors, density and motion.",
       items: [
-        { label: "Theme", icon: "◌", setting: "theme", kind: "select", options: [["dark_galaxy", "Dark Galaxy"], ["nebula", "Nebula"], ["deep_space", "Deep Space"], ["pulse_green", "Pulse Green"], ["cyber_night", "Cyber Night"]] },
-        { label: "Wallpaper", icon: "▧", setting: "wallpaper", kind: "select", options: [["default", "Default"], ["nebula", "Nebula"], ["deep_space", "Deep Space"]] },
-        { label: "Bubble Color", icon: "●", setting: "bubble_color", kind: "select", options: [["cyan", "Cyan"], ["purple", "Purple"], ["rose", "Rose"], ["orange", "Orange"], ["green", "Green"]] },
+        { label: "Theme", icon: "◌", setting: "theme", kind: "select", options: CONTROL_THEME_OPTIONS },
+        { label: "Wallpaper", icon: "▧", setting: "wallpaper", kind: "select", options: CONTROL_WALLPAPER_OPTIONS },
+        { label: "Bubble Color", icon: "●", setting: "bubble_color", kind: "select", options: CONTROL_BUBBLE_OPTIONS },
         { label: "Font Size", icon: "Aa", setting: "font_size", kind: "select", options: [["small", "Small"], ["medium", "Medium"], ["large", "Large"], ["extra_large", "Extra Large"]] },
         { label: "Chat Density", icon: "↕", setting: "density", kind: "select", options: [["compact", "Compact"], ["balanced", "Balanced"], ["relaxed", "Relaxed"]] },
         { label: "Animation Level", icon: "✺", setting: "animation_level", kind: "select", options: [["full", "Full"], ["balanced", "Balanced"], ["reduced", "Reduced"], ["off", "Off"]] },
@@ -1190,6 +1224,7 @@
       const data = await api(`/conversations/${id}/control-center`, {}, "conversation_control_center");
       state.controlData = data;
       if (data.conversation) rememberConversation(data.conversation);
+      if (data.settings) cacheControlSettings(id, data.settings);
       applyControlAppearanceSettings();
       state.controlLoading = false;
       renderControlCenter();
@@ -1203,6 +1238,11 @@
   async function saveControlSetting(section, key, value) {
     const id = activeControlConversationId();
     if (!id) return;
+    const previousSettings = cloneSettings(state.controlData?.settings || readCachedControlSettings(id) || {});
+    const optimisticSettings = mirrorControlSetting(cloneSettings(previousSettings), section, key, value);
+    state.controlData = { ...(state.controlData || {}), settings: optimisticSettings };
+    cacheControlSettings(id, optimisticSettings);
+    applyControlAppearanceSettings(optimisticSettings, id);
     state.controlSaving = true;
     controlStatus("Saving...", "info");
     try {
@@ -1211,6 +1251,7 @@
         body: JSON.stringify({ section, key, value }),
       }, "conversation_control_center_update");
       state.controlData = { ...(state.controlData || {}), settings: data.settings || state.controlData?.settings };
+      if (data.settings) cacheControlSettings(id, data.settings);
       applyControlAppearanceSettings();
       if (section === "notifications" && key === "mute_choice") {
         const item = state.conversationCache.get(id);
@@ -1222,26 +1263,123 @@
       }
       controlStatus(data.message || "Saved.", "success");
       renderControlCenter();
+    } catch (error) {
+      state.controlData = { ...(state.controlData || {}), settings: previousSettings };
+      cacheControlSettings(id, previousSettings);
+      applyControlAppearanceSettings(previousSettings, id);
+      renderControlCenter();
+      throw error;
     } finally {
       state.controlSaving = false;
     }
   }
 
-  function applyControlAppearanceSettings() {
-    const settings = state.controlData?.settings || {};
+  function controlSettingsCacheKey(conversationId) {
+    const id = Number(conversationId || 0);
+    return id ? `pulseMessengerControlSettings:${currentUserId}:${id}` : "";
+  }
+
+  function cloneSettings(settings) {
+    try {
+      return JSON.parse(JSON.stringify(settings || {}));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function readCachedControlSettings(conversationId) {
+    const id = Number(conversationId || 0);
+    if (!id) return null;
+    if (state.controlSettingsCache.has(id)) return cloneSettings(state.controlSettingsCache.get(id));
+    const key = controlSettingsCacheKey(id);
+    if (!key) return null;
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) || "null");
+      if (parsed && typeof parsed === "object") {
+        state.controlSettingsCache.set(id, parsed);
+        return cloneSettings(parsed);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function cacheControlSettings(conversationId, settings) {
+    const id = Number(conversationId || 0);
+    if (!id || !settings) return;
+    const snapshot = cloneSettings(settings);
+    state.controlSettingsCache.set(id, snapshot);
+    const key = controlSettingsCacheKey(id);
+    if (!key) return;
+    try {
+      localStorage.setItem(key, JSON.stringify(snapshot));
+    } catch (_) {}
+  }
+
+  function mirrorControlSetting(settings, section, key, value) {
+    if (!settings || !section || !key) return settings || {};
+    settings[section] = { ...(settings[section] || {}), [key]: value };
+    if (key === "message_preview" && (section === "notifications" || section === "privacy")) {
+      settings.notifications = { ...(settings.notifications || {}), message_preview: Boolean(value) };
+      settings.privacy = { ...(settings.privacy || {}), message_preview: Boolean(value) };
+    }
+    if (key === "read_receipts" && (section === "notifications" || section === "privacy")) {
+      settings.notifications = { ...(settings.notifications || {}), read_receipts: Boolean(value) };
+      settings.privacy = { ...(settings.privacy || {}), read_receipts: Boolean(value) };
+    }
+    return settings;
+  }
+
+  function activeVisualConversationId() {
+    return Number(state.active?.conversation_id || state.controlConversationId || state.controlData?.conversation?.conversation_id || state.controlData?.conversation?.id || 0);
+  }
+
+  function normalizeAppearanceValue(kind, value) {
+    const text = String(value || "").trim().toLowerCase();
+    if (kind === "theme") return CONTROL_THEME_OPTIONS.some(([id]) => id === text) ? text : "dark_galaxy";
+    if (kind === "wallpaper") {
+      if (text === "default") return "deep_space";
+      return CONTROL_WALLPAPER_OPTIONS.some(([id]) => id === text) ? text : "deep_space";
+    }
+    if (kind === "bubble") return CONTROL_BUBBLE_OPTIONS.some(([id]) => id === text) ? text : "cyan";
+    return text;
+  }
+
+  function applyControlAppearanceSettings(settingsOverride = null, conversationId = activeVisualConversationId()) {
+    const id = Number(conversationId || 0);
+    const controlDataId = Number(state.controlData?.conversation?.conversation_id || state.controlData?.conversation?.id || 0);
+    const settings = settingsOverride || readCachedControlSettings(id) || (controlDataId === id ? state.controlData?.settings : null) || {};
     const appearance = settings.appearance || {};
     const accessibility = settings.accessibility || {};
     if (!root) return;
-    root.dataset.controlTheme = appearance.theme || "dark_galaxy";
-    root.dataset.controlWallpaper = appearance.wallpaper || "default";
-    root.dataset.controlBubble = appearance.bubble_color || "cyan";
+    root.dataset.controlTheme = normalizeAppearanceValue("theme", appearance.theme || "dark_galaxy");
+    root.dataset.controlWallpaper = normalizeAppearanceValue("wallpaper", appearance.wallpaper || "deep_space");
+    root.dataset.controlBubble = normalizeAppearanceValue("bubble", appearance.bubble_color || "cyan");
     root.dataset.controlDensity = appearance.density || "balanced";
     root.dataset.controlFont = accessibility.large_text ? "large" : (appearance.font_size || "medium");
+    root.dataset.controlAnimation = appearance.animation_level || "balanced";
+    root.dataset.controlParticles = (appearance.reduce_particles || accessibility.reduce_motion || appearance.animation_level === "reduced" || appearance.animation_level === "off") ? "reduced" : "full";
     root.classList.toggle("control-reduce-motion", Boolean(accessibility.reduce_motion || appearance.reduce_particles || appearance.animation_level === "reduced" || appearance.animation_level === "off"));
     root.classList.toggle("control-high-contrast", Boolean(accessibility.high_contrast || appearance.high_contrast));
     root.classList.toggle("control-large-text", Boolean(accessibility.large_text || ["large", "extra_large"].includes(String(appearance.font_size || ""))));
     root.classList.toggle("control-compact-density", appearance.density === "compact");
     root.classList.toggle("control-relaxed-density", appearance.density === "relaxed");
+  }
+
+  async function hydrateConversationVisualSettings(conversationId, { force = false } = {}) {
+    const id = Number(conversationId || 0);
+    if (!id) return;
+    const cached = readCachedControlSettings(id);
+    if (cached) applyControlAppearanceSettings(cached, id);
+    if (!force && state.controlSettingsCache.has(id)) return;
+    try {
+      const data = await api(`/conversations/${id}/control-center`, {}, "conversation_control_visual_settings");
+      if (data.settings) {
+        cacheControlSettings(id, data.settings);
+        if (Number(state.active?.conversation_id || 0) === id) applyControlAppearanceSettings(data.settings, id);
+      }
+    } catch (_) {
+      if (cached) applyControlAppearanceSettings(cached, id);
+    }
   }
 
   async function runControlAction(action, confirmText = "") {
@@ -1685,7 +1823,11 @@
       } else if (state.active) {
         state.active = rememberConversation(state.conversations.find((c) => Number(c.conversation_id) === Number(state.active.conversation_id)) || state.active);
       }
-      if (state.active) restoreDraft(state.active.conversation_id);
+      if (state.active) {
+        restoreDraft(state.active.conversation_id);
+        applyControlAppearanceSettings(readCachedControlSettings(state.active.conversation_id), state.active.conversation_id);
+        hydrateConversationVisualSettings(state.active.conversation_id).catch(() => {});
+      }
       renderConversations();
       setStatus(state.conversations.length ? "" : "No conversations yet.");
       if (state.active && !state.initialThreadLoaded && (!isMobile() || Number(state.active.conversation_id) === initialConversationId)) {
@@ -1705,6 +1847,8 @@
     const requestToken = ++state.activeRequestToken;
     state.loadingThread = true;
     if (!appendOlder) {
+      applyControlAppearanceSettings(readCachedControlSettings(targetConversationId), targetConversationId);
+      hydrateConversationVisualSettings(targetConversationId).catch(() => {});
       const cached = state.messageCache.get(targetConversationId);
       state.threadHydrating = !cached?.length;
       state.messages = cached ? cached.map((item) => ({ ...item })) : [];
@@ -2735,6 +2879,8 @@
           closeConversationControlCenter();
           state.active = rememberConversation(state.conversationCache.get(id) || state.conversations.find((item) => Number(item.conversation_id) === id));
           if (state.active) state.active.unread_count = 0;
+          applyControlAppearanceSettings(readCachedControlSettings(id), id);
+          hydrateConversationVisualSettings(id).catch(() => {});
           const cached = state.messageCache.get(id) || [];
           state.messages = cached.map((item) => ({ ...item }));
           state.threadHydrating = !cached.length;

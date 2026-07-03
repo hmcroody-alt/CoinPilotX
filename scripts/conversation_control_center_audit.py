@@ -15,7 +15,7 @@ CSS = ROOT / "static" / "css" / "pulse_messages_v2.css"
 ROUTES = ROOT / "pulse_communications_v2" / "routes.py"
 SERVICE = ROOT / "pulse_communications_v2" / "service.py"
 MODELS = ROOT / "pulse_communications_v2" / "models.py"
-REPORT = ROOT / "reports" / "conversation_control_center_v2_wiring.md"
+REPORT = ROOT / "reports" / "conversation_control_center_v3_wiring.md"
 
 
 def read(path: Path) -> str:
@@ -49,6 +49,30 @@ def main() -> int:
         "Accessibility",
         "Danger Zone",
     ]
+    required_themes = [
+        "dark_galaxy",
+        "pulse_green",
+        "deep_space",
+        "nebula",
+        "cyber_night",
+        "solar_flame",
+        "ocean_signal",
+        "royal_purple",
+        "haiti_night",
+        "creator_gold",
+    ]
+    required_wallpapers = [
+        "deep_space",
+        "neon_planet",
+        "galaxy_grid",
+        "pulse_horizon",
+        "alien_city",
+        "cosmic_ocean",
+        "aurora_signal",
+        "dark_nebula",
+        "star_tunnel",
+        "minimal_black",
+    ]
 
     require(checks, "thread gear opens control center", "control-center-action" in template and "data-open-control-center" in template)
     require(checks, "inbox gear opens control center", 'data-control-center-entry="inbox"' in template and 'aria-label="Open Conversation Control Center"' in template)
@@ -81,6 +105,13 @@ def main() -> int:
     require(checks, "notification toggles persist and affect push", "lock_screen_disabled" in service and "_message_preview_hidden(policy_cur" in service)
     require(checks, "privacy toggles affect behavior", "_read_receipts_allowed(cur, user_id, conversation_id)" in service and "typing_indicator" in service)
     require(checks, "appearance toggles affect UI", "applyControlAppearanceSettings" in js and "control-high-contrast" in css and "data-control-theme" in css)
+    require(checks, "all built-in themes exposed", all(theme in js and theme in service for theme in required_themes), ", ".join(theme for theme in required_themes if theme not in js or theme not in service))
+    require(checks, "all built-in themes styled", all(f'data-control-theme="{theme}"' in css or theme == "dark_galaxy" for theme in required_themes), ", ".join(theme for theme in required_themes if f'data-control-theme="{theme}"' not in css and theme != "dark_galaxy"))
+    require(checks, "all built-in wallpapers exposed", all(wallpaper in js and wallpaper in service for wallpaper in required_wallpapers), ", ".join(wallpaper for wallpaper in required_wallpapers if wallpaper not in js or wallpaper not in service))
+    require(checks, "all built-in wallpapers styled", all(f'data-control-wallpaper="{wallpaper}"' in css or wallpaper == "deep_space" for wallpaper in required_wallpapers), ", ".join(wallpaper for wallpaper in required_wallpapers if f'data-control-wallpaper="{wallpaper}"' not in css and wallpaper != "deep_space"))
+    require(checks, "theme and wallpaper affect real chat surfaces", all(token in css for token in [".comm-shell .messages", ".comm-shell .message.is-mine", ".comm-shell .thread-head", ".comm-shell .composer", "--control-wallpaper", "--control-sent-bg"]))
+    require(checks, "appearance settings persist reload safely", "controlSettingsCacheKey" in js and "localStorage.setItem" in js and "hydrateConversationVisualSettings" in js)
+    require(checks, "dropdown changes preview immediately and rollback", "optimisticSettings" in js and "previousSettings" in js and "cacheControlSettings(id, previousSettings)" in js)
     require(checks, "media and storage use real data", "conversation_control_media" in service and "conversation_control_links" in service and "storage_used_bytes" in service)
     require(checks, "danger actions require confirmation", "clear-conversation" in js and "data-control-confirm" in js and "conversation_control_action" in service)
     require(checks, "report file exists", REPORT.exists())

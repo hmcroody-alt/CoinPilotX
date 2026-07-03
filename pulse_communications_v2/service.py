@@ -552,7 +552,7 @@ CONTROL_SETTING_DEFAULTS = {
     },
     "appearance": {
         "theme": "dark_galaxy",
-        "wallpaper": "default",
+        "wallpaper": "deep_space",
         "bubble_color": "cyan",
         "font_size": "medium",
         "density": "balanced",
@@ -604,9 +604,9 @@ CONTROL_SETTING_ALLOWED = {
         "read_receipts": "bool",
     },
     "appearance": {
-        "theme": {"dark_galaxy", "nebula", "deep_space", "pulse_green", "cyber_night"},
-        "wallpaper": {"default", "nebula", "deep_space"},
-        "bubble_color": {"cyan", "purple", "rose", "orange", "green"},
+        "theme": {"dark_galaxy", "pulse_green", "deep_space", "nebula", "cyber_night", "solar_flame", "ocean_signal", "royal_purple", "haiti_night", "creator_gold"},
+        "wallpaper": {"default", "deep_space", "neon_planet", "galaxy_grid", "pulse_horizon", "alien_city", "cosmic_ocean", "aurora_signal", "dark_nebula", "star_tunnel", "minimal_black"},
+        "bubble_color": {"cyan", "purple", "rose", "orange", "green", "gold", "blue"},
         "font_size": {"small", "medium", "large", "extra_large"},
         "density": {"compact", "balanced", "relaxed"},
         "animation_level": {"full", "balanced", "reduced", "off"},
