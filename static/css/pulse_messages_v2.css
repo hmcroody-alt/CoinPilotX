@@ -4146,19 +4146,39 @@ select:focus-visible {
 }
 
 .pulsesoc-call-local {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   object-fit: cover;
   transform: scaleX(-1);
 }
 
+.pulsesoc-call-local-wrap.is-camera-off {
+  background: #03101d;
+}
+
+.pulsesoc-call-local-wrap.is-camera-off .pulsesoc-call-local,
+.pulsesoc-call-local.is-off {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+.pulsesoc-call-local-wrap.is-camera-live .pulsesoc-call-local {
+  display: block;
+  opacity: 1;
+  visibility: visible;
+}
+
 .pulsesoc-call-local-wrap > span {
   position: absolute;
   inset: 0;
+  z-index: 2;
   display: grid;
   place-items: center;
   padding: 12px;
-  background: rgba(3, 14, 26, .9);
+  background: #03101d;
   color: rgba(232, 252, 255, .86);
   font-size: 12px;
   font-weight: 900;
@@ -4172,9 +4192,9 @@ select:focus-visible {
   border: 0;
   border-radius: 0;
   background:
-    radial-gradient(circle at 50% 32%, rgba(58, 245, 209, .17), transparent 52%),
-    linear-gradient(145deg, rgba(3, 16, 30, .9), rgba(9, 10, 24, .92));
-  backdrop-filter: blur(7px);
+    radial-gradient(circle at 50% 32%, rgba(58, 245, 209, .22), transparent 52%),
+    linear-gradient(145deg, #03101e, #090a18);
+  backdrop-filter: none;
 }
 
 .pulsesoc-call-local-wrap .pulsesoc-call-camera-orb {

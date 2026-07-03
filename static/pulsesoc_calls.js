@@ -618,15 +618,26 @@
     return publication?.track || publication?.videoTrack || publication?.audioTrack || publication;
   }
 
+  function publicationSource(publication) {
+    const track = publicationTrack(publication);
+    return String(publication?.source || track?.source || "").toLowerCase();
+  }
+
   function isVideoPublication(publication) {
     const track = publicationTrack(publication);
     const raw = mediaTrack(track);
     const kind = String(publication?.kind || track?.kind || raw?.kind || "").toLowerCase();
-    const source = String(publication?.source || track?.source || "").toLowerCase();
+    const source = publicationSource(publication);
     return kind === "video" || raw?.kind === "video" || source === "camera" || source.includes("video") || source.includes("screen");
   }
 
+  function isCameraPublication(publication) {
+    const source = publicationSource(publication);
+    return !source || source === "camera" || source.includes("camera") || source === "unknown";
+  }
+
   function trackIsLive(track) {
+    if (track?.isMuted === true || track?.muted === true) return false;
     const raw = mediaTrack(track);
     if (!raw) return false;
     return raw.readyState !== "ended" && raw.enabled !== false;
@@ -641,6 +652,7 @@
   }
 
   function videoElementIsLive(video) {
+    if (!video || video.hidden || video.closest?.(".is-camera-off")) return false;
     const stream = video?.srcObject;
     if (!stream?.getVideoTracks) return false;
     return stream.getVideoTracks().some((track) => track.readyState !== "ended" && track.enabled !== false);
@@ -650,15 +662,53 @@
     return qsa(selector, root).some((video) => videoElementIsLive(video));
   }
 
+  function participantCameraEnabled(participant) {
+    if (!participant) return null;
+    const value = participant.isCameraEnabled;
+    if (typeof value === "boolean") return value;
+    if (typeof value === "function") {
+      try {
+        const result = value.call(participant);
+        if (typeof result === "boolean") return result;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  function liveLocalVideoTrack() {
+    return tracksByKind("video").find(trackIsLive) || null;
+  }
+
+  function rememberLocalTrack(track) {
+    if (!track) return;
+    const raw = mediaTrack(track);
+    const exists = state.localTracks.some((item) => {
+      if (item === track) return true;
+      const itemRaw = mediaTrack(item);
+      return raw?.id && itemRaw?.id && raw.id === itemRaw.id;
+    });
+    if (!exists) state.localTracks.push(track);
+  }
+
+  function liveLocalVideoPublication() {
+    return videoPublicationsFor(state.room?.localParticipant)
+      .filter(isCameraPublication)
+      .find((publication) => publicationVideoIsLive(publication, false)) || null;
+  }
+
   function localCameraIsLive() {
-    const publications = videoPublicationsFor(state.room?.localParticipant);
+    const participant = state.room?.localParticipant;
+    const cameraEnabled = participantCameraEnabled(participant);
+    if (cameraEnabled === false) return false;
+    const publications = videoPublicationsFor(participant).filter(isCameraPublication);
     const domLive = anyVideoElementIsLive("[data-call-local]");
     if (publications.length) {
-      const explicitlyMuted = publications.some((publication) => publication.isMuted === true || publication.muted === true);
-      return publications.some((publication) => publicationVideoIsLive(publication, false)) || (!explicitlyMuted && domLive);
+      if (publications.some((publication) => publicationVideoIsLive(publication, false))) return true;
+      if (cameraEnabled === true && liveLocalVideoTrack()) return true;
+      return false;
     }
-    if (tracksByKind("video").some(trackIsLive)) return true;
-    return domLive;
+    if (liveLocalVideoTrack()) return true;
+    return cameraEnabled === true && domLive;
   }
 
   function remoteCameraIsLive() {
@@ -676,6 +726,7 @@
     try { video.pause?.(); } catch (_) {}
     try { video.srcObject = null; } catch (_) {}
     try { video.removeAttribute?.("src"); } catch (_) {}
+    try { video.load?.(); } catch (_) {}
   }
 
   function renderCameraOffFallback(fallback, participant = {}, label = "") {
@@ -708,7 +759,12 @@
     const local = qs("[data-call-local]");
     const wrap = qs("[data-call-local-wrap]");
     const fallback = qs("[data-call-local-fallback]");
-    if (wrap) wrap.hidden = false;
+    if (wrap) {
+      wrap.hidden = false;
+      wrap.classList.toggle("is-camera-off", !isLive);
+      wrap.classList.toggle("is-camera-live", isLive);
+      wrap.dataset.cameraState = isLive ? "live" : "off";
+    }
     if (fallback) {
       fallback.hidden = isLive;
       if (!isLive) renderCameraOffFallback(fallback, currentUserParticipant(), t("pulse.call.local_camera_off", "Camera off"));
@@ -716,7 +772,14 @@
     }
     if (local) {
       local.hidden = !isLive;
+      local.classList.toggle("is-live", isLive);
+      local.classList.toggle("is-off", !isLive);
       if (!isLive) clearVideoElement(local);
+      else if (!videoElementIsLive(local)) {
+        const publication = liveLocalVideoPublication();
+        const track = publicationTrack(publication) || liveLocalVideoTrack();
+        if (track) attachLocalPreview(track, { skipSync: true });
+      }
     }
     renderCameraButtonState();
     return isLive;
@@ -768,13 +831,16 @@
     state.localTracks = kind ? state.localTracks.filter((track) => !selected.includes(track)) : [];
     const local = qs("[data-call-local]");
     if (local && (!kind || kind === "video")) {
-      local.srcObject = null;
+      clearVideoElement(local);
     }
     const wrap = qs("[data-call-local-wrap]");
     const fallback = qs("[data-call-local-fallback]");
     if (!kind || kind === "video") {
       if (wrap) wrap.hidden = kind === "video" ? false : true;
-      if (kind === "video") syncLocalCameraSurface();
+      if (kind === "video") {
+        detachLocalPreview();
+        syncLocalCameraSurface();
+      }
       else if (fallback) fallback.hidden = true;
     }
   }
@@ -844,31 +910,76 @@
     return stream.getTracks().find((track) => track.kind === kind);
   }
 
-  function attachLocalPreview(track) {
+  function detachLocalPreview() {
+    const local = qs("[data-call-local]");
+    const wrap = qs("[data-call-local-wrap]");
+    const fallback = qs("[data-call-local-fallback]");
+    tracksByKind("video").forEach((track) => {
+      try {
+        const detached = track.detach ? track.detach(local || undefined) : [];
+        (Array.isArray(detached) ? detached : [detached]).forEach((el) => {
+          if (el && el !== local) el.remove?.();
+        });
+      } catch (_) {}
+    });
+    if (local) {
+      clearVideoElement(local);
+      local.hidden = true;
+      local.classList.remove("is-live");
+      local.classList.add("is-off");
+    }
+    if (wrap) {
+      wrap.hidden = false;
+      wrap.classList.remove("is-camera-live");
+      wrap.classList.add("is-camera-off");
+      wrap.dataset.cameraState = "off";
+    }
+    if (fallback) fallback.hidden = false;
+  }
+
+  function attachLocalPreview(track, options = {}) {
     if (localTrackKind(track) !== "video") return;
     const local = qs("[data-call-local]");
     const wrap = qs("[data-call-local-wrap]");
     const fallback = qs("[data-call-local-fallback]");
     if (!local) return;
     try {
+      clearVideoElement(local);
       if (track.attach) {
-        const attached = track.attach();
+        let attached = null;
+        try {
+          attached = track.attach(local);
+        } catch (_) {
+          attached = track.attach();
+        }
         if (attached instanceof HTMLVideoElement) {
           local.srcObject = attached.srcObject;
+          if (attached !== local) attached.remove?.();
         }
       } else if (track instanceof MediaStreamTrack) {
         local.srcObject = new MediaStream([track]);
       } else if (track.mediaStreamTrack) {
         local.srcObject = new MediaStream([track.mediaStreamTrack]);
       }
-      if (wrap) wrap.hidden = false;
+      if (!local.srcObject && mediaTrack(track)) {
+        local.srcObject = new MediaStream([mediaTrack(track)]);
+      }
+      rememberLocalTrack(track);
+      if (wrap) {
+        wrap.hidden = false;
+        wrap.classList.remove("is-camera-off");
+        wrap.classList.add("is-camera-live");
+        wrap.dataset.cameraState = "live";
+      }
       if (fallback) {
         fallback.hidden = true;
         fallback.classList.remove("pulsesoc-call-camera-off");
       }
       local.hidden = false;
+      local.classList.remove("is-off");
+      local.classList.add("is-live");
       local.play?.().catch(() => {});
-      syncLocalCameraSurface();
+      if (!options.skipSync) syncLocalCameraSurface();
     } catch (_) {
       if (wrap) wrap.hidden = true;
     }
@@ -894,7 +1005,7 @@
     if (!track) throw new Error(`${kind} track could not be created.`);
     if (kind === "video") attachLocalPreview(track);
     await state.room.localParticipant.publishTrack?.(track);
-    state.localTracks.push(track);
+    rememberLocalTrack(track);
     return track;
   }
 
@@ -1261,9 +1372,10 @@
 
   async function toggleCamera() {
     if (callType() !== "video") return false;
-    const turningOff = !state.mutedVideo;
+    const turningOff = syncLocalCameraSurface();
     state.mutedVideo = turningOff;
     if (turningOff) {
+      try { await state.room?.localParticipant?.setCameraEnabled?.(false); } catch (_) {}
       await stopLocalTracks("video");
       await setControl("disable-video", { unpublished: true });
     } else {
