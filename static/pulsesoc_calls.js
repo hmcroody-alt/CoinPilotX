@@ -70,9 +70,13 @@
   }
 
   function displayNameFor(call) {
-    const participants = Array.isArray(call?.participants) ? call.participants : [];
-    const other = participants.find((item) => String(item.role || "") !== roleFor(call) || String(item.user_id) !== String(currentUserParticipant(call)?.user_id || ""));
+    const other = otherParticipant(call);
     return other?.display_name || (call?.call_type === "video" ? "Video call" : "Audio call");
+  }
+
+  function otherParticipant(call = state.activeCall) {
+    const participants = Array.isArray(call?.participants) ? call.participants : [];
+    return participants.find((item) => String(item.role || "") !== roleFor(call) || String(item.user_id) !== String(currentUserParticipant(call)?.user_id || "")) || {};
   }
 
   function normalizeCallPayload(data = {}) {
@@ -420,6 +424,7 @@
       startDurationTimer();
       scheduleControlsHide();
     }
+    if (isVideo && ["active", "outgoing"].includes(mode)) syncLocalCameraSurface();
   }
 
   function renderIncomingFallback(fallback) {
@@ -536,10 +541,12 @@
   function showRemoteFallback(message = "") {
     const host = qs("[data-call-remote]");
     if (!host) return;
+    if (callType() === "video" && remoteCameraIsLive()) return;
     const fallback = qs("[data-call-remote-fallback]", host);
     if (fallback) {
       fallback.hidden = false;
-      fallback.textContent = message || (callType() === "video" ? t("pulse.call.remote_camera_off", "Camera Off") : displayNameFor(state.activeCall));
+      if (callType() === "video") renderCameraOffFallback(fallback, otherParticipant(), message || t("pulse.call.remote_camera_off", "Camera Off"));
+      else fallback.textContent = message || displayNameFor(state.activeCall);
     }
     const audioVisual = qs("[data-call-audio-visual]", host);
     if (audioVisual) audioVisual.hidden = callType() === "video";
@@ -574,6 +581,183 @@
     return track?.mediaStreamTrack || (track instanceof MediaStreamTrack ? track : null);
   }
 
+  function collectionValues(collection) {
+    if (!collection) return [];
+    if (Array.isArray(collection)) return collection;
+    if (collection instanceof Map) return Array.from(collection.values());
+    if (typeof collection.forEach === "function") {
+      const values = [];
+      try { collection.forEach((value) => values.push(value)); } catch (_) {}
+      return values;
+    }
+    if (typeof collection === "object") return Object.values(collection);
+    return [];
+  }
+
+  function videoPublicationsFor(participant) {
+    const values = [
+      ...collectionValues(participant?.videoTrackPublications),
+      ...collectionValues(participant?.trackPublications),
+      ...collectionValues(participant?.tracks),
+    ];
+    const seen = new Set();
+    return values.filter((publication) => {
+      if (!publication || !isVideoPublication(publication)) return false;
+      const key = publication.sid || publication.trackSid || publication.track?.sid || publication.source || publication.track?.source || publication;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function remoteParticipants() {
+    return collectionValues(state.room?.remoteParticipants);
+  }
+
+  function publicationTrack(publication) {
+    return publication?.track || publication?.videoTrack || publication?.audioTrack || publication;
+  }
+
+  function isVideoPublication(publication) {
+    const track = publicationTrack(publication);
+    const raw = mediaTrack(track);
+    const kind = String(publication?.kind || track?.kind || raw?.kind || "").toLowerCase();
+    const source = String(publication?.source || track?.source || "").toLowerCase();
+    return kind === "video" || raw?.kind === "video" || source === "camera" || source.includes("video") || source.includes("screen");
+  }
+
+  function trackIsLive(track) {
+    const raw = mediaTrack(track);
+    if (!raw) return false;
+    return raw.readyState !== "ended" && raw.enabled !== false;
+  }
+
+  function publicationVideoIsLive(publication, requireSubscribed = false) {
+    if (!publication || !isVideoPublication(publication)) return false;
+    if (publication.isMuted === true || publication.muted === true) return false;
+    if (requireSubscribed && publication.isSubscribed === false) return false;
+    const track = publicationTrack(publication);
+    return trackIsLive(track);
+  }
+
+  function videoElementIsLive(video) {
+    const stream = video?.srcObject;
+    if (!stream?.getVideoTracks) return false;
+    return stream.getVideoTracks().some((track) => track.readyState !== "ended" && track.enabled !== false);
+  }
+
+  function anyVideoElementIsLive(selector, root = document) {
+    return qsa(selector, root).some((video) => videoElementIsLive(video));
+  }
+
+  function localCameraIsLive() {
+    const publications = videoPublicationsFor(state.room?.localParticipant);
+    const domLive = anyVideoElementIsLive("[data-call-local]");
+    if (publications.length) {
+      const explicitlyMuted = publications.some((publication) => publication.isMuted === true || publication.muted === true);
+      return publications.some((publication) => publicationVideoIsLive(publication, false)) || (!explicitlyMuted && domLive);
+    }
+    if (tracksByKind("video").some(trackIsLive)) return true;
+    return domLive;
+  }
+
+  function remoteCameraIsLive() {
+    const publications = remoteParticipants().flatMap((participant) => videoPublicationsFor(participant));
+    const domLive = anyVideoElementIsLive("[data-call-remote] video");
+    if (publications.length) {
+      const explicitlyMuted = publications.some((publication) => publication.isMuted === true || publication.muted === true);
+      return publications.some((publication) => publicationVideoIsLive(publication, true)) || (!explicitlyMuted && domLive);
+    }
+    return domLive;
+  }
+
+  function clearVideoElement(video) {
+    if (!video) return;
+    try { video.pause?.(); } catch (_) {}
+    try { video.srcObject = null; } catch (_) {}
+    try { video.removeAttribute?.("src"); } catch (_) {}
+  }
+
+  function renderCameraOffFallback(fallback, participant = {}, label = "") {
+    if (!fallback) return;
+    const name = String(participant.display_name || participant.username || participant.name || "").trim();
+    const avatar = String(participant.avatar_url || participant.profile_photo_url || participant.photo_url || "").trim();
+    fallback.classList.add("pulsesoc-call-camera-off");
+    fallback.textContent = "";
+    const orb = document.createElement("span");
+    orb.className = "pulsesoc-call-camera-orb";
+    if (avatar) {
+      const image = document.createElement("img");
+      image.alt = "";
+      image.src = avatar;
+      orb.appendChild(image);
+    } else {
+      orb.textContent = name ? name.slice(0, 1).toUpperCase() : "P";
+    }
+    const title = document.createElement("strong");
+    title.textContent = label || t("pulse.call.local_camera_off", "Camera off");
+    const caption = document.createElement("small");
+    caption.textContent = name || "PulseSoc";
+    fallback.append(orb, title, caption);
+  }
+
+  function syncLocalCameraSurface() {
+    if (callType() !== "video") return false;
+    const isLive = localCameraIsLive();
+    state.mutedVideo = !isLive;
+    const local = qs("[data-call-local]");
+    const wrap = qs("[data-call-local-wrap]");
+    const fallback = qs("[data-call-local-fallback]");
+    if (wrap) wrap.hidden = false;
+    if (fallback) {
+      fallback.hidden = isLive;
+      if (!isLive) renderCameraOffFallback(fallback, currentUserParticipant(), t("pulse.call.local_camera_off", "Camera off"));
+      else fallback.classList.remove("pulsesoc-call-camera-off");
+    }
+    if (local) {
+      local.hidden = !isLive;
+      if (!isLive) clearVideoElement(local);
+    }
+    renderCameraButtonState();
+    return isLive;
+  }
+
+  function syncRemoteCameraSurface(message = "") {
+    if (callType() !== "video") return false;
+    const host = qs("[data-call-remote]");
+    if (!host) return false;
+    const isLive = remoteCameraIsLive();
+    const fallback = qs("[data-call-remote-fallback]", host);
+    const audioVisual = qs("[data-call-audio-visual]", host);
+    if (audioVisual) audioVisual.hidden = true;
+    if (fallback) {
+      fallback.hidden = isLive;
+      if (!isLive) renderCameraOffFallback(fallback, otherParticipant(), message || t("pulse.call.remote_camera_off", "Camera Off"));
+      else fallback.classList.remove("pulsesoc-call-camera-off");
+    }
+    if (!isLive) {
+      qsa("video", host).forEach((video) => {
+        state.remoteTrackEls.delete(video);
+        try { video.remove(); } catch (_) {}
+      });
+    }
+    return isLive;
+  }
+
+  function syncCameraSurfaces() {
+    syncLocalCameraSurface();
+    syncRemoteCameraSurface();
+  }
+
+  function renderCameraButtonState() {
+    const btn = qs("[data-call-toggle-camera]");
+    if (!btn) return;
+    const cameraOff = callType() === "video" && !localCameraIsLive();
+    btn.classList.toggle("is-muted", cameraOff);
+    btn.setAttribute("aria-label", cameraOff ? "Turn camera on" : "Turn camera off");
+    setControlButton(btn, "&#128247;", cameraOff ? "Camera On" : "Camera");
+  }
+
   function tracksByKind(kind) {
     return state.localTracks.filter((item) => localTrackKind(item) === kind || mediaTrack(item)?.kind === kind);
   }
@@ -590,10 +774,8 @@
     const fallback = qs("[data-call-local-fallback]");
     if (!kind || kind === "video") {
       if (wrap) wrap.hidden = kind === "video" ? false : true;
-      if (fallback) {
-        fallback.hidden = kind !== "video";
-        fallback.textContent = t("pulse.call.local_camera_off", "Camera off");
-      }
+      if (kind === "video") syncLocalCameraSurface();
+      else if (fallback) fallback.hidden = true;
     }
   }
 
@@ -680,8 +862,13 @@
         local.srcObject = new MediaStream([track.mediaStreamTrack]);
       }
       if (wrap) wrap.hidden = false;
-      if (fallback) fallback.hidden = true;
+      if (fallback) {
+        fallback.hidden = true;
+        fallback.classList.remove("pulsesoc-call-camera-off");
+      }
+      local.hidden = false;
       local.play?.().catch(() => {});
+      syncLocalCameraSurface();
     } catch (_) {
       if (wrap) wrap.hidden = true;
     }
@@ -738,7 +925,10 @@
       if (kind === "video") {
         qsa("video", host).forEach((node) => node.remove());
         const fallback = qs("[data-call-remote-fallback]", host);
-        if (fallback) fallback.hidden = true;
+        if (fallback) {
+          fallback.hidden = true;
+          fallback.classList.remove("pulsesoc-call-camera-off");
+        }
         const audioVisual = qs("[data-call-audio-visual]", host);
         if (audioVisual) audioVisual.hidden = true;
         el.classList.add("pulsesoc-call-remote-video");
@@ -752,6 +942,7 @@
       host.appendChild(el);
       state.remoteTrackEls.add(el);
       el.play?.().catch(() => {});
+      if (kind === "video") syncRemoteCameraSurface();
     } catch (error) {
       console.warn("PulseSoc call remote attach failed", error);
     }
@@ -765,7 +956,7 @@
         state.remoteTrackEls.delete(el);
         el.remove();
       });
-      if (kind === "video") showRemoteFallback(t("pulse.call.remote_camera_off", "Camera Off"));
+      if (kind === "video") syncRemoteCameraSurface(t("pulse.call.remote_camera_off", "Camera Off"));
     } catch (_) {}
   }
 
@@ -789,9 +980,18 @@
     on(event.Reconnected || "reconnected", () => setStatus(t("pulse.call.restored", "Pulse Restored"), "success", t("pulse.call.excellent", "Excellent Connection")));
     on(event.Disconnected || "disconnected", () => setStatus(t("pulse.call.lost", "Pulse Lost"), "warn", "Offline"));
     on(event.ParticipantConnected || "participantConnected", () => setStatus(t("pulse.call.accepted", "Pulse Accepted"), "success", t("pulse.call.excellent", "Excellent Connection")));
-    on(event.ParticipantDisconnected || "participantDisconnected", () => setStatus("Participant left.", "info", qualityLabel()));
+    on(event.ParticipantDisconnected || "participantDisconnected", () => {
+      setStatus("Participant left.", "info", qualityLabel());
+      syncRemoteCameraSurface(t("pulse.call.remote_camera_off", "Camera Off"));
+    });
     on(event.TrackSubscribed || "trackSubscribed", (track) => attachRemoteTrack(track));
     on(event.TrackUnsubscribed || "trackUnsubscribed", (track) => detachRemoteTrack(track));
+    on(event.TrackMuted || "trackMuted", () => syncCameraSurfaces());
+    on(event.TrackUnmuted || "trackUnmuted", () => syncCameraSurfaces());
+    on(event.TrackPublished || "trackPublished", () => syncCameraSurfaces());
+    on(event.TrackUnpublished || "trackUnpublished", () => syncCameraSurfaces());
+    on(event.LocalTrackPublished || "localTrackPublished", () => syncLocalCameraSurface());
+    on(event.LocalTrackUnpublished || "localTrackUnpublished", () => syncLocalCameraSurface());
   }
 
   async function connectCallRoom(data, options = {}) {
@@ -1070,23 +1270,15 @@
       try {
         await publishSingleLocalTrack("video");
         await setControl("enable-video", { republished: true, facing_mode: state.facingMode });
+        syncLocalCameraSurface();
       } catch (error) {
         state.mutedVideo = true;
         await setControl("disable-video", { republish_failed: true, error: error?.name || error?.message || "video_failed" });
         setStatus(error?.name === "NotAllowedError" ? "Camera permission needed." : "Camera could not turn on.", "error");
       }
     }
-    setStatus(state.mutedVideo ? t("pulse.call.camera_off", "Camera off.") : t("pulse.call.camera_on", "Camera on."), "info");
-    const wrap = qs("[data-call-local-wrap]");
-    const fallback = qs("[data-call-local-fallback]");
-    if (wrap) wrap.hidden = false;
-    if (fallback) fallback.hidden = !state.mutedVideo;
-    const btn = qs("[data-call-toggle-camera]");
-    if (btn) {
-      btn.classList.toggle("is-muted", state.mutedVideo);
-      btn.setAttribute("aria-label", state.mutedVideo ? "Turn camera on" : "Turn camera off");
-      setControlButton(btn, state.mutedVideo ? "&#128247;" : "&#128247;", state.mutedVideo ? "Camera On" : "Camera");
-    }
+    const live = syncLocalCameraSurface();
+    setStatus(live ? t("pulse.call.camera_on", "Camera on.") : t("pulse.call.camera_off", "Camera off."), "info");
     return state.mutedVideo;
   }
 
@@ -1098,6 +1290,7 @@
       if (video?.restartTrack) {
         await video.restartTrack({ facingMode: state.facingMode, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } });
         attachLocalPreview(video);
+        syncLocalCameraSurface();
         await setControl("switch-camera", { facing_mode: state.facingMode, method: "restartTrack" });
         setStatus(t("pulse.call.camera_switched", "Camera switched."), "success");
         return { ok: true };
@@ -1105,6 +1298,7 @@
       if (state.room?.localParticipant) {
         await stopLocalTracks("video");
         await publishSingleLocalTrack("video");
+        syncLocalCameraSurface();
         await setControl("switch-camera", { facing_mode: state.facingMode, method: "republish" });
         setStatus(t("pulse.call.camera_switched", "Camera switched."), "success");
         return { ok: true };
@@ -1185,7 +1379,7 @@
         reconnect_count: state.reconnectCount,
         speaker_mode: state.speakerMode,
         muted_audio: state.mutedAudio,
-        muted_video: state.mutedVideo,
+        muted_video: callType() === "video" ? !localCameraIsLive() : false,
         hidden: document.hidden,
         local_audio_tracks: tracksByKind("audio").length,
         local_video_tracks: tracksByKind("video").length,
