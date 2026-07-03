@@ -36,6 +36,10 @@ def main() -> int:
     for endpoint in ("/api/pulse-ai/message", "/api/pulse-ai/conversation", "/api/pulse-ai/reset", "/api/pulse-ai/status"):
         require(endpoint in routes, f"{endpoint} route exists", failures)
     require("PULSE_AI_CONVERSATION_ID" in js and "sendPulseAIMessage" in js, "Messenger has Pulse AI chat sender", failures)
+    require("data-pulse-ai-card" not in read("templates/pulse_messages_v2.html"), "Pulse AI duplicate hero card removed", failures)
+    require("active-ai" not in js and "action-icon ai" not in read("templates/pulse_messages_v2.html"), "Pulse AI duplicate rail/action card removed", failures)
+    require(".filter((item) => !isPulseAIConversation(item))" in js, "Pulse AI is excluded from duplicate active rail", failures)
+    require("item.pinned && !isPulseAIConversation(item)" in js, "Pulse AI is excluded from duplicate pinned cards", failures)
     require("pulseAITyping" in js and "typing-dots" in js, "Typing indicator exists", failures)
     require("Pulse AI supports text conversation first" in js, "Media/voice safely gated for AI chat", failures)
     require("data-pulse-ai-feedback" in js and "/feedback" in js, "Feedback controls wired", failures)

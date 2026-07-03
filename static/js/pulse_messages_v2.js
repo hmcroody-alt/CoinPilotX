@@ -787,17 +787,11 @@
     }
   }
 
-  function renderPulseAICard() {
-    const target = el("[data-pulse-ai-card]");
-    if (!target) return;
-    target.hidden = true;
-    target.innerHTML = "";
-  }
-
   function renderActiveRail() {
     const rail = el("[data-active-rail]");
     if (!rail) return;
     const activeContacts = state.conversations
+      .filter((item) => !isPulseAIConversation(item))
       .filter((item) => String(item.conversation_type || "") !== "group")
       .slice(0, 9)
       .map((item) => {
@@ -809,19 +803,16 @@
           </button>
         `;
       }).join("");
-    rail.innerHTML = `${state.pulseAIEnabled ? `
-      <button class="active-person active-ai" type="button" data-conversation-id="${PULSE_AI_CONVERSATION_ID}" title="Pulse AI">
-        <span class="active-avatar pulse-ai-avatar" aria-hidden="true">AI</span>
-        <span>Pulse AI</span>
-        <b>AI</b>
-      </button>` : ""}${activeContacts}`;
+    rail.innerHTML = activeContacts;
   }
 
   function renderPinnedConversations() {
     const section = el("[data-pinned-section]");
     const rail = el("[data-pinned-conversations]");
     if (!section || !rail) return;
-    const pinned = state.conversations.filter((item) => item.pinned).slice(0, 8);
+    const pinned = state.conversations
+      .filter((item) => item.pinned && !isPulseAIConversation(item))
+      .slice(0, 8);
     section.hidden = !pinned.length;
     rail.innerHTML = pinned.map((item) => `
       <button class="pinned-card" type="button" data-conversation-id="${item.conversation_id}">
@@ -835,7 +826,6 @@
   function renderConversations() {
     if (!list) return;
     renderRealtimeStatus();
-    renderPulseAICard();
     renderActiveRail();
     const filtered = filteredConversations();
     renderPinnedConversations();

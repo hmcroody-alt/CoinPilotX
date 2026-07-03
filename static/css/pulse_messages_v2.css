@@ -544,12 +544,6 @@ select:focus-visible {
   font-weight: 900;
 }
 
-.action-icon.ai {
-  color: #e4d9ff;
-  background: rgba(155, 108, 244, .12);
-  border-color: rgba(155, 108, 244, .24);
-}
-
 .pinned-section {
   min-width: 0;
   padding: 2px 0 8px;

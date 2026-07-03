@@ -41,7 +41,8 @@ If all providers are missing or fail, Pulse AI stores a safe assistant error and
 ## How Pulse AI appears
 - Conversation name: `Pulse AI`
 - Subtitle: `Online · Galaxy Assistant`
-- It is pinned near the top of Messenger.
+- It appears as a single normal Messenger conversation row, sorted near the top when pinned.
+- The duplicate quick action card, hero widget, active-rail entry, and pinned-card duplicate are intentionally not rendered.
 - The normal composer sends text messages to Pulse AI.
 - Attachments and voice are safely disabled for Pulse AI until future phases.
 
