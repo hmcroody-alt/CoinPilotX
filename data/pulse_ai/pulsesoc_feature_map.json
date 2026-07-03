@@ -99,12 +99,12 @@
     "related": ["intelligence.crypto_pulse", "notifications.push", "pulse_ai.chat"]
   },
   {
-    "id": "intelligence.center",
-    "name": "Galaxy Intelligence Center",
+    "id": "intelligence.pulse_signals",
+    "name": "Pulse Signals",
     "status": "active",
-    "entry_points": ["/pulse/intelligence", "/pulse/settings/intelligence"],
-    "description": "Subscribe to Intelligence Streams, set confidence thresholds, use digest modes, and provide feedback.",
-    "user_help": "Open Galaxy Intelligence Center and choose streams such as Crypto Pulse, Security Pulse, or World Pulse.",
+    "entry_points": ["/pulse/intelligence", "/pulse/forecasts", "/pulse/briefing", "/pulse/settings/signals"],
+    "description": "Review Pulse Alerts and Forecasts, open a Daily Briefing, and manage signal frequency and confidence preferences.",
+    "user_help": "Open Alerts for recent signals, Forecasts for confidence-labeled outlooks, or Signal Preferences to manage delivery.",
     "related": ["pulse_ai.chat", "notifications.center", "crypto.alerts.manage"]
   },
   {

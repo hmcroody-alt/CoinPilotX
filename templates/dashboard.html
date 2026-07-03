@@ -215,7 +215,7 @@
     .kicker { margin: 0 0 7px; color: var(--cyan); font-size: 13px; font-weight: 950; letter-spacing: .18em; text-transform: uppercase; }
     h1 { margin: 0; font-size: clamp(38px, 6vw, 72px); line-height: .94; letter-spacing: .07em; text-transform: uppercase; }
     .subcopy { margin: 8px 0 0; color: var(--muted); font-size: clamp(15px, 1.8vw, 19px); }
-    .header-tools { display: flex; align-items: center; gap: 12px; }
+    .header-tools { position: relative; display: flex; align-items: center; gap: 12px; }
     .search {
       width: min(36vw, 390px);
       min-height: 48px;
@@ -228,6 +228,45 @@
       background: rgba(255,255,255,.045);
     }
     .search input { width: 100%; min-width: 0; border: 0; outline: 0; color: var(--text); background: transparent; }
+    .dashboard-search-results {
+      position: absolute;
+      top: calc(100% + 10px);
+      left: 0;
+      z-index: 50;
+      width: min(520px, calc(100vw - 36px));
+      max-height: min(62vh, 520px);
+      overflow: auto;
+      display: grid;
+      gap: 6px;
+      padding: 8px;
+      border: 1px solid rgba(91,220,255,.28);
+      border-radius: 16px;
+      background: rgba(4, 12, 23, .98);
+      box-shadow: 0 28px 90px rgba(0,0,0,.48), 0 0 32px rgba(91,220,255,.08);
+      backdrop-filter: blur(20px);
+    }
+    .dashboard-search-results[hidden] { display: none; }
+    .dashboard-search-result {
+      min-height: 54px;
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      padding: 8px 10px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      background: rgba(255,255,255,.035);
+    }
+    .dashboard-search-result:hover,
+    .dashboard-search-result:focus-visible {
+      outline: 0;
+      border-color: rgba(50,235,174,.4);
+      background: rgba(50,235,174,.08);
+    }
+    .dashboard-search-result strong,
+    .dashboard-search-result small { display: block; }
+    .dashboard-search-result small { margin-top: 3px; color: var(--muted); }
+    .dashboard-search-empty { margin: 0; padding: 12px; color: var(--muted); }
     .icon-btn, .avatar-chip {
       min-width: 48px;
       min-height: 48px;
@@ -604,10 +643,11 @@
             <p class="subcopy">Your private PulseSoc command layer for account health, creator tools, intelligence, media, economy, and safety.</p>
           </div>
           <div class="header-tools">
-            <form class="search" action="/pulse/search" method="get" role="search">
-              <span aria-hidden="true">Search</span>
-              <input name="q" type="search" placeholder="Search PulseSoc..." autocomplete="off">
+            <form class="search" data-dashboard-module-search role="search">
+              <span aria-hidden="true">Find</span>
+              <input name="q" type="search" placeholder="Search your modules..." autocomplete="off" aria-label="Search available Mission Control modules" aria-controls="dashboardModuleSearchResults" aria-expanded="false">
             </form>
+            <div class="dashboard-search-results" id="dashboardModuleSearchResults" data-dashboard-search-results hidden></div>
             <a class="icon-btn" href="/pulse/notifications" aria-label="Notifications">AL</a>
             <a class="icon-btn" href="/pulse" aria-label="Create">+</a>
             <a class="logout header-logout" href="/logout">Log Out</a>
@@ -713,14 +753,74 @@
 
   <script>
     (() => {
-      const search = document.querySelector(".search");
-      if (!search) return;
-      search.addEventListener("submit", (event) => {
-        const input = search.querySelector("input");
-        if (!input || !input.value.trim()) {
-          event.preventDefault();
-          input && input.focus();
+      const search = document.querySelector("[data-dashboard-module-search]");
+      const results = document.querySelector("[data-dashboard-search-results]");
+      const input = search?.querySelector("input");
+      if (!search || !results || !input) return;
+      const modules = [...document.querySelectorAll(".module-card")].map((card) => {
+        const link = card.querySelector(".module-cta");
+        const section = card.closest(".module-section");
+        return {
+          name: card.querySelector("h3")?.textContent?.trim() || "",
+          description: card.querySelector("p")?.textContent?.trim() || "",
+          category: section?.querySelector(".section-title h2")?.textContent?.trim() || "",
+          icon: card.querySelector(".module-icon")?.textContent?.trim() || "MC",
+          route: link?.getAttribute("href") || "",
+        };
+      }).filter((item) => item.name && item.route);
+      let matches = [];
+
+      const closeResults = () => {
+        results.hidden = true;
+        input.setAttribute("aria-expanded", "false");
+      };
+      const renderResults = () => {
+        const query = input.value.trim().toLowerCase();
+        results.replaceChildren();
+        if (!query) {
+          matches = [];
+          closeResults();
+          return;
         }
+        matches = modules.filter((item) => `${item.name} ${item.description} ${item.category}`.toLowerCase().includes(query)).slice(0, 10);
+        if (!matches.length) {
+          const empty = document.createElement("p");
+          empty.className = "dashboard-search-empty";
+          empty.textContent = "No available Mission Control modules match that search.";
+          results.append(empty);
+        } else {
+          matches.forEach((item) => {
+            const link = document.createElement("a");
+            link.className = "dashboard-search-result";
+            link.href = item.route;
+            const glyph = document.createElement("span");
+            glyph.className = "glyph";
+            glyph.textContent = item.icon;
+            const copy = document.createElement("span");
+            const title = document.createElement("strong");
+            title.textContent = item.name;
+            const meta = document.createElement("small");
+            meta.textContent = item.category;
+            copy.append(title, meta);
+            link.append(glyph, copy);
+            results.append(link);
+          });
+        }
+        results.hidden = false;
+        input.setAttribute("aria-expanded", "true");
+      };
+      input.addEventListener("input", renderResults);
+      input.addEventListener("focus", renderResults);
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeResults();
+      });
+      search.addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (matches[0]) window.location.assign(matches[0].route);
+        else input.focus();
+      });
+      document.addEventListener("click", (event) => {
+        if (!event.target.closest("[data-dashboard-module-search]") && !event.target.closest("[data-dashboard-search-results]")) closeResults();
       });
     })();
   </script>

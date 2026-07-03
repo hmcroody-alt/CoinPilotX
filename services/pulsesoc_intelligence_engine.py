@@ -22,7 +22,8 @@ from services import pulsesoc_notification_system
 
 
 INTERNAL_CODENAME = "LogiNexus Intelligence Engine"
-PUBLIC_CENTER_NAME = "Galaxy Intelligence Center"
+PUBLIC_CENTER_NAME = "Pulse Signals"
+ADMIN_CENTER_NAME = "Galaxy Intelligence Center"
 PULSESOC_APP_STORE_URL = os.getenv(
     "PULSESOC_APP_STORE_URL",
     "https://apps.apple.com/us/app/pulsesoc/id6777591572",
@@ -48,6 +49,153 @@ STREAM_KEYS = {
 }
 PRIORITIES = {"breaking", "urgent", "high", "normal", "low"}
 FREQUENCIES = {"realtime", "digest", "morning", "afternoon", "evening", "weekly", "monthly", "muted"}
+
+USER_SURFACES: dict[str, dict[str, Any]] = {
+    "alerts": {
+        "key": "alerts",
+        "title": "Pulse Alerts",
+        "eyebrow": "Signals that matter",
+        "description": "Your latest high-confidence alerts, ranked by importance and relevance.",
+        "stream_keys": [],
+        "show_streams": False,
+        "show_events": True,
+        "show_forecasts": True,
+    },
+    "forecasts": {
+        "key": "forecasts",
+        "title": "Pulse Forecasts",
+        "eyebrow": "What may matter next",
+        "description": "Confidence-labeled forecasts built only when trusted signals support them.",
+        "stream_keys": [],
+        "show_streams": False,
+        "show_events": False,
+        "show_forecasts": True,
+    },
+    "briefing": {
+        "key": "briefing",
+        "title": "Daily Briefing",
+        "eyebrow": "Your day in focus",
+        "description": "A compact view of the strongest signals and forecasts available to you.",
+        "stream_keys": [],
+        "show_streams": False,
+        "show_events": True,
+        "show_forecasts": True,
+        "event_limit": 12,
+        "forecast_limit": 6,
+    },
+    "preferences": {
+        "key": "preferences",
+        "title": "Signal Preferences",
+        "eyebrow": "You control the frequency",
+        "description": "Choose the signals you receive, their confidence threshold, and how often they arrive.",
+        "stream_keys": [],
+        "show_streams": True,
+        "show_events": False,
+        "show_forecasts": False,
+    },
+    "security": {
+        "key": "security",
+        "title": "Security Signals",
+        "eyebrow": "Protection intelligence",
+        "description": "Defensive security alerts, patch guidance, scam warnings, and account protection signals.",
+        "stream_keys": ["security_pulse"],
+        "show_streams": False,
+        "show_events": True,
+        "show_forecasts": True,
+    },
+    "crypto": {
+        "key": "crypto",
+        "title": "Crypto Signals",
+        "eyebrow": "Market intelligence",
+        "description": "High-confidence crypto movement and ecosystem signals without investment advice.",
+        "stream_keys": ["crypto_pulse"],
+        "show_streams": False,
+        "show_events": True,
+        "show_forecasts": True,
+    },
+    "market": {
+        "key": "market",
+        "title": "Market Signals",
+        "eyebrow": "Macro and market activity",
+        "description": "Major market, economic, and cross-asset signals without stock-by-stock noise.",
+        "stream_keys": ["market_pulse"],
+        "show_streams": False,
+        "show_events": True,
+        "show_forecasts": True,
+    },
+    "technology": {
+        "key": "technology",
+        "title": "Tech Signals",
+        "eyebrow": "Technology that matters",
+        "description": "Major AI, platform, hardware, software, and research developments from trusted sources.",
+        "stream_keys": ["technology_pulse"],
+        "show_streams": False,
+        "show_events": True,
+        "show_forecasts": True,
+    },
+    "music": {
+        "key": "music",
+        "title": "Music Signals",
+        "eyebrow": "Sounds moving through PulseSoc",
+        "description": "New releases, trending sounds, and music activity backed by available PulseSoc data.",
+        "stream_keys": ["music_pulse"],
+        "show_streams": False,
+        "show_events": True,
+        "show_forecasts": True,
+    },
+    "creator": {
+        "key": "creator",
+        "title": "Creator Signals",
+        "eyebrow": "Audience and publishing signals",
+        "description": "Creator milestones, audience trends, and posting guidance backed by real platform activity.",
+        "stream_keys": ["creator_pulse"],
+        "show_streams": False,
+        "show_events": True,
+        "show_forecasts": True,
+    },
+    "world": {
+        "key": "world",
+        "title": "World Events",
+        "eyebrow": "Major events only",
+        "description": "Heavily filtered world, emergency, science, space, and infrastructure signals.",
+        "stream_keys": ["world_pulse"],
+        "show_streams": False,
+        "show_events": True,
+        "show_forecasts": True,
+    },
+}
+
+ADMIN_COMMAND_SECTIONS: tuple[dict[str, str], ...] = (
+    {"label": "Overview", "route": "/admin/intelligence"},
+    {"label": "Collector Network", "route": "/admin/intelligence#collector-network"},
+    {"label": "Source Registry", "route": "/admin/intelligence#source-registry"},
+    {"label": "Forecast Engine", "route": "/admin/intelligence#forecast-engine"},
+    {"label": "Signal Queue", "route": "/admin/intelligence#signal-queue"},
+    {"label": "AI Confidence", "route": "/admin/intelligence-command-center/prediction-engine"},
+    {"label": "Threat Monitor", "route": "/admin/intelligence-command-center/threat-intelligence"},
+    {"label": "Cyber Security Feed", "route": "/admin/intelligence?stream=security_pulse#signal-queue"},
+    {"label": "Crypto Feed", "route": "/admin/intelligence?stream=crypto_pulse#signal-queue"},
+    {"label": "Market Feed", "route": "/admin/intelligence?stream=market_pulse#signal-queue"},
+    {"label": "Technology Feed", "route": "/admin/intelligence?stream=technology_pulse#signal-queue"},
+    {"label": "World Events Feed", "route": "/admin/intelligence?stream=world_pulse#signal-queue"},
+    {"label": "PulseSoc Feed", "route": "/admin/intelligence?stream=pulsesoc_pulse#signal-queue"},
+    {"label": "Creator Trends", "route": "/admin/intelligence?stream=creator_pulse#signal-queue"},
+    {"label": "Music Trends", "route": "/admin/intelligence?stream=music_pulse#signal-queue"},
+    {"label": "Broadcast Center", "route": "/admin/notifications"},
+    {"label": "Campaign Manager", "route": "/admin/intelligence-command-center/alert-management"},
+    {"label": "Notification Delivery", "route": "/admin/notification-delivery"},
+    {"label": "Analytics", "route": "/admin/analytics"},
+    {"label": "AI Learning Engine", "route": "/admin/pulse-ai/learning"},
+    {"label": "Quality Assurance", "route": "/admin/audit-logs"},
+    {"label": "Logs", "route": "/admin/audit-logs"},
+    {"label": "System Health", "route": "/admin/system"},
+    {"label": "Source Health", "route": "/admin/provider-health"},
+    {"label": "API Health", "route": "/admin/system-health"},
+    {"label": "Worker Health", "route": "/admin/pulse-worker-health"},
+    {"label": "Feedback Learning", "route": "/admin/intelligence#feedback-learning"},
+    {"label": "Historical Signals", "route": "/admin/intelligence#signal-queue"},
+    {"label": "Emergency Broadcast", "route": "/admin/notifications"},
+)
 
 
 def now_iso() -> str:
@@ -1149,15 +1297,19 @@ def center_state(user_id: int, limit: int = 40) -> dict[str, Any]:
                 (*enabled_streams, int(limit or 40)),
             )
             events = [format_event(row) for row in cur.fetchall()]
-        cur.execute(
-            """
-            SELECT * FROM intelligence_forecasts
-            WHERE status='active'
-            ORDER BY confidence_score DESC, created_at DESC
-            LIMIT 20
-            """
-        )
-        forecasts = [format_forecast(row) for row in cur.fetchall()]
+        forecasts: list[dict[str, Any]] = []
+        if enabled_streams:
+            placeholders = ",".join("?" for _ in enabled_streams)
+            cur.execute(
+                f"""
+                SELECT * FROM intelligence_forecasts
+                WHERE status='active' AND stream_key IN ({placeholders})
+                ORDER BY confidence_score DESC, created_at DESC
+                LIMIT 20
+                """,
+                tuple(enabled_streams),
+            )
+            forecasts = [format_forecast(row) for row in cur.fetchall()]
         summary = {
             "streams_enabled": len(enabled_streams),
             "signals": len(events),
@@ -1180,6 +1332,46 @@ def center_state(user_id: int, limit: int = 40) -> dict[str, Any]:
         }
     finally:
         conn.close()
+
+
+def user_surface(surface_key: str = "alerts") -> dict[str, Any]:
+    key = _slug(surface_key or "alerts", 40)
+    surface = USER_SURFACES.get(key) or USER_SURFACES["alerts"]
+    return dict(surface)
+
+
+def user_surface_state(user_id: int, surface_key: str = "alerts", limit: int = 40) -> dict[str, Any]:
+    surface = user_surface(surface_key)
+    state = center_state(user_id, limit=max(1, min(int(limit or 40), 100)))
+    visible_streams = list(state.get("streams") or [])
+    allowed_streams = set(surface.get("stream_keys") or [])
+    if allowed_streams:
+        visible_streams = [item for item in visible_streams if item.get("stream_key") in allowed_streams]
+        state["streams"] = visible_streams
+        state["events"] = [item for item in state.get("events") or [] if item.get("stream_key") in allowed_streams]
+        state["forecasts"] = [item for item in state.get("forecasts") or [] if item.get("stream_key") in allowed_streams]
+    if not surface.get("show_streams"):
+        state["streams"] = []
+    if not surface.get("show_events"):
+        state["events"] = []
+    if not surface.get("show_forecasts"):
+        state["forecasts"] = []
+    event_limit = int(surface.get("event_limit") or limit or 40)
+    forecast_limit = int(surface.get("forecast_limit") or 20)
+    state["events"] = (state.get("events") or [])[:max(0, event_limit)]
+    state["forecasts"] = (state.get("forecasts") or [])[:max(0, forecast_limit)]
+    enabled_streams = [item for item in visible_streams if item.get("enabled")]
+    events = state.get("events") or []
+    forecasts = state.get("forecasts") or []
+    state["summary"] = {
+        "streams_enabled": len(enabled_streams),
+        "signals": len(events),
+        "forecasts": len(forecasts),
+        "breaking": len([event for event in events if event.get("priority") in {"breaking", "urgent"}]),
+        "avg_confidence": int(sum(event.get("confidence_score", 0) for event in events) / max(1, len(events))),
+    }
+    state["surface"] = surface
+    return state
 
 
 def update_stream(user_id: int, stream_key: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1358,7 +1550,7 @@ def source_health() -> list[dict[str, Any]]:
         conn.close()
 
 
-def admin_dashboard() -> dict[str, Any]:
+def admin_dashboard(stream_key: str = "") -> dict[str, Any]:
     conn = connect()
     try:
         ensure_schema(conn)
@@ -1375,9 +1567,18 @@ def admin_dashboard() -> dict[str, Any]:
         }.items():
             cur.execute(sql)
             counts[key] = _int(_row_get(cur.fetchone(), "count", 0))
-        cur.execute("SELECT * FROM intelligence_events ORDER BY created_at DESC LIMIT 25")
+        selected_stream = _slug(stream_key, 80) if stream_key else ""
+        if selected_stream not in STREAM_KEYS:
+            selected_stream = ""
+        if selected_stream:
+            cur.execute("SELECT * FROM intelligence_events WHERE stream_key=? ORDER BY created_at DESC LIMIT 25", (selected_stream,))
+        else:
+            cur.execute("SELECT * FROM intelligence_events ORDER BY created_at DESC LIMIT 25")
         events = [format_event(row) for row in cur.fetchall()]
-        cur.execute("SELECT * FROM intelligence_forecasts ORDER BY created_at DESC LIMIT 12")
+        if selected_stream:
+            cur.execute("SELECT * FROM intelligence_forecasts WHERE stream_key=? ORDER BY created_at DESC LIMIT 12", (selected_stream,))
+        else:
+            cur.execute("SELECT * FROM intelligence_forecasts ORDER BY created_at DESC LIMIT 12")
         forecasts = [format_forecast(row) for row in cur.fetchall()]
         cur.execute("SELECT * FROM intelligence_collector_runs ORDER BY id DESC LIMIT 20")
         runs = [
@@ -1398,8 +1599,10 @@ def admin_dashboard() -> dict[str, Any]:
         sources = source_health()
         return {
             "ok": True,
-            "center_name": PUBLIC_CENTER_NAME,
+            "center_name": ADMIN_CENTER_NAME,
             "internal_codename": INTERNAL_CODENAME,
+            "selected_stream": selected_stream,
+            "command_sections": [dict(item) for item in ADMIN_COMMAND_SECTIONS],
             "counts": counts,
             "source_health": sources,
             "events": events,

@@ -5,13 +5,32 @@
   let state = {};
 
   function initialState() {
-    const node = document.getElementById("galaxy-intelligence-state");
+    const node = document.getElementById("pulse-intelligence-state");
     if (!node) return {};
     try {
       return JSON.parse(node.textContent || "{}");
     } catch (_) {
       return {};
     }
+  }
+
+  function currentView() {
+    return String(root?.dataset.intelligenceView || "alerts");
+  }
+
+  function streamLabel(streamKey) {
+    return {
+      pulsesoc_discoveries: "PulseSoc Discoveries",
+      crypto_pulse: "Crypto Pulse",
+      market_pulse: "Market Pulse",
+      world_pulse: "World Pulse",
+      security_pulse: "Security Pulse",
+      technology_pulse: "Technology Pulse",
+      pulsesoc_pulse: "PulseSoc Pulse",
+      creator_pulse: "Creator Pulse",
+      music_pulse: "Music Pulse",
+      system_pulse: "System Pulse",
+    }[String(streamKey || "")] || String(streamKey || "Pulse").replaceAll("_", " ");
   }
 
   async function json(url, options = {}) {
@@ -125,7 +144,7 @@
     list.innerHTML = events.map((event) => `
       <article class="signal-card" data-event-id="${Number(event.id || 0)}">
         <div class="signal-meta">
-          <span class="signal-pill">${esc(event.stream_key || "signal")}</span>
+          <span class="signal-pill">${esc(streamLabel(event.stream_key))}</span>
           <span class="confidence-ring">${Number(event.confidence_score || 0)}%</span>
         </div>
         <h3>${esc(event.headline)}</h3>
@@ -164,10 +183,10 @@
   }
 
   async function refresh() {
-    setStatus("Refreshing intelligence...");
-    const data = await json("/api/pulse/intelligence/state");
+    setStatus("Refreshing signals...");
+    const data = await json(`/api/pulse/intelligence/state?view=${encodeURIComponent(currentView())}`);
     render(data);
-    setStatus("Intelligence updated.");
+    setStatus("Signals updated.");
   }
 
   async function patchStream(streamKey, payload) {
@@ -177,7 +196,7 @@
     });
     const streams = (state.streams || []).map((item) => item.stream_key === streamKey ? { ...item, ...(data.stream || {}) } : item);
     render({ ...state, streams });
-    setStatus("Stream setting saved.");
+    setStatus("Signal preference saved.");
   }
 
   root?.addEventListener("click", async (event) => {

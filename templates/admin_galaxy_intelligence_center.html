@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Galaxy Intelligence Center | PulseSoc Admin</title>
-  <link rel="stylesheet" href="/static/css/pulsesoc_intelligence_center.css?v=20260703b">
+  <link rel="stylesheet" href="/static/css/pulsesoc_intelligence_center.css?v=20260703c">
 </head>
 <body class="galaxy-intelligence-page is-admin">
   <main class="galaxy-intelligence-shell">
@@ -31,7 +31,22 @@
       </section>
     </header>
 
-    <section class="intelligence-section admin-actions">
+    <section class="intelligence-section" aria-labelledby="adminCommandSections">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Admin only</p>
+          <h2 id="adminCommandSections">Mission Systems</h2>
+        </div>
+        <p>Every control stays permission-protected and outside regular user navigation.</p>
+      </div>
+      <nav class="admin-command-grid" aria-label="Galaxy Intelligence Center systems">
+        {% for section in dashboard.command_sections %}
+          <a href="{{ section.route }}">{{ section.label }}</a>
+        {% endfor %}
+      </nav>
+    </section>
+
+    <section class="intelligence-section admin-actions" id="collector-network">
       <div class="section-heading">
         <div>
           <p class="eyebrow">Collectors</p>
@@ -72,8 +87,11 @@
     </section>
 
     <section class="intelligence-layout">
-      <div class="intelligence-section">
-        <div class="section-heading"><div><p class="eyebrow">Events</p><h2>Recent Signals</h2></div></div>
+      <div class="intelligence-section" id="signal-queue">
+        <div class="section-heading">
+          <div><p class="eyebrow">Events</p><h2>Signal Queue</h2></div>
+          {% if dashboard.selected_stream %}<span class="signal-pill">{{ dashboard.selected_stream }}</span>{% endif %}
+        </div>
         <div class="signal-list">
           {% for event in dashboard.events %}
           <article class="signal-card">
@@ -87,7 +105,7 @@
           {% endfor %}
         </div>
       </div>
-      <aside class="intelligence-section">
+      <aside class="intelligence-section" id="source-registry">
         <div class="section-heading"><div><p class="eyebrow">Sources</p><h2>Source Readiness</h2></div></div>
         <div class="source-list">
           {% for source in dashboard.source_health %}
@@ -101,6 +119,36 @@
       </aside>
     </section>
 
+    <section class="intelligence-section" id="forecast-engine">
+      <div class="section-heading">
+        <div><p class="eyebrow">Forecast Engine</p><h2>Active Forecasts</h2></div>
+        <span class="signal-pill">{{ dashboard.counts.forecasts }} active</span>
+      </div>
+      <div class="forecast-list">
+        {% for forecast in dashboard.forecasts %}
+          <article class="forecast-card">
+            <strong>{{ forecast.title }}</strong>
+            <p>{{ forecast.forecast_body }}</p>
+            <small>{{ forecast.stream_key }} · {{ forecast.confidence_label }} · {{ forecast.confidence_score }}% · {{ forecast.horizon }}</small>
+          </article>
+        {% else %}
+          <p class="empty">No active forecasts for this view.</p>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="intelligence-section" id="feedback-learning">
+      <div class="section-heading">
+        <div><p class="eyebrow">Learning</p><h2>Feedback Learning</h2></div>
+      </div>
+      <div class="hero-stats">
+        <article><strong>{{ dashboard.counts.feedback }}</strong><span>User feedback records</span></article>
+        <article><strong>{{ dashboard.counts.deliveries }}</strong><span>Delivery records</span></article>
+        <article><strong>{{ dashboard.counts.accepted_events }}</strong><span>Accepted signals</span></article>
+        <article><strong>{{ dashboard.counts.suppressed_events }}</strong><span>Suppressed signals</span></article>
+      </div>
+    </section>
+
     <section class="intelligence-section">
       <div class="section-heading"><div><p class="eyebrow">Runs</p><h2>Collector History</h2></div></div>
       <div class="run-table">
@@ -112,6 +160,6 @@
       </div>
     </section>
   </main>
-  <script src="/static/js/pulsesoc_intelligence_center.js?v=20260703b" defer></script>
+  <script src="/static/js/pulsesoc_intelligence_center.js?v=20260703c" defer></script>
 </body>
 </html>

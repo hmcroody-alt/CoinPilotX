@@ -3,24 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Galaxy Intelligence Center | PulseSoc</title>
-  <link rel="stylesheet" href="/static/css/pulsesoc_intelligence_center.css?v=20260703b">
+  <title>{{ surface.title }} | PulseSoc</title>
+  <link rel="stylesheet" href="/static/css/pulsesoc_intelligence_center.css?v=20260703c">
 </head>
 <body class="galaxy-intelligence-page">
-  <main class="galaxy-intelligence-shell" data-intelligence-root>
+  <main class="galaxy-intelligence-shell" data-intelligence-root data-intelligence-view="{{ surface.key }}">
     <header class="galaxy-intelligence-hero">
       <nav class="galaxy-intelligence-nav" aria-label="PulseSoc navigation">
         <a href="/pulse">PulseSoc</a>
-        <a href="/pulse/messages">Messenger</a>
-        <a href="/pulse/notifications">Signal Center</a>
-        <a href="/account">Settings</a>
+        <a href="/pulse/intelligence" class="{{ 'is-active' if surface.key == 'alerts' else '' }}">Alerts</a>
+        <a href="/pulse/forecasts" class="{{ 'is-active' if surface.key == 'forecasts' else '' }}">Forecasts</a>
+        <a href="/pulse/briefing" class="{{ 'is-active' if surface.key == 'briefing' else '' }}">Daily Briefing</a>
+        <a href="/dashboard/crypto/watchlists">Watchlists</a>
+        <a href="/dashboard/intelligence/ai-advisor">Pulse Advisor</a>
+        <a href="/pulse/settings/signals" class="{{ 'is-active' if surface.key == 'preferences' else '' }}">Preferences</a>
       </nav>
       <div>
-        <p class="eyebrow">PulseSoc Intelligence Layer</p>
-        <h1>Galaxy Intelligence Center</h1>
-        <p class="hero-copy">Streams scan trusted sources, score signal quality, and deliver only the Pulses worth your attention.</p>
+        <p class="eyebrow">{{ surface.eyebrow }}</p>
+        <h1>{{ surface.title }}</h1>
+        <p class="hero-copy">{{ surface.description }}</p>
       </div>
-      <section class="hero-stats" aria-label="Intelligence summary">
+      <section class="hero-stats" aria-label="Signal summary">
         <article><strong data-summary="streams_enabled">0</strong><span>Streams</span></article>
         <article><strong data-summary="signals">0</strong><span>Signals</span></article>
         <article><strong data-summary="forecasts">0</strong><span>Forecasts</span></article>
@@ -28,28 +31,44 @@
       </section>
     </header>
 
+    <nav class="signal-shortcuts" aria-label="Signal categories">
+      <a href="/pulse/signals/security" class="{{ 'is-active' if surface.key == 'security' else '' }}"><strong>Security Signals</strong><span>Protection and patch guidance</span></a>
+      <a href="/pulse/signals/crypto" class="{{ 'is-active' if surface.key == 'crypto' else '' }}"><strong>Crypto Signals</strong><span>High-confidence market activity</span></a>
+      <a href="/pulse/signals/market" class="{{ 'is-active' if surface.key == 'market' else '' }}"><strong>Market Signals</strong><span>Macro and economic events</span></a>
+      <a href="/pulse/signals/technology" class="{{ 'is-active' if surface.key == 'technology' else '' }}"><strong>Tech Signals</strong><span>AI and technology releases</span></a>
+      <a href="/pulse/signals/world" class="{{ 'is-active' if surface.key == 'world' else '' }}"><strong>World Events</strong><span>Major events without noise</span></a>
+      <a href="/pulse/signals/creator" class="{{ 'is-active' if surface.key == 'creator' else '' }}"><strong>Creator Signals</strong><span>Audience and publishing guidance</span></a>
+      <a href="/pulse/signals/music" class="{{ 'is-active' if surface.key == 'music' else '' }}"><strong>Music Signals</strong><span>Releases and trending sounds</span></a>
+    </nav>
+
+    {% if surface.show_streams %}
     <section class="intelligence-section">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Default Pack</p>
-          <h2>Intelligence Streams</h2>
+          <p class="eyebrow">Your choices</p>
+          <h2>Signal Preferences</h2>
         </div>
-        <p data-intelligence-status>Loaded from cached PulseSoc state.</p>
+        <p data-intelligence-status>Loaded from your saved preferences.</p>
       </div>
       <div class="stream-grid" data-stream-list></div>
     </section>
+    {% endif %}
 
+    {% if surface.show_events or surface.show_forecasts %}
     <section class="intelligence-layout">
+      {% if surface.show_events %}
       <div class="intelligence-section">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Signals</p>
-            <h2>Latest Pulses</h2>
+            <h2>{{ 'Today at a Glance' if surface.key == 'briefing' else 'Latest Pulses' }}</h2>
           </div>
           <button type="button" data-refresh-intelligence>Refresh</button>
         </div>
         <div class="signal-list" data-signal-list></div>
       </div>
+      {% endif %}
+      {% if surface.show_forecasts %}
       <aside class="intelligence-section">
         <div class="section-heading">
           <div>
@@ -63,9 +82,11 @@
           <p>Private messages, calls, media, payment data, passwords, tokens, and secrets are not used by collectors. Personalization comes from stream settings, engagement, and explicit feedback.</p>
         </div>
       </aside>
+      {% endif %}
     </section>
+    {% endif %}
   </main>
-  <script type="application/json" id="galaxy-intelligence-state">{{ initial_state|tojson }}</script>
-  <script src="/static/js/pulsesoc_intelligence_center.js?v=20260703b" defer></script>
+  <script type="application/json" id="pulse-intelligence-state">{{ initial_state|tojson }}</script>
+  <script src="/static/js/pulsesoc_intelligence_center.js?v=20260703c" defer></script>
 </body>
 </html>

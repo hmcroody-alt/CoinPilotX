@@ -63,19 +63,24 @@ def main() -> int:
     require("private_conversations_used" in service and "private_messages_used_by_collectors" in service, "privacy-safe learning guard exists", failures)
     require("run_internal_collector" in service and "collector_runs" in service, "background collector foundation exists", failures)
     require("fetch(" not in service and "requests." not in service, "no synchronous external fetch in service", failures)
-    require("/pulse/intelligence" in routes and "/api/pulse/intelligence/state" in routes, "user Intelligence Center routes exist", failures)
+    require(
+        all(route in routes for route in ("/pulse/intelligence", "/pulse/forecasts", "/pulse/briefing", "/pulse/signals/<string:signal_key>", "/api/pulse/intelligence/state")),
+        "user Pulse Signals routes exist",
+        failures,
+    )
     require("/admin/intelligence" in routes and "/api/admin/intelligence/collect" in routes, "admin Intelligence Center routes exist", failures)
-    require("Galaxy Intelligence Center" in user_template and "data-stream-list" in user_template, "user UI exists", failures)
-    require("Source Readiness" in admin_template and "data-admin-intel-collect" in admin_template, "admin UI exists", failures)
+    require("surface.title" in user_template and "Signal Preferences" in user_template and "data-stream-list" in user_template and '"Pulse Alerts"' in service, "user Pulse Signals UI exists", failures)
+    require("Galaxy Intelligence Center" not in user_template and "LogiNexus" not in user_template, "admin engine names stay out of user UI", failures)
+    require("Galaxy Intelligence Center" in admin_template and "Source Readiness" in admin_template and "data-admin-intel-collect" in admin_template, "admin UI exists", failures)
     require("fetch(url" in js and "data-stream-toggle" in js and "data-feedback" in js, "frontend stream controls exist", failures)
     require("prefers-reduced-motion" in css and "overflow-x: hidden" in css, "performance/mobile CSS guard exists", failures)
     require("intelligence_pulse" in notification and '"intelligence"' in notification, "notification category/event exists", failures)
-    require("Galaxy Intelligence Center" in ai_knowledge and "Intelligence Streams" in ai_knowledge, "Pulse AI knowledge updated", failures)
+    require("Pulse Signals" in ai_knowledge and "Pulse Alerts" in ai_knowledge and "Galaxy Intelligence Center" not in ai_knowledge, "Pulse AI knowledge uses user-facing terms", failures)
     require("run_internal_collector" in worker, "worker entry point exists", failures)
     require("Private" in report and "Performance" in report and "Phase" in report, "completion report exists", failures)
 
-    public_ui = user_template + admin_template + js
-    require("LogiNexus" not in public_ui and "L.I.E." not in public_ui, "internal names not exposed in UI", failures)
+    public_ui = user_template + js
+    require("LogiNexus" not in public_ui and "L.I.E." not in public_ui and "Galaxy Intelligence Center" not in public_ui, "internal names not exposed in user UI", failures)
 
     if failures:
         print("PulseSoc Intelligence Engine audit failed:")

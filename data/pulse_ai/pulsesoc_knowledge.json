@@ -66,7 +66,7 @@
     "how_to_use_it": "Ask questions naturally. Pulse AI can answer PulseSoc navigation questions, explain features, help with security education, and search live sources when current information is needed.",
     "common_questions": ["What can Pulse AI do?", "Can Pulse AI read my chats?", "How do I clear Pulse AI memory?"],
     "troubleshooting": ["If Pulse AI is unavailable, try again later; normal Messenger remains unaffected.", "If memory is disabled, personalization will be limited."],
-    "related_features": ["Messenger", "Galaxy Intelligence Center", "Security settings"],
+    "related_features": ["Messenger", "Pulse Alerts", "Security settings"],
     "safety_notes": ["Pulse AI does not secretly read private chats or learn from private conversations without explicit opt-in."]
   },
   {
@@ -86,7 +86,7 @@
     "how_to_use_it": "Open notifications, mark them read, use deep links, and manage push, email, SMS, preview, and quiet-hour preferences.",
     "common_questions": ["How do I turn off lock-screen notifications?", "Why did I not get a push?", "How do unread badges work?"],
     "troubleshooting": ["Check browser/PWA notification permission.", "Check muted conversations and push settings."],
-    "related_features": ["Messenger", "Crypto alerts", "Galaxy Intelligence Center"],
+    "related_features": ["Messenger", "Crypto alerts", "Pulse Alerts"],
     "safety_notes": ["Disable previews on lock screen if privacy matters."]
   },
   {
@@ -102,18 +102,18 @@
   {
     "feature": "Market alerts",
     "summary": "Market alerts and Market Pulse surface macro, stock, ETF, and economic signals when configured and supported.",
-    "where_to_find_it": "Open Galaxy Intelligence Center and subscribe to Market Pulse.",
+    "where_to_find_it": "Open Market Signals, then use Signal Preferences to manage delivery.",
     "how_to_use_it": "Use Market Pulse for major market signals and confidence-labeled forecasts; manage delivery frequency and thresholds.",
     "common_questions": ["What is Market Pulse?", "Can I get stock market news?"],
     "troubleshooting": ["If live market sources are unavailable, Pulse AI can still explain general market concepts."],
-    "related_features": ["Galaxy Intelligence Center", "Notifications", "Pulse AI chat"],
+    "related_features": ["Market Signals", "Pulse Forecasts", "Notifications", "Pulse AI chat"],
     "safety_notes": ["Market content is informational and not financial advice."]
   },
   {
-    "feature": "Intelligence Streams",
-    "summary": "Intelligence Streams filter world, market, crypto, security, technology, creator, music, and PulseSoc signals into useful Pulses.",
-    "where_to_find_it": "Open Galaxy Intelligence Center from PulseSoc navigation or settings.",
-    "how_to_use_it": "Enable streams, set frequency, choose confidence thresholds, and give feedback so PulseSoc learns what matters.",
+    "feature": "Pulse Signals",
+    "summary": "Pulse Alerts, Forecasts, and Daily Briefing filter world, market, crypto, security, technology, creator, music, and PulseSoc signals into useful Pulses.",
+    "where_to_find_it": "Open Alerts, Forecasts, Daily Briefing, or Signal Preferences from Mission Control.",
+    "how_to_use_it": "Review signals, save useful items, set frequency and confidence thresholds in Signal Preferences, and give feedback so PulseSoc learns what matters.",
     "common_questions": ["What are Intelligence Streams?", "How do I mute a stream?", "What does confidence mean?"],
     "troubleshooting": ["If a stream feels noisy, raise confidence threshold or switch to digest mode."],
     "related_features": ["Notifications", "Pulse AI chat", "Crypto alerts"],
@@ -222,7 +222,7 @@
   {
     "feature": "Trending content",
     "summary": "Trending content surfaces popular posts, music, topics, creators, and communities where supported.",
-    "where_to_find_it": "Home, Reels, Music, Discovery, or Galaxy Intelligence Center surfaces.",
+    "where_to_find_it": "Home, Reels, Music, Discovery, Pulse Alerts, or Daily Briefing.",
     "how_to_use_it": "Explore trends, follow creators, save content, and use insights for creator planning.",
     "common_questions": ["Where are trends?", "How do I use trending music?"],
     "troubleshooting": ["If trends look stale, refresh or check network connection."],
@@ -282,11 +282,11 @@
   {
     "feature": "App Store availability",
     "summary": "PulseSoc iOS availability uses the official App Store page and PulseSoc action buttons for download/share prompts.",
-    "where_to_find_it": "Use the App Store app, PulseSoc Intelligence action buttons, or Pulse AI guidance.",
+    "where_to_find_it": "Use the App Store app, Pulse Alerts action buttons, or Pulse AI guidance.",
     "how_to_use_it": "Tap Download PulseSoc, Open PulseSoc, Share PulseSoc, Invite Friends, or Join the Galaxy when those buttons appear. Pulse AI should show or describe the official download action instead of dumping a raw URL unless the user explicitly asks.",
     "common_questions": ["Where can I download PulseSoc?", "How do I share PulseSoc?", "Why is the app not visible?"],
     "troubleshooting": ["If the app is not visible, check storefront region, release status, pricing/availability, agreements, and propagation delay."],
-    "related_features": ["Mobile PWA behavior", "Push notifications", "Galaxy Intelligence Center"],
+    "related_features": ["Mobile PWA behavior", "Push notifications", "Pulse Alerts"],
     "safety_notes": ["Install only from official PulseSoc/App Store links.", "Do not trust random download links sent by strangers."]
   },
   {

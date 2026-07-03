@@ -56,7 +56,7 @@ REQUIRED_CATEGORIES = {
     "Account Command Center",
     "Pulse Network",
     "Creator Studio",
-    "Intelligence Center",
+    "Intelligence",
     "Economy & Earnings",
     "Pulse Radio & Media",
     "Ads & Sponsorships",
@@ -65,6 +65,17 @@ REQUIRED_CATEGORIES = {
 }
 
 SAFE_STATUSES = {"PRODUCTION_READY", "ACTIVE", "BETA", "PARTIAL", "COMING_SOON"}
+USER_INTELLIGENCE_MODULES = {
+    "Alerts",
+    "Forecasts",
+    "Watchlists",
+    "Pulse Advisor",
+    "Security Signals",
+    "Crypto Signals",
+    "Market Signals",
+    "World Events",
+    "Daily Briefing",
+}
 
 
 def fail(message: str) -> None:
@@ -172,6 +183,13 @@ def all_widgets(payload: dict) -> list[dict]:
     return widgets
 
 
+def category_widgets(payload: dict, category_name: str) -> list[dict]:
+    for category in payload.get("categories") or []:
+        if str(category.get("name") or "") == category_name:
+            return list(category.get("widgets") or [])
+    return []
+
+
 def run() -> None:
     setup_data()
     conn = bot.db()
@@ -198,11 +216,19 @@ def run() -> None:
     admin_payload = payload_for(203)
 
     assert_true(REQUIRED_CATEGORIES - {"Admin / Moderator Only"} <= categories(free_payload), "free user sees non-admin V2 categories")
-    assert_true("Ads Manager" in widget_names(free_payload), "free user sees locked ads upgrade path")
-    assert_true("UNDX" in widget_names(free_payload), "free user sees locked AI upgrade path")
+    assert_true("Commercial Mission Control" in widget_names(free_payload), "free user sees ads management path")
+    assert_true("AI Creator Assistant" in widget_names(free_payload), "free user sees locked AI upgrade path")
     assert_true("Audit Logs" not in widget_names(free_payload), "free user cannot see admin audit logs")
     assert_true("Infrastructure Health" not in widget_names(premium_payload), "premium non-admin cannot see infrastructure health")
     assert_true("Infrastructure Health" in widget_names(admin_payload), "admin can see infrastructure health")
+    free_intelligence_names = {str(widget.get("display_name") or "") for widget in category_widgets(free_payload, "Intelligence")}
+    premium_intelligence_names = {str(widget.get("display_name") or "") for widget in category_widgets(premium_payload, "Intelligence")}
+    assert_true(USER_INTELLIGENCE_MODULES <= free_intelligence_names, "free user sees friendly Intelligence modules")
+    assert_true(USER_INTELLIGENCE_MODULES <= premium_intelligence_names, "premium user sees friendly Intelligence modules")
+    assert_true("Galaxy Intelligence Center" not in widget_names(free_payload), "regular user cannot see admin intelligence engine")
+    assert_true("Galaxy Intelligence Center" not in widget_names(premium_payload), "premium user cannot see admin intelligence engine")
+    assert_true("Galaxy Intelligence Center" in widget_names(admin_payload), "admin sees Galaxy Intelligence Center")
+    assert_true(all(widget.get("route") != "/admin/intelligence" for widget in all_widgets(free_payload)), "regular user payload excludes admin intelligence route")
 
     locked = [widget for widget in all_widgets(free_payload) if widget.get("access") == "locked"]
     assert_true(locked, "free payload has locked premium cards")
@@ -210,6 +236,7 @@ def run() -> None:
     assert_true(all(widget.get("status_label") for widget in all_widgets(free_payload)), "widgets expose maturity label")
 
     serialized = json.dumps(free_payload).lower()
+    assert_true("galaxy intelligence center" not in serialized and "/admin/intelligence" not in serialized, "regular user payload does not leak admin intelligence surface")
     for secret_word in ("database_url", "private_key", "command_center_internal_token", "secret_key", "filesystem"):
         assert_true(secret_word not in serialized, f"payload does not expose {secret_word}")
     print("PASS: PulseSoc Mission Control V2 audit passed")

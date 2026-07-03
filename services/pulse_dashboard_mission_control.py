@@ -162,7 +162,7 @@ SECTION_META = {
     "Account Command Center": {"icon": "ID", "accent": "cyan", "label": "Account"},
     "Pulse Network": {"icon": "PN", "accent": "purple", "label": "Network"},
     "Creator Studio": {"icon": "CS", "accent": "blue", "label": "Creator"},
-    "Intelligence Center": {"icon": "AI", "accent": "emerald", "label": "Intel"},
+    "Intelligence": {"icon": "AI", "accent": "emerald", "label": "Intelligence"},
     "Economy & Earnings": {"icon": "$", "accent": "gold", "label": "Economy"},
     "Pulse Radio & Media": {"icon": "FM", "accent": "purple", "label": "Media"},
     "Crypto Command Center": {"icon": "BTC", "accent": "gold", "label": "Crypto"},
@@ -176,7 +176,7 @@ SECTION_META = {
 STATE_CATEGORY_MAP = {
     "account": "Account Command Center",
     "network": "Pulse Network",
-    "intelligence": "Intelligence Center",
+    "intelligence": "Intelligence",
     "economy": "Economy & Earnings",
     "crypto": "Crypto Command Center",
     "ads": "Ads & Sponsorships",
@@ -208,12 +208,16 @@ WIDGET_ICONS = {
     "best_posting_time": "BT",
     "creator_score": "SC",
     "creator_tools": "TL",
-    "scam_shield": "SH",
-    "scam_alerts": "!",
-    "pulse_intelligence": "PI",
-    "ai_insights": "AI",
-    "safety_scan": "100",
-    "recommendations": "RC",
+    "pulse_alerts": "AL",
+    "pulse_forecasts": "FC",
+    "pulse_watchlists": "WL",
+    "pulse_advisor": "AI",
+    "security_signals": "SH",
+    "crypto_signals": "BTC",
+    "market_signals": "MK",
+    "world_events": "WE",
+    "daily_briefing": "DB",
+    "galaxy_intelligence_center": "GC",
     "wallet": "WL",
     "earnings": "ER",
     "marketplace": "MK",
@@ -346,12 +350,15 @@ WIDGETS: list[dict[str, Any]] = [
     _widget("best_posting_time", "Best Posting Time", "Creator Studio", "/dashboard/creator/best-posting-time", "AI-assisted timing insights for creators.", premium_required=True, creator_required=True, sort_order=80, accent="purple"),
     _widget("creator_score", "Creator Score", "Creator Studio", "/dashboard/creator/creator-score", "Creator readiness and audience health.", creator_required=True, sort_order=90, accent="emerald"),
     _widget("creator_tools", "Creator Tools", "Creator Studio", "/dashboard/creator/creator-tools", "Creator workflows, media, and publishing tools.", creator_required=True, sort_order=100),
-    _widget("scam_shield", "Scam Shield", "Intelligence Center", "/dashboard/intelligence/scam-shield", "Protection status, scam patterns, community reports, and safety recommendations.", sort_order=10, accent="emerald"),
-    _widget("scam_alerts", "Scam Alerts", "Intelligence Center", "/dashboard/intelligence/scam-alerts", "Active alerts, priority, alert history, and notification routing.", sort_order=20, accent="red"),
-    _widget("pulse_intelligence", "Pulse Brain", "Intelligence Center", "/dashboard/intelligence/pulse-brain", "Community mood, platform health, topics, creators, and daily briefing signals.", sort_order=30),
-    _widget("ai_insights", "AI Advisor", "Intelligence Center", "/dashboard/intelligence/ai-advisor", "Personalized recommendations, explanations, and safe AI guidance.", premium_required=True, sort_order=40, accent="purple"),
-    _widget("safety_scan", "Safety Scan", "Intelligence Center", "/dashboard/intelligence/safety-scan", "Message, link, file, device, session, and suspicious activity scan state.", sort_order=50, accent="emerald"),
-    _widget("recommendations", "Smart Recommendations", "Intelligence Center", "/dashboard/intelligence/smart-recommendations", "Privacy-safe people, group, content, music, marketplace, and creator recommendations.", premium_required=True, sort_order=60, accent="purple"),
+    _widget("pulse_alerts", "Alerts", "Intelligence", "/pulse/intelligence", "Review high-confidence signals ranked by relevance, urgency, and your preferences.", sort_order=10, accent="emerald"),
+    _widget("pulse_forecasts", "Forecasts", "Intelligence", "/pulse/forecasts", "See confidence-labeled forecasts only when trusted signals support them.", sort_order=20, accent="gold"),
+    _widget("pulse_watchlists", "Watchlists", "Intelligence", "/dashboard/crypto/watchlists", "Track assets and topics you care about without changing alert ownership.", sort_order=30, accent="cyan"),
+    _widget("pulse_advisor", "Pulse Advisor", "Intelligence", "/dashboard/intelligence/ai-advisor", "Ask for clear guidance based on safe PulseSoc knowledge and your approved settings.", sort_order=40, accent="purple"),
+    _widget("security_signals", "Security Signals", "Intelligence", "/pulse/signals/security", "Review defensive security, patch, scam, and account protection signals.", sort_order=50, accent="emerald"),
+    _widget("crypto_signals", "Crypto Signals", "Intelligence", "/pulse/signals/crypto", "Follow high-confidence crypto activity without investment recommendations.", sort_order=60, accent="gold"),
+    _widget("market_signals", "Market Signals", "Intelligence", "/pulse/signals/market", "Follow major market and economic events without stock-by-stock noise.", sort_order=70, accent="cyan"),
+    _widget("world_events", "World Events", "Intelligence", "/pulse/signals/world", "Review heavily filtered major world, science, emergency, and infrastructure events.", sort_order=80, accent="blue"),
+    _widget("daily_briefing", "Daily Briefing", "Intelligence", "/pulse/briefing", "Scan the strongest available signals and forecasts in one compact briefing.", sort_order=90, accent="purple"),
     _widget("wallet", "Wallet", "Economy & Earnings", "/dashboard/economy/wallet", "Balances, transactions, holds, refunds, credits, payment methods, and wallet protection.", sort_order=10, accent="gold"),
     _widget("earnings", "Earnings", "Economy & Earnings", "/dashboard/economy/earnings", "Owner-only earnings, source breakdowns, payout timeline, taxes, and projections.", creator_required=True, sort_order=20, accent="gold", status="BETA", tables=("creator_dashboard_metrics",), dependencies=("creator",)),
     _widget("marketplace", "Marketplace", "Economy & Earnings", "/dashboard/economy/marketplace", "Products, orders, inventory, refunds, disputes, seller reputation, and fraud checks.", sort_order=30),
@@ -398,6 +405,7 @@ WIDGETS: list[dict[str, Any]] = [
     _widget("infrastructure_health", "Infrastructure Health", "Admin / Moderator Only", "/admin/system", "Railway, database, Redis, and service checks.", admin_only=True, free_visible_locked=False, sort_order=70),
     _widget("push_notification_health", "Push Notification Health", "Admin / Moderator Only", "/admin/notifications", "Push and notification delivery health.", admin_only=True, free_visible_locked=False, sort_order=80),
     _widget("livekit_mux_health", "LiveKit / Mux Health", "Admin / Moderator Only", "/admin/livestreams", "Live media provider diagnostics.", admin_only=True, free_visible_locked=False, sort_order=90),
+    _widget("galaxy_intelligence_center", "Galaxy Intelligence Center", "Admin / Moderator Only", "/admin/intelligence", "Admin-only collector, source, forecast, signal, delivery, feedback, and health controls.", admin_only=True, free_visible_locked=False, sort_order=100, accent="purple"),
 ]
 
 WIDGETS.extend([
@@ -429,16 +437,6 @@ WIDGETS.extend([
     _widget("engagement_prediction", "Engagement Prediction", "Creator Studio", "/dashboard/creator/engagement-prediction", "Predictive engagement estimates for creator content.", premium_required=True, creator_required=True, sort_order=160, accent="purple", status="PARTIAL", tables=("creator_dashboard_metrics",), dependencies=("creator", "ai")),
     _widget("creator_reputation", "Creator Reputation", "Creator Studio", "/dashboard/creator/creator-reputation", "Private creator reputation and trust signals.", premium_required=True, creator_required=True, sort_order=170, accent="emerald", status="BETA", tables=("security_events", "posts"), dependencies=("creator", "security")),
     _widget("viral_opportunity_scanner", "Viral Opportunity Scanner", "Creator Studio", "/dashboard/creator/viral-opportunity-scanner", "Find safe high-opportunity content windows.", premium_required=True, creator_required=True, sort_order=180, accent="purple", status="PARTIAL", tables=("dashboard_recommendations",), dependencies=("creator", "ai")),
-
-    _widget("safety_center", "Security Intelligence", "Intelligence Center", "/dashboard/intelligence/security-intelligence", "Safety score, security checklist, device security, and privacy health.", sort_order=70, accent="emerald", status="BETA", tables=("security_events", "security_reports"), dependencies=("security",)),
-    _widget("threat_intelligence", "Threat Intelligence", "Intelligence Center", "/dashboard/intelligence/threat-intelligence", "Threat timeline, emerging risks, severity, and resolution history.", premium_required=True, sort_order=80, accent="red", status="BETA", tables=("security_events",), dependencies=("premium", "security")),
-    _widget("risk_scanner", "Risk Assessment", "Intelligence Center", "/dashboard/intelligence/risk-assessment", "Account, device, network, financial, reputation, and marketplace risk assessment.", premium_required=True, sort_order=90, accent="red", status="PARTIAL", tables=("security_events",), dependencies=("security",)),
-    _widget("reputation_monitoring", "Trust Intelligence", "Intelligence Center", "/dashboard/intelligence/trust-intelligence", "Private trust, reputation, reports, appeals, and improvement plan.", premium_required=True, sort_order=100, accent="purple", status="PARTIAL", tables=("dashboard_recommendations",), dependencies=("premium",)),
-    _widget("deep_signal_analysis", "Signal Intelligence", "Intelligence Center", "/dashboard/intelligence/signal-intelligence", "Feed, community, trend, creator, engagement, and safety signal processing.", premium_required=True, sort_order=110, accent="purple", status="PARTIAL", tables=("ai_analyses",), dependencies=("ai", "premium")),
-    _widget("ai_research_assistant", "Research Workspace", "Intelligence Center", "/dashboard/intelligence/research-workspace", "Topic research, summaries, saved research, citations, export readiness, and usage limits.", premium_required=True, sort_order=120, accent="purple", status="BETA", tables=("ai_conversations",), dependencies=("ai",)),
-    _widget("ai_feed_intelligence", "Feed Intelligence", "Intelligence Center", "/dashboard/intelligence/feed-intelligence", "Feed summary, hidden trends, recommended reading, creator opportunities, and daily briefing.", premium_required=True, sort_order=130, accent="purple", status="BETA", tables=("ai_analyses",), dependencies=("ai",)),
-    _widget("predictive_alerts", "Prediction Center", "Intelligence Center", "/dashboard/intelligence/prediction-center", "Future risks, opportunities, creator predictions, forecasts, and confidence history.", premium_required=True, sort_order=140, accent="purple", status="PARTIAL", tables=("dashboard_recommendations",), dependencies=("ai", "premium")),
-    _widget("community_heatmaps", "Pulse Heatmap", "Intelligence Center", "/dashboard/intelligence/pulse-heatmap", "Aggregate-only activity, topic, engagement, safety, and discovery heatmaps.", premium_required=True, sort_order=150, accent="purple", status="PARTIAL", tables=("posts", "pulse_reels"), dependencies=("premium",)),
 
     _widget("revenue_analytics", "Revenue Analytics", "Economy & Earnings", "/dashboard/economy/revenue-analytics", "Revenue charts, summaries, projections, seasonality, and benchmarks.", premium_required=True, creator_required=True, sort_order=90, accent="gold", status="BETA", tables=("creator_revenue_events",), dependencies=("creator", "premium")),
     _widget("ad_revenue", "Ad Revenue", "Economy & Earnings", "/dashboard/economy/ad-revenue", "Advertising eligibility, RPM, CPM, impressions, fill rate, and payout history.", premium_required=True, creator_required=True, sort_order=100, accent="gold", status="COMING_SOON", tables=("ad_revenue",), dependencies=("ads", "premium")),
@@ -623,7 +621,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             try:
                 if item["category"] == "Pulse Network":
                     state = dashboard_network_command_center.state_for_widget(network_state, item["widget_key"])
-                elif item["category"] == "Intelligence Center":
+                elif item["category"] == "Intelligence":
                     state = dashboard_intelligence_command_center.state_for_widget(intelligence_state, item["widget_key"])
                 elif item["category"] == "Economy & Earnings":
                     state = dashboard_economy_command_center.state_for_widget(economy_state, item["widget_key"])
@@ -672,8 +670,8 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             item["cta_label"] = "Manage Account"
         elif item["category"] == "Pulse Network":
             item["cta_label"] = "Review Network"
-        elif item["category"] == "Intelligence Center":
-            item["cta_label"] = "Review Intelligence"
+        elif item["category"] == "Intelligence":
+            item["cta_label"] = "View Signals"
         elif item["category"] == "Economy & Earnings":
             item["cta_label"] = "Manage Economy"
         elif item["category"] == "Crypto Command Center":

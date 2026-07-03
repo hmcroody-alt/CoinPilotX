@@ -91,10 +91,10 @@ INTELLIGENCE_SUBSYSTEM_BLUEPRINTS: tuple[dict[str, Any], ...] = (
     {
         "key": "ai-advisor",
         "card_key": "ai_insights",
-        "label": "AI Advisor",
+        "label": "Pulse Advisor",
         "route": "/dashboard/intelligence/ai-advisor",
         "admin_route": "/admin/intelligence-command-center/ai-advisor",
-        "action": "Ask AI Advisor",
+        "action": "Ask Pulse Advisor",
         "metric": "ai_recommendations",
         "state": "BETA",
         "description": "Daily summaries, personalized recommendations, missed opportunities, creator/network/safety advice, explanations, and usage limits.",
@@ -294,6 +294,18 @@ INTELLIGENCE_SUBSYSTEM_BLUEPRINTS: tuple[dict[str, Any], ...] = (
 
 SUBSYSTEMS_BY_CARD = {item["card_key"]: item for item in INTELLIGENCE_SUBSYSTEM_BLUEPRINTS}
 SUBSYSTEMS_BY_KEY = {item["key"]: item for item in INTELLIGENCE_SUBSYSTEM_BLUEPRINTS}
+
+USER_INTELLIGENCE_MODULES: dict[str, dict[str, Any]] = {
+    "pulse_alerts": {"route": "/pulse/intelligence", "action": "View Alerts", "metric": "notifications_total"},
+    "pulse_forecasts": {"route": "/pulse/forecasts", "action": "View Forecasts", "metric": "prediction_confidence"},
+    "pulse_watchlists": {"route": "/dashboard/crypto/watchlists", "action": "Open Watchlists", "metric": "new_opportunities"},
+    "pulse_advisor": {"route": "/dashboard/intelligence/ai-advisor", "action": "Ask Pulse Advisor", "metric": "ai_recommendations"},
+    "security_signals": {"route": "/pulse/signals/security", "action": "Review Security", "metric": "security_events", "warning_metric": "active_threats"},
+    "crypto_signals": {"route": "/pulse/signals/crypto", "action": "View Crypto Signals", "metric": "notifications_total"},
+    "market_signals": {"route": "/pulse/signals/market", "action": "View Market Signals", "metric": "notifications_total"},
+    "world_events": {"route": "/pulse/signals/world", "action": "View World Events", "metric": "notifications_total"},
+    "daily_briefing": {"route": "/pulse/briefing", "action": "Open Briefing", "metric": "trending_topics"},
+}
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
@@ -507,6 +519,21 @@ def build_intelligence_state(conn: Any, user: dict[str, Any]) -> dict[str, Any]:
 
 
 def state_for_widget(intelligence_state: dict[str, Any], widget_key: str) -> dict[str, Any] | None:
+    user_module = USER_INTELLIGENCE_MODULES.get(widget_key)
+    if user_module:
+        metrics = intelligence_state.get("metrics") or {}
+        warning_metric = str(user_module.get("warning_metric") or "")
+        state = "WARNING" if warning_metric and _safe_int(metrics.get(warning_metric), 0) > 0 else "READY"
+        return {
+            "state": state,
+            "status": state,
+            "status_label": state,
+            "route": user_module["route"],
+            "cta_label": user_module["action"],
+            "detail": "Owner-scoped signal view connected to saved PulseSoc preferences.",
+            "metric_value": _safe_int(metrics.get(user_module.get("metric")), 0),
+            "confidence": _confidence_for_state(state, metrics),
+        }
     blueprint = SUBSYSTEMS_BY_CARD.get(widget_key)
     if not blueprint:
         return None

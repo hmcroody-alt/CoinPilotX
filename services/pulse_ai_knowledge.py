@@ -20,8 +20,8 @@ CORE_SYSTEM_PROMPT = """You are Pulse AI, the intelligent assistant inside Pulse
 You help users navigate PulseSoc, understand features, troubleshoot common issues,
 discover tools, manage alerts, understand notifications, use Messenger, use calls,
 explore Reels, enjoy PulseSoc Music, and stay safe in the PulseSoc galaxy.
-You can also explain Galaxy Intelligence Center, Intelligence Streams,
-forecasts, confidence labels, digest mode, quiet hours, and privacy-safe signal
+You can also explain Pulse Alerts, Pulse Forecasts, Signal Preferences, Daily
+Briefing, confidence labels, digest mode, quiet hours, and privacy-safe signal
 personalization.
 
 Be clear, friendly, futuristic, concise, and useful. Never expose internal secrets,
@@ -56,7 +56,7 @@ DEFAULT_FEATURE_REGISTRY: list[dict[str, str]] = [
     {"key": "reels", "name": "Reels", "summary": "Reels is the immersive vertical viewing surface for short videos and Live viewing. Join Live links open the Live inside Reels."},
     {"key": "music", "name": "PulseSoc Music", "summary": "PulseSoc Music powers soundtrack discovery, status sounds, music identity, and atmosphere across social experiences."},
     {"key": "notifications", "name": "Notifications", "summary": "PulseSoc notifications include in-app, push-ready, email, SMS-eligible, and device-token-aware delivery with user preferences, privacy previews, mute rules, and deep links."},
-    {"key": "intelligence_streams", "name": "Galaxy Intelligence Center", "summary": "Galaxy Intelligence Center lets users subscribe to Intelligence Streams such as Crypto Pulse, Market Pulse, World Pulse, Security Pulse, Technology Pulse, PulseSoc Pulse, Creator Pulse, and Music Pulse. Streams use confidence scoring, digest mode, quiet hours, and feedback without secretly reading private conversations."},
+    {"key": "intelligence_streams", "name": "Pulse Signals", "summary": "Pulse Alerts, Forecasts, Daily Briefing, and Signal Preferences help users follow Crypto, Market, World, Security, Technology, PulseSoc, Creator, and Music signals. Preferences use confidence thresholds, digest mode, quiet hours, and feedback without secretly reading private conversations."},
     {"key": "crypto_alerts", "name": "Crypto Alerts", "summary": "Crypto alerts notify users when their configured alert conditions trigger. Manage My Alerts is the control surface for pausing, resuming, editing, deleting, duplicating, and inspecting history."},
     {"key": "profile", "name": "Profile", "summary": "Profile controls identity, avatar, privacy, creator signals, account presence, and user-facing personalization."},
     {"key": "premium", "name": "Premium", "summary": "PulseSoc Premium and creator tools unlock higher-value features, creator workflows, billing status, and advanced experiences where available."},
@@ -92,7 +92,7 @@ DEFAULT_KNOWLEDGE_ITEMS: list[dict[str, str]] = [
     {
         "title": "How Intelligence Streams work",
         "category": "intelligence_streams",
-        "body": "Galaxy Intelligence Center filters high-volume external and PulseSoc signals into useful Intelligence Streams. Events are scored for source confidence, freshness, importance, impact, duplicate evidence, and spam probability before becoming Pulses. Forecasts are labeled with confidence and are not investment advice.",
+        "body": "PulseSoc filters high-volume external and platform signals into useful Pulse Alerts and Forecasts. Events are scored for source confidence, freshness, importance, impact, duplicate evidence, and spam probability before becoming Pulses. Forecasts are labeled with confidence and are not investment advice. Users manage frequency and thresholds in Signal Preferences.",
     },
     {
         "title": "Messenger media basics",

@@ -38,7 +38,7 @@ EXPECTED_ACTIONS = {
     "scam-shield": "Protection Center",
     "scam-alerts": "Alert Center",
     "pulse-brain": "Open Pulse Brain",
-    "ai-advisor": "Ask AI Advisor",
+    "ai-advisor": "Ask Pulse Advisor",
     "safety-scan": "Scan My Account",
     "smart-recommendations": "Explore Recommendations",
     "security-intelligence": "Review Security",
@@ -245,10 +245,13 @@ def run() -> None:
             assert_true((card.get("route") or "").startswith("/dashboard/intelligence/"), f"{key} has real route")
 
         dashboard = pulse_dashboard_mission_control.build_mission_control_dashboard(conn, free_user)
-        intelligence_categories = [category for category in dashboard.get("categories") or [] if category.get("name") == "Intelligence Center"]
-        assert_true(intelligence_categories, "Mission Control includes Intelligence Center category")
+        intelligence_categories = [category for category in dashboard.get("categories") or [] if category.get("name") == "Intelligence"]
+        assert_true(intelligence_categories, "Mission Control includes user-friendly Intelligence category")
         widgets = intelligence_categories[0].get("widgets") or []
-        assert_true(len(widgets) >= 6, "Mission Control Intelligence widgets render")
+        names = {str(widget.get("display_name") or "") for widget in widgets}
+        expected = {"Alerts", "Forecasts", "Watchlists", "Pulse Advisor", "Security Signals", "Crypto Signals", "Market Signals", "World Events", "Daily Briefing"}
+        assert_true(expected <= names, "Mission Control user Intelligence widgets render")
+        assert_true("Galaxy Intelligence Center" not in names, "Mission Control hides admin intelligence engine from regular users")
         for widget in widgets:
             assert_true(widget.get("cta_label") != "Open", f"{widget.get('display_name')} avoids generic Open")
             assert_true(widget.get("status_label") != "ACTIVE", f"{widget.get('display_name')} avoids ACTIVE state")
@@ -277,7 +280,8 @@ def run() -> None:
         response = free_client.get(f"/dashboard/intelligence/{key}")
         assert_true(response.status_code == 200, f"/dashboard/intelligence/{key} loads")
         body = response.get_data(as_text=True)
-        assert_true(EXPECTED_ACTIONS[key] in body, f"{key} renders contextual button")
+        rendered_label = "Pulse Advisor" if key == "ai-advisor" else EXPECTED_ACTIONS[key]
+        assert_true(rendered_label in body, f"{key} renders contextual button")
         assert_true("LogiNexus" not in body, f"{key} keeps internal naming invisible")
         assert_no_sensitive_leak(body, key)
 

@@ -248,19 +248,50 @@ def api_admin_pulse_ai_learning():
     return _json(pulse_ai_service.admin_learning_dashboard())
 
 
-@comm_v2_blueprint.get("/pulse/intelligence")
-@comm_v2_blueprint.get("/pulse/settings/intelligence")
-def galaxy_intelligence_center_page():
+def _render_pulse_signal_surface(surface_key):
     user = _current_user()
     if not user:
         return _bot().redirect(_bot().url_for("login_page", next=request.path))
     from services import pulsesoc_intelligence_engine
 
+    surface = pulsesoc_intelligence_engine.user_surface(surface_key)
     return render_template(
         "pulsesoc_intelligence_center.html",
         current_user=user,
-        initial_state=pulsesoc_intelligence_engine.center_state(int(user["user_id"])),
+        surface=surface,
+        initial_state=pulsesoc_intelligence_engine.user_surface_state(int(user["user_id"]), surface["key"]),
     )
+
+
+@comm_v2_blueprint.get("/pulse/intelligence")
+@comm_v2_blueprint.get("/pulse/signals")
+def pulse_alerts_page():
+    return _render_pulse_signal_surface("alerts")
+
+
+@comm_v2_blueprint.get("/pulse/forecasts")
+def pulse_forecasts_page():
+    return _render_pulse_signal_surface("forecasts")
+
+
+@comm_v2_blueprint.get("/pulse/briefing")
+def pulse_daily_briefing_page():
+    return _render_pulse_signal_surface("briefing")
+
+
+@comm_v2_blueprint.get("/pulse/settings/intelligence")
+@comm_v2_blueprint.get("/pulse/settings/signals")
+def pulse_signal_preferences_page():
+    return _render_pulse_signal_surface("preferences")
+
+
+@comm_v2_blueprint.get("/pulse/signals/<string:signal_key>")
+def pulse_signal_stream_page(signal_key):
+    from services import pulsesoc_intelligence_engine
+
+    if signal_key not in pulsesoc_intelligence_engine.USER_SURFACES or signal_key in {"alerts", "forecasts", "briefing", "preferences"}:
+        return _bot().redirect("/pulse/intelligence")
+    return _render_pulse_signal_surface(signal_key)
 
 
 @comm_v2_blueprint.get("/api/pulse/intelligence/state")
@@ -272,7 +303,11 @@ def api_galaxy_intelligence_state():
     def run():
         from services import pulsesoc_intelligence_engine
 
-        return pulsesoc_intelligence_engine.center_state(int(user["user_id"]), int(request.args.get("limit") or 40))
+        return pulsesoc_intelligence_engine.user_surface_state(
+            int(user["user_id"]),
+            request.args.get("view") or "alerts",
+            int(request.args.get("limit") or 40),
+        )
 
     return _timed_json("galaxy_intelligence_state", run)
 
@@ -315,7 +350,7 @@ def admin_galaxy_intelligence_page():
     return render_template(
         "admin_galaxy_intelligence_center.html",
         admin=admin,
-        dashboard=pulsesoc_intelligence_engine.admin_dashboard(),
+        dashboard=pulsesoc_intelligence_engine.admin_dashboard(request.args.get("stream") or ""),
         collect_result={},
     )
 
@@ -337,7 +372,7 @@ def api_admin_galaxy_intelligence_state():
         return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
     from services import pulsesoc_intelligence_engine
 
-    return _json(pulsesoc_intelligence_engine.admin_dashboard())
+    return _json(pulsesoc_intelligence_engine.admin_dashboard(request.args.get("stream") or ""))
 
 
 @comm_v2_blueprint.post("/api/admin/intelligence/collect")

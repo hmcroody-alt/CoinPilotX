@@ -7670,7 +7670,7 @@ def dashboard_intelligence_subsystem_page(subsystem_key):
         finally:
             conn.close()
         return dashboard_intelligence_shell(
-            "AI Advisor",
+            "Pulse Advisor",
             "Personal command center, daily briefing, goals, recommendations, safety guidance, and priority decisions from real PulseSoc state.",
             _ai_advisor_html(advisor_state),
             _ps_center_script(),
