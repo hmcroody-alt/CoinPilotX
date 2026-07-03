@@ -808,6 +808,7 @@ select:focus-visible {
   min-width: 0;
   align-items: center;
   gap: 8px;
+  justify-content: flex-end;
 }
 
 .thread-actions .ai-action {
@@ -838,6 +839,25 @@ select:focus-visible {
     0 0 24px rgba(38, 237, 209, .12);
   transform: translateZ(0);
   transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+.thread-actions .call-icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+}
+
+.thread-actions .call-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 8px rgba(90, 255, 225, .34));
 }
 
 .thread-actions .call-action::before {
@@ -3373,7 +3393,7 @@ select:focus-visible {
   }
 
   .thread-actions {
-    gap: 4px;
+    gap: 6px;
   }
 
   .thread-actions .icon-btn {
@@ -3587,8 +3607,43 @@ select:focus-visible {
     grid-auto-columns: minmax(148px, 44vw);
   }
 
-  .thread-actions .call-action {
-    display: none;
+  .thread-head {
+    grid-template-columns: 42px 42px minmax(0, 1fr) auto;
+    gap: 7px;
+    padding-inline: 10px;
+  }
+
+  .thread-avatar {
+    width: 42px;
+    height: 42px;
+  }
+
+  .thread-identity h1 {
+    font-size: 16px;
+  }
+
+  .thread-identity p {
+    max-width: 100%;
+    font-size: 11px;
+  }
+
+  .thread-actions {
+    gap: 5px;
+  }
+
+  .thread-actions .call-action,
+  .thread-actions .thread-more-button {
+    display: inline-grid;
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+    border-radius: 14px;
+  }
+
+  .thread-actions .call-icon {
+    width: 19px;
+    height: 19px;
   }
 
   .message {
@@ -3641,20 +3696,33 @@ select:focus-visible {
   }
 
   .thread-head {
-    grid-template-columns: 38px 40px minmax(0, 1fr) auto;
-    padding-inline: 8px;
+    grid-template-columns: 38px 38px minmax(0, 1fr) auto;
+    gap: 6px;
+    padding-inline: 7px;
   }
 
   .thread-avatar {
-    width: 40px;
-    height: 40px;
+    width: 38px;
+    height: 38px;
   }
 
+  .thread-actions {
+    gap: 4px;
+  }
+
+  .thread-actions .call-action,
+  .thread-actions .thread-more-button,
   .thread-actions .icon-btn {
     width: 36px;
     min-width: 36px;
     height: 36px;
     min-height: 36px;
+    border-radius: 13px;
+  }
+
+  .thread-actions .call-icon {
+    width: 17px;
+    height: 17px;
   }
 
   .composer {

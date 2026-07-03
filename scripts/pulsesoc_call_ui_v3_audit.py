@@ -44,11 +44,13 @@ def main() -> int:
     require(checks, "header removes gear settings action", "control-center-action" not in header and "&#9881;" not in header)
     require(checks, "header exposes exactly one audio call action", header.count("data-thread-call-audio") == 1)
     require(checks, "header exposes exactly one video call action", header.count("data-thread-call-video") == 1)
+    require(checks, "header call actions use vector icons", "call-icon" in header and "<svg" in header)
     require(checks, "header exposes one More control center entry", header.count("data-thread-more") == 1 and "data-open-control-center" in header)
     require(checks, "header has no desktop info duplicate", "data-toggle-details" not in header)
     require(checks, "header call buttons use central service", "PulseSocCalls.startAudioCall" in messenger_js and "PulseSocCalls.startVideoCall" in messenger_js)
     require(checks, "inactive header buttons are disabled safely", "[data-thread-call-audio], [data-thread-call-video], [data-thread-more]" in messenger_js and ".is-disabled" in css)
     require(checks, "presence state enriches header", "data-presence" in messenger_js and "pulsePresenceBreath" in css)
+    require(checks, "mobile header keeps call actions visible", ".thread-actions .call-action {\n    display: none;" not in css and ".thread-actions .call-action{display:none" not in css)
 
     require(checks, "active call shell exists", "data-pulsesoc-call-shell" in call_js and ".pulsesoc-call-shell" in css)
     require(checks, "full-screen call stage exists", "data-call-stage" in call_js and ".pulsesoc-call-stage" in css and "inset: 0" in css)

@@ -15,6 +15,13 @@ The conversation header was reduced to:
 
 The duplicate header search, gear/settings, info, and AI controls were removed from the conversation header. More opens the Conversation Control Center, where search and settings remain available.
 
+Follow-up mobile alignment fix:
+
+- Audio and video call controls now remain visible between the conversation identity and More on narrow mobile viewports.
+- The old mobile rule that hid call actions below 430px was removed.
+- Header call buttons now use crisp inline vector icons instead of emoji/glyph placeholders.
+- The CSS cache key was bumped so the mobile header correction is served immediately.
+
 ## Active call UI
 
 The active call screen was redesigned from a boxed control-heavy modal into a full-screen cinematic call stage.
@@ -92,6 +99,8 @@ Browser QA:
 - Desktop Messenger loaded the updated cache-busted CSS/JS assets.
 - Header action cluster rendered exactly three controls: audio call, video call, More.
 - Audio and video controls rendered as 48px touch targets, More rendered as a 46px touch target.
+- Mobile thread header rendered audio, video, and More in order between the conversation identity and right edge.
+- Mobile audio, video, and More controls each rendered as 40px touch targets at 390px width.
 - Duplicate header search and gear/settings controls were absent.
 - More opened the Conversation Control Center without route navigation.
 - Desktop and mobile control-center checks showed no horizontal overflow.
