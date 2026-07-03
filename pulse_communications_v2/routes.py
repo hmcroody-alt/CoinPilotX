@@ -793,7 +793,7 @@ def api_admin_call_test_config():
     admin = _current_admin()
     if not admin:
         return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
-    return _timed_json("admin_call_test_config", call_engine.test_config)
+    return _timed_json("admin_call_test_config", lambda: call_engine.test_config(request.get_json(silent=True) or {}))
 
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/live/mux/create")

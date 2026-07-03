@@ -17,6 +17,7 @@ import re
 import secrets
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlparse, urlunparse
 from typing import Any
 
 from pulse_communications_v2 import service as comm_service
@@ -247,6 +248,93 @@ def _generate_livekit_token(room_name: str, user_id: int, call_type: str = "audi
         "room_name": room_name,
         "expires_at": datetime.fromtimestamp(payload["exp"], timezone.utc).isoformat(timespec="seconds"),
     }
+
+
+def _generate_livekit_admin_token(room_name: str) -> dict[str, Any]:
+    missing = _require_livekit()
+    if missing:
+        return missing
+    api_key = os.getenv("LIVEKIT_API_KEY", "").strip()
+    api_secret = os.getenv("LIVEKIT_API_SECRET", "").strip()
+    now = int(time.time())
+    payload = {
+        "iss": api_key,
+        "sub": "pulsesoc-admin-config-check",
+        "nbf": now - 10,
+        "exp": now + 5 * 60,
+        "video": {
+            "roomCreate": True,
+            "roomList": True,
+            "roomAdmin": True,
+            "room": room_name,
+        },
+    }
+    header = {"alg": "HS256", "typ": "JWT"}
+    signing_input = f"{_base64url(_json_dumps(header).encode())}.{_base64url(_json_dumps(payload).encode())}"
+    signature = hmac.new(api_secret.encode("utf-8"), signing_input.encode("ascii"), hashlib.sha256).digest()
+    return {"ok": True, "token": f"{signing_input}.{_base64url(signature)}", "room_name": room_name}
+
+
+def _livekit_http_url() -> str:
+    raw = os.getenv("LIVEKIT_URL", "").strip().rstrip("/")
+    parsed = urlparse(raw)
+    scheme = "https" if parsed.scheme == "wss" else "http" if parsed.scheme == "ws" else parsed.scheme
+    return urlunparse((scheme, parsed.netloc, parsed.path.rstrip("/"), "", "", ""))
+
+
+def _livekit_room_connectivity_check() -> dict[str, Any]:
+    room_name = f"pulsesoc-config-check-{secrets.token_hex(6)}"
+    token_payload = _generate_livekit_admin_token(room_name)
+    if not token_payload.get("ok"):
+        return {
+            "can_create_test_room": False,
+            "can_cleanup_test_room": False,
+            "provider_error": token_payload.get("status") or "config_missing",
+        }
+    try:
+        import requests
+    except Exception:
+        return {
+            "can_create_test_room": False,
+            "can_cleanup_test_room": False,
+            "provider_error": "requests_unavailable",
+        }
+    base_url = _livekit_http_url()
+    headers = {
+        "Authorization": f"Bearer {token_payload['token']}",
+        "Content-Type": "application/json",
+    }
+    body = {"name": room_name, "empty_timeout": 60, "max_participants": 2}
+    try:
+        create = requests.post(
+            f"{base_url}/twirp/livekit.RoomService/CreateRoom",
+            json=body,
+            headers=headers,
+            timeout=6,
+        )
+        if create.status_code >= 300:
+            return {
+                "can_create_test_room": False,
+                "can_cleanup_test_room": False,
+                "provider_error": f"create_room_http_{create.status_code}",
+            }
+        cleanup = requests.post(
+            f"{base_url}/twirp/livekit.RoomService/DeleteRoom",
+            json={"room": room_name},
+            headers=headers,
+            timeout=6,
+        )
+        return {
+            "can_create_test_room": True,
+            "can_cleanup_test_room": cleanup.status_code < 300,
+            "provider_error": "" if cleanup.status_code < 300 else f"delete_room_http_{cleanup.status_code}",
+        }
+    except requests.RequestException as exc:
+        return {
+            "can_create_test_room": False,
+            "can_cleanup_test_room": False,
+            "provider_error": exc.__class__.__name__,
+        }
 
 
 def _conversation_participants(cur: Any, conversation_id: int) -> list[dict[str, Any]]:
@@ -917,9 +1005,50 @@ def admin_call_detail(call_ref: str | int) -> dict[str, Any]:
         conn.close()
 
 
-def test_config() -> dict[str, Any]:
+def test_config(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     status = livekit_config_status()
-    return _ok({"livekit": status, "provider_ready": bool(status.get("configured"))})
+    missing = list(status.get("missing") or [])
+    base = {
+        "provider": "livekit",
+        "configured": bool(status.get("configured")),
+        "url_present": bool(status.get("url_configured")),
+        "api_key_present": "LIVEKIT_API_KEY" not in missing,
+        "api_secret_present": "LIVEKIT_API_SECRET" not in missing,
+        "webhook_secret_present": bool(status.get("webhook_secret_configured")),
+        "turn_present": bool(status.get("turn_configured")),
+        "stun_present": bool(status.get("stun_configured")),
+        "missing": missing,
+        "safe_mode": "" if status.get("configured") else "config_missing",
+        "provider_ready": bool(status.get("configured")),
+        "livekit": status,
+    }
+    if not status.get("configured"):
+        return {
+            "ok": False,
+            "status": "config_missing",
+            "message": "Calling is temporarily unavailable. Please try again later.",
+            "can_generate_token": False,
+            "can_create_test_room": False,
+            "can_cleanup_test_room": False,
+            "http_status": 200,
+            **base,
+        }
+
+    room_name = f"pulsesoc-config-token-{secrets.token_hex(6)}"
+    token = _generate_livekit_token(room_name, 0, "audio")
+    connectivity = _livekit_room_connectivity_check()
+    return _ok({
+        **base,
+        "can_generate_token": bool(token.get("ok") and token.get("token")),
+        "can_create_test_room": bool(connectivity.get("can_create_test_room")),
+        "can_cleanup_test_room": bool(connectivity.get("can_cleanup_test_room")),
+        "provider_error": connectivity.get("provider_error") or "",
+        "room_check": {
+            "attempted": True,
+            "created": bool(connectivity.get("can_create_test_room")),
+            "cleaned_up": bool(connectivity.get("can_cleanup_test_room")),
+        },
+    })
 
 
 def mark_missed_stale_calls(timeout_seconds: int = 45) -> dict[str, Any]:
