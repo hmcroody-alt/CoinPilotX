@@ -1,5 +1,6 @@
 import { PULSE_API_BASE_URL } from "./config";
 import { getSessionCookie, setSessionCookie } from "../session/sessionStore";
+import { Platform } from "react-native";
 
 export class PulseApiError extends Error {
   status: number;
@@ -21,7 +22,7 @@ export async function pulseApi<T>(path: string, options: RequestInit = {}): Prom
   }
 
   const cookie = await getSessionCookie();
-  if (cookie) headers.set("Cookie", cookie);
+  if (cookie && Platform.OS !== "web") headers.set("Cookie", cookie);
 
   let response: Response;
   try {

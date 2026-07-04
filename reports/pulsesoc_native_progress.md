@@ -38,6 +38,8 @@ Completed native foundations:
 - Intelligence + Alerts Foundation: native Intelligence route, server-owned intelligence state through `/api/dashboard/intelligence/state`, crypto/market alert list through `/api/crypto/alerts`, stream/forecast cards, alert overview/detail, notification badge summary, Premium/Growth/Creator/Search/Profile navigation, offline cache, `/dashboard/intelligence` and `/dashboard/crypto/alerts` deep-link routing, and safe web fallback for advanced intelligence, provider administration, collector management, alert creation/editing, and unsupported operations.
 - Feature Parity + QA Readiness Report: native-vs-WebView parity matrix across core PulseSoc surfaces, route/deep-link inventory, backend reuse assessment, QA blocker inventory, recommended hardening order, release readiness statement, and device-QA-first next action.
 - Device QA Setup: added Expo web QA dependencies, QA start/build scripts, EAS development/simulator/preview/production profiles, optional Expo project ID support for push-token registration, exact iOS/Android/browser/physical-device QA commands, and a remaining-blocker inventory.
+- QA Browser Readiness: verified Expo web boot through the built-in QA browser, fixed duplicate Reels deep-link routing, captured login screenshots, and confirmed signed-out feature routes safely land on the auth gate.
+- Authenticated QA Browser Pass: verified login, session restore, logout, authenticated top-level navigation, Settings, Pulse AI, and Intelligence routes through the built-in QA browser against a local temporary QA backend/proxy; fixed web session storage, browser cookie handling, Settings/Pulse AI deep links, and Intelligence object-shaped card normalization.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -70,6 +72,8 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_intelligence_progress.md`
 - `reports/pulsesoc_native_feature_parity_qa_readiness.md`
 - `reports/pulsesoc_native_device_qa_setup.md`
+- `reports/pulsesoc_native_qa_browser_report.md`
+- `reports/pulsesoc_native_authenticated_qa_browser_report.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -96,6 +100,8 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_intelligence_audit.py`
 - `scripts/pulsesoc_native_feature_parity_audit.py`
 - `scripts/pulsesoc_native_device_setup_audit.py`
+- `scripts/pulsesoc_native_qa_browser_audit.py`
+- `scripts/pulsesoc_native_authenticated_qa_browser_audit.py`
 
 ## Remaining Major Features
 
@@ -222,12 +228,13 @@ Do not duplicate in native:
 Dependencies:
 
 - Xcode developer tools or Android platform tools must be installed/configured.
-- Browser QA can now start through the added Expo web dependencies, but feature behavior still needs actual QA browser validation.
+- Browser QA can now start through the added Expo web dependencies, and authenticated top-level browser navigation has been validated against a local temporary QA backend/proxy.
 - A physical device flow needs Expo Go or an EAS development build plus log capture.
 
 Blockers:
 
-- `npm run --prefix mobile-native web:qa` reached Metro at `http://localhost:8094` after `npm ci`; this has not yet been used for end-to-end QA browser validation.
+- `npm run --prefix mobile-native web:qa` reached Metro at `http://localhost:8094`; built-in browser QA verified login, session restore, logout, and authenticated top-level route rendering against a local temporary QA backend/proxy.
+- Browser QA still needs durable seeded data for rich non-empty posts, messages, reels, statuses, marketplace listings, saved items, alerts, and live records.
 - `adb` is not available in `PATH`.
 - `/usr/bin/xcrun` exists, but `xcrun simctl list devices available` fails because `simctl` is not available.
 - No physical-device QA flow has been recorded in this workspace.
@@ -275,4 +282,4 @@ Defer from first slice:
 
 ## Recommendation Summary
 
-Recommended next action: device QA setup. The parity report shows the native app has enough feature breadth; the highest-value work is now establishing a real QA path and hardening verified blockers before more major feature expansion.
+Recommended next action: seed a durable QA fixture set, then continue device QA setup. The authenticated QA browser pass proves the web QA lane can catch real native blockers, but real-device coverage is still required for push, media, video, deep links, foreground/background recovery, and installed-app behavior before more major feature expansion.

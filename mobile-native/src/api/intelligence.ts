@@ -170,8 +170,12 @@ export function alertWebPath(alertId?: number) {
   return alertId ? `/dashboard/crypto/alerts?alert_id=${encodeURIComponent(String(alertId))}` : "/dashboard/crypto/alerts";
 }
 
-function normalizeIntelligenceCards(cards: IntelligenceCard[]) {
-  return cards.map((card) => ({
+function normalizeIntelligenceCards(cards: unknown) {
+  const normalizedCards = Array.isArray(cards) ? cards : Object.entries(cards as Record<string, IntelligenceCard> || {}).map(([key, value]) => ({
+    ...value,
+    key: value.key || key
+  }));
+  return normalizedCards.map((card) => ({
     ...card,
     key: String(card.key || card.card_key || card.label || ""),
     label: String(card.label || "Intelligence"),
