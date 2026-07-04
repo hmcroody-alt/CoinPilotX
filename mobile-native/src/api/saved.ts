@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { readJsonCache, writeJsonCache } from "../core/cache";
 import { pulseApi } from "./pulseApi";
 
 const SAVED_CACHE_KEY = "pulsesoc.native.saved.library";
@@ -115,24 +115,17 @@ export async function deleteSavedCollection(collectionId: number) {
 }
 
 export async function loadCachedSavedLibrary() {
-  try {
-    const cached = await AsyncStorage.getItem(SAVED_CACHE_KEY);
-    if (!cached) return null;
-    return normalizeSavedLibrary(JSON.parse(cached) as SavedLibraryResponse);
-  } catch {
-    await AsyncStorage.removeItem(SAVED_CACHE_KEY).catch(() => undefined);
-    return null;
-  }
+  return readJsonCache<SavedLibraryResponse>(SAVED_CACHE_KEY, normalizeSavedLibrary);
 }
 
 export async function cacheSavedLibrary(data: SavedLibraryResponse) {
-  await AsyncStorage.setItem(
+  await writeJsonCache(
     SAVED_CACHE_KEY,
-    JSON.stringify({
+    {
       ...data,
       items: (data.items || []).slice(0, 120),
       collections: data.collections || []
-    })
+    }
   );
 }
 

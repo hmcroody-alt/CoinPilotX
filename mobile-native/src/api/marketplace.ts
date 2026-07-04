@@ -1,5 +1,5 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Linking } from "react-native";
+import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
 import { PulseAuthor, PulseMedia, mediaDisplayUrl } from "./feed";
 import { pulseApi } from "./pulseApi";
@@ -66,18 +66,11 @@ export async function searchMarketplace(params: { query?: string; limit?: number
 }
 
 export async function loadCachedMarketplace() {
-  try {
-    const cached = await AsyncStorage.getItem(MARKETPLACE_CACHE_KEY);
-    if (!cached) return [];
-    return normalizeMarketplaceListings(JSON.parse(cached) as MarketplaceListing[]);
-  } catch {
-    await AsyncStorage.removeItem(MARKETPLACE_CACHE_KEY).catch(() => undefined);
-    return [];
-  }
+  return (await readJsonCache<MarketplaceListing[]>(MARKETPLACE_CACHE_KEY, normalizeMarketplaceListings)) || [];
 }
 
 export async function cacheMarketplace(items: MarketplaceListing[]) {
-  await AsyncStorage.setItem(MARKETPLACE_CACHE_KEY, JSON.stringify(items.slice(0, 80)));
+  await writeJsonCache(MARKETPLACE_CACHE_KEY, items.slice(0, 80));
 }
 
 export async function saveMarketplaceListing(listingId: number) {

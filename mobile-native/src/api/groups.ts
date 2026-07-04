@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { readJsonCache, writeJsonCache } from "../core/cache";
 import { pulseApi } from "./pulseApi";
 
 const GROUPS_CACHE_KEY = "pulsesoc.native.groups.browse";
@@ -94,7 +94,7 @@ export async function getGroupDetail(slug: string) {
   const group = data.group ? normalizeGroup(data.group) : undefined;
   const posts = normalizeGroupPosts(data.posts || group?.posts || []);
   const detail = { ...data, group: group ? { ...group, posts } : undefined, posts };
-  if (group?.slug) await AsyncStorage.setItem(groupDetailCacheKey(group.slug), JSON.stringify(detail)).catch(() => undefined);
+  if (group?.slug) await writeJsonCache(groupDetailCacheKey(group.slug), detail).catch(() => undefined);
   return detail;
 }
 
@@ -139,32 +139,22 @@ export async function joinRoom(roomId: string) {
 }
 
 export async function loadCachedGroups() {
-  try {
-    const cached = await AsyncStorage.getItem(GROUPS_CACHE_KEY);
-    if (!cached) return null;
-    const data = JSON.parse(cached) as GroupsResponse;
-    return { ...data, groups: normalizeGroups(data.groups || data.items || []), rooms: normalizeRooms(data.rooms || []) };
-  } catch {
-    await AsyncStorage.removeItem(GROUPS_CACHE_KEY).catch(() => undefined);
-    return null;
-  }
+  return readJsonCache<GroupsResponse>(GROUPS_CACHE_KEY, (data) => ({
+    ...data,
+    groups: normalizeGroups(data.groups || data.items || []),
+    rooms: normalizeRooms(data.rooms || [])
+  }));
 }
 
 export async function loadCachedGroupDetail(slug: string) {
-  try {
-    const cached = await AsyncStorage.getItem(groupDetailCacheKey(slug));
-    if (!cached) return null;
-    const data = JSON.parse(cached) as GroupDetailResponse;
+  return readJsonCache<GroupDetailResponse>(groupDetailCacheKey(slug), (data) => {
     const group = data.group ? normalizeGroup(data.group) : undefined;
     return { ...data, group, posts: normalizeGroupPosts(data.posts || group?.posts || []) };
-  } catch {
-    await AsyncStorage.removeItem(groupDetailCacheKey(slug)).catch(() => undefined);
-    return null;
-  }
+  });
 }
 
 export async function cacheGroups(data: GroupsResponse) {
-  await AsyncStorage.setItem(GROUPS_CACHE_KEY, JSON.stringify({ ...data, groups: (data.groups || []).slice(0, 100), rooms: data.rooms || [] }));
+  await writeJsonCache(GROUPS_CACHE_KEY, { ...data, groups: (data.groups || []).slice(0, 100), rooms: data.rooms || [] });
 }
 
 export function normalizeGroups(groups: PulseGroup[]) {

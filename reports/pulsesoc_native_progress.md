@@ -29,6 +29,7 @@ Completed native foundations:
 - Search + Discovery Foundation: native Search tab/route, debounced global search through existing `/api/pulse/search`, recent and suggested searches, discovery tabs, grouped result cards, pull-to-refresh, cached result fallback, native destination routing, `/pulse/search` deep-link routing, and web fallback for unsupported result URLs.
 - Saved Content + Collections Foundation: native Saved tab/route, saved item list, type filters, collection filters, create/rename/delete collection actions, remove/move saved item actions, saved search, offline cache, item deep-link routing, and `/pulse/saved` deep-link routing through existing saved APIs.
 - Groups/Communities + Rooms Foundation: native Groups tab/detail route, thin read-only group JSON bridge, communities browse/search, room rail, group detail, rules/member metadata, compact group feed preview, join/leave, report, group chat open, room open, offline cache, and group/room deep-link routing through existing group, room, and Messenger APIs.
+- Architecture Health Report + Shared Core Consolidation: native architecture audit, shared cache helper under `mobile-native/src/core/cache.ts`, first refactor of Groups/Saved/Marketplace cache wrappers, duplicate-pattern inventory, production WebView safety check, and next Live Discovery recommendation.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -52,6 +53,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_search_progress.md`
 - `reports/pulsesoc_native_saved_progress.md`
 - `reports/pulsesoc_native_groups_progress.md`
+- `reports/pulsesoc_native_architecture_health.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -69,6 +71,7 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_search_audit.py`
 - `scripts/pulsesoc_native_saved_audit.py`
 - `scripts/pulsesoc_native_groups_audit.py`
+- `scripts/pulsesoc_native_architecture_health_audit.py`
 
 ## Remaining Major Features
 
@@ -81,7 +84,6 @@ Completed supporting reports/audits:
 - Intelligence Center
 - Premium/entitlements
 - Creator Studio
-- Architecture health and shared-core consolidation
 
 ## Codebase Reconnaissance
 
@@ -112,6 +114,7 @@ Existing backend/web surfaces inspected:
 - Search APIs and web bridge: `/api/pulse/search`, `/pulse/search`, `static/js/pulse_search_bridge.js`, and search handling in `static/js/pulse_home_core.js`
 - Saved APIs and web route: `/pulse/saved`, `GET/POST /api/pulse/saved`, saved collections, delete, and move endpoints
 - Groups and rooms routes: `/pulse/groups`, `/pulse/groups/create`, `/pulse/groups/<group_slug>`, `POST /api/pulse/groups/create`, join/leave APIs, chat-open APIs, invite/report/update/moderation APIs, group post/comment APIs, `pulse_default_room_cards()`, and `pulse_ensure_default_rooms(...)`
+- Live surfaces: `/pulse/live`, `/pulse/live/studio`, `/api/pulse/live/start`, `/api/pulse/live/<id>/state`, LiveKit direct playback fallback, Mux egress handling, live-session state, live chat, replay/feed insertion, and the existing live audit suite.
 - Current native reuse surface: repeated API wrappers, AsyncStorage cache functions, screen-level loading/empty/error/offline states, native/web fallback routing, card layouts, action busy states, media preview/viewer hooks, and tab/stack route patterns across Feed, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, and Groups.
 
 Existing data/business logic that should remain server-authoritative:
@@ -140,105 +143,109 @@ Existing data/business logic that should remain server-authoritative:
 - saved item collection ownership and removal
 - group membership, roles, moderation, invite links, group chats, and group post/comment rules
 - shared native routing, caching, error, card, and media-viewer behavior that should be consolidated before deeper Live/Calls/Premium work
+- LiveKit/Mux session authority, live room state, live chat, replay creation, feed insertion, destination handling, and creator/host permissions
 
 ## Recommended Next Feature
 
-Recommendation: produce a Native Architecture Health Report + Shared Core Consolidation checkpoint next.
+Recommendation: build Native Live Discovery + Live Viewer Foundation next.
 
-This should come before Marketplace seller tools, Creator Studio, Growth Center, Premium, or native LiveKit calls.
+This should come before native Live hosting, native LiveKit calls, Creator Studio, Growth Center, and Premium.
 
 ## Why This Comes Next
 
-- The native app now has a substantial surface area: auth, Messenger, Notifications, Feed/Post, Profile, Reels, Status, media upload/viewer, Marketplace, Search, Saved, and Groups/Rooms.
-- Multiple features now repeat the same patterns: API wrapper normalization, AsyncStorage cache, loading/empty/error/offline state, card layout, action busy state, native/web fallback routing, and report/audit conventions.
-- The next major features, especially Live, Calls, Creator Studio, Growth, and Premium, will increase complexity and should not be built on duplicated native infrastructure.
-- A consolidation checkpoint directly follows the user's permanent rule: if three or more features use the same UI or service, promote it into `mobile-native/src/shared` or `mobile-native/src/core` with documentation and tests where appropriate.
-- This recommendation is based on current native code structure and the repeated implementation patterns across the already migrated features.
+- Production already has Live routes, Live Studio, LiveKit/Mux bridge behavior, LiveKit direct fallback, live sessions, live chat, replay/feed insertion, and several focused live audits.
+- The native app now has the social prerequisites: Feed, Notifications, Profile, Search, Saved, Groups/Rooms, Messenger, Media Viewer, and the first shared-core cache cleanup.
+- Viewer/discovery is safer than native hosting because server-owned LiveKit/Mux/session state stays authoritative.
+- Hosting/Studio can remain a safe web fallback while native validates discovery, viewer routing, and supported playback paths first.
+- This recommendation is based on the current live backend plus native migration progress, not a predetermined roadmap.
 
 ## Reusable Existing PulseSoc Logic
 
 Reuse directly:
 
-- Existing API wrappers and normalization style in `mobile-native/src/api/*`.
-- Existing AsyncStorage cache patterns in Feed, Messenger, Marketplace, Search, Saved, and Groups.
-- Existing navigation and fallback routing in `notificationRouting.ts` and `linking.ts`.
-- Existing reusable components: `PostCard`, `ProfileHeader`, `NativeMediaViewer`, `FeedComposer`, `StatusCreator`, `StatusViewerCard`, and `ReelPlayerCard`.
-- Existing loading, empty, error, offline, refresh, and busy-action patterns across native screens.
-- Existing audit/report conventions in `scripts/pulsesoc_native_*_audit.py` and `reports/pulsesoc_native_*_progress.md`.
+- Existing `/pulse/live`, `/pulse/live/studio`, `/api/pulse/live/start`, `/api/pulse/live/<id>/state`, and related LiveKit/Mux live API routes.
+- Existing LiveKit/Mux bridge, direct fallback, egress handling, and playback URL selection behavior.
+- Existing live session, live chat, live destination, replay, and feed insertion database/services.
+- Existing moderation, notification, profile, and feed insertion behavior.
+- Existing native navigation, notification routing, Search/Saved/Profile/Messenger/Media Viewer integrations, and shared `readJsonCache`/`writeJsonCache` cache helpers.
 
 Do not duplicate in native:
 
 - Backend business logic.
-- API response normalization patterns.
-- Cache load/save boilerplate.
-- Native route fallback parsing.
-- Loading/empty/error/offline state rendering.
-- Shared card/action UI.
-- Media preview/viewer logic.
+- LiveKit token/session authorization.
+- Mux egress/processing decisions.
+- Host/cohost/restream business rules.
+- Live moderation and destination behavior.
+- Replay/feed insertion logic.
 
 ## What Must Be Rebuilt Natively
 
-- Architecture health report covering component reuse, service reuse, navigation consistency, API wrapper consistency, cache consistency, and duplicate code.
-- Shared-core consolidation plan.
-- Candidate shared modules under `mobile-native/src/shared` or `mobile-native/src/core`.
-- Optional low-risk extraction of clear duplicate utilities if the audit finds safe consolidation points.
-- Focused tests or static audits for any shared utilities introduced.
+- Native Live discovery screen.
+- Live session cards and rails.
+- Live viewer shell.
+- Native playback for supported HLS/Mux/LiveKit direct payloads.
+- Chat/read-only interaction hooks where existing APIs support them.
+- Loading, empty, offline, and error states.
+- Notification/search/profile routing into native Live where supported.
+- Web fallback for Go Live, Studio, cohost, restream, and unsupported playback modes.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Inspect every `mobile-native/src/api`, `mobile-native/src/screens`, `mobile-native/src/components`, `mobile-native/src/navigation`, and `mobile-native/src/utils` file.
-- Identify duplicated cache, fetch, action-state, route, card, media, and empty/error UI patterns.
-- Avoid broad refactors if they risk feature regressions.
-- Keep any extraction additive and covered by static audits.
+- Confirm live API and route payload shape for discovery and viewer state.
+- Confirm playback URL fields for HLS/Mux/LiveKit direct fallback.
+- Confirm chat/read-only behavior and whether viewer chat is safe to expose before native hosting.
+- Preserve Studio/Go Live web fallback.
 
 Blockers:
 
-- Real-device behavior cannot be inferred from static architecture cleanup.
-- Some consolidation may need to wait until shared behavior is verified across simulator/real device.
-- Avoid moving feature-specific logic into shared modules before three or more consumers prove it is stable.
+- Device video playback and background/resume behavior still require simulator or real-device verification.
+- LiveKit egress quota or source-state issues can affect Mux HLS availability.
+- Native hosting, cohost, camera, mic, and restream controls are intentionally out of scope for the first viewer slice.
 
 ## Risk Level
 
-Risk: Medium.
+Risk: Medium-high.
 
 Reasons:
 
-- Architecture consolidation can create regressions if done too broadly.
-- Risk stays medium if the next step is mostly audit/reporting plus only small, obvious shared extractions.
-- Backend risk stays low because this checkpoint does not change server business logic.
+- Live playback has more device-specific behavior than feed/profile/search screens.
+- Risk stays controlled by making discovery/viewer read-first and leaving Studio/hosting on the existing web fallback.
+- Backend risk stays low if native only consumes existing live state and playback contracts.
 
 ## Estimated Complexity
 
-Complexity: Medium.
+Complexity: Medium-high.
 
 Recommended first slice:
 
-- Inventory repeated native patterns and dependencies.
-- Score each candidate shared component/service by number of consumers, risk, and extraction effort.
-- Recommend `src/shared` or `src/core` structure and naming.
-- Extract only the lowest-risk duplicate utilities if they are clearly used by three or more features.
-- Add a native architecture health report and audit script.
-- Keep feature behavior unchanged.
+- Inspect live routes and payloads.
+- Build read-only native discovery first.
+- Build viewer only for supported playback payloads.
+- Add native chat/read-only hooks only where existing APIs support them cleanly.
+- Keep Go Live/Studio/cohost/restream on web fallback.
+- Add a focused native Live audit and document unverified device playback behavior honestly.
 
 Defer from first slice:
 
-- Large component rewrites.
-- Styling system overhauls.
-- Navigation architecture rewrites.
-- Changes to backend API contracts.
-- Live/Calls/Creator/Premium feature work.
+- Native Live hosting and camera broadcast.
+- Native cohost/restream controls.
+- Native LiveKit calls.
+- Background audio/camera/mic controls.
+- Any new Live business logic.
 
 ## Safest Implementation Plan
 
-1. Inspect all native API wrappers, screens, components, navigation, and utils.
-2. Identify duplicated code used by three or more features.
-3. Produce a health report with findings, recommended shared-core structure, and risk-ranked consolidation plan.
-4. Implement only low-risk shared utilities/components if the codebase clearly supports extraction.
-5. Add an audit script that enforces documentation of shared-core boundaries and confirms production WebView paths remain untouched.
-6. Run the standard native verification suite.
+1. Inspect current production live routes, APIs, playback fields, and live audit evidence.
+2. Add a native Live API wrapper that only consumes existing backend payloads.
+3. Build a read-only Live Discovery screen using existing cards/loading/cache conventions.
+4. Build a Live Viewer shell for supported playback URLs only.
+5. Route unsupported host/Studio/cohost/restream states to the existing web fallback.
+6. Wire notification/search/profile navigation into native Live where payloads are supported.
+7. Add a native Live progress report and static audit.
+8. Run the standard native verification suite and document device-only playback gaps.
 
 ## Recommendation Summary
 
-Produce the Native Architecture Health Report + Shared Core Consolidation checkpoint next. The native app has enough feature surface that consolidating repeated API, cache, routing, state, and UI patterns will reduce risk before entering the more complex Live, Calls, Creator Studio, Growth, and Premium phases.
+Build Native Live Discovery + Live Viewer Foundation next. It is the highest-leverage next step because the backend already has substantial LiveKit/Mux/live-session infrastructure, while the native app now has enough navigation, media, profile, notification, search, and shared-cache infrastructure to add a viewer slice without taking on native hosting risk.
