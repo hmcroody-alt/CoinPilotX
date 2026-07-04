@@ -23,6 +23,7 @@ Completed native foundations:
 - Status Viewer + Status Detail: native Status rail, Status list, full-screen viewer, image/video/text rendering, tap navigation, view tracking, reactions, replies, shares, music display, offline metadata cache, and `/pulse/status/<status_id>` deep-link routing through existing Status APIs.
 - Media Capture + Upload Foundation: shared native image picker, video picker, camera entry point, permission states, file validation, upload progress, retry, cancellation, processing-status polling, reusable upload hook/service, and reusable media preview component over existing PulseSoc media APIs.
 - Feed Composer Foundation: native composer entry from Home Feed, text/title publishing, visibility selector, image/video/camera attachment through the shared media upload layer, upload preview/progress/retry/cancel, publish states, and feed refresh through existing PulseSoc post APIs.
+- Status Creator Foundation: native Status composer entry, text/image/video Status publishing, camera/gallery integration, shared upload preview/progress/retry/cancel, privacy/duration selectors, music search/trending hooks, AI Story generation hook, and Status rail refresh through existing PulseSoc Status APIs.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -40,6 +41,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_status_progress.md`
 - `reports/pulsesoc_native_media_upload_progress.md`
 - `reports/pulsesoc_native_feed_composer_progress.md`
+- `reports/pulsesoc_native_status_creator_progress.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -51,10 +53,10 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_status_audit.py`
 - `scripts/pulsesoc_native_media_upload_audit.py`
 - `scripts/pulsesoc_native_feed_composer_audit.py`
+- `scripts/pulsesoc_native_status_creator_audit.py`
 
 ## Remaining Major Features
 
-- Status creator
 - Native media viewer
 - Advanced camera/compression/editor tools
 - Live discovery
@@ -115,72 +117,68 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Feature
 
-Recommendation: build Native Status Creator Foundation next.
+Recommendation: build Native Media Viewer Foundation next.
 
-This should come before Marketplace posting, Creator Studio publishing, or advanced Camera tools.
+This should come before Marketplace, Creator Studio, or advanced Camera tools.
 
 ## Why This Comes Next
 
-- Native Status viewing/detail is already built, so Status creation completes the Status loop.
-- The shared native media upload foundation and Feed Composer now prove the media-pick/upload/publish pattern.
-- The backend already exposes mature Status creation APIs, privacy/expiration rules, media associations, music search/trending, AI story generation, reactions, replies, shares, view tracking, and notification behavior.
-- Status Creator is the next highest-leverage creation surface because it reuses the same media layer while unlocking a major mobile-first PulseSoc workflow.
-- It should be implemented before advanced camera effects so the basic Status publishing contract is stable first.
+- Feed, Post Detail, Profile media, Messenger attachments, Reels, Status, and Feed Composer now all surface media in native screens.
+- The app already has media cards, Status/Reels video rendering, shared upload state, and backend media processing status polling, but it does not yet have one reusable full-screen media viewer.
+- A shared native media viewer removes repeated one-off image/video handling before larger media-heavy features such as Marketplace, Creator Studio, Camera editor tools, and Live.
+- Notification and deep-link fallbacks already route into Post/Reel/Status/Profile. Media tap-through should become native before another major media creation surface is added.
+- This recommendation is based on the current native migration state and the existing PulseSoc media pipeline, not a predetermined roadmap.
 
 ## Reusable Existing PulseSoc Logic
 
 Reuse directly:
 
-- Existing Status creation API: `POST /api/pulse/status`.
-- Existing Status rail/view APIs: `GET /api/pulse/status/rail` and `POST /api/pulse/status/<status_id>/view`.
+- Existing media payloads returned by Feed, Post Detail, Profile, Messenger, Reels, and Status APIs.
 - Existing media upload API: `POST /api/pulse/media/upload`.
-- Shared native media upload hook/service and preview component.
-- Existing Status privacy, expiration, visibility, media association, music, and AI story contracts.
-- Existing media authorization, R2/Mux processing, thumbnails, and CDN URLs.
-- Existing moderation, analytics, notification fanout, and profile identity behavior.
+- Existing processing status API: `GET /api/pulse/media/<media_id>/status`.
+- Existing Mux/R2 playback URLs, thumbnails, poster URLs, valid URLs, and authorization behavior.
+- Existing report/share/save/reaction/comment APIs for the parent surface when available.
+- Existing notification and deep-link target routing for Post/Reel/Status/Profile.
+- Existing media moderation, visibility, premium/creator entitlement, and storage rules.
+- Shared native media helpers: media URL normalization, media kind detection, upload result IDs, and processing polling.
 
 Do not duplicate in native:
 
-- Status privacy and expiration rules.
+- Media authorization.
+- R2/Mux routing.
+- Processing-state decisions.
 - Moderation/risk rules.
-- Music approval rules.
-- AI story generation logic.
-- View/reaction/reply/share persistence.
-- Media authorization or storage decisions.
-- Mux/R2 routing.
+- Visibility/privacy rules.
 - Premium/creator entitlement checks.
+- Parent content reaction/comment/save/share business logic.
 - Notification dispatch.
 - Server-side validation.
 
 ## What Must Be Rebuilt Natively
 
-- Native Status creator sheet/screen.
-- Text Status input.
-- Photo/video Status attachment using the shared native upload foundation.
-- Camera entry through the shared media layer.
-- Status privacy selector.
-- Duration/expiration selector using existing API-supported values.
-- Status type inference for text/photo/video.
-- Media attachment using the shared native upload foundation.
-- Upload progress and retry wiring in the creator.
-- Submit/publishing state.
-- Draft clearing after successful Status.
-- Error, empty, offline, and permission-denied states.
-- Status rail refresh after successful creation.
+- Reusable full-screen media viewer component.
+- Image viewing with pinch/zoom-ready structure.
+- Native video playback surface with mute/play/pause/retry states.
+- Swipe/dismiss gestures.
+- Previous/next navigation for media galleries.
+- Shared loading, empty, unsupported, offline, and error states.
+- Parent surface action hooks for share, save, report, profile navigation, and comments where APIs already exist.
+- Processing-status handling for media that is uploaded but not ready.
+- Integration points from Feed/Post Detail, Profile media, Messenger attachments, Status, Reels, and future Marketplace/Creator Studio.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Confirm exact native Status creation payload shape against the current backend.
-- Confirm supported duration/privacy values.
-- Confirm media ID handling and status type inference for image/video.
-- Confirm whether music/AI story should be included in the first slice or deferred.
+- Inventory the current media payload shapes across Feed, Profile, Messenger, Reels, Status, and uploads.
+- Confirm the strongest reusable native video component already in use for Reels/Status.
+- Confirm which parent surfaces should expose viewer actions in the first slice.
+- Keep all media authorization and processing decisions server-authoritative.
 
 Blockers:
 
-- Real-device media picking/upload within Status Creator must be verified before production replacement.
-- Music/AI story flows may require additional UI and should be deferred if they threaten the first slice.
+- Real-device video playback, memory pressure, swipe gesture smoothness, and large media behavior must be verified before production replacement.
+- Pinch/zoom may require an added native gesture/zoom dependency or a constrained first slice if the current dependency set is not enough.
 
 ## Risk Level
 
@@ -188,9 +186,9 @@ Risk: Medium-high.
 
 Reasons:
 
-- Status Creator publishes time-sensitive user content, so privacy, expiration, media state, and notification side effects matter.
-- Most business logic already exists server-side, so risk is mainly native payload mapping, media attachment state, creator UX, and device QA.
-- The shared upload and Status viewer foundations lower the media/rendering risk.
+- Media viewer quality directly affects the highest-volume native surfaces.
+- Video memory, gesture responsiveness, and large attachments can regress performance if implemented as one-off viewers.
+- Reusing existing media URLs, processing status, and authorization keeps backend risk low, but real-device QA is required.
 
 ## Estimated Complexity
 
@@ -198,34 +196,32 @@ Complexity: Medium-high.
 
 Recommended first slice:
 
-- Creator entry from native Status.
-- Text-only Status creation.
-- Optional image/video attachment through the shared media upload layer.
-- Privacy and duration selectors using existing API values.
-- Status rail refresh after publish.
-- Loading, validation, permission, upload, publishing, and error states.
-- Static audit proving no duplicated Status/privacy/media business rules.
+- Shared `NativeMediaViewer` component.
+- Single-image and single-video viewing.
+- Gallery previous/next navigation where a surface already has multiple media items.
+- Tap-to-dismiss and native-safe loading/error/retry states.
+- Integrations from Feed/Post Detail, Profile media, Messenger attachments, and Status cards.
+- Static audit proving media business rules stay backend-owned.
 
 Defer from first slice:
 
-- Advanced camera effects.
-- Music picker and AI story generation if they make the first slice too broad.
-- Scheduled/status campaign tools.
 - Advanced editing.
-- Music/audio remix.
-- Background uploads.
-- Marketplace and Creator Studio publishing flows.
+- Download/export behavior.
+- Background playback.
+- Complex multi-track audio.
+- Creator Studio-specific analytics overlays.
+- Marketplace listing-specific purchase actions.
 
 ## Safest Implementation Plan
 
-1. Inspect current Status creator and `POST /api/pulse/status` payload handling before coding.
-2. Add or extend native Status API wrappers only around existing Status creation endpoints.
-3. Build a native creator entry on Status.
-4. Wire text-only Status publishing first.
-5. Add image/video attachment through the shared native upload foundation.
-6. Refresh native Status rail after successful creation and keep server privacy/expiration rules authoritative.
-7. Add a focused Status Creator audit and keep production WebView untouched.
+1. Inspect media payload shapes in existing native Feed, Profile, Messenger, Reels, Status, and upload code.
+2. Extract a shared viewer around existing native media URL/kind helpers and Expo AV playback already proven in Reels/Status.
+3. Wire Feed/Post Detail image cards first.
+4. Add Profile media and Messenger attachment entry points.
+5. Add Status card/viewer entry points where it does not conflict with story navigation.
+6. Keep unsupported media on explicit fallback states and preserve existing web fallback for cases not yet native.
+7. Add a focused Media Viewer audit and keep production WebView untouched.
 
 ## Recommendation Summary
 
-Build Native Status Creator Foundation next. Native Status viewing and shared media publishing are now in place, and Status Creator is the highest-leverage next creation feature because it reuses existing Status APIs, media upload, privacy, expiration, moderation, analytics, notification, and music/AI contracts while rebuilding only the native creator UI.
+Build Native Media Viewer Foundation next. The native app now creates and consumes posts, Status, Reels, profile media, and attachments; a shared viewer gives those surfaces one fast native media experience while preserving PulseSoc media authorization, processing, moderation, privacy, storage, and notification behavior on the server.

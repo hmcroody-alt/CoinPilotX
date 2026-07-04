@@ -27,6 +27,7 @@ import {
   statusMusicLabel,
   trackStatusView
 } from "../api/status";
+import { StatusCreator } from "../components/StatusCreator";
 import { StatusViewerCard } from "../components/StatusViewerCard";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
@@ -49,6 +50,7 @@ export function StatusScreen({ route, navigation }: Props) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [muted, setMuted] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [creatorOpen, setCreatorOpen] = useState(false);
   const [replyStatus, setReplyStatus] = useState<PulseStatus | null>(null);
   const [replyBody, setReplyBody] = useState("");
   const [postingReply, setPostingReply] = useState(false);
@@ -148,6 +150,14 @@ export function StatusScreen({ route, navigation }: Props) {
     }
   }
 
+  function handleCreatedStatus(status?: PulseStatus) {
+    if (status?.id) {
+      setItems((current) => [status, ...current.filter((item) => item.id !== status.id)]);
+      setRailItems((current) => [status, ...current.filter((item) => item.id !== status.id)].slice(0, 24));
+    }
+    load("refresh").catch(() => undefined);
+  }
+
   if (loading && !items.length) {
     return (
       <View style={styles.center}>
@@ -166,8 +176,15 @@ export function StatusScreen({ route, navigation }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
         ListHeaderComponent={
           <View>
-            <Text style={styles.title}>Status</Text>
-            <Text style={styles.subtitle}>{offline ? "Showing saved Status" : "PulseSoc native Status"}</Text>
+            <View style={styles.headerRow}>
+              <View>
+                <Text style={styles.title}>Status</Text>
+                <Text style={styles.subtitle}>{offline ? "Showing saved Status" : "PulseSoc native Status"}</Text>
+              </View>
+              <Pressable style={styles.createButton} onPress={() => setCreatorOpen(true)}>
+                <Text style={styles.createButtonText}>Create</Text>
+              </Pressable>
+            </View>
             <FlatList
               horizontal
               data={railItems.length ? railItems : items.slice(0, 12)}
@@ -224,6 +241,7 @@ export function StatusScreen({ route, navigation }: Props) {
         onSubmit={submitReply}
         onClose={() => setReplyStatus(null)}
       />
+      <StatusCreator visible={creatorOpen} onClose={() => setCreatorOpen(false)} onCreated={handleCreatedStatus} />
     </View>
   );
 }
@@ -414,6 +432,22 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 18,
     fontWeight: "900"
+  },
+  createButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 8,
+    paddingHorizontal: 13,
+    paddingVertical: 10
+  },
+  createButtonText: {
+    color: colors.background,
+    fontWeight: "900"
+  },
+  headerRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12
   },
   primaryButton: {
     backgroundColor: colors.accent,

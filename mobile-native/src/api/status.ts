@@ -7,6 +7,8 @@ const STATUS_CACHE_PREFIX = "pulsesoc.native.status.";
 const statusCacheKey = (lane: string) => `${STATUS_CACHE_PREFIX}${lane || "for_you"}`;
 
 export type PulseStatusMusic = {
+  id?: string | number;
+  track_id?: string | number;
   title?: string;
   artist?: string;
   audio_title?: string;
@@ -16,7 +18,13 @@ export type PulseStatusMusic = {
   preview_url?: string;
   music_id?: string;
   audio_id?: string;
+  mood?: string;
+  genre?: string;
+  duration_seconds?: number;
 };
+
+export type StatusVisibility = "public" | "followers" | "private";
+export type StatusType = "text" | "photo" | "video" | "music" | "live" | "ai";
 
 export type PulseStatus = {
   id: number;
@@ -57,6 +65,51 @@ export type StatusRailResponse = {
   trace_id?: string;
 };
 
+export type CreateStatusPayload = {
+  status_type: StatusType;
+  body?: string;
+  visibility?: StatusVisibility;
+  duration_hours?: number;
+  media_ids?: number[];
+  music_media_id?: number;
+  music_track_id?: string | number;
+  effect_name?: string;
+  sticker?: string;
+  link_url?: string;
+  ai_context?: Record<string, unknown>;
+};
+
+export type StatusCreateResponse = {
+  ok?: boolean;
+  success?: boolean;
+  status?: PulseStatus;
+  status_id?: number;
+  media_url?: string;
+  message?: string;
+  trace_id?: string;
+};
+
+export type StatusAiStory = {
+  caption?: string;
+  style?: string;
+  tags?: string[];
+  visual?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+export type StatusAiStoryResponse = {
+  ok?: boolean;
+  story?: StatusAiStory;
+  trace_id?: string;
+};
+
+export type StatusMusicResponse = {
+  ok?: boolean;
+  items?: PulseStatusMusic[];
+  provider?: string;
+  trace_id?: string;
+};
+
 export async function listStatuses(params: { lane?: string } = {}) {
   const lane = params.lane || "for_you";
   const query = new URLSearchParams({ lane });
@@ -65,6 +118,38 @@ export async function listStatuses(params: { lane?: string } = {}) {
   const railItems = normalizeStatuses(data.rail_items || []);
   await cacheStatuses(lane, items, railItems).catch(() => undefined);
   return { ...data, items, rail_items: railItems, lane };
+}
+
+export async function createStatus(payload: CreateStatusPayload) {
+  const data = await pulseApi<StatusCreateResponse>("/api/pulse/status", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+  return {
+    ...data,
+    status_id: Number(data.status_id || data.status?.id || data.status?.status_id || 0),
+    status: data.status ? normalizeStatus(data.status) : undefined
+  };
+}
+
+export async function searchStatusMusic(params: { query?: string; limit?: number } = {}) {
+  const query = new URLSearchParams({
+    q: params.query || "",
+    limit: String(params.limit || 8)
+  });
+  return pulseApi<StatusMusicResponse>(`/api/pulse/status/music/search?${query.toString()}`);
+}
+
+export async function listTrendingStatusMusic(params: { limit?: number } = {}) {
+  const query = new URLSearchParams({ limit: String(params.limit || 8) });
+  return pulseApi<StatusMusicResponse>(`/api/pulse/status/music/trending?${query.toString()}`);
+}
+
+export async function generateStatusAiStory(prompt: string, style = "cinematic") {
+  return pulseApi<StatusAiStoryResponse>("/api/pulse/status/ai-story", {
+    method: "POST",
+    body: JSON.stringify({ prompt, style })
+  });
 }
 
 export async function loadCachedStatuses(lane = "for_you") {
