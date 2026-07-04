@@ -148,9 +148,14 @@ export function HomeScreen() {
                 <Text style={styles.title}>Home Feed</Text>
                 <Text style={styles.subtitle}>{offline ? "Showing saved feed" : "PulseSoc native feed"}</Text>
               </View>
-              <Pressable style={styles.composeButton} onPress={() => setComposerOpen(true)}>
-                <Text style={styles.composeText}>Create</Text>
-              </Pressable>
+              <View style={styles.headerActions}>
+                <Pressable style={styles.cameraButton} onPress={() => navigation.navigate("CameraStudio", { target: "feed", mode: "photo", title: "Camera" })}>
+                  <Text style={styles.cameraText}>Camera</Text>
+                </Pressable>
+                <Pressable style={styles.composeButton} onPress={() => setComposerOpen(true)}>
+                  <Text style={styles.composeText}>Create</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
         }
@@ -209,6 +214,17 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: 12
   },
+  cameraButton: {
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10
+  },
+  cameraText: {
+    color: colors.text,
+    fontWeight: "900"
+  },
   composeButton: {
     backgroundColor: colors.accent,
     borderRadius: 8,
@@ -251,6 +267,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between"
+  },
+  headerActions: {
+    flexDirection: "row",
+    gap: 8
   },
   list: {
     backgroundColor: colors.background,

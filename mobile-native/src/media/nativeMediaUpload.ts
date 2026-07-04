@@ -33,6 +33,8 @@ export type NativeMediaUploadOptions = {
   mode?: string;
   filterName?: string;
   effectKey?: string;
+  compressionPolicy?: string;
+  destination?: string;
 };
 
 export type NativeMediaUploadResult = {
@@ -68,6 +70,17 @@ const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 1024 * 1024 * 1024;
 const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "heif"]);
 const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "m4v", "webm"]);
+
+export type CameraCompressionPolicy = {
+  key: string;
+  imageQuality: number;
+  videoQuality: "480p" | "720p" | "1080p";
+  maxVideoDurationSeconds: number;
+  maxVideoBytes: number;
+  serverAuthoritative: true;
+  deviceVerified: false;
+  note: string;
+};
 
 export const mediaUploadIntegrationTargets = [
   "Status creator",
@@ -108,15 +121,50 @@ export async function pickNativeVideo() {
 export async function captureNativeMedia(kind: "image" | "video" = "image") {
   const permission = await ImagePicker.requestCameraPermissionsAsync();
   if (!permission.granted) return { asset: null, progress: deniedProgress("Camera permission is required.") };
+  const policy = cameraCompressionPolicy(kind === "video" ? "video" : "photo");
   const result = await ImagePicker.launchCameraAsync({
     allowsEditing: false,
     mediaTypes: kind === "video" ? ImagePicker.MediaTypeOptions.Videos : ImagePicker.MediaTypeOptions.Images,
-    quality: kind === "image" ? 0.92 : 1,
-    videoMaxDuration: 180
+    quality: kind === "image" ? policy.imageQuality : 1,
+    videoMaxDuration: policy.maxVideoDurationSeconds
   });
   if (result.canceled || !result.assets?.[0]) return { asset: null, progress: idleProgress("Camera capture cancelled.") };
   const asset = await normalizePickedAsset(result.assets[0], kind);
   return { asset, progress: selectedProgress(asset) };
+}
+
+export async function nativeMediaAssetFromUri(
+  uri: string,
+  mediaType: "image" | "video",
+  metadata: Partial<Pick<NativeMediaAsset, "name" | "mimeType" | "width" | "height" | "duration" | "size">> = {}
+): Promise<NativeMediaAsset> {
+  const fileInfo = await FileSystem.getInfoAsync(uri, { size: true }).catch(() => ({ exists: false } as FileSystem.FileInfo));
+  const name = metadata.name || filenameFor(uri, mediaType);
+  return {
+    uri,
+    name,
+    mimeType: metadata.mimeType || mimeTypeFor(name, mediaType),
+    mediaType,
+    size: Number(metadata.size || ("size" in fileInfo ? fileInfo.size || 0 : 0)),
+    width: metadata.width,
+    height: metadata.height,
+    duration: metadata.duration
+  };
+}
+
+export function cameraCompressionPolicy(mode: "photo" | "video" | "status" | "reel" = "photo", destination = "feed"): CameraCompressionPolicy {
+  const video = mode === "video" || mode === "reel";
+  const status = destination === "status" || mode === "status";
+  return {
+    key: video ? (status ? "native_status_video_v1" : "native_video_v1") : "native_photo_v1",
+    imageQuality: status ? 0.86 : 0.9,
+    videoQuality: status ? "720p" : "1080p",
+    maxVideoDurationSeconds: status ? 60 : 180,
+    maxVideoBytes: video ? Math.min(MAX_VIDEO_BYTES, status ? 350 * 1024 * 1024 : 700 * 1024 * 1024) : 0,
+    serverAuthoritative: true,
+    deviceVerified: false,
+    note: "Native client requests efficient capture settings; PulseSoc backend validation, storage, moderation, and processing remain authoritative."
+  };
 }
 
 export function validateNativeMedia(asset: NativeMediaAsset) {
@@ -182,6 +230,8 @@ export function uploadNativeMedia(
         if (options.mode) form.append("mode", options.mode);
         if (options.filterName) form.append("filter_name", options.filterName);
         if (options.effectKey) form.append("effect_key", options.effectKey);
+        if (options.compressionPolicy) form.append("compression_policy", options.compressionPolicy);
+        if (options.destination) form.append("destination", options.destination);
         form.append("file", {
           uri: asset.uri,
           name: asset.name,

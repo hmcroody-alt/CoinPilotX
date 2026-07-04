@@ -40,7 +40,7 @@ import { formatFileSize, formatShortTime } from "../utils/format";
 const PAGE_SIZE = 40;
 const SYNC_INTERVAL_MS = 2500;
 
-export function ChatScreen({ route }: NativeStackScreenProps<RootStackParamList, "Chat">) {
+export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, "Chat">) {
   const conversationId = route.params.conversationId;
   const [messages, setMessages] = useState<MessengerMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -377,6 +377,14 @@ export function ChatScreen({ route }: NativeStackScreenProps<RootStackParamList,
         <View style={styles.tools}>
           <Pressable accessibilityLabel="Attach image" disabled={uploading} style={[styles.iconButton, uploading && styles.disabled]} onPress={attachImage}>
             <Text style={styles.iconText}>{uploading ? "..." : "Img"}</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Open camera"
+            disabled={uploading}
+            style={[styles.iconButton, uploading && styles.disabled]}
+            onPress={() => navigation.navigate("CameraStudio", { target: "message", mode: "photo", conversationId, title: "Message Camera" })}
+          >
+            <Text style={styles.iconText}>Cam</Text>
           </Pressable>
           <Pressable accessibilityLabel="Attach file" disabled={uploading} style={[styles.iconButton, uploading && styles.disabled]} onPress={attachFile}>
             <Text style={styles.iconText}>File</Text>

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AppState } from "react-native";
 import { getNotificationBadgeCounts, unreadCount } from "../api/notifications";
 import { AlertManagementScreen } from "../screens/AlertManagementScreen";
+import { CameraStudioScreen } from "../screens/CameraStudioScreen";
 import { CreatorStudioScreen } from "../screens/CreatorStudioScreen";
 import { GrowthCenterScreen } from "../screens/GrowthCenterScreen";
 import { GroupsScreen } from "../screens/GroupsScreen";
@@ -97,6 +98,7 @@ export function AppNavigator() {
       }}
     >
       <Stack.Screen name="Tabs" component={TabNavigator} options={{ headerShown: false }} />
+      <Stack.Screen name="CameraStudio" component={CameraStudioScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Chat" component={ChatScreen} options={({ route }) => ({ title: route.params.title || "Chat" })} />
       <Stack.Screen name="PostDetail" component={PostDetailScreen} options={({ route }) => ({ title: route.params.title || "Post" })} />
       <Stack.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />

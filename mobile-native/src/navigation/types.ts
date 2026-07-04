@@ -23,6 +23,13 @@ export type AppTabParamList = {
 
 export type RootStackParamList = {
   Tabs: NavigatorScreenParams<AppTabParamList> | undefined;
+  CameraStudio: {
+    target?: "feed" | "post" | "status" | "reel" | "message" | "avatar" | "cover" | "creator" | "marketplace";
+    mode?: "photo" | "video" | "status" | "reel";
+    captureMode?: "photo" | "video";
+    conversationId?: number;
+    title?: string;
+  } | undefined;
   Chat: { conversationId: number; title?: string };
   PostDetail: { postId: number; title?: string };
   Reels: { reelId?: number; title?: string } | undefined;

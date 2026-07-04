@@ -186,9 +186,14 @@ export function StatusScreen({ route, navigation }: Props) {
                 <Text style={styles.title}>Status</Text>
                 <Text style={styles.subtitle}>{offline ? "Showing saved Status" : "PulseSoc native Status"}</Text>
               </View>
-              <Pressable style={styles.createButton} onPress={() => setCreatorOpen(true)}>
-                <Text style={styles.createButtonText}>Create</Text>
-              </Pressable>
+              <View style={styles.headerActions}>
+                <Pressable style={styles.cameraButton} onPress={() => navigation.navigate("CameraStudio", { target: "status", mode: "status", title: "Status Camera" })}>
+                  <Text style={styles.cameraText}>Camera</Text>
+                </Pressable>
+                <Pressable style={styles.createButton} onPress={() => setCreatorOpen(true)}>
+                  <Text style={styles.createButtonText}>Create</Text>
+                </Pressable>
+              </View>
             </View>
             <FlatList
               horizontal
@@ -410,6 +415,17 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: 10
   },
+  cameraButton: {
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10
+  },
+  cameraText: {
+    color: colors.text,
+    fontWeight: "900"
+  },
   close: {
     backgroundColor: "rgba(8,15,28,0.72)",
     borderRadius: 16,
@@ -463,6 +479,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     gap: 12
+  },
+  headerActions: {
+    flexDirection: "row",
+    gap: 8
   },
   primaryButton: {
     backgroundColor: colors.accent,

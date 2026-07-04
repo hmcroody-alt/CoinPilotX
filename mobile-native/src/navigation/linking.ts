@@ -22,6 +22,15 @@ export const linking: LinkingOptions<RootStackParamList> = {
           Settings: "pulse/settings"
         }
       },
+      CameraStudio: {
+        path: "pulse/camera/:mode?",
+        parse: {
+          mode: String,
+          target: String,
+          captureMode: String,
+          conversationId: Number
+        }
+      },
       Chat: {
         path: "pulse/messages/:conversationId",
         parse: {
