@@ -43,6 +43,7 @@ Completed native foundations:
 - Short Authenticated QA Browser Sweep: verified authenticated Home, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, Groups, Live, Premium, Creator, Growth, Intelligence/Alerts, Settings, Pulse AI, notification preferences, and fallback routes through the built-in QA browser; fixed Login/Settings semantic accessibility roles/labels for reliable web QA automation; confirmed no current console warnings/errors during the sweep; kept device-only claims explicitly unverified.
 - Native Alert Management + Crypto/Market Alert CRUD: native Alert Management route, crypto/market alert list, alert detail/history, create/edit form, pause/resume/delete/duplicate/test actions, channel readiness/test UI, offline cache, Settings/Intelligence/notification routing, `/pulse/alerts` and `/dashboard/crypto/alerts` route handling, and safe web fallback for unsupported advanced/provider tools through existing PulseSoc alert APIs and backend business logic.
 - Native Alert Management QA Hardening: browser-verified alert validation, inline delete confirmation/cancel/confirm, pause/resume/duplicate/delete/test success and failure states, channel readiness success/failure states, long-history and empty-history states, alert deep links, preserved success notices after refresh, and selected-alert stability through the built-in QA browser with seeded alert fixtures.
+- Alert Provider + Device QA Setup: documented APNs/FCM/Expo push readiness, SMS/email/Telegram readiness, notification tap deep links, lock-screen behavior plan, physical-device alert test plan, provider success/failure states, channel readiness accuracy checks, delivery debugging logs, and the critical app identity split between `com.pulsesoc.nativeapp` and `com.pulsesoc.app`; no provider/device delivery was claimed verified.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -80,6 +81,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_short_qa_browser_sweep.md`
 - `reports/pulsesoc_native_alert_management_progress.md`
 - `reports/pulsesoc_native_alert_management_qa_hardening.md`
+- `reports/pulsesoc_alert_provider_device_qa_setup.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -111,6 +113,7 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_short_qa_browser_sweep_audit.py`
 - `scripts/pulsesoc_native_alert_management_audit.py`
 - `scripts/pulsesoc_native_alert_management_qa_audit.py`
+- `scripts/pulsesoc_alert_provider_device_qa_audit.py`
 
 ## Remaining Major Features
 
@@ -118,7 +121,7 @@ Completed supporting reports/audits:
 - Native LiveKit calls
 - Full-screen incoming calls
 - External device QA tooling completion and hardening pass
-- Alert provider/device QA setup for push, SMS, email, Telegram, installed deep links, and notification tap routing
+- Alert provider/device QA execution for push, SMS, email, Telegram, installed deep links, and notification tap routing
 
 ## Codebase Reconnaissance
 
@@ -195,15 +198,16 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Action
 
-Recommendation: run Native Alert Management provider/device QA setup and fixture hardening before building the next major feature.
+Recommendation: run the first real Alert Management provider/device QA pass before building the next major feature.
 
-This is the safest next action because Alert Management has now passed a seeded built-in QA browser hardening pass, but the highest-risk remaining behaviors are still provider/device-only: APNs/FCM delivery, installed-app notification taps, lock-screen presentation, SMS/email/Telegram delivery, and physical-device deep links. Those must not be treated as browser-verified.
+This is the safest next action because Alert Management has now passed a seeded built-in QA browser hardening pass and has a provider/device QA setup report, but the highest-risk remaining behaviors are still provider/device-only: APNs/FCM delivery, installed-app notification taps, lock-screen presentation, SMS/email/Telegram delivery, and physical-device deep links. Those must not be treated as browser-verified.
 
 ## Why This Comes Next
 
 - Alert Management has now moved from native CRUD foundation to browser-hardened CRUD, with create/edit validation, inline delete confirmation, pause/resume/duplicate/delete/test, history, readiness, and deep links verified against seeded fixtures.
-- Browser QA verified the bulk of the UI and API behavior, while real push, SMS, email, Telegram, and installed-app notification behavior remain device/provider-only.
+- Browser QA verified the bulk of the UI and API behavior, and the provider/device QA setup now documents the exact prerequisites, logs, pass criteria, and app identity decision required for the first real delivery pass.
 - Production has complete server-authoritative alert management APIs and delivery logs, but real delivery still needs external setup and device/provider validation before any release claim.
+- The parallel native app declares `com.pulsesoc.nativeapp`, while the current APNs readiness helper still protects `com.pulsesoc.app`; the provider QA target must be chosen explicitly before APNs delivery testing.
 - Camera, advanced media editor, Live hosting, and LiveKit calls are higher-risk because camera, microphone, native media, LiveKit, Bluetooth/audio, and background behavior remain unverified on real devices.
 - This recommendation is based on the current production routes/services and `mobile-native` implementation inspected on 2026-07-04.
 
@@ -248,6 +252,7 @@ Do not duplicate in native:
 
 - Preserve or formalize a durable alert QA fixture with active, paused, duplicated, long-history, empty-history, success, and failure states.
 - Device-test `/pulse/alerts`, `/pulse/alerts/<id>`, `/dashboard/crypto/alerts`, and crypto alert notification links in an installed native build.
+- Decide whether the first APNs QA target is the production WebView shell identity `com.pulsesoc.app` or the parallel native app identity `com.pulsesoc.nativeapp`.
 - Device-test push permission, Expo token registration, APNs/FCM delivery, notification tap routing, foreground/background recovery, and badge refresh.
 - Provider-test SMS, email, and Telegram delivery with safe QA credentials.
 - Keep provider administration, advanced Intelligence editing, unsupported alert types, and any unverified delivery behavior on safe web fallback.
@@ -266,7 +271,8 @@ Blockers:
 - `adb` is still not available in `PATH`.
 - `/usr/bin/xcrun` exists, but `xcrun simctl list devices available` previously failed because `simctl` was not available.
 - No physical-device QA flow has been recorded in this workspace.
-- EAS project ID, Apple credentials, Android/Firebase push credentials, and provisioning remain external setup.
+- EAS project ID, Apple credentials, Android/Firebase push credentials, provisioning, and provider QA credentials remain external setup.
+- The backend APNs readiness helper currently expects `com.pulsesoc.app`; a scoped multi-bundle readiness update is required if the first APNs delivery test targets `com.pulsesoc.nativeapp`.
 
 ## Risk Level
 
@@ -284,7 +290,8 @@ Complexity: Medium.
 
 Recommended first slice:
 
-- Turn the temporary seeded alert fixture into a repeatable QA fixture or documented setup.
+- Select and document the first provider QA target identity.
+- If targeting `mobile-native`, add scoped multi-bundle APNs readiness support without changing production WebView credentials.
 - Run provider/device QA for APNs/FCM, installed-app deep links, SMS, email, and Telegram delivery when credentials/devices are available.
 - Fix only Alert Management blockers found.
 - Then decide whether the next build should be advanced Camera/media hardening or LiveKit calls based on remaining device QA readiness.
@@ -301,8 +308,8 @@ Defer from first slice:
 ## Safest Implementation Plan
 
 1. Preserve the current browser-verified Alert Management baseline and report.
-2. Create a repeatable seeded alert fixture or document the manual local setup.
-3. Configure device/provider prerequisites for APNs/FCM, Expo push, SMS, email, Telegram, and installed-app deep links.
+2. Use the provider/device QA setup report as the execution checklist.
+3. Select the provider QA app identity and configure device/provider prerequisites for APNs/FCM, Expo push, SMS, email, Telegram, and installed-app deep links.
 4. Run Gate 3 device/provider QA without claiming browser-only confidence as device confidence.
 5. Keep unsupported provider administration and advanced alert tooling on safe web fallback.
 6. Verify through Gate 1 static checks, Gate 2 built-in QA browser checks after any alert code changes, and Gate 3 device-readiness documentation.
@@ -310,6 +317,6 @@ Defer from first slice:
 
 ## Recommendation Summary
 
-Recommended next action: Native Alert Management provider/device QA setup and fixture hardening.
+Recommended next action: first real Native Alert Management provider/device QA pass.
 
-Reason: Alert Management is now browser-hardened and still reuses complete existing backend logic, but the remaining risk is external/device behavior, not another native screen. Provider/device QA should come before higher-risk Camera, Live hosting, or LiveKit Calls.
+Reason: Alert Management is now browser-hardened and has provider/device QA setup coverage while still reusing complete existing backend logic, but the remaining risk is external/device behavior, not another native screen. The next highest-value action is to choose the app identity, configure provider credentials/devices, run the first physical-device/provider alert delivery pass, and fix only blockers found before higher-risk Camera, Live hosting, or LiveKit Calls.
