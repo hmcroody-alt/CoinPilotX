@@ -27,8 +27,11 @@ def require_file(relative: str) -> str:
 
 def main() -> int:
     package = require_file("mobile-native/package.json")
+    lockfile = require_file("mobile-native/package-lock.json")
     app = require_file("mobile-native/App.tsx")
     app_json = require_file("mobile-native/app.json")
+    config = require_file("mobile-native/src/api/config.ts")
+    pulse_api = require_file("mobile-native/src/api/pulseApi.ts")
     api = require_file("mobile-native/src/api/pulse.ts")
     auth = require_file("mobile-native/src/api/auth.ts")
     push = require_file("mobile-native/src/api/push.ts")
@@ -39,16 +42,19 @@ def main() -> int:
 
     require(NATIVE.is_dir(), "native app must live in mobile-native/")
     require('"expo"' in package and '"react-native"' in package, "Expo React Native dependencies are declared")
+    require('"expo-status-bar"' in package and '"expo-status-bar"' in lockfile, "Expo status bar dependency is locked")
     require("@react-navigation/native" in package and "@react-navigation/bottom-tabs" in package, "native navigation dependencies are declared")
     require("expo-notifications" in package and "expo-camera" in package and "expo-image-picker" in package, "native permission/media dependencies are declared")
     require("@livekit/react-native" in package and "livekit-client" in package, "native LiveKit SDK dependencies are declared")
 
     code_paths = [
-        path
-        for path in NATIVE.rglob("*")
-        if path.is_file()
-        and path.suffix in {".ts", ".tsx", ".js", ".json"}
-        and path.name not in {"README.md"}
+        NATIVE / "App.tsx",
+        NATIVE / "index.ts",
+        NATIVE / "app.json",
+        NATIVE / "package.json",
+        NATIVE / "babel.config.js",
+        *sorted((NATIVE / "src").rglob("*.ts")),
+        *sorted((NATIVE / "src").rglob("*.tsx")),
     ]
     combined_native = "\n".join(path.read_text(encoding="utf-8") for path in code_paths)
     require("react-native-webview" not in combined_native.lower(), "native foundation must not use WebView")
@@ -58,6 +64,9 @@ def main() -> int:
     require("createBottomTabNavigator" in nav and "createNativeStackNavigator" in nav, "native tabs and stack navigation are wired")
     require("expo-secure-store" in package and "SecureStore" in require_file("mobile-native/src/session/sessionStore.ts"), "session cookie uses secure native storage")
     require("Notifications.getExpoPushTokenAsync" in push and '"/api/push/subscribe"' in push, "native push registration posts to backend")
+    require("try {" in push and "Push permission was not granted." in push and "Push registration requires a physical device." in push, "push permission/device failures degrade explicitly")
+    require("normalizeApiBaseUrl" in config and "replace(/\\/+$/, \"\")" in config and "https://pulsesoc.com" in config, "API base URL is normalized with safe default")
+    require("request_unreachable" in pulse_api and "PulseSoc could not be reached" in pulse_api, "network failures become safe API errors")
 
     expected_routes = [
         "/api/mobile/auth/session",

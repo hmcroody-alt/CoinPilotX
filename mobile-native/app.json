@@ -7,7 +7,7 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "bundleIdentifier": "com.pulsesoc.native",
+      "bundleIdentifier": "com.pulsesoc.nativeapp",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "PulseSoc uses the camera for native status, reels, profile media, and calls.",
@@ -16,7 +16,7 @@
       }
     },
     "android": {
-      "package": "com.pulsesoc.native",
+      "package": "com.pulsesoc.nativeapp",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",

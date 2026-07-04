@@ -31,7 +31,7 @@ export async function signIn(identifier: string, password: string): Promise<Auth
   return { status: "signedIn", user: session.user };
 }
 
-export async function createAccount(payload: { full_name: string; username: string; email: string; password: string }) {
+export async function createAccount(payload: { full_name: string; username: string; email: string; password: string }): Promise<AuthState> {
   const session = await signup(payload);
   if (!session.authenticated || !session.user) return { status: "signedOut", user: null };
   return { status: "signedIn", user: session.user };

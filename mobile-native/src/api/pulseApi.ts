@@ -23,11 +23,16 @@ export async function pulseApi<T>(path: string, options: RequestInit = {}): Prom
   const cookie = await getSessionCookie();
   if (cookie) headers.set("Cookie", cookie);
 
-  const response = await fetch(`${PULSE_API_BASE_URL}${path}`, {
-    ...options,
-    headers,
-    credentials: "include"
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${PULSE_API_BASE_URL}${path}`, {
+      ...options,
+      headers,
+      credentials: "include"
+    });
+  } catch {
+    throw new PulseApiError("PulseSoc could not be reached. Check your connection and try again.", 503, "request_unreachable");
+  }
 
   const responseCookie = response.headers.get("set-cookie");
   if (responseCookie) await setSessionCookie(mergeSessionCookies(cookie || "", responseCookie));
