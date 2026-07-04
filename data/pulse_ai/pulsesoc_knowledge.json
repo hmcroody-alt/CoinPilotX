@@ -328,5 +328,15 @@
     "troubleshooting": ["If only some notifications appear, check whether each event creates a push delivery job."],
     "related_features": ["Push notifications", "Notifications", "Privacy settings"],
     "safety_notes": ["Turn off previews for private chats on shared devices."]
+  },
+  {
+    "feature": "Growth Center",
+    "summary": "The Growth Center is PulseSoc's native Growth Engine. Every account is automatically provisioned with a Growth Account, campaign workspace, promotion wallet, audience profile, analytics container, conversion tracking ID, Growth Score, and Pulse AI Growth Advisor readiness.",
+    "where_to_find_it": "Open /pulse/growth or use promote buttons where available. Pulse AI can also guide users into Growth Center.",
+    "how_to_use_it": "Ask Pulse AI to help promote a business, Reel, marketplace listing, music, event, live stream, or creator profile. Growth Center shows campaigns, audience, budget, performance, insights, billing readiness, promotion credits, and reports without requiring a setup wizard.",
+    "common_questions": ["How do I grow my reach?", "Can Pulse AI promote my music?", "Where is my promotion wallet?", "How do I promote a business?"],
+    "troubleshooting": ["If Growth Center says it is preparing, refresh after a moment; provisioning is automatic and resumable.", "If billing is inactive, funding and live charging are not configured yet.", "Campaign delivery still requires moderation, budget, review, and safety checks."],
+    "related_features": ["Pulse AI chat", "Creator tools", "PulseSoc Music", "Marketplace Promotion", "Reels"],
+    "safety_notes": ["PulseSoc should never expose private targeting data or internal promotion API keys.", "Promotion and billing remain review-gated, fraud-checked, and owner-scoped."]
   }
 ]

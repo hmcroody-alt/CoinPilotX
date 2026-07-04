@@ -249,6 +249,7 @@ from services import (
     pulse_advertiser_portal,
     pulse_ad_payments,
     pulse_ads_service,
+    pulsesoc_growth_engine,
     pulsesoc_promotions,
     pulse_identity_engine,
     pro_access as pro_access_service,
@@ -4850,6 +4851,20 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
             """,
             (user_id, now, trial_end, trial_end, now, now)
         )
+        pulsesoc_growth_engine.provision_user(
+            conn,
+            {
+                "user_id": user_id,
+                "username": username,
+                "display_name": full_name,
+                "full_name": full_name,
+                "email": email,
+                "email_verified": 0,
+                "is_super_user": initial_super_user,
+            },
+            source="signup",
+            commit=False,
+        )
         conn.commit()
         logging.info("database commit success for signup user_id=%s engine=%s", user_id, db_service.ENGINE_NAME)
         log_auth_event("signup_completed", email, user_id, status="success", details={"db_engine": db_service.ENGINE_NAME})
@@ -8472,11 +8487,11 @@ def dashboard_ads_shell(title, subtitle, body, script=""):
         <p class="ads-command-muted">{clean_html(subtitle)}</p>
         <div class="ads-command-actions">
           <a class="button" href="/dashboard">Mission Control</a>
-          <a class="button" href="/dashboard/ads">Ads & Sponsorships</a>
+          <a class="button" href="/dashboard/ads">Growth Hub</a>
           <a class="button" href="/dashboard/ads/manager">Campaigns</a>
           <a class="button" href="/dashboard/ads/signal-studio">Creative Studio</a>
           <a class="button" href="/dashboard/ads/analytics">Analytics</a>
-          <a class="button primary" href="/pulse/ads">Advertiser Portal</a>
+          <a class="button primary" href="/pulse/growth">Growth Center</a>
         </div>
       </section>
       {body}
@@ -8529,10 +8544,10 @@ def _ads_metric_cards(items):
 def _ads_subsystem_detail_html(subsystem):
     recs = "".join(f"<li>{clean_html(item)}</li>" for item in subsystem.get("recommendations") or [])
     layers = [
-        ("What this monitors", subsystem.get("intelligence") or "Reads advertiser-owned campaign, creative, wallet, and delivery signals."),
+        ("What this monitors", subsystem.get("intelligence") or "Reads owner-scoped campaign, creative, wallet, and delivery signals."),
         ("Prediction", subsystem.get("prediction") or "Scores readiness from available privacy-safe commercial signals."),
         ("Automation", subsystem.get("automation") or "Synchronizes campaigns, reviews, wallet pacing, delivery, analytics, and audit events."),
-        ("Protection", subsystem.get("protection") or "Prevents unapproved delivery, unsafe targeting, secret exposure, and cross-advertiser data leakage."),
+        ("Protection", subsystem.get("protection") or "Prevents unapproved delivery, unsafe targeting, secret exposure, and cross-account data leakage."),
         ("Recovery", subsystem.get("recovery") or "Keeps draft, review, failed, hidden, reported, and paused states recoverable where supported."),
     ]
     layer_html = "".join(
@@ -8542,7 +8557,7 @@ def _ads_subsystem_detail_html(subsystem):
     return f"""
     <section class="ads-command-grid">
       <article class="ads-command-card"><strong>State</strong><p class="ads-command-metric">{clean_html(subsystem.get('state') or 'READY')}</p><small>{clean_html(subsystem.get('detail') or '')}</small></article>
-      <article class="ads-command-card"><strong>Signals</strong><p class="ads-command-metric">{clean_html(subsystem.get('count_display') or subsystem.get('count') or 0)}</p><small>Advertiser-owned aggregate commercial signals.</small></article>
+      <article class="ads-command-card"><strong>Signals</strong><p class="ads-command-metric">{clean_html(subsystem.get('count_display') or subsystem.get('count') or 0)}</p><small>Owner-scoped aggregate growth signals.</small></article>
       <article class="ads-command-card"><strong>Confidence</strong><p class="ads-command-metric">{int(subsystem.get('confidence') or 0)}%</p><small>Confidence from available campaign, creative, placement, wallet, and tracking data.</small></article>
       <article class="ads-command-card"><strong>Delivery Boundary</strong><p class="ads-command-metric">SAFE</p><small>Only approved, eligible, frequency-capped ads can serve.</small></article>
     </section>
@@ -8551,7 +8566,7 @@ def _ads_subsystem_detail_html(subsystem):
       <strong>Recommended next actions</strong>
       <ul class="ads-command-muted">{recs or '<li>No urgent commercial action. Keep monitoring campaign health.</li>'}</ul>
       <div class="ads-command-actions">
-        <a class="button primary" href="/pulse/ads">Advertiser Portal</a>
+        <a class="button primary" href="/pulse/growth">Growth Center</a>
         <a class="button" href="{clean_html(subsystem.get('route') or '/dashboard/ads')}">{clean_html(subsystem.get('action') or subsystem.get('cta_label') or 'Review Commerce')}</a>
         <a class="button" href="/dashboard/ads">Commercial Hub</a>
       </div>
@@ -8572,7 +8587,7 @@ def dashboard_ads_page():
     body = f"""
     <section class="ads-command-grid">
       {_ads_metric_cards([
-        ("Wallet Balance", hub.get("wallet_balance") or "$0.00", "Advertiser wallet balance available for eligible campaigns."),
+        ("Wallet Balance", hub.get("wallet_balance") or "$0.00", "Promotion wallet balance available for eligible campaigns."),
         ("Active Campaigns", str(int(hub.get("active_campaigns") or 0)), "Campaigns currently eligible or prepared for delivery."),
         ("Pending Review", str(int(hub.get("pending_review") or 0)), "Creatives or campaigns waiting for moderation review."),
         ("Impressions", f"{int(hub.get('impressions') or 0):,}", "Owner-scoped ad render signals."),
@@ -8588,10 +8603,10 @@ def dashboard_ads_page():
     <section class="ads-command-grid">{cards}</section>
     <section class="ads-command-card">
       <strong>Privacy and delivery protections</strong>
-      <p class="ads-command-muted">This center shows advertiser-owned summaries only. Raw targeting data, storage paths, private user data, provider secrets, internal tokens, and cross-advertiser details are not exposed.</p>
+      <p class="ads-command-muted">This center shows owner-scoped growth summaries only. Raw targeting data, storage paths, private user data, provider secrets, internal tokens, and cross-account details are not exposed.</p>
     </section>
     """
-    return dashboard_ads_shell("Ads & Sponsorships", "Commercial intelligence, campaign readiness, sponsored signals, audience safety, delivery analytics, and revenue guidance.", body)
+    return dashboard_ads_shell("Growth Hub", "Growth intelligence, campaign readiness, promotion signals, audience safety, delivery analytics, and performance guidance.", body)
 
 
 @webhook_app.route("/dashboard/ads/<subsystem_key>", methods=["GET"])
@@ -9667,6 +9682,7 @@ def admin_account_command_verification_decision(request_id):
     return redirect("/admin/account-command")
 
 
+@webhook_app.route("/pulse/growth", methods=["GET"])
 @webhook_app.route("/pulse/advertise", methods=["GET"])
 @webhook_app.route("/pulse/ads", methods=["GET"])
 def pulse_advertiser_portal_page():
@@ -9675,7 +9691,13 @@ def pulse_advertiser_portal_page():
     if not user:
         return redirect(url_for("login_page", next=request.path))
     fresh_user = load_account_by_id(user["user_id"]) or user
-    response = render_template("pulse_advertiser_portal.html", current_user=fresh_user, csrf_token=get_csrf_token())
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        growth_state = pulsesoc_growth_engine.build_growth_state(conn, fresh_user)
+    finally:
+        conn.close()
+    response = render_template("pulse_advertiser_portal.html", current_user=fresh_user, csrf_token=get_csrf_token(), growth_state=growth_state)
     response_obj = webhook_app.make_response(response)
     response_obj.headers["Cache-Control"] = "private, no-store, max-age=0"
     return response_obj
@@ -15594,7 +15616,23 @@ def api_pulse_ads_portal():
     conn = db()
     conn.row_factory = sqlite3.Row
     try:
+        pulsesoc_growth_engine.provision_user(conn, user, source="ads_portal_api", commit=True)
         return jsonify({"ok": True, "portal": pulse_advertiser_portal.portal_summary(conn, user.get("user_id"))})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/growth", methods=["GET"])
+def api_pulse_growth_state():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, **pulsesoc_growth_engine.build_growth_state(conn, user)})
     except Exception as exc:
         return pulse_ads_error_response(exc)
     finally:
@@ -15729,7 +15767,7 @@ def api_pulse_ads_wallet_funding_session(account_id):
     if ios_native_app_request():
         return jsonify({
             "ok": False,
-            "error": "Advertiser wallet funding is available on the secure web portal only while iOS billing compliance is reviewed.",
+            "error": "Promotion wallet funding is available on the secure web portal only while iOS billing compliance is reviewed.",
         }), 403
     if not pulse_ads_verify_write():
         return jsonify({"ok": False, "error": "Security check failed."}), 403
@@ -15741,7 +15779,7 @@ def api_pulse_ads_wallet_funding_session(account_id):
         payload = pulse_ads_json_payload()
         funding = pulse_ad_payments.create_funding_session(conn, user.get("user_id"), account_id, payload)
         if not STRIPE_SECRET_KEY or not pulse_ad_payments.stripe_ready():
-            return jsonify({"ok": False, "error": "Advertiser Stripe funding is not configured.", "funding_session": funding}), 503
+            return jsonify({"ok": False, "error": "Promotion funding is not configured.", "funding_session": funding}), 503
         stripe.api_key = STRIPE_SECRET_KEY
         success_url = f"{APP_BASE_URL}/pulse/ads?funding=success&session_id={{CHECKOUT_SESSION_ID}}"
         cancel_url = f"{APP_BASE_URL}/pulse/ads?funding=cancel"
@@ -15753,7 +15791,7 @@ def api_pulse_ads_wallet_funding_session(account_id):
             line_items=[{
                 "price_data": {
                     "currency": funding.get("currency") or "usd",
-                    "product_data": {"name": "PulseSoc advertiser wallet funding"},
+                    "product_data": {"name": "PulseSoc promotion wallet funding"},
                     "unit_amount": pulse_ad_payments.safe_int(funding.get("amount_cents"), 0),
                 },
                 "quantity": 1,
@@ -28704,7 +28742,7 @@ def pulse_desktop_right_rail_html():
         "<section class='desktop-rail-card home-quick-apps' id='pulseHomeQuickApps'><h3>Quick Apps</h3><div class='pulse-quick-app-grid'>"
         "<a href='/pulse/communities'>Communities</a><a href='/pulse/marketplace'>Marketplace</a><a href='/pulse/music'>Music</a><a href='/pulse/events'>Events</a><a href='/pulse/creator-studio'>Creator Studio</a><a href='/pulse/discover#apps'>More Apps</a>"
         "</div></section>"
-        "<section class='desktop-rail-card home-promotion-gateway'><h3>Promote / Ads</h3><p class='muted'>Promotion starts from real owner content and checks advertiser readiness before any launch.</p><a class='button primary' href='/pulse/promote'>Open Promote</a></section>"
+        "<section class='desktop-rail-card home-promotion-gateway'><h3>Grow Your Reach</h3><p class='muted'>Promotion starts from real owner content and checks growth readiness before any launch.</p><a class='button primary' href='/pulse/promote'>Open Promote</a></section>"
         "<section class='desktop-rail-card'><h3>Educator Signal</h3><div class='desktop-intel-grid' data-desktop-educators>"
         "<a class='desktop-intel-row' href='/pulse/teachers'><span class='desktop-rail-ico'>T</span><span><strong>Trusted teachers</strong><small class='muted'>Education-first creators belong here.</small></span></a>"
         "</div></section>"
@@ -65965,8 +66003,8 @@ def pulse_live_event_create_gateway_page():
 @webhook_app.route("/pulse/promote", methods=["GET"])
 def pulse_promote_page():
     main = pulse_gateway_card_html(
-        "Promote / Ads",
-        "Start promotion from owned content only. Campaign launch remains gated by advertiser readiness, billing, and review.",
+        "Promote",
+        "Start promotion from owned content only. Campaign launch remains gated by growth readiness, billing, and review.",
         [("My Posts", "/pulse/my-posts"), ("Marketplace", "/pulse/marketplace"), ("Creator Studio", "/pulse/creator-studio")],
         [("Launch Without Content", "Choose an owned post, Reel, or listing first."), ("Estimated Reach", "Forecasting provider is not configured; fake reach is not shown.")],
     )
@@ -80679,6 +80717,7 @@ def _admin_ads_section_rows(sections):
     )
 
 
+@webhook_app.route("/admin/growth-engine", methods=["GET"])
 @webhook_app.route("/admin/ads-command-center", methods=["GET"])
 def admin_ads_command_center_page():
     admin, denied = require_admin_page("command_center.view")
@@ -80687,16 +80726,28 @@ def admin_ads_command_center_page():
     state = _admin_ads_state()
     metrics = state.get("metrics") or {}
     sections = state.get("sections") or []
+    conn = db()
+    try:
+        growth_admin_state = pulsesoc_growth_engine.admin_state(conn)
+    finally:
+        conn.close()
+    growth_metrics = growth_admin_state.get("metrics") or {}
+    growth_cards = "".join(
+        f"<article class='card'><h2>{clean_html(key.replace('_',' ').title())}</h2><p class='metric'>{int(value or 0):,}</p></article>"
+        for key, value in growth_metrics.items()
+    )
     body = f"""
     <style>
       .ads-admin-hero{{border:1px solid rgba(255,209,102,.24);border-radius:18px;background:radial-gradient(circle at 14% 0,rgba(255,209,102,.16),transparent 26rem),radial-gradient(circle at 88% 0,rgba(155,92,255,.13),transparent 26rem),linear-gradient(135deg,rgba(6,18,34,.96),rgba(41,29,9,.88));padding:18px;margin-bottom:16px}}
       .ads-admin-note{{border:1px solid rgba(255,209,102,.24);border-radius:14px;background:rgba(255,209,102,.06);padding:14px;color:#fff2c7}}
     </style>
     <section class="ads-admin-hero">
-      <h1>Ads & Sponsorships Command Center</h1>
-      <p class="muted">Backend-managed commercial layer for sponsored signals, campaigns, creatives, review, delivery, privacy-safe targeting, tracking, revenue intelligence, and audit logs.</p>
-      <p><a class="button" href="/admin/pulse-ads-review-board">Ads Review Board</a> <a class="button" href="/admin/command-center/ads">Registry View</a> <a class="button" href="/admin/pulse-analytics">Analytics</a> <a class="button" href="/admin/audit-logs">Audit Logs</a></p>
+      <h1>Growth Engine Command Center</h1>
+      <p class="muted">Backend-managed growth infrastructure for accounts, workspaces, campaigns, promotion wallets, audience models, review, delivery, privacy-safe targeting, tracking, revenue intelligence, and audit logs.</p>
+      <form method="post" action="/api/admin/growth-engine/backfill" style="display:inline-flex;gap:8px;flex-wrap:wrap;align-items:center"><input name="limit" type="number" min="1" max="5000" value="500" aria-label="Backfill batch limit"><button class="button" type="submit">Backfill Missing Growth Engines</button></form>
+      <p><a class="button" href="/admin/pulse-ads-review-board">Promotion Review Board</a> <a class="button" href="/admin/command-center/ads">Registry View</a> <a class="button" href="/admin/pulse-analytics">Analytics</a> <a class="button" href="/admin/audit-logs">Audit Logs</a></p>
     </section>
+    <section class="grid">{growth_cards}</section>
     <section class="grid">{_admin_ads_metric_cards(metrics)}</section>
     <section class="card">
       <h2>Management Surfaces</h2>
@@ -80706,7 +80757,20 @@ def admin_ads_command_center_page():
       <strong>Security boundary:</strong> Ads command surfaces show aggregate operational state and route-backed tools only. Raw targeting data, raw sessions, storage paths, provider keys, database URLs, payment secrets, and cross-advertiser private data are never rendered here.
     </section>
     """
-    return admin_page_html("Ads & Sponsorships Command Center", body, admin)
+    return admin_page_html("Growth Engine Command Center", body, admin)
+
+
+@webhook_app.route("/api/admin/growth-engine/backfill", methods=["POST"])
+def api_admin_growth_engine_backfill():
+    admin, denied = require_admin_api("command_center.view")
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or request.form or {}
+    result = pulsesoc_growth_engine.backfill_missing_growth_engines(limit=int(payload.get("limit") or 500), after_user_id=int(payload.get("after_user_id") or 0))
+    log_admin_audit(admin.get("id"), "growth_engine_backfill", "growth_engine", "universal", {"result": result})
+    if request.form:
+        return redirect("/admin/growth-engine")
+    return jsonify(result)
 
 
 def _admin_ads_section_by_key(state, section_key):

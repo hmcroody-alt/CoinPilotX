@@ -6,29 +6,29 @@
   <meta name="robots" content="noindex,nofollow">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <meta name="theme-color" content="#050b15">
-  <title>PulseSoc Advertiser Mission Control</title>
+  <title>PulseSoc Growth Center</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/pulse_advertiser_portal.css') }}">
 </head>
 <body>
   <main class="ad-portal" data-portal-root>
-    <aside class="ad-rail" aria-label="Advertiser sections">
+    <aside class="ad-rail" aria-label="Growth sections">
       <a class="brand" href="/pulse">
         <img src="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" alt="PulseSoc">
         <span>
-          <strong>PulseSoc Ads</strong>
-          <small>Mission Control</small>
+          <strong>PulseSoc Growth</strong>
+          <small>Growth Center</small>
         </span>
       </a>
       <nav>
         <a href="#overview" class="active">Overview</a>
-        <a href="#account">Account Center</a>
-        <a href="#wizard">Campaign Wizard</a>
-        <a href="#creatives">Creative Studio</a>
+        <a href="#account">Growth Profile</a>
+        <a href="#wizard">Campaigns</a>
+        <a href="#creatives">Promotion Studio</a>
         <a href="#placements">Placements</a>
         <a href="#budget">Budget</a>
         <a href="#analytics">Analytics</a>
-        <a href="#wallet">Wallet</a>
+        <a href="#wallet">Promotion Wallet</a>
         <a href="#billing">Billing</a>
         <a href="#review">Review Board</a>
         <a href="#notifications">Notifications</a>
@@ -40,19 +40,19 @@
     <section class="ad-main">
       <header class="hero" id="overview">
         <div>
-          <p class="eyebrow">Sponsored Signal Command</p>
-          <h1>Advertiser Mission Control</h1>
-          <p>Build campaigns, submit safe creatives, monitor delivery, and prepare budget controls without exposing billing secrets.</p>
+          <p class="eyebrow">Growth Engine</p>
+          <h1>Grow your reach.</h1>
+          <p>PulseSoc is ready whenever you want to promote your content, business, music, marketplace listings, events, or live streams.</p>
         </div>
         <div class="operator">
           <div class="avatar">{{ (current_user.get('name') or current_user.get('email') or 'P')[:1] }}</div>
-          <strong>{{ current_user.get('name') or current_user.get('email') or 'PulseSoc Advertiser' }}</strong>
+          <strong>{{ current_user.get('name') or current_user.get('email') or 'PulseSoc Growth' }}</strong>
           <span data-role-pill>Loading access</span>
         </div>
       </header>
 
-      <section class="metric-grid" aria-label="Advertiser metrics">
-        <article><span>Accounts</span><strong data-metric="account_count">0</strong></article>
+      <section class="metric-grid" aria-label="Growth metrics">
+        <article><span>Growth Accounts</span><strong data-metric="account_count">0</strong></article>
         <article><span>Campaigns</span><strong data-metric="campaign_count">0</strong></article>
         <article><span>Active</span><strong data-metric="active_campaigns">0</strong></article>
         <article><span>Reviews</span><strong data-metric="pending_reviews">0</strong></article>
@@ -63,14 +63,14 @@
 
       <section class="panel split" id="account">
         <div>
-          <p class="eyebrow">Business Identity</p>
-          <h2>Advertiser Account Center</h2>
-          <p class="muted">Verification, legal, contact, health, spend summary, and lifecycle notifications are tied to your own ad accounts only.</p>
+          <p class="eyebrow">Growth Identity</p>
+          <h2>Growth Profile</h2>
+          <p class="muted">Your Growth Engine is provisioned automatically. Add business, creator, music, event, or marketplace details only when you are ready to promote.</p>
           <form class="mini-form" data-create-account-form>
-            <input name="business_name" placeholder="Business name" required maxlength="120">
-            <input name="business_email" type="email" placeholder="Business email">
+            <input name="business_name" placeholder="Growth profile name" required maxlength="120">
+            <input name="business_email" type="email" placeholder="Contact email">
             <input name="business_website" inputmode="url" placeholder="https:// website">
-            <button type="submit">Create Ad Account</button>
+            <button type="submit">Create Growth Profile</button>
           </form>
           <div class="account-list" data-account-list></div>
         </div>
@@ -89,13 +89,13 @@
       <section class="panel" id="wizard">
         <div class="panel-head">
           <div>
-            <p class="eyebrow">Draft Builder</p>
-            <h2>Campaign Wizard</h2>
+          <p class="eyebrow">AI-Assisted Growth</p>
+          <h2>Campaign Builder</h2>
           </div>
           <span class="status-chip">Autosave ready</span>
         </div>
         <form class="wizard-grid" data-campaign-form>
-          <label>Ad account<select name="ad_account_id" required data-account-select></select></label>
+          <label>Growth workspace<select name="ad_account_id" required data-account-select></select></label>
           <label>Objective<select name="objective"><option value="brand_awareness">Brand Awareness</option><option value="website_traffic">Website Traffic</option><option value="marketplace_sales">Marketplace Sales</option><option value="pulse_radio">Pulse Radio</option><option value="creator_promotion">Creator Promotion</option><option value="music_promotion">Music Promotion</option><option value="video_promotion">Video Promotion</option><option value="app_promotion">App Promotion</option><option value="event_promotion">Event Promotion</option><option value="hologram_campaign">UFO/Hologram Campaign</option></select></label>
           <label>Campaign name<input name="campaign_name" required maxlength="120" placeholder="Creator launch sequence"></label>
           <label>Budget type<select name="budget_type"><option value="daily">Daily</option><option value="lifetime">Lifetime</option></select></label>
@@ -118,8 +118,8 @@
       <section class="panel" id="creatives">
         <div class="panel-head">
           <div>
-            <p class="eyebrow">Moderation Safe Assets</p>
-            <h2>Creative Studio</h2>
+          <p class="eyebrow">Moderation Safe Assets</p>
+          <h2>Promotion Studio</h2>
           </div>
           <span class="status-chip">No self approval</span>
         </div>
@@ -136,7 +136,7 @@
               <div>
                 <p class="eyebrow">PulseSoc-secured media</p>
                 <strong data-upload-zone-title>Upload Image, Video, or Audio</strong>
-                <span data-upload-zone-help>Files are validated, stored by PulseSoc, scanned, and sent to moderation before delivery.</span>
+              <span data-upload-zone-help>Files are validated, stored by PulseSoc, scanned, and sent to moderation before promotion delivery.</span>
               </div>
               <label class="upload-button">Choose media<input type="file" data-creative-media-input accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/quicktime,video/webm,audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/ogg"></label>
             </div>
@@ -147,7 +147,7 @@
             </div>
             <progress data-creative-upload-progress value="0" max="100" hidden></progress>
             <div class="ad-upload-preview" data-creative-upload-preview>
-              <span class="muted">Preview appears after upload. Raw storage URLs are never requested from advertisers.</span>
+              <span class="muted">Preview appears after upload. Raw storage URLs are never shown in Growth Center.</span>
             </div>
           </div>
           <label class="wide">Destination URL<input name="destination_url" required inputmode="url" placeholder="https://"></label>
@@ -178,9 +178,9 @@
 
       <section class="panel split" id="wallet">
         <div>
-          <p class="eyebrow">Ad Wallet</p>
+          <p class="eyebrow">Promotion Wallet</p>
           <h2>Funding and Spend Ledger</h2>
-          <p class="muted">Campaigns draw from wallet balance and reserved budget. Stripe funding is web-only and only active when the server billing flag is enabled.</p>
+          <p class="muted">Campaigns draw from promotion credits, wallet balance, and reserved budget. Funding stays inactive until billing is configured and approved.</p>
           <form class="mini-form" data-wallet-funding-form>
             <select name="account_id" data-wallet-account-select></select>
             <input name="amount_cents" type="number" min="500" max="500000" step="100" value="2500" aria-label="Funding amount in cents">
@@ -218,7 +218,7 @@
             <p class="eyebrow">Creative Safety</p>
             <h2>Review Board</h2>
           </div>
-          <span class="status-chip">Advertiser view only</span>
+          <span class="status-chip">Owner scoped</span>
         </div>
         <div class="review-list" data-review-list></div>
       </section>
@@ -226,7 +226,7 @@
       <section class="panel" id="notifications">
         <div class="panel-head">
           <div>
-            <p class="eyebrow">Advertiser Alerts</p>
+            <p class="eyebrow">Growth Updates</p>
             <h2>Notifications</h2>
           </div>
           <span class="status-chip">Owner scoped</span>
@@ -253,7 +253,7 @@
           </article>
           <article class="portal-card">
             <h3>iOS compliance</h3>
-            <p>Advertiser wallet funding is blocked in native iOS until policy review is complete.</p>
+            <p>Promotion wallet funding is blocked in native iOS until policy review is complete.</p>
           </article>
         </div>
       </section>

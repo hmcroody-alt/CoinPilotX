@@ -104,7 +104,7 @@
     }
     if (preview) {
       clear(preview);
-      preview.appendChild(el("span", "muted", "Preview appears after upload. Raw storage URLs are never requested from advertisers."));
+      preview.appendChild(el("span", "muted", "Preview appears after upload. Raw storage URLs are never shown in Growth Center."));
     }
   }
 
@@ -135,7 +135,7 @@
     } else {
       const img = el("img", "ad-upload-media");
       img.src = thumb || url;
-      img.alt = "Uploaded ad creative preview";
+      img.alt = "Uploaded promotion preview";
       img.loading = "lazy";
       preview.appendChild(img);
     }
@@ -230,7 +230,7 @@
     setMetric("wallet_balance", metrics.wallet_balance || "$0.00");
     setMetric("reserved_budget", metrics.reserved_budget || "$0.00");
     const role = document.querySelector("[data-role-pill]");
-    if (role) role.textContent = ((state.portal && state.portal.roles && state.portal.roles.current) || "advertiser").replace(/_/g, " ");
+    if (role) role.textContent = ((state.portal && state.portal.roles && state.portal.roles.current) || "growth owner").replace(/_/g, " ");
   }
 
   function renderAccountLists() {
@@ -240,8 +240,8 @@
     clear(accountSelect);
     const accounts = (state.portal && state.portal.accounts) || [];
     if (!accounts.length) {
-      list.appendChild(el("div", "empty", "Create your first advertiser account using the existing Ads Accounts API, then build campaigns here."));
-      const option = el("option", "", "Create an ad account first");
+      list.appendChild(el("div", "empty", "Your Growth Engine is preparing. Refresh if this takes more than a moment."));
+      const option = el("option", "", "Growth workspace preparing");
       option.value = "";
       accountSelect.appendChild(option);
       return;
@@ -249,7 +249,7 @@
     accounts.forEach((account) => {
       if (!state.selectedAccountId) state.selectedAccountId = account.id;
       const card = el("article", "portal-card");
-      card.appendChild(el("h3", "", account.business_name || "Advertiser account"));
+      card.appendChild(el("h3", "", account.business_name || "Growth workspace"));
       card.appendChild(el("p", "", `${account.business_type || "Business"} · ${account.total_spend || "$0.00"} spend`));
       const row = el("div", "row");
       row.appendChild(pill(account.status || "pending", account.status === "active" ? "ok" : "warn"));
@@ -273,7 +273,7 @@
     const select = document.querySelector("[data-wallet-account-select]");
     clear(select);
     if (!accounts.length) {
-      const option = el("option", "", "Create an ad account first");
+      const option = el("option", "", "Growth workspace preparing");
       option.value = "";
       select.appendChild(option);
       return;
@@ -434,7 +434,7 @@
     clear(billing);
     const wallets = (state.portal && state.portal.wallets) || [];
     if (!wallets.length) {
-      board.appendChild(el("div", "empty", "Create an advertiser account to activate wallet controls."));
+      board.appendChild(el("div", "empty", "Your promotion wallet is being prepared."));
       billing.appendChild(el("div", "empty", "Receipts appear after successful wallet funding."));
       return;
     }
@@ -491,7 +491,7 @@
     clear(list);
     const rows = (state.portal && state.portal.notifications) || [];
     if (!rows.length) {
-      list.appendChild(el("div", "empty", "No advertiser notifications yet."));
+      list.appendChild(el("div", "empty", "No growth updates yet."));
       return;
     }
     rows.slice(0, 20).forEach((row) => {
@@ -517,7 +517,7 @@
   }
 
   async function loadPortal() {
-    const data = await jsonFetch("/api/pulse/ads/portal");
+    const data = await jsonFetch("/api/pulse/growth");
     state.portal = data.portal;
     renderAll();
   }
@@ -642,7 +642,7 @@
   loadPortal().catch((error) => {
     const main = document.querySelector(".ad-main");
     if (main) {
-      const box = el("div", "empty", error.message || "Advertiser portal failed to load.");
+      const box = el("div", "empty", error.message || "Growth Center failed to load.");
       main.insertBefore(box, main.firstChild);
     }
   });
