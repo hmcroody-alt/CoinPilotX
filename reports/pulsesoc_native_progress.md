@@ -45,6 +45,7 @@ Completed native foundations:
 - Native Alert Management QA Hardening: browser-verified alert validation, inline delete confirmation/cancel/confirm, pause/resume/duplicate/delete/test success and failure states, channel readiness success/failure states, long-history and empty-history states, alert deep links, preserved success notices after refresh, and selected-alert stability through the built-in QA browser with seeded alert fixtures.
 - Alert Provider + Device QA Setup: documented APNs/FCM/Expo push readiness, SMS/email/Telegram readiness, notification tap deep links, lock-screen behavior plan, physical-device alert test plan, provider success/failure states, channel readiness accuracy checks, delivery debugging logs, and the critical app identity split between `com.pulsesoc.nativeapp` and `com.pulsesoc.app`; selected `com.pulsesoc.nativeapp` as the native provider/device QA identity while protecting production `com.pulsesoc.app`; no provider/device delivery was claimed verified.
 - Native Camera Studio + Media Compression/Preview Foundation: native Camera Studio route/screen, `/pulse/camera/*` deep-link handling, camera config wrapper, preview wrapper, create-from-camera API wrappers, photo/video capture shell, front/back camera switch, microphone permission handling, gallery fallback, permission-denied and QA browser fallback states, caption/privacy/destination flow, compression policy metadata, shared upload handoff, Feed/Status/Reel/Profile/Messenger publishing hooks, and safe web fallback for advanced AR/Banuba/effects.
+- Native Camera Studio Device QA + Hardening: audited the native Camera Studio device-readiness boundary, confirmed the parallel `com.pulsesoc.nativeapp` camera/mic/photo configuration, documented that `simctl`, `adb`, physical iPhone, and physical Android access are unavailable in this environment, kept browser/simulator/physical-device verification separated, and blocked LiveKit calls until real Camera Studio device QA is completed.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -84,6 +85,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_alert_management_qa_hardening.md`
 - `reports/pulsesoc_alert_provider_device_qa_setup.md`
 - `reports/pulsesoc_native_camera_studio_progress.md`
+- `reports/pulsesoc_native_camera_studio_device_qa.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -117,6 +119,7 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_alert_management_qa_audit.py`
 - `scripts/pulsesoc_alert_provider_device_qa_audit.py`
 - `scripts/pulsesoc_native_camera_studio_audit.py`
+- `scripts/pulsesoc_native_camera_studio_device_qa_audit.py`
 
 ## Remaining Major Features
 
@@ -201,9 +204,9 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Action
 
-Recommendation: harden Native Camera Studio through QA before moving to Native LiveKit calls.
+Recommendation: unblock and execute Native Camera Studio real-device QA before moving to Native LiveKit calls.
 
-This is the highest-value next action based on the current codebase. Native Camera Studio is now implemented as a foundation, but camera, microphone, gallery permissions, video recording, compression behavior, and large uploads are device-sensitive. QA hardening should come before Native LiveKit calls or advanced editor expansion.
+This is the highest-value next action based on the current codebase. Native Camera Studio is implemented as a foundation and has a device-readiness audit, but camera, microphone, gallery permissions, video recording, compression behavior, and large uploads remain unverified on simulator and physical devices. Real-device QA must happen before Native LiveKit calls or advanced editor expansion.
 
 Provider/device QA for Alert Management remains a release blocker, especially APNs/FCM/Expo push delivery, installed-app notification taps, lock-screen presentation, SMS/email/Telegram delivery, and physical-device deep links. That work should continue before any release claim, but it is external-credential/device gated. Among buildable native features, Camera Studio gives the most leverage while reusing existing backend/media logic.
 
@@ -215,7 +218,7 @@ Provider/device QA for Alert Management remains a release blocker, especially AP
 - Production create-from-camera APIs already exist for posts and reels: `/api/pulse/posts/create-from-camera` and `/api/pulse/reels/create-from-camera`; Status Creator already has native publishing through existing Status APIs.
 - Production web camera includes capture modes, front/back camera, microphone toggle, flash/torch fallback, gallery fallback, lenses, beauty modes, filters, preview, privacy/caption, and destination routing.
 - Native already has `expo-camera`, `expo-image-picker`, `expo-file-system`, shared `useNativeMediaUpload`, `MediaUploadPreview`, Feed Composer, Status Creator, Profile uploads, Messenger attachments, Marketplace media viewer, and Creator Studio shortcuts.
-- Native now has a dedicated Camera Studio screen/route and deep link for `/pulse/camera/*`; the next risk is real-device validation, not more UI breadth.
+- Native now has a dedicated Camera Studio screen/route and deep link for `/pulse/camera/*`; the next risk is external device-tooling setup and real-device validation, not more UI breadth.
 - Native LiveKit calls are tempting because `@livekit/react-native` and `livekit-client` are installed and backend call APIs exist, but calls depend on reliable push/ringing, lock-screen behavior, microphone/camera permissions, background audio, and real-device QA that is still not established.
 - This recommendation is based on the current production routes/services and `mobile-native` implementation inspected on 2026-07-04.
 
@@ -253,6 +256,9 @@ Do not duplicate in native:
 
 ## What Must Be Hardened Next
 
+- Select full Xcode so `xcrun simctl` is available.
+- Install Android platform tools so `adb` is available.
+- Attach/trust a physical iPhone and attach/authorize a physical Android device.
 - QA browser route/layout sweep for `/pulse/camera`, `/pulse/camera/photo`, `/pulse/camera/video`, `/pulse/camera/status`, `/pulse/camera/reel`, and `/pulse/camera/post`.
 - Real-device camera permission accept/deny on iOS and Android.
 - Real-device microphone permission accept/deny for video capture.
@@ -276,7 +282,9 @@ Blockers:
 
 - Camera, microphone, gallery permissions, large-video handling, compression behavior, and upload memory pressure remain device-only and must not be claimed browser-verified.
 - `adb` is still not available in `PATH`.
-- `/usr/bin/xcrun` exists, but `xcrun simctl list devices available` previously failed because `simctl` was not available.
+- `/usr/bin/xcrun` exists, but `xcrun simctl list devices available` failed because `simctl` was not available from the active developer directory.
+- `xcode-select -p` points to `/Library/Developer/CommandLineTools`; full Xcode must be selected for simulator work.
+- No physical iPhone or Android device was visible through USB system profiling in this workspace.
 - No physical-device QA flow has been recorded in this workspace.
 - Provider/device Alert Management QA remains unverified for APNs/FCM/SMS/email/Telegram and should continue as a release-readiness track.
 - Native LiveKit calls should stay deferred until push/ringing/device QA is credible.
@@ -325,6 +333,6 @@ Defer from first slice:
 
 ## Recommendation Summary
 
-Recommended next highest-value action: Native Camera Studio QA hardening.
+Recommended next highest-value action: unblock and execute Native Camera Studio real-device QA.
 
-Reason: the production platform already has the camera/media routes, catalogs, validation, storage, preview, and create-from-camera business logic, and the native app now has a dedicated native camera foundation over those contracts. The remaining value is hardening route/layout behavior in the QA browser and proving camera/microphone/gallery/upload behavior on real devices before moving into higher-risk LiveKit calls.
+Reason: the production platform already has the camera/media routes, catalogs, validation, storage, preview, and create-from-camera business logic, and the native app now has a dedicated native camera foundation over those contracts. The remaining value is unblocking the machine/device setup and proving camera/microphone/gallery/upload behavior on real devices before moving into higher-risk LiveKit calls.
