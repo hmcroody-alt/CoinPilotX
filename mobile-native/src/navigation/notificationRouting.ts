@@ -66,6 +66,28 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  const livePathMatch = normalized.match(/^\/pulse\/live\/(\d+)/);
+  if (livePathMatch?.[1] && navigationRef.isReady()) {
+    navigationRef.navigate("LiveDetail", { liveId: Number(livePathMatch[1]), title: "Live" });
+    return { handled: true, target: normalized };
+  }
+
+  if (normalized.startsWith("/pulse/live/studio") && navigationRef.isReady()) {
+    const webTarget = `${PULSE_API_BASE_URL}${normalized}`;
+    await Linking.openURL(webTarget).catch(() => undefined);
+    return { handled: false, target: normalized, reason: "live_studio_web_fallback" };
+  }
+
+  if (normalized.startsWith("/pulse/live") && navigationRef.isReady()) {
+    const queryLiveId = extractNumericQueryValue(normalized, "live") || extractNumericQueryValue(normalized, "live_id");
+    if (queryLiveId) {
+      navigationRef.navigate("LiveDetail", { liveId: queryLiveId, title: "Live" });
+    } else {
+      navigationRef.navigate("Tabs", { screen: "Live" });
+    }
+    return { handled: true, target: normalized };
+  }
+
   if (normalized.startsWith("/pulse/messages") && normalized.includes("room=") && navigationRef.isReady()) {
     navigationRef.navigate("Tabs", { screen: "Groups" });
     return { handled: true, target: normalized, reason: "room_target" };
@@ -79,7 +101,10 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
 
   if (normalized.startsWith("/pulse/reels") && navigationRef.isReady()) {
     const queryReelId = extractNumericQueryValue(normalized, "reel") || extractNumericQueryValue(normalized, "reel_id");
-    if (queryReelId) {
+    const queryLiveId = extractNumericQueryValue(normalized, "live") || extractNumericQueryValue(normalized, "live_id");
+    if (queryLiveId) {
+      navigationRef.navigate("LiveDetail", { liveId: queryLiveId, title: "Live" });
+    } else if (queryReelId) {
       navigationRef.navigate("ReelDetail", { reelId: queryReelId, title: "Reel" });
     } else {
       navigationRef.navigate("Tabs", { screen: "Reels" });

@@ -30,6 +30,7 @@ Completed native foundations:
 - Saved Content + Collections Foundation: native Saved tab/route, saved item list, type filters, collection filters, create/rename/delete collection actions, remove/move saved item actions, saved search, offline cache, item deep-link routing, and `/pulse/saved` deep-link routing through existing saved APIs.
 - Groups/Communities + Rooms Foundation: native Groups tab/detail route, thin read-only group JSON bridge, communities browse/search, room rail, group detail, rules/member metadata, compact group feed preview, join/leave, report, group chat open, room open, offline cache, and group/room deep-link routing through existing group, room, and Messenger APIs.
 - Architecture Health Report + Shared Core Consolidation: native architecture audit, shared cache helper under `mobile-native/src/core/cache.ts`, first refactor of Groups/Saved/Marketplace cache wrappers, duplicate-pattern inventory, production WebView safety check, and next Live Discovery recommendation.
+- Live Discovery + Live Viewer Foundation: native Live tab/detail route, Live Now discovery through existing `/api/pulse/live-now`, native viewer shell using existing playback manifest URLs, join viewer state, chat read/send, reactions, viewer count/state refresh, offline cache, deep-link routing for Live links, and safe web fallback for Go Live/Studio/hosting/co-hosting/unsupported playback.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -54,6 +55,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_saved_progress.md`
 - `reports/pulsesoc_native_groups_progress.md`
 - `reports/pulsesoc_native_architecture_health.md`
+- `reports/pulsesoc_native_live_progress.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -72,11 +74,11 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_saved_audit.py`
 - `scripts/pulsesoc_native_groups_audit.py`
 - `scripts/pulsesoc_native_architecture_health_audit.py`
+- `scripts/pulsesoc_native_live_audit.py`
 
 ## Remaining Major Features
 
 - Advanced camera/compression/editor tools
-- Live discovery
 - Native LiveKit calls
 - Full-screen incoming calls
 - Growth Center
@@ -114,8 +116,8 @@ Existing backend/web surfaces inspected:
 - Search APIs and web bridge: `/api/pulse/search`, `/pulse/search`, `static/js/pulse_search_bridge.js`, and search handling in `static/js/pulse_home_core.js`
 - Saved APIs and web route: `/pulse/saved`, `GET/POST /api/pulse/saved`, saved collections, delete, and move endpoints
 - Groups and rooms routes: `/pulse/groups`, `/pulse/groups/create`, `/pulse/groups/<group_slug>`, `POST /api/pulse/groups/create`, join/leave APIs, chat-open APIs, invite/report/update/moderation APIs, group post/comment APIs, `pulse_default_room_cards()`, and `pulse_ensure_default_rooms(...)`
-- Live surfaces: `/pulse/live`, `/pulse/live/studio`, `/api/pulse/live/start`, `/api/pulse/live/<id>/state`, LiveKit direct playback fallback, Mux egress handling, live-session state, live chat, replay/feed insertion, and the existing live audit suite.
-- Current native reuse surface: repeated API wrappers, AsyncStorage cache functions, screen-level loading/empty/error/offline states, native/web fallback routing, card layouts, action busy states, media preview/viewer hooks, and tab/stack route patterns across Feed, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, and Groups.
+- Live surfaces: `/pulse/live`, `/pulse/live/studio`, `/api/pulse/live-now`, `/api/pulse/live/<id>/state`, `/api/pulse/live/<id>/join`, `/api/pulse/live/<id>/chat`, `/api/pulse/live/<id>/react`, LiveKit direct playback fallback, Mux egress handling, live-session state, live chat, replay/feed insertion, and the existing live audit suite.
+- Current native reuse surface: repeated API wrappers, AsyncStorage cache functions, screen-level loading/empty/error/offline states, native/web fallback routing, card layouts, action busy states, media preview/viewer hooks, tab/stack route patterns, and new Live viewer/discovery routing across Feed, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, Groups, and Live.
 
 Existing data/business logic that should remain server-authoritative:
 
@@ -147,27 +149,26 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Feature
 
-Recommendation: build Native Live Discovery + Live Viewer Foundation next.
+Recommendation: run Native Live Viewer Device QA + Hardening next.
 
-This should come before native Live hosting, native LiveKit calls, Creator Studio, Growth Center, and Premium.
+This should come before native Go Live, native LiveKit hosting, native calls, Creator Studio, Growth Center, and Premium.
 
 ## Why This Comes Next
 
-- Production already has Live routes, Live Studio, LiveKit/Mux bridge behavior, LiveKit direct fallback, live sessions, live chat, replay/feed insertion, and several focused live audits.
-- The native app now has the social prerequisites: Feed, Notifications, Profile, Search, Saved, Groups/Rooms, Messenger, Media Viewer, and the first shared-core cache cleanup.
-- Viewer/discovery is safer than native hosting because server-owned LiveKit/Mux/session state stays authoritative.
-- Hosting/Studio can remain a safe web fallback while native validates discovery, viewer routing, and supported playback paths first.
-- This recommendation is based on the current live backend plus native migration progress, not a predetermined roadmap.
+- Native Live now reaches the device-sensitive part of the migration: video playback, audio, chat keyboard behavior, app resume, and notification deep links.
+- Live hosting should not be built until viewer playback and fallback behavior are verified on simulator or real devices.
+- The current implementation intentionally keeps Go Live/Studio/hosting/co-hosting on web fallback, so the safest next move is to harden the viewer slice.
+- This recommendation is based on the current Live backend and native migration state after implementing the Live viewer foundation.
 
 ## Reusable Existing PulseSoc Logic
 
 Reuse directly:
 
-- Existing `/pulse/live`, `/pulse/live/studio`, `/api/pulse/live/start`, `/api/pulse/live/<id>/state`, and related LiveKit/Mux live API routes.
+- Existing `/pulse/live`, `/pulse/live/studio`, `/api/pulse/live-now`, `/api/pulse/live/<id>/state`, `/api/pulse/live/<id>/join`, `/api/pulse/live/<id>/chat`, `/api/pulse/live/<id>/react`, and related LiveKit/Mux live API routes.
 - Existing LiveKit/Mux bridge, direct fallback, egress handling, and playback URL selection behavior.
 - Existing live session, live chat, live destination, replay, and feed insertion database/services.
 - Existing moderation, notification, profile, and feed insertion behavior.
-- Existing native navigation, notification routing, Search/Saved/Profile/Messenger/Media Viewer integrations, and shared `readJsonCache`/`writeJsonCache` cache helpers.
+- Existing native Live API wrapper/screen, navigation, notification routing, Search/Saved/Profile/Messenger/Media Viewer integrations, and shared `readJsonCache`/`writeJsonCache` cache helpers.
 
 Do not duplicate in native:
 
@@ -180,29 +181,29 @@ Do not duplicate in native:
 
 ## What Must Be Rebuilt Natively
 
-- Native Live discovery screen.
-- Live session cards and rails.
-- Live viewer shell.
-- Native playback for supported HLS/Mux/LiveKit direct payloads.
-- Chat/read-only interaction hooks where existing APIs support them.
-- Loading, empty, offline, and error states.
-- Notification/search/profile routing into native Live where supported.
-- Web fallback for Go Live, Studio, cohost, restream, and unsupported playback modes.
+- Real-device/simulator QA for Live discovery.
+- Real-device/simulator QA for HLS playback and unsupported playback fallback.
+- Chat keyboard and send/read verification.
+- Reaction and viewer-count refresh verification.
+- Notification/deep-link routing into Live detail.
+- Foreground/background recovery.
+- Fixes for blockers found during QA only.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Confirm live API and route payload shape for discovery and viewer state.
-- Confirm playback URL fields for HLS/Mux/LiveKit direct fallback.
-- Confirm chat/read-only behavior and whether viewer chat is safe to expose before native hosting.
-- Preserve Studio/Go Live web fallback.
+- Simulator or real-device access.
+- Authenticated account with access to PulseSoc Live APIs.
+- At least one active or replayable Live session with supported playback URL, or a controlled staging fixture.
+- Continued Studio/Go Live web fallback.
 
 Blockers:
 
-- Device video playback and background/resume behavior still require simulator or real-device verification.
+- Device video playback and background/resume behavior remain unverified in this environment.
 - LiveKit egress quota or source-state issues can affect Mux HLS availability.
-- Native hosting, cohost, camera, mic, and restream controls are intentionally out of scope for the first viewer slice.
+- No backend viewer-leave endpoint was found; native leave is currently local close/leave state only.
+- Native hosting, cohost, camera, mic, and restream controls remain out of scope.
 
 ## Risk Level
 
@@ -210,22 +211,21 @@ Risk: Medium-high.
 
 Reasons:
 
-- Live playback has more device-specific behavior than feed/profile/search screens.
-- Risk stays controlled by making discovery/viewer read-first and leaving Studio/hosting on the existing web fallback.
-- Backend risk stays low if native only consumes existing live state and playback contracts.
+- Live playback and audio are device-specific and cannot be fully proven by TypeScript/static audits.
+- Chat and keyboard behavior need small-device QA.
+- Backend risk stays low because hardening should keep server-owned LiveKit/Mux/session state authoritative.
 
 ## Estimated Complexity
 
-Complexity: Medium-high.
+Complexity: Medium.
 
 Recommended first slice:
 
-- Inspect live routes and payloads.
-- Build read-only native discovery first.
-- Build viewer only for supported playback payloads.
-- Add native chat/read-only hooks only where existing APIs support them cleanly.
+- Exercise the existing Live tab and LiveDetail route on simulator/real device.
+- Test supported playback URLs, unsupported fallback, chat, reactions, join, local leave, and refresh.
+- Verify notification/deep links for `/pulse/live/<id>` and `/pulse/reels?live=<id>`.
+- Fix only QA blockers in the current viewer slice.
 - Keep Go Live/Studio/cohost/restream on web fallback.
-- Add a focused native Live audit and document unverified device playback behavior honestly.
 
 Defer from first slice:
 
@@ -237,15 +237,15 @@ Defer from first slice:
 
 ## Safest Implementation Plan
 
-1. Inspect current production live routes, APIs, playback fields, and live audit evidence.
-2. Add a native Live API wrapper that only consumes existing backend payloads.
-3. Build a read-only Live Discovery screen using existing cards/loading/cache conventions.
-4. Build a Live Viewer shell for supported playback URLs only.
-5. Route unsupported host/Studio/cohost/restream states to the existing web fallback.
-6. Wire notification/search/profile navigation into native Live where payloads are supported.
-7. Add a native Live progress report and static audit.
-8. Run the standard native verification suite and document device-only playback gaps.
+1. Run the native app on simulator or real device.
+2. Verify Live discovery loads from existing `/api/pulse/live-now`.
+3. Verify LiveDetail state refresh, join, chat, reactions, share, and local leave.
+4. Verify HLS/Mux playback where the server exposes a supported playback URL.
+5. Verify unsupported LiveKit direct/cohost/Studio states open web fallback.
+6. Verify notification/deep-link routing.
+7. Fix only blockers found during QA.
+8. Update the Live QA report and keep native hosting out of scope.
 
 ## Recommendation Summary
 
-Build Native Live Discovery + Live Viewer Foundation next. It is the highest-leverage next step because the backend already has substantial LiveKit/Mux/live-session infrastructure, while the native app now has enough navigation, media, profile, notification, search, and shared-cache infrastructure to add a viewer slice without taking on native hosting risk.
+Run Native Live Viewer Device QA + Hardening next. The Live viewer foundation now exists, but Live playback and foreground/background behavior are device-sensitive enough that the next checkpoint should verify and harden this slice before any native hosting, calls, Creator Studio, Growth, or Premium expansion.

@@ -11,6 +11,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
           Search: "pulse/search",
           Saved: "pulse/saved",
           Groups: "pulse/groups",
+          Live: "pulse/live",
           Reels: "pulse/reels",
           Status: "pulse/status",
           Messenger: "pulse/messages",
@@ -63,6 +64,12 @@ export const linking: LinkingOptions<RootStackParamList> = {
       },
       GroupDetail: {
         path: "pulse/groups/:groupSlug"
+      },
+      LiveDetail: {
+        path: "pulse/live/:liveId",
+        parse: {
+          liveId: Number
+        }
       },
       ProfileEdit: {
         path: "pulse/profile/edit"

@@ -10,6 +10,7 @@ export type AppTabParamList = {
   Search: { query?: string } | undefined;
   Saved: undefined;
   Groups: undefined;
+  Live: undefined;
   Reels: undefined;
   Status: undefined;
   Messenger: undefined;
@@ -31,6 +32,7 @@ export type RootStackParamList = {
   Search: { query?: string; title?: string } | undefined;
   Saved: undefined;
   GroupDetail: { groupSlug: string; title?: string };
+  LiveDetail: { liveId: number; title?: string };
   ProfileDetail: { profileKey?: string; title?: string } | undefined;
   ProfileEdit: undefined;
   NotificationCenter: undefined;

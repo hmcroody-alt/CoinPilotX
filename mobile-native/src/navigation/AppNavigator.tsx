@@ -6,6 +6,7 @@ import { AppState } from "react-native";
 import { getNotificationBadgeCounts, unreadCount } from "../api/notifications";
 import { GroupsScreen } from "../screens/GroupsScreen";
 import { HomeScreen } from "../screens/HomeScreen";
+import { LiveScreen } from "../screens/LiveScreen";
 import { MarketplaceScreen } from "../screens/MarketplaceScreen";
 import { MessengerScreen } from "../screens/MessengerScreen";
 import { NotificationCenterScreen } from "../screens/NotificationCenterScreen";
@@ -68,6 +69,7 @@ function TabNavigator() {
       <Tabs.Screen name="Search" component={SearchScreen} />
       <Tabs.Screen name="Saved" component={SavedScreen} />
       <Tabs.Screen name="Groups" component={GroupsScreen} />
+      <Tabs.Screen name="Live" component={LiveScreen} />
       <Tabs.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />
       <Tabs.Screen name="Status" component={StatusScreen} />
       <Tabs.Screen name="Messenger" component={MessengerScreen} />
@@ -99,6 +101,7 @@ export function AppNavigator() {
       <Stack.Screen name="Search" component={SearchScreen} options={({ route }) => ({ title: route.params?.title || "Search" })} />
       <Stack.Screen name="Saved" component={SavedScreen} options={{ title: "Saved" }} />
       <Stack.Screen name="GroupDetail" component={GroupsScreen} options={({ route }) => ({ title: route.params?.title || "Community" })} />
+      <Stack.Screen name="LiveDetail" component={LiveScreen} options={({ route }) => ({ title: route.params?.title || "Live" })} />
       <Stack.Screen name="ProfileDetail" component={ProfileScreen} options={({ route }) => ({ title: route.params?.title || "Profile" })} />
       <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} options={{ title: "Edit Profile" }} />
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} options={{ title: "Notifications" }} />
