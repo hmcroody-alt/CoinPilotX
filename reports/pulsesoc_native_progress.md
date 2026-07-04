@@ -36,6 +36,7 @@ Completed native foundations:
 - Creator Studio Foundation: native Creator Studio route, creator state through `/api/dashboard/creator/state`, Creator AI hooks through `/api/pulse/creator-ai/<tool>`, Content Planner draft save through `/api/dashboard/content-planner/item`, creator metric/recommendation cards, Premium eligibility messaging, shortcuts into existing native composer/status/reels/profile/premium surfaces, and safe web fallback for unsupported Studio/Live/monetization tools.
 - Growth Center Foundation: native Growth Center route, read-only growth state through `/api/pulse/growth`, server-owned growth score/status cards, wallet/budget summary, audience/targeting preview, campaign overview, analytics snapshot, Feed/Post/Reel/Profile promote shortcuts, Settings entry, `/pulse/growth` and `/pulse/promote` routing, offline cache, and safe web fallback for campaign launch, wallet funding, billing, targeting, ad review, and unsupported promotion tools.
 - Intelligence + Alerts Foundation: native Intelligence route, server-owned intelligence state through `/api/dashboard/intelligence/state`, crypto/market alert list through `/api/crypto/alerts`, stream/forecast cards, alert overview/detail, notification badge summary, Premium/Growth/Creator/Search/Profile navigation, offline cache, `/dashboard/intelligence` and `/dashboard/crypto/alerts` deep-link routing, and safe web fallback for advanced intelligence, provider administration, collector management, alert creation/editing, and unsupported operations.
+- Feature Parity + QA Readiness Report: native-vs-WebView parity matrix across core PulseSoc surfaces, route/deep-link inventory, backend reuse assessment, QA blocker inventory, recommended hardening order, release readiness statement, and device-QA-first next action.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -66,6 +67,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_creator_progress.md`
 - `reports/pulsesoc_native_growth_progress.md`
 - `reports/pulsesoc_native_intelligence_progress.md`
+- `reports/pulsesoc_native_feature_parity_qa_readiness.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -90,6 +92,7 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_creator_audit.py`
 - `scripts/pulsesoc_native_growth_audit.py`
 - `scripts/pulsesoc_native_intelligence_audit.py`
+- `scripts/pulsesoc_native_feature_parity_audit.py`
 
 ## Remaining Major Features
 
@@ -97,7 +100,7 @@ Completed supporting reports/audits:
 - Native LiveKit calls
 - Full-screen incoming calls
 - Crypto/market alerts
-- Native feature parity QA readiness checkpoint
+- Device QA/tooling setup and hardening pass
 
 ## Codebase Reconnaissance
 
@@ -169,29 +172,29 @@ Existing data/business logic that should remain server-authoritative:
 - intelligence state, alert rules, crypto/market event evaluation, notification delivery eligibility, alert dedupe windows, premium intelligence gates, and market/crypto data interpretation
 - native QA browser/device validation status, feature parity gaps, release blockers, and WebView replacement readiness
 
-## Recommended Next Feature
+## Recommended Next Action
 
-Recommendation: create Native Feature Parity + QA Readiness Report next.
+Recommendation: device QA setup.
 
 This should come before another major native module.
 
 ## Why This Comes Next
 
-- The native app now covers most major PulseSoc pillars, including Feed, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, Groups, Live viewer, Premium, Creator Studio, Growth, and Intelligence.
-- The user has shifted the migration into QA-driven development.
-- Continuing to add feature modules without browser/device QA increases integration risk.
-- A parity report can compare current WebView PulseSoc against native coverage and produce an evidence-based hardening order.
-- This recommendation is based on the current production and `mobile-native` migration state after the Intelligence + Alerts checkpoint.
+- The parity report shows that native code breadth is no longer the main blocker.
+- Real-device readiness is still low because Expo web, Android tooling, iOS simulator tooling, and a physical device flow are not available in the current workspace.
+- Push, deep links, camera/media permissions, background recovery, Reels/Status playback, Live viewer behavior, billing/provider return flows, and offline cache behavior are device-sensitive.
+- Continuing to add feature modules without at least one working QA route increases rework and release risk.
+- This recommendation is based on the current production and `mobile-native` migration state after the Feature Parity + QA Readiness checkpoint.
 
 ## Reusable Existing PulseSoc Logic
 
 Reuse directly:
 
-- Existing native progress reports and audit scripts.
-- Existing production route inventory in `bot.py`.
-- Existing native screens, API wrappers, cache helpers, notification routing, deep-link routing, and fallback patterns.
-- Existing production feature inventory reports where available.
-- Existing backend route/database/service ownership for Feed, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, Groups, Live, Premium, Creator, Growth, Intelligence, Calls, Camera, and Settings.
+- Existing `mobile-native` automated verification suite.
+- Existing native progress reports and the parity QA readiness report.
+- Existing Expo native scripts: `npm run ios`, `npm run android`, and `npm run typecheck`.
+- Existing native route/deep-link coverage and notification routing.
+- Existing feature audit scripts for targeted regression checks.
 
 Do not duplicate in native:
 
@@ -199,40 +202,41 @@ Do not duplicate in native:
 - WebView behavior assumptions.
 - Device/browser QA claims that were not actually tested.
 - Production route behavior.
+- Browser-only dependencies unless the team intentionally chooses Expo web as a QA target.
 
-## What Must Be Rebuilt Natively
+## What Must Be Set Up
 
-- A native-vs-WebView feature parity report.
-- A QA readiness matrix.
-- A missing-feature and fallback inventory.
-- A browser/device verification status table.
-- A release-blocker list before replacing any WebView surfaces.
-- A hardening order for the next native QA passes.
-- An audit script that verifies the report exists and covers the major PulseSoc pillars.
+- At least one real native QA path:
+  - iOS simulator with working `xcrun simctl`, or
+  - Android emulator/device with working `adb`, or
+  - Physical-device Expo Go/EAS development build flow with logs.
+- A repeatable smoke checklist for login, session restore, notifications, deep links, feed, messenger, media upload, Reels, Status, Live viewer, Premium return flows, Growth, Intelligence, and offline cache.
+- A place to record QA issues and fixes per feature before new major feature work resumes.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Current native reports and audit scripts must be present.
-- Production route inventory must be inspected again.
-- `mobile-native` navigation, screens, API wrappers, and fallback surfaces must be inspected again.
+- Xcode developer tools or Android platform tools must be installed/configured.
+- If browser QA is desired, Expo web dependencies must be intentionally added and accepted as part of the native project.
+- A physical device flow needs Expo Go or an EAS development build plus log capture.
 
 Blockers:
 
-- Real iOS/Android device behavior cannot be marked verified without simulator/device access.
-- QA browser validation depends on launching the Expo app or a supported local target.
-- Some PulseSoc features still intentionally use web fallback and should not be counted as native-complete.
+- `npx expo start --web --port 8094` fails because `react-native-web@~0.19.10`, `react-dom@18.2.0`, and `@expo/metro-runtime@~3.2.3` are not installed.
+- `adb` is not available in `PATH`.
+- `/usr/bin/xcrun` exists, but `xcrun simctl list devices available` fails because `simctl` is not available.
+- No physical-device QA flow has been recorded in this workspace.
 
 ## Risk Level
 
-Risk: Low.
+Risk: Medium.
 
 Reasons:
 
-- This is a reporting/audit checkpoint.
-- Risk comes from inaccurate inventory, not production behavior.
-- No WebView production routes should be changed.
+- Device QA setup can uncover real product blockers across many native features.
+- Tooling changes should be kept separate from production WebView routes.
+- Adding Expo web dependencies is optional and should be deliberate because the product target is native/hybrid-native.
 
 ## Estimated Complexity
 
@@ -240,12 +244,11 @@ Complexity: Medium.
 
 Recommended first slice:
 
-- Inspect production PulseSoc feature surfaces.
-- Inspect `mobile-native` screens, API wrappers, routes, reports, and audits.
-- Build a feature parity matrix.
-- Add QA-driven development checklist and per-feature QA status.
-- Identify highest-risk remaining gaps and hardening order.
-- Add static audit for report completeness.
+- Pick the preferred QA route: iOS simulator, Android emulator/device, physical device, or intentional Expo web.
+- Configure only that route first.
+- Launch the app and run a smoke path.
+- Record blockers in the relevant QA report.
+- Fix only blockers found during QA.
 
 Defer from first slice:
 
@@ -256,15 +259,15 @@ Defer from first slice:
 
 ## Safest Implementation Plan
 
-1. Inspect production PulseSoc routes, services, and existing platform inventory.
-2. Inspect `mobile-native` screens, API wrappers, navigation, cache helpers, reports, and audit scripts.
-3. Build a parity matrix across major PulseSoc pillars.
-4. Mark each feature as native-ready, partial native, web fallback, missing, or device-QA required.
-5. Identify highest-risk regressions before replacing WebView surfaces.
-6. Add a QA-driven development checklist and hardening order.
-7. Add report and audit script.
-8. Run the standard verification suite.
+1. Decide whether device QA starts with iOS simulator, Android emulator/device, or a physical device.
+2. Install/configure the missing tooling for that route.
+3. Launch the native app.
+4. Run the core smoke path: login/session restore, notifications, deep links, feed, messenger, media upload, Reels, Status, Live viewer, Premium, Growth, Intelligence, Settings.
+5. Record issues with root causes.
+6. Fix only blockers found during QA.
+7. Repeat until no significant blockers remain.
+8. Commit/push the QA setup and fixes with scoped staging.
 
 ## Recommendation Summary
 
-Create Native Feature Parity + QA Readiness Report next. The native app has enough breadth that the highest-value work is now an evidence-based parity and QA checkpoint before more major feature expansion.
+Recommended next action: device QA setup. The parity report shows the native app has enough feature breadth; the highest-value work is now establishing a real QA path and hardening verified blockers before more major feature expansion.
