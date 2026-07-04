@@ -4,6 +4,7 @@ import * as Notifications from "expo-notifications";
 import { useCallback, useEffect, useState } from "react";
 import { AppState } from "react-native";
 import { getNotificationBadgeCounts, unreadCount } from "../api/notifications";
+import { AlertManagementScreen } from "../screens/AlertManagementScreen";
 import { CreatorStudioScreen } from "../screens/CreatorStudioScreen";
 import { GrowthCenterScreen } from "../screens/GrowthCenterScreen";
 import { GroupsScreen } from "../screens/GroupsScreen";
@@ -112,6 +113,8 @@ export function AppNavigator() {
       <Stack.Screen name="CreatorStudio" component={CreatorStudioScreen} options={{ title: "Creator Studio" }} />
       <Stack.Screen name="GrowthCenter" component={GrowthCenterScreen} options={{ title: "Growth Center" }} />
       <Stack.Screen name="IntelligenceCenter" component={IntelligenceCenterScreen} options={({ route }) => ({ title: route.params?.title || "Intelligence" })} />
+      <Stack.Screen name="AlertManagement" component={AlertManagementScreen} options={({ route }) => ({ title: route.params?.title || "Alerts" })} />
+      <Stack.Screen name="CryptoAlertManagement" component={AlertManagementScreen} options={({ route }) => ({ title: route.params?.title || "Alerts" })} />
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} options={{ title: "Notifications" }} />
       <Stack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} options={{ title: "Notification Preferences" }} />
     </Stack.Navigator>

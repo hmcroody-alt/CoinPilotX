@@ -39,6 +39,8 @@ export type RootStackParamList = {
   CreatorStudio: undefined;
   GrowthCenter: { contentType?: string; contentId?: number | string; title?: string } | undefined;
   IntelligenceCenter: { alertId?: number; subsystem?: string; title?: string } | undefined;
+  AlertManagement: { alertId?: number; title?: string } | undefined;
+  CryptoAlertManagement: { alertId?: number; alert_id?: number; id?: number; title?: string } | undefined;
   NotificationCenter: undefined;
   NotificationPreferences: undefined;
 };

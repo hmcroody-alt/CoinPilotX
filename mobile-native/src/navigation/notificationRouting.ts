@@ -180,9 +180,10 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
-  if ((normalized.startsWith("/dashboard/crypto/alerts") || normalized.startsWith("/pulse/crypto/alerts")) && navigationRef.isReady()) {
+  if ((normalized.startsWith("/dashboard/crypto/alerts") || normalized.startsWith("/pulse/crypto/alerts") || normalized.startsWith("/pulse/alerts")) && navigationRef.isReady()) {
     const alertId = extractNumericQueryValue(normalized, "alert_id") || extractNumericQueryValue(normalized, "id");
-    navigationRef.navigate("IntelligenceCenter", { alertId: alertId || undefined, title: alertId ? "Alert Detail" : "Alerts" });
+    const pathAlertId = normalized.match(/^\/pulse\/alerts\/(\d+)/)?.[1];
+    navigationRef.navigate("AlertManagement", { alertId: alertId || Number(pathAlertId || 0) || undefined, title: alertId || pathAlertId ? "Alert Detail" : "Alerts" });
     return { handled: true, target: normalized };
   }
 

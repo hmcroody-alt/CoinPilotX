@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   alertConditionLabel,
-  alertWebPath,
   getIntelligenceState,
   IntelligenceCard,
   IntelligenceState,
@@ -129,7 +128,7 @@ export function IntelligenceCenterScreen({ route, navigation }: Props) {
       {selectedAlert ? (
         <Panel>
           <Text style={styles.sectionTitle}>Alert detail</Text>
-          <AlertRow alert={selectedAlert} selected onOpen={() => openIntelligenceWebFallback(alertWebPath(selectedAlert.id)).catch(() => undefined)} />
+          <AlertRow alert={selectedAlert} selected onOpen={() => navigation.navigate("AlertManagement", { alertId: selectedAlert.id, title: "Alert Detail" })} />
         </Panel>
       ) : null}
 
@@ -161,9 +160,10 @@ export function IntelligenceCenterScreen({ route, navigation }: Props) {
             key={alert.id}
             alert={alert}
             selected={alert.id === alertId}
-            onOpen={() => navigation.navigate("IntelligenceCenter", { alertId: alert.id, title: "Alert Detail" })}
+            onOpen={() => navigation.navigate("AlertManagement", { alertId: alert.id, title: "Alert Detail" })}
           />
         )) : <Text style={styles.muted}>No crypto or market alerts returned by the backend.</Text>}
+        <Action label="Manage Alerts" onPress={() => navigation.navigate("AlertManagement", { title: "Alerts" })} />
       </Panel>
 
       <Panel>
@@ -174,6 +174,7 @@ export function IntelligenceCenterScreen({ route, navigation }: Props) {
           <Action label="Growth" onPress={() => navigation.navigate("GrowthCenter")} />
           <Action label="Premium" onPress={() => navigation.navigate("Premium")} />
           <Action label="Creator Studio" onPress={() => navigation.navigate("CreatorStudio")} />
+          <Action label="Alert Management" onPress={() => navigation.navigate("AlertManagement", { title: "Alerts" })} />
           <Action label="Search" onPress={() => navigation.navigate("Search", { title: "Search" })} />
           <Action label="Profile" onPress={() => navigation.navigate("ProfileDetail", undefined)} />
         </View>
@@ -184,7 +185,7 @@ export function IntelligenceCenterScreen({ route, navigation }: Props) {
         <Text style={styles.muted}>Advanced editing, provider administration, collector management, intelligence sources, and unsupported alert operations stay on existing PulseSoc web flows.</Text>
         <View style={styles.actionGrid}>
           <Action label="Open Intelligence Web" onPress={() => openIntelligenceWebFallback("/dashboard/intelligence").catch(() => undefined)} />
-          <Action label="Manage Alerts" onPress={() => openIntelligenceWebFallback("/dashboard/crypto/alerts").catch(() => undefined)} />
+          <Action label="Manage Alerts" onPress={() => navigation.navigate("AlertManagement", { title: "Alerts" })} />
           <Action label="Create Alert" onPress={() => openIntelligenceWebFallback("/dashboard/crypto/alerts/create").catch(() => undefined)} />
         </View>
       </Panel>

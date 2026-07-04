@@ -88,6 +88,20 @@ export const linking: LinkingOptions<RootStackParamList> = {
       IntelligenceCenter: {
         path: "dashboard/intelligence/:subsystem?"
       },
+      AlertManagement: {
+        path: "pulse/alerts/:alertId?",
+        parse: {
+          alertId: Number
+        }
+      },
+      CryptoAlertManagement: {
+        path: "dashboard/crypto/alerts",
+        parse: {
+          alertId: Number,
+          alert_id: Number,
+          id: Number
+        }
+      },
       NotificationCenter: {
         path: "notifications"
       },
