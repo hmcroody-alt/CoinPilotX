@@ -1718,16 +1718,19 @@
           <strong>Choose a chat to begin.</strong>
           <small>Your conversations and composer open instantly here.</small>
         </div>`;
+      syncMessengerMediaViewer();
       return;
     }
     if (state.threadHydrating && !state.messages.length) {
       messages.innerHTML = `<div class="message-skeletons" aria-label="Loading recent messages"><span></span><span></span><span></span></div>`;
+      syncMessengerMediaViewer();
       return;
     }
     if (!state.messages.length) {
       messages.innerHTML = activeIsAI
         ? `<div class="thread-welcome-state pulse-ai-welcome"><span class="messenger-orb large" aria-hidden="true"></span><strong>Pulse AI is ready.</strong><small>Ask about Messenger, Reels, Status, calls, music, alerts, notifications, privacy, or how to explore PulseSoc.</small>${pulseAIQuickPromptsHtml()}${pulseAIPrivacyPanelHtml()}</div>`
         : `<div class="empty-state">No messages here yet. Send the first one.</div>`;
+      syncMessengerMediaViewer();
       return;
     }
     const older = state.hasOlder ? `<button class="load-older" type="button" data-load-older>Load older messages</button>` : "";
@@ -1743,7 +1746,28 @@
     window.requestAnimationFrame(() => {
       document.querySelectorAll("[data-voice-message]").forEach(bindVoiceAudio);
       if (window.PulseMediaRenderer) window.PulseMediaRenderer.hydrate(messages);
+      syncMessengerMediaViewer();
     });
+  }
+
+  function bindMessengerMediaViewer() {
+    if (!window.PulseMessengerMediaViewer) return;
+    window.PulseMessengerMediaViewer.bind(messages || document, {
+      getGallery: currentMessengerMediaGallery,
+      getScrollContainer: () => messages,
+      onReply: (item) => startReply(Number(item.message_id || 0)),
+      onReact: (item, reaction) => reactToMessage(Number(item.message_id || 0), reaction || "heart"),
+      onForward: (item) => forwardMessage(Number(item.message_id || 0)),
+      onReport: async (item, reason) => {
+        await api(`/messages/${Number(item.message_id || 0)}/report`, {
+          method: "POST",
+          body: JSON.stringify({ reason: reason || "media_report" }),
+        }, "media_report");
+        setStatus("Media report sent to moderation.");
+      },
+      setStatus,
+    });
+    syncMessengerMediaViewer();
   }
 
   function renderTrustBadges() {
@@ -1874,10 +1898,116 @@
     `).join("");
   }
 
+  function attachmentMediaUrl(item) {
+    return item?.playback_url || item?.url || item?.cdn_url || item?.download_url || item?.signed_url || item?.media_url || item?.thumbnail_url || "";
+  }
+
+  function attachmentThumbUrl(item) {
+    return item?.thumbnail_url || item?.poster_url || item?.thumb_url || attachmentMediaUrl(item);
+  }
+
+  function isImageAttachment(item) {
+    const type = String(item?.media_type || item?.mime_type || item?.type || "").toLowerCase();
+    const url = String(attachmentMediaUrl(item) || "").toLowerCase();
+    return type.includes("image") || type.includes("photo") || type.includes("gif") || /\.(jpg|jpeg|png|webp|gif|avif)(?:[?#].*)?$/i.test(url);
+  }
+
+  function messageMediaItems(message) {
+    const items = Array.isArray(message?.attachments) ? message.attachments.map((item) => ({ ...item })) : [];
+    const mediaUrl = message?.media_url || message?.playback_url || "";
+    if (mediaUrl && !items.some((item) => attachmentMediaUrl(item) === mediaUrl)) {
+      items.push({
+        id: message.media_id || message.message_id || message.id,
+        message_id: message.id || message.message_id,
+        conversation_id: message.conversation_id || state.active?.conversation_id || 0,
+        media_type: message.message_type || message.type || "image",
+        mime_type: message.mime_type || "",
+        url: mediaUrl,
+        playback_url: message.playback_url || "",
+        thumbnail_url: message.thumbnail_url || mediaUrl,
+        filename: message.filename || "PulseSoc media",
+        file_size: message.file_size || 0,
+      });
+    }
+    return items;
+  }
+
+  function mediaViewerId(message, item, index) {
+    const conversationId = Number(message?.conversation_id || state.active?.conversation_id || 0);
+    const messageId = Number(message?.id || message?.message_id || 0);
+    const attachmentId = item?.attachment_id || item?.media_upload_id || item?.media_id || item?.id || index;
+    return `${conversationId || "conversation"}:${messageId || "message"}:${attachmentId || index}`;
+  }
+
+  function currentMessengerMediaGallery() {
+    const gallery = [];
+    (state.messages || []).forEach((message) => {
+      messageMediaItems(message).forEach((item, index) => {
+        if (!isImageAttachment(item)) return;
+        const url = attachmentMediaUrl(item);
+        if (!url) return;
+        gallery.push({
+          ...item,
+          viewer_id: mediaViewerId(message, item, index),
+          message_id: Number(message.id || message.message_id || 0),
+          conversation_id: Number(message.conversation_id || state.active?.conversation_id || 0),
+          sender_name: message.sender?.display_name || message.sender_display_name || (message.is_mine ? "You" : "PulseSoc member"),
+          created_at: message.created_at || item.created_at || "",
+          high_url: url,
+          url,
+          thumbnail_url: attachmentThumbUrl(item),
+          filename: item.filename || item.original_filename || "PulseSoc image",
+          media_type: item.media_type || message.message_type || "image",
+          can_download: item._local ? false : item.can_download !== false,
+          can_forward: !message._pending && !message._failed,
+          can_share: true,
+        });
+      });
+    });
+    return gallery;
+  }
+
+  function syncMessengerMediaViewer() {
+    if (!window.PulseMessengerMediaViewer) return;
+    window.PulseMessengerMediaViewer.refresh(currentMessengerMediaGallery(), {
+      conversationId: Number(state.active?.conversation_id || 0),
+    });
+  }
+
+  function messengerImageAttachmentHtml(item, message, index, url) {
+    const thumb = attachmentThumbUrl(item) || url;
+    const viewerId = mediaViewerId(message, item, index);
+    const senderName = message.sender?.display_name || message.sender_display_name || (message.is_mine ? "You" : "PulseSoc member");
+    const filename = item.filename || item.original_filename || "PulseSoc image";
+    return `
+      <button
+        class="messenger-media-thumb"
+        type="button"
+        data-messenger-media-viewer-trigger
+        data-media-viewer-id="${escapeAttr(viewerId)}"
+        data-media-id="${escapeAttr(item.media_id || item.attachment_id || item.id || "")}"
+        data-attachment-id="${escapeAttr(item.attachment_id || item.id || "")}"
+        data-message-id="${escapeAttr(message.id || message.message_id || "")}"
+        data-conversation-id="${escapeAttr(message.conversation_id || state.active?.conversation_id || "")}"
+        data-media-index="${escapeAttr(index)}"
+        data-media-url="${escapeAttr(url)}"
+        data-media-full-url="${escapeAttr(url)}"
+        data-media-thumb="${escapeAttr(thumb)}"
+        data-media-type="${escapeAttr(item.media_type || message.message_type || "image")}"
+        data-sender-name="${escapeAttr(senderName)}"
+        data-created-at="${escapeAttr(message.created_at || item.created_at || "")}"
+        data-filename="${escapeAttr(filename)}"
+        aria-label="Open image from ${escapeAttr(senderName)} full screen"
+      >
+        <img src="${escapeAttr(thumb)}" data-full-src="${escapeAttr(url)}" alt="Image from ${escapeAttr(senderName)}" loading="lazy" decoding="async">
+      </button>
+    `;
+  }
+
   function messageHtml(item) {
     const mine = Number(item.sender_user_id || 0) === currentUserId || item.is_mine;
     const aiMessage = Boolean(item.is_ai || Number(item.sender_user_id || 0) === PULSE_AI_USER_ID);
-    const attachments = (item.attachments || []).map(attachmentHtml).join("");
+    const attachments = messageMediaItems(item).map((attachment, index) => attachmentHtml(attachment, item, index)).join("");
     const shield = riskScan(item.body || "");
     const reactionLabels = { heart: "❤️", fire: "🔥", check: "✓" };
     const reactionKeys = { "❤️": "heart", "♥️": "heart", "🔥": "fire", "✓": "check", "✅": "check", heart: "heart", fire: "fire", check: "check" };
@@ -1907,9 +2037,10 @@
     `;
   }
 
-  function attachmentHtml(item) {
-    const url = item.playback_url || item.url || item.cdn_url || item.thumbnail_url || "";
+  function attachmentHtml(item, message = {}, index = 0) {
+    const url = attachmentMediaUrl(item);
     if (!url) return "";
+    if (isImageAttachment(item)) return messengerImageAttachmentHtml(item, message, index, url);
     if (!shouldAutoLoadAttachment(item)) {
       const label = (item.media_type || item.mime_type || "attachment").replace("/", " ");
       return `<a class="attachment-manual-load" href="${escapeAttr(url)}" target="_blank" rel="noopener">Open ${escapeHtml(label)}</a>`;
@@ -4214,6 +4345,7 @@
   }
 
   bind();
+  bindMessengerMediaViewer();
   setMobileMode(isMobile() ? "list" : "desktop");
   sendPresenceHeartbeat();
   schedulePresenceHeartbeat();

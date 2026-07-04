@@ -2473,29 +2473,43 @@ def list_messages(user_id: int, conversation_ref: int | str, filters: dict | Non
         raw_messages = list(reversed(fetched))
         messages = _message_payloads(cur, raw_messages, user_id)
         now = _now()
-        for message in raw_messages:
-            if int(message.get("sender_user_id") or 0) != int(user_id):
-                cur.execute(
-                    """
-                    INSERT OR IGNORE INTO comm_v2_read_receipts
-                    (message_id, conversation_id, user_id, delivered_at, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (int(message.get("id") or 0), conversation_id, int(user_id), now, now, now),
-                )
-                cur.execute(
-                    "UPDATE comm_v2_read_receipts SET delivered_at=COALESCE(NULLIF(delivered_at,''), ?), updated_at=? WHERE message_id=? AND user_id=?",
-                    (now, now, int(message.get("id") or 0), int(user_id)),
-                )
         oldest_message_id = int(raw_messages[0].get("id") or 0) if raw_messages else 0
         latest_incoming = next(
             (message for message in reversed(raw_messages) if int(message.get("sender_user_id") or 0) != int(user_id)),
             None,
         )
         typing = typing_state(user_id, conversation_id, existing_conn=(conn, cur)).get("typing") or []
-        mark_read(user_id, conversation_id, existing_conn=(conn, cur), commit=False)
-        conn.commit()
-        if latest_incoming:
+        read_state_committed = False
+        try:
+            for message in raw_messages:
+                if int(message.get("sender_user_id") or 0) != int(user_id):
+                    cur.execute(
+                        """
+                        INSERT OR IGNORE INTO comm_v2_read_receipts
+                        (message_id, conversation_id, user_id, delivered_at, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (int(message.get("id") or 0), conversation_id, int(user_id), now, now, now),
+                    )
+                    cur.execute(
+                        "UPDATE comm_v2_read_receipts SET delivered_at=COALESCE(NULLIF(delivered_at,''), ?), updated_at=? WHERE message_id=? AND user_id=?",
+                        (now, now, int(message.get("id") or 0), int(user_id)),
+                    )
+            mark_read(user_id, conversation_id, existing_conn=(conn, cur), commit=False)
+            conn.commit()
+            read_state_committed = True
+        except Exception as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            logging.info(
+                "COMM_V2_READ_STATE_DEFERRED user_id=%s conversation_id=%s error=%s",
+                int(user_id),
+                conversation_id,
+                exc.__class__.__name__,
+            )
+        if latest_incoming and read_state_committed:
             _dispatch_command_center_async(
                 "enqueue_message_delivered",
                 conversation_id,
