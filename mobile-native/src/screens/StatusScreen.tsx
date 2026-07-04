@@ -28,6 +28,7 @@ import {
   trackStatusView
 } from "../api/status";
 import { StatusCreator } from "../components/StatusCreator";
+import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
 import { StatusViewerCard } from "../components/StatusViewerCard";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
@@ -259,17 +260,27 @@ function StatusRailBubble({ status, onPress }: { status: PulseStatus; onPress: (
 }
 
 function StatusListCard({ status, onPress }: { status: PulseStatus; onPress: (status: PulseStatus) => void }) {
+  const [viewerOpen, setViewerOpen] = useState(false);
   const kind = statusMediaKind(status);
   const url = statusMediaUrl(status);
   const music = statusMusicLabel(status);
+  const viewerItems = (status.media || []).map((media) =>
+    mediaViewerItemFromPulseMedia(media, {
+      title: status.author?.display_name || status.author_name || "PulseSoc Status",
+      subtitle: status.body || "Status media",
+      author: status.author,
+      sourceUrl: pulseStatusUrl(status.id)
+    })
+  );
   return (
-    <Pressable style={styles.card} onPress={() => onPress(status)}>
+    <Pressable style={styles.card} onPress={() => onPress(status)} onLongPress={() => (viewerItems.length ? setViewerOpen(true) : undefined)}>
       {kind === "image" && url ? <Image source={{ uri: url }} style={styles.cardMedia} /> : null}
       <View style={styles.cardScrim} />
       <Text style={styles.cardAuthor}>{status.author?.display_name || status.author_name || "PulseSoc member"}</Text>
       <Text style={styles.cardBody} numberOfLines={3}>{status.body || (kind === "video" ? "Video Status" : "PulseSoc Status")}</Text>
       {music ? <Text style={styles.cardMeta} numberOfLines={1}>{music}</Text> : null}
       <Text style={styles.cardMeta}>{formatShortTime(status.created_at)} · {status.reaction_count || 0} reactions · {status.reply_count || 0} replies</Text>
+      <NativeMediaViewer visible={viewerOpen} items={viewerItems} title="Status media" onClose={() => setViewerOpen(false)} />
     </Pressable>
   );
 }

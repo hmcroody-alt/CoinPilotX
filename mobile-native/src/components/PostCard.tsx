@@ -1,5 +1,7 @@
-import { Image, Linking, Pressable, Share, StyleSheet, Text, View } from "react-native";
+import { useMemo, useState } from "react";
+import { Image, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import { mediaDisplayUrl, mediaKind, PulsePost, pulsePostUrl } from "../api/feed";
+import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "./NativeMediaViewer";
 import { colors } from "../theme/colors";
 import { compactPreview, formatShortTime } from "../utils/format";
 
@@ -103,6 +105,20 @@ export function PostCard({ post, detail, busy, onOpen, onReact, onSave, onRepost
 }
 
 function MediaStrip({ post }: { post: PulsePost }) {
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const author = post.author || {};
+  const viewerItems = useMemo(
+    () =>
+      (post.media || []).map((media) =>
+        mediaViewerItemFromPulseMedia(media, {
+          title: post.title || "PulseSoc post media",
+          subtitle: post.body || "PulseSoc media",
+          author,
+          sourceUrl: pulsePostUrl(post.id)
+        })
+      ),
+    [author, post.body, post.id, post.media, post.title]
+  );
   if (!post.media?.length) return null;
   return (
     <View style={styles.mediaWrap}>
@@ -110,15 +126,33 @@ function MediaStrip({ post }: { post: PulsePost }) {
         const url = mediaDisplayUrl(media);
         const kind = mediaKind(media);
         if (kind === "image") {
-          return <Image key={`${url}-${index}`} source={{ uri: url }} style={styles.mediaImage} resizeMode="cover" />;
+          return (
+            <Pressable key={`${url}-${index}`} onPress={(event) => {
+              event.stopPropagation();
+              setViewerIndex(index);
+            }}>
+              <Image source={{ uri: url }} style={styles.mediaImage} resizeMode="cover" />
+            </Pressable>
+          );
         }
         return (
-          <Pressable key={`${url}-${index}`} style={styles.mediaFallback} onPress={() => Linking.openURL(pulsePostUrl(post.id)).catch(() => undefined)}>
+          <Pressable key={`${url}-${index}`} style={styles.mediaFallback} onPress={(event) => {
+            event.stopPropagation();
+            setViewerIndex(index);
+          }}>
             <Text style={styles.mediaFallbackTitle}>{kind === "video" ? "Video" : "Attachment"}</Text>
-            <Text style={styles.mediaFallbackText}>Open in PulseSoc</Text>
+            <Text style={styles.mediaFallbackText}>Open viewer</Text>
           </Pressable>
         );
       })}
+      <NativeMediaViewer
+        visible={viewerIndex !== null}
+        items={viewerItems}
+        initialIndex={viewerIndex || 0}
+        title="Post media"
+        onClose={() => setViewerIndex(null)}
+        onShare={() => Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined)}
+      />
     </View>
   );
 }

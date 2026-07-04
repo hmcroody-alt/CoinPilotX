@@ -32,6 +32,7 @@ import {
   uploadMessengerMedia
 } from "../api/messenger";
 import { PULSE_API_BASE_URL } from "../api/config";
+import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatFileSize, formatShortTime } from "../utils/format";
@@ -425,12 +426,29 @@ function MessageBubble({ message, onRetry }: { message: MessengerMessage; onRetr
 }
 
 function MessageMedia({ message }: { message: MessengerMessage }) {
+  const [viewerOpen, setViewerOpen] = useState(false);
   const type = (message.message_type || "text").toLowerCase();
   const mediaUrl = absoluteMediaUrl(message.media_url);
   const thumbnailUrl = absoluteMediaUrl(message.thumbnail_url || message.media_url);
   if (!mediaUrl) return null;
+  const viewerItem: NativeMediaViewerItem = {
+    id: Number(message.id || message.message_id || 0),
+    kind: type === "video" ? "video" : type === "image" || type === "gif" ? "image" : "file",
+    url: mediaUrl,
+    thumbnailUrl,
+    title: type === "video" ? "Video attachment" : type === "image" || type === "gif" ? "Image attachment" : "Messenger attachment",
+    subtitle: message.body || statusLabel(message.local_status || message.delivery_status || "sent", message.seen_at),
+    sourceUrl: mediaUrl
+  };
   if (type === "image" || type === "gif") {
-    return <Image source={{ uri: thumbnailUrl || mediaUrl }} style={styles.image} resizeMode="cover" />;
+    return (
+      <>
+        <Pressable onPress={() => setViewerOpen(true)}>
+          <Image source={{ uri: thumbnailUrl || mediaUrl }} style={styles.image} resizeMode="cover" />
+        </Pressable>
+        <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title="Messenger media" onClose={() => setViewerOpen(false)} />
+      </>
+    );
   }
   if (type === "voice" || type === "audio") {
     return (
@@ -441,10 +459,11 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
     );
   }
   return (
-    <View style={styles.attachment}>
+    <Pressable style={styles.attachment} onPress={() => (type === "video" ? setViewerOpen(true) : undefined)}>
       <Text style={styles.attachmentTitle}>{type === "video" ? "Video attachment" : "File attachment"}</Text>
-      <Text style={styles.attachmentMeta}>{formatFileSize(message.file_size)}</Text>
-    </View>
+      <Text style={styles.attachmentMeta}>{type === "video" ? "Open viewer" : formatFileSize(message.file_size)}</Text>
+      <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title="Messenger media" onClose={() => setViewerOpen(false)} />
+    </Pressable>
   );
 }
 

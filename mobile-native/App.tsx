@@ -2,6 +2,7 @@ import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppNavigator } from "./src/navigation/AppNavigator";
 import { AuthNavigator } from "./src/navigation/AuthNavigator";
 import { linking } from "./src/navigation/linking";
@@ -46,11 +47,13 @@ export default function App() {
   }
 
   return (
-    <AuthContext.Provider value={auth}>
-      <NavigationContainer ref={navigationRef} theme={theme} linking={linking}>
-        <StatusBar style="light" />
-        {authState.status === "signedIn" ? <AppNavigator /> : <AuthNavigator />}
-      </NavigationContainer>
-    </AuthContext.Provider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthContext.Provider value={auth}>
+        <NavigationContainer ref={navigationRef} theme={theme} linking={linking}>
+          <StatusBar style="light" />
+          {authState.status === "signedIn" ? <AppNavigator /> : <AuthNavigator />}
+        </NavigationContainer>
+      </AuthContext.Provider>
+    </GestureHandlerRootView>
   );
 }
