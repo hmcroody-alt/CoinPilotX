@@ -8,6 +8,7 @@ export type AuthStackParamList = {
 export type AppTabParamList = {
   Home: undefined;
   Reels: undefined;
+  Status: undefined;
   Messenger: undefined;
   Notifications: undefined;
   PulseAI: undefined;
@@ -21,6 +22,7 @@ export type RootStackParamList = {
   PostDetail: { postId: number; title?: string };
   Reels: { reelId?: number; title?: string } | undefined;
   ReelDetail: { reelId: number; title?: string };
+  StatusDetail: { statusId: number; title?: string };
   ProfileDetail: { profileKey?: string; title?: string } | undefined;
   ProfileEdit: undefined;
   NotificationCenter: undefined;

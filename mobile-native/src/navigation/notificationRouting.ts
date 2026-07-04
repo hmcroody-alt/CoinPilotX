@@ -60,6 +60,28 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  const statusMatch = normalized.match(/^\/pulse\/status\/(\d+)/);
+  if (statusMatch?.[1] && navigationRef.isReady()) {
+    navigationRef.navigate("StatusDetail", { statusId: Number(statusMatch[1]), title: "Status" });
+    return { handled: true, target: normalized };
+  }
+
+  const mobileStatusMatch = normalized.match(/^\/status\/(\d+)/);
+  if (mobileStatusMatch?.[1] && navigationRef.isReady()) {
+    navigationRef.navigate("StatusDetail", { statusId: Number(mobileStatusMatch[1]), title: "Status" });
+    return { handled: true, target: normalized };
+  }
+
+  if (normalized.startsWith("/pulse/status") && navigationRef.isReady()) {
+    const queryStatusId = extractNumericQueryValue(normalized, "status_id") || extractNumericQueryValue(normalized, "status");
+    if (queryStatusId) {
+      navigationRef.navigate("StatusDetail", { statusId: queryStatusId, title: "Status" });
+    } else {
+      navigationRef.navigate("Tabs", { screen: "Status" });
+    }
+    return { handled: true, target: normalized };
+  }
+
   if (normalized === "/pulse/messages" && navigationRef.isReady()) {
     navigationRef.navigate("Tabs", { screen: "Messenger" });
     return { handled: true, target: normalized };
