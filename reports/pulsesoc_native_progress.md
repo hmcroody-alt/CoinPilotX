@@ -32,6 +32,7 @@ Completed native foundations:
 - Architecture Health Report + Shared Core Consolidation: native architecture audit, shared cache helper under `mobile-native/src/core/cache.ts`, first refactor of Groups/Saved/Marketplace cache wrappers, duplicate-pattern inventory, production WebView safety check, and next Live Discovery recommendation.
 - Live Discovery + Live Viewer Foundation: native Live tab/detail route, Live Now discovery through existing `/api/pulse/live-now`, native viewer shell using existing playback manifest URLs, join viewer state, chat read/send, reactions, viewer count/state refresh, offline cache, deep-link routing for Live links, and safe web fallback for Go Live/Studio/hosting/co-hosting/unsupported playback.
 - Live Viewer Device QA + Hardening: documented unavailable simulator/device tooling, added AppState foreground recovery for Live state/chat/list refresh, added playback failure fallback state, guarded host/profile navigation from empty profile keys, preserved safe web fallback for Studio/hosting/co-hosting/calls, and kept device-only playback claims unverified.
+- Premium + Entitlements Foundation: native Premium route, server-authoritative status display through `/api/premium/status`, Founder/Premium badge display, entitlement list, cached fallback, app-resume refresh, existing checkout/billing portal provider handoff, Settings/Profile entry points, `/pulse/premium` deep-link routing, and explicit no-local-entitlement boundary.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -58,6 +59,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_architecture_health.md`
 - `reports/pulsesoc_native_live_progress.md`
 - `reports/pulsesoc_native_live_device_qa.md`
+- `reports/pulsesoc_native_premium_progress.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -78,6 +80,7 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_architecture_health_audit.py`
 - `scripts/pulsesoc_native_live_audit.py`
 - `scripts/pulsesoc_native_live_device_qa_audit.py`
+- `scripts/pulsesoc_native_premium_audit.py`
 
 ## Remaining Major Features
 
@@ -88,7 +91,6 @@ Completed supporting reports/audits:
 - Crypto/market alerts
 - Intelligence Center
 - Creator Studio
-- Premium/entitlements
 
 ## Codebase Reconnaissance
 
@@ -121,7 +123,9 @@ Existing backend/web surfaces inspected:
 - Groups and rooms routes: `/pulse/groups`, `/pulse/groups/create`, `/pulse/groups/<group_slug>`, `POST /api/pulse/groups/create`, join/leave APIs, chat-open APIs, invite/report/update/moderation APIs, group post/comment APIs, `pulse_default_room_cards()`, and `pulse_ensure_default_rooms(...)`
 - Live surfaces: `/pulse/live`, `/pulse/live/studio`, `/api/pulse/live-now`, `/api/pulse/live/<id>/state`, `/api/pulse/live/<id>/join`, `/api/pulse/live/<id>/chat`, `/api/pulse/live/<id>/react`, LiveKit direct playback fallback, Mux egress handling, live-session state, live chat, replay/feed insertion, and the existing live audit suite.
 - Premium/entitlement surfaces: `/api/premium/status`, `/api/premium/checkout`, `/api/premium/billing-portal`, `/api/dashboard/economy/state`, Stripe hosted checkout/portal routes, `premium_entitlement_service`, `premium_capability_engine`, `premium_identity_engine`, `pulse_premium_profiles`, `pulse_subscriptions`, and `pulse_premium_entitlements`.
-- Current native reuse surface: repeated API wrappers, AsyncStorage cache functions, screen-level loading/empty/error/offline states, native/web fallback routing, card layouts, action busy states, media preview/viewer hooks, tab/stack route patterns, and new Live viewer/discovery routing across Feed, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, Groups, and Live.
+- Creator surfaces: `GET /api/dashboard/creator/state`, `/dashboard/creator`, `/dashboard/creator/posts`, `/dashboard/creator/reels`, `/dashboard/creator/videos`, `/dashboard/creator/statuses`, `/dashboard/creator/live-studio`, `/pulse/creator/dashboard`, `/pulse/creator-studio`, `/pulse/creator/analytics`, and `POST /api/pulse/creator-ai/<tool>`.
+- Creator logic: `services/dashboard_creator_command_center.py`, creator cards/subsystems, owner-scoped creator metrics, content/moderation/processing summaries, creator event-bus recommendations, and creator AI hook routing.
+- Current native reuse surface: repeated API wrappers, shared cache functions, screen-level loading/empty/error/offline states, native/web fallback routing, card layouts, action busy states, media preview/viewer hooks, tab/stack route patterns, Premium status/handoff patterns, and routing across Feed, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, Groups, Live, and Premium.
 
 Existing data/business logic that should remain server-authoritative:
 
@@ -151,69 +155,71 @@ Existing data/business logic that should remain server-authoritative:
 - shared native routing, caching, error, card, and media-viewer behavior that should be consolidated before deeper Live/Calls/Premium work
 - LiveKit/Mux session authority, live room state, live chat, replay creation, feed insertion, destination handling, and creator/host permissions
 - premium subscription status, founder membership, entitlement grants/revocation, profile themes, premium badges, billing portal eligibility, and Stripe checkout state
+- creator dashboard state, creator metrics, moderation/review counts, media processing state, creator AI provider routing, creator recommendations, and creator monetization/payout decisions
 
 ## Recommended Next Feature
 
-Recommendation: build Native Premium + Entitlements Foundation next.
+Recommendation: build Native Creator Studio Foundation next.
 
-This should come before native Go Live, native LiveKit hosting, native calls, Creator Studio, Growth Center, and advanced creator monetization.
+This should come before Growth Center, native Go Live, native LiveKit hosting, native calls, and advanced creator monetization.
 
 ## Why This Comes Next
 
-- Live viewer has been hardened as far as static/local QA can safely prove, but hosting/calls still require real-device playback validation.
-- Premium/entitlement state already exists server-side and is used by Profile, themes, badges, creator readiness, billing, and marketplace/premium surfaces.
-- Native Profile, Settings, Notifications, Feed, Marketplace, and future Creator Studio need a consistent entitlement layer for feature parity.
-- Premium can use safe web/provider checkout and billing portal fallback without rebuilding payment logic in native.
-- This recommendation is based on the current premium backend and native migration state after the Live viewer hardening checkpoint.
+- Premium/Entitlements is now available natively, so creator capabilities can show active/locked/unavailable state without duplicating entitlement logic.
+- The backend already exposes owner-scoped Creator Studio state through `GET /api/dashboard/creator/state`.
+- Existing native Feed Composer, Status Creator, Reels, Media Upload, Media Viewer, Live viewer, Marketplace, Profile, Search, and Premium screens are the exact building blocks Creator Studio needs.
+- Creator Studio is higher leverage than Growth Center because it organizes creation workflows already built natively and can keep Go Live/hosting on safe web fallback.
+- This recommendation is based on the current creator backend and native migration state after the Premium foundation checkpoint.
 
 ## Reusable Existing PulseSoc Logic
 
 Reuse directly:
 
-- Existing `GET /api/premium/status`.
-- Existing `POST /api/premium/checkout`.
-- Existing `POST /api/premium/billing-portal`.
-- Existing `GET /api/dashboard/economy/state`.
-- Existing `premium_entitlement_service`, `premium_capability_engine`, `premium_identity_engine`, and premium visibility helpers.
-- Existing `pulse_premium_profiles`, `pulse_subscriptions`, `pulse_premium_entitlements`, `premium_entitlements`, and checkout attempt/payment audit records.
-- Existing Stripe hosted checkout and billing portal routes.
-- Existing native Profile, Settings, Marketplace web/provider handoff pattern, notification routing, API/cache helpers, and loading/error/offline patterns.
+- Existing `GET /api/dashboard/creator/state`.
+- Existing `/pulse/creator/dashboard` and `/pulse/creator-studio` route behavior.
+- Existing `POST /api/pulse/creator-ai/<tool>`.
+- Existing `services/dashboard_creator_command_center.py` creator metrics, subsystem cards, recommendations, and event-bus summaries.
+- Existing post, Reel, video, Status, Live, moderation, media processing, and creator score database reads.
+- Existing Premium status/entitlement display for locked/active creator capability state.
+- Existing native Feed Composer, Status Creator, Reels, Media Upload, Media Viewer, Live viewer, Profile, Marketplace, Search, routing, cache, and loading/error patterns.
 
 Do not duplicate in native:
 
 - Backend business logic.
-- Stripe checkout/session creation.
-- Billing portal/session creation.
-- Premium entitlement grants/revocation.
-- Founder membership rules.
-- Premium visibility, badge, theme, creator readiness, or marketplace entitlement decisions.
-- Payment, refund, webhook, and provider business logic.
+- Creator score calculations.
+- Creator metric aggregation.
+- Moderation/review decisions.
+- Processing state decisions.
+- Creator AI provider routing or prompt policy.
+- Premium/creator entitlement checks.
+- Creator monetization, payout, payment, refund, webhook, and provider business logic.
 
 ## What Must Be Rebuilt Natively
 
-- Native Premium/Entitlements screen.
-- Plan/subscription/founder status display.
-- Entitlement-aware feature cards.
-- Profile/theme/badge surfacing where existing APIs support it.
-- Settings/Profile entry points.
-- Checkout and billing portal buttons that open existing safe web/provider flows.
-- Loading, empty, error, offline, locked, active, unavailable, and provider-not-configured states.
+- Native Creator Studio dashboard screen.
+- Creator metric and recommendation cards.
+- Creator content shortcuts into existing native creation/playback surfaces.
+- Creator AI tool form using existing backend hooks.
+- Premium/locked capability display using native Premium status.
+- Processing, moderation, empty, offline, loading, and error states.
+- Deep-link routing for `/pulse/creator/dashboard` and `/pulse/creator-studio`.
+- Web fallback for unsupported Studio tools, payouts, monetization, and native Live hosting.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Confirm premium status payload shape and dashboard economy state payload.
-- Confirm iOS/native checkout boundary and route all paid-digital checkout through approved existing web/provider flows.
-- Confirm Profile/theme/badge payload availability.
-- Preserve existing Stripe webhook, checkout, billing portal, and entitlement services.
+- Confirm `GET /api/dashboard/creator/state` payload shape.
+- Confirm creator AI hook response shape for `hook`, `caption`, `virality`, and `live-title`.
+- Reuse existing Premium state for capability gating.
+- Reuse existing native upload, media viewer, composer, routing, cache, and error components.
 
 Blockers:
 
-- Native paid-digital UX must avoid duplicating payment/provider logic.
-- Checkout availability can be provider/config dependent.
-- Some premium cards may need unavailable/locked states if backend payloads do not expose full detail.
-- App Store policy may require careful checkout routing depending on surface and product type.
+- Native Live hosting remains deferred.
+- Creator monetization, payouts, paid courses, and in-app purchases require separate payment-policy planning.
+- Some Studio web tools may need web fallback until native equivalents exist.
+- Creator AI requires backend availability and should degrade safely if provider routing is unavailable.
 
 ## Risk Level
 
@@ -221,42 +227,42 @@ Risk: Medium.
 
 Reasons:
 
-- Payment-adjacent UI is high-consequence, but risk stays medium if native only displays server-owned status and opens existing provider/web flows.
-- Backend risk stays low because native should not create checkout sessions, entitlements, or billing state locally.
-- UX risk is moderate because locked/active/unavailable states must be clear and policy-safe.
+- Creator Studio touches many product surfaces, but backend risk stays medium if native only reads owner-scoped creator state and calls existing creator AI hooks.
+- UX risk is moderate because this becomes a central workflow surface.
+- Payment, payout, entitlement, and Live hosting risk stays contained if those flows remain web/provider fallback in the first slice.
 
 ## Estimated Complexity
 
-Complexity: Medium.
+Complexity: Medium-high.
 
 Recommended first slice:
 
-- Inspect premium status, checkout, billing portal, and dashboard economy payloads.
-- Build read-only premium status first.
-- Add entitlement cards from server-owned status only.
-- Add web/provider checkout and billing portal handoff.
-- Wire Settings/Profile entry points.
-- Add a static audit that verifies no native Stripe/payment logic or entitlement grants are implemented.
+- Inspect creator state and creator AI payloads.
+- Build read-only Creator Studio dashboard first.
+- Add native navigation shortcuts into existing creator-related native screens.
+- Add creator AI form with safe error states.
+- Add Premium-aware locked/active capability cards.
+- Add static audit that verifies no native creator ranking, monetization, payout, or entitlement logic is duplicated.
 
 Defer from first slice:
 
-- In-app purchase implementation.
-- Native Stripe SDK or local payment calculations.
-- Entitlement grants/revocation.
-- Refund/dispute flows.
-- Creator Studio monetization tools beyond status display.
+- Native Live hosting.
+- Creator payouts and monetization writes.
+- Scheduling writes if the backend contract is not clear.
+- Local creator score calculations.
+- In-app purchase or native payment work.
 
 ## Safest Implementation Plan
 
-1. Inspect `/api/premium/status`, `/api/premium/checkout`, `/api/premium/billing-portal`, and `/api/dashboard/economy/state` payloads.
-2. Add a native premium API wrapper that only consumes existing backend status and provider handoff URLs.
-3. Build a native Premium/Entitlements screen with active, locked, unavailable, and provider-not-configured states.
-4. Wire Settings/Profile entry points and deep links where supported.
-5. Open checkout and billing portal through existing safe web/provider handoff only.
+1. Inspect `GET /api/dashboard/creator/state`, `/pulse/creator/dashboard`, `/pulse/creator-studio`, and `POST /api/pulse/creator-ai/<tool>`.
+2. Add a native creator API wrapper that reads existing creator state and calls creator AI hooks only.
+3. Build native Creator Studio dashboard cards from server-owned metrics and recommendations.
+4. Reuse existing native navigation into Feed Composer, Reels, Status Creator, Media Upload, Marketplace, Live viewer, Premium, and Profile.
+5. Add web fallback for unsupported Creator Studio tools, payouts, monetization, scheduling, and Live hosting.
 6. Add progress report and audit script.
 7. Run the standard native verification suite.
-8. Keep payments, entitlements, Stripe webhooks, and billing business logic server-authoritative.
+8. Keep creator metrics, moderation, monetization, payouts, entitlements, and AI provider behavior server-authoritative.
 
 ## Recommendation Summary
 
-Build Native Premium + Entitlements Foundation next. The backend already owns subscription, founder, entitlement, billing portal, Stripe checkout, premium profile/theme, and capability state, and the native app now needs a server-authoritative Premium layer before Creator Studio, Growth, native hosting, or calls create more gated surfaces.
+Build Native Creator Studio Foundation next. The backend already owns owner-scoped creator state, creator metrics, moderation/processing summaries, creator AI hooks, premium entitlement checks, and creator routes, and the native app now has enough reusable creation/media/profile/premium infrastructure to make Creator Studio a high-leverage native orchestration layer without touching Live hosting or payment logic.

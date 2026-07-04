@@ -155,6 +155,11 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  if (normalized.startsWith("/pulse/premium") && navigationRef.isReady()) {
+    navigationRef.navigate("Premium");
+    return { handled: true, target: normalized };
+  }
+
   const marketplacePathMatch = normalized.match(/^\/pulse\/marketplace\/(\d+)/);
   if (marketplacePathMatch?.[1] && navigationRef.isReady()) {
     navigationRef.navigate("MarketplaceDetail", { listingId: Number(marketplacePathMatch[1]), title: "Marketplace" });

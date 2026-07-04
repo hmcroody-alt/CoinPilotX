@@ -31,6 +31,9 @@ export function SettingsScreen() {
         <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("NotificationPreferences")}>
           <Text style={styles.secondaryText}>Notification preferences</Text>
         </Pressable>
+        <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("Premium")}>
+          <Text style={styles.secondaryText}>Premium and entitlements</Text>
+        </Pressable>
         <Text style={styles.muted}>Camera, microphone, media compression, and LiveKit call controls are Phase 2/3 QA-gated.</Text>
       </Panel>
       <Panel>

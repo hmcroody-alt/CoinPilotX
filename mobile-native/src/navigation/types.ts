@@ -35,6 +35,7 @@ export type RootStackParamList = {
   LiveDetail: { liveId: number; title?: string };
   ProfileDetail: { profileKey?: string; title?: string } | undefined;
   ProfileEdit: undefined;
+  Premium: undefined;
   NotificationCenter: undefined;
   NotificationPreferences: undefined;
 };

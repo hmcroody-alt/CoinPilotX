@@ -77,6 +77,9 @@ export const linking: LinkingOptions<RootStackParamList> = {
       ProfileDetail: {
         path: "pulse/profile/:profileKey"
       },
+      Premium: {
+        path: "pulse/premium"
+      },
       NotificationCenter: {
         path: "notifications"
       },

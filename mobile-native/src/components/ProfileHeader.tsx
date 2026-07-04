@@ -7,10 +7,11 @@ type ProfileHeaderProps = {
   publicKey?: string;
   owner?: boolean;
   onEdit?: () => void;
+  onPremium?: () => void;
   onRefresh?: () => void;
 };
 
-export function ProfileHeader({ profile, publicKey, owner, onEdit, onRefresh }: ProfileHeaderProps) {
+export function ProfileHeader({ profile, publicKey, owner, onEdit, onPremium, onRefresh }: ProfileHeaderProps) {
   const handle = profile.username || profile.public_player_id || publicKey || "";
   const premium = Boolean(profile.premium_status && profile.premium_status !== "inactive");
   const verified = Boolean(profile.verified_badge || profile.verification_status === "verified");
@@ -56,6 +57,11 @@ export function ProfileHeader({ profile, publicKey, owner, onEdit, onRefresh }: 
             <Text style={styles.primaryText}>Share Profile</Text>
           </Pressable>
         )}
+        {owner ? (
+          <Pressable style={styles.secondaryButton} onPress={onPremium}>
+            <Text style={styles.secondaryText}>Premium</Text>
+          </Pressable>
+        ) : null}
         <Pressable style={styles.secondaryButton} onPress={onRefresh}>
           <Text style={styles.secondaryText}>Refresh</Text>
         </Pressable>

@@ -100,6 +100,7 @@ export function ProfileScreen({ route, navigation }: Props) {
             publicKey={profileKey}
             owner={owner}
             onEdit={() => navigation?.navigate("ProfileEdit")}
+            onPremium={() => navigation?.navigate("Premium")}
             onRefresh={() => load("refresh").catch(() => undefined)}
           />
           <View style={styles.tabs}>

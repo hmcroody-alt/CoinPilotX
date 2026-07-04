@@ -12,6 +12,7 @@ import { MessengerScreen } from "../screens/MessengerScreen";
 import { NotificationCenterScreen } from "../screens/NotificationCenterScreen";
 import { NotificationPreferencesScreen } from "../screens/NotificationPreferencesScreen";
 import { PostDetailScreen } from "../screens/PostDetailScreen";
+import { PremiumScreen } from "../screens/PremiumScreen";
 import { ProfileEditScreen } from "../screens/ProfileEditScreen";
 import { PulseAiScreen } from "../screens/PulseAiScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
@@ -104,6 +105,7 @@ export function AppNavigator() {
       <Stack.Screen name="LiveDetail" component={LiveScreen} options={({ route }) => ({ title: route.params?.title || "Live" })} />
       <Stack.Screen name="ProfileDetail" component={ProfileScreen} options={({ route }) => ({ title: route.params?.title || "Profile" })} />
       <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} options={{ title: "Edit Profile" }} />
+      <Stack.Screen name="Premium" component={PremiumScreen} options={{ title: "Premium" }} />
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} options={{ title: "Notifications" }} />
       <Stack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} options={{ title: "Notification Preferences" }} />
     </Stack.Navigator>
