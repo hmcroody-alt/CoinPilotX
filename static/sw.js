@@ -1,4 +1,4 @@
-const CACHE_NAME = "coinplotx-cache-v22-launch-readiness";
+const CACHE_NAME = "coinplotx-cache-v25-foreground-intelligence";
 const DEBUG_SW = false;
 const STATIC_ASSETS = [
   "/manifest.json",
@@ -184,33 +184,116 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(fetch(request));
 });
 
-self.addEventListener("push", (event) => {
-  let payload = {};
+function safeNotificationUrl(rawUrl) {
   try {
-    payload = event.data ? event.data.json() : {};
+    const value = String(rawUrl || "/pulse/notifications").trim();
+    if (!value || /[\r\n\t]/.test(value) || /^(javascript|data|blob|file):/i.test(value) || value.startsWith("//")) return "/pulse/notifications";
+    const url = value.startsWith("/") ? new URL(value, self.location.origin) : new URL(value);
+    if (url.origin !== self.location.origin && !/(^|\.)pulsesoc\.com$/i.test(url.hostname)) return "/pulse/notifications";
+    if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/static/") || url.pathname.startsWith("/admin/")) return "/pulse/notifications";
+    return `${url.pathname}${url.search}${url.hash}` || "/pulse/notifications";
   } catch (error) {
-    payload = { title: "PulseSoc Alert", body: event.data ? event.data.text() : "New intelligence alert." };
+    return "/pulse/notifications";
   }
+}
+
+function normalizePushPayload(event) {
+  try {
+    return event.data ? event.data.json() : {};
+  } catch (error) {
+    return { title: "PulseSoc Alert", body: event.data ? event.data.text() : "New intelligence alert." };
+  }
+}
+
+function buildPushNotification(payload) {
+  payload = payload || {};
   const data = payload.data || {};
   const conversationId = data.conversationId || data.conversation_id || payload.conversationId || payload.conversation_id;
-  const targetUrl = data.web_url || data.url || data.target_url || data.deep_link || payload.web_url || payload.url || payload.target_url || payload.deep_link || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications");
-  const title = payload.title || "PulseSoc Alert";
+  const notificationType = data.type || data.notification_type || payload.type || payload.notification_type || "";
+  const notificationCategory = data.category || payload.category || "";
+  const isIntelligence = /^intelligence_/.test(String(notificationType)) || notificationCategory === "intelligence";
+  const priority = String(payload.priority || data.priority || data.priority_badge || "").toLowerCase();
+  const defaultUrl = conversationId ? `/pulse/messages/${conversationId}` : (isIntelligence ? "/pulse/alerts" : "/pulse/notifications");
+  const targetUrl = safeNotificationUrl(data.web_url || data.url || data.target_url || data.deep_link || payload.web_url || payload.url || payload.target_url || payload.deep_link || defaultUrl);
+  const title = isIntelligence ? "PULSESOC ALERT" : (payload.title || "PulseSoc Alert");
+  const intelligenceHeadline = isIntelligence ? String(payload.headline || data.headline || "").trim().toUpperCase().slice(0, 64) : "";
+  const displayBody = isIntelligence && intelligenceHeadline
+    ? `${intelligenceHeadline}\n${payload.body || payload.message || "Open PulseSoc to review this signal."}`
+    : (payload.body || payload.message || "New PulseSoc update.");
   const options = {
-    body: payload.body || payload.message || "New CoinPlotXAI intelligence update.",
+    body: displayBody,
     icon: payload.icon || "/static/brand/pulsesoc-icon-192-20260606.png",
     badge: payload.badge || "/static/brand/pulsesoc-icon-192-20260606.png",
-    vibrate: payload.vibrate || [200, 100, 200],
-    data: { ...data, url: targetUrl, web_url: targetUrl, deepLink: targetUrl },
-    tag: payload.tag || (conversationId ? `pulsesoc-message-${conversationId}` : "coinplotxai-alert"),
+    vibrate: payload.vibrate || payload.vibration || data.vibrate || data.vibration || [200, 100, 200],
+    data: {
+      ...data,
+      url: targetUrl,
+      web_url: targetUrl,
+      deepLink: targetUrl,
+      deep_link: targetUrl,
+      type: notificationType,
+      category: notificationCategory,
+      headline: intelligenceHeadline || data.headline || payload.headline || "",
+      priority,
+      sound_key: payload.sound_key || data.sound_key || "",
+      vibration: payload.vibration || data.vibration || "",
+      notification_id: payload.notification_id || data.notification_id || "",
+      signal_id: payload.signal_id || data.signal_id || data.event_id || ""
+    },
+    tag: payload.tag || (
+      conversationId
+        ? `pulsesoc-message-${conversationId}`
+        : isIntelligence
+          ? `pulsesoc-intelligence-${payload.notification_id || data.notification_id || data.signal_id || data.event_id || "pulse"}`
+          : "coinplotxai-alert"
+    ),
     renotify: payload.renotify !== false,
-    silent: payload.silent === true ? true : false,
+    silent: payload.silent === true || payload.sound === "silent" || data.sound_key === "silent",
     timestamp: payload.timestamp || Date.now(),
     actions: payload.actions || [
-      { action: "open", title: conversationId ? "Open Chat" : "Open Alerts" },
+      { action: "open", title: conversationId ? "Open Chat" : (isIntelligence ? "Open Alerts" : "Open Alerts") },
       { action: "dismiss", title: "Dismiss" }
     ]
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  if (priority === "urgent" || priority === "critical" || data.priority_badge === "CRITICAL") options.requireInteraction = true;
+  return { payload, data, options, title, body: displayBody, targetUrl, isIntelligence, priority, notificationType, notificationCategory, headline: intelligenceHeadline };
+}
+
+function isForegroundClient(client) {
+  if (!client || !client.url || !client.url.startsWith(self.location.origin)) return false;
+  return client.focused || client.visibilityState === "visible";
+}
+
+async function postForegroundNotification(notification) {
+  if (!notification.isIntelligence) return false;
+  const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const visibleClients = clients.filter(isForegroundClient);
+  if (!visibleClients.length) return false;
+  const message = {
+    type: "PULSESOC_FOREGROUND_NOTIFICATION",
+    title: notification.title,
+    body: notification.body,
+    headline: notification.headline || notification.options.data.headline || "",
+    priority: notification.priority,
+    category: notification.notificationCategory,
+    notification_type: notification.notificationType,
+    url: notification.targetUrl,
+    data: notification.options.data,
+    timestamp: notification.options.timestamp || Date.now(),
+  };
+  visibleClients.forEach((client) => {
+    try { client.postMessage(message); } catch (_) {}
+  });
+  return true;
+}
+
+self.addEventListener("push", (event) => {
+  const notification = buildPushNotification(normalizePushPayload(event));
+  event.waitUntil((async () => {
+    const foregroundHandled = await postForegroundNotification(notification);
+    if (foregroundHandled) return;
+    await self.registration.showNotification(notification.title, notification.options);
+  })());
 });
 
 self.addEventListener("notificationclick", (event) => {
@@ -218,7 +301,7 @@ self.addEventListener("notificationclick", (event) => {
   if (event.action === "dismiss") return;
   const data = event.notification.data || {};
   const conversationId = data.conversationId || data.conversation_id;
-  const url = data.web_url || data.url || data.target_url || data.deep_link || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications");
+  const url = safeNotificationUrl(data.web_url || data.url || data.target_url || data.deep_link || (conversationId ? `/pulse/messages/${conversationId}` : "/pulse/notifications"));
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {

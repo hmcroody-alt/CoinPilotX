@@ -1,4 +1,4 @@
-const CACHE_NAME = "coinplotx-cache-v24-intelligence-push";
+const CACHE_NAME = "coinplotx-cache-v25-foreground-intelligence";
 const DEBUG_SW = false;
 const STATIC_ASSETS = [
   "/manifest.json",
@@ -184,18 +184,23 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(fetch(request));
 });
 
-self.addEventListener("push", (event) => {
-  let payload = {};
+function normalizePushPayload(event) {
   try {
-    payload = event.data ? event.data.json() : {};
+    return event.data ? event.data.json() : {};
   } catch (error) {
-    payload = { title: "PulseSoc Alert", body: event.data ? event.data.text() : "New intelligence alert." };
+    return { title: "PulseSoc Alert", body: event.data ? event.data.text() : "New intelligence alert." };
   }
+}
+
+function buildPushNotification(payload) {
+  payload = payload || {};
   const data = payload.data || {};
   const conversationId = data.conversationId || data.conversation_id || payload.conversationId || payload.conversation_id;
   const notificationType = data.type || data.notification_type || payload.type || payload.notification_type || "";
   const notificationCategory = data.category || payload.category || "";
   const isIntelligence = /^intelligence_/.test(String(notificationType)) || notificationCategory === "intelligence";
+  const priority = String(payload.priority || data.priority || data.priority_badge || "").toLowerCase();
+  const soundKey = String(payload.sound_key || data.sound_key || payload.sound || data.sound || "").toLowerCase();
   const defaultUrl = conversationId ? `/pulse/messages/${conversationId}` : (isIntelligence ? "/pulse/alerts" : "/pulse/notifications");
   const targetUrl = safeNotificationUrl(data.web_url || data.url || data.target_url || data.deep_link || payload.web_url || payload.url || payload.target_url || payload.deep_link || defaultUrl);
   const title = isIntelligence ? "PULSESOC ALERT" : (payload.title || "PulseSoc Alert");
@@ -226,6 +231,9 @@ self.addEventListener("push", (event) => {
       type: notificationType,
       category: notificationCategory,
       headline: intelligenceHeadline || data.headline || payload.headline || "",
+      priority,
+      sound_key: soundKey || data.sound_key || "",
+      vibration: payload.vibration || data.vibration || "",
       notification_id: payload.notification_id || data.notification_id || "",
       signal_id: payload.signal_id || data.signal_id || data.event_id || ""
     },
@@ -238,7 +246,57 @@ self.addEventListener("push", (event) => {
       { action: "dismiss", title: "Dismiss" }
     ]
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  if (priority === "urgent" || priority === "critical" || data.priority_badge === "CRITICAL") options.requireInteraction = true;
+  return {
+    payload,
+    data,
+    options,
+    title,
+    body: displayBody,
+    targetUrl,
+    isIntelligence,
+    priority,
+    notificationType,
+    notificationCategory,
+    headline: intelligenceHeadline,
+  };
+}
+
+function isForegroundClient(client) {
+  if (!client || !client.url || !client.url.startsWith(self.location.origin)) return false;
+  return client.focused || client.visibilityState === "visible";
+}
+
+async function postForegroundNotification(notification) {
+  if (!notification.isIntelligence) return false;
+  const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const visibleClients = clients.filter(isForegroundClient);
+  if (!visibleClients.length) return false;
+  const message = {
+    type: "PULSESOC_FOREGROUND_NOTIFICATION",
+    title: notification.title,
+    body: notification.body,
+    headline: notification.headline || notification.options.data.headline || "",
+    priority: notification.priority,
+    category: notification.notificationCategory,
+    notification_type: notification.notificationType,
+    url: notification.targetUrl,
+    data: notification.options.data,
+    timestamp: notification.options.timestamp || Date.now(),
+  };
+  visibleClients.forEach((client) => {
+    try { client.postMessage(message); } catch (_) {}
+  });
+  return true;
+}
+
+self.addEventListener("push", (event) => {
+  const notification = buildPushNotification(normalizePushPayload(event));
+  event.waitUntil((async () => {
+    const foregroundHandled = await postForegroundNotification(notification);
+    if (foregroundHandled) return;
+    await self.registration.showNotification(notification.title, notification.options);
+  })());
 });
 
 function safeNotificationUrl(rawUrl) {

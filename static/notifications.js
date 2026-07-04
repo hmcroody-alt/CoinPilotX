@@ -11,6 +11,9 @@
     lastScrollAt: 0,
     pushStatus: null,
     notesById: new Map(),
+    foregroundQueue: [],
+    foregroundVisible: false,
+    foregroundTimer: null,
     channel: "BroadcastChannel" in window ? new BroadcastChannel("pulse-notifications") : null
   };
   const NOTIFICATION_ROUTE_PREFIXES = [
@@ -269,6 +272,164 @@
     } catch (_) {
       return "";
     }
+  }
+
+  function isIntelligencePayload(payload) {
+    const data = payload?.data || {};
+    const type = String(payload?.notification_type || payload?.type || data.notification_type || data.type || "").toLowerCase();
+    const category = String(payload?.category || data.category || "").toLowerCase();
+    return type.startsWith("intelligence_") || category === "intelligence";
+  }
+
+  function foregroundPriority(payload) {
+    const data = payload?.data || {};
+    return String(payload?.priority || data.priority || data.priority_badge || payload?.priority_badge || "").toLowerCase();
+  }
+
+  function foregroundIsCritical(payload) {
+    const data = payload?.data || {};
+    const priority = foregroundPriority(payload);
+    return ["critical", "urgent"].includes(priority) || String(data.priority_badge || payload?.priority_badge || "").toUpperCase() === "CRITICAL";
+  }
+
+  function foregroundContext() {
+    const path = window.location.pathname || "";
+    const mediaPath = /^\/pulse\/(reels|live|status|videos)(\/|$)/.test(path);
+    const activeVideo = Array.from(document.querySelectorAll("video")).some(video => {
+      try {
+        const rect = video.getBoundingClientRect();
+        return rect.width > 120 && rect.height > 120 && !video.paused && !video.ended;
+      } catch (_) {
+        return false;
+      }
+    });
+    if (mediaPath || activeVideo || document.fullscreenElement) return "media";
+    if (/^\/pulse\/messages(\/|$)/.test(path)) return "messaging";
+    return "standard";
+  }
+
+  function foregroundCopy(payload) {
+    const data = payload?.data || {};
+    const title = String(payload?.title || "PULSESOC ALERT").trim();
+    const headline = String(payload?.headline || data.headline || (title === "PULSESOC ALERT" ? "" : title) || "PULSESOC ALERT").trim().toUpperCase().slice(0, 72);
+    let body = String(payload?.body || payload?.message || data.body || data.message || "Open PulseSoc to view this signal.").trim();
+    if (headline && body.toUpperCase().startsWith(`${headline}\n`)) body = body.slice(headline.length).trim();
+    const confidence = String(data.confidence_label || data.confidence || payload?.confidence || "").trim();
+    const priority = foregroundPriority(payload);
+    const url = safeInternalUrl(payload?.url || payload?.deep_link || data.web_url || data.url || data.deep_link || data.target_url) || "/pulse/alerts";
+    return {
+      label: "PULSESOC ALERT",
+      headline,
+      body: body.slice(0, 150),
+      confidence: confidence || (priority === "high" ? "HIGH" : priority === "urgent" || priority === "critical" ? "CRITICAL" : ""),
+      url,
+    };
+  }
+
+  function ensureForegroundBannerHost() {
+    let host = document.querySelector("[data-pulse-foreground-banner]");
+    if (host) return host;
+    const style = document.createElement("style");
+    style.dataset.pulseForegroundBannerStyle = "true";
+    style.textContent = `
+      [data-pulse-foreground-banner]{position:fixed;z-index:2147482600;left:50%;top:max(10px,env(safe-area-inset-top));width:min(calc(100vw - 24px),430px);transform:translate3d(-50%,-145%,0);opacity:0;pointer-events:none;transition:transform .24s cubic-bezier(.2,.8,.2,1),opacity .18s ease;will-change:transform,opacity;contain:layout style paint;color:#f2fbff;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+      [data-pulse-foreground-banner].is-visible{transform:translate3d(-50%,0,0);opacity:1;pointer-events:auto}
+      .pulse-foreground-card{position:relative;display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:11px;align-items:center;border:1px solid rgba(110,223,246,.34);border-radius:18px;background:linear-gradient(145deg,rgba(6,16,30,.94),rgba(13,25,45,.9));box-shadow:0 18px 70px rgba(0,0,0,.36),0 0 34px rgba(0,230,255,.18),inset 0 1px 0 rgba(255,255,255,.08);backdrop-filter:blur(18px);padding:10px 11px;overflow:hidden}
+      .pulse-foreground-card::before{content:"";position:absolute;inset:0;border-radius:inherit;background:linear-gradient(90deg,rgba(54,229,143,.28),rgba(110,223,246,.08),rgba(155,92,255,.18));opacity:.42;pointer-events:none;transform:translate3d(-40%,0,0);animation:pulseForegroundSweep 2.8s ease infinite}
+      .pulse-foreground-logo{position:relative;width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:radial-gradient(circle at 30% 20%,#5dffe0,#35d5ff 45%,#2460ff);box-shadow:0 0 22px rgba(54,229,143,.32)}
+      .pulse-foreground-logo img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
+      .pulse-foreground-copy{position:relative;min-width:0}
+      .pulse-foreground-label{font-size:11px;font-weight:950;letter-spacing:.11em;color:#5effe1;text-transform:uppercase;margin-bottom:2px}
+      .pulse-foreground-headline{font-size:15px;font-weight:950;line-height:1.12;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .pulse-foreground-body{font-size:12px;color:#bcd1dc;margin-top:2px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+      .pulse-foreground-confidence{display:inline-flex;margin-top:5px;font-size:10px;font-weight:900;color:#c9fff0;border:1px solid rgba(54,229,143,.28);border-radius:999px;padding:3px 7px;background:rgba(54,229,143,.08)}
+      .pulse-foreground-actions{position:relative;display:flex;gap:6px;align-items:center}
+      .pulse-foreground-actions button,.pulse-foreground-actions a{min-height:34px;border-radius:999px;border:1px solid rgba(110,223,246,.28);background:rgba(255,255,255,.065);color:#effcff;padding:7px 10px;font:inherit;font-size:12px;font-weight:950;text-decoration:none;white-space:nowrap}
+      .pulse-foreground-actions a{background:linear-gradient(135deg,#36e58f,#6edff6);color:#04131b;border-color:transparent}
+      [data-pulse-foreground-banner][data-context="media"]{top:calc(max(8px,env(safe-area-inset-top)) + 4px);width:min(calc(100vw - 18px),390px)}
+      [data-pulse-foreground-banner][data-context="media"] .pulse-foreground-card{grid-template-columns:34px minmax(0,1fr) auto;border-radius:15px;padding:8px 9px}
+      [data-pulse-foreground-banner][data-context="media"] .pulse-foreground-logo{width:34px;height:34px;border-radius:11px}
+      [data-pulse-foreground-banner][data-context="media"] .pulse-foreground-body,[data-pulse-foreground-banner][data-context="media"] .pulse-foreground-confidence{display:none}
+      [data-pulse-foreground-banner][data-context="messaging"]{top:max(8px,env(safe-area-inset-top));}
+      [data-pulse-foreground-banner].is-critical .pulse-foreground-card{border-color:rgba(255,107,138,.48);box-shadow:0 18px 70px rgba(0,0,0,.36),0 0 34px rgba(255,107,138,.2)}
+      @keyframes pulseForegroundSweep{0%,100%{transform:translate3d(-45%,0,0);opacity:.24}50%{transform:translate3d(45%,0,0);opacity:.5}}
+      @media (prefers-reduced-motion:reduce){[data-pulse-foreground-banner]{transition:none}.pulse-foreground-card::before{animation:none}}
+      @media (max-width:420px){[data-pulse-foreground-banner]{width:calc(100vw - 16px)}.pulse-foreground-card{grid-template-columns:38px minmax(0,1fr);}.pulse-foreground-actions{grid-column:2}.pulse-foreground-actions button,.pulse-foreground-actions a{min-height:32px;padding:6px 9px}}
+    `;
+    document.head.appendChild(style);
+    host = document.createElement("div");
+    host.dataset.pulseForegroundBanner = "true";
+    host.setAttribute("aria-live", "polite");
+    host.hidden = true;
+    document.body.appendChild(host);
+    return host;
+  }
+
+  function hideForegroundBanner(manual = false) {
+    const host = document.querySelector("[data-pulse-foreground-banner]");
+    window.clearTimeout(STATE.foregroundTimer);
+    STATE.foregroundTimer = null;
+    if (!host) {
+      STATE.foregroundVisible = false;
+      return;
+    }
+    host.classList.remove("is-visible");
+    window.setTimeout(() => {
+      if (!host.classList.contains("is-visible")) {
+        host.hidden = true;
+        host.innerHTML = "";
+      }
+      STATE.foregroundVisible = false;
+      if (manual || STATE.foregroundQueue.length) showNextForegroundNotification();
+    }, 220);
+  }
+
+  function showNextForegroundNotification() {
+    if (STATE.foregroundVisible) return;
+    const payload = STATE.foregroundQueue.shift();
+    if (!payload) return;
+    const host = ensureForegroundBannerHost();
+    const copy = foregroundCopy(payload);
+    const context = foregroundContext();
+    const critical = foregroundIsCritical(payload);
+    host.dataset.context = context;
+    host.classList.toggle("is-critical", critical);
+    host.setAttribute("role", critical ? "alertdialog" : "status");
+    host.hidden = false;
+    host.innerHTML = `
+      <section class="pulse-foreground-card" aria-label="${escapeHtml(copy.label)}">
+        <div class="pulse-foreground-logo"><img src="/static/brand/pulsesoc-icon-192-20260606.png" alt="" aria-hidden="true"></div>
+        <div class="pulse-foreground-copy">
+          <div class="pulse-foreground-label">${escapeHtml(copy.label)}</div>
+          <div class="pulse-foreground-headline">${escapeHtml(copy.headline)}</div>
+          <div class="pulse-foreground-body">${escapeHtml(copy.body)}</div>
+          ${copy.confidence ? `<span class="pulse-foreground-confidence">Confidence: ${escapeHtml(copy.confidence.toUpperCase())}</span>` : ""}
+        </div>
+        <div class="pulse-foreground-actions">
+          <a href="${escapeHtml(copy.url)}" data-pulse-foreground-view>View</a>
+          ${critical ? `<button type="button" data-pulse-foreground-ack>Acknowledge</button>` : ""}
+        </div>
+      </section>
+    `;
+    host.querySelector("[data-pulse-foreground-view]")?.addEventListener("click", () => hideForegroundBanner(true), { once: true });
+    host.querySelector("[data-pulse-foreground-ack]")?.addEventListener("click", () => hideForegroundBanner(true), { once: true });
+    STATE.foregroundVisible = true;
+    playSound();
+    vibrate();
+    STATE.lastAlertAt = Date.now();
+    requestAnimationFrame(() => host.classList.add("is-visible"));
+    if (!critical) {
+      const duration = context === "media" ? 3000 : 4500;
+      STATE.foregroundTimer = window.setTimeout(() => hideForegroundBanner(false), duration);
+    }
+  }
+
+  function enqueueForegroundNotification(payload) {
+    if (!isIntelligencePayload(payload)) return false;
+    STATE.foregroundQueue.push(payload || {});
+    if (STATE.foregroundQueue.length > 8) STATE.foregroundQueue.splice(0, STATE.foregroundQueue.length - 8);
+    showNextForegroundNotification();
+    return true;
   }
 
   function localNotificationTarget(note) {
@@ -669,7 +830,9 @@
     }
     const count = Number(payload?.alert_unread_count || 0);
     if (count || count === 0) {
-      if (STATE.lastAlertUnread !== null && count > STATE.lastAlertUnread) alertUser(payload);
+      if (STATE.lastAlertUnread !== null && count > STATE.lastAlertUnread) {
+        if (!enqueueForegroundNotification(payload)) alertUser(payload);
+      }
       STATE.lastAlertUnread = count;
       setBadges({ alert: count, chat: STATE.lastChatUnread || 0 });
     }
@@ -931,6 +1094,14 @@
   STATE.channel?.addEventListener("message", event => {
     if (event.data?.type === "pulse-notification-refresh") pollNotifications({ refreshList: true });
   });
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", event => {
+      if (event.data?.type !== "PULSESOC_FOREGROUND_NOTIFICATION") return;
+      enqueueForegroundNotification(event.data);
+      refreshNotificationList().catch(() => {});
+      pollNotifications({ refreshList: false, force: true }).catch(() => {});
+    });
+  }
   window.addEventListener("storage", event => {
     if (event.key === "pulseNotificationRefresh") pollNotifications({ refreshList: true });
   });
@@ -942,7 +1113,7 @@
     STATE.lastScrollAt = Date.now();
   }, { passive: true });
 
-  window.CoinPilotNotifications = { loadPreferences, loadPulsePreferences, loadPushStatus, subscribePush, unsubscribePush, testNotification, playSound, vibrate, pollNotifications, refreshNotificationList, handleLiveNotification };
+  window.CoinPilotNotifications = { loadPreferences, loadPulsePreferences, loadPushStatus, subscribePush, unsubscribePush, testNotification, playSound, vibrate, pollNotifications, refreshNotificationList, handleLiveNotification, enqueueForegroundNotification };
 
   document.addEventListener("DOMContentLoaded", async () => {
     bindNotificationActions();
