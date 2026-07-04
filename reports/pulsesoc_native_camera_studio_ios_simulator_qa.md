@@ -4,155 +4,205 @@ Date: 2026-07-04
 
 ## Scope
 
-This mission tested the Native Camera Studio path on the iPhone 17 Pro iOS Simulator. No new native features were built and no production WebView routes were modified.
+This mission tested the Native Camera Studio path through the installed `com.pulsesoc.nativeapp` development build on the iPhone 17 Pro iOS Simulator.
+
+No LiveKit calls were built. No production WebView routes were modified. The native app remains a parallel client for the existing PulseSoc backend.
 
 Simulator target:
 
 - Device: iPhone 17 Pro
 - UDID: `7B3BEEBC-6135-497D-91CD-A3E70C927D56`
 - Runtime: iOS 26.5
+- Native app identity: `com.pulsesoc.nativeapp`
 
 ## Commands And Results
+
+Static setup:
+
+```text
+npm ci --prefix mobile-native --no-audit --no-fund --progress=false
+added 811 packages in 13s
+
+npm run --prefix mobile-native typecheck
+tsc --noEmit
+passed
+
+cd mobile-native && EXPO_DOCTOR_ENABLE_DIRECTORY_CHECK=0 npx expo-doctor --verbose
+17/17 checks passed. No issues detected.
+```
 
 Simulator availability:
 
 ```text
-xcode-select -p
-/Applications/Xcode.app/Contents/Developer
-
-xcrun simctl list devices available
+xcrun simctl list devices available | rg -n "iPhone 17 Pro|iOS 26.5|7B3BEEBC"
 -- iOS 26.5 --
-    iPhone 17 Pro (7B3BEEBC-6135-497D-91CD-A3E70C927D56) (Shutdown)
+iPhone 17 Pro (7B3BEEBC-6135-497D-91CD-A3E70C927D56) (Booted)
 ```
 
-Boot:
-
-```text
-xcrun simctl boot 7B3BEEBC-6135-497D-91CD-A3E70C927D56
-xcrun simctl bootstatus 7B3BEEBC-6135-497D-91CD-A3E70C927D56 -b
-Finished
-```
-
-Expo Go launch:
+Installed development build:
 
 ```text
 cd mobile-native
-npx expo start --ios --go --localhost --port 8082
-Starting Metro Bundler
-Opening exp://127.0.0.1:8082 on iPhone 17 Pro
-Fetching Expo Go
-Installing Expo Go on iPhone 17 Pro
-iOS Bundled 23321ms index.ts (1389 modules)
+npx expo run:ios --device 7B3BEEBC-6135-497D-91CD-A3E70C927D56 --no-bundler
+Build Succeeded
+0 error(s), and 1 warning(s)
+Installing .../PulseSocNative.app
+Opening on iPhone 17 Pro (com.pulsesoc.nativeapp)
 ```
 
-Installed app checks:
+The Xcode build emitted one simulator search-path warning for a missing Metal toolchain Swift path, but the build, signing, install, and launch all completed.
+
+Metro/dev-client bundle:
 
 ```text
-xcrun simctl get_app_container 7B3BEEBC-6135-497D-91CD-A3E70C927D56 host.exp.Exponent
-.../Exponent-2.31.6.tar.app
+cd mobile-native
+npx expo start --dev-client --localhost --port 8081 -c
+Waiting on http://localhost:8081
 
+xcrun simctl openurl 7B3BEEBC-6135-497D-91CD-A3E70C927D56 \
+  'pulsesoc://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
+
+iOS Bundled 9251ms index.ts (1546 modules)
+```
+
+Installed app container:
+
+```text
 xcrun simctl get_app_container 7B3BEEBC-6135-497D-91CD-A3E70C927D56 com.pulsesoc.nativeapp
-No such file or directory
+.../PulseSocNative.app
 ```
 
-Foreground/background container recovery:
+Foreground/background recovery:
 
 ```text
-xcrun simctl terminate 7B3BEEBC-6135-497D-91CD-A3E70C927D56 host.exp.Exponent
-xcrun simctl launch 7B3BEEBC-6135-497D-91CD-A3E70C927D56 host.exp.Exponent
-host.exp.Exponent: 41794
+xcrun simctl terminate 7B3BEEBC-6135-497D-91CD-A3E70C927D56 com.pulsesoc.nativeapp
+xcrun simctl launch 7B3BEEBC-6135-497D-91CD-A3E70C927D56 com.pulsesoc.nativeapp
+com.pulsesoc.nativeapp: 96807
 ```
 
-## Static Verification
-
-- `npm ci --prefix mobile-native --no-audit --no-fund --progress=false`: passed.
-- `npm run --prefix mobile-native typecheck`: passed.
-- `git diff --check`: passed before report edits.
-
-Expo Doctor did not pass:
-
-```text
-16/17 checks passed. 1 checks failed.
-Check native tooling versions
-Your Expo SDK version 51 is not compatible with Xcode 26.6.0. Required Xcode version: <=16.2.0.
-```
-
-This is an environment/toolchain compatibility blocker, not a PulseSoc business-logic bug.
-
-## QA Evidence
+## Simulator Evidence
 
 Screenshots captured during the run:
 
-- `/tmp/pulsesoc-iphone17pro-boot.png`
-- `/tmp/pulsesoc-iphone17pro-expo.png`
-- `/tmp/pulsesoc-iphone17pro-after-bundle.png`
-- `/tmp/pulsesoc-iphone17pro-camera-deeplink.png`
-- `/tmp/pulsesoc-iphone17pro-relaunch.png`
-- `/tmp/pulsesoc-iphone17pro-relaunch-final.png`
-- `/tmp/pulsesoc-iphone17pro-camera-route-no-overlay.png`
-- `/tmp/pulsesoc-iphone17pro-after-cliclick.png`
-- `/tmp/pulsesoc-iphone17pro-after-close-click.png`
+- `/tmp/pulsesoc-camera-ios-sim/01-launch.png`
+- `/tmp/pulsesoc-camera-ios-sim/02-bundled.png`
+- `/tmp/pulsesoc-camera-ios-sim/03-camera-deeplink-signed-out.png`
+- `/tmp/pulsesoc-camera-ios-sim/04-relaunch.png`
+- `/tmp/pulsesoc-camera-ios-sim/05-deeplink-warning.png`
+- `/tmp/pulsesoc-camera-ios-sim/06-post-routing-fix.png`
 
-Observed visual states:
+Observed states:
 
-- The iPhone 17 Pro simulator booted.
-- Expo Go installed successfully.
-- PulseSoc Native bundled and launched in Expo Go.
-- The PulseSoc login screen rendered behind Expo Go's first-run developer menu.
-- Foreground/background container relaunch worked, returning to Expo Go home with PulseSoc Native listed as recently opened.
+- Initial app frame opened from the installed build.
+- Metro bundled the native app into the installed development build.
+- Native login screen rendered inside `com.pulsesoc.nativeapp`, not Expo Go.
+- Signed-out Camera Studio deep link remained on the auth gate.
+- Foreground/background terminate and relaunch returned to the native login/auth gate.
+- Production WebView routes were not touched.
+
+## Scoped Blocker Fixed
+
+The first signed-out Camera Studio deep-link attempt produced a React Navigation development warning:
+
+```text
+The navigation state parsed from the URL contains routes not present in the root navigator.
+```
+
+Root cause:
+
+- The app conditionally renders `AuthNavigator` while signed out.
+- `AuthNavigator` intentionally contains only `Login` and `Signup`.
+- The protected Camera Studio route exists only in the signed-in app navigator.
+- Parsing protected deep links while signed out produced a warning even though the user correctly stayed on the auth gate.
+
+Fix:
+
+- `mobile-native/App.tsx` now enables the protected linking config only after `authState.status === "signedIn"`.
+- Signed-out users still land on the login screen.
+- Protected deep links no longer produce the route-mismatch warning during signed-out simulator QA.
+- This does not add native-only auth logic and does not bypass backend/session authority.
+
+Remaining improvement:
+
+- Post-login intended-route restoration is still not implemented for protected deep links opened while signed out. That should be planned separately instead of being hidden inside this QA fix.
 
 ## Test Matrix
 
-| Area | Result | Notes |
+| Area | Simulator Result | Notes |
 | --- | --- | --- |
-| App launch | Partial pass | PulseSoc Native bundled and rendered login behind Expo Go developer menu. |
-| Login/session restore | Not verified | No QA credentials were used and Expo Go developer menu blocked interaction. |
-| Camera Studio route | Not verified | Deep link was sent, but Expo Go developer menu remained over the app. |
-| Camera permission states | Not verified | Requires interactive simulator/device access and camera-capable runtime. |
-| Microphone permission states | Not verified | Requires interactive simulator/device access. |
-| Gallery fallback | Not verified | Requires interactive simulator/device access. |
-| Preview flow | Not verified | Requires authenticated Camera Studio interaction. |
-| Caption/privacy/destination flow | Not verified | Requires authenticated Camera Studio interaction. |
-| Upload handoff | Not verified | Requires authenticated flow and selected/captured media. |
+| App launch | Passed | Installed `com.pulsesoc.nativeapp` opened on the iPhone 17 Pro simulator. |
+| Metro bundle | Passed | Dev-client bundle loaded through `pulsesoc://expo-development-client` and rendered native Login. |
+| Login screen | Passed | Native Login rendered with PulseSoc branding, fields, sign-in button, and create-account link. |
+| Session restore | Signed-out restore only | Relaunch restored the signed-out auth gate. No authenticated simulator credentials were available. |
+| Logout | Not verified | Requires authenticated simulator session. |
+| Camera Studio route | Auth-gate verified | Signed-out `/pulse/camera/photo?target=feed` remained protected and no longer produced the route-mismatch warning after the scoped fix. |
+| Camera permission state | Not verified | Requires authenticated Camera Studio interaction; simulator cannot prove physical camera behavior. |
+| Microphone permission state | Not verified | Requires authenticated video flow and physical-device follow-up. |
+| Gallery fallback | Not verified | Requires authenticated Camera Studio interaction and simulator photo-library test media. |
+| Preview flow | Not verified | Requires authenticated media selection/capture. |
+| Caption/privacy/destination flow | Not verified | Requires authenticated Camera Studio route. |
+| Upload handoff | Not verified | Requires authenticated media selection/capture and backend session. |
 | Publish destination routing | Not verified | Requires authenticated publish flow. |
-| Foreground/background recovery | Partial pass | Expo Go container terminated/relaunched; authenticated Camera Studio recovery was not verified. |
+| Foreground/background recovery | Passed at auth gate | Terminate/relaunch returned to native Login. Authenticated Camera Studio recovery remains unverified. |
+| LogiNexus visual quality | Partial pass | Login/auth gate is visually stable, dark, simple, and on-brand. Camera Studio visual quality could not be judged without authentication. |
 
-## Blockers
+## Warnings Observed
 
-1. Expo SDK 51 is not compatible with the currently selected Xcode 26.6 according to Expo Doctor.
-2. The app was launched through Expo Go, not an installed `com.pulsesoc.nativeapp` development build.
-3. Expo Go displayed its first-run developer menu over the PulseSoc app.
-4. Local UI automation could not dismiss the Expo Go overlay reliably; AppleScript coordinate clicks returned a System Events error and `cliclick` did not affect the simulator framebuffer.
-5. No authenticated QA session was available for simulator login/session restore.
-6. Simulator camera behavior is inherently limited and cannot replace physical-device camera/mic/video/upload QA.
+Metro emitted the known SDK 54 media warning:
 
-## What The Simulator Can Verify Later
+```text
+[expo-av]: Expo AV has been deprecated and will be removed in SDK 54.
+Use the expo-audio and expo-video packages to replace the required functionality.
+```
 
-After the toolchain and interaction blockers are resolved, the simulator can help verify:
+This warning comes from the current native media player dependency, not from Camera Studio directly. It should be tracked before media-heavy release hardening, especially Reels/Status/Live playback.
 
-- App launch.
-- Auth gate rendering.
-- Login/session restore if QA credentials are available.
-- Native routing and deep links.
-- Form/layout behavior.
-- Gallery fallback to the photo library.
-- Caption/privacy/destination UI.
-- Foreground/background app lifecycle.
+No Expo SDK/Xcode compatibility error remained after the installed development build path.
+
+## What The Simulator Verified
+
+- Full native build can compile for iOS Simulator under Xcode 26.6.
+- `com.pulsesoc.nativeapp` installs and launches.
+- Metro can bundle the installed development build without Expo Go.
+- Signed-out session recovery is stable.
+- Protected Camera Studio deep links do not bypass auth.
+- Foreground/background relaunch at the auth gate is stable.
+- The prior Expo Go overlay/toolchain blocker is resolved.
+
+## What The Simulator Did Not Verify
+
+- Authenticated login/session restore with a durable QA account.
+- Authenticated Camera Studio route rendering.
+- Camera permission allow/deny UI inside Camera Studio.
+- Microphone permission allow/deny UI inside Camera Studio.
+- Real camera preview.
+- Photo capture.
+- Video capture.
+- Front/back camera switching against real hardware.
+- Gallery fallback with real media.
+- Preview flow after selected/captured media.
+- Caption/privacy/destination publish flow.
+- Upload progress, retry, cancel, and backend handoff.
+- Publish to Feed, Status, Reels, Profile avatar/cover, or Messenger.
+- Background recovery during capture or upload.
 
 ## What Requires Physical Device QA
 
-Physical devices are still required for release confidence on:
+Physical iPhone and Android devices are still required before release claims for:
 
 - Real camera capture.
 - Real microphone permission and audio capture.
-- Real front/back camera switching.
-- Video duration, file size, memory pressure, and orientation.
-- Large image/video uploads on real networks.
-- Push/deep-link notification taps.
+- Front/back camera switching.
+- Video duration, file size, memory pressure, orientation, and thermal behavior.
+- Large image/video upload behavior over real networks.
+- Push/deep-link notification taps into Camera Studio or media flows.
 - Lock-screen/background behavior.
+- App Store/TestFlight release confidence.
 
-## Recommended Next Action
+## Next Recommendation
 
 Do not move to Native LiveKit calls yet.
 
-Next highest-value action: resolve the iOS QA runtime mismatch by either using an Expo SDK 51-compatible Xcode path or planning an Expo SDK upgrade/dev-client path, then run Camera Studio simulator QA again with an installed development build for `com.pulsesoc.nativeapp`.
+Next highest-value action: create or connect a QA-safe authenticated simulator/device account, then run the authenticated Camera Studio simulator pass. After that, execute physical iPhone and Android Camera Studio QA for camera, microphone, gallery, compression, upload, and publish behavior.
+
+Native LiveKit calls depend on the same camera/microphone/device-permission layer plus push/ringing/background behavior. Proceeding before authenticated Camera Studio QA and physical-device media QA would compound unknowns.

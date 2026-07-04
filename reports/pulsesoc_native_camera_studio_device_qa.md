@@ -12,7 +12,7 @@ Production WebView camera routes were not modified. The native app remains a par
 
 | Area | Browser QA | iOS Simulator | Physical iPhone | Android Emulator | Physical Android | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| Camera route | Auth-gate verified | Not verified | Not verified | Not verified | Not verified | External device tooling blocked |
+| Camera route | Auth-gate verified | Auth-gate verified | Not verified | Not verified | Not verified | Authenticated route still needs QA account |
 | Camera permission denied/allowed | Not applicable | Not verified | Not verified | Not verified | Not verified | Requires simulator/device |
 | Microphone permission denied/allowed | Not applicable | Not verified | Not verified | Not verified | Not verified | Requires simulator/device |
 | Photo capture | Not applicable | Not verified | Not verified | Not verified | Not verified | Requires simulator/device |
@@ -30,7 +30,7 @@ Production WebView camera routes were not modified. The native app remains a par
 | Profile avatar/cover handoff | Static verified | Not verified | Not verified | Not verified | Not verified | Requires authenticated QA and device |
 | Messenger attachment handoff | Static verified | Not verified | Not verified | Not verified | Not verified | Requires authenticated QA and device |
 | Large image/video behavior | Not verified | Not verified | Not verified | Not verified | Not verified | Requires device and network QA |
-| Background interruption recovery | Not verified | Not verified | Not verified | Not verified | Not verified | Requires device QA |
+| Background interruption recovery | Not verified | Auth-gate relaunch verified | Not verified | Not verified | Not verified | Capture/upload recovery requires device QA |
 
 ## What Was Verified In This Pass
 
@@ -43,7 +43,11 @@ Production WebView camera routes were not modified. The native app remains a par
 - Shared upload code carries `compression_policy` and `destination` metadata to the existing backend upload route.
 - Existing backend routes remain authoritative for upload, preview, post, reel, status, profile, and Messenger publishing.
 - iPhone 17 Pro iOS Simulator boot was verified after full Xcode became available.
-- Expo Go installed on the iPhone 17 Pro simulator and loaded the PulseSoc Native bundle to the login screen behind Expo Go's first-run developer menu.
+- `com.pulsesoc.nativeapp` built, installed, launched, and bundled through the installed development build.
+- Native Login rendered in the installed simulator app without Expo Go.
+- Signed-out `/pulse/camera/photo?target=feed` deep-link behavior safely stayed on the auth gate.
+- Signed-out foreground/background relaunch returned to the native Login/auth gate.
+- A scoped auth-linking fix prevents protected Camera Studio deep links from emitting a React Navigation route-mismatch warning while signed out.
 
 ## Device Tooling Findings
 
@@ -67,8 +71,11 @@ Later iOS Simulator update:
 - iPhone 17 Pro simulator is available at UDID `7B3BEEBC-6135-497D-91CD-A3E70C927D56`.
 - Runtime is iOS 26.5.
 - `xcrun simctl bootstatus 7B3BEEBC-6135-497D-91CD-A3E70C927D56 -b` completed.
-- Expo Doctor now reports a toolchain mismatch: Expo SDK 51 is not compatible with Xcode 26.6.0; required Xcode is `<=16.2.0`.
-- Simulator QA reached PulseSoc login behind Expo Go's first-run developer menu, but Camera Studio interaction was not verified.
+- Expo Doctor now passes under Expo SDK 54 and Xcode 26.6.
+- `npx expo run:ios --device 7B3BEEBC-6135-497D-91CD-A3E70C927D56 --no-bundler` completed with `Build Succeeded`.
+- The installed dev build emitted one non-fatal Xcode simulator search-path warning.
+- Simulator QA reached native Login through the installed `com.pulsesoc.nativeapp` app, not Expo Go.
+- Authenticated Camera Studio interaction was not verified because no simulator-safe authenticated PulseSoc credentials were available.
 
 These are machine/setup blockers, not PulseSoc code blockers.
 
@@ -76,18 +83,17 @@ These are machine/setup blockers, not PulseSoc code blockers.
 
 Priority order:
 
-1. Resolve the Expo SDK 51 and Xcode 26.6 compatibility mismatch, either by using an SDK 51-compatible Xcode path or by planning an Expo SDK/dev-client upgrade path.
-2. Run Camera Studio simulator QA through an installed `com.pulsesoc.nativeapp` development build instead of Expo Go.
+1. Create or reuse QA-safe authenticated PulseSoc credentials for simulator and device publish-to-Feed/Status/Reels/Profile/Messenger flows.
+2. Run authenticated Camera Studio simulator QA through the installed `com.pulsesoc.nativeapp` development build.
 3. Attach and trust at least one physical iPhone for real camera/microphone/photo-library QA.
 4. Attach and authorize at least one physical Android device or start an Android emulator so `adb devices` lists a target.
 5. Install Android Studio/emulator images if emulator QA is needed.
 6. Configure provider credentials and entitlements before push/deep-link/lock-screen camera handoff claims.
-7. Create or reuse QA-safe authenticated PulseSoc credentials for publish-to-Feed/Status/Reels/Profile/Messenger flows.
-8. Run device builds for `com.pulsesoc.nativeapp`; do not use the production `com.pulsesoc.app` identity.
+7. Continue using `com.pulsesoc.nativeapp`; do not use or disturb the production `com.pulsesoc.app` identity.
 
 ## Hardening Decisions
 
-- No native code blocker was patched in this pass because no simulator or physical device was available to reproduce camera behavior.
+- One native QA blocker was patched in this pass: protected deep-link parsing is now enabled only after the native session is signed in, preventing a signed-out Camera Studio route-mismatch warning while preserving the Login auth gate.
 - No production WebView camera route was touched.
 - No backend business logic was duplicated.
 - No provider credential or production app identity was changed.
@@ -138,7 +144,10 @@ iOS simulator setup after full Xcode is selected:
 ```bash
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 xcrun simctl list devices available
-npm run --prefix mobile-native ios:simulator
+cd mobile-native
+npx expo start --dev-client --localhost --port 8081 -c
+npx expo run:ios --device 7B3BEEBC-6135-497D-91CD-A3E70C927D56 --no-bundler
+xcrun simctl openurl 7B3BEEBC-6135-497D-91CD-A3E70C927D56 'pulsesoc://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
 ```
 
 Android setup after platform tools are installed:
@@ -157,6 +166,6 @@ npm run --prefix mobile-native build:android:development
 
 ## Next Recommendation
 
-The next highest-value action is to unblock and execute real-device Camera Studio QA for `com.pulsesoc.nativeapp`.
+The next highest-value action is to create or connect QA-safe authenticated credentials, then run authenticated Camera Studio simulator QA followed by physical iPhone and Android Camera Studio QA for `com.pulsesoc.nativeapp`.
 
-Do not move to Native LiveKit calls yet. LiveKit calls depend on the same camera/microphone/device-permission surface plus push/ringing/background behavior, so proceeding before Camera Studio device QA would compound unknowns.
+Do not move to Native LiveKit calls yet. LiveKit calls depend on the same camera/microphone/device-permission surface plus push/ringing/background behavior, so proceeding before authenticated Camera Studio QA and physical-device media QA would compound unknowns.

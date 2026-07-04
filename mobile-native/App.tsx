@@ -49,7 +49,7 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthContext.Provider value={auth}>
-        <NavigationContainer ref={navigationRef} theme={theme} linking={linking}>
+        <NavigationContainer ref={navigationRef} theme={theme} linking={authState.status === "signedIn" ? linking : undefined}>
           <StatusBar style="light" />
           {authState.status === "signedIn" ? <AppNavigator /> : <AuthNavigator />}
         </NavigationContainer>
