@@ -6,6 +6,17 @@ Date: 2026-07-04
 
 The native app remains isolated under `mobile-native/` and the production WebView app remains untouched.
 
+Device QA setup update from 2026-07-04:
+
+- `xcode-select -p` returns `/Library/Developer/CommandLineTools`.
+- `/Applications/Xcode.app` is not installed, so switching to full Xcode cannot be completed from this workspace.
+- `xcrun simctl list devices` still fails with `xcrun: error: unable to find utility "simctl", not a developer tool or in PATH`.
+- Android platform tools were installed with `HOMEBREW_NO_AUTO_UPDATE=1 brew install android-platform-tools`.
+- `adb` is now available at `/opt/homebrew/bin/adb`.
+- `adb version` reports Android Debug Bridge `1.0.41`, version `37.0.0-14910828`.
+- `adb devices` starts the daemon successfully but shows no attached or authorized devices.
+- USB inspection found no attached iPhone, iPad, Android, Pixel, Samsung, Motorola, or OnePlus device.
+
 Repo-side QA setup completed in this checkpoint:
 
 - Added Expo web QA dependencies:
@@ -36,10 +47,10 @@ The repo is better prepared for QA, but real device QA is not fully unblocked on
 
 Remaining blockers in priority order:
 
-1. iOS simulator tooling is blocked because `/usr/bin/xcrun` exists but `xcrun simctl list devices available` fails with `xcrun: error: unable to find utility "simctl", not a developer tool or in PATH`.
-2. Android emulator/physical device tooling is blocked because `adb` is not available in `PATH`.
-3. Physical iPhone testing still requires Apple developer team/signing, a device, and either Expo Go for limited smoke testing or an EAS development build for full native-module testing.
-4. Physical Android testing still requires Android platform tools, USB/debugging or emulator setup, and an APK/AAB/dev-client install path.
+1. iOS simulator tooling is blocked because full Xcode is not installed at `/Applications/Xcode.app`; `/usr/bin/xcrun` exists but `xcrun simctl list devices` fails with `xcrun: error: unable to find utility "simctl", not a developer tool or in PATH`.
+2. Android platform tools are now installed and `adb` works, but no emulator or physical Android device is currently attached/authorized.
+3. Physical iPhone testing still requires full Xcode, Apple developer team/signing, a device, and either Expo Go for limited smoke testing or an EAS development build for full native-module testing.
+4. Physical Android testing still requires USB debugging or emulator setup, an authorized device/emulator visible in `adb devices`, and an APK/AAB/dev-client install path.
 5. Push testing still requires an EAS project ID, physical devices, notification credentials, and backend push registration validation.
 6. Deep-link testing still requires installed app builds and verified `pulsesoc://` custom scheme handling; universal links require domain-side association files and app entitlements.
 7. Live playback, camera, microphone, media picker, upload, and background/lock-screen behavior still require actual device/simulator testing.
@@ -53,7 +64,7 @@ Install or configure:
 - Xcode command-line tools selected with `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
 - iOS simulator runtimes installed through Xcode.
 - Android Studio.
-- Android SDK platform tools.
+- Android SDK platform tools. Current machine has `adb` installed at `/opt/homebrew/bin/adb`, but no attached device/emulator yet.
 - Android emulator images or a physical Android device.
 - EAS CLI access through `npx eas-cli` or a globally installed `eas`.
 - Expo account access.
@@ -65,6 +76,7 @@ Required for iOS simulator:
 - Install full Xcode.
 - Open Xcode once and accept required setup.
 - Install iOS simulator runtime.
+- Select full Xcode with `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
 - Confirm:
 
 ```bash
@@ -85,8 +97,8 @@ Required for physical iPhone:
 
 Required for emulator/physical Android:
 
-- Install Android Studio.
-- Install Android SDK Platform Tools.
+- Install Android Studio if emulator management is needed.
+- Install Android SDK Platform Tools. Current machine now has Homebrew `android-platform-tools` installed.
 - Install Android Emulator and at least one API image.
 - Export `ANDROID_HOME` or `ANDROID_SDK_ROOT`.
 - Add platform tools to `PATH`.
@@ -94,6 +106,16 @@ Required for emulator/physical Android:
 
 ```bash
 adb devices
+```
+
+Current command result after setup:
+
+```text
+/opt/homebrew/bin/adb
+Android Debug Bridge version 1.0.41
+Version 37.0.0-14910828
+Installed as /opt/homebrew/bin/adb
+List of devices attached
 ```
 
 Required for physical Android:

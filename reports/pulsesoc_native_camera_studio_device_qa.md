@@ -50,7 +50,10 @@ Local machine state observed during this mission:
 - `xcode-select -p` points to `/Library/Developer/CommandLineTools`.
 - `/usr/bin/xcrun` exists.
 - `xcrun simctl list devices available` fails because `simctl` is not available from the active developer directory.
-- `adb` is not available in `PATH`.
+- `adb` was installed through Homebrew `android-platform-tools`.
+- `adb` is available at `/opt/homebrew/bin/adb`.
+- `adb version` reports Android Debug Bridge `1.0.41`, version `37.0.0-14910828`.
+- `adb devices` starts the daemon successfully but shows no attached or authorized devices.
 - `idevice_id` is not available in `PATH`.
 - `ios-deploy` is not available in `PATH`.
 - No iPhone, iPad, Android, Pixel, Samsung, Motorola, or OnePlus device was visible through USB system profiling.
@@ -63,9 +66,9 @@ These are machine/setup blockers, not PulseSoc code blockers.
 Priority order:
 
 1. Install/select full Xcode so `xcrun simctl` is available.
-2. Install Android platform tools so `adb` is available.
-3. Attach and trust at least one physical iPhone for real camera/microphone/photo-library QA.
-4. Attach and authorize at least one physical Android device for real camera/microphone/gallery QA.
+2. Attach and trust at least one physical iPhone for real camera/microphone/photo-library QA.
+3. Attach and authorize at least one physical Android device or start an Android emulator so `adb devices` lists a target.
+4. Install Android Studio/emulator images if emulator QA is needed.
 5. Configure provider credentials and entitlements before push/deep-link/lock-screen camera handoff claims.
 6. Create or reuse QA-safe authenticated PulseSoc credentials for publish-to-Feed/Status/Reels/Profile/Messenger flows.
 7. Run device builds for `com.pulsesoc.nativeapp`; do not use the production `com.pulsesoc.app` identity.

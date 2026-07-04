@@ -45,7 +45,7 @@ Completed native foundations:
 - Native Alert Management QA Hardening: browser-verified alert validation, inline delete confirmation/cancel/confirm, pause/resume/duplicate/delete/test success and failure states, channel readiness success/failure states, long-history and empty-history states, alert deep links, preserved success notices after refresh, and selected-alert stability through the built-in QA browser with seeded alert fixtures.
 - Alert Provider + Device QA Setup: documented APNs/FCM/Expo push readiness, SMS/email/Telegram readiness, notification tap deep links, lock-screen behavior plan, physical-device alert test plan, provider success/failure states, channel readiness accuracy checks, delivery debugging logs, and the critical app identity split between `com.pulsesoc.nativeapp` and `com.pulsesoc.app`; selected `com.pulsesoc.nativeapp` as the native provider/device QA identity while protecting production `com.pulsesoc.app`; no provider/device delivery was claimed verified.
 - Native Camera Studio + Media Compression/Preview Foundation: native Camera Studio route/screen, `/pulse/camera/*` deep-link handling, camera config wrapper, preview wrapper, create-from-camera API wrappers, photo/video capture shell, front/back camera switch, microphone permission handling, gallery fallback, permission-denied and QA browser fallback states, caption/privacy/destination flow, compression policy metadata, shared upload handoff, Feed/Status/Reel/Profile/Messenger publishing hooks, and safe web fallback for advanced AR/Banuba/effects.
-- Native Camera Studio Device QA + Hardening: audited the native Camera Studio device-readiness boundary, confirmed the parallel `com.pulsesoc.nativeapp` camera/mic/photo configuration, documented that `simctl`, `adb`, physical iPhone, and physical Android access are unavailable in this environment, kept browser/simulator/physical-device verification separated, and blocked LiveKit calls until real Camera Studio device QA is completed.
+- Native Camera Studio Device QA + Hardening: audited the native Camera Studio device-readiness boundary, confirmed the parallel `com.pulsesoc.nativeapp` camera/mic/photo configuration, documented that `simctl`, physical iPhone, and physical Android access remain unavailable in this environment, installed and verified Android `adb`, kept browser/simulator/physical-device verification separated, and blocked LiveKit calls until real Camera Studio device QA is completed.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -257,8 +257,7 @@ Do not duplicate in native:
 ## What Must Be Hardened Next
 
 - Select full Xcode so `xcrun simctl` is available.
-- Install Android platform tools so `adb` is available.
-- Attach/trust a physical iPhone and attach/authorize a physical Android device.
+- Attach/trust a physical iPhone and attach/authorize a physical Android device, or start an Android emulator.
 - QA browser route/layout sweep for `/pulse/camera`, `/pulse/camera/photo`, `/pulse/camera/video`, `/pulse/camera/status`, `/pulse/camera/reel`, and `/pulse/camera/post`.
 - Real-device camera permission accept/deny on iOS and Android.
 - Real-device microphone permission accept/deny for video capture.
@@ -281,7 +280,7 @@ Dependencies:
 Blockers:
 
 - Camera, microphone, gallery permissions, large-video handling, compression behavior, and upload memory pressure remain device-only and must not be claimed browser-verified.
-- `adb` is still not available in `PATH`.
+- `adb` is now available at `/opt/homebrew/bin/adb`, but `adb devices` shows no attached or authorized device.
 - `/usr/bin/xcrun` exists, but `xcrun simctl list devices available` failed because `simctl` was not available from the active developer directory.
 - `xcode-select -p` points to `/Library/Developer/CommandLineTools`; full Xcode must be selected for simulator work.
 - No physical iPhone or Android device was visible through USB system profiling in this workspace.
