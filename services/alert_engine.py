@@ -1187,6 +1187,49 @@ def _telegram_send(user, title, body, metadata=None):
         return {"ok": False, "status": "failed", "message": str(exc)}
 
 
+def _crypto_intelligence_push_copy(event, rule, body):
+    symbol = _normalize_symbol((rule or {}).get("symbol") or (event or {}).get("symbol"))
+    signal = {
+        "stream_key": "crypto_pulse",
+        "asset_symbol": symbol,
+        "headline": f"{symbol} crossed {_format_money((rule or {}).get('threshold_value'))}" if symbol else "Crypto signal",
+        "summary": body or "A configured crypto alert was triggered.",
+        "priority": "high",
+        "metadata": {
+            "asset_symbol": symbol,
+            "status_card": {"asset": symbol} if symbol else {},
+            "source": "crypto_alert",
+        },
+    }
+    try:
+        from services.pulsesoc_intelligence_engine import normalize_intelligence_alert_copy
+
+        copy = normalize_intelligence_alert_copy(signal)
+    except Exception:
+        headline = f"{symbol} MARKET SIGNAL" if symbol else "CRYPTO MARKET SIGNAL"
+        copy = {
+            "lock_title": "PULSESOC ALERT",
+            "lock_headline": headline,
+            "lock_body": body or "A configured crypto alert was triggered.",
+            "card_label": "PULSESOC ALERT",
+            "card_category": "Crypto Signal",
+            "card_priority_badge": "HIGH PRIORITY",
+            "card_headline": headline,
+            "card_summary": body or "A configured crypto alert was triggered.",
+            "card_icon": "crypto",
+            "accent": "gold",
+            "ask_ai_prompts": ["Explain this", "Why does it matter?", "What should I do?"],
+        }
+    copy["lock_title"] = "PULSESOC ALERT"
+    copy["lock_headline"] = str(copy.get("lock_headline") or "CRYPTO MARKET SIGNAL").strip().upper()[:64]
+    if body:
+        copy["lock_body"] = str(body).strip()[:180]
+        copy["card_summary"] = copy["lock_body"]
+    else:
+        copy["lock_body"] = str(copy.get("lock_body") or "A configured crypto alert was triggered.").strip()[:180]
+    return copy
+
+
 def dispatch_alert_event(event, rule=None):
     ensure_alert_schema()
     event = dict(event or {})
@@ -1194,8 +1237,10 @@ def dispatch_alert_event(event, rule=None):
     user_id = event.get("user_id") or rule.get("user_id")
     user = _user_record(user_id)
     channels = _normalize_channels(rule.get("channels") or _json_loads(rule.get("channels_json"), {}))
-    title = f"PulseSoc Alert: {_normalize_symbol(rule.get('symbol'))} crossed {_format_money(rule.get('threshold_value'))}"
     body = event.get("message") or "Your PulseSoc alert condition was met."
+    alert_copy = _crypto_intelligence_push_copy(event, rule, body)
+    title = alert_copy["lock_title"]
+    push_body = alert_copy["lock_body"]
     alert_id = rule.get("id") or event.get("alert_rule_id") or event.get("id") or ""
     event_id = event.get("id") or ""
     trigger_window = str(event.get("trigger_bucket") or event_id or alert_id or _now())
@@ -1212,18 +1257,36 @@ def dispatch_alert_event(event, rule=None):
         "observed_value": event.get("observed_value"),
         "target_price": rule.get("threshold_value"),
         "trigger_window": trigger_window,
+        "type": "intelligence_pulse",
+        "notification_type": "intelligence_pulse",
+        "category": "intelligence",
+        "source_type": "crypto_alert",
+        "source_id": str(alert_id),
+        "headline": alert_copy["lock_headline"],
+        "alert_copy": alert_copy,
+        "card_label": alert_copy.get("card_label"),
+        "card_category": alert_copy.get("card_category"),
+        "priority_badge": alert_copy.get("card_priority_badge"),
+        "card_summary": alert_copy.get("card_summary"),
+        "card_icon": alert_copy.get("card_icon"),
+        "accent": alert_copy.get("accent"),
+        "ask_ai_prompts": alert_copy.get("ask_ai_prompts"),
+        "show_on_lock_screen": True,
+        "badge": True,
     }
     delivery = {"ok": True, "channels": {}}
     notification_id = None
     alert_type = _central_crypto_alert_type(rule)
     priority = _central_crypto_priority(rule, channels)
+    metadata["sound_key"] = "alert" if priority == "urgent" else "pulse_signal"
+    metadata["vibration"] = "strong" if priority == "urgent" else "standard"
     central_channels = _central_crypto_channels(channels, priority)
     if central_channels:
         created = pulsesoc_notification_system.notify_crypto_alert(
             int(user_id),
             alert_id,
             title,
-            body,
+            push_body,
             _normalize_symbol(rule.get("symbol")),
             critical=priority == "urgent",
             metadata=metadata,
@@ -1279,7 +1342,7 @@ def dispatch_alert_event(event, rule=None):
             int(user_id),
             alert_id,
             title,
-            f"{body}\n\nSelected external channels need setup, so this in-app copy was created.",
+            f"{push_body}\n\nSelected external channels need setup, so this in-app copy was created.",
             _normalize_symbol(rule.get("symbol")),
             metadata=metadata,
             alert_type=alert_type,
