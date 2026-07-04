@@ -7,6 +7,8 @@ export const linking: LinkingOptions<RootStackParamList> = {
     screens: {
       Tabs: {
         screens: {
+          Home: "pulse",
+          Reels: "pulse/reels",
           Messenger: "pulse/messages",
           Notifications: "pulse/notifications",
           Profile: "pulse/profile"
@@ -22,6 +24,15 @@ export const linking: LinkingOptions<RootStackParamList> = {
         path: "pulse/post/:postId",
         parse: {
           postId: Number
+        }
+      },
+      Reels: {
+        path: "pulse/reels"
+      },
+      ReelDetail: {
+        path: "pulse/reels/:reelId",
+        parse: {
+          reelId: Number
         }
       },
       ProfileEdit: {

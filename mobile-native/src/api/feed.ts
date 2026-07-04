@@ -29,7 +29,15 @@ export type PulseMedia = {
   thumbnail_url?: string;
   poster_url?: string;
   playback_url?: string;
+  mux_playback_id?: string;
+  mux_hls_url?: string;
   hls_url?: string;
+  valid_url?: string;
+  cdn_url?: string;
+  playback_mime_type?: string;
+  is_available?: boolean;
+  has_audio?: boolean;
+  attached_audio_url?: string;
   mime_type?: string;
   alt?: string;
   width?: number;

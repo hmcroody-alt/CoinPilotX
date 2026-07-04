@@ -44,6 +44,22 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  const reelMatch = normalized.match(/^\/pulse\/reels\/(\d+)/);
+  if (reelMatch?.[1] && navigationRef.isReady()) {
+    navigationRef.navigate("ReelDetail", { reelId: Number(reelMatch[1]), title: "Reel" });
+    return { handled: true, target: normalized };
+  }
+
+  if (normalized.startsWith("/pulse/reels") && navigationRef.isReady()) {
+    const queryReelId = extractNumericQueryValue(normalized, "reel") || extractNumericQueryValue(normalized, "reel_id");
+    if (queryReelId) {
+      navigationRef.navigate("ReelDetail", { reelId: queryReelId, title: "Reel" });
+    } else {
+      navigationRef.navigate("Tabs", { screen: "Reels" });
+    }
+    return { handled: true, target: normalized };
+  }
+
   if (normalized === "/pulse/messages" && navigationRef.isReady()) {
     navigationRef.navigate("Tabs", { screen: "Messenger" });
     return { handled: true, target: normalized };
@@ -104,6 +120,13 @@ function navigateToNotifications() {
   if (navigationRef.isReady()) {
     navigationRef.navigate("NotificationCenter");
   }
+}
+
+function extractNumericQueryValue(target: string, name: string) {
+  const query = target.split("?")[1]?.split("#")[0] || "";
+  if (!query) return 0;
+  const value = new URLSearchParams(query).get(name);
+  return Number(value || 0);
 }
 
 function customSchemePath(value: string, prefix: string) {

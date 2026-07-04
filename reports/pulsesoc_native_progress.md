@@ -19,6 +19,7 @@ Completed native foundations:
 - Home Feed + Post Detail: native feed list, pagination, pull-to-refresh, offline cache, post detail, comments, add comment, reactions, save, repost, share hook, image media cards, and `/pulse/post/<post_id>` deep-link routing through existing PulseSoc APIs.
 - Pulse AI: basic chat through existing `/api/pulse/assistant/chat`.
 - Profile: native current profile, public profile route, profile posts/media/about tabs, profile edit, avatar/cover upload/remove, profile theme selection, offline cache, and profile deep links through existing PulseSoc profile/feed/theme APIs.
+- Reels Player + Reel Detail: native full-screen vertical Reels feed, Expo AV video playback, Mux/R2 media URL reuse, infinite scrolling, pull-to-refresh, metadata cache, comments, reactions, save, repost, share, follow creator, not interested, report, view tracking, profile navigation, and `/pulse/reels/<reel_id>` deep-link routing through existing Reels APIs.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -32,6 +33,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_notifications_progress.md`
 - `reports/pulsesoc_native_feed_progress.md`
 - `reports/pulsesoc_native_profile_progress.md`
+- `reports/pulsesoc_native_reels_progress.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -39,12 +41,11 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_notifications_audit.py`
 - `scripts/pulsesoc_native_feed_audit.py`
 - `scripts/pulsesoc_native_profile_audit.py`
+- `scripts/pulsesoc_native_reels_audit.py`
 
 ## Remaining Major Features
 
 - Feed composer
-- Reels native player
-- Reels detail/actions/comments
 - Status viewer
 - Status creator
 - Native media viewer
@@ -84,6 +85,7 @@ Existing backend/web surfaces inspected:
 - Profile APIs/media/theme: `/api/pulse/profile/me`, `/api/pulse/profile/update`, `/api/pulse/profile/avatar`, `/api/pulse/profile/cover`, `/api/pulse/profile/avatar/remove`, `/api/pulse/profile/cover/remove`, `/api/pulse/premium/profile-theme`
 - Reels APIs: `/api/pulse/reels/feed`, `/api/pulse/reels/<reel_id>/react`, comments, save, repost, share, not-interested, follow creator
 - Status APIs: `/api/pulse/status/rail`, `/api/pulse/status`, view, react, reply, share
+- Status data/business logic: `pulse_status`, `pulse_status_media`, `pulse_status_music`, `pulse_status_views`, `pulse_status_reactions`, `pulse_status_replies`
 
 Existing data/business logic that should remain server-authoritative:
 
@@ -106,66 +108,68 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Feature
 
-Recommendation: build Native Reels Player + Reel Detail next.
+Recommendation: build Native Status Viewer + Status Detail next.
 
 This should come before Status creator, Camera capture, Marketplace, or Calls.
 
 ## Why This Comes Next
 
-- Home Feed, Post Detail, Profile, Messenger, and Notifications now cover the core social graph and notification targets.
-- The largest remaining user-facing web fallback is media consumption, especially Reels.
-- The backend already exposes mature Reels APIs for feed, detail/actions/comments, save, repost, share, not-interested, and creator follow behavior.
-- Reels will establish reusable native video playback, media controls, creator headers, comment overlays, and gesture patterns needed by Status, media viewer, Creator Studio, Marketplace video previews, and later camera upload flows.
-- Native Reels is high leverage because it improves a performance-sensitive surface without requiring native camera creation or LiveKit call handling yet.
+- Home Feed, Post Detail, Profile, Notifications, and Reels now cover the core social graph plus the first media-heavy playback surface.
+- Status is the next largest social/media fallback still living primarily in the web experience.
+- The backend already exposes mature Status APIs for rail, create, view tracking, reactions, replies, sharing, music, AI story generation, and media upload association.
+- Reels established reusable native primitives for vertical media playback, metadata cache, creator headers, action controls, profile navigation, gesture handling, and notification deep links.
+- A native Status viewer reuses those primitives without taking on the heavier native camera/compression/editor work yet.
 
 ## Reusable Existing PulseSoc Logic
 
 Reuse directly:
 
-- `GET /api/pulse/reels/feed`
-- Reels detail route/API where available from the current backend
-- `POST /api/pulse/reels/<reel_id>/react`
-- Reels comments read/create APIs
-- Reels save/repost/share/not-interested APIs
-- existing creator follow behavior
-- existing media/Mux/R2 payload URLs
-- existing moderation, visibility, ranking, creator identity, premium marks, and notification side effects
+- `GET /api/pulse/status/rail`
+- `POST /api/pulse/status/<status_id>/view`
+- `POST /api/pulse/status/<status_id>/react`
+- `POST /api/pulse/status/<status_id>/reply`
+- `POST /api/pulse/status/<status_id>/share`
+- Existing `/api/pulse/status` create behavior for later creator work, but not required for the first viewer slice.
+- Existing `/api/pulse/media/upload` media pipeline and `pulse_status` media associations.
+- Existing Status music/search and AI story generation logic for later creator phases.
+- Existing moderation, visibility, expiration, analytics, creator identity, profile, premium marks, and notification side effects.
 
 Do not duplicate in native:
 
-- Reels ranking
-- media transcoding/processing rules
-- moderation/risk state
-- creator entitlement decisions
-- reaction/comment/save/repost persistence
-- notification dispatch
-- follow graph rules
+- Status expiration and visibility rules.
+- Media authorization and processing rules.
+- Moderation/risk state.
+- Reply/reaction/share persistence.
+- Viewer analytics persistence.
+- Notification dispatch.
+- Creator entitlement decisions.
 
 ## What Must Be Rebuilt Natively
 
-- Native vertical Reels player.
-- Native video rendering and buffering states.
+- Native Status rail.
+- Full-screen Status viewer with tap-through navigation and progress bars.
+- Native image/video rendering using the existing media URLs.
+- Reply composer and reaction controls.
+- Share hook.
 - Creator header and profile navigation.
-- Reels actions: react, comment, save, repost, share, not interested where APIs exist.
-- Comments overlay or detail screen.
-- Pull/gesture navigation between reels.
+- View tracking.
 - Offline metadata cache where safe.
-- Deep-link routing from notifications into native Reel detail.
-- Loading, empty, offline, and error states.
+- Deep-link routing from notifications into native Status detail.
+- Loading, empty, expired, offline, and error states.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Confirm exact Reels feed/detail payload shape from the current backend.
-- Confirm Expo AV or native video library behavior against existing Mux/R2 video URLs.
-- Confirm deep-link patterns for `/pulse/reels` and `/pulse/reels/<reel_id>`.
-- Confirm whether comments are returned on detail or require a separate endpoint.
+- Confirm exact Status rail/detail payload shape from the current backend.
+- Confirm whether individual `/pulse/status/<id>` notification links should use a dedicated JSON detail adapter or the rail payload plus focus behavior.
+- Confirm Expo AV behavior for Status videos using the existing media URLs.
+- Confirm Status reply payload shape and notification side effects.
 
 Blockers:
 
-- Real-device video playback, memory, buffering, audio focus, and scroll performance must be verified before production replacement.
-- If the backend exposes a web-only Reel detail for some cases, a thin JSON adapter may be needed before full native deep-link parity.
+- Real-device image/video progression, tap zones, audio/mute behavior, and background recovery must be verified before production replacement.
+- If the backend exposes a web-only Status detail for some cases, a thin JSON adapter may be needed before full native deep-link parity.
 
 ## Risk Level
 
@@ -173,9 +177,9 @@ Risk: Medium-high.
 
 Reasons:
 
-- Reels is media-heavy and performance-sensitive.
-- Native video playback must be smooth on real iOS and Android devices.
-- The backend/API/business logic already exists, so most risk is native rendering, memory, buffering, audio, gesture, and device QA.
+- Status is media-heavy, time-sensitive, and notification-driven.
+- Native image/video progression must feel immediate and match PulseSoc expiration/view tracking behavior.
+- The backend/API/business logic already exists, so most risk is native rendering, gesture timing, media playback, audio, and device QA.
 
 ## Estimated Complexity
 
@@ -183,34 +187,35 @@ Complexity: Medium-high.
 
 Recommended first slice:
 
-- Reels feed list.
-- Full-screen native video card.
-- Play/pause/mute.
+- Status rail.
+- Full-screen native viewer.
+- Tap left/right progression.
+- Progress bars.
 - Creator header and profile navigation.
-- Reaction/save/share hooks.
-- Comments read/create if existing APIs are straightforward.
-- Deep link into Reel detail.
-- Web fallback for unsupported media/detail cases.
+- View tracking.
+- Reaction/reply/share hooks.
+- Deep link into Status detail.
+- Safe fallback for unsupported or expired statuses.
 
 Defer from first slice:
 
-- Reel creation.
+- Status creation.
 - Camera capture.
-- Video compression.
+- Video/image compression.
 - Advanced editing.
 - Background upload.
-- Complex audio remix/music tools.
+- Complex music/AI story creator tools.
 
 ## Safest Implementation Plan
 
-1. Inspect current Reels web implementation, APIs, payloads, and media URL handling again before coding.
-2. Add a typed native Reels API wrapper around existing endpoints only.
-3. Build a native Reels feed screen with one video per viewport and conservative buffering.
-4. Add Reel Detail/deep-link routing.
-5. Add action hooks only after read/playback behavior is stable.
-6. Keep web fallback for unsupported video/media cases.
-7. Add a focused Reels audit and run install/typecheck/Expo doctor gates.
+1. Inspect current Status web implementation, APIs, payloads, and media URL handling again before coding.
+2. Add a typed native Status API wrapper around existing endpoints only.
+3. Build a native Status rail and viewer using reusable media/player/profile/action primitives from Reels where safe.
+4. Add Status detail/deep-link routing.
+5. Add view tracking, reaction, reply, and share hooks only after viewer behavior is stable.
+6. Keep safe fallback for unsupported, unavailable, or expired status cases.
+7. Add a focused Status audit and run install/typecheck/Expo doctor gates.
 
 ## Recommendation Summary
 
-Build Native Reels Player + Reel Detail next. The core social foundation is now native enough to support creator/profile context, and Reels gives the greatest leverage for replacing media-heavy web fallbacks while reusing existing PulseSoc media, ranking, moderation, and action APIs.
+Build Native Status Viewer + Status Detail next. Reels has now established the native media and gesture foundation; Status gives the greatest leverage for replacing the next media-heavy web fallback while reusing existing PulseSoc Status APIs, media pipeline, expiration rules, moderation, analytics, and notification behavior.
