@@ -411,6 +411,46 @@ def livekit_config_status() -> dict[str, Any]:
     }
 
 
+def livekit_hd_quality_policy() -> dict[str, Any]:
+    return {
+        "provider": "livekit",
+        "adaptive_stream": True,
+        "dynacast": True,
+        "simulcast": True,
+        "video_codec": "vp8",
+        "audio_capture": {
+            "echo_cancellation": True,
+            "noise_suppression": True,
+            "auto_gain_control": True,
+        },
+        "video_calls": {
+            "default": "1280x720@30",
+            "ideal_width": 1280,
+            "ideal_height": 720,
+            "ideal_fps": 30,
+            "max_width": 1920,
+            "max_height": 1080,
+            "bitrate_bps": 2_500_000,
+            "subscription": "high layer for active full-screen remote video; medium layer when minimized",
+        },
+        "live_hosts": {
+            "default": "auto_hd",
+            "preferred": "1920x1080@30",
+            "fallbacks": ["1280x720@30", "960x540@24", "640x480@20"],
+            "bitrate_bps": 4_200_000,
+        },
+        "layers": {
+            "low": "180p",
+            "medium": "360p",
+            "call_high": "540p",
+            "live_high": "720p",
+        },
+        "mux_egress": {
+            "rule": "Mux quality depends on the LiveKit input track; verify LiveKit published resolution before tuning replay output.",
+        },
+    }
+
+
 def _require_livekit() -> dict[str, Any] | None:
     status = livekit_config_status()
     if status["configured"]:
@@ -1410,6 +1450,53 @@ def _decode_payload(value: Any) -> dict[str, Any]:
         return {}
 
 
+def _decode_quality_report(row: dict[str, Any]) -> dict[str, Any]:
+    item = dict(row or {})
+    item["device_info"] = _decode_payload(item.get("device_info_json") or "{}")
+    return item
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(float(value))
+    except Exception:
+        return default
+
+
+def _quality_summary(quality: list[dict[str, Any]]) -> dict[str, Any]:
+    latest = quality[0] if quality else {}
+    livekit = (latest.get("device_info") or {}).get("livekit_quality") or {}
+    capture_width = _safe_int(livekit.get("capture_width"))
+    capture_height = _safe_int(livekit.get("capture_height"))
+    rendered_width = _safe_int(livekit.get("rendered_width"))
+    rendered_height = _safe_int(livekit.get("rendered_height"))
+    return {
+        "has_reports": bool(quality),
+        "latest_report_at": latest.get("created_at") or "",
+        "quality_score": latest.get("quality_score") or 0,
+        "resolution": latest.get("resolution") or "",
+        "capture_resolution": livekit.get("capture_resolution") or (f"{capture_width}x{capture_height}" if capture_width and capture_height else ""),
+        "rendered_resolution": livekit.get("rendered_resolution") or (f"{rendered_width}x{rendered_height}" if rendered_width and rendered_height else ""),
+        "capture_fps": livekit.get("capture_fps") or 0,
+        "fps": latest.get("fps") or max(_safe_float(livekit.get("inbound_fps")), _safe_float(livekit.get("outbound_fps"))),
+        "video_bitrate_kbps": latest.get("bitrate_video") or max(_safe_int(livekit.get("inbound_bitrate_kbps")), _safe_int(livekit.get("outbound_bitrate_kbps"))),
+        "latency_ms": latest.get("latency_ms") or livekit.get("rtt_ms") or 0,
+        "jitter_ms": latest.get("jitter_ms") or livekit.get("jitter_ms") or 0,
+        "packet_loss": latest.get("packet_loss") or livekit.get("packet_loss") or 0,
+        "codec": livekit.get("codec") or "",
+        "remote_quality_intent": livekit.get("remote_quality_intent") or "",
+        "hd_capture_observed": capture_width >= 1280 and capture_height >= 720,
+        "hd_render_observed": rendered_width >= 1280 and rendered_height >= 720,
+    }
+
+
 def _call_last_error(cur: Any, call_id: int) -> str:
     cur.execute(
         """
@@ -1731,8 +1818,15 @@ def admin_call_detail(call_ref: str | int) -> dict[str, Any]:
         cur.execute("SELECT * FROM communication_call_events WHERE call_id=? ORDER BY id DESC LIMIT 50", (int(call["id"]),))
         events = [dict(row) for row in cur.fetchall()]
         cur.execute("SELECT * FROM communication_call_quality_reports WHERE call_id=? ORDER BY id DESC LIMIT 50", (int(call["id"]),))
-        quality = [dict(row) for row in cur.fetchall()]
-        return _ok({"call": _serialize_call(cur, call, 0), "events": events, "quality_reports": quality, "livekit": livekit_config_status()})
+        quality = [_decode_quality_report(dict(row)) for row in cur.fetchall()]
+        return _ok({
+            "call": _serialize_call(cur, call, 0),
+            "events": events,
+            "quality_reports": quality,
+            "quality_summary": _quality_summary(quality),
+            "livekit": livekit_config_status(),
+            "hd_quality_policy": livekit_hd_quality_policy(),
+        })
     finally:
         conn.close()
 
@@ -1753,6 +1847,7 @@ def test_config(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         "safe_mode": "" if status.get("configured") else "config_missing",
         "provider_ready": bool(status.get("configured")),
         "livekit": status,
+        "hd_quality_policy": livekit_hd_quality_policy(),
     }
     if not status.get("configured"):
         error = _err(
@@ -1782,6 +1877,34 @@ def test_config(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             "attempted": True,
             "created": bool(connectivity.get("can_create_test_room")),
             "cleaned_up": bool(connectivity.get("can_cleanup_test_room")),
+        },
+    })
+
+
+def admin_livekit_quality_test(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    config = test_config(payload or {})
+    policy = livekit_hd_quality_policy()
+    configured = bool(config.get("configured"))
+    can_generate = bool(config.get("can_generate_token"))
+    can_create = bool(config.get("can_create_test_room"))
+    return _ok({
+        "provider": "livekit",
+        "configured": configured,
+        "provider_ready": bool(configured and can_generate and can_create),
+        "can_generate_token": can_generate,
+        "can_create_test_room": can_create,
+        "can_cleanup_test_room": bool(config.get("can_cleanup_test_room")),
+        "provider_error": config.get("provider_error") or "",
+        "missing": config.get("missing") or [],
+        "hd_quality_policy": policy,
+        "browser_quality_test": {
+            "requires_browser_camera": True,
+            "call_capture_target": policy["video_calls"]["default"],
+            "live_capture_preferred": policy["live_hosts"]["preferred"],
+            "notes": [
+                "Actual capture width, rendered width, fps, bitrate, RTT, jitter, and packet loss are reported by active calls through the quality endpoint.",
+                "Mux replay quality must be checked after LiveKit publishes an HD input track.",
+            ],
         },
     })
 

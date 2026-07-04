@@ -1442,6 +1442,15 @@ def admin_calls_test_config_page():
     return _admin_calls_page("recent", panel="test-config", test_result=result)
 
 
+@comm_v2_blueprint.route("/admin/calls/quality-test", methods=["GET", "POST"])
+def admin_calls_quality_test_page():
+    admin = _current_admin()
+    if not admin:
+        return _bot().redirect(_bot().url_for("admin_login_page", next=request.path))
+    result = call_engine.admin_livekit_quality_test({}) if request.method == "POST" else {}
+    return _admin_calls_page("recent", panel="quality-test", test_result=result)
+
+
 @comm_v2_blueprint.get("/admin/calls/<path:call_id>/timeline")
 def admin_calls_timeline_page(call_id):
     return _admin_calls_page("recent", call_id, "timeline")
@@ -1541,6 +1550,14 @@ def api_admin_call_test_config():
     if not admin:
         return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
     return _timed_json("admin_call_test_config", lambda: call_engine.test_config(request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post("/api/admin/calls/quality-test")
+def api_admin_call_quality_test():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    return _timed_json("admin_call_quality_test", lambda: call_engine.admin_livekit_quality_test(request.get_json(silent=True) or {}))
 
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/live/mux/create")

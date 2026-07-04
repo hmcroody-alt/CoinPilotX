@@ -34,6 +34,10 @@
     durationTimer: null,
     pointerOverControls: false,
     ending: false,
+    lastOutboundVideoBytes: 0,
+    lastOutboundVideoAt: 0,
+    lastInboundVideoBytes: 0,
+    lastInboundVideoAt: 0,
   };
 
   const qs = (sel, root = document) => root.querySelector(sel);
@@ -46,6 +50,89 @@
 
   function livekitClient() {
     return window.LivekitClient || window.LiveKitClient || window.livekitClient || null;
+  }
+
+  const CALL_AUDIO_CONSTRAINTS = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  };
+
+  function callVideoConstraints(facingMode = state.facingMode) {
+    return {
+      facingMode,
+      width: { ideal: 1280, max: 1920 },
+      height: { ideal: 720, max: 1080 },
+      frameRate: { ideal: 30, max: 30 },
+    };
+  }
+
+  function callVideoEncoding(context = "call") {
+    return context === "live"
+      ? { maxBitrate: 3_800_000, maxFramerate: 30 }
+      : { maxBitrate: 2_500_000, maxFramerate: 30 };
+  }
+
+  function livekitVideoLayers(LK, context = "call") {
+    const presets = LK?.VideoPresets || {};
+    const layers = context === "live"
+      ? [presets.h180, presets.h360, presets.h720]
+      : [presets.h180, presets.h360, presets.h540];
+    return layers.filter(Boolean);
+  }
+
+  function livekitPublishDefaults(LK, context = "call") {
+    const defaults = {
+      simulcast: true,
+      videoEncoding: callVideoEncoding(context),
+      videoSimulcastLayers: livekitVideoLayers(LK, context),
+      degradationPreference: "maintain-framerate",
+      dtx: true,
+      red: true,
+      stopMicTrackOnMute: false,
+    };
+    if (LK?.VideoPresets?.h720 || context === "call") defaults.videoCodec = "vp8";
+    return defaults;
+  }
+
+  function livekitRoomOptions(LK, context = "call") {
+    return {
+      adaptiveStream: true,
+      dynacast: true,
+      audioCaptureDefaults: CALL_AUDIO_CONSTRAINTS,
+      videoCaptureDefaults: callVideoConstraints("user"),
+      publishDefaults: livekitPublishDefaults(LK, context),
+      stopLocalTrackOnUnpublish: true,
+    };
+  }
+
+  function livekitPublishOptions(kind, LK, context = "call") {
+    if (kind === "video") {
+      const options = {
+        simulcast: true,
+        videoEncoding: callVideoEncoding(context),
+        videoSimulcastLayers: livekitVideoLayers(LK, context),
+        degradationPreference: "maintain-framerate",
+      };
+      const cameraSource = LK?.Track?.Source?.Camera;
+      if (cameraSource) options.source = cameraSource;
+      return options;
+    }
+    if (kind === "audio") {
+      const options = { dtx: true, red: true };
+      const micSource = LK?.Track?.Source?.Microphone;
+      if (micSource) options.source = micSource;
+      return options;
+    }
+    return {};
+  }
+
+  function livekitVideoQuality(LK, level = "high") {
+    const value = String(level || "high").toLowerCase();
+    const quality = LK?.VideoQuality || {};
+    if (value === "low") return quality.LOW || quality.Low || quality.low || "low";
+    if (value === "medium") return quality.MEDIUM || quality.Medium || quality.medium || "medium";
+    return quality.HIGH || quality.High || quality.high || "high";
   }
 
   function callId(call = state.activeCall) {
@@ -492,6 +579,7 @@
     shell.classList.toggle("is-minimized", state.minimized);
     const pill = qs("[data-call-restore]", shell);
     if (pill) pill.hidden = !state.minimized;
+    syncRemoteSubscriptionQuality(state.minimized ? "minimized_call" : "restored_call");
     setControl(state.minimized ? "minimize" : "restore", { minimized: state.minimized })?.catch?.(() => {});
   }
 
@@ -722,6 +810,28 @@
     return domLive;
   }
 
+  function setPublicationQuality(publication, level = "high", reason = "active_remote_video") {
+    if (!publication || !isVideoPublication(publication)) return;
+    const LK = livekitClient();
+    const quality = livekitVideoQuality(LK, level);
+    try { publication.setVideoQuality?.(quality); } catch (_) {}
+    try { publication.setSubscribed?.(true); } catch (_) {}
+    try { publication.setEnabled?.(true); } catch (_) {}
+    try { publication.track?.setPriority?.(level === "high" ? "high" : level === "low" ? "low" : "medium"); } catch (_) {}
+    publication.__pulseSocQualityIntent = { level, reason, at: Date.now() };
+  }
+
+  function syncRemoteSubscriptionQuality(reason = "layout") {
+    if (callType() !== "video") return;
+    const host = qs("[data-call-remote]");
+    const rect = host?.getBoundingClientRect?.();
+    const area = Math.max(0, Number(rect?.width || 0) * Number(rect?.height || 0));
+    const level = state.minimized || area < 160_000 ? "medium" : "high";
+    remoteParticipants()
+      .flatMap((participant) => videoPublicationsFor(participant))
+      .forEach((publication) => setPublicationQuality(publication, level, reason));
+  }
+
   function clearVideoElement(video) {
     if (!video) return;
     try { video.pause?.(); } catch (_) {}
@@ -878,7 +988,7 @@
   }
 
   function localTrackKind(track) {
-    return track?.kind || track?.source || track?.mediaStreamTrack?.kind || "";
+    return track?.kind || track?.mediaStreamTrack?.kind || track?.source || "";
   }
 
   async function createLocalTracks(type) {
@@ -887,8 +997,8 @@
       throw new Error("Your browser does not support calling.");
     }
     const constraints = {
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: type === "video" ? { facingMode: state.facingMode, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } : false,
+      audio: CALL_AUDIO_CONSTRAINTS,
+      video: type === "video" ? callVideoConstraints(state.facingMode) : false,
     };
     if (LK?.createLocalTracks) {
       return LK.createLocalTracks(constraints);
@@ -899,8 +1009,8 @@
 
   async function createSingleLocalTrack(kind) {
     const LK = livekitClient();
-    const audio = kind === "audio" ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true } : false;
-    const video = kind === "video" ? { facingMode: state.facingMode, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } : false;
+    const audio = kind === "audio" ? CALL_AUDIO_CONSTRAINTS : false;
+    const video = kind === "video" ? callVideoConstraints(state.facingMode) : false;
     if (kind === "video" && LK?.createLocalVideoTrack) return LK.createLocalVideoTrack(video);
     if (kind === "audio" && LK?.createLocalAudioTrack) return LK.createLocalAudioTrack(audio);
     if (LK?.createLocalTracks) {
@@ -987,12 +1097,13 @@
   }
 
   async function publishLocalTracks(room, type) {
+    const LK = livekitClient();
     state.localTracks = await createLocalTracks(type);
     for (const track of state.localTracks) {
       attachLocalPreview(track);
       try {
         if (room?.localParticipant?.publishTrack) {
-          await room.localParticipant.publishTrack(track);
+          await room.localParticipant.publishTrack(track, livekitPublishOptions(localTrackKind(track), LK, "call"));
         }
       } catch (error) {
         console.warn("PulseSoc call publish failed", error);
@@ -1002,10 +1113,11 @@
 
   async function publishSingleLocalTrack(kind) {
     if (!state.room?.localParticipant) throw new Error("Call room is not connected.");
+    const LK = livekitClient();
     const track = await createSingleLocalTrack(kind);
     if (!track) throw new Error(`${kind} track could not be created.`);
     if (kind === "video") attachLocalPreview(track);
-    await state.room.localParticipant.publishTrack?.(track);
+    await state.room.localParticipant.publishTrack?.(track, livekitPublishOptions(kind, LK, "call"));
     rememberLocalTrack(track);
     return track;
   }
@@ -1027,7 +1139,7 @@
     return track;
   }
 
-  function attachRemoteTrack(track) {
+  function attachRemoteTrack(track, publication = null) {
     const kind = localTrackKind(track);
     const host = kind === "audio" ? qs("[data-call-audio]") : qs("[data-call-remote]");
     if (!host) return;
@@ -1044,6 +1156,7 @@
         const audioVisual = qs("[data-call-audio-visual]", host);
         if (audioVisual) audioVisual.hidden = true;
         el.classList.add("pulsesoc-call-remote-video");
+        setPublicationQuality(publication, "high", "remote_video_attached");
       }
       if (kind === "audio") {
         el.hidden = true;
@@ -1054,7 +1167,10 @@
       host.appendChild(el);
       state.remoteTrackEls.add(el);
       el.play?.().catch(() => {});
-      if (kind === "video") syncRemoteCameraSurface();
+      if (kind === "video") {
+        syncRemoteCameraSurface();
+        syncRemoteSubscriptionQuality("remote_video_attached");
+      }
     } catch (error) {
       console.warn("PulseSoc call remote attach failed", error);
     }
@@ -1089,14 +1205,17 @@
       state.reconnectCount += 1;
       setStatus(t("pulse.call.restoring", "Restoring Pulse..."), "warn", t("pulse.call.restoring", "Restoring Pulse..."));
     });
-    on(event.Reconnected || "reconnected", () => setStatus(t("pulse.call.restored", "Pulse Restored"), "success", t("pulse.call.excellent", "Excellent Connection")));
+    on(event.Reconnected || "reconnected", () => {
+      setStatus(t("pulse.call.restored", "Pulse Restored"), "success", t("pulse.call.excellent", "Excellent Connection"));
+      syncRemoteSubscriptionQuality("room_reconnected");
+    });
     on(event.Disconnected || "disconnected", () => setStatus(t("pulse.call.lost", "Pulse Lost"), "warn", "Offline"));
     on(event.ParticipantConnected || "participantConnected", () => setStatus(t("pulse.call.accepted", "Pulse Accepted"), "success", t("pulse.call.excellent", "Excellent Connection")));
     on(event.ParticipantDisconnected || "participantDisconnected", () => {
       setStatus("Participant left.", "info", qualityLabel());
       syncRemoteCameraSurface(t("pulse.call.remote_camera_off", "Camera Off"));
     });
-    on(event.TrackSubscribed || "trackSubscribed", (track) => attachRemoteTrack(track));
+    on(event.TrackSubscribed || "trackSubscribed", (track, publication) => attachRemoteTrack(track, publication));
     on(event.TrackUnsubscribed || "trackUnsubscribed", (track) => detachRemoteTrack(track));
     on(event.TrackMuted || "trackMuted", () => syncCameraSurfaces());
     on(event.TrackUnmuted || "trackUnmuted", () => syncCameraSurfaces());
@@ -1135,7 +1254,7 @@
       try {
         await disconnectRoom("reconnect");
         renderMode(options.mode || "active", options.connectingMessage || t("pulse.call.establishing", "Establishing Secure Connection..."));
-        const room = new LK.Room({ adaptiveStream: true, dynacast: true });
+        const room = new LK.Room(livekitRoomOptions(LK, "call"));
         state.room = room;
         wireRoomEvents(room, LK);
         await room.connect(join.livekit_url, join.token);
@@ -1401,7 +1520,7 @@
     const video = state.localTracks.find((track) => localTrackKind(track) === "video");
     try {
       if (video?.restartTrack) {
-        await video.restartTrack({ facingMode: state.facingMode, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } });
+        await video.restartTrack(callVideoConstraints(state.facingMode));
         attachLocalPreview(video);
         syncLocalCameraSurface();
         await setControl("switch-camera", { facing_mode: state.facingMode, method: "restartTrack" });
@@ -1472,23 +1591,127 @@
     return { ok: true };
   }
 
+  function trackSettings(track) {
+    const raw = mediaTrack(track);
+    const settings = raw?.getSettings?.() || {};
+    return {
+      width: Number(settings.width || 0),
+      height: Number(settings.height || 0),
+      frameRate: Number(settings.frameRate || 0),
+      facingMode: settings.facingMode || "",
+      readyState: raw?.readyState || "",
+      enabled: raw?.enabled !== false,
+      muted: Boolean(raw?.muted),
+    };
+  }
+
+  function localTrackPublications() {
+    return collectionValues(state.room?.localParticipant?.trackPublications);
+  }
+
+  async function collectPublicationStats(publications, direction) {
+    const output = { fps: 0, bitrateKbps: 0, rttMs: 0, packetLoss: 0, jitterMs: 0, codec: "", frames: 0 };
+    let bytes = 0;
+    try {
+      for (const publication of publications) {
+        if (!isVideoPublication(publication)) continue;
+        const track = publicationTrack(publication);
+        const endpoint = direction === "outbound"
+          ? (track?.sender || publication?.sender || track?.processorSender)
+          : (track?.receiver || publication?.receiver);
+        if (!endpoint?.getStats) continue;
+        const reports = await endpoint.getStats();
+        reports.forEach((report) => {
+          if (direction === "outbound" && report.type === "outbound-rtp" && !report.isRemote) {
+            bytes += Number(report.bytesSent || 0);
+            output.frames = Math.max(output.frames, Number(report.framesEncoded || report.framesSent || 0));
+            output.fps = Math.max(output.fps, Number(report.framesPerSecond || report.frameRate || 0));
+          }
+          if (direction === "inbound" && report.type === "inbound-rtp" && !report.isRemote) {
+            bytes += Number(report.bytesReceived || 0);
+            output.frames = Math.max(output.frames, Number(report.framesDecoded || report.framesReceived || 0));
+            output.fps = Math.max(output.fps, Number(report.framesPerSecond || report.frameRate || 0));
+            output.jitterMs = Math.max(output.jitterMs, Math.round(Number(report.jitter || 0) * 1000));
+            const lost = Number(report.packetsLost || 0);
+            const received = Number(report.packetsReceived || 0);
+            output.packetLoss = received + lost > 0 ? Number((lost / (received + lost)).toFixed(4)) : 0;
+          }
+          if (report.type === "candidate-pair" && report.currentRoundTripTime) {
+            output.rttMs = Math.max(output.rttMs, Math.round(Number(report.currentRoundTripTime || 0) * 1000));
+          }
+          if (report.type === "codec" && report.mimeType) output.codec = String(report.mimeType || "");
+        });
+      }
+      const now = Date.now();
+      const lastBytesKey = direction === "outbound" ? "lastOutboundVideoBytes" : "lastInboundVideoBytes";
+      const lastAtKey = direction === "outbound" ? "lastOutboundVideoAt" : "lastInboundVideoAt";
+      const elapsed = Math.max(1, now - Number(state[lastAtKey] || now));
+      const delta = Math.max(0, bytes - Number(state[lastBytesKey] || 0));
+      output.bitrateKbps = Math.round((delta * 8) / elapsed);
+      state[lastBytesKey] = bytes;
+      state[lastAtKey] = now;
+    } catch (_) {}
+    return output;
+  }
+
+  async function callQualitySnapshot() {
+    const localVideo = liveLocalVideoTrack();
+    const remoteVideo = qs("[data-call-remote] video");
+    const localSettings = trackSettings(localVideo);
+    const remoteRect = remoteVideo?.getBoundingClientRect?.() || {};
+    const outbound = await collectPublicationStats(localTrackPublications(), "outbound");
+    const inbound = await collectPublicationStats(remoteParticipants().flatMap((participant) => videoPublicationsFor(participant)), "inbound");
+    const renderedWidth = Math.round(Number(remoteVideo?.videoWidth || remoteRect.width || 0));
+    const renderedHeight = Math.round(Number(remoteVideo?.videoHeight || remoteRect.height || 0));
+    const captureResolution = localSettings.width && localSettings.height ? `${localSettings.width}x${localSettings.height}` : "";
+    const renderedResolution = renderedWidth && renderedHeight ? `${renderedWidth}x${renderedHeight}` : "";
+    return {
+      capture_width: localSettings.width,
+      capture_height: localSettings.height,
+      capture_fps: localSettings.frameRate,
+      capture_facing_mode: localSettings.facingMode,
+      capture_resolution: captureResolution,
+      rendered_width: renderedWidth,
+      rendered_height: renderedHeight,
+      rendered_resolution: renderedResolution,
+      outbound_bitrate_kbps: outbound.bitrateKbps,
+      inbound_bitrate_kbps: inbound.bitrateKbps,
+      outbound_fps: outbound.fps,
+      inbound_fps: inbound.fps,
+      rtt_ms: Math.max(outbound.rttMs, inbound.rttMs),
+      jitter_ms: inbound.jitterMs,
+      packet_loss: inbound.packetLoss,
+      codec: inbound.codec || outbound.codec || "",
+      remote_quality_intent: remoteParticipants()
+        .flatMap((participant) => videoPublicationsFor(participant))
+        .map((publication) => publication.__pulseSocQualityIntent?.level || "")
+        .filter(Boolean)[0] || "",
+    };
+  }
+
   async function submitQualityReport(id = callId(), report = {}) {
     if (!id) return { ok: false, status: "missing_call" };
-    return postJson(`${API}/${encodeURIComponent(id)}/quality`, { ...report, device_info: deviceInfo() });
+    return postJson(`${API}/${encodeURIComponent(id)}/quality`, { ...report, device_info: { ...deviceInfo(), ...(report.device_info || {}) } });
   }
 
   function startQualityTimer() {
     stopQualityTimer();
-    state.qualityTimer = window.setInterval(() => {
+    state.qualityTimer = window.setInterval(async () => {
       const now = Date.now();
       if (!callId() || now - state.lastQualityAt < QUALITY_MS - 1000) return;
       state.lastQualityAt = now;
       const roomState = String(state.room?.state || state.room?.connectionState || "").toLowerCase();
       const score = roomState.includes("connected") ? 92 : roomState.includes("reconnect") ? 42 : 70;
+      const snapshot = await callQualitySnapshot();
       submitQualityReport(callId(), {
         quality_score: score,
         network_type: navigator.connection?.effectiveType || "",
-        resolution: `${window.innerWidth}x${window.innerHeight}`,
+        resolution: snapshot.rendered_resolution || snapshot.capture_resolution || `${window.innerWidth}x${window.innerHeight}`,
+        latency_ms: snapshot.rtt_ms,
+        jitter_ms: snapshot.jitter_ms,
+        packet_loss: snapshot.packet_loss,
+        bitrate_video: Math.max(snapshot.inbound_bitrate_kbps, snapshot.outbound_bitrate_kbps),
+        fps: Math.max(snapshot.inbound_fps, snapshot.outbound_fps, snapshot.capture_fps),
         reconnect_count: state.reconnectCount,
         speaker_mode: state.speakerMode,
         muted_audio: state.mutedAudio,
@@ -1496,6 +1719,7 @@
         hidden: document.hidden,
         local_audio_tracks: tracksByKind("audio").length,
         local_video_tracks: tracksByKind("video").length,
+        device_info: { livekit_quality: snapshot },
       }).catch(() => {});
     }, QUALITY_MS);
   }
@@ -1630,9 +1854,14 @@
   });
 
   window.addEventListener("focus", wakeCallPolling);
-  window.addEventListener("pageshow", wakeCallPolling);
+  window.addEventListener("pageshow", () => {
+    wakeCallPolling();
+    syncRemoteSubscriptionQuality("pageshow");
+  });
+  window.addEventListener("resize", () => syncRemoteSubscriptionQuality("resize"), { passive: true });
   window.addEventListener("online", () => {
     setStatus(t("pulse.call.restored", "Pulse Restored"), "success", qualityLabel());
+    syncRemoteSubscriptionQuality("online");
     wakeCallPolling();
   });
   window.addEventListener("offline", () => setStatus(`${t("pulse.call.lost", "Pulse Lost")}. Attempting recovery...`, "warn", "Offline"));

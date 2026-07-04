@@ -457,6 +457,112 @@
     return window.LivekitClient || window.LiveKitClient || window.livekitClient || null;
   }
 
+  const LIVEKIT_HD_AUDIO_CONSTRAINTS = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  };
+
+  function liveHdCameraProfiles(facingMode = "user", mode = "live") {
+    const fullHd = { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 } };
+    const hd = { facingMode, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } };
+    const medium = { facingMode, width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 24, max: 30 } };
+    const saver = { facingMode, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 20, max: 24 } };
+    return mode === "cohost" ? [hd, medium, saver] : [fullHd, hd, medium, saver];
+  }
+
+  function livekitHdVideoEncoding(mode = "live") {
+    return mode === "cohost"
+      ? { maxBitrate: 2_500_000, maxFramerate: 30 }
+      : { maxBitrate: 4_200_000, maxFramerate: 30 };
+  }
+
+  function livekitHdVideoLayers(LK, mode = "live") {
+    const presets = LK?.VideoPresets || {};
+    const layers = mode === "cohost"
+      ? [presets.h180, presets.h360, presets.h540]
+      : [presets.h180, presets.h360, presets.h720];
+    return layers.filter(Boolean);
+  }
+
+  function livekitHdPublishDefaults(LK, mode = "live") {
+    return {
+      simulcast: true,
+      videoCodec: "vp8",
+      videoEncoding: livekitHdVideoEncoding(mode),
+      videoSimulcastLayers: livekitHdVideoLayers(LK, mode),
+      degradationPreference: "maintain-framerate",
+      dtx: true,
+      red: true,
+      stopMicTrackOnMute: false,
+    };
+  }
+
+  function livekitHdRoomOptions(LK, mode = "live") {
+    return {
+      adaptiveStream: true,
+      dynacast: true,
+      audioCaptureDefaults: LIVEKIT_HD_AUDIO_CONSTRAINTS,
+      videoCaptureDefaults: liveHdCameraProfiles("user", mode)[0],
+      publishDefaults: livekitHdPublishDefaults(LK, mode),
+      stopLocalTrackOnUnpublish: true,
+    };
+  }
+
+  function livekitHdPublishOptions(track, LK, mode = "live") {
+    const kind = String(track?.kind || track?.mediaStreamTrack?.kind || "").toLowerCase();
+    if (kind === "video") {
+      const options = {
+        simulcast: true,
+        videoEncoding: livekitHdVideoEncoding(mode),
+        videoSimulcastLayers: livekitHdVideoLayers(LK, mode),
+        degradationPreference: "maintain-framerate",
+      };
+      const sourceName = String(track?.source || "").toLowerCase();
+      const source = sourceName.includes("screen")
+        ? LK?.Track?.Source?.ScreenShare
+        : LK?.Track?.Source?.Camera;
+      if (source) options.source = source;
+      return options;
+    }
+    if (kind === "audio") {
+      const options = { dtx: true, red: true };
+      const source = LK?.Track?.Source?.Microphone;
+      if (source) options.source = source;
+      return options;
+    }
+    return {};
+  }
+
+  async function createBestLiveVideoTrack(LK, facingMode = "user", mode = "live") {
+    let lastError = null;
+    for (const constraints of liveHdCameraProfiles(facingMode, mode)) {
+      try {
+        if (LK?.createLocalVideoTrack) return await LK.createLocalVideoTrack(constraints);
+        if (LK?.createLocalTracks) {
+          const tracks = await LK.createLocalTracks({ video: constraints, audio: false });
+          const videoTrack = tracks.find((track) => String(track.kind || track.mediaStreamTrack?.kind || "").toLowerCase() === "video");
+          if (videoTrack) return videoTrack;
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({ video: constraints, audio: false });
+        return stream.getVideoTracks()[0];
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error("No camera track was created.");
+  }
+
+  async function createBestLiveAudioTrack(LK) {
+    if (LK?.createLocalAudioTrack) return LK.createLocalAudioTrack(LIVEKIT_HD_AUDIO_CONSTRAINTS);
+    if (LK?.createLocalTracks) {
+      const tracks = await LK.createLocalTracks({ video: false, audio: LIVEKIT_HD_AUDIO_CONSTRAINTS });
+      return tracks.find((track) => String(track.kind || track.mediaStreamTrack?.kind || "").toLowerCase() === "audio");
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: LIVEKIT_HD_AUDIO_CONSTRAINTS });
+    return stream.getAudioTracks()[0];
+  }
+
   function stopGuestMedia(root) {
     root.__pulseLiveGuestTracks?.forEach((track) => {
       try { track.stop?.(); } catch (_) {}
@@ -477,7 +583,7 @@
 
   async function checkGuestReadiness(root) {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera and microphone are unavailable in this browser.");
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({ video: liveHdCameraProfiles("user", "cohost")[0], audio: LIVEKIT_HD_AUDIO_CONSTRAINTS });
     const cameraReady = stream.getVideoTracks().some((track) => track.readyState === "live");
     const micReady = stream.getAudioTracks().some((track) => track.readyState === "live");
     const settings = stream.getVideoTracks()[0]?.getSettings?.() || {};
@@ -485,6 +591,7 @@
       camera_ready: cameraReady,
       mic_ready: micReady,
       network_quality: navigator.onLine === false ? "offline" : "ready",
+      requested_quality: "hd_720p",
       connection: {
         camera_ready: cameraReady,
         mic_ready: micReady,
@@ -684,7 +791,7 @@
       root.dataset.liveRequestId = String(tokenData.request_id || root.dataset.liveRequestId || "");
       await complete("cohost_token_request_started", { stage_number: 13, stage_name: "livekit_token_generated", request_id: tokenData.request_id || 0 });
       await traceCohostStage(root, "cohost_token_delivered", { stage_number: 15, stage_name: "token_delivered_to_viewer", result: "completed", http_status: tokenResponse.status, json_parsed: true, memory_assigned: root.__pulseLiveGuestToken === tokenData.token, request_id: tokenData.request_id || 0 });
-      room = new LK.Room({ adaptiveStream: true, dynacast: true });
+      room = new LK.Room(livekitHdRoomOptions(LK, "cohost"));
       const roomEvents = LK.RoomEvent || {};
       if (room.on) {
         if (roomEvents.Reconnecting) room.on(roomEvents.Reconnecting, () => traceCohostStage(root, "cohost_room_join_started", { stage_number: 16, stage_name: "websocket_reconnecting", result: "started" }));
@@ -708,13 +815,7 @@
       let audioTrack;
       try {
         await begin("cohost_camera_publish_started", { stage_number: 17, stage_name: "camera_get_user_media" });
-        if (LK.createLocalVideoTrack) videoTrack = await LK.createLocalVideoTrack({ resolution: { width: 1280, height: 720 }, facingMode: "user" });
-        else if (LK.createLocalTracks) videoTrack = (await LK.createLocalTracks({ video: true, audio: false })).find((track) => track.kind === "video");
-        else {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          root.__pulseLiveGuestStream = stream;
-          videoTrack = stream.getVideoTracks()[0];
-        }
+        videoTrack = await createBestLiveVideoTrack(LK, "user", "cohost");
         if (!videoTrack) throw new Error("No camera track was created.");
         pendingTracks.push(videoTrack);
         await traceCohostStage(root, "cohost_camera_track_created", { stage_number: 17, stage_name: "camera_track_created", result: "completed", track_id: videoTrack.mediaStreamTrack?.id || videoTrack.sid || "" });
@@ -723,7 +824,7 @@
       }
       let videoPublication;
       try {
-        videoPublication = await room.localParticipant.publishTrack(videoTrack);
+        videoPublication = await room.localParticipant.publishTrack(videoTrack, livekitHdPublishOptions(videoTrack, LK, "cohost"));
         await complete("cohost_camera_publish_started", { stage_number: 17, stage_name: "camera_track_published", publication_sid: videoPublication?.trackSid || videoPublication?.sid || "" });
         await traceCohostStage(root, "cohost_camera_publish_success", { stage_number: 17, stage_name: "camera_track_acknowledged", result: "completed", publication_sid: videoPublication?.trackSid || videoPublication?.sid || "" });
       } catch (error) {
@@ -732,13 +833,7 @@
 
       try {
         await begin("cohost_microphone_publish_started", { stage_number: 18, stage_name: "microphone_get_user_media" });
-        if (LK.createLocalAudioTrack) audioTrack = await LK.createLocalAudioTrack({ echoCancellation: true, noiseSuppression: true });
-        else if (LK.createLocalTracks) audioTrack = (await LK.createLocalTracks({ video: false, audio: true })).find((track) => track.kind === "audio");
-        else {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-          root.__pulseLiveGuestAudioStream = stream;
-          audioTrack = stream.getAudioTracks()[0];
-        }
+        audioTrack = await createBestLiveAudioTrack(LK);
         if (!audioTrack) throw new Error("No microphone track was created.");
         pendingTracks.push(audioTrack);
         await traceCohostStage(root, "cohost_microphone_track_created", { stage_number: 18, stage_name: "microphone_track_created", result: "completed", track_id: audioTrack.mediaStreamTrack?.id || audioTrack.sid || "" });
@@ -747,7 +842,7 @@
       }
       let audioPublication;
       try {
-        audioPublication = await room.localParticipant.publishTrack(audioTrack);
+        audioPublication = await room.localParticipant.publishTrack(audioTrack, livekitHdPublishOptions(audioTrack, LK, "cohost"));
         await complete("cohost_microphone_publish_started", { stage_number: 18, stage_name: "microphone_track_published", publication_sid: audioPublication?.trackSid || audioPublication?.sid || "" });
         await traceCohostStage(root, "cohost_microphone_publish_success", { stage_number: 18, stage_name: "microphone_track_acknowledged", result: "completed", publication_sid: audioPublication?.trackSid || audioPublication?.sid || "" });
       } catch (error) {
@@ -811,6 +906,24 @@
       { urls: "stun:stun.cloudflare.com:3478" },
     ],
   };
+
+  function tuneRtcSender(sender, track, mode = "live") {
+    if (!sender || !track || track.kind !== "video") return;
+    try {
+      const params = sender.getParameters?.() || {};
+      const target = mode === "cohost" ? 2_500_000 : 4_200_000;
+      params.degradationPreference = "maintain-framerate";
+      params.encodings = (params.encodings && params.encodings.length ? params.encodings : [{}]).map((encoding) => ({
+        ...encoding,
+        maxBitrate: target,
+        maxFramerate: 30,
+        scaleResolutionDownBy: Number(encoding.scaleResolutionDownBy || 1),
+      }));
+      sender.setParameters?.(params)?.catch?.((error) => console.warn("PulseSoc Live sender quality tuning failed", error));
+    } catch (error) {
+      console.warn("PulseSoc Live sender quality tuning unavailable", error);
+    }
+  }
 
   function livePeerId(role) {
     const key = `pulseLivePeer:${role}`;
@@ -922,8 +1035,11 @@
       const senders = pc.getSenders();
       stream.getTracks().forEach((track) => {
         const sender = senders.find((item) => item.track?.kind === track.kind);
-        if (sender) sender.replaceTrack(track).catch((error) => console.warn("PulseSoc Live replaceTrack failed", error));
-        else pc.addTrack(track, stream);
+        if (sender) {
+          sender.replaceTrack(track).then(() => tuneRtcSender(sender, track, "live")).catch((error) => console.warn("PulseSoc Live replaceTrack failed", error));
+        } else {
+          tuneRtcSender(pc.addTrack(track, stream), track, "live");
+        }
       });
     });
 
@@ -933,7 +1049,7 @@
     const makePeer = (viewerPeerId) => {
       if (sessions.has(viewerPeerId)) return sessions.get(viewerPeerId);
       const pc = new RTCPeerConnection(rtcConfig);
-      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+      stream.getTracks().forEach((track) => tuneRtcSender(pc.addTrack(track, stream), track, "live"));
       pc.onicecandidate = (event) => {
         if (event.candidate) postSignal(root, "publisher", peerId, "candidate", { candidate: event.candidate.toJSON() }, viewerPeerId).catch((error) => console.warn("PulseSoc Live publisher ICE signal failed", error));
       };
@@ -1159,11 +1275,7 @@
       return mediaStream;
     }
     function cameraVideoProfiles() {
-      return [
-        { facingMode: preferredFacingMode, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } },
-        { facingMode: preferredFacingMode, width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 24, max: 30 } },
-        { facingMode: preferredFacingMode, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 20, max: 24 } },
-      ];
+      return liveHdCameraProfiles(preferredFacingMode, "live");
     }
     function livekitRoomState(room) {
       return String(room?.state || room?.connectionState || "").toLowerCase();
@@ -1350,6 +1462,10 @@
           room_state: livekitRoomState(livekitRoom),
           fps: Number(root.dataset.liveVideoFps || 0),
           bitrate: Number(root.dataset.liveVideoBitrate || 0),
+          capture_width: Number(videoTrack?.getSettings?.().width || 0),
+          capture_height: Number(videoTrack?.getSettings?.().height || 0),
+          capture_fps: Number(videoTrack?.getSettings?.().frameRate || 0),
+          requested_quality: "auto_hd",
           last_frame_age_ms: lastFrameAt ? Date.now() - lastFrameAt : null,
           published_video_tracks: Number(root.dataset.livekitPublishedVideo || 0),
           published_audio_tracks: Number(root.dataset.livekitPublishedAudio || 0),
@@ -1488,7 +1604,10 @@
       return Array.isArray(publications) ? publications : Object.values(publications);
     }
     function publicationKind(publication) {
-      return String(publication?.kind || publication?.track?.kind || publication?.source || "").toLowerCase();
+      const value = String(publication?.kind || publication?.track?.kind || publication?.source || publication?.track?.source || "").toLowerCase();
+      if (value === "camera" || value.includes("video") || value.includes("screen")) return "video";
+      if (value === "microphone" || value.includes("audio")) return "audio";
+      return value;
     }
     function setConnectButtonsBusy(busy) {
       qsa(root, "[data-live-start-camera], [data-live-screen]").forEach((button) => {
@@ -1592,7 +1711,7 @@
         });
         const tokenData = await tokenResponse.json().catch(() => ({}));
         if (!tokenResponse.ok || tokenData.ok === false) throw new Error(tokenData.message || "LiveKit host token could not be created.");
-        const room = livekitRoom || new LK.Room({ adaptiveStream: true, dynacast: true });
+        const room = livekitRoom || new LK.Room(livekitHdRoomOptions(LK, "live"));
         livekitRoom = room;
         if (!room.datasetPulseHandlers) {
           room.datasetPulseHandlers = "1";
@@ -1634,7 +1753,7 @@
         if (kind === "screen_share") {
           trackOptions = await LK.createLocalScreenTracks({ audio: true, video: true });
         } else {
-          const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+          const audio = LIVEKIT_HD_AUDIO_CONSTRAINTS;
           const videoProfiles = cameraVideoProfiles();
           let lastCaptureError = null;
           for (const videoConstraints of videoProfiles) {
@@ -1686,7 +1805,7 @@
             livekitLog("duplicate_track_skipped", { kind: kindName, sid: existingPublication?.trackSid || existingPublication?.sid || "" });
             continue;
           }
-          const publication = await room.localParticipant.publishTrack(track);
+          const publication = await room.localParticipant.publishTrack(track, livekitHdPublishOptions(track, LK, "live"));
           livekitPublishedTrackIds.add(trackId);
           publications.push(publication);
           livekitLog("publish_track_resolved", { kind: track?.kind || mediaTrack?.kind || "", track_id: trackId, sid: publication?.trackSid || publication?.sid || "" });
@@ -1807,7 +1926,7 @@
       await waitForLiveKitConnected(room);
       await unpublishLocalTracksByKind(room, "video");
       for (const track of videoTracks) {
-        const publication = await room.localParticipant.publishTrack(track);
+        const publication = await room.localParticipant.publishTrack(track, livekitHdPublishOptions(track, livekitClient(), "live"));
         const mediaTrack = mediaTrackOf(track);
         livekitPublishedTrackIds.add(trackStableId(track) || publication?.trackSid || publication?.sid || "");
         livekitLog("live_video_republished", {
