@@ -8,6 +8,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
       Tabs: {
         screens: {
           Home: "pulse",
+          Search: "pulse/search",
           Reels: "pulse/reels",
           Status: "pulse/status",
           Messenger: "pulse/messages",
@@ -47,6 +48,12 @@ export const linking: LinkingOptions<RootStackParamList> = {
         path: "pulse/marketplace/:listingId",
         parse: {
           listingId: Number
+        }
+      },
+      Search: {
+        path: "search",
+        parse: {
+          query: String
         }
       },
       ProfileEdit: {

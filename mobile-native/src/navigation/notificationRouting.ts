@@ -44,6 +44,12 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  if (normalized.startsWith("/pulse/search") && navigationRef.isReady()) {
+    const query = extractStringQueryValue(normalized, "q") || extractStringQueryValue(normalized, "query");
+    navigationRef.navigate("Tabs", { screen: "Search", params: query ? { query } : undefined });
+    return { handled: true, target: normalized };
+  }
+
   const reelMatch = normalized.match(/^\/pulse\/reels\/(\d+)/);
   if (reelMatch?.[1] && navigationRef.isReady()) {
     navigationRef.navigate("ReelDetail", { reelId: Number(reelMatch[1]), title: "Reel" });
@@ -165,6 +171,12 @@ function extractNumericQueryValue(target: string, name: string) {
   if (!query) return 0;
   const value = new URLSearchParams(query).get(name);
   return Number(value || 0);
+}
+
+function extractStringQueryValue(target: string, name: string) {
+  const query = target.split("?")[1]?.split("#")[0] || "";
+  if (!query) return "";
+  return new URLSearchParams(query).get(name) || "";
 }
 
 function customSchemePath(value: string, prefix: string) {

@@ -26,6 +26,7 @@ Completed native foundations:
 - Status Creator Foundation: native Status composer entry, text/image/video Status publishing, camera/gallery integration, shared upload preview/progress/retry/cancel, privacy/duration selectors, music search/trending hooks, AI Story generation hook, and Status rail refresh through existing PulseSoc Status APIs.
 - Media Viewer Foundation: shared full-screen native image/video viewer, pinch-to-zoom image structure, swipe-down close, previous/next navigation, processing-status checks, share/save/profile hooks, metadata display, and integrations for Feed/Post/Profile, Messenger attachments, and Status media hooks.
 - Marketplace Browse + Listing Detail Foundation: native Marketplace tab, search/browse through existing marketplace API, listing cards, listing detail modal, media gallery through NativeMediaViewer, save/report/contact seller hooks, safe checkout routing, offline cache, and marketplace deep-link routing.
+- Search + Discovery Foundation: native Search tab/route, debounced global search through existing `/api/pulse/search`, recent and suggested searches, discovery tabs, grouped result cards, pull-to-refresh, cached result fallback, native destination routing, `/pulse/search` deep-link routing, and web fallback for unsupported result URLs.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -46,6 +47,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_status_creator_progress.md`
 - `reports/pulsesoc_native_media_viewer_progress.md`
 - `reports/pulsesoc_native_marketplace_progress.md`
+- `reports/pulsesoc_native_search_progress.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -60,6 +62,7 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_status_creator_audit.py`
 - `scripts/pulsesoc_native_media_viewer_audit.py`
 - `scripts/pulsesoc_native_marketplace_audit.py`
+- `scripts/pulsesoc_native_search_audit.py`
 
 ## Remaining Major Features
 
@@ -74,7 +77,6 @@ Completed supporting reports/audits:
 - Creator Studio
 - Groups/communities
 - Saved content
-- Search/discovery
 
 ## Codebase Reconnaissance
 
@@ -132,65 +134,67 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Feature
 
-Recommendation: build Native Search + Discovery Foundation next.
+Recommendation: build Native Saved Content + Collections Foundation next.
 
-This should come before Marketplace seller tools, Creator Studio, Growth Center, or advanced Camera tools.
+This should come before Marketplace seller tools, Creator Studio, Growth Center, Premium, or native LiveKit calls.
 
 ## Why This Comes Next
 
-- The backend already exposes `/api/pulse/search`, and the web bridge searches posts, creators, videos, reels, statuses, marketplace listings, music, groups, rooms, and comments.
-- The native app now has real destinations for many result types: Post Detail, Profile, Reels, Status, Marketplace, Messenger, media viewer, and web fallback for unsupported targets.
-- Search is a high-leverage navigation layer across every feature already migrated, and it reduces dependence on broad WebView fallbacks.
-- Search can reuse existing server ranking/grouping and result URLs without duplicating discovery logic in native.
-- This recommendation is based on current backend routes, current native destination coverage, and migration progress.
+- The backend already exposes mature saved-content routes and APIs: `/pulse/saved`, `GET/POST /api/pulse/saved`, saved collections, delete, and move endpoints.
+- The native app now has many save-producing surfaces: Home Feed/Post Detail, Reels, Status, Marketplace, Media Viewer hooks, and Search result routing.
+- A native Saved screen turns existing save actions into a visible, reusable library without inventing new business logic.
+- Saved content is lower risk than Live/Calls and higher leverage than isolated seller or creator tooling because it connects most migrated surfaces.
+- This recommendation is based on current backend routes, current native migration progress, and the existing saved-content database/service code.
 
 ## Reusable Existing PulseSoc Logic
 
 Reuse directly:
 
-- Existing global search API: `GET /api/pulse/search`.
-- Existing grouped result contract used by `pulse_search_bridge.js` and `pulse_home_core.js`.
-- Existing result URLs for posts, profiles, videos, reels, statuses, marketplace listings, music, groups, rooms, and comments.
-- Existing server-side search ranking/filtering/grouping.
-- Existing native notification target routing and deep-link helpers.
-- Existing native destinations for Post Detail, Profile, Reels, Status, Marketplace, Messenger, and web fallback.
-- Existing saved/search history behavior if exposed by the backend payload.
+- Saved page and API contracts: `/pulse/saved`, `GET/POST /api/pulse/saved`.
+- Saved collection APIs: `GET/POST /api/pulse/saved/collections`, patch/delete collection routes.
+- Saved item actions: `DELETE /api/pulse/saved/<item_id>` and `POST /api/pulse/saved/<item_id>/move`.
+- Existing saved tables: `pulse_saved_items`, `pulse_saved_collections`, and `pulse_saved_sounds`.
+- Existing saved snapshot behavior: `pulse_saved_snapshot(...)`.
+- Existing saved collection ownership and fallback collection logic.
+- Existing saved actions already used by posts, reels, statuses, videos, marketplace, and sounds.
+- Native result routing for posts, profiles, reels, status, marketplace, messenger, media viewer, Search, and web fallback.
 
 Do not duplicate in native:
 
-- Search ranking.
-- Search indexing.
-- Search permissions/visibility filtering.
-- Marketplace/search moderation.
-- Result authorization.
-- Destination business logic.
-- Server-side query validation.
+- Saved item ownership checks.
+- Collection authorization.
+- Snapshot construction.
+- Save/un-save persistence rules.
+- Content visibility validation.
+- Collection deletion fallback behavior.
 - Server-side validation.
 
 ## What Must Be Rebuilt Natively
 
-- Native Search screen.
-- Search input with debounced query.
-- Grouped result sections.
-- Recent/trending search chips where supported.
-- Result routing into existing native destinations.
-- Unsupported-result web fallback.
-- Loading, empty, offline, error, retry, and cancelled-query states.
-- Optional local cache of last successful search results.
+- Native Saved screen.
+- Saved item list with type filters.
+- Collection selector and collection chips.
+- Search/filter query input.
+- Remove saved item action.
+- Move saved item to collection action.
+- Create collection action.
+- Native routing from saved items into existing native destinations.
+- Offline cache, pull-to-refresh, loading, empty, error, and retry states.
+- Web fallback for saved item types without native destinations.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Confirm `/api/pulse/search` response shape and grouped result keys.
-- Map result URLs to existing native navigation targets.
-- Preserve backend visibility/ranking rules.
-- Keep unsupported result types on web fallback until native surfaces exist.
+- Confirm `GET /api/pulse/saved` response shape for items and collections.
+- Map saved item `source_url`, `content_type`, and `content_id` to existing native routes.
+- Reuse existing save actions instead of adding client-only saved state.
+- Keep unsupported content types on web fallback.
 
 Blockers:
 
-- Real-device search typing latency and result routing must be verified before production replacement.
-- Some result types may not have native destinations yet and must remain explicit web fallback.
+- Real-device collection picker ergonomics and saved-item routing must be verified before replacing the WebView saved library.
+- Some saved content types such as full videos, music, groups, rooms, or future creator tools may still require web fallback until their native surfaces exist.
 
 ## Risk Level
 
@@ -198,9 +202,9 @@ Risk: Medium.
 
 Reasons:
 
-- Search is read-mostly and can reuse server result grouping and native/web routing.
-- Main risk is incorrect result routing or stale native fallback behavior.
-- Backend risk stays low if native does not duplicate ranking, permissions, or indexing.
+- Saved content is read/action heavy but uses mature server-owned endpoints.
+- Main risk is incorrect item routing or collection move/remove state drift.
+- Backend risk stays low if native does not duplicate collection ownership, snapshot, or visibility rules.
 
 ## Estimated Complexity
 
@@ -208,32 +212,34 @@ Complexity: Medium.
 
 Recommended first slice:
 
-- Native Search route/screen.
-- Query input and submit/debounce behavior.
-- Grouped result rendering from existing `/api/pulse/search`.
-- Native routing for posts, profiles, reels, status, marketplace, messenger, and notifications where supported.
-- Web fallback for unsupported result URLs.
-- Loading, empty, error, offline, and retry states.
-- Static audit proving search ranking/permissions stay backend-owned.
+- Native Saved route/screen.
+- API wrapper for saved items and collections.
+- Type filters and collection filter.
+- Saved item cards.
+- Pull-to-refresh and offline cache.
+- Remove item and move-to-collection actions.
+- Create collection action.
+- Native/web fallback routing.
+- Static audit proving saved business logic stays backend-owned.
 
 Defer from first slice:
 
-- New search ranking.
-- New search index tables.
-- AI search summarization.
-- Saved search sync unless the backend already returns it.
-- Advanced filters not exposed by the current API.
+- Bulk saved-item management.
+- Advanced collection editing.
+- Rich media previews for unsupported saved types.
+- Saved-sound player UX unless the current native audio stack is ready.
 
 ## Safest Implementation Plan
 
-1. Inspect `/api/pulse/search` response shape and current web search bridge renderer.
-2. Add native search API wrappers without changing backend routes.
-3. Add a native Search screen and route.
-4. Render grouped results using existing result payload fields.
-5. Map supported result URLs into existing native destinations.
-6. Keep unsupported targets on explicit web fallback.
-7. Add a focused Search audit and keep production WebView untouched.
+1. Inspect `/api/pulse/saved` and saved collection response shapes.
+2. Add native saved API wrappers without changing backend routes.
+3. Add a native Saved screen and route.
+4. Render saved item cards using existing snapshot payload fields.
+5. Add collection/type filtering through existing API query parameters.
+6. Route supported saved URLs into existing native destinations.
+7. Keep unsupported content types on explicit web fallback.
+8. Add a focused Saved audit and keep production WebView untouched.
 
 ## Recommendation Summary
 
-Build Native Search + Discovery Foundation next. The native app now has enough migrated destinations for search to become useful, and `/api/pulse/search` lets native reuse existing PulseSoc discovery, ranking, visibility, result URLs, and grouping while rebuilding only the native search UI and routing layer.
+Build Native Saved Content + Collections Foundation next. The native app now has enough migrated content surfaces for saved items to become valuable, and the existing `/api/pulse/saved` contract lets native reuse PulseSoc ownership, collection, snapshot, visibility, and deletion behavior while rebuilding only the native library UI.

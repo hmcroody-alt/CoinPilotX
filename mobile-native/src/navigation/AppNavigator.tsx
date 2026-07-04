@@ -14,6 +14,7 @@ import { ProfileEditScreen } from "../screens/ProfileEditScreen";
 import { PulseAiScreen } from "../screens/PulseAiScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
 import { ReelsScreen } from "../screens/ReelsScreen";
+import { SearchScreen } from "../screens/SearchScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { StatusScreen } from "../screens/StatusScreen";
 import { ChatScreen } from "../screens/ChatScreen";
@@ -62,6 +63,7 @@ function TabNavigator() {
       }}
     >
       <Tabs.Screen name="Home" component={HomeScreen} />
+      <Tabs.Screen name="Search" component={SearchScreen} />
       <Tabs.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />
       <Tabs.Screen name="Status" component={StatusScreen} />
       <Tabs.Screen name="Messenger" component={MessengerScreen} />
@@ -90,6 +92,7 @@ export function AppNavigator() {
       <Stack.Screen name="ReelDetail" component={ReelsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="StatusDetail" component={StatusScreen} options={({ route }) => ({ title: route.params.title || "Status" })} />
       <Stack.Screen name="MarketplaceDetail" component={MarketplaceScreen} options={({ route }) => ({ title: route.params?.title || "Marketplace" })} />
+      <Stack.Screen name="Search" component={SearchScreen} options={({ route }) => ({ title: route.params?.title || "Search" })} />
       <Stack.Screen name="ProfileDetail" component={ProfileScreen} options={({ route }) => ({ title: route.params?.title || "Profile" })} />
       <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} options={{ title: "Edit Profile" }} />
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} options={{ title: "Notifications" }} />
