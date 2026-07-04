@@ -37,6 +37,7 @@ Completed native foundations:
 - Growth Center Foundation: native Growth Center route, read-only growth state through `/api/pulse/growth`, server-owned growth score/status cards, wallet/budget summary, audience/targeting preview, campaign overview, analytics snapshot, Feed/Post/Reel/Profile promote shortcuts, Settings entry, `/pulse/growth` and `/pulse/promote` routing, offline cache, and safe web fallback for campaign launch, wallet funding, billing, targeting, ad review, and unsupported promotion tools.
 - Intelligence + Alerts Foundation: native Intelligence route, server-owned intelligence state through `/api/dashboard/intelligence/state`, crypto/market alert list through `/api/crypto/alerts`, stream/forecast cards, alert overview/detail, notification badge summary, Premium/Growth/Creator/Search/Profile navigation, offline cache, `/dashboard/intelligence` and `/dashboard/crypto/alerts` deep-link routing, and safe web fallback for advanced intelligence, provider administration, collector management, alert creation/editing, and unsupported operations.
 - Feature Parity + QA Readiness Report: native-vs-WebView parity matrix across core PulseSoc surfaces, route/deep-link inventory, backend reuse assessment, QA blocker inventory, recommended hardening order, release readiness statement, and device-QA-first next action.
+- Device QA Setup: added Expo web QA dependencies, QA start/build scripts, EAS development/simulator/preview/production profiles, optional Expo project ID support for push-token registration, exact iOS/Android/browser/physical-device QA commands, and a remaining-blocker inventory.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -68,6 +69,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_growth_progress.md`
 - `reports/pulsesoc_native_intelligence_progress.md`
 - `reports/pulsesoc_native_feature_parity_qa_readiness.md`
+- `reports/pulsesoc_native_device_qa_setup.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -93,6 +95,7 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_growth_audit.py`
 - `scripts/pulsesoc_native_intelligence_audit.py`
 - `scripts/pulsesoc_native_feature_parity_audit.py`
+- `scripts/pulsesoc_native_device_setup_audit.py`
 
 ## Remaining Major Features
 
@@ -100,7 +103,7 @@ Completed supporting reports/audits:
 - Native LiveKit calls
 - Full-screen incoming calls
 - Crypto/market alerts
-- Device QA/tooling setup and hardening pass
+- External device QA tooling completion and hardening pass
 
 ## Codebase Reconnaissance
 
@@ -174,14 +177,15 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Action
 
-Recommendation: device QA setup.
+Recommendation: finish external device QA setup and run the first real-device/simulator QA pass.
 
 This should come before another major native module.
 
 ## Why This Comes Next
 
 - The parity report shows that native code breadth is no longer the main blocker.
-- Real-device readiness is still low because Expo web, Android tooling, iOS simulator tooling, and a physical device flow are not available in the current workspace.
+- Real-device readiness is still blocked by Android tooling, iOS simulator tooling, push/build credentials, and a physical device flow.
+- Expo web dependencies have been added, but local macOS file permissions can still block Metro from reading `mobile-native/node_modules`.
 - Push, deep links, camera/media permissions, background recovery, Reels/Status playback, Live viewer behavior, billing/provider return flows, and offline cache behavior are device-sensitive.
 - Continuing to add feature modules without at least one working QA route increases rework and release risk.
 - This recommendation is based on the current production and `mobile-native` migration state after the Feature Parity + QA Readiness checkpoint.
@@ -192,7 +196,7 @@ Reuse directly:
 
 - Existing `mobile-native` automated verification suite.
 - Existing native progress reports and the parity QA readiness report.
-- Existing Expo native scripts: `npm run ios`, `npm run android`, and `npm run typecheck`.
+- Existing Expo native scripts: `npm run ios`, `npm run android`, `npm run start:qa`, `npm run web:qa`, `npm run ios:simulator`, `npm run android:emulator`, and `npm run typecheck`.
 - Existing native route/deep-link coverage and notification routing.
 - Existing feature audit scripts for targeted regression checks.
 
@@ -218,15 +222,16 @@ Do not duplicate in native:
 Dependencies:
 
 - Xcode developer tools or Android platform tools must be installed/configured.
-- If browser QA is desired, Expo web dependencies must be intentionally added and accepted as part of the native project.
+- If browser QA is desired, the added Expo web dependencies must run on a filesystem location macOS allows Metro to read.
 - A physical device flow needs Expo Go or an EAS development build plus log capture.
 
 Blockers:
 
-- `npx expo start --web --port 8094` fails because `react-native-web@~0.19.10`, `react-dom@18.2.0`, and `@expo/metro-runtime@~3.2.3` are not installed.
+- Expo web dependencies are installed, but `npm run web:qa` can still fail with `EPERM: operation not permitted` reading files under `mobile-native/node_modules`; prior `xattr -dr com.apple.provenance mobile-native` cleanup was denied by macOS.
 - `adb` is not available in `PATH`.
 - `/usr/bin/xcrun` exists, but `xcrun simctl list devices available` fails because `simctl` is not available.
 - No physical-device QA flow has been recorded in this workspace.
+- EAS project ID, Apple credentials, Android/Firebase push credentials, and provisioning remain external setup.
 
 ## Risk Level
 

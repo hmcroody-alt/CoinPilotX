@@ -1,6 +1,7 @@
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
+import { EXPO_PROJECT_ID } from "./config";
 import { pulseApi } from "./pulseApi";
 
 export type PushRegistrationResult = {
@@ -50,7 +51,9 @@ export async function registerPushDevice(): Promise<PushRegistrationResult> {
       });
     }
 
-    const token = await Notifications.getExpoPushTokenAsync();
+    const token = EXPO_PROJECT_ID
+      ? await Notifications.getExpoPushTokenAsync({ projectId: EXPO_PROJECT_ID })
+      : await Notifications.getExpoPushTokenAsync();
     return pulseApi<PushRegistrationResult>("/api/push/subscribe", {
       method: "POST",
       body: JSON.stringify({
