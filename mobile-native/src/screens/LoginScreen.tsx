@@ -1,0 +1,102 @@
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useNavigation } from "@react-navigation/native";
+import { useState } from "react";
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { signIn, useAuth } from "../session/auth";
+import { colors } from "../theme/colors";
+import { AuthStackParamList } from "../navigation/types";
+
+export function LoginScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
+  const { setAuthState } = useAuth();
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
+    setLoading(true);
+    try {
+      setAuthState(await signIn(identifier.trim(), password));
+    } catch (error) {
+      Alert.alert("Login failed", error instanceof Error ? error.message : "Unable to sign in.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <View style={styles.root}>
+      <Text style={styles.brand}>PulseSoc</Text>
+      <Text style={styles.copy}>Native access to Mission Control, messages, alerts, and Pulse AI.</Text>
+      <TextInput
+        autoCapitalize="none"
+        keyboardType="email-address"
+        placeholder="Email or username"
+        placeholderTextColor={colors.muted}
+        style={styles.input}
+        value={identifier}
+        onChangeText={setIdentifier}
+      />
+      <TextInput
+        placeholder="Password"
+        placeholderTextColor={colors.muted}
+        secureTextEntry
+        style={styles.input}
+        value={password}
+        onChangeText={setPassword}
+      />
+      <Pressable style={styles.button} onPress={submit} disabled={loading}>
+        <Text style={styles.buttonText}>{loading ? "Signing in" : "Sign in"}</Text>
+      </Pressable>
+      <Pressable onPress={() => navigation.navigate("Signup")}>
+        <Text style={styles.link}>Create account</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    justifyContent: "center",
+    gap: 14,
+    padding: 22,
+    backgroundColor: colors.background
+  },
+  brand: {
+    color: colors.text,
+    fontSize: 38,
+    fontWeight: "900"
+  },
+  copy: {
+    color: colors.muted,
+    fontSize: 16,
+    lineHeight: 23,
+    marginBottom: 8
+  },
+  input: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    color: colors.text,
+    minHeight: 52,
+    paddingHorizontal: 14
+  },
+  button: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderRadius: 8,
+    minHeight: 52,
+    justifyContent: "center"
+  },
+  buttonText: {
+    color: "#08110f",
+    fontWeight: "800"
+  },
+  link: {
+    color: colors.accentStrong,
+    fontWeight: "700",
+    textAlign: "center"
+  }
+});

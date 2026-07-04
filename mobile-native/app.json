@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "PulseSoc Native",
+    "slug": "pulsesoc-native",
+    "scheme": "pulsesoc",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "com.pulsesoc.native",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "PulseSoc uses the camera for native status, reels, profile media, and calls.",
+        "NSMicrophoneUsageDescription": "PulseSoc uses the microphone for native voice/video calls and media capture.",
+        "NSPhotoLibraryUsageDescription": "PulseSoc uses the photo library for profile, chat, status, and reels uploads."
+      }
+    },
+    "android": {
+      "package": "com.pulsesoc.native",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-notifications",
+      "expo-camera",
+      "expo-image-picker"
+    ],
+    "extra": {
+      "pulseApiBaseUrl": "https://pulsesoc.com",
+      "track": "parallel-native-foundation"
+    }
+  }
+}
