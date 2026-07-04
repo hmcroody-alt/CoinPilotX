@@ -1,7 +1,7 @@
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, RefreshControl, Share, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, Share, StyleSheet, Text, View } from "react-native";
 import {
   listFeed,
   loadCachedFeed,
@@ -11,6 +11,7 @@ import {
   repostPost,
   savePost
 } from "../api/feed";
+import { FeedComposer } from "../components/FeedComposer";
 import { PostCard } from "../components/PostCard";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -30,6 +31,7 @@ export function HomeScreen() {
   const [offline, setOffline] = useState(false);
   const [error, setError] = useState("");
   const [busyPostId, setBusyPostId] = useState<number | null>(null);
+  const [composerOpen, setComposerOpen] = useState(false);
 
   async function load(mode: "initial" | "refresh" | "more" = "initial") {
     if (mode === "more" && (!hasMore || loadingMore)) return;
@@ -127,43 +129,60 @@ export function HomeScreen() {
   }
 
   return (
-    <FlatList
-      style={styles.list}
-      contentContainerStyle={styles.content}
-      data={posts}
-      keyExtractor={(item) => String(item.id)}
-      refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
-      ListHeaderComponent={
-        <View style={styles.header}>
-          <Text style={styles.title}>Home Feed</Text>
-          <Text style={styles.subtitle}>{offline ? "Showing saved feed" : "PulseSoc native feed"}</Text>
-        </View>
-      }
-      ListEmptyComponent={
-        <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>{error ? "Feed unavailable" : "No posts yet"}</Text>
-          <Text style={styles.emptyText}>{error || "The first posts will appear here when the existing PulseSoc feed returns them."}</Text>
-        </View>
-      }
-      renderItem={({ item }) => (
-        <PostCard
-          post={item}
-          busy={busyPostId === item.id}
-          onOpen={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Post" })}
-          onReact={handleReact}
-          onSave={handleSave}
-          onRepost={handleRepost}
-          onShare={handleShare}
-          onAuthorPress={(post) => {
-            const key = post.author?.public_player_id || post.author?.username || "";
-            if (key) navigation.navigate("ProfileDetail", { profileKey: key, title: post.author?.display_name || "Profile" });
-          }}
-        />
-      )}
-      onEndReached={() => load("more").catch(() => undefined)}
-      onEndReachedThreshold={0.35}
-      ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.footer} color={colors.accent} /> : null}
-    />
+    <View style={styles.root}>
+      <FlatList
+        style={styles.list}
+        contentContainerStyle={styles.content}
+        data={posts}
+        keyExtractor={(item) => String(item.id)}
+        refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
+        ListHeaderComponent={
+          <View style={styles.header}>
+            <View style={styles.headerRow}>
+              <View>
+                <Text style={styles.title}>Home Feed</Text>
+                <Text style={styles.subtitle}>{offline ? "Showing saved feed" : "PulseSoc native feed"}</Text>
+              </View>
+              <Pressable style={styles.composeButton} onPress={() => setComposerOpen(true)}>
+                <Text style={styles.composeText}>Create</Text>
+              </Pressable>
+            </View>
+          </View>
+        }
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>{error ? "Feed unavailable" : "No posts yet"}</Text>
+            <Text style={styles.emptyText}>{error || "The first posts will appear here when the existing PulseSoc feed returns them."}</Text>
+          </View>
+        }
+        renderItem={({ item }) => (
+          <PostCard
+            post={item}
+            busy={busyPostId === item.id}
+            onOpen={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Post" })}
+            onReact={handleReact}
+            onSave={handleSave}
+            onRepost={handleRepost}
+            onShare={handleShare}
+            onAuthorPress={(post) => {
+              const key = post.author?.public_player_id || post.author?.username || "";
+              if (key) navigation.navigate("ProfileDetail", { profileKey: key, title: post.author?.display_name || "Profile" });
+            }}
+          />
+        )}
+        onEndReached={() => load("more").catch(() => undefined)}
+        onEndReachedThreshold={0.35}
+        ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.footer} color={colors.accent} /> : null}
+      />
+      <FeedComposer
+        visible={composerOpen}
+        onClose={() => setComposerOpen(false)}
+        onCreated={(post) => {
+          if (post) setPosts((current) => [post, ...current.filter((item) => item.id !== post.id)]);
+          load("refresh").catch(() => undefined);
+        }}
+      />
+    </View>
   );
 }
 
@@ -183,6 +202,16 @@ const styles = StyleSheet.create({
   centerText: {
     color: colors.muted,
     marginTop: 12
+  },
+  composeButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10
+  },
+  composeText: {
+    color: colors.background,
+    fontWeight: "900"
   },
   content: {
     padding: 16,
@@ -212,7 +241,16 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: 14
   },
+  headerRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
   list: {
+    backgroundColor: colors.background,
+    flex: 1
+  },
+  root: {
     backgroundColor: colors.background,
     flex: 1
   },

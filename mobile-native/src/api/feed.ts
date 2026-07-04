@@ -112,6 +112,23 @@ export type PostDetailResponse = {
   comments?: PulseComment[];
 };
 
+export type CreatePostPayload = {
+  body: string;
+  title?: string;
+  post_type?: "text" | "image" | "video" | string;
+  visibility?: "public" | "followers" | "private";
+  media_ids?: number[];
+  tags?: string[];
+};
+
+export type CreatePostResponse = {
+  ok?: boolean;
+  post_id?: number;
+  post?: PulsePost;
+  next_url?: string;
+  message?: string;
+};
+
 export type FeedParams = {
   feed?: string;
   tab?: string;
@@ -164,6 +181,22 @@ export async function getPostDetail(postId: number) {
   const detail = { ...data, post, comments };
   if (post) await cachePostDetail(postId, detail);
   return detail;
+}
+
+export async function createPost(payload: CreatePostPayload) {
+  const data = await pulseApi<CreatePostResponse>("/api/pulse/posts", {
+    method: "POST",
+    body: JSON.stringify({
+      body: payload.body || "",
+      title: payload.title || "",
+      post_type: payload.post_type || "text",
+      visibility: payload.visibility || "public",
+      media_ids: payload.media_ids || [],
+      tags: payload.tags || []
+    })
+  });
+  const post = data.post ? normalizePost(data.post) : undefined;
+  return { ...data, post, post_id: Number(data.post_id || post?.id || 0) };
 }
 
 export async function loadCachedPostDetail(postId: number) {

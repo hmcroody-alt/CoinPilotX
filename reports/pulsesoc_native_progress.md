@@ -22,6 +22,7 @@ Completed native foundations:
 - Reels Player + Reel Detail: native full-screen vertical Reels feed, Expo AV video playback, Mux/R2 media URL reuse, infinite scrolling, pull-to-refresh, metadata cache, comments, reactions, save, repost, share, follow creator, not interested, report, view tracking, profile navigation, and `/pulse/reels/<reel_id>` deep-link routing through existing Reels APIs.
 - Status Viewer + Status Detail: native Status rail, Status list, full-screen viewer, image/video/text rendering, tap navigation, view tracking, reactions, replies, shares, music display, offline metadata cache, and `/pulse/status/<status_id>` deep-link routing through existing Status APIs.
 - Media Capture + Upload Foundation: shared native image picker, video picker, camera entry point, permission states, file validation, upload progress, retry, cancellation, processing-status polling, reusable upload hook/service, and reusable media preview component over existing PulseSoc media APIs.
+- Feed Composer Foundation: native composer entry from Home Feed, text/title publishing, visibility selector, image/video/camera attachment through the shared media upload layer, upload preview/progress/retry/cancel, publish states, and feed refresh through existing PulseSoc post APIs.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -38,6 +39,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_reels_progress.md`
 - `reports/pulsesoc_native_status_progress.md`
 - `reports/pulsesoc_native_media_upload_progress.md`
+- `reports/pulsesoc_native_feed_composer_progress.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -48,10 +50,10 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_reels_audit.py`
 - `scripts/pulsesoc_native_status_audit.py`
 - `scripts/pulsesoc_native_media_upload_audit.py`
+- `scripts/pulsesoc_native_feed_composer_audit.py`
 
 ## Remaining Major Features
 
-- Feed composer
 - Status creator
 - Native media viewer
 - Advanced camera/compression/editor tools
@@ -113,37 +115,37 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Feature
 
-Recommendation: build Native Feed Composer Foundation next.
+Recommendation: build Native Status Creator Foundation next.
 
-This should come before Status creator, Marketplace posting, Creator Studio publishing, or advanced Camera tools.
+This should come before Marketplace posting, Creator Studio publishing, or advanced Camera tools.
 
 ## Why This Comes Next
 
-- Home Feed and Post Detail are already native, so composing a basic post completes the core feed loop.
-- The shared native media upload layer now exists, so Feed Composer can attach uploaded media without duplicating upload logic.
-- The backend already exposes post creation, media upload, feed ranking, visibility, moderation, mentions, notification fanout, and saved/repost/reaction logic.
-- Feed Composer is less complex than Status creator because it does not require timed story progression, music/AI story tools, or advanced camera effects in the first slice.
-- It gives a user-visible creation milestone while continuing to reuse existing PulseSoc server-side rules.
+- Native Status viewing/detail is already built, so Status creation completes the Status loop.
+- The shared native media upload foundation and Feed Composer now prove the media-pick/upload/publish pattern.
+- The backend already exposes mature Status creation APIs, privacy/expiration rules, media associations, music search/trending, AI story generation, reactions, replies, shares, view tracking, and notification behavior.
+- Status Creator is the next highest-leverage creation surface because it reuses the same media layer while unlocking a major mobile-first PulseSoc workflow.
+- It should be implemented before advanced camera effects so the basic Status publishing contract is stable first.
 
 ## Reusable Existing PulseSoc Logic
 
 Reuse directly:
 
-- Existing post creation API: `POST /api/pulse/posts`.
+- Existing Status creation API: `POST /api/pulse/status`.
+- Existing Status rail/view APIs: `GET /api/pulse/status/rail` and `POST /api/pulse/status/<status_id>/view`.
 - Existing media upload API: `POST /api/pulse/media/upload`.
 - Shared native media upload hook/service and preview component.
-- Existing feed ranking and visibility rules.
-- Existing moderation and risk scoring.
-- Existing mention notification behavior.
+- Existing Status privacy, expiration, visibility, media association, music, and AI story contracts.
 - Existing media authorization, R2/Mux processing, thumbnails, and CDN URLs.
-- Existing profile identity, premium marks, and author rendering data.
+- Existing moderation, analytics, notification fanout, and profile identity behavior.
 
 Do not duplicate in native:
 
-- Feed ranking.
-- Post visibility rules.
+- Status privacy and expiration rules.
 - Moderation/risk rules.
-- Mention parsing/notification behavior.
+- Music approval rules.
+- AI story generation logic.
+- View/reaction/reply/share persistence.
 - Media authorization or storage decisions.
 - Mux/R2 routing.
 - Premium/creator entitlement checks.
@@ -152,29 +154,33 @@ Do not duplicate in native:
 
 ## What Must Be Rebuilt Natively
 
-- Native composer sheet/screen.
-- Text body input.
-- Visibility selector where supported by the existing API.
+- Native Status creator sheet/screen.
+- Text Status input.
+- Photo/video Status attachment using the shared native upload foundation.
+- Camera entry through the shared media layer.
+- Status privacy selector.
+- Duration/expiration selector using existing API-supported values.
+- Status type inference for text/photo/video.
 - Media attachment using the shared native upload foundation.
-- Upload progress and retry wiring in the composer.
+- Upload progress and retry wiring in the creator.
 - Submit/publishing state.
-- Draft clearing after successful post.
+- Draft clearing after successful Status.
 - Error, empty, offline, and permission-denied states.
-- Feed refresh after successful creation.
+- Status rail refresh after successful creation.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Confirm exact native post creation payload shape against the current backend.
-- Confirm whether media IDs, media URLs, or both should be sent with native post creation.
-- Confirm visibility options supported by the existing post API.
-- Confirm mention/hashtag behavior remains backend-owned.
+- Confirm exact native Status creation payload shape against the current backend.
+- Confirm supported duration/privacy values.
+- Confirm media ID handling and status type inference for image/video.
+- Confirm whether music/AI story should be included in the first slice or deferred.
 
 Blockers:
 
-- Real-device media picking/upload within the composer must be verified before production replacement.
-- Offline draft persistence is not in the first slice unless the current API/client patterns make it low risk.
+- Real-device media picking/upload within Status Creator must be verified before production replacement.
+- Music/AI story flows may require additional UI and should be deferred if they threaten the first slice.
 
 ## Risk Level
 
@@ -182,9 +188,9 @@ Risk: Medium-high.
 
 Reasons:
 
-- Feed Composer publishes user content, so mistakes are visible and notification/moderation side effects matter.
-- Most business logic already exists server-side, so risk is mainly native payload mapping, media attachment state, draft/error handling, and device QA.
-- The shared upload foundation lowers the media risk compared with building composer and upload at the same time.
+- Status Creator publishes time-sensitive user content, so privacy, expiration, media state, and notification side effects matter.
+- Most business logic already exists server-side, so risk is mainly native payload mapping, media attachment state, creator UX, and device QA.
+- The shared upload and Status viewer foundations lower the media/rendering risk.
 
 ## Estimated Complexity
 
@@ -192,18 +198,19 @@ Complexity: Medium-high.
 
 Recommended first slice:
 
-- Composer entry from Home Feed.
-- Text-only post creation.
+- Creator entry from native Status.
+- Text-only Status creation.
 - Optional image/video attachment through the shared media upload layer.
-- Visibility selector if supported by the existing API.
-- Post-submit feed refresh.
+- Privacy and duration selectors using existing API values.
+- Status rail refresh after publish.
 - Loading, validation, permission, upload, publishing, and error states.
-- Static audit proving no duplicated post/feed business rules.
+- Static audit proving no duplicated Status/privacy/media business rules.
 
 Defer from first slice:
 
-- Polls, rich formatting, drafts, scheduled posts, and advanced creator tools.
-- Full Status creator.
+- Advanced camera effects.
+- Music picker and AI story generation if they make the first slice too broad.
+- Scheduled/status campaign tools.
 - Advanced editing.
 - Music/audio remix.
 - Background uploads.
@@ -211,14 +218,14 @@ Defer from first slice:
 
 ## Safest Implementation Plan
 
-1. Inspect current web post composer and `POST /api/pulse/posts` payload handling before coding.
-2. Add or extend native feed API wrappers only around existing post creation endpoints.
-3. Build a native composer entry on Home Feed.
-4. Wire text-only publishing first.
-5. Add media attachment through the shared native upload foundation.
-6. Refresh native feed after successful creation and keep server ranking authoritative.
-7. Add a focused Feed Composer audit and keep production WebView untouched.
+1. Inspect current Status creator and `POST /api/pulse/status` payload handling before coding.
+2. Add or extend native Status API wrappers only around existing Status creation endpoints.
+3. Build a native creator entry on Status.
+4. Wire text-only Status publishing first.
+5. Add image/video attachment through the shared native upload foundation.
+6. Refresh native Status rail after successful creation and keep server privacy/expiration rules authoritative.
+7. Add a focused Status Creator audit and keep production WebView untouched.
 
 ## Recommendation Summary
 
-Build Native Feed Composer Foundation next. Native media upload now exists, and Feed Composer is the safest high-value creation surface to connect because it reuses existing post APIs, media upload, moderation, visibility, mention, notification, and feed ranking behavior while rebuilding only the native composer UI.
+Build Native Status Creator Foundation next. Native Status viewing and shared media publishing are now in place, and Status Creator is the highest-leverage next creation feature because it reuses existing Status APIs, media upload, privacy, expiration, moderation, analytics, notification, and music/AI contracts while rebuilding only the native creator UI.
