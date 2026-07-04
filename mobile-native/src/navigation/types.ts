@@ -1,3 +1,5 @@
+import { NavigatorScreenParams } from "@react-navigation/native";
+
 export type AuthStackParamList = {
   Login: undefined;
   Signup: undefined;
@@ -6,12 +8,15 @@ export type AuthStackParamList = {
 export type AppTabParamList = {
   Home: undefined;
   Messenger: undefined;
+  Notifications: undefined;
   PulseAI: undefined;
   Profile: undefined;
   Settings: undefined;
 };
 
 export type RootStackParamList = {
-  Tabs: undefined;
+  Tabs: NavigatorScreenParams<AppTabParamList> | undefined;
   Chat: { conversationId: number; title?: string };
+  NotificationCenter: undefined;
+  NotificationPreferences: undefined;
 };

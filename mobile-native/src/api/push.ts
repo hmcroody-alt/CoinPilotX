@@ -9,6 +9,14 @@ export type PushRegistrationResult = {
   [key: string]: unknown;
 };
 
+export type PushPermissionState = {
+  granted: boolean;
+  canAskAgain?: boolean;
+  status: string;
+  device: boolean;
+  message: string;
+};
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -59,4 +67,23 @@ export async function registerPushDevice(): Promise<PushRegistrationResult> {
       message: error instanceof Error ? error.message : "Push registration could not be completed."
     };
   }
+}
+
+export async function getPushPermissionState(): Promise<PushPermissionState> {
+  if (!Device.isDevice) {
+    return {
+      granted: false,
+      status: "simulator",
+      device: false,
+      message: "Push registration requires a physical device."
+    };
+  }
+  const permission = await Notifications.getPermissionsAsync();
+  return {
+    granted: Boolean(permission.granted),
+    canAskAgain: permission.canAskAgain,
+    status: permission.status,
+    device: true,
+    message: permission.granted ? "Push permission is granted." : permission.canAskAgain ? "Push permission can be requested." : "Push permission was denied by the device."
+  };
 }

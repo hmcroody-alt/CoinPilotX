@@ -5,6 +5,7 @@ import { ActivityIndicator, View } from "react-native";
 import { AppNavigator } from "./src/navigation/AppNavigator";
 import { AuthNavigator } from "./src/navigation/AuthNavigator";
 import { linking } from "./src/navigation/linking";
+import { navigationRef, setupNotificationResponseRouting } from "./src/navigation/notificationRouting";
 import { AuthContext, AuthState, restoreSession } from "./src/session/auth";
 import { colors } from "./src/theme/colors";
 
@@ -13,6 +14,11 @@ export default function App() {
 
   useEffect(() => {
     restoreSession().then(setAuthState).catch(() => setAuthState({ status: "signedOut", user: null }));
+  }, []);
+
+  useEffect(() => {
+    const subscription = setupNotificationResponseRouting();
+    return () => subscription.remove();
   }, []);
 
   const auth = useMemo(() => ({ authState, setAuthState }), [authState]);
@@ -41,7 +47,7 @@ export default function App() {
 
   return (
     <AuthContext.Provider value={auth}>
-      <NavigationContainer theme={theme} linking={linking}>
+      <NavigationContainer ref={navigationRef} theme={theme} linking={linking}>
         <StatusBar style="light" />
         {authState.status === "signedIn" ? <AppNavigator /> : <AuthNavigator />}
       </NavigationContainer>

@@ -1,12 +1,16 @@
 import { Alert, Pressable, StyleSheet, Text } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { registerPushDevice } from "../api/push";
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
+import { RootStackParamList } from "../navigation/types";
 import { signOut, useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 
 export function SettingsScreen() {
   const { setAuthState } = useAuth();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   async function enablePush() {
     const result = await registerPushDevice();
@@ -23,6 +27,9 @@ export function SettingsScreen() {
         <Text style={styles.title}>Native permissions</Text>
         <Pressable style={styles.button} onPress={enablePush}>
           <Text style={styles.buttonText}>Enable push notifications</Text>
+        </Pressable>
+        <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("NotificationPreferences")}>
+          <Text style={styles.secondaryText}>Notification preferences</Text>
         </Pressable>
         <Text style={styles.muted}>Camera, microphone, media compression, and LiveKit call controls are Phase 2/3 QA-gated.</Text>
       </Panel>

@@ -7,7 +7,9 @@ export const linking: LinkingOptions<RootStackParamList> = {
     screens: {
       Tabs: {
         screens: {
-          Messenger: "pulse/messages"
+          Messenger: "pulse/messages",
+          Notifications: "pulse/notifications",
+          Profile: "pulse/profile"
         }
       },
       Chat: {
@@ -15,6 +17,12 @@ export const linking: LinkingOptions<RootStackParamList> = {
         parse: {
           conversationId: Number
         }
+      },
+      NotificationCenter: {
+        path: "notifications"
+      },
+      NotificationPreferences: {
+        path: "pulse/settings/notifications"
       }
     }
   }
