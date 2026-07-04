@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { AppNavigator } from "./src/navigation/AppNavigator";
 import { AuthNavigator } from "./src/navigation/AuthNavigator";
+import { linking } from "./src/navigation/linking";
 import { AuthContext, AuthState, restoreSession } from "./src/session/auth";
 import { colors } from "./src/theme/colors";
 
@@ -40,7 +41,7 @@ export default function App() {
 
   return (
     <AuthContext.Provider value={auth}>
-      <NavigationContainer theme={theme}>
+      <NavigationContainer theme={theme} linking={linking}>
         <StatusBar style="light" />
         {authState.status === "signedIn" ? <AppNavigator /> : <AuthNavigator />}
       </NavigationContainer>

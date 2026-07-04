@@ -26,6 +26,7 @@ def main() -> int:
     app_json = read("mobile-native/app.json")
     config = read("mobile-native/src/api/config.ts")
     pulse_api = read("mobile-native/src/api/pulse.ts")
+    messenger_api = read("mobile-native/src/api/messenger.ts")
     auth_api = read("mobile-native/src/api/auth.ts")
     push_api = read("mobile-native/src/api/push.ts")
     foundation_audit = read("scripts/pulsesoc_native_app_foundation_audit.py")
@@ -79,11 +80,11 @@ def main() -> int:
 
     for route in [
         "/api/dashboard/mission-control",
-        "/api/pulse/messages/conversations",
         "/api/pulse/assistant/chat",
         "/api/pulse/profile/me",
     ]:
         require(route in pulse_api, f"Pulse API wrapper reuses existing route {route}")
+    require("/api/pulse/messages/conversations" in messenger_api, "Messenger API wrapper reuses existing conversation route")
 
     implementation_files = [
         NATIVE / "App.tsx",

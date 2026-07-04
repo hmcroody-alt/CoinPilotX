@@ -1,38 +1,30 @@
 import { pulseApi } from "./pulseApi";
+import {
+  getConversation as getMessengerConversation,
+  listConversations,
+  sendConversationMessage,
+  MessengerConversation,
+  MessengerMessage
+} from "./messenger";
 
-export type Conversation = {
-  id: number;
-  title?: string;
-  name?: string;
-  latest_message?: string;
-  updated_at?: string;
-};
+export type Conversation = MessengerConversation;
 
-export type Message = {
-  id: number;
-  sender_id?: number;
-  body?: string;
-  text?: string;
-  created_at?: string;
-};
+export type Message = MessengerMessage;
 
 export function getMissionControl() {
   return pulseApi<Record<string, unknown>>("/api/dashboard/mission-control");
 }
 
 export function getConversations() {
-  return pulseApi<{ conversations?: Conversation[]; items?: Conversation[] }>("/api/pulse/messages/conversations");
+  return listConversations().then((conversations) => ({ ok: true, conversations, items: conversations }));
 }
 
 export function getConversation(conversationId: number) {
-  return pulseApi<{ messages?: Message[]; conversation?: Conversation }>(`/api/pulse/messages/${conversationId}`);
+  return getMessengerConversation(conversationId);
 }
 
 export function sendMessage(conversationId: number, body: string) {
-  return pulseApi<{ ok: boolean; message?: Message }>(`/api/pulse/messages/${conversationId}/send`, {
-    method: "POST",
-    body: JSON.stringify({ body, message: body, text: body })
-  });
+  return sendConversationMessage(conversationId, { body });
 }
 
 export function askPulseAi(message: string) {

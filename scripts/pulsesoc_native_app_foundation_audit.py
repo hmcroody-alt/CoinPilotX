@@ -33,6 +33,7 @@ def main() -> int:
     config = require_file("mobile-native/src/api/config.ts")
     pulse_api = require_file("mobile-native/src/api/pulseApi.ts")
     api = require_file("mobile-native/src/api/pulse.ts")
+    messenger_api = require_file("mobile-native/src/api/messenger.ts")
     auth = require_file("mobile-native/src/api/auth.ts")
     push = require_file("mobile-native/src/api/push.ts")
     nav = require_file("mobile-native/src/navigation/AppNavigator.tsx")
@@ -95,12 +96,16 @@ def main() -> int:
 
     for route in [
         "/api/dashboard/mission-control",
-        "/api/pulse/messages/conversations",
-        "/api/pulse/messages/",
         "/api/pulse/assistant/chat",
         "/api/pulse/profile/me",
     ]:
         require(route in api, f"Pulse API client wires {route}")
+    for route in [
+        "/api/pulse/messages/conversations",
+        "/api/pulse/messages/${conversationId}/messages",
+        "/api/pulse/messages/${conversationId}/send",
+    ]:
+        require(route in messenger_api, f"Messenger API client wires {route}")
 
     require("mobile-native/" in report and "mobile-native/" in plan, "reports document separate native track")
     require("Do not submit" in plan and "No-Submit Gates" in plan, "migration plan includes App Store no-submit gates")
