@@ -18,6 +18,12 @@ export const linking: LinkingOptions<RootStackParamList> = {
           conversationId: Number
         }
       },
+      PostDetail: {
+        path: "pulse/post/:postId",
+        parse: {
+          postId: Number
+        }
+      },
       NotificationCenter: {
         path: "notifications"
       },

@@ -17,6 +17,7 @@ export type AppTabParamList = {
 export type RootStackParamList = {
   Tabs: NavigatorScreenParams<AppTabParamList> | undefined;
   Chat: { conversationId: number; title?: string };
+  PostDetail: { postId: number; title?: string };
   NotificationCenter: undefined;
   NotificationPreferences: undefined;
 };

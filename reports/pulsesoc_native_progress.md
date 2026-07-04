@@ -16,6 +16,7 @@ Completed native foundations:
 - Messenger: conversation list, conversation screen, text send, retry, receipts, typing, sync polling, offline cache, image/file/voice upload paths using existing Messenger APIs.
 - Messenger hardening: corrupt-cache fallback, foreground/background sync recovery, upload-in-flight guard, long-thread list settings.
 - Notifications: native notification center, unread/badge sync, mark read, mark all read, delete, preferences, push permission state, foreground badge refresh, background tap routing structure, and native/web target fallback.
+- Home Feed + Post Detail: native feed list, pagination, pull-to-refresh, offline cache, post detail, comments, add comment, reactions, save, repost, share hook, image media cards, and `/pulse/post/<post_id>` deep-link routing through existing PulseSoc APIs.
 - Pulse AI: basic chat through existing `/api/pulse/assistant/chat`.
 - Profile: native summary through existing account/session profile data and `/api/pulse/profile/me`.
 - Settings: session controls, push registration, notification preferences entry.
@@ -29,16 +30,16 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_messenger_progress.md`
 - `reports/pulsesoc_native_messenger_device_qa.md`
 - `reports/pulsesoc_native_notifications_progress.md`
+- `reports/pulsesoc_native_feed_progress.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
 - `scripts/pulsesoc_native_messenger_device_qa_audit.py`
 - `scripts/pulsesoc_native_notifications_audit.py`
+- `scripts/pulsesoc_native_feed_audit.py`
 
 ## Remaining Major Features
 
-- Home Feed
-- Post detail
 - Feed composer
 - Profile detail and profile edit
 - Reels native player
@@ -104,76 +105,65 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Feature
 
-Recommendation: build Native Home Feed + Post Detail next.
+Recommendation: build Native Profile Detail + Profile Edit next.
 
 This should come before Reels, Status creator, Marketplace, or Calls.
 
 ## Why This Comes Next
 
-- Notifications now route or fall back to posts, reels, status, alerts, and profiles. The highest-value next step is to reduce those web fallbacks by making the core feed/post target native.
-- Home is currently only a Mission Control placeholder. A real native PulseSoc app needs the main feed as the primary signed-in surface.
-- The backend feed contract is already mature: `GET /api/pulse/feed` uses existing ranking, visibility, moderation, media hydration, video detail links, and status discovery signals.
-- Post detail already has server-authoritative APIs for comments, reactions, save, repost, pin, delete, and moderation-aware visibility.
-- This builds on Messenger and Notifications without requiring device-only camera, LiveKit, lock-screen, or heavy video QA first.
-- Reels and Status depend on the same media/rendering primitives. A native feed/post slice will establish reusable media cards, author headers, reaction rows, comment lists, pagination, offline cache, and target routing.
+- Home Feed and Post Detail now expose author identity as a primary navigation path, but the native Profile tab is still only a signed-in summary.
+- Notifications already route profile targets into the native Profile tab; the next safest improvement is to replace that summary with a real native profile surface and profile-edit flow.
+- Profile is lower risk than Reels/Status/Camera/LiveKit because it reuses mature account/profile APIs and does not require native video, camera, microphone, lock-screen, or background audio behavior.
+- A native profile foundation unlocks author/profile navigation from feed cards, post detail, notifications, Messenger identity, creator surfaces, follow/message actions, and profile posts.
+- It keeps the migration moving through high-frequency social surfaces before the media-heavy Reels/Status pass.
 
 ## Reusable Existing PulseSoc Logic
 
 Reuse directly:
 
-- `GET /api/pulse/feed`
-- `GET /api/pulse/posts/<post_id>`
-- `GET /api/pulse/post/<post_id>`
-- `POST /api/pulse/posts/<post_id>/react`
-- `GET/POST /api/pulse/posts/<post_id>/comments`
-- `POST /api/pulse/posts/<post_id>/save`
-- `POST /api/pulse/posts/<post_id>/repost`
-- `POST /api/pulse/follow`
-- existing media payload fields from `media_service.resolve_media(...)`
-- existing visibility/moderation/ranking from `pulse_feed_engine`
-- existing notification generation from post/comment/reaction flows
-- existing profile identity payloads and premium marks supplied by the backend
+- `GET /api/pulse/profile/me`
+- `POST/PATCH /api/pulse/profile/update`
+- `POST /api/pulse/profile/avatar`
+- `POST /api/pulse/profile/cover`
+- `POST /api/pulse/profile/avatar/remove`
+- `POST /api/pulse/profile/cover/remove`
+- existing `/pulse/profile` and `/pulse/profile/<profile_key>` behavior as the source of parity
+- existing profile identity, premium marks, verification state, bio/location/social fields, avatar/cover storage, and media upload validation
+- existing feed profile filtering or post APIs for profile posts where available
+- existing follow/message/report authorization and safety rules where APIs are already present
 
 Do not duplicate in native:
 
-- feed ranking
-- trust/moderation decisions
-- post visibility rules
-- blocked/deleted content rules
-- premium entitlement decisions
-- media processing state
-- notification dispatch
-- mention parsing
-- saved-content persistence
+- profile authorization
+- premium/verification decisions
+- media validation/storage
+- blocked/private visibility logic
+- follow graph rules
+- creator/premium entitlement checks
+- moderation/report decisions
 
 ## What Must Be Rebuilt Natively
 
-- Feed screen replacing the current native Mission Control placeholder as the primary Home tab content.
-- Native post cards with author, text, media, counters, reactions, and action menus.
-- Native pagination and pull-to-refresh.
-- Native media rendering for images and basic videos, using existing media URLs.
-- Native post detail screen.
-- Native comments list and comment composer.
-- Native optimistic reaction/save/comment UI with server reconciliation.
-- Native deep-link routing for `/pulse/post/<post_id>`.
-- Offline cache for the last loaded feed page and opened post details.
-- Native loading, empty, permission, and failure states.
+- Native profile detail screen.
+- Native profile edit screen.
+- Avatar and cover image picker/upload UI using existing profile media endpoints.
+- Native author/profile navigation from feed and post detail.
+- Profile post list using existing feed/profile filters where available.
+- Follow/message/share/report hooks where existing APIs support them.
+- Loading, empty, offline, and error states.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Confirm exact `GET /api/pulse/feed` response shape with live authenticated test data or fixtures.
-- Confirm media payload shape for images, video, Mux/HLS, broken/processing media, and posts without media.
-- Confirm `/api/pulse/posts/<post_id>` returns enough detail for a native post detail screen, including comments and viewer state.
-- Reuse existing `pulse_media_renderer` behavior conceptually, but do not copy DOM/CSS code directly.
-- Add a native feed audit before commit.
+- Confirm whether public profile detail has a JSON endpoint equivalent to `/pulse/profile/<profile_key>`; if not, add only the smallest backend adapter needed to expose existing server-side profile payloads without changing business logic.
+- Confirm exact avatar/cover upload payload expectations on device.
+- Confirm profile post filtering through `GET /api/pulse/feed?profile=...` or the existing profile post API before building a native profile post list.
 
 Blockers:
 
-- Real-device media performance remains unverified in this environment.
-- Native video playback may require a dedicated Expo AV/native video pass if feed videos are common.
-- Composer/camera upload should not be included in the first feed slice unless the read-only + reactions/comments path is stable.
+- Public profile detail may currently be web-rendered only, which would require a thin JSON adapter before full native author profile navigation.
+- Real-device image picker/upload QA remains required.
 
 ## Risk Level
 
@@ -181,51 +171,41 @@ Risk: Medium.
 
 Reasons:
 
-- Feed is a high-traffic, user-facing surface.
-- Payloads are rich and media-heavy.
-- Mistakes in native caching or optimistic actions could confuse users if not reconciled with the server.
-- However, the backend APIs and business rules already exist, so the native work is mostly UI, pagination, rendering, and safe interaction wiring.
+- Profile is user-facing and identity-sensitive.
+- Avatar/cover uploads require native permission and file handling.
+- The business rules are mature on the backend, so risk is mostly API shape confirmation, media upload handling, and parity with the web profile.
 
 ## Estimated Complexity
 
-Complexity: Medium-high.
+Complexity: Medium.
 
 Recommended first slice:
 
-- Feed list
-- Pull-to-refresh
-- Pagination
-- Image media rendering
-- Basic video placeholder or native playback where safe
-- Reactions
-- Save
-- Post detail
-- Comments read/create
-- Deep link to post detail
-- Offline cache
+- Current user profile detail.
+- Profile edit.
+- Avatar/cover display.
+- Existing avatar/cover upload/remove APIs.
+- Author profile route shape and safe web fallback if public JSON is missing.
+- Profile post list only after confirming existing server support.
 
 Defer from first slice:
 
-- New post composer
-- Camera upload
-- Video compression
-- Advanced Reels-style playback
-- Status creator
-- Full moderation/report menus beyond existing server routes
+- Advanced creator analytics.
+- Marketplace storefront details.
+- Premium creator tools.
+- Full media gallery.
+- Public profile JSON backend expansion beyond a minimal adapter if needed.
 
 ## Safest Implementation Plan
 
-1. Inspect and document the exact feed/post payload shape from existing backend code and, if available, authenticated API responses.
-2. Add `mobile-native/src/api/feed.ts` as a typed wrapper around existing feed/post endpoints.
-3. Add native cache helpers for feed and post details using `AsyncStorage`.
-4. Replace the Home tab placeholder with a native feed list while preserving Mission Control as a small status panel or secondary section.
-5. Add `PostDetailScreen` and route `/pulse/post/:postId` into native navigation.
-6. Implement read-only post cards first: author, body/title, timestamps, media, counters.
-7. Add reactions/save/comment interactions after read-only rendering is stable.
-8. Add focused audit: `scripts/pulsesoc_native_feed_audit.py`.
-9. Run `npm ci`, `npm run typecheck`, Expo doctor, feed audit, `git diff --check`, and scoped staging.
-10. Document anything not device-verified, especially video playback, long-feed scroll performance, and media memory behavior.
+1. Inspect current web profile templates/routes and profile APIs again before coding.
+2. Confirm public-vs-current-user profile data contracts and upload payloads.
+3. Extend native API wrappers around existing profile endpoints only.
+4. Build native Profile Detail and Profile Edit screens.
+5. Add image picker upload controls with explicit denied-permission states.
+6. Wire feed author/profile taps to native profile only for supported profile targets; keep web fallback for unsupported public profile cases.
+7. Add a focused profile audit and run the same install/typecheck/Expo doctor gates.
 
 ## Recommendation Summary
 
-Build Native Home Feed + Post Detail next. It converts the highest-value notification fallback into native UI, establishes reusable content/media primitives for Reels and Status, and uses mature existing backend APIs without duplicating PulseSoc business logic.
+Build Native Profile Detail + Profile Edit next. Feed/Post is now native enough to expose identity paths, and Profile is the safest next social foundation before moving into heavier native media surfaces like Reels, Status, and Camera.

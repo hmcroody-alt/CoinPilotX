@@ -38,6 +38,12 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  const postMatch = normalized.match(/^\/pulse\/post\/(\d+)/);
+  if (postMatch?.[1] && navigationRef.isReady()) {
+    navigationRef.navigate("PostDetail", { postId: Number(postMatch[1]), title: "Post" });
+    return { handled: true, target: normalized };
+  }
+
   if (normalized === "/pulse/messages" && navigationRef.isReady()) {
     navigationRef.navigate("Tabs", { screen: "Messenger" });
     return { handled: true, target: normalized };
