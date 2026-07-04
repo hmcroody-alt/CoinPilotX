@@ -174,6 +174,18 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  if ((normalized.startsWith("/dashboard/intelligence") || normalized.startsWith("/pulse/intelligence")) && navigationRef.isReady()) {
+    const subsystem = normalized.match(/^\/dashboard\/intelligence\/([^/?#]+)/)?.[1] || "";
+    navigationRef.navigate("IntelligenceCenter", { subsystem: subsystem ? decodeURIComponent(subsystem) : undefined, title: "Intelligence" });
+    return { handled: true, target: normalized };
+  }
+
+  if ((normalized.startsWith("/dashboard/crypto/alerts") || normalized.startsWith("/pulse/crypto/alerts")) && navigationRef.isReady()) {
+    const alertId = extractNumericQueryValue(normalized, "alert_id") || extractNumericQueryValue(normalized, "id");
+    navigationRef.navigate("IntelligenceCenter", { alertId: alertId || undefined, title: alertId ? "Alert Detail" : "Alerts" });
+    return { handled: true, target: normalized };
+  }
+
   const marketplacePathMatch = normalized.match(/^\/pulse\/marketplace\/(\d+)/);
   if (marketplacePathMatch?.[1] && navigationRef.isReady()) {
     navigationRef.navigate("MarketplaceDetail", { listingId: Number(marketplacePathMatch[1]), title: "Marketplace" });

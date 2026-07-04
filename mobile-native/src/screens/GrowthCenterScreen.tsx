@@ -120,6 +120,7 @@ export function GrowthCenterScreen({ route, navigation }: Props) {
           <Action label="Reels" onPress={() => navigation.navigate("Reels")} />
           <Action label="Marketplace" onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })} />
           <Action label="Creator Studio" onPress={() => navigation.navigate("CreatorStudio")} />
+          <Action label="Intelligence" onPress={() => navigation.navigate("IntelligenceCenter")} />
           <Action label="Profile" onPress={() => navigation.navigate("ProfileDetail", undefined)} />
         </View>
       </Panel>

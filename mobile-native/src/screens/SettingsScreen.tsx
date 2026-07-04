@@ -40,6 +40,9 @@ export function SettingsScreen() {
         <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("GrowthCenter")}>
           <Text style={styles.secondaryText}>Growth Center</Text>
         </Pressable>
+        <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("IntelligenceCenter")}>
+          <Text style={styles.secondaryText}>Intelligence and alerts</Text>
+        </Pressable>
         <Text style={styles.muted}>Camera, microphone, media compression, and LiveKit call controls are Phase 2/3 QA-gated.</Text>
       </Panel>
       <Panel>

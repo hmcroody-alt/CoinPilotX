@@ -35,6 +35,7 @@ Completed native foundations:
 - Premium + Entitlements Foundation: native Premium route, server-authoritative status display through `/api/premium/status`, Founder/Premium badge display, entitlement list, cached fallback, app-resume refresh, existing checkout/billing portal provider handoff, Settings/Profile entry points, `/pulse/premium` deep-link routing, and explicit no-local-entitlement boundary.
 - Creator Studio Foundation: native Creator Studio route, creator state through `/api/dashboard/creator/state`, Creator AI hooks through `/api/pulse/creator-ai/<tool>`, Content Planner draft save through `/api/dashboard/content-planner/item`, creator metric/recommendation cards, Premium eligibility messaging, shortcuts into existing native composer/status/reels/profile/premium surfaces, and safe web fallback for unsupported Studio/Live/monetization tools.
 - Growth Center Foundation: native Growth Center route, read-only growth state through `/api/pulse/growth`, server-owned growth score/status cards, wallet/budget summary, audience/targeting preview, campaign overview, analytics snapshot, Feed/Post/Reel/Profile promote shortcuts, Settings entry, `/pulse/growth` and `/pulse/promote` routing, offline cache, and safe web fallback for campaign launch, wallet funding, billing, targeting, ad review, and unsupported promotion tools.
+- Intelligence + Alerts Foundation: native Intelligence route, server-owned intelligence state through `/api/dashboard/intelligence/state`, crypto/market alert list through `/api/crypto/alerts`, stream/forecast cards, alert overview/detail, notification badge summary, Premium/Growth/Creator/Search/Profile navigation, offline cache, `/dashboard/intelligence` and `/dashboard/crypto/alerts` deep-link routing, and safe web fallback for advanced intelligence, provider administration, collector management, alert creation/editing, and unsupported operations.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -64,6 +65,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_premium_progress.md`
 - `reports/pulsesoc_native_creator_progress.md`
 - `reports/pulsesoc_native_growth_progress.md`
+- `reports/pulsesoc_native_intelligence_progress.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -87,6 +89,7 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_premium_audit.py`
 - `scripts/pulsesoc_native_creator_audit.py`
 - `scripts/pulsesoc_native_growth_audit.py`
+- `scripts/pulsesoc_native_intelligence_audit.py`
 
 ## Remaining Major Features
 
@@ -94,7 +97,7 @@ Completed supporting reports/audits:
 - Native LiveKit calls
 - Full-screen incoming calls
 - Crypto/market alerts
-- Intelligence Center
+- Native feature parity QA readiness checkpoint
 
 ## Codebase Reconnaissance
 
@@ -164,114 +167,104 @@ Existing data/business logic that should remain server-authoritative:
 - creator dashboard state, creator metrics, moderation/review counts, media processing state, creator AI provider routing, creator recommendations, and creator monetization/payout decisions
 - growth account provisioning, growth score calculation, audience modeling, growth wallets, promotion readiness, ad billing, targeting, risk profiles, and growth AI session behavior
 - intelligence state, alert rules, crypto/market event evaluation, notification delivery eligibility, alert dedupe windows, premium intelligence gates, and market/crypto data interpretation
+- native QA browser/device validation status, feature parity gaps, release blockers, and WebView replacement readiness
 
 ## Recommended Next Feature
 
-Recommendation: build Native Intelligence + Alerts Foundation next.
+Recommendation: create Native Feature Parity + QA Readiness Report next.
 
-This should come before native LiveKit hosting, native calls, deeper paid-promotion writes, and advanced creator monetization.
+This should come before another major native module.
 
 ## Why This Comes Next
 
-- Growth Center, Creator Studio, Premium, Notifications, Feed, Search, Profile, Reels, Marketplace, and native routing are now in place.
-- The backend already exposes intelligence state through `GET /api/dashboard/intelligence/state`.
-- The production platform already has alert-rule storage and crypto alert delivery through `services/alert_engine.py` and central notification helpers.
-- Alerts depend on notifications, badges, deep links, premium/permission checks, and cached read states, which are already native foundations.
-- This recommendation is based on the current intelligence/alert backend and native migration state after the Growth Center checkpoint.
+- The native app now covers most major PulseSoc pillars, including Feed, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, Groups, Live viewer, Premium, Creator Studio, Growth, and Intelligence.
+- The user has shifted the migration into QA-driven development.
+- Continuing to add feature modules without browser/device QA increases integration risk.
+- A parity report can compare current WebView PulseSoc against native coverage and produce an evidence-based hardening order.
+- This recommendation is based on the current production and `mobile-native` migration state after the Intelligence + Alerts checkpoint.
 
 ## Reusable Existing PulseSoc Logic
 
 Reuse directly:
 
-- Existing `GET /api/dashboard/intelligence/state`.
-- Existing `/dashboard/intelligence` and `/dashboard/intelligence/<subsystem_key>` routes.
-- Existing `/dashboard/crypto/alerts` and `/api/crypto/alerts` flows.
-- Existing `services/alert_engine.py`, `services/notification_service.py`, `services/privacy_intelligence_engine.py`, `services/global_intelligence_graph.py`, and `services/universal_intelligence_fabric.py`.
-- Existing `alert_rules`, `user_alert_rules`, notification, delivery-job, crypto/news/market cache, and intelligence graph data.
-- Existing Premium/permission gates, alert dedupe, push/in-app delivery, and notification deep-link behavior.
-- Existing native Notifications, Premium, Search, Feed/Post, Profile, Settings, routing, cache, loading/error, and web fallback patterns.
+- Existing native progress reports and audit scripts.
+- Existing production route inventory in `bot.py`.
+- Existing native screens, API wrappers, cache helpers, notification routing, deep-link routing, and fallback patterns.
+- Existing production feature inventory reports where available.
+- Existing backend route/database/service ownership for Feed, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, Groups, Live, Premium, Creator, Growth, Intelligence, Calls, Camera, and Settings.
 
 Do not duplicate in native:
 
 - Backend business logic.
-- Alert trigger evaluation.
-- Market/crypto price interpretation.
-- Financial advice or buy/sell/hold recommendations.
-- Notification delivery eligibility.
-- Alert dedupe windows.
-- Premium intelligence access checks.
-- Provider data polling.
-- Intelligence ranking/scoring.
+- WebView behavior assumptions.
+- Device/browser QA claims that were not actually tested.
+- Production route behavior.
 
 ## What Must Be Rebuilt Natively
 
-- Native Intelligence/Alerts dashboard.
-- Intelligence summary cards from existing API state.
-- Alert list and alert detail where APIs support it.
-- Crypto/market alert cards and watchlist preview.
-- Alert create/edit entry points only where existing APIs provide safe native payloads.
-- Notification/deep-link routing into alert and intelligence screens.
-- Loading, empty, offline, error, locked, and unavailable states.
-- Safe web fallback for unsupported intelligence subsystems, advanced alert creation, and premium intelligence tools.
+- A native-vs-WebView feature parity report.
+- A QA readiness matrix.
+- A missing-feature and fallback inventory.
+- A browser/device verification status table.
+- A release-blocker list before replacing any WebView surfaces.
+- A hardening order for the next native QA passes.
+- An audit script that verifies the report exists and covers the major PulseSoc pillars.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Confirm `GET /api/dashboard/intelligence/state` payload shape.
-- Confirm authenticated access and premium/permission boundaries.
-- Confirm native-safe alert list/detail payloads for `/api/crypto/alerts`.
-- Reuse native notification preferences and deep-link routing.
+- Current native reports and audit scripts must be present.
+- Production route inventory must be inspected again.
+- `mobile-native` navigation, screens, API wrappers, and fallback surfaces must be inspected again.
 
 Blockers:
 
-- Financial/market alert copy must stay educational and server-owned.
-- Alert creation/editing may need web fallback if APIs are form/web oriented.
-- Real push delivery and notification-tap behavior require device QA.
-- Provider data freshness cannot be inferred locally.
+- Real iOS/Android device behavior cannot be marked verified without simulator/device access.
+- QA browser validation depends on launching the Expo app or a supported local target.
+- Some PulseSoc features still intentionally use web fallback and should not be counted as native-complete.
 
 ## Risk Level
 
-Risk: Medium-high.
+Risk: Low.
 
 Reasons:
 
-- Alerts are time-sensitive and notification-sensitive.
-- Crypto/market intelligence is accuracy-sensitive and must not become client-side financial advice.
-- Backend risk stays contained if native only presents server-owned state and routes unsupported writes to web fallback.
+- This is a reporting/audit checkpoint.
+- Risk comes from inaccurate inventory, not production behavior.
+- No WebView production routes should be changed.
 
 ## Estimated Complexity
 
-Complexity: Medium-high.
+Complexity: Medium.
 
 Recommended first slice:
 
-- Inspect intelligence and alert payloads.
-- Build read-first native Intelligence/Alerts dashboard.
-- Add alert list/detail where stable APIs exist.
-- Add notification/deep-link routing for alert/intelligence targets.
-- Add safe web fallback for advanced alert creation and unsupported intelligence subsystems.
-- Add static audit that verifies no native alert evaluation, market advice, delivery eligibility, or premium intelligence access logic is duplicated.
+- Inspect production PulseSoc feature surfaces.
+- Inspect `mobile-native` screens, API wrappers, routes, reports, and audits.
+- Build a feature parity matrix.
+- Add QA-driven development checklist and per-feature QA status.
+- Identify highest-risk remaining gaps and hardening order.
+- Add static audit for report completeness.
 
 Defer from first slice:
 
-- Local alert trigger evaluation.
-- Local market/crypto recommendations.
-- Provider polling.
-- Advanced premium intelligence tools.
-- Native-only alert delivery rules.
+- New user-facing feature work.
+- Native LiveKit hosting/calls.
+- Camera/editor expansion.
+- Any App Store replacement recommendation.
 
 ## Safest Implementation Plan
 
-1. Inspect `GET /api/dashboard/intelligence/state`, `/dashboard/intelligence`, `/dashboard/crypto/alerts`, `/api/crypto/alerts`, and `services/alert_engine.py`.
-2. Add native API wrappers that read existing backend state first.
-3. Build native Intelligence/Alerts dashboard cards from server-owned state.
-4. Reuse existing native Notifications, Premium, Search, Feed/Post, Profile, Settings, cache, routing, and fallback patterns.
-5. Add web fallback for unsupported intelligence subsystems, premium tools, and advanced alert creation/editing.
-6. Add progress report and audit script.
-7. Run the standard native verification suite.
-8. Keep alert evaluation, market/crypto interpretation, provider polling, premium access, notification delivery, and dedupe behavior server-authoritative.
+1. Inspect production PulseSoc routes, services, and existing platform inventory.
+2. Inspect `mobile-native` screens, API wrappers, navigation, cache helpers, reports, and audit scripts.
+3. Build a parity matrix across major PulseSoc pillars.
+4. Mark each feature as native-ready, partial native, web fallback, missing, or device-QA required.
+5. Identify highest-risk regressions before replacing WebView surfaces.
+6. Add a QA-driven development checklist and hardening order.
+7. Add report and audit script.
+8. Run the standard verification suite.
 
 ## Recommendation Summary
 
-Build Native Intelligence + Alerts Foundation next. The backend already owns intelligence state, alert rules, crypto/market evaluation, premium gates, dedupe, and notification delivery, and the native app now has the notification, premium, search, feed/profile, routing, cache, and fallback foundations needed to present that system without duplicating sensitive alert or market logic.
+Create Native Feature Parity + QA Readiness Report next. The native app has enough breadth that the highest-value work is now an evidence-based parity and QA checkpoint before more major feature expansion.

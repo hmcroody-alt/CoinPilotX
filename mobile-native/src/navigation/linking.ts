@@ -86,6 +86,9 @@ export const linking: LinkingOptions<RootStackParamList> = {
       GrowthCenter: {
         path: "pulse/growth"
       },
+      IntelligenceCenter: {
+        path: "dashboard/intelligence/:subsystem?"
+      },
       NotificationCenter: {
         path: "notifications"
       },
