@@ -29,6 +29,7 @@ export function LoginScreen() {
       <Text style={styles.brand}>PulseSoc</Text>
       <Text style={styles.copy}>Native access to Mission Control, messages, alerts, and Pulse AI.</Text>
       <TextInput
+        accessibilityLabel="Email or username"
         autoCapitalize="none"
         keyboardType="email-address"
         placeholder="Email or username"
@@ -38,6 +39,7 @@ export function LoginScreen() {
         onChangeText={setIdentifier}
       />
       <TextInput
+        accessibilityLabel="Password"
         placeholder="Password"
         placeholderTextColor={colors.muted}
         secureTextEntry
@@ -45,10 +47,10 @@ export function LoginScreen() {
         value={password}
         onChangeText={setPassword}
       />
-      <Pressable style={styles.button} onPress={submit} disabled={loading}>
+      <Pressable accessibilityRole="button" style={styles.button} onPress={submit} disabled={loading}>
         <Text style={styles.buttonText}>{loading ? "Signing in" : "Sign in"}</Text>
       </Pressable>
-      <Pressable onPress={() => navigation.navigate("Signup")}>
+      <Pressable accessibilityRole="button" onPress={() => navigation.navigate("Signup")}>
         <Text style={styles.link}>Create account</Text>
       </Pressable>
     </View>

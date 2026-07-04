@@ -40,6 +40,7 @@ Completed native foundations:
 - Device QA Setup: added Expo web QA dependencies, QA start/build scripts, EAS development/simulator/preview/production profiles, optional Expo project ID support for push-token registration, exact iOS/Android/browser/physical-device QA commands, and a remaining-blocker inventory.
 - QA Browser Readiness: verified Expo web boot through the built-in QA browser, fixed duplicate Reels deep-link routing, captured login screenshots, and confirmed signed-out feature routes safely land on the auth gate.
 - Authenticated QA Browser Pass: verified login, session restore, logout, authenticated top-level navigation, Settings, Pulse AI, and Intelligence routes through the built-in QA browser against a local temporary QA backend/proxy; fixed web session storage, browser cookie handling, Settings/Pulse AI deep links, and Intelligence object-shaped card normalization.
+- Short Authenticated QA Browser Sweep: verified authenticated Home, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, Groups, Live, Premium, Creator, Growth, Intelligence/Alerts, Settings, Pulse AI, notification preferences, and fallback routes through the built-in QA browser; fixed Login/Settings semantic accessibility roles/labels for reliable web QA automation; confirmed no current console warnings/errors during the sweep; kept device-only claims explicitly unverified.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -74,6 +75,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_device_qa_setup.md`
 - `reports/pulsesoc_native_qa_browser_report.md`
 - `reports/pulsesoc_native_authenticated_qa_browser_report.md`
+- `reports/pulsesoc_native_short_qa_browser_sweep.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -102,13 +104,14 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_device_setup_audit.py`
 - `scripts/pulsesoc_native_qa_browser_audit.py`
 - `scripts/pulsesoc_native_authenticated_qa_browser_audit.py`
+- `scripts/pulsesoc_native_short_qa_browser_sweep_audit.py`
 
 ## Remaining Major Features
 
 - Advanced camera/compression/editor tools
 - Native LiveKit calls
 - Full-screen incoming calls
-- Crypto/market alerts
+- Native alert management for crypto/market alerts
 - External device QA tooling completion and hardening pass
 
 ## Codebase Reconnaissance
@@ -146,6 +149,9 @@ Existing backend/web surfaces inspected:
 - Creator logic: `services/dashboard_creator_command_center.py`, creator cards/subsystems, owner-scoped creator metrics, content/moderation/processing summaries, creator event-bus recommendations, and creator AI hook routing.
 - Growth Center surfaces: `GET /api/pulse/growth`, `/pulse/growth`, `services/pulsesoc_growth_engine.py`, growth account/workspace/wallet/audience/profile/score/risk tables, and promotion readiness state.
 - Intelligence and alerts surfaces: `GET /api/dashboard/intelligence/state`, `/dashboard/intelligence`, `/dashboard/intelligence/<subsystem_key>`, `/dashboard/crypto/alerts`, `/api/crypto/alerts`, `services/alert_engine.py`, `services/notification_service.py`, `services/privacy_intelligence_engine.py`, `services/global_intelligence_graph.py`, `services/universal_intelligence_fabric.py`, `alert_rules`, `user_alert_rules`, notification delivery jobs, and crypto/market intelligence notification helpers.
+- Alert management routes: `GET/POST /api/crypto/alerts`, `PATCH/DELETE /api/crypto/alerts/<alert_id>`, `POST /api/crypto/alerts/<alert_id>/duplicate`, `GET /api/crypto/alerts/<alert_id>/history`, `GET/POST /api/alerts`, `POST /api/alerts/<alert_id>/pause`, `POST /api/alerts/<alert_id>/resume`, `POST/DELETE /api/alerts/<alert_id>/delete`, `POST /api/alerts/<alert_id>/test`, `GET /api/alerts/events`, `GET /api/alerts/channel-readiness`, and `POST /api/alerts/test/<channel>`.
+- Camera/media creation routes inspected: `/api/pulse/camera/config`, `/api/pulse/media/upload`, `/api/pulse/media/mux/direct-upload`, `/api/pulse/media/mux/direct-upload/complete`, `/api/pulse/camera/preview`, `/api/pulse/posts/create-from-camera`, `/api/pulse/reels/create-from-camera`, and `/pulse/camera/*`.
+- Live/call routes and services inspected: `services/pulsesoc_communications_engine.py`, LiveKit config/token helpers, `start_call`, `join_token`, `accept_call`, `decline_call`, `call_status`, `active_calls`, `conversation_calls`, and existing LiveKit/Mux Live APIs.
 - Current native reuse surface: repeated API wrappers, shared cache functions, screen-level loading/empty/error/offline states, native/web fallback routing, card layouts, action busy states, media preview/viewer hooks, tab/stack route patterns, Premium status/handoff patterns, Creator Studio shortcuts, and routing across Feed, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, Groups, Live, Premium, and Creator Studio.
 
 Existing data/business logic that should remain server-authoritative:
@@ -183,60 +189,83 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Action
 
-Recommendation: finish external device QA setup and run the first real-device/simulator QA pass.
+Recommendation: build Native Alert Management + Crypto/Market Alert CRUD next.
 
-This should come before another major native module.
+This is the safest next user-facing feature because it removes an existing Intelligence web fallback while avoiding the device-heavy risk of Camera, Live hosting, and LiveKit calls.
 
 ## Why This Comes Next
 
-- The parity report shows that native code breadth is no longer the main blocker.
-- Real-device readiness is still blocked by Android tooling, iOS simulator tooling, push/build credentials, and a physical device flow.
-- Expo web dependencies have been added, and a bounded Metro web startup probe reached `http://localhost:8094`; this does not count as feature/browser/device QA.
-- Push, deep links, camera/media permissions, background recovery, Reels/Status playback, Live viewer behavior, billing/provider return flows, and offline cache behavior are device-sensitive.
-- Continuing to add feature modules without at least one working QA route increases rework and release risk.
-- This recommendation is based on the current production and `mobile-native` migration state after the Feature Parity + QA Readiness checkpoint.
+- Authenticated QA browser testing now works, and the short sweep verified the currently connected native surfaces before the next build. The next feature should be one that can pass the full static/browser/device-readiness gate without requiring unavailable simulator/device tooling.
+- Intelligence currently displays alert overview/detail but still sends create/edit/history/test actions to web fallback.
+- Production has complete server-authoritative alert management APIs for list, create, update, delete, duplicate, history, pause, resume, channel readiness, and test delivery.
+- Native already has the right adjacent infrastructure: Intelligence screen, Notification Center, notification preferences, Premium entitlement display, deep-link routing for `/dashboard/crypto/alerts`, badge sync, offline cache, and browser QA support.
+- Camera, advanced media editor, Live hosting, and LiveKit calls are higher-risk because camera, microphone, native media, LiveKit, Bluetooth/audio, and background behavior remain unverified on real devices.
+- This recommendation is based on the current production routes/services and `mobile-native` implementation inspected on 2026-07-04.
 
 ## Reusable Existing PulseSoc Logic
 
 Reuse directly:
 
-- Existing `mobile-native` automated verification suite.
-- Existing native progress reports and the parity QA readiness report.
-- Existing Expo native scripts: `npm run ios`, `npm run android`, `npm run start:qa`, `npm run web:qa`, `npm run ios:simulator`, `npm run android:emulator`, and `npm run typecheck`.
-- Existing native route/deep-link coverage and notification routing.
-- Existing feature audit scripts for targeted regression checks.
+- `GET/POST /api/crypto/alerts`
+- `PATCH/DELETE /api/crypto/alerts/<alert_id>`
+- `POST /api/crypto/alerts/<alert_id>/duplicate`
+- `GET /api/crypto/alerts/<alert_id>/history`
+- `GET/POST /api/alerts`
+- `POST /api/alerts/<alert_id>/pause`
+- `POST /api/alerts/<alert_id>/resume`
+- `POST/DELETE /api/alerts/<alert_id>/delete`
+- `POST /api/alerts/<alert_id>/test`
+- `GET /api/alerts/events`
+- `GET /api/alerts/channel-readiness`
+- `POST /api/alerts/test/<channel>`
+- Existing `services/alert_engine.py`
+- Existing `services/dashboard_crypto_command_center.py`
+- Existing `services/notification_service.py`
+- Existing `services/pulsesoc_notification_system.py`
+- Existing `alert_rules`, `alert_events`, `alert_delivery_jobs`, `notification_delivery_logs`, `user_alert_rules`, and related alert history tables.
+- Existing premium gates through `api_pro_required(...)` and Premium status APIs.
+- Existing native `mobile-native/src/api/intelligence.ts`, `IntelligenceCenterScreen`, `NotificationCenterScreen`, `NotificationPreferencesScreen`, shared `Panel`, cache helper, notification routing, and safe web fallback helpers.
 
 Do not duplicate in native:
 
-- Backend business logic.
-- WebView behavior assumptions.
-- Device/browser QA claims that were not actually tested.
-- Production route behavior.
-- Browser-only dependencies unless the team intentionally chooses Expo web as a QA target.
+- Alert trigger evaluation.
+- Crypto/market interpretation.
+- Alert dedupe/cooldown logic.
+- Channel eligibility/readiness.
+- Premium gating.
+- Notification delivery routing.
+- Provider polling.
+- Delivery logging.
+- Financial advice or buy/sell/hold recommendations.
 
-## What Must Be Set Up
+## What Must Be Built Natively
 
-- At least one real native QA path:
-  - iOS simulator with working `xcrun simctl`, or
-  - Android emulator/device with working `adb`, or
-  - Physical-device Expo Go/EAS development build flow with logs.
-- A repeatable smoke checklist for login, session restore, notifications, deep links, feed, messenger, media upload, Reels, Status, Live viewer, Premium return flows, Growth, Intelligence, and offline cache.
-- A place to record QA issues and fixes per feature before new major feature work resumes.
+- Native Alerts screen or Intelligence Alerts tab.
+- Alert list with active/paused/deleted-safe filtering.
+- Alert detail with server-provided history and delivery statuses.
+- Create alert form using existing payload shape.
+- Edit alert form using existing update API.
+- Pause/resume/delete/duplicate actions.
+- Test alert and test-channel actions where existing APIs allow it.
+- Channel-readiness display for in-app, push, email, SMS, and Telegram, without pretending device push is verified.
+- Deep-link routing for `/pulse/alerts`, `/pulse/alerts/<id>`, `/dashboard/crypto/alerts`, and `/dashboard/crypto/alerts?alert_id=<id>`.
+- Offline cache, loading, empty, error, retry, permission-denied, and premium-gated states.
+- Safe web fallback for provider administration, advanced Intelligence editing, unsupported alert types, and any device-only delivery behavior.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Xcode developer tools or Android platform tools must be installed/configured.
-- Browser QA can now start through the added Expo web dependencies, and authenticated top-level browser navigation has been validated against a local temporary QA backend/proxy.
-- A physical device flow needs Expo Go or an EAS development build plus log capture.
+- Keep a short authenticated QA browser sweep as a pre-build checkpoint for future features, because the native app now has enough integrated surfaces that regressions matter.
+- Use a QA fixture or local/prod-safe account with at least one alert rule and one alert event to verify non-empty states.
+- Confirm exact create/update payload fields from `dashboard_crypto_command_center` and `alert_engine_service` before wiring forms.
+- Preserve backend Premium gating and channel readiness exactly as returned by the server.
 
 Blockers:
 
-- `npm run --prefix mobile-native web:qa` reached Metro at `http://localhost:8094`; built-in browser QA verified login, session restore, logout, and authenticated top-level route rendering against a local temporary QA backend/proxy.
-- Browser QA still needs durable seeded data for rich non-empty posts, messages, reels, statuses, marketplace listings, saved items, alerts, and live records.
-- `adb` is not available in `PATH`.
-- `/usr/bin/xcrun` exists, but `xcrun simctl list devices available` fails because `simctl` is not available.
+- Real push delivery, lock-screen presentation, APNs/FCM, sounds, and installed-app notification taps remain device-only and must not be claimed browser-verified.
+- `adb` is still not available in `PATH`.
+- `/usr/bin/xcrun` exists, but `xcrun simctl list devices available` previously failed because `simctl` was not available.
 - No physical-device QA flow has been recorded in this workspace.
 - EAS project ID, Apple credentials, Android/Firebase push credentials, and provisioning remain external setup.
 
@@ -246,9 +275,9 @@ Risk: Medium.
 
 Reasons:
 
-- Device QA setup can uncover real product blockers across many native features.
-- Tooling changes should be kept separate from production WebView routes.
-- Adding Expo web dependencies is optional and should be deliberate because the product target is native/hybrid-native.
+- Alert management touches notification delivery, premium gates, and market/crypto safety expectations.
+- The backend already owns the sensitive logic, so native risk is mostly UI/action wiring, payload correctness, and honest device-readiness reporting.
+- Risk is lower than Native Calls or advanced Camera because Alert Management can be substantially verified in the built-in QA browser before device push QA.
 
 ## Estimated Complexity
 
@@ -256,30 +285,33 @@ Complexity: Medium.
 
 Recommended first slice:
 
-- Pick the preferred QA route: iOS simulator, Android emulator/device, physical device, or intentional Expo web.
-- Configure only that route first.
-- Launch the app and run a smoke path.
-- Record blockers in the relevant QA report.
-- Fix only blockers found during QA.
+- Read-only Alerts screen, alert detail/history, pause/resume/delete/duplicate actions, and channel-readiness display.
+- Then add create/edit/test flows once the payload shapes are confirmed.
+- Keep unsupported advanced/provider operations on web fallback.
 
 Defer from first slice:
 
-- New user-facing feature work.
-- Native LiveKit hosting/calls.
-- Camera/editor expansion.
+- Real push delivery claims.
+- Native provider administration.
+- Native market/crypto evaluation.
+- LiveKit calls.
+- Advanced camera/editor expansion.
 - Any App Store replacement recommendation.
 
 ## Safest Implementation Plan
 
-1. Decide whether device QA starts with iOS simulator, Android emulator/device, or a physical device.
-2. Install/configure the missing tooling for that route.
-3. Launch the native app.
-4. Run the core smoke path: login/session restore, notifications, deep links, feed, messenger, media upload, Reels, Status, Live viewer, Premium, Growth, Intelligence, Settings.
-5. Record issues with root causes.
-6. Fix only blockers found during QA.
-7. Repeat until no significant blockers remain.
-8. Commit/push the QA setup and fixes with scoped staging.
+1. Run a full authenticated QA browser sweep across the already implemented native surfaces.
+2. Inspect `dashboard_crypto_command_center` and `alert_engine_service` payloads immediately before implementation.
+3. Extend `mobile-native/src/api/intelligence.ts` or create a focused `mobile-native/src/api/alerts.ts` wrapper over existing alert endpoints.
+4. Add native alert list/detail/history/channel-readiness UI using existing shared `Panel`, loading/error/offline/cache patterns, and Notification/Intelligence navigation.
+5. Add pause/resume/delete/duplicate/test actions with server-returned messages and optimistic UI only where rollback is simple.
+6. Add create/edit forms only after payload validation is explicit.
+7. Keep unsupported provider administration and device-only push verification on safe web/device fallback.
+8. Verify through Gate 1 static checks, Gate 2 built-in QA browser checks, and Gate 3 device-readiness documentation.
+9. Commit/push only scoped native alert files, reports, audit, and any screenshots.
 
 ## Recommendation Summary
 
-Recommended next action: seed a durable QA fixture set, then continue device QA setup. The authenticated QA browser pass proves the web QA lane can catch real native blockers, but real-device coverage is still required for push, media, video, deep links, foreground/background recovery, and installed-app behavior before more major feature expansion.
+Recommended next feature: Native Alert Management + Crypto/Market Alert CRUD.
+
+Reason: it is the highest-leverage next native feature that can reuse complete existing backend logic, remove an Intelligence web fallback, strengthen Notifications/Premium/Intelligence integration, and still fit the new QA discipline. Device QA remains required for real push delivery, but alert list/detail/create/edit/history/action behavior can be safely built and browser-verified before moving into higher-risk Camera, Live hosting, or LiveKit Calls.

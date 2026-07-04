@@ -25,29 +25,29 @@ export function SettingsScreen() {
     <Screen title="Settings" subtitle="Native permissions and session controls for the parallel app.">
       <Panel>
         <Text style={styles.title}>Native permissions</Text>
-        <Pressable style={styles.button} onPress={enablePush}>
+        <Pressable accessibilityRole="button" style={styles.button} onPress={enablePush}>
           <Text style={styles.buttonText}>Enable push notifications</Text>
         </Pressable>
-        <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("NotificationPreferences")}>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("NotificationPreferences")}>
           <Text style={styles.secondaryText}>Notification preferences</Text>
         </Pressable>
-        <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("Premium")}>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("Premium")}>
           <Text style={styles.secondaryText}>Premium and entitlements</Text>
         </Pressable>
-        <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("CreatorStudio")}>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("CreatorStudio")}>
           <Text style={styles.secondaryText}>Creator Studio</Text>
         </Pressable>
-        <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("GrowthCenter")}>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("GrowthCenter")}>
           <Text style={styles.secondaryText}>Growth Center</Text>
         </Pressable>
-        <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("IntelligenceCenter")}>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("IntelligenceCenter")}>
           <Text style={styles.secondaryText}>Intelligence and alerts</Text>
         </Pressable>
         <Text style={styles.muted}>Camera, microphone, media compression, and LiveKit call controls are Phase 2/3 QA-gated.</Text>
       </Panel>
       <Panel>
         <Text style={styles.title}>Session</Text>
-        <Pressable style={styles.secondaryButton} onPress={logout}>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={logout}>
           <Text style={styles.secondaryText}>Sign out</Text>
         </Pressable>
       </Panel>
