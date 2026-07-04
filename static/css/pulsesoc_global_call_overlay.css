@@ -1,0 +1,690 @@
+.pulsesoc-call-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: block;
+  padding: 0;
+  color: #ecfffd;
+  pointer-events: auto;
+}
+
+.pulsesoc-call-shell[hidden] {
+  display: none !important;
+}
+
+.pulsesoc-call-backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 14%, rgba(45, 245, 210, .18), transparent 34%),
+    radial-gradient(circle at 86% 16%, rgba(133, 82, 255, .22), transparent 38%),
+    linear-gradient(180deg, rgba(0, 8, 16, .42), rgba(0, 3, 10, .92));
+  backdrop-filter: blur(14px);
+  pointer-events: none;
+}
+
+.pulsesoc-call-card {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding:
+    calc(18px + env(safe-area-inset-top))
+    calc(18px + env(safe-area-inset-right))
+    calc(24px + env(safe-area-inset-bottom))
+    calc(18px + env(safe-area-inset-left));
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(43, 238, 210, .16), transparent 34%),
+    radial-gradient(circle at 82% 16%, rgba(108, 82, 255, .18), transparent 38%),
+    linear-gradient(180deg, rgba(4, 14, 28, .72), rgba(0, 4, 12, .96));
+  box-shadow: inset 0 0 0 1px rgba(89, 234, 226, .16);
+  pointer-events: auto;
+}
+
+.pulsesoc-call-card::before {
+  content: "";
+  position: absolute;
+  inset: -30%;
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, .12) 0 1px, transparent 1.7px),
+    radial-gradient(circle, rgba(43, 238, 210, .18) 0 1px, transparent 2px);
+  background-size: 92px 92px, 146px 146px;
+  opacity: .14;
+  pointer-events: none;
+}
+
+.pulsesoc-call-head,
+.pulsesoc-call-stage,
+.pulsesoc-call-actions,
+.pulsesoc-call-controls,
+.pulsesoc-call-end-primary {
+  position: relative;
+  z-index: 2;
+}
+
+.pulsesoc-call-head {
+  position: absolute;
+  top: calc(16px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 7;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  width: min(560px, calc(100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  min-height: 62px;
+  padding: 10px 12px;
+  border: 1px solid rgba(79, 242, 222, .28);
+  border-radius: 999px;
+  background: linear-gradient(145deg, rgba(6, 24, 38, .78), rgba(8, 12, 28, .68));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .38), 0 0 30px rgba(44, 238, 214, .12);
+  transform: translateX(-50%);
+  backdrop-filter: blur(18px);
+}
+
+.pulsesoc-call-orb {
+  width: 40px;
+  height: 40px;
+  border-radius: 16px;
+  background: radial-gradient(circle at 35% 30%, #b9fff6, #29ebc6 42%, #584fff 100%);
+  box-shadow: 0 0 34px rgba(41, 235, 198, .42);
+}
+
+.pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-orb {
+  animation: pulseCallRing 1.2s ease-in-out infinite;
+}
+
+.pulsesoc-call-copy {
+  min-width: 0;
+}
+
+.pulsesoc-call-copy strong,
+.pulsesoc-call-copy span,
+.pulsesoc-call-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pulsesoc-call-copy strong {
+  color: #f3fffd;
+  font-size: clamp(15px, 2.3vw, 18px);
+  line-height: 1.05;
+}
+
+.pulsesoc-call-copy span,
+.pulsesoc-call-copy small {
+  margin-top: 3px;
+  color: rgba(210, 228, 236, .78);
+  font-size: 11px;
+}
+
+.pulsesoc-call-quality {
+  min-height: 32px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(85, 239, 218, .28);
+  background: rgba(42, 236, 210, .08);
+  color: #9ffcf0;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.pulsesoc-call-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at center, rgba(47, 244, 194, .18), transparent 34%),
+    linear-gradient(180deg, rgba(0, 7, 17, .2), rgba(0, 0, 0, .48));
+}
+
+.pulsesoc-call-remote {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(217, 241, 247, .76);
+  font-weight: 800;
+  text-align: center;
+  isolation: isolate;
+}
+
+.pulsesoc-call-remote::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background:
+    linear-gradient(180deg, rgba(0, 5, 14, .6), transparent 26%, transparent 62%, rgba(0, 4, 13, .74)),
+    radial-gradient(circle at 50% 50%, transparent 22%, rgba(0, 3, 10, .24) 78%);
+  pointer-events: none;
+}
+
+.pulsesoc-call-remote-video {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #020811;
+}
+
+.pulsesoc-call-audio-visual {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: min(46vw, 310px);
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle, rgba(58, 255, 209, .48) 0 12%, rgba(42, 236, 210, .12) 34%, transparent 62%),
+    radial-gradient(circle, rgba(119, 88, 255, .28), transparent 64%);
+  box-shadow: 0 0 84px rgba(42, 236, 210, .3);
+  animation: pulseAudioOrb 3.4s ease-in-out infinite;
+}
+
+.pulsesoc-call-audio-visual span {
+  position: absolute;
+  inset: 18%;
+  border-radius: inherit;
+  border: 1px solid rgba(111, 255, 226, .22);
+}
+
+.pulsesoc-call-audio-visual span:nth-child(2) {
+  inset: 32%;
+  border-color: rgba(139, 107, 255, .3);
+}
+
+.pulsesoc-call-audio-visual span:nth-child(3) {
+  inset: 44%;
+  background: radial-gradient(circle at 35% 28%, #ebfffb, #35eac9 42%, #6157ff 100%);
+  box-shadow: 0 0 46px rgba(53, 234, 201, .42);
+}
+
+.pulsesoc-call-remote [data-call-remote-fallback] {
+  position: relative;
+  z-index: 3;
+  max-width: min(760px, calc(100vw - 42px));
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: rgba(1, 14, 27, .38);
+  backdrop-filter: blur(8px);
+}
+
+.pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-remote {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(18px, 4vh, 34px);
+  padding:
+    calc(98px + env(safe-area-inset-top))
+    max(22px, env(safe-area-inset-right))
+    calc(168px + env(safe-area-inset-bottom))
+    max(22px, env(safe-area-inset-left));
+}
+
+.pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-audio-visual {
+  width: clamp(172px, 43vw, 310px);
+  max-height: 34vh;
+  animation: pulseIncomingCore 2.6s ease-in-out infinite;
+}
+
+.pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-audio-visual::before,
+.pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-audio-visual::after {
+  content: "";
+  position: absolute;
+  inset: -18%;
+  border-radius: inherit;
+  border: 1px solid rgba(75, 246, 221, .16);
+  opacity: .72;
+  animation: pulseIncomingWave 2.8s ease-out infinite;
+}
+
+.pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-audio-visual::after {
+  inset: -34%;
+  border-color: rgba(132, 112, 255, .13);
+  animation-delay: .85s;
+}
+
+.pulsesoc-call-remote [data-call-remote-fallback].pulsesoc-call-incoming-copy {
+  display: grid;
+  gap: 8px;
+  min-width: min(420px, calc(100vw - 48px));
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(235, 255, 252, .96);
+  text-shadow: 0 0 22px rgba(43, 236, 211, .18);
+  backdrop-filter: none;
+}
+
+.pulsesoc-call-incoming-copy strong {
+  color: #eafffb;
+  font-size: clamp(38px, 8.8vw, 68px);
+  line-height: .95;
+  animation: pulseIncomingText 1.8s ease-in-out infinite;
+}
+
+.pulsesoc-call-incoming-copy span {
+  color: rgba(234, 248, 255, .94);
+  font-size: clamp(22px, 5vw, 34px);
+  line-height: 1.08;
+}
+
+.pulsesoc-call-incoming-copy small {
+  color: rgba(126, 252, 224, .88);
+  font-size: clamp(13px, 3.4vw, 16px);
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.pulsesoc-call-local-wrap {
+  position: absolute;
+  top: calc(92px + env(safe-area-inset-top));
+  right: calc(18px + env(safe-area-inset-right));
+  z-index: 7;
+  width: clamp(92px, 18vw, 168px);
+  aspect-ratio: 9 / 14;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid rgba(75, 244, 222, .42);
+  background: linear-gradient(145deg, rgba(5, 22, 36, .94), rgba(8, 10, 24, .92));
+  box-shadow: 0 18px 54px rgba(0, 0, 0, .42), 0 0 24px rgba(47, 236, 213, .22);
+}
+
+.pulsesoc-call-local-wrap[hidden] {
+  display: none;
+}
+
+.pulsesoc-call-local {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.pulsesoc-call-local-wrap.is-camera-off .pulsesoc-call-local,
+.pulsesoc-call-local.is-off {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+.pulsesoc-call-local-wrap > span,
+.pulsesoc-call-camera-off {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  background:
+    radial-gradient(circle at 50% 32%, rgba(58, 245, 209, .18), transparent 52%),
+    linear-gradient(145deg, #03101e, #090a18);
+  color: rgba(232, 252, 255, .88);
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.pulsesoc-call-actions,
+.pulsesoc-call-controls {
+  position: absolute;
+  left: 50%;
+  z-index: 8;
+  transform: translateX(-50%);
+}
+
+.pulsesoc-call-actions[hidden],
+.pulsesoc-call-controls[hidden],
+.pulsesoc-call-controls button[hidden],
+.pulsesoc-call-end-primary[hidden] {
+  display: none !important;
+}
+
+.pulsesoc-call-actions {
+  bottom: calc(34px + env(safe-area-inset-bottom));
+  display: flex;
+  gap: 12px;
+}
+
+.pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-actions {
+  bottom: calc(34px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: repeat(2, minmax(88px, 112px));
+  justify-content: center;
+  align-items: end;
+  gap: clamp(34px, 11vw, 72px);
+  width: min(440px, calc(100vw - 34px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  padding: 0 max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left));
+}
+
+.pulsesoc-call-controls {
+  bottom: calc(106px + env(safe-area-inset-bottom));
+  display: flex;
+  max-width: min(720px, calc(100vw - 28px));
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(93, 238, 229, .18);
+  border-radius: 999px;
+  background: rgba(3, 15, 29, .66);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .38), 0 0 28px rgba(44, 238, 214, .1);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease, transform .2s cubic-bezier(.22, .61, .36, 1);
+  backdrop-filter: blur(18px);
+}
+
+.pulsesoc-call-shell.controls-visible .pulsesoc-call-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.pulsesoc-call-controls button,
+.pulsesoc-call-actions button,
+.pulsesoc-call-pill,
+.pulsesoc-call-end-primary {
+  min-width: 58px;
+  min-height: 58px;
+  border: 1px solid rgba(133, 222, 255, .24);
+  border-radius: 999px;
+  color: #ecfffd;
+  background: rgba(255, 255, 255, .07);
+  font-weight: 900;
+  cursor: pointer;
+  transform: translateZ(0);
+}
+
+.pulsesoc-call-controls button {
+  display: inline-grid;
+  width: 66px;
+  height: 62px;
+  place-items: center;
+  gap: 2px;
+  padding: 7px 8px;
+}
+
+.pulsesoc-call-controls button span,
+.pulsesoc-call-actions button span,
+.pulsesoc-call-end-primary span {
+  display: block;
+  line-height: 1;
+}
+
+.pulsesoc-call-controls button b,
+.pulsesoc-call-end-primary b {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.pulsesoc-call-actions button:hover,
+.pulsesoc-call-actions button:focus-visible,
+.pulsesoc-call-controls button:hover,
+.pulsesoc-call-controls button:focus-visible,
+.pulsesoc-call-pill:focus-visible,
+.pulsesoc-call-end-primary:focus-visible {
+  outline: 2px solid rgba(43, 236, 211, .55);
+  outline-offset: 3px;
+}
+
+.pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-actions button {
+  position: relative;
+  display: inline-grid;
+  width: clamp(82px, 18vw, 96px);
+  height: clamp(82px, 18vw, 96px);
+  min-width: 76px;
+  min-height: 76px;
+  place-items: center;
+  justify-self: center;
+  overflow: visible;
+}
+
+.pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-actions button span {
+  font-size: clamp(24px, 6vw, 32px);
+}
+
+.pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-actions button b {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  color: rgba(235, 249, 255, .88);
+  font-size: 12px;
+  text-shadow: 0 0 14px rgba(0, 0, 0, .65);
+  transform: translateX(-50%);
+}
+
+.pulsesoc-call-actions .is-accept,
+.pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-actions .is-accept {
+  border-color: rgba(56, 255, 207, .7);
+  color: #05221a;
+  background:
+    radial-gradient(circle at 35% 24%, rgba(255, 255, 255, .74), transparent 25%),
+    linear-gradient(145deg, #31f4a9, #63eaff);
+  box-shadow:
+    0 20px 52px rgba(0, 0, 0, .35),
+    0 0 36px rgba(49, 244, 169, .38),
+    0 0 0 9px rgba(49, 244, 169, .08);
+  animation: pulseIncomingAccept 1.75s ease-in-out infinite;
+}
+
+.pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-actions .is-decline {
+  border-color: rgba(255, 91, 132, .52);
+  color: #ffe3ec;
+  background:
+    radial-gradient(circle at 35% 24%, rgba(255, 255, 255, .24), transparent 25%),
+    linear-gradient(145deg, rgba(255, 64, 116, .94), rgba(91, 14, 49, .98));
+  box-shadow:
+    0 20px 52px rgba(0, 0, 0, .35),
+    0 0 30px rgba(255, 77, 128, .3),
+    0 0 0 7px rgba(255, 77, 128, .06);
+}
+
+.pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-actions .is-decline span,
+.pulsesoc-call-end-primary span {
+  transform: rotate(135deg);
+}
+
+.pulsesoc-call-end-primary {
+  position: absolute;
+  left: 50%;
+  bottom: calc(28px + env(safe-area-inset-bottom));
+  z-index: 9;
+  display: inline-grid;
+  width: 76px;
+  height: 76px;
+  place-items: center;
+  gap: 0;
+  border-color: rgba(255, 95, 142, .44);
+  color: #ffd7e2;
+  background:
+    radial-gradient(circle at 36% 28%, rgba(255, 222, 230, .38), transparent 28%),
+    linear-gradient(145deg, rgba(255, 68, 128, .82), rgba(97, 16, 54, .94));
+  box-shadow: 0 18px 46px rgba(0, 0, 0, .38), 0 0 34px rgba(255, 77, 128, .36);
+  transform: translateX(-50%);
+}
+
+.pulsesoc-call-controls .is-muted {
+  border-color: rgba(255, 202, 92, .42);
+  color: #ffe8a8;
+  background: rgba(255, 202, 92, .12);
+}
+
+.pulsesoc-call-pill {
+  position: fixed;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: calc(92px + env(safe-area-inset-bottom));
+  z-index: 2147483001;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(5, 18, 30, .92);
+  backdrop-filter: blur(16px);
+}
+
+.pulsesoc-call-pill span {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #31f4a9;
+  box-shadow: 0 0 16px rgba(49, 244, 169, .5);
+}
+
+.pulsesoc-call-shell.is-minimized {
+  inset: auto;
+  display: block;
+  padding: 0;
+}
+
+.pulsesoc-call-shell.is-minimized .pulsesoc-call-backdrop,
+.pulsesoc-call-shell.is-minimized .pulsesoc-call-card {
+  display: none;
+}
+
+.pulsesoc-call-shell.is-minimized .pulsesoc-call-pill {
+  display: inline-flex;
+}
+
+html.pulsesoc-global-call-interrupted,
+body.pulsesoc-global-call-interrupted {
+  overscroll-behavior: none;
+}
+
+@keyframes pulseAudioOrb {
+  0%, 100% { transform: scale(.98); opacity: .9; }
+  50% { transform: scale(1.04); opacity: 1; }
+}
+
+@keyframes pulseCallRing {
+  0%, 100% { box-shadow: 0 0 28px rgba(41, 235, 198, .38), 0 0 0 0 rgba(49, 244, 169, .2); }
+  50% { box-shadow: 0 0 44px rgba(41, 235, 198, .55), 0 0 0 14px rgba(49, 244, 169, 0); }
+}
+
+@keyframes pulseIncomingCore {
+  0%, 100% { transform: scale(.97); opacity: .9; filter: saturate(1); }
+  45% { transform: scale(1.035); opacity: 1; filter: saturate(1.14); }
+}
+
+@keyframes pulseIncomingWave {
+  0% { transform: scale(.82); opacity: .42; }
+  74% { transform: scale(1.16); opacity: .05; }
+  100% { transform: scale(1.2); opacity: 0; }
+}
+
+@keyframes pulseIncomingAccept {
+  0%, 100% { box-shadow: 0 20px 52px rgba(0, 0, 0, .35), 0 0 28px rgba(49, 244, 169, .28), 0 0 0 7px rgba(49, 244, 169, .08); }
+  50% { box-shadow: 0 22px 58px rgba(0, 0, 0, .4), 0 0 44px rgba(49, 244, 169, .44), 0 0 0 12px rgba(49, 244, 169, .03); }
+}
+
+@keyframes pulseIncomingText {
+  0%, 100% { text-shadow: 0 0 18px rgba(43, 236, 211, .14); }
+  50% { text-shadow: 0 0 30px rgba(43, 236, 211, .32); }
+}
+
+@media (max-width: 720px) {
+  .pulsesoc-call-head {
+    top: calc(12px + env(safe-area-inset-top));
+    width: calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right));
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+  }
+
+  .pulsesoc-call-orb {
+    width: 34px;
+    height: 34px;
+    border-radius: 14px;
+  }
+
+  .pulsesoc-call-quality {
+    max-width: 38vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pulsesoc-call-controls {
+    bottom: calc(104px + env(safe-area-inset-bottom));
+    flex-wrap: wrap;
+    justify-content: center;
+    width: calc(100vw - 24px);
+    border-radius: 24px;
+  }
+
+  .pulsesoc-call-controls button {
+    width: 62px;
+    height: 58px;
+  }
+
+  .pulsesoc-call-local-wrap {
+    top: calc(86px + env(safe-area-inset-top));
+    right: calc(12px + env(safe-area-inset-right));
+    width: clamp(88px, 26vw, 128px);
+  }
+
+  .pulsesoc-call-end-primary {
+    width: 72px;
+    height: 72px;
+    bottom: calc(22px + env(safe-area-inset-bottom));
+  }
+
+  .pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-remote {
+    gap: clamp(14px, 3.4vh, 24px);
+    padding-top: calc(92px + env(safe-area-inset-top));
+    padding-bottom: calc(158px + env(safe-area-inset-bottom));
+  }
+
+  .pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-actions {
+    bottom: calc(32px + env(safe-area-inset-bottom));
+    grid-template-columns: repeat(2, minmax(80px, 94px));
+    gap: clamp(28px, 10vw, 50px);
+  }
+}
+
+@media (max-width: 360px) {
+  .pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-actions {
+    grid-template-columns: repeat(2, minmax(74px, 84px));
+    gap: 24px;
+  }
+
+  .pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-actions button {
+    width: 74px;
+    height: 74px;
+    min-width: 70px;
+    min-height: 70px;
+  }
+}
+
+@media (max-height: 620px) and (orientation: landscape) {
+  .pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-remote {
+    display: grid;
+    grid-template-columns: minmax(130px, 30vw) minmax(220px, 1fr);
+    gap: 24px;
+    align-content: center;
+    justify-content: center;
+    padding-bottom: calc(110px + env(safe-area-inset-bottom));
+  }
+
+  .pulsesoc-call-shell[data-call-mode="incoming"] .pulsesoc-call-audio-visual {
+    width: clamp(132px, 28vw, 220px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulsesoc-call-shell *,
+  .pulsesoc-call-shell *::before,
+  .pulsesoc-call-shell *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}

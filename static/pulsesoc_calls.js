@@ -174,6 +174,34 @@
     return { call, join };
   }
 
+  function dispatchCallLifecycleEvent(type, detail = {}) {
+    try {
+      const call = detail.call || state.activeCall || null;
+      window.dispatchEvent(new CustomEvent(type, {
+        detail: {
+          ...detail,
+          call,
+          call_id: callId(call),
+          call_type: callType(call),
+          display_name: call ? displayNameFor(call) : "",
+        },
+      }));
+    } catch (_) {}
+  }
+
+  function setGlobalCallInterruption(active, mode = "") {
+    const enabled = Boolean(active);
+    document.documentElement.classList.toggle("pulsesoc-call-interruption-active", enabled);
+    document.body?.classList.toggle("pulsesoc-call-interruption-active", enabled);
+    if (enabled && mode) {
+      document.documentElement.dataset.pulsesocCallMode = mode;
+      if (document.body) document.body.dataset.pulsesocCallMode = mode;
+    } else if (!enabled) {
+      delete document.documentElement.dataset.pulsesocCallMode;
+      if (document.body) delete document.body.dataset.pulsesocCallMode;
+    }
+  }
+
   function outgoingDeliveryMessage(data = {}) {
     const notifications = Array.isArray(data.notifications) ? data.notifications : Array.isArray(data.call?.notifications) ? data.call.notifications : [];
     if (!notifications.length) return t("pulse.call.notification_failed", "Pulse started, but recipient could not be notified.");
@@ -974,6 +1002,7 @@
   }
 
   async function hideCallShell() {
+    const previousCall = state.activeCall;
     await disconnectRoom("hide");
     state.activeCall = null;
     state.lastFailure = null;
@@ -985,6 +1014,8 @@
     shell.hidden = true;
     shell.classList.remove("is-minimized");
     showControls(false, true);
+    setGlobalCallInterruption(false);
+    dispatchCallLifecycleEvent("pulsesoc:call-interruption-ended", { call: previousCall, reason: "hidden" });
   }
 
   function localTrackKind(track) {
@@ -1353,14 +1384,22 @@
   }
 
   function showIncoming(call) {
+    const incomingId = callId(call);
+    const existingShell = qs("[data-pulsesoc-call-shell]");
+    const alreadyShowing = Boolean(incomingId && incomingId === callId(state.activeCall) && existingShell?.dataset.callMode === "incoming" && !existingShell.hidden);
     state.activeCall = call;
-    minimizeCall(false);
-    startCallTone("incoming");
+    if (!alreadyShowing || state.minimized) minimizeCall(false);
+    if (!alreadyShowing) {
+      setGlobalCallInterruption(true, "incoming");
+      dispatchCallLifecycleEvent("pulsesoc:incoming-call", { call });
+      startCallTone("incoming");
+    }
     const name = displayNameFor(call);
     renderMode("incoming", `${name} ${t("pulse.call.incoming_suffix", "is Pulsing You...")}`);
     const meta = qs("[data-call-meta]", ensureShell());
     if (meta) meta.textContent = callType(call) === "video" ? t("pulse.call.incoming_video", "Video Connection") : t("pulse.call.incoming_voice", "Voice Connection");
-    const id = callId(call);
+    if (!state.statusTimer) startStatusPolling();
+    const id = incomingId;
     if (id && !state.seenIncomingCalls.has(id)) {
       state.seenIncomingCalls.add(id);
       postJson(`${API}/${encodeURIComponent(id)}/ring-seen`, { device_info: deviceInfo() }).catch(() => {});
@@ -1393,7 +1432,9 @@
   async function acceptCall(id) {
     if (!id) return { ok: false, status: "missing_call" };
     try {
+      dispatchCallLifecycleEvent("pulsesoc:call-accepted", { call: state.activeCall });
       stopCallTone();
+      setGlobalCallInterruption(true, "active");
       renderMode("active", t("pulse.call.accepted", "Pulse Accepted"));
       statusSequence([
         { delay: 550, message: t("pulse.call.synchronizing", "Synchronizing...") },
@@ -1413,8 +1454,10 @@
   async function declineCall(id) {
     if (!id) return { ok: false, status: "missing_call" };
     try {
+      const previousCall = state.activeCall;
       const data = await postJson(`${API}/${encodeURIComponent(id)}/decline`, {});
       stopCallTone();
+      dispatchCallLifecycleEvent("pulsesoc:call-declined", { call: previousCall });
       await hideCallShell();
       return data;
     } catch (error) {
@@ -1444,6 +1487,8 @@
       shell.hidden = true;
       shell.classList.remove("is-minimized", "controls-visible");
       showControls(false, true);
+      setGlobalCallInterruption(false);
+      dispatchCallLifecycleEvent("pulsesoc:call-interruption-ended", { reason: "ended" });
       state.ending = false;
       const data = await endRequest;
       return data?.ok === false ? data : { ok: true, ...(data || {}) };
@@ -1742,6 +1787,7 @@
         const status = String(call.status || "");
         if (["ended", "missed", "declined", "failed", "canceled"].includes(status)) {
           stopCallTone();
+          dispatchCallLifecycleEvent("pulsesoc:call-terminal", { call, reason: status });
           renderMode("failed", status === "declined" ? t("pulse.call.declined", "Pulse Declined") : status === "missed" ? t("pulse.call.missed", "Missed Pulse") : status === "failed" ? t("pulse.call.interrupted", "Pulse Interrupted") : t("pulse.call.ended", "Pulse Ended"));
           window.setTimeout(() => hideCallShell(), 1400);
           return;

@@ -2205,7 +2205,8 @@ def add_pwa_headers(response):
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     for header_name, header_value in pulse_security_core.security_headers().items():
         response.headers.setdefault(header_name, header_value)
-    if request.path.startswith(("/pulse/camera", "/pulse/live")):
+    pulse_call_surface = request.path == "/pulse" or request.path.startswith(("/pulse/", "/dashboard"))
+    if request.path.startswith(("/pulse/camera", "/pulse/live")) or pulse_call_surface:
         response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()")
     else:
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
@@ -2262,6 +2263,19 @@ def add_pwa_headers(response):
             if "</head>" in html.lower() and "/static/js/pulse_i18n.js" not in html:
                 i18n_script = '<script src="/static/js/pulse_i18n.js?v=persistent-language-20260701" defer></script>'
                 html = re.sub(r"</head>", i18n_script + "</head>", html, count=1, flags=re.I)
+                response.set_data(html)
+                response.headers.pop("Content-Length", None)
+            call_overlay_allowed = bool(session.get("account_user_id")) and (
+                request.path == "/pulse" or request.path.startswith(("/pulse/", "/dashboard"))
+            )
+            if call_overlay_allowed and "</head>" in html.lower() and "/static/css/pulsesoc_global_call_overlay.css" not in html:
+                call_overlay_css = '<link rel="stylesheet" href="/static/css/pulsesoc_global_call_overlay.css?v=fullscreen-incoming-20260704">'
+                html = re.sub(r"</head>", call_overlay_css + "</head>", html, count=1, flags=re.I)
+                response.set_data(html)
+                response.headers.pop("Content-Length", None)
+            if call_overlay_allowed and "</body>" in html.lower() and "/static/js/pulsesoc_global_call_overlay.js" not in html:
+                call_overlay_script = '<script src="/static/js/pulsesoc_global_call_overlay.js?v=fullscreen-incoming-20260704" defer></script>'
+                html = re.sub(r"</body>", call_overlay_script + "</body>", html, count=1, flags=re.I)
                 response.set_data(html)
                 response.headers.pop("Content-Length", None)
         except Exception as exc:
