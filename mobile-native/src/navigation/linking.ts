@@ -12,7 +12,8 @@ export const linking: LinkingOptions<RootStackParamList> = {
           Status: "pulse/status",
           Messenger: "pulse/messages",
           Notifications: "pulse/notifications",
-          Profile: "pulse/profile"
+          Profile: "pulse/profile",
+          Marketplace: "pulse/marketplace"
         }
       },
       Chat: {
@@ -40,6 +41,12 @@ export const linking: LinkingOptions<RootStackParamList> = {
         path: "pulse/status/:statusId",
         parse: {
           statusId: Number
+        }
+      },
+      MarketplaceDetail: {
+        path: "pulse/marketplace/:listingId",
+        parse: {
+          listingId: Number
         }
       },
       ProfileEdit: {

@@ -103,6 +103,22 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  const marketplacePathMatch = normalized.match(/^\/pulse\/marketplace\/(\d+)/);
+  if (marketplacePathMatch?.[1] && navigationRef.isReady()) {
+    navigationRef.navigate("MarketplaceDetail", { listingId: Number(marketplacePathMatch[1]), title: "Marketplace" });
+    return { handled: true, target: normalized };
+  }
+
+  if (normalized.startsWith("/pulse/marketplace") && navigationRef.isReady()) {
+    const queryListingId = extractNumericQueryValue(normalized, "listing") || extractNumericQueryValue(normalized, "listing_id");
+    if (queryListingId) {
+      navigationRef.navigate("MarketplaceDetail", { listingId: queryListingId, title: "Marketplace" });
+    } else {
+      navigationRef.navigate("Tabs", { screen: "Marketplace" });
+    }
+    return { handled: true, target: normalized };
+  }
+
   if (normalized.startsWith("/pulse/notifications") && navigationRef.isReady()) {
     navigationRef.navigate("NotificationCenter");
     return { handled: true, target: normalized };

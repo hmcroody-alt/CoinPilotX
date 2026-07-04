@@ -13,6 +13,7 @@ export type AppTabParamList = {
   Notifications: undefined;
   PulseAI: undefined;
   Profile: undefined;
+  Marketplace: undefined;
   Settings: undefined;
 };
 
@@ -23,6 +24,7 @@ export type RootStackParamList = {
   Reels: { reelId?: number; title?: string } | undefined;
   ReelDetail: { reelId: number; title?: string };
   StatusDetail: { statusId: number; title?: string };
+  MarketplaceDetail: { listingId?: number; title?: string } | undefined;
   ProfileDetail: { profileKey?: string; title?: string } | undefined;
   ProfileEdit: undefined;
   NotificationCenter: undefined;

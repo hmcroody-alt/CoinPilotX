@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AppState } from "react-native";
 import { getNotificationBadgeCounts, unreadCount } from "../api/notifications";
 import { HomeScreen } from "../screens/HomeScreen";
+import { MarketplaceScreen } from "../screens/MarketplaceScreen";
 import { MessengerScreen } from "../screens/MessengerScreen";
 import { NotificationCenterScreen } from "../screens/NotificationCenterScreen";
 import { NotificationPreferencesScreen } from "../screens/NotificationPreferencesScreen";
@@ -67,6 +68,7 @@ function TabNavigator() {
       <Tabs.Screen name="Notifications" component={NotificationCenterScreen} options={{ tabBarBadge: notificationUnread || undefined }} />
       <Tabs.Screen name="PulseAI" component={PulseAiScreen} options={{ title: "Pulse AI" }} />
       <Tabs.Screen name="Profile" component={ProfileScreen} />
+      <Tabs.Screen name="Marketplace" component={MarketplaceScreen} />
       <Tabs.Screen name="Settings" component={SettingsScreen} />
     </Tabs.Navigator>
   );
@@ -87,6 +89,7 @@ export function AppNavigator() {
       <Stack.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="ReelDetail" component={ReelsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="StatusDetail" component={StatusScreen} options={({ route }) => ({ title: route.params.title || "Status" })} />
+      <Stack.Screen name="MarketplaceDetail" component={MarketplaceScreen} options={({ route }) => ({ title: route.params?.title || "Marketplace" })} />
       <Stack.Screen name="ProfileDetail" component={ProfileScreen} options={({ route }) => ({ title: route.params?.title || "Profile" })} />
       <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} options={{ title: "Edit Profile" }} />
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} options={{ title: "Notifications" }} />
