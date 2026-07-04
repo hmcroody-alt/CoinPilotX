@@ -25,7 +25,7 @@ def ensure_smoke_accounts():
     conn = db_service.connect()
     conn.row_factory = bot.sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT user_id FROM users ORDER BY user_id LIMIT 1")
+    cur.execute("SELECT user_id FROM users WHERE user_id>0 ORDER BY user_id LIMIT 1")
     row = cur.fetchone()
     if row:
         user_id = int(row["user_id"])

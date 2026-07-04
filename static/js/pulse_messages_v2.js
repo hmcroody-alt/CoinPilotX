@@ -2284,11 +2284,16 @@
     }
   }
 
-  function scheduleRealtimePoll(delay = 3000) {
+  function realtimePollDelay() {
+    if (document.hidden) return 60000;
+    return state.realtimeConnected ? 15000 : 3000;
+  }
+
+  function scheduleRealtimePoll(delay = realtimePollDelay()) {
     window.clearTimeout(state.realtimeTimer);
     state.realtimeTimer = window.setTimeout(async () => {
       if (!document.hidden) await pollRealtime();
-      scheduleRealtimePoll(document.hidden ? 30000 : 3000);
+      scheduleRealtimePoll();
     }, delay);
   }
 
@@ -2299,10 +2304,13 @@
       window.PulseRealtime.on("connected", () => {
         state.realtimeConnected = true;
         renderRealtimeStatus();
+        scheduleRealtimePoll();
       });
       window.PulseRealtime.on("reconnecting", () => {
         state.realtimeConnected = false;
         renderRealtimeStatus();
+        pollRealtime();
+        scheduleRealtimePoll(3000);
       });
       window.PulseRealtime.on("message_notification", handleRealtimeEvent);
       window.PulseRealtime.on("notification_created", handleRealtimeEvent);
@@ -2335,10 +2343,10 @@
     document.addEventListener("visibilitychange", () => {
       if (document.hidden && state.voice.state === "recording_voice") pauseVoiceRecording();
       if (!document.hidden) pollRealtime();
-      scheduleRealtimePoll(document.hidden ? 30000 : 3000);
+      scheduleRealtimePoll();
     });
     pollRealtime();
-    scheduleRealtimePoll(3000);
+    scheduleRealtimePoll();
     renderRealtimeStatus();
   }
 

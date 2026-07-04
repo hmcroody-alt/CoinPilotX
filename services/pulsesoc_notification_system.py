@@ -482,6 +482,7 @@ def ensure_schema(conn: Any | None = None) -> None:
         "CREATE INDEX IF NOT EXISTS idx_notification_events_recipient_type ON notification_events(recipient_user_id, event_type, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_notification_delivery_jobs_status ON notification_delivery_jobs(status, scheduled_at, next_retry_at)",
         "CREATE INDEX IF NOT EXISTS idx_notification_delivery_jobs_notification ON notification_delivery_jobs(notification_id, channel)",
+        "CREATE INDEX IF NOT EXISTS idx_notification_delivery_jobs_user_created ON notification_delivery_jobs(user_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_notification_device_tokens_user_enabled ON notification_device_tokens(user_id, enabled, last_seen_at)",
         "CREATE INDEX IF NOT EXISTS idx_notification_device_tokens_hash ON notification_device_tokens(token_hash)",
     ]:

@@ -5977,6 +5977,7 @@ def dashboard_page():
                 conn,
                 fresh_user,
                 session_admin=admin_current_user(),
+                include_details=False,
             )
         except Exception as exc:
             trace_id = getattr(g, "performance_trace_id", "") or secrets.token_hex(6)
@@ -20628,6 +20629,7 @@ def api_dashboard_mission_control():
             conn,
             fresh_user,
             session_admin=admin_current_user(),
+            include_details=request.args.get("detail") == "1",
         )
     finally:
         conn.close()
@@ -94943,6 +94945,14 @@ def _init_db_impl():
         ("ip_hash", "TEXT"),
         ("created_at", "TEXT"),
     ], conn=conn)
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created "
+        "ON admin_audit_logs(created_at)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_admin_created "
+        "ON admin_audit_logs(admin_user_id, created_at)"
+    )
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS stripe_events (

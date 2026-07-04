@@ -701,10 +701,26 @@ def growth_summary(conn: Any, user_id: int) -> dict[str, Any]:
 
 
 def build_growth_state(conn: Any, user: dict[str, Any]) -> dict[str, Any]:
-    summary = provision_user(conn, user, source="growth_center", commit=True)
+    user_id = int(user.get("user_id") or user.get("id") or 0)
+    if user_id <= 0:
+        raise ValueError("Growth Center requires a valid user account.")
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT id FROM pulse_growth_accounts WHERE user_id=? LIMIT 1",
+            (user_id,),
+        )
+        provisioned = bool(cur.fetchone())
+    except Exception:
+        provisioned = False
+    summary = (
+        growth_summary(conn, user_id)
+        if provisioned
+        else provision_user(conn, user, source="growth_center_fallback", commit=True)
+    )
     from services import pulse_advertiser_portal
 
-    portal = pulse_advertiser_portal.portal_summary(conn, int(user.get("user_id") or user.get("id") or 0))
+    portal = pulse_advertiser_portal.portal_summary(conn, user_id)
     return {
         "growth": summary,
         "portal": portal,

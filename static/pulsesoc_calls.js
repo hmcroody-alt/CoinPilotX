@@ -1,6 +1,7 @@
 (() => {
   const API = "/api/calls";
-  const POLL_MS = 6500;
+  const POLL_FALLBACK_MS = 6500;
+  const POLL_CONNECTED_MS = 30000;
   const STATUS_MS = 2800;
   const QUALITY_MS = 30000;
 
@@ -1546,10 +1547,24 @@
     }
   }
 
+  function activePollDelay() {
+    return window.PulseRealtime?.state?.connected
+      ? POLL_CONNECTED_MS
+      : POLL_FALLBACK_MS;
+  }
+
+  function scheduleActivePoll(delay = activePollDelay()) {
+    window.clearTimeout(state.activePollTimer);
+    state.activePollTimer = window.setTimeout(async () => {
+      state.activePollTimer = null;
+      await pollActiveCalls();
+      scheduleActivePoll();
+    }, delay);
+  }
+
   function startActivePolling() {
-    if (state.activePollTimer) return;
     pollActiveCalls();
-    state.activePollTimer = window.setInterval(pollActiveCalls, POLL_MS);
+    scheduleActivePoll();
   }
 
   function bindRealtimeCalls() {
@@ -1557,6 +1572,15 @@
       window.PulseRealtime.on("incoming_call", handleIncomingRealtime);
       window.PulseRealtime.on("communication_call_incoming", handleIncomingRealtime);
       window.PulseRealtime.on("call_started", handleIncomingRealtime);
+      window.PulseRealtime.on("connected", () => scheduleActivePoll());
+      window.PulseRealtime.on("reconnecting", () => {
+        pollActiveCalls();
+        scheduleActivePoll(POLL_FALLBACK_MS);
+      });
+      window.PulseRealtime.on("fallback", () => {
+        pollActiveCalls();
+        scheduleActivePoll(POLL_FALLBACK_MS);
+      });
       window.PulseRealtime.on("notification_created", (event) => {
         const payload = realtimePayload(event);
         const type = String(payload.type || payload.notification_type || payload.notification?.type || payload.event_type || "").toLowerCase();

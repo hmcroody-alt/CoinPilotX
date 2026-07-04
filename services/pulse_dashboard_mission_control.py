@@ -60,8 +60,36 @@ def _table_exists(cur: Any, table: str) -> bool:
         return False
 
 
-def _count(cur: Any, table: str, where: str, params: tuple[Any, ...]) -> int:
-    if not _table_exists(cur, table):
+def _table_names(cur: Any) -> set[str]:
+    try:
+        if db_service.IS_POSTGRES:
+            cur.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema='public'"
+            )
+        else:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        key = "table_name" if db_service.IS_POSTGRES else "name"
+        return {
+            str(_row_value(row, key, 0, ""))
+            for row in cur.fetchall()
+        }
+    except Exception:
+        return set()
+
+
+def _count(
+    cur: Any,
+    table: str,
+    where: str,
+    params: tuple[Any, ...],
+    *,
+    tables: set[str] | None = None,
+) -> int:
+    if tables is not None:
+        if table not in tables:
+            return 0
+    elif not _table_exists(cur, table):
         return 0
     try:
         cur.execute(f"SELECT COUNT(*) AS total FROM {table} WHERE {where}", params)
@@ -84,7 +112,13 @@ def _admin_for_account(cur: Any, user: dict[str, Any], session_admin: dict[str, 
         return None
 
 
-def _user_capabilities(cur: Any, user: dict[str, Any], session_admin: dict[str, Any] | None = None) -> dict[str, Any]:
+def _user_capabilities(
+    cur: Any,
+    user: dict[str, Any],
+    session_admin: dict[str, Any] | None = None,
+    *,
+    tables: set[str] | None = None,
+) -> dict[str, Any]:
     user_id = _safe_int(user.get("user_id"), 0)
     admin = _admin_for_account(cur, user, session_admin)
     admin_role = str((admin or {}).get("role") or "").strip().lower()
@@ -94,12 +128,19 @@ def _user_capabilities(cur: Any, user: dict[str, Any], session_admin: dict[str, 
     creator = bool(
         premium
         or str(user.get("creator_mode") or user.get("account_type") or "").lower() in {"creator", "seller", "business"}
-        or _count(cur, "posts", "user_id=?", (user_id,)) > 0
-        or _count(cur, "pulse_reels", "user_id=?", (user_id,)) > 0
+        or _count(cur, "posts", "user_id=?", (user_id,), tables=tables) > 0
+        or _count(cur, "pulse_reels", "user_id=?", (user_id,), tables=tables) > 0
     )
     seller = bool(
         str(user.get("seller_status") or user.get("marketplace_seller_status") or "").lower() in {"active", "approved"}
-        or _count(cur, "marketplace_items", "seller_user_id=?", (user_id,)) > 0
+        or _count(
+            cur,
+            "marketplace_items",
+            "seller_user_id=?",
+            (user_id,),
+            tables=tables,
+        )
+        > 0
     )
     verified = bool(user.get("email_verified") or user.get("verification_status") == "verified" or premium_identity_engine.identity_mark(user))
     return {
@@ -569,38 +610,54 @@ def _build_state(name: str, category: str, builder: Any, conn: Any, user: dict[s
         return _degraded_state(name, category, exc, user)
 
 
-def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_admin: dict[str, Any] | None = None) -> dict[str, Any]:
+def build_mission_control_dashboard(
+    conn: Any,
+    user: dict[str, Any],
+    session_admin: dict[str, Any] | None = None,
+    *,
+    include_details: bool = True,
+) -> dict[str, Any]:
     cur = conn.cursor()
-    caps = _user_capabilities(cur, user, session_admin)
+    tables = _table_names(cur)
+    caps = _user_capabilities(cur, user, session_admin, tables=tables)
     user_id = caps["user_id"]
     degraded_modules: list[dict[str, Any]] = []
-    account_state, incident = _build_state("account", STATE_CATEGORY_MAP["account"], dashboard_account_command_center.build_account_state, conn, user)
-    if incident:
-        degraded_modules.append(incident)
-    network_state, incident = _build_state("network", STATE_CATEGORY_MAP["network"], dashboard_network_command_center.build_network_state, conn, user)
-    if incident:
-        degraded_modules.append(incident)
-    intelligence_state, incident = _build_state("intelligence", STATE_CATEGORY_MAP["intelligence"], dashboard_intelligence_command_center.build_intelligence_state, conn, user)
-    if incident:
-        degraded_modules.append(incident)
-    economy_state, incident = _build_state("economy", STATE_CATEGORY_MAP["economy"], dashboard_economy_command_center.build_economy_state, conn, user)
-    if incident:
-        degraded_modules.append(incident)
-    crypto_state, incident = _build_state("crypto", STATE_CATEGORY_MAP["crypto"], dashboard_crypto_command_center.build_crypto_state, conn, user)
-    if incident:
-        degraded_modules.append(incident)
-    ads_state, incident = _build_state("ads", STATE_CATEGORY_MAP["ads"], dashboard_ads_command_center.build_ads_state, conn, user)
-    if incident:
-        degraded_modules.append(incident)
-    ai_state, incident = _build_state("ai", STATE_CATEGORY_MAP["ai"], dashboard_ai_command_center.build_ai_state, conn, user)
-    if incident:
-        degraded_modules.append(incident)
-    try:
-        system_state = system_mission_control.build_system_state(conn)
-    except Exception as exc:
-        system_state, incident = _degraded_state("system", STATE_CATEGORY_MAP["system"], exc, user)
-        degraded_modules.append(incident)
-    metrics = _metrics(cur, user, caps)
+    account_state: dict[str, Any] = {}
+    network_state: dict[str, Any] = {}
+    intelligence_state: dict[str, Any] = {}
+    economy_state: dict[str, Any] = {}
+    crypto_state: dict[str, Any] = {}
+    ads_state: dict[str, Any] = {}
+    ai_state: dict[str, Any] = {}
+    system_state: dict[str, Any] = {}
+    if include_details:
+        account_state, incident = _build_state("account", STATE_CATEGORY_MAP["account"], dashboard_account_command_center.build_account_state, conn, user)
+        if incident:
+            degraded_modules.append(incident)
+        network_state, incident = _build_state("network", STATE_CATEGORY_MAP["network"], dashboard_network_command_center.build_network_state, conn, user)
+        if incident:
+            degraded_modules.append(incident)
+        intelligence_state, incident = _build_state("intelligence", STATE_CATEGORY_MAP["intelligence"], dashboard_intelligence_command_center.build_intelligence_state, conn, user)
+        if incident:
+            degraded_modules.append(incident)
+        economy_state, incident = _build_state("economy", STATE_CATEGORY_MAP["economy"], dashboard_economy_command_center.build_economy_state, conn, user)
+        if incident:
+            degraded_modules.append(incident)
+        crypto_state, incident = _build_state("crypto", STATE_CATEGORY_MAP["crypto"], dashboard_crypto_command_center.build_crypto_state, conn, user)
+        if incident:
+            degraded_modules.append(incident)
+        ads_state, incident = _build_state("ads", STATE_CATEGORY_MAP["ads"], dashboard_ads_command_center.build_ads_state, conn, user)
+        if incident:
+            degraded_modules.append(incident)
+        ai_state, incident = _build_state("ai", STATE_CATEGORY_MAP["ai"], dashboard_ai_command_center.build_ai_state, conn, user)
+        if incident:
+            degraded_modules.append(incident)
+        try:
+            system_state = system_mission_control.build_system_state(conn)
+        except Exception as exc:
+            system_state, incident = _degraded_state("system", STATE_CATEGORY_MAP["system"], exc, user)
+            degraded_modules.append(incident)
+    metrics = _metrics(cur, user, caps, tables=tables)
     unavailable_categories = {item["category"] for item in degraded_modules}
     widgets = []
     for widget in WIDGETS:
@@ -617,7 +674,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
             }
             item["unavailable"] = True
             item["description"] = "This dashboard module is temporarily unavailable. The rest of PulseSoc is still available."
-        else:
+        elif include_details:
             try:
                 if item["category"] == "Pulse Network":
                     state = dashboard_network_command_center.state_for_widget(network_state, item["widget_key"])
@@ -660,6 +717,8 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
                 state = {"state": "LIMITED", "cta_label": "Retry Dashboard", "route": "/dashboard"}
                 item["unavailable"] = True
                 item["description"] = "This dashboard card is temporarily unavailable. Other Dashboard cards remain available."
+        else:
+            state = None
         item["access"] = access
         item["lock_reason"] = _lock_reason(widget, caps) if access == "locked" else ""
         if state and state.get("route"):
@@ -723,6 +782,7 @@ def build_mission_control_dashboard(conn: Any, user: dict[str, Any], session_adm
         "crypto_command_center": crypto_state,
         "system_mission_control": system_state,
         "degraded_modules": degraded_modules,
+        "detail_mode": "full" if include_details else "summary",
     }
 
 
@@ -741,32 +801,43 @@ def _user_summary(user: dict[str, Any], caps: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _metrics(cur: Any, user: dict[str, Any], caps: dict[str, Any]) -> list[dict[str, Any]]:
+def _metrics(
+    cur: Any,
+    user: dict[str, Any],
+    caps: dict[str, Any],
+    *,
+    tables: set[str] | None = None,
+) -> list[dict[str, Any]]:
     user_id = caps["user_id"]
-    followers = _count(cur, "friendships", "friend_id=? AND status='accepted'", (user_id,))
-    following = _count(cur, "friendships", "user_id=? AND status='accepted'", (user_id,))
-    posts = _count(cur, "posts", "user_id=?", (user_id,))
-    reels = _count(cur, "pulse_reels", "user_id=?", (user_id,))
-    videos = _count(cur, "videos", "owner_user_id=?", (user_id,))
-    comments = _count(cur, "comments", "user_id=?", (user_id,))
-    unread_messages = _count(cur, "conversation_participants", "user_id=? AND COALESCE(unread_count,0)>0", (user_id,))
-    unread_alerts = _count(cur, "notifications", "user_id=? AND COALESCE(read_at,'')=''", (user_id,))
+    followers = _count(cur, "friendships", "friend_id=? AND status='accepted'", (user_id,), tables=tables)
+    following = _count(cur, "friendships", "user_id=? AND status='accepted'", (user_id,), tables=tables)
+    posts = _count(cur, "posts", "user_id=?", (user_id,), tables=tables)
+    reels = _count(cur, "pulse_reels", "user_id=?", (user_id,), tables=tables)
+    videos = _count(cur, "videos", "owner_user_id=?", (user_id,), tables=tables)
+    comments = _count(cur, "comments", "user_id=?", (user_id,), tables=tables)
+    unread_messages = _count(cur, "conversation_participants", "user_id=? AND COALESCE(unread_count,0)>0", (user_id,), tables=tables)
+    unread_alerts = _count(cur, "notifications", "user_id=? AND COALESCE(read_at,'')=''", (user_id,), tables=tables)
     pulse_score = min(100, 35 + followers * 2 + posts * 3 + reels * 4 + videos * 4 + comments)
     engagement = posts + reels + videos + comments
     health = 92 if caps.get("verified") else 76
     return [
         {"label": "Pulse Score", "value": str(pulse_score), "detail": "creator and trust activity", "icon": "PS", "accent": "emerald", "trend": "Live"},
         {"label": "Followers", "value": str(followers), "detail": f"{following} following", "icon": "NW", "accent": "purple", "trend": "Network"},
-        {"label": "Profile Views", "value": str(_profile_views(cur, user_id)), "detail": "private owner metric", "icon": "EV", "accent": "cyan", "trend": "Owner"},
+        {"label": "Profile Views", "value": str(_profile_views(cur, user_id, tables=tables)), "detail": "private owner metric", "icon": "EV", "accent": "cyan", "trend": "Owner"},
         {"label": "Engagement", "value": str(engagement), "detail": "posts, reels, videos, comments", "icon": "EG", "accent": "purple", "trend": "Signals"},
         {"label": "Account Health", "value": f"{health}%", "detail": "security and verification", "icon": "SH", "accent": "emerald", "trend": "Secure"},
         {"label": "Unread", "value": str(unread_messages + unread_alerts), "detail": "messages and alerts separated", "icon": "IN", "accent": "gold", "trend": "Split"},
     ]
 
 
-def _profile_views(cur: Any, user_id: int) -> int:
+def _profile_views(
+    cur: Any,
+    user_id: int,
+    *,
+    tables: set[str] | None = None,
+) -> int:
     for table, column in (("profile_views", "profile_user_id"), ("pulse_profile_views", "profile_user_id")):
-        count = _count(cur, table, f"{column}=?", (user_id,))
+        count = _count(cur, table, f"{column}=?", (user_id,), tables=tables)
         if count:
             return count
     return 0

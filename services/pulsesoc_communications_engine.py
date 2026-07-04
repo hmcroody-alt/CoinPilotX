@@ -1497,7 +1497,6 @@ def calls_dashboard_summary() -> dict[str, Any]:
         } if error_row else {}
         delivery_counts: dict[str, int] = {}
         try:
-            pulsesoc_notification_system.ensure_schema(conn)
             cur.execute(
                 """
                 SELECT COALESCE(j.status,'unknown') AS status, COUNT(*) AS total
