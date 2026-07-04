@@ -138,7 +138,7 @@ export async function nativeMediaAssetFromUri(
   mediaType: "image" | "video",
   metadata: Partial<Pick<NativeMediaAsset, "name" | "mimeType" | "width" | "height" | "duration" | "size">> = {}
 ): Promise<NativeMediaAsset> {
-  const fileInfo = await FileSystem.getInfoAsync(uri, { size: true }).catch(() => ({ exists: false } as FileSystem.FileInfo));
+  const fileInfo = await FileSystem.getInfoAsync(uri).catch(() => ({ exists: false } as FileSystem.FileInfo));
   const name = metadata.name || filenameFor(uri, mediaType);
   return {
     uri,
@@ -281,7 +281,7 @@ export function nativeMediaKind(asset?: NativeMediaAsset | null, media?: PulseMe
 
 async function normalizePickedAsset(asset: ImagePicker.ImagePickerAsset, fallbackType: "image" | "video"): Promise<NativeMediaAsset> {
   const uri = asset.uri;
-  const fileInfo = await FileSystem.getInfoAsync(uri, { size: true }).catch(() => ({ exists: false } as FileSystem.FileInfo));
+  const fileInfo = await FileSystem.getInfoAsync(uri).catch(() => ({ exists: false } as FileSystem.FileInfo));
   const mediaType = asset.type === "video" || fallbackType === "video" ? "video" : "image";
   const name = filenameFor(uri, mediaType);
   return {
