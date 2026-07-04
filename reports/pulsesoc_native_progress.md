@@ -28,6 +28,7 @@ Completed native foundations:
 - Marketplace Browse + Listing Detail Foundation: native Marketplace tab, search/browse through existing marketplace API, listing cards, listing detail modal, media gallery through NativeMediaViewer, save/report/contact seller hooks, safe checkout routing, offline cache, and marketplace deep-link routing.
 - Search + Discovery Foundation: native Search tab/route, debounced global search through existing `/api/pulse/search`, recent and suggested searches, discovery tabs, grouped result cards, pull-to-refresh, cached result fallback, native destination routing, `/pulse/search` deep-link routing, and web fallback for unsupported result URLs.
 - Saved Content + Collections Foundation: native Saved tab/route, saved item list, type filters, collection filters, create/rename/delete collection actions, remove/move saved item actions, saved search, offline cache, item deep-link routing, and `/pulse/saved` deep-link routing through existing saved APIs.
+- Groups/Communities + Rooms Foundation: native Groups tab/detail route, thin read-only group JSON bridge, communities browse/search, room rail, group detail, rules/member metadata, compact group feed preview, join/leave, report, group chat open, room open, offline cache, and group/room deep-link routing through existing group, room, and Messenger APIs.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -50,6 +51,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_marketplace_progress.md`
 - `reports/pulsesoc_native_search_progress.md`
 - `reports/pulsesoc_native_saved_progress.md`
+- `reports/pulsesoc_native_groups_progress.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -66,6 +68,7 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_marketplace_audit.py`
 - `scripts/pulsesoc_native_search_audit.py`
 - `scripts/pulsesoc_native_saved_audit.py`
+- `scripts/pulsesoc_native_groups_audit.py`
 
 ## Remaining Major Features
 
@@ -78,7 +81,7 @@ Completed supporting reports/audits:
 - Intelligence Center
 - Premium/entitlements
 - Creator Studio
-- Groups/communities
+- Architecture health and shared-core consolidation
 
 ## Codebase Reconnaissance
 
@@ -109,6 +112,7 @@ Existing backend/web surfaces inspected:
 - Search APIs and web bridge: `/api/pulse/search`, `/pulse/search`, `static/js/pulse_search_bridge.js`, and search handling in `static/js/pulse_home_core.js`
 - Saved APIs and web route: `/pulse/saved`, `GET/POST /api/pulse/saved`, saved collections, delete, and move endpoints
 - Groups and rooms routes: `/pulse/groups`, `/pulse/groups/create`, `/pulse/groups/<group_slug>`, `POST /api/pulse/groups/create`, join/leave APIs, chat-open APIs, invite/report/update/moderation APIs, group post/comment APIs, `pulse_default_room_cards()`, and `pulse_ensure_default_rooms(...)`
+- Current native reuse surface: repeated API wrappers, AsyncStorage cache functions, screen-level loading/empty/error/offline states, native/web fallback routing, card layouts, action busy states, media preview/viewer hooks, and tab/stack route patterns across Feed, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, and Groups.
 
 Existing data/business logic that should remain server-authoritative:
 
@@ -135,71 +139,65 @@ Existing data/business logic that should remain server-authoritative:
 - PulseSoc search ranking/grouping/result routing
 - saved item collection ownership and removal
 - group membership, roles, moderation, invite links, group chats, and group post/comment rules
+- shared native routing, caching, error, card, and media-viewer behavior that should be consolidated before deeper Live/Calls/Premium work
 
 ## Recommended Next Feature
 
-Recommendation: build Native Groups, Communities + Rooms Foundation next.
+Recommendation: produce a Native Architecture Health Report + Shared Core Consolidation checkpoint next.
 
 This should come before Marketplace seller tools, Creator Studio, Growth Center, Premium, or native LiveKit calls.
 
 ## Why This Comes Next
 
-- The backend already contains extensive group and room infrastructure: group browse/detail pages, create/join/leave/chat-open/report/update/moderation APIs, group posts/comments, invite links, default room cards, and room seeding.
-- Search and Saved now surface groups and rooms, but those targets still rely on web fallback because native group/room destinations do not exist.
-- Messenger is already native, so opening group chat/rooms natively can reuse the existing Messenger destination and conversation behavior.
-- Groups/Rooms is lower risk than LiveKit calls and more connected than isolated premium/growth tooling because it ties Search, Saved, Messenger, Notifications, and Feed-style group posts together.
-- This recommendation is based on current backend routes, default room helpers, database tables, and native migration coverage.
+- The native app now has a substantial surface area: auth, Messenger, Notifications, Feed/Post, Profile, Reels, Status, media upload/viewer, Marketplace, Search, Saved, and Groups/Rooms.
+- Multiple features now repeat the same patterns: API wrapper normalization, AsyncStorage cache, loading/empty/error/offline state, card layout, action busy state, native/web fallback routing, and report/audit conventions.
+- The next major features, especially Live, Calls, Creator Studio, Growth, and Premium, will increase complexity and should not be built on duplicated native infrastructure.
+- A consolidation checkpoint directly follows the user's permanent rule: if three or more features use the same UI or service, promote it into `mobile-native/src/shared` or `mobile-native/src/core` with documentation and tests where appropriate.
+- This recommendation is based on current native code structure and the repeated implementation patterns across the already migrated features.
 
 ## Reusable Existing PulseSoc Logic
 
 Reuse directly:
 
-- Existing group pages: `/pulse/groups`, `/pulse/groups/create`, and `/pulse/groups/<group_slug>`.
-- Existing group APIs: create, join, leave, chat open, invite links, invite, report, update, delete, moderation, member role, ban/unban, and remove-member endpoints.
-- Existing group post/comment APIs and moderation/report/delete/pin flows.
-- Existing default room logic: `pulse_default_room_cards()` and `pulse_ensure_default_rooms(...)`.
-- Existing group database tables: `pulse_groups`, `pulse_group_members`, group post/comment tables, group invite/moderation tables, and linked conversation data.
-- Existing Messenger chat route and native Chat screen for group chat handoff where conversation IDs are returned.
-- Existing Search and Saved result routing for group/room URLs.
+- Existing API wrappers and normalization style in `mobile-native/src/api/*`.
+- Existing AsyncStorage cache patterns in Feed, Messenger, Marketplace, Search, Saved, and Groups.
+- Existing navigation and fallback routing in `notificationRouting.ts` and `linking.ts`.
+- Existing reusable components: `PostCard`, `ProfileHeader`, `NativeMediaViewer`, `FeedComposer`, `StatusCreator`, `StatusViewerCard`, and `ReelPlayerCard`.
+- Existing loading, empty, error, offline, refresh, and busy-action patterns across native screens.
+- Existing audit/report conventions in `scripts/pulsesoc_native_*_audit.py` and `reports/pulsesoc_native_*_progress.md`.
 
 Do not duplicate in native:
 
-- Group ownership and role checks.
-- Membership authorization.
-- Private group visibility.
-- Invite-link generation.
-- Group moderation and reporting rules.
-- Group post/comment validation.
-- Group chat creation/linkage rules.
-- Room seeding logic.
-- Server-side validation.
+- Backend business logic.
+- API response normalization patterns.
+- Cache load/save boilerplate.
+- Native route fallback parsing.
+- Loading/empty/error/offline state rendering.
+- Shared card/action UI.
+- Media preview/viewer logic.
 
 ## What Must Be Rebuilt Natively
 
-- Native Groups/Communities screen.
-- Native group cards and group detail screen.
-- Native default rooms list.
-- Join/leave button states.
-- Open group chat/room routing into native Messenger where supported.
-- Group post list and composer hooks where existing APIs support them.
-- Group post/comment display using reusable feed/comment components where safe.
-- Search/filter/category UI if supported by existing APIs.
-- Offline cache, pull-to-refresh, loading, empty, error, and retry states.
-- Web fallback for unsupported admin/moderation/create/edit surfaces.
+- Architecture health report covering component reuse, service reuse, navigation consistency, API wrapper consistency, cache consistency, and duplicate code.
+- Shared-core consolidation plan.
+- Candidate shared modules under `mobile-native/src/shared` or `mobile-native/src/core`.
+- Optional low-risk extraction of clear duplicate utilities if the audit finds safe consolidation points.
+- Focused tests or static audits for any shared utilities introduced.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Confirm whether a JSON group browse/detail endpoint exists or whether the first slice should use existing search/group helper contracts plus group-specific action APIs.
-- Map `/pulse/groups/<slug>` and `/pulse/messages?room=<slug>` targets into native group detail or Messenger routes.
-- Reuse existing group membership, moderation, and group chat APIs.
-- Keep unsupported owner/admin/moderation tools on web fallback.
+- Inspect every `mobile-native/src/api`, `mobile-native/src/screens`, `mobile-native/src/components`, `mobile-native/src/navigation`, and `mobile-native/src/utils` file.
+- Identify duplicated cache, fetch, action-state, route, card, media, and empty/error UI patterns.
+- Avoid broad refactors if they risk feature regressions.
+- Keep any extraction additive and covered by static audits.
 
 Blockers:
 
-- If no current JSON group browse/detail API exists, the safest first slice may need a thin backend JSON endpoint that reuses existing group queries without changing business logic.
-- Real-device group chat routing and room recovery must be verified before replacing WebView group surfaces.
+- Real-device behavior cannot be inferred from static architecture cleanup.
+- Some consolidation may need to wait until shared behavior is verified across simulator/real device.
+- Avoid moving feature-specific logic into shared modules before three or more consumers prove it is stable.
 
 ## Risk Level
 
@@ -207,43 +205,40 @@ Risk: Medium.
 
 Reasons:
 
-- Groups/Rooms touches membership, permissions, chat handoff, and moderation.
-- Main risk is incorrect membership state or fallback routing.
-- Backend risk stays low if native reuses server membership/chat/moderation endpoints and avoids duplicating role logic.
+- Architecture consolidation can create regressions if done too broadly.
+- Risk stays medium if the next step is mostly audit/reporting plus only small, obvious shared extractions.
+- Backend risk stays low because this checkpoint does not change server business logic.
 
 ## Estimated Complexity
 
-Complexity: Medium-high.
+Complexity: Medium.
 
 Recommended first slice:
 
-- Inspect group browse/detail and group API response shapes.
-- Add native group API wrappers only for existing endpoints or a thin read-only JSON bridge if no browse endpoint exists.
-- Native Groups screen with community cards and default room cards.
-- Native Group detail with metadata, posts preview, join/leave, open chat, report, and web fallback for unsupported admin tools.
-- Native room open routing into Messenger where a conversation ID or room target is available.
-- Pull-to-refresh and offline cache.
-- Static audit proving group membership/moderation/chat rules stay backend-owned.
+- Inventory repeated native patterns and dependencies.
+- Score each candidate shared component/service by number of consumers, risk, and extraction effort.
+- Recommend `src/shared` or `src/core` structure and naming.
+- Extract only the lowest-risk duplicate utilities if they are clearly used by three or more features.
+- Add a native architecture health report and audit script.
+- Keep feature behavior unchanged.
 
 Defer from first slice:
 
-- Full group creation/editing.
-- Group admin dashboards.
-- Member role management.
-- Ban/unban and advanced moderation.
-- Rich group media galleries.
+- Large component rewrites.
+- Styling system overhauls.
+- Navigation architecture rewrites.
+- Changes to backend API contracts.
+- Live/Calls/Creator/Premium feature work.
 
 ## Safest Implementation Plan
 
-1. Inspect group browse/detail pages, group action APIs, default room helpers, and native Messenger routing.
-2. Prefer existing JSON endpoints. If a read-only JSON bridge is needed, keep it thin and reuse the existing group queries/business rules.
-3. Add native group/room API wrappers without duplicating membership logic.
-4. Add native Groups screen and Group detail screen.
-5. Wire join/leave/open chat/report actions to existing APIs.
-6. Route group and room URLs from Search/Saved/Notifications into native destinations where supported.
-7. Keep admin, moderation, create/edit, and unsupported room surfaces on explicit web fallback.
-8. Add a focused Groups audit and keep production WebView untouched.
+1. Inspect all native API wrappers, screens, components, navigation, and utils.
+2. Identify duplicated code used by three or more features.
+3. Produce a health report with findings, recommended shared-core structure, and risk-ranked consolidation plan.
+4. Implement only low-risk shared utilities/components if the codebase clearly supports extraction.
+5. Add an audit script that enforces documentation of shared-core boundaries and confirms production WebView paths remain untouched.
+6. Run the standard native verification suite.
 
 ## Recommendation Summary
 
-Build Native Groups, Communities + Rooms Foundation next. Search and Saved can now expose group and room targets, Messenger is already native, and the backend has enough membership/chat/moderation infrastructure to reuse PulseSoc behavior while rebuilding only the native discovery, detail, and chat-entry UI.
+Produce the Native Architecture Health Report + Shared Core Consolidation checkpoint next. The native app has enough feature surface that consolidating repeated API, cache, routing, state, and UI patterns will reduce risk before entering the more complex Live, Calls, Creator Studio, Growth, and Premium phases.

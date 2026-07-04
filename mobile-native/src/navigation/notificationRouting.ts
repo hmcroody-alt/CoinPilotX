@@ -55,6 +55,22 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  const groupMatch = normalized.match(/^\/pulse\/groups\/([^/?#]+)/);
+  if (groupMatch?.[1] && navigationRef.isReady()) {
+    navigationRef.navigate("GroupDetail", { groupSlug: decodeURIComponent(groupMatch[1]), title: "Community" });
+    return { handled: true, target: normalized };
+  }
+
+  if (normalized.startsWith("/pulse/groups") && navigationRef.isReady()) {
+    navigationRef.navigate("Tabs", { screen: "Groups" });
+    return { handled: true, target: normalized };
+  }
+
+  if (normalized.startsWith("/pulse/messages") && normalized.includes("room=") && navigationRef.isReady()) {
+    navigationRef.navigate("Tabs", { screen: "Groups" });
+    return { handled: true, target: normalized, reason: "room_target" };
+  }
+
   const reelMatch = normalized.match(/^\/pulse\/reels\/(\d+)/);
   if (reelMatch?.[1] && navigationRef.isReady()) {
     navigationRef.navigate("ReelDetail", { reelId: Number(reelMatch[1]), title: "Reel" });

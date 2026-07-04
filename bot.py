@@ -67780,6 +67780,132 @@ def pulse_groups_page():
     return pulse_social_shell("PulseSoc Groups", "Create focused communities, invite friends, post updates, and grow safe discussion spaces.", main, "", script)
 
 
+def pulse_native_group_post_payload(row):
+    item = dict(row or {})
+    return {
+        "id": safe_int(item.get("id"), 0),
+        "group_id": safe_int(item.get("group_id"), 0),
+        "user_id": safe_int(item.get("user_id"), 0),
+        "author_name": item.get("author_name") or "PulseSoc Member",
+        "title": item.get("title") or "",
+        "body": item.get("body") or item.get("content") or "",
+        "post_type": item.get("post_type") or "text",
+        "media_url": pulse_media_url(item.get("media_url") or ""),
+        "thumbnail_url": pulse_media_url(item.get("thumbnail_url") or ""),
+        "media_type": item.get("media_type") or "",
+        "pinned": bool(item.get("pinned_at")),
+        "created_at": item.get("created_at") or "",
+        "updated_at": item.get("updated_at") or "",
+    }
+
+
+def pulse_native_group_payload(cur, group, user_id, include_posts=False):
+    item = dict(group or {})
+    group_id = safe_int(item.get("id"), 0)
+    cur.execute("SELECT role FROM pulse_group_members WHERE group_id=? AND user_id=? LIMIT 1", (group_id, int(user_id or 0)))
+    membership = dict(cur.fetchone() or {})
+    role = membership.get("role") or ""
+    if not item.get("member_count"):
+        cur.execute("SELECT COUNT(*) AS total FROM pulse_group_members WHERE group_id=?", (group_id,))
+        item["member_count"] = safe_int(dict(cur.fetchone() or {}).get("total"), 0)
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_group_posts WHERE group_id=? AND deleted_at IS NULL AND COALESCE(status,'published') NOT IN ('deleted','removed')", (group_id,))
+    post_count = safe_int(dict(cur.fetchone() or {}).get("total"), 0)
+    payload = {
+        "id": group_id,
+        "group_id": group_id,
+        "slug": item.get("slug") or str(group_id),
+        "name": item.get("name") or "PulseSoc Group",
+        "description": item.get("description") or "",
+        "category": item.get("category") or "Community",
+        "group_type": item.get("group_type") or "public",
+        "rules": item.get("rules") or "",
+        "status": item.get("status") or "active",
+        "trust_level": item.get("trust_level") or "standard",
+        "featured": bool(item.get("featured")),
+        "cover_image_url": pulse_media_url(item.get("cover_image_url") or ""),
+        "member_count": safe_int(item.get("member_count"), 0),
+        "post_count": post_count,
+        "viewer_role": role,
+        "joined": bool(role),
+        "can_manage": bool(role in {"owner", "admin", "moderator"} or safe_int(item.get("owner_user_id"), 0) == int(user_id or 0)),
+        "created_at": item.get("created_at") or "",
+        "updated_at": item.get("updated_at") or "",
+        "url": f"/pulse/groups/{item.get('slug') or group_id}",
+    }
+    if include_posts:
+        cur.execute(
+            """
+            SELECT gp.*, COALESCE(u.display_name,u.username,'PulseSoc Member') AS author_name
+            FROM pulse_group_posts gp
+            LEFT JOIN users u ON u.user_id=gp.user_id
+            WHERE gp.group_id=?
+              AND gp.deleted_at IS NULL
+              AND COALESCE(gp.status,'published') NOT IN ('deleted','removed')
+            ORDER BY CASE WHEN gp.pinned_at IS NOT NULL AND gp.pinned_at!='' THEN 0 ELSE 1 END,
+                     gp.pinned_at DESC,
+                     gp.id DESC
+            LIMIT 30
+            """,
+            (group_id,),
+        )
+        payload["posts"] = [pulse_native_group_post_payload(row) for row in cur.fetchall()]
+    return payload
+
+
+@webhook_app.route("/api/pulse/groups", methods=["GET"])
+def api_pulse_groups_browse():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    q = clean_html(request.args.get("q") or "")[:120]
+    category = clean_html(request.args.get("category") or "")[:80]
+    limit = max(1, min(safe_int(request.args.get("limit"), 40), 80))
+    offset = max(0, safe_int(request.args.get("offset"), 0))
+    where = ["COALESCE(g.status,'active') NOT IN ('suspended','deleted','removed')"]
+    params = []
+    if q:
+        where.append("(COALESCE(g.name,'') LIKE ? OR COALESCE(g.description,'') LIKE ? OR COALESCE(g.category,'') LIKE ? OR COALESCE(g.tags_json,'') LIKE ?)")
+        params.extend([f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"])
+    if category and category.lower() != "all":
+        where.append("COALESCE(g.category,'Community')=?")
+        params.append(category)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute(
+        f"""
+        SELECT g.*, COUNT(m.user_id) AS member_count
+        FROM pulse_groups g
+        LEFT JOIN pulse_group_members m ON m.group_id=g.id
+        WHERE {' AND '.join(where)}
+        GROUP BY g.id
+        ORDER BY COALESCE(g.featured,0) DESC, g.id DESC
+        LIMIT ? OFFSET ?
+        """,
+        (*params, limit, offset),
+    )
+    groups = [pulse_native_group_payload(cur, row, user["user_id"]) for row in cur.fetchall()]
+    rooms = pulse_ensure_default_rooms(cur, user["user_id"])
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "groups": groups, "items": groups, "rooms": rooms, "limit": limit, "offset": offset, "has_more": len(groups) == limit})
+
+
+@webhook_app.route("/api/pulse/groups/<group_slug>", methods=["GET"])
+def api_pulse_group_detail(group_slug):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_groups WHERE (slug=? OR id=?) AND COALESCE(status,'active') NOT IN ('deleted','removed') LIMIT 1", (clean_html(group_slug), safe_int(group_slug, 0)))
+    group = dict(cur.fetchone() or {})
+    if not group:
+        conn.close()
+        return api_error("Group not found.", 404)
+    payload = pulse_native_group_payload(cur, group, user["user_id"], include_posts=True)
+    conn.close()
+    return jsonify({"ok": True, "group": payload, "posts": payload.get("posts") or []})
+
+
 @webhook_app.route("/pulse/groups/create", methods=["GET"])
 def pulse_groups_create_page():
     init_db()
