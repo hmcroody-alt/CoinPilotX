@@ -99,9 +99,14 @@ export async function listConversations() {
 }
 
 export async function loadCachedConversations() {
-  const cached = await AsyncStorage.getItem(CONVERSATION_CACHE_KEY);
-  if (!cached) return [];
-  return normalizeConversations(JSON.parse(cached) as MessengerConversation[]);
+  try {
+    const cached = await AsyncStorage.getItem(CONVERSATION_CACHE_KEY);
+    if (!cached) return [];
+    return normalizeConversations(JSON.parse(cached) as MessengerConversation[]);
+  } catch {
+    await AsyncStorage.removeItem(CONVERSATION_CACHE_KEY).catch(() => undefined);
+    return [];
+  }
 }
 
 export async function cacheConversations(conversations: MessengerConversation[]) {
@@ -128,9 +133,15 @@ export async function syncConversation(conversationId: number, afterId = 0) {
 }
 
 export async function loadCachedMessages(conversationId: number) {
-  const cached = await AsyncStorage.getItem(messageCacheKey(conversationId));
-  if (!cached) return [];
-  return normalizeMessages(JSON.parse(cached) as MessengerMessage[], conversationId);
+  const key = messageCacheKey(conversationId);
+  try {
+    const cached = await AsyncStorage.getItem(key);
+    if (!cached) return [];
+    return normalizeMessages(JSON.parse(cached) as MessengerMessage[], conversationId);
+  } catch {
+    await AsyncStorage.removeItem(key).catch(() => undefined);
+    return [];
+  }
 }
 
 export async function cacheMessages(conversationId: number, messages: MessengerMessage[]) {

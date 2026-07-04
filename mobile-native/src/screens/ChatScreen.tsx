@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
+  AppStateStatus,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -48,8 +50,10 @@ export function ChatScreen({ route }: NativeStackScreenProps<RootStackParamList,
   const [typing, setTyping] = useState("");
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [recordingStartedAt, setRecordingStartedAt] = useState<number>(0);
+  const [uploading, setUploading] = useState(false);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingAt = useRef(0);
+  const appState = useRef<AppStateStatus>(AppState.currentState);
 
   const newestMessageId = useMemo(
     () => messages.reduce((max, message) => Math.max(max, message.id > 0 ? message.id : 0), 0),
@@ -59,6 +63,7 @@ export function ChatScreen({ route }: NativeStackScreenProps<RootStackParamList,
     () => messages.filter((message) => message.id > 0).reduce((min, message) => Math.min(min, message.id), Number.MAX_SAFE_INTEGER),
     [messages]
   );
+  const visibleMessages = useMemo(() => [...messages].reverse(), [messages]);
 
   const mergeMessages = useCallback((current: MessengerMessage[], incoming: MessengerMessage[]) => {
     const byKey = new Map<string, MessengerMessage>();
@@ -116,6 +121,7 @@ export function ChatScreen({ route }: NativeStackScreenProps<RootStackParamList,
   }, [conversationId, loadingOlder, mergeMessages, oldestMessageId]);
 
   const sync = useCallback(async () => {
+    if (appState.current !== "active") return;
     if (!newestMessageId) return;
     try {
       const data = await syncConversation(conversationId, newestMessageId);
@@ -214,6 +220,8 @@ export function ChatScreen({ route }: NativeStackScreenProps<RootStackParamList,
   }, [sendPayload]);
 
   const uploadAndSend = useCallback(async (input: { uri: string; name: string; mimeType: string; voice?: boolean; durationSeconds?: number }) => {
+    if (uploading) return;
+    setUploading(true);
     try {
       const uploaded = await uploadMessengerMedia({
         conversationId,
@@ -233,8 +241,10 @@ export function ChatScreen({ route }: NativeStackScreenProps<RootStackParamList,
       });
     } catch (uploadError) {
       Alert.alert("Attachment failed", uploadError instanceof Error ? uploadError.message : "Attachment could not be sent.");
+    } finally {
+      setUploading(false);
     }
-  }, [conversationId, sendPayload]);
+  }, [conversationId, sendPayload, uploading]);
 
   const attachImage = useCallback(async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -322,6 +332,17 @@ export function ChatScreen({ route }: NativeStackScreenProps<RootStackParamList,
     return () => clearInterval(timer);
   }, [sync]);
 
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      const wasBackgrounded = appState.current.match(/inactive|background/);
+      appState.current = nextState;
+      if (wasBackgrounded && nextState === "active") {
+        sync().catch(() => load().catch(() => undefined));
+      }
+    });
+    return () => subscription.remove();
+  }, [load, sync]);
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.root}>
       <View style={styles.header}>
@@ -335,10 +356,15 @@ export function ChatScreen({ route }: NativeStackScreenProps<RootStackParamList,
         </View>
       ) : (
         <FlatList
-          data={[...messages].reverse()}
+          data={visibleMessages}
           inverted
           keyExtractor={(item) => `${item.id}-${item.client_message_id || ""}`}
           contentContainerStyle={styles.list}
+          initialNumToRender={18}
+          maxToRenderPerBatch={12}
+          removeClippedSubviews
+          updateCellsBatchingPeriod={40}
+          windowSize={9}
           refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load({ refresh: true })} />}
           onEndReached={loadOlder}
           onEndReachedThreshold={0.2}
@@ -348,13 +374,13 @@ export function ChatScreen({ route }: NativeStackScreenProps<RootStackParamList,
       )}
       <View style={styles.composer}>
         <View style={styles.tools}>
-          <Pressable accessibilityLabel="Attach image" style={styles.iconButton} onPress={attachImage}>
-            <Text style={styles.iconText}>Img</Text>
+          <Pressable accessibilityLabel="Attach image" disabled={uploading} style={[styles.iconButton, uploading && styles.disabled]} onPress={attachImage}>
+            <Text style={styles.iconText}>{uploading ? "..." : "Img"}</Text>
           </Pressable>
-          <Pressable accessibilityLabel="Attach file" style={styles.iconButton} onPress={attachFile}>
+          <Pressable accessibilityLabel="Attach file" disabled={uploading} style={[styles.iconButton, uploading && styles.disabled]} onPress={attachFile}>
             <Text style={styles.iconText}>File</Text>
           </Pressable>
-          <Pressable accessibilityLabel="Record voice message" style={[styles.iconButton, recording && styles.recording]} onPress={toggleVoiceRecording}>
+          <Pressable accessibilityLabel="Record voice message" disabled={uploading && !recording} style={[styles.iconButton, recording && styles.recording, uploading && !recording && styles.disabled]} onPress={toggleVoiceRecording}>
             <Text style={styles.iconText}>{recording ? "Stop" : "Mic"}</Text>
           </Pressable>
         </View>
@@ -575,6 +601,9 @@ const styles = StyleSheet.create({
   },
   recording: {
     borderColor: colors.danger
+  },
+  disabled: {
+    opacity: 0.55
   },
   iconText: {
     color: colors.text,
