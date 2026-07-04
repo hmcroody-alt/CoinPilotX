@@ -80,6 +80,9 @@ export const linking: LinkingOptions<RootStackParamList> = {
       Premium: {
         path: "pulse/premium"
       },
+      CreatorStudio: {
+        path: "pulse/creator-studio"
+      },
       NotificationCenter: {
         path: "notifications"
       },

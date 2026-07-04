@@ -6,13 +6,13 @@ export type AuthStackParamList = {
 };
 
 export type AppTabParamList = {
-  Home: undefined;
+  Home: { openComposer?: boolean } | undefined;
   Search: { query?: string } | undefined;
   Saved: undefined;
   Groups: undefined;
   Live: undefined;
   Reels: undefined;
-  Status: undefined;
+  Status: { openCreator?: boolean; statusId?: number } | undefined;
   Messenger: undefined;
   Notifications: undefined;
   PulseAI: undefined;
@@ -36,6 +36,7 @@ export type RootStackParamList = {
   ProfileDetail: { profileKey?: string; title?: string } | undefined;
   ProfileEdit: undefined;
   Premium: undefined;
+  CreatorStudio: undefined;
   NotificationCenter: undefined;
   NotificationPreferences: undefined;
 };

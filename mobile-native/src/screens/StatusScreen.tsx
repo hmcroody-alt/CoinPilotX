@@ -34,7 +34,7 @@ import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 
 type Props = {
-  route: { params?: { statusId?: number; title?: string } };
+  route: { params?: { statusId?: number; title?: string; openCreator?: boolean } };
   navigation: { navigate: (name: string, params?: Record<string, unknown>) => void };
 };
 
@@ -87,6 +87,10 @@ export function StatusScreen({ route, navigation }: Props) {
   useEffect(() => {
     load("initial").catch(() => undefined);
   }, [initialStatusId]);
+
+  useEffect(() => {
+    if (route.params?.openCreator) setCreatorOpen(true);
+  }, [route.params?.openCreator]);
 
   const activeStatus = useMemo(() => (viewerIndex === null ? null : items[viewerIndex] || null), [items, viewerIndex]);
 

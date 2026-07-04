@@ -1,5 +1,5 @@
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useNavigation } from "@react-navigation/native";
+import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Share, StyleSheet, Text, View } from "react-native";
 import {
@@ -13,7 +13,7 @@ import {
 } from "../api/feed";
 import { FeedComposer } from "../components/FeedComposer";
 import { PostCard } from "../components/PostCard";
-import { RootStackParamList } from "../navigation/types";
+import { AppTabParamList, RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
@@ -22,6 +22,7 @@ const FEED_NAME = "for_you";
 
 export function HomeScreen() {
   const navigation = useNavigation<HomeNavigation>();
+  const route = useRoute<RouteProp<AppTabParamList, "Home">>();
   const [posts, setPosts] = useState<PulsePost[]>([]);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(false);
@@ -64,6 +65,10 @@ export function HomeScreen() {
   useEffect(() => {
     load("initial").catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (route.params?.openComposer) setComposerOpen(true);
+  }, [route.params?.openComposer]);
 
   const updatePost = useCallback((postId: number, next: Partial<PulsePost>) => {
     setPosts((current) => current.map((post) => (post.id === postId ? { ...post, ...next } : post)));

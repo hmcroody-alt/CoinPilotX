@@ -34,6 +34,9 @@ export function SettingsScreen() {
         <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("Premium")}>
           <Text style={styles.secondaryText}>Premium and entitlements</Text>
         </Pressable>
+        <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("CreatorStudio")}>
+          <Text style={styles.secondaryText}>Creator Studio</Text>
+        </Pressable>
         <Text style={styles.muted}>Camera, microphone, media compression, and LiveKit call controls are Phase 2/3 QA-gated.</Text>
       </Panel>
       <Panel>

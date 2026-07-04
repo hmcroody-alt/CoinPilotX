@@ -33,6 +33,7 @@ Completed native foundations:
 - Live Discovery + Live Viewer Foundation: native Live tab/detail route, Live Now discovery through existing `/api/pulse/live-now`, native viewer shell using existing playback manifest URLs, join viewer state, chat read/send, reactions, viewer count/state refresh, offline cache, deep-link routing for Live links, and safe web fallback for Go Live/Studio/hosting/co-hosting/unsupported playback.
 - Live Viewer Device QA + Hardening: documented unavailable simulator/device tooling, added AppState foreground recovery for Live state/chat/list refresh, added playback failure fallback state, guarded host/profile navigation from empty profile keys, preserved safe web fallback for Studio/hosting/co-hosting/calls, and kept device-only playback claims unverified.
 - Premium + Entitlements Foundation: native Premium route, server-authoritative status display through `/api/premium/status`, Founder/Premium badge display, entitlement list, cached fallback, app-resume refresh, existing checkout/billing portal provider handoff, Settings/Profile entry points, `/pulse/premium` deep-link routing, and explicit no-local-entitlement boundary.
+- Creator Studio Foundation: native Creator Studio route, creator state through `/api/dashboard/creator/state`, Creator AI hooks through `/api/pulse/creator-ai/<tool>`, Content Planner draft save through `/api/dashboard/content-planner/item`, creator metric/recommendation cards, Premium eligibility messaging, shortcuts into existing native composer/status/reels/profile/premium surfaces, and safe web fallback for unsupported Studio/Live/monetization tools.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -60,6 +61,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_live_progress.md`
 - `reports/pulsesoc_native_live_device_qa.md`
 - `reports/pulsesoc_native_premium_progress.md`
+- `reports/pulsesoc_native_creator_progress.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -81,6 +83,7 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_live_audit.py`
 - `scripts/pulsesoc_native_live_device_qa_audit.py`
 - `scripts/pulsesoc_native_premium_audit.py`
+- `scripts/pulsesoc_native_creator_audit.py`
 
 ## Remaining Major Features
 
@@ -90,7 +93,6 @@ Completed supporting reports/audits:
 - Growth Center
 - Crypto/market alerts
 - Intelligence Center
-- Creator Studio
 
 ## Codebase Reconnaissance
 
@@ -125,7 +127,8 @@ Existing backend/web surfaces inspected:
 - Premium/entitlement surfaces: `/api/premium/status`, `/api/premium/checkout`, `/api/premium/billing-portal`, `/api/dashboard/economy/state`, Stripe hosted checkout/portal routes, `premium_entitlement_service`, `premium_capability_engine`, `premium_identity_engine`, `pulse_premium_profiles`, `pulse_subscriptions`, and `pulse_premium_entitlements`.
 - Creator surfaces: `GET /api/dashboard/creator/state`, `/dashboard/creator`, `/dashboard/creator/posts`, `/dashboard/creator/reels`, `/dashboard/creator/videos`, `/dashboard/creator/statuses`, `/dashboard/creator/live-studio`, `/pulse/creator/dashboard`, `/pulse/creator-studio`, `/pulse/creator/analytics`, and `POST /api/pulse/creator-ai/<tool>`.
 - Creator logic: `services/dashboard_creator_command_center.py`, creator cards/subsystems, owner-scoped creator metrics, content/moderation/processing summaries, creator event-bus recommendations, and creator AI hook routing.
-- Current native reuse surface: repeated API wrappers, shared cache functions, screen-level loading/empty/error/offline states, native/web fallback routing, card layouts, action busy states, media preview/viewer hooks, tab/stack route patterns, Premium status/handoff patterns, and routing across Feed, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, Groups, Live, and Premium.
+- Growth Center surfaces: `GET /api/pulse/growth`, `/pulse/growth`, `services/pulsesoc_growth_engine.py`, growth account/workspace/wallet/audience/profile/score/risk tables, and promotion readiness state.
+- Current native reuse surface: repeated API wrappers, shared cache functions, screen-level loading/empty/error/offline states, native/web fallback routing, card layouts, action busy states, media preview/viewer hooks, tab/stack route patterns, Premium status/handoff patterns, Creator Studio shortcuts, and routing across Feed, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, Groups, Live, Premium, and Creator Studio.
 
 Existing data/business logic that should remain server-authoritative:
 
@@ -156,70 +159,71 @@ Existing data/business logic that should remain server-authoritative:
 - LiveKit/Mux session authority, live room state, live chat, replay creation, feed insertion, destination handling, and creator/host permissions
 - premium subscription status, founder membership, entitlement grants/revocation, profile themes, premium badges, billing portal eligibility, and Stripe checkout state
 - creator dashboard state, creator metrics, moderation/review counts, media processing state, creator AI provider routing, creator recommendations, and creator monetization/payout decisions
+- growth account provisioning, growth score calculation, audience modeling, growth wallets, promotion readiness, ad billing, targeting, risk profiles, and growth AI session behavior
 
 ## Recommended Next Feature
 
-Recommendation: build Native Creator Studio Foundation next.
+Recommendation: build Native Growth Center Foundation next.
 
-This should come before Growth Center, native Go Live, native LiveKit hosting, native calls, and advanced creator monetization.
+This should come before native Go Live, native LiveKit hosting, native calls, advanced creator monetization, and deeper paid promotion tools.
 
 ## Why This Comes Next
 
-- Premium/Entitlements is now available natively, so creator capabilities can show active/locked/unavailable state without duplicating entitlement logic.
-- The backend already exposes owner-scoped Creator Studio state through `GET /api/dashboard/creator/state`.
-- Existing native Feed Composer, Status Creator, Reels, Media Upload, Media Viewer, Live viewer, Marketplace, Profile, Search, and Premium screens are the exact building blocks Creator Studio needs.
-- Creator Studio is higher leverage than Growth Center because it organizes creation workflows already built natively and can keep Go Live/hosting on safe web fallback.
-- This recommendation is based on the current creator backend and native migration state after the Premium foundation checkpoint.
+- Creator Studio now gives creators a native dashboard and creation hub, which naturally leads to audience growth and promotion readiness.
+- The backend already exposes Growth Center state through `GET /api/pulse/growth`.
+- Growth Center can reuse native Creator Studio, Feed/Post, Reels, Marketplace, Profile, Premium, Search, Notifications, and web fallback patterns.
+- Growth Center can remain read-mostly and server-authoritative in the first slice while paid promotion launch, wallet funding, targeting, billing, and ad review stay backend/web/provider owned.
+- This recommendation is based on the current growth backend and native migration state after the Creator Studio foundation checkpoint.
 
 ## Reusable Existing PulseSoc Logic
 
 Reuse directly:
 
-- Existing `GET /api/dashboard/creator/state`.
-- Existing `/pulse/creator/dashboard` and `/pulse/creator-studio` route behavior.
-- Existing `POST /api/pulse/creator-ai/<tool>`.
-- Existing `services/dashboard_creator_command_center.py` creator metrics, subsystem cards, recommendations, and event-bus summaries.
-- Existing post, Reel, video, Status, Live, moderation, media processing, and creator score database reads.
-- Existing Premium status/entitlement display for locked/active creator capability state.
-- Existing native Feed Composer, Status Creator, Reels, Media Upload, Media Viewer, Live viewer, Profile, Marketplace, Search, routing, cache, and loading/error patterns.
+- Existing `GET /api/pulse/growth`.
+- Existing `/pulse/growth` route behavior.
+- Existing `services/pulsesoc_growth_engine.py`.
+- Existing `pulse_growth_accounts`, `pulse_growth_workspaces`, `pulse_growth_wallets`, `pulse_growth_audience_profiles`, `pulse_growth_audience_models`, `pulse_creator_growth_profiles`, `pulse_growth_scores`, `pulse_growth_risk_profiles`, and `pulse_growth_preferences`.
+- Existing promotion readiness, trust/risk, billing profile, audience model, growth score, and AI growth summary logic.
+- Existing native Creator Studio, Premium, Feed/Post, Reels, Marketplace, Profile, Search, Notifications, routing, cache, loading/error, and web fallback patterns.
 
 Do not duplicate in native:
 
 - Backend business logic.
-- Creator score calculations.
-- Creator metric aggregation.
-- Moderation/review decisions.
-- Processing state decisions.
-- Creator AI provider routing or prompt policy.
-- Premium/creator entitlement checks.
-- Creator monetization, payout, payment, refund, webhook, and provider business logic.
+- Growth score calculations.
+- Audience modeling.
+- Promotion readiness decisions.
+- Ad targeting rules.
+- Growth wallet funding or ledger changes.
+- Billing profile/provider logic.
+- Premium/growth entitlement checks.
+- Campaign launch, ad review, refund, webhook, and provider business logic.
 
 ## What Must Be Rebuilt Natively
 
-- Native Creator Studio dashboard screen.
-- Creator metric and recommendation cards.
-- Creator content shortcuts into existing native creation/playback surfaces.
-- Creator AI tool form using existing backend hooks.
-- Premium/locked capability display using native Premium status.
-- Processing, moderation, empty, offline, loading, and error states.
-- Deep-link routing for `/pulse/creator/dashboard` and `/pulse/creator-studio`.
-- Web fallback for unsupported Studio tools, payouts, monetization, and native Live hosting.
+- Native Growth Center dashboard screen.
+- Growth score/status summary.
+- Audience and promotion readiness cards.
+- Wallet/credit display where backend supports it.
+- Growth recommendations.
+- Promote-post, promote-reel, and marketplace promotion shortcuts where safe.
+- Loading, empty, offline, error, active, locked, and unavailable states.
+- Deep-link routing for `/pulse/growth`.
+- Web fallback for campaign launch, wallet funding, billing, targeting, ad review, and unsupported promotion tools.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Confirm `GET /api/dashboard/creator/state` payload shape.
-- Confirm creator AI hook response shape for `hook`, `caption`, `virality`, and `live-title`.
-- Reuse existing Premium state for capability gating.
-- Reuse existing native upload, media viewer, composer, routing, cache, and error components.
+- Confirm `GET /api/pulse/growth` payload shape.
+- Confirm Growth Center auth and permission boundaries.
+- Reuse existing Premium state for growth eligibility.
+- Reuse Creator Studio and marketplace/feed/reel/profile navigation for growth shortcuts.
 
 Blockers:
 
-- Native Live hosting remains deferred.
-- Creator monetization, payouts, paid courses, and in-app purchases require separate payment-policy planning.
-- Some Studio web tools may need web fallback until native equivalents exist.
-- Creator AI requires backend availability and should degrade safely if provider routing is unavailable.
+- Paid promotion, wallet funding, ad billing, and targeting are policy-sensitive and should stay backend/web/provider flows in the first slice.
+- Growth Center may require real account data for meaningful cards.
+- Provider fallback handoff needs real-device QA.
 
 ## Risk Level
 
@@ -227,42 +231,43 @@ Risk: Medium.
 
 Reasons:
 
-- Creator Studio touches many product surfaces, but backend risk stays medium if native only reads owner-scoped creator state and calls existing creator AI hooks.
-- UX risk is moderate because this becomes a central workflow surface.
-- Payment, payout, entitlement, and Live hosting risk stays contained if those flows remain web/provider fallback in the first slice.
+- Growth is monetization-adjacent and policy-sensitive.
+- Backend risk remains contained if native only displays server-owned growth state and routes unsupported writes to web fallback.
+- UX risk is moderate because growth cards must communicate locked/unavailable states without implying guaranteed results.
 
 ## Estimated Complexity
 
-Complexity: Medium-high.
+Complexity: Medium.
 
 Recommended first slice:
 
-- Inspect creator state and creator AI payloads.
-- Build read-only Creator Studio dashboard first.
-- Add native navigation shortcuts into existing creator-related native screens.
-- Add creator AI form with safe error states.
-- Add Premium-aware locked/active capability cards.
-- Add static audit that verifies no native creator ranking, monetization, payout, or entitlement logic is duplicated.
+- Inspect growth state payload and web Growth Center behavior.
+- Build read-only Growth Center dashboard first.
+- Add growth recommendation and readiness cards from server-owned state.
+- Add shortcuts to Creator Studio, Feed/Post, Reels, Marketplace, Premium, and Profile.
+- Add web fallback for promotion launch, wallet, billing, targeting, and unsupported tools.
+- Add static audit that verifies no native targeting, billing, wallet, promotion, or growth score logic is duplicated.
 
 Defer from first slice:
 
-- Native Live hosting.
-- Creator payouts and monetization writes.
-- Scheduling writes if the backend contract is not clear.
-- Local creator score calculations.
-- In-app purchase or native payment work.
+- Campaign launch writes.
+- Wallet funding.
+- Ad targeting.
+- Billing/provider setup.
+- Local growth/audience scoring.
+- Native payment work.
 
 ## Safest Implementation Plan
 
-1. Inspect `GET /api/dashboard/creator/state`, `/pulse/creator/dashboard`, `/pulse/creator-studio`, and `POST /api/pulse/creator-ai/<tool>`.
-2. Add a native creator API wrapper that reads existing creator state and calls creator AI hooks only.
-3. Build native Creator Studio dashboard cards from server-owned metrics and recommendations.
-4. Reuse existing native navigation into Feed Composer, Reels, Status Creator, Media Upload, Marketplace, Live viewer, Premium, and Profile.
-5. Add web fallback for unsupported Creator Studio tools, payouts, monetization, scheduling, and Live hosting.
+1. Inspect `GET /api/pulse/growth`, `/pulse/growth`, and `services/pulsesoc_growth_engine.py`.
+2. Add a native growth API wrapper that reads existing backend state only.
+3. Build native Growth Center dashboard cards from server-owned score, workspace, wallet, audience, trust/risk, and recommendation state.
+4. Reuse existing native navigation into Creator Studio, Feed/Post, Reels, Marketplace, Premium, Profile, Search, and Notifications.
+5. Add web fallback for campaign launch, wallet funding, billing, targeting, ad review, and unsupported promotion tools.
 6. Add progress report and audit script.
 7. Run the standard native verification suite.
-8. Keep creator metrics, moderation, monetization, payouts, entitlements, and AI provider behavior server-authoritative.
+8. Keep growth scoring, audience modeling, promotion readiness, targeting, wallets, billing, and provider behavior server-authoritative.
 
 ## Recommendation Summary
 
-Build Native Creator Studio Foundation next. The backend already owns owner-scoped creator state, creator metrics, moderation/processing summaries, creator AI hooks, premium entitlement checks, and creator routes, and the native app now has enough reusable creation/media/profile/premium infrastructure to make Creator Studio a high-leverage native orchestration layer without touching Live hosting or payment logic.
+Build Native Growth Center Foundation next. The backend already owns growth account state, score calculation, audience modeling, wallet/profile state, trust/risk checks, and promotion readiness, and the native app now has Creator Studio plus the social/media/marketplace/premium surfaces needed to present Growth Center safely without duplicating targeting, billing, wallet, or campaign-launch logic.
