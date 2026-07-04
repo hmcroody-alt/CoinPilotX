@@ -198,125 +198,134 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Action
 
-Recommendation: run the first real Alert Management provider/device QA pass before building the next major feature.
+Recommendation: build Native Camera Studio + Media Compression/Preview Foundation next.
 
-This is the safest next action because Alert Management has now passed a seeded built-in QA browser hardening pass and has a provider/device QA setup report with the native QA identity set to `com.pulsesoc.nativeapp`, but the highest-risk remaining behaviors are still provider/device-only: APNs/FCM delivery, installed-app notification taps, lock-screen presentation, SMS/email/Telegram delivery, and physical-device deep links. Those must not be treated as browser-verified.
+This is the highest-value next native feature based on the current codebase. Production PulseSoc already has a rich `/pulse/camera` web experience, camera config API, lens/beauty/filter catalogs, preview/draft APIs, media upload, Mux/R2 processing, and create-from-camera routes. The native app already has reusable media picker/upload hooks and Feed/Status/Profile/Messenger media integrations, but it does not yet have a dedicated native Camera Studio route/screen, compression tuning, preview flow, lens/filter selection, or create-from-camera handoff.
+
+Provider/device QA for Alert Management remains a release blocker, especially APNs/FCM/Expo push delivery, installed-app notification taps, lock-screen presentation, SMS/email/Telegram delivery, and physical-device deep links. That work should continue before any release claim, but it is external-credential/device gated. Among buildable native features, Camera Studio gives the most leverage while reusing existing backend/media logic.
 
 ## Why This Comes Next
 
-- Alert Management has now moved from native CRUD foundation to browser-hardened CRUD, with create/edit validation, inline delete confirmation, pause/resume/duplicate/delete/test, history, readiness, and deep links verified against seeded fixtures.
-- Browser QA verified the bulk of the UI and API behavior, and the provider/device QA setup now documents the exact prerequisites, logs, pass criteria, and app identity decision required for the first real delivery pass.
-- Production has complete server-authoritative alert management APIs and delivery logs, but real delivery still needs external setup and device/provider validation before any release claim.
-- The parallel native app declares `com.pulsesoc.nativeapp`, and that is now the selected provider/device QA identity. The current APNs readiness helper still protects `com.pulsesoc.app`, so production identity must remain untouched while native QA credentials are configured separately.
-- Camera, advanced media editor, Live hosting, and LiveKit calls are higher-risk because camera, microphone, native media, LiveKit, Bluetooth/audio, and background behavior remain unverified on real devices.
+- Production has substantial camera/media functionality behind `/pulse/camera`, `/pulse/camera/photo`, `/pulse/camera/video`, `/pulse/camera/status`, `/pulse/camera/reel`, and `/pulse/camera/post`.
+- Production camera config already exposes `GET /api/pulse/camera/config` with provider, target, mode, fallback, Banuba readiness, upload endpoint, and supported targets.
+- Production media upload already writes through `/api/pulse/media/upload`, `chat_media_uploads`, `pulse_media_assets`, `pulse_camera_captures`, Mux/R2 processing, validation, storage, thumbnails, playback URLs, and moderation state.
+- Production create-from-camera APIs already exist for posts and reels: `/api/pulse/posts/create-from-camera` and `/api/pulse/reels/create-from-camera`; Status Creator already has native publishing through existing Status APIs.
+- Production web camera includes capture modes, front/back camera, microphone toggle, flash/torch fallback, gallery fallback, lenses, beauty modes, filters, preview, privacy/caption, and destination routing.
+- Native already has `expo-camera`, `expo-image-picker`, `expo-file-system`, shared `useNativeMediaUpload`, `MediaUploadPreview`, Feed Composer, Status Creator, Profile uploads, Messenger attachments, Marketplace media viewer, and Creator Studio shortcuts.
+- Native does not yet have a dedicated Camera Studio screen/route or deep link for `/pulse/camera/*`; current native camera support is embedded as `launchCameraAsync(...)` calls inside individual composer components.
+- Native LiveKit calls are tempting because `@livekit/react-native` and `livekit-client` are installed and backend call APIs exist, but calls depend on reliable push/ringing, lock-screen behavior, microphone/camera permissions, background audio, and real-device QA that is still not established.
 - This recommendation is based on the current production routes/services and `mobile-native` implementation inspected on 2026-07-04.
 
 ## Reusable Existing PulseSoc Logic
 
-Reuse directly for the QA hardening pass:
+Reuse directly for Native Camera Studio:
 
-- `GET/POST /api/crypto/alerts`
-- `PATCH/DELETE /api/crypto/alerts/<alert_id>`
-- `POST /api/crypto/alerts/<alert_id>/duplicate`
-- `GET /api/crypto/alerts/<alert_id>/history`
-- `GET/POST /api/alerts`
-- `POST /api/alerts/<alert_id>/pause`
-- `POST /api/alerts/<alert_id>/resume`
-- `POST/DELETE /api/alerts/<alert_id>/delete`
-- `POST /api/alerts/<alert_id>/test`
-- `GET /api/alerts/events`
-- `GET /api/alerts/channel-readiness`
-- `POST /api/alerts/test/<channel>`
-- Existing `services/alert_engine.py`
-- Existing `services/dashboard_crypto_command_center.py`
-- Existing `services/notification_service.py`
-- Existing `services/pulsesoc_notification_system.py`
-- Existing `alert_rules`, `alert_events`, `alert_delivery_jobs`, `notification_delivery_logs`, `user_alert_rules`, and related alert history tables.
-- Existing premium gates through `api_pro_required(...)` and Premium status APIs.
-- Existing native `mobile-native/src/api/intelligence.ts`, `IntelligenceCenterScreen`, `NotificationCenterScreen`, `NotificationPreferencesScreen`, shared `Panel`, cache helper, notification routing, and safe web fallback helpers.
-- Existing native `mobile-native/src/api/alerts.ts` and `AlertManagementScreen`.
+- `GET /api/pulse/camera/config`
+- `POST /api/pulse/media/upload`
+- `POST /api/pulse/media/mux/direct-upload`
+- `POST /api/pulse/media/mux/direct-upload/complete`
+- `POST /api/pulse/camera/preview`
+- `POST /api/pulse/camera/preview/mark-published`
+- `POST /api/pulse/posts/create-from-camera`
+- `POST /api/pulse/reels/create-from-camera`
+- Existing Status create APIs for Status camera publishing.
+- Existing Profile avatar/cover APIs for profile camera publishing.
+- Existing Messenger media send/upload paths for message camera publishing.
+- Existing Marketplace media upload/listing APIs for marketplace camera publishing where supported.
+- Existing `camera_filter_engine`, `pulse_lens_engine`, `preview_service`, `upload_progress_service`, `media_service`, `media_storage`, Mux/R2 processing, and moderation/validation.
+- Existing database tables including `chat_media_uploads`, `pulse_media_assets`, `pulse_camera_captures`, `pulse_posts`, `pulse_reels`, `pulse_status`, profile media tables, and notification/media-processing logs.
+- Existing native `useNativeMediaUpload`, `nativeMediaUpload.ts`, `MediaUploadPreview`, `NativeMediaViewer`, Feed Composer, Status Creator, Profile media upload, Messenger attachment flow, Creator Studio shortcuts, shared `Panel`, shared cache, native routing, and safe web fallback patterns.
 
 Do not duplicate in native:
 
-- Alert trigger evaluation.
-- Crypto/market interpretation.
-- Alert dedupe/cooldown logic.
-- Channel eligibility/readiness.
-- Premium gating.
-- Notification delivery routing.
-- Provider polling.
-- Delivery logging.
-- Financial advice or buy/sell/hold recommendations.
+- Media validation rules.
+- Premium filter/lens eligibility.
+- Moderation decisions.
+- Storage authorization.
+- Mux/R2 processing state.
+- Post/Reel/Status/Profile/Messenger/Marketplace publishing rules.
+- Creator entitlement checks.
+- Media repair/processing fallbacks.
+- Backend business logic for destinations or visibility.
 
-## What Must Be Hardened Next
+## What Must Be Built Natively
 
-- Preserve or formalize a durable alert QA fixture with active, paused, duplicated, long-history, empty-history, success, and failure states.
-- Device-test `/pulse/alerts`, `/pulse/alerts/<id>`, `/dashboard/crypto/alerts`, and crypto alert notification links in an installed native build.
-- Use `com.pulsesoc.nativeapp` as the first APNs/FCM/Expo QA target while keeping production `com.pulsesoc.app` protected.
-- Device-test push permission, Expo token registration, APNs/FCM delivery, notification tap routing, foreground/background recovery, and badge refresh.
-- Provider-test SMS, email, and Telegram delivery with safe QA credentials.
-- Keep provider administration, advanced Intelligence editing, unsupported alert types, and any unverified delivery behavior on safe web fallback.
+- Dedicated `CameraStudio` native screen/route.
+- Deep links for `/pulse/camera`, `/pulse/camera/photo`, `/pulse/camera/video`, `/pulse/camera/status`, `/pulse/camera/reel`, and `/pulse/camera/post`.
+- Native capture controls for photo/video, front/back camera, microphone on video, gallery fallback, cancel/retake, permission denied, and safe fallback states.
+- Native camera config loader using `/api/pulse/camera/config`.
+- Native lens/filter/beauty selector using server-provided catalog and Premium lock state.
+- Native preview flow with caption/privacy/destination selection, upload progress, processing status, retry/cancel, and preview/draft handoff.
+- Client-side compression policy where safe, using existing server limits and preserving backend validation authority.
+- Destination hooks for Feed post, Reel, Status, Profile avatar/cover, Messenger attachment, Creator Studio, and safe web fallback for unsupported targets.
+- Device/browser QA documentation that separates browser-verified layout from device-verified camera, microphone, gallery, upload, compression, and playback behavior.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Keep a short authenticated QA browser sweep as a pre-build checkpoint for future features, because the native app now has enough integrated surfaces that regressions matter.
-- Use a QA fixture or local/prod-safe account with at least one alert rule and one alert event to verify non-empty states.
-- Preserve backend Premium gating and channel readiness exactly as returned by the server.
+- Keep the existing media pipeline server-authoritative.
+- Reuse the shared native media upload service instead of creating feature-specific upload logic.
+- Preserve production WebView `/pulse/camera` routes and provider behavior.
+- Keep unsupported Banuba/native AR SDK behavior on safe fallback unless separately planned.
+- Continue Alert Management provider/device QA separately because push and lock-screen remain release blockers.
 
 Blockers:
 
-- Real push delivery, lock-screen presentation, APNs/FCM, sounds, and installed-app notification taps remain device-only and must not be claimed browser-verified.
+- Camera, microphone, gallery permissions, large-video handling, compression behavior, and upload memory pressure remain device-only and must not be claimed browser-verified.
 - `adb` is still not available in `PATH`.
 - `/usr/bin/xcrun` exists, but `xcrun simctl list devices available` previously failed because `simctl` was not available.
 - No physical-device QA flow has been recorded in this workspace.
-- EAS project ID, Apple credentials, Android/Firebase push credentials, provisioning, and provider QA credentials remain external setup.
-- The backend APNs readiness helper currently expects `com.pulsesoc.app`; a scoped multi-bundle readiness update or native-QA credential path is required for `com.pulsesoc.nativeapp` without changing production credentials.
+- Provider/device Alert Management QA remains unverified for APNs/FCM/SMS/email/Telegram and should continue as a release-readiness track.
+- Native LiveKit calls should stay deferred until push/ringing/device QA is credible.
 
 ## Risk Level
 
-Risk: Medium.
+Risk: Medium-high.
 
 Reasons:
 
-- Alert management touches notification delivery, premium gates, and market/crypto safety expectations.
-- The backend already owns the sensitive logic, so native risk is mostly UI/action wiring, payload correctness, and honest device-readiness reporting.
-- Risk is lower than Native Calls or advanced Camera because Alert Management can be substantially verified in the built-in QA browser before device push QA.
+- Camera touches device permissions, memory, large uploads, compression, video duration, orientation, and media processing.
+- Risk is lower than Native LiveKit calls because the backend/media pipeline already exists and the native app already has a working shared media upload foundation.
+- Risk is higher than another read-only screen because true camera/gallery behavior cannot be fully verified in the QA browser.
+- Production WebView camera must remain untouched while native Camera Studio is built in parallel.
 
 ## Estimated Complexity
 
-Complexity: Medium.
+Complexity: Medium-high.
 
 Recommended first slice:
 
-- Keep the first provider QA target identity set to `com.pulsesoc.nativeapp`.
-- Add scoped multi-bundle APNs readiness support or native-QA credential validation without changing production WebView credentials.
-- Run provider/device QA for APNs/FCM, installed-app deep links, SMS, email, and Telegram delivery when credentials/devices are available.
-- Fix only Alert Management blockers found.
-- Then decide whether the next build should be advanced Camera/media hardening or LiveKit calls based on remaining device QA readiness.
+- Add native Camera Studio route/screen and linking coverage.
+- Load `/api/pulse/camera/config` and render capture mode/destination state.
+- Reuse `useNativeMediaUpload` for capture/gallery upload with progress, retry, cancel, processing status, and permission-denied states.
+- Add preview/caption/privacy/destination handoff for Feed, Status, Reels, Profile, Messenger, and Creator Studio where existing APIs support it.
+- Keep unsupported advanced AR/Banuba/effects on safe web fallback.
+- Create a focused report/audit for Native Camera Studio.
 
 Defer from first slice:
 
-- Real push delivery claims.
-- Native provider administration.
-- Native market/crypto evaluation.
 - LiveKit calls.
-- Advanced camera/editor expansion.
+- Full AR face tracking or Banuba-native SDK work.
+- Background uploads.
+- Advanced video trimming.
+- Complex drawing/sticker/text editor.
+- Claims about device camera/microphone performance until physical-device QA runs.
 - Any App Store replacement recommendation.
 
 ## Safest Implementation Plan
 
-1. Preserve the current browser-verified Alert Management baseline and report.
-2. Use the provider/device QA setup report as the execution checklist.
-3. Configure device/provider prerequisites for `com.pulsesoc.nativeapp`: APNs/FCM, Expo push, SMS, email, Telegram, and installed-app deep links.
-4. Run Gate 3 device/provider QA without claiming browser-only confidence as device confidence.
-5. Keep unsupported provider administration and advanced alert tooling on safe web fallback.
-6. Verify through Gate 1 static checks, Gate 2 built-in QA browser checks after any alert code changes, and Gate 3 device-readiness documentation.
-7. Commit/push only scoped native alert files, reports, audit, and screenshots.
+1. Inspect the production camera web route and media API payloads again immediately before implementation.
+2. Add a native `CameraStudioScreen` and typed navigation params without touching production WebView routes.
+3. Add a small `mobile-native/src/api/camera.ts` wrapper for camera config and preview APIs.
+4. Extend the existing shared media upload hook only where needed for compression metadata, destination, mode, filter, effect, and preview handoff.
+5. Build the UI with native navigation, permission states, capture/gallery controls, preview, progress, retry, cancel, and safe fallback.
+6. Wire Feed/Status/Reel/Profile/Messenger/Creator entry points to Camera Studio where safe.
+7. Run Gate 1 static checks and Gate 2 QA browser route/layout checks; document camera/microphone/gallery behavior as device-unverified until real device QA.
+8. Keep Alert Management provider/device QA and native app identity work as release-readiness blockers, not as production replacement proof.
 
 ## Recommendation Summary
 
-Recommended next action: first real Native Alert Management provider/device QA pass.
+Recommended next native feature: Native Camera Studio + Media Compression/Preview Foundation.
 
-Reason: Alert Management is now browser-hardened and has provider/device QA setup coverage while still reusing complete existing backend logic, but the remaining risk is external/device behavior, not another native screen. The next highest-value action is to configure native QA provider credentials/devices for `com.pulsesoc.nativeapp`, run the first physical-device/provider alert delivery pass, and fix only blockers found before higher-risk Camera, Live hosting, or LiveKit Calls.
+Reason: the production platform already has the camera/media routes, catalogs, validation, storage, preview, and create-from-camera business logic, and the native app already has shared upload primitives but lacks a dedicated native camera experience. This gives immediate leverage across Feed, Status, Reels, Profile, Messenger, Creator Studio, Marketplace, and future Live/Calls media work while avoiding premature native LiveKit call risk.
