@@ -50,6 +50,11 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  if (normalized.startsWith("/pulse/saved") && navigationRef.isReady()) {
+    navigationRef.navigate("Tabs", { screen: "Saved" });
+    return { handled: true, target: normalized };
+  }
+
   const reelMatch = normalized.match(/^\/pulse\/reels\/(\d+)/);
   if (reelMatch?.[1] && navigationRef.isReady()) {
     navigationRef.navigate("ReelDetail", { reelId: Number(reelMatch[1]), title: "Reel" });

@@ -9,6 +9,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
         screens: {
           Home: "pulse",
           Search: "pulse/search",
+          Saved: "pulse/saved",
           Reels: "pulse/reels",
           Status: "pulse/status",
           Messenger: "pulse/messages",
@@ -55,6 +56,9 @@ export const linking: LinkingOptions<RootStackParamList> = {
         parse: {
           query: String
         }
+      },
+      Saved: {
+        path: "saved"
       },
       ProfileEdit: {
         path: "pulse/profile/edit"
