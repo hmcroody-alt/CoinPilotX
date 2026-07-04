@@ -42,6 +42,7 @@ Completed native foundations:
 - Authenticated QA Browser Pass: verified login, session restore, logout, authenticated top-level navigation, Settings, Pulse AI, and Intelligence routes through the built-in QA browser against a local temporary QA backend/proxy; fixed web session storage, browser cookie handling, Settings/Pulse AI deep links, and Intelligence object-shaped card normalization.
 - Short Authenticated QA Browser Sweep: verified authenticated Home, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, Groups, Live, Premium, Creator, Growth, Intelligence/Alerts, Settings, Pulse AI, notification preferences, and fallback routes through the built-in QA browser; fixed Login/Settings semantic accessibility roles/labels for reliable web QA automation; confirmed no current console warnings/errors during the sweep; kept device-only claims explicitly unverified.
 - Native Alert Management + Crypto/Market Alert CRUD: native Alert Management route, crypto/market alert list, alert detail/history, create/edit form, pause/resume/delete/duplicate/test actions, channel readiness/test UI, offline cache, Settings/Intelligence/notification routing, `/pulse/alerts` and `/dashboard/crypto/alerts` route handling, and safe web fallback for unsupported advanced/provider tools through existing PulseSoc alert APIs and backend business logic.
+- Native Alert Management QA Hardening: browser-verified alert validation, inline delete confirmation/cancel/confirm, pause/resume/duplicate/delete/test success and failure states, channel readiness success/failure states, long-history and empty-history states, alert deep links, preserved success notices after refresh, and selected-alert stability through the built-in QA browser with seeded alert fixtures.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -78,6 +79,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_authenticated_qa_browser_report.md`
 - `reports/pulsesoc_native_short_qa_browser_sweep.md`
 - `reports/pulsesoc_native_alert_management_progress.md`
+- `reports/pulsesoc_native_alert_management_qa_hardening.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -108,6 +110,7 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_authenticated_qa_browser_audit.py`
 - `scripts/pulsesoc_native_short_qa_browser_sweep_audit.py`
 - `scripts/pulsesoc_native_alert_management_audit.py`
+- `scripts/pulsesoc_native_alert_management_qa_audit.py`
 
 ## Remaining Major Features
 
@@ -115,7 +118,7 @@ Completed supporting reports/audits:
 - Native LiveKit calls
 - Full-screen incoming calls
 - External device QA tooling completion and hardening pass
-- Seeded Alert Management QA hardening
+- Alert provider/device QA setup for push, SMS, email, Telegram, installed deep links, and notification tap routing
 
 ## Codebase Reconnaissance
 
@@ -192,15 +195,15 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Action
 
-Recommendation: run a seeded Native Alert Management QA hardening pass before building the next major feature.
+Recommendation: run Native Alert Management provider/device QA setup and fixture hardening before building the next major feature.
 
-This is the safest next action because Alert Management now crosses Intelligence, Notifications, Premium gates, delivery readiness, deep links, and external delivery channels. It should be validated with real alert fixtures before expanding into more device-heavy Camera, Live hosting, or LiveKit call work.
+This is the safest next action because Alert Management has now passed a seeded built-in QA browser hardening pass, but the highest-risk remaining behaviors are still provider/device-only: APNs/FCM delivery, installed-app notification taps, lock-screen presentation, SMS/email/Telegram delivery, and physical-device deep links. Those must not be treated as browser-verified.
 
 ## Why This Comes Next
 
-- Alert Management has just moved from web fallback to a native CRUD foundation and needs a fixture-backed pass across create, edit, pause, resume, duplicate, delete, test, history, readiness, and deep links.
-- Browser QA can verify the bulk of the UI and API behavior now, while real push delivery remains device-only.
-- Production has complete server-authoritative alert management APIs and delivery logs, but the native screen should be tested against non-empty active/paused/history states before another broad module is added.
+- Alert Management has now moved from native CRUD foundation to browser-hardened CRUD, with create/edit validation, inline delete confirmation, pause/resume/duplicate/delete/test, history, readiness, and deep links verified against seeded fixtures.
+- Browser QA verified the bulk of the UI and API behavior, while real push, SMS, email, Telegram, and installed-app notification behavior remain device/provider-only.
+- Production has complete server-authoritative alert management APIs and delivery logs, but real delivery still needs external setup and device/provider validation before any release claim.
 - Camera, advanced media editor, Live hosting, and LiveKit calls are higher-risk because camera, microphone, native media, LiveKit, Bluetooth/audio, and background behavior remain unverified on real devices.
 - This recommendation is based on the current production routes/services and `mobile-native` implementation inspected on 2026-07-04.
 
@@ -243,11 +246,11 @@ Do not duplicate in native:
 
 ## What Must Be Hardened Next
 
-- Seed active, paused, duplicated, and recently-triggered alert records for a QA account.
-- Browser-test `/pulse/alerts`, `/pulse/alerts/<id>`, `/dashboard/crypto/alerts`, and `/dashboard/crypto/alerts?alert_id=<id>`.
-- Browser-test create, edit, pause, resume, duplicate, delete, test alert, test channel, history, readiness, empty, error, and offline-cache states where possible.
-- Confirm blocked push/SMS/Telegram readiness states degrade safely without pretending delivery passed.
-- Keep provider administration, advanced Intelligence editing, unsupported alert types, and any device-only delivery behavior on safe web fallback.
+- Preserve or formalize a durable alert QA fixture with active, paused, duplicated, long-history, empty-history, success, and failure states.
+- Device-test `/pulse/alerts`, `/pulse/alerts/<id>`, `/dashboard/crypto/alerts`, and crypto alert notification links in an installed native build.
+- Device-test push permission, Expo token registration, APNs/FCM delivery, notification tap routing, foreground/background recovery, and badge refresh.
+- Provider-test SMS, email, and Telegram delivery with safe QA credentials.
+- Keep provider administration, advanced Intelligence editing, unsupported alert types, and any unverified delivery behavior on safe web fallback.
 
 ## Dependencies And Blockers
 
@@ -281,10 +284,10 @@ Complexity: Medium.
 
 Recommended first slice:
 
-- Add a local alert fixture seed path for QA only.
-- Run built-in QA browser through alert list/detail/create/edit/pause/resume/duplicate/test/history/deep links.
-- Fix any Alert Management blockers found.
-- Then run real-device push/deep-link QA when device tooling is available.
+- Turn the temporary seeded alert fixture into a repeatable QA fixture or documented setup.
+- Run provider/device QA for APNs/FCM, installed-app deep links, SMS, email, and Telegram delivery when credentials/devices are available.
+- Fix only Alert Management blockers found.
+- Then decide whether the next build should be advanced Camera/media hardening or LiveKit calls based on remaining device QA readiness.
 
 Defer from first slice:
 
@@ -297,18 +300,16 @@ Defer from first slice:
 
 ## Safest Implementation Plan
 
-1. Run a full authenticated QA browser sweep across the already implemented native surfaces.
-2. Inspect `dashboard_crypto_command_center` and `alert_engine_service` payloads immediately before implementation.
-3. Extend `mobile-native/src/api/intelligence.ts` or create a focused `mobile-native/src/api/alerts.ts` wrapper over existing alert endpoints.
-4. Add native alert list/detail/history/channel-readiness UI using existing shared `Panel`, loading/error/offline/cache patterns, and Notification/Intelligence navigation.
-5. Add pause/resume/delete/duplicate/test actions with server-returned messages and optimistic UI only where rollback is simple.
-6. Add create/edit forms only after payload validation is explicit.
-7. Keep unsupported provider administration and device-only push verification on safe web/device fallback.
-8. Verify through Gate 1 static checks, Gate 2 built-in QA browser checks, and Gate 3 device-readiness documentation.
-9. Commit/push only scoped native alert files, reports, audit, and any screenshots.
+1. Preserve the current browser-verified Alert Management baseline and report.
+2. Create a repeatable seeded alert fixture or document the manual local setup.
+3. Configure device/provider prerequisites for APNs/FCM, Expo push, SMS, email, Telegram, and installed-app deep links.
+4. Run Gate 3 device/provider QA without claiming browser-only confidence as device confidence.
+5. Keep unsupported provider administration and advanced alert tooling on safe web fallback.
+6. Verify through Gate 1 static checks, Gate 2 built-in QA browser checks after any alert code changes, and Gate 3 device-readiness documentation.
+7. Commit/push only scoped native alert files, reports, audit, and screenshots.
 
 ## Recommendation Summary
 
-Recommended next feature: Native Alert Management + Crypto/Market Alert CRUD.
+Recommended next action: Native Alert Management provider/device QA setup and fixture hardening.
 
-Reason: it is the highest-leverage next native feature that can reuse complete existing backend logic, remove an Intelligence web fallback, strengthen Notifications/Premium/Intelligence integration, and still fit the new QA discipline. Device QA remains required for real push delivery, but alert list/detail/create/edit/history/action behavior can be safely built and browser-verified before moving into higher-risk Camera, Live hosting, or LiveKit Calls.
+Reason: Alert Management is now browser-hardened and still reuses complete existing backend logic, but the remaining risk is external/device behavior, not another native screen. Provider/device QA should come before higher-risk Camera, Live hosting, or LiveKit Calls.

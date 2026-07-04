@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert as NativeAlert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   ALERT_CHANNELS,
   ALERT_CONDITIONS,
@@ -53,6 +53,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
   const routeAlertId = Number(routeParams?.alertId || routeParams?.alert_id || routeParams?.id || 0);
   const [state, setState] = useState<AlertManagementState | null>(null);
   const [selectedId, setSelectedId] = useState(routeAlertId);
+  const selectedIdRef = useRef(selectedId);
   const [historyEvents, setHistoryEvents] = useState<AlertEvent[]>([]);
   const [form, setForm] = useState<AlertFormPayload>(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -62,11 +63,16 @@ export function AlertManagementScreen({ route, navigation }: Props) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
 
   const alerts = state?.alerts || [];
   const selectedAlert = useMemo(() => alerts.find((alert) => alert.id === selectedId) || null, [alerts, selectedId]);
   const readiness = (state?.channel_readiness || {}) as Record<AlertChannel, ChannelReadiness>;
   const recentEvents = historyEvents.length ? historyEvents : state?.events || [];
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
 
   const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
     setError("");
@@ -77,7 +83,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
     try {
       const next = await getAlertManagementState();
       setState(next);
-      const nextSelected = routeAlertId || selectedId || next.alerts[0]?.id || 0;
+      const nextSelected = routeAlertId || selectedIdRef.current || next.alerts[0]?.id || 0;
       setSelectedId(nextSelected);
       if (nextSelected) {
         const history = await getCryptoAlertHistory(nextSelected).catch(() => ({ events: [] }));
@@ -88,7 +94,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
       if (cached) {
         setState(cached);
         setOffline(true);
-        const nextSelected = routeAlertId || selectedId || cached.alerts[0]?.id || 0;
+        const nextSelected = routeAlertId || selectedIdRef.current || cached.alerts[0]?.id || 0;
         setSelectedId(nextSelected);
         if (nextSelected) {
           const history = await loadCachedCryptoAlertHistory(nextSelected);
@@ -100,7 +106,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [routeAlertId, selectedId]);
+  }, [routeAlertId]);
 
   useEffect(() => {
     load("initial").catch(() => undefined);
@@ -139,8 +145,10 @@ export function AlertManagementScreen({ route, navigation }: Props) {
   }
 
   async function saveForm() {
-    if (!form.assetSymbol.trim() || !form.targetValue.trim()) {
-      setError("Add a symbol and target before saving the alert.");
+    const validationError = validateAlertForm(form);
+    if (validationError) {
+      setError(validationError);
+      setNotice("");
       return;
     }
     setBusy("save");
@@ -148,10 +156,10 @@ export function AlertManagementScreen({ route, navigation }: Props) {
     setNotice("");
     try {
       const result = editingId ? await updateCryptoAlert(editingId, form) : await createCryptoAlert(form);
-      setNotice(result.message || (editingId ? "Alert updated." : "Alert created."));
       resetForm();
       await load("refresh");
       if (result.alert_id) setSelectedId(result.alert_id);
+      setNotice(result.message || (editingId ? "Alert updated." : "Alert created."));
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Alert could not be saved.");
     } finally {
@@ -170,9 +178,10 @@ export function AlertManagementScreen({ route, navigation }: Props) {
         action === "delete" ? await deleteAlert(alert.id) :
         action === "duplicate" ? await duplicateCryptoAlert(alert.id) :
         await testAlert(alert.id);
-      setNotice(result.message || `${action} complete.`);
+      if (action === "delete") setPendingDeleteId(null);
       await load("refresh");
       if (action === "duplicate" && result.alert_id) setSelectedId(result.alert_id);
+      setNotice(result.message || `${action} complete.`);
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : "Alert action failed.");
     } finally {
@@ -181,10 +190,9 @@ export function AlertManagementScreen({ route, navigation }: Props) {
   }
 
   function confirmDelete(alert: AlertRule) {
-    NativeAlert.alert("Delete alert?", `${alert.asset_symbol || alert.symbol} ${alertConditionLabel(alert)}`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => runAction(alert, "delete").catch(() => undefined) }
-    ]);
+    setPendingDeleteId(alert.id);
+    setNotice(`Confirm delete for ${alert.asset_symbol || alert.symbol} ${alertConditionLabel(alert)}.`);
+    setError("");
   }
 
   async function refreshReadiness() {
@@ -335,8 +343,14 @@ export function AlertManagementScreen({ route, navigation }: Props) {
             onPause={() => runAction(alert, "pause")}
             onResume={() => runAction(alert, "resume")}
             onDelete={() => confirmDelete(alert)}
+            onConfirmDelete={() => runAction(alert, "delete")}
+            onCancelDelete={() => {
+              setPendingDeleteId(null);
+              setNotice("Delete canceled.");
+            }}
             onDuplicate={() => runAction(alert, "duplicate")}
             onTest={() => runAction(alert, "test")}
+            pendingDelete={pendingDeleteId === alert.id}
           />
         )) : <Text style={styles.muted}>No alerts returned yet. Create your first server-owned alert above.</Text>}
       </Panel>
@@ -363,7 +377,8 @@ export function AlertManagementScreen({ route, navigation }: Props) {
             <Text style={styles.muted}>{event.message || `${event.condition || "alert"} at ${event.observed_value ?? "unknown"} against ${event.threshold_value ?? "target"}`}</Text>
             <Text style={styles.rowMeta}>{event.created_at || "No timestamp"}</Text>
           </View>
-        )) : <Text style={styles.muted}>No alert history returned yet.</Text>}
+        )) : <Text style={styles.muted}>No alert history returned yet. The backend will add events after a rule fires or a test delivery is recorded.</Text>}
+        {recentEvents.length > 12 ? <Text style={styles.rowMeta}>Showing the newest 12 of {recentEvents.length} alert history events.</Text> : null}
       </Panel>
 
       <Panel>
@@ -387,8 +402,11 @@ function AlertCard({
   onPause,
   onResume,
   onDelete,
+  onConfirmDelete,
+  onCancelDelete,
   onDuplicate,
-  onTest
+  onTest,
+  pendingDelete
 }: {
   alert: AlertRule;
   selected: boolean;
@@ -398,8 +416,11 @@ function AlertCard({
   onPause: () => void;
   onResume: () => void;
   onDelete: () => void;
+  onConfirmDelete: () => void;
+  onCancelDelete: () => void;
   onDuplicate: () => void;
   onTest: () => void;
+  pendingDelete: boolean;
 }) {
   const active = (alert.status || "active") === "active";
   return (
@@ -420,8 +441,33 @@ function AlertCard({
         <ActionButton label="Duplicate" variant="secondary" disabled={busy} onPress={onDuplicate} />
         <ActionButton label="Delete" variant="danger" disabled={busy} onPress={onDelete} />
       </View>
+      {pendingDelete ? (
+        <View style={styles.confirmBox}>
+          <Text style={styles.confirmText}>Delete this alert? This uses the existing PulseSoc alert delete endpoint and cannot be undone in the native client.</Text>
+          <View style={styles.topActions}>
+            <ActionButton label="Cancel" variant="secondary" disabled={busy} onPress={onCancelDelete} />
+            <ActionButton label={busy ? "Deleting" : "Confirm delete"} variant="danger" disabled={busy} onPress={onConfirmDelete} />
+          </View>
+        </View>
+      ) : null}
     </View>
   );
+}
+
+function validateAlertForm(form: AlertFormPayload) {
+  const symbol = form.assetSymbol.trim().toUpperCase();
+  const rawTarget = form.targetValue.trim();
+  const target = Number(rawTarget);
+  const hasChannel = form.notifyInApp || form.notifyEmail || form.notifyPush || form.notifySMS || form.notifyTelegram;
+  if (!symbol) return "Add an asset symbol before saving the alert.";
+  if (!/^[A-Z0-9.$:-]{2,24}$/.test(symbol)) return "Use a valid asset symbol such as BTC, ETH, or SOL.";
+  if (!rawTarget) return "Add a target value before saving the alert.";
+  if (!Number.isFinite(target)) return "Use a numeric target value.";
+  if (target <= 0) return "Target value must be greater than zero.";
+  if (target > 1_000_000_000_000) return "Target value is too large for a safe alert threshold.";
+  if (!ALERT_CONDITIONS.some((condition) => condition.value === form.condition)) return "Choose a supported alert condition.";
+  if (!hasChannel) return "Choose at least one delivery channel.";
+  return "";
 }
 
 function ChannelToggle({ label, value, onPress }: { label: string; value: boolean; onPress: () => void }) {
@@ -505,6 +551,20 @@ const styles = StyleSheet.create({
   centerText: {
     color: colors.muted,
     marginTop: 10
+  },
+  confirmBox: {
+    backgroundColor: "rgba(255, 107, 107, 0.08)",
+    borderColor: "rgba(255, 107, 107, 0.34)",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 10,
+    marginTop: 10,
+    padding: 10
+  },
+  confirmText: {
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 18
   },
   channelGrid: {
     flexDirection: "row",
