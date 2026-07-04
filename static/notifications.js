@@ -876,8 +876,12 @@
       const pushState = "Notification" in window ? Notification.permission : "unsupported";
       const status = (payload && payload.push_status) || STATE.pushStatus || {};
       const activeDevices = Number(status.active_devices || status.active_subscriptions || 0);
+      let pushLabel = "Needs permission";
+      if (pushState === "granted" && activeDevices > 0) pushLabel = "Enabled";
+      else if (pushState === "denied") pushLabel = "Blocked by device";
+      else if (pushState === "unsupported") pushLabel = "Unsupported";
       const deviceText = activeDevices > 0 ? ` Active push devices: ${activeDevices}.` : " No active push device is saved yet.";
-      note.textContent = "Push permission: " + pushState + "." + deviceText + " Some phones only allow vibration or sound after app permission is granted.";
+      note.textContent = `Push status: ${pushLabel}. ${deviceText} Enable Push to receive PulseSoc alerts on your lock screen.`;
     }
   }
 

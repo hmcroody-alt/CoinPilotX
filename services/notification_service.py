@@ -108,6 +108,8 @@ PULSE_NOTIFICATION_CATEGORIES = {
     "security": {"in_app": True, "push": True, "email": True, "sms": False},
     "admin_security": {"in_app": True, "push": True, "email": True, "sms": False},
     "marketing": {"in_app": False, "push": False, "email": False, "sms": False},
+    "market": {"in_app": True, "push": True, "email": True, "sms": True},
+    "intelligence": {"in_app": True, "push": True, "email": True, "sms": True},
     # Legacy UI categories preserved for older saved preferences.
     "messages": {"in_app": True, "push": True, "email": False, "sms": False},
     "comments": {"in_app": True, "push": True, "email": False, "sms": False},
@@ -117,6 +119,9 @@ PULSE_NOTIFICATION_CATEGORIES = {
     "lives": {"in_app": True, "push": True, "email": False, "sms": False},
     "roast_battle": {"in_app": True, "push": True, "email": False, "sms": False},
 }
+
+for _pulse_category_defaults in PULSE_NOTIFICATION_CATEGORIES.values():
+    _pulse_category_defaults.update({"in_app": True, "push": True, "email": True, "sms": True})
 
 PULSE_TYPE_TO_CATEGORY = {
     "chat_message": "chat_message",

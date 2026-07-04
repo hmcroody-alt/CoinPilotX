@@ -4843,6 +4843,7 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
         )
         user_id = cur.lastrowid
         logging.info("database insert generated user_id=%s email=%s", user_id, mask_email(email))
+        pulsesoc_notification_system.ensure_user_notification_defaults(user_id, conn=conn)
         cur.execute(
             """
             INSERT INTO subscriptions
@@ -66596,6 +66597,8 @@ def pulse_notification_settings_page():
         "live": "Live",
         "live_invite": "Live Invites",
         "crypto": "Crypto Alerts",
+        "market": "Market Alerts",
+        "intelligence": "Intelligence Alerts",
         "marketplace": "Marketplace",
         "marketplace_order": "Marketplace Orders",
         "purchase": "Purchases",
@@ -66617,19 +66620,19 @@ def pulse_notification_settings_page():
         </tr>
         """
         for key, label in labels.items()
-        for values in [prefs.get(key, {})]
+        for values in [prefs.get(key, {"in_app": True, "push": True, "email": True, "sms": True})]
     )
     main = f"""
     <section class='card' data-notification-settings>
       <h2>Notification Channels</h2>
-      <p class='muted'>Push asks only when you choose it. Security alerts stay recommended because they protect your account.</p>
+      <p class='muted'>All PulseSoc categories start enabled. OS-level push permission is still controlled by your phone.</p>
       <div class='actions'>
         <button class='button primary' type='button' data-notification-action='enable-push'>Enable Push</button>
         <button class='button' type='button' data-notification-action='disable-push'>Disable Push</button>
         <button class='button' type='button' data-notification-action='test-notification'>Test Notification</button>
         <a class='button' href='/account/settings'>Email and SMS Profile</a>
       </div>
-      <p class='muted' data-notification-status></p>
+      <p class='muted' data-notification-status>Enable Push to receive PulseSoc alerts on your lock screen.</p>
       <p class='muted' data-notification-message></p>
     </section>
     <section class='card' data-notification-experience>
@@ -91386,9 +91389,9 @@ def _init_db_impl():
         user_id INTEGER,
         category TEXT,
         in_app INTEGER DEFAULT 1,
-        email INTEGER DEFAULT 0,
-        sms INTEGER DEFAULT 0,
-        push INTEGER DEFAULT 0,
+        email INTEGER DEFAULT 1,
+        sms INTEGER DEFAULT 1,
+        push INTEGER DEFAULT 1,
         updated_at TEXT,
         UNIQUE(user_id, category)
     )
@@ -93134,16 +93137,16 @@ def _init_db_impl():
         user_id INTEGER,
         category TEXT,
         in_app INTEGER DEFAULT 1,
-        push INTEGER DEFAULT 0,
-        email INTEGER DEFAULT 0,
+        push INTEGER DEFAULT 1,
+        email INTEGER DEFAULT 1,
         telegram INTEGER DEFAULT 0,
         updated_at TEXT,
         UNIQUE(user_id, category)
     )
     """)
     add_columns_if_missing(cur, "notification_preferences", [
-        ("sms", "INTEGER DEFAULT 0"),
-        ("enable_push_notifications", "INTEGER DEFAULT 0"),
+        ("sms", "INTEGER DEFAULT 1"),
+        ("enable_push_notifications", "INTEGER DEFAULT 1"),
         ("enable_notification_sound", "INTEGER DEFAULT 1"),
         ("enable_notification_vibration", "INTEGER DEFAULT 1"),
         ("notification_sound_type", "TEXT DEFAULT 'soft'"),
@@ -93169,6 +93172,11 @@ def _init_db_impl():
     )
     """)
     pulsesoc_notification_system.ensure_schema(conn)
+    try:
+        notification_backfill_limit = int(os.getenv("PULSESOC_NOTIFICATION_DEFAULT_BACKFILL_LIMIT", "1000") or "1000")
+        pulsesoc_notification_system.backfill_notification_defaults(limit=notification_backfill_limit, conn=conn)
+    except Exception as exc:
+        logging.warning("Notification default backfill skipped safely: %s", exc)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS alert_delivery_jobs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

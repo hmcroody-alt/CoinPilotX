@@ -135,6 +135,26 @@ EVENT_DEFINITIONS: dict[str, dict[str, str]] = {
 }
 
 DEFAULT_CATEGORIES = sorted({definition["category"] for definition in EVENT_DEFINITIONS.values()} | {
+    "admin_security",
+    "chat_message",
+    "comments",
+    "crypto",
+    "group_message",
+    "intelligence",
+    "live",
+    "live_invite",
+    "market",
+    "marketing",
+    "marketplace",
+    "marketplace_order",
+    "payments",
+    "premium",
+    "purchase",
+    "reaction",
+    "reply",
+    "roast_battle",
+    "room_message",
+    "status",
     "system",
     "messages",
     "calls",
@@ -394,10 +414,10 @@ def ensure_schema(conn: Any | None = None) -> None:
             user_id INTEGER,
             category TEXT,
             in_app INTEGER DEFAULT 1,
-            push INTEGER DEFAULT 0,
-            email INTEGER DEFAULT 0,
+            push INTEGER DEFAULT 1,
+            email INTEGER DEFAULT 1,
             telegram INTEGER DEFAULT 0,
-            sms INTEGER DEFAULT 0,
+            sms INTEGER DEFAULT 1,
             sound INTEGER DEFAULT 1,
             vibration INTEGER DEFAULT 1,
             lock_screen_preview INTEGER DEFAULT 1,
@@ -408,7 +428,7 @@ def ensure_schema(conn: Any | None = None) -> None:
             muted_conversations_json TEXT,
             blocked_users_json TEXT,
             category_rules_json TEXT,
-            enable_push_notifications INTEGER DEFAULT 0,
+            enable_push_notifications INTEGER DEFAULT 1,
             enable_notification_sound INTEGER DEFAULT 1,
             enable_notification_vibration INTEGER DEFAULT 1,
             notification_sound_type TEXT DEFAULT 'soft',
@@ -763,18 +783,14 @@ def _actor_blocked(cur: Any, recipient_user_id: int, actor_user_id: int) -> bool
 
 
 def _default_category_preferences(category: str) -> dict[str, bool]:
-    normalized = str(category or "system").strip().lower()
-    push_default = normalized in LOCKED_DEVICE_PUSH_DEFAULT_CATEGORIES
-    if normalized in PREFERENCE_CONTROLLED_PUSH_CATEGORIES:
-        push_default = False
     return {
-        "in_app": normalized != "marketing",
-        "push": push_default,
-        "email": normalized in EMAIL_DEFAULT_CATEGORIES,
-        "sms": normalized in SMS_DEFAULT_CATEGORIES,
+        "in_app": True,
+        "push": True,
+        "email": True,
+        "sms": True,
         "sound": True,
         "vibration": True,
-        "lock_screen_preview": normalized not in SENSITIVE_CATEGORIES,
+        "lock_screen_preview": True,
     }
 
 
@@ -842,7 +858,7 @@ def _default_channels_for_event(
 def _preferences_from_rows(rows: list[Any]) -> dict[str, Any]:
     defaults = {category: _default_category_preferences(category) for category in DEFAULT_CATEGORIES}
     experience = {
-        "enable_push_notifications": False,
+        "enable_push_notifications": True,
         "enable_notification_sound": True,
         "enable_notification_vibration": True,
         "notification_sound_type": "soft",
@@ -857,9 +873,9 @@ def _preferences_from_rows(rows: list[Any]) -> dict[str, Any]:
         category = str(_row_get(row, "category", "") or "global")
         values = {
             "in_app": _bool(_row_get(row, "in_app", 1), True),
-            "push": _bool(_row_get(row, "push", 0), False),
-            "email": _bool(_row_get(row, "email", 0), False),
-            "sms": _bool(_row_get(row, "sms", 0), False),
+            "push": _bool(_row_get(row, "push", 1), True),
+            "email": _bool(_row_get(row, "email", 1), True),
+            "sms": _bool(_row_get(row, "sms", 1), True),
             "sound": _bool(_row_get(row, "sound", _row_get(row, "enable_notification_sound", 1)), True),
             "vibration": _bool(_row_get(row, "vibration", _row_get(row, "enable_notification_vibration", 1)), True),
             "lock_screen_preview": _bool(_row_get(row, "lock_screen_preview", 1), True),
@@ -868,7 +884,7 @@ def _preferences_from_rows(rows: list[Any]) -> dict[str, Any]:
             defaults[category] = values
         if category == "global" or not experience.get("_loaded"):
             experience.update({
-                "enable_push_notifications": _bool(_row_get(row, "enable_push_notifications", _row_get(row, "push", 0)), False),
+                "enable_push_notifications": _bool(_row_get(row, "enable_push_notifications", _row_get(row, "push", 1)), True),
                 "enable_notification_sound": _bool(_row_get(row, "enable_notification_sound", _row_get(row, "sound", 1)), True),
                 "enable_notification_vibration": _bool(_row_get(row, "enable_notification_vibration", _row_get(row, "vibration", 1)), True),
                 "notification_sound_type": str(_row_get(row, "notification_sound_type", "soft") or "soft"),
@@ -889,10 +905,119 @@ def _get_preferences_with_cursor(cur: Any, user_id: int) -> dict[str, Any]:
     return _preferences_from_rows(list(cur.fetchall()))
 
 
+def ensure_user_notification_defaults(user_id: int, conn: Any | None = None) -> dict[str, Any]:
+    """Provision missing notification preference rows without overwriting user choices."""
+    user_id = _int(user_id, 0)
+    if user_id <= 0:
+        return {"ok": False, "inserted": 0, "updated_nulls": 0}
+    owns_conn = conn is None
+    if conn is None:
+        conn = db_service.connect()
+        ensure_schema(conn)
+    cur = conn.cursor()
+    now = now_iso()
+    cur.execute("SELECT category FROM notification_preferences WHERE user_id=?", (user_id,))
+    existing = {str(_row_get(row, "category", row[0] if row else "") or "") for row in cur.fetchall()}
+    inserted = 0
+    if "global" not in existing:
+        cur.execute(
+            """
+            INSERT INTO notification_preferences
+            (user_id, category, in_app, push, email, sms, sound, vibration, lock_screen_preview,
+             enable_push_notifications, enable_notification_sound, enable_notification_vibration,
+             notification_sound_type, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, updated_at)
+            VALUES (?, 'global', 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 'soft', 0, '22:00', '07:00', ?)
+            ON CONFLICT(user_id, category) DO NOTHING
+            """,
+            (user_id, now),
+        )
+        inserted += 1
+    for category in DEFAULT_CATEGORIES:
+        if category in existing:
+            continue
+        cur.execute(
+            """
+            INSERT INTO notification_preferences
+            (user_id, category, in_app, push, email, sms, sound, vibration, lock_screen_preview, updated_at)
+            VALUES (?, ?, 1, 1, 1, 1, 1, 1, 1, ?)
+            ON CONFLICT(user_id, category) DO NOTHING
+            """,
+            (user_id, category, now),
+        )
+        inserted += 1
+    cur.execute(
+        """
+        UPDATE notification_preferences
+        SET in_app=COALESCE(in_app, 1),
+            push=COALESCE(push, 1),
+            email=COALESCE(email, 1),
+            sms=COALESCE(sms, 1),
+            sound=COALESCE(sound, 1),
+            vibration=COALESCE(vibration, 1),
+            lock_screen_preview=COALESCE(lock_screen_preview, 1),
+            enable_push_notifications=CASE
+                WHEN category='global' THEN COALESCE(enable_push_notifications, 1)
+                ELSE enable_push_notifications
+            END,
+            enable_notification_sound=COALESCE(enable_notification_sound, 1),
+            enable_notification_vibration=COALESCE(enable_notification_vibration, 1),
+            notification_sound_type=COALESCE(notification_sound_type, 'soft'),
+            quiet_hours_enabled=COALESCE(quiet_hours_enabled, 0),
+            quiet_hours_start=COALESCE(quiet_hours_start, '22:00'),
+            quiet_hours_end=COALESCE(quiet_hours_end, '07:00')
+        WHERE user_id=?
+        """,
+        (user_id,),
+    )
+    updated_nulls = int(getattr(cur, "rowcount", 0) or 0)
+    if owns_conn:
+        conn.commit()
+        conn.close()
+    return {"ok": True, "inserted": inserted, "updated_nulls": updated_nulls}
+
+
+def backfill_notification_defaults(limit: int = 1000, conn: Any | None = None) -> dict[str, Any]:
+    owns_conn = conn is None
+    if conn is None:
+        conn = db_service.connect()
+        ensure_schema(conn)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT u.user_id
+        FROM users u
+        WHERE u.user_id IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM notification_preferences np
+              WHERE np.user_id=u.user_id AND np.category='global'
+          )
+        ORDER BY u.user_id
+        LIMIT ?
+        """,
+        (max(1, int(limit or 1000)),),
+    )
+    rows = list(cur.fetchall())
+    users_checked = 0
+    rows_inserted = 0
+    for row in rows:
+        user_id = _int(_row_get(row, "user_id", row[0] if row else 0), 0)
+        if user_id <= 0:
+            continue
+        result = ensure_user_notification_defaults(user_id, conn=conn)
+        users_checked += 1
+        rows_inserted += int(result.get("inserted") or 0)
+    if owns_conn:
+        conn.commit()
+        conn.close()
+    return {"ok": True, "users_checked": users_checked, "rows_inserted": rows_inserted}
+
+
 def get_preferences(user_id: int) -> dict[str, Any]:
     conn = db_service.connect()
     ensure_schema(conn)
     cur = conn.cursor()
+    ensure_user_notification_defaults(user_id, conn=conn)
+    conn.commit()
     result = _get_preferences_with_cursor(cur, user_id)
     conn.close()
     return result
@@ -926,6 +1051,8 @@ def update_preferences(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     for category, values in (category_preferences or {}).items():
         if not isinstance(values, dict):
             continue
+        normalized_category = normalize_category(str(category), "system_announcement")
+        defaults = _default_category_preferences(normalized_category)
         cur.execute(
             """
             INSERT INTO notification_preferences (user_id, category, in_app, push, email, sms, sound, vibration, lock_screen_preview, updated_at)
@@ -942,11 +1069,11 @@ def update_preferences(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
             """,
             (
                 int(user_id),
-                normalize_category(str(category), "system_announcement"),
-                1 if values.get("in_app", True) else 0,
-                1 if values.get("push") else 0,
-                1 if values.get("email") else 0,
-                1 if values.get("sms") else 0,
+                normalized_category,
+                1 if values.get("in_app", defaults["in_app"]) else 0,
+                1 if values.get("push", defaults["push"]) else 0,
+                1 if values.get("email", defaults["email"]) else 0,
+                1 if values.get("sms", defaults["sms"]) else 0,
                 1 if values.get("sound", True) else 0,
                 1 if values.get("vibration", True) else 0,
                 1 if values.get("lock_screen_preview", True) else 0,
@@ -954,6 +1081,15 @@ def update_preferences(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
             ),
         )
     if experience:
+        cur.execute("SELECT * FROM notification_preferences WHERE user_id=? AND category='global' LIMIT 1", (int(user_id),))
+        existing_global = cur.fetchone()
+        if "enable_push_notifications" in experience:
+            push_enabled = 1 if experience.get("enable_push_notifications") else 0
+        else:
+            push_enabled = 1 if _bool(
+                _row_get(existing_global, "enable_push_notifications", _row_get(existing_global, "push", 1)),
+                True,
+            ) else 0
         cur.execute(
             """
             INSERT INTO notification_preferences
@@ -961,7 +1097,7 @@ def update_preferences(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
              enable_push_notifications, enable_notification_sound, enable_notification_vibration,
              notification_sound_type, quiet_hours_enabled, quiet_hours_start, quiet_hours_end,
              muted_users_json, muted_conversations_json, blocked_users_json, updated_at)
-            VALUES (?, 'global', 1, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, 'global', 1, 1, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, category) DO UPDATE SET
                 sound=excluded.sound,
                 vibration=excluded.vibration,
@@ -983,7 +1119,7 @@ def update_preferences(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                 1 if experience.get("enable_notification_sound", True) else 0,
                 1 if experience.get("enable_notification_vibration", True) else 0,
                 1 if experience.get("lock_screen_preview", True) else 0,
-                1 if experience.get("enable_push_notifications") else 0,
+                push_enabled,
                 1 if experience.get("enable_notification_sound", True) else 0,
                 1 if experience.get("enable_notification_vibration", True) else 0,
                 str(experience.get("notification_sound_type") or "soft")[:40],
@@ -1223,6 +1359,7 @@ def intake_event(
         if existing:
             conn.commit()
             return {"ok": True, "deduped": True, "notification": existing, "notification_id": existing.get("id"), "event_id": event_id}
+        ensure_user_notification_defaults(recipient_user_id, conn=conn)
         prefs = _get_preferences_with_cursor(cur, recipient_user_id)
         rules = _rules_check(cur, payload, prefs)
         if not rules.get("allowed"):
@@ -2614,7 +2751,9 @@ def process_delivery_jobs(limit: int = 50, channels: list[str] | tuple[str, ...]
             conn.commit()
             continue
         notification = format_notification(row)
-        prefs = _get_preferences_with_cursor(cur, int(notification.get("recipient_user_id") or notification.get("user_id") or 0))
+        pref_user_id = int(notification.get("recipient_user_id") or notification.get("user_id") or 0)
+        ensure_user_notification_defaults(pref_user_id, conn=conn)
+        prefs = _get_preferences_with_cursor(cur, pref_user_id)
         try:
             result = _dispatch_job(cur, job, notification, prefs)
         except Exception as exc:
