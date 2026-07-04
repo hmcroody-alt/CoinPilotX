@@ -46,6 +46,7 @@ Completed native foundations:
 - Alert Provider + Device QA Setup: documented APNs/FCM/Expo push readiness, SMS/email/Telegram readiness, notification tap deep links, lock-screen behavior plan, physical-device alert test plan, provider success/failure states, channel readiness accuracy checks, delivery debugging logs, and the critical app identity split between `com.pulsesoc.nativeapp` and `com.pulsesoc.app`; selected `com.pulsesoc.nativeapp` as the native provider/device QA identity while protecting production `com.pulsesoc.app`; no provider/device delivery was claimed verified.
 - Native Camera Studio + Media Compression/Preview Foundation: native Camera Studio route/screen, `/pulse/camera/*` deep-link handling, camera config wrapper, preview wrapper, create-from-camera API wrappers, photo/video capture shell, front/back camera switch, microphone permission handling, gallery fallback, permission-denied and QA browser fallback states, caption/privacy/destination flow, compression policy metadata, shared upload handoff, Feed/Status/Reel/Profile/Messenger publishing hooks, and safe web fallback for advanced AR/Banuba/effects.
 - Native Camera Studio Device QA + Hardening: audited the native Camera Studio device-readiness boundary, confirmed the parallel `com.pulsesoc.nativeapp` camera/mic/photo configuration, documented that `simctl`, physical iPhone, and physical Android access remain unavailable in this environment, installed and verified Android `adb`, kept browser/simulator/physical-device verification separated, and blocked LiveKit calls until real Camera Studio device QA is completed.
+- Native Camera Studio iOS Simulator QA: booted the iPhone 17 Pro iOS 26.5 simulator, installed Expo Go, launched PulseSoc Native through Metro, verified the app bundled and rendered the login screen behind Expo Go's developer menu, verified Expo Go terminate/relaunch at the container level, and documented that Camera Studio interaction remains unverified because Expo Doctor reports Expo SDK 51 is incompatible with Xcode 26.6 and the Expo Go first-run overlay could not be dismissed through available automation.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -86,6 +87,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_alert_provider_device_qa_setup.md`
 - `reports/pulsesoc_native_camera_studio_progress.md`
 - `reports/pulsesoc_native_camera_studio_device_qa.md`
+- `reports/pulsesoc_native_camera_studio_ios_simulator_qa.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -204,9 +206,9 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Action
 
-Recommendation: unblock and execute Native Camera Studio real-device QA before moving to Native LiveKit calls.
+Recommendation: resolve the iOS simulator runtime mismatch and rerun Native Camera Studio simulator QA through a development build before moving to Native LiveKit calls.
 
-This is the highest-value next action based on the current codebase. Native Camera Studio is implemented as a foundation and has a device-readiness audit, but camera, microphone, gallery permissions, video recording, compression behavior, and large uploads remain unverified on simulator and physical devices. Real-device QA must happen before Native LiveKit calls or advanced editor expansion.
+This is the highest-value next action based on the current codebase. Native Camera Studio is implemented as a foundation and has a device-readiness audit. The iPhone 17 Pro simulator is now available and the app launches through Expo Go, but Expo Doctor reports Expo SDK 51 is not compatible with the selected Xcode 26.6. Camera Studio interaction, camera permissions, microphone permissions, gallery fallback, upload handoff, and publish routing remain unverified. Simulator/dev-client QA and then real-device QA must happen before Native LiveKit calls or advanced editor expansion.
 
 Provider/device QA for Alert Management remains a release blocker, especially APNs/FCM/Expo push delivery, installed-app notification taps, lock-screen presentation, SMS/email/Telegram delivery, and physical-device deep links. That work should continue before any release claim, but it is external-credential/device gated. Among buildable native features, Camera Studio gives the most leverage while reusing existing backend/media logic.
 
@@ -218,7 +220,7 @@ Provider/device QA for Alert Management remains a release blocker, especially AP
 - Production create-from-camera APIs already exist for posts and reels: `/api/pulse/posts/create-from-camera` and `/api/pulse/reels/create-from-camera`; Status Creator already has native publishing through existing Status APIs.
 - Production web camera includes capture modes, front/back camera, microphone toggle, flash/torch fallback, gallery fallback, lenses, beauty modes, filters, preview, privacy/caption, and destination routing.
 - Native already has `expo-camera`, `expo-image-picker`, `expo-file-system`, shared `useNativeMediaUpload`, `MediaUploadPreview`, Feed Composer, Status Creator, Profile uploads, Messenger attachments, Marketplace media viewer, and Creator Studio shortcuts.
-- Native now has a dedicated Camera Studio screen/route and deep link for `/pulse/camera/*`; the next risk is external device-tooling setup and real-device validation, not more UI breadth.
+- Native now has a dedicated Camera Studio screen/route and deep link for `/pulse/camera/*`; the next risk is simulator/dev-client compatibility and real-device validation, not more UI breadth.
 - Native LiveKit calls are tempting because `@livekit/react-native` and `livekit-client` are installed and backend call APIs exist, but calls depend on reliable push/ringing, lock-screen behavior, microphone/camera permissions, background audio, and real-device QA that is still not established.
 - This recommendation is based on the current production routes/services and `mobile-native` implementation inspected on 2026-07-04.
 
@@ -256,7 +258,8 @@ Do not duplicate in native:
 
 ## What Must Be Hardened Next
 
-- Select full Xcode so `xcrun simctl` is available.
+- Resolve Expo SDK 51 versus Xcode 26.6 compatibility before treating iOS simulator QA as passable.
+- Prefer an installed `com.pulsesoc.nativeapp` development build for simulator QA instead of Expo Go.
 - Attach/trust a physical iPhone and attach/authorize a physical Android device, or start an Android emulator.
 - QA browser route/layout sweep for `/pulse/camera`, `/pulse/camera/photo`, `/pulse/camera/video`, `/pulse/camera/status`, `/pulse/camera/reel`, and `/pulse/camera/post`.
 - Real-device camera permission accept/deny on iOS and Android.
@@ -281,8 +284,9 @@ Blockers:
 
 - Camera, microphone, gallery permissions, large-video handling, compression behavior, and upload memory pressure remain device-only and must not be claimed browser-verified.
 - `adb` is now available at `/opt/homebrew/bin/adb`, but `adb devices` shows no attached or authorized device.
-- `/usr/bin/xcrun` exists, but `xcrun simctl list devices available` failed because `simctl` was not available from the active developer directory.
-- `xcode-select -p` points to `/Library/Developer/CommandLineTools`; full Xcode must be selected for simulator work.
+- `xcrun simctl` now works and the iPhone 17 Pro simulator boots.
+- Expo Doctor fails under the selected Xcode 26.6 because Expo SDK 51 requires Xcode `<=16.2.0`.
+- Expo Go launches PulseSoc Native but shows its first-run developer menu over the app; available automation did not dismiss it reliably.
 - No physical iPhone or Android device was visible through USB system profiling in this workspace.
 - No physical-device QA flow has been recorded in this workspace.
 - Provider/device Alert Management QA remains unverified for APNs/FCM/SMS/email/Telegram and should continue as a release-readiness track.
@@ -332,6 +336,6 @@ Defer from first slice:
 
 ## Recommendation Summary
 
-Recommended next highest-value action: unblock and execute Native Camera Studio real-device QA.
+Recommended next highest-value action: resolve iOS simulator/dev-client QA compatibility, then rerun Native Camera Studio simulator QA.
 
-Reason: the production platform already has the camera/media routes, catalogs, validation, storage, preview, and create-from-camera business logic, and the native app now has a dedicated native camera foundation over those contracts. The remaining value is unblocking the machine/device setup and proving camera/microphone/gallery/upload behavior on real devices before moving into higher-risk LiveKit calls.
+Reason: the production platform already has the camera/media routes, catalogs, validation, storage, preview, and create-from-camera business logic, and the native app now has a dedicated native camera foundation over those contracts. The simulator can now boot and run Expo Go, but the selected Xcode is outside Expo SDK 51's supported range and Camera Studio interaction remains unverified. Fixing that QA runtime is the necessary next step before physical-device Camera Studio QA and before higher-risk LiveKit calls.

@@ -42,6 +42,8 @@ Production WebView camera routes were not modified. The native app remains a par
 - Camera Studio exposes photo/video controls, front/back switch, microphone toggle, gallery fallback, preview metadata, caption/privacy/destination controls, and safe web fallback for advanced effects.
 - Shared upload code carries `compression_policy` and `destination` metadata to the existing backend upload route.
 - Existing backend routes remain authoritative for upload, preview, post, reel, status, profile, and Messenger publishing.
+- iPhone 17 Pro iOS Simulator boot was verified after full Xcode became available.
+- Expo Go installed on the iPhone 17 Pro simulator and loaded the PulseSoc Native bundle to the login screen behind Expo Go's first-run developer menu.
 
 ## Device Tooling Findings
 
@@ -59,19 +61,29 @@ Local machine state observed during this mission:
 - No iPhone, iPad, Android, Pixel, Samsung, Motorola, or OnePlus device was visible through USB system profiling.
 - No `GoogleService-Info.plist`, `google-services.json`, or entitlements file was found under `mobile-native/`.
 
+Later iOS Simulator update:
+
+- `xcode-select -p` now returns `/Applications/Xcode.app/Contents/Developer`.
+- iPhone 17 Pro simulator is available at UDID `7B3BEEBC-6135-497D-91CD-A3E70C927D56`.
+- Runtime is iOS 26.5.
+- `xcrun simctl bootstatus 7B3BEEBC-6135-497D-91CD-A3E70C927D56 -b` completed.
+- Expo Doctor now reports a toolchain mismatch: Expo SDK 51 is not compatible with Xcode 26.6.0; required Xcode is `<=16.2.0`.
+- Simulator QA reached PulseSoc login behind Expo Go's first-run developer menu, but Camera Studio interaction was not verified.
+
 These are machine/setup blockers, not PulseSoc code blockers.
 
 ## Blockers
 
 Priority order:
 
-1. Install/select full Xcode so `xcrun simctl` is available.
-2. Attach and trust at least one physical iPhone for real camera/microphone/photo-library QA.
-3. Attach and authorize at least one physical Android device or start an Android emulator so `adb devices` lists a target.
-4. Install Android Studio/emulator images if emulator QA is needed.
-5. Configure provider credentials and entitlements before push/deep-link/lock-screen camera handoff claims.
-6. Create or reuse QA-safe authenticated PulseSoc credentials for publish-to-Feed/Status/Reels/Profile/Messenger flows.
-7. Run device builds for `com.pulsesoc.nativeapp`; do not use the production `com.pulsesoc.app` identity.
+1. Resolve the Expo SDK 51 and Xcode 26.6 compatibility mismatch, either by using an SDK 51-compatible Xcode path or by planning an Expo SDK/dev-client upgrade path.
+2. Run Camera Studio simulator QA through an installed `com.pulsesoc.nativeapp` development build instead of Expo Go.
+3. Attach and trust at least one physical iPhone for real camera/microphone/photo-library QA.
+4. Attach and authorize at least one physical Android device or start an Android emulator so `adb devices` lists a target.
+5. Install Android Studio/emulator images if emulator QA is needed.
+6. Configure provider credentials and entitlements before push/deep-link/lock-screen camera handoff claims.
+7. Create or reuse QA-safe authenticated PulseSoc credentials for publish-to-Feed/Status/Reels/Profile/Messenger flows.
+8. Run device builds for `com.pulsesoc.nativeapp`; do not use the production `com.pulsesoc.app` identity.
 
 ## Hardening Decisions
 
