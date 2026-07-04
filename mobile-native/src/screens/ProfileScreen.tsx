@@ -101,6 +101,7 @@ export function ProfileScreen({ route, navigation }: Props) {
             owner={owner}
             onEdit={() => navigation?.navigate("ProfileEdit")}
             onPremium={() => navigation?.navigate("Premium")}
+            onGrowth={() => navigation?.navigate("GrowthCenter", { contentType: "profile", title: "Grow Profile" })}
             onRefresh={() => load("refresh").catch(() => undefined)}
           />
           <View style={styles.tabs}>

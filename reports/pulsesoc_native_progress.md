@@ -34,6 +34,7 @@ Completed native foundations:
 - Live Viewer Device QA + Hardening: documented unavailable simulator/device tooling, added AppState foreground recovery for Live state/chat/list refresh, added playback failure fallback state, guarded host/profile navigation from empty profile keys, preserved safe web fallback for Studio/hosting/co-hosting/calls, and kept device-only playback claims unverified.
 - Premium + Entitlements Foundation: native Premium route, server-authoritative status display through `/api/premium/status`, Founder/Premium badge display, entitlement list, cached fallback, app-resume refresh, existing checkout/billing portal provider handoff, Settings/Profile entry points, `/pulse/premium` deep-link routing, and explicit no-local-entitlement boundary.
 - Creator Studio Foundation: native Creator Studio route, creator state through `/api/dashboard/creator/state`, Creator AI hooks through `/api/pulse/creator-ai/<tool>`, Content Planner draft save through `/api/dashboard/content-planner/item`, creator metric/recommendation cards, Premium eligibility messaging, shortcuts into existing native composer/status/reels/profile/premium surfaces, and safe web fallback for unsupported Studio/Live/monetization tools.
+- Growth Center Foundation: native Growth Center route, read-only growth state through `/api/pulse/growth`, server-owned growth score/status cards, wallet/budget summary, audience/targeting preview, campaign overview, analytics snapshot, Feed/Post/Reel/Profile promote shortcuts, Settings entry, `/pulse/growth` and `/pulse/promote` routing, offline cache, and safe web fallback for campaign launch, wallet funding, billing, targeting, ad review, and unsupported promotion tools.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -62,6 +63,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_live_device_qa.md`
 - `reports/pulsesoc_native_premium_progress.md`
 - `reports/pulsesoc_native_creator_progress.md`
+- `reports/pulsesoc_native_growth_progress.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -84,13 +86,13 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_live_device_qa_audit.py`
 - `scripts/pulsesoc_native_premium_audit.py`
 - `scripts/pulsesoc_native_creator_audit.py`
+- `scripts/pulsesoc_native_growth_audit.py`
 
 ## Remaining Major Features
 
 - Advanced camera/compression/editor tools
 - Native LiveKit calls
 - Full-screen incoming calls
-- Growth Center
 - Crypto/market alerts
 - Intelligence Center
 
@@ -128,6 +130,7 @@ Existing backend/web surfaces inspected:
 - Creator surfaces: `GET /api/dashboard/creator/state`, `/dashboard/creator`, `/dashboard/creator/posts`, `/dashboard/creator/reels`, `/dashboard/creator/videos`, `/dashboard/creator/statuses`, `/dashboard/creator/live-studio`, `/pulse/creator/dashboard`, `/pulse/creator-studio`, `/pulse/creator/analytics`, and `POST /api/pulse/creator-ai/<tool>`.
 - Creator logic: `services/dashboard_creator_command_center.py`, creator cards/subsystems, owner-scoped creator metrics, content/moderation/processing summaries, creator event-bus recommendations, and creator AI hook routing.
 - Growth Center surfaces: `GET /api/pulse/growth`, `/pulse/growth`, `services/pulsesoc_growth_engine.py`, growth account/workspace/wallet/audience/profile/score/risk tables, and promotion readiness state.
+- Intelligence and alerts surfaces: `GET /api/dashboard/intelligence/state`, `/dashboard/intelligence`, `/dashboard/intelligence/<subsystem_key>`, `/dashboard/crypto/alerts`, `/api/crypto/alerts`, `services/alert_engine.py`, `services/notification_service.py`, `services/privacy_intelligence_engine.py`, `services/global_intelligence_graph.py`, `services/universal_intelligence_fabric.py`, `alert_rules`, `user_alert_rules`, notification delivery jobs, and crypto/market intelligence notification helpers.
 - Current native reuse surface: repeated API wrappers, shared cache functions, screen-level loading/empty/error/offline states, native/web fallback routing, card layouts, action busy states, media preview/viewer hooks, tab/stack route patterns, Premium status/handoff patterns, Creator Studio shortcuts, and routing across Feed, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, Groups, Live, Premium, and Creator Studio.
 
 Existing data/business logic that should remain server-authoritative:
@@ -160,114 +163,115 @@ Existing data/business logic that should remain server-authoritative:
 - premium subscription status, founder membership, entitlement grants/revocation, profile themes, premium badges, billing portal eligibility, and Stripe checkout state
 - creator dashboard state, creator metrics, moderation/review counts, media processing state, creator AI provider routing, creator recommendations, and creator monetization/payout decisions
 - growth account provisioning, growth score calculation, audience modeling, growth wallets, promotion readiness, ad billing, targeting, risk profiles, and growth AI session behavior
+- intelligence state, alert rules, crypto/market event evaluation, notification delivery eligibility, alert dedupe windows, premium intelligence gates, and market/crypto data interpretation
 
 ## Recommended Next Feature
 
-Recommendation: build Native Growth Center Foundation next.
+Recommendation: build Native Intelligence + Alerts Foundation next.
 
-This should come before native Go Live, native LiveKit hosting, native calls, advanced creator monetization, and deeper paid promotion tools.
+This should come before native LiveKit hosting, native calls, deeper paid-promotion writes, and advanced creator monetization.
 
 ## Why This Comes Next
 
-- Creator Studio now gives creators a native dashboard and creation hub, which naturally leads to audience growth and promotion readiness.
-- The backend already exposes Growth Center state through `GET /api/pulse/growth`.
-- Growth Center can reuse native Creator Studio, Feed/Post, Reels, Marketplace, Profile, Premium, Search, Notifications, and web fallback patterns.
-- Growth Center can remain read-mostly and server-authoritative in the first slice while paid promotion launch, wallet funding, targeting, billing, and ad review stay backend/web/provider owned.
-- This recommendation is based on the current growth backend and native migration state after the Creator Studio foundation checkpoint.
+- Growth Center, Creator Studio, Premium, Notifications, Feed, Search, Profile, Reels, Marketplace, and native routing are now in place.
+- The backend already exposes intelligence state through `GET /api/dashboard/intelligence/state`.
+- The production platform already has alert-rule storage and crypto alert delivery through `services/alert_engine.py` and central notification helpers.
+- Alerts depend on notifications, badges, deep links, premium/permission checks, and cached read states, which are already native foundations.
+- This recommendation is based on the current intelligence/alert backend and native migration state after the Growth Center checkpoint.
 
 ## Reusable Existing PulseSoc Logic
 
 Reuse directly:
 
-- Existing `GET /api/pulse/growth`.
-- Existing `/pulse/growth` route behavior.
-- Existing `services/pulsesoc_growth_engine.py`.
-- Existing `pulse_growth_accounts`, `pulse_growth_workspaces`, `pulse_growth_wallets`, `pulse_growth_audience_profiles`, `pulse_growth_audience_models`, `pulse_creator_growth_profiles`, `pulse_growth_scores`, `pulse_growth_risk_profiles`, and `pulse_growth_preferences`.
-- Existing promotion readiness, trust/risk, billing profile, audience model, growth score, and AI growth summary logic.
-- Existing native Creator Studio, Premium, Feed/Post, Reels, Marketplace, Profile, Search, Notifications, routing, cache, loading/error, and web fallback patterns.
+- Existing `GET /api/dashboard/intelligence/state`.
+- Existing `/dashboard/intelligence` and `/dashboard/intelligence/<subsystem_key>` routes.
+- Existing `/dashboard/crypto/alerts` and `/api/crypto/alerts` flows.
+- Existing `services/alert_engine.py`, `services/notification_service.py`, `services/privacy_intelligence_engine.py`, `services/global_intelligence_graph.py`, and `services/universal_intelligence_fabric.py`.
+- Existing `alert_rules`, `user_alert_rules`, notification, delivery-job, crypto/news/market cache, and intelligence graph data.
+- Existing Premium/permission gates, alert dedupe, push/in-app delivery, and notification deep-link behavior.
+- Existing native Notifications, Premium, Search, Feed/Post, Profile, Settings, routing, cache, loading/error, and web fallback patterns.
 
 Do not duplicate in native:
 
 - Backend business logic.
-- Growth score calculations.
-- Audience modeling.
-- Promotion readiness decisions.
-- Ad targeting rules.
-- Growth wallet funding or ledger changes.
-- Billing profile/provider logic.
-- Premium/growth entitlement checks.
-- Campaign launch, ad review, refund, webhook, and provider business logic.
+- Alert trigger evaluation.
+- Market/crypto price interpretation.
+- Financial advice or buy/sell/hold recommendations.
+- Notification delivery eligibility.
+- Alert dedupe windows.
+- Premium intelligence access checks.
+- Provider data polling.
+- Intelligence ranking/scoring.
 
 ## What Must Be Rebuilt Natively
 
-- Native Growth Center dashboard screen.
-- Growth score/status summary.
-- Audience and promotion readiness cards.
-- Wallet/credit display where backend supports it.
-- Growth recommendations.
-- Promote-post, promote-reel, and marketplace promotion shortcuts where safe.
-- Loading, empty, offline, error, active, locked, and unavailable states.
-- Deep-link routing for `/pulse/growth`.
-- Web fallback for campaign launch, wallet funding, billing, targeting, ad review, and unsupported promotion tools.
+- Native Intelligence/Alerts dashboard.
+- Intelligence summary cards from existing API state.
+- Alert list and alert detail where APIs support it.
+- Crypto/market alert cards and watchlist preview.
+- Alert create/edit entry points only where existing APIs provide safe native payloads.
+- Notification/deep-link routing into alert and intelligence screens.
+- Loading, empty, offline, error, locked, and unavailable states.
+- Safe web fallback for unsupported intelligence subsystems, advanced alert creation, and premium intelligence tools.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Confirm `GET /api/pulse/growth` payload shape.
-- Confirm Growth Center auth and permission boundaries.
-- Reuse existing Premium state for growth eligibility.
-- Reuse Creator Studio and marketplace/feed/reel/profile navigation for growth shortcuts.
+- Confirm `GET /api/dashboard/intelligence/state` payload shape.
+- Confirm authenticated access and premium/permission boundaries.
+- Confirm native-safe alert list/detail payloads for `/api/crypto/alerts`.
+- Reuse native notification preferences and deep-link routing.
 
 Blockers:
 
-- Paid promotion, wallet funding, ad billing, and targeting are policy-sensitive and should stay backend/web/provider flows in the first slice.
-- Growth Center may require real account data for meaningful cards.
-- Provider fallback handoff needs real-device QA.
+- Financial/market alert copy must stay educational and server-owned.
+- Alert creation/editing may need web fallback if APIs are form/web oriented.
+- Real push delivery and notification-tap behavior require device QA.
+- Provider data freshness cannot be inferred locally.
 
 ## Risk Level
 
-Risk: Medium.
+Risk: Medium-high.
 
 Reasons:
 
-- Growth is monetization-adjacent and policy-sensitive.
-- Backend risk remains contained if native only displays server-owned growth state and routes unsupported writes to web fallback.
-- UX risk is moderate because growth cards must communicate locked/unavailable states without implying guaranteed results.
+- Alerts are time-sensitive and notification-sensitive.
+- Crypto/market intelligence is accuracy-sensitive and must not become client-side financial advice.
+- Backend risk stays contained if native only presents server-owned state and routes unsupported writes to web fallback.
 
 ## Estimated Complexity
 
-Complexity: Medium.
+Complexity: Medium-high.
 
 Recommended first slice:
 
-- Inspect growth state payload and web Growth Center behavior.
-- Build read-only Growth Center dashboard first.
-- Add growth recommendation and readiness cards from server-owned state.
-- Add shortcuts to Creator Studio, Feed/Post, Reels, Marketplace, Premium, and Profile.
-- Add web fallback for promotion launch, wallet, billing, targeting, and unsupported tools.
-- Add static audit that verifies no native targeting, billing, wallet, promotion, or growth score logic is duplicated.
+- Inspect intelligence and alert payloads.
+- Build read-first native Intelligence/Alerts dashboard.
+- Add alert list/detail where stable APIs exist.
+- Add notification/deep-link routing for alert/intelligence targets.
+- Add safe web fallback for advanced alert creation and unsupported intelligence subsystems.
+- Add static audit that verifies no native alert evaluation, market advice, delivery eligibility, or premium intelligence access logic is duplicated.
 
 Defer from first slice:
 
-- Campaign launch writes.
-- Wallet funding.
-- Ad targeting.
-- Billing/provider setup.
-- Local growth/audience scoring.
-- Native payment work.
+- Local alert trigger evaluation.
+- Local market/crypto recommendations.
+- Provider polling.
+- Advanced premium intelligence tools.
+- Native-only alert delivery rules.
 
 ## Safest Implementation Plan
 
-1. Inspect `GET /api/pulse/growth`, `/pulse/growth`, and `services/pulsesoc_growth_engine.py`.
-2. Add a native growth API wrapper that reads existing backend state only.
-3. Build native Growth Center dashboard cards from server-owned score, workspace, wallet, audience, trust/risk, and recommendation state.
-4. Reuse existing native navigation into Creator Studio, Feed/Post, Reels, Marketplace, Premium, Profile, Search, and Notifications.
-5. Add web fallback for campaign launch, wallet funding, billing, targeting, ad review, and unsupported promotion tools.
+1. Inspect `GET /api/dashboard/intelligence/state`, `/dashboard/intelligence`, `/dashboard/crypto/alerts`, `/api/crypto/alerts`, and `services/alert_engine.py`.
+2. Add native API wrappers that read existing backend state first.
+3. Build native Intelligence/Alerts dashboard cards from server-owned state.
+4. Reuse existing native Notifications, Premium, Search, Feed/Post, Profile, Settings, cache, routing, and fallback patterns.
+5. Add web fallback for unsupported intelligence subsystems, premium tools, and advanced alert creation/editing.
 6. Add progress report and audit script.
 7. Run the standard native verification suite.
-8. Keep growth scoring, audience modeling, promotion readiness, targeting, wallets, billing, and provider behavior server-authoritative.
+8. Keep alert evaluation, market/crypto interpretation, provider polling, premium access, notification delivery, and dedupe behavior server-authoritative.
 
 ## Recommendation Summary
 
-Build Native Growth Center Foundation next. The backend already owns growth account state, score calculation, audience modeling, wallet/profile state, trust/risk checks, and promotion readiness, and the native app now has Creator Studio plus the social/media/marketplace/premium surfaces needed to present Growth Center safely without duplicating targeting, billing, wallet, or campaign-launch logic.
+Build Native Intelligence + Alerts Foundation next. The backend already owns intelligence state, alert rules, crypto/market evaluation, premium gates, dedupe, and notification delivery, and the native app now has the notification, premium, search, feed/profile, routing, cache, and fallback foundations needed to present that system without duplicating sensitive alert or market logic.

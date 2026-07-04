@@ -15,11 +15,12 @@ type PostCardProps = {
   onReact?: (post: PulsePost, reactionType: string) => void;
   onSave?: (post: PulsePost) => void;
   onRepost?: (post: PulsePost) => void;
+  onPromote?: (post: PulsePost) => void;
   onShare?: (post: PulsePost) => void;
   onAuthorPress?: (post: PulsePost) => void;
 };
 
-export function PostCard({ post, detail, busy, onOpen, onReact, onSave, onRepost, onShare, onAuthorPress }: PostCardProps) {
+export function PostCard({ post, detail, busy, onOpen, onReact, onSave, onRepost, onPromote, onShare, onAuthorPress }: PostCardProps) {
   const author = post.author || {};
   const displayName = author.display_name || author.name || post.author_name || "PulseSoc";
   const handle = author.username || author.handle || post.author_username || "";
@@ -85,6 +86,11 @@ export function PostCard({ post, detail, busy, onOpen, onReact, onSave, onRepost
         <Pressable style={styles.utilityButton} disabled={busy} onPress={() => onRepost?.(post)}>
           <Text style={styles.utilityText}>{post.reposted ? "Reposted" : "Repost"}</Text>
         </Pressable>
+        {onPromote ? (
+          <Pressable style={styles.utilityButton} disabled={busy} onPress={() => onPromote(post)}>
+            <Text style={styles.utilityText}>Promote</Text>
+          </Pressable>
+        ) : null}
         <Pressable style={styles.utilityButton} onPress={() => (onShare ? onShare(post) : Share.share({ message: pulsePostUrl(post.id) }))}>
           <Text style={styles.utilityText}>Share</Text>
         </Pressable>

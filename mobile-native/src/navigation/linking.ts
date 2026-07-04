@@ -83,6 +83,9 @@ export const linking: LinkingOptions<RootStackParamList> = {
       CreatorStudio: {
         path: "pulse/creator-studio"
       },
+      GrowthCenter: {
+        path: "pulse/growth"
+      },
       NotificationCenter: {
         path: "notifications"
       },

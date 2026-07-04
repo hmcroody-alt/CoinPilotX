@@ -168,6 +168,7 @@ export function HomeScreen() {
             onReact={handleReact}
             onSave={handleSave}
             onRepost={handleRepost}
+            onPromote={(post) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: post.id, title: "Promote Post" })}
             onShare={handleShare}
             onAuthorPress={(post) => {
               const key = post.author?.public_player_id || post.author?.username || "";

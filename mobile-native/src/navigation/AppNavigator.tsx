@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AppState } from "react-native";
 import { getNotificationBadgeCounts, unreadCount } from "../api/notifications";
 import { CreatorStudioScreen } from "../screens/CreatorStudioScreen";
+import { GrowthCenterScreen } from "../screens/GrowthCenterScreen";
 import { GroupsScreen } from "../screens/GroupsScreen";
 import { HomeScreen } from "../screens/HomeScreen";
 import { LiveScreen } from "../screens/LiveScreen";
@@ -108,6 +109,7 @@ export function AppNavigator() {
       <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} options={{ title: "Edit Profile" }} />
       <Stack.Screen name="Premium" component={PremiumScreen} options={{ title: "Premium" }} />
       <Stack.Screen name="CreatorStudio" component={CreatorStudioScreen} options={{ title: "Creator Studio" }} />
+      <Stack.Screen name="GrowthCenter" component={GrowthCenterScreen} options={{ title: "Growth Center" }} />
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} options={{ title: "Notifications" }} />
       <Stack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} options={{ title: "Notification Preferences" }} />
     </Stack.Navigator>

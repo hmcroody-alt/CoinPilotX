@@ -177,6 +177,7 @@ export function PostDetailScreen({ route, navigation }: Props) {
               onReact={handleReact}
               onSave={handleSave}
               onRepost={handleRepost}
+              onPromote={(item) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: item.id, title: "Promote Post" })}
               onShare={(item) => Share.share({ message: pulsePostUrl(item.id) }).catch(() => undefined)}
               onAuthorPress={(item) => {
                 const key = item.author?.public_player_id || item.author?.username || "";

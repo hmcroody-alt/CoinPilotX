@@ -8,10 +8,11 @@ type ProfileHeaderProps = {
   owner?: boolean;
   onEdit?: () => void;
   onPremium?: () => void;
+  onGrowth?: () => void;
   onRefresh?: () => void;
 };
 
-export function ProfileHeader({ profile, publicKey, owner, onEdit, onPremium, onRefresh }: ProfileHeaderProps) {
+export function ProfileHeader({ profile, publicKey, owner, onEdit, onPremium, onGrowth, onRefresh }: ProfileHeaderProps) {
   const handle = profile.username || profile.public_player_id || publicKey || "";
   const premium = Boolean(profile.premium_status && profile.premium_status !== "inactive");
   const verified = Boolean(profile.verified_badge || profile.verification_status === "verified");
@@ -60,6 +61,11 @@ export function ProfileHeader({ profile, publicKey, owner, onEdit, onPremium, on
         {owner ? (
           <Pressable style={styles.secondaryButton} onPress={onPremium}>
             <Text style={styles.secondaryText}>Premium</Text>
+          </Pressable>
+        ) : null}
+        {owner ? (
+          <Pressable style={styles.secondaryButton} onPress={onGrowth}>
+            <Text style={styles.secondaryText}>Growth</Text>
           </Pressable>
         ) : null}
         <Pressable style={styles.secondaryButton} onPress={onRefresh}>

@@ -37,6 +37,7 @@ export type RootStackParamList = {
   ProfileEdit: undefined;
   Premium: undefined;
   CreatorStudio: undefined;
+  GrowthCenter: { contentType?: string; contentId?: number | string; title?: string } | undefined;
   NotificationCenter: undefined;
   NotificationPreferences: undefined;
 };

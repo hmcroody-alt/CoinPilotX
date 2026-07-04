@@ -14,6 +14,7 @@ type ReelPlayerCardProps = {
   onOpenComments: (reel: PulseReel) => void;
   onSave: (reel: PulseReel) => void;
   onRepost: (reel: PulseReel) => void;
+  onPromote?: (reel: PulseReel) => void;
   onShare: (reel: PulseReel) => void;
   onNotInterested: (reel: PulseReel) => void;
   onReport: (reel: PulseReel) => void;
@@ -32,6 +33,7 @@ export function ReelPlayerCard({
   onOpenComments,
   onSave,
   onRepost,
+  onPromote,
   onShare,
   onNotInterested,
   onReport,
@@ -134,6 +136,7 @@ export function ReelPlayerCard({
         <Action label="Comments" value={reel.comments_count || 0} onPress={() => onOpenComments(reel)} />
         <Action label={reel.saved ? "Saved" : "Save"} onPress={() => onSave(reel)} active={Boolean(reel.saved)} />
         <Action label="Repost" onPress={() => onRepost(reel)} active={Boolean(reel.reposted)} />
+        {onPromote ? <Action label="Promote" onPress={() => onPromote(reel)} /> : null}
         <Action label="Share" value={reel.share_count || 0} onPress={() => onShare(reel)} />
         <Action label="Less" onPress={() => onNotInterested(reel)} />
         <Action label="Report" onPress={() => onReport(reel)} />

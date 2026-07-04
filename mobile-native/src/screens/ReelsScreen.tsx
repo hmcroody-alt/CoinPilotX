@@ -238,6 +238,7 @@ export function ReelsScreen({ route, navigation }: Props) {
               onOpenComments={openComments}
               onSave={handleSave}
               onRepost={handleRepost}
+              onPromote={(reel) => navigation.navigate("GrowthCenter", { contentType: "reel", contentId: reel.id, title: "Promote Reel" })}
               onShare={handleShare}
               onNotInterested={handleNotInterested}
               onReport={handleReport}
