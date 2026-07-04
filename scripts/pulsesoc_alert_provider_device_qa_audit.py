@@ -65,6 +65,13 @@ def main() -> int:
             "Logs Needed For Debugging",
             "Physical Device Alert Test Plan",
             "What Cannot Be Verified Yet",
+            "QA Identity Decision",
+            "Native provider/device QA target: `com.pulsesoc.nativeapp`",
+            "Protected production app identity: `com.pulsesoc.app`",
+            "EAS Build Identity",
+            "Push Token Registration Provider Metadata",
+            "Provider delivery log checklist",
+            "Rollback And No-Production-Impact Plan",
             "com.pulsesoc.nativeapp",
             "com.pulsesoc.app",
             "channelId: \"alerts\"",
@@ -109,6 +116,8 @@ def main() -> int:
 
     require("Alert Provider + Device QA Setup" in progress, "progress report includes provider/device QA setup")
     require("provider/device QA setup" in progress, "progress report recommends provider/device QA next")
+    require("selected `com.pulsesoc.nativeapp`" in progress, "progress report records native provider QA identity")
+    require("protecting production `com.pulsesoc.app`" in progress, "progress report records protected production identity")
 
     forbidden = [
         ROOT / "templates" / "index.html",

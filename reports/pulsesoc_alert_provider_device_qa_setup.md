@@ -56,12 +56,16 @@ The parallel native app is intentionally separate from the existing production W
 
 The backend helper `services/native_push_readiness.py` currently expects APNs bundle ID `com.pulsesoc.app`.
 
-Provider/device QA must choose the test target explicitly:
+## QA Identity Decision
 
-1. Existing production WebView shell push QA: keep `APNS_BUNDLE_ID=com.pulsesoc.app`.
-2. Parallel `mobile-native` push QA: use credentials for `com.pulsesoc.nativeapp`, or update backend readiness to support both bundle IDs in a separate scoped mission.
+Decision for provider/device QA:
 
-Do not silently switch production APNs identity during this QA setup pass.
+- Native provider/device QA target: `com.pulsesoc.nativeapp`
+- Protected production app identity: `com.pulsesoc.app`
+
+The current production WebView app identity must remain untouched. Do not modify production provider credentials, production APNs bundle IDs, production provisioning, or any existing `com.pulsesoc.app` release materials for this native QA pass.
+
+Native QA should use credentials, builds, and provider metadata that are explicitly scoped to `com.pulsesoc.nativeapp`. If backend readiness tooling needs to validate both app identities, implement that as scoped multi-bundle readiness support rather than replacing the production identity.
 
 ## APNs Readiness
 
@@ -74,12 +78,11 @@ Repo support exists:
 Remaining external setup:
 
 - Apple Developer Program access.
-- APNs key or certificate.
-- Correct bundle ID decision:
-  - `com.pulsesoc.app` for existing production shell.
-  - `com.pulsesoc.nativeapp` for parallel native app.
+- APNs key or certificate that is valid for `com.pulsesoc.nativeapp`.
+- Provisioning profile for `com.pulsesoc.nativeapp`.
+- Backend runtime APNs configuration or scoped readiness override for the native QA identity.
 - `APNS_USE_SANDBOX=true` for development/sandbox device builds if applicable.
-- A physical iPhone with the installed development/internal build.
+- A physical iPhone with the installed `com.pulsesoc.nativeapp` development/internal build.
 
 APNs QA commands:
 
@@ -91,10 +94,11 @@ venv/bin/python scripts/push_credentials_readiness_audit.py --json --allow-missi
 Pass criteria:
 
 - APNs readiness reports credentials loaded and parseable.
-- APNs bundle ID matches the installed app target.
+- APNs bundle ID matches the installed native QA app target: `com.pulsesoc.nativeapp`.
 - Alert push to iPhone appears on lock screen.
 - Tapping the notification routes to native Alert Management.
 - Provider failures are logged without crashing alert delivery.
+- No production `com.pulsesoc.app` credential, provisioning, or provider state is modified.
 
 ## FCM Readiness
 
@@ -118,6 +122,7 @@ Pass criteria:
 - Android uses a high-importance alert channel.
 - Tapping the notification routes to native Alert Management.
 - `DeviceNotRegistered` or invalid token failures disable stale tokens.
+- No existing production Android/WebView app provider identity is modified.
 
 ## Expo Push Readiness
 
@@ -133,7 +138,7 @@ Remaining external setup:
 
 - Expo/EAS project linked for `mobile-native`.
 - `EXPO_PUBLIC_EXPO_PROJECT_ID` set or available through EAS config.
-- iOS/Android notification credentials configured in EAS.
+- iOS/Android notification credentials configured in EAS for `com.pulsesoc.nativeapp`.
 - Physical devices for push token registration.
 
 Exact setup commands:
@@ -163,6 +168,46 @@ Pass criteria:
 - `/api/alerts/channel-readiness` shows push ready for the signed-in device/user.
 - `POST /api/alerts/test/push` returns a success or queued/sent state.
 - `push_delivery_jobs` and `expo_push_tickets` show the provider path.
+
+## EAS Build Identity
+
+Current repository state:
+
+- `mobile-native/app.json` declares iOS bundle identifier `com.pulsesoc.nativeapp`.
+- `mobile-native/app.json` declares Android package `com.pulsesoc.nativeapp`.
+- `mobile-native/eas.json` includes development, simulator, preview, and production profiles for the parallel native app.
+
+Native provider/device QA build expectation:
+
+- iOS development/internal builds must install as `com.pulsesoc.nativeapp`.
+- Android development/internal builds must install as `com.pulsesoc.nativeapp`.
+- EAS credentials must be created or selected for the native QA identity only.
+- Existing `com.pulsesoc.app` credentials must remain untouched.
+
+EAS identity checks:
+
+```bash
+cd mobile-native
+npx expo config --type public
+npx eas-cli credentials
+```
+
+## Push Token Registration Provider Metadata
+
+Current repository state:
+
+- Native registration sends Expo tokens to existing `/api/push/subscribe`.
+- Native registration includes provider `expo`.
+- Native registration includes subscription metadata and `device_type: "native"`.
+- Native registration uses the existing session/account authority.
+
+Native provider/device QA expectations:
+
+- Token registration should identify the client as native, not the production WebView shell.
+- The backend should be able to distinguish the native QA app identity from existing production app tokens through provider metadata, app version/build metadata, bundle/package identity where available, or scoped QA account/device records.
+- Delivery debugging should correlate push subscription records, `push_delivery_jobs`, `expo_push_tickets`, and `notification_delivery_logs`.
+
+Do not add native-only entitlement or alert-delivery logic to the client. The backend remains authoritative.
 
 ## SMS Readiness
 
@@ -259,6 +304,11 @@ Not verified yet:
 - Cold-start notification tap.
 - Background notification tap.
 - Foreground notification tap.
+
+Native QA target:
+
+- All installed-app alert tap tests should use `com.pulsesoc.nativeapp`.
+- Production `com.pulsesoc.app` tap behavior should not be changed during this QA pass.
 
 ## Lock-Screen Behavior Plan
 
@@ -396,11 +446,23 @@ Runtime logs:
 - iOS Console logs for APNs receipt/tap behavior.
 - Android `adb logcat` logs for notification channel/tap behavior.
 
+Provider delivery log checklist:
+
+- Confirm alert rule ID.
+- Confirm alert event ID.
+- Confirm user/account ID.
+- Confirm provider/channel name.
+- Confirm delivery status.
+- Confirm provider ticket or receipt ID when available.
+- Confirm `push_trace_id` correlation.
+- Confirm notification tap target/deep link.
+- Confirm fallback notification creation when an external provider fails.
+
 ## Physical Device Alert Test Plan
 
 ### iPhone
 
-1. Build/install the development build for the selected bundle ID.
+1. Build/install the development build for `com.pulsesoc.nativeapp`.
 2. Sign in with a QA account.
 3. Accept notification permission.
 4. Register push from Settings.
@@ -414,6 +476,7 @@ Runtime logs:
 12. Tap the notification.
 13. Confirm native Alert Management opens the correct alert detail.
 14. Inspect delivery logs and Expo ticket/receipt state.
+15. Confirm no production `com.pulsesoc.app` provider state changed.
 
 ### Android
 
@@ -430,6 +493,25 @@ Runtime logs:
 11. Tap the notification.
 12. Confirm native Alert Management opens the correct alert detail.
 13. Inspect `adb logcat`, delivery logs, and Expo ticket/receipt state.
+14. Confirm no production WebView app provider state changed.
+
+## Rollback And No-Production-Impact Plan
+
+Rules for native provider/device QA:
+
+- Keep `com.pulsesoc.app` protected for the current production app.
+- Use `com.pulsesoc.nativeapp` for native QA builds and provider credentials.
+- Do not overwrite production APNs, FCM, Expo, SMS, email, or Telegram credentials.
+- Do not change production notification copy, production WebView routes, production provider routing, or production subscription behavior during this QA identity setup.
+- If native provider QA fails, disable or remove only the native QA credentials/builds/tokens and leave production provider state unchanged.
+
+Rollback checks:
+
+- Remove or disable native QA device tokens from the QA account if a token is bad.
+- Disable native QA APNs/FCM credentials in EAS/provider consoles if misconfigured.
+- Re-run channel readiness for the QA account.
+- Confirm production `com.pulsesoc.app` readiness remains unchanged.
+- Confirm production users continue receiving existing WebView/app notifications.
 
 ## Commands
 
@@ -487,20 +569,21 @@ Reasons:
 - No physical device flow was executed in this mission.
 - Local machine still needs Android/iOS tooling completion from the previous device QA report.
 - Provider credentials are external runtime secrets and were not exposed or modified.
-- The parallel native app bundle/package identity must be explicitly reconciled with provider credentials before APNs/FCM QA.
+- The native QA identity is now selected as `com.pulsesoc.nativeapp`, but credentials, provisioning, provider setup, and physical-device delivery remain unverified.
 
 ## Next Recommendation
 
-Next highest-value action: create a repeatable Alert Provider Device QA fixture and run the first physical-device push registration pass.
+Next highest-value action: configure provider credentials for `com.pulsesoc.nativeapp` and run the first physical-device push registration pass.
 
 Do this before building another large native feature.
 
 Safest next slice:
 
-1. Decide whether provider QA targets existing `com.pulsesoc.app` or parallel `com.pulsesoc.nativeapp`.
-2. If targeting `mobile-native`, add scoped multi-bundle APNs readiness support or configure runtime APNs credentials for `com.pulsesoc.nativeapp` without disturbing `com.pulsesoc.app`.
-3. Configure EAS project ID and push credentials.
+1. Keep `com.pulsesoc.app` protected for production.
+2. Configure EAS project ID and APNs/FCM credentials for `com.pulsesoc.nativeapp`.
+3. Add scoped multi-bundle APNs readiness support if backend readiness must validate both production and native QA identities.
 4. Install development builds on one iPhone and one Android device.
 5. Register push from Settings.
 6. Run Alert Management push/channel tests.
-7. Record delivery logs, provider responses, and notification-tap results.
+7. Record delivery logs, provider responses, notification-tap results, and lock-screen behavior.
+8. Fix only provider/device blockers found.
