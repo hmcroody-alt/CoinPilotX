@@ -3,6 +3,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -54,6 +55,7 @@ export function LiveScreen({ route, navigation }: Props) {
   const [busy, setBusy] = useState("");
   const [joined, setJoined] = useState(false);
   const [muted, setMuted] = useState(true);
+  const [playbackFailed, setPlaybackFailed] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   async function load(mode: "initial" | "refresh" = "initial") {
@@ -91,6 +93,7 @@ export function LiveScreen({ route, navigation }: Props) {
     setState(null);
     setMessages([]);
     setJoined(false);
+    setPlaybackFailed(false);
     await refreshLiveState(item.id, "open");
     handleJoin(item.id).catch(() => undefined);
   }
@@ -104,6 +107,7 @@ export function LiveScreen({ route, navigation }: Props) {
     } else {
       setSelected({ id: liveId, live_id: liveId, title: "PulseSoc Live", creator_name: "PulseSoc Creator" });
     }
+    setPlaybackFailed(false);
     await refreshLiveState(liveId, "open");
     handleJoin(liveId).catch(() => undefined);
   }
@@ -177,8 +181,14 @@ export function LiveScreen({ route, navigation }: Props) {
     setState(null);
     setMessages([]);
     setJoined(false);
+    setPlaybackFailed(false);
     setError("");
     if (initialLiveId && navigation?.canGoBack()) navigation.goBack();
+  }
+
+  function navigateToHostProfile(item: PulseLiveItem | null | undefined) {
+    const profileKey = String(item?.author?.username || item?.author?.public_player_id || item?.author?.user_id || "").trim();
+    if (profileKey) navigation?.navigate("ProfileDetail", { profileKey, title: item?.creator_name || "Profile" });
   }
 
   useEffect(() => {
@@ -201,11 +211,28 @@ export function LiveScreen({ route, navigation }: Props) {
     };
   }, [selected?.id]);
 
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (status) => {
+      if (status !== "active") return;
+      if (selected?.id) {
+        refreshLiveState(selected.id, "manual").catch(() => undefined);
+        listLiveChat(selected.id).then(setMessages).catch(() => undefined);
+      } else {
+        load("refresh").catch(() => undefined);
+      }
+    });
+    return () => subscription.remove();
+  }, [selected?.id]);
+
   const active = state?.discovery || selected;
   const activeLiveId = Number(active?.id || state?.live_id || 0);
   const playbackUrl = useMemo(() => livePlaybackUrl(state || active), [state, active]);
   const posterUrl = useMemo(() => livePosterUrl(state || active), [state, active]);
-  const canPlayNative = liveSupportsNativePlayback(state || active);
+  const canPlayNative = liveSupportsNativePlayback(state || active) && !playbackFailed;
+
+  useEffect(() => {
+    setPlaybackFailed(false);
+  }, [playbackUrl, activeLiveId]);
 
   if (loading && !items.length && !active) {
     return (
@@ -244,7 +271,10 @@ export function LiveScreen({ route, navigation }: Props) {
                 isMuted={muted}
                 usePoster={Boolean(posterUrl)}
                 posterSource={posterUrl ? { uri: posterUrl } : undefined}
-                onError={() => setError("Native playback could not start. Use web fallback for this Live.")}
+                onError={() => {
+                  setPlaybackFailed(true);
+                  setError("Native playback could not start. Use web fallback for this Live.");
+                }}
               />
             ) : (
               <View style={styles.unsupported}>
@@ -264,7 +294,7 @@ export function LiveScreen({ route, navigation }: Props) {
 
           <View style={styles.viewerInfo}>
             <Text style={styles.viewerTitle} numberOfLines={2}>{active.title || "PulseSoc Live"}</Text>
-            <Pressable onPress={() => navigation?.navigate("ProfileDetail", { profileKey: String(active.author?.username || active.author?.public_player_id || active.author?.user_id || ""), title: active.creator_name || "Profile" })}>
+            <Pressable onPress={() => navigateToHostProfile(active)}>
               <Text style={styles.viewerMeta} numberOfLines={1}>{active.creator_name || active.author?.display_name || "PulseSoc Creator"} · {active.category || "Live"}</Text>
             </Pressable>
             <Text style={styles.viewerMeta}>{Number(state?.viewer_count || active.viewer_count || 0)} watching · {state?.playback?.preferred_transport || "state"} · {joined ? "joined" : "local leave available"}</Text>
@@ -337,7 +367,7 @@ export function LiveScreen({ route, navigation }: Props) {
           <Text style={styles.sectionTitle}>Live now</Text>
         </View>
       }
-      renderItem={({ item }) => <LiveCard item={item} onOpen={openLive} onHostPress={() => navigation?.navigate("ProfileDetail", { profileKey: String(item.author?.username || item.author?.public_player_id || item.author?.user_id || ""), title: item.creator_name || "Profile" })} />}
+      renderItem={({ item }) => <LiveCard item={item} onOpen={openLive} onHostPress={() => navigateToHostProfile(item)} />}
       ListEmptyComponent={
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No one is live right now</Text>
@@ -347,7 +377,7 @@ export function LiveScreen({ route, navigation }: Props) {
       ListFooterComponent={
         <View style={styles.footer}>
           <Text style={styles.sectionTitle}>Scheduled</Text>
-          {scheduled.length ? scheduled.map((item) => <LiveCard key={`scheduled-${item.id}`} item={item} onOpen={openLive} onHostPress={() => undefined} />) : (
+          {scheduled.length ? scheduled.map((item) => <LiveCard key={`scheduled-${item.id}`} item={item} onOpen={openLive} onHostPress={() => navigateToHostProfile(item)} />) : (
             <Text style={styles.footerNote}>Scheduled Live/events will appear here when the existing API returns them to native.</Text>
           )}
         </View>

@@ -31,6 +31,7 @@ Completed native foundations:
 - Groups/Communities + Rooms Foundation: native Groups tab/detail route, thin read-only group JSON bridge, communities browse/search, room rail, group detail, rules/member metadata, compact group feed preview, join/leave, report, group chat open, room open, offline cache, and group/room deep-link routing through existing group, room, and Messenger APIs.
 - Architecture Health Report + Shared Core Consolidation: native architecture audit, shared cache helper under `mobile-native/src/core/cache.ts`, first refactor of Groups/Saved/Marketplace cache wrappers, duplicate-pattern inventory, production WebView safety check, and next Live Discovery recommendation.
 - Live Discovery + Live Viewer Foundation: native Live tab/detail route, Live Now discovery through existing `/api/pulse/live-now`, native viewer shell using existing playback manifest URLs, join viewer state, chat read/send, reactions, viewer count/state refresh, offline cache, deep-link routing for Live links, and safe web fallback for Go Live/Studio/hosting/co-hosting/unsupported playback.
+- Live Viewer Device QA + Hardening: documented unavailable simulator/device tooling, added AppState foreground recovery for Live state/chat/list refresh, added playback failure fallback state, guarded host/profile navigation from empty profile keys, preserved safe web fallback for Studio/hosting/co-hosting/calls, and kept device-only playback claims unverified.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -56,6 +57,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_groups_progress.md`
 - `reports/pulsesoc_native_architecture_health.md`
 - `reports/pulsesoc_native_live_progress.md`
+- `reports/pulsesoc_native_live_device_qa.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -75,6 +77,7 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_groups_audit.py`
 - `scripts/pulsesoc_native_architecture_health_audit.py`
 - `scripts/pulsesoc_native_live_audit.py`
+- `scripts/pulsesoc_native_live_device_qa_audit.py`
 
 ## Remaining Major Features
 
@@ -84,8 +87,8 @@ Completed supporting reports/audits:
 - Growth Center
 - Crypto/market alerts
 - Intelligence Center
-- Premium/entitlements
 - Creator Studio
+- Premium/entitlements
 
 ## Codebase Reconnaissance
 
@@ -117,6 +120,7 @@ Existing backend/web surfaces inspected:
 - Saved APIs and web route: `/pulse/saved`, `GET/POST /api/pulse/saved`, saved collections, delete, and move endpoints
 - Groups and rooms routes: `/pulse/groups`, `/pulse/groups/create`, `/pulse/groups/<group_slug>`, `POST /api/pulse/groups/create`, join/leave APIs, chat-open APIs, invite/report/update/moderation APIs, group post/comment APIs, `pulse_default_room_cards()`, and `pulse_ensure_default_rooms(...)`
 - Live surfaces: `/pulse/live`, `/pulse/live/studio`, `/api/pulse/live-now`, `/api/pulse/live/<id>/state`, `/api/pulse/live/<id>/join`, `/api/pulse/live/<id>/chat`, `/api/pulse/live/<id>/react`, LiveKit direct playback fallback, Mux egress handling, live-session state, live chat, replay/feed insertion, and the existing live audit suite.
+- Premium/entitlement surfaces: `/api/premium/status`, `/api/premium/checkout`, `/api/premium/billing-portal`, `/api/dashboard/economy/state`, Stripe hosted checkout/portal routes, `premium_entitlement_service`, `premium_capability_engine`, `premium_identity_engine`, `pulse_premium_profiles`, `pulse_subscriptions`, and `pulse_premium_entitlements`.
 - Current native reuse surface: repeated API wrappers, AsyncStorage cache functions, screen-level loading/empty/error/offline states, native/web fallback routing, card layouts, action busy states, media preview/viewer hooks, tab/stack route patterns, and new Live viewer/discovery routing across Feed, Messenger, Notifications, Profile, Reels, Status, Marketplace, Search, Saved, Groups, and Live.
 
 Existing data/business logic that should remain server-authoritative:
@@ -146,74 +150,80 @@ Existing data/business logic that should remain server-authoritative:
 - group membership, roles, moderation, invite links, group chats, and group post/comment rules
 - shared native routing, caching, error, card, and media-viewer behavior that should be consolidated before deeper Live/Calls/Premium work
 - LiveKit/Mux session authority, live room state, live chat, replay creation, feed insertion, destination handling, and creator/host permissions
+- premium subscription status, founder membership, entitlement grants/revocation, profile themes, premium badges, billing portal eligibility, and Stripe checkout state
 
 ## Recommended Next Feature
 
-Recommendation: run Native Live Viewer Device QA + Hardening next.
+Recommendation: build Native Premium + Entitlements Foundation next.
 
-This should come before native Go Live, native LiveKit hosting, native calls, Creator Studio, Growth Center, and Premium.
+This should come before native Go Live, native LiveKit hosting, native calls, Creator Studio, Growth Center, and advanced creator monetization.
 
 ## Why This Comes Next
 
-- Native Live now reaches the device-sensitive part of the migration: video playback, audio, chat keyboard behavior, app resume, and notification deep links.
-- Live hosting should not be built until viewer playback and fallback behavior are verified on simulator or real devices.
-- The current implementation intentionally keeps Go Live/Studio/hosting/co-hosting on web fallback, so the safest next move is to harden the viewer slice.
-- This recommendation is based on the current Live backend and native migration state after implementing the Live viewer foundation.
+- Live viewer has been hardened as far as static/local QA can safely prove, but hosting/calls still require real-device playback validation.
+- Premium/entitlement state already exists server-side and is used by Profile, themes, badges, creator readiness, billing, and marketplace/premium surfaces.
+- Native Profile, Settings, Notifications, Feed, Marketplace, and future Creator Studio need a consistent entitlement layer for feature parity.
+- Premium can use safe web/provider checkout and billing portal fallback without rebuilding payment logic in native.
+- This recommendation is based on the current premium backend and native migration state after the Live viewer hardening checkpoint.
 
 ## Reusable Existing PulseSoc Logic
 
 Reuse directly:
 
-- Existing `/pulse/live`, `/pulse/live/studio`, `/api/pulse/live-now`, `/api/pulse/live/<id>/state`, `/api/pulse/live/<id>/join`, `/api/pulse/live/<id>/chat`, `/api/pulse/live/<id>/react`, and related LiveKit/Mux live API routes.
-- Existing LiveKit/Mux bridge, direct fallback, egress handling, and playback URL selection behavior.
-- Existing live session, live chat, live destination, replay, and feed insertion database/services.
-- Existing moderation, notification, profile, and feed insertion behavior.
-- Existing native Live API wrapper/screen, navigation, notification routing, Search/Saved/Profile/Messenger/Media Viewer integrations, and shared `readJsonCache`/`writeJsonCache` cache helpers.
+- Existing `GET /api/premium/status`.
+- Existing `POST /api/premium/checkout`.
+- Existing `POST /api/premium/billing-portal`.
+- Existing `GET /api/dashboard/economy/state`.
+- Existing `premium_entitlement_service`, `premium_capability_engine`, `premium_identity_engine`, and premium visibility helpers.
+- Existing `pulse_premium_profiles`, `pulse_subscriptions`, `pulse_premium_entitlements`, `premium_entitlements`, and checkout attempt/payment audit records.
+- Existing Stripe hosted checkout and billing portal routes.
+- Existing native Profile, Settings, Marketplace web/provider handoff pattern, notification routing, API/cache helpers, and loading/error/offline patterns.
 
 Do not duplicate in native:
 
 - Backend business logic.
-- LiveKit token/session authorization.
-- Mux egress/processing decisions.
-- Host/cohost/restream business rules.
-- Live moderation and destination behavior.
-- Replay/feed insertion logic.
+- Stripe checkout/session creation.
+- Billing portal/session creation.
+- Premium entitlement grants/revocation.
+- Founder membership rules.
+- Premium visibility, badge, theme, creator readiness, or marketplace entitlement decisions.
+- Payment, refund, webhook, and provider business logic.
 
 ## What Must Be Rebuilt Natively
 
-- Real-device/simulator QA for Live discovery.
-- Real-device/simulator QA for HLS playback and unsupported playback fallback.
-- Chat keyboard and send/read verification.
-- Reaction and viewer-count refresh verification.
-- Notification/deep-link routing into Live detail.
-- Foreground/background recovery.
-- Fixes for blockers found during QA only.
+- Native Premium/Entitlements screen.
+- Plan/subscription/founder status display.
+- Entitlement-aware feature cards.
+- Profile/theme/badge surfacing where existing APIs support it.
+- Settings/Profile entry points.
+- Checkout and billing portal buttons that open existing safe web/provider flows.
+- Loading, empty, error, offline, locked, active, unavailable, and provider-not-configured states.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Simulator or real-device access.
-- Authenticated account with access to PulseSoc Live APIs.
-- At least one active or replayable Live session with supported playback URL, or a controlled staging fixture.
-- Continued Studio/Go Live web fallback.
+- Confirm premium status payload shape and dashboard economy state payload.
+- Confirm iOS/native checkout boundary and route all paid-digital checkout through approved existing web/provider flows.
+- Confirm Profile/theme/badge payload availability.
+- Preserve existing Stripe webhook, checkout, billing portal, and entitlement services.
 
 Blockers:
 
-- Device video playback and background/resume behavior remain unverified in this environment.
-- LiveKit egress quota or source-state issues can affect Mux HLS availability.
-- No backend viewer-leave endpoint was found; native leave is currently local close/leave state only.
-- Native hosting, cohost, camera, mic, and restream controls remain out of scope.
+- Native paid-digital UX must avoid duplicating payment/provider logic.
+- Checkout availability can be provider/config dependent.
+- Some premium cards may need unavailable/locked states if backend payloads do not expose full detail.
+- App Store policy may require careful checkout routing depending on surface and product type.
 
 ## Risk Level
 
-Risk: Medium-high.
+Risk: Medium.
 
 Reasons:
 
-- Live playback and audio are device-specific and cannot be fully proven by TypeScript/static audits.
-- Chat and keyboard behavior need small-device QA.
-- Backend risk stays low because hardening should keep server-owned LiveKit/Mux/session state authoritative.
+- Payment-adjacent UI is high-consequence, but risk stays medium if native only displays server-owned status and opens existing provider/web flows.
+- Backend risk stays low because native should not create checkout sessions, entitlements, or billing state locally.
+- UX risk is moderate because locked/active/unavailable states must be clear and policy-safe.
 
 ## Estimated Complexity
 
@@ -221,31 +231,32 @@ Complexity: Medium.
 
 Recommended first slice:
 
-- Exercise the existing Live tab and LiveDetail route on simulator/real device.
-- Test supported playback URLs, unsupported fallback, chat, reactions, join, local leave, and refresh.
-- Verify notification/deep links for `/pulse/live/<id>` and `/pulse/reels?live=<id>`.
-- Fix only QA blockers in the current viewer slice.
-- Keep Go Live/Studio/cohost/restream on web fallback.
+- Inspect premium status, checkout, billing portal, and dashboard economy payloads.
+- Build read-only premium status first.
+- Add entitlement cards from server-owned status only.
+- Add web/provider checkout and billing portal handoff.
+- Wire Settings/Profile entry points.
+- Add a static audit that verifies no native Stripe/payment logic or entitlement grants are implemented.
 
 Defer from first slice:
 
-- Native Live hosting and camera broadcast.
-- Native cohost/restream controls.
-- Native LiveKit calls.
-- Background audio/camera/mic controls.
-- Any new Live business logic.
+- In-app purchase implementation.
+- Native Stripe SDK or local payment calculations.
+- Entitlement grants/revocation.
+- Refund/dispute flows.
+- Creator Studio monetization tools beyond status display.
 
 ## Safest Implementation Plan
 
-1. Run the native app on simulator or real device.
-2. Verify Live discovery loads from existing `/api/pulse/live-now`.
-3. Verify LiveDetail state refresh, join, chat, reactions, share, and local leave.
-4. Verify HLS/Mux playback where the server exposes a supported playback URL.
-5. Verify unsupported LiveKit direct/cohost/Studio states open web fallback.
-6. Verify notification/deep-link routing.
-7. Fix only blockers found during QA.
-8. Update the Live QA report and keep native hosting out of scope.
+1. Inspect `/api/premium/status`, `/api/premium/checkout`, `/api/premium/billing-portal`, and `/api/dashboard/economy/state` payloads.
+2. Add a native premium API wrapper that only consumes existing backend status and provider handoff URLs.
+3. Build a native Premium/Entitlements screen with active, locked, unavailable, and provider-not-configured states.
+4. Wire Settings/Profile entry points and deep links where supported.
+5. Open checkout and billing portal through existing safe web/provider handoff only.
+6. Add progress report and audit script.
+7. Run the standard native verification suite.
+8. Keep payments, entitlements, Stripe webhooks, and billing business logic server-authoritative.
 
 ## Recommendation Summary
 
-Run Native Live Viewer Device QA + Hardening next. The Live viewer foundation now exists, but Live playback and foreground/background behavior are device-sensitive enough that the next checkpoint should verify and harden this slice before any native hosting, calls, Creator Studio, Growth, or Premium expansion.
+Build Native Premium + Entitlements Foundation next. The backend already owns subscription, founder, entitlement, billing portal, Stripe checkout, premium profile/theme, and capability state, and the native app now needs a server-authoritative Premium layer before Creator Studio, Growth, native hosting, or calls create more gated surfaces.
