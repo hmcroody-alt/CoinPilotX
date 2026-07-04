@@ -5182,33 +5182,22 @@ def send_account_confirmation_email(user, source="signup"):
         public_app_base_url(),
     )
     subject = "Verify your PulseSoc email"
-    text_body = f"Verify your email: {verification_link}"
-    html_body = f"<p><a href='{verification_link}'>Verify email</a></p>"
-    queued = enqueue_platform_email(
-        user.get("email"),
-        subject,
-        text_body,
-        html_body,
-        user.get("user_id"),
-        email_type="email_verification",
-        idempotency_key=f"email-verification:{int(user.get('user_id') or 0)}:{hashlib.sha256(token.encode('utf-8')).hexdigest()[:20]}",
-        metadata={"source": source},
-    )
-    ok = bool(queued.get("ok"))
+    idempotency_key = f"email-verification:{int(user.get('user_id') or 0)}:{hashlib.sha256(token.encode('utf-8')).hexdigest()[:20]}"
+    ok = bool(send_email_verification(user, verification_link, trace_id=trace_id, idempotency_key=idempotency_key))
     if not ok:
         logging.warning(
             "ACCOUNT_CONFIRMATION_EMAIL_FAILED trace_id=%s user_id=%s source=%s reason=%s",
-            queued.get("trace_id") or trace_id,
+            trace_id,
             user.get("user_id"),
             source,
-            queued.get("error") or "Email job could not be queued.",
+            getattr(send_platform_email, "last_error", "") or "Email provider did not accept the verification email.",
         )
     return {
         "ok": bool(ok),
-        "queued": bool(ok),
-        "trace_id": queued.get("trace_id") or trace_id,
+        "queued": False,
+        "trace_id": trace_id,
         "verification_link_base": public_app_base_url(),
-        "message": "Confirmation email queued." if ok else "Confirmation email could not be queued.",
+        "message": "Confirmation email sent." if ok else f"Confirmation email could not be delivered. {getattr(send_platform_email, 'last_error', '') or ''}".strip(),
     }
 
 
@@ -14181,6 +14170,7 @@ def admin_emails_page():
     has_provider_status = "provider_status_code" in email_columns
     filters = {
         "all": ("All", ""),
+        "queued": ("Queued", "status='queued'"),
         "sent": ("Sent", "status LIKE 'sent%'"),
         "failed": ("Failed", "status LIKE 'failed%' OR status='failed'"),
         "brevo_401": ("Brevo 401", "status IN ('failed_brevo_401','failed_brevo_unauthorized','failed_brevo_unauthorized_ip')" + (" OR provider_status_code=401" if has_provider_status else "")),
@@ -14200,6 +14190,8 @@ def admin_emails_page():
     total_emails = int((cur.fetchone() or {"c": 0})["c"] or 0)
     cur.execute("SELECT COUNT(*) AS c FROM email_logs WHERE status LIKE 'sent%'")
     sent_count = int((cur.fetchone() or {"c": 0})["c"] or 0)
+    cur.execute("SELECT COUNT(*) AS c FROM email_logs WHERE status='queued'")
+    queued_log_count = int((cur.fetchone() or {"c": 0})["c"] or 0)
     cur.execute("SELECT COUNT(*) AS c FROM email_logs WHERE status LIKE 'failed%' OR status='failed'")
     failed_count = int((cur.fetchone() or {"c": 0})["c"] or 0)
     cur.execute("SELECT COUNT(*) AS c FROM email_logs WHERE status='failed_brevo_unauthorized_ip' OR lower(COALESCE(safe_error_reason,error_message,'')) LIKE '%ip%authorized%' OR lower(COALESCE(safe_error_reason,error_message,'')) LIKE '%ip blocked%'")
@@ -14208,7 +14200,7 @@ def admin_emails_page():
     pending_verification_count = int((cur.fetchone() or {"c": 0})["c"] or 0)
     cur.execute("SELECT COUNT(*) AS c FROM email_logs WHERE status LIKE 'failed_brevo%'")
     brevo_error_count = int((cur.fetchone() or {"c": 0})["c"] or 0)
-    cur.execute("SELECT COUNT(*) AS c FROM failed_email_queue WHERE status IN ('pending','failed','retry_ready')")
+    cur.execute("SELECT COUNT(*) AS c FROM failed_email_queue WHERE status IN ('pending','failed','retry_ready','processing')")
     queued_retry_count = int((cur.fetchone() or {"c": 0})["c"] or 0)
     cur.execute("SELECT created_at FROM email_logs WHERE COALESCE(provider,'brevo')='brevo' AND status LIKE 'sent%' ORDER BY created_at DESC LIMIT 1")
     latest_brevo_sent_at = (cur.fetchone() or {"created_at": ""})["created_at"] or ""
@@ -14266,6 +14258,8 @@ def admin_emails_page():
             label, cls = "Rate Limited", "failed"
         elif raw.startswith("failed") or raw == "failed":
             label, cls = "Failed", "failed"
+        elif raw == "queued":
+            label, cls = "Queued", "queued"
         else:
             label, cls = raw or "Unknown", "neutral"
         return f"<span class='email-badge {cls}'>{clean_html(label)}</span>"
@@ -14314,7 +14308,8 @@ def admin_emails_page():
       .email-notice.ok{{border-color:rgba(54,229,143,.32);background:rgba(54,229,143,.1);color:#b9ffd8}}
       .email-filters{{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}}.email-filter{{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:8px 10px;text-decoration:none;color:#dffcff;background:rgba(255,255,255,.04);font-weight:850}}.email-filter.active{{background:linear-gradient(135deg,#36e58f,#6edff6);color:#04101a;border:0}}
       .email-table-wrap{{overflow:auto}}.email-table{{min-width:980px;width:100%;border-collapse:collapse}}.email-table th,.email-table td{{padding:10px;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top;text-align:left}}.email-subject{{max-width:260px}}
-      .email-badge{{display:inline-flex;border-radius:999px;padding:5px 8px;font-size:12px;font-weight:900}}.email-badge.sent{{background:rgba(54,229,143,.15);color:#b9ffd8}}.email-badge.failed,.email-badge.unauthorized{{background:rgba(255,107,122,.16);color:#ffd4dc}}.email-badge.not-configured{{background:rgba(255,209,102,.14);color:#ffe6a6}}.email-badge.neutral{{background:rgba(255,255,255,.08);color:#dbeafe}}
+      .email-table td{{word-break:break-word}}.email-table td:nth-child(2),.email-table td:nth-child(11){{white-space:nowrap}}
+      .email-badge{{display:inline-flex;border-radius:999px;padding:5px 8px;font-size:12px;font-weight:900}}.email-badge.sent{{background:rgba(54,229,143,.15);color:#b9ffd8}}.email-badge.failed,.email-badge.unauthorized{{background:rgba(255,107,122,.16);color:#ffd4dc}}.email-badge.not-configured{{background:rgba(255,209,102,.14);color:#ffe6a6}}.email-badge.queued{{background:rgba(110,223,246,.14);color:#c9fbff}}.email-badge.neutral{{background:rgba(255,255,255,.08);color:#dbeafe}}
       .email-pager{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;flex-wrap:wrap}}
       @media(max-width:720px){{.email-admin-card span{{font-size:22px}}.email-table{{min-width:860px}}}}
     </style>
@@ -14324,6 +14319,7 @@ def admin_emails_page():
     <div class="email-admin-grid">
         <div class="email-admin-card"><strong>Total Emails</strong><span>{total_emails}</span></div>
         <div class="email-admin-card"><strong>Successful Deliveries</strong><span>{sent_count}</span></div>
+        <div class="email-admin-card"><strong>Queued Logs</strong><span>{queued_log_count}</span></div>
         <div class="email-admin-card"><strong>Failed Emails</strong><span>{failed_count}</span></div>
         <div class="email-admin-card"><strong>Blocked Emails</strong><span>{blocked_email_count}</span></div>
         <div class="email-admin-card"><strong>Pending Verification Emails</strong><span>{pending_verification_count}</span></div>
@@ -14371,7 +14367,7 @@ def admin_emails_page():
       <form method="post" action="/admin/emails/retry-failed" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <input type="hidden" name="csrf_token" value="{get_csrf_token()}">
         <input name="limit" type="number" min="1" max="200" value="50" style="min-height:44px;max-width:120px">
-        <button class="button" type="submit">Retry Failed Queue</button>
+        <button class="button" type="submit">Process Pending Queue</button>
       </form>
       {f'''
       <form method="post" action="/admin/users/set-password-by-email" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;border-top:1px solid rgba(255,255,255,.1);padding-top:12px">
@@ -14429,7 +14425,7 @@ def admin_emails_retry_failed_queue():
     limit = safe_int(request.form.get("limit"), 50)
     result = retry_failed_email_queue(limit=limit)
     log_admin_audit(admin.get("id"), "admin_failed_email_queue_retry", "email", "", result)
-    return redirect("/admin/emails?filter=failed")
+    return redirect("/admin/emails?filter=queued")
 
 
 @webhook_app.route("/api/admin/email/diagnostics", methods=["GET"])
@@ -84206,6 +84202,66 @@ def log_email_status(user_id, email, subject, status, email_type="", provider="b
                 pass
 
 
+def finalize_email_log_for_trace(trace_id, queued_row, status, result=None, safe_error_reason="", retry_count=0, delivery_status=""):
+    """Update the original queued email log after the outbox job reaches Brevo."""
+    trace_id = str(trace_id or "").strip()
+    result = result or {}
+    if not trace_id:
+        return False
+    sent_at = datetime.now().isoformat() if str(status or "").startswith("sent") else ""
+    metadata = {
+        "queue_id": (queued_row or {}).get("id"),
+        "queue_status": delivery_status or status,
+        "provider_response": result.get("provider_response") or result.get("response") or {},
+        "missing_fields": result.get("missing_fields") or [],
+    }
+    conn = None
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE email_logs
+            SET status=?, provider=?, provider_status_code=?, provider_message_id=?,
+                safe_error_reason=?, error_message=?, retry_count=?, delivery_status=?,
+                sent_at=CASE WHEN ?<>'' THEN ? ELSE sent_at END,
+                metadata=?
+            WHERE trace_id=?
+            """,
+            (
+                status,
+                "brevo",
+                result.get("status_code"),
+                str(result.get("message_id") or "")[:240],
+                safe_error_reason or "",
+                safe_error_reason or "",
+                int(retry_count or 0),
+                delivery_status or ("sent" if str(status or "").startswith("sent") else "failed" if str(status or "").startswith("failed") else ""),
+                sent_at,
+                sent_at,
+                json.dumps(metadata, default=str)[:2000],
+                trace_id,
+            ),
+        )
+        updated = int(getattr(cur, "rowcount", 0) or 0)
+        conn.commit()
+        return updated > 0
+    except Exception as exc:
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        logging.warning("EMAIL_LOG_FINALIZE_FAILED trace_id=%s status=%s error=%s", trace_id, status, exc.__class__.__name__)
+        return False
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 def queue_failed_email(user_id, recipient_email, email_type, subject, html_body="", text_body="", error_message="", metadata=None, *, idempotency_key="", due_now=False):
     """Persist an email outbox job without contacting the provider."""
     conn = None
@@ -84352,6 +84408,7 @@ def process_email_delivery_jobs(limit=10, provider_send=None):
         ok = bool(result.get("ok"))
         max_attempts = int(row.get("max_attempts") or 5)
         final_status = "sent" if ok else "dead_letter" if attempts >= max_attempts else "retry_ready"
+        email_log_status = email_status_from_result(result)
         next_retry_at = "" if ok or final_status == "dead_letter" else _email_retry_at(attempts)
         safe_error = "" if ok else safe_brevo_error_reason(result)
         conn = db()
@@ -84382,6 +84439,29 @@ def process_email_delivery_jobs(limit=10, provider_send=None):
             dead_letter += 1
         else:
             retried += 1
+        if not finalize_email_log_for_trace(
+            row.get("trace_id") or "",
+            row,
+            email_log_status,
+            result,
+            safe_error,
+            attempts,
+            "sent" if ok else final_status,
+        ):
+            log_email_status(
+                row.get("user_id") or 0,
+                row.get("recipient_email") or "",
+                row.get("subject") or "",
+                email_log_status,
+                email_type=row.get("email_type") or "transactional",
+                provider="brevo",
+                provider_status_code=result.get("status_code"),
+                provider_message_id=result.get("message_id") or "",
+                safe_error_reason=safe_error,
+                metadata={"queue_id": queue_id, "queue_status": final_status},
+                trace_id=row.get("trace_id") or "",
+                retry_count=attempts,
+            )
         logging.info("EMAIL_JOB_PROCESSED id=%s trace_id=%s status=%s attempts=%s", queue_id, row.get("trace_id") or "", final_status, attempts)
     return {"attempted": len(rows), "sent": sent, "retry": retried, "dead_letter": dead_letter}
 
@@ -84448,11 +84528,12 @@ def email_sender_identity():
     return config["email"], config["name"]
 
 
-def send_platform_email(to_email, subject, text_body, html_body="", user_id=None):
+def send_platform_email(to_email, subject, text_body, html_body="", user_id=None, *, email_type="transactional", trace_id="", idempotency_key="", queue_on_failure=True):
     send_platform_email.last_response = ""
     send_platform_email.last_error = ""
+    trace_id = trace_id or secrets.token_hex(8)
     if not to_email:
-        log_email_status(user_id or 0, "", subject, "skipped_no_email")
+        log_email_status(user_id or 0, "", subject, "skipped_no_email", email_type=email_type, trace_id=trace_id)
         send_platform_email.last_error = "skipped_no_email"
         return False
     from_email, from_name = email_sender_identity()
@@ -84470,6 +84551,7 @@ def send_platform_email(to_email, subject, text_body, html_body="", user_id=None
             subject,
             html_body or text_body.replace("\n", "<br>"),
             text_body=text_body,
+            email_type=email_type,
             user_id=user_id,
         )
         ok = bool(result.get("ok"))
@@ -84483,20 +84565,23 @@ def send_platform_email(to_email, subject, text_body, html_body="", user_id=None
             to_email,
             subject,
             status,
+            email_type=email_type,
             provider="brevo",
             provider_status_code=result.get("status_code"),
             provider_message_id=message_id,
             safe_error_reason="" if ok else send_platform_email.last_error,
             metadata={"missing_fields": result.get("missing_fields") or []},
+            trace_id=trace_id,
         )
-        if not ok:
-            queue_failed_email(user_id or 0, to_email, "transactional", subject, html_body, text_body, send_platform_email.last_error)
+        if not ok and queue_on_failure:
+            queue_failed_email(user_id or 0, to_email, email_type, subject, html_body, text_body, send_platform_email.last_error, idempotency_key=idempotency_key)
         return ok
     except Exception as exc:
         logging.info("Platform email failed: %s", exc)
         send_platform_email.last_error = str(exc)[:1000]
-        log_email_status(user_id or 0, to_email, subject, "failed_brevo_exception", safe_error_reason=send_platform_email.last_error)
-        queue_failed_email(user_id or 0, to_email, "transactional", subject, html_body, text_body, send_platform_email.last_error)
+        log_email_status(user_id or 0, to_email, subject, "failed_brevo_exception", email_type=email_type, safe_error_reason=send_platform_email.last_error, trace_id=trace_id)
+        if queue_on_failure:
+            queue_failed_email(user_id or 0, to_email, email_type, subject, html_body, text_body, send_platform_email.last_error, idempotency_key=idempotency_key)
         return False
 
 
@@ -84605,7 +84690,9 @@ def send_welcome_email_with_retry(user, override_email=None, audit_label="user")
 
 def send_signup_welcome_emails(user):
     results = {}
-    recipients = [("new_user", user.get("email")), ("support_copy", "support@pulsesoc.com")]
+    recipients = [("new_user", user.get("email"))]
+    if os.getenv("PULSESOC_SIGNUP_SUPPORT_COPY", "").strip().lower() in {"1", "true", "yes", "on"}:
+        recipients.append(("support_copy", "support@pulsesoc.com"))
     seen = set()
     for label, email in recipients:
         if not email or email in seen:
@@ -84649,31 +84736,31 @@ def send_update_signup_email(lead):
 
 
 def send_password_reset_email(user, reset_link):
-    subject = "Reset your CoinPilotX password"
+    trace_id = secrets.token_hex(8)
+    subject = "Reset your PulseSoc password"
     text = (
         f"Hi {account_display_name(user)},\n\n"
-        "Use this secure link to reset your CoinPilotX password. It expires in 1 hour:\n"
+        "Use this secure link to reset your PulseSoc password. It expires in 1 hour:\n"
         f"{reset_link}\n\n"
         "If you did not request this, ignore this email.\n\n"
         "Support: support@pulsesoc.com"
     )
-    html = branded_email_html("Reset your CoinPilotX password", f"""
+    html = branded_email_html("Reset your PulseSoc password", f"""
       <p>Hi {clean_html(account_display_name(user))},</p>
       <p>Use this secure link to reset your password. It expires in 1 hour.</p>
       <p><a href="{reset_link}" style="color:#36e58f">Reset password</a></p>
       <p>If you did not request this, ignore this email.</p>
     """)
-    queued = enqueue_platform_email(
+    return bool(send_platform_email(
         user.get("email"),
         subject,
         text,
         html,
         user.get("user_id"),
         email_type="password_reset",
+        trace_id=trace_id,
         idempotency_key=f"password-reset:{int(user.get('user_id') or 0)}:{hashlib.sha256(str(reset_link).encode('utf-8')).hexdigest()[:20]}",
-        metadata={"source": "password_reset_request"},
-    )
-    return bool(queued.get("ok"))
+    ))
 
 
 def send_password_changed_email(user):
@@ -84723,11 +84810,20 @@ def send_username_recovery_email(user):
     return send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
 
 
-def send_email_verification(user, verification_link):
-    subject = "Verify your CoinPilotX email"
-    text = f"Verify your CoinPilotX email here: {verification_link}\n\nSupport: support@pulsesoc.com"
-    html = branded_email_html("Verify your CoinPilotX email", f'<p><a href="{verification_link}" style="color:#36e58f">Verify email</a></p>')
-    return send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
+def send_email_verification(user, verification_link, *, trace_id="", idempotency_key=""):
+    subject = "Verify your PulseSoc email"
+    text = f"Verify your PulseSoc email here: {verification_link}\n\nSupport: support@pulsesoc.com"
+    html = branded_email_html("Verify your PulseSoc email", f'<p><a href="{verification_link}" style="color:#36e58f">Verify email</a></p>')
+    return send_platform_email(
+        user.get("email"),
+        subject,
+        text,
+        html,
+        user.get("user_id"),
+        email_type="email_verification",
+        trace_id=trace_id,
+        idempotency_key=idempotency_key,
+    )
 
 
 def send_trial_lifecycle_email(user, event_type):
