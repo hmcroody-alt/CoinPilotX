@@ -32,9 +32,6 @@ export const linking: LinkingOptions<RootStackParamList> = {
           postId: Number
         }
       },
-      Reels: {
-        path: "pulse/reels"
-      },
       ReelDetail: {
         path: "pulse/reels/:reelId",
         parse: {
