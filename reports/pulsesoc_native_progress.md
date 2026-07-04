@@ -18,7 +18,7 @@ Completed native foundations:
 - Notifications: native notification center, unread/badge sync, mark read, mark all read, delete, preferences, push permission state, foreground badge refresh, background tap routing structure, and native/web target fallback.
 - Home Feed + Post Detail: native feed list, pagination, pull-to-refresh, offline cache, post detail, comments, add comment, reactions, save, repost, share hook, image media cards, and `/pulse/post/<post_id>` deep-link routing through existing PulseSoc APIs.
 - Pulse AI: basic chat through existing `/api/pulse/assistant/chat`.
-- Profile: native summary through existing account/session profile data and `/api/pulse/profile/me`.
+- Profile: native current profile, public profile route, profile posts/media/about tabs, profile edit, avatar/cover upload/remove, profile theme selection, offline cache, and profile deep links through existing PulseSoc profile/feed/theme APIs.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -31,17 +31,18 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_messenger_device_qa.md`
 - `reports/pulsesoc_native_notifications_progress.md`
 - `reports/pulsesoc_native_feed_progress.md`
+- `reports/pulsesoc_native_profile_progress.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
 - `scripts/pulsesoc_native_messenger_device_qa_audit.py`
 - `scripts/pulsesoc_native_notifications_audit.py`
 - `scripts/pulsesoc_native_feed_audit.py`
+- `scripts/pulsesoc_native_profile_audit.py`
 
 ## Remaining Major Features
 
 - Feed composer
-- Profile detail and profile edit
 - Reels native player
 - Reels detail/actions/comments
 - Status viewer
@@ -80,7 +81,7 @@ Existing backend/web surfaces inspected:
 - Moderation: `services/pulse_moderation_engine.py`
 - Notifications into feed/post targets: `static/notifications.js` and server target resolver
 - Profile routes: `/pulse/profile`, `/pulse/profile/<profile_key>`, `/pulse/profile/edit`
-- Profile APIs/media: `/api/pulse/profile/me`, `/api/pulse/profile/update`, `/api/pulse/profile/avatar`, `/api/pulse/profile/cover`
+- Profile APIs/media/theme: `/api/pulse/profile/me`, `/api/pulse/profile/update`, `/api/pulse/profile/avatar`, `/api/pulse/profile/cover`, `/api/pulse/profile/avatar/remove`, `/api/pulse/profile/cover/remove`, `/api/pulse/premium/profile-theme`
 - Reels APIs: `/api/pulse/reels/feed`, `/api/pulse/reels/<reel_id>/react`, comments, save, repost, share, not-interested, follow creator
 - Status APIs: `/api/pulse/status/rail`, `/api/pulse/status`, view, react, reply, share
 
@@ -105,107 +106,111 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Feature
 
-Recommendation: build Native Profile Detail + Profile Edit next.
+Recommendation: build Native Reels Player + Reel Detail next.
 
-This should come before Reels, Status creator, Marketplace, or Calls.
+This should come before Status creator, Camera capture, Marketplace, or Calls.
 
 ## Why This Comes Next
 
-- Home Feed and Post Detail now expose author identity as a primary navigation path, but the native Profile tab is still only a signed-in summary.
-- Notifications already route profile targets into the native Profile tab; the next safest improvement is to replace that summary with a real native profile surface and profile-edit flow.
-- Profile is lower risk than Reels/Status/Camera/LiveKit because it reuses mature account/profile APIs and does not require native video, camera, microphone, lock-screen, or background audio behavior.
-- A native profile foundation unlocks author/profile navigation from feed cards, post detail, notifications, Messenger identity, creator surfaces, follow/message actions, and profile posts.
-- It keeps the migration moving through high-frequency social surfaces before the media-heavy Reels/Status pass.
+- Home Feed, Post Detail, Profile, Messenger, and Notifications now cover the core social graph and notification targets.
+- The largest remaining user-facing web fallback is media consumption, especially Reels.
+- The backend already exposes mature Reels APIs for feed, detail/actions/comments, save, repost, share, not-interested, and creator follow behavior.
+- Reels will establish reusable native video playback, media controls, creator headers, comment overlays, and gesture patterns needed by Status, media viewer, Creator Studio, Marketplace video previews, and later camera upload flows.
+- Native Reels is high leverage because it improves a performance-sensitive surface without requiring native camera creation or LiveKit call handling yet.
 
 ## Reusable Existing PulseSoc Logic
 
 Reuse directly:
 
-- `GET /api/pulse/profile/me`
-- `POST/PATCH /api/pulse/profile/update`
-- `POST /api/pulse/profile/avatar`
-- `POST /api/pulse/profile/cover`
-- `POST /api/pulse/profile/avatar/remove`
-- `POST /api/pulse/profile/cover/remove`
-- existing `/pulse/profile` and `/pulse/profile/<profile_key>` behavior as the source of parity
-- existing profile identity, premium marks, verification state, bio/location/social fields, avatar/cover storage, and media upload validation
-- existing feed profile filtering or post APIs for profile posts where available
-- existing follow/message/report authorization and safety rules where APIs are already present
+- `GET /api/pulse/reels/feed`
+- Reels detail route/API where available from the current backend
+- `POST /api/pulse/reels/<reel_id>/react`
+- Reels comments read/create APIs
+- Reels save/repost/share/not-interested APIs
+- existing creator follow behavior
+- existing media/Mux/R2 payload URLs
+- existing moderation, visibility, ranking, creator identity, premium marks, and notification side effects
 
 Do not duplicate in native:
 
-- profile authorization
-- premium/verification decisions
-- media validation/storage
-- blocked/private visibility logic
+- Reels ranking
+- media transcoding/processing rules
+- moderation/risk state
+- creator entitlement decisions
+- reaction/comment/save/repost persistence
+- notification dispatch
 - follow graph rules
-- creator/premium entitlement checks
-- moderation/report decisions
 
 ## What Must Be Rebuilt Natively
 
-- Native profile detail screen.
-- Native profile edit screen.
-- Avatar and cover image picker/upload UI using existing profile media endpoints.
-- Native author/profile navigation from feed and post detail.
-- Profile post list using existing feed/profile filters where available.
-- Follow/message/share/report hooks where existing APIs support them.
+- Native vertical Reels player.
+- Native video rendering and buffering states.
+- Creator header and profile navigation.
+- Reels actions: react, comment, save, repost, share, not interested where APIs exist.
+- Comments overlay or detail screen.
+- Pull/gesture navigation between reels.
+- Offline metadata cache where safe.
+- Deep-link routing from notifications into native Reel detail.
 - Loading, empty, offline, and error states.
 
 ## Dependencies And Blockers
 
 Dependencies:
 
-- Confirm whether public profile detail has a JSON endpoint equivalent to `/pulse/profile/<profile_key>`; if not, add only the smallest backend adapter needed to expose existing server-side profile payloads without changing business logic.
-- Confirm exact avatar/cover upload payload expectations on device.
-- Confirm profile post filtering through `GET /api/pulse/feed?profile=...` or the existing profile post API before building a native profile post list.
+- Confirm exact Reels feed/detail payload shape from the current backend.
+- Confirm Expo AV or native video library behavior against existing Mux/R2 video URLs.
+- Confirm deep-link patterns for `/pulse/reels` and `/pulse/reels/<reel_id>`.
+- Confirm whether comments are returned on detail or require a separate endpoint.
 
 Blockers:
 
-- Public profile detail may currently be web-rendered only, which would require a thin JSON adapter before full native author profile navigation.
-- Real-device image picker/upload QA remains required.
+- Real-device video playback, memory, buffering, audio focus, and scroll performance must be verified before production replacement.
+- If the backend exposes a web-only Reel detail for some cases, a thin JSON adapter may be needed before full native deep-link parity.
 
 ## Risk Level
 
-Risk: Medium.
+Risk: Medium-high.
 
 Reasons:
 
-- Profile is user-facing and identity-sensitive.
-- Avatar/cover uploads require native permission and file handling.
-- The business rules are mature on the backend, so risk is mostly API shape confirmation, media upload handling, and parity with the web profile.
+- Reels is media-heavy and performance-sensitive.
+- Native video playback must be smooth on real iOS and Android devices.
+- The backend/API/business logic already exists, so most risk is native rendering, memory, buffering, audio, gesture, and device QA.
 
 ## Estimated Complexity
 
-Complexity: Medium.
+Complexity: Medium-high.
 
 Recommended first slice:
 
-- Current user profile detail.
-- Profile edit.
-- Avatar/cover display.
-- Existing avatar/cover upload/remove APIs.
-- Author profile route shape and safe web fallback if public JSON is missing.
-- Profile post list only after confirming existing server support.
+- Reels feed list.
+- Full-screen native video card.
+- Play/pause/mute.
+- Creator header and profile navigation.
+- Reaction/save/share hooks.
+- Comments read/create if existing APIs are straightforward.
+- Deep link into Reel detail.
+- Web fallback for unsupported media/detail cases.
 
 Defer from first slice:
 
-- Advanced creator analytics.
-- Marketplace storefront details.
-- Premium creator tools.
-- Full media gallery.
-- Public profile JSON backend expansion beyond a minimal adapter if needed.
+- Reel creation.
+- Camera capture.
+- Video compression.
+- Advanced editing.
+- Background upload.
+- Complex audio remix/music tools.
 
 ## Safest Implementation Plan
 
-1. Inspect current web profile templates/routes and profile APIs again before coding.
-2. Confirm public-vs-current-user profile data contracts and upload payloads.
-3. Extend native API wrappers around existing profile endpoints only.
-4. Build native Profile Detail and Profile Edit screens.
-5. Add image picker upload controls with explicit denied-permission states.
-6. Wire feed author/profile taps to native profile only for supported profile targets; keep web fallback for unsupported public profile cases.
-7. Add a focused profile audit and run the same install/typecheck/Expo doctor gates.
+1. Inspect current Reels web implementation, APIs, payloads, and media URL handling again before coding.
+2. Add a typed native Reels API wrapper around existing endpoints only.
+3. Build a native Reels feed screen with one video per viewport and conservative buffering.
+4. Add Reel Detail/deep-link routing.
+5. Add action hooks only after read/playback behavior is stable.
+6. Keep web fallback for unsupported video/media cases.
+7. Add a focused Reels audit and run install/typecheck/Expo doctor gates.
 
 ## Recommendation Summary
 
-Build Native Profile Detail + Profile Edit next. Feed/Post is now native enough to expose identity paths, and Profile is the safest next social foundation before moving into heavier native media surfaces like Reels, Status, and Camera.
+Build Native Reels Player + Reel Detail next. The core social foundation is now native enough to support creator/profile context, and Reels gives the greatest leverage for replacing media-heavy web fallbacks while reusing existing PulseSoc media, ranking, moderation, and action APIs.

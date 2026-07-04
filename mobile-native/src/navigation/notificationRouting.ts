@@ -49,7 +49,18 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
-  if (normalized.startsWith("/pulse/profile") && navigationRef.isReady()) {
+  if (normalized === "/pulse/profile/edit" && navigationRef.isReady()) {
+    navigationRef.navigate("ProfileEdit");
+    return { handled: true, target: normalized };
+  }
+
+  const profileMatch = normalized.match(/^\/pulse\/profile\/([^/?#]+)/);
+  if (profileMatch?.[1] && navigationRef.isReady()) {
+    navigationRef.navigate("ProfileDetail", { profileKey: decodeURIComponent(profileMatch[1]), title: "Profile" });
+    return { handled: true, target: normalized };
+  }
+
+  if (normalized === "/pulse/profile" && navigationRef.isReady()) {
     navigationRef.navigate("Tabs", { screen: "Profile" });
     return { handled: true, target: normalized };
   }

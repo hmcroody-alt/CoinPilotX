@@ -14,9 +14,10 @@ type PostCardProps = {
   onSave?: (post: PulsePost) => void;
   onRepost?: (post: PulsePost) => void;
   onShare?: (post: PulsePost) => void;
+  onAuthorPress?: (post: PulsePost) => void;
 };
 
-export function PostCard({ post, detail, busy, onOpen, onReact, onSave, onRepost, onShare }: PostCardProps) {
+export function PostCard({ post, detail, busy, onOpen, onReact, onSave, onRepost, onShare, onAuthorPress }: PostCardProps) {
   const author = post.author || {};
   const displayName = author.display_name || author.name || post.author_name || "PulseSoc";
   const handle = author.username || author.handle || post.author_username || "";
@@ -30,7 +31,14 @@ export function PostCard({ post, detail, busy, onOpen, onReact, onSave, onRepost
       onPress={() => onOpen?.(post)}
       disabled={!onOpen}
     >
-      <View style={styles.authorRow}>
+      <Pressable
+        style={styles.authorRow}
+        onPress={(event) => {
+          event.stopPropagation();
+          onAuthorPress?.(post);
+        }}
+        disabled={!onAuthorPress}
+      >
         {author.avatar_url ? <Image source={{ uri: author.avatar_url }} style={styles.avatar} /> : <View style={styles.avatarFallback} />}
         <View style={styles.authorText}>
           <Text style={styles.authorName} numberOfLines={1}>
@@ -41,7 +49,7 @@ export function PostCard({ post, detail, busy, onOpen, onReact, onSave, onRepost
             {formatShortTime(post.created_at)}
           </Text>
         </View>
-      </View>
+      </Pressable>
 
       {post.title ? <Text style={styles.title}>{post.title}</Text> : null}
       {body ? <Text style={styles.body}>{body}</Text> : null}

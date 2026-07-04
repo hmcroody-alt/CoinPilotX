@@ -24,6 +24,12 @@ export const linking: LinkingOptions<RootStackParamList> = {
           postId: Number
         }
       },
+      ProfileEdit: {
+        path: "pulse/profile/edit"
+      },
+      ProfileDetail: {
+        path: "pulse/profile/:profileKey"
+      },
       NotificationCenter: {
         path: "notifications"
       },

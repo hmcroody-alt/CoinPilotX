@@ -31,7 +31,7 @@ import { formatShortTime } from "../utils/format";
 
 type Props = NativeStackScreenProps<RootStackParamList, "PostDetail">;
 
-export function PostDetailScreen({ route }: Props) {
+export function PostDetailScreen({ route, navigation }: Props) {
   const postId = route.params.postId;
   const [post, setPost] = useState<PulsePost | null>(null);
   const [comments, setComments] = useState<PulseComment[]>([]);
@@ -178,6 +178,10 @@ export function PostDetailScreen({ route }: Props) {
               onSave={handleSave}
               onRepost={handleRepost}
               onShare={(item) => Share.share({ message: pulsePostUrl(item.id) }).catch(() => undefined)}
+              onAuthorPress={(item) => {
+                const key = item.author?.public_player_id || item.author?.username || "";
+                if (key) navigation.navigate("ProfileDetail", { profileKey: key, title: item.author?.display_name || "Profile" });
+              }}
             />
             <View style={styles.commentComposer}>
               <TextInput

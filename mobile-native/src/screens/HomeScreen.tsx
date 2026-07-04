@@ -154,6 +154,10 @@ export function HomeScreen() {
           onSave={handleSave}
           onRepost={handleRepost}
           onShare={handleShare}
+          onAuthorPress={(post) => {
+            const key = post.author?.public_player_id || post.author?.username || "";
+            if (key) navigation.navigate("ProfileDetail", { profileKey: key, title: post.author?.display_name || "Profile" });
+          }}
         />
       )}
       onEndReached={() => load("more").catch(() => undefined)}

@@ -88,6 +88,19 @@ export function MessengerScreen() {
                   {compactPreview(item.latest_message || item.last_message_preview, "Open chat")}
                 </Text>
               </View>
+              {item.other_public_player_id || item.public_player_id ? (
+                <Pressable
+                  style={styles.profileButton}
+                  onPress={() =>
+                    navigation.navigate("ProfileDetail", {
+                      profileKey: item.other_public_player_id || item.public_player_id,
+                      title: item.title || "Profile"
+                    })
+                  }
+                >
+                  <Text style={styles.profileButtonText}>Profile</Text>
+                </Pressable>
+              ) : null}
               {Number(item.unread_count || 0) > 0 ? (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>{item.unread_count}</Text>
@@ -182,6 +195,18 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 14,
     lineHeight: 20
+  },
+  profileButton: {
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8
+  },
+  profileButtonText: {
+    color: colors.accentStrong,
+    fontSize: 12,
+    fontWeight: "900"
   },
   time: {
     color: colors.muted,

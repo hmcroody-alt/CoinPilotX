@@ -17,6 +17,8 @@ export type MessengerConversation = {
   unread_count?: number;
   avatar_url?: string;
   presence?: string;
+  other_public_player_id?: string;
+  public_player_id?: string;
 };
 
 export type MessengerMessage = {

@@ -14,8 +14,10 @@ export type PulseAuthor = {
   name?: string;
   avatar_url?: string;
   profile_url?: string;
+  public_player_id?: string;
   verified?: boolean;
   premium?: boolean;
+  premium_verified?: boolean;
 };
 
 export type PulseMedia = {
