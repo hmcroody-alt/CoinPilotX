@@ -38,12 +38,11 @@ Remaining blockers in priority order:
 
 1. iOS simulator tooling is blocked because `/usr/bin/xcrun` exists but `xcrun simctl list devices available` fails with `xcrun: error: unable to find utility "simctl", not a developer tool or in PATH`.
 2. Android emulator/physical device tooling is blocked because `adb` is not available in `PATH`.
-3. QA browser workflow is partially unblocked by dependencies, but Metro currently fails on local macOS file permissions: `EPERM: operation not permitted` reading files under `mobile-native/node_modules`. The affected tree has `com.apple.provenance` attributes, and `xattr -dr com.apple.provenance mobile-native` is denied by macOS with `Operation not permitted`.
-4. Physical iPhone testing still requires Apple developer team/signing, a device, and either Expo Go for limited smoke testing or an EAS development build for full native-module testing.
-5. Physical Android testing still requires Android platform tools, USB/debugging or emulator setup, and an APK/AAB/dev-client install path.
-6. Push testing still requires an EAS project ID, physical devices, notification credentials, and backend push registration validation.
-7. Deep-link testing still requires installed app builds and verified `pulsesoc://` custom scheme handling; universal links require domain-side association files and app entitlements.
-8. Live playback, camera, microphone, media picker, upload, and background/lock-screen behavior still require actual device/simulator testing.
+3. Physical iPhone testing still requires Apple developer team/signing, a device, and either Expo Go for limited smoke testing or an EAS development build for full native-module testing.
+4. Physical Android testing still requires Android platform tools, USB/debugging or emulator setup, and an APK/AAB/dev-client install path.
+5. Push testing still requires an EAS project ID, physical devices, notification credentials, and backend push registration validation.
+6. Deep-link testing still requires installed app builds and verified `pulsesoc://` custom scheme handling; universal links require domain-side association files and app entitlements.
+7. Live playback, camera, microphone, media picker, upload, and background/lock-screen behavior still require actual device/simulator testing.
 
 ## Required External Software
 
@@ -238,7 +237,7 @@ cd mobile-native
 npm start
 ```
 
-Start browser QA, after local file permissions allow Metro to read `node_modules`:
+Start browser QA:
 
 ```bash
 cd mobile-native
@@ -359,9 +358,13 @@ The repository is better prepared, and the Expo web dependency gap is fixed, but
 
 1. Fix iOS simulator tooling by installing/selecting full Xcode so `xcrun simctl` works.
 2. Install Android platform tools so `adb devices` works.
-3. Resolve macOS provenance/privacy permissions on `mobile-native/node_modules` so Metro web can read package files, or run the repo from a location without those restrictions.
-4. Create/link an EAS project and set `EXPO_PUBLIC_EXPO_PROJECT_ID`.
-5. Configure Apple and Android push credentials.
-6. Establish physical-device or simulator log capture.
+3. Create/link an EAS project and set `EXPO_PUBLIC_EXPO_PROJECT_ID`.
+4. Configure Apple and Android push credentials.
+5. Establish physical-device or simulator log capture.
+
+Browser QA note:
+
+- After `npm ci`, a bounded `npm run --prefix mobile-native web:qa` startup probe reached `http://localhost:8094` without reproducing the earlier `EPERM` node_modules read failure.
+- This only proves Metro web startup, not real browser feature QA and not device QA.
 
 Do not claim real iOS, Android, push, media, Live, or deep-link QA until those blockers are resolved and the flows are actually tested.

@@ -185,7 +185,7 @@ This should come before another major native module.
 
 - The parity report shows that native code breadth is no longer the main blocker.
 - Real-device readiness is still blocked by Android tooling, iOS simulator tooling, push/build credentials, and a physical device flow.
-- Expo web dependencies have been added, but local macOS file permissions can still block Metro from reading `mobile-native/node_modules`.
+- Expo web dependencies have been added, and a bounded Metro web startup probe reached `http://localhost:8094`; this does not count as feature/browser/device QA.
 - Push, deep links, camera/media permissions, background recovery, Reels/Status playback, Live viewer behavior, billing/provider return flows, and offline cache behavior are device-sensitive.
 - Continuing to add feature modules without at least one working QA route increases rework and release risk.
 - This recommendation is based on the current production and `mobile-native` migration state after the Feature Parity + QA Readiness checkpoint.
@@ -222,12 +222,12 @@ Do not duplicate in native:
 Dependencies:
 
 - Xcode developer tools or Android platform tools must be installed/configured.
-- If browser QA is desired, the added Expo web dependencies must run on a filesystem location macOS allows Metro to read.
+- Browser QA can now start through the added Expo web dependencies, but feature behavior still needs actual QA browser validation.
 - A physical device flow needs Expo Go or an EAS development build plus log capture.
 
 Blockers:
 
-- Expo web dependencies are installed, but `npm run web:qa` can still fail with `EPERM: operation not permitted` reading files under `mobile-native/node_modules`; prior `xattr -dr com.apple.provenance mobile-native` cleanup was denied by macOS.
+- `npm run --prefix mobile-native web:qa` reached Metro at `http://localhost:8094` after `npm ci`; this has not yet been used for end-to-end QA browser validation.
 - `adb` is not available in `PATH`.
 - `/usr/bin/xcrun` exists, but `xcrun simctl list devices available` fails because `simctl` is not available.
 - No physical-device QA flow has been recorded in this workspace.
