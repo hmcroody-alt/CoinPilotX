@@ -209,6 +209,12 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  const verificationTarget = verificationRouteTarget(normalized);
+  if (verificationTarget && navigationRef.isReady()) {
+    navigationRef.navigate("VerificationCenter", verificationTarget);
+    return { handled: true, target: normalized };
+  }
+
   const trustSafety = trustSafetyTarget(normalized);
   if (trustSafety && navigationRef.isReady()) {
     navigationRef.navigate("TrustSafety", trustSafety);
@@ -322,6 +328,21 @@ function trustSafetyTarget(target: string): { title: string; mode: "support" | "
     return { title: "Scam Shield", mode: "scam" };
   }
   return null;
+}
+
+function verificationRouteTarget(target: string): { title: string; track?: "identity" | "blue_check" | "business" | "government_id" } | null {
+  if (target.startsWith("/dashboard/account/verification") || target.startsWith("/pulse/verification")) {
+    const rawTrack = extractStringQueryValue(target, "track") || extractStringQueryValue(target, "verification_type") || target.match(/^\/pulse\/verification\/([^/?#]+)/)?.[1] || "";
+    const track = normalizeVerificationTrack(rawTrack);
+    return { title: "Verification Center", ...(track ? { track } : {}) };
+  }
+  return null;
+}
+
+function normalizeVerificationTrack(track: string): "identity" | "blue_check" | "business" | "government_id" | "" {
+  const value = String(track || "").toLowerCase();
+  if (value === "blue_check" || value === "business" || value === "government_id" || value === "identity") return value;
+  return "";
 }
 
 function customSchemePath(value: string, prefix: string) {

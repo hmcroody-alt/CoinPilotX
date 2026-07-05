@@ -143,6 +143,18 @@ export const linking: LinkingOptions<RootStackParamList> = {
       TrustCenter: "trust-center",
       SecurityReport: "security",
       ScamShield: "scam-shield/:mode?",
+      VerificationCenter: {
+        path: "pulse/verification/:track?",
+        parse: {
+          track: String
+        }
+      },
+      VerificationWebCenter: {
+        path: "dashboard/account/verification",
+        parse: {
+          track: String
+        }
+      },
       NotificationCenter: {
         path: "notifications"
       },

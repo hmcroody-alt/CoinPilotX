@@ -421,6 +421,7 @@ Only block the roadmap for critical, security-related, data-loss, production-bre
 - Native Account, Security & Privacy foundation.
 - Native Account, Security & Privacy authenticated QA sweep.
 - Native Trust, Safety & Support foundation.
+- Native Verification Center + Badge/Identity Verification foundation.
 
 ## Native Calls Foundation
 
@@ -673,3 +674,96 @@ Safest implementation plan for the next action:
 4. Keep document/provider-heavy flows on protected web fallback unless the existing backend exposes safe native-ready APIs.
 5. Run static verification and practical QA browser routing checks.
 6. Treat provider/document proof as release QA, not a development blocker unless a security or data-loss issue appears.
+
+## Native Verification Center + Badge/Identity Verification Foundation
+
+Recommended and implemented next feature/action: Native Verification Center + Badge/Identity Verification foundation.
+
+Why it came next:
+
+- Account, Security, Privacy, Trust/Safety, Profile, Premium, Notifications, and Settings were already native.
+- Production PulseSoc already exposes verification request, appeal, private document upload, admin review, badge, and audit-log behavior.
+- Verification strengthens trust across Profile, Premium, Marketplace, Creator, Account, Safety, and Search without requiring duplicated client-side business logic.
+- Existing verification reports in the repository indicate this area is already a first-class PulseSoc trust subsystem.
+
+Reusable PulseSoc APIs/code/database/business logic:
+
+- `GET /api/dashboard/account/state`
+- `POST /api/dashboard/account/verification/request`
+- `POST /api/dashboard/account/verification/appeal`
+- `POST /api/dashboard/account/verification/document`
+- `GET /api/pulse/profile/me`
+- `GET /api/premium/status`
+- Existing protected route `/dashboard/account/verification`
+- Existing `verification_requests`, `verification_documents`, account audit logs, badge fields, profile verification status, Premium/Foundation badge status, and admin review logic.
+
+What was rebuilt natively:
+
+- Native Verification Center screen.
+- Verification status display.
+- Verification score/status visual.
+- Requirements checklist.
+- Identity, blue check, business, and government ID request entry points.
+- Private document picker/upload handoff.
+- Appeal form.
+- Profile badge preview.
+- Premium/Foundation badge display.
+- Entry points from Settings, Profile, Premium, and Trust/Safety.
+- Deep-link and notification routing for `/pulse/verification`, `/pulse/verification/<track>`, and `/dashboard/account/verification`.
+- Loading, offline, error, validation, and success states.
+
+What remains backend/provider owned:
+
+- Admin review queue.
+- Admin document access.
+- Approval, rejection, needs-more-info, suspension, revocation, and restore decisions.
+- Sensitive document validation and private storage.
+- Badge issuance and revocation.
+- Provider-heavy identity verification and compliance logic.
+
+Dependencies/blockers:
+
+- Physical document picker behavior remains device QA.
+- Provider identity verification and admin approval proof remain release/provider QA.
+- Native must not claim sensitive document review is verified until a controlled provider/device QA pass is completed.
+
+Risk level: medium-high because this feature touches identity, sensitive document handoff, privacy, and badge trust.
+
+Estimated complexity: medium-high.
+
+## Recommendation Summary
+
+Recommended next highest-value action after Native Verification Center: short practical Verification Center QA sweep.
+
+Reason: verification is security/privacy-sensitive enough to warrant a focused route/form/upload-handoff pass before the next broad feature. This should remain practical QA, not an endless loop. Only security-critical, data-loss, production-breaking, or future-development-blocking issues should pause the roadmap.
+
+Reusable PulseSoc APIs/code/database/business logic for the next action:
+
+- Existing verification API wrapper in `mobile-native/src/api/verification.ts`.
+- Existing native Verification Center, Settings, Profile, Premium, Trust/Safety, linking, and notification routing.
+- Existing backend verification request, appeal, document upload, account state, profile, and premium APIs.
+
+What must be rebuilt natively:
+
+- No new major feature in the next action.
+- Only scoped fixes found during QA should be implemented.
+
+Dependencies/blockers:
+
+- A QA account is needed for request/appeal validation.
+- Document picker behavior may require simulator or physical-device testing.
+- Admin/provider approval remains outside browser QA.
+
+Risk level: medium.
+
+Estimated complexity: low-medium.
+
+Safest implementation plan for the next action:
+
+1. Run static verification.
+2. Start the QA web build.
+3. Verify `/pulse/verification`, `/pulse/verification/business`, and `/dashboard/account/verification`.
+4. Verify entry points from Settings, Profile, Premium, and Trust/Safety.
+5. Verify request validation/success/failure with a QA account where safe.
+6. Verify document picker handoff where the test surface supports it.
+7. Fix only scoped blockers.

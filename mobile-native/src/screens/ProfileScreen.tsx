@@ -109,7 +109,7 @@ export function ProfileScreen({ route, navigation }: Props) {
             <TabButton label="Media" value="media" active={tab} onPress={setTab} />
             <TabButton label="About" value="about" active={tab} onPress={setTab} />
           </View>
-          {tab === "about" ? <AboutPanel profile={profile} profileKey={profileKey} owner={owner} /> : null}
+          {tab === "about" ? <AboutPanel profile={profile} profileKey={profileKey} owner={owner} onVerification={() => navigation?.navigate("VerificationCenter", { title: "Verification Center" })} /> : null}
         </View>
       }
       ListEmptyComponent={tab === "about" ? null : <Text style={styles.empty}>{tab === "media" ? "No media posts loaded." : "No profile posts loaded."}</Text>}
@@ -135,7 +135,7 @@ function TabButton({ label, value, active, onPress }: { label: string; value: Ta
   );
 }
 
-function AboutPanel({ profile, profileKey, owner }: { profile: PulseProfile; profileKey: string; owner: boolean }) {
+function AboutPanel({ profile, profileKey, owner, onVerification }: { profile: PulseProfile; profileKey: string; owner: boolean; onVerification: () => void }) {
   return (
     <View style={styles.about}>
       <Text style={styles.aboutTitle}>About</Text>
@@ -144,6 +144,12 @@ function AboutPanel({ profile, profileKey, owner }: { profile: PulseProfile; pro
       <Text style={styles.aboutMeta}>Expertise: {profile.expertise_tags || "None loaded"}</Text>
       <Text style={styles.aboutMeta}>Visibility: {profile.profile_visibility || "public"}</Text>
       <Text style={styles.aboutMeta}>Status: {profile.account_status || "active"}</Text>
+      <Text style={styles.aboutMeta}>Verification: {profile.verification_status || (profile.verified_badge ? "approved" : "not started")}</Text>
+      {owner ? (
+        <Pressable style={styles.webLink} onPress={onVerification}>
+          <Text style={styles.webLinkText}>Open Verification Center</Text>
+        </Pressable>
+      ) : null}
       <Pressable style={styles.webLink} onPress={() => Linking.openURL(profileWebUrl(owner ? undefined : profileKey)).catch(() => undefined)}>
         <Text style={styles.webLinkText}>Open full PulseSoc profile</Text>
       </Pressable>

@@ -143,6 +143,9 @@ export function PremiumScreen({ navigation }: Props) {
         <Pressable style={styles.secondaryButton} disabled={Boolean(busyAction)} onPress={() => navigation?.navigate("IntelligenceCenter")}>
           <Text style={styles.secondaryText}>Open Intelligence</Text>
         </Pressable>
+        <Pressable style={styles.secondaryButton} disabled={Boolean(busyAction)} onPress={() => navigation?.navigate("VerificationCenter", { title: "Verification Center" })}>
+          <Text style={styles.secondaryText}>Open Verification Center</Text>
+        </Pressable>
       </Panel>
 
       <Panel>

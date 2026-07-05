@@ -71,6 +71,8 @@ export type RootStackParamList = {
   TrustCenter: { title?: string } | undefined;
   SecurityReport: { title?: string } | undefined;
   ScamShield: { title?: string } | undefined;
+  VerificationCenter: { title?: string; track?: "identity" | "blue_check" | "business" | "government_id" } | undefined;
+  VerificationWebCenter: { title?: string; track?: "identity" | "blue_check" | "business" | "government_id" } | undefined;
   NotificationCenter: undefined;
   NotificationPreferences: undefined;
 };

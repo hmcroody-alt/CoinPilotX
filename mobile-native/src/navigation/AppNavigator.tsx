@@ -29,6 +29,7 @@ import { SearchScreen } from "../screens/SearchScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { StatusScreen } from "../screens/StatusScreen";
 import { TrustSafetyScreen } from "../screens/TrustSafetyScreen";
+import { VerificationCenterScreen } from "../screens/VerificationCenterScreen";
 import { ChatScreen } from "../screens/ChatScreen";
 import { colors } from "../theme/colors";
 import { AppTabParamList, RootStackParamList } from "./types";
@@ -134,6 +135,8 @@ export function AppNavigator() {
       <Stack.Screen name="TrustCenter" component={TrustSafetyScreen} options={{ title: "Trust Center" }} />
       <Stack.Screen name="SecurityReport" component={TrustSafetyScreen} options={{ title: "Security Report" }} />
       <Stack.Screen name="ScamShield" component={TrustSafetyScreen} options={{ title: "Scam Shield" }} />
+      <Stack.Screen name="VerificationCenter" component={VerificationCenterScreen} options={({ route }) => ({ title: route.params?.title || "Verification Center" })} />
+      <Stack.Screen name="VerificationWebCenter" component={VerificationCenterScreen} options={{ title: "Verification Center" }} />
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} options={{ title: "Notifications" }} />
       <Stack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} options={{ title: "Notification Preferences" }} />
     </Stack.Navigator>

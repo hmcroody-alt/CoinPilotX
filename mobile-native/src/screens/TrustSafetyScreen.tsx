@@ -184,6 +184,7 @@ export function TrustSafetyScreen({ navigation }: Props) {
           <ActionButton label="Trust Center" variant="secondary" onPress={() => openSupportWebFallback("/trust-center")} />
           <ActionButton label="Rules" variant="secondary" onPress={() => openSupportWebFallback("/community-rules")} />
           <ActionButton label="Web Help" variant="secondary" onPress={() => openSupportWebFallback("/pulse/help")} />
+          <ActionButton label="Verification" variant="secondary" onPress={() => navigation.navigate("VerificationCenter", { title: "Verification Center" })} />
         </View>
       </Panel>
 
