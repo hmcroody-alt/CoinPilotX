@@ -235,6 +235,59 @@ This means authenticated Camera Studio simulator QA is still not complete. The b
 
 Do not claim authenticated simulator login, session restore, Camera Studio route rendering, gallery fallback, preview, upload handoff, or publish routing as verified from this attempt.
 
+## Reliable Simulator Auth Path
+
+A QA-only simulator deep link was added to avoid unreliable Simulator text-entry automation:
+
+```text
+pulsesoc://qa/simulator-login?identifier=<qa-user>&password=<redacted>&redirect=/pulse/camera/photo&target=feed&mode=photo
+```
+
+Safety boundary:
+
+- Enabled only in development native builds.
+- Disabled on web.
+- Enabled only when `EXPO_PUBLIC_PULSE_API_BASE_URL` points to localhost, `127.0.0.1`, or `::1`.
+- Uses the existing native `signIn()` path and existing `/api/mobile/auth/login` backend API.
+- Does not mint, inject, or bypass server sessions.
+- Does not add a production backend endpoint.
+- Does not touch production WebView routes.
+
+Current status: QA-only simulator deep link implemented. Authenticated Camera Studio simulator verification must be rerun through this path before claiming the route, permission states, preview, destination flow, upload handoff, or authenticated recovery.
+
+## Authenticated Simulator QA Through QA Deep Link
+
+The QA-only simulator deep link was rerun against a temporary local backend at `127.0.0.1:5107`.
+
+Verified:
+
+- Local backend health returned `ok: true`.
+- Existing `/api/mobile/auth/login` returned `authenticated: true` for the temporary local QA user.
+- Existing `/api/pulse/camera/config?target=feed&mode=photo` returned `ok: true`.
+- The installed `com.pulsesoc.nativeapp` development build bundled through Metro with `EXPO_PUBLIC_PULSE_API_BASE_URL=http://127.0.0.1:5107`.
+- `pulsesoc://qa/simulator-login?...&target=feed&mode=photo` authenticated without Simulator text entry and opened Camera Studio in Feed/photo mode.
+- The native Camera Studio UI rendered provider `native_fallback`, the Feed destination, caption field, privacy selector, gallery fallback control, and no-media/upload area.
+- `pulsesoc://qa/simulator-login?...&target=reel&mode=reel&captureMode=video` authenticated and opened Camera Studio in Reel/video mode.
+- The native Camera Studio UI switched to `Record`, selected the Reel destination, and showed the microphone control.
+- `xcrun simctl privacy` could grant and revoke microphone and photo-library permissions for `com.pulsesoc.nativeapp`.
+- Terminate/relaunch restored the authenticated session and returned to native Home.
+
+Screenshots:
+
+- `/tmp/pulsesoc-sim-auth-qa-04-after-fresh-deeplink.png`
+- `/tmp/pulsesoc-sim-auth-qa-07-reel-destination.png`
+- `/tmp/pulsesoc-sim-auth-qa-08-session-restore.png`
+
+Still not verified:
+
+- Real camera permission allow/deny prompt. This `simctl privacy` build does not expose a camera service.
+- Gallery picker selection. `cliclick` taps did not reliably affect the Simulator app surface.
+- Preview after selected/captured media.
+- Upload progress, retry, cancel, and publish handoff.
+- Real camera capture, microphone capture, front/back switching, compression, and large media behavior.
+
+Result: authenticated simulator QA is no longer blocked by login/text entry. It is now blocked by reliable Simulator touch/media automation and by physical-device-only camera behavior.
+
 ## What Requires Physical Device QA
 
 Physical iPhone and Android devices are still required before release claims for:
@@ -252,6 +305,6 @@ Physical iPhone and Android devices are still required before release claims for
 
 Do not move to Native LiveKit calls yet.
 
-Next highest-value action: use a reliable authenticated input path for simulator QA, such as manual Simulator typing, XCTest/Appium/Detox automation, or a physical QA device. After authenticated login is reliable, run the authenticated Camera Studio simulator pass, then execute physical iPhone and Android Camera Studio QA for camera, microphone, gallery, compression, upload, and publish behavior.
+Next highest-value action: add or use reliable Simulator touch/media automation, such as XCTest, Appium, Detox, or manual Simulator interaction, then complete gallery, preview, upload handoff, retry/cancel, and publish routing QA. After that, execute physical iPhone and Android Camera Studio QA for camera, microphone, gallery, compression, upload, and publish behavior.
 
 Native LiveKit calls depend on the same camera/microphone/device-permission layer plus push/ringing/background behavior. Proceeding before authenticated Camera Studio QA and physical-device media QA would compound unknowns.

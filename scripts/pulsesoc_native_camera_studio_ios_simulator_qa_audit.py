@@ -93,7 +93,9 @@ def main() -> int:
             "before moving to Native LiveKit calls",
             "Signed-out Camera Studio deep links",
             "Native Camera Studio Authenticated Simulator QA Attempt",
-            "reliable authenticated input path",
+            "Native Camera Studio Authenticated Simulator QA Through QA Deep Link",
+            "QA-only simulator login deep link",
+            "touch/media automation",
             "Simulator text-entry automation",
         ],
     )
