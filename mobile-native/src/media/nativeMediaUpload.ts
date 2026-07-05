@@ -4,6 +4,7 @@ import { PULSE_API_BASE_URL } from "../api/config";
 import { PulseMedia, mediaDisplayUrl, mediaKind } from "../api/feed";
 import { pulseApi } from "../api/pulseApi";
 import { getSessionCookie, setSessionCookie } from "../session/sessionStore";
+import { formatFileSize } from "../utils/format";
 
 export type NativeMediaContext =
   | "pulse_status"
@@ -208,7 +209,11 @@ export function uploadNativeMedia(
             return;
           }
           const percent = Math.max(4, Math.min(92, Math.round((event.loaded / event.total) * 92)));
-          onProgress?.({ stage: "uploading", percent, message: "Uploading media." });
+          onProgress?.({
+            stage: "uploading",
+            percent,
+            message: `Uploading media ${Math.round((event.loaded / event.total) * 100)}% (${formatFileSize(event.loaded)} of ${formatFileSize(event.total)}).`
+          });
         };
         xhr.onerror = () => reject(new Error("Upload failed. Check your connection and retry."));
         xhr.onabort = () => reject(new Error("Upload cancelled."));
