@@ -26,6 +26,7 @@ import { PulseAiScreen } from "../screens/PulseAiScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
 import { ReelsScreen } from "../screens/ReelsScreen";
 import { SavedScreen } from "../screens/SavedScreen";
+import { SafetyHubScreen } from "../screens/SafetyHubScreen";
 import { SearchScreen } from "../screens/SearchScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { StatusScreen } from "../screens/StatusScreen";
@@ -132,6 +133,8 @@ export function AppNavigator() {
       <Stack.Screen name="AccountDevices" component={AccountCenterScreen} options={{ title: "Sessions and Devices" }} />
       <Stack.Screen name="AccountHealth" component={AccountHealthAppealsScreen} options={{ title: "Account Health" }} />
       <Stack.Screen name="AccountHealthWeb" component={AccountHealthAppealsScreen} options={{ title: "Account Health" }} />
+      <Stack.Screen name="SafetyHub" component={SafetyHubScreen} options={({ route }) => ({ title: route.params?.title || "Safety Hub" })} />
+      <Stack.Screen name="SafetyWebHub" component={SafetyHubScreen} options={({ route }) => ({ title: route.params?.title || "Safety Hub" })} />
       <Stack.Screen name="TrustSafety" component={TrustSafetyScreen} options={({ route }) => ({ title: route.params?.title || "Trust & Safety" })} />
       <Stack.Screen name="TrustSafetySupport" component={TrustSafetyScreen} options={{ title: "Support" }} />
       <Stack.Screen name="TrustSafetyHelp" component={TrustSafetyScreen} options={{ title: "Help" }} />

@@ -49,7 +49,12 @@ export function MessengerScreen() {
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <Text style={styles.screenTitle}>Messenger</Text>
+        <View style={styles.headerTop}>
+          <Text style={styles.screenTitle}>Messenger</Text>
+          <Pressable style={styles.safetyButton} onPress={() => navigation.navigate("SafetyHub", { title: "Safety Hub", section: "blocks" })}>
+            <Text style={styles.safetyButtonText}>Safety</Text>
+          </Pressable>
+        </View>
         <TextInput
           autoCapitalize="none"
           placeholder="Search messages"
@@ -129,6 +134,25 @@ const styles = StyleSheet.create({
   screenTitle: {
     color: colors.text,
     fontSize: 28,
+    fontWeight: "900"
+  },
+  headerTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between"
+  },
+  safetyButton: {
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 36,
+    justifyContent: "center",
+    paddingHorizontal: 12
+  },
+  safetyButtonText: {
+    color: colors.accent,
+    fontSize: 12,
     fontWeight: "900"
   },
   search: {

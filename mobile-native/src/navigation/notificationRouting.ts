@@ -214,6 +214,12 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  const safetyTarget = safetyRouteTarget(normalized);
+  if (safetyTarget && navigationRef.isReady()) {
+    navigationRef.navigate("SafetyHub", safetyTarget);
+    return { handled: true, target: normalized };
+  }
+
   const verificationTarget = verificationRouteTarget(normalized);
   if (verificationTarget && navigationRef.isReady()) {
     navigationRef.navigate("VerificationCenter", verificationTarget);
@@ -321,6 +327,31 @@ function accountSectionTitle(section: "account" | "security" | "privacy" | "devi
 
 function accountHealthTarget(target: string) {
   return target.startsWith("/dashboard/account/health") || target.startsWith("/pulse/account-health") || target.startsWith("/account/health");
+}
+
+function safetyRouteTarget(target: string): { title: string; section?: "overview" | "blocks" | "mutes" | "reports" } | null {
+  if (
+    target.startsWith("/pulse/safety") ||
+    target.startsWith("/pulse/blocks") ||
+    target.startsWith("/pulse/mutes") ||
+    target.startsWith("/pulse/reports") ||
+    target.startsWith("/dashboard/network/network-security") ||
+    target.startsWith("/dashboard/network/blocks-mutes")
+  ) {
+    const section = normalizeSafetySection(
+      extractStringQueryValue(target, "section") ||
+      target.match(/^\/pulse\/safety\/([^/?#]+)/)?.[1] ||
+      (target.includes("blocks") ? "blocks" : target.includes("mutes") ? "mutes" : target.includes("reports") ? "reports" : "")
+    );
+    return { title: "Safety Hub", ...(section ? { section } : {}) };
+  }
+  return null;
+}
+
+function normalizeSafetySection(section: string): "overview" | "blocks" | "mutes" | "reports" | "" {
+  const value = String(section || "").toLowerCase();
+  if (value === "overview" || value === "blocks" || value === "mutes" || value === "reports") return value;
+  return "";
 }
 
 function trustSafetyTarget(target: string): { title: string; mode: "support" | "security" | "scam" | "trust" } | null {

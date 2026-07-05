@@ -46,6 +46,9 @@ export function SettingsScreen() {
         <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("AccountHealth", { title: "Account Health" })}>
           <Text style={styles.secondaryText}>Account Health and Appeals</Text>
         </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("SafetyHub", { title: "Safety Hub" })}>
+          <Text style={styles.secondaryText}>Safety Hub</Text>
+        </Pressable>
         <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("Premium")}>
           <Text style={styles.secondaryText}>Premium and entitlements</Text>
         </Pressable>

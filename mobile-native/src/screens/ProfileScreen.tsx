@@ -102,6 +102,7 @@ export function ProfileScreen({ route, navigation }: Props) {
             onEdit={() => navigation?.navigate("ProfileEdit")}
             onPremium={() => navigation?.navigate("Premium")}
             onGrowth={() => navigation?.navigate("GrowthCenter", { contentType: "profile", title: "Grow Profile" })}
+            onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })}
             onRefresh={() => load("refresh").catch(() => undefined)}
           />
           <View style={styles.tabs}>
@@ -109,7 +110,7 @@ export function ProfileScreen({ route, navigation }: Props) {
             <TabButton label="Media" value="media" active={tab} onPress={setTab} />
             <TabButton label="About" value="about" active={tab} onPress={setTab} />
           </View>
-          {tab === "about" ? <AboutPanel profile={profile} profileKey={profileKey} owner={owner} onVerification={() => navigation?.navigate("VerificationCenter", { title: "Verification Center" })} /> : null}
+          {tab === "about" ? <AboutPanel profile={profile} profileKey={profileKey} owner={owner} onVerification={() => navigation?.navigate("VerificationCenter", { title: "Verification Center" })} onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })} /> : null}
         </View>
       }
       ListEmptyComponent={tab === "about" ? null : <Text style={styles.empty}>{tab === "media" ? "No media posts loaded." : "No profile posts loaded."}</Text>}
@@ -135,7 +136,7 @@ function TabButton({ label, value, active, onPress }: { label: string; value: Ta
   );
 }
 
-function AboutPanel({ profile, profileKey, owner, onVerification }: { profile: PulseProfile; profileKey: string; owner: boolean; onVerification: () => void }) {
+function AboutPanel({ profile, profileKey, owner, onVerification, onSafety }: { profile: PulseProfile; profileKey: string; owner: boolean; onVerification: () => void; onSafety: () => void }) {
   return (
     <View style={styles.about}>
       <Text style={styles.aboutTitle}>About</Text>
@@ -150,6 +151,9 @@ function AboutPanel({ profile, profileKey, owner, onVerification }: { profile: P
           <Text style={styles.webLinkText}>Open Verification Center</Text>
         </Pressable>
       ) : null}
+      <Pressable style={styles.webLink} onPress={onSafety}>
+        <Text style={styles.webLinkText}>Open Safety Hub</Text>
+      </Pressable>
       <Pressable style={styles.webLink} onPress={() => Linking.openURL(profileWebUrl(owner ? undefined : profileKey)).catch(() => undefined)}>
         <Text style={styles.webLinkText}>Open full PulseSoc profile</Text>
       </Pressable>

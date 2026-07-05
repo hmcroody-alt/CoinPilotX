@@ -954,3 +954,112 @@ Safest implementation plan:
 3. Implement user-visible unblock/unmute/report actions only where an existing user-safe API already exists.
 4. Keep admin/moderator-only data on protected web fallback.
 5. Run static verification, audit, and practical QA browser route checks before commit.
+
+## Native Blocks, Mutes, and Report Management Foundation
+
+Recommended and implemented next feature/action: Native Blocks, Mutes, and Report Management Foundation.
+
+Why it came next:
+
+- Account, Security, Privacy, Trust/Safety, Verification, Account Health, and Appeals now form a native trust layer.
+- Feed, Messenger, Profile, Reels, Marketplace, Search, Groups, Notifications, Account Health, and Trust/Safety all depend on safety controls.
+- Production PulseSoc already exposes server-authoritative block/report logic and network safety state.
+- A unified native Safety Hub gives users one control layer without duplicating moderation, filtering, enforcement, or review decisions on-device.
+
+Reusable PulseSoc APIs/code/database/business logic:
+
+- `POST /api/pulse/report`
+- `POST /api/pulse/block`
+- `POST /api/security/report`
+- `GET /api/dashboard/network/state`
+- Existing protected `/dashboard/network/network-security`
+- Existing protected `/dashboard/network/blocks-mutes`
+- Existing `blocked_users` filtering in feed and messaging paths.
+- Existing Communications V2 message report and block APIs.
+- Existing support tickets, security reports, account health, network governance, trust/safety, moderation, and notification routing logic.
+
+What was rebuilt natively:
+
+- `mobile-native/src/api/safety.ts`
+- `mobile-native/src/screens/SafetyHubScreen.tsx`
+- Native `SafetyHub` route.
+- Native `SafetyWebHub` route alias.
+- `/pulse/safety`, `/pulse/safety/blocks`, `/pulse/safety/mutes`, `/pulse/safety/reports` route coverage.
+- `/dashboard/network/network-security` and `/dashboard/network/blocks-mutes` native route coverage.
+- Settings, Trust/Safety, Account Health, Profile, and Messenger entry points.
+- Safety overview, block user, mute handoff, create report, local action history, support case visibility, cached/offline state, loading/error states, and protected web fallbacks.
+
+Backend authority boundaries:
+
+- Report creation calls the existing server endpoint.
+- Block creation calls the existing server endpoint.
+- User mute/unmute is not implemented natively because no user-safe server API was found.
+- Unblock is not implemented natively because no user-safe server API was found.
+- Full blocked-user lists and report-review history are not treated as local truth because no user-safe list/history API was found.
+- Native action history is clearly device-local visibility only.
+
+Dependencies/blockers:
+
+- Add a user-safe `GET /api/pulse/blocks` endpoint before native can show the full server blocked list.
+- Add a user-safe unblock endpoint before native can unblock directly.
+- Add user-safe mute/unmute endpoints only if product policy supports account-level mutes.
+- Add a user-safe report-history endpoint that redacts moderator notes before native can show authoritative report status.
+- Seeded QA fixtures are needed before exercising real block/report side effects broadly.
+
+Risk level: medium-high.
+
+Reason: safety controls affect user relationships, feed/messenger visibility, report review, moderation, account health, and trust signals.
+
+Verification plan:
+
+- Static verification passed.
+- Audit script passed.
+- Practical QA browser route checks passed for `/pulse/safety`, `/pulse/safety/blocks`, `/pulse/safety/mutes`, `/pulse/safety/reports`, `/dashboard/network/network-security`, `/dashboard/network/blocks-mutes`, and Settings, Trust/Safety, Account Health, Profile, and Messenger entry points.
+- Final QA browser route checks had no console errors.
+- Real block/report submissions were not executed because they create moderation side effects and need seeded QA fixtures.
+- Device/provider QA is not required for the first foundation, but notification tap routing remains a release QA item.
+
+## Recommendation Summary
+
+Recommended next highest-value action after Native Safety Hub: Native Notifications + Inbox + Activity Graph Unification.
+
+Reason: PulseSoc now has many native surfaces, but activity still arrives through separate feature-specific paths. A unified native Activity Inbox can make Notifications, Messenger unread events, Account Health, Safety events, Verification updates, Creator/Growth updates, Intelligence/Alert events, Marketplace events, and deep links feel like one PulseSoc operating system layer.
+
+Reusable PulseSoc APIs/code/database/business logic for the next action:
+
+- Existing notification APIs.
+- Existing notification preferences/read/delete flows.
+- Existing Messenger unread and conversation state.
+- Existing Alert/Intelligence event APIs.
+- Existing Account Health, Safety Hub, Verification, Trust/Safety, Creator, Growth, Marketplace, and Premium status APIs.
+- Existing notification routing/deep-link handling.
+- Existing native Notification Center, Messenger, Account Health, Safety Hub, Intelligence, Alert Management, Growth, Creator, Profile, and shared cache/loading/error utilities.
+
+What must be rebuilt natively:
+
+- Unified Activity Inbox screen.
+- Cross-surface activity cards.
+- Native filters for all activity, messages, safety, account, creator, growth, market, and intelligence.
+- Read/unread/archive/delete controls where existing APIs support them.
+- Deep-link polish into every native destination.
+- Cached activity timeline and offline fallback.
+- Unsupported provider/admin flows on safe web fallback.
+
+Dependencies/blockers:
+
+- Need inspection of actual notification/activity data shapes before implementation.
+- Avoid merging private message bodies, moderator notes, provider secrets, or admin-only data into the user activity feed.
+- Mutations must only use existing server-authoritative APIs.
+
+Risk level: medium.
+
+Estimated complexity: medium-high.
+
+Safest implementation plan:
+
+1. Inspect production notification, message, support, account, safety, alert, creator, growth, and market event APIs.
+2. Reuse existing native Notification Center, deep-link router, and shared cache/loading/error states.
+3. Build read-only unified timeline first.
+4. Add mutations only for APIs already supported.
+5. Keep unsupported review/admin/provider paths on protected web fallback.
+6. Run static verification, audit, and short QA browser route checks before commit.

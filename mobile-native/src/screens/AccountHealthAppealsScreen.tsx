@@ -198,6 +198,7 @@ export function AccountHealthAppealsScreen({ navigation }: Props) {
         {!state?.cases.length ? <Text style={styles.muted}>No linked support cases returned by the backend.</Text> : null}
         <View style={styles.buttonGrid}>
           <ActionButton label="Trust & Safety" variant="secondary" onPress={() => navigation.navigate("TrustSafety", { title: "Trust & Safety", mode: "support" })} />
+          <ActionButton label="Safety Hub" variant="secondary" onPress={() => navigation.navigate("SafetyHub", { title: "Safety Hub" })} />
           <ActionButton label="Security Center" variant="secondary" onPress={() => navigation.navigate("AccountCenter", { section: "security", title: "Security Center" })} />
         </View>
       </Panel>

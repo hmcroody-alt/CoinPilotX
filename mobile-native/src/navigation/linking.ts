@@ -134,6 +134,18 @@ export const linking: LinkingOptions<RootStackParamList> = {
       AccountDevices: "pulse/settings/devices",
       AccountHealth: "pulse/account-health",
       AccountHealthWeb: "dashboard/account/health",
+      SafetyHub: {
+        path: "pulse/safety/:section?",
+        parse: {
+          section: String
+        }
+      },
+      SafetyWebHub: {
+        path: "dashboard/network/:section?",
+        parse: {
+          section: String
+        }
+      },
       TrustSafety: {
         path: "pulse/help",
         parse: {
