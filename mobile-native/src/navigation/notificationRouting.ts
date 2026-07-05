@@ -32,9 +32,25 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: "/pulse/notifications", reason: "missing_target" };
   }
 
+  const callMatch = normalized.match(/^\/pulse\/calls\/([^/?#]+)/);
+  if (callMatch?.[1] && navigationRef.isReady()) {
+    navigationRef.navigate("Call", { callId: decodeURIComponent(callMatch[1]), direction: "incoming", title: "PulseSoc Call" });
+    return { handled: true, target: normalized };
+  }
+
   const messageMatch = normalized.match(/^\/pulse\/messages\/(\d+)/);
   if (messageMatch?.[1] && navigationRef.isReady()) {
-    navigationRef.navigate("Chat", { conversationId: Number(messageMatch[1]), title: "Messenger" });
+    const callId = extractStringQueryValue(normalized, "call_id") || extractStringQueryValue(normalized, "call");
+    if (callId) {
+      navigationRef.navigate("Call", {
+        callId,
+        conversationId: Number(messageMatch[1]),
+        direction: "incoming",
+        title: "PulseSoc Call"
+      });
+    } else {
+      navigationRef.navigate("Chat", { conversationId: Number(messageMatch[1]), title: "Messenger" });
+    }
     return { handled: true, target: normalized };
   }
 

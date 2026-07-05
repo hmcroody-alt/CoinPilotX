@@ -31,6 +31,15 @@ export const linking: LinkingOptions<RootStackParamList> = {
           conversationId: Number
         }
       },
+      Call: {
+        path: "pulse/calls/:callId?",
+        parse: {
+          callId: String,
+          conversationId: Number,
+          callType: String,
+          direction: String
+        }
+      },
       Chat: {
         path: "pulse/messages/:conversationId",
         parse: {

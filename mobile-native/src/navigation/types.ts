@@ -33,6 +33,13 @@ export type RootStackParamList = {
     qaAutoPublish?: boolean;
     qaCaption?: string;
   } | undefined;
+  Call: {
+    callId?: string;
+    conversationId?: number;
+    callType?: "audio" | "video";
+    direction?: "incoming" | "outgoing";
+    title?: string;
+  } | undefined;
   Chat: { conversationId: number; title?: string };
   PostDetail: { postId: number; title?: string };
   Reels: { reelId?: number; title?: string } | undefined;

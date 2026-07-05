@@ -347,8 +347,28 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.root}>
       <View style={styles.header}>
-        <Text style={styles.title} numberOfLines={1}>{route.params.title || "Chat"}</Text>
-        <Text style={styles.presence} numberOfLines={1}>{typing || "Secure PulseSoc messages"}</Text>
+        <View style={styles.headerTop}>
+          <View style={styles.headerCopy}>
+            <Text style={styles.title} numberOfLines={1}>{route.params.title || "Chat"}</Text>
+            <Text style={styles.presence} numberOfLines={1}>{typing || "Secure PulseSoc messages"}</Text>
+          </View>
+          <View style={styles.callActions}>
+            <Pressable
+              accessibilityLabel="Start voice call"
+              style={styles.callButton}
+              onPress={() => navigation.navigate("Call", { conversationId, callType: "audio", direction: "outgoing", title: route.params.title || "PulseSoc Voice" })}
+            >
+              <Text style={styles.callText}>Voice</Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel="Start video call"
+              style={styles.callButton}
+              onPress={() => navigation.navigate("Call", { conversationId, callType: "video", direction: "outgoing", title: route.params.title || "PulseSoc Video" })}
+            >
+              <Text style={styles.callText}>Video</Text>
+            </Pressable>
+          </View>
+        </View>
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {loading && messages.length === 0 ? (
@@ -508,6 +528,15 @@ const styles = StyleSheet.create({
     gap: 4,
     padding: 16
   },
+  headerTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10
+  },
+  headerCopy: {
+    flex: 1,
+    minWidth: 0
+  },
   title: {
     color: colors.text,
     fontSize: 23,
@@ -516,6 +545,26 @@ const styles = StyleSheet.create({
   presence: {
     color: colors.muted,
     fontSize: 13
+  },
+  callActions: {
+    flexDirection: "row",
+    gap: 8
+  },
+  callButton: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 34,
+    minWidth: 56,
+    justifyContent: "center",
+    paddingHorizontal: 10
+  },
+  callText: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "900"
   },
   error: {
     color: colors.warning,

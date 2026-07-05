@@ -372,8 +372,107 @@ Defer from first slice:
 5. Fix only Camera Studio blockers found.
 6. Continue Alert Management provider/device QA and native app identity work as release-readiness blockers, not as production replacement proof.
 
+## Strategy Update
+
+Do not stay stuck in QA loops. Camera Studio physical-device interaction evidence remains a release blocker, not a development blocker. The native app now has enough baseline QA infrastructure to keep building while still using practical quality gates:
+
+- built-in QA browser,
+- iOS simulator,
+- physical iPhone install/launch,
+- XCTest path,
+- audit scripts,
+- honest browser/simulator/device verification reports.
+
+Only block the roadmap for critical, security-related, data-loss, production-breaking, or impossible-to-fix-later issues.
+
+## Completed Native Features
+
+- Native app foundation and install/typecheck/start baseline.
+- Auth/session/login/signup foundation.
+- Messenger foundation and QA hardening.
+- Notifications foundation.
+- Home Feed and Post Detail.
+- Feed Composer.
+- Profile foundation.
+- Reels Player and Reel Detail.
+- Status Viewer and Status Creator.
+- Shared Media Upload and Media Viewer.
+- Marketplace foundation.
+- Search and Discovery.
+- Saved Content and Collections.
+- Groups/Communities/Rooms.
+- Live Discovery and Live Viewer.
+- Premium and Entitlements.
+- Creator Studio.
+- Growth Center.
+- Intelligence and Alerts.
+- Alert Management and Crypto/Market Alert CRUD.
+- Camera Studio foundation, simulator QA, XCTest QA path, and physical iPhone install/launch proof.
+- Native Calls foundation.
+
+## Native Calls Foundation
+
+Recommended and implemented next feature/action: Native LiveKit Calls foundation.
+
+Why it came next:
+
+- PulseSoc already has a mature server-authoritative Communications V2 call engine.
+- The native app already has Messenger, notifications/deep links, profile navigation, camera/media groundwork, Live discovery/viewer, and practical QA gates.
+- Calls are high leverage for Messenger and real-time social behavior, and deferring all call work until perfect physical Camera Studio proof would slow the roadmap without reducing backend risk.
+
+Reusable PulseSoc APIs/code/database/business logic:
+
+- `POST /api/pulse/comm/v2/conversations/<conversation_ref>/voice/start`
+- `POST /api/pulse/comm/v2/conversations/<conversation_ref>/video/start`
+- `POST /api/calls/start`
+- `POST /api/calls/<call_id>/accept`
+- `POST /api/calls/<call_id>/ring-seen`
+- `POST /api/calls/<call_id>/decline`
+- `POST /api/calls/<call_id>/end`
+- `POST /api/calls/<call_id>/join-token`
+- `GET /api/calls/<call_id>/status`
+- `GET /api/calls/active`
+- `POST /api/calls/<call_id>/quality`
+- `POST /api/calls/<call_id>/connected`
+- `GET /api/calls/<call_id>/events`
+- `GET /api/conversations/<conversation_ref>/calls`
+- Native call control endpoints for mute, unmute, video enable/disable, camera switch, speaker, minimize, restore, and visibility.
+- Existing `services/pulsesoc_communications_engine.py` call state, authorization, LiveKit token, event, device-session, quality-report, and notification logic.
+- Existing database tables including `communication_calls`, `communication_call_participants`, `communication_call_events`, `communication_call_quality_reports`, and `communication_call_device_sessions`.
+
+What was rebuilt natively:
+
+- Native call route.
+- Native call screen.
+- Messenger voice/video entry points.
+- LiveKit connection shell for installed native builds.
+- Safe browser/web fallback behavior.
+- Native deep-link handling for `/pulse/calls/<call_id>` and existing message links with `call_id`.
+- Native controls that report state changes back to the existing backend.
+
+Dependencies/blockers:
+
+- Full two-device LiveKit media QA remains unverified.
+- APNs/FCM incoming-call delivery and lock-screen behavior remain release blockers.
+- Bluetooth/speaker route behavior remains device-only.
+- Background audio behavior remains device-only.
+- Physical iOS/Android camera/microphone permission behavior for calls remains device-only.
+
+Risk level: high.
+
+Estimated complexity: high.
+
+Safest implementation plan:
+
+1. Keep the backend authoritative for all call state, authorization, participants, notifications, and tokens.
+2. Keep the native layer limited to route/UI/device connection/control behavior.
+3. Use safe web fallback for unsupported or unverified environments.
+4. Run static verification and audit on every call change.
+5. Run QA browser routing checks where practical.
+6. Schedule full two-device iOS/Android LiveKit call QA before production replacement or App Store submission.
+
 ## Recommendation Summary
 
-Recommended next highest-value action: run the new QA-only Camera Studio XCTest with a valid local QA backend/session and `PULSESOC_QA_CAMERA_DEEPLINK`, then collect `.xcresult` screenshots plus backend media/upload/published IDs. If route access is still unreliable, add scoped native accessibility identifiers to Camera Studio controls before Native LiveKit calls.
+Recommended next highest-value action after Native Calls foundation: run a short practical QA browser/static sweep focused on call route reachability, Messenger call entry points, notification/deep-link routing, safe fallback behavior, and no production WebView changes. Then continue building the next high-leverage native surface unless the sweep finds a critical/security/data-loss/production-breaking issue.
 
-Reason: the production platform already has the camera/media routes, catalogs, validation, storage, preview, and create-from-camera business logic, and the native app now has a dedicated native camera foundation over those contracts. The simulator can now boot, build, install, bundle, relaunch, auth-gate Camera Studio deep links, authenticate through the QA-only localhost deep link, route into Feed/photo and Reel/video Camera Studio, render native camera config, seed/select QA media, upload/publish to Feed/Status/Reel, restore the authenticated session, and show transferred/total upload progress where XHR reports it. The physical iPhone now installs, launches, bundles, accepts Camera Studio deep links at process level, foregrounds under `com.pulsesoc.nativeapp`, and survives process-level suspend/resume. The new XCTest target compiles and runs against `com.pulsesoc.nativeapp`, captures screenshots, and reports missing auth/route setup as a skip, but no manual screen recording or completed UI automation pass has verified camera/microphone permissions, gallery picker touch UI, capture, front/back switch, video compression, large upload memory pressure, retry/cancel, physical network behavior, backend IDs, or visual quality. Real interaction proof is still the necessary next step before higher-risk Native LiveKit calls.
+Reason: Native Calls now reuses the existing PulseSoc Communications V2 engine and LiveKit token flow instead of duplicating call business logic. The largest remaining call risks are device/provider QA items that should block release, not continued native app development.
