@@ -419,6 +419,8 @@ Only block the roadmap for critical, security-related, data-loss, production-bre
 - Native Full-Screen Incoming Calls foundation.
 - Native Incoming Calls Practical QA.
 - Native Account, Security & Privacy foundation.
+- Native Account, Security & Privacy authenticated QA sweep.
+- Native Trust, Safety & Support foundation.
 
 ## Native Calls Foundation
 
@@ -567,3 +569,107 @@ Safest implementation plan for the next action:
 4. Verify sensitive actions fail safely or succeed through existing backend APIs.
 5. Fix only scoped blockers.
 6. Keep production WebView routes untouched.
+
+## Native Account, Security & Privacy QA Sweep
+
+Completed action: short authenticated QA browser sweep for Account, Security, Privacy, Devices, and web-route aliases.
+
+Verified:
+
+- Native login/session restored through the QA browser.
+- `/pulse/settings` rendered the native Settings surface.
+- `/pulse/settings/account` rendered Account Center.
+- `/pulse/settings/security` rendered Security Center.
+- `/pulse/settings/privacy` rendered Privacy Center.
+- `/pulse/settings/devices` rendered Sessions and Devices.
+- `/dashboard/account/settings`, `/dashboard/account/security`, `/account/settings`, `/account/security`, and `/privacy-center` now route to native account/security/privacy screens instead of falling back to Home.
+- Privacy save state returned a native success state.
+- Two-factor enable action returned an updated server-authoritative security state.
+
+No critical, security-critical, production-breaking, or data-loss issues were found in the practical QA sweep. Production WebView routes remained untouched.
+
+## Native Trust, Safety & Support Foundation
+
+Recommended and implemented next feature/action: Native Trust, Safety & Support foundation.
+
+Why it came next:
+
+- Account/Security/Privacy QA passed without critical blockers.
+- Production PulseSoc already exposes support, help, security report, Scam Shield, moderation report, and block routes.
+- The native app had report hooks scattered across feature areas but no central Trust/Safety/Support surface.
+- This feature strengthens the native foundation for Feed, Messenger, Marketplace, Groups, Reels, Status, Search, and Notifications without adding new server-side business logic.
+
+Reusable PulseSoc APIs/code/database/business logic:
+
+- `GET /api/support/ticket`
+- `POST /api/support/ticket`
+- `POST /api/security/report`
+- `POST /api/scam-shield/scan`
+- `POST /api/pulse/report`
+- `POST /api/pulse/block`
+- Existing support ticket, security report, Scam Shield, moderation, report, and block tables/services.
+- Existing protected web routes for help, trust center, community rules, and advanced support/help content.
+
+What was rebuilt natively:
+
+- Native Trust & Safety screen.
+- Native support ticket history with offline cache fallback.
+- Native support ticket creation form.
+- Native security report form.
+- Native Scam Shield scan form.
+- Shared Trust/Safety API wrapper for support, security report, scam scan, report target, and block user behavior.
+- Settings entry, linking aliases, and notification routing for `/pulse/help`, `/support`, `/help`, `/trust-center`, `/security`, and `/scam-shield/:mode?`.
+- Loading, empty, offline, error, validation, and success states.
+
+Dependencies/blockers:
+
+- Provider-side support delivery remains backend/provider QA.
+- Advanced help-center browsing remains on safe web fallback.
+- Physical-device QA is not required for this feature because it does not depend on camera, microphone, push, background audio, or installed-app-only APIs.
+- Feature-specific report/block buttons should progressively reuse this shared API wrapper.
+
+Risk level: medium.
+
+Estimated complexity: medium.
+
+## Recommendation Summary
+
+Recommended next highest-value action after Native Trust, Safety & Support: Native Verification Center + Badge/Identity Verification foundation.
+
+Reason: the repository already contains verification-related production artifacts and reports, and the native app now has Account, Security, Privacy, Trust/Safety, Profile, Premium, Notifications, and Settings foundations. Verification is the next identity/trust layer that can reuse existing backend authority while improving native Profile, Search, Marketplace, Creator, Groups, and Trust/Safety surfaces.
+
+Reusable PulseSoc APIs/code/database/business logic for the next action:
+
+- Existing verification and badge production routes/services identified in the repository.
+- Existing user/profile/account database behavior.
+- Existing premium/founder/verification badge display logic.
+- Existing moderation, account security, identity, and privacy rules.
+- Native Profile, Account Center, Trust/Safety, Premium, Settings, Search, and Notification routing components.
+
+What must be rebuilt natively:
+
+- Native Verification Center.
+- Verification status display.
+- Badge/identity state display.
+- Safe document/provider upload entry points where supported.
+- Protected web fallback for provider-heavy or unsupported verification flows.
+- Loading/error/offline states and route/deep-link coverage.
+
+Dependencies/blockers:
+
+- Exact production verification endpoints must be inspected before implementation.
+- Provider/document verification remains release/provider QA.
+- Any sensitive identity document handling must stay server/provider-authoritative and must not duplicate compliance logic in the native client.
+
+Risk level: medium-high because identity and verification touch trust, privacy, and account status.
+
+Estimated complexity: medium-high.
+
+Safest implementation plan for the next action:
+
+1. Inspect current production verification routes, services, database references, and reports.
+2. Reuse backend verification/badge/account status behavior exactly.
+3. Build native read/status and entry-point screens first.
+4. Keep document/provider-heavy flows on protected web fallback unless the existing backend exposes safe native-ready APIs.
+5. Run static verification and practical QA browser routing checks.
+6. Treat provider/document proof as release QA, not a development blocker unless a security or data-loss issue appears.

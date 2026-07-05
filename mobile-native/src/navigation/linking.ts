@@ -132,6 +132,17 @@ export const linking: LinkingOptions<RootStackParamList> = {
       AccountWebSecurity: "account/security",
       AccountPrivacy: "privacy-center",
       AccountDevices: "pulse/settings/devices",
+      TrustSafety: {
+        path: "pulse/help",
+        parse: {
+          mode: String
+        }
+      },
+      TrustSafetySupport: "support",
+      TrustSafetyHelp: "help",
+      TrustCenter: "trust-center",
+      SecurityReport: "security",
+      ScamShield: "scam-shield/:mode?",
       NotificationCenter: {
         path: "notifications"
       },

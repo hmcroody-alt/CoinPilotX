@@ -28,6 +28,7 @@ import { SavedScreen } from "../screens/SavedScreen";
 import { SearchScreen } from "../screens/SearchScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { StatusScreen } from "../screens/StatusScreen";
+import { TrustSafetyScreen } from "../screens/TrustSafetyScreen";
 import { ChatScreen } from "../screens/ChatScreen";
 import { colors } from "../theme/colors";
 import { AppTabParamList, RootStackParamList } from "./types";
@@ -127,6 +128,12 @@ export function AppNavigator() {
       <Stack.Screen name="AccountWebSecurity" component={AccountCenterScreen} options={{ title: "Security Center" }} />
       <Stack.Screen name="AccountPrivacy" component={AccountCenterScreen} options={{ title: "Privacy Center" }} />
       <Stack.Screen name="AccountDevices" component={AccountCenterScreen} options={{ title: "Sessions and Devices" }} />
+      <Stack.Screen name="TrustSafety" component={TrustSafetyScreen} options={({ route }) => ({ title: route.params?.title || "Trust & Safety" })} />
+      <Stack.Screen name="TrustSafetySupport" component={TrustSafetyScreen} options={{ title: "Support" }} />
+      <Stack.Screen name="TrustSafetyHelp" component={TrustSafetyScreen} options={{ title: "Help" }} />
+      <Stack.Screen name="TrustCenter" component={TrustSafetyScreen} options={{ title: "Trust Center" }} />
+      <Stack.Screen name="SecurityReport" component={TrustSafetyScreen} options={{ title: "Security Report" }} />
+      <Stack.Screen name="ScamShield" component={TrustSafetyScreen} options={{ title: "Scam Shield" }} />
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} options={{ title: "Notifications" }} />
       <Stack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} options={{ title: "Notification Preferences" }} />
     </Stack.Navigator>

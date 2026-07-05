@@ -209,6 +209,12 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  const trustSafety = trustSafetyTarget(normalized);
+  if (trustSafety && navigationRef.isReady()) {
+    navigationRef.navigate("TrustSafety", trustSafety);
+    return { handled: true, target: normalized };
+  }
+
   const marketplacePathMatch = normalized.match(/^\/pulse\/marketplace\/(\d+)/);
   if (marketplacePathMatch?.[1] && navigationRef.isReady()) {
     navigationRef.navigate("MarketplaceDetail", { listingId: Number(marketplacePathMatch[1]), title: "Marketplace" });
@@ -300,6 +306,22 @@ function accountSectionTitle(section: "account" | "security" | "privacy" | "devi
   if (section === "privacy") return "Privacy Center";
   if (section === "devices") return "Sessions and Devices";
   return "Account Center";
+}
+
+function trustSafetyTarget(target: string): { title: string; mode: "support" | "security" | "scam" | "trust" } | null {
+  if (target.startsWith("/pulse/help") || target.startsWith("/support") || target.startsWith("/help")) {
+    return { title: "Support", mode: "support" };
+  }
+  if (target.startsWith("/trust-center") || target.startsWith("/community-rules")) {
+    return { title: "Trust Center", mode: "trust" };
+  }
+  if (target.startsWith("/security")) {
+    return { title: "Security Report", mode: "security" };
+  }
+  if (target.startsWith("/scam-shield")) {
+    return { title: "Scam Shield", mode: "scam" };
+  }
+  return null;
 }
 
 function customSchemePath(value: string, prefix: string) {

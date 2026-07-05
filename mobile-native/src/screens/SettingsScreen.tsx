@@ -58,6 +58,9 @@ export function SettingsScreen() {
         <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("AlertManagement", { title: "Alerts" })}>
           <Text style={styles.secondaryText}>Alert Management</Text>
         </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("TrustSafety", { title: "Trust & Safety", mode: "support" })}>
+          <Text style={styles.secondaryText}>Trust and Safety</Text>
+        </Pressable>
         <Text style={styles.muted}>Camera, microphone, media compression, and LiveKit call controls are Phase 2/3 QA-gated.</Text>
       </Panel>
       <Panel>

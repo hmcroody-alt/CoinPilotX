@@ -65,6 +65,12 @@ export type RootStackParamList = {
   AccountWebSecurity: { title?: string } | undefined;
   AccountPrivacy: { title?: string } | undefined;
   AccountDevices: { title?: string } | undefined;
+  TrustSafety: { title?: string; mode?: "support" | "security" | "scam" | "trust" } | undefined;
+  TrustSafetySupport: { title?: string } | undefined;
+  TrustSafetyHelp: { title?: string } | undefined;
+  TrustCenter: { title?: string } | undefined;
+  SecurityReport: { title?: string } | undefined;
+  ScamShield: { title?: string } | undefined;
   NotificationCenter: undefined;
   NotificationPreferences: undefined;
 };
