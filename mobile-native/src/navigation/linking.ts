@@ -120,6 +120,12 @@ export const linking: LinkingOptions<RootStackParamList> = {
           id: Number
         }
       },
+      AccountCenter: {
+        path: "pulse/settings/:section",
+        parse: {
+          section: String
+        }
+      },
       NotificationCenter: {
         path: "notifications"
       },

@@ -58,7 +58,10 @@ Completed native foundations:
 - Native iPhone Camera Studio Interaction QA: verified physical iPhone app launch, bundle load, Camera Studio payload launch, and process-level suspend/resume on the installed `com.pulsesoc.nativeapp` iPhone 16 Pro build. Installed Mac-side `libimobiledevice` for screenshot attempts, but `idevicescreenshot` could not start the iOS `screenshotr` service. No screenshot/video evidence, backend media IDs, upload IDs, post IDs, status IDs, or reel IDs were captured; real camera/mic/gallery/capture/upload/publish behavior remains unverified before moving to Native LiveKit calls.
 - Native Physical Interaction Evidence Path: documented the safest current evidence path for physical iPhone Camera Studio QA: manual iPhone screen recording or QuickTime video capture plus backend ID logging for `chat_media_uploads`, `pulse_posts`, `pulse_status`, and `pulse_reels`. Confirmed `devicectl` can launch/deep-link/suspend/resume but cannot drive taps or screenshots, `idevicescreenshot` remains blocked by the device screenshot service, and no `PulseSocNativeUITests` target exists yet. This mission added no new user-facing feature and preserved production WebView paths.
 - Native Captured iPhone Camera Studio QA Pass: collected machine-captured launch, bundle, deep-link, display, process, and syslog evidence on the connected iPhone 16 Pro build. The app foregrounded as `com.pulsesoc.nativeapp`, Metro bundled for iOS, and the Camera Studio payload URL launched at process level. No screenshot/video evidence or backend media/upload/post/status/reel IDs were captured, and syslog showed the camera service remained cold, so real camera/mic/gallery/capture/upload/publish behavior remains unverified before moving to Native LiveKit calls.
-- Settings: session controls, push registration, notification preferences entry.
+- Native Calls foundation and Practical QA: native call route, Messenger voice/video entry points, LiveKit connection shell, call control API wrappers, `/pulse/calls/<call_id>` deep-link routing, safe web fallback behavior, and practical QA documentation for release blockers.
+- Native Full-Screen Incoming Calls foundation and Practical QA: foreground incoming-call layer, active-call polling/resume hook, ring-seen guard, accept/decline/end controls, floating active-call bubble, minimized-call restore, and seeded practical QA path.
+- Native Account, Security & Privacy foundation: native Account Center, Security Center, Privacy Center, Sessions/Devices section, thin server-authoritative account API wrapper, settings entries, offline display cache, trusted-device removal, recovery/2FA/verification actions, deep-link routing, and protected web fallback for sensitive password/deletion/privacy flows.
+- Settings: session controls, push registration, notification preferences entry, and account/security/privacy/device center entry points.
 
 Completed supporting reports/audits:
 
@@ -151,11 +154,13 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_iphone_camera_manual_qa_audit.py`
 - `reports/pulsesoc_native_xctest_camera_qa.md`
 - `scripts/pulsesoc_native_xctest_camera_qa_audit.py`
+- `reports/pulsesoc_native_account_security_privacy_progress.md`
+- `scripts/pulsesoc_native_account_security_privacy_audit.py`
 
 ## Remaining Major Features
 
+- Account, Security & Privacy practical QA sweep
 - Camera Studio physical-device release QA and advanced editor expansion
-- Full-screen incoming calls and incoming-call presentation
 - Calls two-device release QA for native LiveKit media, push/ringing, lock-screen behavior, Bluetooth/speaker route behavior, and background audio
 - External Android device QA completion and hardening pass
 - Alert provider/device QA execution for push, SMS, email, Telegram, installed deep links, and notification tap routing
@@ -412,6 +417,7 @@ Only block the roadmap for critical, security-related, data-loss, production-bre
 - Native Calls Practical QA Sweep.
 - Native Full-Screen Incoming Calls foundation.
 - Native Incoming Calls Practical QA.
+- Native Account, Security & Privacy foundation.
 
 ## Native Calls Foundation
 
@@ -474,86 +480,89 @@ Safest implementation plan:
 5. Run QA browser routing checks where practical.
 6. Schedule full two-device iOS/Android LiveKit call QA before production replacement or App Store submission.
 
-## Recommendation Summary
+## Native Account, Security & Privacy Foundation
 
-Recommended next highest-value action after Native Incoming Calls QA: build the Native Account, Security, and Privacy Settings foundation, unless an authenticated local two-account incoming-call QA fixture is immediately available.
+Recommended and implemented next feature/action: Native Account, Security & Privacy foundation.
 
-Reason: Native Calls now reuses the existing PulseSoc Communications V2 engine and LiveKit token flow instead of duplicating call business logic. The practical QA sweep verified Messenger voice/video entry points, `/pulse/calls/:callId` route reachability through `npm run web:qa`, call loading/error/control rendering, LiveKit web fallback guards, notification/deep-link routing, and no production WebView changes. The native app now also has a foreground full-screen incoming-call layer mounted above the signed-in navigator, backed by `/api/calls/active`, ring-seen, accept, decline, and end. The incoming-call practical QA added a dev/local-only seeded fixture, verified route serving through the built-in QA browser path, documented that the browser session was signed out, and fixed duplicate `ring-seen` acknowledgements so each call is marked seen once per foreground session. The remaining call risks are provider/device release blockers, not reasons to stop feature development.
+Why it came next:
 
-The current repo shows a more immediately buildable native gap in Settings: `mobile-native/src/screens/SettingsScreen.tsx` is still mainly push/session shortcuts, while production PulseSoc exposes account/security/privacy APIs and routes including `/api/dashboard/account/settings`, `/api/account/status`, `/api/account/security`, `/api/account/verify-email`, `/api/account/verify-phone`, `/api/account/2fa/enable`, `/api/account/2fa/disable`, `/api/account/recovery-codes/generate`, `/api/account/security-events`, `/api/account/trusted-devices`, `/api/account/trusted-devices/<device_id>`, `/api/account/reauthenticate`, `/api/pulse/notifications/preferences`, `/account/security`, `/dashboard/account/security`, and `/pulse/settings/privacy`. This can reuse backend authority and improve app completeness without waiting on provider/device call QA.
+- Calls and incoming-call work now have practical QA coverage and remaining release blockers are provider/device-specific.
+- The native Settings surface was still mostly a push/session shortcut hub.
+- Production PulseSoc already exposes server-authoritative account, security, privacy, trusted-device, session, and notification preference routes.
+- Account/security/privacy strengthens every future native flow without requiring new backend business logic.
 
-Reusable PulseSoc APIs/code/database/business logic for the next feature:
+Reusable PulseSoc APIs/code/database/business logic:
 
-- `GET /api/calls/active`
-- `POST /api/calls/<call_id>/ring-seen`
-- `POST /api/calls/<call_id>/accept`
-- `POST /api/calls/<call_id>/decline`
-- `POST /api/calls/<call_id>/end`
-- `GET /api/calls/<call_id>/status`
-- Existing Communications V2 participant authorization, call state, call notifications, and call delivery diagnostics.
-- Existing native `CallScreen`, `calls.ts`, notification routing, deep-link routing, AppState refresh patterns, and safe web fallback behavior.
+- `GET /api/account/status`
+- `GET /api/dashboard/account/settings`
+- `POST /api/dashboard/account/settings`
+- `GET /api/account/security`
+- `POST /api/account/verify-email`
+- `POST /api/account/verify-phone`
+- `POST /api/account/2fa/enable`
+- `POST /api/account/2fa/disable`
+- `POST /api/account/recovery-codes/generate`
+- `GET /api/account/security-events`
+- `GET /api/account/trusted-devices`
+- `DELETE /api/account/trusted-devices/<device_id>`
+- `POST /api/account/reauthenticate`
+- `POST /api/account/sessions/revoke-all`
+- Existing protected web routes for password, deletion, privacy center, and advanced security flows.
+- Existing auth/session behavior and notification preference APIs.
 
 What was rebuilt natively:
 
-- Incoming-call overlay/sheet while the app is foregrounded.
-- Active-call polling/resume hook.
-- Tap-to-answer route into the existing `CallScreen`.
-- Decline/end controls from the incoming-call UI.
-- Missed-call and already-ended safe states.
-- Floating active-call bubble.
-- Minimize-to-bubble handoff from `CallScreen`.
-- Dev/local-only seeded incoming/active call QA fixture.
-- Per-call `ring-seen` duplicate guard.
-- Release-QA documentation for lock-screen, APNs/FCM, and OS-level full-screen call behavior without claiming it is verified.
+- Native Account Center.
+- Native Security Center.
+- Native Privacy Center.
+- Native Sessions and Devices section.
+- Thin account API wrapper with cached display fallback.
+- Settings entries for account/security/privacy/devices.
+- Deep-link and notification routing for `/pulse/settings/account`, `/pulse/settings/security`, `/pulse/settings/privacy`, `/pulse/settings/devices`, `/dashboard/account/settings`, `/dashboard/account/security`, `/account/settings`, `/account/security`, and `/privacy-center`.
+- Safe protected web fallbacks for password/email management, account deletion, advanced security, and full privacy center controls.
 
 Dependencies/blockers:
 
-- Real APNs/FCM incoming push and lock-screen behavior remain provider/device release blockers.
-- True OS-level full-screen incoming-call behavior may require additional native module/build configuration and should remain scoped until the installed build path is stable.
-- Two-device LiveKit media quality remains release QA.
+- Email/SMS/verification provider delivery is backend/provider QA.
+- Password changes, account export, and deletion remain on protected web fallback until a dedicated native reauth flow is planned.
+- Real-device QA is not claimed.
+- Account/security UX requires a short authenticated QA pass before moving on.
 
-Risk level: high for release, medium for a foreground native foundation.
+Risk level: medium-high because the feature touches account and security controls.
 
 Estimated complexity: medium-high.
 
-Reusable PulseSoc APIs/code/database/business logic for the next feature:
+## Recommendation Summary
 
-- Account status and dashboard settings APIs.
-- Account security APIs.
-- Email/phone verification APIs.
-- 2FA enable/disable APIs.
-- Recovery code generation.
-- Security events.
-- Trusted devices listing/removal.
-- Reauthentication.
-- Existing notification preference APIs.
-- Existing privacy settings route and backend privacy rules.
-- Existing auth/session behavior and logout handling.
+Recommended next highest-value action after Native Account, Security & Privacy: run a short practical authenticated QA browser/simulator sweep for this surface.
+
+Reason: this foundation touches trust, security actions, privacy settings, and protected fallbacks. The next action should verify signed-in loading, safe offline/error states, route reachability, deep-link routing, action failure/success states, and visual consistency before the roadmap moves to another broad feature. Provider delivery and physical-device proof remain release blockers, not development blockers unless a security-critical, production-breaking, or data-loss issue appears.
+
+Reusable PulseSoc APIs/code/database/business logic for the next action:
+
+- Existing account/security/privacy APIs listed above.
+- Existing native `AccountCenterScreen`, `account.ts`, Settings entries, navigation linking, and notification routing.
+- Existing authenticated QA browser workflow.
 
 What must be rebuilt natively:
 
-- Native Account Settings screen.
-- Native Security Settings screen.
-- Native Privacy Settings screen or section.
-- Trusted device list/removal UI.
-- Security event list.
-- 2FA/recovery-code action surfaces with safe reauth/web fallback where required.
-- Deep links from `/account/security`, `/dashboard/account/security`, `/dashboard/account/settings`, and `/pulse/settings/privacy`.
+- No new major feature in the next action.
+- Only scoped fixes found during QA should be implemented.
 
 Dependencies/blockers:
 
-- Sensitive reauthentication and verification flows must not weaken production auth.
-- Any provider/OTP/SMS/email delivery behavior remains backend/provider-authoritative.
-- Unsupported or high-risk account deletion/password reset flows should stay on safe web fallback until separately planned.
+- QA credentials or local QA auth path must be available for authenticated browser/simulator checks.
+- Provider delivery for verification channels remains outside browser QA.
 
-Risk level: medium-high because account/security UX is sensitive.
+Risk level: medium.
 
-Estimated complexity: medium-high.
+Estimated complexity: low-medium.
 
 Safest implementation plan for the next action:
 
-1. Inspect the existing production account/security/privacy implementation before coding.
-2. Add thin native API wrappers over existing account/security/privacy endpoints.
-3. Build read-first native settings surfaces, then add low-risk actions such as trusted-device removal.
-4. Keep sensitive provider/OTP/password/account-deletion flows on safe web fallback unless already supported by backend APIs.
-5. Run static verification and practical QA browser checks without blocking on external provider delivery.
+1. Start the native QA web build.
+2. Authenticate with a QA-safe account.
+3. Exercise Account, Security, Privacy, Devices, and fallback routes.
+4. Verify sensitive actions fail safely or succeed through existing backend APIs.
+5. Fix only scoped blockers.
+6. Keep production WebView routes untouched.

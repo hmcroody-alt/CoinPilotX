@@ -203,6 +203,12 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  const accountSection = accountSectionForTarget(normalized);
+  if (accountSection && navigationRef.isReady()) {
+    navigationRef.navigate("AccountCenter", { section: accountSection, title: accountSectionTitle(accountSection) });
+    return { handled: true, target: normalized };
+  }
+
   const marketplacePathMatch = normalized.match(/^\/pulse\/marketplace\/(\d+)/);
   if (marketplacePathMatch?.[1] && navigationRef.isReady()) {
     navigationRef.navigate("MarketplaceDetail", { listingId: Number(marketplacePathMatch[1]), title: "Marketplace" });
@@ -271,6 +277,29 @@ function extractStringQueryValue(target: string, name: string) {
   const query = target.split("?")[1]?.split("#")[0] || "";
   if (!query) return "";
   return new URLSearchParams(query).get(name) || "";
+}
+
+function accountSectionForTarget(target: string): "account" | "security" | "privacy" | "devices" | "" {
+  if (target.startsWith("/pulse/settings/security") || target.startsWith("/dashboard/account/security") || target.startsWith("/account/security")) {
+    return "security";
+  }
+  if (target.startsWith("/pulse/settings/privacy") || target.startsWith("/privacy-center")) {
+    return "privacy";
+  }
+  if (target.startsWith("/pulse/settings/devices")) {
+    return "devices";
+  }
+  if (target.startsWith("/pulse/settings/account") || target.startsWith("/dashboard/account/settings") || target.startsWith("/account/settings")) {
+    return "account";
+  }
+  return "";
+}
+
+function accountSectionTitle(section: "account" | "security" | "privacy" | "devices") {
+  if (section === "security") return "Security Center";
+  if (section === "privacy") return "Privacy Center";
+  if (section === "devices") return "Sessions and Devices";
+  return "Account Center";
 }
 
 function customSchemePath(value: string, prefix: string) {

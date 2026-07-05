@@ -31,6 +31,18 @@ export function SettingsScreen() {
         <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("NotificationPreferences")}>
           <Text style={styles.secondaryText}>Notification preferences</Text>
         </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("AccountCenter", { section: "account", title: "Account Center" })}>
+          <Text style={styles.secondaryText}>Account Center</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("AccountCenter", { section: "security", title: "Security Center" })}>
+          <Text style={styles.secondaryText}>Security Center</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("AccountCenter", { section: "privacy", title: "Privacy Center" })}>
+          <Text style={styles.secondaryText}>Privacy Center</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("AccountCenter", { section: "devices", title: "Sessions and Devices" })}>
+          <Text style={styles.secondaryText}>Sessions and devices</Text>
+        </Pressable>
         <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("Premium")}>
           <Text style={styles.secondaryText}>Premium and entitlements</Text>
         </Pressable>

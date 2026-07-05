@@ -58,6 +58,7 @@ export type RootStackParamList = {
   IntelligenceCenter: { alertId?: number; subsystem?: string; title?: string } | undefined;
   AlertManagement: { alertId?: number; title?: string } | undefined;
   CryptoAlertManagement: { alertId?: number; alert_id?: number; id?: number; title?: string } | undefined;
+  AccountCenter: { section?: "account" | "security" | "privacy" | "devices"; title?: string } | undefined;
   NotificationCenter: undefined;
   NotificationPreferences: undefined;
 };
