@@ -410,6 +410,7 @@ Only block the roadmap for critical, security-related, data-loss, production-bre
 - Camera Studio foundation, simulator QA, XCTest QA path, and physical iPhone install/launch proof.
 - Native Calls foundation.
 - Native Calls Practical QA Sweep.
+- Native Full-Screen Incoming Calls foundation.
 
 ## Native Calls Foundation
 
@@ -474,9 +475,9 @@ Safest implementation plan:
 
 ## Recommendation Summary
 
-Recommended next highest-value action after Native Calls foundation: build the Native Full-Screen Incoming Calls foundation, unless a real two-device QA window is immediately available for LiveKit media release testing.
+Recommended next highest-value action after Native Calls foundation: run a practical incoming-call QA sweep against a seeded active-call fixture or local two-account backend test, unless a critical/security/data-loss/production-breaking issue appears.
 
-Reason: Native Calls now reuses the existing PulseSoc Communications V2 engine and LiveKit token flow instead of duplicating call business logic. The practical QA sweep verified Messenger voice/video entry points, `/pulse/calls/:callId` route reachability through `npm run web:qa`, call loading/error/control rendering, LiveKit web fallback guards, notification/deep-link routing, and no production WebView changes. The next code gap is native incoming-call presentation: the backend already exposes `/api/calls/active`, ring-seen, accept, decline, end, call notification links, and call event state, while the native app now has a Call screen and notification router. That makes a native incoming-call overlay/routing surface high leverage and low duplication.
+Reason: Native Calls now reuses the existing PulseSoc Communications V2 engine and LiveKit token flow instead of duplicating call business logic. The practical QA sweep verified Messenger voice/video entry points, `/pulse/calls/:callId` route reachability through `npm run web:qa`, call loading/error/control rendering, LiveKit web fallback guards, notification/deep-link routing, and no production WebView changes. The native app now also has a foreground full-screen incoming-call layer mounted above the signed-in navigator, backed by `/api/calls/active`, ring-seen, accept, decline, and end. The remaining call risks are provider/device release blockers, not reasons to stop feature development.
 
 Reusable PulseSoc APIs/code/database/business logic for the next feature:
 
@@ -489,13 +490,15 @@ Reusable PulseSoc APIs/code/database/business logic for the next feature:
 - Existing Communications V2 participant authorization, call state, call notifications, and call delivery diagnostics.
 - Existing native `CallScreen`, `calls.ts`, notification routing, deep-link routing, AppState refresh patterns, and safe web fallback behavior.
 
-What must be rebuilt natively:
+What was rebuilt natively:
 
 - Incoming-call overlay/sheet while the app is foregrounded.
 - Active-call polling/resume hook.
 - Tap-to-answer route into the existing `CallScreen`.
 - Decline/end controls from the incoming-call UI.
 - Missed-call and already-ended safe states.
+- Floating active-call bubble.
+- Minimize-to-bubble handoff from `CallScreen`.
 - Release-QA documentation for lock-screen, APNs/FCM, and OS-level full-screen call behavior without claiming it is verified.
 
 Dependencies/blockers:
@@ -508,10 +511,10 @@ Risk level: high for release, medium for a foreground native foundation.
 
 Estimated complexity: medium-high.
 
-Safest implementation plan:
+Safest implementation plan for the next QA action:
 
-1. Reuse `/api/calls/active` polling and notification routing; do not create native-only call state.
-2. Build a foreground incoming-call surface in the native app shell.
-3. Route accept/decline/end to existing backend endpoints and existing `CallScreen`.
-4. Keep OS-level lock-screen/full-screen provider behavior documented as unverified release work.
-5. Run static verification, route QA, and practical browser/simulator checks where possible.
+1. Seed or create a real ringing call through existing backend routes.
+2. Verify foreground app interruption on at least one native route.
+3. Verify accept routes into `CallScreen`; decline/end use backend endpoints.
+4. Verify silent ignore does not alter backend call state.
+5. Keep OS-level lock-screen/full-screen provider behavior documented as unverified release work.

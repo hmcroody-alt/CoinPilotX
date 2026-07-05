@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Linking, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { IncomingCallLayer } from "./src/calls/IncomingCallLayer";
 import { AppNavigator } from "./src/navigation/AppNavigator";
 import { AuthNavigator } from "./src/navigation/AuthNavigator";
 import { linking } from "./src/navigation/linking";
@@ -97,6 +98,7 @@ export default function App() {
           <StatusBar style="light" />
           {authState.status === "signedIn" ? <AppNavigator /> : <AuthNavigator />}
         </NavigationContainer>
+        <IncomingCallLayer signedIn={authState.status === "signedIn"} currentUserId={authState.user?.user_id} />
       </AuthContext.Provider>
     </GestureHandlerRootView>
   );

@@ -171,7 +171,8 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
     const next = !minimized;
     setMinimized(next);
     await sendCallControl(callId, next ? "minimize" : "restore").catch(() => undefined);
-  }, [callId, minimized]);
+    if (next && navigation.canGoBack()) navigation.goBack();
+  }, [callId, minimized, navigation]);
 
   useEffect(() => {
     let mounted = true;
