@@ -411,6 +411,7 @@ Only block the roadmap for critical, security-related, data-loss, production-bre
 - Native Calls foundation.
 - Native Calls Practical QA Sweep.
 - Native Full-Screen Incoming Calls foundation.
+- Native Incoming Calls Practical QA.
 
 ## Native Calls Foundation
 
@@ -475,9 +476,11 @@ Safest implementation plan:
 
 ## Recommendation Summary
 
-Recommended next highest-value action after Native Calls foundation: run a practical incoming-call QA sweep against a seeded active-call fixture or local two-account backend test, unless a critical/security/data-loss/production-breaking issue appears.
+Recommended next highest-value action after Native Incoming Calls QA: build the Native Account, Security, and Privacy Settings foundation, unless an authenticated local two-account incoming-call QA fixture is immediately available.
 
-Reason: Native Calls now reuses the existing PulseSoc Communications V2 engine and LiveKit token flow instead of duplicating call business logic. The practical QA sweep verified Messenger voice/video entry points, `/pulse/calls/:callId` route reachability through `npm run web:qa`, call loading/error/control rendering, LiveKit web fallback guards, notification/deep-link routing, and no production WebView changes. The native app now also has a foreground full-screen incoming-call layer mounted above the signed-in navigator, backed by `/api/calls/active`, ring-seen, accept, decline, and end. The remaining call risks are provider/device release blockers, not reasons to stop feature development.
+Reason: Native Calls now reuses the existing PulseSoc Communications V2 engine and LiveKit token flow instead of duplicating call business logic. The practical QA sweep verified Messenger voice/video entry points, `/pulse/calls/:callId` route reachability through `npm run web:qa`, call loading/error/control rendering, LiveKit web fallback guards, notification/deep-link routing, and no production WebView changes. The native app now also has a foreground full-screen incoming-call layer mounted above the signed-in navigator, backed by `/api/calls/active`, ring-seen, accept, decline, and end. The incoming-call practical QA added a dev/local-only seeded fixture, verified route serving through the built-in QA browser path, documented that the browser session was signed out, and fixed duplicate `ring-seen` acknowledgements so each call is marked seen once per foreground session. The remaining call risks are provider/device release blockers, not reasons to stop feature development.
+
+The current repo shows a more immediately buildable native gap in Settings: `mobile-native/src/screens/SettingsScreen.tsx` is still mainly push/session shortcuts, while production PulseSoc exposes account/security/privacy APIs and routes including `/api/dashboard/account/settings`, `/api/account/status`, `/api/account/security`, `/api/account/verify-email`, `/api/account/verify-phone`, `/api/account/2fa/enable`, `/api/account/2fa/disable`, `/api/account/recovery-codes/generate`, `/api/account/security-events`, `/api/account/trusted-devices`, `/api/account/trusted-devices/<device_id>`, `/api/account/reauthenticate`, `/api/pulse/notifications/preferences`, `/account/security`, `/dashboard/account/security`, and `/pulse/settings/privacy`. This can reuse backend authority and improve app completeness without waiting on provider/device call QA.
 
 Reusable PulseSoc APIs/code/database/business logic for the next feature:
 
@@ -499,6 +502,8 @@ What was rebuilt natively:
 - Missed-call and already-ended safe states.
 - Floating active-call bubble.
 - Minimize-to-bubble handoff from `CallScreen`.
+- Dev/local-only seeded incoming/active call QA fixture.
+- Per-call `ring-seen` duplicate guard.
 - Release-QA documentation for lock-screen, APNs/FCM, and OS-level full-screen call behavior without claiming it is verified.
 
 Dependencies/blockers:
@@ -511,10 +516,44 @@ Risk level: high for release, medium for a foreground native foundation.
 
 Estimated complexity: medium-high.
 
-Safest implementation plan for the next QA action:
+Reusable PulseSoc APIs/code/database/business logic for the next feature:
 
-1. Seed or create a real ringing call through existing backend routes.
-2. Verify foreground app interruption on at least one native route.
-3. Verify accept routes into `CallScreen`; decline/end use backend endpoints.
-4. Verify silent ignore does not alter backend call state.
-5. Keep OS-level lock-screen/full-screen provider behavior documented as unverified release work.
+- Account status and dashboard settings APIs.
+- Account security APIs.
+- Email/phone verification APIs.
+- 2FA enable/disable APIs.
+- Recovery code generation.
+- Security events.
+- Trusted devices listing/removal.
+- Reauthentication.
+- Existing notification preference APIs.
+- Existing privacy settings route and backend privacy rules.
+- Existing auth/session behavior and logout handling.
+
+What must be rebuilt natively:
+
+- Native Account Settings screen.
+- Native Security Settings screen.
+- Native Privacy Settings screen or section.
+- Trusted device list/removal UI.
+- Security event list.
+- 2FA/recovery-code action surfaces with safe reauth/web fallback where required.
+- Deep links from `/account/security`, `/dashboard/account/security`, `/dashboard/account/settings`, and `/pulse/settings/privacy`.
+
+Dependencies/blockers:
+
+- Sensitive reauthentication and verification flows must not weaken production auth.
+- Any provider/OTP/SMS/email delivery behavior remains backend/provider-authoritative.
+- Unsupported or high-risk account deletion/password reset flows should stay on safe web fallback until separately planned.
+
+Risk level: medium-high because account/security UX is sensitive.
+
+Estimated complexity: medium-high.
+
+Safest implementation plan for the next action:
+
+1. Inspect the existing production account/security/privacy implementation before coding.
+2. Add thin native API wrappers over existing account/security/privacy endpoints.
+3. Build read-first native settings surfaces, then add low-risk actions such as trusted-device removal.
+4. Keep sensitive provider/OTP/password/account-deletion flows on safe web fallback unless already supported by backend APIs.
+5. Run static verification and practical QA browser checks without blocking on external provider delivery.

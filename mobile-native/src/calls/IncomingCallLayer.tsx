@@ -6,6 +6,7 @@ import {
   AppStateStatus,
   Easing,
   Image,
+  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -14,6 +15,7 @@ import {
 import { acceptCall, declineCall, endCall, getActiveCalls, markRingSeen, PulseCall, PulseCallParticipant } from "../api/calls";
 import { navigationRef } from "../navigation/notificationRouting";
 import { colors } from "../theme/colors";
+import { qaIncomingCallFromUrl } from "./incomingCallQa";
 
 const ACTIVE_CALL_REFRESH_MS = 4200;
 const SILENCED_CALL_TTL_MS = 15 * 60 * 1000;
@@ -29,6 +31,7 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
   const ignoredCalls = useRef<Map<string, number>>(new Map());
+  const ringSeenCalls = useRef<Set<string>>(new Set());
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const pulse = useRef(new Animated.Value(0)).current;
   const floatPulse = useRef(new Animated.Value(0)).current;
@@ -47,12 +50,29 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
     if (ringing) {
       setIncomingCall(ringing);
       setError("");
-      markRingSeen(ringing.call_id).catch(() => undefined);
+      if (!ringSeenCalls.current.has(ringing.call_id)) {
+        ringSeenCalls.current.add(ringing.call_id);
+        markRingSeen(ringing.call_id).catch(() => undefined);
+      }
     } else {
       setIncomingCall(null);
     }
     setFloatingCall(connected || null);
   }, [currentUserId, signedIn]);
+
+  const seedQaCallFromUrl = useCallback((url: string | null) => {
+    const fixture = qaIncomingCallFromUrl(url, currentUserId);
+    if (!fixture) return false;
+    if (isFloatingActiveCall(fixture)) {
+      setFloatingCall(fixture);
+      setIncomingCall(null);
+    } else {
+      setIncomingCall(fixture);
+      setFloatingCall(null);
+    }
+    setError("");
+    return true;
+  }, [currentUserId]);
 
   const accept = useCallback(async () => {
     if (!incomingCall?.call_id) return;
@@ -127,6 +147,7 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
     if (!signedIn) {
       setIncomingCall(null);
       setFloatingCall(null);
+      ringSeenCalls.current.clear();
       return;
     }
     refreshActiveCalls().catch(() => undefined);
@@ -147,6 +168,15 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
       notificationSubscription.remove();
     };
   }, [refreshActiveCalls, signedIn]);
+
+  useEffect(() => {
+    if (!signedIn) return;
+    Linking.getInitialURL().then(seedQaCallFromUrl).catch(() => undefined);
+    const subscription = Linking.addEventListener("url", (event) => {
+      seedQaCallFromUrl(event.url);
+    });
+    return () => subscription.remove();
+  }, [seedQaCallFromUrl, signedIn]);
 
   useEffect(() => {
     if (!incomingCall) return;
