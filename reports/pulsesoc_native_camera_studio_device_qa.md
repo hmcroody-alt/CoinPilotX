@@ -12,7 +12,7 @@ Production WebView camera routes were not modified. The native app remains a par
 
 | Area | Browser QA | iOS Simulator | Physical iPhone | Android Emulator | Physical Android | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| Camera route | Auth-gate verified | Auth-gate verified | Not verified | Not verified | Not verified | Authenticated route still needs QA account |
+| Camera route | Auth-gate verified | Auth-gate verified | Not verified | Not verified | Not verified | Authenticated route still blocked by reliable simulator/device input |
 | Camera permission denied/allowed | Not applicable | Not verified | Not verified | Not verified | Not verified | Requires simulator/device |
 | Microphone permission denied/allowed | Not applicable | Not verified | Not verified | Not verified | Not verified | Requires simulator/device |
 | Photo capture | Not applicable | Not verified | Not verified | Not verified | Not verified | Requires simulator/device |
@@ -75,7 +75,18 @@ Later iOS Simulator update:
 - `npx expo run:ios --device 7B3BEEBC-6135-497D-91CD-A3E70C927D56 --no-bundler` completed with `Build Succeeded`.
 - The installed dev build emitted one non-fatal Xcode simulator search-path warning.
 - Simulator QA reached native Login through the installed `com.pulsesoc.nativeapp` app, not Expo Go.
-- Authenticated Camera Studio interaction was not verified because no simulator-safe authenticated PulseSoc credentials were available.
+- Authenticated Camera Studio interaction was not verified in the installed simulator app. A temporary local QA backend and verified local QA account were created, direct backend login and authenticated camera config passed outside the app, and the app rebundled against the local QA API, but available Simulator text-entry automation did not reliably fill the username/email field.
+
+Authenticated simulator attempt findings:
+
+- Temporary local backend: `http://127.0.0.1:5107`.
+- Temporary local DB: `/tmp/pulsesoc_camera_sim_qa.sqlite`.
+- Verified outside-app auth: `POST /api/mobile/auth/login` returned `authenticated: true`.
+- Verified outside-app camera config: `GET /api/pulse/camera/config?target=feed&mode=photo` returned `ok: true`, provider `native_fallback`, and upload endpoint `/api/pulse/media/upload`.
+- Installed app bundle target: `EXPO_PUBLIC_PULSE_API_BASE_URL=http://127.0.0.1:5107`.
+- Simulator text-entry automation could type into the password field, but the username/email field missed input, dropped characters, or stayed empty after paste attempts.
+- Submitting incomplete or corrupted credentials correctly showed `Login failed`.
+- Do not claim authenticated simulator login, authenticated Camera Studio route rendering, gallery fallback, preview, upload handoff, publish routing, or authenticated foreground/background recovery from this attempt.
 
 These are machine/setup blockers, not PulseSoc code blockers.
 
@@ -83,8 +94,8 @@ These are machine/setup blockers, not PulseSoc code blockers.
 
 Priority order:
 
-1. Create or reuse QA-safe authenticated PulseSoc credentials for simulator and device publish-to-Feed/Status/Reels/Profile/Messenger flows.
-2. Run authenticated Camera Studio simulator QA through the installed `com.pulsesoc.nativeapp` development build.
+1. Use a reliable authenticated input path for the installed simulator app: manual Simulator typing, XCTest/Appium/Detox automation, or a physical QA device.
+2. Run authenticated Camera Studio simulator QA through the installed `com.pulsesoc.nativeapp` development build after login can be completed reliably.
 3. Attach and trust at least one physical iPhone for real camera/microphone/photo-library QA.
 4. Attach and authorize at least one physical Android device or start an Android emulator so `adb devices` lists a target.
 5. Install Android Studio/emulator images if emulator QA is needed.
@@ -166,6 +177,6 @@ npm run --prefix mobile-native build:android:development
 
 ## Next Recommendation
 
-The next highest-value action is to create or connect QA-safe authenticated credentials, then run authenticated Camera Studio simulator QA followed by physical iPhone and Android Camera Studio QA for `com.pulsesoc.nativeapp`.
+The next highest-value action is to use a reliable authenticated input path, then run authenticated Camera Studio simulator QA followed by physical iPhone and Android Camera Studio QA for `com.pulsesoc.nativeapp`.
 
 Do not move to Native LiveKit calls yet. LiveKit calls depend on the same camera/microphone/device-permission surface plus push/ringing/background behavior, so proceeding before authenticated Camera Studio QA and physical-device media QA would compound unknowns.

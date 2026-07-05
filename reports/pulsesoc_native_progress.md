@@ -49,6 +49,7 @@ Completed native foundations:
 - Native Camera Studio iOS Simulator QA: booted the iPhone 17 Pro iOS 26.5 simulator, installed Expo Go, launched PulseSoc Native through Metro, verified the app bundled and rendered the login screen behind Expo Go's developer menu, verified Expo Go terminate/relaunch at the container level, and documented that Camera Studio interaction remains unverified because Expo Doctor reports Expo SDK 51 is incompatible with Xcode 26.6 and the Expo Go first-run overlay could not be dismissed through available automation.
 - Native iOS Toolchain Compatibility: upgraded the parallel `mobile-native` app to Expo SDK 54/React Native 0.81 for Xcode 26.6 compatibility, aligned Expo modules, added the Reanimated worklets peer, fixed SDK 54 notification/file-system API changes, built and installed `com.pulsesoc.nativeapp` on the iPhone 17 Pro simulator, verified Metro bundles without Expo Go, and rendered the native login screen in the installed simulator app.
 - Native Camera Studio iOS Simulator QA Through Installed Dev Build: built, installed, launched, and bundled `com.pulsesoc.nativeapp` on the iPhone 17 Pro simulator; verified native Login, signed-out session recovery, signed-out Camera Studio deep-link auth gating, and foreground/background relaunch at the auth gate; fixed protected deep-link parsing so signed-out Camera Studio links no longer emit React Navigation route-mismatch warnings; documented that authenticated Camera Studio, camera/mic/gallery/upload/publish, and physical-device behavior remain unverified.
+- Native Camera Studio Authenticated Simulator QA Attempt: started a temporary local QA backend at `127.0.0.1:5107`, verified direct mobile auth and authenticated camera config outside the app, rebundled the installed simulator app with `EXPO_PUBLIC_PULSE_API_BASE_URL=http://127.0.0.1:5107`, and documented that Simulator text-entry automation could not reliably fill the username/email field. Authenticated Camera Studio remains unverified; do not claim simulator login, preview, upload, publish, or authenticated recovery from this attempt.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -210,9 +211,9 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Action
 
-Recommendation: create or connect QA-safe authenticated PulseSoc credentials, then run authenticated Native Camera Studio simulator QA followed by physical iPhone and Android Camera Studio QA before moving to Native LiveKit calls.
+Recommendation: use a reliable authenticated input path for the installed simulator app, then run authenticated Native Camera Studio simulator QA followed by physical iPhone and Android Camera Studio QA before moving to Native LiveKit calls.
 
-This is the highest-value next action based on the current codebase. Native Camera Studio is implemented as a foundation and the installed `com.pulsesoc.nativeapp` development build now compiles, installs, bundles, renders native Login, survives signed-out foreground/background relaunch, and safely auth-gates Camera Studio deep links on the iPhone 17 Pro simulator. The remaining risk is no longer Expo Go or Xcode compatibility; it is authenticated Camera Studio interaction and real device media behavior. Camera permissions, microphone permissions, gallery fallback, preview/caption/privacy/destination flow, upload handoff, publish routing, and physical camera/video/compression behavior still remain unverified.
+This is the highest-value next action based on the current codebase. Native Camera Studio is implemented as a foundation and the installed `com.pulsesoc.nativeapp` development build now compiles, installs, bundles, renders native Login, survives signed-out foreground/background relaunch, and safely auth-gates Camera Studio deep links on the iPhone 17 Pro simulator. A temporary local QA backend and verified local QA account were created, and direct mobile auth plus authenticated camera config passed outside the app. The remaining simulator blocker is reliable authenticated input into the installed app: available text-entry automation dropped or missed username/email input while password input worked. The remaining release risk is authenticated Camera Studio interaction and real device media behavior. Camera permissions, microphone permissions, gallery fallback, preview/caption/privacy/destination flow, upload handoff, publish routing, and physical camera/video/compression behavior still remain unverified.
 
 Provider/device QA for Alert Management remains a release blocker, especially APNs/FCM/Expo push delivery, installed-app notification taps, lock-screen presentation, SMS/email/Telegram delivery, and physical-device deep links. That work should continue before any release claim, but it is external-credential/device gated. Among buildable native features, Camera Studio gives the most leverage while reusing existing backend/media logic.
 
@@ -224,7 +225,7 @@ Provider/device QA for Alert Management remains a release blocker, especially AP
 - Production create-from-camera APIs already exist for posts and reels: `/api/pulse/posts/create-from-camera` and `/api/pulse/reels/create-from-camera`; Status Creator already has native publishing through existing Status APIs.
 - Production web camera includes capture modes, front/back camera, microphone toggle, flash/torch fallback, gallery fallback, lenses, beauty modes, filters, preview, privacy/caption, and destination routing.
 - Native already has `expo-camera`, `expo-image-picker`, `expo-file-system`, shared `useNativeMediaUpload`, `MediaUploadPreview`, Feed Composer, Status Creator, Profile uploads, Messenger attachments, Marketplace media viewer, and Creator Studio shortcuts.
-- Native now has a dedicated Camera Studio screen/route and deep link for `/pulse/camera/*`; signed-out simulator deep links are safely auth-gated, and the next risk is authenticated simulator QA plus real-device validation, not more UI breadth.
+- Native now has a dedicated Camera Studio screen/route and deep link for `/pulse/camera/*`; signed-out simulator deep links are safely auth-gated, local backend auth/camera config works outside the app, and the next risk is reliable authenticated simulator input plus real-device validation, not more UI breadth.
 - Native LiveKit calls are tempting because `@livekit/react-native` and `livekit-client` are installed and backend call APIs exist, but calls depend on reliable push/ringing, lock-screen behavior, microphone/camera permissions, background audio, and real-device QA that is still not established.
 - This recommendation is based on the current production routes/services and `mobile-native` implementation inspected on 2026-07-04.
 
@@ -262,8 +263,8 @@ Do not duplicate in native:
 
 ## What Must Be Hardened Next
 
-- Create or connect QA-safe authenticated PulseSoc credentials for simulator/device Camera Studio testing.
-- Run an authenticated iOS simulator QA pass through the installed `com.pulsesoc.nativeapp` development build.
+- Use a reliable authenticated input path for simulator/device Camera Studio testing, such as manual Simulator typing, XCTest/Appium/Detox automation, or a physical QA device.
+- Run an authenticated iOS simulator QA pass through the installed `com.pulsesoc.nativeapp` development build after login can be completed reliably.
 - Verify Camera Studio routing, fallback UI, gallery fallback, preview flow, caption/privacy/destination state, and publish handoff where simulator supports it.
 - Attach/trust a physical iPhone and attach/authorize a physical Android device, or start an Android emulator.
 - QA browser route/layout sweep for `/pulse/camera`, `/pulse/camera/photo`, `/pulse/camera/video`, `/pulse/camera/status`, `/pulse/camera/reel`, and `/pulse/camera/post`.
@@ -293,7 +294,7 @@ Blockers:
 - Expo Doctor now passes under Xcode 26.6 after the native Expo SDK 54 compatibility upgrade.
 - `com.pulsesoc.nativeapp` now builds, installs, bundles, and renders the login screen on the iPhone 17 Pro simulator without Expo Go.
 - Signed-out Camera Studio deep links now stay on the auth gate without React Navigation route-mismatch warnings after the scoped native linking fix.
-- Authenticated Camera Studio interaction still needs a QA-safe account/session.
+- A temporary local QA account/session and local backend were verified outside the app, but authenticated Camera Studio interaction still needs reliable app input automation or manual/device login.
 - No physical iPhone or Android device was visible through USB system profiling in this workspace.
 - No physical-device QA flow has been recorded in this workspace.
 - Provider/device Alert Management QA remains unverified for APNs/FCM/SMS/email/Telegram and should continue as a release-readiness track.
@@ -343,6 +344,6 @@ Defer from first slice:
 
 ## Recommendation Summary
 
-Recommended next highest-value action: create/connect QA-safe authenticated PulseSoc credentials, then run authenticated Camera Studio simulator QA and physical-device media QA.
+Recommended next highest-value action: use a reliable authenticated input path, then run authenticated Camera Studio simulator QA and physical-device media QA.
 
-Reason: the production platform already has the camera/media routes, catalogs, validation, storage, preview, and create-from-camera business logic, and the native app now has a dedicated native camera foundation over those contracts. The simulator can now boot, build, install, bundle, relaunch, and auth-gate Camera Studio deep links under Xcode 26.6, but authenticated Camera Studio interaction and real camera/microphone/gallery/upload behavior remain unverified. Running authenticated simulator QA and then physical-device QA is the necessary next step before higher-risk LiveKit calls.
+Reason: the production platform already has the camera/media routes, catalogs, validation, storage, preview, and create-from-camera business logic, and the native app now has a dedicated native camera foundation over those contracts. The simulator can now boot, build, install, bundle, relaunch, and auth-gate Camera Studio deep links under Xcode 26.6. Direct local backend auth and authenticated camera config also passed outside the app. Authenticated Camera Studio interaction and real camera/microphone/gallery/upload behavior remain unverified because the available Simulator text-entry automation did not reliably fill the username/email field. Running authenticated simulator QA through a reliable input path and then physical-device QA is the necessary next step before higher-risk LiveKit calls.

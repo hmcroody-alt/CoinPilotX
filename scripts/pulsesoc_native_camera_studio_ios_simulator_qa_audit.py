@@ -57,6 +57,12 @@ def main() -> int:
             "Physical Device QA",
             "Do not move to Native LiveKit calls yet",
             "authenticated Camera Studio",
+            "Authenticated Simulator Attempt Addendum",
+            "127.0.0.1:5107",
+            "EXPO_PUBLIC_PULSE_API_BASE_URL=http://127.0.0.1:5107",
+            "authenticated: true",
+            "Simulator text-entry automation",
+            "Do not claim authenticated simulator login",
         ],
     )
 
@@ -68,6 +74,10 @@ def main() -> int:
             "Auth-gate relaunch verified",
             "installed development build",
             "authenticated Camera Studio",
+            "127.0.0.1:5107",
+            "authenticated: true",
+            "Simulator text-entry automation",
+            "reliable authenticated input path",
             "physical iPhone",
             "physical Android",
             "Do not move to Native LiveKit calls yet",
@@ -79,10 +89,12 @@ def main() -> int:
         progress,
         [
             "Native Camera Studio iOS Simulator QA Through Installed Dev Build",
-            "QA-safe authenticated PulseSoc credentials",
             "physical iPhone and Android Camera Studio QA",
             "before moving to Native LiveKit calls",
             "Signed-out Camera Studio deep links",
+            "Native Camera Studio Authenticated Simulator QA Attempt",
+            "reliable authenticated input path",
+            "Simulator text-entry automation",
         ],
     )
 

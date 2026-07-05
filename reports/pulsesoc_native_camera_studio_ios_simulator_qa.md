@@ -186,6 +186,55 @@ No Expo SDK/Xcode compatibility error remained after the installed development b
 - Publish to Feed, Status, Reels, Profile avatar/cover, or Messenger.
 - Background recovery during capture or upload.
 
+## Authenticated Simulator Attempt Addendum
+
+After the installed-dev-build pass, a temporary local QA backend was started on `127.0.0.1:5107` with its own temporary SQLite database and a verified local QA user. Production credentials were not used.
+
+Local backend checks passed:
+
+```text
+GET http://127.0.0.1:5107/health
+{"ok":true,"service":"coinpilotx-web"}
+
+POST http://127.0.0.1:5107/api/mobile/auth/login
+authenticated: true
+
+GET http://127.0.0.1:5107/api/pulse/camera/config?target=feed&mode=photo
+ok: true
+provider: native_fallback
+uploadEndpoint: /api/pulse/media/upload
+```
+
+The installed app was rebundled against the local QA API:
+
+```text
+EXPO_PUBLIC_PULSE_API_BASE_URL=http://127.0.0.1:5107 npx expo start --dev-client --localhost --port 8081 -c
+iOS Bundled 143705ms index.ts (1546 modules)
+```
+
+Simulator screenshots captured during the authenticated attempt:
+
+- `/tmp/pulsesoc-camera-auth-ios-sim/01-login-local-api.png`
+- `/tmp/pulsesoc-camera-auth-ios-sim/03-after-typed-login.png`
+- `/tmp/pulsesoc-camera-auth-ios-sim/08-fields-reset-username.png`
+- `/tmp/pulsesoc-camera-auth-ios-sim/11-clean-fields-filled.png`
+- `/tmp/pulsesoc-camera-auth-ios-sim/13-fields-paste-clean.png`
+- `/tmp/pulsesoc-camera-auth-ios-sim/14-after-paste-login-submit.png`
+
+Result:
+
+- The backend login/session/camera-config path was verified outside the app.
+- The simulator app rendered Login against the local-QA bundle.
+- `cliclick` could focus and type into the password field.
+- The username/email field did not reliably receive text through available Simulator automation.
+- Fast typing dropped characters from the username.
+- Clipboard paste filled the password field but left the username/email field empty.
+- Submitting incomplete or corrupted credentials correctly produced `Login failed`.
+
+This means authenticated Camera Studio simulator QA is still not complete. The blocker is local Simulator text-entry automation, not the backend auth route and not the Camera Studio backend contract.
+
+Do not claim authenticated simulator login, session restore, Camera Studio route rendering, gallery fallback, preview, upload handoff, or publish routing as verified from this attempt.
+
 ## What Requires Physical Device QA
 
 Physical iPhone and Android devices are still required before release claims for:
@@ -203,6 +252,6 @@ Physical iPhone and Android devices are still required before release claims for
 
 Do not move to Native LiveKit calls yet.
 
-Next highest-value action: create or connect a QA-safe authenticated simulator/device account, then run the authenticated Camera Studio simulator pass. After that, execute physical iPhone and Android Camera Studio QA for camera, microphone, gallery, compression, upload, and publish behavior.
+Next highest-value action: use a reliable authenticated input path for simulator QA, such as manual Simulator typing, XCTest/Appium/Detox automation, or a physical QA device. After authenticated login is reliable, run the authenticated Camera Studio simulator pass, then execute physical iPhone and Android Camera Studio QA for camera, microphone, gallery, compression, upload, and publish behavior.
 
 Native LiveKit calls depend on the same camera/microphone/device-permission layer plus push/ringing/background behavior. Proceeding before authenticated Camera Studio QA and physical-device media QA would compound unknowns.
