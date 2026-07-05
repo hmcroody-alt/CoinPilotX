@@ -31,6 +31,9 @@ export function SettingsScreen() {
         <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("NotificationPreferences")}>
           <Text style={styles.secondaryText}>Notification preferences</Text>
         </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("ActivityInbox", { title: "Activity Inbox" })}>
+          <Text style={styles.secondaryText}>Activity Inbox</Text>
+        </Pressable>
         <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("AccountCenter", { section: "account", title: "Account Center" })}>
           <Text style={styles.secondaryText}>Account Center</Text>
         </Pressable>

@@ -38,6 +38,12 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  const activityTarget = activityRouteTarget(normalized);
+  if (activityTarget && navigationRef.isReady()) {
+    navigationRef.navigate("ActivityInbox", activityTarget);
+    return { handled: true, target: normalized };
+  }
+
   const messageMatch = normalized.match(/^\/pulse\/messages\/(\d+)/);
   if (messageMatch?.[1] && navigationRef.isReady()) {
     const callId = extractStringQueryValue(normalized, "call_id") || extractStringQueryValue(normalized, "call");
@@ -249,7 +255,7 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
   }
 
   if (normalized.startsWith("/pulse/notifications") && navigationRef.isReady()) {
-    navigationRef.navigate("NotificationCenter");
+    navigationRef.navigate("ActivityInbox", { title: "Activity Inbox" });
     return { handled: true, target: normalized };
   }
 
@@ -285,7 +291,7 @@ export function normalizeNotificationTarget(raw: string) {
 
 function navigateToNotifications() {
   if (navigationRef.isReady()) {
-    navigationRef.navigate("NotificationCenter");
+    navigationRef.navigate("ActivityInbox", { title: "Activity Inbox" });
   }
 }
 
@@ -323,6 +329,43 @@ function accountSectionTitle(section: "account" | "security" | "privacy" | "devi
   if (section === "privacy") return "Privacy Center";
   if (section === "devices") return "Sessions and Devices";
   return "Account Center";
+}
+
+function activityRouteTarget(target: string): {
+  title: string;
+  category?: "all" | "messages" | "calls" | "social" | "safety" | "verification" | "marketplace" | "creator_growth" | "intelligence_alerts";
+} | null {
+  if (
+    target.startsWith("/pulse/activity") ||
+    target.startsWith("/pulse/inbox") ||
+    target.startsWith("/dashboard/activity") ||
+    target.startsWith("/dashboard/inbox")
+  ) {
+    const rawCategory = extractStringQueryValue(target, "category") || target.match(/^\/pulse\/activity\/([^/?#]+)/)?.[1] || "";
+    const category = normalizeActivityRouteCategory(rawCategory);
+    return { title: "Activity Inbox", ...(category ? { category } : {}) };
+  }
+  return null;
+}
+
+function normalizeActivityRouteCategory(
+  category: string
+): "all" | "messages" | "calls" | "social" | "safety" | "verification" | "marketplace" | "creator_growth" | "intelligence_alerts" | "" {
+  const value = String(category || "").toLowerCase().replace(/-/g, "_");
+  if (
+    value === "all" ||
+    value === "messages" ||
+    value === "calls" ||
+    value === "social" ||
+    value === "safety" ||
+    value === "verification" ||
+    value === "marketplace" ||
+    value === "creator_growth" ||
+    value === "intelligence_alerts"
+  ) {
+    return value;
+  }
+  return "";
 }
 
 function accountHealthTarget(target: string) {

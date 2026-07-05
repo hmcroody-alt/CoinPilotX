@@ -15,7 +15,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
           Reels: "pulse/reels",
           Status: "pulse/status",
           Messenger: "pulse/messages",
-          Notifications: "pulse/notifications",
+          Notifications: "pulse/activity",
           PulseAI: "pulse/ai",
           Profile: "pulse/profile",
           Marketplace: "pulse/marketplace",
@@ -167,6 +167,12 @@ export const linking: LinkingOptions<RootStackParamList> = {
         path: "dashboard/account/verification",
         parse: {
           track: String
+        }
+      },
+      ActivityInbox: {
+        path: "pulse/activity/:category?",
+        parse: {
+          category: String
         }
       },
       NotificationCenter: {

@@ -70,10 +70,11 @@ export async function markNotificationRead(notificationId: number) {
   );
 }
 
-export async function markAllNotificationsRead() {
-  return pulseApi<NotificationBadgeCounts & { ok?: boolean; badge_counts?: NotificationBadgeCounts }>("/api/pulse/notifications/read-all", {
+export async function markAllNotificationsRead(category?: string) {
+  const query = category ? `?category=${encodeURIComponent(category)}` : "";
+  return pulseApi<NotificationBadgeCounts & { ok?: boolean; badge_counts?: NotificationBadgeCounts }>(`/api/pulse/notifications/read-all${query}`, {
     method: "POST",
-    body: JSON.stringify({})
+    body: JSON.stringify(category ? { category } : {})
   });
 }
 

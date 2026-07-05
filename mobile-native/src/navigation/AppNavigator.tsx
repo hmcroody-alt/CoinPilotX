@@ -6,6 +6,7 @@ import { AppState } from "react-native";
 import { getNotificationBadgeCounts, unreadCount } from "../api/notifications";
 import { AccountCenterScreen } from "../screens/AccountCenterScreen";
 import { AccountHealthAppealsScreen } from "../screens/AccountHealthAppealsScreen";
+import { ActivityInboxScreen } from "../screens/ActivityInboxScreen";
 import { AlertManagementScreen } from "../screens/AlertManagementScreen";
 import { CameraStudioScreen } from "../screens/CameraStudioScreen";
 import { CallScreen } from "../screens/CallScreen";
@@ -85,7 +86,7 @@ function TabNavigator() {
       <Tabs.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />
       <Tabs.Screen name="Status" component={StatusScreen} />
       <Tabs.Screen name="Messenger" component={MessengerScreen} />
-      <Tabs.Screen name="Notifications" component={NotificationCenterScreen} options={{ tabBarBadge: notificationUnread || undefined }} />
+      <Tabs.Screen name="Notifications" component={ActivityInboxScreen} options={{ title: "Activity", tabBarBadge: notificationUnread || undefined }} />
       <Tabs.Screen name="PulseAI" component={PulseAiScreen} options={{ title: "Pulse AI" }} />
       <Tabs.Screen name="Profile" component={ProfileScreen} />
       <Tabs.Screen name="Marketplace" component={MarketplaceScreen} />
@@ -143,6 +144,7 @@ export function AppNavigator() {
       <Stack.Screen name="ScamShield" component={TrustSafetyScreen} options={{ title: "Scam Shield" }} />
       <Stack.Screen name="VerificationCenter" component={VerificationCenterScreen} options={({ route }) => ({ title: route.params?.title || "Verification Center" })} />
       <Stack.Screen name="VerificationWebCenter" component={VerificationCenterScreen} options={{ title: "Verification Center" }} />
+      <Stack.Screen name="ActivityInbox" component={ActivityInboxScreen} options={({ route }) => ({ title: route.params?.title || "Activity Inbox" })} />
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} options={{ title: "Notifications" }} />
       <Stack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} options={{ title: "Notification Preferences" }} />
     </Stack.Navigator>

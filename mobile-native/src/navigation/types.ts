@@ -77,6 +77,10 @@ export type RootStackParamList = {
   ScamShield: { title?: string } | undefined;
   VerificationCenter: { title?: string; track?: "identity" | "blue_check" | "business" | "government_id" } | undefined;
   VerificationWebCenter: { title?: string; track?: "identity" | "blue_check" | "business" | "government_id" } | undefined;
+  ActivityInbox: {
+    category?: "all" | "messages" | "calls" | "social" | "safety" | "verification" | "marketplace" | "creator_growth" | "intelligence_alerts";
+    title?: string;
+  } | undefined;
   NotificationCenter: undefined;
   NotificationPreferences: undefined;
 };

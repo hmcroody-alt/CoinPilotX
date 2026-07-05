@@ -1063,3 +1063,116 @@ Safest implementation plan:
 4. Add mutations only for APIs already supported.
 5. Keep unsupported review/admin/provider paths on protected web fallback.
 6. Run static verification, audit, and short QA browser route checks before commit.
+
+## Native Notifications + Inbox + Activity Graph Unification
+
+Recommended and implemented next feature/action: Native Notifications + Inbox + Activity Graph Unification.
+
+Why it came next:
+
+- Native PulseSoc now has many connected surfaces: Messenger, Calls, Feed, Reels, Status, Marketplace, Search, Saved, Groups, Live, Premium, Creator, Growth, Intelligence, Alerts, Account, Verification, Account Health, and Safety Hub.
+- Users need one native activity layer to understand messages, calls, social events, safety actions, verification updates, marketplace updates, creator/growth alerts, and intelligence alerts.
+- Production PulseSoc already has server-authoritative notification, unread count, read/delete, preference, message unread, active-call, and deep-link systems that can be reused safely.
+- The native app already has route targets for most notification destinations, so this feature improves leverage without duplicating backend delivery logic.
+
+Reusable PulseSoc APIs/code/database/business logic:
+
+- `GET /api/pulse/notifications`
+- `GET /api/pulse/notifications/unread-count`
+- `POST /api/pulse/notifications/<notification_id>/read`
+- `POST /api/pulse/notifications/read-all`
+- `DELETE /api/pulse/notifications/<notification_id>`
+- `POST /api/pulse/notifications/<notification_id>/resolve`
+- `GET/PATCH /api/pulse/notifications/preferences`
+- `GET /api/pulse/messages/conversations`
+- `GET /api/calls/active`
+- Existing notification tables, delivery status, read/delete behavior, badge count logic, deep links, notification preferences, Messenger unread state, active-call state, and notification routing.
+- Existing native cache helpers, Notification Center, Notification Preferences, Messenger, Call, Safety, Verification, Marketplace, Creator/Growth, Intelligence, Alert Management, Profile, and Settings surfaces.
+
+What was rebuilt natively:
+
+- `mobile-native/src/api/activity.ts`
+- `mobile-native/src/screens/ActivityInboxScreen.tsx`
+- Native `ActivityInbox` route.
+- Native Notifications tab now opens Activity Inbox.
+- Settings entry point for Activity Inbox.
+- Activity categories:
+  - All
+  - Messages
+  - Calls
+  - Social
+  - Safety
+  - Verification
+  - Marketplace
+  - Creator/Growth
+  - Intelligence/Alerts
+- Cached/offline activity state.
+- Category rail, unread indicators, read/delete/open controls, loading/error/empty states, and safe target routing.
+- Deep links for `/pulse/activity`, `/pulse/activity/<category>`, `/pulse/inbox`, `/dashboard/activity`, `/dashboard/inbox`, and legacy `/pulse/notifications`.
+
+Backend authority boundaries:
+
+- Native grouping is display-only and does not create notification business rules.
+- Notification read/delete and mark-all-read call existing backend endpoints.
+- Messenger read/seen state remains owned by Messenger conversation APIs.
+- Active call state remains owned by call APIs and the Call screen.
+- Private message bodies, moderator notes, provider logs, and admin-only data are not merged into Activity Inbox.
+- Unsupported targets continue through the existing safe web fallback.
+
+Dependencies/blockers:
+
+- Physical push notification tap routing still needs APNs/FCM device QA.
+- App badge synchronization still needs provider/device QA.
+- Notification grouping accuracy depends on existing notification category/type/deep-link fields; richer server category fields would improve precision.
+- Advanced provider/admin delivery logs remain out of the native user Activity Inbox.
+
+Risk level: medium.
+
+Reason: Activity Inbox touches many routes and read/delete states, but it mostly composes existing server-authoritative APIs and native route handlers.
+
+Estimated complexity: medium-high.
+
+Verification plan:
+
+- Static verification.
+- Native audit script.
+- QA browser route checks for `/pulse/activity`, category routes, `/pulse/notifications`, `/pulse/inbox`, and Settings entry point.
+- Device push/badge verification remains a release blocker, not a development blocker.
+
+## Recommendation Summary
+
+Recommended next highest-value action after Native Activity Inbox: Native Activity Inbox practical QA hardening.
+
+Reason: Activity Inbox now spans nearly every native feature. A short authenticated QA pass should verify route reachability, category filtering, read/delete mutation behavior, unread badge refresh, Settings entry point, and fallback routing before another major feature is added.
+
+Reusable PulseSoc APIs/code/database/business logic for the next action:
+
+- Existing Activity Inbox implementation.
+- Existing notification read/delete/resolve APIs.
+- Existing Messenger unread state.
+- Existing active-call state.
+- Existing notification router and deep-link coverage.
+- Existing QA browser workflow and audit scripts.
+
+What must be rebuilt natively:
+
+- Only scoped fixes discovered during QA.
+- Potential route aliases or fallback polish if QA finds broken activity destinations.
+
+Dependencies/blockers:
+
+- Authenticated QA account/session is needed for meaningful data.
+- Provider/device push and badge checks remain release blockers.
+- Avoid executing destructive delete/read mutations against production accounts unless using a seeded QA fixture.
+
+Risk level: medium.
+
+Estimated complexity: low to medium.
+
+Safest implementation plan:
+
+1. Run a short authenticated QA browser pass for Activity Inbox routes and filters.
+2. Exercise non-destructive open/filter/refresh paths first.
+3. Test read/delete only against QA notifications or document as unverified.
+4. Fix scoped route/layout/state issues.
+5. Keep provider/device push checks documented as release blockers.
