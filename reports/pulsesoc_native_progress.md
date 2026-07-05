@@ -62,6 +62,7 @@ Completed native foundations:
 - Native Full-Screen Incoming Calls foundation and Practical QA: foreground incoming-call layer, active-call polling/resume hook, ring-seen guard, accept/decline/end controls, floating active-call bubble, minimized-call restore, and seeded practical QA path.
 - Native Account, Security & Privacy foundation: native Account Center, Security Center, Privacy Center, Sessions/Devices section, thin server-authoritative account API wrapper, settings entries, offline display cache, trusted-device removal, recovery/2FA/verification actions, deep-link routing, and protected web fallback for sensitive password/deletion/privacy flows.
 - Native Account, Security & Privacy QA: authenticated QA browser sweep through a temporary local QA backend/proxy, verified Account/Security/Privacy/Devices routes, privacy save, 2FA enable, security score/history refresh, no console errors, and fixed direct `/dashboard/account/*`, `/account/*`, and `/privacy-center` aliases that had fallen back to Home.
+- Native Verification Center Practical QA: authenticated QA browser sweep verified `/pulse/verification`, `/pulse/verification/business`, `/dashboard/account/verification`, Settings/Profile/Premium/Trust entry points, status/checklist rendering, request/document/appeal validation guards, and no console errors; sensitive upload/admin/provider/device behavior remains honestly unverified.
 - Settings: session controls, push registration, notification preferences entry, and account/security/privacy/device center entry points.
 
 Completed supporting reports/audits:
@@ -158,6 +159,8 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_account_security_privacy_progress.md`
 - `reports/pulsesoc_native_account_security_privacy_qa.md`
 - `scripts/pulsesoc_native_account_security_privacy_audit.py`
+- `reports/pulsesoc_native_verification_qa.md`
+- `scripts/pulsesoc_native_verification_qa_audit.py`
 
 ## Remaining Major Features
 
@@ -422,6 +425,7 @@ Only block the roadmap for critical, security-related, data-loss, production-bre
 - Native Account, Security & Privacy authenticated QA sweep.
 - Native Trust, Safety & Support foundation.
 - Native Verification Center + Badge/Identity Verification foundation.
+- Native Verification Center Practical QA browser sweep.
 
 ## Native Calls Foundation
 
@@ -767,3 +771,84 @@ Safest implementation plan for the next action:
 5. Verify request validation/success/failure with a QA account where safe.
 6. Verify document picker handoff where the test surface supports it.
 7. Fix only scoped blockers.
+
+## Native Verification Center Practical QA
+
+Recommended and completed next action: short practical Verification Center QA sweep.
+
+Why this came next:
+
+- Verification touches identity, private document handoff, account trust, Premium/Profile badges, Marketplace trust, Creator eligibility, and Trust/Safety.
+- The previous native foundation added the routes and screen, but the practical browser QA gate had not yet verified connected route behavior.
+- This QA pass was the correct precondition before building another trust/account feature.
+
+Verified in the built-in QA browser:
+
+- `/pulse/verification` rendered the authenticated native Verification Center.
+- `/pulse/verification/business` rendered the native Verification Center with `Business` selected.
+- `/dashboard/account/verification` routed to the same native Verification Center.
+- Settings exposed `Verification Center`.
+- Profile About exposed `Verification: not started` and `Open Verification Center`.
+- Premium exposed `Open Verification Center`.
+- Trust Center and Scam Shield/Trust routes exposed `Verification`.
+- The status card, score, badge preview, Premium/Foundation badge display, checklist, request form, document handoff, appeal form, and recommendations rendered for the authenticated QA account.
+- `Choose private document` safely blocked upload before a request exists.
+- `Submit appeal` safely blocked submission without an existing rejected, suspended, or needs-more-info request.
+- No browser console errors were captured during the final route pass.
+
+What remains unverified:
+
+- Actual request submission was not executed in this pass to avoid creating review side effects outside a dedicated seeded QA fixture.
+- Private identity document upload was not executed. Browser verified the safe guard/handoff, not provider/device upload.
+- Pending, approved, rejected, suspended, and needs-more-info states were not seeded in browser QA.
+- Offline cache on full route reload was not proven because full reload first rechecks auth/session and returned to the signed-out shell when the local proxy was intentionally stopped.
+- Admin review, audit logs, provider identity checks, notification tap deep links, and physical iOS/Android document picker behavior remain release/provider/device QA.
+
+Result:
+
+No critical, security-critical, production-breaking, data-loss, or future-development-blocking issue was found. Production WebView routes remained untouched.
+
+## Recommendation Summary
+
+Recommended next highest-value action after Verification Center Practical QA: Native Account Health + Appeals Center foundation.
+
+Reason: the production codebase already exposes account health and trust/review concepts through `/dashboard/account/health`, `GET /api/dashboard/account/state`, verification appeals, security events, support reports, login restrictions, account scores, and trust subsystems. The native app now has Account/Security/Privacy, Trust/Safety, Verification, Profile, Premium, Notifications, Marketplace, and Creator surfaces. A native Account Health + Appeals Center is the next trust layer that can reuse existing server authority while giving users one native place to understand account restrictions, review status, trust score, appeals, safety recommendations, and recovery actions.
+
+Reusable PulseSoc APIs/code/database/business logic for the next action:
+
+- `GET /api/dashboard/account/state`
+- Existing `/dashboard/account/health` web route and account command-center state.
+- Existing account status, login restriction, verification request, appeal, security event, trusted-device, support ticket, security report, and notification routes.
+- Existing user/profile/account database behavior, verification tables, account audit logs, support/security report tables, trust scoring, moderation state, and login-restriction logic.
+- Existing native Account Center, Security Center, Privacy Center, Trust/Safety, Verification Center, Notification routing, Profile, Premium, and shared cache/loading/error components.
+
+What must be rebuilt natively:
+
+- Native Account Health route/screen.
+- Account health score/status display.
+- Restriction/review status cards.
+- Trust recommendations.
+- Appeal/review shortcuts that use existing backend routes.
+- Security/support/verification recovery shortcuts.
+- Deep-link routing for `/dashboard/account/health` and related health/review URLs.
+- Loading, cached, empty, error, and safe web fallback states.
+
+Dependencies/blockers:
+
+- Backend must remain authoritative for restrictions, appeals, trust scoring, verification decisions, moderation state, and account recovery.
+- Appeal submission should only be tested against seeded QA fixtures.
+- Admin/provider review decisions remain release/provider QA.
+- Physical device QA is not required for the first foundation because the feature is account/API driven.
+
+Risk level: medium-high because account health and appeals touch trust, restrictions, identity, moderation, and user recovery.
+
+Estimated complexity: medium.
+
+Safest implementation plan:
+
+1. Inspect the existing account health web route, account-state API, verification appeal routes, support/security report APIs, and account restriction logic.
+2. Add a native Account Health screen that reads server-owned state only.
+3. Reuse existing Account/Verification/Trust/Safety components and API wrappers where possible.
+4. Keep any unsupported provider/admin flows on protected web fallback.
+5. Run static verification, audit, and practical QA browser route checks.
+6. Commit only scoped native/account-health files, report, audit, and progress updates.
