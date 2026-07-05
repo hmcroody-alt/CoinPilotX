@@ -63,6 +63,7 @@ Completed native foundations:
 - Native Account, Security & Privacy foundation: native Account Center, Security Center, Privacy Center, Sessions/Devices section, thin server-authoritative account API wrapper, settings entries, offline display cache, trusted-device removal, recovery/2FA/verification actions, deep-link routing, and protected web fallback for sensitive password/deletion/privacy flows.
 - Native Account, Security & Privacy QA: authenticated QA browser sweep through a temporary local QA backend/proxy, verified Account/Security/Privacy/Devices routes, privacy save, 2FA enable, security score/history refresh, no console errors, and fixed direct `/dashboard/account/*`, `/account/*`, and `/privacy-center` aliases that had fallen back to Home.
 - Native Verification Center Practical QA: authenticated QA browser sweep verified `/pulse/verification`, `/pulse/verification/business`, `/dashboard/account/verification`, Settings/Profile/Premium/Trust entry points, status/checklist rendering, request/document/appeal validation guards, and no console errors; sensitive upload/admin/provider/device behavior remains honestly unverified.
+- Native Account Health + Appeals Center Foundation: native account-health route, server-owned standing summary, warning/strike/restriction counters, appeal readiness list, verification appeal submission where supported by existing APIs, linked support cases, security signals, Settings/Trust entry points, `/pulse/account-health` and `/dashboard/account/health` route handling, offline cache, and safe protected web fallback for unsupported enforcement details.
 - Settings: session controls, push registration, notification preferences entry, and account/security/privacy/device center entry points.
 
 Completed supporting reports/audits:
@@ -161,6 +162,8 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_account_security_privacy_audit.py`
 - `reports/pulsesoc_native_verification_qa.md`
 - `scripts/pulsesoc_native_verification_qa_audit.py`
+- `reports/pulsesoc_native_account_health_appeals_progress.md`
+- `scripts/pulsesoc_native_account_health_appeals_audit.py`
 
 ## Remaining Major Features
 
@@ -426,6 +429,7 @@ Only block the roadmap for critical, security-related, data-loss, production-bre
 - Native Trust, Safety & Support foundation.
 - Native Verification Center + Badge/Identity Verification foundation.
 - Native Verification Center Practical QA browser sweep.
+- Native Account Health + Appeals Center foundation.
 
 ## Native Calls Foundation
 
@@ -852,3 +856,101 @@ Safest implementation plan:
 4. Keep any unsupported provider/admin flows on protected web fallback.
 5. Run static verification, audit, and practical QA browser route checks.
 6. Commit only scoped native/account-health files, report, audit, and progress updates.
+
+## Native Account Health + Appeals Center Foundation
+
+Recommended and implemented next feature/action: Native Account Health + Appeals Center foundation.
+
+Why it came next:
+
+- Verification Center practical QA found no critical blocker.
+- Account Health is already a production PulseSoc trust surface at `/dashboard/account/health`.
+- The native app now has Account/Security/Privacy, Trust/Safety, Verification, Profile, Premium, Notifications, Marketplace, and Creator surfaces, but did not yet have a single native owner-visible account standing surface.
+- Account Health connects warnings, strikes, restrictions, appeals, verification, support cases, and recovery actions without requiring new client-side business logic.
+
+Reusable PulseSoc APIs/code/database/business logic:
+
+- `GET /api/dashboard/account/state`
+- Existing `/dashboard/account/health` protected web route.
+- Existing account health subsystem in `services/dashboard_account_command_center.py`.
+- Existing warning, strike, restriction, security alert, and appeal-ready metrics.
+- Existing verification appeal API through `/api/dashboard/account/verification/appeal`.
+- Existing support ticket and security event APIs.
+- Existing account login restriction, moderation, verification, trust score, support, and audit-log logic.
+- Existing native Account Center, Security Center, Trust/Safety, Verification Center, notification routing, shared cache, loading, error, and fallback patterns.
+
+What was rebuilt natively:
+
+- `mobile-native/src/api/accountHealth.ts`
+- `mobile-native/src/screens/AccountHealthAppealsScreen.tsx`
+- `AccountHealth` and `AccountHealthWeb` stack routes.
+- `/pulse/account-health` native route.
+- `/dashboard/account/health` native route alias.
+- Notification routing for account-health links.
+- Settings entry for `Account Health and Appeals`.
+- Trust/Safety entry for `Account Health`.
+- Account health score, risk level, standing summary, warning/strike/restriction counters, appeal readiness cards, support case list, security signal list, recovery recommendations, and protected web fallback actions.
+- Practical built-in QA browser checks for `/pulse/account-health`, `/dashboard/account/health`, Settings entry, Trust Center entry, unsupported appeal guard behavior, and final console errors.
+
+What remains backend/provider owned:
+
+- Enforcement creation.
+- Warning, strike, and restriction truth.
+- Account restriction enforcement.
+- Account-health appeal eligibility and approval.
+- Verification approval/rejection/suspension/restoration.
+- Moderator notes and admin review.
+- Detailed enforcement history when no native JSON detail endpoint is available.
+
+Dependencies/blockers:
+
+- Detailed strike/restriction row history is not currently exposed through a native JSON API; the screen shows server-owned summary counts and routes advanced detail to `/dashboard/account/health`.
+- Account-health strike/restriction appeal submission is not currently exposed as a native JSON endpoint; only verification appeal can submit natively through the existing verification API.
+- Seeded warning/strike/restriction fixtures are needed for deeper appeal-state QA.
+- Admin/provider outcomes remain backend/admin QA.
+
+Risk level: medium-high because account health touches trust, moderation, restrictions, appeals, identity, and account recovery.
+
+Estimated complexity: medium.
+
+## Recommendation Summary
+
+Recommended next highest-value action after Native Account Health + Appeals Center: Native Blocks, Mutes, and Report Management Foundation.
+
+Reason: the production codebase already includes report, block, mute, restriction, moderation, governance, and safety-management logic, and the native app now has Feed, Messenger, Groups, Marketplace, Search, Profile, Trust/Safety, Verification, and Account Health surfaces that all depend on safety actions. A central native Blocks/Mutes/Reports surface would let users review and recover safety actions while keeping server moderation and relationship rules authoritative.
+
+Reusable PulseSoc APIs/code/database/business logic for the next action:
+
+- Existing `/api/pulse/report`.
+- Existing `/api/pulse/block`.
+- Existing support/security report APIs.
+- Existing moderation, account health, network governance, report, block, mute, ban, restriction, and appeal-aware backend logic.
+- Existing native Trust/Safety API wrapper, Account Health screen, Settings entry patterns, Profile/Messenger/Groups/Marketplace report hooks, notification routing, cache helpers, and loading/error components.
+
+What must be rebuilt natively:
+
+- Native Blocks/Mutes/Reports management screen.
+- Report status list where APIs support it.
+- Blocked/muted user list where APIs support it.
+- Unblock/unmute actions where APIs support them.
+- Safe report creation handoff and case status links.
+- Deep links for safety/report/block URLs.
+- Protected web fallback for unsupported moderation/admin details.
+
+Dependencies/blockers:
+
+- Exact public JSON endpoints for block/mute lists must be inspected before implementation.
+- Moderator/admin notes must stay hidden and server-owned.
+- Unblock/unmute/report actions should be tested only against seeded QA fixtures.
+
+Risk level: medium-high because safety actions affect user relationships, visibility, and moderation state.
+
+Estimated complexity: medium.
+
+Safest implementation plan:
+
+1. Inspect the current PulseSoc production block, mute, report, moderation, and network governance routes.
+2. Reuse existing report/block APIs and add native read-only status first.
+3. Implement user-visible unblock/unmute/report actions only where an existing user-safe API already exists.
+4. Keep admin/moderator-only data on protected web fallback.
+5. Run static verification, audit, and practical QA browser route checks before commit.

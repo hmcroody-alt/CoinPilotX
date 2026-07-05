@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AppState } from "react-native";
 import { getNotificationBadgeCounts, unreadCount } from "../api/notifications";
 import { AccountCenterScreen } from "../screens/AccountCenterScreen";
+import { AccountHealthAppealsScreen } from "../screens/AccountHealthAppealsScreen";
 import { AlertManagementScreen } from "../screens/AlertManagementScreen";
 import { CameraStudioScreen } from "../screens/CameraStudioScreen";
 import { CallScreen } from "../screens/CallScreen";
@@ -129,6 +130,8 @@ export function AppNavigator() {
       <Stack.Screen name="AccountWebSecurity" component={AccountCenterScreen} options={{ title: "Security Center" }} />
       <Stack.Screen name="AccountPrivacy" component={AccountCenterScreen} options={{ title: "Privacy Center" }} />
       <Stack.Screen name="AccountDevices" component={AccountCenterScreen} options={{ title: "Sessions and Devices" }} />
+      <Stack.Screen name="AccountHealth" component={AccountHealthAppealsScreen} options={{ title: "Account Health" }} />
+      <Stack.Screen name="AccountHealthWeb" component={AccountHealthAppealsScreen} options={{ title: "Account Health" }} />
       <Stack.Screen name="TrustSafety" component={TrustSafetyScreen} options={({ route }) => ({ title: route.params?.title || "Trust & Safety" })} />
       <Stack.Screen name="TrustSafetySupport" component={TrustSafetyScreen} options={{ title: "Support" }} />
       <Stack.Screen name="TrustSafetyHelp" component={TrustSafetyScreen} options={{ title: "Help" }} />

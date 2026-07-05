@@ -209,6 +209,11 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  if (accountHealthTarget(normalized) && navigationRef.isReady()) {
+    navigationRef.navigate("AccountHealth", { title: "Account Health" });
+    return { handled: true, target: normalized };
+  }
+
   const verificationTarget = verificationRouteTarget(normalized);
   if (verificationTarget && navigationRef.isReady()) {
     navigationRef.navigate("VerificationCenter", verificationTarget);
@@ -312,6 +317,10 @@ function accountSectionTitle(section: "account" | "security" | "privacy" | "devi
   if (section === "privacy") return "Privacy Center";
   if (section === "devices") return "Sessions and Devices";
   return "Account Center";
+}
+
+function accountHealthTarget(target: string) {
+  return target.startsWith("/dashboard/account/health") || target.startsWith("/pulse/account-health") || target.startsWith("/account/health");
 }
 
 function trustSafetyTarget(target: string): { title: string; mode: "support" | "security" | "scam" | "trust" } | null {
