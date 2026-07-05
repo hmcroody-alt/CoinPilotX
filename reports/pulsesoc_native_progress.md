@@ -154,10 +154,10 @@ Completed supporting reports/audits:
 
 ## Remaining Major Features
 
-- Camera Studio device QA hardening and advanced editor expansion
-- Native LiveKit calls
-- Full-screen incoming calls
-- External device QA tooling completion and hardening pass
+- Camera Studio physical-device release QA and advanced editor expansion
+- Full-screen incoming calls and incoming-call presentation
+- Calls two-device release QA for native LiveKit media, push/ringing, lock-screen behavior, Bluetooth/speaker route behavior, and background audio
+- External Android device QA completion and hardening pass
 - Alert provider/device QA execution for push, SMS, email, Telegram, installed deep links, and notification tap routing
 
 ## Codebase Reconnaissance
@@ -409,6 +409,7 @@ Only block the roadmap for critical, security-related, data-loss, production-bre
 - Alert Management and Crypto/Market Alert CRUD.
 - Camera Studio foundation, simulator QA, XCTest QA path, and physical iPhone install/launch proof.
 - Native Calls foundation.
+- Native Calls Practical QA Sweep.
 
 ## Native Calls Foundation
 
@@ -473,6 +474,44 @@ Safest implementation plan:
 
 ## Recommendation Summary
 
-Recommended next highest-value action after Native Calls foundation: run a short practical QA browser/static sweep focused on call route reachability, Messenger call entry points, notification/deep-link routing, safe fallback behavior, and no production WebView changes. Then continue building the next high-leverage native surface unless the sweep finds a critical/security/data-loss/production-breaking issue.
+Recommended next highest-value action after Native Calls foundation: build the Native Full-Screen Incoming Calls foundation, unless a real two-device QA window is immediately available for LiveKit media release testing.
 
-Reason: Native Calls now reuses the existing PulseSoc Communications V2 engine and LiveKit token flow instead of duplicating call business logic. The largest remaining call risks are device/provider QA items that should block release, not continued native app development.
+Reason: Native Calls now reuses the existing PulseSoc Communications V2 engine and LiveKit token flow instead of duplicating call business logic. The practical QA sweep verified Messenger voice/video entry points, `/pulse/calls/:callId` route reachability through `npm run web:qa`, call loading/error/control rendering, LiveKit web fallback guards, notification/deep-link routing, and no production WebView changes. The next code gap is native incoming-call presentation: the backend already exposes `/api/calls/active`, ring-seen, accept, decline, end, call notification links, and call event state, while the native app now has a Call screen and notification router. That makes a native incoming-call overlay/routing surface high leverage and low duplication.
+
+Reusable PulseSoc APIs/code/database/business logic for the next feature:
+
+- `GET /api/calls/active`
+- `POST /api/calls/<call_id>/ring-seen`
+- `POST /api/calls/<call_id>/accept`
+- `POST /api/calls/<call_id>/decline`
+- `POST /api/calls/<call_id>/end`
+- `GET /api/calls/<call_id>/status`
+- Existing Communications V2 participant authorization, call state, call notifications, and call delivery diagnostics.
+- Existing native `CallScreen`, `calls.ts`, notification routing, deep-link routing, AppState refresh patterns, and safe web fallback behavior.
+
+What must be rebuilt natively:
+
+- Incoming-call overlay/sheet while the app is foregrounded.
+- Active-call polling/resume hook.
+- Tap-to-answer route into the existing `CallScreen`.
+- Decline/end controls from the incoming-call UI.
+- Missed-call and already-ended safe states.
+- Release-QA documentation for lock-screen, APNs/FCM, and OS-level full-screen call behavior without claiming it is verified.
+
+Dependencies/blockers:
+
+- Real APNs/FCM incoming push and lock-screen behavior remain provider/device release blockers.
+- True OS-level full-screen incoming-call behavior may require additional native module/build configuration and should remain scoped until the installed build path is stable.
+- Two-device LiveKit media quality remains release QA.
+
+Risk level: high for release, medium for a foreground native foundation.
+
+Estimated complexity: medium-high.
+
+Safest implementation plan:
+
+1. Reuse `/api/calls/active` polling and notification routing; do not create native-only call state.
+2. Build a foreground incoming-call surface in the native app shell.
+3. Route accept/decline/end to existing backend endpoints and existing `CallScreen`.
+4. Keep OS-level lock-screen/full-screen provider behavior documented as unverified release work.
+5. Run static verification, route QA, and practical browser/simulator checks where possible.
