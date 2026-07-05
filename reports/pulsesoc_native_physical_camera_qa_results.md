@@ -4,9 +4,9 @@ Date: 2026-07-05
 
 ## Result
 
-Status: blocked by missing local iOS code-signing identity.
+Status: physical install and launch verified; physical Camera Studio media interaction remains unverified.
 
-This mission did not build Native LiveKit calls, did not modify production WebView routes, and did not claim physical Camera Studio behavior as verified.
+This mission did not build Native LiveKit calls, did not modify production WebView routes, and did not claim physical Camera Studio media behavior as verified without evidence.
 
 ## Device Detection
 
@@ -28,16 +28,27 @@ Physical Android:
 - `adb devices -l` returned an empty attached-device list.
 - No Android device was visible to adb.
 
-Available test target:
+## Signing State
 
-- iPhone 17 Pro Simulator, iOS 26.5, UDID `7B3BEEBC-6135-497D-91CD-A3E70C927D56`.
-- This is not a substitute for physical camera/microphone QA.
+WWDR G3 installation resolved the local identity blocker.
 
-## Build Used
+```bash
+security find-identity -v -p codesigning
+```
 
-Physical device build: not installed on the connected iPhone because local iOS code signing is unavailable.
+Result:
 
-Install attempt:
+```text
+1) 9AA0603693FED4F7038C1A975B3D3B4595FC4647 "Apple Development: ROODY CHERIE (HB5FV6P922)"
+2) 6E0B7551E4E8509D779AFE96AA1F96E5D3DEAE6F "Apple Development: ROODY CHERIE (HB5FV6P922)"
+2 valid identities found
+```
+
+The duplicate Apple Development identities remain, but Xcode/Expo selected a valid identity and completed the build.
+
+## Build, Install, Launch
+
+Command run:
 
 ```bash
 cd mobile-native
@@ -47,50 +58,92 @@ npx expo run:ios --device 00008140-000E2D9A2EE8801C
 Result:
 
 ```text
-CommandError: No code signing certificates are available to use.
+› Signing and building iOS app with: Apple Development: ROODY CHERIE (HB5FV6P922)
+› Build Succeeded
+› Installing /Users/hmcherie/Library/Developer/Xcode/DerivedData/PulseSocNative-.../PulseSocNative.app
 ```
 
-Signing check:
+The first automatic launch failed because the device locked during the final launch step:
+
+```text
+CommandError: Cannot launch PulseSocNative on P3r7or because the device is locked.
+```
+
+After confirming the device was available, the installed app was launched directly:
 
 ```bash
-security find-identity -v -p codesigning
+xcrun devicectl device process launch --device 00008140-000E2D9A2EE8801C com.pulsesoc.nativeapp
 ```
 
 Result:
 
 ```text
-0 valid identities found
+Launched application with com.pulsesoc.nativeapp bundle identifier.
 ```
 
-No existing `.ipa`, `.app`, or `.xcarchive` artifact was found in `mobile-native/` for direct install.
+Installed app inventory:
 
-Current native QA identity remains:
+```text
+PulseSoc Native   com.pulsesoc.nativeapp   0.1.0   1
+```
 
-- `com.pulsesoc.nativeapp`
+Running process evidence:
 
-Production identity remains protected:
+```text
+/private/var/containers/Bundle/Application/.../PulseSocNative.app/PulseSocNative
+```
 
-- `com.pulsesoc.app`
+Camera Studio deep-link process launch:
+
+```bash
+xcrun devicectl device process launch --device 00008140-000E2D9A2EE8801C --terminate-existing --payload-url 'pulsesoc://pulse/camera/photo?target=feed' com.pulsesoc.nativeapp
+```
+
+Result:
+
+```text
+Launched application with com.pulsesoc.nativeapp bundle identifier.
+```
+
+Metro physical bundle evidence:
+
+```text
+iOS Bundled 7080ms index.ts (1554 modules)
+```
+
+Warning observed:
+
+```text
+[expo-av]: Expo AV has been deprecated and will be removed in SDK 54.
+```
+
+The Expo AV warning is not a Camera Studio blocker, but it should remain on the native technical-debt list because Reels/Status/Live viewer surfaces still use native video playback.
 
 ## Requested Physical QA Matrix
 
 | Area | iPhone physical | Android physical | Result |
 | --- | --- | --- | --- |
-| Photo capture | Not run | Not run | iPhone blocked by missing code-signing identity; Android not connected |
-| Video capture | Not run | Not run | iPhone blocked by missing code-signing identity; Android not connected |
-| Front/back camera | Not run | Not run | iPhone blocked by missing code-signing identity; Android not connected |
-| Microphone permission | Not run | Not run | iPhone blocked by missing code-signing identity; Android not connected |
-| Gallery picker | Not run | Not run | iPhone blocked by missing code-signing identity; Android not connected |
-| Large video upload | Not run | Not run | iPhone blocked by missing code-signing identity; Android not connected |
-| Weak-network retry/cancel | Not run | Not run | iPhone blocked by missing code-signing identity; Android not connected |
-| Upload progress accuracy | Not run | Not run | iPhone blocked by missing code-signing identity; Android not connected |
-| Feed publish | Not run | Not run | iPhone blocked by missing code-signing identity; Android not connected |
-| Status publish | Not run | Not run | iPhone blocked by missing code-signing identity; Android not connected |
-| Reels publish | Not run | Not run | iPhone blocked by missing code-signing identity; Android not connected |
-| Messenger handoff | Not run | Not run | iPhone blocked by missing code-signing identity; Android not connected |
-| Profile handoff | Not run | Not run | iPhone blocked by missing code-signing identity; Android not connected |
-| Foreground/background interruption | Not run | Not run | iPhone blocked by missing code-signing identity; Android not connected |
-| Native visual quality on device | Not run | Not run | iPhone blocked by missing code-signing identity; Android not connected |
+| App install | Passed | Not run | iPhone install passed; Android not connected |
+| App launch | Passed | Not run | iPhone launch passed through `devicectl`; Android not connected |
+| JS bundle load | Passed | Not run | Metro bundled `index.ts` for iOS after launch |
+| Camera Studio deep link | Passed at process level | Not run | `pulsesoc://pulse/camera/photo?target=feed` launch accepted |
+| Login/session restore | Not observed | Not run | Requires on-device visual/manual QA or physical-device automation |
+| Camera permission | Not observed | Not run | Requires on-device visual/manual QA |
+| Microphone permission | Not observed | Not run | Requires on-device visual/manual QA |
+| Gallery picker | Not observed | Not run | Requires on-device visual/manual QA |
+| Photo capture | Not observed | Not run | Requires on-device visual/manual QA |
+| Video capture | Not observed | Not run | Requires on-device visual/manual QA |
+| Front/back camera | Not observed | Not run | Requires on-device visual/manual QA |
+| Large video upload | Not observed | Not run | Requires on-device visual/manual QA and large fixture |
+| Weak-network retry/cancel | Not observed | Not run | Requires on-device visual/manual QA and weak network setup |
+| Upload progress accuracy | Not observed | Not run | Requires on-device visual/manual QA |
+| Feed publish | Not observed | Not run | Requires authenticated on-device QA |
+| Status publish | Not observed | Not run | Requires authenticated on-device QA |
+| Reels publish | Not observed | Not run | Requires authenticated on-device QA |
+| Messenger handoff | Not observed | Not run | Requires authenticated on-device QA |
+| Profile handoff | Not observed | Not run | Requires authenticated on-device QA |
+| Foreground/background interruption | Process launch verified only | Not run | Full recovery requires on-device visual/manual QA |
+| Native visual quality on device | Not observed | Not run | Requires screenshot/screen-view/manual evidence |
 
 ## What Remains Verified From Earlier Gates
 
@@ -112,19 +165,26 @@ These remain simulator-verification results only.
 
 ## Failures Found
 
-No physical-app failures were observed because the connected iPhone cannot install or run the development build until local iOS code signing is configured.
+No Camera Studio media-flow failures were observed because physical camera/media interaction could not be driven or observed from the available tooling.
 
-The failure for this mission is environmental:
+Resolved blockers:
 
 - A trusted/paired iPhone is visible to Xcode/CoreDevice.
 - Developer Mode is enabled and DDI services are available.
-- Expo/Xcode cannot install `com.pulsesoc.nativeapp` because no local code-signing identity is available.
-- `security find-identity -v -p codesigning` returns `0 valid identities found`.
+- Local codesigning identities are valid after WWDR G3 installation.
+- `npx expo run:ios --device 00008140-000E2D9A2EE8801C` built and installed the app.
+- `xcrun devicectl device process launch` launched `com.pulsesoc.nativeapp`.
+
+Remaining blockers:
+
+- This environment has no reliable physical iPhone screen capture/touch automation path configured.
+- `devicectl` can launch the app and pass a payload URL, but it does not provide tap/camera/gallery automation.
+- No on-device screenshots/videos or manual pass/fail observations were captured for camera permission, microphone permission, gallery picker, capture, upload, retry/cancel, or publish flows.
 - No Android device was visible to adb.
 
 ## Fixes Applied
 
-No code fixes were applied during this physical QA run because the app could not be installed or launched on physical hardware.
+No production code fixes were applied during this physical QA run.
 
 The previous checkpoint already added upload progress observability for large media by showing percent plus transferred/total size when XHR provides computable upload length.
 
@@ -132,26 +192,33 @@ The previous checkpoint already added upload progress observability for large me
 
 iPhone:
 
-1. Keep the iPhone connected and unlocked.
-2. Configure iOS code signing through one of these safe paths:
-   - Sign into Xcode with an Apple developer account and let Xcode create an Apple Development certificate.
-   - Import an existing Apple Development certificate and matching private key into the login keychain.
-   - Use an EAS development build signed for `com.pulsesoc.nativeapp` and this device.
-3. Confirm a valid signing identity exists:
+1. Keep the iPhone connected, unlocked, and awake.
+2. Keep Metro running in LAN mode:
 
 ```bash
-security find-identity -v -p codesigning
+cd mobile-native
+EXPO_PUBLIC_PULSE_API_BASE_URL=https://pulsesoc.com npx expo start --dev-client --host lan --port 8081
 ```
 
-4. Re-run:
+3. Launch the installed app:
 
 ```bash
-xcrun devicectl list devices
-xcrun xctrace list devices
-xcrun devicectl device info details --device F45E640F-6D02-514E-877C-B764E8D6818F
+xcrun devicectl device process launch --device 00008140-000E2D9A2EE8801C --terminate-existing com.pulsesoc.nativeapp
 ```
 
-5. Continue only when `developerModeStatus` is enabled, `ddiServicesAvailable` is true, and at least one valid Apple Development signing identity exists.
+4. Perform the on-device checklist manually or with a real device automation tool:
+   - Login/session restore.
+   - Camera permission allow/deny.
+   - Microphone permission allow/deny.
+   - Gallery picker.
+   - Photo capture.
+   - Video capture.
+   - Front/back camera switch.
+   - Upload progress.
+   - Feed/Status/Reels publish.
+   - Retry/cancel.
+   - Foreground/background recovery.
+   - Native visual quality.
 
 Android:
 
@@ -163,29 +230,6 @@ Android:
 
 ```bash
 adb devices -l
-```
-
-## Commands To Run Once A Device Is Visible
-
-iPhone development build:
-
-```bash
-cd mobile-native
-EXPO_PUBLIC_PULSE_API_BASE_URL=<QA_API_BASE_URL> npx expo run:ios --device <DEVICE_ID>
-```
-
-Android development build:
-
-```bash
-cd mobile-native
-EXPO_PUBLIC_PULSE_API_BASE_URL=<QA_API_BASE_URL> npx expo run:android --device <DEVICE_ID>
-```
-
-Metro for installed development build:
-
-```bash
-cd mobile-native
-EXPO_PUBLIC_PULSE_API_BASE_URL=<QA_API_BASE_URL> npx expo start --dev-client --localhost
 ```
 
 ## Required Evidence For The Next Attempt
@@ -205,4 +249,4 @@ For each physical device:
 
 Do not move to Native LiveKit calls yet.
 
-The next highest-value action is to configure iOS code signing for `com.pulsesoc.nativeapp`, install the development build on the connected iPhone 16 Pro, then rerun the physical Camera Studio QA plan. Specifically verify camera/microphone permissions, gallery picker behavior, large-video upload progress, weak-network retry/cancel, foreground/background recovery, and Feed/Status/Reels publish routing on hardware.
+The next highest-value action is to run a manual or automated on-device Camera Studio pass now that `com.pulsesoc.nativeapp` installs and launches on the iPhone 16 Pro. Specifically verify login/session restore, camera/microphone permissions, gallery picker behavior, photo/video capture, large-video upload progress, weak-network retry/cancel, foreground/background recovery, and Feed/Status/Reels publish routing on hardware.
