@@ -145,6 +145,34 @@ The Expo AV warning is not a Camera Studio blocker, but it should remain on the 
 | Foreground/background interruption | Process launch verified only | Not run | Full recovery requires on-device visual/manual QA |
 | Native visual quality on device | Not observed | Not run | Requires screenshot/screen-view/manual evidence |
 
+## Captured iPhone Camera Studio QA Attempt
+
+Status: machine-captured launch, bundle, deep-link, display, process, and syslog evidence was collected. Physical Camera Studio interaction remains unverified.
+
+Captured evidence:
+
+- iPhone display was active, portrait, and unlocked since boot.
+- Metro bundled `index.ts` for iOS after app launch and Camera Studio deep-link launch.
+- `xcrun devicectl device process launch` succeeded for `com.pulsesoc.nativeapp`.
+- `xcrun devicectl device process launch --payload-url 'pulsesoc://pulse/camera/photo?target=feed'` succeeded.
+- `xcrun devicectl device info processes` listed `PulseSocNative` as PID `952`.
+- `idevicesyslog` included `fgApp: com.pulsesoc.nativeapp` and `FBWorkspace (ForegroundFocal)` for `com.pulsesoc.nativeapp`.
+- `idevicesyslog` also showed `CameraException(None)`, but the camera service remained cold: `Cam(Cold:<private>)`.
+
+Screenshot/video evidence:
+
+- No screenshot or video evidence was captured.
+- `idevicescreenshot` still failed with `Could not start screenshotr service: Invalid service`.
+
+Backend evidence:
+
+- No backend media/upload/post/status/reel IDs were produced because no authenticated physical Camera Studio media upload or publish flow was completed.
+
+Conclusion:
+
+- App launch, bundle load, foreground process, and Camera Studio deep-link dispatch are physically evidenced.
+- Login/session restore, camera/microphone permission prompts, gallery picker, photo/video capture, preview, upload progress, Feed publish, Status publish, Reels publish, retry/cancel, and visual quality remain unverified.
+
 ## What Remains Verified From Earlier Gates
 
 Simulator QA has already verified:
@@ -249,4 +277,4 @@ For each physical device:
 
 Do not move to Native LiveKit calls yet.
 
-The next highest-value action is to run a manual or automated on-device Camera Studio pass now that `com.pulsesoc.nativeapp` installs and launches on the iPhone 16 Pro. Specifically verify login/session restore, camera/microphone permissions, gallery picker behavior, photo/video capture, large-video upload progress, weak-network retry/cancel, foreground/background recovery, and Feed/Status/Reels publish routing on hardware.
+The next highest-value action is to capture a real manual iPhone Camera Studio QA video or implement a QA-only XCTest UI target. Specifically verify login/session restore, camera/microphone permissions, gallery picker behavior, photo/video capture, large-video upload progress, weak-network retry/cancel, foreground/background recovery, Feed/Status/Reels publish routing, backend IDs, and visual quality on hardware.
