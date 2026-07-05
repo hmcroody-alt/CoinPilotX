@@ -55,6 +55,7 @@ Completed native foundations:
 - Native Camera Studio Media QA Automation: seeded simulator media with `xcrun simctl addmedia`, added a dev/native/localhost-only QA media injection path, verified selected-media preview state, upload handoff, Feed publish to native Post Detail, Status publish to native Status viewer, Reel publish to native Reels viewer, local backend media/camera/post/status/reel records, foreground/background session recovery, and Camera Studio safe-area visual hardening. The touch/media automation blocker is partially reduced by QA-only simulator media injection, but real gallery picker touch selection, upload retry/cancel, physical camera/microphone capture, video compression, and physical-device behavior remain unverified.
 - Native Physical Camera Studio QA Plan: created the physical iPhone/Android Camera Studio QA plan for camera/microphone permissions, gallery picker behavior, large-video upload, retry/cancel, upload progress accuracy, compression metadata, foreground/background recovery, and device-specific visual checks; added native upload progress hardening so large media shows transferred/total size when available. No production WebView route or backend business logic was changed.
 - Native Physical Camera Studio QA Attempt: WWDR G3 installation resolved local iOS identity validation; `security find-identity -v -p codesigning` now returns two valid Apple Development identities. `npx expo run:ios --device 00008140-000E2D9A2EE8801C` built, signed, and installed `com.pulsesoc.nativeapp` on the iPhone 16 Pro. `xcrun devicectl device process launch` launched the installed app, Metro bundled `index.ts` for iOS, and a Camera Studio payload URL launch for `pulsesoc://pulse/camera/photo?target=feed` was accepted at process level. Physical camera/mic/gallery/capture/upload/publish behavior remains unverified because no reliable physical screen/touch automation or manual evidence was captured. No Android device is visible to adb.
+- Native iPhone Camera Studio Interaction QA: verified physical iPhone app launch, bundle load, Camera Studio payload launch, and process-level suspend/resume on the installed `com.pulsesoc.nativeapp` iPhone 16 Pro build. Installed Mac-side `libimobiledevice` for screenshot attempts, but `idevicescreenshot` could not start the iOS `screenshotr` service. No screenshot/video evidence, backend media IDs, upload IDs, post IDs, status IDs, or reel IDs were captured; real camera/mic/gallery/capture/upload/publish behavior remains unverified before moving to Native LiveKit calls.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -100,6 +101,7 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_camera_studio_media_qa.md`
 - `reports/pulsesoc_native_physical_camera_qa_plan.md`
 - `reports/pulsesoc_native_physical_camera_qa_results.md`
+- `reports/pulsesoc_native_iphone_camera_interaction_qa.md`
 - `scripts/pulsesoc_native_app_foundation_audit.py`
 - `scripts/pulsesoc_native_phase1_device_qa_audit.py`
 - `scripts/pulsesoc_native_messenger_audit.py`
@@ -138,6 +140,7 @@ Completed supporting reports/audits:
 - `scripts/pulsesoc_native_camera_studio_media_qa_audit.py`
 - `scripts/pulsesoc_native_physical_camera_qa_audit.py`
 - `scripts/pulsesoc_native_physical_camera_qa_results_audit.py`
+- `scripts/pulsesoc_native_iphone_camera_interaction_qa_audit.py`
 
 ## Remaining Major Features
 
@@ -222,9 +225,9 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Action
 
-Recommendation: run a manual or automated on-device Camera Studio pass on the installed iPhone 16 Pro build, using a larger video fixture or network-throttled upload retry/cancel pass, before moving to Native LiveKit calls.
+Recommendation: add a reliable physical-device interaction evidence path, then rerun the iPhone Camera Studio checklist on the installed iPhone 16 Pro build before moving to Native LiveKit calls.
 
-This is the highest-value next action based on the current codebase. Native Camera Studio is implemented as a foundation and the installed `com.pulsesoc.nativeapp` development build now compiles, installs, bundles, renders native Login in simulator, survives signed-out foreground/background relaunch in simulator, safely auth-gates Camera Studio deep links, authenticates through a dev-only localhost QA deep link in simulator, and exercises simulator media selection/preview/upload/publish through a QA-only media injection path. The physical iPhone build now installs and launches, but physical camera/microphone/gallery/large-upload behavior must remain unverified until an on-device manual or automation pass captures evidence.
+This is the highest-value next action based on the current codebase. Native Camera Studio is implemented as a foundation and the installed `com.pulsesoc.nativeapp` development build now compiles, installs, bundles, renders native Login in simulator, survives signed-out foreground/background relaunch in simulator, safely auth-gates Camera Studio deep links, authenticates through a dev-only localhost QA deep link in simulator, and exercises simulator media selection/preview/upload/publish through a QA-only media injection path. The physical iPhone build now launches, bundles, accepts Camera Studio deep links at process level, and survives process-level suspend/resume, but physical camera/microphone/gallery/upload/publish behavior must remain unverified until manual capture or physical UI automation captures evidence.
 
 Provider/device QA for Alert Management remains a release blocker, especially APNs/FCM/Expo push delivery, installed-app notification taps, lock-screen presentation, SMS/email/Telegram delivery, and physical-device deep links. That work should continue before any release claim, but it is external-credential/device gated. Among buildable native features, Camera Studio gives the most leverage while reusing existing backend/media logic.
 
@@ -358,6 +361,6 @@ Defer from first slice:
 
 ## Recommendation Summary
 
-Recommended next highest-value action: execute the on-device Camera Studio QA checklist on the installed iPhone 16 Pro build, including a large-video or network-throttled upload retry/cancel pass.
+Recommended next highest-value action: add a reliable physical-device interaction evidence path, then execute the on-device Camera Studio QA checklist on the installed iPhone 16 Pro build, including a large-video or network-throttled upload retry/cancel pass.
 
-Reason: the production platform already has the camera/media routes, catalogs, validation, storage, preview, and create-from-camera business logic, and the native app now has a dedicated native camera foundation over those contracts. The simulator can now boot, build, install, bundle, relaunch, auth-gate Camera Studio deep links, authenticate through the QA-only localhost deep link, route into Feed/photo and Reel/video Camera Studio, render native camera config, seed/select QA media, upload/publish to Feed/Status/Reel, restore the authenticated session, and show transferred/total upload progress where XHR reports it. The physical iPhone now installs and launches `com.pulsesoc.nativeapp`, but camera/microphone permissions, gallery picker touch UI, capture, front/back switch, video compression, large upload memory pressure, retry/cancel, and physical network behavior remain unverified. Physical-device QA is the necessary next step before higher-risk LiveKit calls.
+Reason: the production platform already has the camera/media routes, catalogs, validation, storage, preview, and create-from-camera business logic, and the native app now has a dedicated native camera foundation over those contracts. The simulator can now boot, build, install, bundle, relaunch, auth-gate Camera Studio deep links, authenticate through the QA-only localhost deep link, route into Feed/photo and Reel/video Camera Studio, render native camera config, seed/select QA media, upload/publish to Feed/Status/Reel, restore the authenticated session, and show transferred/total upload progress where XHR reports it. The physical iPhone now installs, launches, bundles, accepts Camera Studio deep links at process level, and survives process-level suspend/resume, but camera/microphone permissions, gallery picker touch UI, capture, front/back switch, video compression, large upload memory pressure, retry/cancel, and physical network behavior remain unverified. Physical-device QA evidence is the necessary next step before higher-risk LiveKit calls.
