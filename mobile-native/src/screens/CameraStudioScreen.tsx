@@ -22,6 +22,7 @@ import {
   NativeMediaAsset,
   uploadResultMediaId
 } from "../media/nativeMediaUpload";
+import { createQaCameraImageAsset, shouldEnableQaCameraMediaAutomation } from "../media/qaCameraMedia";
 import { useNativeMediaUpload } from "../media/useNativeMediaUpload";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -82,6 +83,8 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const cameraRef = useRef<CameraView | null>(null);
+  const qaMediaSeedRef = useRef("");
+  const qaPublishRef = useRef("");
   const uploadOptions = useMemo(
     () => ({
       contextType: "pulse_camera",
@@ -108,6 +111,36 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   useEffect(() => {
     setCaptureMode(destination.mode === "reel" || destination.mode === "video" ? "video" : "photo");
   }, [destination.mode]);
+
+  useEffect(() => {
+    const nextDestination = destinationFromParams(route.params);
+    setDestination((current) => (current.key === nextDestination.key ? current : nextDestination));
+  }, [route.params?.mode, route.params?.target]);
+
+  useEffect(() => {
+    const qaMedia = route.params?.qaMedia;
+    if (!qaMedia || !shouldEnableQaCameraMediaAutomation()) return;
+    const seedKey = `${destination.key}:${qaMedia}:${route.params?.qaCaption || ""}`;
+    if (qaMediaSeedRef.current === seedKey) return;
+    qaMediaSeedRef.current = seedKey;
+    createQaCameraImageAsset()
+      .then((asset) => {
+        mediaUpload.setAsset(asset);
+        setCaption(route.params?.qaCaption || caption || "PulseSoc Camera simulator QA");
+        setMessage("QA simulator media selected.");
+      })
+      .catch((qaError) => {
+        setError(qaError instanceof Error ? qaError.message : "QA simulator media could not be prepared.");
+      });
+  }, [caption, destination.key, mediaUpload, route.params?.qaCaption, route.params?.qaMedia]);
+
+  useEffect(() => {
+    if (!route.params?.qaAutoPublish || !shouldEnableQaCameraMediaAutomation() || !mediaUpload.asset || publishing || mediaUpload.uploading) return;
+    const publishKey = `${destination.key}:${route.params?.qaCaption || ""}:${mediaUpload.asset.uri}`;
+    if (qaPublishRef.current === publishKey) return;
+    qaPublishRef.current = publishKey;
+    publish().catch(() => undefined);
+  }, [destination.key, mediaUpload.asset, mediaUpload.uploading, publishing, route.params?.qaAutoPublish]);
 
   async function ensureCameraReady() {
     setError("");
@@ -696,7 +729,7 @@ const styles = StyleSheet.create({
     left: 14,
     position: "absolute",
     right: 14,
-    top: 14
+    top: Platform.OS === "ios" ? 58 : 18
   },
   visibility: {
     borderColor: colors.border,
@@ -725,7 +758,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
     justifyContent: "center",
-    padding: 24
+    padding: 24,
+    paddingTop: Platform.OS === "ios" ? 104 : 24
   },
   webText: {
     color: colors.muted,

@@ -62,13 +62,19 @@ function cameraRouteFromQaUrl(parsed: URL): RootStackParamList["CameraStudio"] |
   const mode = normalizeMode(parsed.searchParams.get("mode") || modeFromRedirect || null);
   const captureMode = normalizeCaptureMode(parsed.searchParams.get("captureMode") || parsed.searchParams.get("capture_mode"));
   const conversationId = Number(parsed.searchParams.get("conversationId") || parsed.searchParams.get("conversation_id") || 0) || undefined;
+  const qaMedia = parsed.searchParams.get("qaMedia") === "image" ? "image" : undefined;
+  const qaAutoPublish = ["1", "true", "yes"].includes(String(parsed.searchParams.get("qaAutoPublish") || "").toLowerCase());
+  const qaCaption = parsed.searchParams.get("qaCaption") || undefined;
 
   return {
     target: target || "feed",
     mode: mode || "photo",
     captureMode,
     conversationId,
-    title: "Camera"
+    title: "Camera",
+    qaMedia,
+    qaAutoPublish,
+    qaCaption
   };
 }
 

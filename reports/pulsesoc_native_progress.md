@@ -52,6 +52,7 @@ Completed native foundations:
 - Native Camera Studio Authenticated Simulator QA Attempt: started a temporary local QA backend at `127.0.0.1:5107`, verified direct mobile auth and authenticated camera config outside the app, rebundled the installed simulator app with `EXPO_PUBLIC_PULSE_API_BASE_URL=http://127.0.0.1:5107`, and documented that Simulator text-entry automation could not reliably fill the username/email field. Authenticated Camera Studio remains unverified; do not claim simulator login, preview, upload, publish, or authenticated recovery from this attempt.
 - Native Simulator Authenticated QA Path: added a QA-only simulator deep link that is enabled only in development native builds when `EXPO_PUBLIC_PULSE_API_BASE_URL` points to localhost; it still calls the existing `/api/mobile/auth/login` flow, stores the existing backend session cookie, and queues Camera Studio navigation after auth. Production auth, production WebView routes, and production app identity remain untouched.
 - Native Camera Studio Authenticated Simulator QA Through QA Deep Link: verified that the QA-only simulator deep link authenticates `com.pulsesoc.nativeapp` against a localhost backend without text entry, opens Camera Studio in Feed/photo and Reel/video modes, renders provider `native_fallback`, supports microphone/photo-library permission grant/revoke through `xcrun simctl privacy`, and restores the authenticated session after terminate/relaunch. Gallery selection, preview, upload handoff, publish routing, real camera capture, and physical-device media behavior remain unverified.
+- Native Camera Studio Media QA Automation: seeded simulator media with `xcrun simctl addmedia`, added a dev/native/localhost-only QA media injection path, verified selected-media preview state, upload handoff, Feed publish to native Post Detail, Status publish to native Status viewer, Reel publish to native Reels viewer, local backend media/camera/post/status/reel records, foreground/background session recovery, and Camera Studio safe-area visual hardening. The touch/media automation blocker is partially reduced by QA-only simulator media injection, but real gallery picker touch selection, upload retry/cancel, physical camera/microphone capture, video compression, and physical-device behavior remain unverified.
 - Settings: session controls, push registration, notification preferences entry.
 
 Completed supporting reports/audits:
@@ -213,9 +214,9 @@ Existing data/business logic that should remain server-authoritative:
 
 ## Recommended Next Action
 
-Recommendation: add or use reliable Simulator touch/media automation for Camera Studio, then run physical iPhone and Android Camera Studio QA before moving to Native LiveKit calls.
+Recommendation: run physical iPhone and Android Camera Studio QA with a larger video fixture or network-throttled upload retry/cancel pass before moving to Native LiveKit calls.
 
-This is the highest-value next action based on the current codebase. Native Camera Studio is implemented as a foundation and the installed `com.pulsesoc.nativeapp` development build now compiles, installs, bundles, renders native Login, survives signed-out foreground/background relaunch, safely auth-gates Camera Studio deep links, and now authenticates through a dev-only localhost QA deep link without relying on brittle text entry. Feed/photo and Reel/video Camera Studio routing, camera config rendering, microphone/photo-library privacy toggles, and authenticated session restore are simulator-verified. The remaining release risk is media interaction and real device behavior: gallery selection, preview, upload handoff, retry/cancel, publish routing, camera permission prompt behavior, physical camera capture, microphone capture, front/back switching, and compression remain unverified.
+This is the highest-value next action based on the current codebase. Native Camera Studio is implemented as a foundation and the installed `com.pulsesoc.nativeapp` development build now compiles, installs, bundles, renders native Login, survives signed-out foreground/background relaunch, safely auth-gates Camera Studio deep links, authenticates through a dev-only localhost QA deep link, and now exercises simulator media selection/preview/upload/publish through a QA-only media injection path. Feed, Status, and Reel publish routing have simulator evidence against the existing backend APIs. The remaining release risk is physical device behavior and interruptible uploads: the touch/media automation blocker still applies to real gallery picker UI touch selection, retry/cancel, camera permission prompt behavior, physical camera capture, microphone capture, front/back switching, video compression, and large media handling.
 
 Provider/device QA for Alert Management remains a release blocker, especially APNs/FCM/Expo push delivery, installed-app notification taps, lock-screen presentation, SMS/email/Telegram delivery, and physical-device deep links. That work should continue before any release claim, but it is external-credential/device gated. Among buildable native features, Camera Studio gives the most leverage while reusing existing backend/media logic.
 
@@ -227,7 +228,7 @@ Provider/device QA for Alert Management remains a release blocker, especially AP
 - Production create-from-camera APIs already exist for posts and reels: `/api/pulse/posts/create-from-camera` and `/api/pulse/reels/create-from-camera`; Status Creator already has native publishing through existing Status APIs.
 - Production web camera includes capture modes, front/back camera, microphone toggle, flash/torch fallback, gallery fallback, lenses, beauty modes, filters, preview, privacy/caption, and destination routing.
 - Native already has `expo-camera`, `expo-image-picker`, `expo-file-system`, shared `useNativeMediaUpload`, `MediaUploadPreview`, Feed Composer, Status Creator, Profile uploads, Messenger attachments, Marketplace media viewer, and Creator Studio shortcuts.
-- Native now has a dedicated Camera Studio screen/route and deep link for `/pulse/camera/*`; signed-out simulator deep links are safely auth-gated, local backend auth/camera config works outside the app, and the new QA-only simulator login deep link verified authenticated Camera Studio access without weakening production auth.
+- Native now has a dedicated Camera Studio screen/route and deep link for `/pulse/camera/*`; signed-out simulator deep links are safely auth-gated, local backend auth/camera config works outside the app, the QA-only simulator login deep link verified authenticated Camera Studio access, and the QA-only media path verified simulator upload/publish routing without weakening production auth.
 - Native LiveKit calls are tempting because `@livekit/react-native` and `livekit-client` are installed and backend call APIs exist, but calls depend on reliable push/ringing, lock-screen behavior, microphone/camera permissions, background audio, and real-device QA that is still not established.
 - This recommendation is based on the current production routes/services and `mobile-native` implementation inspected on 2026-07-04.
 
@@ -265,8 +266,8 @@ Do not duplicate in native:
 
 ## What Must Be Hardened Next
 
-- Add or use reliable Simulator touch/media automation through XCTest, Appium, Detox, or manual Simulator interaction.
-- Verify Camera Studio gallery fallback selection, preview flow, caption/privacy/destination state, upload handoff, retry/cancel, and publish routing where simulator supports it.
+- Run physical iPhone and Android Camera Studio QA for real gallery picker, camera capture, microphone capture, front/back switch, video recording, compression, and large media behavior.
+- Add a larger fixture or network-throttled QA harness for upload retry/cancel because the injected simulator image uploads too quickly to interrupt.
 - Keep the QA-only deep link disabled outside development native builds and localhost API bases.
 - Attach/trust a physical iPhone and attach/authorize a physical Android device, or start an Android emulator.
 - QA browser route/layout sweep for `/pulse/camera`, `/pulse/camera/photo`, `/pulse/camera/video`, `/pulse/camera/status`, `/pulse/camera/reel`, and `/pulse/camera/post`.
@@ -298,7 +299,8 @@ Blockers:
 - Signed-out Camera Studio deep links now stay on the auth gate without React Navigation route-mismatch warnings after the scoped native linking fix.
 - A temporary local QA account/session and local backend were verified outside the app, and a QA-only simulator login deep link now verifies authenticated app access without unreliable text-entry automation.
 - `xcrun simctl` does not expose camera permission control in this environment.
-- `cliclick` did not reliably affect the Simulator app surface for Gallery/Allow Camera taps, so preview/upload/publish remain blocked by touch/media automation.
+- `cliclick` did not reliably affect the Simulator app surface for Gallery/Allow Camera taps, so native picker touch selection remains unverified. QA media injection covered selected-media preview and publish routing instead.
+- Upload retry/cancel remains unverified because the QA image upload completes too quickly to interrupt.
 - No physical iPhone or Android device was visible through USB system profiling in this workspace.
 - No physical-device QA flow has been recorded in this workspace.
 - Provider/device Alert Management QA remains unverified for APNs/FCM/SMS/email/Telegram and should continue as a release-readiness track.
@@ -348,6 +350,6 @@ Defer from first slice:
 
 ## Recommendation Summary
 
-Recommended next highest-value action: add or use reliable Simulator touch/media automation for Camera Studio, then run physical-device media QA.
+Recommended next highest-value action: run physical iPhone and Android Camera Studio QA, including a large-video or network-throttled upload retry/cancel pass.
 
-Reason: the production platform already has the camera/media routes, catalogs, validation, storage, preview, and create-from-camera business logic, and the native app now has a dedicated native camera foundation over those contracts. The simulator can now boot, build, install, bundle, relaunch, auth-gate Camera Studio deep links, authenticate through the QA-only localhost deep link, route into Feed/photo and Reel/video Camera Studio, render native camera config, and restore the authenticated session. The next blocker is interaction/media automation: gallery selection, preview, upload handoff, retry/cancel, and publish routing were not verified because available tap automation did not reliably affect the Simulator surface. Physical camera/microphone behavior remains physical-device-only. Completing touch/media QA and then physical-device QA is the necessary next step before higher-risk LiveKit calls.
+Reason: the production platform already has the camera/media routes, catalogs, validation, storage, preview, and create-from-camera business logic, and the native app now has a dedicated native camera foundation over those contracts. The simulator can now boot, build, install, bundle, relaunch, auth-gate Camera Studio deep links, authenticate through the QA-only localhost deep link, route into Feed/photo and Reel/video Camera Studio, render native camera config, seed/select QA media, upload/publish to Feed/Status/Reel, and restore the authenticated session. The next blocker is real device media behavior: camera/microphone permissions, gallery picker touch UI, capture, front/back switch, video compression, large upload memory pressure, retry/cancel, and physical network behavior. Physical-device QA is the necessary next step before higher-risk LiveKit calls.

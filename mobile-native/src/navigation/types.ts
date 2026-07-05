@@ -29,6 +29,9 @@ export type RootStackParamList = {
     captureMode?: "photo" | "video";
     conversationId?: number;
     title?: string;
+    qaMedia?: "image";
+    qaAutoPublish?: boolean;
+    qaCaption?: string;
   } | undefined;
   Chat: { conversationId: number; title?: string };
   PostDetail: { postId: number; title?: string };
