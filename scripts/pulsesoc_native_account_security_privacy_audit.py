@@ -32,6 +32,7 @@ def main() -> int:
     linking = read("mobile-native/src/navigation/linking.ts")
     notification_routing = read("mobile-native/src/navigation/notificationRouting.ts")
     report = read("reports/pulsesoc_native_account_security_privacy_progress.md")
+    qa_report = read("reports/pulsesoc_native_account_security_privacy_qa.md")
     progress = read("reports/pulsesoc_native_progress.md")
 
     for endpoint in [
@@ -72,8 +73,13 @@ def main() -> int:
         require(settings_screen, settings_entry, "Settings navigation entry")
 
     require(types, "AccountCenter", "navigation type")
+    for route_name in ["AccountSettings", "AccountSecurity", "AccountWebSettings", "AccountWebSecurity", "AccountPrivacy", "AccountDevices"]:
+        require(types, route_name, "account route alias type")
+        require(navigator, route_name, "account route alias stack screen")
     require(navigator, "AccountCenterScreen", "stack route component")
     require(linking, 'path: "pulse/settings/:section"', "Pulse settings deep link")
+    for path in ["dashboard/account/settings", "dashboard/account/security", "account/settings", "account/security", "privacy-center"]:
+        require(linking, path, "direct account/privacy link alias")
 
     for route in [
         "/pulse/settings/security",
@@ -94,6 +100,14 @@ def main() -> int:
         "Run a short practical QA sweep",
     ]:
         require(report, phrase, "account/security/privacy progress report")
+
+    for phrase in [
+        "No critical, security, production-breaking, or data-loss issues were found",
+        "Direct account/privacy aliases fell back to Home",
+        "All aliases listed above rendered the correct native Account, Security, or Privacy Center",
+        "2FA enable action through `/api/account/2fa/enable`",
+    ]:
+        require(qa_report, phrase, "account/security/privacy QA report")
 
     require(progress, "Native Account, Security & Privacy", "progress report completed feature")
     forbid(account_screen, "LogiNexus", "user-facing internal design language in AccountCenterScreen")

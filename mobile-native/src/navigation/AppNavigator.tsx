@@ -121,6 +121,12 @@ export function AppNavigator() {
       <Stack.Screen name="AlertManagement" component={AlertManagementScreen} options={({ route }) => ({ title: route.params?.title || "Alerts" })} />
       <Stack.Screen name="CryptoAlertManagement" component={AlertManagementScreen} options={({ route }) => ({ title: route.params?.title || "Alerts" })} />
       <Stack.Screen name="AccountCenter" component={AccountCenterScreen} options={({ route }) => ({ title: route.params?.title || "Account Center" })} />
+      <Stack.Screen name="AccountSettings" component={AccountCenterScreen} options={{ title: "Account Center" }} />
+      <Stack.Screen name="AccountSecurity" component={AccountCenterScreen} options={{ title: "Security Center" }} />
+      <Stack.Screen name="AccountWebSettings" component={AccountCenterScreen} options={{ title: "Account Center" }} />
+      <Stack.Screen name="AccountWebSecurity" component={AccountCenterScreen} options={{ title: "Security Center" }} />
+      <Stack.Screen name="AccountPrivacy" component={AccountCenterScreen} options={{ title: "Privacy Center" }} />
+      <Stack.Screen name="AccountDevices" component={AccountCenterScreen} options={{ title: "Sessions and Devices" }} />
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} options={{ title: "Notifications" }} />
       <Stack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} options={{ title: "Notification Preferences" }} />
     </Stack.Navigator>

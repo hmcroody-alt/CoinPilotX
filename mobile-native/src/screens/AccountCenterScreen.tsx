@@ -22,7 +22,14 @@ import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 
-type Props = NativeStackScreenProps<RootStackParamList, "AccountCenter">;
+type Props =
+  | NativeStackScreenProps<RootStackParamList, "AccountCenter">
+  | NativeStackScreenProps<RootStackParamList, "AccountSettings">
+  | NativeStackScreenProps<RootStackParamList, "AccountSecurity">
+  | NativeStackScreenProps<RootStackParamList, "AccountWebSettings">
+  | NativeStackScreenProps<RootStackParamList, "AccountWebSecurity">
+  | NativeStackScreenProps<RootStackParamList, "AccountPrivacy">
+  | NativeStackScreenProps<RootStackParamList, "AccountDevices">;
 
 type AccountSection = "account" | "security" | "privacy" | "devices";
 
@@ -76,7 +83,7 @@ const settingOptions: Record<string, { label: string; value: string }[]> = {
 };
 
 export function AccountCenterScreen({ route, navigation }: Props) {
-  const initialSection = normalizeSection(route.params?.section);
+  const initialSection = normalizeSection(route.name, routeSectionParam(route.params));
   const [section, setSection] = useState<AccountSection>(initialSection);
   const [state, setState] = useState<AccountState | null>(null);
   const [draftSettings, setDraftSettings] = useState<AccountSettings>({});
@@ -114,8 +121,8 @@ export function AccountCenterScreen({ route, navigation }: Props) {
   }, []);
 
   useEffect(() => {
-    setSection(normalizeSection(route.params?.section));
-  }, [route.params?.section]);
+    setSection(normalizeSection(route.name, routeSectionParam(route.params)));
+  }, [route.name, route.params]);
 
   useEffect(() => {
     navigation.setOptions({ title });
@@ -565,9 +572,17 @@ function ActionButton({
   );
 }
 
-function normalizeSection(section?: string): AccountSection {
+function normalizeSection(routeName: string, section?: string): AccountSection {
   if (section === "security" || section === "privacy" || section === "devices") return section;
+  if (routeName === "AccountSecurity" || routeName === "AccountWebSecurity") return "security";
+  if (routeName === "AccountPrivacy") return "privacy";
+  if (routeName === "AccountDevices") return "devices";
   return "account";
+}
+
+function routeSectionParam(params: Props["route"]["params"]): AccountSection | undefined {
+  if (params && "section" in params) return params.section;
+  return undefined;
 }
 
 function sectionTitle(section: AccountSection) {

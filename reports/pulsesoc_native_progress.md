@@ -61,6 +61,7 @@ Completed native foundations:
 - Native Calls foundation and Practical QA: native call route, Messenger voice/video entry points, LiveKit connection shell, call control API wrappers, `/pulse/calls/<call_id>` deep-link routing, safe web fallback behavior, and practical QA documentation for release blockers.
 - Native Full-Screen Incoming Calls foundation and Practical QA: foreground incoming-call layer, active-call polling/resume hook, ring-seen guard, accept/decline/end controls, floating active-call bubble, minimized-call restore, and seeded practical QA path.
 - Native Account, Security & Privacy foundation: native Account Center, Security Center, Privacy Center, Sessions/Devices section, thin server-authoritative account API wrapper, settings entries, offline display cache, trusted-device removal, recovery/2FA/verification actions, deep-link routing, and protected web fallback for sensitive password/deletion/privacy flows.
+- Native Account, Security & Privacy QA: authenticated QA browser sweep through a temporary local QA backend/proxy, verified Account/Security/Privacy/Devices routes, privacy save, 2FA enable, security score/history refresh, no console errors, and fixed direct `/dashboard/account/*`, `/account/*`, and `/privacy-center` aliases that had fallen back to Home.
 - Settings: session controls, push registration, notification preferences entry, and account/security/privacy/device center entry points.
 
 Completed supporting reports/audits:
@@ -155,11 +156,11 @@ Completed supporting reports/audits:
 - `reports/pulsesoc_native_xctest_camera_qa.md`
 - `scripts/pulsesoc_native_xctest_camera_qa_audit.py`
 - `reports/pulsesoc_native_account_security_privacy_progress.md`
+- `reports/pulsesoc_native_account_security_privacy_qa.md`
 - `scripts/pulsesoc_native_account_security_privacy_audit.py`
 
 ## Remaining Major Features
 
-- Account, Security & Privacy practical QA sweep
 - Camera Studio physical-device release QA and advanced editor expansion
 - Calls two-device release QA for native LiveKit media, push/ringing, lock-screen behavior, Bluetooth/speaker route behavior, and background audio
 - External Android device QA completion and hardening pass
