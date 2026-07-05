@@ -278,3 +278,32 @@ For each physical device:
 Do not move to Native LiveKit calls yet.
 
 The next highest-value action is to capture a real manual iPhone Camera Studio QA video or implement a QA-only XCTest UI target. Specifically verify login/session restore, camera/microphone permissions, gallery picker behavior, photo/video capture, large-video upload progress, weak-network retry/cancel, foreground/background recovery, Feed/Status/Reels publish routing, backend IDs, and visual quality on hardware.
+
+## Manual iPhone Camera Studio QA Capture Attempt
+
+Status: manual iPhone Camera Studio QA capture remains blocked because no human-operated screen recording, QuickTime video, screenshots, syslog excerpt, backend media/upload IDs, or published post/status/reel IDs were available in this workspace for the manual pass.
+
+This update does not claim any new physical Camera Studio interaction behavior passed.
+
+Manual capture evidence expected:
+
+- iPhone Control Center screen recording or QuickTime iPhone recording.
+- Camera permission and microphone permission observations.
+- Gallery picker observation.
+- Photo capture and video capture observations.
+- Front/back switch observation.
+- Preview flow observation.
+- Upload progress observation.
+- Feed, Status, and Reels publish evidence.
+- Backend media/upload IDs and published destination IDs.
+- Failure/fix notes.
+
+Current result:
+
+- No manual recording path was produced.
+- No screenshot path was produced.
+- No new syslog excerpt was produced for an actual tap-through.
+- No backend media/upload/post/status/reel IDs were produced.
+- Login/session restore, permission prompts, gallery picker, capture, preview, upload, retry/cancel, publish routing, foreground/background recovery, and native visual quality remain physical-device unverified.
+
+The required next step is still a real manual iPhone Camera Studio recording or a QA-only XCTest UI target before Native LiveKit calls.
