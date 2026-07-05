@@ -4,7 +4,7 @@ Date: 2026-07-05
 
 ## Result
 
-Status: blocked by missing physical device access.
+Status: blocked by physical iPhone Developer Mode being disabled.
 
 This mission did not build Native LiveKit calls, did not modify production WebView routes, and did not claim physical Camera Studio behavior as verified.
 
@@ -12,14 +12,22 @@ This mission did not build Native LiveKit calls, did not modify production WebVi
 
 Physical iPhone:
 
-- `xcrun xctrace list devices` listed the Mac and simulators only.
-- `xcrun devicectl list devices` returned `No devices found.`
-- `system_profiler SPUSBDataType` did not show an attached iPhone or iPad.
+- Connected device: `P3r7or`
+- Model: iPhone 16 Pro (`iPhone17,1`)
+- OS: iOS 18.7.3 (`22H217`)
+- UDID: `00008140-000E2D9A2EE8801C`
+- CoreDevice identifier: `F45E640F-6D02-514E-877C-B764E8D6818F`
+- Transport: wired
+- Pairing state: paired
+- `xcrun xctrace list devices` lists `P3r7or (18.7.3) (00008140-000E2D9A2EE8801C)`.
+- `xcrun devicectl list devices` lists `P3r7or` as `connected (no DDI)`.
+- `xcrun devicectl device info details --device F45E640F-6D02-514E-877C-B764E8D6818F` reports `developerModeStatus: disabled` and `ddiServicesAvailable: false`.
+- `xcrun devicectl device info apps --device F45E640F-6D02-514E-877C-B764E8D6818F` fails with `The operation failed because Developer Mode is disabled.`
 
 Physical Android:
 
 - `adb devices -l` returned an empty attached-device list.
-- `system_profiler SPUSBDataType` did not show an attached Android device.
+- No Android device was visible to adb.
 
 Available test target:
 
@@ -28,7 +36,7 @@ Available test target:
 
 ## Build Used
 
-Physical device build: not installed because no physical iPhone or Android device was visible to the machine.
+Physical device build: not installed on the connected iPhone because Developer Mode is disabled and DDI services are unavailable.
 
 Current native QA identity remains:
 
@@ -42,21 +50,21 @@ Production identity remains protected:
 
 | Area | iPhone physical | Android physical | Result |
 | --- | --- | --- | --- |
-| Photo capture | Not run | Not run | Blocked by no physical device |
-| Video capture | Not run | Not run | Blocked by no physical device |
-| Front/back camera | Not run | Not run | Blocked by no physical device |
-| Microphone permission | Not run | Not run | Blocked by no physical device |
-| Gallery picker | Not run | Not run | Blocked by no physical device |
-| Large video upload | Not run | Not run | Blocked by no physical device |
-| Weak-network retry/cancel | Not run | Not run | Blocked by no physical device |
-| Upload progress accuracy | Not run | Not run | Blocked by no physical device |
-| Feed publish | Not run | Not run | Blocked by no physical device |
-| Status publish | Not run | Not run | Blocked by no physical device |
-| Reels publish | Not run | Not run | Blocked by no physical device |
-| Messenger handoff | Not run | Not run | Blocked by no physical device |
-| Profile handoff | Not run | Not run | Blocked by no physical device |
-| Foreground/background interruption | Not run | Not run | Blocked by no physical device |
-| Native visual quality on device | Not run | Not run | Blocked by no physical device |
+| Photo capture | Not run | Not run | iPhone blocked by Developer Mode disabled; Android not connected |
+| Video capture | Not run | Not run | iPhone blocked by Developer Mode disabled; Android not connected |
+| Front/back camera | Not run | Not run | iPhone blocked by Developer Mode disabled; Android not connected |
+| Microphone permission | Not run | Not run | iPhone blocked by Developer Mode disabled; Android not connected |
+| Gallery picker | Not run | Not run | iPhone blocked by Developer Mode disabled; Android not connected |
+| Large video upload | Not run | Not run | iPhone blocked by Developer Mode disabled; Android not connected |
+| Weak-network retry/cancel | Not run | Not run | iPhone blocked by Developer Mode disabled; Android not connected |
+| Upload progress accuracy | Not run | Not run | iPhone blocked by Developer Mode disabled; Android not connected |
+| Feed publish | Not run | Not run | iPhone blocked by Developer Mode disabled; Android not connected |
+| Status publish | Not run | Not run | iPhone blocked by Developer Mode disabled; Android not connected |
+| Reels publish | Not run | Not run | iPhone blocked by Developer Mode disabled; Android not connected |
+| Messenger handoff | Not run | Not run | iPhone blocked by Developer Mode disabled; Android not connected |
+| Profile handoff | Not run | Not run | iPhone blocked by Developer Mode disabled; Android not connected |
+| Foreground/background interruption | Not run | Not run | iPhone blocked by Developer Mode disabled; Android not connected |
+| Native visual quality on device | Not run | Not run | iPhone blocked by Developer Mode disabled; Android not connected |
 
 ## What Remains Verified From Earlier Gates
 
@@ -78,16 +86,17 @@ These remain simulator-verification results only.
 
 ## Failures Found
 
-No physical-app failures were observed because no physical device was available.
+No physical-app failures were observed because the connected iPhone cannot run the development build until Developer Mode is enabled.
 
 The failure for this mission is environmental:
 
-- No trusted iPhone was visible to Xcode/devicectl.
+- A trusted/paired iPhone is now visible to Xcode/CoreDevice, but Developer Mode is disabled.
+- DDI services are unavailable (`connected (no DDI)`), so app listing, installation, launch, logs, and screen-based physical QA are blocked.
 - No Android device was visible to adb.
 
 ## Fixes Applied
 
-No code fixes were applied during this physical QA run because the app could not be launched on physical hardware.
+No code fixes were applied during this physical QA run because the app could not be installed or launched on physical hardware.
 
 The previous checkpoint already added upload progress observability for large media by showing percent plus transferred/total size when XHR provides computable upload length.
 
@@ -95,15 +104,20 @@ The previous checkpoint already added upload progress observability for large me
 
 iPhone:
 
-1. Connect a real iPhone by USB or configure trusted wireless debugging.
-2. Unlock the device.
-3. Tap Trust This Computer if prompted.
-4. Confirm it appears in:
+1. Keep the iPhone connected and unlocked.
+2. Enable Developer Mode on the iPhone:
+   - Settings -> Privacy & Security -> Developer Mode -> On
+   - Reboot if prompted
+   - Confirm Developer Mode after reboot if prompted
+3. Re-run:
 
 ```bash
 xcrun devicectl list devices
 xcrun xctrace list devices
+xcrun devicectl device info details --device F45E640F-6D02-514E-877C-B764E8D6818F
 ```
+
+4. Continue only when `developerModeStatus` is enabled and the device is no longer `connected (no DDI)`.
 
 Android:
 
@@ -157,4 +171,4 @@ For each physical device:
 
 Do not move to Native LiveKit calls yet.
 
-The next highest-value action is to connect and trust at least one real iPhone or Android device, rerun the physical Camera Studio QA plan, and specifically verify camera/microphone permissions, gallery picker behavior, large-video upload progress, weak-network retry/cancel, and Feed/Status/Reels publish routing on hardware.
+The next highest-value action is to enable Developer Mode on the connected iPhone 16 Pro, confirm DDI services are available, install `com.pulsesoc.nativeapp`, then rerun the physical Camera Studio QA plan. Specifically verify camera/microphone permissions, gallery picker behavior, large-video upload progress, weak-network retry/cancel, foreground/background recovery, and Feed/Status/Reels publish routing on hardware.

@@ -40,14 +40,18 @@ def main() -> int:
         report,
         [
             "# PulseSoc Native Physical Camera Studio QA Results",
-            "Status: blocked by missing physical device access.",
-            "No devices found.",
+            "Status: blocked by physical iPhone Developer Mode being disabled.",
+            "iPhone 16 Pro",
+            "iOS 18.7.3",
+            "connected (no DDI)",
+            "developerModeStatus: disabled",
+            "ddiServicesAvailable: false",
             "adb devices -l",
             "Not run",
-            "Blocked by no physical device",
+            "iPhone blocked by Developer Mode disabled; Android not connected",
             "These remain simulator-verification results only.",
             "Do not move to Native LiveKit calls yet.",
-            "connect and trust at least one real iPhone or Android device",
+            "enable Developer Mode on the connected iPhone 16 Pro",
         ],
     )
 
@@ -56,8 +60,10 @@ def main() -> int:
         progress,
         [
             "Native Physical Camera Studio QA Attempt",
-            "blocked by missing physical device access",
-            "No physical iPhone or Android device was visible",
+            "blocked by iPhone Developer Mode being disabled",
+            "iPhone 16 Pro",
+            "connected (no DDI)",
+            "developerModeStatus: disabled",
             "before moving to Native LiveKit calls",
         ],
     )
