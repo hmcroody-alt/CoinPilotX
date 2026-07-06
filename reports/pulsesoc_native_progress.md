@@ -3226,3 +3226,71 @@ Reason for recommendation:
 
 - The server-authoritative cursor contract now exists, so the next weakest gap is proving cursor advancement, duplicate suppression, and invalidation behavior under seeded order, listing, message, call, safety, verification, alert, and intelligence events.
 - This is the fastest way to raise system-wide consistency without adding another product surface.
+
+## Native Event Cursor Integrity Validation
+
+Completed action: validated the `/api/pulse/sync/events` cursor contract with seeded backend events and documented production-readiness gaps.
+
+What changed:
+
+- Created `reports/pulsesoc_native_cursor_integrity_validation.md`.
+- Created `scripts/pulsesoc_native_cursor_integrity_validation_audit.py`.
+- Validated unauthenticated protection, initial sync, delta sync, timestamp replay, invalid cursor fallback, event ordering, duplicate safety, cross-user isolation, invalidation hints, and metadata redaction.
+- Confirmed the native sync client remains polling-first and does not introduce WebSockets, SSE, or realtime streaming.
+
+Cursor system correctness status:
+
+- Correct for polling-first notification-derived event replay.
+- `pulse_notifications.id` provides stable monotonic cursor ordering.
+- Server remains the source of truth.
+- Native full-resync fallback remains the recovery path when the endpoint is unavailable.
+
+Systems that break under replay:
+
+- No cursor-contract breakage found in seeded temp-db validation.
+- Screen-level handler refresh under live high-volume backend bursts remains unproven.
+
+Systems that may drift under concurrency:
+
+- Messenger summary state.
+- Calls active-call state.
+- Safety enforcement/report state.
+- Verification review/badge state.
+- Premium entitlement state.
+- Intelligence/alert detail state.
+
+Event loss/duplication risks:
+
+- Low for events already mirrored into `pulse_notifications`.
+- Medium for event producers that do not yet emit, mirror, or map to a cursor-visible notification/event envelope.
+
+Updated subsystem sync reliability:
+
+| Subsystem | Sync reliability |
+| --- | ---: |
+| Activity Inbox | 88% |
+| Notifications | 90% |
+| Buyer Orders | 86% |
+| Seller Inventory | 85% |
+| Marketplace | 85% |
+| Messaging | 72% |
+| Calls | 65% |
+| Trust/Safety | 78% |
+| Verification | 78% |
+| Media/Capture | 62% |
+| Creator/Premium/Intelligence | 74% |
+
+Overall native migration percentage: 85% foundation/parity coverage, 79% system consistency confidence, 64% release QA confidence.
+
+Critical gaps for production readiness:
+
+- Real provider APNs/FCM delivery and tap routing still need physical-device QA.
+- Cursor replay needs authenticated live-data QA beyond seeded temp-db validation.
+- Messenger and Calls need dedicated event handler wiring.
+- Event producer coverage must be audited across orders, listings, messages, calls, safety, verification, alerts, and intelligence.
+
+ONE highest-impact fix ONLY: Event Producer Coverage Audit.
+
+Reason:
+
+- The cursor endpoint is correct for events it can see, but production readiness now depends on ensuring every critical backend event producer emits or maps to a cursor-visible event envelope with stable id, target URL, entity metadata, and invalidation hints.
