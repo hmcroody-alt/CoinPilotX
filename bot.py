@@ -3643,6 +3643,14 @@ def notify_payment_status(user_id, note_type, title, body, target_url="/dashboar
         "target_url": target_url,
         "source": "stripe_webhook",
         "category": "payments",
+        "domain": "commerce",
+        "event_type": str(note_type or "payment_updated")[:80],
+        "entity_type": "payment",
+        "entity_id": str(entity_id or stripe_event_id or "")[:120],
+        "actor_id": 0,
+        "timestamp": datetime.utcnow().isoformat(timespec="seconds"),
+        "sync_cursor_key": f"{str(note_type or 'payment_updated')[:80]}:payment:{str(entity_id or stripe_event_id or '')[:120]}:{stripe_event_id or ''}",
+        "invalidates": ["activity", "notifications", "orders", "seller_inventory", "marketplace"],
     }
     try:
         return notification_service.create_pulse_notification(
@@ -41606,6 +41614,93 @@ def pulse_emit_marketplace_inventory_event(
     )
 
 
+def pulse_emit_payment_checkout_event(
+    cur,
+    tx,
+    event_type,
+    status="",
+    actor_user_id=0,
+    title="",
+    body="",
+    extra=None,
+):
+    tx = dict(tx or {})
+    tx_id = int(tx.get("id") or 0)
+    if not tx_id:
+        return
+    event_type = str(event_type or "payment_updated")[:80]
+    buyer_user_id = int(tx.get("buyer_user_id") or 0)
+    seller_user_id = int(tx.get("seller_user_id") or 0)
+    item_type = str(tx.get("item_type") or "")[:80]
+    item_id = int(tx.get("item_id") or 0)
+    seller_type = str(tx.get("seller_type") or "merchant")[:40]
+    status_value = str(status or tx.get("status") or "")[:80]
+    invalidates = ["activity", "notifications", "orders", "seller_inventory", "marketplace"]
+    metadata = {
+        "domain": "commerce",
+        "category": "payments",
+        "transaction_id": tx_id,
+        "seller_transaction_id": tx_id,
+        "item_type": item_type,
+        "item_id": item_id,
+        "seller_type": seller_type,
+        "status": status_value,
+        "amount_cents": int(tx.get("amount_cents") or 0),
+        "currency": str(tx.get("currency") or "USD")[:12],
+        "invalidates": invalidates,
+    }
+    metadata.update(dict(extra or {}))
+    note_titles = {
+        "checkout_created": "Checkout created",
+        "checkout_blocked": "Checkout blocked",
+        "checkout_failed": "Checkout failed",
+        "checkout_expired": "Checkout expired",
+        "payment_pending": "Payment pending",
+        "payment_succeeded": "Payment succeeded",
+        "payment_failed": "Payment failed",
+        "refund_requested": "Refund requested",
+        "refund_issued": "Refund issued",
+        "dispute_opened": "Dispute opened",
+        "dispute_updated": "Dispute updated",
+        "dispute_resolved": "Dispute resolved",
+        "order_cancelled": "Order cancelled",
+    }
+    note_bodies = {
+        "checkout_created": "A checkout session was created for this order.",
+        "checkout_blocked": "Checkout could not continue until the payment setup is complete.",
+        "checkout_failed": "Checkout could not be created. No duplicate charge was made by this request.",
+        "checkout_expired": "The checkout session expired before payment completed.",
+        "payment_pending": "Payment is pending provider confirmation.",
+        "payment_succeeded": "Payment was confirmed by the provider.",
+        "payment_failed": "The provider reported a failed payment.",
+        "refund_requested": "A refund request was recorded for this order.",
+        "refund_issued": "The provider reported a refund for this order.",
+        "dispute_opened": "A payment dispute was opened for this order.",
+        "dispute_updated": "A payment dispute changed state.",
+        "dispute_resolved": "A payment dispute was resolved or closed.",
+        "order_cancelled": "This order was cancelled.",
+    }
+    recipients = [
+        (buyer_user_id, "buyer", f"/pulse/orders/{tx_id}"),
+        (seller_user_id, "seller", "/pulse/seller-store"),
+    ]
+    for user_id, role, target_url in recipients:
+        if not user_id:
+            continue
+        notify_user(
+            cur,
+            user_id,
+            event_type,
+            title or note_titles.get(event_type, "Payment updated"),
+            body or note_bodies.get(event_type, "Payment state changed."),
+            target_url,
+            actor_user_id=actor_user_id or buyer_user_id or seller_user_id,
+            entity_type="seller_transaction",
+            entity_id=str(tx_id),
+            metadata={**metadata, "recipient_role": role},
+        )
+
+
 @webhook_app.route("/api/pulse/marketplace/seller/listings/<int:listing_id>", methods=["PATCH", "POST"])
 def api_pulse_marketplace_seller_listing_update(listing_id):
     init_db()
@@ -74868,12 +74963,40 @@ def api_pulse_payments_checkout():
         (buyer["user_id"], seller_user_id, seller_type, item_type, item_id, amount_cents, currency, platform_fee, seller_net, json.dumps({"title": title}, default=str), now, now),
     )
     tx_id = int(cur.lastrowid)
+    tx_event = {
+        "id": tx_id,
+        "buyer_user_id": buyer["user_id"],
+        "seller_user_id": seller_user_id,
+        "seller_type": seller_type,
+        "item_type": item_type,
+        "item_id": item_id,
+        "amount_cents": amount_cents,
+        "currency": currency,
+        "status": "created",
+    }
+    pulse_emit_payment_checkout_event(cur, tx_event, "payment_pending", status="created", actor_user_id=buyer["user_id"])
     if not STRIPE_SECRET_KEY:
         cur.execute("UPDATE seller_transactions SET status='blocked_stripe_not_configured', updated_at=? WHERE id=?", (now, tx_id))
+        pulse_emit_payment_checkout_event(
+            cur,
+            {**tx_event, "status": "blocked_stripe_not_configured"},
+            "checkout_blocked",
+            status="blocked_stripe_not_configured",
+            actor_user_id=buyer["user_id"],
+            extra={"block_reason": "stripe_not_configured"},
+        )
         conn.commit(); conn.close()
         return api_error("Stripe checkout is not configured yet. No card was charged.", 503, transaction_id=tx_id)
     if not payout.get("connected_account_id"):
         cur.execute("UPDATE seller_transactions SET status='blocked_payout_onboarding_required', updated_at=? WHERE id=?", (now, tx_id))
+        pulse_emit_payment_checkout_event(
+            cur,
+            {**tx_event, "status": "blocked_payout_onboarding_required"},
+            "checkout_blocked",
+            status="blocked_payout_onboarding_required",
+            actor_user_id=buyer["user_id"],
+            extra={"block_reason": "payout_onboarding_required"},
+        )
         conn.commit(); conn.close()
         return api_error("Seller payout onboarding is required before checkout.", 409, transaction_id=tx_id)
     try:
@@ -74887,14 +75010,30 @@ def api_pulse_payments_checkout():
             metadata={"seller_transaction_id": str(tx_id), "seller_type": seller_type, "item_type": item_type, "item_id": str(item_id), "buyer_user_id": str(buyer["user_id"]), "seller_user_id": str(seller_user_id)},
         )
         cur.execute("UPDATE seller_transactions SET stripe_checkout_session_id=?, status='checkout_created', updated_at=? WHERE id=?", (session_obj.get("id"), now, tx_id))
+        pulse_emit_payment_checkout_event(
+            cur,
+            {**tx_event, "status": "checkout_created", "stripe_checkout_session_id": session_obj.get("id") or ""},
+            "checkout_created",
+            status="checkout_created",
+            actor_user_id=buyer["user_id"],
+            extra={"stripe_checkout_session_id": session_obj.get("id") or ""},
+        )
         conn.commit(); conn.close()
         return jsonify({"ok": True, "checkout_url": session_obj.get("url"), "transaction_id": tx_id, "platform_fee_cents": platform_fee, "seller_net_cents": seller_net})
     except Exception as exc:
         trace_id = secrets.token_hex(6)
         logging.exception("SELLER_CHECKOUT_CREATE_FAILED trace_id=%s tx_id=%s", trace_id, tx_id)
         cur.execute("UPDATE seller_transactions SET status='checkout_failed', metadata_json=?, updated_at=? WHERE id=?", (json.dumps({"error": str(exc), "trace_id": trace_id}, default=str), now, tx_id))
+        pulse_emit_payment_checkout_event(
+            cur,
+            {**tx_event, "status": "checkout_failed"},
+            "checkout_failed",
+            status="checkout_failed",
+            actor_user_id=buyer["user_id"],
+            extra={"trace_id": trace_id},
+        )
         conn.commit(); conn.close()
-        return api_error("Checkout could not be created.", 500, trace_id, error=str(exc))
+        return api_error("Checkout could not be created.", 500, trace_id, error=str(exc), transaction_id=tx_id)
 
 
 def _creator_checkout_for_item(buyer, item_type, item_id, plan_key=""):
@@ -84675,6 +84814,14 @@ def stripe_webhook():
                     "UPDATE seller_transactions SET status=?, stripe_checkout_session_id=?, stripe_payment_intent_id=?, updated_at=? WHERE id=?",
                     (status, session_id, session.get("payment_intent") or "", now, tx_id),
                 )
+                pulse_emit_payment_checkout_event(
+                    cur,
+                    {**tx, "status": status, "stripe_checkout_session_id": session_id, "stripe_payment_intent_id": session.get("payment_intent") or ""},
+                    "payment_succeeded" if payment_status in {"paid", "no_payment_required"} else "payment_pending",
+                    status=status,
+                    actor_user_id=tx.get("buyer_user_id") or 0,
+                    extra={"stripe_event_id": event_id, "stripe_checkout_session_id": session_id, "stripe_payment_intent_id": session.get("payment_intent") or "", "payment_status": payment_status or ""},
+                )
                 notify_user(cur, tx.get("seller_user_id"), "seller_payment", "Payment received", "A buyer completed checkout. Your payout status will update after Stripe settlement.", "/admin/payments" if False else f"/pulse/{tx.get('seller_type')}/payouts")
                 notify_user(cur, tx.get("buyer_user_id"), "purchase", "Payment complete", "Your purchase was completed successfully.", "/pulse")
                 conn.commit()
@@ -84787,6 +84934,32 @@ def stripe_webhook():
             logging.error("checkout.session.completed could not resolve local user session_id=%s customer_id=%s email=%s", session_id, customer_id, bool(resolved_email))
             record_unmatched_payment(event, session, "checkout.session.completed could not resolve local user")
 
+    if event_type == "checkout.session.expired":
+        session = event["data"]["object"]
+        metadata = session.get("metadata") or {}
+        tx_id = safe_int(metadata.get("seller_transaction_id"), 0)
+        if tx_id:
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+            cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
+            tx = dict(cur.fetchone() or {})
+            if tx:
+                cur.execute("UPDATE seller_transactions SET status='checkout_expired', stripe_checkout_session_id=COALESCE(NULLIF(?, ''), stripe_checkout_session_id), updated_at=? WHERE id=?", (session.get("id") or "", now, tx_id))
+                pulse_emit_payment_checkout_event(
+                    cur,
+                    {**tx, "status": "checkout_expired", "stripe_checkout_session_id": session.get("id") or ""},
+                    "checkout_expired",
+                    status="checkout_expired",
+                    actor_user_id=tx.get("buyer_user_id") or 0,
+                    extra={"stripe_event_id": event_id, "stripe_checkout_session_id": session.get("id") or ""},
+                )
+                resolved_event_user_id = int(tx.get("buyer_user_id") or 0) or None
+                conn.commit()
+            conn.close()
+            record_stripe_event(event, "processed", resolved_event_user_id)
+            creator_economy_service.update_webhook_event(event_id, "processed")
+            return "OK", 200
+
     if event_type in {"customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"}:
         subscription_object = event["data"]["object"]
         logging.info("STRIPE_USER_MATCH_START event_id=%s object_id=%s customer_id=%s", event_id, subscription_object.get("id"), subscription_object.get("customer"))
@@ -84890,6 +85063,14 @@ def stripe_webhook():
             tx = dict(cur.fetchone() or {})
             if tx:
                 cur.execute("UPDATE seller_transactions SET status='paid', stripe_payment_intent_id=?, updated_at=? WHERE id=?", (payment_intent.get("id") or "", now, tx_id))
+                pulse_emit_payment_checkout_event(
+                    cur,
+                    {**tx, "status": "paid", "stripe_payment_intent_id": payment_intent.get("id") or ""},
+                    "payment_succeeded",
+                    status="paid",
+                    actor_user_id=tx.get("buyer_user_id") or 0,
+                    extra={"stripe_event_id": event_id, "stripe_payment_intent_id": payment_intent.get("id") or ""},
+                )
                 notify_user(cur, tx.get("seller_user_id"), "seller_payment", "Payment succeeded", "Stripe confirmed a seller payment. Net payout is tracked in your payout dashboard.", f"/pulse/{tx.get('seller_type')}/payouts")
                 resolved_event_user_id = int(tx.get("buyer_user_id") or 0) or None
                 conn.commit()
@@ -84950,8 +85131,19 @@ def stripe_webhook():
         now = datetime.utcnow().isoformat(timespec="seconds")
         if tx_id:
             conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+            cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
+            tx = dict(cur.fetchone() or {})
             cur.execute("UPDATE creator_transactions SET status='failed', updated_at=? WHERE id=?", (now, tx_id))
             cur.execute("UPDATE seller_transactions SET status='failed', metadata_json=?, updated_at=? WHERE id=?", (json.dumps({"stripe_event_id": event_id, "failure": failure}, default=str)[:4000], now, tx_id))
+            if tx:
+                pulse_emit_payment_checkout_event(
+                    cur,
+                    {**tx, "status": "failed", "stripe_payment_intent_id": payment_intent.get("id") or ""},
+                    "payment_failed",
+                    status="failed",
+                    actor_user_id=tx.get("buyer_user_id") or 0,
+                    extra={"stripe_event_id": event_id, "stripe_payment_intent_id": payment_intent.get("id") or "", "failure_code": failure.get("code") or ""},
+                )
             conn.commit(); conn.close()
             resolved_event_user_id = safe_int(metadata.get("buyer_user_id"), 0) or resolved_event_user_id
         else:
@@ -84988,7 +85180,7 @@ def stripe_webhook():
             else:
                 record_unmatched_payment(event, payment_intent, "payment_intent.payment_failed could not resolve local user")
 
-    if event_type in {"account.updated", "payout.paid", "payout.failed", "charge.refunded", "charge.dispute.created"}:
+    if event_type in {"account.updated", "payout.paid", "payout.failed", "charge.refunded", "charge.dispute.created", "charge.dispute.updated", "charge.dispute.closed"}:
         obj = event["data"]["object"]
         now = datetime.utcnow().isoformat(timespec="seconds")
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
@@ -85025,8 +85217,23 @@ def stripe_webhook():
                         conn2.commit(); conn2.close()
             tx_id = safe_int(metadata.get("seller_transaction_id"), 0)
             if tx_id:
-                status = "refunded" if event_type == "charge.refunded" else "dispute_opened"
+                status = "refunded" if event_type == "charge.refunded" else "dispute_opened" if event_type == "charge.dispute.created" else "dispute_updated" if event_type == "charge.dispute.updated" else "dispute_resolved"
+                cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
+                tx = dict(cur.fetchone() or {})
                 cur.execute("UPDATE seller_transactions SET status=?, updated_at=? WHERE id=?", (status, now, tx_id))
+                if tx:
+                    pulse_emit_payment_checkout_event(
+                        cur,
+                        {**tx, "status": status},
+                        "refund_issued" if event_type == "charge.refunded" else "dispute_opened" if event_type == "charge.dispute.created" else "dispute_updated" if event_type == "charge.dispute.updated" else "dispute_resolved",
+                        status=status,
+                        actor_user_id=tx.get("buyer_user_id") or 0,
+                        extra={
+                            "stripe_event_id": event_id,
+                            "provider_object_id": obj.get("id") or "",
+                            "provider_event_type": event_type,
+                        },
+                    )
         conn.commit(); conn.close()
 
     record_stripe_event(event, "processed", resolved_event_user_id)

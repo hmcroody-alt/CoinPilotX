@@ -110,7 +110,7 @@ def route_block(source: str, route_token: str) -> str:
 
 
 def mutation_has_event(block: str) -> bool:
-    return any(token in block for token in ["notify_user(", "create_pulse_notification", "notify_crypto_alert", "pulse_emit_event(", "pulse_emit_marketplace_inventory_event(", "notification_service.send_user_alert"])
+    return any(token in block for token in ["notify_user(", "create_pulse_notification", "notify_crypto_alert", "pulse_emit_event(", "pulse_emit_marketplace_inventory_event(", "pulse_emit_payment_checkout_event(", "notification_service.send_user_alert"])
 
 
 def main() -> int:
@@ -199,7 +199,9 @@ def main() -> int:
             silent_routes.append(label)
     require("seller listing update" not in silent_routes, "seller listing update should now emit cursor-visible inventory events", failures)
     require("listing create" not in silent_routes, "listing create should now emit cursor-visible inventory events", failures)
+    require("checkout" not in silent_routes, "checkout should now emit cursor-visible payment events", failures)
     require("pulse_emit_marketplace_inventory_event" in bot_source, "seller inventory event helper missing after hardening", failures)
+    require("pulse_emit_payment_checkout_event" in bot_source, "payment checkout event helper missing after hardening", failures)
 
     for token in [
         "Event Producer Mapping Audit",

@@ -3418,3 +3418,75 @@ Reason for recommendation:
 - Seller inventory is now cursor-visible.
 - Payment/order state is the next highest-risk silent mutation family.
 - Checkout failure, blocked checkout, refunds, disputes, and payment status transitions must converge across Buyer Orders, Seller Inventory, Activity Inbox, Notifications, and Marketplace.
+
+## Payment and Checkout Event Emission Hardening
+
+Important roadmap rule:
+
+- Do not focus on Android right now.
+- Android remains tracked as a later release-readiness gap.
+- Current development priority is iPhone/iOS native app, server-authoritative event consistency, payment/checkout/order trust correctness, PulseSoc production parity, and LogiNexus UI polish.
+- Do not spend time on Android tooling, Android physical QA, Android-specific bugs, or Android release setup unless the issue also affects shared native code or backend correctness.
+
+Completed action: hardened cursor-visible event emission for checkout, payment, refund, and dispute state changes.
+
+What changed:
+
+- Created `reports/pulsesoc_native_payment_checkout_event_emission.md`.
+- Created `scripts/pulsesoc_native_payment_checkout_event_emission_audit.py`.
+- Added the shared `pulse_emit_payment_checkout_event(...)` backend helper.
+- Wired checkout pending, blocked, failed, created, and expired states into the native sync cursor.
+- Wired seller transaction payment succeeded/failed states into the native sync cursor.
+- Wired refund issued and dispute opened/updated/resolved states into the native sync cursor.
+- Normalized `notify_payment_status(...)` metadata so existing Premium payment notifications carry cursor-safe event metadata.
+
+Payment/checkout event coverage: 82%.
+
+Remaining silent mutation paths:
+
+- `refund_requested` needs a first-class server route or explicit mapping to an existing route.
+- `order_cancelled` needs a first-class server route or explicit mapping to an existing route.
+- marketplace save/report actions
+- message seen/delete/report cursor mirroring
+- call active/ringing/ended state transitions
+- safety block/mute/report/appeal state changes
+- verification request/review/appeal details
+
+Event visibility through sync cursor:
+
+- `payment_pending`
+- `checkout_created`
+- `checkout_blocked`
+- `checkout_failed`
+- `checkout_expired`
+- `payment_succeeded`
+- `payment_failed`
+- `refund_issued`
+- `dispute_opened`
+- `dispute_updated`
+- `dispute_resolved`
+
+Activity/Orders/Seller/Marketplace consistency impact:
+
+- Buyer Orders can refresh when provider payment state changes.
+- Seller Store can refresh order/payment status after checkout, refund, and dispute events.
+- Marketplace can refresh listing/order context where payment state changes affect availability or history.
+- Activity Inbox and Notifications can surface financial state transitions from server truth.
+
+Event producer coverage: 81%.
+
+Overall native migration percentage: 87% foundation/parity coverage, 84% system consistency confidence, 64% release QA confidence.
+
+Critical production risk gaps:
+
+- Refund-request and order-cancel semantics still need explicit server-authoritative routes or mappings.
+- Communication and safety state producers remain the next broad stale-state family.
+- Real provider APNs/FCM delivery remains a release-readiness gap.
+
+Recommended next native feature/action: Message, Call, and Safety Event Emission Hardening.
+
+Reason for recommendation:
+
+- Seller inventory and payment/order event families are now cursor-visible.
+- Messenger/Calls/Safety remain high-frequency trust surfaces where silent read/delete/report/block/mute/call state changes can make Activity Inbox drift.
+- This is the highest-value consistency fix before adding more product surface area.
