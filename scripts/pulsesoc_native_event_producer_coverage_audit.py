@@ -118,6 +118,7 @@ def mutation_has_event(block: str) -> bool:
         "pulse_emit_marketplace_inventory_event(",
         "pulse_emit_payment_checkout_event(",
         "pulse_emit_comms_safety_event(",
+        "pulse_emit_trust_safety_review_event(",
         "notification_service.send_user_alert",
     ])
 
@@ -175,7 +176,7 @@ def main() -> int:
         "payments": ["stripe.checkout", "checkout_completed", "charge.refunded", "charge.dispute.created"],
         "messaging": ["pulse_messages", "pulse_emit_event", "notify_new_message"],
         "calls": ["notify_missed_call", "_emit_call_sync_event", "call_started", "call_ended"],
-        "safety": ["pulse_reports", "pulse_emit_comms_safety_event", "block", "mute", "appeal"],
+        "safety": ["pulse_reports", "pulse_emit_comms_safety_event", "pulse_emit_trust_safety_review_event", "block", "mute", "appeal"],
         "verification": ["verification", "teacher_review", "identity"],
         "alerts": ["alert_events", "notify_crypto_alert", "dispatch_alert_event"],
         "notifications": ["pulse_notifications", "create_pulse_notification", "notify_user"],
@@ -214,6 +215,7 @@ def main() -> int:
     require("pulse_emit_marketplace_inventory_event" in bot_source, "seller inventory event helper missing after hardening", failures)
     require("pulse_emit_payment_checkout_event" in bot_source, "payment checkout event helper missing after hardening", failures)
     require("pulse_emit_comms_safety_event" in bot_source, "communications/safety event helper missing after hardening", failures)
+    require("pulse_emit_trust_safety_review_event" in bot_source, "trust/safety review event helper missing after hardening", failures)
     require("_emit_call_sync_event" in call_engine, "call sync event helper missing after hardening", failures)
 
     for token in [

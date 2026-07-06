@@ -9729,8 +9729,31 @@ def admin_account_command_verification_decision(request_id):
         return denied
     init_db()
     conn = db()
+    conn.row_factory = sqlite3.Row
     try:
-        dashboard_account_command_center.admin_decide_verification(conn, int(request_id), int(admin.get("user_id") or admin.get("id") or 0), request.form.get("decision") or "", request.form.get("reason") or "")
+        result = dashboard_account_command_center.admin_decide_verification(conn, int(request_id), int(admin.get("user_id") or admin.get("id") or 0), request.form.get("decision") or "", request.form.get("reason") or "")
+        target_user_id = safe_int(result.get("user_id"), 0)
+        if not target_user_id:
+            cur = conn.cursor()
+            cur.execute("SELECT user_id FROM verification_requests WHERE id=? LIMIT 1", (int(request_id),))
+            target_user_id = safe_int((dict(cur.fetchone() or {}).get("user_id")), 0)
+        status = clean_html(result.get("status") or request.form.get("decision") or "")[:80]
+        review_event = "safety_appeal_approved" if status == "approved" else "safety_appeal_rejected" if status == "rejected" else "safety_appeal_updated"
+        if target_user_id:
+            pulse_emit_trust_safety_review_event(
+                conn.cursor(),
+                target_user_id,
+                review_event,
+                "verification_request",
+                request_id,
+                actor_user_id=admin.get("user_id") or admin.get("id") or 0,
+                status=status,
+                target_url="/pulse/verification",
+                title="Verification review updated",
+                body="Your PulseSoc verification review was updated.",
+                extra={"request_id": int(request_id), "decision": status, "source": "account_command"},
+            )
+            conn.commit()
     except ValueError as exc:
         conn.close()
         return admin_page_html("Verification Decision", f"<h1>Verification decision failed</h1><p>{clean_html(str(exc))}</p><p><a class='button' href='/admin/account-command'>Back</a></p>", admin), 400
@@ -12716,6 +12739,26 @@ def api_admin_verification_action():
     conn.row_factory = sqlite3.Row
     try:
         result = pulsesoc_dashboard_centers.admin_decision(conn, admin, int(payload.get("request_id") or 0), payload.get("action") or "", payload.get("reason") or "", client_ip_hash(), request.headers.get("User-Agent", "")[:240])
+        if result.get("ok"):
+            request_row = result.get("request") or {}
+            target_user_id = safe_int(request_row.get("user_id"), 0)
+            status = clean_html(request_row.get("status") or payload.get("action") or "")[:80]
+            review_event = "safety_appeal_approved" if status == "approved" else "safety_appeal_rejected" if status == "rejected" else "safety_appeal_updated"
+            if target_user_id:
+                pulse_emit_trust_safety_review_event(
+                    conn.cursor(),
+                    target_user_id,
+                    review_event,
+                    "verification_request",
+                    int(payload.get("request_id") or 0),
+                    actor_user_id=admin.get("id") or 0,
+                    status=status,
+                    target_url="/pulse/verification",
+                    title="Verification review updated",
+                    body="Your PulseSoc verification review was updated.",
+                    extra={"request_id": int(payload.get("request_id") or 0), "decision": status, "source": "verification_command_center"},
+                )
+                conn.commit()
     finally:
         conn.close()
     log_admin_audit(admin.get("id"), "verification_action", "verification_request", str(payload.get("request_id") or ""), {"action": payload.get("action"), "ok": bool(result.get("ok"))})
@@ -31591,7 +31634,21 @@ def api_pulse_music_report(track_id):
         "INSERT INTO pulse_music_reports (audio_track_id, reporter_user_id, reason, details, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)",
         (track_id, user["user_id"], reason, details, datetime.utcnow().isoformat(timespec="seconds")),
     )
+    report_id = int(cur.lastrowid or 0)
     cur.execute("UPDATE pulse_audio_tracks SET safety_status='review', active=0, updated_at=? WHERE id=? AND source_type='artist_upload'", (datetime.utcnow().isoformat(timespec="seconds"), track_id))
+    pulse_emit_comms_safety_event(
+        cur,
+        user["user_id"],
+        "report_submitted",
+        "music_report",
+        report_id or track_id,
+        actor_user_id=user["user_id"],
+        target_url="/pulse/account-health",
+        title="Music report submitted",
+        body="Your music report was submitted for safety review.",
+        category="safety",
+        extra={"report_id": report_id, "target_type": "music_track", "target_id": track_id, "reason": reason},
+    )
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "message": "Song report sent for review.", "track_id": track_id})
@@ -31938,11 +31995,14 @@ def api_admin_pulse_music_remove(track_id):
     note = clean_html(payload.get("note") or payload.get("reason") or "Removed by admin review.")[:1000]
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db()
+    conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     cur.execute("SELECT id FROM pulse_audio_tracks WHERE id=? LIMIT 1", (track_id,))
     if not cur.fetchone():
         conn.close()
         return api_error("Track not found.", 404)
+    cur.execute("SELECT id, reporter_user_id, status FROM pulse_music_reports WHERE audio_track_id=? AND status='open'", (track_id,))
+    open_reports = [dict(row) for row in cur.fetchall()]
     cur.execute(
         """
         UPDATE pulse_audio_tracks
@@ -31961,6 +32021,20 @@ def api_admin_pulse_music_remove(track_id):
         "UPDATE pulse_music_reports SET status='reviewed', reviewed_at=?, reviewed_by=? WHERE audio_track_id=? AND status='open'",
         (now, int(admin.get("user_id") or admin.get("id") or 0), track_id),
     )
+    for report in open_reports:
+        pulse_emit_trust_safety_review_event(
+            cur,
+            report.get("reporter_user_id"),
+            "report_reviewed",
+            "music_report",
+            report.get("id") or track_id,
+            actor_user_id=admin.get("user_id") or admin.get("id") or 0,
+            status="reviewed",
+            target_url="/pulse/account-health",
+            title="Music report reviewed",
+            body="Your music report was reviewed by PulseSoc safety.",
+            extra={"report_id": report.get("id"), "target_type": "music_track", "target_id": track_id, "admin_action": "remove"},
+        )
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "message": "Song removed from PulseSoc Music.", "track_id": track_id})
@@ -41821,6 +41895,42 @@ def pulse_emit_comms_safety_event(
         entity_type=entity_type,
         entity_id=entity_id,
         metadata=metadata,
+    )
+
+
+def pulse_emit_trust_safety_review_event(
+    cur,
+    user_id,
+    event_type,
+    entity_type,
+    entity_id,
+    actor_user_id=0,
+    status="",
+    target_url="/pulse/account-health",
+    title="Safety review updated",
+    body="A PulseSoc safety review was updated.",
+    extra=None,
+):
+    event_type = str(event_type or "report_updated")[:80]
+    status = str(status or "")[:80]
+    payload = {
+        "review_status": status,
+        "status": status,
+        "review_event": True,
+    }
+    payload.update(dict(extra or {}))
+    pulse_emit_comms_safety_event(
+        cur,
+        user_id,
+        event_type,
+        entity_type,
+        entity_id,
+        actor_user_id=actor_user_id,
+        target_url=target_url,
+        title=title,
+        body=body,
+        category="safety",
+        extra=payload,
     )
 
 
@@ -75785,6 +75895,20 @@ def api_pulse_marketplace_listing_report():
     reason = clean_html(payload.get("reason") or "Needs review")[:500]
     conn = db(); cur = conn.cursor()
     cur.execute("INSERT INTO marketplace_reports (reporter_user_id, listing_id, reason, status, created_at) VALUES (?, ?, ?, 'open', ?)", (user["user_id"], listing_id, reason, datetime.utcnow().isoformat(timespec="seconds")))
+    report_id = int(cur.lastrowid or 0)
+    pulse_emit_comms_safety_event(
+        cur,
+        user["user_id"],
+        "report_submitted",
+        "marketplace_report",
+        report_id or listing_id,
+        actor_user_id=user["user_id"],
+        target_url="/pulse/account-health",
+        title="Marketplace report submitted",
+        body="Your marketplace report was submitted for safety review.",
+        category="safety",
+        extra={"report_id": report_id, "target_type": "marketplace_listing", "target_id": listing_id, "reason": reason},
+    )
     conn.commit(); conn.close()
     return jsonify({"ok": True, "message": "Listing report sent."})
 
@@ -76617,6 +76741,20 @@ def pulse_group_report_common(user, group_id=0, group_slug="", reason="Needs rev
         conn.close()
         return api_error("Group not found.", 404)
     cur.execute("INSERT INTO pulse_group_reports (group_id, reporter_user_id, reason, status, created_at) VALUES (?, ?, ?, 'open', ?)", (int(group["id"]), user["user_id"], report_text, datetime.utcnow().isoformat(timespec="seconds")))
+    report_id = int(cur.lastrowid or 0)
+    pulse_emit_comms_safety_event(
+        cur,
+        user["user_id"],
+        "report_submitted",
+        "group_report",
+        report_id or int(group["id"]),
+        actor_user_id=user["user_id"],
+        target_url="/pulse/account-health",
+        title="Group report submitted",
+        body="Your group report was submitted for safety review.",
+        category="safety",
+        extra={"report_id": report_id, "target_type": "group", "target_id": int(group["id"]), "reason": reason},
+    )
     conn.commit(); conn.close()
     return jsonify({"ok": True, "message": "Group report sent."})
 
@@ -76953,6 +77091,20 @@ def api_pulse_group_comment_report(comment_id):
         "INSERT INTO pulse_group_comment_reports (comment_id, group_post_id, reporter_user_id, reason, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)",
         (comment_id, int(comment.get("group_post_id") or 0), user["user_id"], reason, datetime.utcnow().isoformat(timespec="seconds")),
     )
+    report_id = int(cur.lastrowid or 0)
+    pulse_emit_comms_safety_event(
+        cur,
+        user["user_id"],
+        "report_submitted",
+        "group_comment_report",
+        report_id or comment_id,
+        actor_user_id=user["user_id"],
+        target_url="/pulse/account-health",
+        title="Comment report submitted",
+        body="Your comment report was submitted for safety review.",
+        category="safety",
+        extra={"report_id": report_id, "target_type": "group_comment", "target_id": comment_id, "group_post_id": int(comment.get("group_post_id") or 0), "reason": reason},
+    )
     conn.commit(); conn.close()
     return jsonify({"ok": True, "message": "Comment report sent."})
 
@@ -77011,6 +77163,20 @@ def pulse_group_post_report_create(post_id, user, reason, notes="", trace_id="")
         cur.execute(
             "INSERT INTO pulse_group_post_reports (group_post_id, reporter_user_id, reason, status, created_at) VALUES (?, ?, ?, 'open', ?)",
             (post_id, user["user_id"], report_reason, datetime.utcnow().isoformat(timespec="seconds")),
+        )
+        report_id = int(cur.lastrowid or 0)
+        pulse_emit_comms_safety_event(
+            cur,
+            user["user_id"],
+            "report_submitted",
+            "group_post_report",
+            report_id or post_id,
+            actor_user_id=user["user_id"],
+            target_url="/pulse/account-health",
+            title="Group post report submitted",
+            body="Your group post report was submitted for safety review.",
+            category="safety",
+            extra={"report_id": report_id, "target_type": "group_post", "target_id": post_id, "reason": reason},
         )
         conn.commit(); conn.close()
         return jsonify({"ok": True, "message": "Report submitted."})
@@ -79995,7 +80161,23 @@ def admin_verification_page():
     if request.method == "POST":
         request_id = int(request.form.get("request_id") or 0)
         status = "approved" if request.form.get("action") == "approve" else "rejected"
+        cur.execute("SELECT user_id FROM verification_requests WHERE id=? LIMIT 1", (request_id,))
+        request_row = dict(cur.fetchone() or {})
         cur.execute("UPDATE verification_requests SET status=?, reviewed_by=?, reviewed_at=? WHERE id=?", (status, admin.get("id"), datetime.utcnow().isoformat(timespec="seconds"), request_id))
+        if request_row.get("user_id"):
+            pulse_emit_trust_safety_review_event(
+                cur,
+                request_row.get("user_id"),
+                "safety_appeal_approved" if status == "approved" else "safety_appeal_rejected",
+                "verification_request",
+                request_id,
+                actor_user_id=admin.get("id") or 0,
+                status=status,
+                target_url="/pulse/verification",
+                title="Verification review updated",
+                body="Your PulseSoc verification review was updated.",
+                extra={"request_id": request_id, "decision": status, "source": "legacy_verification_admin"},
+            )
         log_admin_audit(admin.get("id"), f"verification_{status}", "verification_request", str(request_id), {})
         conn.commit()
         message = "Verification request updated."
@@ -80438,7 +80620,28 @@ def apply_department_action(slug, action, target_id, note, admin):
                 cur.execute("UPDATE pulse_posts SET moderation_status=?, updated_at=? WHERE id=?", (status, now, target_id))
                 message = "Content status updated."
             elif action == "dismiss_report" and target_id:
+                cur.execute("SELECT * FROM pulse_reports WHERE id=? LIMIT 1", (target_id,))
+                report_row = dict(cur.fetchone() or {})
                 cur.execute("UPDATE pulse_reports SET status='dismissed' WHERE id=?", (target_id,))
+                if report_row.get("reporter_user_id"):
+                    pulse_emit_trust_safety_review_event(
+                        cur,
+                        report_row.get("reporter_user_id"),
+                        "report_dismissed",
+                        "report",
+                        target_id,
+                        actor_user_id=admin.get("id") or 0,
+                        status="dismissed",
+                        target_url="/pulse/account-health",
+                        title="Report reviewed",
+                        body="Your PulseSoc report was reviewed and dismissed.",
+                        extra={
+                            "report_id": target_id,
+                            "target_type": report_row.get("target_type") or "",
+                            "target_id": report_row.get("target_id") or "",
+                            "review_action": "dismiss_report",
+                        },
+                    )
                 message = "Report dismissed."
             else:
                 create_task(slug, f"{action.replace('_', ' ').title()} {target_id}", "critical" if action in {"ban_user", "suspend_user"} else "high", "admin_action", target_id)

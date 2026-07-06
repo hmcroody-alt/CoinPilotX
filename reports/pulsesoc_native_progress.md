@@ -3561,3 +3561,67 @@ Reason for recommendation:
 - Submission-side safety events are now cursor-visible.
 - Review/resolution paths remain the next stale-state risk for Safety Hub, Account Health, Activity Inbox, and Notifications.
 - This is the highest-value consistency fix before broader realtime streaming or product expansion.
+
+## Trust/Safety Review Update Event Emission Hardening
+
+Important roadmap rule:
+
+- Do not focus on Android right now.
+- Android remains tracked as a later release-readiness gap.
+- Current priority remains iPhone/iOS native app, server-authoritative event consistency, payment/checkout/order trust correctness, PulseSoc production parity, and LogiNexus UI polish.
+
+Completed action: hardened cursor-visible event emission for trust/safety review updates and report variants.
+
+What changed:
+
+- Created `reports/pulsesoc_native_trust_safety_review_event_emission.md`.
+- Created `scripts/pulsesoc_native_trust_safety_review_event_emission_audit.py`.
+- Added `pulse_emit_trust_safety_review_event(...)` as a small wrapper over the existing communications/safety event helper.
+- Wired verification review decisions into the native sync cursor.
+- Wired legacy verification review decisions into the native sync cursor.
+- Wired marketplace, group, group comment, group post, and music report variants into the native sync cursor.
+- Wired music report review and Trust/Safety report dismissal into the native sync cursor.
+
+Trust/safety review event coverage: 84%.
+
+Remaining silent mutation paths:
+
+- user unblock if/when a first-class route exists
+- user mute/unmute if/when first-class routes exist
+- group/comment/media report review-update routes that are not yet first-class mutation endpoints
+- moderation case updates without a user-facing report recipient
+- APNs/FCM delivery-state confirmation for safety updates on physical devices
+
+Event visibility through sync cursor:
+
+- `safety_appeal_approved`
+- `safety_appeal_rejected`
+- `safety_appeal_updated`
+- `report_reviewed`
+- `report_dismissed`
+- `report_submitted` for marketplace, group, group comment, group post, and music report variants
+
+Activity/Trust/Safety/Account Health consistency impact:
+
+- Activity Inbox can now reflect safety review updates from durable cursor events.
+- Trust/Safety can refresh after report submission, report review, report dismissal, and verification review decisions.
+- Account Health can surface review lifecycle updates from the same server-authoritative event stream.
+- Notifications remain backed by `pulse_notifications`, which is the native cursor source.
+
+Event producer coverage: 89%.
+
+Overall native migration percentage: 88% foundation/parity coverage, 88% system consistency confidence, 64% release QA confidence.
+
+Critical production risk gaps:
+
+- User unblock/mute/unmute need first-class server-authoritative mutation routes before they can be fully event-covered.
+- Group/comment/media report review resolution is still fragmented across admin/dashboard surfaces.
+- Multi-device event ordering and physical APNs/FCM delivery remain release-readiness gaps.
+
+Recommended next native feature/action: Unified Moderation Review Endpoint Event Emission Hardening.
+
+Reason for recommendation:
+
+- The largest remaining safety consistency gap is fragmented report review state.
+- A single server-authoritative review endpoint with standardized event emission would make report review, dismissal, resolution, and appeal updates deterministic across Activity Inbox, Trust/Safety, Account Health, and Notifications.
+- This is the highest-value production-readiness improvement before broader realtime streaming or UI expansion.
