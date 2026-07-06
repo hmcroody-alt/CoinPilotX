@@ -3124,3 +3124,55 @@ Safest implementation plan:
 3. Verify Activity Inbox, Orders, Seller Store, and Marketplace reload from existing APIs after invalidation.
 4. Confirm fallback behavior when the sync endpoint is unavailable.
 5. Then wire Messenger/Calls handlers in a separate scoped mission.
+
+## Native Owner iPhone Test Setup
+
+Completed action: prepared the installed physical iPhone native app for Roody owner testing while Codex continues development.
+
+What changed:
+
+- Created a temporary production-backed owner QA account through the existing mobile auth API without weakening production auth.
+- Marked the account as QA/test through username/display name because no dedicated test-account user flag was identified in the current user schema.
+- Verified production mobile login for the QA account through `/api/mobile/auth/login`.
+- Built, signed, installed, launched, and bundled `com.pulsesoc.nativeapp` on the connected iPhone 16 Pro.
+- Confirmed `devicectl` lists `PulseSoc Native   com.pulsesoc.nativeapp   0.1.0`.
+- Documented Roody's manual walkthrough steps in `reports/pulsesoc_native_owner_iphone_test_setup.md`.
+- Kept the temporary password out of reports, source, config, and Git history.
+
+What Roody can test now:
+
+- Native login and session behavior with the owner QA account.
+- Home Feed, Messenger, Profile, Reels, Status, Marketplace, Seller Store, Activity Inbox, Notifications, Settings, Camera Studio, Calls screen, Creator, Growth, Premium, and Intelligence/Alerts where backend permissions allow.
+- Physical iPhone visual quality, navigation feel, performance impressions, and manual screen recording/screenshot feedback.
+
+Still unstable or release-gated:
+
+- Physical camera/microphone capture, upload, video compression, retry/cancel, and published media IDs.
+- Push provider behavior, lock-screen behavior, notification taps, and APNs/FCM badge timing.
+- LiveKit two-device calls, background audio, speaker/Bluetooth controls, and lock-screen calling.
+- Android physical-device QA.
+- Server-side eligibility boundaries for seller, commerce, premium, creator, growth, and intelligence actions.
+
+Updated subsystem completion:
+
+| Subsystem | Current estimate | Owner-test readiness | Remaining gap |
+| --- | ---: | ---: | --- |
+| App shell / navigation | 92% | 86% | More owner feedback and polish |
+| Auth/session | 90% | 84% | Password rotation/delete process after QA |
+| Activity + Notifications | 88% | 76% | Provider/device push QA and event cursor |
+| Marketplace / Seller / Buyer commerce | 91% | 78% | Provider boundary and physical media QA |
+| Camera Studio / native media | 73% | 58% | Real camera/mic/upload evidence |
+| Calls | 64% | 54% | Two-device LiveKit and lock-screen QA |
+| Creator/Growth/Premium/Intelligence | 82% | 72% | Eligibility/provider fallback hardening |
+| iOS readiness | 72% | 68% | Manual owner walkthrough and device media QA |
+| Android readiness | 35% | 24% | Physical Android QA |
+
+Overall native migration percentage: 84% foundation/parity coverage, 75% system consistency confidence, 63% release QA confidence.
+
+Recommended next highest-value action: confirm or expose the authenticated server event cursor endpoint for native polling sync.
+
+Reason for recommendation:
+
+- Owner testing can now happen in parallel on a real iPhone.
+- The biggest architecture gap remains production-confirmed delta replay for the polling-first native sync layer.
+- Another UI feature would add more state surfaces; a server-authoritative event cursor makes existing native features more coherent across Activity, Orders, Seller Store, Marketplace, Messenger, Calls, Safety, Verification, Alerts, and Intelligence.
