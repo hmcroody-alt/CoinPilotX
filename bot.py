@@ -74715,6 +74715,102 @@ def api_payments_order_verify(transaction_id):
     return jsonify({"ok": True, "order": order, "payment_status": safe_status, "fulfilled": safe_status == "paid"})
 
 
+def pulse_buyer_order_response(cur, order, source_table="seller_transactions"):
+    raw = dict(order or {})
+    tx_id = safe_int(raw.get("id"), 0)
+    item_type = str(raw.get("item_type") or "order")
+    item_id = raw.get("item_id")
+    try:
+        numeric_item_id = safe_int(item_id, 0)
+    except Exception:
+        numeric_item_id = 0
+    metadata = {}
+    try:
+        metadata = json.loads(raw.get("metadata_json") or "{}")
+        if not isinstance(metadata, dict):
+            metadata = {}
+    except Exception:
+        metadata = {}
+    seller_user_id = safe_int(raw.get("seller_user_id"), 0)
+    seller = {}
+    if seller_user_id:
+        cur.execute("SELECT user_id, username, display_name, avatar_url FROM users WHERE user_id=? LIMIT 1", (seller_user_id,))
+        seller = dict(cur.fetchone() or {})
+    listing = {}
+    if numeric_item_id and item_type in {"marketplace_product", "product"}:
+        cur.execute(
+            """
+            SELECT l.id, l.title, l.seller_user_id, l.category, l.price_label, l.currency,
+                   l.cover_image_url, l.media_url AS image_url, l.cover_image_url AS thumbnail_url, l.video_url,
+                   COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
+                   u.username AS seller_username
+            FROM marketplace_listings l
+            LEFT JOIN users u ON u.user_id=l.seller_user_id
+            WHERE l.id=?
+            LIMIT 1
+            """,
+            (numeric_item_id,),
+        )
+        listing = dict(cur.fetchone() or {})
+    title = metadata.get("title") or listing.get("title") or item_type.replace("_", " ").title()
+    amount_cents = safe_int(raw.get("amount_cents"), 0) or safe_int(raw.get("gross_amount_cents"), 0)
+    currency = str(raw.get("currency") or listing.get("currency") or "USD").upper()
+    status = str(raw.get("status") or "pending").lower()
+    if status in {"paid", "checkout_completed", "succeeded"}:
+        status_group = "paid"
+    elif "refund" in status:
+        status_group = "refunded"
+    elif "cancel" in status:
+        status_group = "cancelled"
+    elif "ship" in status:
+        status_group = "shipped"
+    elif "deliver" in status:
+        status_group = "delivered"
+    elif "fail" in status or status.startswith("blocked"):
+        status_group = "failed"
+    elif status in {"checkout_created", "created"}:
+        status_group = "pending"
+    else:
+        status_group = status or "pending"
+    order_id = str(tx_id)
+    receipt_url = f"/dashboard/orders?order_id={tx_id}&source={source_table}"
+    support_url = f"/support?topic=order&order_id={tx_id}&source={source_table}"
+    return {
+        **raw,
+        "id": tx_id,
+        "order_id": order_id,
+        "transaction_id": tx_id,
+        "source_table": source_table,
+        "item_title": title,
+        "title": title,
+        "item_type": item_type,
+        "item_id": item_id,
+        "amount_cents": amount_cents,
+        "gross_amount_cents": safe_int(raw.get("gross_amount_cents"), 0) or amount_cents,
+        "currency": currency,
+        "status": status,
+        "status_group": status_group,
+        "payment_status": "paid" if status_group == "paid" else "refunded" if status_group == "refunded" else "cancelled" if status_group == "cancelled" else "pending",
+        "seller": {
+            "user_id": seller_user_id,
+            "display_name": seller.get("display_name") or listing.get("seller_name") or "PulseSoc Seller",
+            "username": seller.get("username") or listing.get("seller_username") or "",
+            "public_player_id": "",
+            "avatar_url": seller.get("avatar_url") or "",
+        },
+        "listing": listing,
+        "marketplace_listing_id": numeric_item_id if item_type in {"marketplace_product", "product"} else 0,
+        "receipt_url": receipt_url,
+        "support_url": support_url,
+        "dispute_url": support_url,
+        "detail_url": f"/pulse/orders/{tx_id}",
+        "tracking": {
+            "available": False,
+            "message": "Shipping and tracking remain server/provider controlled when available.",
+        },
+    }
+
+
 @webhook_app.route("/api/payments/purchases", methods=["GET"])
 @webhook_app.route("/api/pulse/payments/purchases", methods=["GET"])
 def api_payments_list_purchases():
@@ -74747,6 +74843,70 @@ def api_payments_list_purchases():
     seller_orders = [dict(row) for row in cur.fetchall()]
     conn.close()
     return jsonify({"ok": True, "purchases": creator_orders + seller_orders})
+
+
+@webhook_app.route("/api/pulse/orders", methods=["GET"])
+@webhook_app.route("/api/pulse/purchases", methods=["GET"])
+def api_pulse_buyer_orders():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    limit = min(max(safe_int(request.args.get("limit"), 100), 1), 100)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT * FROM seller_transactions
+        WHERE buyer_user_id=?
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+        """,
+        (int(user["user_id"]), limit),
+    )
+    seller_orders = [pulse_buyer_order_response(cur, row, "seller_transactions") for row in cur.fetchall()]
+    cur.execute(
+        """
+        SELECT * FROM creator_transactions
+        WHERE buyer_user_id=?
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+        """,
+        (int(user["user_id"]), limit),
+    )
+    creator_orders = [pulse_buyer_order_response(cur, row, "creator_transactions") for row in cur.fetchall()]
+    conn.close()
+    orders = sorted(seller_orders + creator_orders, key=lambda item: (str(item.get("created_at") or ""), int(item.get("id") or 0)), reverse=True)[:limit]
+    return jsonify({"ok": True, "orders": orders, "purchases": orders, "count": len(orders)})
+
+
+@webhook_app.route("/api/pulse/orders/<int:transaction_id>", methods=["GET"])
+def api_pulse_buyer_order_detail(transaction_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    source = str(request.args.get("source") or "").strip()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    order = {}
+    source_table = "seller_transactions"
+    if source == "creator_transactions":
+        cur.execute("SELECT * FROM creator_transactions WHERE id=? AND buyer_user_id=? LIMIT 1", (int(transaction_id), int(user["user_id"])))
+        order = dict(cur.fetchone() or {})
+        source_table = "creator_transactions"
+    if not order:
+        cur.execute("SELECT * FROM seller_transactions WHERE id=? AND buyer_user_id=? LIMIT 1", (int(transaction_id), int(user["user_id"])))
+        order = dict(cur.fetchone() or {})
+        source_table = "seller_transactions"
+    if not order:
+        cur.execute("SELECT * FROM creator_transactions WHERE id=? AND buyer_user_id=? LIMIT 1", (int(transaction_id), int(user["user_id"])))
+        order = dict(cur.fetchone() or {})
+        source_table = "creator_transactions"
+    if not order:
+        conn.close()
+        return api_error("Order not found.", 404)
+    payload = pulse_buyer_order_response(cur, order, source_table)
+    conn.close()
+    return jsonify({"ok": True, "order": payload, "payment_status": payload.get("payment_status"), "fulfilled": payload.get("status_group") == "paid"})
 
 
 @webhook_app.route("/api/payments/seller/orders", methods=["GET"])

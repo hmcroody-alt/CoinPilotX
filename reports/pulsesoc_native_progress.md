@@ -2469,3 +2469,131 @@ Safest implementation plan:
 5. Verify resume re-runs review.
 6. Verify remove is a soft deletion and public search remains approval-gated.
 7. Fix only scoped blockers and preserve production WebView paths.
+
+## Native Purchase/Order History + Buyer Commerce Controls Foundation
+
+Completed action: built the native buyer-side commerce visibility layer.
+
+What was implemented:
+
+- Added read-only native buyer order aliases over existing payment ledgers:
+  - `GET /api/pulse/orders`
+  - `GET /api/pulse/orders/<transaction_id>`
+  - `GET /api/pulse/purchases`
+- Reused existing `seller_transactions` and `creator_transactions` records without moving checkout, refund, dispute, shipping, payout, or receipt authority into the native client.
+- Added normalized order payload fields for native:
+  - order id / transaction id
+  - source ledger
+  - item title/type/id
+  - seller identity
+  - marketplace listing id
+  - status group
+  - amount/currency
+  - receipt/support/dispute fallback URLs
+  - provider-controlled shipping/tracking placeholder
+- Added native buyer order API wrapper and offline cache in `mobile-native/src/api/orders.ts`.
+- Added native Purchase History and Order Detail screens.
+- Added status visualization for pending, paid, processing, shipped, delivered, cancelled, refunded, and failed orders.
+- Added buyer controls for:
+  - view receipt through existing web/provider flow
+  - support/dispute safe fallback
+  - open seller/store
+  - open related Marketplace listing
+- Added deep-link routing for:
+  - `/pulse/orders`
+  - `/pulse/orders/<id>`
+  - `/pulse/purchases`
+  - `/dashboard/orders`
+- Added Settings and Marketplace entry points.
+- Added notification target routing for purchase/order links.
+
+Verification:
+
+- Static implementation complete.
+- `scripts/pulsesoc_native_buyer_orders_audit.py` added.
+- Payment/provider behavior remains server/provider-owned and was not moved into the app.
+- Authenticated buyer order fixtures are still needed for a practical browser QA hardening pass.
+
+Completed native subsystems:
+
+- Native app foundation.
+- Auth/session foundation.
+- Messenger.
+- Notifications and Activity Inbox.
+- Home Feed, Post Detail, and Feed Composer.
+- Profile and Profile Edit.
+- Reels and Status viewer/creator.
+- Shared Media Upload, Camera Studio, and Media Viewer foundations.
+- Marketplace browse/detail.
+- Seller/Store dashboard, listing composer, seller-owned listings, marketplace media payloads, seller inventory controls, and buyer purchase history/order detail.
+- Search, Saved, Groups, Events, Courses, Creator, Growth, Premium, Intelligence, Trust/Safety, Verification, Account Health, Blocks/Mutes/Reports, Live Viewer, and Calls shells/foundations.
+
+Remaining major subsystems:
+
+- Buyer order practical QA with seeded paid/pending/refunded/cancelled transactions.
+- Marketplace provider QA for checkout, payout, refunds, disputes, fulfillment, and receipts.
+- Native media reorder/remove controls for marketplace listings.
+- Physical iPhone/Android media upload QA.
+- Full LiveKit call/live release QA.
+- Android physical QA.
+- Final native polish, accessibility, animation, and performance pass.
+
+Updated native completion percentages by subsystem:
+
+| Subsystem | Current estimate | Confidence | Remaining high-value gap |
+| --- | ---: | --- | --- |
+| Auth/session/settings | 86% | Browser + simulator foundations verified | Release device auth and provider edge cases |
+| Messaging and calls | 72% | Browser/practical QA verified | LiveKit two-device media and lock-screen release QA |
+| Feed/posts/composer | 78% | Browser/static verified | Rich composer options and device media QA |
+| Media viewer/upload/camera | 72% | Browser/simulator/media QA partially verified | Physical camera/mic, large video, weak network |
+| Reels and Status | 74% | Browser/static verified | Physical native video performance |
+| Marketplace and Commerce | 91% | Backend contract + native buyer/seller foundations | Buyer order QA, provider QA, media reorder/remove |
+| Search, Saved, Groups, Events, Courses | 75% | Browser/static verified | Data-rich authenticated QA depth |
+| Trust, Safety, Verification, Account Health | 82% | Browser verified | Document/admin/provider flows remain web/server-owned |
+| Premium, Creator, Growth, Intelligence | 74% | Browser/static verified | Provider/billing/advanced tools remain fallback |
+| Live and Calls | 56% | Practical shell verified | Native LiveKit/call media release QA |
+| Android readiness | 35% | Tooling partially verified | Physical Android QA |
+
+overall native migration percentage: 80% foundation/parity coverage, 64% release QA confidence.
+
+Recommended next highest-value native feature/action: Native Buyer Orders Practical QA Hardening.
+
+Reason for recommendation:
+
+- Buyer and seller commerce foundations are now both present, but buyer order state needs authenticated fixture validation before expanding commerce.
+- The next highest leverage is not another new commerce feature; it is verifying order status rendering, receipt/support fallbacks, listing/seller navigation, Activity Inbox order routing, and empty/offline states against seeded buyer transactions.
+- This pass protects payment/provider boundaries while increasing confidence in the commerce subsystem.
+
+Reusable APIs/code/database/business logic for next action:
+
+- `GET /api/pulse/orders`
+- `GET /api/pulse/orders/<transaction_id>`
+- `GET /api/pulse/purchases`
+- `seller_transactions`
+- `creator_transactions`
+- Marketplace listing/detail APIs
+- existing Activity Inbox routing
+- existing support/dispute/provider fallback routes
+
+What must be rebuilt natively:
+
+- No new major feature is needed next.
+- Practical QA fixtures, buyer-order browser checks, and any scoped UI/data-shape hardening discovered during QA.
+
+Dependencies/blockers:
+
+- Need an authenticated buyer account with seeded transactions across pending, paid, cancelled/refunded/failed states.
+- Real payment receipts, Stripe/provider behavior, refunds/disputes, and shipping/tracking remain provider/server QA.
+
+Risk level: low to medium.
+
+Estimated complexity: low.
+
+Safest implementation plan:
+
+1. Seed a QA buyer with seller and creator transactions.
+2. Verify `/pulse/orders`, `/pulse/orders/<id>`, `/pulse/purchases`, and `/dashboard/orders`.
+3. Verify order list/detail status rendering and offline cache.
+4. Verify receipt/support/dispute fallback URLs do not mutate payment state.
+5. Verify Marketplace listing and seller navigation.
+6. Fix only scoped blockers and preserve production WebView compatibility.

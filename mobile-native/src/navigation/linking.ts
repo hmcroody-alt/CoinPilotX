@@ -78,6 +78,30 @@ export const linking: LinkingOptions<RootStackParamList> = {
           sellerId: String
         }
       },
+      BuyerOrders: {
+        path: "pulse/orders",
+        parse: {
+          orderId: Number,
+          source: String
+        }
+      },
+      BuyerOrderDetail: {
+        path: "pulse/orders/:orderId",
+        parse: {
+          orderId: Number,
+          source: String
+        }
+      },
+      BuyerPurchases: "pulse/purchases",
+      BuyerOrdersDashboard: {
+        path: "dashboard/orders",
+        parse: {
+          orderId: Number,
+          order_id: Number,
+          id: Number,
+          source: String
+        }
+      },
       MerchantApply: "pulse/merchant/apply",
       MerchantDashboard: "pulse/merchant/dashboard",
       MerchantProfile: {

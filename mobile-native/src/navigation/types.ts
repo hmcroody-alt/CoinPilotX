@@ -47,6 +47,10 @@ export type RootStackParamList = {
   StatusDetail: { statusId: number; title?: string };
   MarketplaceDetail: { listingId?: number; title?: string } | undefined;
   SellerStore: { title?: string; mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts"; sellerId?: string } | undefined;
+  BuyerOrders: { orderId?: number; source?: string; title?: string } | undefined;
+  BuyerOrderDetail: { orderId: number; source?: string; title?: string };
+  BuyerPurchases: { title?: string } | undefined;
+  BuyerOrdersDashboard: { orderId?: number; order_id?: number; id?: number; source?: string; title?: string } | undefined;
   MerchantApply: { title?: string } | undefined;
   MerchantDashboard: { title?: string } | undefined;
   MerchantProfile: { title?: string; sellerId?: string } | undefined;

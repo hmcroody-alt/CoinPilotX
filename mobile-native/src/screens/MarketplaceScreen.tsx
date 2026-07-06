@@ -161,6 +161,9 @@ export function MarketplaceScreen({ route, navigation }: Props) {
             <Pressable style={styles.sellerGatewayButton} onPress={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })}>
               <Text style={styles.sellerGatewayText}>Seller / Store Management</Text>
             </Pressable>
+            <Pressable style={styles.sellerGatewayButton} onPress={() => navigation?.navigate("BuyerOrders", { title: "Purchase History" })}>
+              <Text style={styles.sellerGatewayText}>Purchase History</Text>
+            </Pressable>
             <View style={styles.searchRow}>
               <TextInput
                 style={styles.searchInput}

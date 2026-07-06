@@ -297,6 +297,13 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  const buyerOrderTarget = buyerOrderRouteTarget(normalized);
+  if (buyerOrderTarget && navigationRef.isReady()) {
+    if (buyerOrderTarget.orderId) navigationRef.navigate("BuyerOrderDetail", { orderId: buyerOrderTarget.orderId, source: buyerOrderTarget.source, title: buyerOrderTarget.title });
+    else navigationRef.navigate("BuyerOrders", buyerOrderTarget);
+    return { handled: true, target: normalized };
+  }
+
   const marketplacePathMatch = normalized.match(/^\/pulse\/marketplace\/(\d+)/);
   if (marketplacePathMatch?.[1] && navigationRef.isReady()) {
     navigationRef.navigate("MarketplaceDetail", { listingId: Number(marketplacePathMatch[1]), title: "Marketplace" });
@@ -512,6 +519,16 @@ function normalizeSellerStoreMode(mode: string): "overview" | "apply" | "dashboa
   const value = String(mode || "").toLowerCase();
   if (value === "overview" || value === "apply" || value === "dashboard" || value === "profile" || value === "create" || value === "payouts") return value;
   return "";
+}
+
+function buyerOrderRouteTarget(target: string): { orderId?: number; source?: string; title: string } | null {
+  if (target.startsWith("/pulse/orders") || target.startsWith("/pulse/purchases") || target.startsWith("/dashboard/orders")) {
+    const pathOrderId = target.match(/^\/pulse\/orders\/(\d+)/)?.[1];
+    const orderId = Number(pathOrderId || extractNumericQueryValue(target, "order_id") || extractNumericQueryValue(target, "orderId") || extractNumericQueryValue(target, "id") || 0) || undefined;
+    const source = extractStringQueryValue(target, "source") || undefined;
+    return { orderId, source, title: orderId ? "Order Detail" : "Purchase History" };
+  }
+  return null;
 }
 
 function contentPlannerTarget(target: string): { title: string; mode?: "planner" | "scheduler" | "drafts" } | null {

@@ -8,6 +8,7 @@ import { AccountCenterScreen } from "../screens/AccountCenterScreen";
 import { AccountHealthAppealsScreen } from "../screens/AccountHealthAppealsScreen";
 import { ActivityInboxScreen } from "../screens/ActivityInboxScreen";
 import { AlertManagementScreen } from "../screens/AlertManagementScreen";
+import { BuyerOrdersScreen } from "../screens/BuyerOrdersScreen";
 import { CameraStudioScreen } from "../screens/CameraStudioScreen";
 import { CallScreen } from "../screens/CallScreen";
 import { ContentPlannerScreen } from "../screens/ContentPlannerScreen";
@@ -119,6 +120,10 @@ export function AppNavigator() {
       <Stack.Screen name="StatusDetail" component={StatusScreen} options={({ route }) => ({ title: route.params.title || "Status" })} />
       <Stack.Screen name="MarketplaceDetail" component={MarketplaceScreen} options={({ route }) => ({ title: route.params?.title || "Marketplace" })} />
       <Stack.Screen name="SellerStore" component={SellerStoreScreen} options={({ route }) => ({ title: route.params?.title || "Seller / Store" })} />
+      <Stack.Screen name="BuyerOrders" component={BuyerOrdersScreen} options={({ route }) => ({ title: route.params?.title || "Purchase History" })} />
+      <Stack.Screen name="BuyerOrderDetail" component={BuyerOrdersScreen} options={({ route }) => ({ title: route.params?.title || "Order Detail" })} />
+      <Stack.Screen name="BuyerPurchases" component={BuyerOrdersScreen} options={{ title: "Purchase History" }} />
+      <Stack.Screen name="BuyerOrdersDashboard" component={BuyerOrdersScreen} options={{ title: "Purchase History" }} />
       <Stack.Screen name="MerchantApply" component={SellerStoreScreen} options={{ title: "Merchant Application" }} />
       <Stack.Screen name="MerchantDashboard" component={SellerStoreScreen} options={{ title: "Merchant Dashboard" }} />
       <Stack.Screen name="MerchantProfile" component={SellerStoreScreen} options={({ route }) => ({ title: route.params?.title || "Merchant Profile" })} />
