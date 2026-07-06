@@ -3357,3 +3357,64 @@ Reason for recommendation:
 - Seller inventory is complete enough that its remaining risk is consistency, not UI.
 - Listing create/update/pause/resume/delete mutations affect Seller Store, Marketplace, Buyer Orders, Activity Inbox, and Notifications.
 - These routes are the clearest high-value silent mutation gap discovered by the current audit.
+
+## Seller Inventory Event Emission Hardening
+
+Completed action: hardened cursor-visible event emission for marketplace seller application and seller inventory lifecycle mutations.
+
+What changed:
+
+- Created `reports/pulsesoc_native_seller_inventory_event_emission.md`.
+- Created `scripts/pulsesoc_native_seller_inventory_event_emission_audit.py`.
+- Added the shared `pulse_emit_marketplace_inventory_event(...)` backend helper.
+- Wired seller application submit/change events into the native sync cursor.
+- Wired marketplace listing create/update/pause/resume/soft-delete events into the native sync cursor.
+- Wired admin marketplace listing review state changes into the native sync cursor.
+
+Seller inventory event coverage: 95%.
+
+Remaining silent mutation paths:
+
+- marketplace save/report actions if those should become user-visible Activity events
+- checkout blocked/failure states before Stripe handoff
+- message seen/delete/report cursor mirroring
+- call active/ringing/ended state transitions
+- safety block/mute/report/appeal state changes
+- verification request/review/appeal details
+- payment/refund/dispute lifecycle branches
+
+Event visibility through sync cursor:
+
+- `seller_application_submitted`
+- `seller_application_changed`
+- `seller_listing_created`
+- `seller_listing_updated`
+- `seller_listing_paused`
+- `seller_listing_resumed`
+- `seller_listing_deleted`
+- `seller_listing_review_changed`
+
+Activity/Marketplace/Seller Store consistency impact:
+
+- Seller Store can invalidate from cursor events instead of relying only on screen reloads.
+- Marketplace can refresh listing state after seller lifecycle changes.
+- Activity Inbox and Notifications can display seller lifecycle transitions.
+- Buyer Orders can refresh when listing lifecycle changes may affect active or historical orders.
+
+Event producer coverage: 76%.
+
+Overall native migration percentage: 86% foundation/parity coverage, 82% system consistency confidence, 64% release QA confidence.
+
+Critical production risk gaps:
+
+- Payment/order event producers need the next hardening pass because stale payment states create higher trust risk than additional UI expansion.
+- Real APNs/FCM push delivery remains device/provider QA gated.
+- Event replay/idempotency remains partially validated with seeded tests, not yet proven under real traffic.
+
+Recommended next native feature/action: Payment and Checkout Failure Event Emission Hardening.
+
+Reason for recommendation:
+
+- Seller inventory is now cursor-visible.
+- Payment/order state is the next highest-risk silent mutation family.
+- Checkout failure, blocked checkout, refunds, disputes, and payment status transitions must converge across Buyer Orders, Seller Inventory, Activity Inbox, Notifications, and Marketplace.

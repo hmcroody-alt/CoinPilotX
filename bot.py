@@ -27137,7 +27137,7 @@ def _pulse_native_sync_safe_metadata(raw_metadata):
     return {
         str(key): value
         for key, value in metadata.items()
-        if not any(fragment in str(key).lower() for fragment in blocked_fragments)
+        if str(key) == "sync_cursor_key" or not any(fragment in str(key).lower() for fragment in blocked_fragments)
     }
 
 
@@ -41531,6 +41531,81 @@ def pulse_marketplace_owned_listing_response(cur, listing_id, user_id):
     return pulse_marketplace_listing_payload(listing, media_by_listing.get(int(listing.get("id") or 0), []))
 
 
+def pulse_emit_marketplace_inventory_event(
+    cur,
+    seller_user_id,
+    event_type,
+    listing_id=0,
+    actor_user_id=0,
+    status="",
+    approval_status="",
+    title="",
+    extra=None,
+):
+    seller_user_id = int(seller_user_id or 0)
+    if not seller_user_id:
+        return
+    listing_id = int(listing_id or 0)
+    event_type = str(event_type or "seller_inventory_changed")[:80]
+    title_text = str(title or "Marketplace listing").strip()[:160]
+    entity_type = "marketplace_listing" if listing_id else "marketplace_seller"
+    entity_id = str(listing_id or seller_user_id)
+    target_url = f"/pulse/marketplace/{listing_id}" if listing_id else "/pulse/seller-store"
+    invalidates = ["activity", "notifications", "marketplace", "seller_inventory"]
+    if listing_id and event_type in {
+        "seller_listing_created",
+        "seller_listing_updated",
+        "seller_listing_paused",
+        "seller_listing_resumed",
+        "seller_listing_deleted",
+        "seller_listing_review_changed",
+    }:
+        invalidates.append("orders")
+    metadata = {
+        "domain": "marketplace",
+        "category": "seller_inventory",
+        "listing_id": listing_id,
+        "seller_user_id": seller_user_id,
+        "status": str(status or "")[:80],
+        "approval_status": str(approval_status or "")[:80],
+        "title": title_text,
+        "invalidates": sorted(set(invalidates)),
+    }
+    metadata.update(dict(extra or {}))
+    note_titles = {
+        "seller_application_submitted": "Seller application saved",
+        "seller_application_changed": "Seller application updated",
+        "seller_listing_created": "Listing submitted",
+        "seller_listing_updated": "Listing updated",
+        "seller_listing_paused": "Listing paused",
+        "seller_listing_resumed": "Listing returned to review",
+        "seller_listing_deleted": "Listing removed",
+        "seller_listing_review_changed": "Listing review updated",
+    }
+    note_bodies = {
+        "seller_application_submitted": "Your seller application is saved and ready for review.",
+        "seller_application_changed": f"Your seller status changed to {status or approval_status or 'review'}."[:220],
+        "seller_listing_created": f"{title_text} was submitted for marketplace review."[:220],
+        "seller_listing_updated": f"{title_text} was updated and sent through marketplace review."[:220],
+        "seller_listing_paused": f"{title_text} was paused in your seller inventory."[:220],
+        "seller_listing_resumed": f"{title_text} returned to marketplace review."[:220],
+        "seller_listing_deleted": f"{title_text} was removed from your seller inventory."[:220],
+        "seller_listing_review_changed": f"{title_text} review status changed to {approval_status or status or 'review'}."[:220],
+    }
+    notify_user(
+        cur,
+        seller_user_id,
+        event_type,
+        note_titles.get(event_type, "Seller inventory updated"),
+        note_bodies.get(event_type, "Your marketplace seller inventory changed."),
+        target_url,
+        actor_user_id=actor_user_id or seller_user_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        metadata=metadata,
+    )
+
+
 @webhook_app.route("/api/pulse/marketplace/seller/listings/<int:listing_id>", methods=["PATCH", "POST"])
 def api_pulse_marketplace_seller_listing_update(listing_id):
     init_db()
@@ -41588,6 +41663,17 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
         ),
     )
     item = pulse_marketplace_owned_listing_response(cur, listing_id, user["user_id"])
+    pulse_emit_marketplace_inventory_event(
+        cur,
+        user["user_id"],
+        "seller_listing_updated",
+        listing_id=listing_id,
+        actor_user_id=user["user_id"],
+        status=item.get("status") or next_status,
+        approval_status=item.get("approval_status") or review.get("status"),
+        title=item.get("title") or title,
+        extra={"review_status": review.get("status"), "risk_score": int(review.get("risk_score") or 0)},
+    )
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "message": "Listing updated and sent through marketplace review.", "listing": item})
@@ -41609,6 +41695,16 @@ def api_pulse_marketplace_seller_listing_pause(listing_id):
         return api_error("Listing not found.", 404)
     cur.execute("UPDATE marketplace_listings SET status='paused', updated_at=? WHERE id=? AND seller_user_id=?", (now, int(listing_id), int(user["user_id"])))
     item = pulse_marketplace_owned_listing_response(cur, listing_id, user["user_id"])
+    pulse_emit_marketplace_inventory_event(
+        cur,
+        user["user_id"],
+        "seller_listing_paused",
+        listing_id=listing_id,
+        actor_user_id=user["user_id"],
+        status="paused",
+        approval_status=item.get("approval_status") or "",
+        title=item.get("title") or "",
+    )
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "message": "Listing paused.", "listing": item})
@@ -41640,6 +41736,17 @@ def api_pulse_marketplace_seller_listing_resume(listing_id):
         (next_status, review["status"], int(review["risk_score"]), json.dumps(review["flags"], default=str), now, int(listing_id), int(user["user_id"])),
     )
     item = pulse_marketplace_owned_listing_response(cur, listing_id, user["user_id"])
+    pulse_emit_marketplace_inventory_event(
+        cur,
+        user["user_id"],
+        "seller_listing_resumed",
+        listing_id=listing_id,
+        actor_user_id=user["user_id"],
+        status=item.get("status") or next_status,
+        approval_status=item.get("approval_status") or review.get("status"),
+        title=item.get("title") or listing.get("title") or "",
+        extra={"review_status": review.get("status"), "risk_score": int(review.get("risk_score") or 0)},
+    )
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "message": "Listing returned to marketplace review.", "listing": item})
@@ -41664,6 +41771,16 @@ def api_pulse_marketplace_seller_listing_delete(listing_id):
         (now, int(listing_id), int(user["user_id"])),
     )
     item = pulse_marketplace_owned_listing_response(cur, listing_id, user["user_id"])
+    pulse_emit_marketplace_inventory_event(
+        cur,
+        user["user_id"],
+        "seller_listing_deleted",
+        listing_id=listing_id,
+        actor_user_id=user["user_id"],
+        status="seller_deleted",
+        approval_status="seller_deleted",
+        title=item.get("title") or "",
+    )
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "message": "Listing removed from seller inventory.", "listing": item})
@@ -74580,6 +74697,16 @@ def api_pulse_marketplace_seller_apply():
         """,
         (user["user_id"], name, bio, now, now),
     )
+    pulse_emit_marketplace_inventory_event(
+        cur,
+        user["user_id"],
+        "seller_application_submitted",
+        actor_user_id=user["user_id"],
+        status="pending",
+        approval_status="pending",
+        title=name,
+        extra={"application_status": "pending"},
+    )
     conn.commit(); conn.close()
     return jsonify({"ok": True, "message": "Seller application saved."})
 
@@ -75309,6 +75436,17 @@ def api_pulse_marketplace_listing_create():
             (listing_id, pos, int(media.get("id") or 0), user["user_id"]),
         )
         cur.execute("UPDATE chat_media_uploads SET context_type='marketplace_product', context_id=? WHERE media_url=?", (str(listing_id), media.get("media_url") or ""))
+    pulse_emit_marketplace_inventory_event(
+        cur,
+        user["user_id"],
+        "seller_listing_created",
+        listing_id=listing_id,
+        actor_user_id=user["user_id"],
+        status=status,
+        approval_status=review.get("status"),
+        title=title,
+        extra={"review_status": review.get("status"), "risk_score": int(review.get("risk_score") or 0), "media_count": len(media_rows)},
+    )
     conn.commit(); conn.close()
     return jsonify({"ok": True, "listing_id": listing_id, "message": "Listing saved for safety review."})
 
@@ -78789,6 +78927,16 @@ def admin_merchant_applications_page():
                 """,
                 (status, verification_status, admin.get("id"), now, note, now, app_row.get("user_id")),
             )
+            pulse_emit_marketplace_inventory_event(
+                cur,
+                app_row.get("user_id"),
+                "seller_application_changed",
+                actor_user_id=admin.get("id") or 0,
+                status=status,
+                approval_status=verification_status,
+                title=app_row.get("display_name") or "Seller application",
+                extra={"application_id": app_id, "review_action": action, "verification_status": verification_status},
+            )
             conn.commit()
             log_admin_audit(admin.get("id"), "merchant_application_reviewed", "merchant_application", str(app_id), {"action": action, "status": status})
             message = "Merchant application updated."
@@ -79041,10 +79189,23 @@ def admin_marketplace_command_page():
         listing_id = int(request.form.get("listing_id") or 0)
         action = request.form.get("action") or ""
         now = datetime.utcnow().isoformat(timespec="seconds")
-        conn = db(); cur = conn.cursor()
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
         if listing_id and action in {"approve", "reject", "hide", "suspend", "feature"}:
             status = {"approve": "approved", "reject": "rejected", "hide": "hidden", "suspend": "suspended", "feature": "approved"}[action]
+            cur.execute("SELECT seller_user_id, title FROM marketplace_listings WHERE id=? LIMIT 1", (listing_id,))
+            listing_row = dict(cur.fetchone() or {})
             cur.execute("UPDATE marketplace_listings SET status=?, approval_status=?, featured=CASE WHEN ?='feature' THEN 1 ELSE COALESCE(featured,0) END, reviewed_by=?, reviewed_at=?, updated_at=? WHERE id=?", (status, status, action, admin.get("id"), now, now, listing_id))
+            pulse_emit_marketplace_inventory_event(
+                cur,
+                listing_row.get("seller_user_id"),
+                "seller_listing_review_changed",
+                listing_id=listing_id,
+                actor_user_id=admin.get("id") or 0,
+                status=status,
+                approval_status=status,
+                title=listing_row.get("title") or "Marketplace listing",
+                extra={"review_action": action},
+            )
             conn.commit()
             log_admin_audit(admin.get("id"), "marketplace_listing_reviewed", "marketplace_listing", str(listing_id), {"action": action})
             message = "Listing updated."

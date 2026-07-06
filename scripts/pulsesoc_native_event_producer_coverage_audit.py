@@ -110,7 +110,7 @@ def route_block(source: str, route_token: str) -> str:
 
 
 def mutation_has_event(block: str) -> bool:
-    return any(token in block for token in ["notify_user(", "create_pulse_notification", "notify_crypto_alert", "pulse_emit_event(", "notification_service.send_user_alert"])
+    return any(token in block for token in ["notify_user(", "create_pulse_notification", "notify_crypto_alert", "pulse_emit_event(", "pulse_emit_marketplace_inventory_event(", "notification_service.send_user_alert"])
 
 
 def main() -> int:
@@ -197,8 +197,9 @@ def main() -> int:
         require(bool(block), f"missing critical route block for {label}", failures)
         if block and not mutation_has_event(block):
             silent_routes.append(label)
-    require("seller listing update" in silent_routes, "audit expected to identify seller listing update as current silent route", failures)
-    require("listing create" in silent_routes, "audit expected to identify listing create as current silent route", failures)
+    require("seller listing update" not in silent_routes, "seller listing update should now emit cursor-visible inventory events", failures)
+    require("listing create" not in silent_routes, "listing create should now emit cursor-visible inventory events", failures)
+    require("pulse_emit_marketplace_inventory_event" in bot_source, "seller inventory event helper missing after hardening", failures)
 
     for token in [
         "Event Producer Mapping Audit",
