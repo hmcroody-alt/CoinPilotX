@@ -2,8 +2,10 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
 import { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { DashboardCard, DashboardModuleKey, loadUserDashboardState, UserDashboardState } from "../api/dashboard";
+import { PULSE_API_BASE_URL } from "../api/config";
+import { DashboardModuleGroup, DashboardModuleItem, DashboardQuickAction } from "../data/dashboardModules";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 
@@ -48,6 +50,9 @@ export function UserDashboardScreen() {
 
   const topCards = useMemo(() => (state?.cards || []).slice(0, 4), [state?.cards]);
   const dashboardCards = useMemo(() => (state?.cards || []).slice(4), [state?.cards]);
+  const moduleGroups = state?.moduleGroups || [];
+  const moduleCount = useMemo(() => moduleGroups.reduce((total, group) => total + group.modules.length, 0), [moduleGroups]);
+  const fallbackCount = useMemo(() => moduleGroups.reduce((total, group) => total + group.modules.filter((module) => !isNativeDashboardRoute(module.route)).length, 0), [moduleGroups]);
 
   if (loading && !state) {
     return (
@@ -84,6 +89,7 @@ export function UserDashboardScreen() {
           <Signal label="Activity" value={`${state?.activity?.unreadTotal || 0} unread`} tone={(state?.activity?.unreadTotal || 0) > 0 ? "attention" : "ready"} />
           <Signal label="Orders" value={`${state?.buyerOrders.length || 0}`} tone="ready" />
           <Signal label="System" value={state?.warnings.length ? "Partial" : "Stable"} tone={state?.warnings.length ? "attention" : "ready"} />
+          <Signal label="Dashboard" value={`${moduleCount} modules`} tone={fallbackCount ? "fallback" : "ready"} />
         </View>
       </View>
 
@@ -127,6 +133,32 @@ export function UserDashboardScreen() {
         </View>
       </Section>
 
+      <Section title="Production Dashboard Map" subtitle="Current PulseSoc dashboard module groups represented natively with safe fallback routing where advanced modules are still web-owned.">
+        <View style={styles.moduleRail}>
+          {moduleGroups.map((group) => (
+            <Pressable key={`rail-${group.key}`} style={styles.railChip} onPress={() => undefined}>
+              <Text style={styles.railGlyph}>{group.icon}</Text>
+              <View style={styles.railCopy}>
+                <Text style={styles.railLabel}>{group.label}</Text>
+                <Text style={styles.railCount}>{group.modules.length} modules</Text>
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      </Section>
+
+      {moduleGroups.map((group) => (
+        <ModuleGroupSection key={group.key} group={group} onOpen={(module) => openDashboardModule(navigation, module)} />
+      ))}
+
+      <Section title="Dashboard Quick Actions" subtitle="Production quick-action routes are wired to native destinations or safe web fallbacks.">
+        <View style={styles.quickLinkGrid}>
+          {(state?.dashboardQuickActionLinks || []).map((action) => (
+            <DashboardQuickLink key={action.label} action={action} onPress={() => openDashboardQuickAction(navigation, action)} />
+          ))}
+        </View>
+      </Section>
+
       <Section title="Recent Activity" subtitle="Server-authoritative activity and commerce events feed this timeline.">
         {state?.recentActivity.length ? (
           state.recentActivity.map((item) => (
@@ -146,6 +178,49 @@ export function UserDashboardScreen() {
         )}
       </Section>
     </ScrollView>
+  );
+}
+
+function ModuleGroupSection({ group, onOpen }: { group: DashboardModuleGroup; onOpen: (module: DashboardModuleItem) => void }) {
+  return (
+    <Section title={group.title} subtitle={`${group.modules.length} production dashboard modules represented in the native foundation.`}>
+      <View style={styles.moduleGrid}>
+        {group.modules.map((module) => (
+          <DashboardModuleCard key={module.key} module={module} onPress={() => onOpen(module)} />
+        ))}
+      </View>
+    </Section>
+  );
+}
+
+function DashboardModuleCard({ module, onPress }: { module: DashboardModuleItem; onPress: () => void }) {
+  const native = isNativeDashboardRoute(module.route);
+  return (
+    <Pressable style={[styles.moduleCard, module.access === "locked" ? styles.moduleLocked : null]} onPress={onPress}>
+      <View style={styles.moduleTop}>
+        <Text style={styles.moduleGlyph}>{module.icon}</Text>
+        <Text style={[styles.moduleStatus, module.status === "COMING_SOON" ? styles.moduleComingSoon : null]}>
+          {module.access === "locked" ? "LOCKED" : module.status.replace("_", " ")}
+        </Text>
+      </View>
+      <Text style={styles.moduleTitle}>{module.title}</Text>
+      <Text style={styles.moduleDetail}>{module.description}</Text>
+      {module.lockReason ? <Text style={styles.lockReason}>{module.lockReason}</Text> : null}
+      <View style={styles.moduleBottom}>
+        <Text style={styles.moduleAction}>{module.actionLabel}</Text>
+        <Text style={styles.moduleRoute}>{native ? "Native" : "Fallback"}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function DashboardQuickLink({ action, onPress }: { action: DashboardQuickAction; onPress: () => void }) {
+  return (
+    <Pressable style={styles.quickLink} onPress={onPress}>
+      <Text style={styles.quickLinkIcon}>{action.label.slice(0, 2)}</Text>
+      <Text style={styles.quickLinkText}>{action.label}</Text>
+      <Text style={styles.quickLinkGo}>Go</Text>
+    </Pressable>
   );
 }
 
@@ -281,6 +356,151 @@ function openActivityTarget(navigation: DashboardNavigation, target?: string) {
     return;
   }
   navigation.navigate("ActivityInbox", { title: "Activity Inbox" });
+}
+
+function openDashboardQuickAction(navigation: DashboardNavigation, action: DashboardQuickAction) {
+  openDashboardRoute(navigation, action.route);
+}
+
+function openDashboardModule(navigation: DashboardNavigation, module: DashboardModuleItem) {
+  if (module.access === "locked") {
+    if (module.lockReason?.includes("Premium")) {
+      navigation.navigate("Premium");
+      return;
+    }
+    if (module.lockReason?.includes("Seller")) {
+      navigation.navigate("SellerStore", { title: "Seller / Store" });
+      return;
+    }
+    if (module.lockReason?.includes("Creator")) {
+      navigation.navigate("CreatorStudio");
+      return;
+    }
+  }
+  openDashboardRoute(navigation, module.route);
+}
+
+function openDashboardRoute(navigation: DashboardNavigation, route: string) {
+  const normalized = route || "/dashboard";
+  if (normalized === "/dashboard" || normalized === "/pulse/dashboard") return;
+  if (normalized === "/pulse" || normalized === "/dashboard/creator/posts") {
+    navigation.navigate("Tabs", { screen: "Home" });
+    return;
+  }
+  if (normalized.includes("/notifications") || normalized.includes("/activity")) {
+    navigation.navigate("ActivityInbox", { title: "Activity Inbox" });
+    return;
+  }
+  if (normalized.includes("/messages")) {
+    navigation.navigate("Tabs", { screen: "Messenger" });
+    return;
+  }
+  if (normalized.includes("/network/groups")) {
+    navigation.navigate("Tabs", { screen: "Groups" });
+    return;
+  }
+  if (normalized.includes("/reels")) {
+    navigation.navigate("Reels", { title: "Reels" });
+    return;
+  }
+  if (normalized.includes("/status") || normalized.includes("/statuses")) {
+    navigation.navigate("Tabs", { screen: "Status" });
+    return;
+  }
+  if (normalized.includes("/live")) {
+    navigation.navigate("Tabs", { screen: "Live" });
+    return;
+  }
+  if (normalized.includes("/marketplace")) {
+    navigation.navigate("Tabs", { screen: "Marketplace" });
+    return;
+  }
+  if (normalized.includes("/seller-tools") || normalized.includes("/merchant")) {
+    navigation.navigate("SellerStore", { title: "Seller / Store" });
+    return;
+  }
+  if (normalized.includes("/subscriptions") || normalized.includes("/premium")) {
+    navigation.navigate("Premium");
+    return;
+  }
+  if (normalized.includes("/verification")) {
+    navigation.navigate("VerificationCenter", { title: "Verification Center" });
+    return;
+  }
+  if (normalized.includes("/account/health")) {
+    navigation.navigate("AccountHealth", { title: "Account Health" });
+    return;
+  }
+  if (normalized.includes("/account/security")) {
+    navigation.navigate("AccountCenter", { section: "security", title: "Security Center" });
+    return;
+  }
+  if (normalized.includes("/account/settings")) {
+    navigation.navigate("Tabs", { screen: "Settings" });
+    return;
+  }
+  if (normalized.includes("/account/profile")) {
+    navigation.navigate("Tabs", { screen: "Profile" });
+    return;
+  }
+  if (normalized.includes("/support") || normalized.includes("/profile/security") || normalized.includes("/scam-shield")) {
+    navigation.navigate("SafetyHub", { title: "Safety Hub" });
+    return;
+  }
+  if (normalized.includes("/creator/content-planner")) {
+    navigation.navigate("ContentPlanner", { mode: "planner", title: "Content Planner" });
+    return;
+  }
+  if (normalized.includes("/creator/post-scheduler")) {
+    navigation.navigate("ContentPlanner", { mode: "scheduler", title: "Post Scheduler" });
+    return;
+  }
+  if (normalized.includes("/creator/draft-studio")) {
+    navigation.navigate("ContentPlanner", { mode: "drafts", title: "Draft Studio" });
+    return;
+  }
+  if (normalized.includes("/creator")) {
+    navigation.navigate("CreatorStudio");
+    return;
+  }
+  if (normalized.includes("/growth") || normalized.includes("/ads")) {
+    navigation.navigate("GrowthCenter", { title: "Growth Center" });
+    return;
+  }
+  if (normalized.includes("/crypto/alerts") || normalized.includes("/dashboard/crypto")) {
+    navigation.navigate("AlertManagement", { title: "Alerts" });
+    return;
+  }
+  if (normalized.includes("/intelligence") || normalized.includes("/signals") || normalized.includes("/briefing") || normalized.includes("/forecasts")) {
+    navigation.navigate("IntelligenceCenter", { title: "Intelligence" });
+    return;
+  }
+  if (normalized.includes("/saved")) {
+    navigation.navigate("Saved");
+    return;
+  }
+  if (normalized.includes("/videos") || normalized.includes("/music")) {
+    openWebFallback(normalized);
+    return;
+  }
+  if (normalized.includes("/ai")) {
+    navigation.navigate("Tabs", { screen: "PulseAI" });
+    return;
+  }
+  if (normalized.includes("/system")) {
+    navigation.navigate("IntelligenceCenter", { title: "System Status" });
+    return;
+  }
+  openWebFallback(normalized);
+}
+
+function isNativeDashboardRoute(route: string) {
+  return new RegExp("/pulse($|/)|/dashboard/(account|network|creator|economy|crypto|ads|ai|system)|/support|/scam-shield").test(route || "");
+}
+
+function openWebFallback(route: string) {
+  const url = route.startsWith("http") ? route : `${PULSE_API_BASE_URL}${route.startsWith("/") ? route : `/${route}`}`;
+  Linking.openURL(url).catch(() => undefined);
 }
 
 function quickActionCopy(key: DashboardModuleKey) {
@@ -429,6 +649,83 @@ const styles = StyleSheet.create({
     fontSize: 23,
     fontWeight: "900"
   },
+  lockReason: {
+    color: colors.warning,
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 4
+  },
+  moduleAction: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "900"
+  },
+  moduleBottom: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
+    marginTop: "auto"
+  },
+  moduleCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexGrow: 1,
+    flexBasis: "30%",
+    gap: 8,
+    minHeight: 176,
+    minWidth: 180,
+    padding: 14
+  },
+  moduleComingSoon: {
+    color: colors.muted
+  },
+  moduleDetail: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 18
+  },
+  moduleGlyph: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  moduleGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12
+  },
+  moduleLocked: {
+    opacity: 0.72
+  },
+  moduleRail: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  moduleRoute: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: "900"
+  },
+  moduleStatus: {
+    color: colors.accent,
+    fontSize: 10,
+    fontWeight: "900"
+  },
+  moduleTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "900"
+  },
+  moduleTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10
+  },
   offlineCard: {
     opacity: 0.82
   },
@@ -450,6 +747,68 @@ const styles = StyleSheet.create({
   quickTitle: {
     color: colors.text,
     fontSize: 14,
+    fontWeight: "900"
+  },
+  quickLink: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    minWidth: 188,
+    padding: 12
+  },
+  quickLinkGo: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: "900",
+    marginLeft: "auto"
+  },
+  quickLinkGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  quickLinkIcon: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "900",
+    minWidth: 24
+  },
+  quickLinkText: {
+    color: colors.text,
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: "800"
+  },
+  railChip: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    minWidth: 150,
+    padding: 10
+  },
+  railCopy: {
+    gap: 2
+  },
+  railCount: {
+    color: colors.muted,
+    fontSize: 11
+  },
+  railGlyph: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "900"
+  },
+  railLabel: {
+    color: colors.text,
+    fontSize: 12,
     fontWeight: "900"
   },
   root: {

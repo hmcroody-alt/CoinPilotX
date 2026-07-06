@@ -2,6 +2,7 @@ import { getSession, PulseUser } from "./auth";
 import { loadActivityInboxState, ActivityInboxState } from "./activity";
 import { getActiveCalls, PulseCall } from "./calls";
 import { getCreatorState, CreatorState, creatorScore, creatorRecommendations } from "./creator";
+import { dashboardModuleGroups, dashboardQuickActions, DashboardModuleGroup, DashboardQuickAction } from "../data/dashboardModules";
 import { listFeed, PulsePost } from "./feed";
 import { getGrowthState, GrowthState } from "./growth";
 import { getIntelligenceState, IntelligenceState } from "./intelligence";
@@ -63,11 +64,14 @@ export type UserDashboardState = {
   intelligence: IntelligenceState | null;
   cards: DashboardCard[];
   quickActions: DashboardCard[];
+  moduleGroups: DashboardModuleGroup[];
+  dashboardQuickActionLinks: DashboardQuickAction[];
   recentActivity: Array<{ id: string; title: string; body: string; target?: string }>;
   warnings: string[];
 };
 
 type Settled<T> = PromiseSettledResult<T>;
+type DashboardLoadedState = Omit<UserDashboardState, "cards" | "quickActions" | "moduleGroups" | "dashboardQuickActionLinks" | "recentActivity">;
 
 export async function loadUserDashboardState(): Promise<UserDashboardState> {
   const [
@@ -108,7 +112,7 @@ export async function loadUserDashboardState(): Promise<UserDashboardState> {
     getIntelligenceState()
   ]);
 
-  const normalized: Omit<UserDashboardState, "cards" | "quickActions" | "recentActivity"> = {
+  const normalized: DashboardLoadedState = {
     loadedAt: new Date().toISOString(),
     loadedFromCache: Boolean(value(activity)?.loadedFromCache),
     user: value(session)?.user || null,
@@ -153,11 +157,13 @@ export async function loadUserDashboardState(): Promise<UserDashboardState> {
     ...normalized,
     cards,
     quickActions: cards.filter((card) => ["camera", "activity", "messenger", "seller", "creator", "intelligence"].includes(card.key)),
+    moduleGroups: dashboardModuleGroups,
+    dashboardQuickActionLinks: dashboardQuickActions,
     recentActivity: buildRecentActivity(normalized)
   };
 }
 
-function buildDashboardCards(state: Omit<UserDashboardState, "cards" | "quickActions" | "recentActivity">): DashboardCard[] {
+function buildDashboardCards(state: DashboardLoadedState): DashboardCard[] {
   const unread = Number(state.activity?.unreadTotal || 0);
   const activeCalls = state.calls.filter((call) => !["ended", "declined", "missed", "failed"].includes(String(call.status || "").toLowerCase())).length;
   const sellerListings = state.sellerStore?.listings || [];
@@ -285,7 +291,7 @@ function buildDashboardCards(state: Omit<UserDashboardState, "cards" | "quickAct
   ];
 }
 
-function buildRecentActivity(state: Omit<UserDashboardState, "cards" | "quickActions" | "recentActivity">) {
+function buildRecentActivity(state: DashboardLoadedState) {
   const activity = (state.activity?.items || []).slice(0, 5).map((item) => ({
     id: item.id,
     title: item.title,

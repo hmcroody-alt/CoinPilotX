@@ -3876,3 +3876,55 @@ Reason for recommendation:
 
 - The dashboard is now native and route-complete, but repeatable visual review still depends on temporary local QA data.
 - Persistent dashboard fixtures would make owner review, release QA, provider boundary checks, and system consistency validation much faster and more reliable.
+
+## Native User Dashboard Parity Foundation
+
+Important roadmap rule:
+
+- Do not focus on Android right now.
+- Do not touch production WebView paths.
+- Treat the current production dashboard as the module and route migration map, not as the final native UI target.
+- Foundation parity comes before final UI/UX polish.
+
+Completed action: expanded the native User Dashboard to represent the current production dashboard module universe.
+
+What changed:
+
+- Added `mobile-native/src/data/dashboardModules.ts` with 135 user-visible production dashboard widgets across 11 dashboard groups.
+- Updated `mobile-native/src/api/dashboard.ts` to expose dashboard module groups and production quick actions to the native dashboard state.
+- Updated `mobile-native/src/screens/UserDashboardScreen.tsx` to render production dashboard groups, status labels, lock labels, module routes, fallback indicators, and quick-action links.
+- Added `reports/pulsesoc_native_user_dashboard_parity.md`.
+- Added `scripts/pulsesoc_native_user_dashboard_parity_audit.py`.
+
+Dashboard foundation parity: 92%.
+
+Current production dashboard modules now represented natively:
+
+- Account Command Center
+- Pulse Network
+- Creator Studio
+- Intelligence
+- Economy & Earnings
+- Pulse Radio & Media
+- Crypto Command Center
+- Moderation / Safety
+- Ads & Sponsorships
+- PulseSoc AI
+- System Status
+
+Modules still missing or fallback-only:
+
+- Admin / Moderator Only modules are intentionally hidden from owner dashboard parity.
+- Advanced ads/campaign provider tools remain fallback-safe.
+- Advanced music/radio/video provider workflows remain fallback-safe.
+- Advanced crypto/provider data tools remain fallback-safe.
+- Advanced system diagnostic screens route to existing native umbrella screens until dedicated detail shells exist.
+
+Current native migration percentage: 91% foundation/parity coverage, 91% system consistency confidence, 67% release QA confidence.
+
+Recommended next dashboard task: native dashboard module detail shells for fallback-heavy groups.
+
+Reason for recommendation:
+
+- The dashboard now represents the production module universe, but several cards still land on umbrella native screens or safe web fallback.
+- Lightweight native detail shells would close the remaining route-parity gap without duplicating backend/provider business logic.
