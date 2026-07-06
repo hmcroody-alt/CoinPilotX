@@ -3490,3 +3490,74 @@ Reason for recommendation:
 - Seller inventory and payment/order event families are now cursor-visible.
 - Messenger/Calls/Safety remain high-frequency trust surfaces where silent read/delete/report/block/mute/call state changes can make Activity Inbox drift.
 - This is the highest-value consistency fix before adding more product surface area.
+
+## Message, Call, and Safety Event Emission Hardening
+
+Important roadmap rule:
+
+- Do not focus on Android right now.
+- Android remains tracked as a later release-readiness gap.
+- Current priority remains iPhone/iOS native app, server-authoritative event consistency, payment/checkout/order trust correctness, PulseSoc production parity, and LogiNexus UI polish.
+
+Completed action: hardened cursor-visible event emission for communications and safety state changes.
+
+What changed:
+
+- Created `reports/pulsesoc_native_comms_safety_event_emission.md`.
+- Created `scripts/pulsesoc_native_comms_safety_event_emission_audit.py`.
+- Added the shared `pulse_emit_comms_safety_event(...)` backend helper.
+- Wired message received, seen, deleted, and reported events into the native sync cursor.
+- Wired call started, accepted, declined, ended, missed, and failed events into the native sync cursor.
+- Wired user block, generic report submit, message report submit, and verification appeal submit events into the native sync cursor.
+
+Message/call/safety event coverage: 78%.
+
+Remaining silent mutation paths:
+
+- user unblock if/when a first-class route exists
+- user mute/unmute if/when a first-class route exists
+- report status updates from admin/moderator review paths
+- safety appeal status updates from review paths
+- group/comment/media report variants not yet fully unified into Safety Hub events
+- refund requested and order cancelled if first-class commerce routes are added
+
+Event visibility through sync cursor:
+
+- `message_received`
+- `message_seen`
+- `message_deleted`
+- `message_reported`
+- `call_started`
+- `call_accepted`
+- `call_declined`
+- `call_ended`
+- `call_missed`
+- `call_failed`
+- `user_blocked`
+- `report_submitted`
+- `safety_appeal_submitted`
+
+Activity/Messenger/Calls/Safety consistency impact:
+
+- Activity Inbox can refresh from durable comms/safety event rows instead of only transient realtime state.
+- Messenger can invalidate message and conversation caches after receive/seen/delete/report transitions.
+- Calls can recover lifecycle state after foreground/background transitions through cursor-visible call events.
+- Trust/Safety and Account Health can refresh after block/report/appeal submission events.
+
+Event producer coverage: 86%.
+
+Overall native migration percentage: 88% foundation/parity coverage, 86% system consistency confidence, 64% release QA confidence.
+
+Critical production risk gaps:
+
+- Admin/moderator review update routes still need durable `report_updated` and `safety_appeal_updated` event emission.
+- User mute/unmute/unblock coverage depends on first-class server-authoritative mutation routes.
+- Real APNs/FCM delivery, lock-screen notification behavior, and multi-device ordering remain release-readiness gaps.
+
+Recommended next native feature/action: Trust/Safety Review Update Event Emission Hardening.
+
+Reason for recommendation:
+
+- Submission-side safety events are now cursor-visible.
+- Review/resolution paths remain the next stale-state risk for Safety Hub, Account Health, Activity Inbox, and Notifications.
+- This is the highest-value consistency fix before broader realtime streaming or product expansion.

@@ -6135,6 +6135,23 @@ def api_dashboard_verification_appeal():
             client_ip_hash(),
             request.headers.get("User-Agent", "")[:240],
         )
+        if result.get("ok"):
+            cur = conn.cursor()
+            request_id = int(payload.get("request_id") or 0)
+            pulse_emit_comms_safety_event(
+                cur,
+                user["user_id"],
+                "safety_appeal_submitted",
+                "verification_appeal",
+                request_id,
+                actor_user_id=user["user_id"],
+                target_url="/pulse/verification",
+                title="Appeal submitted",
+                body="Your verification appeal was submitted for review.",
+                category="safety",
+                extra={"request_id": request_id, "appeal_scope": "verification"},
+            )
+            conn.commit()
     finally:
         conn.close()
     return jsonify(result), (200 if result.get("ok") else 400)
@@ -9400,6 +9417,22 @@ def api_dashboard_account_verification_appeal():
     conn = db()
     try:
         result = dashboard_account_command_center.appeal_verification_request(conn, int(user["user_id"]), safe_int(payload.get("request_id"), 0), payload.get("appeal_note") or "")
+        cur = conn.cursor()
+        request_id = safe_int(payload.get("request_id"), 0)
+        pulse_emit_comms_safety_event(
+            cur,
+            user["user_id"],
+            "safety_appeal_submitted",
+            "verification_appeal",
+            request_id,
+            actor_user_id=user["user_id"],
+            target_url="/pulse/verification",
+            title="Appeal submitted",
+            body="Your verification appeal was submitted for review.",
+            category="safety",
+            extra={"request_id": request_id, "appeal_scope": "verification"},
+        )
+        conn.commit()
         return jsonify({"ok": True, "message": "Verification appeal submitted.", **result})
     except ValueError as exc:
         conn.rollback()
@@ -33659,6 +33692,45 @@ def pulse_finalize_message_delivery(result, sender, trace_id=""):
             "suppress_push": suppress_push,
             "push_skip_reason": str((recipient or {}).get("skip_reason") or "")[:80],
         }
+        event_conn = None
+        try:
+            event_conn = db()
+            event_cur = event_conn.cursor()
+            pulse_emit_comms_safety_event(
+                event_cur,
+                recipient_id,
+                "message_received",
+                "message",
+                message_id,
+                actor_user_id=sender_id,
+                target_url=deep_link,
+                title=title,
+                body=f"{actor_name}: {preview}",
+                category="messages",
+                extra={
+                    **metadata,
+                    "recipient_user_id": recipient_id,
+                    "sender_user_id": sender_id,
+                    "conversation_id": conversation_id,
+                    "message_id": message_id,
+                },
+            )
+            event_conn.commit()
+            event_conn.close()
+        except Exception as exc:
+            try:
+                if event_conn:
+                    event_conn.rollback()
+                    event_conn.close()
+            except Exception:
+                pass
+            logging.warning(
+                "PUSH_TRACE stage=message_received_sync_event_failed trace_id=%s recipient_id=%s message_id=%s error_type=%s",
+                trace_id,
+                recipient_id,
+                message_id,
+                exc.__class__.__name__,
+            )
         try:
             notification = notification_service.create_pulse_notification(
                 recipient_id,
@@ -41699,6 +41771,57 @@ def pulse_emit_payment_checkout_event(
             entity_id=str(tx_id),
             metadata={**metadata, "recipient_role": role},
         )
+
+
+def pulse_emit_comms_safety_event(
+    cur,
+    user_id,
+    event_type,
+    entity_type,
+    entity_id,
+    actor_user_id=0,
+    target_url="/pulse/activity",
+    title="PulseSoc update",
+    body="Open PulseSoc for the latest update.",
+    category="activity",
+    extra=None,
+):
+    user_id = int(user_id or 0)
+    if not user_id:
+        return
+    event_type = str(event_type or "pulse_event")[:80]
+    entity_type = str(entity_type or "event")[:80]
+    entity_id = str(entity_id or "")[:120]
+    category = str(category or "activity")[:80]
+    invalidates = ["activity", "notifications"]
+    if category == "messages" or "message" in event_type or "conversation" in event_type:
+        invalidates.append("messenger")
+    if category == "calls" or "call" in event_type or entity_type == "call":
+        invalidates.append("calls")
+    if category == "safety" or re.search(r"(safety|report|block|mute|appeal)", event_type):
+        invalidates.extend(["safety", "account_health"])
+    metadata = {
+        "domain": "communications" if category in {"messages", "calls"} else "safety",
+        "category": category,
+        "event_type": event_type,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "actor_id": int(actor_user_id or 0),
+        "invalidates": sorted(set(invalidates)),
+    }
+    metadata.update(dict(extra or {}))
+    notify_user(
+        cur,
+        user_id,
+        event_type,
+        title,
+        body,
+        target_url,
+        actor_user_id=actor_user_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        metadata=metadata,
+    )
 
 
 @webhook_app.route("/api/pulse/marketplace/seller/listings/<int:listing_id>", methods=["PATCH", "POST"])
@@ -74496,6 +74619,23 @@ def api_pulse_message_delete(message_id):
         return api_error("You cannot delete this message.", 403, trace_id)
     now = datetime.utcnow().isoformat(timespec="seconds")
     cur.execute("UPDATE pulse_messages SET deleted_at=?, status='deleted', delivery_status='deleted' WHERE id=?", (now, message_id))
+    cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
+    participant_ids = [int(dict(row).get("user_id") or 0) for row in cur.fetchall()]
+    for participant_id in sorted(set(participant_ids + [int(message.get("sender_user_id") or 0)])):
+        if participant_id:
+            pulse_emit_comms_safety_event(
+                cur,
+                participant_id,
+                "message_deleted",
+                "message",
+                message_id,
+                actor_user_id=user["user_id"],
+                target_url=f"/pulse/messages/{conversation_id}",
+                title="Message deleted",
+                body="A message was removed from a conversation.",
+                category="messages",
+                extra={"conversation_id": conversation_id, "message_id": message_id, "deleted_by_user_id": user["user_id"]},
+            )
     conn.commit(); conn.close()
     pulse_emit_event("pulse_message_deleted", {"message_id": message_id, "conversation_id": conversation_id}, user["user_id"], conversation_id)
     return jsonify({"ok": True, "message": "Message deleted.", "message_id": message_id})
@@ -74531,6 +74671,33 @@ def api_pulse_message_report(message_id):
             """,
             (user["user_id"], message_id, reason, json.dumps({"notes": notes, "conversation_id": conversation_id, "trace_id": trace_id})[:2000], now),
         )
+        report_id = int(cur.lastrowid or 0)
+        pulse_emit_comms_safety_event(
+            cur,
+            user["user_id"],
+            "message_reported",
+            "message_report",
+            report_id or message_id,
+            actor_user_id=user["user_id"],
+            target_url="/pulse/account-health",
+            title="Message report submitted",
+            body="Your message report was submitted for safety review.",
+            category="safety",
+            extra={"report_id": report_id, "message_id": message_id, "conversation_id": conversation_id, "reason": reason},
+        )
+        pulse_emit_comms_safety_event(
+            cur,
+            user["user_id"],
+            "report_submitted",
+            "report",
+            report_id or message_id,
+            actor_user_id=user["user_id"],
+            target_url="/pulse/account-health",
+            title="Report submitted",
+            body="Your report was submitted to PulseSoc safety review.",
+            category="safety",
+            extra={"report_id": report_id, "target_type": "message", "target_id": message_id, "reason": reason},
+        )
         conn.commit(); conn.close()
         log_product_event(user["user_id"], "pulse_message_reported", {"message_id": message_id, "conversation_id": conversation_id, "reason": reason, "trace_id": trace_id})
         return jsonify({"ok": True, "message": "Report submitted.", "trace_id": trace_id})
@@ -74560,6 +74727,23 @@ def api_pulse_messages_seen(conversation_id):
     if ids:
         placeholders = ",".join(["?"] * len(ids))
         cur.execute(f"UPDATE pulse_messages SET seen_at=?, delivery_status='seen' WHERE id IN ({placeholders}) AND sender_user_id!=?", [now, *ids, user["user_id"]])
+    cur.execute("SELECT DISTINCT sender_user_id FROM pulse_messages WHERE conversation_id=? AND sender_user_id!=? AND deleted_at IS NULL", (conversation_id, user["user_id"]))
+    sender_ids = [int(dict(row).get("sender_user_id") or 0) for row in cur.fetchall()]
+    for sender_id in sender_ids:
+        if sender_id:
+            pulse_emit_comms_safety_event(
+                cur,
+                sender_id,
+                "message_seen",
+                "conversation",
+                conversation_id,
+                actor_user_id=user["user_id"],
+                target_url=f"/pulse/messages/{conversation_id}",
+                title="Message seen",
+                body="A conversation message was marked seen.",
+                category="messages",
+                extra={"conversation_id": conversation_id, "seen_by_user_id": user["user_id"], "seen_count": len(ids), "last_read_message_id": last_message_id},
+            )
     conn.commit(); conn.close()
     pulse_emit_event("pulse_message_seen", {"conversation_id": conversation_id, "user_id": user["user_id"]}, user["user_id"], conversation_id)
     return jsonify({"ok": True, "message": "Seen.", "seen_count": len(ids), "last_read_message_id": last_message_id, "unread_count": 0})
@@ -76969,7 +77153,26 @@ def api_pulse_report():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
-    result = pulse_feed_engine.report(user["user_id"], payload.get("target_type") or "post", payload.get("target_id") or 0, payload.get("reason") or "reported")
+    target_type = clean_html(payload.get("target_type") or "post")[:80]
+    target_id = safe_int(payload.get("target_id"), 0)
+    reason = clean_html(payload.get("reason") or "reported")[:500]
+    result = pulse_feed_engine.report(user["user_id"], target_type, target_id, reason)
+    if result.get("ok"):
+        conn = db(); cur = conn.cursor()
+        pulse_emit_comms_safety_event(
+            cur,
+            user["user_id"],
+            "report_submitted",
+            "report",
+            f"{target_type}:{target_id}",
+            actor_user_id=user["user_id"],
+            target_url="/pulse/account-health",
+            title="Report submitted",
+            body="Your report was submitted to PulseSoc safety review.",
+            category="safety",
+            extra={"target_type": target_type, "target_id": target_id, "reason": reason},
+        )
+        conn.commit(); conn.close()
     log_product_event(user["user_id"], "pulse_report_created", {"target_type": payload.get("target_type"), "target_id": payload.get("target_id")})
     return jsonify(result)
 
@@ -77034,6 +77237,33 @@ def api_pulse_block_user():
             VALUES (?, 'user', ?, ?, ?, 'open', ?, ?)
             """,
             (int(user["user_id"]), blocked_user_id, reason or "Blocked abusive user", details, now, now),
+        )
+        report_id = int(cur.lastrowid or 0)
+        pulse_emit_comms_safety_event(
+            cur,
+            user["user_id"],
+            "user_blocked",
+            "user",
+            blocked_user_id,
+            actor_user_id=user["user_id"],
+            target_url="/pulse/safety",
+            title="User blocked",
+            body="This user was blocked and added to safety review.",
+            category="safety",
+            extra={"blocked_user_id": blocked_user_id, "report_id": report_id, "trace_id": trace_id},
+        )
+        pulse_emit_comms_safety_event(
+            cur,
+            user["user_id"],
+            "report_submitted",
+            "report",
+            report_id,
+            actor_user_id=user["user_id"],
+            target_url="/pulse/account-health",
+            title="Report submitted",
+            body="Your safety report was submitted for review.",
+            category="safety",
+            extra={"report_id": report_id, "target_type": "user", "target_id": blocked_user_id, "reason": reason, "trace_id": trace_id},
         )
         conn.commit()
         log_product_event(user["user_id"], "pulse_user_blocked", {"blocked_user_id": blocked_user_id, "trace_id": trace_id})
@@ -84230,6 +84460,19 @@ def api_messages_block():
         "INSERT INTO blocked_users (blocker_user_id, blocked_user_id, reason, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(blocker_user_id, blocked_user_id) DO UPDATE SET reason=excluded.reason",
         (user["user_id"], blocked_user_id, clean_html(payload.get("reason") or "")[:400], datetime.now().isoformat()),
     )
+    pulse_emit_comms_safety_event(
+        cur,
+        user["user_id"],
+        "user_blocked",
+        "user",
+        blocked_user_id,
+        actor_user_id=user["user_id"],
+        target_url="/pulse/safety",
+        title="User blocked",
+        body="This user was blocked from messaging.",
+        category="safety",
+        extra={"blocked_user_id": blocked_user_id, "source": "messages"},
+    )
     conn.commit()
     conn.close()
     return jsonify({"ok": True})
@@ -84261,6 +84504,33 @@ def api_messages_report():
             datetime.now().isoformat(),
             datetime.now().isoformat(),
         ),
+    )
+    report_id = int(cur.lastrowid or 0)
+    pulse_emit_comms_safety_event(
+        cur,
+        user["user_id"],
+        "message_reported",
+        "message_report",
+        report_id or int(payload.get("message_id") or 0),
+        actor_user_id=user["user_id"],
+        target_url="/pulse/account-health",
+        title="Message report submitted",
+        body="Your private chat report was submitted for safety review.",
+        category="safety",
+        extra={"report_id": report_id, "conversation_id": conversation_id, "message_id": int(payload.get("message_id") or 0), "reported_user_id": int(payload.get("reported_user_id") or 0)},
+    )
+    pulse_emit_comms_safety_event(
+        cur,
+        user["user_id"],
+        "report_submitted",
+        "report",
+        report_id,
+        actor_user_id=user["user_id"],
+        target_url="/pulse/account-health",
+        title="Report submitted",
+        body="Your safety report was submitted for review.",
+        category="safety",
+        extra={"report_id": report_id, "target_type": "message", "target_id": int(payload.get("message_id") or 0), "conversation_id": conversation_id},
     )
     conn.commit()
     conn.close()

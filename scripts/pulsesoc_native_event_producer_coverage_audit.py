@@ -110,7 +110,16 @@ def route_block(source: str, route_token: str) -> str:
 
 
 def mutation_has_event(block: str) -> bool:
-    return any(token in block for token in ["notify_user(", "create_pulse_notification", "notify_crypto_alert", "pulse_emit_event(", "pulse_emit_marketplace_inventory_event(", "pulse_emit_payment_checkout_event(", "notification_service.send_user_alert"])
+    return any(token in block for token in [
+        "notify_user(",
+        "create_pulse_notification",
+        "notify_crypto_alert",
+        "pulse_emit_event(",
+        "pulse_emit_marketplace_inventory_event(",
+        "pulse_emit_payment_checkout_event(",
+        "pulse_emit_comms_safety_event(",
+        "notification_service.send_user_alert",
+    ])
 
 
 def main() -> int:
@@ -122,6 +131,7 @@ def main() -> int:
     pulse_notifications = read("services/pulsesoc_notification_system.py")
     alert_engine = read("services/alert_engine.py")
     feed_engine = read("services/pulse_feed_engine.py")
+    call_engine = read("services/pulsesoc_communications_engine.py")
     event_sync = read("mobile-native/src/core/eventSync.ts")
     report = read("reports/pulsesoc_native_event_producer_coverage_audit.md")
     progress = read("reports/pulsesoc_native_progress.md")
@@ -156,6 +166,7 @@ def main() -> int:
         "pulsesoc_notification_system": pulse_notifications,
         "alert_engine": alert_engine,
         "pulse_feed_engine": feed_engine,
+        "pulsesoc_communications_engine": call_engine,
         "bot": bot_source,
     }
     producer_tokens = {
@@ -163,8 +174,8 @@ def main() -> int:
         "orders": ["seller_transactions", "creator_transactions"],
         "payments": ["stripe.checkout", "checkout_completed", "charge.refunded", "charge.dispute.created"],
         "messaging": ["pulse_messages", "pulse_emit_event", "notify_new_message"],
-        "calls": ["notify_missed_call", "call_started", "call_ended"],
-        "safety": ["pulse_reports", "block", "mute", "appeal"],
+        "calls": ["notify_missed_call", "_emit_call_sync_event", "call_started", "call_ended"],
+        "safety": ["pulse_reports", "pulse_emit_comms_safety_event", "block", "mute", "appeal"],
         "verification": ["verification", "teacher_review", "identity"],
         "alerts": ["alert_events", "notify_crypto_alert", "dispatch_alert_event"],
         "notifications": ["pulse_notifications", "create_pulse_notification", "notify_user"],
@@ -202,6 +213,8 @@ def main() -> int:
     require("checkout" not in silent_routes, "checkout should now emit cursor-visible payment events", failures)
     require("pulse_emit_marketplace_inventory_event" in bot_source, "seller inventory event helper missing after hardening", failures)
     require("pulse_emit_payment_checkout_event" in bot_source, "payment checkout event helper missing after hardening", failures)
+    require("pulse_emit_comms_safety_event" in bot_source, "communications/safety event helper missing after hardening", failures)
+    require("_emit_call_sync_event" in call_engine, "call sync event helper missing after hardening", failures)
 
     for token in [
         "Event Producer Mapping Audit",

@@ -693,6 +693,108 @@ def _event(cur: Any, call_id: int, user_id: int, event_type: str, payload: dict[
     )
 
 
+def _call_participant_user_ids(cur: Any, call_id: int) -> list[int]:
+    cur.execute("SELECT user_id FROM communication_call_participants WHERE call_id=? ORDER BY id ASC", (int(call_id),))
+    ids = []
+    for row in cur.fetchall():
+        item = _row(row)
+        user_id = int(item.get("user_id") or 0)
+        if user_id:
+            ids.append(user_id)
+    return sorted(set(ids))
+
+
+def _emit_call_sync_event(
+    cur: Any,
+    call: dict[str, Any],
+    event_type: str,
+    actor_user_id: int = 0,
+    recipient_user_ids: list[int] | tuple[int, ...] | None = None,
+    status: str = "",
+    reason: str = "",
+    extra: dict[str, Any] | None = None,
+) -> None:
+    call = dict(call or {})
+    call_id = int(call.get("id") or 0)
+    public_id = str(call.get("public_id") or call_id or "")
+    if not call_id:
+        return
+    recipients = list(recipient_user_ids or _call_participant_user_ids(cur, call_id))
+    event_type = str(event_type or "call_updated")[:80]
+    now = _now()
+    conversation_id = int(call.get("conversation_id") or 0)
+    target_url = f"/pulse/calls/{public_id}" if public_id else f"/pulse/messages/{conversation_id}?tab=calls"
+    metadata = {
+        "domain": "communications",
+        "category": "calls",
+        "event_type": event_type,
+        "entity_type": "call",
+        "entity_id": public_id,
+        "actor_id": int(actor_user_id or 0),
+        "timestamp": now,
+        "sync_cursor_key": f"{event_type}:call:{public_id}:{now}",
+        "call_id": public_id,
+        "internal_call_id": call_id,
+        "conversation_id": conversation_id,
+        "call_type": str(call.get("call_type") or "audio")[:40],
+        "status": str(status or call.get("status") or "")[:80],
+        "reason": str(reason or call.get("end_reason") or "")[:120],
+        "invalidates": ["activity", "notifications", "calls", "messenger"],
+    }
+    metadata.update(dict(extra or {}))
+    titles = {
+        "call_started": "Call started",
+        "call_accepted": "Call accepted",
+        "call_declined": "Call declined",
+        "call_ended": "Call ended",
+        "call_missed": "Call missed",
+        "call_failed": "Call failed",
+    }
+    bodies = {
+        "call_started": "A PulseSoc call started.",
+        "call_accepted": "A PulseSoc call was accepted.",
+        "call_declined": "A PulseSoc call was declined.",
+        "call_ended": "A PulseSoc call ended.",
+        "call_missed": "A PulseSoc call was missed.",
+        "call_failed": "A PulseSoc call failed.",
+    }
+    for recipient_id in recipients:
+        if not recipient_id:
+            continue
+        try:
+            cur.execute(
+                """
+                INSERT INTO pulse_notifications
+                (user_id, actor_user_id, type, title, body, entity_type, entity_id, deep_link, target_url,
+                 is_read, delivery_status, metadata_json, created_at)
+                VALUES (?, ?, ?, ?, ?, 'call', ?, ?, ?, 0, 'created', ?, ?)
+                """,
+                (
+                    int(recipient_id),
+                    int(actor_user_id or 0),
+                    event_type,
+                    titles.get(event_type, "Call updated"),
+                    bodies.get(event_type, "PulseSoc call state changed."),
+                    public_id,
+                    target_url,
+                    target_url,
+                    _json_dumps({**metadata, "recipient_user_id": int(recipient_id)}),
+                    now,
+                ),
+            )
+            notification_id = int(getattr(cur, "lastrowid", 0) or 0)
+            cur.execute(
+                """
+                INSERT INTO pulse_notification_deliveries
+                (notification_id, user_id, channel, provider, status, created_at, sent_at)
+                VALUES (?, ?, 'in_app', 'pulse', 'created', ?, ?)
+                """,
+                (notification_id, int(recipient_id), now, now),
+            )
+        except Exception as exc:
+            logging.debug("PULSESOC_CALL_SYNC_EVENT_SKIPPED call_id=%s type=%s recipient=%s error=%s", call_id, event_type, recipient_id, exc.__class__.__name__)
+
+
 def _recipient_online_state(cur: Any, user_id: int) -> dict[str, Any]:
     """Best-effort recipient availability used only for call diagnostics."""
     now = _now()
@@ -826,6 +928,7 @@ def _mark_missed_stale_calls_cur(cur: Any, timeout_seconds: int = 45) -> int:
         caller_name = comm_service._user_summary(cur, int(call.get("created_by_user_id") or 0)).get("display_name") or "Someone"
         for recipient_id in recipients:
             _notify_missed_call(cur, call, int(call.get("created_by_user_id") or 0), recipient_id, caller_name)
+        _emit_call_sync_event(cur, _get_call(cur, call.get("public_id") or call.get("id") or ""), "call_missed", int(call.get("created_by_user_id") or 0), [int(call.get("created_by_user_id") or 0), *recipients], status="missed", reason="ring_timeout")
         updated += 1
     return updated
 
@@ -1044,6 +1147,7 @@ def start_call(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         _event(cur, call_id, int(user_id), "ringing_started", {"recipient_user_ids": recipient_ids})
         cur.execute("SELECT * FROM communication_calls WHERE id=? LIMIT 1", (call_id,))
         call = _row(cur.fetchone())
+        _emit_call_sync_event(cur, call, "call_started", int(user_id), [int(user_id), *recipient_ids], status="ringing")
         serialized = _serialize_call(cur, call, int(user_id), include_token=True)
         join = serialized.get("join") if isinstance(serialized.get("join"), dict) else {}
         if not join.get("ok") or not join.get("token") or not join.get("livekit_url"):
@@ -1059,6 +1163,7 @@ def start_call(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                 },
             )
             _transition(cur, call, "failed", int(user_id), "livekit_token_failed")
+            _emit_call_sync_event(cur, _get_call(cur, public_id), "call_failed", int(user_id), [int(user_id), *recipient_ids], status="failed", reason="livekit_token_failed")
             conn.commit()
             return _err(
                 "Call token could not be generated.",
@@ -1130,6 +1235,7 @@ def accept_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | Non
             return transition
         _event(cur, int(call["id"]), int(user_id), "accepted", {})
         refreshed = _get_call(cur, call_ref)
+        _emit_call_sync_event(cur, refreshed, "call_accepted", int(user_id), status="accepted")
         token = _generate_livekit_token(refreshed.get("room_name") or "", int(user_id), refreshed.get("call_type") or "audio")
         if not token.get("ok"):
             return token
@@ -1185,6 +1291,7 @@ def decline_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | No
         active = int(_row(cur.fetchone()).get("active") or 0)
         if active <= 1:
             _transition(cur, call, "declined", int(user_id), "declined")
+        _emit_call_sync_event(cur, _get_call(cur, call_ref), "call_declined", int(user_id), status="declined")
         conn.commit()
         return _ok({"call": _serialize_call(cur, _get_call(cur, call_ref), int(user_id))})
     except Exception:
@@ -1207,6 +1314,7 @@ def end_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | None =
         active = int(_row(cur.fetchone()).get("active") or 0)
         if active == 0 or int(call.get("created_by_user_id") or 0) == int(user_id):
             _transition(cur, call, "ended", int(user_id), (payload or {}).get("reason") or "ended_by_participant")
+        _emit_call_sync_event(cur, _get_call(cur, call_ref), "call_ended", int(user_id), status="ended", reason=(payload or {}).get("reason") or "ended_by_participant")
         conn.commit()
         return _ok({"call": _serialize_call(cur, _get_call(cur, call_ref), int(user_id))})
     except Exception:
