@@ -40,6 +40,7 @@ import { SettingsScreen } from "../screens/SettingsScreen";
 import { StatusScreen } from "../screens/StatusScreen";
 import { TrustSafetyScreen } from "../screens/TrustSafetyScreen";
 import { VerificationCenterScreen } from "../screens/VerificationCenterScreen";
+import { UserDashboardScreen } from "../screens/UserDashboardScreen";
 import { ChatScreen } from "../screens/ChatScreen";
 import { colors } from "../theme/colors";
 import { AppTabParamList, RootStackParamList } from "./types";
@@ -96,6 +97,7 @@ function TabNavigator() {
         tabBarInactiveTintColor: colors.muted
       }}
     >
+      <Tabs.Screen name="Dashboard" component={UserDashboardScreen} options={{ title: "Dashboard" }} />
       <Tabs.Screen name="Home" component={HomeScreen} />
       <Tabs.Screen name="Search" component={SearchScreen} />
       <Tabs.Screen name="Saved" component={SavedScreen} />
@@ -123,6 +125,8 @@ export function AppNavigator() {
       }}
     >
       <Stack.Screen name="Tabs" component={TabNavigator} options={{ headerShown: false }} />
+      <Stack.Screen name="UserDashboard" component={UserDashboardScreen} options={{ title: "Dashboard" }} />
+      <Stack.Screen name="UserDashboardWeb" component={UserDashboardScreen} options={{ title: "Dashboard" }} />
       <Stack.Screen name="CameraStudio" component={CameraStudioScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Call" component={CallScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Chat" component={ChatScreen} options={({ route }) => ({ title: route.params.title || "Chat" })} />

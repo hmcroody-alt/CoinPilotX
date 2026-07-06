@@ -3810,3 +3810,69 @@ Reason for recommendation:
 - The app is now broad and visible enough for owner review.
 - Event producer coverage is high enough that the next highest-value step is repeatable release-grade validation, not another native surface.
 - A persistent staging fixture pack would make browser, simulator, iPhone, provider, and multi-session event replay QA deterministic across every future run.
+
+## Native User Dashboard Completion
+
+Important roadmap rule:
+
+- Do not focus on Android right now.
+- Do not touch production WebView paths.
+- Use the built-in QA browser visibly for dashboard review.
+- Keep dashboard logic server-authoritative and reuse existing PulseSoc APIs.
+
+Completed action: built the native User Dashboard foundation.
+
+What changed:
+
+- Created `mobile-native/src/api/dashboard.ts`.
+- Created `mobile-native/src/screens/UserDashboardScreen.tsx`.
+- Registered the Dashboard tab in `mobile-native/src/navigation/AppNavigator.tsx`.
+- Added `/dashboard` and `/pulse/dashboard` native route handling.
+- Added notification/deep-link routing for dashboard home links.
+- Created `reports/pulsesoc_native_user_dashboard_progress.md`.
+- Created `reports/pulsesoc_native_visible_dashboard_qa.md`.
+- Created `scripts/pulsesoc_native_user_dashboard_audit.py`.
+
+User Dashboard completion: 78%.
+
+Fully native dashboard modules:
+
+- dashboard home/overview
+- profile/identity summary
+- account status
+- notifications/activity summary
+- messages/calls summary
+- posts/status/reels summary gateway
+- marketplace/seller/buyer summary
+- premium/verification/security/trust summary
+- creator/growth/intelligence summary
+- quick actions
+- recent activity
+- dashboard cards
+- navigation to existing native modules
+
+Dashboard modules still fallback to web:
+
+- advanced payment provider checkout and billing pages
+- advanced marketplace payout/provider setup
+- advanced campaign launch tools
+- advanced creator studio and Live Studio tools
+- sensitive account deletion/password/provider workflows
+- physical camera/microphone and provider push behavior
+
+Visible QA status:
+
+- Built-in QA browser used visibly.
+- Chrome Incognito not used.
+- Dashboard tab, `/pulse/dashboard`, and `/dashboard` were prepared for visible review.
+- Roody visibly saw the signed-in native dashboard, full dashboard scroll, Seller Store action, Intelligence action, and Camera Studio browser fallback.
+- QA tooling note: direct Expo web on `localhost:8095` rendered reliably; the `localhost:8094` same-origin proxy served API but did not mount the Expo root reliably in the in-app browser.
+
+Current native migration percentage: 90% foundation/parity coverage, 91% system consistency confidence, 67% release QA confidence.
+
+Recommended next native feature/action: Persistent Dashboard QA Fixture Pack.
+
+Reason for recommendation:
+
+- The dashboard is now native and route-complete, but repeatable visual review still depends on temporary local QA data.
+- Persistent dashboard fixtures would make owner review, release QA, provider boundary checks, and system consistency validation much faster and more reliable.

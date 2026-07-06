@@ -7,6 +7,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
     screens: {
       Tabs: {
         screens: {
+          Dashboard: "pulse/dashboard",
           Home: "pulse",
           Search: "pulse/search",
           Saved: "pulse/saved",
@@ -22,6 +23,8 @@ export const linking: LinkingOptions<RootStackParamList> = {
           Settings: "pulse/settings"
         }
       },
+      UserDashboard: "dashboard",
+      UserDashboardWeb: "dashboard/home",
       CameraStudio: {
         path: "pulse/camera/:mode?",
         parse: {

@@ -6,6 +6,7 @@ export type AuthStackParamList = {
 };
 
 export type AppTabParamList = {
+  Dashboard: undefined;
   Home: { openComposer?: boolean } | undefined;
   Search: { query?: string } | undefined;
   Saved: undefined;
@@ -23,6 +24,8 @@ export type AppTabParamList = {
 
 export type RootStackParamList = {
   Tabs: NavigatorScreenParams<AppTabParamList> | undefined;
+  UserDashboard: { title?: string } | undefined;
+  UserDashboardWeb: { title?: string } | undefined;
   CameraStudio: {
     target?: "feed" | "post" | "status" | "reel" | "message" | "avatar" | "cover" | "creator" | "marketplace";
     mode?: "photo" | "video" | "status" | "reel";
