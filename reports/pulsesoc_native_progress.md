@@ -3186,3 +3186,43 @@ Reason for recommendation:
 - Owner testing can now happen in parallel on a real iPhone.
 - The biggest architecture gap remains production-confirmed delta replay for the polling-first native sync layer.
 - Another UI feature would add more state surfaces; a server-authoritative event cursor makes existing native features more coherent across Activity, Orders, Seller Store, Marketplace, Messenger, Calls, Safety, Verification, Alerts, and Intelligence.
+
+## Native Autonomous Priority System
+
+Completed action: added the first autonomous progress dashboard and implemented the auto-selected highest-value stability improvement.
+
+Auto-detected weakest subsystem: Event Sync / Real-time consistency.
+
+What changed:
+
+- Created `reports/pulsesoc_native_autonomous_progress.md` with the required PulseSoc system dashboard, subsystem health table, weakest-system explanation, fixed-this-run summary, next auto-selected action, and system health score.
+- Created `scripts/pulsesoc_native_autonomous_priority_audit.py` to verify the autonomous dashboard and the native/backend sync contract.
+- Added authenticated `GET /api/pulse/sync/events`, a polling-first server event cursor endpoint sourced from existing `pulse_notifications` rows.
+- The endpoint supports `after_id`, `after`, and bounded `limit`; returns native-compatible `events`, `cursor`, `latest_event_id`, `latestEventId`, `last_event_at`, and `lastEventAt`; and includes deterministic invalidation hints for native subsystems.
+- The endpoint sanitizes sensitive metadata keys before returning event metadata and keeps production auth, WebView routes, notification delivery, payment, marketplace, and business logic unchanged.
+
+Updated subsystem completion:
+
+| Subsystem | Completion | Health | Remaining gap |
+| --- | ---: | ---: | --- |
+| Marketplace | 92% | 88% | Listing/moderation event replay QA |
+| Seller System | 93% | 89% | Seeded seller inventory event replay QA |
+| Buyer Orders | 92% | 88% | Seeded payment/refund cursor QA |
+| Activity Inbox | 89% | 86% | Event cursor replay and provider/device push QA |
+| Messaging | 77% | 74% | Shared message event handler pass |
+| Calls | 65% | 66% | Active-call event bridge and two-device LiveKit QA |
+| Notifications | 89% | 87% | Provider/device push QA |
+| Event Sync | 82% | 81% | Seeded replay QA and handler expansion |
+| Trust/Safety | 85% | 83% | Enforcement/report/appeal event QA |
+| Verification | 85% | 83% | Admin/provider review event QA |
+| Media/Capture | 74% | 72% | Physical capture/upload evidence |
+| Creator Tools | 82% | 79% | Advanced fallback/provider hardening |
+
+Overall native migration percentage: 85% foundation/parity coverage, 77% system consistency confidence, 64% release QA confidence.
+
+Recommended next auto-selected action: Seeded Event Cursor QA Hardening.
+
+Reason for recommendation:
+
+- The server-authoritative cursor contract now exists, so the next weakest gap is proving cursor advancement, duplicate suppression, and invalidation behavior under seeded order, listing, message, call, safety, verification, alert, and intelligence events.
+- This is the fastest way to raise system-wide consistency without adding another product surface.

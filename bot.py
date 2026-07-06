@@ -27058,6 +27058,180 @@ def api_pulse_notifications():
     return response
 
 
+def _pulse_native_sync_invalidates(note_type="", entity_type="", target_url="", metadata=None):
+    metadata = metadata or {}
+    explicit = metadata.get("invalidates") or metadata.get("invalidate") or []
+    allowed = {
+        "activity",
+        "notifications",
+        "orders",
+        "marketplace",
+        "seller_inventory",
+        "messenger",
+        "calls",
+        "safety",
+        "verification",
+        "premium",
+        "intelligence",
+    }
+    if isinstance(explicit, str):
+        explicit = [part.strip() for part in explicit.split(",") if part.strip()]
+    explicit = [str(item or "").strip() for item in explicit if str(item or "").strip()]
+    direct = [item for item in explicit if item in allowed]
+    if direct:
+        return sorted(set(direct))
+
+    haystack = " ".join(
+        str(item or "")
+        for item in (
+            note_type,
+            entity_type,
+            target_url,
+            metadata.get("type"),
+            metadata.get("category"),
+            metadata.get("domain"),
+            metadata.get("deepLink"),
+            metadata.get("deep_link"),
+        )
+    ).lower()
+    result = set()
+    if re.search(r"(order|purchase|payment|checkout|refund|dispute|receipt|shipping)", haystack):
+        result.update(("orders", "activity", "notifications"))
+    if re.search(r"(listing|marketplace|seller|merchant|inventory|product|storefront)", haystack):
+        result.update(("marketplace", "seller_inventory", "activity"))
+    if re.search(r"(message|conversation|chat|thread)", haystack):
+        result.update(("messenger", "activity"))
+    if re.search(r"(call|ring|missed|decline|answer)", haystack):
+        result.update(("calls", "activity", "notifications"))
+    if re.search(r"(notification|badge|inbox|activity)", haystack):
+        result.update(("activity", "notifications"))
+    if re.search(r"(safety|report|block|mute|appeal|enforcement|strike)", haystack):
+        result.update(("safety", "activity", "notifications"))
+    if re.search(r"(verification|badge|identity|kyc)", haystack):
+        result.update(("verification", "activity", "notifications"))
+    if re.search(r"(premium|subscription|entitlement|founder)", haystack):
+        result.update(("premium", "activity", "notifications"))
+    if re.search(r"(alert|intelligence|crypto|market)", haystack):
+        result.update(("intelligence", "activity", "notifications"))
+    return sorted(result or {"activity", "notifications"})
+
+
+def _pulse_native_sync_safe_metadata(raw_metadata):
+    try:
+        metadata = json.loads(raw_metadata or "{}")
+    except Exception:
+        metadata = {}
+    if not isinstance(metadata, dict):
+        return {}
+    blocked_fragments = ("password", "secret", "token", "key", "credential")
+    return {
+        str(key): value
+        for key, value in metadata.items()
+        if not any(fragment in str(key).lower() for fragment in blocked_fragments)
+    }
+
+
+@webhook_app.route("/api/pulse/sync/events", methods=["GET"])
+def api_pulse_native_sync_events():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required.", "events": []})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+
+    user_id = int(user["user_id"])
+    after_id = max(0, safe_int(request.args.get("after_id"), 0))
+    after_at = (request.args.get("after") or "").strip()
+    limit = min(max(safe_int(request.args.get("limit"), 100), 1), 100)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    try:
+        params = [user_id]
+        where = "user_id=?"
+        if after_id:
+            where += " AND id>?"
+            params.append(after_id)
+            order = "ASC"
+        elif after_at:
+            where += " AND created_at>?"
+            params.append(after_at)
+            order = "ASC"
+        else:
+            order = "DESC"
+        params.append(limit)
+        cur.execute(
+            f"""
+            SELECT id, user_id, actor_user_id, type, title, body, entity_type, entity_id,
+                   deep_link, target_url, is_read, read_at, delivery_status, metadata_json, created_at
+            FROM pulse_notifications
+            WHERE {where}
+            ORDER BY id {order}
+            LIMIT ?
+            """,
+            tuple(params),
+        )
+        rows = list(cur.fetchall())
+        if order == "DESC":
+            rows.reverse()
+        cur.execute("SELECT COALESCE(MAX(id), 0) AS latest_id FROM pulse_notifications WHERE user_id=?", (user_id,))
+        latest_row = cur.fetchone()
+        latest_event_id = int((latest_row["latest_id"] if latest_row and hasattr(latest_row, "keys") else 0) or 0)
+    finally:
+        conn.close()
+
+    events = []
+    last_event_at = after_at or None
+    for row in rows:
+        metadata = _pulse_native_sync_safe_metadata(row["metadata_json"])
+        deep_link = row["deep_link"] or row["target_url"] or metadata.get("deepLink") or metadata.get("deep_link") or "/pulse"
+        event_id = int(row["id"] or 0)
+        last_event_at = row["created_at"] or last_event_at
+        events.append({
+            "id": str(event_id),
+            "event_id": str(event_id),
+            "event_type": row["type"] or "notification",
+            "type": row["type"] or "notification",
+            "domain": metadata.get("domain") or "notifications",
+            "category": metadata.get("category") or row["type"] or "notification",
+            "entity_type": row["entity_type"] or metadata.get("entity_type") or "",
+            "entity_id": row["entity_id"] or metadata.get("entity_id") or "",
+            "target_url": row["target_url"] or deep_link,
+            "deep_link": deep_link,
+            "created_at": row["created_at"],
+            "updated_at": row["read_at"] or row["created_at"],
+            "invalidate": _pulse_native_sync_invalidates(row["type"], row["entity_type"], deep_link, metadata),
+            "metadata": {
+                **metadata,
+                "notification_id": event_id,
+                "delivery_status": row["delivery_status"] or "created",
+                "is_read": bool(row["is_read"] or 0),
+            },
+        })
+
+    cursor = {
+        "latestEventId": str(latest_event_id or after_id or ""),
+        "lastEventAt": last_event_at,
+        "lastSyncedAt": now,
+    }
+    response = jsonify({
+        "ok": True,
+        "events": events,
+        "cursor": cursor,
+        "latest_event_id": cursor["latestEventId"],
+        "latestEventId": cursor["latestEventId"],
+        "last_event_at": last_event_at,
+        "lastEventAt": last_event_at,
+        "server_time": now,
+        "limit": limit,
+        "source": "pulse_notifications",
+    })
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 @webhook_app.route("/api/pulse/notifications/unread-count", methods=["GET"])
 def api_pulse_notifications_unread_count():
     init_db()
