@@ -3674,3 +3674,81 @@ Reason for recommendation:
 
 - Event emission coverage is now high enough that the next risk is deterministic convergence across multiple devices and reconnect/replay scenarios.
 - This is the highest-value production-readiness improvement before broader realtime streaming or release-candidate QA.
+
+## Visible QA Browser Walkthrough
+
+Important roadmap rule:
+
+- Do not focus on Android right now.
+- Use the built-in QA browser for visible web QA.
+- Do not use Chrome Incognito.
+- Do not claim device-only behavior from browser evidence.
+
+Completed action: ran a signed-in visible QA browser walkthrough using the built-in QA browser.
+
+What changed:
+
+- Created `reports/pulsesoc_native_visible_qa_walkthrough.md`.
+- Captured screenshots and route-by-route results under `reports/screenshots/native-visible-qa-2026-07-06/`.
+- Established a runtime-only same-origin local QA stack so authenticated screens could be shown without weakening production auth.
+
+What Roody saw live:
+
+- Login/Auth
+- Home
+- Search
+- Saved
+- Groups
+- Live
+- Reels
+- Status
+- Messenger
+- Activity Inbox
+- Pulse AI
+- Profile
+- Marketplace
+- Settings
+- Calls
+- Full-screen Incoming Calls fixture route
+- Seller Store
+- Seller Listing Composer
+- Seller Inventory
+- Buyer Orders
+- Premium
+- Creator Studio
+- Growth Center
+- Intelligence
+- Alert Management
+- Trust/Safety
+- Verification Center
+- Account Health
+- Safety Hub
+- Courses
+- Camera Studio
+
+Visible walkthrough coverage:
+
+- Visible signed-in screens checked: 30.
+- Screens opened by app UI tab click: 13.
+- Screens opened by authenticated deep route: 17.
+- Auth gates during signed-in walkthrough: 0.
+- Blank screens: 0.
+- Navigation errors: 0.
+
+Still blocked or not verified:
+
+- Physical APNs/FCM delivery and lock-screen notifications.
+- Real camera/microphone capture.
+- Native installed-app deep links.
+- Real LiveKit two-device media calls.
+- Production-scale event pressure.
+- Real payment provider completion on physical devices.
+
+Overall native migration percentage: 89% foundation/parity coverage, 90% system consistency confidence, 66% release QA confidence.
+
+Recommended next native feature/action: Real-time cursor replay and multi-device ordering validation.
+
+Reason for recommendation:
+
+- The visible app shell is broad enough for owner review.
+- The highest production-readiness risk is no longer route visibility; it is deterministic event replay and convergence across multiple sessions/devices.
