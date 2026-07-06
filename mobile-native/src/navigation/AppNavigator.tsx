@@ -4,6 +4,7 @@ import * as Notifications from "expo-notifications";
 import { useCallback, useEffect, useState } from "react";
 import { AppState } from "react-native";
 import { getNotificationBadgeCounts, unreadCount } from "../api/notifications";
+import { invalidateNativeSync, registerSyncInvalidation, startNativeEventSync } from "../core/eventSync";
 import { AccountCenterScreen } from "../screens/AccountCenterScreen";
 import { AccountHealthAppealsScreen } from "../screens/AccountHealthAppealsScreen";
 import { ActivityInboxScreen } from "../screens/ActivityInboxScreen";
@@ -62,13 +63,24 @@ function TabNavigator() {
 
   useEffect(() => {
     refreshBadges().catch(() => undefined);
+    const refreshBadgeSync = () => refreshBadges();
+    const unregisterNotifications = registerSyncInvalidation("notifications", refreshBadgeSync);
+    const unregisterActivity = registerSyncInvalidation("activity", refreshBadgeSync);
+    const stopSync = startNativeEventSync({
+      fullResyncOnStart: true,
+      subsystems: ["activity", "notifications", "orders", "marketplace", "seller_inventory"]
+    });
     const appState = AppState.addEventListener("change", (state) => {
       if (state === "active") refreshBadges().catch(() => undefined);
     });
     const received = Notifications.addNotificationReceivedListener(() => {
+      invalidateNativeSync(["notifications", "activity"], "notification_received").catch(() => undefined);
       refreshBadges().catch(() => undefined);
     });
     return () => {
+      unregisterNotifications();
+      unregisterActivity();
+      stopSync();
       appState.remove();
       received.remove();
     };

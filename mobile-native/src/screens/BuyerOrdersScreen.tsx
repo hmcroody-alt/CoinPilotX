@@ -12,6 +12,7 @@ import {
   supportOrderWebUrl
 } from "../api/orders";
 import { Panel } from "../components/Panel";
+import { registerSyncInvalidation } from "../core/eventSync";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 
@@ -72,6 +73,11 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     load().catch(() => undefined);
+  }, [orderId, source]);
+
+  useEffect(() => {
+    const unregisterOrders = registerSyncInvalidation("orders", () => load(orderId, source, true));
+    return unregisterOrders;
   }, [orderId, source]);
 
   function openOrder(order: BuyerOrder) {

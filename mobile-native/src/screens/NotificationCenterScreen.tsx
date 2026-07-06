@@ -12,6 +12,7 @@ import {
   resolveNotificationTarget,
   unreadCount
 } from "../api/notifications";
+import { registerSyncInvalidation } from "../core/eventSync";
 import { RootStackParamList } from "../navigation/types";
 import { routeNotificationTarget } from "../navigation/notificationRouting";
 import { colors } from "../theme/colors";
@@ -93,6 +94,11 @@ export function NotificationCenterScreen() {
       if (state === "active") load({ refresh: true }).catch(() => undefined);
     });
     return () => subscription.remove();
+  }, [load]);
+
+  useEffect(() => {
+    const unregisterNotifications = registerSyncInvalidation("notifications", () => load({ refresh: true }));
+    return unregisterNotifications;
   }, [load]);
 
   return (

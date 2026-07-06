@@ -3034,3 +3034,93 @@ Safest implementation plan:
 4. Wire first to Activity Inbox, badge counts, Buyer Orders, Seller Store, Marketplace, Messenger, and Calls.
 5. Add seeded event replay/idempotency audits.
 6. Keep WebSocket/SSE, APNs/FCM timing, and cross-device behavior as release hardening tasks after the polling-first layer passes.
+
+## Native Event Sync Foundation
+
+Completed action: built the polling-first native event sync foundation with persistent cursor tracking and centralized cache invalidation.
+
+What is synchronized correctly now:
+
+- Activity Inbox and notification badge counts can be invalidated from the shared native sync registry.
+- Buyer Orders refreshes from server-authoritative order/payment state when order-related events invalidate.
+- Marketplace listing search/detail state refreshes when listing/marketplace events invalidate.
+- Seller Store / Seller Inventory refreshes when seller inventory, marketplace, or order events invalidate.
+- Foreground notifications invalidate Activity + Notifications in addition to the existing badge refresh.
+- App foreground/startup can trigger a safe polling-first refresh path.
+
+What still relies on stale local state:
+
+- Messenger and Calls are mapped in the invalidation classifier but are not yet wired to screen-level event handlers.
+- Safety, Verification, Premium, Intelligence, and Alerts are mapped for event classification but still rely on their existing per-screen refresh/cache behavior.
+- Full delta replay depends on a production-confirmed `/api/pulse/sync/events` or equivalent authenticated event feed.
+
+What can still break under concurrent updates:
+
+- Two-device seller inventory edits can briefly show stale inventory until event polling or foreground refresh runs.
+- Buyer Orders and Activity can still disagree temporarily if payment/provider events arrive before the native delta endpoint exposes them.
+- Marketplace moderation/listing state can remain cached if the backend does not emit or expose a sync event.
+- Activity Inbox can still lag behind Messenger/Calls until those screen handlers are connected to the shared registry.
+
+What is missing for true real-time readiness:
+
+- Confirmed backend event replay contract with stable event IDs and cursor semantics.
+- Seeded event QA for order, payment, refund, listing, notification, message, and call events.
+- Messenger/Calls/Safety/Verification/Alerts/Intelligence handler wiring after seeded sync behavior is proven.
+- Later WebSocket/SSE layer after polling-first sync proves stable.
+- Physical APNs/FCM/cross-device provider timing QA.
+
+Updated subsystem completion:
+
+| Subsystem | Current estimate | Sync coverage | Remaining gap |
+| --- | ---: | ---: | --- |
+| Activity + Notifications | 88% | 83% | Seeded event replay and provider/device push QA |
+| Buyer Orders | 92% | 82% | Seeded order/payment/refund event QA |
+| Seller Inventory | 93% | 82% | Seeded listing/order invalidation QA |
+| Marketplace | 92% | 80% | Listing moderation/media-change event QA |
+| Messenger | 76% | 66% | Shared conversation/message handler wiring |
+| Calls | 63% | 60% | Active-call event bridge and two-device release QA |
+| Safety/Trust | 84% | 73% | Enforcement/report/appeal handler wiring |
+| Verification | 84% | 73% | Review/badge handler wiring |
+| Intelligence/Alerts | 80% | 70% | Alert/intelligence handler wiring and provider QA |
+| Native media/camera | 72% | 60% | Physical-device upload/camera release QA |
+| Android readiness | 35% | 30% | Physical Android QA |
+
+Overall native migration percentage: 83% foundation/parity coverage, 70% release QA confidence.
+
+Recommended next highest-value action: Native Event Sync QA Hardening.
+
+Reason for recommendation:
+
+- The polling/cursor/invalidation layer now exists, but seeded backend events should verify that Activity Inbox, Buyer Orders, Seller Store, Marketplace, and Notifications refresh deterministically without duplicates.
+- This is a practical hardening step, not a full realtime/WebSocket build.
+- Once seeded event behavior is proven, the next safest expansion is wiring Messenger and Calls into the same registry.
+
+Reusable APIs/code/database/business logic:
+
+- existing Activity Inbox and notification APIs.
+- existing Buyer Orders, Seller Orders, Marketplace listing, and Seller Inventory APIs.
+- existing server-side payment/provider state and idempotency logic.
+- existing native cache helpers and screen refresh callbacks.
+
+What must be rebuilt natively next:
+
+- Seeded event replay QA harness or audit checks.
+- Practical QA route checks for Activity Inbox, Orders, Marketplace, and Seller Store after synthetic/seeded state changes.
+- Optional handler wiring for Messenger/Calls only after event semantics are verified.
+
+Dependencies/blockers:
+
+- Production-confirmed event delta endpoint remains unverified.
+- Provider push/cross-device timing remains release QA.
+
+Risk level: medium.
+
+Estimated complexity: low to medium for QA hardening; medium for the next handler expansion.
+
+Safest implementation plan:
+
+1. Seed or simulate event envelopes for order, payment, refund, listing, notification, message, and call families.
+2. Verify classifier invalidates the intended subsystems only once.
+3. Verify Activity Inbox, Orders, Seller Store, and Marketplace reload from existing APIs after invalidation.
+4. Confirm fallback behavior when the sync endpoint is unavailable.
+5. Then wire Messenger/Calls handlers in a separate scoped mission.

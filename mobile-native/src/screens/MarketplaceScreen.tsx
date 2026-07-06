@@ -29,6 +29,7 @@ import {
 import { PULSE_API_BASE_URL } from "../api/config";
 import { mediaDisplayUrl } from "../api/feed";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
+import { registerSyncInvalidation } from "../core/eventSync";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 
@@ -74,6 +75,11 @@ export function MarketplaceScreen({ route, navigation }: Props) {
   useEffect(() => {
     load("initial").catch(() => undefined);
   }, [initialListingId]);
+
+  useEffect(() => {
+    const unregisterMarketplace = registerSyncInvalidation("marketplace", () => load("refresh"));
+    return unregisterMarketplace;
+  }, [initialListingId, query]);
 
   function updateListing(listingId: number, next: Partial<MarketplaceListing>) {
     setItems((current) => current.map((item) => (item.id === listingId ? { ...item, ...next } : item)));

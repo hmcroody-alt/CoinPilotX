@@ -14,6 +14,7 @@ import {
   markActivityItemRead,
   resolveActivityItemTarget
 } from "../api/activity";
+import { registerSyncInvalidation } from "../core/eventSync";
 import { routeNotificationTarget } from "../navigation/notificationRouting";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -119,6 +120,16 @@ export function ActivityInboxScreen() {
       if (state === "active") load({ refresh: true }).catch(() => undefined);
     });
     return () => subscription.remove();
+  }, [load]);
+
+  useEffect(() => {
+    const refreshActivity = () => load({ refresh: true });
+    const unregisterActivity = registerSyncInvalidation("activity", refreshActivity);
+    const unregisterNotifications = registerSyncInvalidation("notifications", refreshActivity);
+    return () => {
+      unregisterActivity();
+      unregisterNotifications();
+    };
   }, [load]);
 
   return (

@@ -18,6 +18,7 @@ import { mediaDisplayUrl } from "../api/feed";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
+import { registerSyncInvalidation } from "../core/eventSync";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 
@@ -71,6 +72,18 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     load().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const refreshStore = () => load();
+    const unregisterSeller = registerSyncInvalidation("seller_inventory", refreshStore);
+    const unregisterMarketplace = registerSyncInvalidation("marketplace", refreshStore);
+    const unregisterOrders = registerSyncInvalidation("orders", refreshStore);
+    return () => {
+      unregisterSeller();
+      unregisterMarketplace();
+      unregisterOrders();
+    };
   }, []);
 
   async function submitApplication() {
