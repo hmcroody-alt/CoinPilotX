@@ -2719,3 +2719,111 @@ Safest implementation plan:
 3. Verify provider-owned actions are clear, non-mutating, and do not bypass backend checks.
 4. Polish buyer/seller commerce copy and state layout only where it reduces ambiguity.
 5. Preserve production WebView compatibility and keep payment/provider logic server-authoritative.
+
+## Native Commerce Polish + Provider Boundary QA
+
+Completed action: stabilized and documented native commerce provider boundaries without adding new commerce features.
+
+What was verified:
+
+- Checkout remains server-authoritative through `POST /api/pulse/payments/checkout`.
+- Unauthenticated checkout is blocked.
+- Self-purchase, free/unpriced checkout, and unapproved-seller checkout are blocked.
+- Missing Stripe configuration creates server-side blocked transactions with no checkout URL and no card charge.
+- Buyer Orders reads server transaction state rather than local payment state.
+- Buyer Order Detail keeps receipt, support, dispute, and provider-controlled tracking fallbacks.
+- Seller Orders and Buyer Orders share the same transaction ledger.
+- Historical orders tied to seller-deleted listings remain safely viewable.
+- Native Marketplace, Seller/Store, Buyer Orders, Activity Inbox, and notification routing keep payment/refund/dispute/shipping logic server/provider-owned.
+
+Provider/device behavior not verified:
+
+- Real Stripe checkout success and receipt pages.
+- Expired checkout session recovery.
+- Refund and dispute webhook delivery.
+- Shipping/tracking provider delivery.
+- Provider-generated commerce notifications in Activity Inbox.
+- Physical-device push notification taps for commerce events.
+
+Completed native subsystems:
+
+- Native app foundation.
+- Auth/session foundation.
+- Messenger.
+- Notifications and Activity Inbox.
+- Home Feed, Post Detail, and Feed Composer.
+- Profile and Profile Edit.
+- Reels and Status viewer/creator.
+- Shared Media Upload, Camera Studio, and Media Viewer foundations.
+- Marketplace browse/detail.
+- Full native commerce foundation: seller application, listing composer, inventory controls, marketplace media payloads, buyer purchase history, order detail, lifecycle QA, and provider boundary QA.
+- Search, Saved, Groups, Events, Courses, Creator, Growth, Premium, Intelligence, Trust/Safety, Verification, Account Health, Blocks/Mutes/Reports, Live Viewer, and Calls shells/foundations.
+
+Remaining major subsystems:
+
+- Commerce Activity Inbox fixture hardening for purchase/refund/dispute/shipping/provider notifications.
+- Native media reorder/remove controls for marketplace listings.
+- Physical iPhone/Android media upload QA.
+- Full LiveKit call/live release QA.
+- Android physical QA.
+- Final native polish, accessibility, animation, and performance pass.
+
+Updated native completion percentages by subsystem:
+
+| Subsystem | Current estimate | Confidence | Remaining high-value gap |
+| --- | ---: | --- | --- |
+| Auth/session/settings | 86% | Browser + simulator foundations verified | Release device auth and provider edge cases |
+| Messaging and calls | 72% | Browser/practical QA verified | LiveKit two-device media and lock-screen release QA |
+| Feed/posts/composer | 78% | Browser/static verified | Rich composer options and device media QA |
+| Media viewer/upload/camera | 72% | Browser/simulator/media QA partially verified | Physical camera/mic, large video, weak network |
+| Reels and Status | 74% | Browser/static verified | Physical native video performance |
+| Marketplace and Commerce | 94% | Backend contract + lifecycle/provider-boundary QA | Commerce notification fixtures, provider-live release QA, media reorder/remove |
+| Search, Saved, Groups, Events, Courses | 75% | Browser/static verified | Data-rich authenticated QA depth |
+| Trust, Safety, Verification, Account Health | 82% | Browser verified | Document/admin/provider flows remain web/server-owned |
+| Premium, Creator, Growth, Intelligence | 74% | Browser/static verified | Provider/billing/advanced tools remain fallback |
+| Live and Calls | 56% | Practical shell verified | Native LiveKit/call media release QA |
+| Android readiness | 35% | Tooling partially verified | Physical Android QA |
+
+overall native migration percentage: 80% foundation/parity coverage, 66% release QA confidence.
+
+Recommended next highest-value native feature/action: Native Commerce Activity Fixture Hardening.
+
+Reason for recommendation:
+
+- Commerce now has the buyer/seller loop plus provider-boundary stabilization.
+- The next reliability gap is cross-system event visibility: purchase completion, failed payment, refund, dispute, shipping update, and seller-payment events should route cleanly through Activity Inbox into native Buyer Orders, Seller/Store, Marketplace Detail, or a safe fallback.
+- This is stabilization, not new business logic, and it keeps payment/provider events server-authoritative while making the native app feel more alive.
+
+Reusable APIs/code/database/business logic for next action:
+
+- existing notification APIs
+- Activity Inbox APIs and classifiers
+- `notify_user` commerce events
+- `seller_transactions`
+- `creator_transactions`
+- `/api/pulse/orders`
+- `/api/pulse/payments/seller/orders`
+- existing notification/deep-link routing
+- Stripe/provider webhook status categories
+
+What must be rebuilt natively:
+
+- No new commerce feature is needed.
+- Seeded commerce notification fixtures, Activity Inbox route QA, and any scoped fallback/copy fixes discovered during QA.
+
+Dependencies/blockers:
+
+- Real provider-generated push taps still require physical device/provider QA.
+- Refund/dispute/shipping provider webhooks need configured provider test fixtures for release confidence.
+
+Risk level: low.
+
+Estimated complexity: low.
+
+Safest implementation plan:
+
+1. Seed activity fixtures for purchase complete, failed payment, seller payment, refund, dispute, and shipping update.
+2. Verify Activity Inbox category grouping, unread state, deep-link target, and fallback route behavior.
+3. Confirm native order and seller screens can safely open from each commerce event.
+4. Fix only scoped routing/copy/fallback issues.
+5. Keep provider creation and payment state mutation server-side.
