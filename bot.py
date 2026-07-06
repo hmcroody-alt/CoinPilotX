@@ -41934,6 +41934,39 @@ def pulse_emit_trust_safety_review_event(
     )
 
 
+def pulse_emit_moderation_review_event(
+    cur,
+    user_id,
+    event_type,
+    entity_type,
+    entity_id,
+    actor_user_id=0,
+    status="",
+    target_url="/pulse/account-health",
+    title="Moderation review updated",
+    body="A PulseSoc moderation review was updated.",
+    extra=None,
+):
+    payload = {
+        "moderation_review": True,
+        "moderation_status": str(status or "")[:80],
+    }
+    payload.update(dict(extra or {}))
+    pulse_emit_trust_safety_review_event(
+        cur,
+        user_id,
+        event_type,
+        entity_type,
+        entity_id,
+        actor_user_id=actor_user_id,
+        status=status,
+        target_url=target_url,
+        title=title,
+        body=body,
+        extra=payload,
+    )
+
+
 @webhook_app.route("/api/pulse/marketplace/seller/listings/<int:listing_id>", methods=["PATCH", "POST"])
 def api_pulse_marketplace_seller_listing_update(listing_id):
     init_db()
@@ -80572,7 +80605,7 @@ def apply_department_action(slug, action, target_id, note, admin):
 
     try:
         if slug == "social" and target_id:
-            cur.execute("SELECT id, moderation_status, engagement_score, deleted_at FROM pulse_posts WHERE id=?", (target_id,))
+            cur.execute("SELECT id, user_id, moderation_status, engagement_score, deleted_at FROM pulse_posts WHERE id=?", (target_id,))
             before = dict(cur.fetchone() or {})
             if action == "approve_post" or action == "restore_content":
                 cur.execute("UPDATE pulse_posts SET moderation_status='approved', updated_at=? WHERE id=?", (now, target_id))
@@ -80585,6 +80618,20 @@ def apply_department_action(slug, action, target_id, note, admin):
                 message = "PulseSoc post removed."
                 pulse_emit_event("pulse_post_deleted", {"post_id": target_id, "deleted": True, "source": "global_command"}, admin.get("id") or 0, target_id)
                 pulse_emit_event("post_deleted", {"post_id": target_id, "deleted": True, "source": "global_command"}, admin.get("id") or 0, target_id)
+                if before.get("user_id"):
+                    pulse_emit_moderation_review_event(
+                        cur,
+                        before.get("user_id"),
+                        "content_removed",
+                        "post",
+                        target_id,
+                        actor_user_id=admin.get("id") or 0,
+                        status="removed",
+                        target_url=f"/pulse/posts/{target_id}",
+                        title="Content removed",
+                        body="A PulseSoc post was removed after moderation review.",
+                        extra={"source": "global_command", "review_action": action},
+                    )
             elif action == "send_to_moderation":
                 cur.execute("UPDATE pulse_posts SET moderation_status='needs_review', updated_at=? WHERE id=?", (now, target_id))
                 create_task("moderation", f"Review PulseSoc post #{target_id}", "high", "post", target_id)
@@ -80615,9 +80662,57 @@ def apply_department_action(slug, action, target_id, note, admin):
                 else:
                     cur.execute("UPDATE moderation_cases SET notes=COALESCE(notes,'') || ? WHERE id=?", (f"\n{now}: {note}", target_id))
                     message = "Case note added."
+                if before.get("reporter_user_id"):
+                    case_event = {
+                        "assign_case": "moderation_case_updated",
+                        "escalate_case": "moderation_case_updated",
+                        "resolve_case": "moderation_case_resolved",
+                        "dismiss_case": "moderation_case_dismissed",
+                        "add_case_note": "moderation_case_updated",
+                    }.get(action, "moderation_case_updated")
+                    case_status = "resolved" if action == "resolve_case" else "dismissed" if action == "dismiss_case" else "reviewing"
+                    pulse_emit_moderation_review_event(
+                        cur,
+                        before.get("reporter_user_id"),
+                        case_event,
+                        "moderation_case",
+                        target_id,
+                        actor_user_id=admin.get("id") or 0,
+                        status=case_status,
+                        target_url="/pulse/account-health",
+                        title="Moderation case updated",
+                        body="A PulseSoc moderation case connected to your report was updated.",
+                        extra={
+                            "case_id": target_id,
+                            "target_type": before.get("target_type") or "",
+                            "target_id": before.get("target_id") or "",
+                            "review_action": action,
+                            "previous_status": before.get("status") or "",
+                        },
+                    )
             elif action in {"quarantine_content", "restore_content"} and target_id:
                 status = "approved" if action == "restore_content" else "needs_review"
+                cur.execute("SELECT id, user_id, moderation_status FROM pulse_posts WHERE id=? LIMIT 1", (target_id,))
+                content_row = dict(cur.fetchone() or {})
                 cur.execute("UPDATE pulse_posts SET moderation_status=?, updated_at=? WHERE id=?", (status, now, target_id))
+                if content_row.get("user_id"):
+                    pulse_emit_moderation_review_event(
+                        cur,
+                        content_row.get("user_id"),
+                        "content_restored" if action == "restore_content" else "moderation_action_applied",
+                        "post",
+                        target_id,
+                        actor_user_id=admin.get("id") or 0,
+                        status=status,
+                        target_url=f"/pulse/posts/{target_id}",
+                        title="Content moderation updated",
+                        body="A PulseSoc content moderation state was updated.",
+                        extra={
+                            "post_id": target_id,
+                            "review_action": action,
+                            "previous_status": content_row.get("moderation_status") or "",
+                        },
+                    )
                 message = "Content status updated."
             elif action == "dismiss_report" and target_id:
                 cur.execute("SELECT * FROM pulse_reports WHERE id=? LIMIT 1", (target_id,))
@@ -80642,9 +80737,42 @@ def apply_department_action(slug, action, target_id, note, admin):
                             "review_action": "dismiss_report",
                         },
                     )
+                    pulse_emit_moderation_review_event(
+                        cur,
+                        report_row.get("reporter_user_id"),
+                        "marketplace_report_resolved" if report_row.get("target_type") == "marketplace_listing" else "content_report_resolved",
+                        "report",
+                        target_id,
+                        actor_user_id=admin.get("id") or 0,
+                        status="dismissed",
+                        target_url="/pulse/account-health",
+                        title="Moderation report resolved",
+                        body="A PulseSoc report review reached a resolution.",
+                        extra={
+                            "report_id": target_id,
+                            "target_type": report_row.get("target_type") or "",
+                            "target_id": report_row.get("target_id") or "",
+                            "review_action": "dismiss_report",
+                        },
+                    )
                 message = "Report dismissed."
             else:
                 create_task(slug, f"{action.replace('_', ' ').title()} {target_id}", "critical" if action in {"ban_user", "suspend_user"} else "high", "admin_action", target_id)
+                if target_id and action in {"warn_user", "restrict_user", "ban_user", "suspend_user"}:
+                    event_type = "user_warning_issued" if action == "warn_user" else "user_restriction_updated"
+                    pulse_emit_moderation_review_event(
+                        cur,
+                        target_id,
+                        event_type,
+                        "user",
+                        target_id,
+                        actor_user_id=admin.get("id") or 0,
+                        status=action,
+                        target_url="/pulse/account-health",
+                        title="Account safety status updated",
+                        body="Your PulseSoc account safety status was updated.",
+                        extra={"review_action": action, "queued_task": True},
+                    )
                 message = "Trust & Safety action queued."
         elif slug == "creators" and target_id:
             cur.execute("SELECT * FROM creator_profiles WHERE id=? OR user_id=?", (target_id, target_id))

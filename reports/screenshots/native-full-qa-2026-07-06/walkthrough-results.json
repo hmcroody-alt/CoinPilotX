@@ -1,0 +1,1320 @@
+{
+  "generatedAt": "2026-07-06T19:13:58.230Z",
+  "results": [
+    {
+      "name": "Login/Auth",
+      "path": "/Login",
+      "status": "visible",
+      "screenshot": "/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-full-qa-2026-07-06/login-auth.png",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/Login"
+    },
+    {
+      "name": "Home Feed",
+      "path": "/pulse",
+      "status": "auth-gated",
+      "screenshot": "/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-full-qa-2026-07-06/home-feed.png",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse"
+    },
+    {
+      "name": "Post Detail",
+      "path": "/pulse/post/1",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/post/1"
+    },
+    {
+      "name": "Feed Composer",
+      "path": "/pulse?composer=1",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse?composer=1"
+    },
+    {
+      "name": "Messenger",
+      "path": "/pulse/messages",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/messages"
+    },
+    {
+      "name": "Chat Detail",
+      "path": "/pulse/messages/1",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/messages/1"
+    },
+    {
+      "name": "Calls",
+      "path": "/pulse/calls/qa-call-1",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/calls/qa-call-1"
+    },
+    {
+      "name": "Incoming Calls Fixture",
+      "path": "/pulse?qa_incoming_call=1&call_id=qa-call-1&caller=PulseSoc%20QA&call_type=video",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse?qa_incoming_call=1&call_id=qa-call-1&caller=PulseSoc%20QA&call_type=video"
+    },
+    {
+      "name": "Activity Inbox",
+      "path": "/pulse/inbox",
+      "status": "auth-gated",
+      "screenshot": "/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-full-qa-2026-07-06/activity-inbox.png",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/inbox"
+    },
+    {
+      "name": "Notifications",
+      "path": "/pulse/notifications",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/notifications"
+    },
+    {
+      "name": "Notification Preferences",
+      "path": "/pulse/settings/notifications",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/settings/notifications"
+    },
+    {
+      "name": "Profile",
+      "path": "/pulse/profile",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/profile"
+    },
+    {
+      "name": "Profile Edit",
+      "path": "/pulse/profile/edit",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/profile/edit"
+    },
+    {
+      "name": "Reels",
+      "path": "/pulse/reels",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/reels"
+    },
+    {
+      "name": "Reel Detail",
+      "path": "/pulse/reels/1",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/reels/1"
+    },
+    {
+      "name": "Status Viewer",
+      "path": "/pulse/status",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/status"
+    },
+    {
+      "name": "Status Detail",
+      "path": "/pulse/status/1",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/status/1"
+    },
+    {
+      "name": "Status Creator",
+      "path": "/pulse/status?create=1",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/status?create=1"
+    },
+    {
+      "name": "Camera Studio",
+      "path": "/pulse/camera/photo?target=feed",
+      "status": "auth-gated",
+      "screenshot": "/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-full-qa-2026-07-06/camera-studio.png",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/camera/photo?target=feed"
+    },
+    {
+      "name": "Media Viewer",
+      "path": "/pulse/marketplace/1?media=1",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/marketplace/1?media=1"
+    },
+    {
+      "name": "Marketplace",
+      "path": "/pulse/marketplace",
+      "status": "auth-gated",
+      "screenshot": "/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-full-qa-2026-07-06/marketplace.png",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/marketplace"
+    },
+    {
+      "name": "Seller Store",
+      "path": "/pulse/seller-store?title=Seller%20%2F%20Store",
+      "status": "auth-gated",
+      "screenshot": "/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-full-qa-2026-07-06/seller-store.png",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/seller-store?title=Seller%20%2F%20Store"
+    },
+    {
+      "name": "Seller Listing Composer",
+      "path": "/pulse/marketplace/create?title=Create%20Listing",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/marketplace/create?title=Create%20Listing"
+    },
+    {
+      "name": "Seller Inventory",
+      "path": "/pulse/seller-store?mode=inventory",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/seller-store?mode=inventory"
+    },
+    {
+      "name": "Buyer Orders",
+      "path": "/pulse/orders",
+      "status": "auth-gated",
+      "screenshot": "/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-full-qa-2026-07-06/buyer-orders.png",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/orders"
+    },
+    {
+      "name": "Buyer Order Detail",
+      "path": "/pulse/orders/1",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/orders/1"
+    },
+    {
+      "name": "Search/Discovery",
+      "path": "/pulse/search",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/search"
+    },
+    {
+      "name": "Saved/Collections",
+      "path": "/pulse/saved",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/saved"
+    },
+    {
+      "name": "Groups/Communities/Rooms",
+      "path": "/pulse/groups",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/groups"
+    },
+    {
+      "name": "Group Detail",
+      "path": "/pulse/groups/qa-group",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/groups/qa-group"
+    },
+    {
+      "name": "Live Viewer",
+      "path": "/pulse/live",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/live"
+    },
+    {
+      "name": "Live Detail",
+      "path": "/pulse/live/1",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/live/1"
+    },
+    {
+      "name": "Events/Scheduled Live",
+      "path": "/pulse/events",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/events"
+    },
+    {
+      "name": "Premium",
+      "path": "/pulse/premium",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/premium"
+    },
+    {
+      "name": "Creator Studio",
+      "path": "/pulse/creator-studio",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/creator-studio"
+    },
+    {
+      "name": "Content Planner",
+      "path": "/pulse/content-planner",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/content-planner"
+    },
+    {
+      "name": "Draft Studio",
+      "path": "/dashboard/creator/draft-studio",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/dashboard/creator/draft-studio"
+    },
+    {
+      "name": "Growth Center",
+      "path": "/pulse/growth",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/growth"
+    },
+    {
+      "name": "Intelligence/Alerts",
+      "path": "/dashboard/intelligence",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/dashboard/intelligence"
+    },
+    {
+      "name": "Alert Management",
+      "path": "/pulse/alerts",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/alerts"
+    },
+    {
+      "name": "Account/Security/Privacy",
+      "path": "/pulse/settings/security",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/settings/security"
+    },
+    {
+      "name": "Trust/Safety/Support",
+      "path": "/pulse/help",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/help"
+    },
+    {
+      "name": "Verification Center",
+      "path": "/pulse/verification",
+      "status": "auth-gated",
+      "screenshot": "/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-full-qa-2026-07-06/verification-center.png",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/verification"
+    },
+    {
+      "name": "Account Health/Appeals",
+      "path": "/pulse/account-health",
+      "status": "auth-gated",
+      "screenshot": "/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-full-qa-2026-07-06/account-health-appeals.png",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/account-health"
+    },
+    {
+      "name": "Safety Hub",
+      "path": "/pulse/safety",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/safety"
+    },
+    {
+      "name": "Courses/Learning",
+      "path": "/pulse/courses",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/courses"
+    },
+    {
+      "name": "Course Detail",
+      "path": "/pulse/courses/1",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/courses/1"
+    },
+    {
+      "name": "Settings",
+      "path": "/pulse/settings",
+      "status": "auth-gated",
+      "screenshot": "",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/settings"
+    },
+    {
+      "name": "Pulse AI",
+      "path": "/pulse/ai",
+      "status": "auth-gated",
+      "screenshot": "/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-full-qa-2026-07-06/pulse-ai.png",
+      "blank": false,
+      "bodyLength": 97,
+      "buttons": [
+        "Sign in",
+        "Create account"
+      ],
+      "hasLogin": true,
+      "headings": [],
+      "textSample": "PulseSoc Native access to Mission Control, messages, alerts, and Pulse AI. Sign in Create account",
+      "title": "Login",
+      "url": "http://localhost:8094/pulse/ai"
+    }
+  ],
+  "logs": [
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:00.826Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:00.826Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:03.247Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:03.247Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:03.247Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:05.242Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:05.242Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:05.242Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:07.752Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:07.753Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:07.753Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:10.252Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:10.252Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:10.253Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:12.268Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:12.269Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:12.269Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:14.265Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:14.266Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:14.266Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:15.901Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:15.902Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:15.902Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:18.269Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:18.269Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:18.269Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:20.275Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:20.275Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:20.275Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:22.266Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:22.267Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:22.267Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:24.280Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:24.281Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:24.281Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:26.277Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:26.278Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:26.278Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:28.278Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:28.278Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:28.278Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:29.792Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:29.792Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:29.793Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:31.769Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:31.769Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:31.769Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:33.759Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:33.759Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:33.760Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:36.286Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:36.287Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:36.292Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:38.289Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:38.290Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:38.290Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:40.295Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:40.296Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:40.296Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:42.120Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:42.120Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:42.120Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:44.301Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:44.301Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:44.301Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:46.878Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:46.878Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:46.879Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:49.320Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:49.320Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:49.320Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:51.310Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:51.310Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:51.310Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:53.315Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:53.315Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:53.315Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.",
+      "timestamp": "2026-07-06T19:13:55.330Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "\"shadow*\" style props are deprecated. Use \"boxShadow\".",
+      "timestamp": "2026-07-06T19:13:55.330Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    },
+    {
+      "level": "warn",
+      "message": "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.",
+      "timestamp": "2026-07-06T19:13:55.330Z",
+      "url": "http://localhost:8094/index.ts.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable"
+    }
+  ]
+}
