@@ -2004,3 +2004,104 @@ Safest implementation plan:
 3. Keep edit on fallback unless a safe JSON update endpoint exists.
 4. Reuse MediaUploadPreview, Camera Studio target, NativeMediaViewer, Seller/Store navigation, and existing marketplace API wrappers.
 5. Verify with backend contract checks and QA browser route/form checks.
+
+## Native Seller Listing Composer Foundation
+
+Completed action: built the native Seller Listing Composer foundation using the existing PulseSoc marketplace backend.
+
+What was implemented:
+
+- Added `createMarketplaceListing(...)` to `mobile-native/src/api/marketplace.ts`.
+- Added native `SellerListingComposerScreen`.
+- Routed `MarketplaceCreateGateway` to the native composer.
+- Kept `/pulse/marketplace/create` deep link active through existing linking config.
+- Updated Seller/Store `Create Listing` entry point to open the native composer.
+- Added listing title, short description, full description, category, price label, product type, and product media ID controls.
+- Added Camera Studio handoff for marketplace media.
+- Added safe web uploader fallback for advanced marketplace media/listing flows.
+- Added backend validation display and submit-for-review action.
+- Navigates to native Marketplace Detail after successful listing creation when the backend returns a listing ID.
+- Added `@egjs/hammerjs` to `mobile-native` dependencies because clean `npm ci` web QA exposed it as a required `react-native-gesture-handler` web dependency.
+- Corrected notification/deep-link routing so `/pulse/marketplace/create` opens the new native composer instead of the older Seller/Store create gateway.
+
+Reusable backend/API/database/business logic:
+
+- Existing `POST /api/pulse/marketplace/listings/create`.
+- Existing merchant approval checks.
+- Existing marketplace draft media ID requirement.
+- Existing cover photo validation.
+- Existing marketplace safety review/risk scoring.
+- Existing marketplace listing/media/seller tables.
+- Existing payout, checkout, refund, dispute, fulfillment, and provider fallback flows.
+
+Native-only work:
+
+- Form UI and validation presentation.
+- Navigation and deep-link routing.
+- Media ID handoff and Camera Studio entry.
+- Safe fallback buttons for web/provider flows.
+
+Remaining gaps:
+
+- Direct native file upload to `/api/pulse/marketplace/media/upload` should wait until the shared upload service can safely target marketplace-specific upload endpoints.
+- Listing edit remains safe web fallback unless a confirmed JSON update endpoint is found.
+- Physical product-media upload remains release QA.
+
+Verification evidence:
+
+- `npm run --prefix mobile-native typecheck` passed.
+- `venv/bin/python scripts/pulsesoc_native_seller_listing_composer_audit.py` passed.
+- `git diff --check` passed.
+- Authenticated QA browser verified `/pulse/marketplace/create` renders the native `Create Listing` composer with product type controls, product media handoff, Camera Studio handoff, Web Uploader fallback, Submit for Review, and Back to Store.
+- Authenticated backend contract check created `QA Native Composer Listing` with draft media ID 5 and received `ok=true`, `listing_id=5`, and `Listing saved for safety review.`
+
+Updated native completion percentages by subsystem:
+
+| Subsystem | Current estimate | Confidence | Remaining high-value gap |
+| --- | ---: | --- | --- |
+| Auth/session/settings | 86% | Browser + simulator foundations verified | Release device auth and provider edge cases |
+| Messaging and calls | 72% | Browser/practical QA verified | LiveKit two-device media and lock-screen release QA |
+| Feed/posts/composer | 78% | Browser/static verified | Rich composer options and device media QA |
+| Media viewer/upload/camera | 72% | Browser/simulator/media QA partially verified | Physical camera/mic, large video, weak network |
+| Reels and Status | 74% | Browser/static verified | Physical native video performance |
+| Marketplace and Seller/Store | 82% | Backend contract + native composer foundation verified | Marketplace-specific native upload and edit support |
+| Search, Saved, Groups, Events, Courses | 75% | Browser/static verified | Data-rich authenticated QA depth |
+| Trust, Safety, Verification, Account Health | 82% | Browser verified | Document/admin/provider flows remain web/server-owned |
+| Premium, Creator, Growth, Intelligence | 74% | Browser/static verified | Provider/billing/advanced tools remain fallback |
+| Live and Calls | 56% | Practical shell verified | Native LiveKit/call media release QA |
+| Android readiness | 35% | Tooling partially verified | Physical Android QA |
+
+overall native migration percentage: 76% foundation/parity coverage, 62% release QA confidence.
+
+Recommended next highest-value native feature/action: Native Seller Listing Composer Practical QA Hardening.
+
+Reason for recommendation:
+
+- The composer now routes and submits through existing server-authoritative marketplace APIs.
+- Because listing creation touches commerce and seller trust, a short authenticated browser/backend QA pass should verify validation, merchant approval errors, media ID requirements, success handoff, and fallback routes before moving to another major subsystem.
+- This is a practical hardening pass, not a reason to block the roadmap indefinitely.
+
+Reusable APIs/code/database/business logic for next action:
+
+- `POST /api/pulse/marketplace/listings/create`.
+- Existing `/api/pulse/marketplace/media/upload`.
+- Existing marketplace seller/listing/media tables.
+- Existing seller approval and listing moderation/risk review.
+- Existing native Seller/Store, Marketplace Detail, Camera Studio, and safe fallback routing.
+
+What must be rebuilt or adjusted natively:
+
+- Only scoped blockers found in QA.
+- Do not duplicate seller approval, media moderation, risk scoring, checkout, payout, refund, or dispute logic.
+
+Risk level: medium.
+
+Estimated complexity: low to medium.
+
+Safest implementation plan:
+
+1. Seed or use an approved seller with draft marketplace media IDs.
+2. Verify `/pulse/marketplace/create` renders the native composer.
+3. Verify missing media/title/description validation.
+4. Verify a successful listing create response routes to Marketplace Detail.
+5. Verify edit/provider/payout flows remain fallback.

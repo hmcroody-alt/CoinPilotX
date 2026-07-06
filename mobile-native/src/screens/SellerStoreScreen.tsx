@@ -182,7 +182,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           <Pressable style={styles.primaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: "Marketplace Media" })}>
             <Text style={styles.primaryText}>Capture Product Media</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl("create")).catch(() => undefined)}>
+          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("MarketplaceCreateGateway", { title: "Create Listing" })}>
             <Text style={styles.secondaryText}>Create Listing</Text>
           </Pressable>
         </View>

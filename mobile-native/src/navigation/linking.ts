@@ -52,6 +52,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
           postId: Number
         }
       },
+      MarketplaceCreateGateway: "pulse/marketplace/create",
       ReelDetail: {
         path: "pulse/reels/:reelId",
         parse: {
@@ -85,7 +86,6 @@ export const linking: LinkingOptions<RootStackParamList> = {
           sellerId: String
         }
       },
-      MarketplaceCreateGateway: "pulse/marketplace/create",
       Search: {
         path: "search",
         parse: {

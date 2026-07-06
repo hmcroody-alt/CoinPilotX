@@ -286,6 +286,11 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  if (normalized.startsWith("/pulse/marketplace/create") && navigationRef.isReady()) {
+    navigationRef.navigate("MarketplaceCreateGateway", { title: "Create Listing" });
+    return { handled: true, target: normalized };
+  }
+
   const sellerStore = sellerStoreTarget(normalized);
   if (sellerStore && navigationRef.isReady()) {
     navigationRef.navigate("SellerStore", sellerStore);
@@ -486,9 +491,6 @@ function sellerStoreTarget(target: string): { title: string; mode?: "overview" |
   if (target.startsWith("/pulse/seller-store")) {
     const mode = normalizeSellerStoreMode(extractStringQueryValue(target, "mode"));
     return { title: "Seller / Store", ...(mode ? { mode } : {}) };
-  }
-  if (target.startsWith("/pulse/marketplace/create")) {
-    return { title: "Create Listing", mode: "create" };
   }
   if (target.startsWith("/pulse/merchant/apply")) {
     return { title: "Merchant Application", mode: "apply" };

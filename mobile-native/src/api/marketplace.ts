@@ -62,6 +62,27 @@ export type MarketplaceSellerApplicationPayload = {
   bio: string;
 };
 
+export type MarketplaceListingCreatePayload = {
+  title: string;
+  short_description?: string;
+  description: string;
+  category?: string;
+  subcategory?: string;
+  price_label?: string;
+  currency?: string;
+  quantity?: number;
+  product_type?: "digital" | "physical" | "course" | "service";
+  media_ids?: number[];
+  tags?: string;
+  refund_policy?: string;
+  estimated_delivery?: string;
+  seller_notes?: string;
+};
+
+export type MarketplaceListingCreateResponse = MarketplaceActionResponse & {
+  listing_id?: number;
+};
+
 export type MarketplaceSellerOrder = {
   id?: number;
   item_type?: string;
@@ -128,6 +149,13 @@ export async function loadSellerStoreSnapshot() {
 
 export async function applyMarketplaceSeller(payload: MarketplaceSellerApplicationPayload) {
   return pulseApi<MarketplaceActionResponse>("/api/pulse/marketplace/seller/apply", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function createMarketplaceListing(payload: MarketplaceListingCreatePayload) {
+  return pulseApi<MarketplaceListingCreateResponse>("/api/pulse/marketplace/listings/create", {
     method: "POST",
     body: JSON.stringify(payload)
   });
