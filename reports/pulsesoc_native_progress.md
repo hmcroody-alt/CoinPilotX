@@ -2936,3 +2936,101 @@ Safest implementation plan:
 3. Define a minimal server-authoritative event envelope and cache invalidation map.
 4. Build native event-sync foundation with graceful polling fallback.
 5. Verify with seeded backend events before attempting provider/device push sync.
+
+## Native Real-time Event Sync Readiness
+
+Completed action: audited the current PulseSoc production backend and native migration state against the intended final state of a fully real-time synchronized PulseSoc system.
+
+What is fully consistent already:
+
+- Commerce event truth is backend-owned and fixture-verified across Buyer Orders, Seller Orders, Seller Inventory, Marketplace listing references, Activity Inbox, and Notifications.
+- Activity Inbox can aggregate server notifications, Messenger unread summaries, and active calls without becoming a separate source of truth.
+- Notification routing supports the current native commerce/activity targets, including `/pulse/orders`, `/pulse/orders/<id>`, `/dashboard/orders`, `/pulse/marketplace`, `/pulse/activity`, and `/pulse/inbox`.
+- Existing notification and payment paths include duplicate/idempotency protections.
+- Native cache reads safely remove corrupted cache payloads.
+- Command Center realtime worker/client contracts exist and degrade to polling fallback when disabled.
+
+What is partially synced:
+
+- Activity Inbox, badge counts, Buyer Orders, Seller Store, Marketplace, Messenger, Calls, Safety, and Verification each have local refresh/cache behavior, but invalidation is not centralized.
+- Messenger and Calls already poll their own endpoints, but Activity Inbox does not yet receive a shared event cursor that refreshes the related message/call summaries.
+- Seller Inventory and Buyer Orders share backend state, but an already-open native screen may remain stale until manual, focus, foreground, or interval refresh.
+- Safety and Verification state refresh correctly from server APIs, but changes do not yet push through a native event-sync layer.
+
+What is stale or inconsistent risk:
+
+- Activity badge can update before Buyer Orders or Seller Store refreshes.
+- Marketplace listing state can change on the backend while cached search/seller inventory remains visible until refresh.
+- Call or Messenger state can update in a focused screen before the Activity Inbox summary refreshes.
+- Offline cache restore is safe, but stale data age is not displayed consistently across all sync-sensitive screens.
+
+What is missing for full real-time readiness:
+
+- Native event-sync service with one cursor per signed-in user.
+- Shared invalidation map for activity, orders, seller inventory, marketplace, messages, calls, safety, verification, alerts, and intelligence.
+- Server-authenticated main-app proxy or direct native endpoint for Command Center realtime poll/stream events.
+- Event replay on app resume and deterministic duplicate suppression at the native cache-invalidation layer.
+- Cross-device provider QA for push, badge, notification tap, and foreground/background timing.
+
+Updated subsystem completion:
+
+| Subsystem | Current estimate | Real-time sync readiness | Remaining gap |
+| --- | ---: | ---: | --- |
+| Activity + Notifications | 86% | 78% | Event cursor, shared invalidation, provider/device push QA |
+| Buyer Orders | 91% | 75% | Order event-triggered refresh and replay |
+| Seller Inventory | 92% | 75% | Listing/order invalidation and seller activity refresh |
+| Marketplace | 91% | 72% | Listing-state refresh, media-change invalidation |
+| Messenger | 76% | 65% | Shared conversation/message event bridge |
+| Calls | 62% | 58% | Active-call event bridge, LiveKit/two-device release QA |
+| Safety/Trust | 84% | 72% | Enforcement/report/appeal event refresh |
+| Verification | 84% | 72% | Review/badge event refresh |
+| Native media/camera | 72% | 60% | Physical device upload/camera release QA |
+| Android readiness | 35% | 30% | Physical Android QA |
+
+overall native migration percentage: 82% foundation/parity coverage, 69% release QA confidence.
+
+Recommended next highest-value action: Native Event Sync Foundation.
+
+Reason for recommendation:
+
+- The backend and native app now have enough event, cache, and routing contracts to support a small shared sync layer.
+- Another UI feature would add more independent refresh paths; a shared event-sync service will make the existing native app feel alive and coherent.
+- The safest next implementation is polling-first and server-authoritative, using existing Command Center realtime contracts when available and degrading to current refresh behavior when unavailable.
+
+Reusable APIs/code/database/business logic:
+
+- `services/command_center_client.py` realtime helpers.
+- Command Center worker realtime event/poll/stream/status routes.
+- existing notification APIs and `pulse_notifications`.
+- existing Messenger sync endpoints.
+- existing Call active/status/events endpoints.
+- existing Buyer Orders, Seller Orders, Marketplace listing APIs.
+- existing Safety, Verification, Alert, and Intelligence APIs.
+- native cache helpers in `mobile-native/src/core/cache.ts`.
+
+What must be rebuilt natively:
+
+- A small native event-sync service.
+- A cache invalidation registry.
+- A persisted `latest_event_id` cursor.
+- Foreground/resume/reconnect polling hooks.
+- Screen refresh callbacks for Activity Inbox, Orders, Seller Store, Marketplace, Messenger, Calls, Safety, Verification, Alerts, and Intelligence.
+
+Dependencies/blockers:
+
+- Need to choose whether native polls the main app or a user-authenticated proxy to Command Center.
+- Provider push and cross-device delivery timing remain release QA blockers.
+- Full WebSocket/SSE streaming should remain deferred until polling-first behavior is verified.
+
+Risk level: medium.
+
+Estimated complexity: medium.
+
+Safest implementation plan:
+
+1. Build a polling-first native event-sync service with no business logic.
+2. Store and replay `latest_event_id` per signed-in user.
+3. Map event families to cache invalidation keys and optional screen refresh callbacks.
+4. Wire first to Activity Inbox, badge counts, Buyer Orders, Seller Store, Marketplace, Messenger, and Calls.
+5. Add seeded event replay/idempotency audits.
+6. Keep WebSocket/SSE, APNs/FCM timing, and cross-device behavior as release hardening tasks after the polling-first layer passes.
