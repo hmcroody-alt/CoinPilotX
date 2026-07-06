@@ -213,6 +213,12 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  const plannerTarget = contentPlannerTarget(normalized);
+  if (plannerTarget && navigationRef.isReady()) {
+    navigationRef.navigate("ContentPlanner", plannerTarget);
+    return { handled: true, target: normalized };
+  }
+
   if ((normalized.startsWith("/pulse/growth") || normalized.startsWith("/pulse/promote")) && navigationRef.isReady()) {
     navigationRef.navigate("GrowthCenter", {
       contentType: extractStringQueryValue(normalized, "content_type") || undefined,
@@ -452,6 +458,29 @@ function normalizeVerificationTrack(track: string): "identity" | "blue_check" | 
   const value = String(track || "").toLowerCase();
   if (value === "blue_check" || value === "business" || value === "government_id" || value === "identity") return value;
   return "";
+}
+
+function contentPlannerTarget(target: string): { title: string; mode?: "planner" | "scheduler" | "drafts" } | null {
+  if (
+    target.startsWith("/pulse/content-planner") ||
+    target.startsWith("/dashboard/creator/content-planner") ||
+    target.startsWith("/pulse/dashboard/content-planner")
+  ) {
+    return { title: "Content Planner", mode: "planner" };
+  }
+  if (
+    target.startsWith("/dashboard/creator/post-scheduler") ||
+    target.startsWith("/pulse/dashboard/post-scheduler")
+  ) {
+    return { title: "Scheduled Publishing", mode: "scheduler" };
+  }
+  if (
+    target.startsWith("/dashboard/creator/draft-studio") ||
+    target.startsWith("/pulse/dashboard/draft-studio")
+  ) {
+    return { title: "Draft Studio", mode: "drafts" };
+  }
+  return null;
 }
 
 function customSchemePath(value: string, prefix: string) {

@@ -10,6 +10,7 @@ import { ActivityInboxScreen } from "../screens/ActivityInboxScreen";
 import { AlertManagementScreen } from "../screens/AlertManagementScreen";
 import { CameraStudioScreen } from "../screens/CameraStudioScreen";
 import { CallScreen } from "../screens/CallScreen";
+import { ContentPlannerScreen } from "../screens/ContentPlannerScreen";
 import { CreatorStudioScreen } from "../screens/CreatorStudioScreen";
 import { GrowthCenterScreen } from "../screens/GrowthCenterScreen";
 import { GroupsScreen } from "../screens/GroupsScreen";
@@ -126,6 +127,13 @@ export function AppNavigator() {
       <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} options={{ title: "Edit Profile" }} />
       <Stack.Screen name="Premium" component={PremiumScreen} options={{ title: "Premium" }} />
       <Stack.Screen name="CreatorStudio" component={CreatorStudioScreen} options={{ title: "Creator Studio" }} />
+      <Stack.Screen name="ContentPlanner" component={ContentPlannerScreen} options={({ route }) => ({ title: route.params?.title || "Content Planner" })} />
+      <Stack.Screen name="ContentPlannerWeb" component={ContentPlannerScreen} options={({ route }) => ({ title: route.params?.title || "Content Planner" })} />
+      <Stack.Screen name="ContentPlannerPulseAlias" component={ContentPlannerScreen} options={{ title: "Content Planner" }} />
+      <Stack.Screen name="PostScheduler" component={ContentPlannerScreen} options={{ title: "Scheduled Publishing" }} />
+      <Stack.Screen name="PostSchedulerPulseAlias" component={ContentPlannerScreen} options={{ title: "Scheduled Publishing" }} />
+      <Stack.Screen name="DraftStudio" component={ContentPlannerScreen} options={{ title: "Draft Studio" }} />
+      <Stack.Screen name="DraftStudioPulseAlias" component={ContentPlannerScreen} options={{ title: "Draft Studio" }} />
       <Stack.Screen name="GrowthCenter" component={GrowthCenterScreen} options={{ title: "Growth Center" }} />
       <Stack.Screen name="IntelligenceCenter" component={IntelligenceCenterScreen} options={({ route }) => ({ title: route.params?.title || "Intelligence" })} />
       <Stack.Screen name="AlertManagement" component={AlertManagementScreen} options={({ route }) => ({ title: route.params?.title || "Alerts" })} />

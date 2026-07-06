@@ -58,6 +58,13 @@ export type RootStackParamList = {
   ProfileEdit: undefined;
   Premium: undefined;
   CreatorStudio: undefined;
+  ContentPlanner: { mode?: "planner" | "scheduler" | "drafts"; title?: string } | undefined;
+  ContentPlannerWeb: { mode?: "planner" | "scheduler" | "drafts"; title?: string } | undefined;
+  ContentPlannerPulseAlias: { title?: string } | undefined;
+  PostScheduler: { title?: string } | undefined;
+  PostSchedulerPulseAlias: { title?: string } | undefined;
+  DraftStudio: { title?: string } | undefined;
+  DraftStudioPulseAlias: { title?: string } | undefined;
   GrowthCenter: { contentType?: string; contentId?: number | string; title?: string } | undefined;
   IntelligenceCenter: { alertId?: number; subsystem?: string; title?: string } | undefined;
   AlertManagement: { alertId?: number; title?: string } | undefined;

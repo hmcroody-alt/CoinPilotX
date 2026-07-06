@@ -1384,3 +1384,102 @@ Safest implementation plan:
 3. Add native planner gateway only for read/save/update flows supported by backend.
 4. Keep publish, bulk schedule, recurring schedule, and unsupported version history on safe web fallback.
 5. Run static checks, audit, and QA browser route checks before commit.
+
+## Native Content Planner + Scheduled Publishing Gateway Foundation
+
+Completed feature: native Content Planner, Scheduled Publishing, and Draft Studio gateway.
+
+Why it happened now:
+
+- Events/Scheduled Live created a stronger need for native creator planning and calendar workflow.
+- Creator Studio already had a basic draft save path but advanced planner/scheduler/draft tools opened web directly.
+- The production backend already owns planner persistence and validation through `pulsesoc_content_planner_items` and `/api/dashboard/content-planner/item`.
+
+Reusable PulseSoc APIs/code/database/business logic:
+
+- Existing `/api/dashboard/content-planner/item` write endpoint.
+- Existing `pulsesoc_content_planner_items` database table.
+- Existing `pulsesoc_dashboard_centers.build_content_planner`, `build_post_scheduler`, and `build_draft_studio` behavior.
+- Existing Creator Studio state and recommendations.
+- Existing backend validation that scheduled items require `scheduled_at`.
+- Existing safe-unavailable rules for publish-now, bulk scheduling, recurring scheduling, smart rescheduling, and version history.
+
+Native work completed:
+
+- Added `mobile-native/src/screens/ContentPlannerScreen.tsx`.
+- Extended `mobile-native/src/api/creator.ts` planner payload support for scheduled time, alt text, checklist booleans, and route helpers.
+- Added native draft save and scheduled draft save flows using existing backend POST.
+- Added native Content Planner, Scheduled Publishing, and Draft Studio route modes.
+- Added deep-link support for:
+  - `/pulse/content-planner`
+  - `/dashboard/creator/content-planner`
+  - `/pulse/dashboard/content-planner`
+  - `/dashboard/creator/post-scheduler`
+  - `/pulse/dashboard/post-scheduler`
+  - `/dashboard/creator/draft-studio`
+  - `/pulse/dashboard/draft-studio`
+- Updated Creator Studio planner/draft/scheduler cards to open native first.
+- Added Settings entry point.
+
+Safe fallback boundaries:
+
+- Full planner board/list management remains on web fallback because no dedicated native JSON list/read endpoint was found.
+- Edit/delete planner item flows wait for backend endpoints.
+- Publish-now, bulk schedule, recurring schedule, smart rescheduling, and version history remain fallback-only.
+- Native does not claim content was published; it only saves draft/scheduled planner records through backend validation.
+
+Verification plan:
+
+- Static verification, Expo Doctor, and the Content Planner audit script cover route wiring and backend reuse.
+- Authenticated QA browser route checks verified Content Planner, Scheduled Publishing, and Draft Studio direct routes/aliases with no visible runtime error text.
+- Direct authenticated local API checks verified `/api/dashboard/content-planner/item` accepted both a draft planner item and a scheduled planner item with `scheduled_at`.
+- Provider-backed full planner row management remains pending backend JSON read/list contracts.
+
+Remaining major features:
+
+- Native Courses + Learning Gateway.
+- Native seller/store management beyond Marketplace browse/detail.
+- Native advanced Live Studio/hosting/co-hosting.
+- Physical-device LiveKit calls and lock-screen call QA.
+- Full provider/device push verification.
+
+Recommended next highest-value native feature/action: Native Courses + Learning Gateway Foundation.
+
+Reason for recommendation:
+
+- Production PulseSoc already exposes course creation, teacher dashboard, course draft tables, free/paid-course-ready routes, and course safety/compliance boundaries.
+- Native now has Profile, Premium, Marketplace/media viewer, Creator Studio, Content Planner, Events, Notifications, Search, and Trust/Safety foundations needed for a safe learning gateway.
+- Courses can reuse existing backend/course draft logic while keeping paid checkout, teacher tools, and compliance-sensitive operations on web fallback.
+
+Reusable APIs/code/database/business logic for the next action:
+
+- Existing course routes and draft tables in `bot.py`.
+- Existing profile/teacher identity, premium, marketplace/payment fallbacks, media viewer/upload, creator tooling, trust/safety, and notification routing.
+- Existing course moderation, compliance, and paid-course readiness rules.
+
+What must be rebuilt natively:
+
+- Course discovery gateway.
+- Course detail shell.
+- Teacher/Profile navigation.
+- Create-course safe gateway.
+- Free/paid readiness labels.
+- Safe fallback to existing web flows for course creation, teacher dashboard, paid checkout, compliance review, and lesson authoring.
+
+Dependencies/blockers:
+
+- Confirm native-safe JSON course list/detail endpoints before building full course browsing.
+- Paid-course checkout and teacher dashboard should remain fallback unless native contracts already exist.
+- Course compliance/review must remain backend-authoritative.
+
+Risk level: medium.
+
+Estimated complexity: medium.
+
+Safest implementation plan:
+
+1. Inspect production course routes/tables and any existing course APIs.
+2. Reuse native Profile, Premium, Marketplace/media, Creator, Search, and notification routing.
+3. Build a native gateway around confirmed list/detail data only.
+4. Keep create/edit/paid/teacher/admin flows on safe fallback until backend contracts exist.
+5. Verify static checks, audit, and QA browser route rendering before commit.

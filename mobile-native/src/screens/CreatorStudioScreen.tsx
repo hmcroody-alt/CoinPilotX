@@ -119,8 +119,16 @@ export function CreatorStudioScreen({ navigation }: Props) {
 
   function openCreatorRoute(card: CreatorCard) {
     const route = creatorWebRoute(card.route);
-    if (route.includes("content-planner") || route.includes("draft-studio") || route.includes("post-scheduler")) {
-      openCreatorWebFallback(route).catch(() => undefined);
+    if (route.includes("content-planner")) {
+      navigation.navigate("ContentPlanner", { mode: "planner", title: "Content Planner" });
+      return;
+    }
+    if (route.includes("draft-studio")) {
+      navigation.navigate("ContentPlanner", { mode: "drafts", title: "Draft Studio" });
+      return;
+    }
+    if (route.includes("post-scheduler")) {
+      navigation.navigate("ContentPlanner", { mode: "scheduler", title: "Scheduled Publishing" });
       return;
     }
     if (route.includes("live-studio")) {
@@ -180,6 +188,8 @@ export function CreatorStudioScreen({ navigation }: Props) {
         <View style={styles.actionGrid}>
           <Action label="Feed Composer" onPress={() => navigation.navigate("Tabs", { screen: "Home", params: { openComposer: true } })} />
           <Action label="Status Creator" onPress={() => navigation.navigate("Tabs", { screen: "Status", params: { openCreator: true } })} />
+          <Action label="Content Planner" onPress={() => navigation.navigate("ContentPlanner", { mode: "planner", title: "Content Planner" })} />
+          <Action label="Scheduled Publishing" onPress={() => navigation.navigate("ContentPlanner", { mode: "scheduler", title: "Scheduled Publishing" })} />
           <Action label="Reels" onPress={() => navigation.navigate("Reels")} />
           <Action label="Profile" onPress={() => navigation.navigate("ProfileDetail", undefined)} />
           <Action label="Premium" onPress={() => navigation.navigate("Premium")} />

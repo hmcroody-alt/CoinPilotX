@@ -72,9 +72,13 @@ export type ContentPlannerItemPayload = {
   content_type?: string;
   hashtags?: string;
   audience?: string;
+  scheduled_at?: string;
+  alt_text?: string;
   status?: string;
   stage?: string;
   media_attached?: boolean;
+  thumbnail_selected?: boolean;
+  links_validated?: boolean;
   final_preview_reviewed?: boolean;
 };
 
@@ -110,6 +114,13 @@ export async function saveContentPlannerItem(payload: ContentPlannerItemPayload)
       source: "mobile_native_creator_studio"
     })
   });
+}
+
+export function plannerWebRoute(mode: "planner" | "scheduler" | "drafts" | "ai" = "planner") {
+  if (mode === "scheduler") return "/dashboard/creator/post-scheduler";
+  if (mode === "drafts") return "/dashboard/creator/draft-studio";
+  if (mode === "ai") return "/dashboard/creator/ai-creator-assistant";
+  return "/dashboard/creator/content-planner";
 }
 
 export async function openCreatorWebFallback(path = "/pulse/creator-studio") {

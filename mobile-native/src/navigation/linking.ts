@@ -115,6 +115,23 @@ export const linking: LinkingOptions<RootStackParamList> = {
       CreatorStudio: {
         path: "pulse/creator-studio"
       },
+      ContentPlanner: {
+        path: "pulse/content-planner",
+        parse: {
+          mode: String
+        }
+      },
+      ContentPlannerWeb: {
+        path: "dashboard/creator/content-planner",
+        parse: {
+          mode: String
+        }
+      },
+      ContentPlannerPulseAlias: "pulse/dashboard/content-planner",
+      PostScheduler: "dashboard/creator/post-scheduler",
+      PostSchedulerPulseAlias: "pulse/dashboard/post-scheduler",
+      DraftStudio: "dashboard/creator/draft-studio",
+      DraftStudioPulseAlias: "pulse/dashboard/draft-studio",
       GrowthCenter: {
         path: "pulse/growth"
       },
