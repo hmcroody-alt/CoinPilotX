@@ -3391,6 +3391,16 @@ def notify_user(
     recipient_language = metadata.get("preferred_language") or metadata.get("language") or preferred_language_for_user(cur, user_id)
     metadata.setdefault("preferred_language", recipient_language)
     metadata.setdefault("language", recipient_language)
+    event_type_value = str(note_type or "notification")[:80]
+    entity_type_value = str(entity_type or "")[:80]
+    entity_id_value = str(entity_id or "")[:120]
+    target_url_value = str(target_url or "/pulse")[:700]
+    metadata.setdefault("event_type", event_type_value)
+    metadata.setdefault("entity_type", entity_type_value)
+    metadata.setdefault("entity_id", entity_id_value)
+    metadata.setdefault("actor_id", int(actor_user_id or 0))
+    metadata.setdefault("timestamp", now)
+    metadata.setdefault("sync_cursor_key", f"{event_type_value}:{entity_type_value or 'event'}:{entity_id_value or target_url_value}:{now}")
     try:
         cur.execute(
             """
@@ -3402,13 +3412,13 @@ def notify_user(
             (
                 int(user_id),
                 int(actor_user_id or 0),
-                str(note_type or "message")[:80],
+                event_type_value,
                 str(title or "PulseSoc notification")[:180],
                 str(body or "")[:2000],
-                str(entity_type or "")[:80],
-                str(entity_id or "")[:120],
-                str(target_url or "/pulse")[:700],
-                str(target_url or "/pulse")[:700],
+                entity_type_value,
+                entity_id_value,
+                target_url_value,
+                target_url_value,
                 str(delivery_status or "created")[:60],
                 json.dumps(metadata or {})[:4000],
                 now,

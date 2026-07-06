@@ -3294,3 +3294,66 @@ ONE highest-impact fix ONLY: Event Producer Coverage Audit.
 Reason:
 
 - The cursor endpoint is correct for events it can see, but production readiness now depends on ensuring every critical backend event producer emits or maps to a cursor-visible event envelope with stable id, target URL, entity metadata, and invalidation hints.
+
+## Native Event Producer Coverage Audit
+
+Completed action: audited backend event producer coverage and normalized the shared `notify_user` emitter for native cursor sync.
+
+What changed:
+
+- Created `reports/pulsesoc_native_event_producer_coverage_audit.md`.
+- Created `scripts/pulsesoc_native_event_producer_coverage_audit.py`.
+- Updated the shared `notify_user` event emitter so every current producer using it writes standardized metadata:
+  - `event_type`
+  - `entity_type`
+  - `entity_id`
+  - `actor_id`
+  - `timestamp`
+  - `sync_cursor_key`
+- Validated that a standardized `notify_user` event flows into `pulse_notifications` and is visible through `/api/pulse/sync/events`.
+
+Event producer coverage completeness: 72%.
+
+Missing critical emitters:
+
+- marketplace seller listing create/update/pause/resume/delete
+- marketplace seller application changes
+- checkout blocked/failure states before Stripe handoff
+- message seen/delete/report cursor mirroring
+- call active/ringing/ended state transitions
+- safety block/mute/report/appeal state changes
+- verification request/review/appeal details
+- premium entitlement refresh outside payment success
+- intelligence source/forecast/read-state changes outside delivered alerts
+
+Duplicate / unsafe producers:
+
+- `notify_user`, `notification_service`, `pulsesoc_notification_system`, feed notifications, alert delivery, and realtime message events can all produce user-visible events.
+- This remains safe only when `pulse_notifications` is treated as the native cursor-visible truth source.
+- Retry/idempotency is not uniformly proven across all producer families.
+
+Systems not emitting cursor-visible events consistently:
+
+- seller inventory controls
+- marketplace report/save
+- trust/safety control actions
+- verification request/appeal state
+- selected call lifecycle branches
+
+Sync pipeline integrity score: 78/100.
+
+Overall native migration percentage: 85% foundation/parity coverage, 80% system consistency confidence, 64% release QA confidence.
+
+Critical production risk gaps:
+
+- Silent backend mutations can leave Activity Inbox and dependent native screens stale until full refresh.
+- Event producers need stable cursor-visible event envelopes before true realtime streaming should be attempted.
+- Provider/device push remains release-gated.
+
+Recommended next native feature/action: Marketplace Seller Inventory Event Emission Hardening.
+
+Reason for recommendation:
+
+- Seller inventory is complete enough that its remaining risk is consistency, not UI.
+- Listing create/update/pause/resume/delete mutations affect Seller Store, Marketplace, Buyer Orders, Activity Inbox, and Notifications.
+- These routes are the clearest high-value silent mutation gap discovered by the current audit.
