@@ -21,6 +21,8 @@ export type MarketplaceListing = {
   subcategory?: string;
   price_label?: string;
   currency?: string;
+  quantity?: number;
+  product_type?: string;
   safety_score?: number;
   status?: string;
   approval_status?: string;
@@ -81,6 +83,19 @@ export type MarketplaceListingCreatePayload = {
 
 export type MarketplaceListingCreateResponse = MarketplaceActionResponse & {
   listing_id?: number;
+};
+
+export type MarketplaceListingUpdatePayload = {
+  title: string;
+  short_description?: string;
+  description: string;
+  category?: string;
+  price_label?: string;
+  quantity?: number;
+};
+
+export type MarketplaceListingMutationResponse = MarketplaceActionResponse & {
+  listing?: MarketplaceListing;
 };
 
 export type MarketplaceSellerOrder = {
@@ -170,6 +185,40 @@ export async function createMarketplaceListing(payload: MarketplaceListingCreate
   });
 }
 
+export async function updateMarketplaceSellerListing(listingId: number, payload: MarketplaceListingUpdatePayload) {
+  const result = await pulseApi<MarketplaceListingMutationResponse>(`/api/pulse/marketplace/seller/listings/${listingId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+  return {
+    ...result,
+    listing: result.listing ? normalizeMarketplaceListing(result.listing) : undefined
+  };
+}
+
+export async function pauseMarketplaceSellerListing(listingId: number) {
+  return mutateMarketplaceSellerListingStatus(listingId, "pause");
+}
+
+export async function resumeMarketplaceSellerListing(listingId: number) {
+  return mutateMarketplaceSellerListingStatus(listingId, "resume");
+}
+
+export async function deleteMarketplaceSellerListing(listingId: number) {
+  return mutateMarketplaceSellerListingStatus(listingId, "delete");
+}
+
+async function mutateMarketplaceSellerListingStatus(listingId: number, action: "pause" | "resume" | "delete") {
+  const result = await pulseApi<MarketplaceListingMutationResponse>(`/api/pulse/marketplace/seller/listings/${listingId}/${action}`, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+  return {
+    ...result,
+    listing: result.listing ? normalizeMarketplaceListing(result.listing) : undefined
+  };
+}
+
 export async function connectMarketplacePayout() {
   const result = await pulseApi<MarketplaceActionResponse>("/api/pulse/payouts/connect", {
     method: "POST",
@@ -241,6 +290,8 @@ export function normalizeMarketplaceListing(item: MarketplaceListing): Marketpla
     description: String(item.description || ""),
     category: String(item.category || "Education"),
     price_label: String(item.price_label || "Request access"),
+    quantity: Number(item.quantity || 0),
+    product_type: String(item.product_type || ""),
     safety_score: Number(item.safety_score || 0),
     saved: Boolean(item.saved || item.is_saved),
     media: normalizeMarketplaceMedia(item)

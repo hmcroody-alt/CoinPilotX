@@ -3,12 +3,16 @@ import { ActivityIndicator, Image, Linking, Pressable, StyleSheet, Text, TextInp
 import {
   applyMarketplaceSeller,
   connectMarketplacePayout,
+  deleteMarketplaceSellerListing,
   loadCachedSellerStore,
   loadSellerStoreSnapshot,
   MarketplaceListing,
   MarketplaceSellerOrder,
   marketplaceSellerAuthor,
-  sellerStoreWebUrl
+  pauseMarketplaceSellerListing,
+  resumeMarketplaceSellerListing,
+  sellerStoreWebUrl,
+  updateMarketplaceSellerListing
 } from "../api/marketplace";
 import { mediaDisplayUrl } from "../api/feed";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
@@ -36,6 +40,12 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   const [bio, setBio] = useState("");
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
+  const [editingListingId, setEditingListingId] = useState(0);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+  const [editPriceLabel, setEditPriceLabel] = useState("");
+  const [editQuantity, setEditQuantity] = useState("");
 
   async function load() {
     setMessage("");
@@ -89,6 +99,62 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     }
   }
 
+  function startListingEdit(listing: MarketplaceListing) {
+    setEditingListingId(listing.id);
+    setEditTitle(listing.title || "");
+    setEditDescription(listing.description || listing.short_description || "");
+    setEditCategory(listing.category || "Education");
+    setEditPriceLabel(listing.price_label || "Request access");
+    setEditQuantity(String(listing.quantity || 0));
+    setMessage("");
+  }
+
+  function applyListingResponse(listing?: MarketplaceListing) {
+    if (!listing?.id) return;
+    setListings((current) => current.map((item) => (item.id === listing.id ? { ...item, ...listing } : item)));
+    startListingEdit(listing);
+  }
+
+  async function saveListingEdit() {
+    if (!editingListingId) return;
+    setBusy(`edit:${editingListingId}`);
+    setMessage("");
+    try {
+      const result = await updateMarketplaceSellerListing(editingListingId, {
+        title: editTitle.trim(),
+        description: editDescription.trim(),
+        category: editCategory.trim() || "Education",
+        price_label: editPriceLabel.trim() || "Request access",
+        quantity: Number(editQuantity || 0)
+      });
+      applyListingResponse(result.listing);
+      setMessage(result.message || "Listing updated and sent through review.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Listing could not be updated.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function mutateListingStatus(listing: MarketplaceListing, action: "pause" | "resume" | "delete") {
+    setBusy(`${action}:${listing.id}`);
+    setMessage("");
+    try {
+      const result =
+        action === "pause"
+          ? await pauseMarketplaceSellerListing(listing.id)
+          : action === "resume"
+            ? await resumeMarketplaceSellerListing(listing.id)
+            : await deleteMarketplaceSellerListing(listing.id);
+      applyListingResponse(result.listing);
+      setMessage(result.message || "Listing updated.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Listing status could not be updated.");
+    } finally {
+      setBusy("");
+    }
+  }
+
   const mediaItems = useMemo(
     () =>
       listings
@@ -108,7 +174,8 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   );
 
   const activeListings = listings.filter((listing) => ["active", "approved", "review_ready"].includes(String(listing.status || listing.approval_status || "").toLowerCase()));
-  const pendingListings = listings.filter((listing) => String(listing.status || listing.approval_status || "").toLowerCase().includes("pending"));
+  const pendingListings = listings.filter((listing) => statusKey(listing) === "pending");
+  const editingListing = listings.find((listing) => listing.id === editingListingId) || listings[0] || null;
 
   if (loading && !listings.length && !orders.length) {
     return (
@@ -193,6 +260,92 @@ export function SellerStoreScreen({ route, navigation }: Props) {
       </Panel>
 
       <Panel>
+        <Text style={styles.sectionTitle}>Seller inventory</Text>
+        <Text style={styles.copy}>Edit seller-owned listing fields and control visibility through PulseSoc marketplace review. Public Marketplace visibility remains approval-gated.</Text>
+        <View style={styles.inventoryList}>
+          {listings.slice(0, 8).map((listing) => (
+            <Pressable
+              key={`inventory-${listing.id}`}
+              style={[styles.inventoryRow, editingListing?.id === listing.id && styles.inventoryRowActive]}
+              onPress={() => startListingEdit(listing)}
+            >
+              <View style={styles.inventoryCopy}>
+                <Text style={styles.listingTitle} numberOfLines={1}>{listing.title || "Marketplace listing"}</Text>
+                <Text style={styles.listingMeta} numberOfLines={1}>{listing.price_label || "Request access"} · {listing.category || "Marketplace"}</Text>
+              </View>
+              <StatusPill listing={listing} />
+            </Pressable>
+          ))}
+        </View>
+        {!listings.length ? <Text style={styles.emptyText}>Seller inventory appears after products are created or loaded.</Text> : null}
+
+        {editingListing ? (
+          <View style={styles.editorBox}>
+            <View style={styles.editorHeader}>
+              <Text style={styles.editorTitle}>Edit listing #{editingListing.id}</Text>
+              <StatusPill listing={editingListing} />
+            </View>
+            <TextInput style={styles.input} value={editTitle} onChangeText={setEditTitle} placeholder="Title" placeholderTextColor={colors.muted} />
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={editDescription}
+              onChangeText={setEditDescription}
+              placeholder="Description"
+              placeholderTextColor={colors.muted}
+              multiline
+            />
+            <View style={styles.twoCol}>
+              <TextInput style={[styles.input, styles.flex]} value={editCategory} onChangeText={setEditCategory} placeholder="Category" placeholderTextColor={colors.muted} />
+              <TextInput style={[styles.input, styles.flex]} value={editPriceLabel} onChangeText={setEditPriceLabel} placeholder="Price label" placeholderTextColor={colors.muted} />
+            </View>
+            <TextInput
+              style={styles.input}
+              value={editQuantity}
+              onChangeText={setEditQuantity}
+              placeholder="Inventory quantity"
+              placeholderTextColor={colors.muted}
+              keyboardType="numeric"
+            />
+            <View style={styles.actionRow}>
+              <Pressable style={styles.primaryButton} disabled={busy === `edit:${editingListing.id}`} onPress={saveListingEdit}>
+                <Text style={styles.primaryText}>{busy === `edit:${editingListing.id}` ? "Saving..." : "Save and Review"}</Text>
+              </Pressable>
+              <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: "Marketplace Media" })}>
+                <Text style={styles.secondaryText}>Add Media</Text>
+              </Pressable>
+              <Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl("create")).catch(() => undefined)}>
+                <Text style={styles.secondaryText}>Advanced Edit Web</Text>
+              </Pressable>
+            </View>
+            <View style={styles.actionRow}>
+              <Pressable
+                style={styles.secondaryButton}
+                disabled={busy === `pause:${editingListing.id}` || statusKey(editingListing) === "paused"}
+                onPress={() => mutateListingStatus(editingListing, "pause")}
+              >
+                <Text style={styles.secondaryText}>{busy === `pause:${editingListing.id}` ? "Pausing..." : "Pause"}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.secondaryButton}
+                disabled={busy === `resume:${editingListing.id}` || statusKey(editingListing) === "live"}
+                onPress={() => mutateListingStatus(editingListing, "resume")}
+              >
+                <Text style={styles.secondaryText}>{busy === `resume:${editingListing.id}` ? "Resuming..." : "Resume Review"}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.dangerButton}
+                disabled={busy === `delete:${editingListing.id}` || statusKey(editingListing) === "removed"}
+                onPress={() => mutateListingStatus(editingListing, "delete")}
+              >
+                <Text style={styles.dangerText}>{busy === `delete:${editingListing.id}` ? "Removing..." : "Remove"}</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.meta}>Updates are saved server-side and re-enter marketplace review when content changes. Checkout, payouts, fulfillment, disputes, and provider actions stay on safe fallback flows.</Text>
+          </View>
+        ) : null}
+      </Panel>
+
+      <Panel>
         <Text style={styles.sectionTitle}>Product media gallery</Text>
         <Text style={styles.copy}>The gallery reuses marketplace media payloads and the shared native media viewer. Unsupported media falls back safely inside the viewer.</Text>
         <View style={styles.mediaGrid}>
@@ -256,6 +409,41 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   );
 }
 
+function statusKey(listing: MarketplaceListing) {
+  const raw = String(listing.status || listing.approval_status || "draft").toLowerCase();
+  if (raw.includes("delete") || raw.includes("removed")) return "removed";
+  if (raw.includes("reject") || raw.includes("blocked")) return "rejected";
+  if (raw.includes("pause")) return "paused";
+  if (raw.includes("sold")) return "sold";
+  if (raw.includes("stock")) return "out_of_stock";
+  if (raw.includes("pending") || raw.includes("review")) return "pending";
+  if (["active", "approved", "live"].includes(raw)) return "live";
+  if (raw.includes("draft")) return "draft";
+  return raw || "draft";
+}
+
+function statusLabel(listing: MarketplaceListing) {
+  const key = statusKey(listing);
+  if (key === "live") return "Approved/live";
+  if (key === "pending") return "Pending review";
+  if (key === "out_of_stock") return "Out of stock";
+  if (key === "removed") return "Removed";
+  return key.replace(/_/g, " ");
+}
+
+function StatusPill({ listing }: { listing: MarketplaceListing }) {
+  const key = statusKey(listing);
+  const style =
+    key === "live"
+      ? styles.statusLive
+      : key === "pending"
+        ? styles.statusPending
+        : key === "rejected" || key === "removed"
+          ? styles.statusDanger
+          : styles.statusNeutral;
+  return <Text style={[styles.statusPill, style]}>{statusLabel(listing)}</Text>;
+}
+
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.metric}>
@@ -312,6 +500,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21
   },
+  dangerButton: {
+    alignItems: "center",
+    borderColor: "rgba(255, 107, 107, 0.45)",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexGrow: 1,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: 12
+  },
+  dangerText: {
+    color: colors.danger,
+    fontWeight: "900",
+    textAlign: "center"
+  },
+  editorBox: {
+    backgroundColor: "rgba(37, 208, 167, 0.06)",
+    borderColor: "rgba(37, 208, 167, 0.2)",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 10,
+    padding: 12
+  },
+  editorHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    justifyContent: "space-between"
+  },
+  editorTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "900"
+  },
   emptyText: {
     color: colors.muted,
     fontSize: 13,
@@ -344,6 +567,9 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "900",
     lineHeight: 29
+  },
+  flex: {
+    flex: 1
   },
   input: {
     backgroundColor: colors.surfaceRaised,
@@ -399,6 +625,30 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     fontWeight: "900"
+  },
+  inventoryCopy: {
+    flex: 1,
+    gap: 3
+  },
+  inventoryList: {
+    gap: 8
+  },
+  inventoryRow: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 58,
+    padding: 10
+  },
+  inventoryRowActive: {
+    borderColor: "rgba(37, 208, 167, 0.5)",
+    shadowColor: colors.accent,
+    shadowOpacity: 0.18,
+    shadowRadius: 12
   },
   mediaFallback: {
     color: colors.muted,
@@ -461,6 +711,11 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "900"
   },
+  meta: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 18
+  },
   notice: {
     backgroundColor: "rgba(37, 208, 167, 0.12)",
     borderColor: "rgba(37, 208, 167, 0.28)",
@@ -520,9 +775,44 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "900"
   },
+  statusDanger: {
+    backgroundColor: "rgba(255, 107, 107, 0.12)",
+    borderColor: "rgba(255, 107, 107, 0.35)",
+    color: colors.danger
+  },
+  statusLive: {
+    backgroundColor: "rgba(37, 208, 167, 0.12)",
+    borderColor: "rgba(37, 208, 167, 0.35)",
+    color: colors.accent
+  },
+  statusNeutral: {
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderColor: colors.border,
+    color: colors.muted
+  },
+  statusPending: {
+    backgroundColor: "rgba(243, 185, 78, 0.12)",
+    borderColor: "rgba(243, 185, 78, 0.35)",
+    color: colors.warning
+  },
+  statusPill: {
+    borderRadius: 999,
+    borderWidth: 1,
+    fontSize: 11,
+    fontWeight: "900",
+    overflow: "hidden",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    textTransform: "capitalize"
+  },
   textArea: {
     minHeight: 104,
     textAlignVertical: "top"
+  },
+  twoCol: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
   },
   warning: {
     backgroundColor: "rgba(243, 185, 78, 0.12)",

@@ -41223,7 +41223,7 @@ def api_pulse_marketplace_search():
     cur = conn.cursor()
     cur.execute(
         f"""
-        SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.safety_score,
+        SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
                COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
                COALESCE(u.username,'') AS seller_username
@@ -41254,7 +41254,7 @@ def api_pulse_marketplace_seller_listings():
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.safety_score,
+        SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
                COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
                COALESCE(u.username,'') AS seller_username
@@ -41271,6 +41271,165 @@ def api_pulse_marketplace_seller_listings():
     items = [pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), [])) for row in rows]
     conn.close()
     return jsonify({"ok": True, "items": items, "limit": limit})
+
+
+def pulse_marketplace_owned_listing_response(cur, listing_id, user_id):
+    cur.execute(
+        """
+        SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
+               l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
+               COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
+               COALESCE(u.username,'') AS seller_username
+        FROM marketplace_listings l
+        LEFT JOIN users u ON u.user_id=l.seller_user_id
+        WHERE l.id=? AND l.seller_user_id=?
+        LIMIT 1
+        """,
+        (int(listing_id or 0), int(user_id or 0)),
+    )
+    listing = dict(cur.fetchone() or {})
+    if not listing:
+        return {}
+    media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [listing.get("id")])
+    return pulse_marketplace_listing_payload(listing, media_by_listing.get(int(listing.get("id") or 0), []))
+
+
+@webhook_app.route("/api/pulse/marketplace/seller/listings/<int:listing_id>", methods=["PATCH", "POST"])
+def api_pulse_marketplace_seller_listing_update(listing_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    title = clean_html(payload.get("title") or "")[:140]
+    short_description = clean_html(payload.get("short_description") or "")[:260]
+    description = clean_html(payload.get("description") or "")[:1400]
+    category = clean_html(payload.get("category") or "Education")[:80]
+    price = clean_html(payload.get("price_label") or "Request access")[:80]
+    quantity = safe_int(payload.get("quantity"), 0)
+    if not title or not description:
+        return api_error("Add a title and description before updating the listing.", 400)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    seller = approved_marketplace_seller_for_user(cur, user["user_id"])
+    if not seller:
+        conn.close()
+        return api_error("Merchant approval is required before editing listings.", 403)
+    cur.execute("SELECT * FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1", (int(listing_id), int(user["user_id"])))
+    existing = dict(cur.fetchone() or {})
+    if not existing:
+        conn.close()
+        return api_error("Listing not found.", 404)
+    if str(existing.get("status") or "").lower() in {"seller_deleted", "deleted", "removed"}:
+        conn.close()
+        return api_error("Deleted listings cannot be edited.", 400)
+    review = revenue_safety_engine.marketplace_listing_review({"title": title, "description": description, "category": category})
+    next_status = "pending_review" if review["status"] != "review_ready" else "review_ready"
+    cur.execute(
+        """
+        UPDATE marketplace_listings
+        SET title=?, short_description=?, description=?, category=?, price_label=?, quantity=?,
+            status=?, approval_status=?, safety_score=?, safety_flags_json=?, updated_at=?
+        WHERE id=? AND seller_user_id=?
+        """,
+        (
+            title,
+            short_description,
+            description,
+            category,
+            price,
+            quantity,
+            next_status,
+            review["status"],
+            int(review["risk_score"]),
+            json.dumps(review["flags"], default=str),
+            now,
+            int(listing_id),
+            int(user["user_id"]),
+        ),
+    )
+    item = pulse_marketplace_owned_listing_response(cur, listing_id, user["user_id"])
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Listing updated and sent through marketplace review.", "listing": item})
+
+
+@webhook_app.route("/api/pulse/marketplace/seller/listings/<int:listing_id>/pause", methods=["POST"])
+def api_pulse_marketplace_seller_listing_pause(listing_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1", (int(listing_id), int(user["user_id"])))
+    if not cur.fetchone():
+        conn.close()
+        return api_error("Listing not found.", 404)
+    cur.execute("UPDATE marketplace_listings SET status='paused', updated_at=? WHERE id=? AND seller_user_id=?", (now, int(listing_id), int(user["user_id"])))
+    item = pulse_marketplace_owned_listing_response(cur, listing_id, user["user_id"])
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Listing paused.", "listing": item})
+
+
+@webhook_app.route("/api/pulse/marketplace/seller/listings/<int:listing_id>/resume", methods=["POST"])
+def api_pulse_marketplace_seller_listing_resume(listing_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    seller = approved_marketplace_seller_for_user(cur, user["user_id"])
+    if not seller:
+        conn.close()
+        return api_error("Merchant approval is required before resuming listings.", 403)
+    cur.execute("SELECT * FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1", (int(listing_id), int(user["user_id"])))
+    listing = dict(cur.fetchone() or {})
+    if not listing:
+        conn.close()
+        return api_error("Listing not found.", 404)
+    review = revenue_safety_engine.marketplace_listing_review({"title": listing.get("title") or "", "description": listing.get("description") or "", "category": listing.get("category") or ""})
+    next_status = "pending_review" if review["status"] != "review_ready" else "review_ready"
+    cur.execute(
+        "UPDATE marketplace_listings SET status=?, approval_status=?, safety_score=?, safety_flags_json=?, updated_at=? WHERE id=? AND seller_user_id=?",
+        (next_status, review["status"], int(review["risk_score"]), json.dumps(review["flags"], default=str), now, int(listing_id), int(user["user_id"])),
+    )
+    item = pulse_marketplace_owned_listing_response(cur, listing_id, user["user_id"])
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Listing returned to marketplace review.", "listing": item})
+
+
+@webhook_app.route("/api/pulse/marketplace/seller/listings/<int:listing_id>/delete", methods=["POST", "DELETE"])
+def api_pulse_marketplace_seller_listing_delete(listing_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1", (int(listing_id), int(user["user_id"])))
+    if not cur.fetchone():
+        conn.close()
+        return api_error("Listing not found.", 404)
+    cur.execute(
+        "UPDATE marketplace_listings SET status='seller_deleted', approval_status='seller_deleted', updated_at=? WHERE id=? AND seller_user_id=?",
+        (now, int(listing_id), int(user["user_id"])),
+    )
+    item = pulse_marketplace_owned_listing_response(cur, listing_id, user["user_id"])
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Listing removed from seller inventory.", "listing": item})
 
 
 @webhook_app.route("/pulse/assistant", methods=["GET"])

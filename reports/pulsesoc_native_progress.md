@@ -2211,3 +2211,131 @@ Safest implementation plan:
 4. Keep public marketplace visibility approval-gated.
 5. Build native edit/inventory UI around server responses.
 6. Run backend contract checks and QA browser route checks before commit.
+
+## Native Seller Inventory Controls Foundation
+
+Completed action: built native Marketplace Listing Edit + Seller Inventory Controls foundation.
+
+What was implemented:
+
+- Added seller-owned listing mutation APIs:
+  - `PATCH/POST /api/pulse/marketplace/seller/listings/<listing_id>`
+  - `POST /api/pulse/marketplace/seller/listings/<listing_id>/pause`
+  - `POST /api/pulse/marketplace/seller/listings/<listing_id>/resume`
+  - `POST/DELETE /api/pulse/marketplace/seller/listings/<listing_id>/delete`
+- Added backend ownership checks for every seller listing mutation.
+- Reused approved merchant checks for edit and resume.
+- Reused existing marketplace review/risk scoring for edit and resume.
+- Kept public marketplace search approval-gated.
+- Implemented soft delete through `seller_deleted` status instead of physical deletion.
+- Added native seller inventory controls inside Seller/Store:
+  - status labels
+  - listing selection
+  - title/description/category/price/quantity edit fields
+  - save and review
+  - pause
+  - resume review
+  - remove
+  - media handoff
+  - safe web fallback for advanced edit/provider flows
+- Added `scripts/pulsesoc_native_seller_inventory_audit.py`.
+- Added `reports/pulsesoc_native_seller_inventory_progress.md`.
+- Verified the seller-owned backend contract with a local authenticated QA seller:
+  - update persisted seller-owned title/description/category/price/quantity
+  - pause hid the listing from public marketplace search
+  - resume returned the listing through marketplace review
+  - soft delete set `seller_deleted`
+  - deleted listings stayed out of public marketplace search
+- Verified static/native gates:
+  - `npm ci --prefix mobile-native --no-audit --no-fund --progress=false`
+  - `npm run --prefix mobile-native typecheck`
+  - Expo Doctor
+  - seller inventory audit script
+  - `git diff --check`
+- QA browser route check confirmed the Seller/Store route remains protected behind auth. Authenticated browser interaction did not complete in this pass and remains a hardening follow-up, not a development blocker.
+
+Reusable backend/API/database/business logic:
+
+- Existing marketplace listing table.
+- Existing marketplace product media table.
+- Existing seller approval rules.
+- Existing marketplace listing review/risk scoring.
+- Existing public marketplace visibility rules.
+- Existing seller-owned listing payload builder.
+- Existing NativeMediaViewer, Seller/Store, Camera Studio, and safe fallback routing.
+
+Native-only work:
+
+- Seller inventory UI and status presentation.
+- Edit gateway controls.
+- Pause/resume/remove action controls.
+- Local state refresh from backend responses.
+- Seller/Store layout and copy.
+
+Remaining gaps:
+
+- Practical QA hardening for edit/pause/resume/remove flows.
+- Physical marketplace media upload QA.
+- Provider checkout/payout QA.
+- Admin approval/rejection QA.
+- Native media reorder/remove controls.
+- Dedicated seller listing detail/editor route.
+
+Updated native completion percentages by subsystem:
+
+| Subsystem | Current estimate | Confidence | Remaining high-value gap |
+| --- | ---: | --- | --- |
+| Auth/session/settings | 86% | Browser + simulator foundations verified | Release device auth and provider edge cases |
+| Messaging and calls | 72% | Browser/practical QA verified | LiveKit two-device media and lock-screen release QA |
+| Feed/posts/composer | 78% | Browser/static verified | Rich composer options and device media QA |
+| Media viewer/upload/camera | 72% | Browser/simulator/media QA partially verified | Physical camera/mic, large video, weak network |
+| Reels and Status | 74% | Browser/static verified | Physical native video performance |
+| Marketplace and Seller/Store | 88% | Backend contract + native inventory foundation | Inventory QA, marketplace-specific upload, provider QA |
+| Search, Saved, Groups, Events, Courses | 75% | Browser/static verified | Data-rich authenticated QA depth |
+| Trust, Safety, Verification, Account Health | 82% | Browser verified | Document/admin/provider flows remain web/server-owned |
+| Premium, Creator, Growth, Intelligence | 74% | Browser/static verified | Provider/billing/advanced tools remain fallback |
+| Live and Calls | 56% | Practical shell verified | Native LiveKit/call media release QA |
+| Android readiness | 35% | Tooling partially verified | Physical Android QA |
+
+overall native migration percentage: 78% foundation/parity coverage, 63% release QA confidence.
+
+Recommended next highest-value native feature/action: Native Seller Inventory Practical QA Hardening.
+
+Reason for recommendation:
+
+- The seller inventory foundation adds seller-owned mutation APIs and commerce lifecycle controls.
+- Because this touches marketplace trust, public visibility, and seller state, a short authenticated backend/browser QA pass should verify edit, pause, resume, remove, status labels, public marketplace filtering, and Seller/Store refresh before moving to another major feature.
+
+Reusable APIs/code/database/business logic for next action:
+
+- Seller-owned listings endpoint.
+- Seller listing update/pause/resume/delete APIs.
+- Existing seller approval rules.
+- Existing marketplace moderation/review/risk scoring.
+- Existing public search approval filters.
+- Existing NativeMediaViewer and Seller/Store components.
+
+What must be rebuilt or adjusted natively:
+
+- Only scoped blockers found in QA.
+- Do not duplicate checkout, payout, moderation, approval, refund, dispute, or fulfillment logic.
+
+Dependencies/blockers:
+
+- QA account needs approved merchant status and owned listings with media.
+- Provider checkout/payout remains fallback/provider-owned.
+- Physical marketplace media upload remains release QA.
+
+Risk level: medium.
+
+Estimated complexity: low to medium.
+
+Safest implementation plan:
+
+1. Seed or use an approved seller with active, review-ready, paused, and deleted/removed listings.
+2. Verify Seller/Store inventory status labels and edit controls in QA browser.
+3. Verify update sends listing through server review.
+4. Verify pause hides from public search while preserving seller visibility.
+5. Verify resume re-runs review.
+6. Verify remove is a soft deletion and public search remains approval-gated.
+7. Fix only scoped blockers and preserve production WebView paths.
