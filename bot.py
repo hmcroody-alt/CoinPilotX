@@ -74772,6 +74772,11 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions"):
         status_group = "pending"
     else:
         status_group = status or "pending"
+    payment_status = "pending"
+    if status_group in {"paid", "processing", "shipped", "delivered"}:
+        payment_status = "paid"
+    elif status_group in {"refunded", "cancelled", "failed"}:
+        payment_status = status_group
     order_id = str(tx_id)
     receipt_url = f"/dashboard/orders?order_id={tx_id}&source={source_table}"
     support_url = f"/support?topic=order&order_id={tx_id}&source={source_table}"
@@ -74790,7 +74795,7 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions"):
         "currency": currency,
         "status": status,
         "status_group": status_group,
-        "payment_status": "paid" if status_group == "paid" else "refunded" if status_group == "refunded" else "cancelled" if status_group == "cancelled" else "pending",
+        "payment_status": payment_status,
         "seller": {
             "user_id": seller_user_id,
             "display_name": seller.get("display_name") or listing.get("seller_name") or "PulseSoc Seller",

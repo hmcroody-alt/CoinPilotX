@@ -2597,3 +2597,125 @@ Safest implementation plan:
 4. Verify receipt/support/dispute fallback URLs do not mutate payment state.
 5. Verify Marketplace listing and seller navigation.
 6. Fix only scoped blockers and preserve production WebView compatibility.
+
+## Native Buyer Orders Practical QA Hardening
+
+Completed action: verified and hardened the native Buyer Orders lifecycle.
+
+What was verified and hardened:
+
+- Seeded buyer, seller, listing, and order fixtures for:
+  - pending
+  - paid
+  - processing
+  - shipped
+  - delivered
+  - cancelled
+  - failed
+  - refunded
+- Verified unauthenticated `/api/pulse/orders` remains protected.
+- Verified authenticated `/api/pulse/orders` returns all lifecycle states.
+- Verified `/api/pulse/orders/<transaction_id>` returns detail state, seller identity, listing relation, receipt fallback, support fallback, and source ledger.
+- Verified `/api/pulse/purchases` returns the same buyer order set through the purchases alias.
+- Verified orders sort newest first by server timestamps.
+- Verified seller-deleted listing references remain safe for historical refunded order detail.
+- Verified signed-out QA browser order routes remain auth-gated without console errors.
+- Hardened backend buyer-order normalization so failed/refunded/cancelled/shipped/delivered/processing states are not mislabeled as pending payment state.
+
+Provider/device behavior not verified:
+
+- Real Stripe receipt pages.
+- Real refund/dispute provider events.
+- Real shipping provider tracking.
+- Physical-device notification taps.
+- Activity Inbox delivery for live purchase/shipping/refund notifications.
+- Authenticated browser click-through with a production-like buyer session.
+
+Completed native subsystems:
+
+- Native app foundation.
+- Auth/session foundation.
+- Messenger.
+- Notifications and Activity Inbox.
+- Home Feed, Post Detail, and Feed Composer.
+- Profile and Profile Edit.
+- Reels and Status viewer/creator.
+- Shared Media Upload, Camera Studio, and Media Viewer foundations.
+- Marketplace browse/detail.
+- Full native commerce foundation: seller application, listing composer, inventory controls, media payloads, buyer purchase history, order detail, and lifecycle QA.
+- Search, Saved, Groups, Events, Courses, Creator, Growth, Premium, Intelligence, Trust/Safety, Verification, Account Health, Blocks/Mutes/Reports, Live Viewer, and Calls shells/foundations.
+
+Remaining major subsystems:
+
+- Commerce provider boundary QA for checkout, payout, refunds, disputes, fulfillment, receipts, and shipping/tracking.
+- Activity Inbox commerce notification fixtures for purchase/shipping/refund updates.
+- Native media reorder/remove controls for marketplace listings.
+- Physical iPhone/Android media upload QA.
+- Full LiveKit call/live release QA.
+- Android physical QA.
+- Final native polish, accessibility, animation, and performance pass.
+
+Updated native completion percentages by subsystem:
+
+| Subsystem | Current estimate | Confidence | Remaining high-value gap |
+| --- | ---: | --- | --- |
+| Auth/session/settings | 86% | Browser + simulator foundations verified | Release device auth and provider edge cases |
+| Messaging and calls | 72% | Browser/practical QA verified | LiveKit two-device media and lock-screen release QA |
+| Feed/posts/composer | 78% | Browser/static verified | Rich composer options and device media QA |
+| Media viewer/upload/camera | 72% | Browser/simulator/media QA partially verified | Physical camera/mic, large video, weak network |
+| Reels and Status | 74% | Browser/static verified | Physical native video performance |
+| Marketplace and Commerce | 93% | Backend contract + lifecycle QA hardening | Provider QA, commerce notification fixtures, media reorder/remove |
+| Search, Saved, Groups, Events, Courses | 75% | Browser/static verified | Data-rich authenticated QA depth |
+| Trust, Safety, Verification, Account Health | 82% | Browser verified | Document/admin/provider flows remain web/server-owned |
+| Premium, Creator, Growth, Intelligence | 74% | Browser/static verified | Provider/billing/advanced tools remain fallback |
+| Live and Calls | 56% | Practical shell verified | Native LiveKit/call media release QA |
+| Android readiness | 35% | Tooling partially verified | Physical Android QA |
+
+overall native migration percentage: 80% foundation/parity coverage, 65% release QA confidence.
+
+Recommended next highest-value native feature/action: Native Commerce Polish + Provider Boundary QA.
+
+Reason for recommendation:
+
+- The buyer/seller commerce loop is now structurally complete and lifecycle-hardened.
+- The remaining risk is not another new screen; it is provider boundary clarity, Activity Inbox commerce notification fixtures, and release-blocker documentation around checkout, receipts, refunds, disputes, fulfillment, and shipping.
+- A short commerce polish pass can improve trust, reduce regressions, and preserve server-authoritative payment logic before moving to another large subsystem.
+
+Reusable APIs/code/database/business logic for next action:
+
+- `seller_transactions`
+- `creator_transactions`
+- `marketplace_listings`
+- `/api/pulse/orders`
+- `/api/pulse/orders/<transaction_id>`
+- `/api/pulse/purchases`
+- `/api/pulse/payments/checkout`
+- Activity Inbox notification routing
+- existing Stripe/provider checkout, receipt, refund, dispute, payout, fulfillment, and support routes
+
+What must be rebuilt natively:
+
+- No new major business logic.
+- Practical QA fixtures and small UI polish only:
+  - commerce notification routing checks
+  - receipt/support/dispute fallback clarity
+  - buyer/seller commerce navigation polish
+  - empty/error/offline state polish
+
+Dependencies/blockers:
+
+- Real provider tests need configured Stripe/provider test accounts and safe test transactions.
+- Shipping/refund/dispute behavior requires provider/server fixtures.
+- Physical notification taps require device push setup.
+
+Risk level: low.
+
+Estimated complexity: low.
+
+Safest implementation plan:
+
+1. Seed purchase, refund, shipping, and dispute notification fixtures.
+2. Verify Activity Inbox routes each commerce notification into native Buyer Orders, Seller/Store, Marketplace Detail, or safe fallback.
+3. Verify provider-owned actions are clear, non-mutating, and do not bypass backend checks.
+4. Polish buyer/seller commerce copy and state layout only where it reduces ambiguity.
+5. Preserve production WebView compatibility and keep payment/provider logic server-authoritative.
