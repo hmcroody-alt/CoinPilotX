@@ -2827,3 +2827,112 @@ Safest implementation plan:
 3. Confirm native order and seller screens can safely open from each commerce event.
 4. Fix only scoped routing/copy/fallback issues.
 5. Keep provider creation and payment state mutation server-side.
+
+## Native Commerce + Activity Fixture Hardening
+
+Completed action: hardened commerce/activity fixture consistency across backend notifications, Buyer Orders, Seller Orders, Marketplace listing state, and native routing.
+
+What was verified:
+
+- Commerce events are seeded through existing `notify_user` and `pulse_notifications`, not a native-only event store.
+- Fixture events cover purchase completed, payment failed, refund issued, dispute created, shipping updated, order cancelled, listing created, listing updated, and listing removed.
+- Buyer order history reflects paid, failed, refunded, cancelled, shipped, and dispute-opened transaction states.
+- Seller order endpoint reads the same transaction ledger as buyer orders.
+- Deleted/seller-removed listings remain safe in historical order views.
+- Activity unread counts include commerce events.
+- Notification list and badge APIs now include legacy Pulse commerce notifications written by existing `notify_user` paths, so native Activity Inbox can see existing commerce events without a new native store.
+- Activity read/delete operations use existing notification APIs.
+- Activity Inbox classifies order/payment/refund/listing/seller signals through the existing Marketplace lane.
+- Native notification routing supports `/pulse/orders`, `/pulse/orders/<id>`, `/pulse/purchases`, `/dashboard/orders`, `/pulse/marketplace`, `/pulse/activity`, and `/pulse/inbox`.
+- Duplicate provider event handling remains guarded by existing Stripe webhook idempotency code.
+
+Provider/device behavior not verified:
+
+- Live APNs/FCM commerce notification taps.
+- Physical badge synchronization.
+- Live Stripe refund/dispute webhook delivery.
+- Real shipping provider webhook delivery.
+- Cross-device activity sync.
+- Offline cache restore with network disabled.
+
+Completed native subsystems:
+
+- Native app foundation.
+- Auth/session foundation.
+- Messenger.
+- Notifications and Activity Inbox.
+- Home Feed, Post Detail, and Feed Composer.
+- Profile and Profile Edit.
+- Reels and Status viewer/creator.
+- Shared Media Upload, Camera Studio, and Media Viewer foundations.
+- Marketplace browse/detail.
+- Full native commerce foundation: seller application, listing composer, inventory controls, marketplace media payloads, buyer purchase history, order detail, lifecycle QA, provider boundary QA, and commerce/activity fixture hardening.
+- Search, Saved, Groups, Events, Courses, Creator, Growth, Premium, Intelligence, Trust/Safety, Verification, Account Health, Blocks/Mutes/Reports, Live Viewer, and Calls shells/foundations.
+
+Remaining major subsystems:
+
+- Native real-time event sync readiness for activity, commerce, messaging, calls, alerts, safety, and marketplace state.
+- Native media reorder/remove controls for marketplace listings.
+- Physical iPhone/Android media upload QA.
+- Full LiveKit call/live release QA.
+- Android physical QA.
+- Final native polish, accessibility, animation, and performance pass.
+
+Updated native completion percentages by subsystem:
+
+| Subsystem | Current estimate | Confidence | Remaining high-value gap |
+| --- | ---: | --- | --- |
+| Auth/session/settings | 86% | Browser + simulator foundations verified | Release device auth and provider edge cases |
+| Messaging and calls | 72% | Browser/practical QA verified | LiveKit two-device media and lock-screen release QA |
+| Feed/posts/composer | 78% | Browser/static verified | Rich composer options and device media QA |
+| Media viewer/upload/camera | 72% | Browser/simulator/media QA partially verified | Physical camera/mic, large video, weak network |
+| Reels and Status | 74% | Browser/static verified | Physical native video performance |
+| Marketplace and Commerce | 95% | Backend contract + lifecycle/provider/activity fixture QA | Provider-live release QA, media reorder/remove |
+| Notifications and Activity Inbox | 84% | Browser + backend fixture verified | Real-time sync, push-tap/device badge release QA |
+| Search, Saved, Groups, Events, Courses | 75% | Browser/static verified | Data-rich authenticated QA depth |
+| Trust, Safety, Verification, Account Health | 82% | Browser verified | Document/admin/provider flows remain web/server-owned |
+| Premium, Creator, Growth, Intelligence | 74% | Browser/static verified | Provider/billing/advanced tools remain fallback |
+| Live and Calls | 56% | Practical shell verified | Native LiveKit/call media release QA |
+| Android readiness | 35% | Tooling partially verified | Physical Android QA |
+
+overall native migration percentage: 81% foundation/parity coverage, 67% release QA confidence.
+
+Recommended next highest-value native feature/action: Native Real-time Event Sync Readiness.
+
+Reason for recommendation:
+
+- Commerce and Activity now agree through seeded backend fixtures.
+- The next gap is event freshness and cross-device consistency, not another commerce screen.
+- PulseSoc already has many native surfaces that currently load or poll independently. A shared real-time sync layer can keep Activity Inbox, Buyer Orders, Seller Inventory, Messenger, Calls, Alerts, Safety, and Marketplace state aligned while preserving backend authority.
+
+Reusable APIs/code/database/business logic for next action:
+
+- existing notification APIs and `pulse_notifications`
+- existing Messenger/conversation unread APIs
+- existing Calls active-call APIs
+- existing alert/intelligence event APIs
+- existing commerce ledgers: `seller_transactions`, `creator_transactions`, `marketplace_listings`
+- existing server-side websocket/SSE/realtime/event infrastructure if present
+- existing native cache utilities and refresh hooks
+
+What must be rebuilt natively:
+
+- A small shared native event-sync service that subscribes or polls, maps event envelopes to cache invalidation, and safely refreshes affected screens.
+- No duplicated backend business logic.
+
+Dependencies/blockers:
+
+- Need inspection of current production realtime infrastructure before choosing WebSocket, SSE, long-polling, or hybrid fallback.
+- Physical push and cross-device sync still require device/provider QA.
+
+Risk level: medium.
+
+Estimated complexity: medium.
+
+Safest implementation plan:
+
+1. Inspect existing production realtime, websocket, SSE, notification, and polling infrastructure.
+2. Inventory native screens that currently poll independently.
+3. Define a minimal server-authoritative event envelope and cache invalidation map.
+4. Build native event-sync foundation with graceful polling fallback.
+5. Verify with seeded backend events before attempting provider/device push sync.

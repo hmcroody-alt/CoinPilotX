@@ -26795,10 +26795,20 @@ def admin_alerts_run_check_api():
 
 def _pulse_notification_os_badge_counts(user_id):
     legacy_counts = notification_service.pulse_badge_counts(user_id)
+    legacy_alert_count = int((legacy_counts or {}).get("alert_unread_count") or (legacy_counts or {}).get("unread_count") or (legacy_counts or {}).get("count") or 0)
+    legacy_chat_count = int((legacy_counts or {}).get("chat_unread_count") or 0)
     counts = pulsesoc_notification_system.badge_counts(
         user_id,
-        chat_unread_count=int((legacy_counts or {}).get("chat_unread_count") or 0),
+        chat_unread_count=legacy_chat_count,
     )
+    alert_count = int(counts.get("alert_unread_count") or counts.get("unread_count") or counts.get("count") or 0) + legacy_alert_count
+    counts.update({
+        "alert_unread_count": alert_count,
+        "count": alert_count,
+        "unread_count": alert_count,
+        "total_unread_count": alert_count + int(counts.get("chat_unread_count") or legacy_chat_count),
+        "legacy_pulse_unread_count": legacy_alert_count,
+    })
     if command_center_client_service.is_enabled():
         pipeline = command_center_client_service.get_notification_unread_count(user_id)
         if pipeline.get("available"):
@@ -26812,6 +26822,41 @@ def _pulse_notification_os_badge_counts(user_id):
                 "notification_pipeline_available": True,
             })
     return counts
+
+
+def _pulse_notification_combined_list(user_id, limit=50, category="all", unread_only=False):
+    limit = max(1, min(safe_int(limit, 50), 100))
+    result = pulsesoc_notification_system.list_notifications(
+        user_id,
+        limit=limit,
+        category=category,
+        unread_only=unread_only,
+    )
+    notifications = list((result or {}).get("notifications") or [])
+    existing_ids = {safe_int(item.get("id"), 0) for item in notifications}
+    legacy = notification_service.list_pulse_notifications(
+        user_id,
+        limit=limit,
+        category=category,
+        unread_only=unread_only,
+    )
+    legacy_items = [
+        {**item, "source": "legacy_pulse"}
+        for item in ((legacy or {}).get("notifications") or [])
+        if safe_int(item.get("id"), 0) and safe_int(item.get("id"), 0) not in existing_ids
+    ]
+    combined = [*notifications, *legacy_items]
+    combined.sort(key=lambda item: (str(item.get("created_at") or ""), safe_int(item.get("id"), 0)), reverse=True)
+    combined = combined[:limit]
+    return {
+        **(result or {}),
+        "ok": True,
+        "notifications": combined,
+        "items": combined,
+        "count": len(combined),
+        "legacy_pulse_count": len(legacy_items),
+        "badge_counts": _pulse_notification_os_badge_counts(user_id),
+    }
 
 
 def _pulse_notification_os_get_or_legacy(user_id, notification_id):
@@ -27002,7 +27047,7 @@ def api_pulse_notifications():
         response = jsonify({"ok": False, "message": "Login required."})
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 401
-    result = pulsesoc_notification_system.list_notifications(
+    result = _pulse_notification_combined_list(
         user["user_id"],
         limit=safe_int(request.args.get("limit"), 50),
         category=request.args.get("filter") or request.args.get("category") or "all",
