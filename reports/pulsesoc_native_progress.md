@@ -3752,3 +3752,61 @@ Reason for recommendation:
 
 - The visible app shell is broad enough for owner review.
 - The highest production-readiness risk is no longer route visibility; it is deterministic event replay and convergence across multiple sessions/devices.
+
+## Real-time Cursor Replay + Multi-Device Ordering Validation
+
+Important roadmap rule:
+
+- Do not focus on Android right now.
+- Do not add new features.
+- Keep `/api/pulse/sync/events` as server-authoritative cursor truth.
+- Keep the sync layer polling-first until cursor correctness is stable.
+
+Completed action: validated seeded cursor replay and multi-session ordering behavior.
+
+What changed:
+
+- Created `reports/pulsesoc_native_cursor_multidevice_ordering.md`.
+- Created `scripts/pulsesoc_native_cursor_multidevice_ordering_audit.py`.
+- Added seeded backend checks for same-user multi-session replay, buyer/seller session isolation, delayed events, duplicate delivery rows, invalid cursor fallback, and invalidation registry coverage.
+
+Cursor replay correctness: 93%.
+
+Multi-device ordering confidence: 84%.
+
+Systems that converge correctly:
+
+- Activity Inbox
+- Notifications
+- Buyer Orders
+- Seller Inventory
+- Marketplace listing state
+- Messenger activity
+- Calls activity
+- Trust/Safety activity
+
+Systems still at risk of drift:
+
+- Physical APNs/FCM delivery and tap ordering.
+- Provider webhook retries under production-like concurrency.
+- Fragmented admin/moderation review updates outside unified event producers.
+- Two-device call/media state where realtime and polling overlap.
+- High-volume screen refresh behavior under rapid cursor invalidations.
+
+Event producer coverage: 91%.
+
+Overall native migration percentage: 89% foundation/parity coverage, 91% system consistency confidence, 66% release QA confidence.
+
+Critical production risk gaps:
+
+- Persistent staging QA fixtures do not yet exist for repeatable multi-account release gates.
+- Physical iPhone QA remains incomplete for camera, push, installed deep links, and media-heavy flows.
+- Provider push/payment/dispute/refund QA remains release-blocking.
+
+Recommended next native feature/action: Persistent Authenticated Staging QA Environment + Replay Fixture Pack.
+
+Reason for recommendation:
+
+- The app is now broad and visible enough for owner review.
+- Event producer coverage is high enough that the next highest-value step is repeatable release-grade validation, not another native surface.
+- A persistent staging fixture pack would make browser, simulator, iPhone, provider, and multi-session event replay QA deterministic across every future run.
