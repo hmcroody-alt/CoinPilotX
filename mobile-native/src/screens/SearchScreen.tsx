@@ -151,6 +151,7 @@ export function SearchScreen({ route }: Props) {
 
       {!hasQuery ? (
         <ScrollView contentContainerStyle={styles.starter}>
+          {activeTab === "events" ? <EventsGatewayShortcut onPress={() => routeNotificationTarget("/pulse/events").catch(() => undefined)} /> : null}
           <ChipSection title="Recent searches" emptyText="Your searches will appear here." items={recent} onPress={applyChip} />
           <ChipSection title="Suggested searches" items={trending} onPress={applyChip} />
         </ScrollView>
@@ -188,6 +189,16 @@ export function SearchScreen({ route }: Props) {
         />
       )}
     </View>
+  );
+}
+
+function EventsGatewayShortcut({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable style={styles.eventsGateway} onPress={onPress}>
+      <Text style={styles.eventsGatewayKicker}>Native gateway</Text>
+      <Text style={styles.eventsGatewayTitle}>Events and scheduled Live</Text>
+      <Text style={styles.eventsGatewayText}>Open scheduled broadcasts from the existing PulseSoc Live backend. Creation and ticketing stay on safe fallback.</Text>
+    </Pressable>
   );
 }
 
@@ -309,6 +320,31 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "900",
     marginBottom: 6
+  },
+  eventsGateway: {
+    backgroundColor: colors.surface,
+    borderColor: "rgba(37,208,167,0.26)",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 6,
+    marginBottom: 24,
+    padding: 14
+  },
+  eventsGatewayKicker: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    textTransform: "uppercase"
+  },
+  eventsGatewayText: {
+    color: colors.muted,
+    lineHeight: 20
+  },
+  eventsGatewayTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "900"
   },
   error: {
     color: "#ff9f9f",

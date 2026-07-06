@@ -88,6 +88,21 @@ export const linking: LinkingOptions<RootStackParamList> = {
           liveId: Number
         }
       },
+      Events: {
+        path: "pulse/events",
+        parse: {
+          eventId: Number,
+          mode: String
+        }
+      },
+      EventDetail: {
+        path: "pulse/events/:eventId",
+        parse: {
+          eventId: Number
+        }
+      },
+      LiveScheduleGateway: "pulse/live/schedule",
+      LiveEventCreateGateway: "pulse/live/events/create",
       ProfileEdit: {
         path: "pulse/profile/edit"
       },

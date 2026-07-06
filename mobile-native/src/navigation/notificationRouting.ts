@@ -94,6 +94,16 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  if (normalized.startsWith("/pulse/live/events/create") && navigationRef.isReady()) {
+    navigationRef.navigate("LiveEventCreateGateway", { title: "Create Live Event" });
+    return { handled: true, target: normalized };
+  }
+
+  if (normalized.startsWith("/pulse/live/schedule") && navigationRef.isReady()) {
+    navigationRef.navigate("LiveScheduleGateway", { title: "Schedule Live" });
+    return { handled: true, target: normalized };
+  }
+
   if (normalized.startsWith("/pulse/live/studio") && navigationRef.isReady()) {
     const webTarget = `${PULSE_API_BASE_URL}${normalized}`;
     await Linking.openURL(webTarget).catch(() => undefined);
@@ -106,6 +116,22 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
       navigationRef.navigate("LiveDetail", { liveId: queryLiveId, title: "Live" });
     } else {
       navigationRef.navigate("Tabs", { screen: "Live" });
+    }
+    return { handled: true, target: normalized };
+  }
+
+  const eventMatch = normalized.match(/^\/pulse\/events\/(\d+)/);
+  if (eventMatch?.[1] && navigationRef.isReady()) {
+    navigationRef.navigate("EventDetail", { eventId: Number(eventMatch[1]), title: "Event" });
+    return { handled: true, target: normalized };
+  }
+
+  if (normalized.startsWith("/pulse/events") && navigationRef.isReady()) {
+    const queryEventId = extractNumericQueryValue(normalized, "event") || extractNumericQueryValue(normalized, "event_id") || extractNumericQueryValue(normalized, "live_id");
+    if (queryEventId) {
+      navigationRef.navigate("EventDetail", { eventId: queryEventId, title: "Event" });
+    } else {
+      navigationRef.navigate("Events", { title: "Events" });
     }
     return { handled: true, target: normalized };
   }

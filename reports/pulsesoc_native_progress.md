@@ -1285,3 +1285,102 @@ Safest implementation plan:
 4. Keep `/pulse/live/schedule` and `/pulse/live/events/create` on safe web fallback or lightweight native gateway cards.
 5. Do not invent ticketing, checkout, or event persistence logic.
 6. Verify with static checks and QA browser route checks before commit.
+
+## Native Events + Scheduled Live Gateway Foundation
+
+Completed feature: native Events and Scheduled Live gateway.
+
+Why it happened now:
+
+- Activity Inbox, Live Viewer, Search/Discovery, Creator Studio, Growth Center, Profile, Groups, and Notifications now need a common native destination for event/live links.
+- The production `/pulse/events` route is a gateway over existing Live scheduling until dedicated event persistence exists.
+- The native app already had reusable Live API/cache/navigation infrastructure, so this feature could be built without duplicating backend logic.
+
+Reusable PulseSoc APIs/code/database/business logic:
+
+- Existing `/api/pulse/live-now` scheduled/live payloads through `mobile-native/src/api/live.ts`.
+- Existing Live item normalization, scheduled detection, playback state, and offline discovery cache.
+- Existing `/pulse/events`, `/pulse/live/schedule`, and `/pulse/live/events/create` production gateways.
+- Existing Live Viewer route for join/watch.
+- Existing profile routing from host metadata.
+- Existing notification/deep-link routing.
+- Existing backend Live eligibility, visibility, moderation, LiveKit/Mux, and business rules.
+
+Native work completed:
+
+- Added `mobile-native/src/api/events.ts` as an adapter over scheduled Live payloads.
+- Added `mobile-native/src/screens/EventsScreen.tsx`.
+- Added native Events list, event detail, host/profile navigation, share hook, watch/join handoff to Live Viewer, loading/error/offline states, and fallback action cards.
+- Added deep-link support for:
+  - `/pulse/events`
+  - `/pulse/events/<event_id>`
+  - `/pulse/live/schedule`
+  - `/pulse/live/events/create`
+- Added notification routing for event/scheduled-live links.
+- Added Settings entry point.
+- Added Search/Discovery Events shortcut.
+
+Safe fallback boundaries:
+
+- Event creation stays on existing web gateway.
+- Ticketing/payment stays unavailable/fallback because production gateway says event payments require a dedicated checkout adapter.
+- Live Studio, hosting, and co-hosting stay on existing Live Studio fallback.
+- Native does not fake reminder authority because no dedicated reminder endpoint was found in this inspection.
+
+Verification plan:
+
+- Static verification, Expo Doctor, and the Events audit script cover code and route wiring.
+- Authenticated QA browser route checks verified `/pulse/events`, `/pulse/events/1`, `/pulse/live/schedule`, `/pulse/live/events/create`, Settings entry, and Search/Discovery Events shortcut against a disposable local QA account/session.
+- The local QA backend returned no scheduled events, so empty-state rendering is verified; seeded provider-backed scheduled event data remains pending.
+- Live hosting, ticketing, payments, provider reminder delivery, and two-device Live playback remain release QA/provider blockers.
+
+Remaining major features:
+
+- Native Content Planner + Scheduled Publishing Gateway.
+- Native Course/Learning Gateway if prioritized from current course backend.
+- Native seller/store management beyond Marketplace browse/detail.
+- Native advanced Live Studio/hosting/co-hosting.
+- Physical-device LiveKit calls and lock-screen call QA.
+- Full provider/device push verification.
+
+Recommended next highest-value native feature/action: Native Content Planner + Scheduled Publishing Gateway Foundation.
+
+Reason for recommendation:
+
+- The production backend already exposes `/api/dashboard/content-planner/item`, content planner, draft studio, and post scheduler flows.
+- Native Creator Studio currently saves a basic draft and routes advanced planner/scheduler tools to web fallback.
+- Events/Scheduled Live now creates a stronger need for creator calendar/planner visibility, but publishing and scheduling must remain backend-authoritative.
+
+Reusable APIs/code/database/business logic for the next action:
+
+- Existing `/api/dashboard/content-planner/item`.
+- Existing content planner, draft studio, and post scheduler web flows.
+- Existing creator state API.
+- Existing feed composer, status creator, camera/media upload, profile, notifications, activity routing, and Creator Studio components.
+- Existing moderation, privacy, checklist, publishing, and scheduling safety rules.
+
+What must be rebuilt natively:
+
+- Planner list/queue screen over existing creator/planner state where APIs support it.
+- Draft detail/edit gateway.
+- Scheduled content overview.
+- Save draft/update draft forms where existing APIs support them.
+- Safe web fallback cards for unsupported publish-now, recurring, bulk schedule, and version history.
+
+Dependencies/blockers:
+
+- A list/read API for planner items should be confirmed before building full native planner management.
+- Current native creator API has save support but not an obvious dedicated native list wrapper.
+- Publish-now and recurring scheduler remain unsupported without backend contracts.
+
+Risk level: medium.
+
+Estimated complexity: medium.
+
+Safest implementation plan:
+
+1. Inspect creator/content planner API coverage in `bot.py` and `mobile-native/src/api/creator.ts`.
+2. Reuse existing `CreatorStudioScreen` and `saveContentPlannerItem()`.
+3. Add native planner gateway only for read/save/update flows supported by backend.
+4. Keep publish, bulk schedule, recurring schedule, and unsupported version history on safe web fallback.
+5. Run static checks, audit, and QA browser route checks before commit.

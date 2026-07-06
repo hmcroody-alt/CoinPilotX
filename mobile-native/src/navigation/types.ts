@@ -50,6 +50,10 @@ export type RootStackParamList = {
   Saved: undefined;
   GroupDetail: { groupSlug: string; title?: string };
   LiveDetail: { liveId: number; title?: string };
+  Events: { eventId?: number; mode?: "events" | "schedule" | "create"; title?: string } | undefined;
+  EventDetail: { eventId: number; title?: string };
+  LiveScheduleGateway: { title?: string } | undefined;
+  LiveEventCreateGateway: { title?: string } | undefined;
   ProfileDetail: { profileKey?: string; title?: string } | undefined;
   ProfileEdit: undefined;
   Premium: undefined;

@@ -15,6 +15,7 @@ import { GrowthCenterScreen } from "../screens/GrowthCenterScreen";
 import { GroupsScreen } from "../screens/GroupsScreen";
 import { HomeScreen } from "../screens/HomeScreen";
 import { IntelligenceCenterScreen } from "../screens/IntelligenceCenterScreen";
+import { EventsScreen } from "../screens/EventsScreen";
 import { LiveScreen } from "../screens/LiveScreen";
 import { MarketplaceScreen } from "../screens/MarketplaceScreen";
 import { MessengerScreen } from "../screens/MessengerScreen";
@@ -117,6 +118,10 @@ export function AppNavigator() {
       <Stack.Screen name="Saved" component={SavedScreen} options={{ title: "Saved" }} />
       <Stack.Screen name="GroupDetail" component={GroupsScreen} options={({ route }) => ({ title: route.params?.title || "Community" })} />
       <Stack.Screen name="LiveDetail" component={LiveScreen} options={({ route }) => ({ title: route.params?.title || "Live" })} />
+      <Stack.Screen name="Events" component={EventsScreen} options={({ route }) => ({ title: route.params?.title || "Events" })} />
+      <Stack.Screen name="EventDetail" component={EventsScreen} options={({ route }) => ({ title: route.params?.title || "Event" })} />
+      <Stack.Screen name="LiveScheduleGateway" component={EventsScreen} options={{ title: "Schedule Live" }} />
+      <Stack.Screen name="LiveEventCreateGateway" component={EventsScreen} options={{ title: "Create Live Event" }} />
       <Stack.Screen name="ProfileDetail" component={ProfileScreen} options={({ route }) => ({ title: route.params?.title || "Profile" })} />
       <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} options={{ title: "Edit Profile" }} />
       <Stack.Screen name="Premium" component={PremiumScreen} options={{ title: "Premium" }} />
