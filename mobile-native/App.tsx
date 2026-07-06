@@ -1,7 +1,7 @@
 import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Linking, View } from "react-native";
+import { ActivityIndicator, Linking, Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { IncomingCallLayer } from "./src/calls/IncomingCallLayer";
 import { AppNavigator } from "./src/navigation/AppNavigator";
@@ -43,6 +43,9 @@ export default function App() {
       }
     }
 
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      handleQaSimulatorAuthUrl(window.location.href).catch(() => undefined);
+    }
     Linking.getInitialURL().then(handleQaSimulatorAuthUrl).catch(() => undefined);
     const subscription = Linking.addEventListener("url", (event) => {
       handleQaSimulatorAuthUrl(event.url).catch(() => undefined);

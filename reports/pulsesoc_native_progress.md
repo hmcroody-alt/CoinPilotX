@@ -1903,3 +1903,104 @@ Safest implementation plan:
 3. Verify Marketplace cards render media.
 4. Verify Seller/Store media gallery opens NativeMediaViewer.
 5. Confirm unsupported provider/payment/payout flows remain fallback.
+
+## Native Marketplace/Seller Media QA Hardening
+
+Completed action: verified the hardened marketplace media payload contract across native Marketplace, Listing Detail, Seller/Store, and NativeMediaViewer.
+
+What was verified:
+
+- Authenticated backend contract check against local disposable QA data.
+- Marketplace feed cards render media-backed and no-media listings safely.
+- Listing Detail screen renders seeded mixed-media listing data.
+- Seller/Store gallery renders product media tiles from the backend payload.
+- NativeMediaViewer opens from Seller/Store gallery and Listing Detail.
+- Cover images, thumbnails, gallery assets, video payload metadata, empty media, missing media fallback, and moderated-media filtering were covered.
+- Payout and checkout boundaries remain unchanged and provider/backend-owned.
+
+Scoped hardening fix:
+
+- Seller/Store media gallery now preserves the selected tile index when opening NativeMediaViewer.
+- `mobile-native/App.tsx` now passes the web `window.location.href` into the existing QA-only simulator auth handler so local QA browser deep links can authenticate when `__DEV__` and local API base URL gates are satisfied.
+
+QA evidence:
+
+- Backend contract evidence: four seeded marketplace listings loaded; mixed media returned image/video media, one-image listing returned one asset, empty listing returned zero assets, and rejected media returned zero assets.
+- Built-in QA browser evidence: `/pulse/seller-store` rendered `4 Listings loaded`, `4 Active/review ready`, and five product media gallery tiles.
+- Built-in QA browser evidence: `Open store media 2` opened NativeMediaViewer with listing context, author context, Prev/Next controls, and Share.
+- Built-in QA browser evidence: `/pulse/marketplace` rendered all four seeded listings.
+- Built-in QA browser evidence: `/pulse/marketplace/1` deep-linked to native Marketplace with Listing Detail open, and media opened NativeMediaViewer.
+
+Remaining release QA:
+
+- Physical product-media capture and large media uploads.
+- Weak-network upload retry/cancel behavior.
+- Native video playback performance on physical iOS/Android.
+- Provider checkout completion and payout onboarding completion.
+- Broken remote media URL behavior on device.
+
+Critical blocker assessment:
+
+- No critical, security, data-loss, production-breaking, or future-development-blocking issue was found.
+
+Native completion percentages by subsystem:
+
+| Subsystem | Current estimate | Confidence | Remaining high-value gap |
+| --- | ---: | --- | --- |
+| Auth/session/settings | 86% | Browser + simulator foundations verified | Release device auth and provider edge cases |
+| Messaging and calls | 72% | Browser/practical QA verified | LiveKit two-device media and lock-screen release QA |
+| Feed/posts/composer | 78% | Browser/static verified | Rich composer options and device media QA |
+| Media viewer/upload/camera | 72% | Browser/simulator/media QA partially verified | Physical camera/mic, large video, weak network |
+| Reels and Status | 74% | Browser/static verified | Physical native video performance |
+| Marketplace and Seller/Store | 78% | Backend contract + QA browser verified | Native listing composer/edit and provider completion |
+| Search, Saved, Groups, Events, Courses | 75% | Browser/static verified | Data-rich authenticated QA depth |
+| Trust, Safety, Verification, Account Health | 82% | Browser verified | Document/admin/provider flows remain web/server-owned |
+| Premium, Creator, Growth, Intelligence | 74% | Browser/static verified | Provider/billing/advanced tools remain fallback |
+| Live and Calls | 56% | Practical shell verified | Native LiveKit/call media release QA |
+| Android readiness | 35% | Tooling partially verified | Physical Android QA |
+
+overall native migration percentage: 75% foundation/parity coverage, 61% release QA confidence.
+
+Recommended next highest-value native feature/action: Native Seller Listing Composer + Listing Edit Foundation.
+
+Reason for recommendation:
+
+- Marketplace browse, Seller/Store, Media Upload, Camera Studio, NativeMediaViewer, Profile, Verification, Premium, Safety, and Activity Inbox are now in place.
+- The backend already exposes seller application, marketplace media upload, and listing creation routes.
+- Sellers can now see native store readiness and media payloads, but listing creation/editing remains mostly web fallback.
+- A native seller listing composer completes the seller create/manage loop while keeping seller approval, media moderation, pricing, checkout, payouts, refunds, disputes, and fulfillment server-authoritative.
+
+Reusable APIs/code/database/business logic:
+
+- Existing `/api/pulse/marketplace/listings/create`.
+- Existing `/api/pulse/marketplace/media/upload`.
+- Existing `/api/pulse/marketplace/search`.
+- Existing marketplace seller approval and listing moderation rules.
+- Existing marketplace listing/media/seller/order/report tables.
+- Existing native Media Upload, Camera Studio, Seller/Store, Marketplace, NativeMediaViewer, Verification, Premium, Safety, Activity Inbox, loading/error/cache, and route fallback infrastructure.
+
+What must be rebuilt natively:
+
+- Listing draft form UI.
+- Media attachment preview and handoff.
+- Validation display using backend responses.
+- Create/edit gateway routing and fallback boundaries.
+- Listing detail return/refresh behavior after create or edit.
+
+Dependencies/blockers:
+
+- Confirm whether an update/edit JSON endpoint exists before building edit; if not, keep edit on safe web fallback.
+- Physical media upload remains release QA.
+- Provider checkout/payout remains fallback/provider-owned.
+
+Risk level: medium because seller listing creation touches commerce surfaces, but low risk if the native client only calls existing server-authoritative endpoints and keeps advanced payment/provider flows on fallback.
+
+Estimated complexity: medium.
+
+Safest implementation plan:
+
+1. Inspect existing marketplace listing create/edit backend routes and native media upload hooks.
+2. Build native listing composer as a gateway around confirmed create APIs only.
+3. Keep edit on fallback unless a safe JSON update endpoint exists.
+4. Reuse MediaUploadPreview, Camera Studio target, NativeMediaViewer, Seller/Store navigation, and existing marketplace API wrappers.
+5. Verify with backend contract checks and QA browser route/form checks.

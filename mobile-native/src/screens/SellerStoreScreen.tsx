@@ -35,6 +35,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(0);
 
   async function load() {
     setMessage("");
@@ -201,7 +202,10 @@ export function SellerStoreScreen({ route, navigation }: Props) {
               accessibilityLabel={`Open store media ${index + 1}`}
               accessibilityRole="button"
               style={styles.mediaTile}
-              onPress={() => setViewerOpen(true)}
+              onPress={() => {
+                setViewerIndex(index);
+                setViewerOpen(true);
+              }}
             >
               {item.thumbnailUrl || item.url ? <Image source={{ uri: item.thumbnailUrl || item.url }} style={styles.mediaImage} resizeMode="cover" /> : <Text style={styles.mediaFallback}>Media</Text>}
               <Text style={styles.mediaOverlay}>Open media</Text>
@@ -247,7 +251,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         <Text style={styles.copy}>Advanced tax forms, bank onboarding, disputes, refunds, fulfillment, and admin review stay on safe web/provider flows until native QA gates are ready.</Text>
       </Panel>
 
-      <NativeMediaViewer visible={viewerOpen} items={mediaItems} title="Store media" onClose={() => setViewerOpen(false)} />
+      <NativeMediaViewer visible={viewerOpen} items={mediaItems} initialIndex={viewerIndex} title="Store media" onClose={() => setViewerOpen(false)} />
     </Screen>
   );
 }
