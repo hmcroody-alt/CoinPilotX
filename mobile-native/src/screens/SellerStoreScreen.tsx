@@ -111,6 +111,16 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
   function applyListingResponse(listing?: MarketplaceListing) {
     if (!listing?.id) return;
+    if (statusKey(listing) === "removed") {
+      setListings((current) => current.filter((item) => item.id !== listing.id));
+      setEditingListingId(0);
+      setEditTitle("");
+      setEditDescription("");
+      setEditCategory("");
+      setEditPriceLabel("");
+      setEditQuantity("");
+      return;
+    }
     setListings((current) => current.map((item) => (item.id === listing.id ? { ...item, ...listing } : item)));
     startListingEdit(listing);
   }

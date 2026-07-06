@@ -41249,11 +41249,18 @@ def api_pulse_marketplace_seller_listings():
     if not user:
         return api_error("Login required.", 401)
     limit = max(1, min(safe_int(request.args.get("limit"), 80), 100))
+    include_removed = str(request.args.get("include_removed") or "").lower() in {"1", "true", "yes"}
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute(
+    removal_filter = ""
+    if not include_removed:
+        removal_filter = """
+          AND LOWER(COALESCE(l.status,'')) NOT IN ('seller_deleted','deleted','removed')
+          AND LOWER(COALESCE(l.approval_status,'')) NOT IN ('seller_deleted','deleted','removed')
         """
+    cur.execute(
+        f"""
         SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
                COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
@@ -41261,6 +41268,7 @@ def api_pulse_marketplace_seller_listings():
         FROM marketplace_listings l
         LEFT JOIN users u ON u.user_id=l.seller_user_id
         WHERE l.seller_user_id=?
+        {removal_filter}
         ORDER BY l.id DESC
         LIMIT ?
         """,

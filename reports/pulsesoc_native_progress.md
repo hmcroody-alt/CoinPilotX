@@ -2326,6 +2326,136 @@ Dependencies/blockers:
 - Provider checkout/payout remains fallback/provider-owned.
 - Physical marketplace media upload remains release QA.
 
+## Native Seller Inventory Practical QA Hardening
+
+Completed action: verified and hardened native Seller Inventory lifecycle.
+
+What was verified and hardened:
+
+- Seller-owned listings load through authenticated backend contract checks.
+- Title, description, category, price label, and quantity updates persist server-side.
+- Pause changes listing status to `paused`.
+- Paused listings remain excluded from public marketplace search.
+- Resume returns listings through marketplace review.
+- Soft delete changes status and approval state to `seller_deleted`.
+- Seller-deleted listings are hidden from active seller inventory by default.
+- Public Marketplace remains approval-gated after pause/delete.
+- Native Seller/Store removes a listing from active inventory immediately after server-confirmed soft removal.
+- NativeMediaViewer payload coverage remains available for inventory media.
+- Safe web/provider boundaries remain intact for checkout, payout, fulfillment, refunds, disputes, tax, and advanced media editing.
+
+Scoped fix from QA:
+
+- Added default backend filtering to `GET /api/pulse/marketplace/seller/listings` so `seller_deleted`, `deleted`, and `removed` rows do not appear in active seller inventory unless explicitly requested.
+- Updated native Seller/Store response handling to clear removed listings from the inventory list after a successful soft delete.
+
+Verification:
+
+- `npm ci --prefix mobile-native --no-audit --no-fund --progress=false`
+- `npm run --prefix mobile-native typecheck`
+- `cd mobile-native && EXPO_DOCTOR_ENABLE_DIRECTORY_CHECK=0 npx expo-doctor --verbose`
+- `venv/bin/python scripts/pulsesoc_native_seller_inventory_audit.py`
+- `venv/bin/python scripts/pulsesoc_native_seller_inventory_qa_audit.py`
+- `git diff --check`
+- Authenticated backend contract checks with a local approved seller and owned listing.
+- QA browser route check where practical.
+
+QA browser status:
+
+- `npm run web:qa` served the native web build.
+- Seller/Store route remains auth-protected.
+- Authenticated React Native Web click-through did not complete reliably in this pass, so browser UI interaction remains a practical QA gap.
+- Backend contract verification covered the seller inventory lifecycle against authenticated server APIs.
+
+Completed native subsystems:
+
+- Native app foundation.
+- Auth/session foundation.
+- Messenger.
+- Notifications and Activity Inbox.
+- Home Feed, Post Detail, and Feed Composer.
+- Profile and Profile Edit.
+- Reels and Status viewer/creator.
+- Shared Media Upload, Camera Studio, and Media Viewer foundations.
+- Marketplace browse/detail.
+- Seller/Store dashboard, listing composer, seller-owned listings, marketplace media payloads, and seller inventory controls.
+- Search, Saved, Groups, Events, Courses, Creator, Growth, Premium, Intelligence, Trust/Safety, Verification, Account Health, Blocks/Mutes/Reports, Live Viewer, and Calls shells/foundations.
+
+Remaining major subsystems:
+
+- Buyer-side order history and purchase controls.
+- Marketplace provider QA for checkout, payout, refunds, disputes, and fulfillment.
+- Native media reorder/remove controls for marketplace listings.
+- Physical iPhone/Android media upload QA.
+- Full LiveKit call/live release QA.
+- Android physical QA.
+- Final native polish, accessibility, animation, and performance pass.
+
+Updated native completion percentages by subsystem:
+
+| Subsystem | Current estimate | Confidence | Remaining high-value gap |
+| --- | ---: | --- | --- |
+| Auth/session/settings | 86% | Browser + simulator foundations verified | Release device auth and provider edge cases |
+| Messaging and calls | 72% | Browser/practical QA verified | LiveKit two-device media and lock-screen release QA |
+| Feed/posts/composer | 78% | Browser/static verified | Rich composer options and device media QA |
+| Media viewer/upload/camera | 72% | Browser/simulator/media QA partially verified | Physical camera/mic, large video, weak network |
+| Reels and Status | 74% | Browser/static verified | Physical native video performance |
+| Marketplace and Seller/Store | 90% | Backend contract + inventory QA hardening | Buyer orders, provider QA, media reorder/remove |
+| Search, Saved, Groups, Events, Courses | 75% | Browser/static verified | Data-rich authenticated QA depth |
+| Trust, Safety, Verification, Account Health | 82% | Browser verified | Document/admin/provider flows remain web/server-owned |
+| Premium, Creator, Growth, Intelligence | 74% | Browser/static verified | Provider/billing/advanced tools remain fallback |
+| Live and Calls | 56% | Practical shell verified | Native LiveKit/call media release QA |
+| Android readiness | 35% | Tooling partially verified | Physical Android QA |
+
+overall native migration percentage: 79% foundation/parity coverage, 64% release QA confidence.
+
+Recommended next highest-value native feature/action: Native Purchase/Order History + Buyer Commerce Controls Foundation.
+
+Reason for recommendation:
+
+- Seller-side marketplace lifecycle is now structurally complete and server-authoritative.
+- Buyer-side commerce is the next missing marketplace pillar: users need native order history, purchase status, receipts, seller contact, refund/dispute safe fallbacks, and activity routing.
+- This should reuse existing orders, payment records, marketplace listings, seller profiles, Activity Inbox, NativeMediaViewer, and provider checkout boundaries without moving Stripe/payout/refund authority into the native client.
+
+Reusable APIs/code/database/business logic for next action:
+
+- Existing payment/order tables and APIs.
+- Marketplace listing/detail APIs.
+- Seller profile/storefront logic.
+- Existing payment/checkout/provider routes.
+- Existing notification/activity routing.
+- Existing messaging seller-contact flow.
+- Existing moderation, refund, dispute, entitlement, and receipt logic.
+
+What must be rebuilt natively:
+
+- Buyer order history screen.
+- Order detail screen.
+- Purchase status cards.
+- Receipt/open-provider fallbacks.
+- Seller contact route.
+- Refund/dispute safe fallback gateway.
+- Loading/error/offline states.
+- Buyer-facing commerce navigation from Marketplace, Activity Inbox, Settings, and Profile.
+
+Dependencies/blockers:
+
+- Need actual authenticated buyer account with order fixtures for deeper QA.
+- Checkout, refund, dispute, and payout provider flows remain web/provider-owned.
+- No native-only commerce authority should be introduced.
+
+Risk level: medium.
+
+Estimated complexity: medium.
+
+Safest implementation plan:
+
+1. Inspect existing order/payment APIs and Marketplace checkout/provider routes.
+2. Build native read-only order history and order detail first.
+3. Add seller contact and listing detail navigation.
+4. Route receipts, refunds, disputes, and checkout back to existing safe web/provider flows.
+5. Verify with backend contract checks and practical browser QA where authenticated fixtures exist.
+
 Risk level: medium.
 
 Estimated complexity: low to medium.
