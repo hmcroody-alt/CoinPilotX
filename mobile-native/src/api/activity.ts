@@ -106,6 +106,7 @@ export async function deleteActivityItem(item: ActivityInboxItem) {
 export async function resolveActivityItemTarget(item: ActivityInboxItem) {
   if (item.notificationId) {
     const resolved = await resolveNotificationTarget(item.notificationId);
+    if (resolved.fallback_used && item.targetUrl) return item.targetUrl;
     return resolved.target_url || item.targetUrl || "/pulse/activity";
   }
   if (item.conversationId) return `/pulse/messages/${encodeURIComponent(String(item.conversationId))}`;
@@ -242,6 +243,7 @@ function classifyNotification(notification: PulseNotification): Exclude<Activity
   if (/(verification|verified|badge|identity|kyc|document)/.test(signal)) return "verification";
   if (/(marketplace|listing|seller|order|checkout|purchase|product)/.test(signal)) return "marketplace";
   if (/(creator|growth|campaign|promotion|promote|analytics|studio)/.test(signal)) return "creator_growth";
+  if (/(post|like|comment|mention|follow|reaction|share|repost|social)/.test(signal)) return "social";
   if (/(intelligence|alert|crypto|market|forecast|signal|price)/.test(signal)) return "intelligence_alerts";
   return "social";
 }

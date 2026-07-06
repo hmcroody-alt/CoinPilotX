@@ -19,12 +19,19 @@ import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { compactPreview, formatShortTime } from "../utils/format";
 
+function unreadCountsByCategory(items: ActivityInboxItem[]) {
+  return items.reduce<Record<string, number>>((counts, item) => {
+    if (!item.unread) return counts;
+    counts[item.category] = Number(counts[item.category] || 0) + 1;
+    return counts;
+  }, {});
+}
+
 export function ActivityInboxScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "ActivityInbox">>();
   const [items, setItems] = useState<ActivityInboxItem[]>([]);
   const [unreadTotal, setUnreadTotal] = useState(0);
-  const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
   const [category, setCategory] = useState<ActivityCategory>(normalizeRouteCategory(route.params?.category));
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -32,6 +39,7 @@ export function ActivityInboxScreen() {
   const [error, setError] = useState("");
 
   const visibleItems = useMemo(() => filterActivityItems(items, category), [category, items]);
+  const categoryCounts = useMemo(() => unreadCountsByCategory(items), [items]);
 
   const load = useCallback(async ({ refresh = false } = {}) => {
     if (refresh) setRefreshing(true);
@@ -41,7 +49,6 @@ export function ActivityInboxScreen() {
       const state = await loadActivityInboxState({ limit: 100 });
       setItems(state.items);
       setUnreadTotal(state.unreadTotal);
-      setCategoryCounts(state.categoryCounts);
       setOffline(Boolean(state.loadedFromCache));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Activity could not load.");

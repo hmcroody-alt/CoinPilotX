@@ -81,6 +81,9 @@ export type RootStackParamList = {
     category?: "all" | "messages" | "calls" | "social" | "safety" | "verification" | "marketplace" | "creator_growth" | "intelligence_alerts";
     title?: string;
   } | undefined;
+  ActivityInboxLegacyInbox: { title?: string } | undefined;
+  ActivityInboxWebActivity: { title?: string } | undefined;
+  ActivityInboxWebInbox: { title?: string } | undefined;
   NotificationCenter: undefined;
   NotificationPreferences: undefined;
 };

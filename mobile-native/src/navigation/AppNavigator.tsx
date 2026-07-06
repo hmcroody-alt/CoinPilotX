@@ -145,6 +145,9 @@ export function AppNavigator() {
       <Stack.Screen name="VerificationCenter" component={VerificationCenterScreen} options={({ route }) => ({ title: route.params?.title || "Verification Center" })} />
       <Stack.Screen name="VerificationWebCenter" component={VerificationCenterScreen} options={{ title: "Verification Center" }} />
       <Stack.Screen name="ActivityInbox" component={ActivityInboxScreen} options={({ route }) => ({ title: route.params?.title || "Activity Inbox" })} />
+      <Stack.Screen name="ActivityInboxLegacyInbox" component={ActivityInboxScreen} options={{ title: "Activity Inbox" }} />
+      <Stack.Screen name="ActivityInboxWebActivity" component={ActivityInboxScreen} options={{ title: "Activity Inbox" }} />
+      <Stack.Screen name="ActivityInboxWebInbox" component={ActivityInboxScreen} options={{ title: "Activity Inbox" }} />
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} options={{ title: "Notifications" }} />
       <Stack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} options={{ title: "Notification Preferences" }} />
     </Stack.Navigator>

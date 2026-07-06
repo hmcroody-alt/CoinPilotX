@@ -1176,3 +1176,112 @@ Safest implementation plan:
 3. Test read/delete only against QA notifications or document as unverified.
 4. Fix scoped route/layout/state issues.
 5. Keep provider/device push checks documented as release blockers.
+
+## Native Activity Inbox Authenticated QA Hardening
+
+Completed action: authenticated QA browser hardening for Native Activity Inbox.
+
+Why it happened now:
+
+- Activity Inbox spans Notifications, Messenger, Calls, Social, Safety, Verification, Marketplace, Creator/Growth, Intelligence/Alerts, Settings, badge counts, and deep-link routing.
+- The previous foundation pass verified route protection but did not have an authenticated local QA session.
+- A disposable local QA account and seeded notifications were needed before trusting category grouping, read/delete state, badge refresh, Settings entry, legacy routes, and Open routing.
+
+Reusable PulseSoc APIs/code/database/business logic verified:
+
+- Existing `/api/mobile/auth/register` and `/api/mobile/auth/login`.
+- Existing local notification schema and notification preference rules.
+- Existing `/api/pulse/notifications`, unread-count, read-all, delete, and resolve endpoints.
+- Existing deep-link router.
+- Existing Growth Center route.
+- Existing Settings route.
+- Existing Activity Inbox native API/screen.
+
+Fixes made during QA:
+
+- Social notification classification now recognizes post, like, comment, mention, follow, reaction, share, repost, and social before intelligence/market signal terms.
+- React Navigation linking now supports `/pulse/inbox`, `/dashboard/activity`, and `/dashboard/inbox`.
+- `/pulse/notifications` is restored as the Notifications tab path, and the tab renders Activity Inbox.
+- Activity Inbox category counts are now derived from current items so delete/read mutations cannot leave stale category counts.
+- Activity Inbox now preserves the original server-provided target when `/api/pulse/notifications/<id>/resolve` returns the server safe fallback for a native-supported target.
+
+Authenticated QA verified:
+
+- `/pulse/activity`
+- `/pulse/activity/messages`
+- `/pulse/activity/calls`
+- `/pulse/activity/social`
+- `/pulse/activity/safety`
+- `/pulse/activity/verification`
+- `/pulse/activity/marketplace`
+- `/pulse/activity/creator_growth`
+- `/pulse/activity/intelligence_alerts`
+- `/pulse/notifications`
+- `/pulse/inbox`
+- `/dashboard/activity`
+- `/dashboard/inbox`
+- Settings Activity Inbox entry point
+- Notification tab Activity Inbox entry point
+- Delete one QA notification
+- Mark remaining QA activity read
+- Badge/unread title cleared after read
+- Open action routed Creator/Growth activity into native Growth Center
+
+Browser/runtime result:
+
+- Final clean-bundle check rendered Activity Inbox and Growth Center routing without visible runtime error text.
+- A transient hot-refresh console error was observed and resolved by moving the derived-count helper above the component before restarting Expo web.
+
+Release blockers:
+
+- Physical APNs/FCM tap routing.
+- Device badge synchronization.
+- Background push delivery behavior.
+- Offline cache restore with network disabled.
+- Provider-backed read/delete tests against a seeded QA provider account.
+
+No critical, security, data-loss, production-breaking, or future-development-blocking issues remain from this pass.
+
+## Recommendation Summary
+
+Recommended next highest-value native feature/action: Native Events + Scheduled Live Gateway Foundation.
+
+Reason: the production codebase exposes `/pulse/events`, `/pulse/live/schedule`, and `/pulse/live/events/create` gateway routes, and the native app already has Live Viewer, Search/Discovery Events tab, Activity Inbox, Creator/Growth, Profile, Groups, Notifications, and deep-link routing. The actual repo does not show a full user-facing native JSON event database/API yet, so the safest next step is a native Events surface that reuses existing Live scheduled data and keeps event creation, ticketing, checkout, and studio scheduling on safe web fallback.
+
+Reusable PulseSoc APIs/code/database/business logic for the next action:
+
+- Existing `/api/pulse/live-now` scheduled/live event payloads through `mobile-native/src/api/live.ts`.
+- Existing `/pulse/events` web gateway copy and route.
+- Existing `/pulse/live/schedule` safe scheduling gateway.
+- Existing `/pulse/live/events/create` safe live event creation gateway.
+- Existing Live Viewer, Live discovery, Creator Studio, Growth Center, Search Events tab, Notifications/Activity routing, and Profile/Groups navigation.
+- Existing LiveKit/Mux/live eligibility/moderation/business rules remain backend-owned.
+
+What must be rebuilt natively:
+
+- Native Events screen.
+- Scheduled live/event cards using existing live scheduled data.
+- Event detail gateway where an existing live ID is available.
+- Search/Discovery Events route integration.
+- Activity/deep-link routing for `/pulse/events`, `/pulse/live/schedule`, and `/pulse/live/events/create`.
+- Safe web fallback for event creation, ticketed events, event payments, Live Studio, and unsupported schedule persistence.
+
+Dependencies/blockers:
+
+- No dedicated native JSON event database/API was found in this inspection.
+- Ticketing and event checkout are explicitly not configured in the current production gateway.
+- Scheduled-live persistence appears gateway/studio-owned, not a standalone calendar API.
+- Full native event creation should wait for backend event contracts.
+
+Risk level: medium.
+
+Estimated complexity: medium.
+
+Safest implementation plan:
+
+1. Reuse `listLiveNow()` scheduled items as the first native events data source.
+2. Add a native Events screen focused on discovery and scheduled live/event visibility.
+3. Wire `/pulse/events` to native Events.
+4. Keep `/pulse/live/schedule` and `/pulse/live/events/create` on safe web fallback or lightweight native gateway cards.
+5. Do not invent ticketing, checkout, or event persistence logic.
+6. Verify with static checks and QA browser route checks before commit.
