@@ -1814,3 +1814,92 @@ Safest implementation plan:
 3. Update native marketplace wrappers to consume the confirmed payload without inventing local media state.
 4. Re-run Seller/Store and Marketplace media QA in the built-in QA browser.
 5. Keep all provider/payment/payout flows on fallback.
+
+## Native Marketplace/Seller Media Payload Contract Hardening
+
+Completed action: hardened the marketplace search/listing JSON contract so native Marketplace, Seller/Store, and NativeMediaViewer can consume server-owned product media.
+
+What was implemented:
+
+- Added a reusable backend marketplace listing payload builder for native-safe search results.
+- Added normalized product media arrays to `GET /api/pulse/marketplace/search`.
+- Preserved existing marketplace search fields for WebView compatibility.
+- Reused existing `marketplace_listings` media columns:
+  - `cover_image_url`
+  - `gallery_json`
+  - `video_url`
+  - `media_url`
+- Reused existing `marketplace_product_media` rows for richer product media payloads.
+- Normalized media URLs through the existing `pulse_media_url(...)` helper and media service.
+- Excluded rejected, removed, blocked, and blocked-review product media rows from the API payload.
+
+Payload fields now available where data exists:
+
+- `cover_image_url`
+- `image_url`
+- `thumbnail_url`
+- `gallery_json`
+- `video_url`
+- `media`
+- `media_assets`
+
+Native impact:
+
+- `mobile-native/src/api/marketplace.ts` already supports these fields and normalizes them into `listing.media`.
+- Marketplace cards can render cover media from backend-provided fields.
+- Listing Detail can pass media into NativeMediaViewer.
+- Seller/Store media gallery can now verify product media when seeded or real listings include media.
+
+Backend contract QA:
+
+- Authenticated local backend contract checks confirmed a seeded marketplace listing returns non-empty `media` and `media_assets` arrays.
+- Backend evidence: `ok=true`, `media_count=3`, `first_media_type=image`, `has_thumbnail=true`, and `has_video_url=true`.
+- Built-in QA browser evidence confirmed Seller/Store rendered `1 Listings loaded`, the seeded `QA Product Media Contract` listing, three `Open store media` tiles, and NativeMediaViewer opened the first media item.
+- Web marketplace compatibility is preserved because the API response is additive.
+
+Remaining gaps:
+
+- Physical-device product media capture/upload remains release QA.
+- Provider checkout/payout flows remain web/provider fallback.
+- A dedicated seller-owned listing dashboard endpoint may still be useful later, but this hardening unlocks the immediate media-gallery gap.
+
+Critical blocker assessment:
+
+- No security, data-loss, production-breaking, or future-development-blocking issue is expected from this additive payload change.
+
+Recommended next highest-value native feature/action: Native Marketplace/Seller Media QA Hardening.
+
+Reason for recommendation:
+
+- The backend payload now exposes the fields native already expects.
+- The next safest step is a short authenticated QA browser pass over Marketplace, Listing Detail, Seller/Store media gallery, and NativeMediaViewer opening.
+- This validates the contract end to end before moving to another major feature.
+
+Reusable APIs/code/database/business logic for the next action:
+
+- `GET /api/pulse/marketplace/search`.
+- Existing marketplace listing/media/seller tables.
+- Existing marketplace visibility/moderation rules.
+- Existing native Marketplace, Seller/Store, Listing Detail, NativeMediaViewer, and cache utilities.
+
+What must be rebuilt or adjusted natively:
+
+- Only scoped QA blockers found while rendering the newly exposed media payload.
+- Do not duplicate media authorization or moderation logic in the client.
+
+Dependencies/blockers:
+
+- Real physical product-media capture and upload still require device QA.
+- Checkout and payout provider flows remain fallback/provider-owned.
+
+Risk level: low.
+
+Estimated complexity: low.
+
+Safest implementation plan:
+
+1. Start the local QA backend/proxy and Expo web QA build.
+2. Seed an approved seller/listing with product media records.
+3. Verify Marketplace cards render media.
+4. Verify Seller/Store media gallery opens NativeMediaViewer.
+5. Confirm unsupported provider/payment/payout flows remain fallback.

@@ -41068,6 +41068,142 @@ def pulse_marketplace_page():
     return pulse_social_shell("PulseSoc Marketplace", "Creator products, educational services, templates, books, scam-prevention guides, and coaching foundations. No risky financial products.", main, "", script)
 
 
+def pulse_marketplace_gallery_urls(value):
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value) if isinstance(value, str) else value
+    except Exception:
+        parsed = []
+    if not isinstance(parsed, list):
+        return []
+    urls = []
+    seen = set()
+    for item in parsed:
+        url = pulse_media_url(str(item or "").strip())
+        if url and url not in seen:
+            seen.add(url)
+            urls.append(url)
+    return urls
+
+
+def pulse_marketplace_media_rows_for_listings(cur, listing_ids):
+    safe_ids = [int(item_id or 0) for item_id in listing_ids if int(item_id or 0)]
+    if not safe_ids:
+        return {}
+    placeholders = ",".join(["?"] * len(safe_ids))
+    cur.execute(
+        f"""
+        SELECT *
+        FROM marketplace_product_media
+        WHERE product_id IN ({placeholders})
+          AND COALESCE(moderation_status,'pending_review') NOT IN ('rejected','removed','blocked','blocked_review')
+        ORDER BY is_cover DESC, position ASC, id ASC
+        """,
+        safe_ids,
+    )
+    media_by_listing = {}
+    for row in cur.fetchall():
+        item = dict(row)
+        media_by_listing.setdefault(int(item.get("product_id") or 0), []).append(item)
+    return media_by_listing
+
+
+def pulse_marketplace_media_payload(row):
+    media_type = (row.get("media_type") or "image").lower()
+    media_url = pulse_media_url(row.get("media_url") or "")
+    thumbnail_url = pulse_media_url(row.get("thumbnail_url") or media_url)
+    if not media_url:
+        return {}
+    return {
+        "id": safe_int(row.get("id"), 0),
+        "product_media_id": safe_int(row.get("id"), 0),
+        "media_type": "video" if media_type == "video" else "image",
+        "media_url": media_url,
+        "thumbnail_url": thumbnail_url,
+        "poster_url": thumbnail_url if media_type == "video" else "",
+        "mime_type": row.get("mime_type") or "",
+        "file_size": safe_int(row.get("file_size"), 0),
+        "width": safe_int(row.get("width"), 0),
+        "height": safe_int(row.get("height"), 0),
+        "duration_seconds": float(row.get("duration_seconds") or 0),
+        "processing_status": row.get("moderation_status") or "ready",
+        "is_cover": bool(safe_int(row.get("is_cover"), 0)),
+    }
+
+
+def pulse_marketplace_listing_payload(listing, media_rows=None):
+    item = dict(listing or {})
+    listing_id = safe_int(item.get("id"), 0)
+    media = []
+    seen = set()
+
+    def add_media(entry):
+        media_url = pulse_media_url((entry or {}).get("media_url") or "")
+        if not media_url or media_url in seen:
+            return
+        seen.add(media_url)
+        payload = dict(entry or {})
+        payload["media_url"] = media_url
+        if payload.get("thumbnail_url"):
+            payload["thumbnail_url"] = pulse_media_url(payload.get("thumbnail_url") or "")
+        media.append(payload)
+
+    for media_row in media_rows or []:
+        add_media(pulse_marketplace_media_payload(media_row))
+
+    cover_url = pulse_media_url(item.get("cover_image_url") or item.get("media_url") or "")
+    if cover_url:
+        add_media({
+            "media_type": "image",
+            "media_url": cover_url,
+            "thumbnail_url": cover_url,
+            "processing_status": "ready",
+            "is_cover": True,
+        })
+    for url in pulse_marketplace_gallery_urls(item.get("gallery_json")):
+        add_media({
+            "media_type": "image",
+            "media_url": url,
+            "thumbnail_url": url,
+            "processing_status": "ready",
+        })
+    video_url = pulse_media_url(item.get("video_url") or "")
+    if video_url:
+        add_media({
+            "media_type": "video",
+            "media_url": video_url,
+            "thumbnail_url": cover_url,
+            "poster_url": cover_url,
+            "processing_status": "ready",
+        })
+
+    gallery_urls = [entry.get("media_url") for entry in media if entry.get("media_type") == "image" and entry.get("media_url")]
+    cover = next((entry for entry in media if entry.get("is_cover")), media[0] if media else {})
+    video = next((entry for entry in media if entry.get("media_type") == "video"), {})
+    return {
+        **item,
+        "id": listing_id,
+        "listing_id": listing_id,
+        "seller_user_id": safe_int(item.get("seller_user_id"), 0),
+        "seller_name": item.get("seller_name") or "PulseSoc Seller",
+        "seller_username": item.get("seller_username") or "",
+        "title": item.get("title") or "PulseSoc Listing",
+        "short_description": item.get("short_description") or "",
+        "description": item.get("description") or "",
+        "category": item.get("category") or "Education",
+        "price_label": item.get("price_label") or "Request access",
+        "safety_score": safe_int(item.get("safety_score"), 0),
+        "cover_image_url": cover.get("media_url") or cover_url,
+        "image_url": cover.get("media_url") or cover_url,
+        "thumbnail_url": cover.get("thumbnail_url") or cover.get("media_url") or cover_url,
+        "gallery_json": gallery_urls,
+        "video_url": video.get("media_url") or video_url,
+        "media": media,
+        "media_assets": media,
+    }
+
+
 @webhook_app.route("/api/pulse/marketplace/search", methods=["GET"])
 def api_pulse_marketplace_search():
     init_db()
@@ -41088,7 +41224,9 @@ def api_pulse_marketplace_search():
     cur.execute(
         f"""
         SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.safety_score,
-               COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name
+               l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
+               COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
+               COALESCE(u.username,'') AS seller_username
         FROM marketplace_listings l
         LEFT JOIN users u ON u.user_id=l.seller_user_id
         WHERE {' AND '.join(where)}
@@ -41097,7 +41235,9 @@ def api_pulse_marketplace_search():
         """,
         (*params, limit),
     )
-    items = [dict(row) for row in cur.fetchall()]
+    rows = [dict(row) for row in cur.fetchall()]
+    media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [row.get("id") for row in rows])
+    items = [pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), [])) for row in rows]
     conn.close()
     return jsonify({"ok": True, "items": items, "query": query, "limit": limit})
 
