@@ -16,7 +16,7 @@ No production WebView route, production app identity, production auth policy, or
 
 ## Temporary Owner QA Account
 
-Created through the existing production mobile auth API:
+Initial setup created a temporary account through the existing production mobile auth API:
 
 - Register endpoint: `POST https://pulsesoc.com/api/mobile/auth/register`
 - Login verification endpoint: `POST https://pulsesoc.com/api/mobile/auth/login`
@@ -26,12 +26,27 @@ Created through the existing production mobile auth API:
 
 The account is QA-marked through its username/display name because the current user schema inspected in this workspace does not expose a dedicated `is_test_account` or equivalent production-safe user flag.
 
-- Username: `roody_native_qa_20260706`
+- Original username: `roody_native_qa_20260706`
 - Display name: `Roody Native QA`
 - Production user ID returned by mobile auth: `28`
-- Login verification: successful through the existing mobile auth API
+- Initial login verification: successful through the existing mobile auth API
+- Security update: the original account was revoked after the temporary password was exposed outside a secure handoff path.
 
-The temporary password was generated and printed only in terminal/output for direct handoff. It is not stored in this report, source code, config, or Git history. Rotate or delete this account after owner testing.
+Do not use the original username or prior temporary password.
+
+Replacement credential status:
+
+- Replacement username: `roody_native_qa_20260706_r3`
+- Replacement password storage: macOS Keychain only
+- Keychain service: `PulseSocNativeOwnerQA`
+- Keychain account: `roody_native_qa_20260706_r3`
+- Password retrieval command for the local owner machine only:
+
+```bash
+security find-generic-password -s PulseSocNativeOwnerQA -a roody_native_qa_20260706_r3 -w
+```
+
+The replacement password is not stored in this report, source code, config, or Git history. Production mobile auth POST requests began timing out during replacement registration/login confirmation, so replacement login remains pending confirmation until `/api/mobile/auth/login` and `/api/mobile/auth/register` respond normally again.
 
 ## Install / Launch Result
 
@@ -62,8 +77,8 @@ No build, signing, install, or bundle failure was observed.
 
 1. Open `PulseSoc Native` on the iPhone.
 2. Log in with:
-   - Username: `roody_native_qa_20260706`
-   - Temporary password: use the direct credential handoff from terminal/output.
+   - Username: `roody_native_qa_20260706_r3`
+   - Temporary password: retrieve from macOS Keychain only after production mobile auth POSTs recover.
 3. Walk through each major native surface:
    - Home Feed
    - Messenger
@@ -92,8 +107,8 @@ No build, signing, install, or bundle failure was observed.
 
 ## What Roody Can Test Now
 
-- Real production-backed mobile login with the temporary QA account.
-- Signed-in native navigation and primary tabs.
+- App install/launch and signed-out native route behavior on the physical iPhone.
+- Signed-in native navigation and primary tabs after replacement login is confirmed.
 - Read paths for Feed, Profile, Reels, Status, Marketplace, Activity Inbox, Notifications, Settings, Premium, Creator, Growth, and Intelligence where backend permissions allow.
 - Seller Store and Marketplace management gates as a real QA user.
 - Camera Studio screen, permissions, gallery/camera prompts, and visible handoff behavior on a physical iPhone.
@@ -105,6 +120,7 @@ No build, signing, install, or bundle failure was observed.
 - Push notifications, APNs/FCM token behavior, lock-screen behavior, and notification tap routing still require provider/device QA.
 - LiveKit two-device calls, Bluetooth/speaker routing, background audio, and lock-screen calls remain release blockers.
 - Android physical-device QA remains incomplete.
+- Production mobile auth register/login POST requests timed out during credential rotation; health and session endpoints stayed healthy.
 - Some creator, seller, premium, commerce, and intelligence actions may show server-side eligibility or safe web/provider fallback because the backend remains authoritative.
 
 ## What Codex Should Keep Building
@@ -120,7 +136,10 @@ Reason: the native app now has broad feature coverage and owner testing can begi
 - `npm ci --prefix mobile-native --no-audit --no-fund --progress=false`: passed
 - `npm run --prefix mobile-native typecheck`: passed
 - `cd mobile-native && EXPO_DOCTOR_ENABLE_DIRECTORY_CHECK=0 npx expo-doctor --verbose`: passed, 17/17
-- Production mobile auth register/login: passed
+- Original production mobile auth register/login: passed before revocation
+- Original QA account revocation through `/api/account/delete`: passed
+- Replacement credential generation and Keychain storage: passed
+- Replacement registration/login confirmation: blocked by production mobile auth POST timeout
 - Physical iPhone install/build/bundle: passed
 - `devicectl` installed-app confirmation: passed
 

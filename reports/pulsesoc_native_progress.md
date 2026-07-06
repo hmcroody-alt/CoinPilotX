@@ -3139,14 +3139,24 @@ What changed:
 - Documented Roody's manual walkthrough steps in `reports/pulsesoc_native_owner_iphone_test_setup.md`.
 - Kept the temporary password out of reports, source, config, and Git history.
 
+Security correction:
+
+- The original owner QA account credential was exposed outside the intended secure handoff path.
+- The original account `roody_native_qa_20260706` was authenticated once and revoked through the existing `/api/account/delete` endpoint; no production auth logic was changed.
+- A replacement password was generated and stored only in macOS Keychain under service `PulseSocNativeOwnerQA` and account `roody_native_qa_20260706_r3`.
+- Replacement registration/login confirmation is still blocked because production mobile auth POSTs to `/api/mobile/auth/register` and `/api/mobile/auth/login` timed out during the rotation attempt, while `/health` and `/api/mobile/auth/session` stayed healthy.
+- Reports and source were scanned for the exposed password fragments and no committed plaintext password was found.
+
 What Roody can test now:
 
-- Native login and session behavior with the owner QA account.
-- Home Feed, Messenger, Profile, Reels, Status, Marketplace, Seller Store, Activity Inbox, Notifications, Settings, Camera Studio, Calls screen, Creator, Growth, Premium, and Intelligence/Alerts where backend permissions allow.
+- App install/launch and signed-out native route behavior on the physical iPhone.
+- Native login and signed-in session behavior after replacement registration/login confirmation succeeds.
+- Home Feed, Messenger, Profile, Reels, Status, Marketplace, Seller Store, Activity Inbox, Notifications, Settings, Camera Studio, Calls screen, Creator, Growth, Premium, and Intelligence/Alerts where backend permissions allow after replacement login is confirmed.
 - Physical iPhone visual quality, navigation feel, performance impressions, and manual screen recording/screenshot feedback.
 
 Still unstable or release-gated:
 
+- Replacement owner QA login is blocked until production mobile auth POSTs stop timing out.
 - Physical camera/microphone capture, upload, video compression, retry/cancel, and published media IDs.
 - Push provider behavior, lock-screen behavior, notification taps, and APNs/FCM badge timing.
 - LiveKit two-device calls, background audio, speaker/Bluetooth controls, and lock-screen calling.
