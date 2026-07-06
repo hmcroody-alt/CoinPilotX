@@ -196,8 +196,15 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         <Text style={styles.copy}>The gallery reuses marketplace media payloads and the shared native media viewer. Unsupported media falls back safely inside the viewer.</Text>
         <View style={styles.mediaGrid}>
           {mediaItems.slice(0, 8).map((item, index) => (
-            <Pressable key={`${item.url}-${index}`} style={styles.mediaTile} onPress={() => setViewerOpen(true)}>
+            <Pressable
+              key={`${item.url}-${index}`}
+              accessibilityLabel={`Open store media ${index + 1}`}
+              accessibilityRole="button"
+              style={styles.mediaTile}
+              onPress={() => setViewerOpen(true)}
+            >
               {item.thumbnailUrl || item.url ? <Image source={{ uri: item.thumbnailUrl || item.url }} style={styles.mediaImage} resizeMode="cover" /> : <Text style={styles.mediaFallback}>Media</Text>}
+              <Text style={styles.mediaOverlay}>Open media</Text>
             </Pressable>
           ))}
         </View>
@@ -401,6 +408,19 @@ const styles = StyleSheet.create({
   mediaImage: {
     height: "100%",
     width: "100%"
+  },
+  mediaOverlay: {
+    backgroundColor: "rgba(16, 18, 20, 0.72)",
+    borderRadius: 8,
+    bottom: 6,
+    color: colors.text,
+    fontSize: 10,
+    fontWeight: "900",
+    left: 6,
+    overflow: "hidden",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    position: "absolute"
   },
   mediaTile: {
     alignItems: "center",

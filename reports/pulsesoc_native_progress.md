@@ -1718,3 +1718,99 @@ Suggested QA focus:
 3. Verify unapproved seller payout/connect failure state is safe and server-owned.
 4. Verify Marketplace, Profile, Settings, and notification/deep-link entry points.
 5. Document provider-only and physical-device gaps separately from browser-verified behavior.
+
+## Native Seller/Store Practical QA Hardening
+
+Completed action: authenticated practical QA hardening for the native Seller/Store Management foundation.
+
+What was verified:
+
+- `/pulse/seller-store` loads signed in and renders the native Seller/Store screen.
+- `/pulse/merchant/apply`, `/pulse/merchant/dashboard`, `/pulse/merchant/<sellerId>`, and `/pulse/marketplace/create` route into the native seller/store gateway or safe fallback.
+- Marketplace and Settings expose Seller/Store entry points.
+- Profile exposes Seller/Store from the About tab.
+- Blank merchant application submit renders validation instead of sending incomplete data.
+- Merchant application save returns a visible success state through the existing backend API.
+- Seller status and storefront listing count render after a local approved seller/listing fixture is seeded.
+- Orders summary renders safely.
+- Payout/connect returns the server-owned approval gate for an unapproved merchant.
+- Loading and error states remain contained to the native screen.
+
+Scoped fixes completed:
+
+- Added accessible product-media tile labels and a visible `Open media` overlay to improve QA targeting and accessibility.
+- Extended the existing QA-only simulator auth helper to support local QA browser login redirects. This remains limited to development builds with a localhost API base URL and still calls the existing backend sign-in API.
+- Added safe local redirect handling for QA login. Redirect targets must be local paths and reject protocol-relative, API, admin, and backslash paths.
+
+Backend contract finding:
+
+- A seeded approved marketplace listing with `cover_image_url` and `gallery_json` was present in the local QA database.
+- The inspected `GET /api/pulse/marketplace/search?limit=5` response did not expose listing media fields such as `cover_image_url`, `gallery_json`, `video_url`, or a normalized `media` array.
+- The native Seller/Store media gallery is ready to render authorized media, but full media-gallery/NativeMediaViewer QA cannot be claimed until the backend exposes a native-safe product-media payload.
+
+Critical blocker assessment:
+
+- No critical, security, data-loss, production-breaking, or future-development-blocking issue was found.
+- The product-media payload gap is a scoped parity/hardening issue, not a reason to stop development.
+
+## Native Completion Snapshot by Subsystem
+
+Estimated completion is based on implemented native foundations, browser/simulator/device evidence, and known release blockers. These are engineering readiness estimates, not App Store readiness claims.
+
+| Subsystem | Estimated Native Completion | Current Confidence | Notes |
+| --- | ---: | --- | --- |
+| App shell, auth, session, routing | 90% | Browser/simulator verified | Device push/deep-link release QA remains. |
+| Social feed, posts, comments, composer | 82% | Browser verified | Physical media capture/upload remains release QA. |
+| Messaging | 78% | Browser/static verified | Two-device realtime/push/media QA remains. |
+| Notifications, Activity Inbox, alerts | 76% | Browser verified | APNs/FCM/SMS/email/Telegram provider QA remains. |
+| Media viewer/upload/camera | 68% | Browser/simulator partially verified | Physical camera/mic/large video remains release blocker. |
+| Reels and Status | 72% | Browser/static verified | Native video performance and physical media QA remain. |
+| Marketplace and Seller/Store | 70% | Browser/backend contract verified | Product-media payload and provider checkout/payout QA remain. |
+| Search, Saved, Groups, Events, Courses | 74% | Browser/static verified | Deeper data-rich QA and offline-auth recovery remain. |
+| Trust, Safety, Verification, Account Health | 80% | Browser verified | Sensitive document/admin/provider flows stay web/server-owned. |
+| Premium, Creator, Growth, Intelligence | 72% | Browser/static verified | Provider/billing/advanced admin flows remain fallback surfaces. |
+| Live and Calls | 55% | Practical route/shell verified | LiveKit two-device media, lock-screen, audio route, and push call QA remain. |
+| Android readiness | 35% | Tooling partially verified | Physical Android QA remains incomplete. |
+
+Overall native migration estimate: 72% foundation/parity coverage, 58% release QA confidence.
+
+## Recommended Next Action
+
+Recommended next highest-value native feature/action: Native Marketplace/Seller Media Payload Contract Hardening.
+
+Reason for recommendation:
+
+- Seller/Store, Marketplace Browse, Listing Detail, NativeMediaViewer, Search, Activity Inbox, and Profile seller surfaces all depend on reliable product-media payloads.
+- The native UI already has the media-gallery integration point, but the current inspected marketplace search response does not expose authorized listing media fields.
+- A scoped server-authoritative payload hardening pass will unlock real Seller/Store media QA and improve Marketplace parity without duplicating business logic in the native client.
+
+Reusable APIs/code/database/business logic for the next action:
+
+- Existing marketplace listing/search APIs.
+- Existing marketplace listing/media tables and media authorization/moderation rules.
+- Existing `marketplace_listings`, product media, seller, order, saved, report, and safety data.
+- Existing native Marketplace cards, Seller/Store screen, Listing Detail, NativeMediaViewer, offline cache, and route/deep-link infrastructure.
+
+What must be rebuilt or adjusted natively:
+
+- Prefer a native-safe API payload contract that includes authorized listing media fields or a dedicated seller/listing detail endpoint.
+- Update native Marketplace/Seller wrappers only to consume confirmed backend fields.
+- Keep checkout, payout, tax, disputes, refunds, fulfillment, and admin review on safe fallback.
+
+Dependencies/blockers:
+
+- Production backend files are currently dirty from unrelated work, so any backend payload change must be scoped carefully and staged explicitly.
+- Media authorization and moderation must remain server-owned.
+- Physical product-media capture/upload QA remains a release blocker, not a development blocker.
+
+Risk level: low to medium if additive and server-authoritative.
+
+Estimated complexity: low to medium.
+
+Safest implementation plan:
+
+1. Inspect the current marketplace search/listing route implementation and marketplace media table usage.
+2. Add or expose authorized media fields through an existing JSON response or a dedicated native-safe endpoint.
+3. Update native marketplace wrappers to consume the confirmed payload without inventing local media state.
+4. Re-run Seller/Store and Marketplace media QA in the built-in QA browser.
+5. Keep all provider/payment/payout flows on fallback.

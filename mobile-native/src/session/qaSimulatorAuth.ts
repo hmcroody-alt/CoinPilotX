@@ -9,18 +9,19 @@ export type QaSimulatorAuthResult = {
   handled: boolean;
   authState?: AuthState;
   cameraRoute?: RootStackParamList["CameraStudio"];
+  redirectTarget?: string;
   reason?: string;
 };
 
 export function isQaSimulatorAuthEnabled() {
-  return __DEV__ && Platform.OS !== "web" && isLocalApiBaseUrl(PULSE_API_BASE_URL);
+  return __DEV__ && isLocalApiBaseUrl(PULSE_API_BASE_URL);
 }
 
 export async function tryHandleQaSimulatorAuthUrl(url: string): Promise<QaSimulatorAuthResult> {
   if (!isQaSimulatorAuthEnabled()) return { handled: false, reason: "disabled" };
 
   const parsed = parseQaUrl(url);
-  if (!parsed || parsed.hostname !== "qa" || parsed.pathname !== "/simulator-login") {
+  if (!parsed || !isQaLoginUrl(parsed)) {
     return { handled: false, reason: "not_qa_login" };
   }
 
@@ -32,8 +33,16 @@ export async function tryHandleQaSimulatorAuthUrl(url: string): Promise<QaSimula
   return {
     handled: true,
     authState,
-    cameraRoute: authState.status === "signedIn" ? cameraRouteFromQaUrl(parsed) : undefined
+    cameraRoute: authState.status === "signedIn" ? cameraRouteFromQaUrl(parsed) : undefined,
+    redirectTarget: authState.status === "signedIn" ? safeRedirectTarget(parsed) : undefined
   };
+}
+
+function isQaLoginUrl(parsed: URL) {
+  if (Platform.OS === "web") {
+    return isLocalWebHost(parsed.hostname) && parsed.pathname === "/qa/simulator-login";
+  }
+  return parsed.hostname === "qa" && parsed.pathname === "/simulator-login";
 }
 
 function isLocalApiBaseUrl(value: string) {
@@ -43,6 +52,10 @@ function isLocalApiBaseUrl(value: string) {
   } catch {
     return false;
   }
+}
+
+function isLocalWebHost(hostname: string) {
+  return ["127.0.0.1", "localhost", "::1"].includes(hostname);
 }
 
 function parseQaUrl(url: string) {
@@ -76,6 +89,14 @@ function cameraRouteFromQaUrl(parsed: URL): RootStackParamList["CameraStudio"] |
     qaAutoPublish,
     qaCaption
   };
+}
+
+function safeRedirectTarget(parsed: URL) {
+  const redirect = parsed.searchParams.get("redirect") || "";
+  if (!redirect || !redirect.startsWith("/") || redirect.startsWith("//") || redirect.includes("\\") || redirect.startsWith("/api/") || redirect.startsWith("/admin/")) {
+    return "";
+  }
+  return redirect.slice(0, 240);
 }
 
 function normalizeTarget(value: string | null): CameraStudioParams["target"] | undefined {

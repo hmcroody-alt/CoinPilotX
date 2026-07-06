@@ -7,7 +7,7 @@ import { IncomingCallLayer } from "./src/calls/IncomingCallLayer";
 import { AppNavigator } from "./src/navigation/AppNavigator";
 import { AuthNavigator } from "./src/navigation/AuthNavigator";
 import { linking } from "./src/navigation/linking";
-import { navigationRef, setupNotificationResponseRouting } from "./src/navigation/notificationRouting";
+import { navigationRef, routeNotificationTarget, setupNotificationResponseRouting } from "./src/navigation/notificationRouting";
 import { RootStackParamList } from "./src/navigation/types";
 import { AuthContext, AuthState, restoreSession } from "./src/session/auth";
 import { tryHandleQaSimulatorAuthUrl } from "./src/session/qaSimulatorAuth";
@@ -16,6 +16,7 @@ import { colors } from "./src/theme/colors";
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>({ status: "loading", user: null });
   const [pendingQaCameraRoute, setPendingQaCameraRoute] = useState<RootStackParamList["CameraStudio"] | null>(null);
+  const [pendingQaRedirectTarget, setPendingQaRedirectTarget] = useState("");
 
   useEffect(() => {
     restoreSession().then(setAuthState).catch(() => setAuthState({ status: "signedOut", user: null }));
@@ -36,6 +37,7 @@ export default function App() {
         if (!mounted || !result.handled) return;
         if (result.authState) setAuthState(result.authState);
         if (result.cameraRoute) setPendingQaCameraRoute(result.cameraRoute);
+        if (result.redirectTarget) setPendingQaRedirectTarget(result.redirectTarget);
       } catch {
         // QA-only simulator auth bootstrap must never interrupt normal auth.
       }
@@ -66,6 +68,22 @@ export default function App() {
     }, 150);
     return () => clearInterval(interval);
   }, [authState.status, pendingQaCameraRoute]);
+
+  useEffect(() => {
+    if (authState.status !== "signedIn" || !pendingQaRedirectTarget || pendingQaCameraRoute) return;
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts += 1;
+      if (navigationRef.isReady()) {
+        routeNotificationTarget(pendingQaRedirectTarget).catch(() => undefined);
+        setPendingQaRedirectTarget("");
+        clearInterval(interval);
+      } else if (attempts >= 20) {
+        clearInterval(interval);
+      }
+    }, 150);
+    return () => clearInterval(interval);
+  }, [authState.status, pendingQaCameraRoute, pendingQaRedirectTarget]);
 
   const auth = useMemo(() => ({ authState, setAuthState }), [authState]);
   const theme = useMemo(
