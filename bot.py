@@ -41242,6 +41242,37 @@ def api_pulse_marketplace_search():
     return jsonify({"ok": True, "items": items, "query": query, "limit": limit})
 
 
+@webhook_app.route("/api/pulse/marketplace/seller/listings", methods=["GET"])
+def api_pulse_marketplace_seller_listings():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    limit = max(1, min(safe_int(request.args.get("limit"), 80), 100))
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.safety_score,
+               l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
+               COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
+               COALESCE(u.username,'') AS seller_username
+        FROM marketplace_listings l
+        LEFT JOIN users u ON u.user_id=l.seller_user_id
+        WHERE l.seller_user_id=?
+        ORDER BY l.id DESC
+        LIMIT ?
+        """,
+        (int(user["user_id"]), limit),
+    )
+    rows = [dict(row) for row in cur.fetchall()]
+    media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [row.get("id") for row in rows])
+    items = [pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), [])) for row in rows]
+    conn.close()
+    return jsonify({"ok": True, "items": items, "limit": limit})
+
+
 @webhook_app.route("/pulse/assistant", methods=["GET"])
 def pulse_assistant_page():
     init_db()

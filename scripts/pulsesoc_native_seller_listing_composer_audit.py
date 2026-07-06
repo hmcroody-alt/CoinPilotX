@@ -46,6 +46,8 @@ def main() -> int:
         "MarketplaceListingCreateResponse",
         "createMarketplaceListing",
         "/api/pulse/marketplace/listings/create",
+        "listMarketplaceSellerListings",
+        "/api/pulse/marketplace/seller/listings",
         "media_ids",
     ]:
         require(token in api, f"marketplace API missing composer token {token}", failures)
@@ -69,7 +71,7 @@ def main() -> int:
         "Web Uploader",
         "Submit for Review",
         "createMarketplaceListing",
-        "navigation.navigate(\"MarketplaceDetail\"",
+        "navigation.navigate(\"SellerStore\"",
         "sellerStoreWebUrl(\"create\")",
     ]:
         require(token in composer, f"composer screen missing {token}", failures)

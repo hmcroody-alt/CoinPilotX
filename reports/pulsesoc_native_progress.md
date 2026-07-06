@@ -2020,7 +2020,7 @@ What was implemented:
 - Added Camera Studio handoff for marketplace media.
 - Added safe web uploader fallback for advanced marketplace media/listing flows.
 - Added backend validation display and submit-for-review action.
-- Navigates to native Marketplace Detail after successful listing creation when the backend returns a listing ID.
+- Returns to native Seller/Store after successful listing creation when the backend returns a listing ID, because newly-created products remain seller-visible while marketplace review controls public visibility.
 - Added `@egjs/hammerjs` to `mobile-native` dependencies because clean `npm ci` web QA exposed it as a required `react-native-gesture-handler` web dependency.
 - Corrected notification/deep-link routing so `/pulse/marketplace/create` opens the new native composer instead of the older Seller/Store create gateway.
 
@@ -2103,5 +2103,111 @@ Safest implementation plan:
 1. Seed or use an approved seller with draft marketplace media IDs.
 2. Verify `/pulse/marketplace/create` renders the native composer.
 3. Verify missing media/title/description validation.
-4. Verify a successful listing create response routes to Marketplace Detail.
+4. Verify a successful listing create response returns to Seller/Store while public Marketplace visibility remains approval-gated.
 5. Verify edit/provider/payout flows remain fallback.
+
+## Native Seller Listing Composer Practical QA Hardening
+
+Completed action: verified and hardened the native Seller Listing Composer and Seller/Store create-listing loop.
+
+What was verified:
+
+- `/pulse/marketplace/create` renders the native `Create Listing` composer in the built-in QA browser.
+- Seller/Store `Create Listing` entry routes to the native composer.
+- Missing media is rejected by the backend with `Upload or capture a cover photo before creating a listing.`
+- Missing title/description is rejected by the backend with `Add a title and description for the listing.`
+- Pending/non-approved merchants are rejected by the backend with `Merchant approval is required before creating listings.`
+- Approved merchant create succeeds with existing draft product media IDs and returns a `listing_id`.
+- Public marketplace search remains approval-gated and does not expose newly-created review listings.
+- Existing web merchant dashboard still shows seller-created listings.
+- Native Seller/Store now shows seller-owned listings, including newly-created review listings.
+- Seller/Store product media gallery renders payload-backed media tiles.
+- NativeMediaViewer opens from Seller/Store media and displays title, seller identity, navigation, and share controls.
+
+Scoped hardening implemented:
+
+- Added protected `GET /api/pulse/marketplace/seller/listings`.
+- Reused existing marketplace listing, seller, and media tables.
+- Reused existing `pulse_marketplace_listing_payload(...)` and marketplace media payload normalization.
+- Updated `loadSellerStoreSnapshot()` to use seller-owned listings instead of public marketplace search.
+- Updated the composer success handoff to return to Seller/Store after review submission.
+- Updated seller listing composer audits.
+
+Why this was necessary:
+
+- Public marketplace search correctly filters to approved/active listings.
+- Seller tools need to show a seller their own pending-review listings after submission.
+- The fix preserves public marketplace compatibility and does not duplicate moderation or approval logic.
+
+Verification evidence:
+
+- Backend contract check passed against local QA backend/proxy.
+- Built-in QA browser verified `/pulse/marketplace/create`.
+- Built-in QA browser verified `/pulse/seller-store`.
+- Built-in QA browser opened NativeMediaViewer from Seller/Store media.
+- `reports/pulsesoc_native_seller_listing_composer_qa.md` records detailed evidence and unverified provider/device items.
+
+Remaining release/provider QA gaps:
+
+- Real marketplace-specific image/video upload on physical devices.
+- Payout/provider onboarding.
+- Payment checkout completion.
+- Admin approval/rejection workflow.
+- Native edit/delete/inventory controls.
+
+Updated native completion percentages by subsystem:
+
+| Subsystem | Current estimate | Confidence | Remaining high-value gap |
+| --- | ---: | --- | --- |
+| Auth/session/settings | 86% | Browser + simulator foundations verified | Release device auth and provider edge cases |
+| Messaging and calls | 72% | Browser/practical QA verified | LiveKit two-device media and lock-screen release QA |
+| Feed/posts/composer | 78% | Browser/static verified | Rich composer options and device media QA |
+| Media viewer/upload/camera | 72% | Browser/simulator/media QA partially verified | Physical camera/mic, large video, weak network |
+| Reels and Status | 74% | Browser/static verified | Physical native video performance |
+| Marketplace and Seller/Store | 85% | Backend contract + authenticated QA browser verified | Listing edit/inventory controls and marketplace-specific upload |
+| Search, Saved, Groups, Events, Courses | 75% | Browser/static verified | Data-rich authenticated QA depth |
+| Trust, Safety, Verification, Account Health | 82% | Browser verified | Document/admin/provider flows remain web/server-owned |
+| Premium, Creator, Growth, Intelligence | 74% | Browser/static verified | Provider/billing/advanced tools remain fallback |
+| Live and Calls | 56% | Practical shell verified | Native LiveKit/call media release QA |
+| Android readiness | 35% | Tooling partially verified | Physical Android QA |
+
+overall native migration percentage: 77% foundation/parity coverage, 63% release QA confidence.
+
+Recommended next highest-value native feature/action: Marketplace Listing Edit + Seller Inventory Controls foundation.
+
+Reason for recommendation:
+
+- Seller create now works, and seller-owned pending listings are visible in native Seller/Store.
+- The next commerce gap is lifecycle management: edit review/draft listings, update listing status, remove listings, and expose inventory controls while keeping approval, moderation, checkout, payouts, refunds, disputes, and fulfillment server-authoritative.
+
+Reusable APIs/code/database/business logic for next action:
+
+- Existing marketplace listing and media tables.
+- Existing seller approval and moderation status fields.
+- Existing merchant dashboard behavior that already lists all seller-owned listings.
+- Existing NativeMediaViewer, Seller/Store, marketplace media payloads, Camera Studio handoff, and safe web/provider fallbacks.
+
+What must be rebuilt or adjusted natively:
+
+- Native seller-owned listing detail/edit gateway.
+- Native inventory status controls only where backend APIs exist or can be safely exposed.
+- Fallback routing for unsupported edit, provider, payout, tax, dispute, and fulfillment tools.
+
+Dependencies/blockers:
+
+- Confirm whether a safe JSON update endpoint exists for marketplace listings.
+- If it does not exist, add a narrow seller-owned update endpoint that preserves approval/moderation gates.
+- Physical media upload and provider QA remain release blockers, not development blockers.
+
+Risk level: medium.
+
+Estimated complexity: medium.
+
+Safest implementation plan:
+
+1. Inspect existing merchant dashboard listing update/edit behavior and marketplace admin review flow.
+2. Reuse existing listing/media schema and server-side approval rules.
+3. Add or reuse only seller-owned endpoints for editable fields.
+4. Keep public marketplace visibility approval-gated.
+5. Build native edit/inventory UI around server responses.
+6. Run backend contract checks and QA browser route checks before commit.

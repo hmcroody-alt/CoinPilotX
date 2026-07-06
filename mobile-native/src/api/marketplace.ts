@@ -117,6 +117,15 @@ export async function searchMarketplace(params: { query?: string; limit?: number
   return { ...data, items };
 }
 
+export async function listMarketplaceSellerListings(params: { limit?: number } = {}) {
+  const query = new URLSearchParams({
+    limit: String(params.limit || 80)
+  });
+  const data = await pulseApi<MarketplaceSearchResponse>(`/api/pulse/marketplace/seller/listings?${query.toString()}`);
+  const items = normalizeMarketplaceListings(data.items || data.listings || []);
+  return { ...data, items };
+}
+
 export async function loadCachedMarketplace() {
   return (await readJsonCache<MarketplaceListing[]>(MARKETPLACE_CACHE_KEY, normalizeMarketplaceListings)) || [];
 }
@@ -134,12 +143,12 @@ export async function cacheSellerStore(snapshot: SellerStoreSnapshot) {
 }
 
 export async function loadSellerStoreSnapshot() {
-  const [marketplace, orders] = await Promise.allSettled([
-    searchMarketplace({ limit: 48 }),
+  const [sellerListings, orders] = await Promise.allSettled([
+    listMarketplaceSellerListings({ limit: 80 }),
     listMarketplaceSellerOrders()
   ]);
   const snapshot: SellerStoreSnapshot = {
-    listings: marketplace.status === "fulfilled" ? marketplace.value.items || [] : [],
+    listings: sellerListings.status === "fulfilled" ? sellerListings.value.items || [] : [],
     orders: orders.status === "fulfilled" ? orders.value.orders || [] : [],
     cached_at: new Date().toISOString()
   };

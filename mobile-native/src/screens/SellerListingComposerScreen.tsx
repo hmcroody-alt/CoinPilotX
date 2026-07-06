@@ -53,7 +53,7 @@ export function SellerListingComposerScreen({ navigation }: Props) {
       setCreatedListingId(listingId);
       setMessage(result.message || "Listing saved for safety review.");
       if (listingId) {
-        navigation.navigate("MarketplaceDetail", { listingId, title: title.trim() || "Marketplace" });
+        navigation.navigate("SellerStore", { title: "Seller / Store" });
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Listing could not be saved.");
