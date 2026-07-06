@@ -190,6 +190,7 @@ export function CreatorStudioScreen({ navigation }: Props) {
           <Action label="Status Creator" onPress={() => navigation.navigate("Tabs", { screen: "Status", params: { openCreator: true } })} />
           <Action label="Content Planner" onPress={() => navigation.navigate("ContentPlanner", { mode: "planner", title: "Content Planner" })} />
           <Action label="Scheduled Publishing" onPress={() => navigation.navigate("ContentPlanner", { mode: "scheduler", title: "Scheduled Publishing" })} />
+          <Action label="Courses and Learning" onPress={() => navigation.navigate("Courses", { title: "Courses" })} />
           <Action label="Reels" onPress={() => navigation.navigate("Reels")} />
           <Action label="Profile" onPress={() => navigation.navigate("ProfileDetail", undefined)} />
           <Action label="Premium" onPress={() => navigation.navigate("Premium")} />

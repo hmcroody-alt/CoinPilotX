@@ -132,6 +132,25 @@ export const linking: LinkingOptions<RootStackParamList> = {
       PostSchedulerPulseAlias: "pulse/dashboard/post-scheduler",
       DraftStudio: "dashboard/creator/draft-studio",
       DraftStudioPulseAlias: "pulse/dashboard/draft-studio",
+      Courses: {
+        path: "pulse/courses",
+        parse: {
+          category: String
+        }
+      },
+      CourseDetail: {
+        path: "pulse/courses/:courseId",
+        parse: {
+          courseId: Number
+        }
+      },
+      LearningLessonDetail: {
+        path: "education/lesson/:lessonSlug"
+      },
+      TeacherProfileGateway: {
+        path: "pulse/teachers/:teacherId?"
+      },
+      TeacherDashboardGateway: "pulse/teacher-dashboard",
       GrowthCenter: {
         path: "pulse/growth"
       },

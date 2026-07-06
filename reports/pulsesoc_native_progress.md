@@ -1483,3 +1483,94 @@ Safest implementation plan:
 3. Build a native gateway around confirmed list/detail data only.
 4. Keep create/edit/paid/teacher/admin flows on safe fallback until backend contracts exist.
 5. Verify static checks, audit, and QA browser route rendering before commit.
+
+## Native Courses + Learning Gateway Foundation
+
+Completed feature: native Courses + Learning gateway.
+
+Why it happened now:
+
+- Creator Studio, Content Planner, Profile, Premium, Marketplace, Search, Activity Inbox, and Events now provide the surrounding native surfaces that courses and teacher learning workflows need.
+- Production PulseSoc already has course, teacher, education, lesson, tutor, progress, and paid-course-ready web/backend behavior.
+- The native app needed a safe learning gateway that exposes available JSON lesson data without bypassing course, payment, compliance, or teacher approval rules.
+
+Reusable PulseSoc APIs/code/database/business logic:
+
+- Existing `/api/education/categories`.
+- Existing `/api/education/lessons`.
+- Existing `/api/education/lesson/<lesson_slug>`.
+- Existing `/api/education/quiz/submit`.
+- Existing `/api/education/tutor`.
+- Existing `/api/pulse/courses/create` and web-backed course creation rules.
+- Existing `/pulse/courses`, `/pulse/courses/<course_id>`, `/pulse/teachers`, and `/pulse/teacher-dashboard` production routes.
+- Existing education, course, teacher, lesson, enrollment, progress, tutor-log, compliance, paid-course readiness, and payment fallback database/business logic.
+
+Native work completed:
+
+- Added `mobile-native/src/api/learning.ts`.
+- Added `mobile-native/src/screens/CoursesLearningScreen.tsx`.
+- Added native route aliases for Courses, Course Detail, Lesson Detail, Teacher Profile gateway, and Teacher Dashboard gateway.
+- Added deep-link and notification routing for course, teacher, and education lesson links.
+- Added Creator Studio, Settings, and Search/Discovery entry points.
+- Added native category browse, lesson list, lesson detail, knowledge map, quiz preview, tutor, and progress completion hooks.
+- Added offline cache for categories, lessons, and recently opened lessons.
+
+Safe fallback boundaries:
+
+- Full course catalog/detail stays on fallback where no JSON course list/detail API was confirmed.
+- Course creation stays on existing web flow and backend teacher approval rules.
+- Paid enrollment, checkout, refunds, payouts, and provider logic stay on existing web/provider flows.
+- Teacher dashboard, lesson authoring, admin review, and advanced teacher tools stay fallback-only.
+- Unsupported lesson video/player behavior stays fallback-only.
+
+Verification plan and QA evidence:
+
+- Static typecheck passes after adding the Courses/Learning gateway.
+- Dedicated audit script verifies API reuse, route wiring, Settings/Creator/Search entry points, safe fallback tokens, report coverage, and no internal design-label leakage into user-facing native source.
+- Built-in QA browser route checks rendered `/pulse/courses`, `/pulse/courses/1`, `/education/lesson/crypto-basics-101`, `/pulse/teachers`, and `/pulse/teacher-dashboard` with no visible runtime error text on those routes.
+- Local QA backend checks authenticated a disposable QA account, returned a tutor answer from `/api/education/tutor`, and saved progress through `/api/education/quiz/submit`.
+- Device/provider QA is not a development blocker for this foundation because camera, payment, and provider-managed course behavior remain fallback-only.
+
+Remaining major features:
+
+- Native Courses + Learning practical QA hardening.
+- Native seller/store management beyond Marketplace browse/detail.
+- Native advanced Live Studio/hosting/co-hosting.
+- Physical-device LiveKit calls and lock-screen call QA.
+- Full provider/device push verification.
+
+Recommended next highest-value native feature/action: Native Courses + Learning Practical QA Hardening.
+
+Reason for recommendation:
+
+- The feature intentionally bridges native JSON lesson data with several safe web fallbacks.
+- A short authenticated QA browser pass should verify that route aliases, lesson loading, progress/tutor states, fallback buttons, and visual consistency behave correctly before another major build.
+- This is a practical QA gate only; it should not become a long release-blocking loop unless a critical, data-loss, security, or production-breaking issue appears.
+
+Reusable APIs/code/database/business logic for the next action:
+
+- Existing education category, lesson, tutor, and progress APIs.
+- Existing course, teacher, and dashboard web routes.
+- Existing native navigation, notification routing, Settings, Creator Studio, Search, and offline cache utilities.
+
+What must be rebuilt/fixed natively:
+
+- Only scoped QA blockers found in route rendering, fallback routing, empty/error/offline states, or lesson interaction states.
+- No new backend business logic should be added.
+
+Dependencies/blockers:
+
+- A real JSON course catalog/detail API is still needed before full native paid course browsing/enrollment.
+- Paid enrollment and teacher dashboard remain provider/compliance-sensitive fallback surfaces.
+
+Risk level: low to medium.
+
+Estimated complexity: low.
+
+Safest implementation plan:
+
+1. Start the QA web build with the existing local backend/proxy pattern.
+2. Authenticate with the local QA account.
+3. Verify course, teacher, dashboard, and lesson routes in the built-in QA browser.
+4. Verify lesson progress/tutor behavior where a seeded lesson exists.
+5. Fix only scoped blockers, then commit and continue the roadmap.

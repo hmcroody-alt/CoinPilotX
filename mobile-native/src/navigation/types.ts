@@ -65,6 +65,11 @@ export type RootStackParamList = {
   PostSchedulerPulseAlias: { title?: string } | undefined;
   DraftStudio: { title?: string } | undefined;
   DraftStudioPulseAlias: { title?: string } | undefined;
+  Courses: { category?: string; title?: string } | undefined;
+  CourseDetail: { courseId?: number; lessonSlug?: string; title?: string } | undefined;
+  LearningLessonDetail: { lessonSlug: string; title?: string };
+  TeacherProfileGateway: { teacherId?: string; title?: string } | undefined;
+  TeacherDashboardGateway: { title?: string } | undefined;
   GrowthCenter: { contentType?: string; contentId?: number | string; title?: string } | undefined;
   IntelligenceCenter: { alertId?: number; subsystem?: string; title?: string } | undefined;
   AlertManagement: { alertId?: number; title?: string } | undefined;

@@ -61,6 +61,9 @@ export function SettingsScreen() {
         <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("ContentPlanner", { title: "Content Planner" })}>
           <Text style={styles.secondaryText}>Content Planner</Text>
         </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("Courses", { title: "Courses" })}>
+          <Text style={styles.secondaryText}>Courses and Learning</Text>
+        </Pressable>
         <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("GrowthCenter")}>
           <Text style={styles.secondaryText}>Growth Center</Text>
         </Pressable>

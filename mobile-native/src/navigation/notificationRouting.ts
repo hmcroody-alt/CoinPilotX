@@ -219,6 +219,22 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  const learningTarget = learningRouteTarget(normalized);
+  if (learningTarget && navigationRef.isReady()) {
+    if (learningTarget.route === "lesson") {
+      navigationRef.navigate("LearningLessonDetail", { lessonSlug: learningTarget.lessonSlug, title: "Lesson" });
+    } else if (learningTarget.route === "course-detail") {
+      navigationRef.navigate("CourseDetail", { courseId: learningTarget.courseId, title: "Course" });
+    } else if (learningTarget.route === "teacher-dashboard") {
+      navigationRef.navigate("TeacherDashboardGateway", { title: "Teacher Dashboard" });
+    } else if (learningTarget.route === "teacher") {
+      navigationRef.navigate("TeacherProfileGateway", { teacherId: learningTarget.teacherId, title: "Teacher" });
+    } else {
+      navigationRef.navigate("Courses", { category: learningTarget.category, title: "Courses" });
+    }
+    return { handled: true, target: normalized };
+  }
+
   if ((normalized.startsWith("/pulse/growth") || normalized.startsWith("/pulse/promote")) && navigationRef.isReady()) {
     navigationRef.navigate("GrowthCenter", {
       contentType: extractStringQueryValue(normalized, "content_type") || undefined,
@@ -479,6 +495,37 @@ function contentPlannerTarget(target: string): { title: string; mode?: "planner"
     target.startsWith("/pulse/dashboard/draft-studio")
   ) {
     return { title: "Draft Studio", mode: "drafts" };
+  }
+  return null;
+}
+
+function learningRouteTarget(target: string):
+  | { route: "courses"; category?: string }
+  | { route: "course-detail"; courseId: number }
+  | { route: "lesson"; lessonSlug: string }
+  | { route: "teacher"; teacherId?: string }
+  | { route: "teacher-dashboard" }
+  | null {
+  const lessonMatch = target.match(/^\/education\/lesson\/([^/?#]+)/);
+  if (lessonMatch?.[1]) {
+    return { route: "lesson", lessonSlug: decodeURIComponent(lessonMatch[1]) };
+  }
+  if (target.startsWith("/pulse/teacher-dashboard")) {
+    return { route: "teacher-dashboard" };
+  }
+  const teacherMatch = target.match(/^\/pulse\/teachers\/([^/?#]+)/);
+  if (teacherMatch?.[1]) {
+    return { route: "teacher", teacherId: decodeURIComponent(teacherMatch[1]) };
+  }
+  if (target.startsWith("/pulse/teachers")) {
+    return { route: "teacher" };
+  }
+  const courseMatch = target.match(/^\/pulse\/courses\/(\d+)/);
+  if (courseMatch?.[1]) {
+    return { route: "course-detail", courseId: Number(courseMatch[1]) };
+  }
+  if (target.startsWith("/pulse/courses") || target.startsWith("/education")) {
+    return { route: "courses", category: extractStringQueryValue(target, "category") || undefined };
   }
   return null;
 }

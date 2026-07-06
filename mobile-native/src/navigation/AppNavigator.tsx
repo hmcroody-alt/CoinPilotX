@@ -11,6 +11,7 @@ import { AlertManagementScreen } from "../screens/AlertManagementScreen";
 import { CameraStudioScreen } from "../screens/CameraStudioScreen";
 import { CallScreen } from "../screens/CallScreen";
 import { ContentPlannerScreen } from "../screens/ContentPlannerScreen";
+import { CoursesLearningScreen } from "../screens/CoursesLearningScreen";
 import { CreatorStudioScreen } from "../screens/CreatorStudioScreen";
 import { GrowthCenterScreen } from "../screens/GrowthCenterScreen";
 import { GroupsScreen } from "../screens/GroupsScreen";
@@ -134,6 +135,11 @@ export function AppNavigator() {
       <Stack.Screen name="PostSchedulerPulseAlias" component={ContentPlannerScreen} options={{ title: "Scheduled Publishing" }} />
       <Stack.Screen name="DraftStudio" component={ContentPlannerScreen} options={{ title: "Draft Studio" }} />
       <Stack.Screen name="DraftStudioPulseAlias" component={ContentPlannerScreen} options={{ title: "Draft Studio" }} />
+      <Stack.Screen name="Courses" component={CoursesLearningScreen} options={({ route }) => ({ title: route.params?.title || "Courses" })} />
+      <Stack.Screen name="CourseDetail" component={CoursesLearningScreen} options={({ route }) => ({ title: route.params?.title || "Course" })} />
+      <Stack.Screen name="LearningLessonDetail" component={CoursesLearningScreen} options={({ route }) => ({ title: route.params?.title || "Lesson" })} />
+      <Stack.Screen name="TeacherProfileGateway" component={CoursesLearningScreen} options={({ route }) => ({ title: route.params?.title || "Teacher" })} />
+      <Stack.Screen name="TeacherDashboardGateway" component={CoursesLearningScreen} options={{ title: "Teacher Dashboard" }} />
       <Stack.Screen name="GrowthCenter" component={GrowthCenterScreen} options={{ title: "Growth Center" }} />
       <Stack.Screen name="IntelligenceCenter" component={IntelligenceCenterScreen} options={({ route }) => ({ title: route.params?.title || "Intelligence" })} />
       <Stack.Screen name="AlertManagement" component={AlertManagementScreen} options={({ route }) => ({ title: route.params?.title || "Alerts" })} />

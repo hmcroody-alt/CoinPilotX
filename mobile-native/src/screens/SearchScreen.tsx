@@ -29,7 +29,7 @@ import { colors } from "../theme/colors";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "Search">>;
 
-type DiscoveryTab = "all" | "people" | "posts" | "reels" | "status" | "marketplace" | "communities" | "events" | "trending" | "hashtags";
+type DiscoveryTab = "all" | "people" | "posts" | "reels" | "status" | "marketplace" | "communities" | "events" | "learning" | "trending" | "hashtags";
 
 const DISCOVERY_TABS: Array<{ key: DiscoveryTab; label: string; groups: PulseSearchGroupKey[] }> = [
   { key: "all", label: "All", groups: SEARCH_GROUPS.map((group) => group.key) },
@@ -40,6 +40,7 @@ const DISCOVERY_TABS: Array<{ key: DiscoveryTab; label: string; groups: PulseSea
   { key: "marketplace", label: "Marketplace", groups: ["marketplace"] },
   { key: "communities", label: "Communities", groups: ["groups", "rooms"] },
   { key: "events", label: "Events", groups: [] },
+  { key: "learning", label: "Learning", groups: [] },
   { key: "trending", label: "Trending", groups: [] },
   { key: "hashtags", label: "Hashtags", groups: [] }
 ];
@@ -152,6 +153,7 @@ export function SearchScreen({ route }: Props) {
       {!hasQuery ? (
         <ScrollView contentContainerStyle={styles.starter}>
           {activeTab === "events" ? <EventsGatewayShortcut onPress={() => routeNotificationTarget("/pulse/events").catch(() => undefined)} /> : null}
+          {activeTab === "learning" ? <LearningGatewayShortcut onPress={() => routeNotificationTarget("/pulse/courses").catch(() => undefined)} /> : null}
           <ChipSection title="Recent searches" emptyText="Your searches will appear here." items={recent} onPress={applyChip} />
           <ChipSection title="Suggested searches" items={trending} onPress={applyChip} />
         </ScrollView>
@@ -198,6 +200,16 @@ function EventsGatewayShortcut({ onPress }: { onPress: () => void }) {
       <Text style={styles.eventsGatewayKicker}>Native gateway</Text>
       <Text style={styles.eventsGatewayTitle}>Events and scheduled Live</Text>
       <Text style={styles.eventsGatewayText}>Open scheduled broadcasts from the existing PulseSoc Live backend. Creation and ticketing stay on safe fallback.</Text>
+    </Pressable>
+  );
+}
+
+function LearningGatewayShortcut({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable style={styles.eventsGateway} onPress={onPress}>
+      <Text style={styles.eventsGatewayKicker}>Native gateway</Text>
+      <Text style={styles.eventsGatewayTitle}>Courses and learning</Text>
+      <Text style={styles.eventsGatewayText}>Open native lesson discovery. Course creation, payments, teacher tools, and unsupported lesson media stay on safe fallback.</Text>
     </Pressable>
   );
 }
