@@ -1574,3 +1574,86 @@ Safest implementation plan:
 3. Verify course, teacher, dashboard, and lesson routes in the built-in QA browser.
 4. Verify lesson progress/tutor behavior where a seeded lesson exists.
 5. Fix only scoped blockers, then commit and continue the roadmap.
+
+## Native Courses + Learning Practical QA Hardening
+
+Completed action: short authenticated QA hardening pass for the native Courses + Learning gateway.
+
+What was verified:
+
+- `/pulse/courses`.
+- `/pulse/courses?category=scam-defense`.
+- `/pulse/courses/1`.
+- `/education/lesson/crypto-basics-101`.
+- `/pulse/teachers`.
+- `/pulse/teacher-dashboard`.
+- `/pulse/creator-studio`.
+- `/pulse/settings`.
+- `/pulse/search`.
+- Category browse rendered filtered scam-defense lessons.
+- Lesson detail rendered overview, knowledge map, quiz preview, tutor, progress, and fallback rows.
+- Tutor interaction returned a backend lesson-scoped response.
+- Recent learning cache surfaced `Crypto Basics 101`.
+- Creator Studio, Settings, and Search/Discovery entry points rendered correctly.
+
+Scoped fix completed:
+
+- `Mark Complete` now leaves durable inline progress feedback after `/api/education/quiz/submit` success/error. This fixes the QA browser gap where progress saved server-side but the user had no persistent visible result.
+
+Remaining gap:
+
+- Offline Courses cache behind the auth gate remains unverified. With the local API proxy stopped, the app returned to the login gate before the Courses screen could render cached learning data. This is an app-level offline-auth/session limitation, not a Courses data-loss or security blocker.
+
+Critical blocker assessment:
+
+- No critical, security, data-loss, production-breaking, or future-development-blocking issue was found.
+
+Recommended next highest-value native feature/action: Native Seller/Store Management Foundation.
+
+Reason for recommendation:
+
+- Native Marketplace browse/detail already exists, but seller-owned workflows still need a native control layer.
+- Production PulseSoc already exposes seller application, marketplace product creation, marketplace media upload, checkout fallback, payout onboarding, merchant dashboard/profile routes, seller readiness, and store/economy analytics logic.
+- Native now has Marketplace, Media Upload, Media Viewer, Profile, Verification, Safety, Premium, Activity Inbox, Growth, Creator Studio, Courses/Learning, and Content Planner foundations that can support a safe seller/store gateway.
+
+Reusable APIs/code/database/business logic for the next action:
+
+- Existing `/api/pulse/marketplace/seller/apply`.
+- Existing `/api/pulse/marketplace/listings/create`.
+- Existing `/api/pulse/marketplace/media/upload`.
+- Existing `/api/pulse/payments/checkout`.
+- Existing `/api/pulse/payouts/connect`.
+- Existing Marketplace browse/search/save/report APIs.
+- Existing merchant routes: `/pulse/merchant/apply`, `/pulse/merchant/dashboard`, `/pulse/merchant/<username>`.
+- Existing seller, listing, media, payout, transaction, escrow, refund, dispute, moderation, verification, tax, and trust/business-rule tables.
+- Existing native Marketplace, Profile, Verification, Safety Hub, Premium, Activity Inbox, Media Upload, and NativeMediaViewer components.
+
+What must be rebuilt natively:
+
+- Seller/Store Management gateway.
+- Seller application/status display.
+- Owned listings overview where APIs support it.
+- Create listing draft handoff using existing marketplace/media APIs where safe.
+- Product media upload handoff through existing native upload helpers where supported.
+- Payout onboarding/status gateway using existing backend/provider route.
+- Store safety/readiness dashboard from existing backend data where available.
+- Safe fallbacks for checkout, tax forms, bank onboarding, disputes/refunds, fulfillment, advanced analytics, and admin review.
+
+Dependencies/blockers:
+
+- Confirm native-safe JSON seller dashboard/status/listing-owner endpoints before building full owned-store management.
+- Payout, tax, checkout, refunds, disputes, and provider onboarding must remain server/provider-authoritative.
+- Physical-device media upload QA remains a release blocker for seller product camera flows, not a development blocker.
+
+Risk level: medium.
+
+Estimated complexity: medium.
+
+Safest implementation plan:
+
+1. Inspect marketplace seller/product creation and merchant dashboard APIs/routes in `bot.py` and existing `mobile-native/src/api/marketplace.ts`.
+2. Extend native marketplace API wrappers only for confirmed JSON endpoints.
+3. Build a native seller/store gateway with clear fallback boundaries.
+4. Reuse Media Upload, NativeMediaViewer, Profile, Verification, Safety, Premium, and Activity Inbox components.
+5. Keep checkout, payout provider onboarding, tax, disputes, refunds, fulfillment, and admin review on safe fallback.
+6. Run static checks, audit, and QA browser route checks before commit.

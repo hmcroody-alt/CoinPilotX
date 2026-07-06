@@ -60,6 +60,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
   const [selectedLesson, setSelectedLesson] = useState<LearningLessonDetail | null>(null);
   const [question, setQuestion] = useState("");
   const [tutorAnswer, setTutorAnswer] = useState("");
+  const [progressMessage, setProgressMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [offline, setOffline] = useState(false);
@@ -114,6 +115,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
     setLoading(true);
     setError("");
     setTutorAnswer("");
+    setProgressMessage("");
     try {
       setSelectedLesson(await getLearningLesson(lesson.slug));
       setRecent((await loadRecentLearningLessons()) || []);
@@ -126,11 +128,16 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
 
   async function completeLesson() {
     if (!selectedLesson?.slug) return;
+    setProgressMessage("Saving progress...");
     try {
       const result = await submitLearningProgress(selectedLesson.slug, 100);
-      Alert.alert("Progress saved", result.message || "PulseSoc saved your lesson progress.");
+      const message = result.message || "PulseSoc saved your lesson progress.";
+      setProgressMessage(message);
+      Alert.alert("Progress saved", message);
     } catch (progressError) {
-      Alert.alert("Progress unavailable", progressError instanceof Error ? progressError.message : "Login is required to save progress.");
+      const message = progressError instanceof Error ? progressError.message : "Login is required to save progress.";
+      setProgressMessage(message);
+      Alert.alert("Progress unavailable", message);
     }
   }
 
@@ -194,6 +201,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
           <Pressable style={styles.primaryButton} onPress={completeLesson}>
             <Text style={styles.primaryText}>Mark Complete</Text>
           </Pressable>
+          {progressMessage ? <Text style={styles.answer}>{progressMessage}</Text> : null}
         </Panel>
         <Panel>
           <Text style={styles.sectionTitle}>Knowledge map</Text>
