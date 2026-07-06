@@ -32,6 +32,7 @@ import { ReelsScreen } from "../screens/ReelsScreen";
 import { SavedScreen } from "../screens/SavedScreen";
 import { SafetyHubScreen } from "../screens/SafetyHubScreen";
 import { SearchScreen } from "../screens/SearchScreen";
+import { SellerStoreScreen } from "../screens/SellerStoreScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { StatusScreen } from "../screens/StatusScreen";
 import { TrustSafetyScreen } from "../screens/TrustSafetyScreen";
@@ -116,6 +117,11 @@ export function AppNavigator() {
       <Stack.Screen name="ReelDetail" component={ReelsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="StatusDetail" component={StatusScreen} options={({ route }) => ({ title: route.params.title || "Status" })} />
       <Stack.Screen name="MarketplaceDetail" component={MarketplaceScreen} options={({ route }) => ({ title: route.params?.title || "Marketplace" })} />
+      <Stack.Screen name="SellerStore" component={SellerStoreScreen} options={({ route }) => ({ title: route.params?.title || "Seller / Store" })} />
+      <Stack.Screen name="MerchantApply" component={SellerStoreScreen} options={{ title: "Merchant Application" }} />
+      <Stack.Screen name="MerchantDashboard" component={SellerStoreScreen} options={{ title: "Merchant Dashboard" }} />
+      <Stack.Screen name="MerchantProfile" component={SellerStoreScreen} options={({ route }) => ({ title: route.params?.title || "Merchant Profile" })} />
+      <Stack.Screen name="MarketplaceCreateGateway" component={SellerStoreScreen} options={{ title: "Create Listing" }} />
       <Stack.Screen name="Search" component={SearchScreen} options={({ route }) => ({ title: route.params?.title || "Search" })} />
       <Stack.Screen name="Saved" component={SavedScreen} options={{ title: "Saved" }} />
       <Stack.Screen name="GroupDetail" component={GroupsScreen} options={({ route }) => ({ title: route.params?.title || "Community" })} />

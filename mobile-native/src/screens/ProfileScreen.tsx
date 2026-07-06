@@ -110,7 +110,7 @@ export function ProfileScreen({ route, navigation }: Props) {
             <TabButton label="Media" value="media" active={tab} onPress={setTab} />
             <TabButton label="About" value="about" active={tab} onPress={setTab} />
           </View>
-          {tab === "about" ? <AboutPanel profile={profile} profileKey={profileKey} owner={owner} onVerification={() => navigation?.navigate("VerificationCenter", { title: "Verification Center" })} onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })} /> : null}
+          {tab === "about" ? <AboutPanel profile={profile} profileKey={profileKey} owner={owner} onVerification={() => navigation?.navigate("VerificationCenter", { title: "Verification Center" })} onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })} onSellerStore={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })} /> : null}
         </View>
       }
       ListEmptyComponent={tab === "about" ? null : <Text style={styles.empty}>{tab === "media" ? "No media posts loaded." : "No profile posts loaded."}</Text>}
@@ -136,7 +136,7 @@ function TabButton({ label, value, active, onPress }: { label: string; value: Ta
   );
 }
 
-function AboutPanel({ profile, profileKey, owner, onVerification, onSafety }: { profile: PulseProfile; profileKey: string; owner: boolean; onVerification: () => void; onSafety: () => void }) {
+function AboutPanel({ profile, profileKey, owner, onVerification, onSafety, onSellerStore }: { profile: PulseProfile; profileKey: string; owner: boolean; onVerification: () => void; onSafety: () => void; onSellerStore: () => void }) {
   return (
     <View style={styles.about}>
       <Text style={styles.aboutTitle}>About</Text>
@@ -149,6 +149,11 @@ function AboutPanel({ profile, profileKey, owner, onVerification, onSafety }: { 
       {owner ? (
         <Pressable style={styles.webLink} onPress={onVerification}>
           <Text style={styles.webLinkText}>Open Verification Center</Text>
+        </Pressable>
+      ) : null}
+      {owner ? (
+        <Pressable style={styles.webLink} onPress={onSellerStore}>
+          <Text style={styles.webLinkText}>Open Seller / Store Management</Text>
         </Pressable>
       ) : null}
       <Pressable style={styles.webLink} onPress={onSafety}>

@@ -5,6 +5,7 @@ import { PulseAuthor, PulseMedia, mediaDisplayUrl } from "./feed";
 import { pulseApi } from "./pulseApi";
 
 const MARKETPLACE_CACHE_KEY = "pulsesoc.native.marketplace.search";
+const SELLER_STORE_CACHE_KEY = "pulsesoc.native.marketplace.seller_store";
 
 export type MarketplaceListing = {
   id: number;
@@ -52,6 +53,36 @@ export type MarketplaceActionResponse = {
   conversation_id?: number;
   thread_id?: number;
   next_url?: string;
+  onboarding_url?: string;
+  connected_account_id?: string;
+};
+
+export type MarketplaceSellerApplicationPayload = {
+  display_name: string;
+  bio: string;
+};
+
+export type MarketplaceSellerOrder = {
+  id?: number;
+  item_type?: string;
+  item_id?: number | string;
+  amount_cents?: number;
+  gross_amount_cents?: number;
+  currency?: string;
+  status?: string;
+  created_at?: string;
+};
+
+export type MarketplaceSellerOrdersResponse = {
+  ok?: boolean;
+  orders?: MarketplaceSellerOrder[];
+  message?: string;
+};
+
+export type SellerStoreSnapshot = {
+  listings: MarketplaceListing[];
+  orders: MarketplaceSellerOrder[];
+  cached_at?: string;
 };
 
 export async function searchMarketplace(params: { query?: string; limit?: number } = {}) {
@@ -71,6 +102,48 @@ export async function loadCachedMarketplace() {
 
 export async function cacheMarketplace(items: MarketplaceListing[]) {
   await writeJsonCache(MARKETPLACE_CACHE_KEY, items.slice(0, 80));
+}
+
+export async function loadCachedSellerStore() {
+  return readJsonCache<SellerStoreSnapshot>(SELLER_STORE_CACHE_KEY, normalizeSellerStoreSnapshot);
+}
+
+export async function cacheSellerStore(snapshot: SellerStoreSnapshot) {
+  await writeJsonCache(SELLER_STORE_CACHE_KEY, normalizeSellerStoreSnapshot(snapshot));
+}
+
+export async function loadSellerStoreSnapshot() {
+  const [marketplace, orders] = await Promise.allSettled([
+    searchMarketplace({ limit: 48 }),
+    listMarketplaceSellerOrders()
+  ]);
+  const snapshot: SellerStoreSnapshot = {
+    listings: marketplace.status === "fulfilled" ? marketplace.value.items || [] : [],
+    orders: orders.status === "fulfilled" ? orders.value.orders || [] : [],
+    cached_at: new Date().toISOString()
+  };
+  await cacheSellerStore(snapshot).catch(() => undefined);
+  return snapshot;
+}
+
+export async function applyMarketplaceSeller(payload: MarketplaceSellerApplicationPayload) {
+  return pulseApi<MarketplaceActionResponse>("/api/pulse/marketplace/seller/apply", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function connectMarketplacePayout() {
+  const result = await pulseApi<MarketplaceActionResponse>("/api/pulse/payouts/connect", {
+    method: "POST",
+    body: JSON.stringify({ seller_type: "merchant" })
+  });
+  if (result.onboarding_url) await Linking.openURL(result.onboarding_url).catch(() => undefined);
+  return result;
+}
+
+export async function listMarketplaceSellerOrders() {
+  return pulseApi<MarketplaceSellerOrdersResponse>("/api/pulse/payments/seller/orders");
 }
 
 export async function saveMarketplaceListing(listingId: number) {
@@ -105,6 +178,14 @@ export async function openMarketplaceCheckout(listingId: number) {
 
 export function marketplaceWebUrl(listingId?: number) {
   return `${PULSE_API_BASE_URL}/pulse/marketplace${listingId ? `?listing=${encodeURIComponent(String(listingId))}` : ""}`;
+}
+
+export function sellerStoreWebUrl(route: "dashboard" | "apply" | "create" | "payouts" | "profile" = "dashboard", sellerKey = "") {
+  if (route === "apply") return `${PULSE_API_BASE_URL}/pulse/merchant/apply`;
+  if (route === "create") return `${PULSE_API_BASE_URL}/pulse/marketplace/create`;
+  if (route === "payouts") return `${PULSE_API_BASE_URL}/pulse/merchant/payouts`;
+  if (route === "profile" && sellerKey) return `${PULSE_API_BASE_URL}/pulse/merchant/${encodeURIComponent(sellerKey)}`;
+  return `${PULSE_API_BASE_URL}/pulse/merchant/dashboard`;
 }
 
 export function normalizeMarketplaceListings(items: MarketplaceListing[]) {
@@ -161,4 +242,20 @@ function parseGallery(value?: string | string[]) {
   } catch {
     return [];
   }
+}
+
+function normalizeSellerStoreSnapshot(snapshot: SellerStoreSnapshot): SellerStoreSnapshot {
+  return {
+    listings: normalizeMarketplaceListings(snapshot?.listings || []),
+    orders: (snapshot?.orders || []).map((order) => ({
+      ...order,
+      id: Number(order.id || 0),
+      item_id: order.item_id,
+      amount_cents: Number(order.amount_cents || order.gross_amount_cents || 0),
+      gross_amount_cents: Number(order.gross_amount_cents || order.amount_cents || 0),
+      currency: String(order.currency || "USD"),
+      status: String(order.status || "pending")
+    })),
+    cached_at: snapshot?.cached_at || ""
+  };
 }

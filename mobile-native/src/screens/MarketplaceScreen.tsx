@@ -158,6 +158,9 @@ export function MarketplaceScreen({ route, navigation }: Props) {
           <View style={styles.header}>
             <Text style={styles.title}>Marketplace</Text>
             <Text style={styles.subtitle}>{offline ? "Showing saved marketplace results" : "PulseSoc native marketplace"}</Text>
+            <Pressable style={styles.sellerGatewayButton} onPress={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })}>
+              <Text style={styles.sellerGatewayText}>Seller / Store Management</Text>
+            </Pressable>
             <View style={styles.searchRow}>
               <TextInput
                 style={styles.searchInput}
@@ -552,6 +555,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginTop: 16,
     padding: 14
+  },
+  sellerGatewayButton: {
+    alignItems: "center",
+    borderColor: "rgba(37, 208, 167, 0.36)",
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: "center",
+    marginTop: 12,
+    minHeight: 42
+  },
+  sellerGatewayText: {
+    color: colors.accent,
+    fontWeight: "900"
   },
   sellerText: {
     color: colors.muted,

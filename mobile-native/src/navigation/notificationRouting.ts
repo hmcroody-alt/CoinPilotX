@@ -286,6 +286,12 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  const sellerStore = sellerStoreTarget(normalized);
+  if (sellerStore && navigationRef.isReady()) {
+    navigationRef.navigate("SellerStore", sellerStore);
+    return { handled: true, target: normalized };
+  }
+
   const marketplacePathMatch = normalized.match(/^\/pulse\/marketplace\/(\d+)/);
   if (marketplacePathMatch?.[1] && navigationRef.isReady()) {
     navigationRef.navigate("MarketplaceDetail", { listingId: Number(marketplacePathMatch[1]), title: "Marketplace" });
@@ -473,6 +479,36 @@ function verificationRouteTarget(target: string): { title: string; track?: "iden
 function normalizeVerificationTrack(track: string): "identity" | "blue_check" | "business" | "government_id" | "" {
   const value = String(track || "").toLowerCase();
   if (value === "blue_check" || value === "business" || value === "government_id" || value === "identity") return value;
+  return "";
+}
+
+function sellerStoreTarget(target: string): { title: string; mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts"; sellerId?: string } | null {
+  if (target.startsWith("/pulse/seller-store")) {
+    const mode = normalizeSellerStoreMode(extractStringQueryValue(target, "mode"));
+    return { title: "Seller / Store", ...(mode ? { mode } : {}) };
+  }
+  if (target.startsWith("/pulse/marketplace/create")) {
+    return { title: "Create Listing", mode: "create" };
+  }
+  if (target.startsWith("/pulse/merchant/apply")) {
+    return { title: "Merchant Application", mode: "apply" };
+  }
+  if (target.startsWith("/pulse/merchant/dashboard")) {
+    return { title: "Merchant Dashboard", mode: "dashboard" };
+  }
+  if (target.startsWith("/pulse/merchant/payouts")) {
+    return { title: "Merchant Payouts", mode: "payouts" };
+  }
+  const merchantMatch = target.match(/^\/pulse\/merchant\/([^/?#]+)/);
+  if (merchantMatch?.[1]) {
+    return { title: "Merchant Profile", mode: "profile", sellerId: decodeURIComponent(merchantMatch[1]) };
+  }
+  return null;
+}
+
+function normalizeSellerStoreMode(mode: string): "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts" | "" {
+  const value = String(mode || "").toLowerCase();
+  if (value === "overview" || value === "apply" || value === "dashboard" || value === "profile" || value === "create" || value === "payouts") return value;
   return "";
 }
 

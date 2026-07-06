@@ -1657,3 +1657,64 @@ Safest implementation plan:
 4. Reuse Media Upload, NativeMediaViewer, Profile, Verification, Safety, Premium, and Activity Inbox components.
 5. Keep checkout, payout provider onboarding, tax, disputes, refunds, fulfillment, and admin review on safe fallback.
 6. Run static checks, audit, and QA browser route checks before commit.
+
+## Native Seller/Store Management Foundation
+
+Completed action: built the native Seller/Store Management foundation.
+
+What was implemented:
+
+- Native `SellerStoreScreen` as a server-authoritative seller/store control layer.
+- Existing marketplace seller application API wrapper: `POST /api/pulse/marketplace/seller/apply`.
+- Existing seller orders API wrapper: `GET /api/pulse/payments/seller/orders`.
+- Existing payout onboarding API wrapper: `POST /api/pulse/payouts/connect`.
+- Seller/store snapshot cache for offline metadata recovery.
+- Product media gallery using existing marketplace media payloads and `NativeMediaViewer`.
+- Native route/deep-link coverage for:
+  - `/pulse/seller-store`
+  - `/pulse/merchant/apply`
+  - `/pulse/merchant/dashboard`
+  - `/pulse/merchant/<sellerId>`
+  - `/pulse/marketplace/create`
+- Native entry points from Marketplace, Profile, and Settings.
+- Safe fallback boundaries for merchant document upload, full listing creation, payout provider onboarding, checkout, tax, disputes, refunds, fulfillment, and admin review.
+
+QA evidence:
+
+- Static verification passed: `npm ci`, TypeScript, Expo Doctor, seller/store audit, and `git diff --check`.
+- Built-in QA browser route checks confirmed the seller/store aliases route into the native app and preserve the auth gate while signed out.
+- Authenticated backend contract checks passed against a temporary local QA database: seller application save returned `200 ok=true`, seller orders returned `200 ok=true`, and payout/connect correctly returned the server-owned `403` approval gate for an unapproved merchant.
+- Authenticated browser rendering remains unverified because React Native Web login automation did not trigger submit in the built-in browser, and the browser automation page scope cannot seed local storage directly.
+
+Production systems reused:
+
+- Existing marketplace seller APIs and merchant routes.
+- Existing marketplace listing/search/media/order/payout payloads.
+- Existing seller, listing, media, order, payout, verification, trust, premium, and moderation database/business logic.
+- Existing native Marketplace, Profile, Verification, Safety Hub, Premium, Activity Inbox, Camera Studio, and NativeMediaViewer infrastructure.
+
+Remaining gaps:
+
+- A dedicated native-safe seller dashboard/status JSON endpoint is not yet exposed; the native screen uses confirmed marketplace/order APIs and safe merchant web fallbacks.
+- Full merchant application document upload remains web-only because private document handling and admin review are sensitive.
+- Stripe Connect onboarding, checkout, refunds/disputes, fulfillment, and tax flows remain provider/web fallback.
+- Physical-device product media capture/upload remains a release QA blocker, not a development blocker.
+
+Risk level: medium.
+
+Estimated complexity completed: medium.
+
+Recommended next highest-value native feature/action: Native Seller/Store Practical QA Hardening.
+
+Reason for recommendation:
+
+- Seller/store now connects approval, marketplace, media, payout, checkout fallback, trust, verification, safety, and profile surfaces.
+- The safest next move is a short authenticated QA browser pass over seller routes, application validation, payout/provider fallback states, and entry points before adding another major native feature.
+
+Suggested QA focus:
+
+1. Verify `/pulse/seller-store`, `/pulse/merchant/apply`, `/pulse/merchant/dashboard`, `/pulse/merchant/<sellerId>`, and `/pulse/marketplace/create`.
+2. Verify seller application validation and success/error messaging.
+3. Verify unapproved seller payout/connect failure state is safe and server-owned.
+4. Verify Marketplace, Profile, Settings, and notification/deep-link entry points.
+5. Document provider-only and physical-device gaps separately from browser-verified behavior.

@@ -46,6 +46,11 @@ export type RootStackParamList = {
   ReelDetail: { reelId: number; title?: string };
   StatusDetail: { statusId: number; title?: string };
   MarketplaceDetail: { listingId?: number; title?: string } | undefined;
+  SellerStore: { title?: string; mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts"; sellerId?: string } | undefined;
+  MerchantApply: { title?: string } | undefined;
+  MerchantDashboard: { title?: string } | undefined;
+  MerchantProfile: { title?: string; sellerId?: string } | undefined;
+  MarketplaceCreateGateway: { title?: string } | undefined;
   Search: { query?: string; title?: string } | undefined;
   Saved: undefined;
   GroupDetail: { groupSlug: string; title?: string };

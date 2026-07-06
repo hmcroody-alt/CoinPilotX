@@ -70,6 +70,22 @@ export const linking: LinkingOptions<RootStackParamList> = {
           listingId: Number
         }
       },
+      SellerStore: {
+        path: "pulse/seller-store",
+        parse: {
+          mode: String,
+          sellerId: String
+        }
+      },
+      MerchantApply: "pulse/merchant/apply",
+      MerchantDashboard: "pulse/merchant/dashboard",
+      MerchantProfile: {
+        path: "pulse/merchant/:sellerId",
+        parse: {
+          sellerId: String
+        }
+      },
+      MarketplaceCreateGateway: "pulse/marketplace/create",
       Search: {
         path: "search",
         parse: {
