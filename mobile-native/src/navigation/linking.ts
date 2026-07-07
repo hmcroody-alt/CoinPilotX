@@ -25,6 +25,13 @@ export const linking: LinkingOptions<RootStackParamList> = {
       },
       UserDashboard: "dashboard",
       UserDashboardWeb: "dashboard/home",
+      DashboardModuleDetail: {
+        path: "pulse/dashboard/module/:groupKey/:moduleKey",
+        parse: {
+          groupKey: String,
+          moduleKey: String
+        }
+      },
       CameraStudio: {
         path: "pulse/camera/:mode?",
         parse: {

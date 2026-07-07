@@ -1,0 +1,410 @@
+import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { dashboardModuleGroups, DashboardModuleGroup, DashboardModuleItem } from "../data/dashboardModules";
+import { dashboardWebUrl, isNativeDashboardRoute, openDashboardAccessRoute, openDashboardRoute, openDashboardWebFallback, DashboardNavigation } from "../navigation/dashboardRouting";
+import { RootStackParamList } from "../navigation/types";
+import { colors } from "../theme/colors";
+
+type DetailRoute = RouteProp<RootStackParamList, "DashboardModuleDetail">;
+
+export function DashboardModuleDetailScreen() {
+  const navigation = useNavigation<DashboardNavigation>();
+  const route = useRoute<DetailRoute>();
+  const group = dashboardModuleGroups.find((candidate) => candidate.key === route.params?.groupKey);
+  const module = group?.modules.find((candidate) => candidate.key === route.params?.moduleKey);
+
+  if (!group || !module) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.centerTitle}>Dashboard module unavailable</Text>
+        <Text style={styles.centerText}>This dashboard card could not be matched to the production module map.</Text>
+        <Pressable style={styles.primaryButton} onPress={() => navigation.navigate("UserDashboard", { title: "Dashboard" })}>
+          <Text style={styles.primaryButtonText}>Return to Dashboard</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const nativeRoute = isNativeDashboardRoute(module.route);
+  const related = relatedNativeRoutes(group, module);
+
+  return (
+    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
+      <View style={[styles.hero, accentStyle(module.accent)]}>
+        <View style={styles.heroTop}>
+          <Text style={styles.moduleGlyph}>{module.icon}</Text>
+          <View style={styles.statusCluster}>
+            <Text style={styles.statusPill}>{module.status.replace("_", " ")}</Text>
+            <Text style={[styles.accessPill, module.access === "locked" ? styles.lockedPill : null]}>{module.access}</Text>
+          </View>
+        </View>
+        <Text style={styles.eyebrow}>{group.title}</Text>
+        <Text style={styles.heroTitle}>{module.title}</Text>
+        <Text style={styles.heroBody}>{module.description}</Text>
+        {module.lockReason ? <Text style={styles.lockReason}>{module.lockReason}</Text> : null}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Module route parity</Text>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Production route</Text>
+          <Text style={styles.infoValue}>{module.route}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Native state</Text>
+          <Text style={styles.infoValue}>{nativeRoute ? "Native route available" : "Protected web fallback required"}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Server authority</Text>
+          <Text style={styles.infoValue}>Permissions, locks, provider state, and business rules stay backend-owned.</Text>
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Available actions</Text>
+        <View style={styles.actionGrid}>
+          <ActionButton
+            label={module.access === "locked" ? "Review Access" : nativeRoute ? "Open Native Surface" : "Open Fallback"}
+            body={module.access === "locked" ? "Open the entitlement or owner area tied to this card." : nativeRoute ? "Use the current native route for this module." : "Use the protected production route until native support exists."}
+            onPress={() => (module.access === "locked" ? openDashboardAccessRoute(navigation, module) : openDashboardRoute(navigation, module.route))}
+          />
+          <ActionButton
+            label="Open Production Route"
+            body={dashboardWebUrl(module.route)}
+            variant="secondary"
+            onPress={() => openDashboardWebFallback(module.route)}
+          />
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Related native surfaces</Text>
+        <View style={styles.relatedGrid}>
+          {related.map((item) => (
+            <Pressable key={`${item.label}-${item.route}`} style={styles.relatedCard} onPress={() => openDashboardRoute(navigation, item.route)}>
+              <Text style={styles.relatedTitle}>{item.label}</Text>
+              <Text style={styles.relatedBody}>{item.body}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Foundation status</Text>
+        <Text style={styles.bodyText}>
+          This shell completes native dashboard navigation parity for the module card. Advanced workflows remain on safe fallback until their native screens are built and verified.
+        </Text>
+      </View>
+    </ScrollView>
+  );
+}
+
+function relatedNativeRoutes(group: DashboardModuleGroup, module: DashboardModuleItem) {
+  const groupKey = group.key;
+  const route = module.route;
+  if (groupKey === "economy-earnings") {
+    return [
+      { label: "Marketplace", route: "/pulse/marketplace", body: "Browse listings, detail pages, media, and seller links." },
+      { label: "Seller Store", route: "/pulse/seller-store", body: "Manage seller status, listings, inventory, and payout fallback." },
+      { label: "Buyer Orders", route: "/pulse/orders", body: "Review purchases, order state, receipts, and transaction history." }
+    ];
+  }
+  if (groupKey === "creator-studio") {
+    return [
+      { label: "Creator Studio", route: "/pulse/creator-studio", body: "Open dashboard summary, planner links, and creator entry points." },
+      { label: "Content Planner", route: "/dashboard/creator/content-planner", body: "Plan posts, drafts, and scheduled content where native support exists." },
+      { label: "Camera Studio", route: "/pulse/camera/photo?target=feed", body: "Create media for feed, status, reels, and profile handoffs." }
+    ];
+  }
+  if (groupKey === "intelligence" || groupKey === "pulsesoc-ai") {
+    return [
+      { label: "Intelligence Center", route: "/dashboard/intelligence", body: "Review streams, forecasts, alerts, sources, and recent events." },
+      { label: "Alert Management", route: "/dashboard/crypto/alerts", body: "Create, edit, duplicate, pause, and test crypto/market alerts." },
+      { label: "Pulse AI", route: "/pulse/ai", body: "Use the native AI conversation surface." }
+    ];
+  }
+  if (groupKey === "pulse-radio-media") {
+    return [
+      { label: "Saved Media", route: "/pulse/saved", body: "Open native saved content and collections." },
+      { label: "Reels", route: "/pulse/reels", body: "Review native short-form media playback." },
+      { label: "Status", route: "/pulse/status", body: "Open native status viewer and creator entry." }
+    ];
+  }
+  if (groupKey === "crypto-command-center") {
+    return [
+      { label: "My Alerts", route, body: "Open the crypto alert route represented by this card." },
+      { label: "Intelligence", route: "/dashboard/intelligence", body: "Review crypto, market, and source-backed signals." },
+      { label: "Activity", route: "/pulse/activity/intelligence_alerts", body: "Review alert and intelligence activity." }
+    ];
+  }
+  if (groupKey === "ads-sponsorships") {
+    return [
+      { label: "Growth Center", route: "/pulse/growth", body: "Review promotion, campaign, and audience summaries." },
+      { label: "Creator Studio", route: "/pulse/creator-studio", body: "Open creator eligibility, performance, and shortcut surfaces." },
+      { label: "Marketplace", route: "/pulse/marketplace", body: "Review commerce surfaces tied to sponsored activity." }
+    ];
+  }
+  if (groupKey === "moderation-safety") {
+    return [
+      { label: "Safety Hub", route: "/pulse/safety", body: "Review reports, blocks, mutes, and safety state." },
+      { label: "Account Health", route: "/dashboard/account/health", body: "Review account standing, appeals, and enforcement history." },
+      { label: "Verification", route: "/dashboard/account/verification", body: "Review trust requirements and verification state." }
+    ];
+  }
+  if (groupKey === "system-status") {
+    return [
+      { label: "Activity Inbox", route: "/pulse/activity", body: "Inspect current server-authoritative activity and notification state." },
+      { label: "Intelligence", route: "/dashboard/intelligence", body: "Review system, safety, market, and event intelligence." },
+      { label: "Settings", route: "/dashboard/account/settings", body: "Open account and notification controls." }
+    ];
+  }
+  return [
+    { label: group.label, route: module.route, body: "Open the production route mapped to this dashboard card." },
+    { label: "Dashboard", route: "/pulse/dashboard", body: "Return to the native User Dashboard foundation." }
+  ];
+}
+
+function ActionButton({ label, body, onPress, variant = "primary" }: { label: string; body: string; onPress: () => void; variant?: "primary" | "secondary" }) {
+  return (
+    <Pressable style={[styles.actionButton, variant === "secondary" ? styles.secondaryButton : null]} onPress={onPress}>
+      <Text style={styles.actionLabel}>{label}</Text>
+      <Text style={styles.actionBody}>{body}</Text>
+    </Pressable>
+  );
+}
+
+function accentStyle(accent: string) {
+  if (accent === "gold") return styles.goldAccent;
+  if (accent === "purple") return styles.purpleAccent;
+  if (accent === "red") return styles.redAccent;
+  if (accent === "emerald") return styles.emeraldAccent;
+  return null;
+}
+
+const styles = StyleSheet.create({
+  accessPill: {
+    backgroundColor: "rgba(79,140,255,0.13)",
+    borderColor: "rgba(79,140,255,0.42)",
+    borderRadius: 999,
+    borderWidth: 1,
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "900",
+    overflow: "hidden",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    textTransform: "uppercase"
+  },
+  actionBody: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 6
+  },
+  actionButton: {
+    backgroundColor: "rgba(37,208,167,0.12)",
+    borderColor: "rgba(37,208,167,0.5)",
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    minWidth: 210,
+    padding: 14
+  },
+  actionGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  actionLabel: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "900"
+  },
+  bodyText: {
+    color: colors.muted,
+    fontSize: 14,
+    lineHeight: 21
+  },
+  center: {
+    alignItems: "center",
+    backgroundColor: colors.background,
+    flex: 1,
+    justifyContent: "center",
+    padding: 24
+  },
+  centerText: {
+    color: colors.muted,
+    fontSize: 14,
+    marginBottom: 16,
+    marginTop: 8,
+    textAlign: "center"
+  },
+  centerTitle: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: "900",
+    textAlign: "center"
+  },
+  content: {
+    gap: 14,
+    padding: 16,
+    paddingBottom: 34
+  },
+  emeraldAccent: {
+    borderColor: "rgba(37,208,167,0.5)"
+  },
+  eyebrow: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0,
+    textTransform: "uppercase"
+  },
+  goldAccent: {
+    borderColor: "rgba(243,185,78,0.58)"
+  },
+  hero: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 12,
+    padding: 18
+  },
+  heroBody: {
+    color: colors.muted,
+    fontSize: 15,
+    lineHeight: 22
+  },
+  heroTitle: {
+    color: colors.text,
+    fontSize: 28,
+    fontWeight: "900"
+  },
+  heroTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  infoLabel: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "900",
+    textTransform: "uppercase"
+  },
+  infoRow: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 6,
+    padding: 12
+  },
+  infoValue: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 20
+  },
+  lockedPill: {
+    borderColor: "rgba(243,185,78,0.5)",
+    color: "#f3d58a"
+  },
+  lockReason: {
+    color: "#f3d58a",
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  moduleGlyph: {
+    backgroundColor: "rgba(79,140,255,0.12)",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    color: colors.accent,
+    fontSize: 18,
+    fontWeight: "900",
+    minWidth: 52,
+    overflow: "hidden",
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    textAlign: "center"
+  },
+  primaryButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 12
+  },
+  primaryButtonText: {
+    color: colors.background,
+    fontSize: 14,
+    fontWeight: "900"
+  },
+  purpleAccent: {
+    borderColor: "rgba(164,92,255,0.58)"
+  },
+  redAccent: {
+    borderColor: "rgba(255,93,124,0.58)"
+  },
+  relatedBody: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 6
+  },
+  relatedCard: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    minWidth: 180,
+    padding: 12
+  },
+  relatedGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  relatedTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "900"
+  },
+  root: {
+    backgroundColor: colors.background,
+    flex: 1
+  },
+  secondaryButton: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderColor: colors.border
+  },
+  section: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 12,
+    padding: 14
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "900"
+  },
+  statusCluster: {
+    alignItems: "flex-end",
+    gap: 6
+  },
+  statusPill: {
+    backgroundColor: "rgba(37,208,167,0.13)",
+    borderColor: "rgba(37,208,167,0.42)",
+    borderRadius: 999,
+    borderWidth: 1,
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: "900",
+    overflow: "hidden",
+    paddingHorizontal: 10,
+    paddingVertical: 5
+  }
+});

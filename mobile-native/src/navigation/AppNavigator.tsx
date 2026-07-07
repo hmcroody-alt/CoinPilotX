@@ -15,6 +15,7 @@ import { CallScreen } from "../screens/CallScreen";
 import { ContentPlannerScreen } from "../screens/ContentPlannerScreen";
 import { CoursesLearningScreen } from "../screens/CoursesLearningScreen";
 import { CreatorStudioScreen } from "../screens/CreatorStudioScreen";
+import { DashboardModuleDetailScreen } from "../screens/DashboardModuleDetailScreen";
 import { GrowthCenterScreen } from "../screens/GrowthCenterScreen";
 import { GroupsScreen } from "../screens/GroupsScreen";
 import { HomeScreen } from "../screens/HomeScreen";
@@ -127,6 +128,7 @@ export function AppNavigator() {
       <Stack.Screen name="Tabs" component={TabNavigator} options={{ headerShown: false }} />
       <Stack.Screen name="UserDashboard" component={UserDashboardScreen} options={{ title: "Dashboard" }} />
       <Stack.Screen name="UserDashboardWeb" component={UserDashboardScreen} options={{ title: "Dashboard" }} />
+      <Stack.Screen name="DashboardModuleDetail" component={DashboardModuleDetailScreen} options={({ route }) => ({ title: route.params?.title || "Dashboard Module" })} />
       <Stack.Screen name="CameraStudio" component={CameraStudioScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Call" component={CallScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Chat" component={ChatScreen} options={({ route }) => ({ title: route.params.title || "Chat" })} />

@@ -26,6 +26,7 @@ export type RootStackParamList = {
   Tabs: NavigatorScreenParams<AppTabParamList> | undefined;
   UserDashboard: { title?: string } | undefined;
   UserDashboardWeb: { title?: string } | undefined;
+  DashboardModuleDetail: { groupKey: string; moduleKey: string; title?: string };
   CameraStudio: {
     target?: "feed" | "post" | "status" | "reel" | "message" | "avatar" | "cover" | "creator" | "marketplace";
     mode?: "photo" | "video" | "status" | "reel";

@@ -133,3 +133,61 @@ Not verified in this browser pass:
 - installed-app deep links
 - provider billing/payout/payment pages
 - final UI/UX polish
+
+## 2026-07-06 Dashboard Module Detail Shell Visible Pass
+
+Result: completed with one QA browser automation limitation documented.
+
+Server verification before walkthrough:
+
+- `http://localhost:5055/health` returned healthy local API status.
+- Expo web rendered on `localhost:8095`.
+- A same-origin local QA proxy served the visible app on `localhost:8094` and forwarded API calls to the local backend. This was QA tooling only; no production WebView route was changed.
+
+What Roody visibly saw:
+
+- signed-in native User Dashboard on `http://localhost:8094/pulse/dashboard`
+- native module detail shell for Creator Studio / Creator Tools
+- native module detail shell for Intelligence / Alerts
+- native module detail shell for Pulse Radio & Media / Pulse Radio
+- native module detail shell for Crypto Command Center / Create Alert
+- native module detail shell for Ads & Sponsorships / Campaign Builder
+- native module detail shell for Moderation / Safety / Reports Submitted
+- native module detail shell for Economy & Earnings / Earnings
+- native module detail shell for System Status / Feed Intelligence
+
+What opened from dashboard card clicks:
+
+- Creator Tools
+- Alerts
+- Pulse Radio
+- Create Alert
+- Campaign Builder
+- Reports Submitted
+
+What was shown through direct native shell routes after browser-scroll limitations:
+
+- Economy & Earnings / Earnings
+- System Status / Feed Intelligence
+
+Evidence saved:
+
+- `reports/screenshots/native-dashboard-module-shells-2026-07-06/creator-tools.png`
+- `reports/screenshots/native-dashboard-module-shells-2026-07-06/intelligence-alerts.png`
+- `reports/screenshots/native-dashboard-module-shells-2026-07-06/media-pulse-radio.png`
+- `reports/screenshots/native-dashboard-module-shells-2026-07-06/crypto-create-alert.png`
+- `reports/screenshots/native-dashboard-module-shells-2026-07-06/ads-campaign-builder.png`
+- `reports/screenshots/native-dashboard-module-shells-2026-07-06/safety-reports-submitted.png`
+- `reports/screenshots/native-dashboard-module-shells-2026-07-06/economy-earnings-direct.png`
+- `reports/screenshots/native-dashboard-module-shells-2026-07-06/system-feed-intelligence-direct.png`
+
+Console notes:
+
+- Existing web warnings remain: Expo Notifications web listener support, deprecated shadow props, Expo AV deprecation, and React Native web animation fallback.
+- No dashboard shell-specific runtime error was observed on the rendered shells.
+
+Not UI/UX polish yet:
+
+- Shells are foundation routing/detail surfaces, not final module-specific dashboards.
+- Advanced provider, payment, campaign, admin, payout, and creator tooling remains safe web fallback.
+- Legacy production dashboard URL aliases still need direct mapping into these shells.

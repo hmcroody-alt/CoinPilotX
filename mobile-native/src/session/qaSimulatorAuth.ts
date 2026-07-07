@@ -25,8 +25,14 @@ export async function tryHandleQaSimulatorAuthUrl(url: string): Promise<QaSimula
     return { handled: false, reason: "not_qa_login" };
   }
 
-  const identifier = parsed.searchParams.get("identifier") || parsed.searchParams.get("email") || parsed.searchParams.get("username") || "";
-  const password = parsed.searchParams.get("password") || "";
+  const runtimeCredentials = runtimeWebCredentials();
+  const identifier =
+    parsed.searchParams.get("identifier") ||
+    parsed.searchParams.get("email") ||
+    parsed.searchParams.get("username") ||
+    runtimeCredentials.identifier ||
+    "";
+  const password = parsed.searchParams.get("password") || runtimeCredentials.password || "";
   if (!identifier.trim() || !password) return { handled: true, reason: "missing_credentials" };
 
   const authState = await signIn(identifier.trim(), password);
@@ -36,6 +42,19 @@ export async function tryHandleQaSimulatorAuthUrl(url: string): Promise<QaSimula
     cameraRoute: authState.status === "signedIn" ? cameraRouteFromQaUrl(parsed) : undefined,
     redirectTarget: authState.status === "signedIn" ? safeRedirectTarget(parsed) : undefined
   };
+}
+
+function runtimeWebCredentials() {
+  if (Platform.OS !== "web" || typeof window === "undefined") return { identifier: "", password: "" };
+  try {
+    const identifier = window.sessionStorage.getItem("pulsesoc.qa.identifier") || "";
+    const password = window.sessionStorage.getItem("pulsesoc.qa.password") || "";
+    window.sessionStorage.removeItem("pulsesoc.qa.identifier");
+    window.sessionStorage.removeItem("pulsesoc.qa.password");
+    return { identifier, password };
+  } catch {
+    return { identifier: "", password: "" };
+  }
 }
 
 function isQaLoginUrl(parsed: URL) {

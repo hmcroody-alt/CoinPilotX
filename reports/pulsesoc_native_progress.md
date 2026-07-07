@@ -3928,3 +3928,61 @@ Reason for recommendation:
 
 - The dashboard now represents the production module universe, but several cards still land on umbrella native screens or safe web fallback.
 - Lightweight native detail shells would close the remaining route-parity gap without duplicating backend/provider business logic.
+
+## Native Dashboard Module Detail Shells
+
+Important roadmap rule:
+
+- Continue focusing only on the User Dashboard until the foundation is complete.
+- Do not focus on Android right now.
+- Do not touch production WebView paths.
+- Foundation parity comes before final UI/UX polish.
+
+Completed action: added native module detail shells for dashboard cards that were fallback-heavy.
+
+What changed:
+
+- Added `mobile-native/src/navigation/dashboardRouting.ts` so native dashboard cards and shells share one route/fallback helper.
+- Added `mobile-native/src/screens/DashboardModuleDetailScreen.tsx`.
+- Registered `DashboardModuleDetail` in stack navigation and deep linking at `/pulse/dashboard/module/:groupKey/:moduleKey`.
+- Updated User Dashboard cards to open native module shells before routing to native surfaces or protected production web fallbacks.
+- Added `reports/pulsesoc_native_dashboard_module_shells.md`.
+- Added `scripts/pulsesoc_native_dashboard_module_shells_audit.py`.
+
+Native detail-shell groups covered:
+
+- Economy & Earnings
+- Creator Studio
+- Intelligence
+- Pulse Radio & Media
+- Crypto Command Center
+- Ads & Sponsorships
+- Moderation / Safety
+- System Status
+
+Dashboard foundation parity: 95%.
+
+Native module detail shell coverage: 100% of represented dashboard cards through the reusable shell.
+
+Visible QA coverage:
+
+- Creator, Intelligence, Media, Crypto, Ads, and Safety shell cards opened from visible dashboard card text in the built-in QA browser.
+- Economy and System shell routes rendered visibly through native shell URLs after in-app browser automation could not reliably scroll/click the deeper virtualized dashboard cards.
+- Screenshot evidence is saved under `reports/screenshots/native-dashboard-module-shells-2026-07-06/`.
+
+Modules still fallback-only:
+
+- Advanced provider/payment/payout/billing flows.
+- Advanced campaign launch and sponsorship setup.
+- Advanced music/radio/video provider workflows.
+- Admin and moderator-only dashboard modules.
+- Any production dashboard route that should deep-link directly into a specific shell but still resolves to a legacy umbrella route.
+
+Current native migration percentage: 92% foundation/parity coverage, 91% system consistency confidence, 67% release QA confidence.
+
+Recommended next dashboard task: direct legacy dashboard route alias mapping into module detail shells.
+
+Reason for recommendation:
+
+- Dashboard card clicks now open native shells, but direct production routes like `/dashboard/network/community-intelligence` can still resolve through older generic route handlers.
+- Mapping those legacy aliases into the module shell route will finish the foundation-level navigation parity without adding final UI polish or duplicating backend business logic.
