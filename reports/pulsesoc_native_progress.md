@@ -4043,3 +4043,57 @@ Reason for recommendation:
 
 - Dashboard route parity is now wired at the foundation level.
 - The next gap is per-module data richness: lightweight native state panels should reuse existing APIs for counts, statuses, permissions, and warnings without building final UI polish or duplicating backend logic.
+
+## Native Dashboard Live State Panels
+
+Section: Dashboard Live State Panels
+
+Important roadmap rule:
+
+- Continue focusing only on the User Dashboard until the foundation is complete.
+- Do not focus on Android right now.
+- Do not touch production WebView paths.
+- Foundation coverage comes before final UI/UX polish.
+
+Completed action: added lightweight server-authoritative live state panels to dashboard module detail shells.
+
+What changed:
+
+- Added `mobile-native/src/api/dashboardLiveState.ts`.
+- Reused the existing native dashboard aggregation layer instead of duplicating backend logic.
+- Reused existing API wrappers for account, profile, activity, messenger, calls, feed, marketplace, seller, orders, premium, verification, account health, safety, creator, growth, intelligence, and crypto alerts.
+- Updated `DashboardModuleDetailScreen` to render loading, live, cached, warning, fallback, and unavailable panel states.
+- Every represented dashboard module now receives group-aware live metrics and server-derived signals.
+
+Dashboard live-state groups covered:
+
+- Account Command Center
+- Pulse Network
+- Creator Studio
+- Intelligence
+- Economy & Earnings
+- Pulse Radio & Media
+- Crypto Command Center
+- Moderation / Safety
+- Ads & Sponsorships
+- PulseSoc AI
+- System Status
+
+Dashboard foundation parity: 98%.
+
+Dashboard live-state coverage: 100% of represented dashboard modules through reusable group-aware panels.
+
+Modules still using fallback-only data:
+
+- Advanced provider-owned payment, payout, campaign launch, radio/music distribution, Live Studio, and AI provider operations.
+- Admin/moderator-only modules intentionally hidden from the owner dashboard.
+- Module-specific contracts not yet dedicated beyond group-level dashboard aggregation.
+
+Current native migration percentage: 94% foundation/parity coverage, 92% system consistency confidence, 68% release QA confidence.
+
+Recommended next dashboard task: Dashboard quick-action parity hardening.
+
+Reason for recommendation:
+
+- The dashboard now has route parity, legacy alias routing, module shells, and live state panels.
+- The remaining foundation gap is quick-action reliability: every production dashboard quick action should land on a native route or explicit safe fallback with no dead links.

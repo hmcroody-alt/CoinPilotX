@@ -248,3 +248,64 @@ Not UI/UX polish yet:
 
 - Module shells still provide foundation-level route parity and context.
 - Final module-specific layouts, animation polish, and richer per-module data panels remain future work.
+
+## 2026-07-08 Dashboard Live State Panels
+
+Result: completed.
+
+What changed:
+
+- Dashboard module detail shells now load server-authoritative live panels.
+- The panels reuse the native dashboard aggregation layer and existing API wrappers.
+- Each represented dashboard group receives meaningful live metrics rather than only generic shell status:
+  - Account
+  - Network
+  - Creator
+  - Intelligence
+  - Economy
+  - Media
+  - Crypto
+  - Safety
+  - Ads
+  - AI
+  - System Status
+- Modules without dedicated contracts show group-level server data plus a safe fallback note.
+- No production WebView routes were changed.
+
+Visible QA route set:
+
+- `/dashboard/account/security`
+- `/dashboard/network/community-intelligence`
+- `/dashboard/creator/content-planner`
+- `/dashboard/intelligence/ai-advisor`
+- `/dashboard/economy/earnings`
+- `/dashboard/media/pulse-radio`
+- `/dashboard/crypto/alerts/create`
+- `/dashboard/safety/reports-submitted`
+- `/dashboard/ads/campaign-builder`
+- `/dashboard/ai/assistant`
+- `/dashboard/system/feed`
+
+Expected visible behavior:
+
+- Each route opens a native module shell.
+- Each route renders `Live state`, `Module route parity`, `Available actions`, and `Foundation status`.
+- Live state panels show backend-derived metrics, warnings, live/cached mode, and fallback notes when a dedicated module contract is not available.
+- Final visual polish remains intentionally deferred until dashboard foundation coverage is complete.
+
+Authenticated final sweep:
+
+- Passed in the built-in QA browser through the local QA server.
+- `/dashboard/account/security` opened Security and rendered live state.
+- `/dashboard/network/community-intelligence` opened Community Intelligence and rendered live state.
+- `/dashboard/creator/content-planner` opened Content Planner and rendered live state.
+- `/dashboard/intelligence/ai-advisor` opened Pulse Advisor and rendered live state.
+- `/dashboard/economy/earnings` opened Earnings and rendered live state.
+- `/dashboard/media/pulse-radio` opened Pulse Radio and rendered live state.
+- `/dashboard/crypto/alerts/create` opened Create Alert and rendered live state.
+- `/dashboard/safety/reports-submitted` opened Reports Submitted and rendered live state.
+- `/dashboard/ads/campaign-builder` opened Campaign Builder and rendered live state.
+- `/dashboard/ai/assistant` opened Adaptive AI Companion and rendered live state.
+- `/dashboard/system/feed` opened Feed Intelligence and rendered live state.
+- Every representative route rendered `Live state`, `Module route parity`, `Available actions`, and `Foundation status`.
+- No representative route showed `Dashboard module unavailable` or remained auth-blocked during the visible QA pass.

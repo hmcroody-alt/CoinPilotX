@@ -1,8 +1,10 @@
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { dashboardModuleGroups, DashboardModuleGroup, DashboardModuleItem } from "../data/dashboardModules";
 import { dashboardWebUrl, isNativeDashboardRoute, openDashboardAccessRoute, openDashboardRoute, openDashboardWebFallback, DashboardNavigation } from "../navigation/dashboardRouting";
 import { RootStackParamList } from "../navigation/types";
+import { DashboardLiveStatePanel, loadDashboardModuleLiveState } from "../api/dashboardLiveState";
 import { colors } from "../theme/colors";
 
 type DetailRoute = RouteProp<RootStackParamList, "DashboardModuleDetail">;
@@ -12,6 +14,31 @@ export function DashboardModuleDetailScreen() {
   const route = useRoute<DetailRoute>();
   const group = dashboardModuleGroups.find((candidate) => candidate.key === route.params?.groupKey);
   const module = group?.modules.find((candidate) => candidate.key === route.params?.moduleKey);
+  const [liveState, setLiveState] = useState<DashboardLiveStatePanel | null>(null);
+  const [liveLoading, setLiveLoading] = useState(true);
+  const [liveError, setLiveError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    if (!group || !module) return undefined;
+    setLiveLoading(true);
+    setLiveError("");
+    loadDashboardModuleLiveState(group, module)
+      .then((panel) => {
+        if (!active) return;
+        setLiveState(panel);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setLiveError(error instanceof Error ? error.message : "Live dashboard state is unavailable.");
+      })
+      .finally(() => {
+        if (active) setLiveLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [group, module]);
 
   if (!group || !module) {
     return (
@@ -60,6 +87,8 @@ export function DashboardModuleDetailScreen() {
         </View>
       </View>
 
+      <LiveStateSection panel={liveState} loading={liveLoading} error={liveError} />
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Available actions</Text>
         <View style={styles.actionGrid}>
@@ -96,6 +125,75 @@ export function DashboardModuleDetailScreen() {
         </Text>
       </View>
     </ScrollView>
+  );
+}
+
+function LiveStateSection({ panel, loading, error }: { panel: DashboardLiveStatePanel | null; loading: boolean; error: string }) {
+  if (loading) {
+    return (
+      <View style={styles.section}>
+        <View style={styles.liveHeader}>
+          <Text style={styles.sectionTitle}>Live state</Text>
+          <ActivityIndicator color={colors.accent} />
+        </View>
+        <Text style={styles.bodyText}>Loading server-authoritative dashboard state.</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Live state</Text>
+        <View style={styles.liveWarning}>
+          <Text style={styles.warningTitle}>Live dashboard state unavailable</Text>
+          <Text style={styles.warningText}>{error}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!panel) {
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Live state</Text>
+        <Text style={styles.bodyText}>No live state is available for this module yet.</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.liveHeader}>
+        <View>
+          <Text style={styles.sectionTitle}>Live state</Text>
+          <Text style={styles.liveSource}>{panel.source}</Text>
+        </View>
+        <Text style={[styles.liveMode, panel.loadedFromCache ? styles.offlineMode : null]}>{panel.loadedFromCache ? "Cached" : "Live"}</Text>
+      </View>
+      <View style={styles.liveMetricGrid}>
+        {panel.metrics.map((metric) => (
+          <View key={`${metric.label}-${metric.value}`} style={[styles.liveMetricCard, metricStateStyle(metric.state)]}>
+            <Text style={styles.liveMetricLabel}>{metric.label}</Text>
+            <Text style={styles.liveMetricValue}>{metric.value}</Text>
+            <Text style={styles.liveMetricDetail}>{metric.detail}</Text>
+          </View>
+        ))}
+      </View>
+      <View style={styles.signalList}>
+        {panel.signals.map((signal) => (
+          <Text key={signal} style={styles.signalItem}>{signal}</Text>
+        ))}
+      </View>
+      {panel.warnings.length ? (
+        <View style={styles.liveWarning}>
+          {panel.warnings.map((warning) => (
+            <Text key={warning} style={styles.warningText}>{warning}</Text>
+          ))}
+        </View>
+      ) : null}
+      <Text style={styles.liveFreshness}>Last refresh: {panel.loadedAt}</Text>
+    </View>
   );
 }
 
@@ -179,6 +277,13 @@ function accentStyle(accent: string) {
   if (accent === "red") return styles.redAccent;
   if (accent === "emerald") return styles.emeraldAccent;
   return null;
+}
+
+function metricStateStyle(state: "ready" | "attention" | "fallback" | "offline") {
+  if (state === "attention") return styles.attentionMetric;
+  if (state === "fallback") return styles.fallbackMetric;
+  if (state === "offline") return styles.offlineMetric;
+  return styles.readyMetric;
 }
 
 const styles = StyleSheet.create({
@@ -314,6 +419,82 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "900"
   },
+  attentionMetric: {
+    borderColor: "rgba(243,185,78,0.54)"
+  },
+  fallbackMetric: {
+    borderColor: "rgba(164,92,255,0.42)"
+  },
+  liveFreshness: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "800"
+  },
+  liveHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between"
+  },
+  liveMetricCard: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    minWidth: 190,
+    padding: 12
+  },
+  liveMetricDetail: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 8
+  },
+  liveMetricGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  liveMetricLabel: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "900",
+    textTransform: "uppercase"
+  },
+  liveMetricValue: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: "900",
+    marginTop: 6
+  },
+  liveMode: {
+    backgroundColor: "rgba(37,208,167,0.13)",
+    borderColor: "rgba(37,208,167,0.42)",
+    borderRadius: 999,
+    borderWidth: 1,
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: "900",
+    overflow: "hidden",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    textTransform: "uppercase"
+  },
+  liveSource: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 4
+  },
+  liveWarning: {
+    backgroundColor: "rgba(243,185,78,0.08)",
+    borderColor: "rgba(243,185,78,0.28)",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 6,
+    padding: 12
+  },
   moduleGlyph: {
     backgroundColor: "rgba(79,140,255,0.12)",
     borderColor: colors.border,
@@ -339,11 +520,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "900"
   },
+  offlineMetric: {
+    borderColor: "rgba(114,128,150,0.48)"
+  },
+  offlineMode: {
+    borderColor: "rgba(114,128,150,0.48)",
+    color: colors.muted
+  },
   purpleAccent: {
     borderColor: "rgba(164,92,255,0.58)"
   },
   redAccent: {
     borderColor: "rgba(255,93,124,0.58)"
+  },
+  readyMetric: {
+    borderColor: "rgba(37,208,167,0.46)"
   },
   relatedBody: {
     color: colors.muted,
@@ -391,6 +582,19 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "900"
   },
+  signalItem: {
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 19
+  },
+  signalList: {
+    backgroundColor: "rgba(255,255,255,0.025)",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 6,
+    padding: 12
+  },
   statusCluster: {
     alignItems: "flex-end",
     gap: 6
@@ -406,5 +610,15 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     paddingHorizontal: 10,
     paddingVertical: 5
+  },
+  warningText: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17
+  },
+  warningTitle: {
+    color: "#f3d58a",
+    fontSize: 13,
+    fontWeight: "900"
   }
 });
