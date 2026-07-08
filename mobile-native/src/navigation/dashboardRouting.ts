@@ -1,10 +1,28 @@
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Linking } from "react-native";
 import { PULSE_API_BASE_URL } from "../api/config";
-import { DashboardModuleItem } from "../data/dashboardModules";
+import { dashboardModuleGroups, DashboardModuleGroup, DashboardModuleItem } from "../data/dashboardModules";
 import { RootStackParamList } from "./types";
 
 export type DashboardNavigation = NativeStackNavigationProp<RootStackParamList>;
+export type DashboardModuleRouteMatch = {
+  group: DashboardModuleGroup;
+  module: DashboardModuleItem;
+};
+
+export const DASHBOARD_LEGACY_GROUPS: Record<string, string> = {
+  account: "account-command-center",
+  network: "pulse-network",
+  creator: "creator-studio",
+  intelligence: "intelligence",
+  economy: "economy-earnings",
+  media: "pulse-radio-media",
+  crypto: "crypto-command-center",
+  safety: "moderation-safety",
+  ads: "ads-sponsorships",
+  ai: "pulsesoc-ai",
+  system: "system-status"
+};
 
 export function openDashboardRoute(navigation: DashboardNavigation, route: string) {
   const normalized = route || "/dashboard";
@@ -137,7 +155,7 @@ export function openDashboardAccessRoute(navigation: DashboardNavigation, module
 }
 
 export function isNativeDashboardRoute(route: string) {
-  return new RegExp("/pulse($|/)|/dashboard/(account|network|creator|economy|crypto|ads|ai|system)|/support|/scam-shield").test(route || "");
+  return new RegExp("/pulse($|/)|/dashboard/(account|network|creator|intelligence|economy|media|crypto|safety|ads|ai|system)|/support|/scam-shield").test(route || "");
 }
 
 export function dashboardWebUrl(route: string) {
@@ -146,4 +164,83 @@ export function dashboardWebUrl(route: string) {
 
 export function openDashboardWebFallback(route: string) {
   Linking.openURL(dashboardWebUrl(route)).catch(() => undefined);
+}
+
+export function normalizeDashboardPath(route: string) {
+  if (!route) return "/dashboard";
+  let path = route.trim();
+  try {
+    if (/^https?:\/\//i.test(path)) {
+      path = new URL(path).pathname;
+    }
+  } catch {
+    path = route.trim();
+  }
+  path = path.split("#")[0].split("?")[0];
+  if (!path.startsWith("/")) path = `/${path}`;
+  return path.length > 1 ? path.replace(/\/+$/, "") : path;
+}
+
+export function dashboardModuleParamsForRoute(route: string): RootStackParamList["DashboardModuleDetail"] | undefined {
+  const match = findDashboardModuleByRoute(route);
+  if (!match) return undefined;
+  return {
+    groupKey: match.group.key,
+    moduleKey: match.module.key,
+    title: match.module.title
+  };
+}
+
+export function findDashboardModuleByRoute(route: string): DashboardModuleRouteMatch | undefined {
+  const path = normalizeDashboardPath(route);
+  const exactMatch = findExactDashboardModuleRoute(path);
+  if (exactMatch) return exactMatch;
+  return findLegacyDashboardAlias(path);
+}
+
+function findExactDashboardModuleRoute(path: string): DashboardModuleRouteMatch | undefined {
+  for (const group of dashboardModuleGroups) {
+    for (const module of group.modules) {
+      if (normalizeDashboardPath(module.route) === path) {
+        return { group, module };
+      }
+    }
+  }
+  return undefined;
+}
+
+function findLegacyDashboardAlias(path: string): DashboardModuleRouteMatch | undefined {
+  const parts = path.replace(/^\/dashboard\/?/, "").split("/").filter(Boolean);
+  const [legacyGroup, ...moduleParts] = parts;
+  if (!legacyGroup || moduleParts.length === 0) return undefined;
+
+  const groupKey = DASHBOARD_LEGACY_GROUPS[legacyGroup];
+  const group = dashboardModuleGroups.find((candidate) => candidate.key === groupKey);
+  if (!group) return undefined;
+
+  const requestedSlug = moduleParts.join("/");
+  const module = group.modules.find((candidate) => legacyModuleAliases(candidate, legacyGroup).includes(requestedSlug));
+  return module ? { group, module } : undefined;
+}
+
+function legacyModuleAliases(module: DashboardModuleItem, legacyGroup: string) {
+  const aliases = new Set<string>();
+  aliases.add(slugify(module.key));
+  aliases.add(slugify(module.title));
+  const route = normalizeDashboardPath(module.route);
+  const groupPrefix = `/dashboard/${legacyGroup}/`;
+  if (route.startsWith(groupPrefix)) aliases.add(route.slice(groupPrefix.length));
+  const routeParts = route.split("/").filter(Boolean);
+  if (routeParts.length > 0) aliases.add(routeParts[routeParts.length - 1]);
+  if (routeParts.length > 1) aliases.add(routeParts.slice(-2).join("/"));
+  return Array.from(aliases).filter(Boolean);
+}
+
+function slugify(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }

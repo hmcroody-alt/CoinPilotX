@@ -2,6 +2,7 @@ import { Linking } from "react-native";
 import * as Notifications from "expo-notifications";
 import { createNavigationContainerRef } from "@react-navigation/native";
 import { PULSE_API_BASE_URL } from "../api/config";
+import { dashboardModuleParamsForRoute } from "./dashboardRouting";
 import { RootStackParamList } from "./types";
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
@@ -34,6 +35,12 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
 
   if ((normalized === "/dashboard" || normalized === "/dashboard/home" || normalized === "/pulse/dashboard") && navigationRef.isReady()) {
     navigationRef.navigate("Tabs", { screen: "Dashboard" });
+    return { handled: true, target: normalized };
+  }
+
+  const dashboardModule = dashboardModuleParamsForRoute(normalized);
+  if (dashboardModule && navigationRef.isReady()) {
+    navigationRef.navigate("DashboardModuleDetail", dashboardModule);
     return { handled: true, target: normalized };
   }
 

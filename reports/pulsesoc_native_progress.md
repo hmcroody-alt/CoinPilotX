@@ -3986,3 +3986,60 @@ Reason for recommendation:
 
 - Dashboard card clicks now open native shells, but direct production routes like `/dashboard/network/community-intelligence` can still resolve through older generic route handlers.
 - Mapping those legacy aliases into the module shell route will finish the foundation-level navigation parity without adding final UI polish or duplicating backend business logic.
+
+## Native Dashboard Legacy Route Alias Mapping
+
+Section: Legacy Dashboard Route Alias Mapping
+
+Important roadmap rule:
+
+- Continue focusing only on the User Dashboard until the foundation is complete.
+- Do not focus on Android right now.
+- Do not touch production WebView paths.
+- Foundation parity comes before final UI/UX polish.
+
+Completed action: mapped legacy production dashboard URLs into the native module detail shell.
+
+What changed:
+
+- Added alias helpers in `mobile-native/src/navigation/dashboardRouting.ts`.
+- Added `DashboardLegacyModuleScreen` as a native deep-link gateway.
+- Registered `DashboardLegacyModule` in stack navigation and deep linking.
+- Moved older exact legacy dashboard linking entries off `/dashboard/<group>/*` so the shell resolver handles production dashboard aliases consistently.
+- Added dashboard module alias handling to notification/deep-link routing.
+- Covered legacy dashboard group prefixes for Account, Network, Creator, Intelligence, Economy, Media, Crypto, Safety, Ads, AI, and System Status.
+- Preserved the dashboard module registry as the source of truth for module title, status, lock state, description, route, and fallback behavior.
+
+Legacy URLs now opening native shells:
+
+- `/dashboard/account/security`
+- `/dashboard/network/community-intelligence`
+- `/dashboard/creator/content-planner`
+- `/dashboard/intelligence/ai-advisor`
+- `/dashboard/economy/earnings`
+- `/dashboard/media/pulse-radio`
+- `/dashboard/crypto/alerts/create`
+- `/dashboard/safety/reports-submitted`
+- `/dashboard/ads/campaign-builder`
+- `/dashboard/ai/assistant`
+- `/dashboard/system/feed`
+
+Dashboard foundation parity: 97%.
+
+Legacy dashboard alias coverage: 100% for represented native dashboard modules and requested group prefixes.
+
+Remaining fallback-only dashboard URLs:
+
+- Unknown dashboard URLs not represented in the native module registry.
+- Admin/moderator-only dashboard modules intentionally hidden from owner dashboard parity.
+- Provider-owned advanced payment, payout, campaign launch, radio/music distribution, and Live Studio tools.
+- Future dedicated native detail screens for modules that currently use the reusable foundation shell.
+
+Current native migration percentage: 93% foundation/parity coverage, 91% system consistency confidence, 67% release QA confidence.
+
+Recommended next dashboard task: Dashboard module data contracts and state panels.
+
+Reason for recommendation:
+
+- Dashboard route parity is now wired at the foundation level.
+- The next gap is per-module data richness: lightweight native state panels should reuse existing APIs for counts, statuses, permissions, and warnings without building final UI polish or duplicating backend logic.

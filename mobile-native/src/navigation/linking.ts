@@ -23,6 +23,14 @@ export const linking: LinkingOptions<RootStackParamList> = {
           Settings: "pulse/settings"
         }
       },
+      DashboardLegacyModule: {
+        path: "dashboard/:legacyGroup/:legacyModule/:legacySubmodule?",
+        parse: {
+          legacyGroup: String,
+          legacyModule: String,
+          legacySubmodule: String
+        }
+      },
       UserDashboard: "dashboard",
       UserDashboardWeb: "dashboard/home",
       DashboardModuleDetail: {
@@ -172,15 +180,15 @@ export const linking: LinkingOptions<RootStackParamList> = {
         }
       },
       ContentPlannerWeb: {
-        path: "dashboard/creator/content-planner",
+        path: "pulse/dashboard/content-planner-web",
         parse: {
           mode: String
         }
       },
       ContentPlannerPulseAlias: "pulse/dashboard/content-planner",
-      PostScheduler: "dashboard/creator/post-scheduler",
+      PostScheduler: "pulse/dashboard/post-scheduler-web",
       PostSchedulerPulseAlias: "pulse/dashboard/post-scheduler",
-      DraftStudio: "dashboard/creator/draft-studio",
+      DraftStudio: "pulse/dashboard/draft-studio-web",
       DraftStudioPulseAlias: "pulse/dashboard/draft-studio",
       Courses: {
         path: "pulse/courses",
@@ -205,7 +213,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
         path: "pulse/growth"
       },
       IntelligenceCenter: {
-        path: "dashboard/intelligence/:subsystem?"
+        path: "pulse/intelligence/:subsystem?"
       },
       AlertManagement: {
         path: "pulse/alerts/:alertId?",
@@ -214,7 +222,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
         }
       },
       CryptoAlertManagement: {
-        path: "dashboard/crypto/alerts",
+        path: "pulse/crypto/alerts",
         parse: {
           alertId: Number,
           alert_id: Number,
@@ -227,14 +235,14 @@ export const linking: LinkingOptions<RootStackParamList> = {
           section: String
         }
       },
-      AccountSettings: "dashboard/account/settings",
-      AccountSecurity: "dashboard/account/security",
+      AccountSettings: "pulse/dashboard/account-settings",
+      AccountSecurity: "pulse/dashboard/account-security",
       AccountWebSettings: "account/settings",
       AccountWebSecurity: "account/security",
       AccountPrivacy: "privacy-center",
       AccountDevices: "pulse/settings/devices",
       AccountHealth: "pulse/account-health",
-      AccountHealthWeb: "dashboard/account/health",
+      AccountHealthWeb: "pulse/dashboard/account-health",
       SafetyHub: {
         path: "pulse/safety/:section?",
         parse: {
@@ -242,7 +250,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
         }
       },
       SafetyWebHub: {
-        path: "dashboard/network/:section?",
+        path: "pulse/dashboard/network-safety/:section?",
         parse: {
           section: String
         }
@@ -265,7 +273,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
         }
       },
       VerificationWebCenter: {
-        path: "dashboard/account/verification",
+        path: "pulse/dashboard/account-verification",
         parse: {
           track: String
         }

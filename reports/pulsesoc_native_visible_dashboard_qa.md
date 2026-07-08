@@ -191,3 +191,60 @@ Not UI/UX polish yet:
 - Shells are foundation routing/detail surfaces, not final module-specific dashboards.
 - Advanced provider, payment, campaign, admin, payout, and creator tooling remains safe web fallback.
 - Legacy production dashboard URL aliases still need direct mapping into these shells.
+
+## 2026-07-06 Legacy Dashboard Route Alias Mapping
+
+Result: completed.
+
+What changed:
+
+- Legacy production dashboard URLs now route through `DashboardLegacyModule`.
+- `DashboardLegacyModule` resolves the URL against the native dashboard module registry.
+- Matched modules open the native `DashboardModuleDetail` shell.
+- Group aliases cover Account, Network, Creator, Intelligence, Economy, Media, Crypto, Safety, Ads, AI, and System Status.
+- Existing exact legacy deep-link entries that previously won before the shell resolver were moved to `/pulse/...` aliases.
+- Notification/deep-link routing now checks the dashboard module resolver before older umbrella routes.
+
+Representative visible QA route set:
+
+- `/dashboard/account/security`
+- `/dashboard/network/community-intelligence`
+- `/dashboard/creator/content-planner`
+- `/dashboard/intelligence/ai-advisor`
+- `/dashboard/economy/earnings`
+- `/dashboard/media/pulse-radio`
+- `/dashboard/crypto/alerts/create`
+- `/dashboard/safety/reports-submitted`
+- `/dashboard/ads/campaign-builder`
+- `/dashboard/ai/assistant`
+- `/dashboard/system/feed`
+
+Expected visible behavior:
+
+- Each represented legacy dashboard URL opens a native module shell.
+- Unknown or hidden dashboard URLs remain safe fallback/unrepresented instead of pretending to be complete.
+- No production WebView route is modified.
+- Dedicated native `/pulse/...` routes remain available for direct native surfaces.
+
+Authenticated final sweep:
+
+- Passed in the built-in QA browser through the local QA server.
+- `/dashboard/account/security` opened Account Command Center / Security.
+- `/dashboard/network/community-intelligence` opened Pulse Network / Community Intelligence.
+- `/dashboard/creator/content-planner` opened Creator Studio / Content Planner.
+- `/dashboard/intelligence/ai-advisor` opened Intelligence / Pulse Advisor.
+- `/dashboard/economy/earnings` opened Economy & Earnings / Earnings.
+- `/dashboard/media/pulse-radio` opened Pulse Radio & Media / Pulse Radio.
+- `/dashboard/crypto/alerts/create` opened Crypto Command Center / Create Alert.
+- `/dashboard/safety/reports-submitted` opened Moderation / Safety / Reports Submitted.
+- `/dashboard/ads/campaign-builder` opened Ads & Sponsorships / Campaign Builder.
+- `/dashboard/ai/assistant` opened PulseSoc AI / Adaptive AI Companion.
+- `/dashboard/system/feed` opened System Status / Feed Intelligence.
+- Every route rendered `Module route parity`, `Available actions`, and `Foundation status`.
+- No representative route showed `Dashboard module unavailable` or remained auth-blocked after QA login.
+- Continuation recheck confirmed `/dashboard/system/feed` visibly redirects to `/pulse/dashboard/module/system-status/feed_status?title=Feed%20Intelligence` and renders the native shell.
+
+Not UI/UX polish yet:
+
+- Module shells still provide foundation-level route parity and context.
+- Final module-specific layouts, animation polish, and richer per-module data panels remain future work.
