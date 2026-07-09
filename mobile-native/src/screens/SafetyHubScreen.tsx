@@ -32,13 +32,13 @@ export function SafetyHubScreen({ navigation, route }: Props) {
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
-  const [blockHandle, setBlockHandle] = useState("");
+  const [blockHandle, setBlockHandle] = useState(route.params?.blockTarget || "");
   const [blockReason, setBlockReason] = useState("Unsafe interaction");
-  const [muteTarget, setMuteTarget] = useState("");
+  const [muteTarget, setMuteTarget] = useState(route.params?.muteTarget || "");
   const [muteDuration, setMuteDuration] = useState("24 hours");
   const [muteReason, setMuteReason] = useState("Reduce noise");
-  const [reportType, setReportType] = useState("user");
-  const [reportTarget, setReportTarget] = useState("");
+  const [reportType, setReportType] = useState(reportTypes.includes(route.params?.reportType || "") ? route.params?.reportType || "user" : "user");
+  const [reportTarget, setReportTarget] = useState(route.params?.reportTarget || "");
   const [reportReason, setReportReason] = useState("");
 
   const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {

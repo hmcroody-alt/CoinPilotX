@@ -509,7 +509,19 @@ def _media_with_attached_music(media, music):
     return out
 
 
-def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=None, viewer_user_id=None, views=0, music=None):
+def _public_post(
+    row,
+    media=None,
+    reactions=None,
+    comments=0,
+    viewer_reaction=None,
+    viewer_user_id=None,
+    views=0,
+    music=None,
+    viewer_saved=False,
+    viewer_reposted=False,
+    viewer_follows_author=False,
+):
     item = dict(row)
     author = _public_author(item)
     repost_original = item.get("_repost_original") or None
@@ -571,10 +583,50 @@ def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=No
         "view_count": int(views or 0),
         "views_count": int(views or 0),
         "viewer_reaction": viewer_reaction,
+        "saved": bool(viewer_saved),
+        "is_saved": bool(viewer_saved),
+        "reposted": bool(viewer_reposted),
+        "is_reposted": bool(viewer_reposted),
+        "viewer_follows_author": bool(viewer_follows_author),
+        "is_following_author": bool(viewer_follows_author),
         "can_delete": can_delete,
         "live": live_payload,
         "permalink": live_payload.get("live_url") or f"/pulse/post/{item.get('id')}",
     }
+
+
+def _viewer_post_state(cur, rows, viewer_user_id=None):
+    if not viewer_user_id or not rows:
+        return {"saved": set(), "reposted": set(), "following": set()}
+    post_ids = sorted({int((row or {}).get("id") or 0) for row in rows or [] if int((row or {}).get("id") or 0) > 0})
+    author_ids = sorted({int((row or {}).get("user_id") or 0) for row in rows or [] if int((row or {}).get("user_id") or 0) > 0})
+    saved = set()
+    reposted = set()
+    following = set()
+    if post_ids:
+        placeholders = ",".join(["?"] * len(post_ids))
+        cur.execute(
+            f"SELECT post_id FROM pulse_post_saves WHERE user_id=? AND post_id IN ({placeholders})",
+            (int(viewer_user_id), *post_ids),
+        )
+        saved = {int(row["post_id"]) for row in cur.fetchall()}
+        cur.execute(
+            f"""
+            SELECT repost_of_post_id
+            FROM pulse_posts
+            WHERE user_id=? AND deleted_at IS NULL AND repost_of_post_id IN ({placeholders})
+            """,
+            (int(viewer_user_id), *post_ids),
+        )
+        reposted = {int(row["repost_of_post_id"]) for row in cur.fetchall()}
+    if author_ids:
+        placeholders = ",".join(["?"] * len(author_ids))
+        cur.execute(
+            f"SELECT followed_user_id FROM pulse_follows WHERE follower_user_id=? AND followed_user_id IN ({placeholders})",
+            (int(viewer_user_id), *author_ids),
+        )
+        following = {int(row["followed_user_id"]) for row in cur.fetchall()}
+    return {"saved": saved, "reposted": reposted, "following": following}
 
 
 def _repost_originals(cur, rows, viewer_user_id=None):
@@ -616,6 +668,7 @@ def _repost_originals(cur, rows, viewer_user_id=None):
         reaction_placeholders = ",".join(["?"] * len(hydrated_ids))
         cur.execute(f"SELECT post_id, reaction_type FROM pulse_reactions WHERE user_id=? AND post_id IN ({reaction_placeholders})", (int(viewer_user_id), *hydrated_ids))
         viewer_reactions = {int(row["post_id"]): row["reaction_type"] for row in cur.fetchall()}
+    viewer_state = _viewer_post_state(cur, originals, viewer_user_id)
     media = _media_for_posts(hydrated_ids)
     music = _music_for_posts(hydrated_ids)
     return {
@@ -628,6 +681,9 @@ def _repost_originals(cur, rows, viewer_user_id=None):
             viewer_user_id,
             views.get(int(row["id"]), 0),
             music.get(int(row["id"])),
+            int(row["id"]) in viewer_state["saved"],
+            int(row["id"]) in viewer_state["reposted"],
+            int(row.get("user_id") or 0) in viewer_state["following"],
         )
         for row in originals
     }
@@ -829,10 +885,23 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
     repost_originals = _repost_originals(cur, [row], viewer_user_id=viewer_user_id)
     if int(row.get("repost_of_post_id") or 0):
         row["_repost_original"] = repost_originals.get(int(row.get("repost_of_post_id") or 0))
+    viewer_state = _viewer_post_state(cur, [row], viewer_user_id)
     conn.close()
     media = _media_for_posts(post_ids)
     music = _music_for_posts(post_ids)
-    return _public_post(row, media.get(int(post_id), []), reactions.get(int(post_id), {}), comments.get(int(post_id), 0), viewer_reaction, viewer_user_id, views.get(int(post_id), 0), music.get(int(post_id)))
+    return _public_post(
+        row,
+        media.get(int(post_id), []),
+        reactions.get(int(post_id), {}),
+        comments.get(int(post_id), 0),
+        viewer_reaction,
+        viewer_user_id,
+        views.get(int(post_id), 0),
+        music.get(int(post_id)),
+        int(post_id) in viewer_state["saved"],
+        int(post_id) in viewer_state["reposted"],
+        int(row.get("user_id") or 0) in viewer_state["following"],
+    )
 
 
 def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_player_id="", limit=20, offset=0):
@@ -937,6 +1006,7 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         placeholders = ",".join(["?"] * len(post_ids))
         cur.execute(f"SELECT post_id, reaction_type FROM pulse_reactions WHERE user_id=? AND post_id IN ({placeholders})", (int(viewer_user_id), *post_ids))
         viewer_reactions = {int(row["post_id"]): row["reaction_type"] for row in cur.fetchall()}
+    viewer_state = _viewer_post_state(cur, rows, viewer_user_id)
     repost_originals = _repost_originals(cur, rows, viewer_user_id=viewer_user_id)
     for row in rows:
         original_id = int(row.get("repost_of_post_id") or 0)
@@ -945,7 +1015,22 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     conn.close()
     media = _media_for_posts(post_ids)
     music = _music_for_posts(post_ids)
-    posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id, views.get(int(row["id"]), 0), music.get(int(row["id"]))) for row in rows]
+    posts = [
+        _public_post(
+            row,
+            media.get(int(row["id"]), []),
+            reactions.get(int(row["id"]), {}),
+            comments.get(int(row["id"]), 0),
+            viewer_reactions.get(int(row["id"])),
+            viewer_user_id,
+            views.get(int(row["id"]), 0),
+            music.get(int(row["id"])),
+            int(row["id"]) in viewer_state["saved"],
+            int(row["id"]) in viewer_state["reposted"],
+            int(row.get("user_id") or 0) in viewer_state["following"],
+        )
+        for row in rows
+    ]
     try:
         if feed == "trending" or (feed == "for_you" and (topic or profile_public_player_id)):
             posts = pulse_feed_ranking_engine.rank_posts(posts, {"viewer_user_id": viewer_user_id})
@@ -995,6 +1080,7 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
         placeholders = ",".join(["?"] * len(post_ids))
         cur.execute(f"SELECT post_id, reaction_type FROM pulse_reactions WHERE user_id=? AND post_id IN ({placeholders})", (int(viewer_user_id), *post_ids))
         viewer_reactions = {int(row["post_id"]): row["reaction_type"] for row in cur.fetchall()}
+    viewer_state = _viewer_post_state(cur, rows, viewer_user_id)
     repost_originals = _repost_originals(cur, rows, viewer_user_id=viewer_user_id)
     for row in rows:
         original_id = int(row.get("repost_of_post_id") or 0)
@@ -1003,7 +1089,22 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
     conn.close()
     media = _media_for_posts(post_ids)
     music = _music_for_posts(post_ids)
-    posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id, views.get(int(row["id"]), 0), music.get(int(row["id"]))) for row in rows]
+    posts = [
+        _public_post(
+            row,
+            media.get(int(row["id"]), []),
+            reactions.get(int(row["id"]), {}),
+            comments.get(int(row["id"]), 0),
+            viewer_reactions.get(int(row["id"])),
+            viewer_user_id,
+            views.get(int(row["id"]), 0),
+            music.get(int(row["id"])),
+            int(row["id"]) in viewer_state["saved"],
+            int(row["id"]) in viewer_state["reposted"],
+            int(row.get("user_id") or 0) in viewer_state["following"],
+        )
+        for row in rows
+    ]
     return {"ok": True, "feed": "my_posts", "topic": "", "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": safe_intelligence_panel("")}
 
 
@@ -1159,7 +1260,7 @@ def daily_prompt():
     return prompts[day % len(prompts)]
 
 
-def add_comment(user_id, post_id, body, parent_comment_id=None, media_ids=None):
+def add_comment(user_id, post_id, body, parent_comment_id=None, media_ids=None, notify_owner=True):
     post = get_post(post_id, viewer_user_id=user_id, include_private=True)
     if not post:
         return {"ok": False, "message": "Post not found."}, 404
@@ -1187,30 +1288,31 @@ def add_comment(user_id, post_id, body, parent_comment_id=None, media_ids=None):
     conn.commit()
     conn.close()
     media_service.attach_media_to_message(user_id, comment_id, media_ids or [], context_type="pulse_comment", context_id=str(comment_id))
-    notified = set()
-    for recipient_id in [post_owner_id, parent_owner_id]:
-        if not recipient_id or int(recipient_id) == int(user_id) or recipient_id in notified:
-            continue
-        notified.add(recipient_id)
-        try:
-            pulsesoc_notification_system.notify_post_comment(
-                recipient_user_id=recipient_id,
-                actor_user_id=int(user_id),
-                post_id=int(post_id),
-                comment_id=comment_id,
-                body=body,
-                parent_comment_id=int(parent_comment_id or 0) or None,
-                actor_name=actor.get("display_name") or "",
-                metadata={"media_count": len(media_ids or [])},
-            )
-        except Exception as exc:
-            logging.warning(
-                "PULSE_FEED_COMMENT_NOTIFICATION_FAILED post_id=%s comment_id=%s recipient_user_id=%s error=%s",
-                post_id,
-                comment_id,
-                recipient_id,
-                exc,
-            )
+    if notify_owner:
+        notified = set()
+        for recipient_id in [post_owner_id, parent_owner_id]:
+            if not recipient_id or int(recipient_id) == int(user_id) or recipient_id in notified:
+                continue
+            notified.add(recipient_id)
+            try:
+                pulsesoc_notification_system.notify_post_comment(
+                    recipient_user_id=recipient_id,
+                    actor_user_id=int(user_id),
+                    post_id=int(post_id),
+                    comment_id=comment_id,
+                    body=body,
+                    parent_comment_id=int(parent_comment_id or 0) or None,
+                    actor_name=actor.get("display_name") or "",
+                    metadata={"media_count": len(media_ids or [])},
+                )
+            except Exception as exc:
+                logging.warning(
+                    "PULSE_FEED_COMMENT_NOTIFICATION_FAILED post_id=%s comment_id=%s recipient_user_id=%s error=%s",
+                    post_id,
+                    comment_id,
+                    recipient_id,
+                    exc,
+                )
     comments = list_comments(post_id).get("comments", [])
     comment = next((item for item in comments if int(item.get("id") or 0) == comment_id), None)
     return {"ok": True, "comment_id": comment_id, "comment": comment, "comments_count": len(comments), "message": "Comment posted."}, 200
@@ -1284,7 +1386,7 @@ def get_comment(comment_id):
     }
 
 
-def react(user_id, post_id, reaction_type):
+def react(user_id, post_id, reaction_type, notify_owner=True):
     reaction_type = (reaction_type or "").strip().lower()
     if reaction_type not in REACTIONS:
         return {"ok": False, "message": "Choose a supported PulseSoc reaction."}, 400
@@ -1318,7 +1420,7 @@ def react(user_id, post_id, reaction_type):
     conn.commit()
     reactions = _reaction_counts(cur, [int(post_id)]).get(int(post_id), {})
     conn.close()
-    if post_owner_id and int(post_owner_id) != int(user_id):
+    if notify_owner and post_owner_id and int(post_owner_id) != int(user_id):
         try:
             pulsesoc_notification_system.notify_post_like(
                 recipient_user_id=post_owner_id,
@@ -1338,7 +1440,7 @@ def react(user_id, post_id, reaction_type):
     return {"ok": True, "message": "Reaction added.", "reaction_type": reaction_type, "post_id": int(post_id), "reaction_counts": reactions, "reactions_count": sum(int(v or 0) for v in reactions.values())}, 200
 
 
-def follow(follower_user_id, followed_user_id=None, followed_public_player_id=""):
+def follow(follower_user_id, followed_user_id=None, followed_public_player_id="", notify_owner=True):
     if not followed_user_id and followed_public_player_id:
         conn = user_context.connect()
         cur = conn.cursor()
@@ -1358,7 +1460,7 @@ def follow(follower_user_id, followed_user_id=None, followed_public_player_id=""
     inserted = getattr(cur, "rowcount", 0) > 0
     conn.commit()
     conn.close()
-    if inserted:
+    if notify_owner and inserted:
         try:
             pulsesoc_notification_system.notify_follow(
                 recipient_user_id=int(followed_user_id),

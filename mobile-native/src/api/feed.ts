@@ -95,6 +95,8 @@ export type PulsePost = {
   share_count?: number;
   visibility?: string;
   moderation_status?: string;
+  viewer_follows_author?: boolean;
+  is_following_author?: boolean;
 };
 
 export type FeedResponse = {
@@ -245,6 +247,20 @@ export async function repostPost(postId: number, body = "") {
   });
 }
 
+export async function toggleFollowAuthor(post: PulsePost) {
+  const author = post.author || post.user || {};
+  const publicPlayerId = author.public_player_id || post.author_public_player_id || author.username || post.author_username || "";
+  const followedUserId = Number(author.user_id || author.id || 0);
+  return pulseApi<{ ok?: boolean; following?: boolean; message?: string }>("/api/pulse/follows/toggle", {
+    method: "POST",
+    body: JSON.stringify({
+      followed_user_id: followedUserId || 0,
+      public_player_id: publicPlayerId || "",
+      followed_public_player_id: publicPlayerId || ""
+    })
+  });
+}
+
 export async function addPostComment(postId: number, body: string) {
   const data = await pulseApi<{ ok?: boolean; comment?: PulseComment; comments?: PulseComment[] }>(`/api/pulse/posts/${postId}/comments`, {
     method: "POST",
@@ -289,7 +305,8 @@ export function normalizePost(item: PulsePost): PulsePost {
     saved: Boolean(item.saved || item.is_saved),
     reposted: Boolean(item.reposted || item.is_reposted),
     repost_count: Number(item.repost_count || 0),
-    share_count: Number(item.share_count || 0)
+    share_count: Number(item.share_count || 0),
+    viewer_follows_author: Boolean(item.viewer_follows_author || item.is_following_author)
   };
 }
 

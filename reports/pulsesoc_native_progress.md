@@ -4377,3 +4377,53 @@ Reason for recommendation:
 - Home publishing is structurally implemented and backend-contract verified.
 - The QA runtime blocker has been removed at the Metro/dependency layer.
 - The fastest path toward completing the Home foundation is now to visually prove text entry, draft recovery, publish, composer reset, and feed refresh in the built-in QA browser.
+
+## Native Home Activity + Notification Invalidation Visible QA
+
+Section: Home synchronization and cursor invalidation proof.
+
+Completed action:
+
+- Proved authenticated Home feed interaction state visibly in the built-in QA browser.
+- Verified text publish from prior Home completion remains visible in feed and Activity.
+- Verified Home like and comment interactions update the feed/detail UI visibly.
+- Verified Activity and `/pulse/notifications` routes remain stable after Home actions.
+- Fixed duplicate recipient notifications for like/comment by making API routes emit one cursor-aware notification while opting out of lower-level feed-engine owner notifications.
+- Added explicit Activity/Notifications invalidation metadata to post-owner and follow notifications.
+- Hardened feed payloads so saved, reposted, and follows state survives refresh.
+- Wired Home Follow to the server-authoritative follow toggle endpoint.
+- Wired Home Report/Block/Mute actions into Safety Hub with target context.
+
+Visible QA evidence:
+
+- Home seed post `6` rendered visibly in the QA browser.
+- Fire reaction changed the visible card to `1 reactions` / `Fire 1`.
+- Post Detail accepted a visible comment and showed `1 comments`.
+- Activity route showed actor-side publish/report/block events.
+- Notifications route resolved to the unified Activity Inbox.
+
+Backend cursor evidence:
+
+- Recipient owner notification rows for seed post `6` showed exactly one `like` and one `comment` notification.
+- Both rows include `sync_cursor_key`.
+- Both rows include `invalidates=["activity","notifications"]`.
+- No duplicate like/comment notifications were produced after the fix.
+
+Remaining Home release blockers:
+
+- Persistent Hide is still local-only and restores after refresh.
+- Native user Mute still uses Safety Hub local/web fallback instead of a server-authoritative native mute mutation.
+- Comment submit works but is rendered as a non-semantic clickable view; it needs an accessible button path.
+- Physical-device push notification delivery, lock-screen taps, and background recovery remain release QA.
+
+Current native migration percentage: 95% foundation/parity coverage, 93% system consistency confidence, 76% release QA confidence.
+
+Can Home be considered release complete: NO.
+
+Recommended next Home mission: Native Home Hide/Mute Persistence + Comment Accessibility Hardening.
+
+Reason for recommendation:
+
+- Home foundation is complete enough and Home sync is now visually/backend verified.
+- The remaining Home release blockers are narrow: persistent hide, native mute, and accessible comment submit.
+- Fixing those closes the last Home-specific release blockers without starting a new subsystem or UI polish phase.

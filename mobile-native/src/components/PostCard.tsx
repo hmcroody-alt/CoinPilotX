@@ -171,12 +171,12 @@ export function PostCard({
             <Pressable
               testID={`home-feed-follow-${post.id}`}
               accessibilityRole="button"
-              accessibilityLabel={`Follow ${displayName}`}
+              accessibilityLabel={`${post.viewer_follows_author ? "Following" : "Follow"} ${displayName}`}
               style={styles.safetyButton}
               disabled={busy}
               onPress={() => onFollow(post)}
             >
-              <Text style={styles.safetyText}>Follow</Text>
+              <Text style={styles.safetyText}>{post.viewer_follows_author ? "Following" : "Follow"}</Text>
             </Pressable>
           ) : null}
           {onReport ? (

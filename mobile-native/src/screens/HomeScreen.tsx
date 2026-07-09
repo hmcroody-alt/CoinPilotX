@@ -9,7 +9,8 @@ import {
   pulsePostUrl,
   reactToPost,
   repostPost,
-  savePost
+  savePost,
+  toggleFollowAuthor
 } from "../api/feed";
 import { listStatuses, loadCachedStatuses, PulseStatus } from "../api/status";
 import { HomePulseComposer } from "../components/HomePulseComposer";
@@ -198,6 +199,33 @@ export function HomeScreen() {
     await Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined);
   }
 
+  async function handleFollow(post: PulsePost) {
+    setBusyPostId(post.id);
+    try {
+      const result = await toggleFollowAuthor(post);
+      const following = Boolean(result.following);
+      const publicId = post.author?.public_player_id || post.author_public_player_id || "";
+      setPosts((current) =>
+        current.map((item) => {
+          const itemPublicId = item.author?.public_player_id || item.author_public_player_id || "";
+          if (publicId && itemPublicId === publicId) return { ...item, viewer_follows_author: following };
+          return item.id === post.id ? { ...item, viewer_follows_author: following } : item;
+        })
+      );
+      invalidateNativeSync(["activity", "notifications"], "home_follow", [
+        {
+          event_type: following ? "follow" : "unfollow",
+          entity_type: "profile",
+          entity_id: publicId || post.author?.user_id || post.author?.id || "unknown",
+          invalidates: ["activity", "notifications"],
+          metadata: { source: "native_home_feed" }
+        }
+      ]).catch(() => undefined);
+    } finally {
+      setBusyPostId(null);
+    }
+  }
+
   function selectFeed(feedKey: string) {
     if (feedKey === selectedFeed) return;
     setSelectedFeed(feedKey);
@@ -288,14 +316,30 @@ export function HomeScreen() {
             onPromote={(post) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: post.id, title: "Promote Post" })}
             onShare={handleShare}
             onComment={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Comments" })}
-            onReport={() => navigation.navigate("SafetyHub", { title: "Report", section: "reports" })}
+            onReport={(post) =>
+              navigation.navigate("SafetyHub", {
+                title: "Report",
+                section: "reports",
+                reportType: "post",
+                reportTarget: String(post.id)
+              })
+            }
             onHide={(post) => setPosts((current) => current.filter((item) => item.id !== post.id))}
-            onBlock={() => navigation.navigate("SafetyHub", { title: "Blocked Users", section: "blocks" })}
-            onMute={() => navigation.navigate("SafetyHub", { title: "Muted Users", section: "mutes" })}
-            onFollow={(post) => {
-              const key = profileKeyForPost(post);
-              if (key) navigation.navigate("ProfileDetail", { profileKey: key, title: post.author?.display_name || "Profile" });
-            }}
+            onBlock={(post) =>
+              navigation.navigate("SafetyHub", {
+                title: "Blocked Users",
+                section: "blocks",
+                blockTarget: post.author?.public_player_id || post.author_public_player_id || post.author?.username || post.author_username || ""
+              })
+            }
+            onMute={(post) =>
+              navigation.navigate("SafetyHub", {
+                title: "Muted Users",
+                section: "mutes",
+                muteTarget: post.author?.public_player_id || post.author_public_player_id || post.author?.username || post.author_username || ""
+              })
+            }
+            onFollow={handleFollow}
             onAuthorPress={(post) => {
               const key = profileKeyForPost(post);
               if (key) navigation.navigate("ProfileDetail", { profileKey: key, title: post.author?.display_name || "Profile" });

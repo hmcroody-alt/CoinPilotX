@@ -3684,6 +3684,8 @@ def pulse_notify_post_owner(cur, post_id, actor_user, note_type, title, body, *,
     actor_id = int((actor_user or {}).get("user_id") or 0)
     if not owner_id or owner_id == actor_id:
         return
+    notification_metadata = {**(metadata or {}), "post_id": int(post_id or 0), "post_type": post.get("post_type") or ""}
+    notification_metadata.setdefault("invalidates", ["activity", "notifications"])
     notify_user(
         cur,
         owner_id,
@@ -3694,7 +3696,7 @@ def pulse_notify_post_owner(cur, post_id, actor_user, note_type, title, body, *,
         actor_user_id=actor_id,
         entity_type=entity_type,
         entity_id=str(entity_id or post_id or ""),
-        metadata={**(metadata or {}), "post_id": int(post_id or 0), "post_type": post.get("post_type") or ""},
+        metadata=notification_metadata,
     )
 
 
@@ -72364,7 +72366,7 @@ def api_pulse_react(post_id):
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
-    result, status = pulse_feed_engine.react(user["user_id"], post_id, payload.get("reaction_type") or "")
+    result, status = pulse_feed_engine.react(user["user_id"], post_id, payload.get("reaction_type") or "", notify_owner=False)
     if result.get("ok"):
         if not result.get("removed"):
             conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
@@ -72739,7 +72741,7 @@ def api_pulse_comments(post_id):
     if request.method == "GET":
         return jsonify(pulse_feed_engine.list_comments(post_id))
     payload = request.get_json(silent=True) or {}
-    result, status = pulse_feed_engine.add_comment(user["user_id"], post_id, payload.get("body") or "", payload.get("parent_comment_id"), payload.get("media_ids") or [])
+    result, status = pulse_feed_engine.add_comment(user["user_id"], post_id, payload.get("body") or "", payload.get("parent_comment_id"), payload.get("media_ids") or [], notify_owner=False)
     if result.get("ok"):
         pulse_emit_event("new_comment", result, user["user_id"], post_id)
     if result.get("ok"):
@@ -72761,12 +72763,18 @@ def api_pulse_comments(post_id):
             preview = clean_html(payload.get("body") or comment.get("body") or "")[:240]
             original_preview = clean_html(post.get("title") or post.get("body") or "PulseSoc post")[:240]
             actor_name = pulse_actor_display_name(user)
-            notification_service.send_user_alert(
+            conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+            notify_user(
+                cur,
                 owner_id,
                 "comment_reply" if parent_id else "comment",
                 "New PulseSoc reply" if parent_id else "New PulseSoc comment",
                 f"{actor_name} replied: “{preview}”" if parent_id else f"{actor_name} commented: “{preview}”",
-                {
+                f"/pulse/post/{post_id}#comment-{comment_id}" if comment_id else f"/pulse/post/{post_id}",
+                actor_user_id=user["user_id"],
+                entity_type="comment",
+                entity_id=str(comment_id or post_id),
+                metadata={
                     "post_id": post_id,
                     "comment_id": comment_id,
                     "reply_id": comment_id if parent_id else 0,
@@ -72782,11 +72790,13 @@ def api_pulse_comments(post_id):
                     "deep_link": f"/pulse/post/{post_id}#comment-{comment_id}" if comment_id else f"/pulse/post/{post_id}",
                     "next_url": f"/pulse/post/{post_id}#comment-{comment_id}" if comment_id else f"/pulse/post/{post_id}",
                     "actor_user_id": user["user_id"],
-                    "entity_type": "post",
+                    "entity_type": "comment",
                     "entity_id": str(comment_id or post_id),
+                    "source": "api_pulse_comments",
+                    "invalidates": ["activity", "notifications"],
                 },
-                channels=["in_app"],
             )
+            conn.commit(); conn.close()
         try:
             conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
             pulse_notify_mentions(
@@ -72812,7 +72822,7 @@ def api_pulse_follow():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
-    result, status = pulse_feed_engine.follow(user["user_id"], payload.get("followed_user_id"), payload.get("public_player_id") or payload.get("followed_public_player_id") or "")
+    result, status = pulse_feed_engine.follow(user["user_id"], payload.get("followed_user_id"), payload.get("public_player_id") or payload.get("followed_public_player_id") or "", notify_owner=False)
     if result.get("ok"):
         followed_id = safe_int(payload.get("followed_user_id"), 0)
         public_player_id = payload.get("public_player_id") or payload.get("followed_public_player_id") or ""
@@ -72830,7 +72840,7 @@ def api_pulse_follow():
                 entity_type="profile",
                 entity_id=str(user["user_id"]),
                 deep_link=f"/pulse/profile/{user.get('public_player_id') or user['user_id']}",
-                metadata={"source": "api_pulse_follow"},
+                metadata={"source": "api_pulse_follow", "invalidates": ["activity", "notifications"]},
             )
         pulse_emit_event("notification_created", {"message": "Creator followed."}, user["user_id"], 0)
     return jsonify(result), status
@@ -73140,7 +73150,7 @@ def api_pulse_follows_toggle():
             actor_user_id=user["user_id"],
             entity_type="profile",
             entity_id=str(user["user_id"]),
-            metadata={"source": "api_pulse_follows_toggle"},
+            metadata={"source": "api_pulse_follows_toggle", "invalidates": ["activity", "notifications"]},
         )
     conn.commit(); conn.close()
     return jsonify({"ok": True, "following": following, "message": "Followed." if following else "Unfollowed."})

@@ -99,8 +99,26 @@ export type RootStackParamList = {
   AccountDevices: { title?: string } | undefined;
   AccountHealth: { title?: string } | undefined;
   AccountHealthWeb: { title?: string } | undefined;
-  SafetyHub: { title?: string; section?: "overview" | "blocks" | "mutes" | "reports" } | undefined;
-  SafetyWebHub: { title?: string; section?: "overview" | "blocks" | "mutes" | "reports" } | undefined;
+  SafetyHub:
+    | {
+        title?: string;
+        section?: "overview" | "blocks" | "mutes" | "reports";
+        reportTarget?: string;
+        reportType?: string;
+        blockTarget?: string;
+        muteTarget?: string;
+      }
+    | undefined;
+  SafetyWebHub:
+    | {
+        title?: string;
+        section?: "overview" | "blocks" | "mutes" | "reports";
+        reportTarget?: string;
+        reportType?: string;
+        blockTarget?: string;
+        muteTarget?: string;
+      }
+    | undefined;
   TrustSafety: { title?: string; mode?: "support" | "security" | "scam" | "trust" } | undefined;
   TrustSafetySupport: { title?: string } | undefined;
   TrustSafetyHelp: { title?: string } | undefined;
