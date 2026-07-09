@@ -72528,6 +72528,56 @@ def api_pulse_post_save(post_id):
     return jsonify({"ok": True, "saved": saved, "message": "Post saved." if saved else "Post removed from saved."})
 
 
+@webhook_app.route("/api/pulse/posts/<int:post_id>/hide", methods=["POST"])
+def api_pulse_post_hide(post_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    result, status = pulse_feed_engine.hide_post(
+        user["user_id"],
+        post_id,
+        payload.get("reason") or "Hidden from Home",
+    )
+    if result.get("ok"):
+        conn = db()
+        cur = conn.cursor()
+        notify_user(
+            cur,
+            user["user_id"],
+            "pulse_post_hidden",
+            "Post hidden",
+            "This post was hidden from your Home feed.",
+            "/pulse",
+            actor_user_id=user["user_id"],
+            entity_type="post",
+            entity_id=str(post_id),
+            metadata={
+                "post_id": int(post_id),
+                "domain": "feed",
+                "category": "home_safety",
+                "source": "api_pulse_post_hide",
+                "invalidates": ["home", "activity", "notifications"],
+            },
+        )
+        conn.commit()
+        conn.close()
+        pulse_emit_event(
+            "pulse_post_hidden",
+            {
+                "post_id": int(post_id),
+                "entity_type": "post",
+                "entity_id": str(post_id),
+                "invalidates": ["home", "activity", "notifications"],
+                "source": "api_pulse_post_hide",
+            },
+            user["user_id"],
+            post_id,
+        )
+    return jsonify(result), status
+
+
 @webhook_app.route("/api/pulse/saved/collections", methods=["GET", "POST"])
 def api_pulse_saved_collections():
     init_db()
@@ -72843,6 +72893,64 @@ def api_pulse_follow():
                 metadata={"source": "api_pulse_follow", "invalidates": ["activity", "notifications"]},
             )
         pulse_emit_event("notification_created", {"message": "Creator followed."}, user["user_id"], 0)
+    return jsonify(result), status
+
+
+@webhook_app.route("/api/pulse/users/mute", methods=["POST"])
+def api_pulse_user_mute():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    target_id = safe_int(payload.get("muted_user_id") or payload.get("user_id"), 0)
+    public_player_id = payload.get("public_player_id") or payload.get("muted_public_player_id") or ""
+    if not target_id and public_player_id:
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        target_id = pulse_user_id_from_public(cur, public_player_id) or 0
+        conn.close()
+    result, status = pulse_feed_engine.mute_user(
+        user["user_id"],
+        target_id,
+        payload.get("reason") or "Muted from Home",
+        payload.get("muted_until") or "",
+    )
+    if result.get("ok"):
+        muted_user_id = int(result.get("muted_user_id") or target_id or 0)
+        conn = db()
+        cur = conn.cursor()
+        notify_user(
+            cur,
+            user["user_id"],
+            "pulse_user_muted",
+            "User muted",
+            "Muted user content was removed from your Home feed.",
+            "/pulse",
+            actor_user_id=user["user_id"],
+            entity_type="user",
+            entity_id=str(muted_user_id),
+            metadata={
+                "muted_user_id": muted_user_id,
+                "domain": "feed",
+                "category": "home_safety",
+                "source": "api_pulse_user_mute",
+                "invalidates": ["home", "activity", "notifications"],
+            },
+        )
+        conn.commit()
+        conn.close()
+        pulse_emit_event(
+            "pulse_user_muted",
+            {
+                "muted_user_id": muted_user_id,
+                "entity_type": "user",
+                "entity_id": str(muted_user_id or ""),
+                "invalidates": ["home", "activity", "notifications"],
+                "source": "api_pulse_user_mute",
+            },
+            user["user_id"],
+            0,
+        )
     return jsonify(result), status
 
 

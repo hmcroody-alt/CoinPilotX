@@ -629,6 +629,36 @@ def _viewer_post_state(cur, rows, viewer_user_id=None):
     return {"saved": saved, "reposted": reposted, "following": following}
 
 
+def _ensure_home_safety_tables(cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pulse_post_hides (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            post_id INTEGER,
+            reason TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            UNIQUE(user_id, post_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pulse_user_mutes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            muted_user_id INTEGER,
+            reason TEXT,
+            muted_until TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            UNIQUE(user_id, muted_user_id)
+        )
+        """
+    )
+
+
 def _repost_originals(cur, rows, viewer_user_id=None):
     original_ids = sorted({
         int((row or {}).get("repost_of_post_id") or 0)
@@ -920,6 +950,10 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     if viewer_user_id:
         where.append("NOT EXISTS (SELECT 1 FROM blocked_users bu WHERE bu.blocker_user_id=? AND bu.blocked_user_id=p.user_id)")
         params.append(int(viewer_user_id))
+        where.append("NOT EXISTS (SELECT 1 FROM pulse_post_hides ph WHERE ph.user_id=? AND ph.post_id=p.id)")
+        params.append(int(viewer_user_id))
+        where.append("NOT EXISTS (SELECT 1 FROM pulse_user_mutes pum WHERE pum.user_id=? AND pum.muted_user_id=p.user_id AND (pum.muted_until IS NULL OR pum.muted_until='' OR pum.muted_until>datetime('now')))")
+        params.append(int(viewer_user_id))
     if feed == "following" and viewer_user_id:
         where.append("p.user_id IN (SELECT followed_user_id FROM pulse_follows WHERE follower_user_id=?)")
         params.append(int(viewer_user_id))
@@ -981,6 +1015,7 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         params.extend([int(viewer_user_id or 0), int(viewer_user_id or 0)])
     conn = user_context.connect()
     cur = conn.cursor()
+    _ensure_home_safety_tables(cur)
     cur.execute(
         f"""
         SELECT p.*, u.username, u.email, u.full_name, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
@@ -1054,8 +1089,13 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
         if viewer_user_id:
             where.append("NOT EXISTS (SELECT 1 FROM blocked_users bu WHERE bu.blocker_user_id=? AND bu.blocked_user_id=p.user_id)")
             params.append(int(viewer_user_id))
+            where.append("NOT EXISTS (SELECT 1 FROM pulse_post_hides ph WHERE ph.user_id=? AND ph.post_id=p.id)")
+            params.append(int(viewer_user_id))
+            where.append("NOT EXISTS (SELECT 1 FROM pulse_user_mutes pum WHERE pum.user_id=? AND pum.muted_user_id=p.user_id AND (pum.muted_until IS NULL OR pum.muted_until='' OR pum.muted_until>datetime('now')))")
+            params.append(int(viewer_user_id))
     conn = user_context.connect()
     cur = conn.cursor()
+    _ensure_home_safety_tables(cur)
     cur.execute(
         f"""
         SELECT p.*, u.username, u.email, u.full_name, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
@@ -1106,6 +1146,64 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
         for row in rows
     ]
     return {"ok": True, "feed": "my_posts", "topic": "", "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": safe_intelligence_panel("")}
+
+
+def hide_post(user_id, post_id, reason="Hidden from Home"):
+    user_id = int(user_id or 0)
+    post_id = int(post_id or 0)
+    if not user_id or not post_id:
+        return {"ok": False, "message": "Valid user and post are required."}, 400
+    conn = user_context.connect()
+    cur = conn.cursor()
+    _ensure_home_safety_tables(cur)
+    cur.execute("SELECT user_id FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (post_id,))
+    post = _row(cur.fetchone()) or {}
+    if not post:
+        conn.close()
+        return {"ok": False, "message": "Post not found."}, 404
+    if int(post.get("user_id") or 0) == user_id:
+        conn.close()
+        return {"ok": False, "message": "Your own post cannot be hidden from your Home feed."}, 400
+    now = _now()
+    cur.execute(
+        """
+        INSERT INTO pulse_post_hides (user_id, post_id, reason, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, post_id) DO UPDATE SET reason=excluded.reason, updated_at=excluded.updated_at
+        """,
+        (user_id, post_id, _clean_text(reason or "Hidden from Home", 240), now, now),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True, "hidden": True, "post_id": post_id, "message": "Post hidden from Home."}, 200
+
+
+def mute_user(user_id, muted_user_id, reason="Muted from Home", muted_until=""):
+    user_id = int(user_id or 0)
+    muted_user_id = int(muted_user_id or 0)
+    if not user_id or not muted_user_id:
+        return {"ok": False, "message": "Valid users are required."}, 400
+    if user_id == muted_user_id:
+        return {"ok": False, "message": "You cannot mute yourself."}, 400
+    conn = user_context.connect()
+    cur = conn.cursor()
+    _ensure_home_safety_tables(cur)
+    cur.execute("SELECT user_id FROM users WHERE user_id=? LIMIT 1", (muted_user_id,))
+    if not cur.fetchone():
+        conn.close()
+        return {"ok": False, "message": "User not found."}, 404
+    now = _now()
+    cur.execute(
+        """
+        INSERT INTO pulse_user_mutes (user_id, muted_user_id, reason, muted_until, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, muted_user_id) DO UPDATE SET reason=excluded.reason, muted_until=excluded.muted_until, updated_at=excluded.updated_at
+        """,
+        (user_id, muted_user_id, _clean_text(reason or "Muted from Home", 240), _clean_text(muted_until or "", 80), now, now),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True, "muted": True, "muted_user_id": muted_user_id, "message": "User muted from Home."}, 200
 
 
 def explain_visibility(post_id, viewer_user_id=None):

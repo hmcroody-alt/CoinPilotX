@@ -4427,3 +4427,42 @@ Reason for recommendation:
 - Home foundation is complete enough and Home sync is now visually/backend verified.
 - The remaining Home release blockers are narrow: persistent hide, native mute, and accessible comment submit.
 - Fixing those closes the last Home-specific release blockers without starting a new subsystem or UI polish phase.
+
+## Native Home Release Blocker Hardening
+
+Section: Home release readiness.
+
+Completed action:
+
+- Replaced local-only Home Hide with server-authoritative `POST /api/pulse/posts/<post_id>/hide`.
+- Added backend `pulse_post_hides` persistence and feed filtering so refresh does not restore hidden cards.
+- Replaced Home Mute fallback with server-authoritative `POST /api/pulse/users/mute`.
+- Added backend `pulse_user_mutes` persistence and feed filtering so muted user content stays removed after refresh.
+- Added cursor-visible `pulse_post_hidden` and `pulse_user_muted` notification events.
+- Added native feed API wrappers for hide and mute.
+- Added semantic, QA-addressable comment submit path in Post Detail.
+
+Visible QA result:
+
+- Built-in QA browser showed Home against the local QA stack.
+- Hide -> refresh -> hidden state persisted for post `91001`.
+- Mute -> refresh -> muted author content stayed removed for user `51003`.
+- Comment submit through `post-detail-submit-comment` posted and rendered the comment for post `91003`.
+- `/api/pulse/sync/events` exposed `pulse_post_hidden` and `pulse_user_muted` with cursor metadata.
+
+Current Home status:
+
+- Home foundation: 99%.
+- Home release readiness: 96%.
+- Current native migration: 95%.
+- Release QA confidence: 84%.
+
+Can Home be considered release complete: browser release blockers closed; physical-device push/background/accessibility sweep remains before final release-complete signoff.
+
+Recommended next mission: PulseSoc Native Home Release Device Readiness Sweep.
+
+Reason for recommendation:
+
+- Home browser blockers are closed.
+- Remaining Home risks are release-readiness validation items: physical-device push taps, background recovery, and broader accessibility scan.
+- This is a narrow QA/hardening pass, not a new feature or polish phase.

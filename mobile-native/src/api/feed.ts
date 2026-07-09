@@ -247,6 +247,13 @@ export async function repostPost(postId: number, body = "") {
   });
 }
 
+export async function hidePost(postId: number, reason = "Hidden from Home") {
+  return pulseApi<{ ok?: boolean; hidden?: boolean; message?: string }>(`/api/pulse/posts/${postId}/hide`, {
+    method: "POST",
+    body: JSON.stringify({ post_id: postId, reason })
+  });
+}
+
 export async function toggleFollowAuthor(post: PulsePost) {
   const author = post.author || post.user || {};
   const publicPlayerId = author.public_player_id || post.author_public_player_id || author.username || post.author_username || "";
@@ -257,6 +264,22 @@ export async function toggleFollowAuthor(post: PulsePost) {
       followed_user_id: followedUserId || 0,
       public_player_id: publicPlayerId || "",
       followed_public_player_id: publicPlayerId || ""
+    })
+  });
+}
+
+export async function mutePostAuthor(post: PulsePost, reason = "Muted from Home") {
+  const author = post.author || post.user || {};
+  const publicPlayerId = author.public_player_id || post.author_public_player_id || author.username || post.author_username || "";
+  const mutedUserId = Number(author.user_id || author.id || 0);
+  return pulseApi<{ ok?: boolean; muted?: boolean; muted_user_id?: number; message?: string }>("/api/pulse/users/mute", {
+    method: "POST",
+    body: JSON.stringify({
+      muted_user_id: mutedUserId || 0,
+      user_id: mutedUserId || 0,
+      public_player_id: publicPlayerId || "",
+      muted_public_player_id: publicPlayerId || "",
+      reason
     })
   });
 }

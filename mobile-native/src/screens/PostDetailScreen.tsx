@@ -186,14 +186,25 @@ export function PostDetailScreen({ route, navigation }: Props) {
             />
             <View style={styles.commentComposer}>
               <TextInput
+                accessibilityLabel="Comment text"
+                testID="post-detail-comment-input"
                 style={styles.input}
                 value={commentBody}
                 onChangeText={setCommentBody}
+                onSubmitEditing={handleComment}
                 placeholder="Add a comment"
                 placeholderTextColor={colors.muted}
                 multiline
               />
-              <Pressable style={[styles.commentButton, (!commentBody.trim() || posting) && styles.commentButtonDisabled]} onPress={handleComment} disabled={!commentBody.trim() || posting}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Submit comment"
+                accessibilityState={{ disabled: !commentBody.trim() || posting, busy: posting }}
+                testID="post-detail-submit-comment"
+                style={[styles.commentButton, (!commentBody.trim() || posting) && styles.commentButtonDisabled]}
+                onPress={handleComment}
+                disabled={!commentBody.trim() || posting}
+              >
                 <Text style={styles.commentButtonText}>{posting ? "Sending" : "Post"}</Text>
               </Pressable>
             </View>

@@ -3,8 +3,10 @@ import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import {
+  hidePost,
   listFeed,
   loadCachedFeed,
+  mutePostAuthor,
   PulsePost,
   pulsePostUrl,
   reactToPost,
@@ -226,6 +228,59 @@ export function HomeScreen() {
     }
   }
 
+  async function handleHide(post: PulsePost) {
+    setBusyPostId(post.id);
+    try {
+      await hidePost(post.id);
+      setPosts((current) => current.filter((item) => item.id !== post.id));
+      invalidateNativeSync(["activity", "notifications"], "home_hide", [
+        {
+          event_type: "pulse_post_hidden",
+          entity_type: "post",
+          entity_id: post.id,
+          invalidates: ["activity", "notifications"],
+          metadata: { source: "native_home_feed" }
+        }
+      ]).catch(() => undefined);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Post could not be hidden.");
+    } finally {
+      setBusyPostId(null);
+    }
+  }
+
+  async function handleMute(post: PulsePost) {
+    setBusyPostId(post.id);
+    const authorId = Number(post.author?.user_id || post.author?.id || 0);
+    const publicId = post.author?.public_player_id || post.author_public_player_id || "";
+    try {
+      const result = await mutePostAuthor(post);
+      const mutedId = Number(result.muted_user_id || authorId || 0);
+      setPosts((current) =>
+        current.filter((item) => {
+          const itemAuthorId = Number(item.author?.user_id || item.author?.id || 0);
+          const itemPublicId = item.author?.public_player_id || item.author_public_player_id || "";
+          if (mutedId && itemAuthorId === mutedId) return false;
+          if (publicId && itemPublicId === publicId) return false;
+          return item.id !== post.id;
+        })
+      );
+      invalidateNativeSync(["activity", "notifications"], "home_mute", [
+        {
+          event_type: "pulse_user_muted",
+          entity_type: "user",
+          entity_id: mutedId || publicId || "unknown",
+          invalidates: ["activity", "notifications"],
+          metadata: { source: "native_home_feed" }
+        }
+      ]).catch(() => undefined);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "User could not be muted.");
+    } finally {
+      setBusyPostId(null);
+    }
+  }
+
   function selectFeed(feedKey: string) {
     if (feedKey === selectedFeed) return;
     setSelectedFeed(feedKey);
@@ -324,7 +379,7 @@ export function HomeScreen() {
                 reportTarget: String(post.id)
               })
             }
-            onHide={(post) => setPosts((current) => current.filter((item) => item.id !== post.id))}
+            onHide={handleHide}
             onBlock={(post) =>
               navigation.navigate("SafetyHub", {
                 title: "Blocked Users",
@@ -332,13 +387,7 @@ export function HomeScreen() {
                 blockTarget: post.author?.public_player_id || post.author_public_player_id || post.author?.username || post.author_username || ""
               })
             }
-            onMute={(post) =>
-              navigation.navigate("SafetyHub", {
-                title: "Muted Users",
-                section: "mutes",
-                muteTarget: post.author?.public_player_id || post.author_public_player_id || post.author?.username || post.author_username || ""
-              })
-            }
+            onMute={handleMute}
             onFollow={handleFollow}
             onAuthorPress={(post) => {
               const key = profileKeyForPost(post);
