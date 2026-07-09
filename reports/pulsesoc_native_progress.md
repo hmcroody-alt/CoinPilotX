@@ -4300,3 +4300,47 @@ Reason for recommendation:
 
 - It is the only remaining blocker to marking the Home foundation complete.
 - The next task should stabilize the in-app browser path and prove the already-built publishing state machine end to end without adding new Home features.
+
+## Native QA Runtime Stabilization
+
+Section: Native QA runtime stabilization.
+
+Important roadmap rule:
+
+- Stop new Home feature work until visible QA runtime is stable.
+- No Android focus.
+- No UI/UX polish.
+- Preserve production WebView behavior.
+- Keep server-authoritative behavior unchanged.
+
+Completed action: stabilized the native QA web runtime path after Home visible publish proof was blocked by browser-control timeouts and Metro resolver errors.
+
+What changed:
+
+- Added explicit `mobile-native` dependency for `nullthrows@1.1.1`.
+- Kept `expo-modules-core@3.0.30` Expo-managed because Expo Doctor rejects direct installation of `expo-modules-core`.
+- Preserved Expo SDK 54 / React Native 0.81 package versions already present in the lockfile.
+- Added `scripts/pulsesoc_native_qa_runtime_audit.py` to verify project-level dependency resolution and required stabilization reports.
+- Created QA runtime stabilization and visible runtime readiness reports.
+
+Runtime evidence:
+
+- `npm ci --prefix mobile-native --no-audit --no-fund --progress=false` passed.
+- Clean Metro web run with `--clear` bundled `index.ts` successfully.
+- `curl -I http://localhost:8094/Login` returned `HTTP/1.1 200 OK`.
+- The previous `expo-modules-core` and `nullthrows` resolver failures did not reproduce from a clean install/cache state.
+- Built-in QA browser visible Login route rendered with no runtime console errors.
+- Authenticated visible route checks passed through `http://127.0.0.1:8094` for Home, Dashboard, Marketplace, and Messages.
+- Documented the local QA host rule: use `127.0.0.1:8094` when the local API proxy is `127.0.0.1:5108`; `localhost:8094` can render unauthenticated routes but may not restore local API cookies.
+
+Visible QA can resume: YES, with the rule that Metro must be started from a clean cache after dependency changes, localhost must be verified before opening the built-in QA browser, and authenticated local QA should use `127.0.0.1:8094`.
+
+Current native migration percentage: 95% foundation/parity coverage, 92% system consistency confidence, 73% release QA confidence.
+
+Recommended next mission: Native Home visible browser publish proof completion.
+
+Reason for recommendation:
+
+- Home publishing is structurally implemented and backend-contract verified.
+- The QA runtime blocker has been removed at the Metro/dependency layer.
+- The fastest path toward completing the Home foundation is now to visually prove text entry, draft recovery, publish, composer reset, and feed refresh in the built-in QA browser.
