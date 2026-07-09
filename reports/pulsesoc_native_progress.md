@@ -4253,3 +4253,50 @@ Reason for recommendation:
 
 - Text-only publishing, draft recovery, retry state, and feed invalidation are structurally hardened.
 - The immediate Home-specific risk is the remaining visible proof: type a text post, reload and recover the draft, publish to the local QA backend, confirm composer reset, and confirm feed refresh.
+
+## Native Home Publishing Proof & Foundation Completion
+
+Section: Native Home foundation completion.
+
+Important roadmap rule:
+
+- Continue focusing only on Home until visible publish proof is complete.
+- No Android focus.
+- No final UI/UX polish yet.
+- Keep the backend authoritative for publishing, validation, media processing, moderation, visibility, ranking, and sync.
+
+Completed action:
+
+- Added stable Home Composer QA handles for input, counter, Post/Reel/Live modes, photo/video handoffs, publish, retry, recovered draft, clear draft, and composer status.
+- Reconfirmed text-only publishing contract against a disposable local backend.
+- Verified local QA login, `/api/pulse/posts` publish success, feed visibility for the new post, and `/api/pulse/sync/events` availability after publish.
+- Created Home completion and visible publish QA reports.
+
+Home foundation estimates:
+
+- Home foundation: 91%.
+- Hero: 90%.
+- Status: 86%.
+- Composer: 90%.
+- Publishing: 84%.
+- Draft recovery: 88%.
+- Upload queue: 78%.
+- Feed consistency: 84%.
+- Navigation: 93%.
+- Visible QA: 78%.
+
+Current native migration percentage: 95% foundation/parity coverage, 92% system consistency confidence, 72% release QA confidence.
+
+Can Home foundation be considered complete: NO.
+
+Reason:
+
+- The backend contract and implementation are hardened, but the built-in QA browser control channel timed out before Roody could watch the full text publish proof, draft recovery, composer reset, and visible feed refresh.
+- Device media capture/upload remains separate release QA.
+
+Recommended next Home task: Native Home visible browser publish proof recovery.
+
+Reason for recommendation:
+
+- It is the only remaining blocker to marking the Home foundation complete.
+- The next task should stabilize the in-app browser path and prove the already-built publishing state machine end to end without adding new Home features.

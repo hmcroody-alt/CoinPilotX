@@ -251,13 +251,21 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
       </View>
       <View style={styles.modeRow}>
         {MODES.map((item) => (
-          <Pressable key={item.key} style={[styles.modeButton, mode === item.key && styles.modeButtonActive]} onPress={() => selectMode(item.key)}>
+          <Pressable
+            key={item.key}
+            testID={`home-composer-mode-${item.key}`}
+            accessibilityLabel={`Composer mode ${item.label}`}
+            style={[styles.modeButton, mode === item.key && styles.modeButtonActive]}
+            onPress={() => selectMode(item.key)}
+          >
             <Text style={[styles.modeText, mode === item.key && styles.modeTextActive]}>{item.label}</Text>
           </Pressable>
         ))}
       </View>
       <View style={styles.inputWrap}>
         <TextInput
+          testID="home-composer-input"
+          accessibilityLabel="Home composer text"
           multiline
           maxLength={MAX_BODY}
           placeholder="What’s happening in your world?"
@@ -266,11 +274,11 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
           value={body}
           onChangeText={setBody}
         />
-        <Text style={styles.counter}>{characters}/{MAX_BODY}</Text>
+        <Text testID="home-composer-counter" style={styles.counter}>{characters}/{MAX_BODY}</Text>
       </View>
       <View style={styles.actionGrid}>
-        <ComposerAction label="Photo" icon="▧" onPress={() => media.chooseImage().then(() => setNote("Photo selected for PulseSoc upload.")).catch(() => undefined)} />
-        <ComposerAction label="Video" icon="▶" onPress={() => media.chooseVideo().then(() => setNote("Video selected for PulseSoc upload.")).catch(() => undefined)} />
+        <ComposerAction testID="home-composer-photo" label="Photo" icon="▧" onPress={() => media.chooseImage().then(() => setNote("Photo selected for PulseSoc upload.")).catch(() => undefined)} />
+        <ComposerAction testID="home-composer-video" label="Video" icon="▶" onPress={() => media.chooseVideo().then(() => setNote("Video selected for PulseSoc upload.")).catch(() => undefined)} />
         <ComposerAction label="Music" icon="♪" onPress={() => {
           setNote("Music selection opens the existing PulseSoc media/music surface.");
           onOpenMusic();
@@ -307,23 +315,23 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
         </View>
       ) : null}
       {draftRecovered ? (
-        <View style={styles.draftPanel}>
+        <View testID="home-composer-recovered-draft" style={styles.draftPanel}>
           <Text style={styles.draftText}>Recovered saved draft.</Text>
-          <Pressable style={styles.draftButton} onPress={() => clearDraft().catch(() => undefined)}>
+          <Pressable testID="home-composer-clear-draft" style={styles.draftButton} onPress={() => clearDraft().catch(() => undefined)}>
             <Text style={styles.draftButtonText}>Clear Draft</Text>
           </Pressable>
         </View>
       ) : null}
-      <View style={styles.statusPanel}>
+      <View testID="home-composer-status" style={styles.statusPanel}>
         <Text style={styles.statusTitle}>{error || selectedMode.note}</Text>
         <Text style={[styles.statusText, error ? styles.errorText : undefined]}>{error || note}</Text>
       </View>
       {lastFailedPayload ? (
-        <Pressable style={styles.retryButton} disabled={publishing} onPress={() => retryLastPublish().catch(() => undefined)}>
+        <Pressable testID="home-composer-retry" style={styles.retryButton} disabled={publishing} onPress={() => retryLastPublish().catch(() => undefined)}>
           <Text style={styles.retryText}>{publishing ? "Retrying..." : "Retry Last Publish"}</Text>
         </Pressable>
       ) : null}
-      <Pressable style={[styles.publishButton, publishing && styles.publishButtonDisabled]} disabled={publishing} onPress={handlePublish}>
+      <Pressable testID="home-composer-publish" style={[styles.publishButton, publishing && styles.publishButtonDisabled]} disabled={publishing} onPress={handlePublish}>
         <Text style={styles.publishText}>{publishing ? "Publishing..." : mode === "live" ? "Open Live Studio" : "Publish Signal"}</Text>
       </Pressable>
       <View style={styles.routeRow}>
@@ -375,9 +383,9 @@ function restoredMediaKind(result: NativeMediaUploadResult | null) {
   return "";
 }
 
-function ComposerAction({ label, icon, onPress }: { label: string; icon: string; onPress: () => void }) {
+function ComposerAction({ label, icon, onPress, testID }: { label: string; icon: string; onPress: () => void; testID?: string }) {
   return (
-    <Pressable style={styles.actionButton} onPress={onPress}>
+    <Pressable testID={testID} accessibilityLabel={label} style={styles.actionButton} onPress={onPress}>
       <Text style={styles.actionIcon}>{icon}</Text>
       <Text style={styles.actionText} numberOfLines={1}>{label}</Text>
     </Pressable>
