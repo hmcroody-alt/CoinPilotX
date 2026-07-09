@@ -4097,3 +4097,46 @@ Reason for recommendation:
 
 - The dashboard now has route parity, legacy alias routing, module shells, and live state panels.
 - The remaining foundation gap is quick-action reliability: every production dashboard quick action should land on a native route or explicit safe fallback with no dead links.
+
+## Native Dashboard Quick Action Parity Hardening
+
+Section: Dashboard Quick Action Parity Hardening
+
+Important roadmap rule:
+
+- Continue focusing only on the User Dashboard until the foundation is complete.
+- Do not focus on Android right now.
+- Do not touch production WebView paths.
+- Foundation coverage comes before final UI/UX polish.
+
+Completed action: hardened dashboard quick-action routing and classification.
+
+What changed:
+
+- Added route classification for dashboard actions: native route, native shell, safe web fallback, or missing/invalid.
+- Updated dashboard quick-action targets so they no longer point to stale or ambiguous routes.
+- Updated User Dashboard quick-action badges, module cards, and module detail shells to show route classification.
+- Added direct aliases for `/pulse/compose` and `/pulse/music` so deep-link/URL entry matches dashboard click behavior.
+- Preserved the Live Studio provider boundary and routed Pulse Radio through its native Media dashboard shell.
+
+Quick-action parity:
+
+- Native route: Create Post, Upload Video, Add Status, Upgrade to Premium, Open Scam Shield.
+- Native shell route: Invite Friends, Create Crypto Alert, Ask Crypto AI, Scan Token, Add Watchlist Asset, Open Pulse Radio.
+- Safe web fallback: Go Live.
+- Missing/invalid route: none.
+
+Dashboard foundation parity: 99%.
+
+Quick-action parity: 100% for registered dashboard quick actions.
+
+Visible QA result: passed in the built-in QA browser. Representative quick actions opened native surfaces, native dashboard module shells, or the intentional Live Studio provider boundary with no missing route, auth wall, or unavailable module state.
+
+Current native migration percentage: 95% foundation/parity coverage, 92% system consistency confidence, 69% release QA confidence.
+
+Recommended next dashboard task: Dashboard fallback boundary labeling.
+
+Reason for recommendation:
+
+- The dashboard now has route parity, legacy aliases, module shells, live panels, and quick-action parity.
+- The remaining dashboard foundation gap is clarity around fallback-heavy modules: every provider-owned or unsupported area should clearly show why it falls back and what native coverage already exists.

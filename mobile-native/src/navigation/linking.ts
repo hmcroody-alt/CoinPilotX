@@ -33,6 +33,8 @@ export const linking: LinkingOptions<RootStackParamList> = {
       },
       UserDashboard: "dashboard",
       UserDashboardWeb: "dashboard/home",
+      DashboardComposeAlias: "pulse/compose",
+      DashboardMusicAlias: "pulse/music",
       DashboardModuleDetail: {
         path: "pulse/dashboard/module/:groupKey/:moduleKey",
         parse: {

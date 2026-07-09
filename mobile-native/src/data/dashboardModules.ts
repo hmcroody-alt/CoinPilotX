@@ -200,11 +200,11 @@ export const dashboardModuleGroups: DashboardModuleGroup[] = [
 ];
 
 export const dashboardQuickActions: DashboardQuickAction[] = [
-  { label: "Create Post", route: "/pulse", capability: "all" },
-  { label: "Go Live", route: "/pulse/live", capability: "creator" },
-  { label: "Upload Video", route: "/pulse/videos", capability: "all" },
-  { label: "Add Status", route: "/pulse/status", capability: "all" },
-  { label: "Invite Friends", route: "/pulse/friends", capability: "all" },
+  { label: "Create Post", route: "/pulse/compose", capability: "all" },
+  { label: "Go Live", route: "/pulse/live/studio", capability: "creator" },
+  { label: "Upload Video", route: "/pulse/camera/video?target=feed", capability: "all" },
+  { label: "Add Status", route: "/pulse/status?openCreator=1", capability: "all" },
+  { label: "Invite Friends", route: "/dashboard/network/friends", capability: "all" },
   { label: "Create Crypto Alert", route: "/dashboard/crypto/alerts/create", capability: "all" },
   { label: "Ask Crypto AI", route: "/dashboard/crypto/ask-ai", capability: "all" },
   { label: "Scan Token", route: "/dashboard/crypto/token-scanner", capability: "all" },

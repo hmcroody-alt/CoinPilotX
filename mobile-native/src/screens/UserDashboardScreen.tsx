@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { DashboardCard, DashboardModuleKey, loadUserDashboardState, UserDashboardState } from "../api/dashboard";
 import { DashboardModuleGroup, DashboardModuleItem, DashboardQuickAction } from "../data/dashboardModules";
-import { isNativeDashboardRoute, openDashboardRoute } from "../navigation/dashboardRouting";
+import { classifyDashboardActionRoute, dashboardModuleParamsForRoute, openDashboardRoute } from "../navigation/dashboardRouting";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 
@@ -52,7 +52,7 @@ export function UserDashboardScreen() {
   const dashboardCards = useMemo(() => (state?.cards || []).slice(4), [state?.cards]);
   const moduleGroups = state?.moduleGroups || [];
   const moduleCount = useMemo(() => moduleGroups.reduce((total, group) => total + group.modules.length, 0), [moduleGroups]);
-  const fallbackCount = useMemo(() => moduleGroups.reduce((total, group) => total + group.modules.filter((module) => !isNativeDashboardRoute(module.route)).length, 0), [moduleGroups]);
+  const fallbackCount = useMemo(() => moduleGroups.reduce((total, group) => total + group.modules.filter((module) => classifyDashboardActionRoute(module.route).kind === "safe_web_fallback").length, 0), [moduleGroups]);
 
   if (loading && !state) {
     return (
@@ -194,7 +194,7 @@ function ModuleGroupSection({ group, onOpen }: { group: DashboardModuleGroup; on
 }
 
 function DashboardModuleCard({ module, onPress }: { module: DashboardModuleItem; onPress: () => void }) {
-  const native = isNativeDashboardRoute(module.route);
+  const routeClass = classifyDashboardActionRoute(module.route);
   return (
     <Pressable style={[styles.moduleCard, module.access === "locked" ? styles.moduleLocked : null]} onPress={onPress}>
       <View style={styles.moduleTop}>
@@ -208,18 +208,19 @@ function DashboardModuleCard({ module, onPress }: { module: DashboardModuleItem;
       {module.lockReason ? <Text style={styles.lockReason}>{module.lockReason}</Text> : null}
       <View style={styles.moduleBottom}>
         <Text style={styles.moduleAction}>{module.actionLabel}</Text>
-        <Text style={styles.moduleRoute}>{native ? "Native" : "Fallback"}</Text>
+        <Text style={styles.moduleRoute}>{routeClass.label}</Text>
       </View>
     </Pressable>
   );
 }
 
 function DashboardQuickLink({ action, onPress }: { action: DashboardQuickAction; onPress: () => void }) {
+  const routeClass = classifyDashboardActionRoute(action.route);
   return (
     <Pressable style={styles.quickLink} onPress={onPress}>
       <Text style={styles.quickLinkIcon}>{action.label.slice(0, 2)}</Text>
       <Text style={styles.quickLinkText}>{action.label}</Text>
-      <Text style={styles.quickLinkGo}>Go</Text>
+      <Text style={styles.quickLinkGo}>{routeClass.label}</Text>
     </Pressable>
   );
 }
@@ -359,6 +360,11 @@ function openActivityTarget(navigation: DashboardNavigation, target?: string) {
 }
 
 function openDashboardQuickAction(navigation: DashboardNavigation, action: DashboardQuickAction) {
+  const moduleParams = dashboardModuleParamsForRoute(action.route);
+  if (moduleParams) {
+    navigation.navigate("DashboardModuleDetail", moduleParams);
+    return;
+  }
   openDashboardRoute(navigation, action.route);
 }
 

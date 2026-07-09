@@ -309,3 +309,50 @@ Authenticated final sweep:
 - `/dashboard/system/feed` opened Feed Intelligence and rendered live state.
 - Every representative route rendered `Live state`, `Module route parity`, `Available actions`, and `Foundation status`.
 - No representative route showed `Dashboard module unavailable` or remained auth-blocked during the visible QA pass.
+
+## 2026-07-08 Dashboard Quick Action Parity Hardening
+
+Result: completed.
+
+What changed:
+
+- Dashboard quick actions now use explicit route classifications.
+- Weak action targets were replaced with native routes, native module shells, or intentional safe fallbacks.
+- The quick-action UI now shows `Native`, `Native shell`, or `Safe fallback` rather than a generic `Go` label.
+- Module cards and module detail shells use the same classifier for route state.
+
+Visible QA route set:
+
+- `/pulse/compose`
+- `/pulse/camera/video?target=feed`
+- `/pulse/status?openCreator=1`
+- `/dashboard/network/friends`
+- `/dashboard/crypto/alerts/create`
+- `/dashboard/crypto/ask-ai`
+- `/dashboard/crypto/token-scanner`
+- `/dashboard/crypto/watchlists`
+- `/pulse/live/studio`
+- `/pulse/music`
+- `/pulse/premium`
+- `/scam-shield`
+
+Authenticated visible sweep:
+
+- Passed in the built-in QA browser through the local QA server.
+- The dashboard quick-action section rendered `Native`, `Native shell`, and `Safe fallback` route labels.
+- `/pulse/compose` opened Home through `/pulse?openComposer=true`.
+- `/pulse/camera/video?target=feed` opened Camera Studio and showed the QA-browser camera limitation state.
+- `/pulse/status?openCreator=1` opened native Status.
+- `/dashboard/network/friends` opened the Friends native dashboard module shell.
+- `/dashboard/crypto/alerts/create` opened the Create Alert native dashboard module shell.
+- `/dashboard/crypto/ask-ai` opened the Ask Crypto AI native dashboard module shell.
+- `/dashboard/crypto/token-scanner` opened the Token Scanner native dashboard module shell.
+- `/dashboard/crypto/watchlists` opened the Watchlists native dashboard module shell.
+- `/pulse/live/studio` opened Live with the `Go Live Web` boundary visible.
+- `/pulse/music` opened the Pulse Radio native dashboard module shell.
+- `/pulse/premium` opened native Premium.
+- `/scam-shield` opened native Trust & Safety.
+- Dashboard UI click check passed for `Create Post`, which opened Home through `/pulse?openComposer=true`.
+- Dashboard UI click check passed for `Open Pulse Radio`, which opened the native Pulse Radio dashboard module shell.
+- `Go Live` was verified through direct route entry and visible quick-action classification; the rendered label is split by the quick-link layout, so the browser locator could not click it by exact text without a brittle selector.
+- No representative quick action showed `Dashboard module unavailable`, stayed auth-blocked, or landed on a missing route.

@@ -26,6 +26,8 @@ export type RootStackParamList = {
   Tabs: NavigatorScreenParams<AppTabParamList> | undefined;
   UserDashboard: { title?: string } | undefined;
   UserDashboardWeb: { title?: string } | undefined;
+  DashboardComposeAlias: undefined;
+  DashboardMusicAlias: undefined;
   DashboardLegacyModule: { legacyGroup?: string; legacyModule?: string; legacySubmodule?: string; title?: string } | undefined;
   DashboardModuleDetail: { groupKey: string; moduleKey: string; title?: string };
   CameraStudio: {

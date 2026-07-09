@@ -2,7 +2,7 @@ import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { dashboardModuleGroups, DashboardModuleGroup, DashboardModuleItem } from "../data/dashboardModules";
-import { dashboardWebUrl, isNativeDashboardRoute, openDashboardAccessRoute, openDashboardRoute, openDashboardWebFallback, DashboardNavigation } from "../navigation/dashboardRouting";
+import { classifyDashboardActionRoute, dashboardWebUrl, openDashboardAccessRoute, openDashboardRoute, openDashboardWebFallback, DashboardNavigation } from "../navigation/dashboardRouting";
 import { RootStackParamList } from "../navigation/types";
 import { DashboardLiveStatePanel, loadDashboardModuleLiveState } from "../api/dashboardLiveState";
 import { colors } from "../theme/colors";
@@ -52,7 +52,8 @@ export function DashboardModuleDetailScreen() {
     );
   }
 
-  const nativeRoute = isNativeDashboardRoute(module.route);
+  const routeClass = classifyDashboardActionRoute(module.route);
+  const nativeRoute = routeClass.kind === "native_route" || routeClass.kind === "native_shell_route";
   const related = relatedNativeRoutes(group, module);
 
   return (
@@ -79,7 +80,7 @@ export function DashboardModuleDetailScreen() {
         </View>
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Native state</Text>
-          <Text style={styles.infoValue}>{nativeRoute ? "Native route available" : "Protected web fallback required"}</Text>
+          <Text style={styles.infoValue}>{routeClass.label}: {routeClass.detail}</Text>
         </View>
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Server authority</Text>
@@ -93,8 +94,8 @@ export function DashboardModuleDetailScreen() {
         <Text style={styles.sectionTitle}>Available actions</Text>
         <View style={styles.actionGrid}>
           <ActionButton
-            label={module.access === "locked" ? "Review Access" : nativeRoute ? "Open Native Surface" : "Open Fallback"}
-            body={module.access === "locked" ? "Open the entitlement or owner area tied to this card." : nativeRoute ? "Use the current native route for this module." : "Use the protected production route until native support exists."}
+            label={module.access === "locked" ? "Review Access" : nativeRoute ? routeClass.label === "Native shell" ? "Open Native Shell" : "Open Native Surface" : "Open Fallback"}
+            body={module.access === "locked" ? "Open the entitlement or owner area tied to this card." : nativeRoute ? routeClass.detail : "Use the protected production route until native support exists."}
             onPress={() => (module.access === "locked" ? openDashboardAccessRoute(navigation, module) : openDashboardRoute(navigation, module.route))}
           />
           <ActionButton
