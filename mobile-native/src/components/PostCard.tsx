@@ -17,10 +17,33 @@ type PostCardProps = {
   onRepost?: (post: PulsePost) => void;
   onPromote?: (post: PulsePost) => void;
   onShare?: (post: PulsePost) => void;
+  onComment?: (post: PulsePost) => void;
+  onFollow?: (post: PulsePost) => void;
+  onReport?: (post: PulsePost) => void;
+  onHide?: (post: PulsePost) => void;
+  onBlock?: (post: PulsePost) => void;
+  onMute?: (post: PulsePost) => void;
   onAuthorPress?: (post: PulsePost) => void;
 };
 
-export function PostCard({ post, detail, busy, onOpen, onReact, onSave, onRepost, onPromote, onShare, onAuthorPress }: PostCardProps) {
+export function PostCard({
+  post,
+  detail,
+  busy,
+  onOpen,
+  onReact,
+  onSave,
+  onRepost,
+  onPromote,
+  onShare,
+  onComment,
+  onFollow,
+  onReport,
+  onHide,
+  onBlock,
+  onMute,
+  onAuthorPress
+}: PostCardProps) {
   const author = post.author || {};
   const displayName = author.display_name || author.name || post.author_name || "PulseSoc";
   const handle = author.username || author.handle || post.author_username || "";
@@ -80,6 +103,11 @@ export function PostCard({ post, detail, busy, onOpen, onReact, onSave, onRepost
       </View>
 
       <View style={styles.utilityRow}>
+        {onComment ? (
+          <Pressable style={styles.utilityButton} disabled={busy} onPress={() => onComment(post)}>
+            <Text style={styles.utilityText}>Comment</Text>
+          </Pressable>
+        ) : null}
         <Pressable style={styles.utilityButton} disabled={busy} onPress={() => onSave?.(post)}>
           <Text style={styles.utilityText}>{post.saved ? "Saved" : "Save"}</Text>
         </Pressable>
@@ -95,6 +123,36 @@ export function PostCard({ post, detail, busy, onOpen, onReact, onSave, onRepost
           <Text style={styles.utilityText}>Share</Text>
         </Pressable>
       </View>
+
+      {onFollow || onReport || onHide || onBlock || onMute ? (
+        <View style={styles.safetyRow}>
+          {onFollow ? (
+            <Pressable style={styles.safetyButton} disabled={busy} onPress={() => onFollow(post)}>
+              <Text style={styles.safetyText}>Follow</Text>
+            </Pressable>
+          ) : null}
+          {onReport ? (
+            <Pressable style={styles.safetyButton} disabled={busy} onPress={() => onReport(post)}>
+              <Text style={styles.safetyText}>Report</Text>
+            </Pressable>
+          ) : null}
+          {onHide ? (
+            <Pressable style={styles.safetyButton} disabled={busy} onPress={() => onHide(post)}>
+              <Text style={styles.safetyText}>Hide</Text>
+            </Pressable>
+          ) : null}
+          {onBlock ? (
+            <Pressable style={styles.safetyButton} disabled={busy} onPress={() => onBlock(post)}>
+              <Text style={styles.safetyText}>Block</Text>
+            </Pressable>
+          ) : null}
+          {onMute ? (
+            <Pressable style={styles.safetyButton} disabled={busy} onPress={() => onMute(post)}>
+              <Text style={styles.safetyText}>Mute</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
 
       {!detail && post.preview_comments?.length ? (
         <View style={styles.previewComments}>
@@ -298,6 +356,25 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 12,
     paddingTop: 10
+  },
+  safetyButton: {
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 32,
+    justifyContent: "center",
+    paddingHorizontal: 10
+  },
+  safetyRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8
+  },
+  safetyText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "900"
   },
   title: {
     color: colors.text,

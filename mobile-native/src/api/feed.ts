@@ -71,6 +71,7 @@ export type PulsePost = {
   user?: PulseAuthor;
   author_name?: string;
   author_username?: string;
+  author_public_player_id?: string;
   author_avatar_url?: string;
   media?: PulseMedia[];
   media_assets?: PulseMedia[];
@@ -332,6 +333,7 @@ function normalizeAuthor(item: PulsePost): PulseAuthor {
     ...author,
     display_name: author.display_name || author.name || item.author_name || item.author_username || "PulseSoc",
     username: author.username || author.handle || item.author_username || "",
+    public_player_id: author.public_player_id || item.author_public_player_id || "",
     avatar_url: author.avatar_url || item.author_avatar_url || ""
   };
 }

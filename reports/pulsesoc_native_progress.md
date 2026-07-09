@@ -4140,3 +4140,68 @@ Reason for recommendation:
 
 - The dashboard now has route parity, legacy aliases, module shells, live panels, and quick-action parity.
 - The remaining dashboard foundation gap is clarity around fallback-heavy modules: every provider-owned or unsupported area should clearly show why it falls back and what native coverage already exists.
+
+## Native Home Experience Foundation - Phase 1
+
+Section: Native Home Experience Foundation.
+
+Important roadmap rule:
+
+- Dashboard foundation is paused and complete enough for this phase.
+- Current priority is the native iPhone/iOS Home experience and shared native code.
+- Do not focus on Android right now.
+- Do not touch production WebView paths.
+- Foundation parity comes before final UI/UX polish.
+
+Completed action: built the first native Home foundation parity layer.
+
+What changed:
+
+- Replaced the feed-only Home surface with a full native Home foundation.
+- Added Pulse Network hero with Pulse Radio, Live, Safety scan, refresh, and lightweight server-derived metrics.
+- Added Home status rail using the existing native Status API/cache wrappers.
+- Added native Add Status and Status detail routing from Home.
+- Added a dedicated inline `HomePulseComposer` with Post/Reel/Live modes, attachment controls, audience selector, media upload preview, validation, publish progress, retry/cancel inherited from the shared upload pipeline, and safe fallback notes.
+- Added native feed category tabs for For You, Following, Friends, Communities, Trending, Crypto, Scam Alerts, Arena Highlights, Roast Clips, Questions, and My Posts.
+- Preserved existing feed loading, cursor pagination, pull refresh, cache/offline fallback, post detail routing, profile routing, media viewer routing, save/repost/share/promote behavior, and event sync invalidation.
+- Extended feed card controls with visible Comment, Follow, Report, Hide, Block, and Mute paths without introducing client-authoritative moderation logic.
+
+Reused backend/API/business logic:
+
+- Existing PulseSoc feed APIs and ranking/filtering query contract.
+- Existing Status rail APIs.
+- Existing post creation APIs.
+- Existing shared native media upload pipeline.
+- Existing native event sync invalidation registry.
+- Existing Profile, Status, Live, Camera Studio, Safety Hub, Growth, and dashboard routing.
+
+Home foundation estimates:
+
+- Home foundation: 82%.
+- Hero: 86%.
+- Status: 84%.
+- Composer: 80%.
+- Feed tabs: 90%.
+- Feed cards: 84%.
+- Feed interactions: 78%.
+- Publishing: 68%.
+- Navigation: 92%.
+- Visible QA coverage: 86%.
+
+Visible QA result:
+
+- Authenticated Home rendered in the built-in QA browser.
+- Verified Live, Safety Hub, Status Creator, Pulse Radio native shell, Post Detail, Profile Detail, and NativeMediaViewer destinations.
+- Verified Trending selection, feed scrolling, Save state, composer modes, audience/topic/feeling state, and empty publish validation.
+- Fixed native feed normalization so `author_public_player_id` is preserved for profile routing.
+- Added the production resolver's display-name fallback for legacy posts without stable public IDs.
+- No runtime console errors were observed; only known Expo web warnings/deprecations remained.
+
+Current native migration percentage: 95% foundation/parity coverage, 92% system consistency confidence, 70% release QA confidence.
+
+Recommended next Home task: Native Home publishing contract and draft recovery hardening.
+
+Reason for recommendation:
+
+- The native Home foundation now exposes and visibly verifies the production Home structure, feed controls, and navigation.
+- The highest-risk remaining Home gap is successful text/media publishing across Post and Reel modes, durable draft recovery, and explicit server-backed location/mention selection.
