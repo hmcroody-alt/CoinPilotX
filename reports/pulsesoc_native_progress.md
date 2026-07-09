@@ -4466,3 +4466,49 @@ Reason for recommendation:
 - Home browser blockers are closed.
 - Remaining Home risks are release-readiness validation items: physical-device push taps, background recovery, and broader accessibility scan.
 - This is a narrow QA/hardening pass, not a new feature or polish phase.
+
+## Native Home Release Device Readiness Sweep
+
+Section: Home release readiness.
+
+Completed action:
+
+- Verified the connected iPhone 16 Pro is paired and available through `xcrun devicectl`.
+- Verified `com.pulsesoc.nativeapp` launches on the physical iPhone at process level.
+- Verified the Home deep link payload `pulsesoc://pulse` launches the native app at process level.
+- Audited native Home release contracts for deep linking, push registration, notification response routing, Home refresh, server-authoritative hide/mute, and semantic comment submit.
+- Documented the remaining release-device checks without claiming unobserved physical interaction behavior.
+
+Device evidence:
+
+- Device: P3r7or, iPhone 16 Pro, iOS 18.7.3.
+- App identity: `com.pulsesoc.nativeapp`.
+- `xcrun devicectl device process launch --device 00008140-000E2D9A2EE8801C --terminate-existing com.pulsesoc.nativeapp` returned `Launched application with com.pulsesoc.nativeapp bundle identifier.`
+- `xcrun devicectl device process launch --device 00008140-000E2D9A2EE8801C --terminate-existing --payload-url 'pulsesoc://pulse' com.pulsesoc.nativeapp` also returned `Launched application with com.pulsesoc.nativeapp bundle identifier.`
+
+Current Home status:
+
+- Home foundation: 99%.
+- Home release readiness: 97%.
+- iPhone device readiness: 72%.
+- Push/tap readiness: 55%.
+- Background recovery: 60%.
+- Accessibility readiness: 78%.
+- Visible QA coverage: 95%.
+- Current native migration: 95%.
+- Release QA confidence: 85%.
+
+Can Home be considered release complete: NO.
+
+Reason:
+
+- Physical iPhone launch and Home deep-link dispatch passed at process level.
+- Home is not yet release-complete because manual on-device Home interaction, provider-backed push delivery, notification tap routing, background recovery, and broader Home accessibility still require device evidence.
+
+Recommended next mission: PulseSoc Native Home Manual iPhone Release QA.
+
+Reason for recommendation:
+
+- The app/device path is available.
+- The next useful work is not another Home feature; it is a short manual iPhone pass with screen recording plus provider-backed notification tap checks if credentials/provider access are available.
+- That pass should verify Home scroll, refresh, text publish, media handoff, hide/mute persistence after app restart, comment submit accessibility, foreground/background recovery, and notification tap routing.
