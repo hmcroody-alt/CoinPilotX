@@ -27,6 +27,13 @@ Result: blocked before final visible proof.
 
 The built-in QA browser control channel repeatedly timed out when reading the selected tab or navigating. Because of that, this report does not claim that Roody watched the final text publish proof.
 
+The QA web server log also surfaced Metro dependency-resolution errors during the run:
+
+- `Unable to resolve "expo-modules-core" from "node_modules/expo/src/Expo.ts"`
+- `Unable to resolve "nullthrows" from "node_modules/react-native-web/dist/vendor/react-native/VirtualizedList/index.js"`
+
+Because `npm ci`, TypeScript, and Expo Doctor passed, this is tracked as a web QA runtime blocker that must be resolved or proven transient before the final visible publish proof.
+
 ## Contract Evidence Completed
 
 - Local QA login succeeded.
@@ -56,4 +63,4 @@ The built-in QA browser control channel repeatedly timed out when reading the se
 
 ## Conclusion
 
-The Home publishing contract is structurally and backend-contract verified, but the Home foundation cannot be marked complete until visible browser publish proof succeeds.
+The Home publishing contract is structurally and backend-contract verified, but the Home foundation cannot be marked complete until visible browser publish proof succeeds and the QA web runtime blocker is resolved or proven transient.

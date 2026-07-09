@@ -28,6 +28,13 @@ No QA credentials were committed or written into reports.
 
 The built-in QA browser was opened visibly and the browser skill was used. The browser-control channel then timed out repeatedly when reading the selected tab or navigating, so the final visible publish walkthrough could not be completed honestly in this pass.
 
+After shutting down the QA web server, Metro also surfaced dependency-resolution errors during the attempted web run:
+
+- `Unable to resolve "expo-modules-core" from "node_modules/expo/src/Expo.ts"`
+- `Unable to resolve "nullthrows" from "node_modules/react-native-web/dist/vendor/react-native/VirtualizedList/index.js"`
+
+Static package install, TypeScript, and Expo Doctor still passed, so this is tracked as a QA-browser/web bundling blocker rather than a Home publishing contract failure.
+
 Already visible from the prior Home walkthrough:
 
 - Authenticated Home.
@@ -93,6 +100,7 @@ The Home foundation is not yet complete because the final visible end-to-end pub
 Native Home visible browser publish proof recovery:
 
 - Stabilize the in-app browser control path.
+- Resolve the QA web bundling/runtime dependency issue if it reproduces.
 - Open authenticated Home.
 - Type a post visibly.
 - Reload and prove draft recovery.
