@@ -4512,3 +4512,43 @@ Reason for recommendation:
 - The app/device path is available.
 - The next useful work is not another Home feature; it is a short manual iPhone pass with screen recording plus provider-backed notification tap checks if credentials/provider access are available.
 - That pass should verify Home scroll, refresh, text publish, media handoff, hide/mute persistence after app restart, comment submit accessibility, foreground/background recovery, and notification tap routing.
+
+## Native Home Manual iPhone Release QA
+
+Section: Home release readiness.
+
+Completed action:
+
+- Attempted the manual iPhone Home release QA path using the connected iPhone 16 Pro.
+- Verified the device display is active and portrait through `xcrun devicectl device info displays`.
+- Verified `com.pulsesoc.nativeapp` launches through `pulsesoc://pulse`.
+- Verified `PulseSocNative.app/PulseSocNative` appears in the physical iPhone process list.
+- Verified process-level suspend/resume on the active native app PID.
+- Attempted physical screenshot capture with `idevicescreenshot`; the service failed with `Could not start screenshotr service: Invalid service`.
+- Documented that no human-operated screen recording, QuickTime capture, screenshots, or provider-backed push/tap evidence was produced.
+
+Current Home status:
+
+- Home foundation: 99%.
+- Home release readiness: 97%.
+- iPhone manual QA: 42%.
+- Push/tap readiness: 55%.
+- Background recovery: 66%.
+- Accessibility readiness: 78%.
+- Release QA confidence: 85%.
+
+Can Home be considered release complete: NO.
+
+Reason:
+
+- Home remains foundation-complete.
+- Launch, Home deep-link dispatch, running process presence, and process-level background/foreground recovery are verified on the physical iPhone.
+- manual iPhone interaction and push/tap behavior remain unproven because no screen recording, screenshots, human tap-through, or provider-backed notification tap evidence was captured.
+
+Recommended next mission: PulseSoc Native Home Manual Screen Recording And Push Tap Proof.
+
+Reason for recommendation:
+
+- No new Home feature is needed.
+- The only Home release blockers are evidence blockers: a human-captured iPhone Home interaction pass and provider-backed notification tap proof.
+- The next pass should produce a video/screenshot path plus any backend IDs for publish/comment/activity events that happen during the run.
