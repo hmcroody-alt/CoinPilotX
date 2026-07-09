@@ -14,7 +14,7 @@ import {
 import { listStatuses, loadCachedStatuses, PulseStatus } from "../api/status";
 import { HomePulseComposer } from "../components/HomePulseComposer";
 import { PostCard } from "../components/PostCard";
-import { registerSyncInvalidation } from "../core/eventSync";
+import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { openDashboardRoute } from "../navigation/dashboardRouting";
 import { AppTabParamList, RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -255,6 +255,15 @@ export function HomeScreen() {
             }}
             onCreated={(post) => {
               if (post) setPosts((current) => [post, ...current.filter((item) => item.id !== post.id)]);
+              invalidateNativeSync(["activity", "notifications"], "home_publish", [
+                {
+                  event_type: "post_published",
+                  entity_type: "post",
+                  entity_id: post?.id || post?.post_id || "pending",
+                  invalidates: ["activity", "notifications"],
+                  metadata: { source: "native_home_composer" }
+                }
+              ]).catch(() => undefined);
               load("refresh").catch(() => undefined);
             }}
             onOpenMusic={() => openDashboardRoute(navigation, "/dashboard/media/music-library")}

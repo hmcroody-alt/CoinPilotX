@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { createPost, PulsePost } from "../api/feed";
 import { MediaUploadPreview } from "../media/MediaUploadPreview";
-import { uploadResultMediaId } from "../media/nativeMediaUpload";
+import { NativeMediaAsset, NativeMediaUploadResult, uploadResultMediaId } from "../media/nativeMediaUpload";
 import { useNativeMediaUpload } from "../media/useNativeMediaUpload";
 import { colors } from "../theme/colors";
 
@@ -17,6 +18,7 @@ type Props = {
 };
 
 const MAX_BODY = 3000;
+const DRAFT_KEY = "pulsesoc.native.home.composer.draft.v1";
 const MODES: Array<{ key: ComposerMode; label: string; note: string }> = [
   { key: "post", label: "Post", note: "Publish a PulseSoc feed signal." },
   { key: "reel", label: "Reel", note: "Attach a video or use Camera Studio for the native Reel path." },
@@ -24,6 +26,18 @@ const MODES: Array<{ key: ComposerMode; label: string; note: string }> = [
 ];
 const VISIBILITY: Visibility[] = ["public", "followers", "private"];
 const FEELINGS = ["Curious", "Focused", "Bullish", "Creative"];
+
+type HomeComposerDraft = {
+  body: string;
+  mode: ComposerMode;
+  visibility: Visibility;
+  topic: string;
+  feeling: string;
+  savedAt: string;
+  mediaAsset?: NativeMediaAsset | null;
+  mediaResult?: NativeMediaUploadResult | null;
+  uploadStage?: string;
+};
 
 export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenMusic }: Props) {
   const [mode, setMode] = useState<ComposerMode>("post");
@@ -34,9 +48,68 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
   const [note, setNote] = useState("Ready to publish.");
   const [error, setError] = useState("");
   const [publishing, setPublishing] = useState(false);
+  const [lastFailedPayload, setLastFailedPayload] = useState<ReturnType<typeof buildCreatePayload> | null>(null);
+  const [restoredMediaResult, setRestoredMediaResult] = useState<NativeMediaUploadResult | null>(null);
+  const [draftRecovered, setDraftRecovered] = useState(false);
+  const mountedRef = useRef(false);
+  const skipNextPersistRef = useRef(false);
   const media = useNativeMediaUpload({ contextType: "pulse_post", target: "feed", destination: "feed", mode: "post" });
   const characters = body.length;
   const selectedMode = useMemo(() => MODES.find((item) => item.key === mode) || MODES[0], [mode]);
+  const hasDraft = Boolean(body.trim() || topic || feeling || media.asset || media.result || restoredMediaResult);
+
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem(DRAFT_KEY)
+      .then((raw) => {
+        if (!active || !raw) return;
+        const draft = normalizeDraft(JSON.parse(raw) as HomeComposerDraft);
+        if (!draft) return;
+        setBody(draft.body);
+        setMode(draft.mode);
+        setVisibility(draft.visibility);
+        setTopic(draft.topic);
+        setFeeling(draft.feeling);
+        if (draft.mediaAsset) media.setAsset(draft.mediaAsset);
+        if (draft.mediaResult) setRestoredMediaResult(draft.mediaResult);
+        setDraftRecovered(true);
+        setNote(draft.mediaResult ? "Draft recovered with uploaded media ready." : "Draft recovered locally.");
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        mountedRef.current = true;
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!mountedRef.current) return;
+    if (skipNextPersistRef.current) {
+      skipNextPersistRef.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (!hasDraft) {
+        AsyncStorage.removeItem(DRAFT_KEY).catch(() => undefined);
+        return;
+      }
+      const draft: HomeComposerDraft = {
+        body,
+        mode,
+        visibility,
+        topic,
+        feeling,
+        savedAt: new Date().toISOString(),
+        mediaAsset: media.asset,
+        mediaResult: media.result || restoredMediaResult,
+        uploadStage: media.progress.stage
+      };
+      AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(draft)).catch(() => undefined);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [body, feeling, hasDraft, media.asset, media.progress.stage, media.result, mode, restoredMediaResult, topic, visibility]);
 
   async function handlePublish() {
     if (mode === "live") {
@@ -45,35 +118,50 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
       return;
     }
     const cleanBody = body.trim();
-    if (!cleanBody && !media.asset && !media.result) {
+    if (!cleanBody && !media.asset && !media.result && !restoredMediaResult) {
       setError("Add text or media before publishing.");
       setNote("Composer validation blocked an empty signal.");
+      return;
+    }
+    if (media.uploading) {
+      setError("Wait for the current media upload or cancel it before publishing.");
+      setNote("Upload queue is active. PulseSoc will publish after media is ready.");
       return;
     }
     setPublishing(true);
     setError("");
     setNote("Publishing through PulseSoc backend.");
     try {
-      const uploaded = media.result || (media.asset ? await media.upload({ mode: mode === "reel" ? "reel" : media.asset.mediaType, destination: "feed" }) : null);
+      const uploaded = media.result || restoredMediaResult || (media.asset ? await media.upload({ mode: mode === "reel" ? "reel" : media.asset.mediaType, destination: "feed" }) : null);
       const mediaId = uploaded ? uploadResultMediaId(uploaded) : 0;
-      const postType = mediaId ? (media.asset?.mediaType === "video" || mode === "reel" ? "video" : "image") : "text";
+      const restoredMediaType = restoredMediaKind(restoredMediaResult);
+      const postType = mediaId ? (media.asset?.mediaType === "video" || restoredMediaType === "video" || mode === "reel" ? "video" : "image") : "text";
       if (mode === "reel" && postType !== "video") {
         setError("Attach video or open Camera Studio to create a Reel.");
         setNote("Reel publishing needs video media from the existing media pipeline.");
         return;
       }
       const tags = [topic].filter(Boolean);
-      const response = await createPost({
+      const payload = buildCreatePayload({
         body: [cleanBody, feeling ? `Feeling: ${feeling}` : ""].filter(Boolean).join("\n\n"),
         post_type: postType,
         visibility,
         media_ids: mediaId ? [mediaId] : [],
         tags
       });
+      setLastFailedPayload(payload);
+      const response = await createPost(payload);
       setBody("");
       setTopic("");
       setFeeling("");
+      setMode("post");
+      setVisibility("public");
+      setRestoredMediaResult(null);
       media.reset();
+      skipNextPersistRef.current = true;
+      await AsyncStorage.removeItem(DRAFT_KEY).catch(() => undefined);
+      setDraftRecovered(false);
+      setLastFailedPayload(null);
       setNote(response.post_id ? "Published. Refreshing Home." : response.message || "Published.");
       onCreated(response.post);
     } catch (publishError) {
@@ -83,6 +171,51 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
     } finally {
       setPublishing(false);
     }
+  }
+
+  async function retryLastPublish() {
+    if (!lastFailedPayload || publishing) return;
+    setPublishing(true);
+    setError("");
+    setNote("Retrying the last server-authoritative publish request.");
+    try {
+      const response = await createPost(lastFailedPayload);
+      setBody("");
+      setTopic("");
+      setFeeling("");
+      setMode("post");
+      setVisibility("public");
+      setRestoredMediaResult(null);
+      media.reset();
+      skipNextPersistRef.current = true;
+      await AsyncStorage.removeItem(DRAFT_KEY).catch(() => undefined);
+      setDraftRecovered(false);
+      setLastFailedPayload(null);
+      setNote(response.post_id ? "Published after retry. Refreshing Home." : response.message || "Published after retry.");
+      onCreated(response.post);
+    } catch (retryError) {
+      const message = retryError instanceof Error ? retryError.message : "Retry failed.";
+      setError(message);
+      setNote("Retry failed. Draft remains saved for recovery.");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function clearDraft() {
+    setBody("");
+    setTopic("");
+    setFeeling("");
+    setMode("post");
+    setVisibility("public");
+    setRestoredMediaResult(null);
+    setLastFailedPayload(null);
+    media.reset();
+    skipNextPersistRef.current = true;
+    await AsyncStorage.removeItem(DRAFT_KEY).catch(() => undefined);
+    setDraftRecovered(false);
+    setError("");
+    setNote("Draft cleared.");
   }
 
   function cycleVisibility() {
@@ -102,6 +235,9 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
     setMode(nextMode);
     setError("");
     setNote(MODES.find((item) => item.key === nextMode)?.note || "Ready to publish.");
+    if (nextMode === "reel" && media.asset?.mediaType !== "video") {
+      setNote("Reel mode requires video media. Use Video or Reel Camera for backend-safe creation.");
+    }
   }
 
   return (
@@ -164,10 +300,29 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
           onRetry={media.retry}
         />
       ) : null}
+      {restoredMediaResult && !media.result ? (
+        <View style={styles.restoredPanel}>
+          <Text style={styles.restoredTitle}>Uploaded media restored</Text>
+          <Text style={styles.restoredText}>Server media #{uploadResultMediaId(restoredMediaResult)} will be reused unless you choose new media.</Text>
+        </View>
+      ) : null}
+      {draftRecovered ? (
+        <View style={styles.draftPanel}>
+          <Text style={styles.draftText}>Recovered saved draft.</Text>
+          <Pressable style={styles.draftButton} onPress={() => clearDraft().catch(() => undefined)}>
+            <Text style={styles.draftButtonText}>Clear Draft</Text>
+          </Pressable>
+        </View>
+      ) : null}
       <View style={styles.statusPanel}>
         <Text style={styles.statusTitle}>{error || selectedMode.note}</Text>
         <Text style={[styles.statusText, error ? styles.errorText : undefined]}>{error || note}</Text>
       </View>
+      {lastFailedPayload ? (
+        <Pressable style={styles.retryButton} disabled={publishing} onPress={() => retryLastPublish().catch(() => undefined)}>
+          <Text style={styles.retryText}>{publishing ? "Retrying..." : "Retry Last Publish"}</Text>
+        </Pressable>
+      ) : null}
       <Pressable style={[styles.publishButton, publishing && styles.publishButtonDisabled]} disabled={publishing} onPress={handlePublish}>
         <Text style={styles.publishText}>{publishing ? "Publishing..." : mode === "live" ? "Open Live Studio" : "Publish Signal"}</Text>
       </Pressable>
@@ -184,6 +339,40 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
       </View>
     </View>
   );
+}
+
+function buildCreatePayload(payload: {
+  body: string;
+  post_type: string;
+  visibility: Visibility;
+  media_ids: number[];
+  tags: string[];
+}) {
+  return payload;
+}
+
+function normalizeDraft(raw: HomeComposerDraft) {
+  if (!raw || typeof raw !== "object") return null;
+  const mode = ["post", "reel", "live"].includes(raw.mode) ? raw.mode : "post";
+  const visibility = VISIBILITY.includes(raw.visibility) ? raw.visibility : "public";
+  return {
+    body: String(raw.body || "").slice(0, MAX_BODY),
+    mode,
+    visibility,
+    topic: String(raw.topic || "").slice(0, 40),
+    feeling: String(raw.feeling || "").slice(0, 40),
+    savedAt: String(raw.savedAt || ""),
+    mediaAsset: raw.mediaAsset?.uri ? raw.mediaAsset : null,
+    mediaResult: uploadResultMediaId(raw.mediaResult || {}) ? raw.mediaResult : null,
+    uploadStage: String(raw.uploadStage || "idle")
+  } satisfies HomeComposerDraft;
+}
+
+function restoredMediaKind(result: NativeMediaUploadResult | null) {
+  const type = String(result?.media?.media_type || result?.media?.type || result?.media?.mime_type || "").toLowerCase();
+  if (type.includes("video") || String(result?.playback_url || result?.media_url || "").match(/\.(mp4|mov|m3u8|webm)(\?|$)/i)) return "video";
+  if (type.includes("image")) return "image";
+  return "";
 }
 
 function ComposerAction({ label, icon, onPress }: { label: string; icon: string; onPress: () => void }) {
@@ -240,6 +429,35 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: colors.danger
+  },
+  draftButton: {
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8
+  },
+  draftButtonText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "900"
+  },
+  draftPanel: {
+    alignItems: "center",
+    backgroundColor: "rgba(37, 208, 167, 0.08)",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 12,
+    padding: 10
+  },
+  draftText: {
+    color: colors.accent,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "900"
   },
   headerRow: {
     alignItems: "center",
@@ -324,6 +542,39 @@ const styles = StyleSheet.create({
   publishText: {
     color: colors.background,
     fontSize: 18,
+    fontWeight: "900"
+  },
+  restoredPanel: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 4,
+    marginTop: 12,
+    padding: 10
+  },
+  restoredText: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17
+  },
+  restoredTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  retryButton: {
+    alignItems: "center",
+    borderColor: colors.danger,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 12,
+    minHeight: 42,
+    justifyContent: "center"
+  },
+  retryText: {
+    color: colors.text,
+    fontSize: 14,
     fontWeight: "900"
   },
   routeButton: {

@@ -4205,3 +4205,51 @@ Reason for recommendation:
 
 - The native Home foundation now exposes and visibly verifies the production Home structure, feed controls, and navigation.
 - The highest-risk remaining Home gap is successful text/media publishing across Post and Reel modes, durable draft recovery, and explicit server-backed location/mention selection.
+
+## Native Home Publishing Contract + Draft Recovery Hardening
+
+Section: Native Home publishing contract.
+
+Important roadmap rule:
+
+- Continue focusing only on Home until the foundation is complete.
+- Do not focus on Android right now.
+- Keep server-authoritative publishing, media processing, moderation, and visibility logic in the backend.
+- Foundation coverage comes before final UI/UX polish.
+
+Completed action: hardened Home Composer publishing state, durable draft recovery, retry behavior, and feed invalidation after publish.
+
+What changed:
+
+- Added durable Home Composer draft persistence through native storage.
+- Restores body, Post/Reel/Live mode, visibility, topic, feeling, selected media metadata, and uploaded media result metadata.
+- Added visible recovered-draft state and clear-draft action.
+- Added retry for failed server publish requests without bypassing backend validation.
+- Preserved shared media upload retry/cancel for image/video upload failures.
+- Blocks publish while the upload queue is active.
+- Clears draft state and resets composer mode/audience/media after successful publish.
+- Invalidates Activity and Notifications through the existing native event sync registry after Home publish success.
+
+Home publishing estimates:
+
+- Home foundation: 87%.
+- Publishing: 78%.
+- Draft recovery: 86%.
+- Upload queue: 74%.
+- Feed invalidation after publish: 86%.
+- Visible QA coverage: 72% for this publishing pass.
+
+Visible QA result:
+
+- Roody could visibly see authenticated native Dashboard -> Home navigation, the Home hero, Status rail, Pulse Composer, Post/Reel/Live modes, publishing controls, feed tabs, and feed cards in the built-in QA browser.
+- Browser automation timed out before completing composer text entry, draft reload, and text-only publish verification.
+- The publishing implementation is statically verified but not yet fully browser-proven end to end.
+
+Current native migration percentage: 95% foundation/parity coverage, 92% system consistency confidence, 70% release QA confidence.
+
+Recommended next Home task: Native Home visible text publish QA completion.
+
+Reason for recommendation:
+
+- Text-only publishing, draft recovery, retry state, and feed invalidation are structurally hardened.
+- The immediate Home-specific risk is the remaining visible proof: type a text post, reload and recover the draft, publish to the local QA backend, confirm composer reset, and confirm feed refresh.

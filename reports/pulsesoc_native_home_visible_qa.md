@@ -106,3 +106,37 @@ Roody should see these Home sections in the built-in QA browser:
 - A local QA account/session was used without committing or displaying credentials.
 - Browser-visible QA coverage for the Phase 1 Home foundation is estimated at 86%.
 - Simulator/physical-device verification remains separate and is not implied by this report.
+
+## Home Publishing Contract Visible QA
+
+Scope: Home publishing contract, draft recovery, retry/failure state, and feed invalidation after publish.
+
+Expected visible checks:
+
+- Home Composer renders on authenticated Home.
+- Empty Publish Signal shows validation without calling server publish.
+- Typed text draft auto-saves.
+- Draft recovery restores saved text and composer state after reload.
+- Browser reload/session return restores the saved draft.
+- Clear Draft removes recovered local state.
+- Text-only Publish Signal uses the existing `/api/pulse/posts` backend contract.
+- Successful publish clears composer state and refreshes the Home feed.
+- Failed publish keeps the draft and exposes retry state.
+- Reel mode routes through video-only publishing or existing Camera Studio handoff.
+- Live mode opens the existing Live Studio/Live route handoff.
+
+Result: partial visible QA completed.
+
+Verified visibly:
+
+- Built-in QA browser was opened visibly on `http://localhost:8094`.
+- Native Login screen rendered and accepted a local-only QA account without exposing credentials in reports or committed files.
+- Native Dashboard rendered after sign-in.
+- Native Dashboard -> Home UI navigation opened authenticated Home without direct route-only checking.
+- Home showed the Pulse Network hero, Status rail, Pulse Composer, Post/Reel/Live modes, publishing controls, feed tabs, and feed cards.
+
+Blocked in this pass:
+
+- Browser automation timed out while continuing composer interaction, so typed draft recovery, empty publish click validation, text-only publish, success reset, and visible feed refresh after publish remain unverified in the built-in QA browser.
+- The static audit still verifies the implementation hooks for draft storage, upload queue metadata, retry, reset-after-success, and feed invalidation.
+- A follow-up visible QA pass should focus only on typing into the composer, reloading to prove recovered draft state, publishing a local text-only post, and confirming feed refresh.
