@@ -140,3 +140,57 @@ Blocked in this pass:
 - Browser automation timed out while continuing composer interaction, so typed draft recovery, empty publish click validation, text-only publish, success reset, and visible feed refresh after publish remain unverified in the built-in QA browser.
 - The static audit still verifies the implementation hooks for draft storage, upload queue metadata, retry, reset-after-success, and feed invalidation.
 - A follow-up visible QA pass should focus only on typing into the composer, reloading to prove recovered draft state, publishing a local text-only post, and confirming feed refresh.
+
+## Home Feed Interaction + Media Handoff Visible QA
+
+Date: 2026-07-09
+
+Scope: Home feed interactions and media handoffs only. No new Home product features or final UI polish were added.
+
+Visible runtime:
+
+- Built-in QA browser was used visibly.
+- App URL: `http://127.0.0.1:8094`.
+- API proxy: `http://127.0.0.1:5108`.
+- Disposable local backend: `http://127.0.0.1:5107`.
+- Runtime-only local QA account was used; no password was committed or written into reports.
+
+Roody visibly watched:
+
+- Authenticated Home with Pulse Network hero, Status rail, Composer, feed tabs, and seeded feed cards.
+- `Home Feed Interaction QA` text card for feed actions.
+- `Home Media Handoff QA` image card opening `NativeMediaViewer`.
+- `Home Broken Media QA` broken media card opening/closing `NativeMediaViewer` without crashing the feed.
+- Like changing to `fire 1`.
+- Save changing to `Saved`.
+- Repost changing to `Reposted`.
+- Comment routing to `/pulse/post/1?title=Comments`.
+- Card-level Post Detail routing to `/pulse/post/1?title=Post`.
+- Profile/Follow routing to `/pulse/profile/homefeedqa?title=Home%20Feed%20QA`.
+- Share no-crash behavior in web QA.
+- Report routing to `/pulse/safety/reports?title=Report`.
+- Block routing to `/pulse/safety/blocks?title=Blocked%20Users`.
+- Mute routing to `/pulse/safety/mutes?title=Muted%20Users`.
+- Hide removing the selected local card while preserving the rest of the feed.
+- Refresh restoring server-authoritative feed state.
+- Add Status routing to `/pulse/status?openCreator=true`.
+- Reels routing to `/pulse/reels`.
+
+Scoped issue found and fixed:
+
+- Visible QA exposed React web nested-button warnings after feed-card QA selectors were added. The outer feed card button role was removed while keeping child action buttons and test selectors intact. The current DOM no longer contains nested `button button` elements.
+
+Known non-blocking warnings:
+
+- Expo web push-token listener limitation.
+- Browser Badging API unavailable.
+- `expo-av` deprecation warning.
+- Web animation/native-driver fallback warnings.
+- React Native Web style deprecation warnings.
+
+Known remaining Home release QA gaps:
+
+- Reply remains a Post Detail/comment flow, not a direct Home-card action.
+- Follow from Home currently routes to Profile; follow mutation should be handled in the dedicated profile/network flow unless backend support is added to the Home card later.
+- Browser share was proven safe/no-crash; native provider share sheets still require device QA.
+- Physical camera/gallery/media capture and large upload behavior remain device-release QA items.

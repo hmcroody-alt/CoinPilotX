@@ -113,7 +113,7 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
 
   return (
     <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
-      <View style={styles.root}>
+      <View style={styles.root} testID="native-media-viewer" accessibilityLabel="Native media viewer">
         <PanGestureHandler
           onGestureEvent={panEvent}
           onHandlerStateChange={(event) => {
@@ -170,7 +170,7 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
         ) : null}
 
         <View style={styles.topBar}>
-          <Pressable style={styles.closeButton} onPress={onClose}>
+          <Pressable testID="native-media-viewer-close" accessibilityRole="button" accessibilityLabel="Close media viewer" style={styles.closeButton} onPress={onClose}>
             <Text style={styles.closeText}>Close</Text>
           </Pressable>
           <View style={styles.titleWrap}>
@@ -190,10 +190,10 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
             </Pressable>
           ) : null}
           <View style={styles.actions}>
-            <Pressable style={[styles.actionButton, !canGoPrevious && styles.disabled]} disabled={!canGoPrevious} onPress={() => setIndex((current) => Math.max(0, current - 1))}>
+            <Pressable testID="native-media-viewer-prev" accessibilityRole="button" accessibilityLabel="Previous media" style={[styles.actionButton, !canGoPrevious && styles.disabled]} disabled={!canGoPrevious} onPress={() => setIndex((current) => Math.max(0, current - 1))}>
               <Text style={styles.actionText}>Prev</Text>
             </Pressable>
-            <Pressable style={[styles.actionButton, !canGoNext && styles.disabled]} disabled={!canGoNext} onPress={() => setIndex((current) => Math.min(items.length - 1, current + 1))}>
+            <Pressable testID="native-media-viewer-next" accessibilityRole="button" accessibilityLabel="Next media" style={[styles.actionButton, !canGoNext && styles.disabled]} disabled={!canGoNext} onPress={() => setIndex((current) => Math.min(items.length - 1, current + 1))}>
               <Text style={styles.actionText}>Next</Text>
             </Pressable>
             {onSave ? (
@@ -201,7 +201,7 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
                 <Text style={styles.actionText}>Save</Text>
               </Pressable>
             ) : null}
-            <Pressable style={styles.actionButton} onPress={shareItem}>
+            <Pressable testID="native-media-viewer-share" accessibilityRole="button" accessibilityLabel="Share media" style={styles.actionButton} onPress={shareItem}>
               <Text style={styles.actionText}>Share</Text>
             </Pressable>
           </View>

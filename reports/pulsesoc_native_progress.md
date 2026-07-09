@@ -2,35 +2,38 @@
 
 Date: 2026-07-09
 
-## Latest Mission Status: Native Home Visible Publish Proof Completion
+## Latest Mission Status: Native Home Feed Interaction + Media Handoff QA
 
 - Home foundation: 96%.
-- Publishing: 96%.
-- Draft recovery: 96%.
-- Upload queue: 86%.
-- Feed consistency: 94%.
-- Visible QA: 94%.
+- Feed interactions: 91%.
+- Media handoff: 88%.
+- Visible QA: 92%.
 - Current native migration: 91%.
-- Release QA confidence: 80%.
-- Can Home foundation be considered complete: YES.
+- Release QA confidence: 81%.
+- Can Home remain foundation-complete: YES.
 
 Completed this mission:
 
 - Authenticated native Home was opened in the built-in QA browser at `127.0.0.1:8094` through the local QA API proxy.
-- Roody visibly watched the Home composer validate an empty publish, accept a real text draft, update the character counter, restore the draft after reload, publish successfully, reset the composer, clear the draft, refresh the feed, and avoid duplicate posts after reload.
-- Backend verification confirmed exactly one matching `pulse_posts` row and feed API visibility for the published text post.
-- The Home publish path now emits a cursor-visible owner-scoped `pulse_post_created` sync event through the existing notification-backed `/api/pulse/sync/events` pipeline.
+- Roody visibly watched seeded Home feed cards for interaction, image media, and broken media behavior.
+- Like, Save, Repost, Share no-crash, Comment/Post Detail routing, Profile/Follow routing, Report, Hide, Block, and Mute were exercised from Home feed cards.
+- Image media opened the shared `NativeMediaViewer`; broken media opened and closed the same viewer layer without crashing Home.
+- Add Status and Reels routing were checked from Home.
+- Server-side disposable backend evidence confirmed reaction, save, saved-item, repost live-event, and feed media payload rows.
+- Added stable QA selectors to Home feed actions/media thumbnails and `NativeMediaViewer` controls.
+- Fixed a visible web QA issue where the outer feed card role caused nested-button warnings on web; child action buttons remain accessible and scoped.
 - No QA credentials were committed or written into reports.
 
 Known remaining Home gaps:
 
-- Activity/Notifications invalidation is cursor/audit verified but still needs visible Activity screen proof after publish.
-- Synthetic server retry and offline/reconnect recovery were not forced visibly in this pass.
-- Physical media capture, microphone/camera permissions, gallery picker, and large video upload remain device-release QA items.
+- Reply remains inside Post Detail/comment flow, not as a direct Home-card action.
+- Follow from Home currently routes to Profile; it is not a Home-card follow mutation proof.
+- Browser share was proven safe/no-crash, but native provider share sheets remain device-release QA.
+- Physical media capture, microphone/camera permissions, gallery picker, native share sheets, and large video upload remain device-release QA items.
 
 ONE next Home mission ONLY:
 
-Native Home feed interaction and media handoff QA. Verify Home feed card actions, visible Activity refresh after publish, and Photo/Video handoff fallback states while staying foundation-first and avoiding final UI polish.
+Native Home Activity/Notification invalidation visible QA. Prove a Home publish or feed action refreshes Activity/Notifications visibly through the existing event sync path, without adding new Home features or starting UI polish.
 
 ## Current Native State
 

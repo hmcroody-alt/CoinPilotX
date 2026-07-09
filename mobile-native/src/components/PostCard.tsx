@@ -53,11 +53,15 @@ export function PostCard({
 
   return (
     <Pressable
+      testID={`home-feed-post-${post.id}`}
       style={({ pressed }) => [styles.card, pressed && onOpen ? styles.cardPressed : undefined]}
       onPress={() => onOpen?.(post)}
       disabled={!onOpen}
     >
       <Pressable
+        testID={`home-feed-author-${post.id}`}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${displayName} profile`}
         style={styles.authorRow}
         onPress={(event) => {
           event.stopPropagation();
@@ -91,6 +95,9 @@ export function PostCard({
         {REACTIONS.map((reaction) => (
           <Pressable
             key={reaction}
+            testID={`home-feed-reaction-${reaction}-${post.id}`}
+            accessibilityRole="button"
+            accessibilityLabel={`React ${reaction} to post ${post.id}`}
             style={[styles.actionButton, post.viewer_reaction === reaction ? styles.actionButtonActive : undefined]}
             disabled={busy}
             onPress={() => onReact?.(post, reaction)}
@@ -104,22 +111,56 @@ export function PostCard({
 
       <View style={styles.utilityRow}>
         {onComment ? (
-          <Pressable style={styles.utilityButton} disabled={busy} onPress={() => onComment(post)}>
+          <Pressable
+            testID={`home-feed-comment-${post.id}`}
+            accessibilityRole="button"
+            accessibilityLabel={`Open comments for post ${post.id}`}
+            style={styles.utilityButton}
+            disabled={busy}
+            onPress={() => onComment(post)}
+          >
             <Text style={styles.utilityText}>Comment</Text>
           </Pressable>
         ) : null}
-        <Pressable style={styles.utilityButton} disabled={busy} onPress={() => onSave?.(post)}>
+        <Pressable
+          testID={`home-feed-save-${post.id}`}
+          accessibilityRole="button"
+          accessibilityLabel={`${post.saved ? "Saved" : "Save"} post ${post.id}`}
+          style={styles.utilityButton}
+          disabled={busy}
+          onPress={() => onSave?.(post)}
+        >
           <Text style={styles.utilityText}>{post.saved ? "Saved" : "Save"}</Text>
         </Pressable>
-        <Pressable style={styles.utilityButton} disabled={busy} onPress={() => onRepost?.(post)}>
+        <Pressable
+          testID={`home-feed-repost-${post.id}`}
+          accessibilityRole="button"
+          accessibilityLabel={`${post.reposted ? "Reposted" : "Repost"} post ${post.id}`}
+          style={styles.utilityButton}
+          disabled={busy}
+          onPress={() => onRepost?.(post)}
+        >
           <Text style={styles.utilityText}>{post.reposted ? "Reposted" : "Repost"}</Text>
         </Pressable>
         {onPromote ? (
-          <Pressable style={styles.utilityButton} disabled={busy} onPress={() => onPromote(post)}>
+          <Pressable
+            testID={`home-feed-promote-${post.id}`}
+            accessibilityRole="button"
+            accessibilityLabel={`Promote post ${post.id}`}
+            style={styles.utilityButton}
+            disabled={busy}
+            onPress={() => onPromote(post)}
+          >
             <Text style={styles.utilityText}>Promote</Text>
           </Pressable>
         ) : null}
-        <Pressable style={styles.utilityButton} onPress={() => (onShare ? onShare(post) : Share.share({ message: pulsePostUrl(post.id) }))}>
+        <Pressable
+          testID={`home-feed-share-${post.id}`}
+          accessibilityRole="button"
+          accessibilityLabel={`Share post ${post.id}`}
+          style={styles.utilityButton}
+          onPress={() => (onShare ? onShare(post) : Share.share({ message: pulsePostUrl(post.id) }))}
+        >
           <Text style={styles.utilityText}>Share</Text>
         </Pressable>
       </View>
@@ -127,27 +168,62 @@ export function PostCard({
       {onFollow || onReport || onHide || onBlock || onMute ? (
         <View style={styles.safetyRow}>
           {onFollow ? (
-            <Pressable style={styles.safetyButton} disabled={busy} onPress={() => onFollow(post)}>
+            <Pressable
+              testID={`home-feed-follow-${post.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Follow ${displayName}`}
+              style={styles.safetyButton}
+              disabled={busy}
+              onPress={() => onFollow(post)}
+            >
               <Text style={styles.safetyText}>Follow</Text>
             </Pressable>
           ) : null}
           {onReport ? (
-            <Pressable style={styles.safetyButton} disabled={busy} onPress={() => onReport(post)}>
+            <Pressable
+              testID={`home-feed-report-${post.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Report post ${post.id}`}
+              style={styles.safetyButton}
+              disabled={busy}
+              onPress={() => onReport(post)}
+            >
               <Text style={styles.safetyText}>Report</Text>
             </Pressable>
           ) : null}
           {onHide ? (
-            <Pressable style={styles.safetyButton} disabled={busy} onPress={() => onHide(post)}>
+            <Pressable
+              testID={`home-feed-hide-${post.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Hide post ${post.id}`}
+              style={styles.safetyButton}
+              disabled={busy}
+              onPress={() => onHide(post)}
+            >
               <Text style={styles.safetyText}>Hide</Text>
             </Pressable>
           ) : null}
           {onBlock ? (
-            <Pressable style={styles.safetyButton} disabled={busy} onPress={() => onBlock(post)}>
+            <Pressable
+              testID={`home-feed-block-${post.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Block ${displayName}`}
+              style={styles.safetyButton}
+              disabled={busy}
+              onPress={() => onBlock(post)}
+            >
               <Text style={styles.safetyText}>Block</Text>
             </Pressable>
           ) : null}
           {onMute ? (
-            <Pressable style={styles.safetyButton} disabled={busy} onPress={() => onMute(post)}>
+            <Pressable
+              testID={`home-feed-mute-${post.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Mute ${displayName}`}
+              style={styles.safetyButton}
+              disabled={busy}
+              onPress={() => onMute(post)}
+            >
               <Text style={styles.safetyText}>Mute</Text>
             </Pressable>
           ) : null}
@@ -194,7 +270,7 @@ function MediaStrip({ post }: { post: PulsePost }) {
             <Pressable key={`${url}-${index}`} onPress={(event) => {
               event.stopPropagation();
               setViewerIndex(index);
-            }}>
+            }} testID={`home-feed-media-${post.id}-${index}`} accessibilityRole="button" accessibilityLabel={`Open media ${index + 1} for post ${post.id}`}>
               <Image source={{ uri: url }} style={styles.mediaImage} resizeMode="cover" />
             </Pressable>
           );
@@ -203,7 +279,7 @@ function MediaStrip({ post }: { post: PulsePost }) {
           <Pressable key={`${url}-${index}`} style={styles.mediaFallback} onPress={(event) => {
             event.stopPropagation();
             setViewerIndex(index);
-          }}>
+          }} testID={`home-feed-media-${post.id}-${index}`} accessibilityRole="button" accessibilityLabel={`Open ${kind} media ${index + 1} for post ${post.id}`}>
             <Text style={styles.mediaFallbackTitle}>{kind === "video" ? "Video" : "Attachment"}</Text>
             <Text style={styles.mediaFallbackText}>Open viewer</Text>
           </Pressable>
