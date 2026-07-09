@@ -1,6 +1,36 @@
 # PulseSoc Native Migration Progress
 
-Date: 2026-07-04
+Date: 2026-07-09
+
+## Latest Mission Status: Native Home Visible Publish Proof Completion
+
+- Home foundation: 96%.
+- Publishing: 96%.
+- Draft recovery: 96%.
+- Upload queue: 86%.
+- Feed consistency: 94%.
+- Visible QA: 94%.
+- Current native migration: 91%.
+- Release QA confidence: 80%.
+- Can Home foundation be considered complete: YES.
+
+Completed this mission:
+
+- Authenticated native Home was opened in the built-in QA browser at `127.0.0.1:8094` through the local QA API proxy.
+- Roody visibly watched the Home composer validate an empty publish, accept a real text draft, update the character counter, restore the draft after reload, publish successfully, reset the composer, clear the draft, refresh the feed, and avoid duplicate posts after reload.
+- Backend verification confirmed exactly one matching `pulse_posts` row and feed API visibility for the published text post.
+- The Home publish path now emits a cursor-visible owner-scoped `pulse_post_created` sync event through the existing notification-backed `/api/pulse/sync/events` pipeline.
+- No QA credentials were committed or written into reports.
+
+Known remaining Home gaps:
+
+- Activity/Notifications invalidation is cursor/audit verified but still needs visible Activity screen proof after publish.
+- Synthetic server retry and offline/reconnect recovery were not forced visibly in this pass.
+- Physical media capture, microphone/camera permissions, gallery picker, and large video upload remain device-release QA items.
+
+ONE next Home mission ONLY:
+
+Native Home feed interaction and media handoff QA. Verify Home feed card actions, visible Activity refresh after publish, and Photo/Video handoff fallback states while staying foundation-first and avoiding final UI polish.
 
 ## Current Native State
 

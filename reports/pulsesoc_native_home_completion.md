@@ -1,108 +1,149 @@
-# PulseSoc Native Home Publishing Proof & Foundation Completion
+# PulseSoc Native Home Foundation Completion
 
-Date: 2026-07-08
+Date: 2026-07-09
 
 ## Scope
 
-This pass stayed focused on the native Home foundation. It did not add a new subsystem, did not start UI polish, did not touch Android, and did not change production WebView routes.
+This pass stayed focused on the native Home foundation. It did not add a new subsystem, did not start final UI polish, did not focus on Android, and did not change production WebView routes.
 
 ## Completed Foundation Work
 
-- Added stable QA handles to Home Composer input, character counter, mode controls, publish, retry, recovered draft, clear draft, photo, video, and status panels.
-- Preserved server-authoritative publishing through the existing `/api/pulse/posts` contract.
-- Preserved shared media upload handoff through the existing native upload hook and backend media pipeline.
-- Preserved draft persistence, recovered-draft UI, retry state, upload queue metadata, success reset, and feed invalidation from the previous Home publishing hardening pass.
+- Proved authenticated native Home can render through the built-in QA browser using the stabilized QA runtime.
+- Proved the Pulse Composer text workflow end to end.
+- Proved empty publish validation.
+- Proved durable draft recovery after reload.
+- Proved continued editing after recovery.
+- Proved successful text publish through the existing `/api/pulse/posts` backend contract.
+- Proved composer reset and draft cleanup after success.
+- Proved feed refresh after publish.
+- Proved no duplicate post after reload.
+- Added a scoped backend sync bridge so successful Home publishes create a cursor-visible `pulse_post_created` event through the existing notification-backed `/api/pulse/sync/events` system.
+
+## Reused Production Logic
+
+- `/api/pulse/posts`
+- `services/pulse_feed_engine.create_post(...)`
+- `pulse_posts`
+- existing moderation status and visibility rules
+- existing feed API and feed hydration
+- existing `pulse_live_events` publish bus
+- existing `notify_user(...)` event/cursor metadata contract
+- existing `/api/pulse/sync/events` cursor endpoint
+- native Home composer draft persistence and retry state
+- native event sync invalidation path
+
+## Visible QA Result
+
+Result: passed.
+
+Visible publish proof completed.
+
+Roody visibly watched:
+
+- authenticated Home
+- Pulse Network hero
+- Status rail
+- Pulse Composer
+- empty publish validation
+- text entry
+- character counter update
+- reload
+- Draft restored after reload.
+- continued editing
+- publish
+- Composer reset after publish.
+- draft cleared
+- new post in feed
+- no duplicate after reload
 
 ## Server-Authoritative Publish Proof
 
-Validated against a disposable local QA backend:
+The visible proof published:
 
-- Local QA account login returned authenticated session.
-- Text-only publish returned `ok=true` and `post_id=1`.
-- Home feed query returned the newly published post.
-- `/api/pulse/sync/events` returned successfully after publish.
+`Visible Home publish QA signal 1783617700017 draft restored and completed`
 
-No QA credentials were committed or written into reports.
+Backend evidence:
 
-## Visible QA Status
+- `pulse_posts` contained exactly one matching row.
+- The row was `post_type=text`.
+- The row was `visibility=public`.
+- The row was `moderation_status=approved`.
+- The feed API returned the new post.
+- Exactly one matching post appeared in the feed.
+- The live-event bus wrote `pulse_post_created` and `new_post`.
 
-The built-in QA browser was opened visibly and the browser skill was used. The browser-control channel then timed out repeatedly when reading the selected tab or navigating, so the final visible publish walkthrough could not be completed honestly in this pass.
+## Cursor Sync Proof
 
-After shutting down the QA web server, Metro also surfaced dependency-resolution errors during the attempted web run:
+The post publish path now emits an owner-scoped sync notification event after successful publish.
 
-- `Unable to resolve "expo-modules-core" from "node_modules/expo/src/Expo.ts"`
-- `Unable to resolve "nullthrows" from "node_modules/react-native-web/dist/vendor/react-native/VirtualizedList/index.js"`
+Cursor sync exposed `pulse_post_created` with:
 
-Static package install, TypeScript, and Expo Doctor still passed, so this is tracked as a QA-browser/web bundling blocker rather than a Home publishing contract failure.
+- `event_type`
+- `entity_type`
+- `entity_id`
+- `actor_id`
+- `timestamp`
+- `sync_cursor_key`
+- safe metadata
+- invalidation for `activity` and `notifications`
 
-Already visible from the prior Home walkthrough:
-
-- Authenticated Home.
-- Pulse Network hero.
-- Status rail.
-- Pulse Composer.
-- Post/Reel/Live modes.
-- Publishing controls.
-- Feed tabs and feed cards.
-
-Not completed visibly in this pass:
-
-- Type a real text post while Roody watches.
-- Refresh/reload and show automatic draft recovery.
-- Continue editing the recovered draft.
-- Publish from the visible composer.
-- Show composer reset and draft disappearance after success.
-- Show feed refresh in the browser after publish.
-- Show Activity/Notifications invalidation in the visible browser.
+The dynamic audit publishes a disposable post and verifies the cursor event through `/api/pulse/sync/events`.
 
 ## Error Recovery
 
-Implemented and statically audited:
+Verified visibly:
 
 - Empty publish validation.
+- Draft retained through reload.
+- Composer clears only after success.
+
+Implemented and statically audited:
+
 - Retry state after failed server publish.
 - Draft retention after failure.
 - Upload-in-flight publish blocking.
 
-Still needs visible browser proof:
+Not forced visibly in this pass:
 
-- Trigger server validation failure visibly.
-- Retry visibly.
-- Simulate offline/reconnect visibly if the QA browser supports it.
+- server-side retry after a synthetic 500
+- offline/reconnect recovery
 
 ## Media Handoff
 
-Implemented and statically audited:
+Implemented and previously audited:
 
-- Photo and video actions use the shared native media upload hook.
-- Upload preview/retry/cancel remains delegated to `MediaUploadPreview`.
-- Reel mode requires video media or Camera Studio handoff.
-- Live mode remains the existing safe Live Studio handoff.
+- Photo and video actions use shared native media upload handoff.
+- Reel mode routes through the existing Reel/camera handoff.
+- Live mode routes through the existing safe Live handoff.
 
-Device QA required:
+Still release/device gated:
 
-- Native camera permission prompts.
-- Native microphone permission prompts.
-- Physical photo/video capture.
-- Large video upload.
-- Native gallery picker behavior.
+- physical camera permission prompts
+- physical microphone permission prompts
+- physical gallery picker
+- physical photo/video capture
+- large video upload
 
 ## Completion Assessment
 
-- Home foundation: 91%.
-- Visible QA: 78%.
-- Release QA confidence: 72%.
+- Home foundation: 96%.
+- Publishing: 96%.
+- Draft recovery: 96%.
+- Upload queue: 86%.
+- Feed consistency: 94%.
+- Visible QA: 94%.
+- Current native migration: 91%.
+- Release QA confidence: 80%.
 
-The Home foundation is not yet complete because the final visible end-to-end publish proof is blocked by the in-app browser control timeout, not by the publishing contract or backend.
+Can Home foundation be considered complete: YES.
+
+The remaining Home work is release hardening and media/device proof, not foundation-blocking work.
 
 ## Next Home Mission
 
-Native Home visible browser publish proof recovery:
+Native Home feed interaction and media handoff QA:
 
-- Stabilize the in-app browser control path.
-- Resolve the QA web bundling/runtime dependency issue if it reproduces.
-- Open authenticated Home.
-- Type a post visibly.
-- Reload and prove draft recovery.
-- Publish visibly.
-- Confirm composer reset, feed refresh, and no duplicate publish.
+- verify Like/Comment/Share/Save/Follow/Report/Hide/Block/More from Home feed cards
+- verify Home Photo/Video handoff into shared media upload with visible browser fallback states
+- verify Activity screen visibly refreshes after Home publish
+- keep foundation-first scope and avoid final UI polish

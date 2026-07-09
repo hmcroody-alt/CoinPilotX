@@ -71207,6 +71207,42 @@ def api_pulse_posts():
                 hydrated_post = pulse_feed_engine.get_post(result.get("post_id"), viewer_user_id=user["user_id"], include_private=True)
                 if hydrated_post:
                     result["post"] = hydrated_post
+            sync_conn = None
+            try:
+                sync_conn = db()
+                sync_cur = sync_conn.cursor()
+                sync_post = result.get("post") or {}
+                sync_post_id = int(result.get("post_id") or sync_post.get("id") or 0)
+                notify_user(
+                    sync_cur,
+                    user["user_id"],
+                    "pulse_post_created",
+                    "Post published",
+                    "Your PulseSoc post was published and Home is ready to refresh.",
+                    result.get("next_url") or (f"/pulse/post/{sync_post_id}" if sync_post_id else "/pulse"),
+                    actor_user_id=user["user_id"],
+                    entity_type="post",
+                    entity_id=str(sync_post_id),
+                    metadata={
+                        "domain": "feed",
+                        "category": "home_publish",
+                        "post_id": sync_post_id,
+                        "post_type": sync_post.get("post_type") or payload.get("post_type") or "text",
+                        "visibility": sync_post.get("visibility") or payload.get("visibility") or "public",
+                        "moderation_status": sync_post.get("moderation_status") or result.get("status") or "",
+                        "invalidates": ["activity", "notifications"],
+                        "source": "native_home_composer",
+                    },
+                )
+                sync_conn.commit()
+            except Exception as exc:
+                logging.warning("PulseSoc post sync notification failed user_id=%s post_id=%s error=%s", user["user_id"], result.get("post_id"), exc)
+            finally:
+                if sync_conn:
+                    try:
+                        sync_conn.close()
+                    except Exception:
+                        pass
         if result.get("ok") and (result.get("post") or {}).get("moderation_status") == "approved":
             post_payload = result.get("post") or {}
             author = post_payload.get("author") or {}
