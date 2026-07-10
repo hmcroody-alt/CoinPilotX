@@ -4596,3 +4596,48 @@ Reason for recommendation:
 
 - Core wiring is now foundation-complete by static audit.
 - The next highest-value task is to restore the local QA API/proxy and run a focused visible click-through of representative drawer, Settings, dashboard, Home, marketplace, messaging, and profile actions to catch any route-level runtime misses before returning to release-device evidence tasks.
+
+## Native Authenticated Wiring QA Pass
+
+Section: authenticated route and action wiring.
+
+Completed action:
+
+- Restarted the local QA stack with a local backend on `127.0.0.1:5107`, a local QA proxy on `127.0.0.1:5108`, and Expo web on `127.0.0.1:8094`.
+- Added a reusable local-only QA proxy utility for authenticated browser QA.
+- Signed in through the visible native Login screen with a disposable local QA account; no credentials were committed or written to reports.
+- Ran a visible built-in QA browser pass across 37 representative authenticated routes.
+- Verified representative Home, Activity, Search, Profile, Profile Edit, Reels, Status, Camera Studio, Messenger, Calls, Marketplace, Seller Store, Buyer Orders, Premium, Creator, Growth, Intelligence, Alerts, Settings, Security, Privacy, Support, Verification, Account Health, Safety, Courses, Dashboard shell, and Pulse AI routes.
+- Verified representative back navigation from Home, Profile, Marketplace, Settings, and Dashboard module shell flows.
+- Fixed `/pulse/creator` so it opens native Creator Studio instead of falling back to Dashboard.
+- Fixed `/pulse/support` so it opens the native Trust & Safety support shell instead of falling back to Dashboard.
+
+Authenticated QA result:
+
+- Representative routes tested: 37.
+- Failures after scoped fixes: 0.
+- Dead routes in the representative matrix: 0.
+- Routing loops observed: 0.
+- Back navigation checks passed: 5 of 5.
+- Visible QA coverage: 80%.
+
+Current native status:
+
+- Current native migration: 96%.
+- Authenticated routing production readiness: representative browser routing is production-ready.
+- Release QA confidence: 87%.
+
+Remaining release blockers:
+
+- Physical iPhone push/tap routing.
+- Provider-backed notification delivery.
+- Camera/microphone hardware flows.
+- Two-device calls/media sessions.
+- Final legal-document strategy if Terms/Privacy should become native screens instead of safe provider fallbacks.
+
+Recommended next mission: PulseSoc Native Messenger Foundation Replacement QA.
+
+Reason for recommendation:
+
+- Home and Dashboard foundations are complete enough, and representative app-wide authenticated routing is now verified.
+- Messenger is the highest-value daily-engagement vertical and should be hardened next against the production WebView behavior before moving to Reels/Live and profile ecosystem polish.

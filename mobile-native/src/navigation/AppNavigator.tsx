@@ -175,6 +175,7 @@ export function AppNavigator() {
       <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} options={{ title: "Edit Profile" }} />
       <Stack.Screen name="Premium" component={PremiumScreen} options={{ title: "Premium" }} />
       <Stack.Screen name="CreatorStudio" component={CreatorStudioScreen} options={{ title: "Creator Studio" }} />
+      <Stack.Screen name="CreatorStudioAlias" component={CreatorStudioScreen} options={{ title: "Creator Studio" }} />
       <Stack.Screen name="ContentPlanner" component={ContentPlannerScreen} options={({ route }) => ({ title: route.params?.title || "Content Planner" })} />
       <Stack.Screen name="ContentPlannerWeb" component={ContentPlannerScreen} options={({ route }) => ({ title: route.params?.title || "Content Planner" })} />
       <Stack.Screen name="ContentPlannerPulseAlias" component={ContentPlannerScreen} options={{ title: "Content Planner" }} />

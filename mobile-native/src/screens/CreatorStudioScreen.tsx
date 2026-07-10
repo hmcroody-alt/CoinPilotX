@@ -19,7 +19,7 @@ import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 
-type Props = NativeStackScreenProps<RootStackParamList, "CreatorStudio">;
+type Props = NativeStackScreenProps<RootStackParamList, "CreatorStudio" | "CreatorStudioAlias">;
 
 const AI_TOOLS: Array<{ key: CreatorAiTool; label: string; placeholder: string }> = [
   { key: "hook", label: "Hook", placeholder: "Turn this idea into a stronger opening..." },

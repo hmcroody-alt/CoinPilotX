@@ -175,6 +175,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
       CreatorStudio: {
         path: "pulse/creator-studio"
       },
+      CreatorStudioAlias: "pulse/creator",
       ContentPlanner: {
         path: "pulse/content-planner",
         parse: {
@@ -263,7 +264,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
           mode: String
         }
       },
-      TrustSafetySupport: "support",
+      TrustSafetySupport: "pulse/support",
       TrustSafetyHelp: "help",
       TrustCenter: "trust-center",
       SecurityReport: "security",

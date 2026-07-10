@@ -75,7 +75,7 @@ const HOME_DRAWER_SECTIONS: DrawerSection[] = [
       { label: "Camera", route: "/pulse/camera/photo?target=feed", status: "native" },
       { label: "Add Status", route: "/pulse/status/create", status: "native" },
       { label: "Go Live", route: "/pulse/live/studio", status: "fallback" },
-      { label: "Creator Studio", route: "/pulse/creator", status: "native" }
+      { label: "Creator Studio", route: "/pulse/creator-studio", status: "native" }
     ]
   },
   {

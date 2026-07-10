@@ -75,6 +75,7 @@ export type RootStackParamList = {
   ProfileEdit: undefined;
   Premium: undefined;
   CreatorStudio: undefined;
+  CreatorStudioAlias: undefined;
   ContentPlanner: { mode?: "planner" | "scheduler" | "drafts"; title?: string } | undefined;
   ContentPlannerWeb: { mode?: "planner" | "scheduler" | "drafts"; title?: string } | undefined;
   ContentPlannerPulseAlias: { title?: string } | undefined;
