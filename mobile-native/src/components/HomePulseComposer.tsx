@@ -438,37 +438,38 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(9, 20, 33, 0.74)",
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: logiNexus.radius.large,
+    borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
     flexGrow: 0,
-    gap: 5,
+    gap: 4,
     justifyContent: "center",
-    minHeight: 50,
+    minHeight: 44,
     paddingHorizontal: 5,
-    paddingVertical: 6,
-    width: 82
+    paddingVertical: 5,
+    width: 70
   },
   actionGrid: {
     gap: 6,
-    marginTop: 10
+    marginTop: 8
   },
   actionIcon: {
     color: colors.accent,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "900"
   },
   actionText: {
     color: colors.text,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: "900",
     maxWidth: "100%",
     textAlign: "center"
   },
   counter: {
-    bottom: 8,
     color: colors.accentStrong,
+    fontSize: 12,
     fontWeight: "900",
-    marginTop: 5,
+    lineHeight: 15,
+    marginTop: 3,
     textAlign: "right"
   },
   errorText: {
@@ -506,18 +507,18 @@ const styles = StyleSheet.create({
   headerRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 9,
+    gap: 7,
     justifyContent: "space-between"
   },
   identityOrb: {
     alignItems: "center",
     backgroundColor: "rgba(159, 124, 255, 0.18)",
     borderColor: logiNexus.colors.home.borderIntelligence,
-    borderRadius: 23,
+    borderRadius: 20,
     borderWidth: 1,
-    height: 46,
+    height: 40,
     justifyContent: "center",
-    width: 46
+    width: 40
   },
   identityOrbText: {
     color: colors.accentStrong,
@@ -527,21 +528,21 @@ const styles = StyleSheet.create({
   identitySignal: {
     backgroundColor: colors.accent,
     borderColor: logiNexus.colors.home.backgroundDeepSpace,
-    borderRadius: 6,
+    borderRadius: 5,
     borderWidth: 2,
-    bottom: 2,
-    height: 12,
+    bottom: 1,
+    height: 10,
     position: "absolute",
-    right: 2,
-    width: 12
+    right: 1,
+    width: 10
   },
   input: {
     color: colors.text,
     flex: 1,
-    fontSize: 16,
-    lineHeight: 22,
-    minHeight: 46,
-    paddingVertical: 4,
+    fontSize: 15,
+    lineHeight: 20,
+    minHeight: 40,
+    paddingVertical: 2,
     textAlignVertical: "center"
   },
   audienceArrow: {
@@ -556,13 +557,13 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.capsule,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 6,
-    minHeight: 34,
-    paddingHorizontal: 10
+    gap: 5,
+    minHeight: 30,
+    paddingHorizontal: 8
   },
   audienceText: {
     color: colors.text,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900"
   },
   liveDot: {
@@ -590,7 +591,7 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.large,
     flex: 1,
     justifyContent: "center",
-    minHeight: 36
+    minHeight: 32
   },
   modeButtonActive: {
     backgroundColor: colors.accent
@@ -598,16 +599,16 @@ const styles = StyleSheet.create({
   modeRow: {
     backgroundColor: "rgba(3, 7, 18, 0.4)",
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 24,
+    borderRadius: 21,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 6,
-    marginTop: 10,
-    padding: 4
+    gap: 5,
+    marginTop: 8,
+    padding: 3
   },
   modeText: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "900"
   },
   modeTextActive: {
@@ -616,9 +617,9 @@ const styles = StyleSheet.create({
   publishButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
-    borderRadius: 22,
-    marginTop: 11,
-    minHeight: 50,
+    borderRadius: 20,
+    marginTop: 9,
+    minHeight: 46,
     justifyContent: "center"
   },
   publishButtonDisabled: {
@@ -626,7 +627,7 @@ const styles = StyleSheet.create({
   },
   publishText: {
     color: colors.background,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "900"
   },
   restoredPanel: {
@@ -685,11 +686,11 @@ const styles = StyleSheet.create({
   statusPanel: {
     backgroundColor: "rgba(9, 20, 33, 0.74)",
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: logiNexus.radius.large,
+    borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
     gap: 3,
-    marginTop: 9,
-    padding: 8
+    marginTop: 7,
+    padding: 7
   },
   statusText: {
     color: colors.muted,
@@ -710,7 +711,7 @@ const styles = StyleSheet.create({
   wrap: {
     backgroundColor: "rgba(10, 23, 39, 0.92)",
     borderColor: "rgba(97, 216, 255, 0.62)",
-    marginBottom: 10,
-    padding: 10
+    marginBottom: 8,
+    padding: 8
   }
 });

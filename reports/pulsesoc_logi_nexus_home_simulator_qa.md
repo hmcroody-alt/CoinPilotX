@@ -28,6 +28,7 @@ Final simulator evidence:
 - `reports/screenshots/logi-nexus-home-iphone17pro-size-feed-visible.png`
 - `reports/screenshots/logi-nexus-home-iphone17pro-size-final-after-npm-ci.png`
 - `reports/screenshots/logi-nexus-home-iphone17pro-blueprint-final.png`
+- `reports/screenshots/logi-nexus-home-iphone17pro-space-efficient-clean.png`
 
 ## Result
 
@@ -38,6 +39,8 @@ Final simulator evidence:
 - A blueprint-inspired reconstruction pass was verified through the Xcode iPhone 17 Pro Simulator using the installed `com.pulsesoc.nativeapp` development build and a fresh Metro bundle.
 - The correct custom-scheme route for Home simulator QA is `pulsesoc:///pulse`; the two-slash form can be interpreted as a host and preserve the previous screen context.
 - The verified Home render shows the command strip, compact Pulse Network hero, Your Orbit rail, Transmission Console, compact feed filter rail, and the first Signal Card beginning below the fold.
+- The space-efficiency pass reduced the command strip, hero, Orbit rail, Transmission Console, and filter rail enough for the first Signal Card to begin inside the opening iPhone 17 Pro Simulator viewport.
+- Simulator visual QA used the installed `com.pulsesoc.nativeapp` development build with Metro pointed at the local backend during sign-in. No production auth logic was changed.
 - The Expo Notifications `@ide/backoff` runtime resolver issue was fixed by adding a native Metro resolver alias to the installed transitive dependency.
 - The previous redbox is no longer present.
 

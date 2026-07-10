@@ -82,3 +82,14 @@ Status: scoped visual-system milestone completed; this is not Homefeed LogiNexus
 - Removed the extra feed-tab title/subtitle block so the signal filter rail behaves like a compact channel selector.
 - Verified the route with `pulsesoc:///pulse` on the Xcode iPhone 17 Pro Simulator after a fresh dev-client Metro bundle.
 - Final simulator evidence: `reports/screenshots/logi-nexus-home-iphone17pro-blueprint-final.png`.
+
+## Space Efficiency Pass
+
+- Further tightened the native Home surface after comparing the simulator render against the generated blueprint's efficient use of space.
+- Reduced Home-mode command strip height, icon button size, and brand subtitle footprint while preserving safe-area behavior.
+- Reduced Pulse Network hero padding, network row height, metric tile height, quick chip height, and ambient map decoration size.
+- Reduced `Your Orbit` rail height, avatar rings, empty-state card, section spacing, and online indicators.
+- Reduced the default Transmission Console footprint: smaller identity orb, tighter text field, compact mode selector, tighter action rail, and smaller counter.
+- Reduced the feed filter rail padding so the first Signal Card appears sooner in the opening iPhone viewport.
+- Preserved existing Home logic: publishing, draft recovery, feed invalidation, media upload handoff, status routing, feed filtering, and server-authoritative mutations were not changed.
+- Xcode iPhone 17 Pro Simulator evidence: `reports/screenshots/logi-nexus-home-iphone17pro-space-efficient-clean.png`.

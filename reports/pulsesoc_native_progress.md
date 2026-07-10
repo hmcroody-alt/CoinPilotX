@@ -2,10 +2,10 @@
 
 Date: 2026-07-10
 
-## Latest Mission Status: LogiNexus Homefeed Native Reconstruction
+## Latest Mission Status: LogiNexus Homefeed Native Reconstruction / Space Efficiency Pass
 
-- Home LogiNexus transformation: 78%.
-- Home UX completeness: 88%.
+- Home LogiNexus transformation: 80%.
+- Home UX completeness: 90%.
 - Native foundation/parity: 97%.
 - System consistency: 90%.
 - Release QA confidence: 87%.
@@ -30,6 +30,10 @@ Completed this mission:
 - Removed the extra feed-tab title/subtitle block so the signal filter rail behaves like a compact channel selector.
 - Verified the final candidate in the Xcode iPhone 17 Pro Simulator with `pulsesoc:///pulse` after a fresh Metro dev-client bundle.
 - Captured final simulator evidence at `reports/screenshots/logi-nexus-home-iphone17pro-blueprint-final.png`.
+- Completed a follow-up space-efficiency pass based on the generated blueprint's tighter first-viewport proportions.
+- Tightened the Home-mode command strip, Pulse Network hero, `Your Orbit` rail, Transmission Console, and feed filter rail without changing Home business logic or backend contracts.
+- Verified on Xcode iPhone 17 Pro Simulator that the first Signal Card now begins inside the opening viewport.
+- Captured simulator evidence at `reports/screenshots/logi-nexus-home-iphone17pro-space-efficient-clean.png`.
 
 Remaining Home work:
 

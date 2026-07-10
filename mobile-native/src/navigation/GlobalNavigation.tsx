@@ -386,7 +386,7 @@ const styles = StyleSheet.create({
   headerShellHome: {
     backgroundColor: logiNexus.colors.home.backgroundDeepSpace,
     borderBottomColor: "transparent",
-    paddingBottom: 10
+    paddingBottom: 6
   },
   headerSubtitle: {
     ...logiNexus.typography.metadata,
@@ -394,9 +394,9 @@ const styles = StyleSheet.create({
   },
   headerSubtitleHome: {
     color: colors.accent,
-    fontSize: 10,
-    letterSpacing: 5,
-    lineHeight: 14,
+    fontSize: 9,
+    letterSpacing: 4,
+    lineHeight: 12,
     textAlign: "center"
   },
   headerTitle: {
@@ -406,8 +406,8 @@ const styles = StyleSheet.create({
   },
   headerTitleHome: {
     ...logiNexus.typography.home.brand,
-    fontSize: 23,
-    lineHeight: 27,
+    fontSize: 21,
+    lineHeight: 24,
     textAlign: "center"
   },
   iconBadge: {
@@ -429,15 +429,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.055)",
     borderColor: "rgba(255,255,255,0.16)",
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
-    height: 38,
+    height: 36,
     justifyContent: "center",
-    width: 38
+    width: 36
   },
   iconButtonSpacer: {
-    height: 38,
-    width: 38
+    height: 36,
+    width: 36
   },
   iconText: {
     color: colors.text,
