@@ -1,7 +1,7 @@
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Modal, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import {
   hidePost,
   listFeed,
@@ -30,6 +30,17 @@ type FeedTab = {
   description: string;
 };
 
+type DrawerAction = {
+  label: string;
+  route: string;
+  status: "native" | "shell" | "fallback" | "gated";
+};
+
+type DrawerSection = {
+  title: string;
+  actions: DrawerAction[];
+};
+
 const FEED_TABS: FeedTab[] = [
   { key: "for_you", label: "For You", description: "Ranked PulseSoc feed" },
   { key: "following", label: "Following", description: "Accounts you follow" },
@@ -42,6 +53,71 @@ const FEED_TABS: FeedTab[] = [
   { key: "roast_clips", label: "Roast Clips", description: "Creator clips and comedy" },
   { key: "questions", label: "Questions", description: "Questions and answers" },
   { key: "my_posts", label: "My Posts", description: "Your published posts" }
+];
+
+const HOME_DRAWER_SECTIONS: DrawerSection[] = [
+  {
+    title: "Core",
+    actions: [
+      { label: "Dashboard", route: "/pulse/dashboard", status: "native" },
+      { label: "Home", route: "/pulse", status: "native" },
+      { label: "Search", route: "/pulse/search", status: "native" },
+      { label: "Activity Inbox", route: "/pulse/activity", status: "native" },
+      { label: "Messages", route: "/pulse/messages", status: "native" },
+      { label: "Profile", route: "/pulse/profile", status: "native" },
+      { label: "Settings", route: "/pulse/settings", status: "native" }
+    ]
+  },
+  {
+    title: "Create",
+    actions: [
+      { label: "Create Post", route: "/pulse/compose", status: "native" },
+      { label: "Camera", route: "/pulse/camera/photo?target=feed", status: "native" },
+      { label: "Add Status", route: "/pulse/status/create", status: "native" },
+      { label: "Go Live", route: "/pulse/live/studio", status: "fallback" },
+      { label: "Creator Studio", route: "/pulse/creator", status: "native" }
+    ]
+  },
+  {
+    title: "Network",
+    actions: [
+      { label: "Reels", route: "/pulse/reels", status: "native" },
+      { label: "Status", route: "/pulse/status", status: "native" },
+      { label: "Groups", route: "/pulse/groups", status: "native" },
+      { label: "Live", route: "/pulse/live", status: "native" },
+      { label: "Events", route: "/pulse/events", status: "native" }
+    ]
+  },
+  {
+    title: "Commerce",
+    actions: [
+      { label: "Marketplace", route: "/pulse/marketplace", status: "native" },
+      { label: "Seller Store", route: "/pulse/seller-store", status: "native" },
+      { label: "Purchase History", route: "/pulse/orders", status: "native" },
+      { label: "Premium", route: "/pulse/premium", status: "native" },
+      { label: "Growth Center", route: "/pulse/growth", status: "native" }
+    ]
+  },
+  {
+    title: "Trust",
+    actions: [
+      { label: "Safety Hub", route: "/pulse/safety", status: "native" },
+      { label: "Scam Shield", route: "/scam-shield/scan", status: "native" },
+      { label: "Verification", route: "/pulse/verification", status: "native" },
+      { label: "Account Health", route: "/pulse/account-health", status: "native" },
+      { label: "Support", route: "/support", status: "native" }
+    ]
+  },
+  {
+    title: "Intelligence",
+    actions: [
+      { label: "Pulse AI", route: "/pulse/ai", status: "native" },
+      { label: "Intelligence", route: "/pulse/intelligence", status: "native" },
+      { label: "Alerts", route: "/pulse/alerts", status: "native" },
+      { label: "Courses", route: "/pulse/courses", status: "native" },
+      { label: "Pulse Radio", route: "/pulse/music#pulse-radio", status: "fallback" }
+    ]
+  }
 ];
 
 export function HomeScreen() {
@@ -63,6 +139,7 @@ export function HomeScreen() {
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusOffline, setStatusOffline] = useState(false);
   const [statusError, setStatusError] = useState("");
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const activeTab = useMemo(() => FEED_TABS.find((tab) => tab.key === selectedFeed) || FEED_TABS[0], [selectedFeed]);
 
   const loadStatuses = useCallback(async () => {
@@ -296,6 +373,40 @@ export function HomeScreen() {
     load("refresh").catch(() => undefined);
   }
 
+  function openHomeRoute(routePath: string) {
+    setDrawerOpen(false);
+    if (routePath === "/pulse") navigation.navigate("Tabs", { screen: "Home" });
+    else if (routePath === "/pulse/dashboard") navigation.navigate("Tabs", { screen: "Dashboard" });
+    else if (routePath === "/pulse/search") navigation.navigate("Tabs", { screen: "Search" });
+    else if (routePath === "/pulse/activity" || routePath === "/pulse/notifications") navigation.navigate("ActivityInbox", { title: "Activity Inbox" });
+    else if (routePath === "/pulse/messages") navigation.navigate("Tabs", { screen: "Messenger" });
+    else if (routePath === "/pulse/profile") navigation.navigate("Tabs", { screen: "Profile" });
+    else if (routePath === "/pulse/settings") navigation.navigate("Tabs", { screen: "Settings" });
+    else if (routePath === "/pulse/compose") navigation.navigate("Tabs", { screen: "Home", params: { openComposer: true } });
+    else if (routePath === "/pulse/camera/photo?target=feed") navigation.navigate("CameraStudio", { target: "feed", mode: "photo", title: "Camera" });
+    else if (routePath === "/pulse/status/create") navigation.navigate("Tabs", { screen: "Status", params: { openCreator: true } });
+    else if (routePath === "/pulse/status") navigation.navigate("Tabs", { screen: "Status" });
+    else if (routePath === "/pulse/reels") navigation.navigate("Tabs", { screen: "Reels" });
+    else if (routePath === "/pulse/groups") navigation.navigate("Tabs", { screen: "Groups" });
+    else if (routePath === "/pulse/live") navigation.navigate("Tabs", { screen: "Live" });
+    else if (routePath === "/pulse/events") navigation.navigate("Events", { title: "Events" });
+    else if (routePath === "/pulse/marketplace") navigation.navigate("Tabs", { screen: "Marketplace" });
+    else if (routePath === "/pulse/seller-store") navigation.navigate("SellerStore", { title: "Seller / Store" });
+    else if (routePath === "/pulse/orders") navigation.navigate("BuyerOrders", { title: "Purchase History" });
+    else if (routePath === "/pulse/premium") navigation.navigate("Premium");
+    else if (routePath === "/pulse/growth") navigation.navigate("GrowthCenter", { title: "Growth Center" });
+    else if (routePath === "/pulse/safety") navigation.navigate("SafetyHub", { title: "Safety Hub" });
+    else if (routePath === "/scam-shield/scan") navigation.navigate("ScamShield", { title: "Scam Shield" });
+    else if (routePath === "/pulse/verification") navigation.navigate("VerificationCenter", { title: "Verification Center" });
+    else if (routePath === "/pulse/account-health") navigation.navigate("AccountHealth", { title: "Account Health" });
+    else if (routePath === "/support") navigation.navigate("TrustSafetySupport", { title: "Support" });
+    else if (routePath === "/pulse/ai") navigation.navigate("Tabs", { screen: "PulseAI" });
+    else if (routePath === "/pulse/intelligence") navigation.navigate("IntelligenceCenter", { title: "Intelligence" });
+    else if (routePath === "/pulse/alerts") navigation.navigate("AlertManagement", { title: "Alerts" });
+    else if (routePath === "/pulse/courses") navigation.navigate("Courses", { title: "Courses" });
+    else openDashboardRoute(navigation, routePath);
+  }
+
   if (loading && !posts.length) {
     return (
       <View style={styles.center}>
@@ -325,6 +436,10 @@ export function HomeScreen() {
             statusError={statusError}
             posts={posts}
             offline={offline}
+            onOpenDrawer={() => setDrawerOpen(true)}
+            onOpenSearch={() => navigation.navigate("Tabs", { screen: "Search" })}
+            onOpenActivity={() => navigation.navigate("ActivityInbox", { title: "Activity Inbox" })}
+            onOpenProfile={() => navigation.navigate("Tabs", { screen: "Profile" })}
             onRefresh={refreshHome}
             onSelectFeed={selectFeed}
             onOpenPulseRadio={() => openDashboardRoute(navigation, "/pulse/music#pulse-radio")}
@@ -399,6 +514,7 @@ export function HomeScreen() {
         onEndReachedThreshold={0.35}
         ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.footer} color={colors.accent} /> : null}
       />
+      <HomeDrawer visible={drawerOpen} sections={HOME_DRAWER_SECTIONS} onClose={() => setDrawerOpen(false)} onOpenRoute={openHomeRoute} />
     </View>
   );
 }
@@ -413,6 +529,10 @@ function HomeHeader({
   statusError,
   posts,
   offline,
+  onOpenDrawer,
+  onOpenSearch,
+  onOpenActivity,
+  onOpenProfile,
   onRefresh,
   onSelectFeed,
   onOpenPulseRadio,
@@ -433,6 +553,10 @@ function HomeHeader({
   statusError: string;
   posts: PulsePost[];
   offline: boolean;
+  onOpenDrawer: () => void;
+  onOpenSearch: () => void;
+  onOpenActivity: () => void;
+  onOpenProfile: () => void;
   onRefresh: () => void;
   onSelectFeed: (feedKey: string) => void;
   onOpenPulseRadio: () => void;
@@ -446,6 +570,7 @@ function HomeHeader({
 }) {
   return (
     <View style={styles.header}>
+      <HomeTopBar onOpenDrawer={onOpenDrawer} onOpenSearch={onOpenSearch} onOpenActivity={onOpenActivity} onOpenProfile={onOpenProfile} />
       <PulseNetworkHero posts={posts} statuses={statusItems} offline={offline || statusOffline} onRefresh={onRefresh} onOpenPulseRadio={onOpenPulseRadio} onOpenLive={onOpenLive} onOpenSafety={onOpenSafety} />
       <StatusRail
         items={statusItems}
@@ -468,6 +593,94 @@ function HomeHeader({
         </ScrollView>
       </View>
     </View>
+  );
+}
+
+function HomeTopBar({
+  onOpenDrawer,
+  onOpenSearch,
+  onOpenActivity,
+  onOpenProfile
+}: {
+  onOpenDrawer: () => void;
+  onOpenSearch: () => void;
+  onOpenActivity: () => void;
+  onOpenProfile: () => void;
+}) {
+  return (
+    <View style={styles.topBar}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Open PulseSoc navigation drawer" testID="home-top-menu" style={styles.topIconButton} onPress={onOpenDrawer}>
+        <Text style={styles.topIconText}>☰</Text>
+      </Pressable>
+      <View style={styles.topBrand}>
+        <Text style={styles.topBrandLogo}>PS</Text>
+        <Text style={styles.topBrandText}>PulseSoc</Text>
+      </View>
+      <View style={styles.topActions}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Search PulseSoc" testID="home-top-search" style={styles.topIconButton} onPress={onOpenSearch}>
+          <Text style={styles.topIconText}>⌕</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Open Activity Inbox" testID="home-top-activity" style={styles.topIconButton} onPress={onOpenActivity}>
+          <Text style={styles.topIconText}>99+</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Open Profile" testID="home-top-profile" style={styles.topAvatarButton} onPress={onOpenProfile}>
+          <Text style={styles.topAvatarText}>ME</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function HomeDrawer({
+  visible,
+  sections,
+  onClose,
+  onOpenRoute
+}: {
+  visible: boolean;
+  sections: DrawerSection[];
+  onClose: () => void;
+  onOpenRoute: (route: string) => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.drawerOverlay}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close navigation drawer" style={styles.drawerScrim} onPress={onClose} />
+        <View style={styles.drawerPanel}>
+          <View style={styles.drawerHeader}>
+            <View>
+              <Text style={styles.drawerKicker}>MISSION CONTROL</Text>
+              <Text style={styles.drawerTitle}>PulseSoc</Text>
+            </View>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close navigation drawer" style={styles.drawerClose} onPress={onClose}>
+              <Text style={styles.drawerCloseText}>×</Text>
+            </Pressable>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {sections.map((section) => (
+              <View key={section.title} style={styles.drawerSection}>
+                <Text style={styles.drawerSectionTitle}>{section.title}</Text>
+                {section.actions.map((action) => (
+                  <Pressable
+                    key={`${section.title}-${action.route}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open ${action.label}`}
+                    testID={`home-drawer-${action.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+                    style={styles.drawerItem}
+                    onPress={() => onOpenRoute(action.route)}
+                  >
+                    <Text style={styles.drawerItemText}>{action.label}</Text>
+                    <Text style={[styles.drawerStatus, action.status === "fallback" && styles.drawerStatusFallback, action.status === "gated" && styles.drawerStatusGated]}>
+                      {action.status}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -695,6 +908,95 @@ const styles = StyleSheet.create({
   feedTabs: {
     gap: 10,
     paddingTop: 12
+  },
+  drawerClose: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: "center",
+    width: 40
+  },
+  drawerCloseText: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: "900"
+  },
+  drawerHeader: {
+    alignItems: "center",
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12,
+    paddingBottom: 12
+  },
+  drawerItem: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 8,
+    minHeight: 44,
+    paddingHorizontal: 12
+  },
+  drawerItemText: {
+    color: colors.text,
+    flex: 1,
+    fontWeight: "900"
+  },
+  drawerKicker: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.2
+  },
+  drawerOverlay: {
+    backgroundColor: "rgba(1, 6, 14, 0.68)",
+    flex: 1,
+    flexDirection: "row"
+  },
+  drawerPanel: {
+    backgroundColor: colors.background,
+    borderRightColor: colors.border,
+    borderRightWidth: 1,
+    maxWidth: 380,
+    padding: 16,
+    width: "86%"
+  },
+  drawerScrim: {
+    ...StyleSheet.absoluteFillObject
+  },
+  drawerSection: {
+    marginBottom: 16
+  },
+  drawerSectionTitle: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    textTransform: "uppercase"
+  },
+  drawerStatus: {
+    color: colors.accent,
+    fontSize: 10,
+    fontWeight: "900",
+    marginLeft: 10,
+    textTransform: "uppercase"
+  },
+  drawerStatusFallback: {
+    color: colors.warning
+  },
+  drawerStatusGated: {
+    color: colors.danger
+  },
+  drawerTitle: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: "900"
   },
   feedTabsSubtitle: {
     color: colors.muted,
@@ -932,5 +1234,76 @@ const styles = StyleSheet.create({
   },
   statusSection: {
     marginBottom: 14
+  },
+  topActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8
+  },
+  topAvatarButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(37, 208, 167, 0.12)",
+    borderColor: colors.accent,
+    borderRadius: 21,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: "center",
+    width: 42
+  },
+  topAvatarText: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "900"
+  },
+  topBar: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+    marginBottom: 14,
+    padding: 12
+  },
+  topBrand: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: 10
+  },
+  topBrandLogo: {
+    backgroundColor: "rgba(37, 208, 167, 0.12)",
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "900",
+    height: 32,
+    lineHeight: 32,
+    overflow: "hidden",
+    textAlign: "center",
+    width: 32
+  },
+  topBrandText: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: "900"
+  },
+  topIconButton: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: "center",
+    minWidth: 42,
+    paddingHorizontal: 8
+  },
+  topIconText: {
+    color: colors.text,
+    fontWeight: "900"
   }
 });

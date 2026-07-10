@@ -2,6 +2,7 @@ import { Alert, Pressable, StyleSheet, Text } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { registerPushDevice } from "../api/push";
+import { openSupportWebFallback } from "../api/support";
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
@@ -85,8 +86,20 @@ export function SettingsScreen() {
         <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("TrustSafety", { title: "Trust & Safety", mode: "support" })}>
           <Text style={styles.secondaryText}>Trust and Safety</Text>
         </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("TrustSafetySupport", { title: "Support" })}>
+          <Text style={styles.secondaryText}>Support Center</Text>
+        </Pressable>
         <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("VerificationCenter", { title: "Verification Center" })}>
           <Text style={styles.secondaryText}>Verification Center</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => openSupportWebFallback("/privacy")}>
+          <Text style={styles.secondaryText}>Privacy Policy</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => openSupportWebFallback("/terms")}>
+          <Text style={styles.secondaryText}>Terms of Service</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => openSupportWebFallback("/account/settings")}>
+          <Text style={styles.secondaryText}>Telegram companion setup</Text>
         </Pressable>
         <Text style={styles.muted}>Camera, microphone, media compression, and LiveKit call controls are Phase 2/3 QA-gated.</Text>
       </Panel>

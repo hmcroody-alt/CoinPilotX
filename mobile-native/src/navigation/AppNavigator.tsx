@@ -1,5 +1,6 @@
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { BottomTabNavigationProp, createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { useNavigation } from "@react-navigation/native";
 import * as Notifications from "expo-notifications";
 import { useCallback, useEffect, useState } from "react";
 import { AppState } from "react-native";
@@ -50,6 +51,16 @@ import { AppTabParamList, RootStackParamList } from "./types";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<AppTabParamList>();
+
+function CreateTabScreen() {
+  const navigation = useNavigation<BottomTabNavigationProp<AppTabParamList>>();
+
+  useEffect(() => {
+    navigation.navigate("Home", { openComposer: true });
+  }, [navigation]);
+
+  return null;
+}
 
 function TabNavigator() {
   const [notificationUnread, setNotificationUnread] = useState(0);
@@ -107,6 +118,7 @@ function TabNavigator() {
       <Tabs.Screen name="Groups" component={GroupsScreen} />
       <Tabs.Screen name="Live" component={LiveScreen} />
       <Tabs.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />
+      <Tabs.Screen name="Create" component={CreateTabScreen} options={{ title: "Create" }} />
       <Tabs.Screen name="Status" component={StatusScreen} />
       <Tabs.Screen name="Messenger" component={MessengerScreen} />
       <Tabs.Screen name="Notifications" component={ActivityInboxScreen} options={{ title: "Activity", tabBarBadge: notificationUnread || undefined }} />

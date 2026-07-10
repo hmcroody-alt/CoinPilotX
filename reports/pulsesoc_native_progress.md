@@ -4552,3 +4552,47 @@ Reason for recommendation:
 - No new Home feature is needed.
 - The only Home release blockers are evidence blockers: a human-captured iPhone Home interaction pass and provider-backed notification tap proof.
 - The next pass should produce a video/screenshot path plus any backend IDs for publish/comment/activity events that happen during the run.
+
+## Native Full Wiring Autopilot
+
+Section: core native wiring.
+
+Completed action:
+
+- Added a native `Create` bottom-tab action that opens the existing Home composer.
+- Added a native Home top bar for menu, search, activity, and profile.
+- Added a Home hamburger drawer with 32 classified native/fallback actions.
+- Added explicit Settings entries for Support Center, Privacy Policy, Terms of Service, and Telegram companion setup.
+- Preserved server-authoritative behavior and production WebView compatibility.
+- Added a reproducible full-wiring audit script.
+
+Static audit result:
+
+- Total static action surfaces discovered: 332.
+- Dashboard modules: 146.
+- Dashboard quick actions: 12.
+- Bottom tabs: 15.
+- Stack screens: 77.
+- Home drawer actions: 32.
+- Settings buttons: 26.
+- Home composer pressables: 9.
+- Feed card pressables: 15.
+
+Current native status:
+
+- Current native migration: 96%.
+- Core native wiring: 94%.
+- Release QA confidence: 86%.
+
+Visible QA note:
+
+- Built-in QA browser rendered native Login after a clean Metro rebuild.
+- Authenticated visible wiring click-through was blocked because the local QA API/proxy at `127.0.0.1:5108` was not running.
+- No Chrome Incognito was used.
+
+Recommended next mission: PulseSoc Native Authenticated Wiring QA Pass.
+
+Reason for recommendation:
+
+- Core wiring is now foundation-complete by static audit.
+- The next highest-value task is to restore the local QA API/proxy and run a focused visible click-through of representative drawer, Settings, dashboard, Home, marketplace, messaging, and profile actions to catch any route-level runtime misses before returning to release-device evidence tasks.

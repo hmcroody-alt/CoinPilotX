@@ -13,6 +13,7 @@ export type AppTabParamList = {
   Groups: undefined;
   Live: undefined;
   Reels: undefined;
+  Create: undefined;
   Status: { openCreator?: boolean; statusId?: number } | undefined;
   Messenger: undefined;
   Notifications: undefined;
