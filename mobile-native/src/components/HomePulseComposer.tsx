@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { createPost, PulsePost } from "../api/feed";
-import { LogiNexusBadge, LogiNexusPanel } from "./LogiNexus";
+import { LogiNexusPanel } from "./LogiNexus";
 import { MediaUploadPreview } from "../media/MediaUploadPreview";
 import { NativeMediaAsset, NativeMediaUploadResult, uploadResultMediaId } from "../media/nativeMediaUpload";
 import { useNativeMediaUpload } from "../media/useNativeMediaUpload";
@@ -244,14 +244,25 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
 
   return (
     <LogiNexusPanel style={styles.wrap} tone={mode === "live" ? "danger" : mode === "reel" ? "creator" : "default"}>
-      <View style={styles.headerRow}>
-        <View>
-          <LogiNexusBadge label="Pulse Network" tone={mode === "live" ? "danger" : mode === "reel" ? "creator" : "default"} />
-          <Text style={styles.title}>Transmission Console</Text>
+      <View accessible accessibilityLabel="Transmission Console" style={styles.headerRow}>
+        <View style={styles.identityOrb}>
+          <Text style={styles.identityOrbText}>LN</Text>
+          <View style={styles.identitySignal} />
         </View>
-        <Pressable style={styles.livePill} onPress={onOpenLive}>
-          <Text style={styles.liveDot}>●</Text>
-          <Text style={styles.liveText}>LIVE</Text>
+        <TextInput
+          testID="home-composer-input"
+          accessibilityLabel="Home composer text"
+          multiline
+          maxLength={MAX_BODY}
+          placeholder="Transmit to the Pulse Network..."
+          placeholderTextColor={colors.muted}
+          style={styles.input}
+          value={body}
+          onChangeText={setBody}
+        />
+        <Pressable style={styles.audiencePill} onPress={cycleVisibility}>
+          <Text style={styles.audienceText}>{visibilityLabel(visibility)}</Text>
+          <Text style={styles.audienceArrow}>⌄</Text>
         </Pressable>
       </View>
       <View style={styles.modeRow}>
@@ -266,20 +277,6 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
             <Text style={[styles.modeText, mode === item.key && styles.modeTextActive]}>{item.label}</Text>
           </Pressable>
         ))}
-      </View>
-      <View style={styles.inputWrap}>
-        <TextInput
-          testID="home-composer-input"
-          accessibilityLabel="Home composer text"
-          multiline
-          maxLength={MAX_BODY}
-          placeholder="Transmit to the Pulse Network..."
-          placeholderTextColor={colors.muted}
-          style={styles.input}
-          value={body}
-          onChangeText={setBody}
-        />
-        <Text testID="home-composer-counter" style={styles.counter}>{characters}/{MAX_BODY}</Text>
       </View>
       <View style={styles.actionGrid}>
         <ComposerAction testID="home-composer-photo" label="Photo" icon="▧" onPress={() => media.chooseImage().then(() => setNote("Photo selected for PulseSoc upload.")).catch(() => undefined)} />
@@ -300,8 +297,9 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
           setTopic(next);
           setNote(next ? "Topic tag added for backend publish." : "Topic tag cleared.");
         }} />
-        <ComposerAction label={visibilityLabel(visibility)} icon="◎" onPress={cycleVisibility} />
+        <ComposerAction label="More" icon="…" onPress={cycleVisibility} />
       </View>
+      <Text testID="home-composer-counter" style={styles.counter}>{characters}/{MAX_BODY}</Text>
       {media.asset || media.result || media.progress.stage !== "idle" || media.error ? (
         <MediaUploadPreview
           asset={media.asset}
@@ -417,17 +415,17 @@ const styles = StyleSheet.create({
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: logiNexus.radius.large,
     borderWidth: 1,
-    flexBasis: "23%",
+    flexBasis: "13.8%",
     gap: 8,
     justifyContent: "center",
-    minHeight: 64,
-    paddingHorizontal: 8,
-    paddingVertical: 10
+    minHeight: 58,
+    paddingHorizontal: 6,
+    paddingVertical: 8
   },
   actionGrid: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
+    flexWrap: "nowrap",
+    gap: 8,
     marginTop: 14
   },
   actionIcon: {
@@ -444,10 +442,10 @@ const styles = StyleSheet.create({
   },
   counter: {
     bottom: 12,
-    color: colors.muted,
+    color: colors.accentStrong,
     fontWeight: "900",
-    position: "absolute",
-    right: 14
+    marginTop: 8,
+    textAlign: "right"
   },
   errorText: {
     color: colors.danger
@@ -484,24 +482,64 @@ const styles = StyleSheet.create({
   headerRow: {
     alignItems: "center",
     flexDirection: "row",
+    gap: 12,
     justifyContent: "space-between"
+  },
+  identityOrb: {
+    alignItems: "center",
+    backgroundColor: "rgba(159, 124, 255, 0.18)",
+    borderColor: logiNexus.colors.home.borderIntelligence,
+    borderRadius: 28,
+    borderWidth: 1,
+    height: 56,
+    justifyContent: "center",
+    width: 56
+  },
+  identityOrbText: {
+    color: colors.accentStrong,
+    fontSize: 14,
+    fontWeight: "900"
+  },
+  identitySignal: {
+    backgroundColor: colors.accent,
+    borderColor: logiNexus.colors.home.backgroundDeepSpace,
+    borderRadius: 6,
+    borderWidth: 2,
+    bottom: 2,
+    height: 12,
+    position: "absolute",
+    right: 2,
+    width: 12
   },
   input: {
     color: colors.text,
-    fontSize: 20,
-    lineHeight: 28,
-    minHeight: 136,
-    padding: 18,
-    paddingBottom: 36,
-    textAlignVertical: "top"
+    flex: 1,
+    fontSize: 18,
+    lineHeight: 25,
+    minHeight: 54,
+    paddingVertical: 4,
+    textAlignVertical: "center"
   },
-  inputWrap: {
-    backgroundColor: "rgba(3, 7, 18, 0.78)",
+  audienceArrow: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  audiencePill: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.055)",
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 24,
+    borderRadius: logiNexus.radius.capsule,
     borderWidth: 1,
-    marginTop: 14,
-    overflow: "hidden"
+    flexDirection: "row",
+    gap: 6,
+    minHeight: 38,
+    paddingHorizontal: 12
+  },
+  audienceText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "900"
   },
   liveDot: {
     color: colors.danger,
@@ -528,7 +566,7 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.large,
     flex: 1,
     justifyContent: "center",
-    minHeight: 50
+    minHeight: 42
   },
   modeButtonActive: {
     backgroundColor: colors.accent
@@ -540,8 +578,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 8,
-    marginTop: 14,
-    padding: 6
+    marginTop: 12,
+    padding: 5
   },
   modeText: {
     color: colors.muted,
@@ -625,9 +663,9 @@ const styles = StyleSheet.create({
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: logiNexus.radius.large,
     borderWidth: 1,
-    gap: 6,
-    marginTop: 14,
-    padding: 12
+    gap: 4,
+    marginTop: 12,
+    padding: 10
   },
   statusText: {
     color: colors.muted,
@@ -646,9 +684,9 @@ const styles = StyleSheet.create({
     marginTop: 8
   },
   wrap: {
-    backgroundColor: "rgba(11, 27, 44, 0.92)",
-    borderColor: logiNexus.colors.home.borderCreator,
+    backgroundColor: "rgba(10, 23, 39, 0.92)",
+    borderColor: "rgba(97, 216, 255, 0.62)",
     marginBottom: 14,
-    padding: 16
+    padding: 12
   }
 });

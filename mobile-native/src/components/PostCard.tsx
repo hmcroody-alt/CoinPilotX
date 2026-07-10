@@ -52,6 +52,7 @@ export function PostCard({
   const body = detail ? post.body : compactPreview(post.body, "");
   const commentCount = Number(post.comment_count || 0);
   const reactionTotal = Object.values(post.reaction_counts || {}).reduce((sum, count) => sum + Number(count || 0), 0);
+  const creatorLabel = author.premium_verified || author.verified ? "Pulse Creator" : "";
 
   return (
     <Pressable
@@ -61,32 +62,34 @@ export function PostCard({
       disabled={!onOpen}
     >
       <LogiNexusCard tone={post.viewer_reaction ? "creator" : "default"} style={styles.card}>
-        <Pressable
-          testID={`home-feed-author-${post.id}`}
-          accessibilityRole="button"
-          accessibilityLabel={`Open ${displayName} profile`}
-          style={styles.authorRow}
-          onPress={(event) => {
-            event.stopPropagation();
-            onAuthorPress?.(post);
-          }}
-          disabled={!onAuthorPress}
-        >
-          {author.avatar_url ? <Image source={{ uri: author.avatar_url }} style={styles.avatar} /> : <View style={styles.avatarFallback} />}
-          <View style={styles.authorText}>
-            <View style={styles.authorNameRow}>
-              <Text style={styles.authorName} numberOfLines={1}>
-                {displayName}
+        <View style={styles.cardHeader}>
+          <Pressable
+            testID={`home-feed-author-${post.id}`}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${displayName} profile`}
+            style={styles.authorRow}
+            onPress={(event) => {
+              event.stopPropagation();
+              onAuthorPress?.(post);
+            }}
+            disabled={!onAuthorPress}
+          >
+            {author.avatar_url ? <Image source={{ uri: author.avatar_url }} style={styles.avatar} /> : <View style={styles.avatarFallback} />}
+            <View style={styles.authorText}>
+              <View style={styles.authorNameRow}>
+                <Text style={styles.authorName} numberOfLines={1}>
+                  {displayName}
+                </Text>
+                {author.verified || author.premium_verified ? <Text style={styles.verifiedMark}>◆</Text> : null}
+              </View>
+              <Text style={styles.meta} numberOfLines={1}>
+                {handle ? `@${handle} · ` : ""}
+                {formatShortTime(post.created_at)} · {post.visibility || "public"}
               </Text>
-              {author.verified || author.premium_verified ? <Text style={styles.verifiedMark}>◆</Text> : null}
-              <LogiNexusBadge label={post.visibility || "public"} />
             </View>
-            <Text style={styles.meta} numberOfLines={1}>
-              {handle ? `@${handle} · ` : ""}
-              {formatShortTime(post.created_at)}
-            </Text>
-          </View>
-        </Pressable>
+          </Pressable>
+          {creatorLabel ? <View style={styles.creatorPill}><Text style={styles.creatorPillText}>✦ {creatorLabel}</Text></View> : <LogiNexusBadge label={post.visibility || "public"} />}
+        </View>
 
       {post.title ? <Text style={styles.title}>{post.title}</Text> : null}
       {body ? <Text style={styles.body}>{body}</Text> : null}
@@ -359,7 +362,9 @@ const styles = StyleSheet.create({
   authorRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 10
+    flex: 1,
+    gap: 10,
+    minWidth: 0
   },
   authorText: {
     flex: 1
@@ -383,14 +388,23 @@ const styles = StyleSheet.create({
   body: {
     color: colors.text,
     ...logiNexus.typography.home.cardBody,
-    marginTop: 12
+    marginTop: 14
   },
   card: {
-    backgroundColor: "rgba(7, 16, 29, 0.88)",
+    backgroundColor: "rgba(6, 14, 27, 0.94)",
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 24,
+    borderRadius: 26,
     marginBottom: 14,
-    padding: 16
+    padding: 16,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.1,
+    shadowRadius: 18
+  },
+  cardHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between"
   },
   cardPressed: {
     borderColor: colors.accent
@@ -429,13 +443,13 @@ const styles = StyleSheet.create({
     aspectRatio: 16 / 10,
     backgroundColor: colors.surfaceRaised,
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
     width: "100%"
   },
   mediaWrap: {
     gap: 8,
-    marginTop: 12
+    marginTop: 14
   },
   meta: {
     color: colors.muted,
@@ -481,7 +495,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "900",
     lineHeight: 27,
-    marginTop: 12
+    marginTop: 14
   },
   utilityButton: {
     minHeight: 34,
@@ -500,6 +514,19 @@ const styles = StyleSheet.create({
   verifiedMark: {
     color: colors.accentStrong,
     fontSize: 13,
+    fontWeight: "900"
+  },
+  creatorPill: {
+    backgroundColor: "rgba(159, 124, 255, 0.22)",
+    borderColor: logiNexus.colors.home.borderIntelligence,
+    borderRadius: logiNexus.radius.capsule,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  creatorPillText: {
+    color: "#d8c7ff",
+    fontSize: 11,
     fontWeight: "900"
   }
 });

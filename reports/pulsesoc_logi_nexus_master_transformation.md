@@ -24,13 +24,17 @@ Completed:
 - Transformed Status into the `Your Orbit` rail with circular avatars, unseen state, and clearer empty/cached language.
 - Updated the composer presentation into the `Transmission Console` while preserving publishing, draft recovery, upload queue, validation, retry, and feed invalidation.
 - Updated Home feed cards toward `Signal Card` presentation while preserving all server-authoritative feed actions.
+- Applied the approved Home reference image as inspiration for centered PulseSoc / LOGINEXUS command-strip treatment, richer hero network depth, compact composer density, creator-pill Signal Cards, and a stronger floating Create dock.
+- Launched the native app on the Xcode iPhone 17 Pro Simulator and fixed the simulator-discovered Home hero overlap with a compact narrow-screen layout.
+- Recorded native simulator evidence at `reports/screenshots/logi-nexus-home-iphone17pro-reconstructed-home-final-clean.png`.
 
 Not yet complete:
 
 - Full visible QA walkthrough after this visual-system pass.
 - Motion/reduced-motion hardening.
 - Bottom dock final visual fidelity.
-- iPhone simulator and physical-device release checks.
+- Physical-device release checks.
+- Existing app-wide `expo-av` deprecation warning remains visible in development builds and should be handled as a later media dependency migration.
 
 ## Master Navigation Drawer Milestone
 
@@ -55,29 +59,28 @@ Completed:
 
 ## Current Transformation Estimate
 
-- Overall LogiNexus transformation: 17%.
+- Overall LogiNexus transformation: 19%.
 - Native foundation/parity: 96%.
 - System consistency: 89%.
 - Release QA confidence: 87%.
 
 ## Current Weakest LogiNexus Subsystem
 
-Homefeed visible QA and interaction polish.
+Messenger / Pulse Command foundation.
 
 Why:
 
-- The Homefeed visual-system milestone is now in code, but visible QA, motion/reduced-motion behavior, and final interaction polish are not yet proven.
-- Messenger remains the next major subsystem after Homefeed is visibly verified.
+- Homefeed now has browser and Xcode iPhone Simulator proof for the foundation visual pass.
+- Messenger remains the highest-value daily-engagement subsystem that still needs foundation hardening before full WebView replacement.
 
 ## Autopilot Queue
 
-1. Homefeed visible QA and interaction polish.
-2. Messenger / Pulse Command.
-3. Search / Discover.
-4. Activity / Notifications.
-5. Profile identity hub.
-6. Reels, Status, Live, Media, Camera.
-7. Creator, Commerce, Trust, Intelligence, Settings.
+1. Messenger / Pulse Command.
+2. Search / Discover.
+3. Activity / Notifications.
+4. Profile identity hub.
+5. Reels, Status, Live, Media, Camera.
+6. Creator, Commerce, Trust, Intelligence, Settings.
 
 ## Safety Rules Preserved
 
@@ -86,3 +89,12 @@ Why:
 - No fake data was added.
 - No secrets were introduced.
 - No Android-specific release work was started.
+
+## Home Reconstruction Update
+
+Homefeed native reconstruction has moved from foundation parity into the first visual-system reconstruction pass. The generated image is treated as inspiration only; native source remains server-authoritative and does not embed the concept's static numbers or post content.
+
+- Home foundation/parity: high.
+- Home LogiNexus reconstruction: active milestone.
+- Global navigation: partially transformed through shared header/bottom dock primitives.
+- Full LogiNexus app transformation: not complete.

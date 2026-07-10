@@ -20,3 +20,12 @@ Status: foundation accessibility preserved; full review pending.
 - Dynamic type stress pass.
 - Reduced-motion review once Home ambient motion is implemented.
 - Physical iPhone tap target and screen recording review.
+
+## Reconstruction Update
+
+- Hero metric cells that route are exposed as buttons; passive metric cells are disabled pressables without button role.
+- Hero quick tiles expose route-specific accessibility labels.
+- Composer publish flow keeps the existing QA-addressable publish selector.
+- Feed card actions remain semantic native pressables with existing QA/test selectors.
+- Bottom navigation remains shared and label-driven.
+- Keyboard/screen-reader pass on web QA remains useful, but does not replace native VoiceOver release QA.

@@ -49,7 +49,7 @@ const PRIMARY_TABS: Array<{
   { name: "Home", routeName: "Home", label: "Home", symbol: "⌂", accessibilityLabel: "Open Home" },
   { name: "Reels", routeName: "Reels", label: "Reels", symbol: "▶", accessibilityLabel: "Open Reels" },
   { name: "Create", routeName: "Create", label: "Create", symbol: "+", accessibilityLabel: "Open Create" },
-  { name: "Messenger", routeName: "Messenger", label: "Messages", symbol: "☏", accessibilityLabel: "Open Messages" },
+  { name: "Messenger", routeName: "Messenger", label: "Messages", symbol: "☵", accessibilityLabel: "Open Messages" },
   { name: "Profile", routeName: "Profile", label: "Profile", symbol: "◉", accessibilityLabel: "Open Profile" }
 ];
 
@@ -74,9 +74,10 @@ export function LogiNexusGlobalHeader({
   const messageCount = normalizeBadgeCount(badges?.messages);
   const initials = initialsFor(identity?.displayName || identity?.username || "PulseSoc");
   const intelligenceMode = mode === "intelligence";
+  const homeMode = mode === "home";
 
   return (
-    <View style={[styles.headerShell, { paddingTop: Math.max(insets.top, 10) }]} testID={testID}>
+    <View style={[styles.headerShell, homeMode && styles.headerShellHome, { paddingTop: Math.max(insets.top, 10) }]} testID={testID}>
       <View style={styles.headerRow}>
         {canGoBack ? (
           <IconButton label="Back" symbol="‹" testID="global-header-back" onPress={onBack} />
@@ -86,15 +87,15 @@ export function LogiNexusGlobalHeader({
           <View style={styles.iconButtonSpacer} />
         )}
 
-        <View style={styles.titleBlock}>
+        <View style={[styles.titleBlock, homeMode && styles.titleBlockHome]}>
           <View style={styles.brandRow}>
-            <LogiNexusSignalIndicator active tone={intelligenceMode ? "intelligence" : "default"} />
-            <Text style={styles.headerTitle} numberOfLines={1}>
+            {homeMode ? null : <LogiNexusSignalIndicator active tone={intelligenceMode ? "intelligence" : "default"} />}
+            <Text style={[styles.headerTitle, homeMode && styles.headerTitleHome]} numberOfLines={1}>
               {title}
             </Text>
           </View>
           {subtitle ? (
-            <Text style={styles.headerSubtitle} numberOfLines={1}>
+            <Text style={[styles.headerSubtitle, homeMode && styles.headerSubtitleHome]} numberOfLines={1}>
               {subtitle}
             </Text>
           ) : null}
@@ -118,11 +119,11 @@ export function LogiNexusGlobalHeader({
           ) : null}
         </View>
       </View>
-      <View style={styles.headerMetaRow}>
+      {!homeMode ? <View style={styles.headerMetaRow}>
         <LogiNexusBadge label={intelligenceMode ? "UNDX" : "LogiNexus"} tone={intelligenceMode ? "intelligence" : "default"} />
         {identity?.attention ? <LogiNexusBadge label="attention" tone="warning" /> : null}
         {badges?.alerts ? <LogiNexusBadge label={`${formatBadge(badges.alerts)} alerts`} tone="intelligence" /> : null}
-      </View>
+      </View> : null}
     </View>
   );
 }
@@ -148,7 +149,12 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
               accessibilityState={{ selected: active, disabled }}
               testID={`global-bottom-${String(item.name).toLowerCase()}`}
               disabled={disabled}
-              style={({ pressed }) => [styles.bottomItem, active && styles.bottomItemActive, pressed && styles.pressed]}
+              style={({ pressed }) => [
+                styles.bottomItem,
+                item.name === "Create" && styles.bottomCreateItem,
+                active && styles.bottomItemActive,
+                pressed && styles.pressed
+              ]}
               onPress={() => {
                 if (item.name === "Create") {
                   navigation.navigate("Home", { openComposer: true });
@@ -167,7 +173,7 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
                 if (route) navigation.emit({ type: "tabLongPress", target: route.key });
               }}
             >
-              <View style={[styles.bottomSymbol, active && styles.bottomSymbolActive]}>
+              <View style={[styles.bottomSymbol, item.name === "Create" && styles.bottomCreateSymbol, active && styles.bottomSymbolActive]}>
                 <Text style={[styles.bottomSymbolText, active && styles.bottomSymbolTextActive]}>{item.symbol}</Text>
                 {badge ? (
                   <View style={styles.bottomBadge}>
@@ -229,8 +235,8 @@ function initialsFor(value: string) {
 const styles = StyleSheet.create({
   avatarButton: {
     alignItems: "center",
-    backgroundColor: colors.glass,
-    borderColor: colors.border,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.18)",
     borderRadius: logiNexus.radius.circular,
     borderWidth: 1,
     height: 44,
@@ -245,7 +251,9 @@ const styles = StyleSheet.create({
   avatarSignal: {
     backgroundColor: colors.accent,
     borderRadius: 5,
-    bottom: 3,
+    borderColor: colors.background,
+    borderWidth: 2,
+    bottom: 1,
     height: 10,
     position: "absolute",
     right: 3,
@@ -257,7 +265,7 @@ const styles = StyleSheet.create({
   },
   bottomBadge: {
     alignItems: "center",
-    backgroundColor: colors.danger,
+    backgroundColor: colors.accent,
     borderColor: colors.background,
     borderRadius: logiNexus.radius.capsule,
     borderWidth: 1,
@@ -268,62 +276,78 @@ const styles = StyleSheet.create({
     top: -8
   },
   bottomBadgeText: {
-    color: colors.text,
+    color: colors.background,
     fontSize: 10,
     fontWeight: "900"
   },
   bottomItem: {
     alignItems: "center",
-    borderRadius: logiNexus.radius.large,
+    borderRadius: 28,
     flex: 1,
     gap: 4,
     justifyContent: "center",
-    minHeight: 62,
-    paddingHorizontal: 4,
+    minHeight: 68,
+    paddingHorizontal: 2,
     paddingVertical: 8
   },
   bottomItemActive: {
-    backgroundColor: "rgba(108, 244, 214, 0.14)"
+    backgroundColor: "rgba(50, 230, 179, 0.1)"
+  },
+  bottomCreateItem: {
+    marginTop: -18,
+    minHeight: 86
   },
   bottomLabel: {
     ...logiNexus.typography.metadata,
     color: colors.muted,
+    fontSize: 11,
+    lineHeight: 14,
     textAlign: "center"
   },
   bottomLabelActive: {
-    color: colors.text
+    color: colors.accent
   },
   bottomPanel: {
     alignItems: "center",
-    backgroundColor: colors.glassStrong,
-    borderColor: colors.border,
-    borderRadius: logiNexus.radius.panel,
+    backgroundColor: "rgba(3, 8, 18, 0.92)",
+    borderColor: "rgba(121, 210, 255, 0.18)",
+    borderRadius: 34,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 6,
-    minHeight: 76,
+    gap: 2,
+    minHeight: 86,
     padding: 8
   },
   bottomShell: {
-    backgroundColor: "rgba(3, 9, 18, 0.94)",
-    borderTopColor: colors.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    backgroundColor: "transparent",
+    borderTopColor: "transparent",
+    borderTopWidth: 0,
     paddingHorizontal: logiNexus.spacing.md,
     paddingTop: 8
   },
   bottomSymbol: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.055)",
-    borderColor: colors.border,
+    backgroundColor: "transparent",
+    borderColor: "transparent",
     borderRadius: logiNexus.radius.circular,
     borderWidth: 1,
-    height: 34,
+    height: 38,
     justifyContent: "center",
-    width: 34
+    width: 38
   },
   bottomSymbolActive: {
     backgroundColor: colors.accent,
-    borderColor: colors.accent
+    borderColor: colors.accent,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.35,
+    shadowRadius: 18
+  },
+  bottomCreateSymbol: {
+    backgroundColor: "rgba(50, 230, 179, 0.2)",
+    borderColor: colors.accent,
+    borderWidth: 1,
+    height: 64,
+    width: 64
   },
   bottomSymbolText: {
     color: colors.text,
@@ -359,14 +383,30 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     paddingHorizontal: logiNexus.spacing.md
   },
+  headerShellHome: {
+    backgroundColor: logiNexus.colors.home.backgroundDeepSpace,
+    borderBottomColor: "transparent",
+    paddingBottom: 14
+  },
   headerSubtitle: {
     ...logiNexus.typography.metadata,
     color: colors.muted
+  },
+  headerSubtitleHome: {
+    color: colors.accent,
+    fontSize: 12,
+    letterSpacing: 6,
+    lineHeight: 17,
+    textAlign: "center"
   },
   headerTitle: {
     ...logiNexus.typography.sectionTitle,
     color: colors.text,
     flexShrink: 1
+  },
+  headerTitleHome: {
+    ...logiNexus.typography.home.brand,
+    textAlign: "center"
   },
   iconBadge: {
     alignItems: "center",
@@ -385,9 +425,9 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     alignItems: "center",
-    backgroundColor: colors.glass,
-    borderColor: colors.border,
-    borderRadius: logiNexus.radius.medium,
+    backgroundColor: "rgba(255,255,255,0.055)",
+    borderColor: "rgba(255,255,255,0.16)",
+    borderRadius: 18,
     borderWidth: 1,
     height: 44,
     justifyContent: "center",
@@ -410,9 +450,13 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0
   },
+  titleBlockHome: {
+    alignItems: "center"
+  },
   brandRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 8
+    gap: 8,
+    justifyContent: "center"
   }
 });

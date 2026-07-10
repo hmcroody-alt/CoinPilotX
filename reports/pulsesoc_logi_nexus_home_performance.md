@@ -24,3 +24,14 @@ Status: low-risk visual-system milestone.
 - iPhone simulator scroll and keyboard check.
 - Large feed memory behavior.
 - Reduced-motion and low-power behavior when platform hooks are available.
+
+## Reconstruction Update
+
+- The Home reconstruction keeps feed loading on the existing cursor/pagination path.
+- The hero uses lightweight React Native views instead of bitmap-heavy or canvas-heavy animation.
+- No new polling loop was introduced.
+- Event refresh continues through the existing native sync invalidation layer.
+- Feed cards keep lazy media handoff through existing post/media components.
+- Final ambient animation is not implemented yet; it must remain reduced-motion aware and low battery impact.
+- Physical iPhone scrolling/performance still needs release QA.
+- Expo AV deprecation warnings are app-wide and were not changed in this Homefeed scope.
