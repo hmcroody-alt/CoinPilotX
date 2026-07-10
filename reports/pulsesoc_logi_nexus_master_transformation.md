@@ -25,31 +25,41 @@ Completed:
 - Added drawer search, collapsible sections, route descriptions, and native/shell/fallback/gated classification.
 - Updated the public-facing intelligence tab title to `UNDX`.
 
+## Global Navigation Milestone
+
+Completed:
+
+- Added the reusable `LogiNexusGlobalHeader` command-strip primitive.
+- Added the reusable `LogiNexusBottomNavigation` primary tab primitive.
+- Wired global badges through existing notification count APIs and event-sync invalidation.
+- Added shared authenticated identity metadata and drawer identity rendering.
+- Integrated the master drawer with stack and tab route dispatch from the shared navigator.
+- Updated Home to use the shared command-strip primitive without changing Home backend behavior.
+
 ## Current Transformation Estimate
 
-- Overall LogiNexus transformation: 11%.
+- Overall LogiNexus transformation: 14%.
 - Native foundation/parity: 96%.
-- System consistency: 88%.
+- System consistency: 89%.
 - Release QA confidence: 87%.
 
 ## Current Weakest LogiNexus Subsystem
 
-Global top and bottom navigation.
+Messenger / Pulse Command.
 
 Why:
 
-- Home and the master drawer now share the first reusable design-system layer.
-- The bottom tabs and stack headers still use basic React Navigation styling and need the shared LogiNexus command/navigation treatment before Messenger/Profile/Reels transformations.
+- Home, the master drawer, global headers, and bottom navigation now share reusable foundation primitives.
+- Messenger is the highest daily-engagement surface still carrying subsystem-specific chrome and needs the next parity and LogiNexus foundation pass before calls, profile, and content verticals.
 
 ## Autopilot Queue
 
-1. Global top and bottom navigation.
+1. Messenger / Pulse Command.
 2. Search / Discover.
 3. Activity / Notifications.
-4. Messenger / UNDX conversation surfaces.
-6. Profile identity hub.
-7. Reels, Status, Live, Media, Camera.
-8. Creator, Commerce, Trust, Intelligence, Settings.
+4. Profile identity hub.
+5. Reels, Status, Live, Media, Camera.
+6. Creator, Commerce, Trust, Intelligence, Settings.
 
 ## Safety Rules Preserved
 

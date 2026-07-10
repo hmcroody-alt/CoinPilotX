@@ -11,12 +11,14 @@ REQUIRED = {
     "composer": ROOT / "mobile-native/src/components/HomePulseComposer.tsx",
     "post card": ROOT / "mobile-native/src/components/PostCard.tsx",
     "master drawer": ROOT / "mobile-native/src/components/MasterNavigationDrawer.tsx",
+    "global navigation": ROOT / "mobile-native/src/navigation/GlobalNavigation.tsx",
     "navigation inventory": ROOT / "mobile-native/src/navigation/masterNavigation.ts",
     "route dispatcher": ROOT / "mobile-native/src/navigation/nativeRouteActions.ts",
     "master report": ROOT / "reports/pulsesoc_logi_nexus_master_transformation.md",
     "design report": ROOT / "reports/pulsesoc_logi_nexus_design_system.md",
     "home report": ROOT / "reports/pulsesoc_logi_nexus_home_progress.md",
     "drawer report": ROOT / "reports/pulsesoc_logi_nexus_master_navigation_drawer.md",
+    "global navigation report": ROOT / "reports/pulsesoc_native_global_navigation_logi_nexus.md",
     "visible qa report": ROOT / "reports/pulsesoc_logi_nexus_visible_qa.md",
     "screen inventory": ROOT / "reports/pulsesoc_logi_nexus_screen_inventory.md",
 }
@@ -37,6 +39,10 @@ CHECKS = [
     ("Master drawer UNDX action", "mobile-native/src/navigation/masterNavigation.ts", "Digital Intelligence Companion"),
     ("Shared route dispatcher", "mobile-native/src/navigation/nativeRouteActions.ts", "export function openNativeRoute"),
     ("Home uses master drawer", "mobile-native/src/screens/HomeScreen.tsx", "MasterNavigationDrawer"),
+    ("Global header primitive", "mobile-native/src/navigation/GlobalNavigation.tsx", "LogiNexusGlobalHeader"),
+    ("Global bottom navigation primitive", "mobile-native/src/navigation/GlobalNavigation.tsx", "LogiNexusBottomNavigation"),
+    ("App uses global navigation", "mobile-native/src/navigation/AppNavigator.tsx", "LogiNexusBottomNavigation"),
+    ("Master drawer identity header", "mobile-native/src/components/MasterNavigationDrawer.tsx", "master-drawer-identity"),
     ("Global tab title uses UNDX", "mobile-native/src/navigation/AppNavigator.tsx", "title: \"UNDX\""),
 ]
 
@@ -69,6 +75,8 @@ def main() -> int:
             failures.append("progress report missing LogiNexus Transformation Phase 1 section")
         if "LogiNexus Master Navigation Drawer Foundation" not in progress_text:
             failures.append("progress report missing LogiNexus Master Navigation Drawer Foundation section")
+        if "LogiNexus Global Navigation Foundation" not in progress_text:
+            failures.append("progress report missing LogiNexus Global Navigation Foundation section")
 
     if failures:
         print("PulseSoc LogiNexus audit failed:")

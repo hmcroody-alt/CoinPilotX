@@ -90,3 +90,32 @@ QA limitations:
 
 - The local temporary web QA session showed API cards with `Login required` after hard reloads because the web QA cookie path is cross-origin between `localhost:8094` and the local API proxy. The visible route and drawer checks were therefore performed inside the active signed-in single-page app state.
 - This pass did not claim physical-device navigation, push taps, or hardware-only behavior.
+
+## Global Navigation Visible QA
+
+Status: completed for the global navigation foundation milestone.
+
+Verified visibly in the built-in QA browser on `http://localhost:8094` with the local API/proxy stack:
+
+- Authenticated Mission Control showed the shared global command strip.
+- Global header showed activity badge state and profile initials.
+- Master drawer opened from the command strip and showed the authenticated identity header.
+- Drawer Home action opened native Home.
+- Bottom navigation opened Reels.
+- Bottom Create routed back to Home with the composer context.
+- Bottom navigation opened Messages.
+- Bottom navigation opened Profile.
+- Header Activity action opened Activity Inbox / Notifications.
+- Drawer Marketplace action opened native Marketplace.
+- Drawer UNDX action opened the UNDX route.
+- No browser console errors were captured during this walkthrough.
+
+Known non-claims:
+
+- Physical iPhone safe area and Dynamic Island behavior.
+- APNs push tap routing and provider badge clearing.
+- Background badge updates.
+
+Observed follow-up:
+
+- The UNDX route header is branded correctly, but inner AI screen body copy still uses legacy `Pulse AI` text. This is queued for the Messenger / UNDX subsystem pass.

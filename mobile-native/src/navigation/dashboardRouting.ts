@@ -1,10 +1,11 @@
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Linking } from "react-native";
 import { PULSE_API_BASE_URL } from "../api/config";
 import { dashboardModuleGroups, DashboardModuleGroup, DashboardModuleItem } from "../data/dashboardModules";
 import { RootStackParamList } from "./types";
 
-export type DashboardNavigation = NativeStackNavigationProp<RootStackParamList>;
+export type DashboardNavigation = {
+  navigate: (...args: any[]) => void;
+};
 export type DashboardModuleRouteMatch = {
   group: DashboardModuleGroup;
   module: DashboardModuleItem;

@@ -5,10 +5,10 @@ Status: initial inventory.
 ## Phase 1 Core Experience
 
 - Home: first transformation pass complete.
-- Global top navigation: pending.
-- Bottom navigation: pending.
+- Global top navigation: foundation complete.
+- Bottom navigation: foundation complete.
 - Master navigation drawer: foundation transformation complete.
-- Create flow: pending.
+- Create flow: wired through shared bottom navigation to Home composer; dedicated create gateway transformation pending.
 - Search / Discover: pending.
 - Activity / Notifications: pending.
 

@@ -4701,3 +4701,38 @@ Reason for recommendation:
 
 - The master drawer is now represented by a shared native component and central route inventory.
 - The remaining weakest navigation layer is the global top/bottom navigation chrome, which still uses basic navigator styling and must become a coherent LogiNexus command layer before the next content verticals are transformed.
+
+## LogiNexus Global Navigation Foundation
+
+Section: shared top navigation, bottom navigation, drawer integration, route state, and badge foundation.
+
+Completed action:
+
+- Added `LogiNexusGlobalHeader` as the shared native command-strip header.
+- Added `LogiNexusBottomNavigation` as the shared primary five-action navigation bar.
+- Kept Home, Reels, Create, Messages, and Profile as the primary bottom actions while preserving the broader native tab registry for route dispatch.
+- Wired notification/activity/message/alert badge state through existing notification APIs and the native event-sync invalidation layer.
+- Added authenticated identity metadata from existing profile/session APIs.
+- Added an authenticated identity header inside `MasterNavigationDrawer`.
+- Connected stack and tab screens to the shared global header where safe.
+- Replaced Home's local top-bar rendering with the shared command-strip primitive.
+
+Current native status:
+
+- Current native migration: 96%.
+- Overall LogiNexus transformation: 14%.
+- Global navigation foundation: 84%.
+- Release QA confidence: 87%.
+
+Remaining navigation gaps:
+
+- Home uses the shared command-strip primitive but does not yet receive live global badge/identity props because Home still owns its header locally.
+- Physical iPhone safe area, Dynamic Island, background badge refresh, and push-tap clearing remain release-device/provider QA.
+- Some nested subsystem screens still carry local headers until their subsystem transformation pass.
+
+Recommended next mission: PulseSoc Native Messenger / Pulse Command Foundation Hardening.
+
+Reason for recommendation:
+
+- The shared navigation foundation now exists across stack, tab, drawer, and Home command-strip surfaces.
+- Messenger is the highest-value daily-engagement subsystem still needing full native foundation hardening across inbox, chat, unread state, calls, attachments, and UNDX/Pulse Command identity.

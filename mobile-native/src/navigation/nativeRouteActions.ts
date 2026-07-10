@@ -1,8 +1,8 @@
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { openDashboardRoute } from "./dashboardRouting";
-import { RootStackParamList } from "./types";
 
-export type NativeRouteNavigation = NativeStackNavigationProp<RootStackParamList>;
+export type NativeRouteNavigation = {
+  navigate: (...args: any[]) => void;
+};
 
 export function openNativeRoute(navigation: NativeRouteNavigation, routePath: string) {
   if (routePath === "/pulse") navigation.navigate("Tabs", { screen: "Home" });

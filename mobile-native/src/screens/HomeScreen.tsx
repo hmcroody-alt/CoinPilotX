@@ -20,6 +20,7 @@ import { LogiNexusBadge, LogiNexusButton, LogiNexusEmptyState, LogiNexusMetric, 
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { PostCard } from "../components/PostCard";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
+import { LogiNexusGlobalHeader } from "../navigation/GlobalNavigation";
 import { openDashboardRoute } from "../navigation/dashboardRouting";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
 import { AppTabParamList, RootStackParamList } from "../navigation/types";
@@ -506,29 +507,17 @@ function HomeTopBar({
   onOpenProfile: () => void;
 }) {
   return (
-    <View style={styles.topBar}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Open PulseSoc navigation drawer" testID="home-top-menu" style={styles.topIconButton} onPress={onOpenDrawer}>
-        <Text style={styles.topIconText}>☰</Text>
-      </Pressable>
-      <View style={styles.topBrand}>
-        <LogiNexusSignalIndicator />
-        <View>
-          <Text style={styles.topBrandText}>PulseSoc</Text>
-          <Text style={styles.topBrandSubtext}>Powered by LogiNexus Intelligence</Text>
-        </View>
-      </View>
-      <View style={styles.topActions}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Search PulseSoc" testID="home-top-search" style={styles.topIconButton} onPress={onOpenSearch}>
-          <Text style={styles.topIconText}>⌕</Text>
-        </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Open Activity Inbox" testID="home-top-activity" style={styles.topIconButton} onPress={onOpenActivity}>
-          <Text style={styles.topIconText}>99+</Text>
-        </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Open Profile" testID="home-top-profile" style={styles.topAvatarButton} onPress={onOpenProfile}>
-          <Text style={styles.topAvatarText}>ME</Text>
-        </Pressable>
-      </View>
-    </View>
+    <LogiNexusGlobalHeader
+      title="PulseSoc"
+      subtitle="Powered by LogiNexus Intelligence"
+      mode="home"
+      showDrawer
+      onOpenDrawer={onOpenDrawer}
+      onOpenSearch={onOpenSearch}
+      onOpenActivity={onOpenActivity}
+      onOpenProfile={onOpenProfile}
+      testID="home-global-command-strip"
+    />
   );
 }
 

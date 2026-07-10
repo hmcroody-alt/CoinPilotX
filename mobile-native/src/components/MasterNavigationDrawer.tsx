@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { GlobalNavigationIdentity } from "../navigation/GlobalNavigation";
 import { colors } from "../theme/colors";
 import { logiNexus, LogiNexusTone } from "../theme/logiNexus";
 import { LogiNexusBadge, LogiNexusCard, LogiNexusPanel, LogiNexusSignalIndicator } from "./LogiNexus";
@@ -7,12 +8,13 @@ import { masterNavigationSections, MasterNavigationAction, MasterNavigationSecti
 
 type Props = {
   visible: boolean;
+  identity?: GlobalNavigationIdentity;
   onClose: () => void;
   onOpenRoute: (route: string) => void;
   sections?: MasterNavigationSection[];
 };
 
-export function MasterNavigationDrawer({ visible, onClose, onOpenRoute, sections = masterNavigationSections }: Props) {
+export function MasterNavigationDrawer({ visible, identity, onClose, onOpenRoute, sections = masterNavigationSections }: Props) {
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -46,6 +48,7 @@ export function MasterNavigationDrawer({ visible, onClose, onOpenRoute, sections
                 <Text style={styles.drawerKicker}>LOGINEXUS NETWORK</Text>
                 <Text style={styles.drawerTitle}>PulseSoc Navigation</Text>
                 <Text style={styles.drawerSubtitle}>Search, classify, and route every native subsystem.</Text>
+                {identity ? <DrawerIdentity identity={identity} /> : null}
               </View>
             </View>
             <Pressable accessibilityRole="button" accessibilityLabel="Close navigation drawer" style={styles.drawerClose} onPress={onClose}>
@@ -119,6 +122,35 @@ export function MasterNavigationDrawer({ visible, onClose, onOpenRoute, sections
         </LogiNexusPanel>
       </View>
     </Modal>
+  );
+}
+
+function DrawerIdentity({ identity }: { identity: GlobalNavigationIdentity }) {
+  const name = identity.displayName || identity.username || "PulseSoc member";
+  const initials =
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || "PS";
+
+  return (
+    <View style={styles.identityRow} testID="master-drawer-identity">
+      <View style={styles.identityAvatar}>
+        {identity.avatarUrl ? <Image source={{ uri: identity.avatarUrl }} style={styles.identityImage} /> : <Text style={styles.identityInitials}>{initials}</Text>}
+      </View>
+      <View style={styles.identityCopy}>
+        <Text style={styles.identityName} numberOfLines={1}>
+          {name}
+        </Text>
+        <Text style={styles.identityMeta} numberOfLines={1}>
+          {identity.username ? `@${identity.username}` : "Authenticated PulseSoc account"}
+        </Text>
+      </View>
+      {identity.verified ? <LogiNexusBadge label="verified" tone="default" /> : null}
+      {identity.premium ? <LogiNexusBadge label="premium" tone="economy" /> : null}
+    </View>
   );
 }
 
@@ -288,6 +320,48 @@ const styles = StyleSheet.create({
   },
   drawerTitleText: {
     flex: 1
+  },
+  identityAvatar: {
+    alignItems: "center",
+    backgroundColor: colors.glass,
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.circular,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: "center",
+    overflow: "hidden",
+    width: 42
+  },
+  identityCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  identityImage: {
+    height: "100%",
+    width: "100%"
+  },
+  identityInitials: {
+    ...logiNexus.typography.label,
+    color: colors.text
+  },
+  identityMeta: {
+    ...logiNexus.typography.metadata,
+    color: colors.muted
+  },
+  identityName: {
+    ...logiNexus.typography.body,
+    color: colors.text
+  },
+  identityRow: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.large,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: logiNexus.spacing.sm,
+    marginTop: logiNexus.spacing.sm,
+    padding: logiNexus.spacing.sm
   },
   noResults: {
     gap: logiNexus.spacing.sm

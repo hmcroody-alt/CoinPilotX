@@ -5,6 +5,8 @@ import * as Notifications from "expo-notifications";
 import { useCallback, useEffect, useState } from "react";
 import { AppState } from "react-native";
 import { getNotificationBadgeCounts, unreadCount } from "../api/notifications";
+import { getMyProfile, PulseProfile } from "../api/profile";
+import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { invalidateNativeSync, registerSyncInvalidation, startNativeEventSync } from "../core/eventSync";
 import { AccountCenterScreen } from "../screens/AccountCenterScreen";
 import { AccountHealthAppealsScreen } from "../screens/AccountHealthAppealsScreen";
@@ -47,7 +49,11 @@ import { VerificationCenterScreen } from "../screens/VerificationCenterScreen";
 import { UserDashboardScreen } from "../screens/UserDashboardScreen";
 import { ChatScreen } from "../screens/ChatScreen";
 import { colors } from "../theme/colors";
+import { useAuth } from "../session/auth";
+import { GlobalNavigationBadges, GlobalNavigationIdentity, LogiNexusBottomNavigation, LogiNexusGlobalHeader } from "./GlobalNavigation";
 import { AppTabParamList, RootStackParamList } from "./types";
+import { openNativeRoute } from "./nativeRouteActions";
+import { navigationRef } from "./notificationRouting";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<AppTabParamList>();
@@ -62,17 +68,71 @@ function CreateTabScreen() {
   return null;
 }
 
-function TabNavigator() {
-  const [notificationUnread, setNotificationUnread] = useState(0);
+function TabNavigator({
+  badges,
+  identity,
+  onOpenDrawer
+}: {
+  badges: GlobalNavigationBadges;
+  identity?: GlobalNavigationIdentity;
+  onOpenDrawer: () => void;
+}) {
+  return (
+    <Tabs.Navigator
+      tabBar={(props) => <LogiNexusBottomNavigation {...props} badges={badges} />}
+      screenOptions={({ navigation, route }) => ({
+        header: ({ options }) => (
+          <LogiNexusGlobalHeader
+            title={String(options.title || route.name)}
+            subtitle={subtitleForTab(route.name)}
+            mode={route.name === "PulseAI" ? "intelligence" : "standard"}
+            showDrawer
+            onOpenDrawer={onOpenDrawer}
+            onOpenSearch={() => navigation.navigate("Search")}
+            onOpenActivity={() => navigation.navigate("Notifications")}
+            onOpenMessages={() => navigation.navigate("Messenger")}
+            onOpenProfile={() => navigation.navigate("Profile")}
+            badges={badges}
+            identity={identity}
+          />
+        )
+      })}
+    >
+      <Tabs.Screen name="Dashboard" component={UserDashboardScreen} options={{ title: "Mission Control" }} />
+      <Tabs.Screen name="Home" component={HomeScreen} options={{ headerShown: false, title: "Home" }} />
+      <Tabs.Screen name="Search" component={SearchScreen} options={{ title: "Search" }} />
+      <Tabs.Screen name="Saved" component={SavedScreen} options={{ title: "Saved" }} />
+      <Tabs.Screen name="Groups" component={GroupsScreen} options={{ title: "Communities" }} />
+      <Tabs.Screen name="Live" component={LiveScreen} options={{ title: "Live" }} />
+      <Tabs.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />
+      <Tabs.Screen name="Create" component={CreateTabScreen} options={{ title: "Create" }} />
+      <Tabs.Screen name="Status" component={StatusScreen} options={{ title: "Status" }} />
+      <Tabs.Screen name="Messenger" component={MessengerScreen} options={{ title: "Messages" }} />
+      <Tabs.Screen name="Notifications" component={ActivityInboxScreen} options={{ title: "Activity" }} />
+      <Tabs.Screen name="PulseAI" component={PulseAiScreen} options={{ title: "UNDX" }} />
+      <Tabs.Screen name="Profile" component={ProfileScreen} options={{ title: "Profile" }} />
+      <Tabs.Screen name="Marketplace" component={MarketplaceScreen} options={{ title: "Marketplace" }} />
+      <Tabs.Screen name="Settings" component={SettingsScreen} options={{ title: "Settings" }} />
+    </Tabs.Navigator>
+  );
+}
+
+export function AppNavigator() {
+  const { authState } = useAuth();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [badges, setBadges] = useState<GlobalNavigationBadges>({});
+  const [profile, setProfile] = useState<PulseProfile | null>(null);
 
   const refreshBadges = useCallback(async () => {
     try {
       const counts = await getNotificationBadgeCounts();
-      const nextUnread = unreadCount(counts);
-      setNotificationUnread(nextUnread);
-      await Notifications.setBadgeCountAsync(nextUnread).catch(() => undefined);
+      const activity = unreadCount(counts);
+      const messages = Number(counts.chat_unread_count || 0);
+      const alerts = Number(counts.alert_unread_count || 0);
+      setBadges({ activity, messages, alerts });
+      await Notifications.setBadgeCountAsync(activity).catch(() => undefined);
     } catch {
-      setNotificationUnread(0);
+      setBadges({});
     }
   }, []);
 
@@ -101,45 +161,51 @@ function TabNavigator() {
     };
   }, [refreshBadges]);
 
-  return (
-    <Tabs.Navigator
-      screenOptions={{
-        headerStyle: { backgroundColor: colors.surface },
-        headerTintColor: colors.text,
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.muted
-      }}
-    >
-      <Tabs.Screen name="Dashboard" component={UserDashboardScreen} options={{ title: "Dashboard" }} />
-      <Tabs.Screen name="Home" component={HomeScreen} />
-      <Tabs.Screen name="Search" component={SearchScreen} />
-      <Tabs.Screen name="Saved" component={SavedScreen} />
-      <Tabs.Screen name="Groups" component={GroupsScreen} />
-      <Tabs.Screen name="Live" component={LiveScreen} />
-      <Tabs.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />
-      <Tabs.Screen name="Create" component={CreateTabScreen} options={{ title: "Create" }} />
-      <Tabs.Screen name="Status" component={StatusScreen} />
-      <Tabs.Screen name="Messenger" component={MessengerScreen} />
-      <Tabs.Screen name="Notifications" component={ActivityInboxScreen} options={{ title: "Activity", tabBarBadge: notificationUnread || undefined }} />
-      <Tabs.Screen name="PulseAI" component={PulseAiScreen} options={{ title: "UNDX" }} />
-      <Tabs.Screen name="Profile" component={ProfileScreen} />
-      <Tabs.Screen name="Marketplace" component={MarketplaceScreen} />
-      <Tabs.Screen name="Settings" component={SettingsScreen} />
-    </Tabs.Navigator>
-  );
-}
+  useEffect(() => {
+    getMyProfile().then(setProfile).catch(() => setProfile(null));
+  }, []);
 
-export function AppNavigator() {
+  const identity: GlobalNavigationIdentity = {
+    displayName: profile?.display_name || authState.user?.display_name || authState.user?.full_name || "PulseSoc member",
+    username: profile?.username || authState.user?.username || "",
+    avatarUrl: profile?.avatar_thumbnail_url || profile?.avatar_url || authState.user?.avatar_url || "",
+    verified: Boolean(profile?.verified_badge),
+    premium: ["active", "premium", "founder"].includes(String(profile?.premium_status || authState.user?.premium_status || "").toLowerCase()),
+    attention: String(profile?.account_status || authState.user?.account_status || "active").toLowerCase() !== "active"
+  };
+
+  function openDrawerRoute(routePath: string) {
+    setDrawerOpen(false);
+    if (navigationRef.isReady()) openNativeRoute(navigationRef, routePath);
+  }
+
   return (
-    <Stack.Navigator
-      screenOptions={{
-        headerStyle: { backgroundColor: colors.surface },
-        headerTintColor: colors.text,
-        contentStyle: { backgroundColor: colors.background }
-      }}
-    >
-      <Stack.Screen name="Tabs" component={TabNavigator} options={{ headerShown: false }} />
+    <>
+      <Stack.Navigator
+        screenOptions={({ route, navigation }) => ({
+          contentStyle: { backgroundColor: colors.background },
+          header: ({ back, options }) => (
+            <LogiNexusGlobalHeader
+              title={String(options.title || stackTitle(route.name))}
+              subtitle={subtitleForStack(route.name)}
+              mode={route.name === "IntelligenceCenter" ? "intelligence" : "standard"}
+              canGoBack={Boolean(back)}
+              showDrawer={!back}
+              onBack={() => navigation.goBack()}
+              onOpenDrawer={() => setDrawerOpen(true)}
+              onOpenSearch={() => navigation.navigate("Tabs", { screen: "Search" })}
+              onOpenActivity={() => navigation.navigate("ActivityInbox", { title: "Activity Inbox" })}
+              onOpenMessages={() => navigation.navigate("Tabs", { screen: "Messenger" })}
+              onOpenProfile={() => navigation.navigate("Tabs", { screen: "Profile" })}
+              badges={badges}
+              identity={identity}
+            />
+          )
+        })}
+      >
+      <Stack.Screen name="Tabs" options={{ headerShown: false }}>
+        {() => <TabNavigator badges={badges} identity={identity} onOpenDrawer={() => setDrawerOpen(true)} />}
+      </Stack.Screen>
       <Stack.Screen name="UserDashboard" component={UserDashboardScreen} options={{ title: "Dashboard" }} />
       <Stack.Screen name="UserDashboardWeb" component={UserDashboardScreen} options={{ title: "Dashboard" }} />
       <Stack.Screen name="DashboardComposeAlias" component={DashboardActionAliasScreen} options={{ title: "Create Post" }} />
@@ -218,5 +284,28 @@ export function AppNavigator() {
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} options={{ title: "Notifications" }} />
       <Stack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} options={{ title: "Notification Preferences" }} />
     </Stack.Navigator>
+      <MasterNavigationDrawer visible={drawerOpen} identity={identity} onClose={() => setDrawerOpen(false)} onOpenRoute={openDrawerRoute} />
+    </>
   );
+}
+
+function subtitleForTab(name: string) {
+  if (name === "Dashboard") return "Mission Control";
+  if (name === "Messenger") return "Pulse Command";
+  if (name === "PulseAI") return "Digital Intelligence Companion";
+  if (name === "Marketplace") return "Commerce layer";
+  if (name === "Notifications") return "Activity and notification signals";
+  return "Powered by LogiNexus Intelligence";
+}
+
+function subtitleForStack(name: string) {
+  if (name.includes("Dashboard")) return "Mission Control";
+  if (name.includes("Account") || name.includes("Safety") || name.includes("Verification")) return "Trust and identity layer";
+  if (name.includes("Marketplace") || name.includes("Seller") || name.includes("Buyer")) return "Commerce layer";
+  if (name.includes("Call") || name.includes("Chat")) return "Pulse Command";
+  return "Native PulseSoc route";
+}
+
+function stackTitle(name: string) {
+  return name.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/Web|Alias/g, "").trim() || "PulseSoc";
 }
