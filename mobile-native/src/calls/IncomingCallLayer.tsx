@@ -4,7 +4,6 @@ import {
   Animated,
   AppState,
   AppStateStatus,
-  Easing,
   Image,
   Linking,
   Pressable,
@@ -15,6 +14,7 @@ import {
 import { acceptCall, declineCall, endCall, getActiveCalls, markRingSeen, PulseCall, PulseCallParticipant } from "../api/calls";
 import { navigationRef } from "../navigation/notificationRouting";
 import { colors } from "../theme/colors";
+import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { qaIncomingCallFromUrl } from "./incomingCallQa";
 
 const ACTIVE_CALL_REFRESH_MS = 4200;
@@ -35,6 +35,7 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const pulse = useRef(new Animated.Value(0)).current;
   const floatPulse = useRef(new Animated.Value(0)).current;
+  const reducedMotion = useLogiNexusReducedMotion();
 
   const currentRouteName = navigationRef.isReady() ? navigationRef.getCurrentRoute()?.name : "";
   const showFloatingCall = Boolean(floatingCall && !incomingCall && currentRouteName !== "Call");
@@ -181,32 +182,26 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
   useEffect(() => {
     if (!incomingCall) return;
     pulse.setValue(0);
-    const animation = Animated.loop(
-      Animated.timing(pulse, {
-        toValue: 1,
-        duration: 1800,
-        easing: Easing.inOut(Easing.quad),
-        useNativeDriver: true
-      })
-    );
+    if (reducedMotion) {
+      pulse.setValue(0.45);
+      return undefined;
+    }
+    const animation = createLogiNexusAmbientPulse(pulse, { duration: 1800 });
     animation.start();
     return () => animation.stop();
-  }, [incomingCall, pulse]);
+  }, [incomingCall, pulse, reducedMotion]);
 
   useEffect(() => {
     if (!showFloatingCall) return;
     floatPulse.setValue(0);
-    const animation = Animated.loop(
-      Animated.timing(floatPulse, {
-        toValue: 1,
-        duration: 2400,
-        easing: Easing.inOut(Easing.quad),
-        useNativeDriver: true
-      })
-    );
+    if (reducedMotion) {
+      floatPulse.setValue(0.5);
+      return undefined;
+    }
+    const animation = createLogiNexusAmbientPulse(floatPulse, { duration: 2400 });
     animation.start();
     return () => animation.stop();
-  }, [floatPulse, showFloatingCall]);
+  }, [floatPulse, showFloatingCall, reducedMotion]);
 
   const caller = useMemo(() => callerParticipant(incomingCall || floatingCall), [floatingCall, incomingCall]);
 
@@ -215,7 +210,7 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
   return (
     <>
       {incomingCall ? (
-        <View style={styles.fullscreen} pointerEvents="auto">
+        <View style={styles.fullscreen}>
           <View style={styles.spaceLayer}>
             <Animated.View
               style={[

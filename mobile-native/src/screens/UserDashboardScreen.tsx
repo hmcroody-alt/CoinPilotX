@@ -8,6 +8,7 @@ import { DashboardModuleGroup, DashboardModuleItem, DashboardQuickAction } from 
 import { classifyDashboardActionRoute, dashboardModuleParamsForRoute, openDashboardRoute } from "../navigation/dashboardRouting";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 
 type DashboardNavigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -18,21 +19,21 @@ export function UserDashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const pulse = useRef(new Animated.Value(0)).current;
+  const reducedMotion = useLogiNexusReducedMotion();
 
   useEffect(() => {
     load("initial").catch(() => undefined);
   }, []);
 
   useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 1800, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 1800, useNativeDriver: true })
-      ])
-    );
+    if (reducedMotion) {
+      pulse.setValue(0.5);
+      return undefined;
+    }
+    const loop = createLogiNexusAmbientPulse(pulse, { duration: 1800 });
     loop.start();
     return () => loop.stop();
-  }, [pulse]);
+  }, [pulse, reducedMotion]);
 
   async function load(mode: "initial" | "refresh") {
     setError("");
@@ -71,7 +72,6 @@ export function UserDashboardScreen() {
     >
       <View style={styles.hero}>
         <Animated.View
-          pointerEvents="none"
           style={[
             styles.energyRing,
             {
@@ -465,6 +465,7 @@ const styles = StyleSheet.create({
     bottom: 10,
     left: 10,
     position: "absolute",
+    pointerEvents: "none",
     right: 10,
     top: 10
   },
