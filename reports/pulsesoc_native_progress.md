@@ -4,8 +4,8 @@ Date: 2026-07-10
 
 ## Latest Mission Status: LogiNexus Homefeed Native Reconstruction
 
-- Home LogiNexus transformation: 74%.
-- Home UX completeness: 86%.
+- Home LogiNexus transformation: 78%.
+- Home UX completeness: 88%.
 - Native foundation/parity: 97%.
 - System consistency: 90%.
 - Release QA confidence: 87%.
@@ -24,6 +24,12 @@ Completed this mission:
 - Added a follow-up iPhone size balance pass after simulator review showed the first Home version was still oversized.
 - Tightened the shared Home command strip, bottom dock, hero metrics, quick-action chips, Status rail, and default composer footprint.
 - Verified in the Xcode iPhone 17 Pro Simulator that the feed section now enters the first viewport below the compact composer.
+- Completed a blueprint-inspired native Home reconstruction pass that treats the generated image as inspiration only.
+- Rebuilt the Pulse Network hero into a compact live overview with server-derived signal metric, live broadcast count, ambient network panel, and route-safe UNDX/Pulse Radio/Safety Shield chips.
+- Converted the Transmission Console quick actions into a horizontal native action rail to preserve touch targets without oversized vertical footprint.
+- Removed the extra feed-tab title/subtitle block so the signal filter rail behaves like a compact channel selector.
+- Verified the final candidate in the Xcode iPhone 17 Pro Simulator with `pulsesoc:///pulse` after a fresh Metro dev-client bundle.
+- Captured final simulator evidence at `reports/screenshots/logi-nexus-home-iphone17pro-blueprint-final.png`.
 
 Remaining Home work:
 
@@ -37,11 +43,11 @@ Complete shared global navigation and Messenger LogiNexus foundation after this 
 
 Date: 2026-07-09
 
-## Latest Mission Status: LogiNexus Homefeed Visual System Milestone
+## Latest Mission Status: LogiNexus Homefeed Inspiration Alignment Pass
 
-- Home LogiNexus transformation: 62%.
-- Home UX completeness: 78%.
-- Visual fidelity to approved concept: 58%.
+- Home LogiNexus transformation: 68%.
+- Home UX completeness: 82%.
+- Visual fidelity to approved concept: 68%.
 - Native foundation/parity: 96%.
 - System consistency: 89%.
 - Release QA confidence: 86%.
@@ -54,6 +60,7 @@ Completed this mission:
 - Transformed Status presentation into the `Your Orbit` rail with circular identity treatment, unseen state, online dot, and clearer empty/cached language.
 - Updated the Pulse Composer presentation into the `Transmission Console` while preserving existing draft recovery, upload queue, retry, validation, publish, and feed invalidation logic.
 - Updated Home feed cards toward the `Signal Card` direction with stronger author hierarchy, verified marker treatment, media framing, and action clarity.
+- Applied the approved Home reference image as inspiration for command-strip hierarchy, hero density, status orbit weight, compact composer layout, creator pill treatment, and floating Create dock emphasis.
 - Added scoped Homefeed LogiNexus reports and an audit script.
 
 What remains in Home:
@@ -4802,3 +4809,36 @@ Reason for recommendation:
 
 - The shared navigation foundation now exists across stack, tab, drawer, and Home command-strip surfaces.
 - Messenger is the highest-value daily-engagement subsystem still needing full native foundation hardening across inbox, chat, unread state, calls, attachments, and UNDX/Pulse Command identity.
+
+## LogiNexus Home iPhone Simulator Alignment
+
+Section: native Home visual proof on Xcode iPhone Simulator.
+
+Completed action:
+
+- Used the Xcode iPhone 17 Pro Simulator to launch `com.pulsesoc.nativeapp` against the local QA proxy.
+- Verified the native Home command strip, Pulse Network hero, UNDX / Pulse Radio / Safety Shield tiles, and shared bottom dock in the simulator.
+- Fixed an iPhone-width Pulse Network hero overlap by adding a compact stacked layout under 430px width.
+- Tightened shared bottom navigation spacing and fixed the Home activity glyph rendering issue.
+- Cleaned scoped `pointerEvents` warning paths in dashboard/reels/status decorative layers.
+
+Current native status:
+
+- Current native migration: 96%.
+- Overall LogiNexus transformation: 15%.
+- Home LogiNexus transformation: 45%.
+- Home simulator visual confidence: 78%.
+- Release QA confidence: 87%.
+
+Remaining Home visual/release gaps:
+
+- Development builds still show the existing app-wide `expo-av` deprecation warning overlay; this is a media dependency migration task, not a Home crash.
+- Physical iPhone Home haptics, push taps, background refresh, and camera/media hardware behavior remain release QA.
+- Final Home animation/motion polish is still deferred until foundation parity is complete across the app.
+
+Recommended next mission: PulseSoc Native Messenger / Pulse Command Foundation Hardening.
+
+Reason for recommendation:
+
+- Home and global navigation now have simulator-backed layout proof.
+- Messenger remains the highest-impact daily-engagement subsystem that still needs foundation hardening before the native app can replace the WebView client.

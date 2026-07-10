@@ -27,7 +27,7 @@ REQUIRED_FILES = [
 CHECKS = [
     ("responsive Home width handling", "mobile-native/src/screens/HomeScreen.tsx", "useWindowDimensions"),
     ("compact Pulse Network hero", "mobile-native/src/screens/HomeScreen.tsx", "heroQuickRow"),
-    ("server-derived hero metrics", "mobile-native/src/screens/HomeScreen.tsx", "HeroMetricCell"),
+    ("server-derived hero metrics", "mobile-native/src/screens/HomeScreen.tsx", "HeroMetricBlock"),
     ("server-derived status count", "mobile-native/src/screens/HomeScreen.tsx", "statuses.filter"),
     ("no fake concept follower metric", "mobile-native/src/screens/HomeScreen.tsx", "formatHeroMetric(posts.length)"),
     ("Your Orbit status rail", "mobile-native/src/screens/HomeScreen.tsx", "Your Orbit"),

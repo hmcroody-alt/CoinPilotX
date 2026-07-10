@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { createPost, PulsePost } from "../api/feed";
 import { LogiNexusPanel } from "./LogiNexus";
 import { MediaUploadPreview } from "../media/MediaUploadPreview";
@@ -297,7 +297,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
           </Pressable>
         ))}
       </View>
-      <View style={styles.actionGrid}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionGrid}>
         <ComposerAction testID="home-composer-photo" label="Photo" icon="▧" onPress={() => media.chooseImage().then(() => setNote("Photo selected for PulseSoc upload.")).catch(() => undefined)} />
         <ComposerAction testID="home-composer-video" label="Video" icon="▶" onPress={() => media.chooseVideo().then(() => setNote("Video selected for PulseSoc upload.")).catch(() => undefined)} />
         <ComposerAction label="Music" icon="♪" onPress={() => {
@@ -317,7 +317,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
           setNote(next ? "Topic tag added for backend publish." : "Topic tag cleared.");
         }} />
         <ComposerAction label="More" icon="…" onPress={cycleVisibility} />
-      </View>
+      </ScrollView>
       <Text testID="home-composer-counter" style={styles.counter}>{characters}/{MAX_BODY}</Text>
       {media.asset || media.result || media.progress.stage !== "idle" || media.error ? (
         <MediaUploadPreview
@@ -440,16 +440,15 @@ const styles = StyleSheet.create({
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: logiNexus.radius.large,
     borderWidth: 1,
-    flexBasis: "13.8%",
+    flexGrow: 0,
     gap: 5,
     justifyContent: "center",
-    minHeight: 48,
+    minHeight: 50,
     paddingHorizontal: 5,
-    paddingVertical: 6
+    paddingVertical: 6,
+    width: 82
   },
   actionGrid: {
-    flexDirection: "row",
-    flexWrap: "nowrap",
     gap: 6,
     marginTop: 10
   },

@@ -72,3 +72,13 @@ Status: scoped visual-system milestone completed; this is not Homefeed LogiNexus
 - Tightened Status rail cards, empty state, avatar rings, and spacing.
 - Made the default Transmission Console compact by showing publish/status/camera-route controls only when there is a draft, media, error, text, retry state, or Live context.
 - Verified on the Xcode iPhone 17 Pro Simulator that the first Home viewport now shows the command strip, hero, Status rail, compact composer, and the beginning of the feed section.
+
+## Blueprint-Inspired Native Reconstruction Pass
+
+- Used the provided blueprint as inspiration only for hierarchy, proportion, and atmosphere.
+- Rebuilt the Pulse Network hero into a compact live overview: server-derived signal metric, live broadcast count, ambient network panel, route-safe UNDX, Pulse Radio, and Safety Shield chips.
+- Kept Home server-authoritative: no fake concept metrics, no backend contract changes, no feed/ranking/publish logic changes.
+- Converted the Transmission Console action controls into a horizontal native action rail so iPhone touch targets remain large without pushing the feed too far down the first viewport.
+- Removed the extra feed-tab title/subtitle block so the signal filter rail behaves like a compact channel selector.
+- Verified the route with `pulsesoc:///pulse` on the Xcode iPhone 17 Pro Simulator after a fresh dev-client Metro bundle.
+- Final simulator evidence: `reports/screenshots/logi-nexus-home-iphone17pro-blueprint-final.png`.

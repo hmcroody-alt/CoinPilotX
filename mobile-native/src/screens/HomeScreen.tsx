@@ -327,7 +327,6 @@ export function HomeScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => refreshHome()} />}
         ListHeaderComponent={
           <HomeHeader
-            activeTab={activeTab}
             feedTabs={FEED_TABS}
             selectedFeed={selectedFeed}
             statusItems={statusItems}
@@ -420,7 +419,6 @@ export function HomeScreen() {
 }
 
 function HomeHeader({
-  activeTab,
   feedTabs,
   selectedFeed,
   statusItems,
@@ -445,7 +443,6 @@ function HomeHeader({
   onCreated,
   onOpenMusic
 }: {
-  activeTab: FeedTab;
   feedTabs: FeedTab[];
   selectedFeed: string;
   statusItems: PulseStatus[];
@@ -486,8 +483,6 @@ function HomeHeader({
       />
       <HomePulseComposer onCreated={onCreated} onOpenCamera={onOpenCamera} onOpenLive={onOpenLive} onOpenMusic={onOpenMusic} />
       <View style={styles.feedTabsWrap}>
-        <Text style={styles.feedTabsTitle}>{activeTab.label}</Text>
-        <Text style={styles.feedTabsSubtitle}>{activeTab.description}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.feedTabs}>
           {feedTabs.map((tab) => (
             <Pressable key={tab.key} style={[styles.feedTab, selectedFeed === tab.key && styles.feedTabActive]} onPress={() => onSelectFeed(tab.key)}>
@@ -556,7 +551,6 @@ function PulseNetworkHero({
   const liveCount = statuses.filter((status) => status.author_live || status.status_type === "live").length;
   const alertCount = posts.filter((post) => /scam|alert|warning|security|safety/i.test(`${post.title || ""} ${post.body || ""}`)).length;
   const signalMetric = posts.length ? formatHeroMetric(posts.length) : offline ? "Cached" : "Live";
-  const networkHeadline = offline ? "Cached signals remain available." : posts.length ? "The network is alive." : "Network ready.";
   return (
     <LogiNexusPanel style={styles.hero} tone="default">
       <View style={styles.heroAtmosphere}>
@@ -566,7 +560,41 @@ function PulseNetworkHero({
         <View style={[styles.heroSignalLine, styles.heroSignalLineTwo]} />
         <View style={[styles.heroSignalLine, styles.heroSignalLineThree]} />
       </View>
-      {compact ? (
+      <View style={styles.heroTopLine}>
+        <LogiNexusBadge label="Pulse Network" />
+        <Pressable accessibilityRole="button" accessibilityLabel="Refresh Pulse Network" style={styles.heroHealthPill} onPress={onRefresh}>
+          <View style={styles.heroHealthDot} />
+          <Text style={styles.heroHealthText}>{offline ? "Resync" : "Optimal"}</Text>
+        </Pressable>
+      </View>
+      <View style={styles.heroBlueprintRow}>
+        <View style={styles.heroMetricStack}>
+          <HeroMetricBlock value={signalMetric} label={posts.length ? "Active signals" : offline ? "Cached signals" : "Signals ready"} tone="default" />
+          <HeroMetricBlock value={liveCount} label="Live broadcasts" tone="danger" onPress={onOpenLive} />
+        </View>
+        <View style={styles.heroMapPanel}>
+          <Text style={styles.heroMapKicker}>Real-time overview</Text>
+          <View style={styles.heroMapSignalLineOne} />
+          <View style={styles.heroMapSignalLineTwo} />
+          <View style={styles.heroMapSignalLineThree} />
+          <View style={[styles.heroOrb, styles.heroOrbInMap]}>
+            <View style={styles.heroRingOuter} />
+            <View style={styles.heroRingInner} />
+            <View style={styles.heroNodeBig} />
+            <View style={[styles.heroNode, styles.heroNodeOne]} />
+            <View style={[styles.heroNode, styles.heroNodeTwo]} />
+            <View style={[styles.heroNode, styles.heroNodeThree]} />
+            <View style={[styles.heroNode, styles.heroNodeFour]} />
+            <Text style={styles.heroOrbText}>LN</Text>
+          </View>
+          <Text style={styles.heroMapCaption} numberOfLines={2}>
+            {offline
+              ? "Cached signals active."
+              : `${creatorCount} creators online.`}
+          </Text>
+        </View>
+      </View>
+      {compact ? null : (
         <View style={[styles.heroOrb, styles.heroOrbCompact]}>
           <View style={styles.heroRingOuter} />
           <View style={styles.heroRingInner} />
@@ -577,27 +605,9 @@ function PulseNetworkHero({
           <View style={[styles.heroNode, styles.heroNodeFour]} />
           <Text style={styles.heroOrbText}>LN</Text>
         </View>
-      ) : null}
-      <View style={styles.heroTopLine}>
-        <LogiNexusBadge label="Pulse Network" />
-        <Pressable accessibilityRole="button" accessibilityLabel="Refresh Pulse Network" style={styles.heroHealthPill} onPress={onRefresh}>
-          <View style={styles.heroHealthDot} />
-          <Text style={styles.heroHealthText}>{offline ? "Resync" : "Optimal"}</Text>
-        </Pressable>
-      </View>
-      <Text style={styles.heroHeadline} numberOfLines={2}>{networkHeadline}</Text>
-      <Text style={styles.heroSubtitle} numberOfLines={compact ? 2 : 3}>
-        {offline
-          ? "PulseSoc is showing cached Home signals until the backend reconnects."
-          : `${creatorCount} creators represented from server-authoritative Home discovery data.`}
-      </Text>
-      <View style={styles.heroMetricsRow}>
-        <HeroMetricCell value={signalMetric} label={posts.length ? "Active signals" : offline ? "Cached" : "Signals"} tone="default" />
-        <HeroMetricCell value={liveCount} label="Live broadcasts" tone="danger" onPress={onOpenLive} />
-        <HeroMetricCell value={alertCount} label="UNDX alerts" tone="intelligence" onPress={onOpenUndx} />
-      </View>
+      )}
       <View style={styles.heroQuickRow}>
-        <HeroTile label="UNDX" value={String(alertCount)} body="Updates" tone="intelligence" icon="◇" onPress={onOpenUndx} />
+        <HeroTile label="UNDX" value={String(alertCount)} body="UNDX alerts" tone="intelligence" icon="◇" onPress={onOpenUndx} />
         <HeroTile label="Pulse Radio" value="Radio" body="Open streams" tone="creator" icon="≋" onPress={onOpenPulseRadio} />
         <HeroTile label="Safety Shield" value={String(alertCount)} body="Scan ready" tone="safety" icon="⌾" onPress={onOpenSafety} />
       </View>
@@ -653,7 +663,7 @@ function HeroTile({
   );
 }
 
-function HeroMetricCell({
+function HeroMetricBlock({
   value,
   label,
   tone,
@@ -670,11 +680,11 @@ function HeroMetricCell({
       accessibilityRole={onPress ? "button" : undefined}
       accessibilityLabel={`${label}: ${value}`}
       disabled={!onPress}
-      style={[styles.heroMetricCell, { borderColor: `${accent}55` }]}
+      style={[styles.heroMetricBlock, { borderColor: `${accent}55` }]}
       onPress={onPress}
     >
-      <Text style={[styles.heroMetricValue, { color: accent }]} numberOfLines={1}>{value}</Text>
-      <Text style={styles.heroMetricCellLabel} numberOfLines={2}>{label}</Text>
+      <Text style={[styles.heroMetricBlockValue, { color: accent }]} numberOfLines={1}>{value}</Text>
+      <Text style={styles.heroMetricBlockLabel} numberOfLines={2}>{label}</Text>
     </Pressable>
   );
 }
@@ -800,7 +810,7 @@ const styles = StyleSheet.create({
     marginTop: 12
   },
   content: {
-    padding: 12,
+    padding: 10,
     paddingBottom: 156
   },
   empty: {
@@ -825,9 +835,9 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
     borderRadius: logiNexus.radius.capsule,
     borderWidth: 1,
-    minHeight: 42,
+    minHeight: 38,
     justifyContent: "center",
-    paddingHorizontal: 14
+    paddingHorizontal: 13
   },
   feedTabActive: {
     backgroundColor: "rgba(50, 230, 179, 0.13)",
@@ -841,8 +851,8 @@ const styles = StyleSheet.create({
     color: colors.accent
   },
   feedTabs: {
-    gap: 10,
-    paddingVertical: 4
+    gap: 8,
+    paddingVertical: 3
   },
   drawerClose: {
     alignItems: "center",
@@ -952,11 +962,11 @@ const styles = StyleSheet.create({
   feedTabsWrap: {
     backgroundColor: "rgba(7, 16, 29, 0.9)",
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 24,
+    borderRadius: 22,
     borderWidth: 1,
     marginBottom: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8
+    paddingHorizontal: 10,
+    paddingVertical: 7
   },
   footer: {
     padding: 18
@@ -968,7 +978,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(5, 13, 26, 0.94)",
     marginBottom: 8,
     overflow: "hidden",
-    padding: 9
+    padding: 10
   },
   heroAtmosphere: {
     ...StyleSheet.absoluteFillObject,
@@ -1087,6 +1097,13 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 12
   },
+  heroBlueprintRow: {
+    flexDirection: "row",
+    gap: 7,
+    marginTop: 8,
+    minHeight: 108,
+    zIndex: 2
+  },
   heroKicker: {
     alignSelf: "flex-start",
     borderColor: colors.border,
@@ -1137,6 +1154,91 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     maxWidth: 118
   },
+  heroMetricBlock: {
+    backgroundColor: "rgba(3, 7, 18, 0.56)",
+    borderRadius: 14,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 48,
+    paddingHorizontal: 7,
+    paddingVertical: 5
+  },
+  heroMetricBlockLabel: {
+    color: colors.muted,
+    fontSize: 8,
+    fontWeight: "800",
+    lineHeight: 10,
+    marginTop: 3
+  },
+  heroMetricBlockValue: {
+    fontSize: 19,
+    fontWeight: "900",
+    lineHeight: 22
+  },
+  heroMetricStack: {
+    gap: 6,
+    width: 88,
+    zIndex: 2
+  },
+  heroMapCaption: {
+    bottom: 7,
+    color: colors.muted,
+    fontSize: 8,
+    fontWeight: "800",
+    left: 9,
+    lineHeight: 10,
+    maxWidth: 142,
+    position: "absolute",
+    zIndex: 3
+  },
+  heroMapKicker: {
+    color: colors.accent,
+    fontSize: 8,
+    fontWeight: "900",
+    left: 9,
+    letterSpacing: 0.7,
+    position: "absolute",
+    textTransform: "uppercase",
+    top: 7,
+    zIndex: 3
+  },
+  heroMapPanel: {
+    backgroundColor: "rgba(7, 18, 33, 0.5)",
+    borderColor: "rgba(97, 216, 255, 0.16)",
+    borderRadius: 17,
+    borderWidth: 1,
+    flex: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    position: "relative"
+  },
+  heroMapSignalLineOne: {
+    backgroundColor: "rgba(121, 210, 255, 0.2)",
+    height: 1,
+    left: 16,
+    position: "absolute",
+    top: 56,
+    transform: [{ rotate: "-18deg" }],
+    width: 178
+  },
+  heroMapSignalLineThree: {
+    backgroundColor: "rgba(159, 124, 255, 0.18)",
+    height: 1,
+    left: 42,
+    position: "absolute",
+    top: 82,
+    transform: [{ rotate: "10deg" }],
+    width: 164
+  },
+  heroMapSignalLineTwo: {
+    backgroundColor: "rgba(50, 230, 179, 0.16)",
+    height: 1,
+    left: 4,
+    position: "absolute",
+    top: 90,
+    transform: [{ rotate: "24deg" }],
+    width: 154
+  },
   heroContentRow: {
     alignItems: "stretch",
     flexDirection: "row",
@@ -1182,6 +1284,13 @@ const styles = StyleSheet.create({
     top: 56,
     width: 124,
     zIndex: 0
+  },
+  heroOrbInMap: {
+    height: 104,
+    opacity: 0.48,
+    right: -8,
+    top: 12,
+    width: 104
   },
   heroNode: {
     backgroundColor: colors.accent,
