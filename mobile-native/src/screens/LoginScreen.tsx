@@ -1,8 +1,9 @@
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
-import { useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { signIn, useAuth } from "../session/auth";
+import { createQaSimulatorLocalSession, isQaSimulatorAutoLoginEnabled, tryHandleQaSimulatorAuthUrl } from "../session/qaSimulatorAuth";
 import { colors } from "../theme/colors";
 import { AuthStackParamList } from "../navigation/types";
 
@@ -12,6 +13,45 @@ export function LoginScreen() {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const qaBootstrapStarted = useRef(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function handleQaUrl(url: string | null) {
+      if (!url) return;
+      const result = await tryHandleQaSimulatorAuthUrl(url).catch(() => null);
+      if (!mounted || !result?.handled || !result.authState) return;
+      setAuthState(result.authState);
+    }
+
+    Linking.getInitialURL().then(handleQaUrl).catch(() => undefined);
+    const subscription = Linking.addEventListener("url", (event) => {
+      handleQaUrl(event.url).catch(() => undefined);
+    });
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, [setAuthState]);
+
+  useEffect(() => {
+    if (!isQaSimulatorAutoLoginEnabled() || qaBootstrapStarted.current) return;
+    let mounted = true;
+    qaBootstrapStarted.current = true;
+    setLoading(true);
+    createQaSimulatorLocalSession()
+      .then((state) => {
+        if (mounted && state.status === "signedIn") setAuthState(state);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [setAuthState]);
 
   async function submit() {
     setLoading(true);
@@ -35,6 +75,7 @@ export function LoginScreen() {
         placeholder="Email or username"
         placeholderTextColor={colors.muted}
         style={styles.input}
+        testID="login-identifier"
         value={identifier}
         onChangeText={setIdentifier}
       />
@@ -44,10 +85,11 @@ export function LoginScreen() {
         placeholderTextColor={colors.muted}
         secureTextEntry
         style={styles.input}
+        testID="login-password"
         value={password}
         onChangeText={setPassword}
       />
-      <Pressable accessibilityRole="button" style={styles.button} onPress={submit} disabled={loading}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Sign in" testID="login-submit" style={styles.button} onPress={submit} disabled={loading}>
         <Text style={styles.buttonText}>{loading ? "Signing in" : "Sign in"}</Text>
       </Pressable>
       <Pressable accessibilityRole="button" onPress={() => navigation.navigate("Signup")}>

@@ -18,6 +18,15 @@ export function isQaSimulatorAuthEnabled() {
   return __DEV__ && isLocalApiBaseUrl(PULSE_API_BASE_URL);
 }
 
+export function isQaSimulatorAutoLoginEnabled() {
+  return isQaSimulatorAuthEnabled() && process.env.EXPO_PUBLIC_PULSESOC_QA_AUTO_LOGIN === "1";
+}
+
+export async function createQaSimulatorLocalSession(): Promise<AuthState> {
+  if (!isQaSimulatorAutoLoginEnabled()) return { status: "signedOut", user: null };
+  return registerLocalQaAccount(PULSE_API_BASE_URL);
+}
+
 export async function tryHandleQaSimulatorAuthUrl(url: string): Promise<QaSimulatorAuthResult> {
   if (!__DEV__) return { handled: false, reason: "disabled" };
 
@@ -63,6 +72,34 @@ async function signInWithQaApiBase(apiBase: string, identifier: string, password
   return { status: "signedIn", user: data.user };
 }
 
+async function registerLocalQaAccount(apiBase: string): Promise<AuthState> {
+  const nonce = `${Date.now()}${Math.floor(Math.random() * 100000)}`.slice(-10);
+  const phone = `+1415${nonce.slice(-7)}`;
+  const username = `nativeqa_${nonce}`;
+  const password = `PulseNativeQA-${nonce}-${Math.floor(Math.random() * 1000000)}`;
+  const response = await fetch(`${apiBase}/api/mobile/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      full_name: "PulseSoc Native QA",
+      username,
+      phone,
+      password,
+      age_confirmed: true,
+      sms_opt_in: false,
+      email_opt_in: false,
+      source: "native_simulator_qa_auto_login",
+      platform: Platform.OS
+    }),
+    credentials: "include"
+  });
+  const cookie = response.headers.get("set-cookie");
+  if (cookie) await setSessionCookie(cookie.split(";")[0] || cookie);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data?.authenticated || !data?.user) return { status: "signedOut", user: null };
+  return { status: "signedIn", user: data.user };
+}
+
 function runtimeWebCredentials() {
   if (Platform.OS !== "web" || typeof window === "undefined") return { identifier: "", password: "" };
   try {
@@ -83,7 +120,7 @@ function isQaLoginUrl(parsed: URL) {
   return parsed.hostname === "qa" && parsed.pathname === "/simulator-login";
 }
 
-function isLocalApiBaseUrl(value: string) {
+export function isLocalApiBaseUrl(value: string) {
   try {
     const parsed = new URL(value);
     return ["127.0.0.1", "localhost", "::1"].includes(parsed.hostname);

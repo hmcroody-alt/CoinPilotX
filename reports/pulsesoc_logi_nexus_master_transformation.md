@@ -62,25 +62,29 @@ Completed:
 - Overall LogiNexus transformation: 19%.
 - Native foundation/parity: 96%.
 - System consistency: 89%.
-- Release QA confidence: 87%.
+- Release QA confidence: 88%.
 
 ## Current Weakest LogiNexus Subsystem
 
-Messenger / Pulse Command foundation.
+Xcode iPhone Simulator QA reliability for authenticated transformation review.
 
 Why:
 
-- Homefeed now has browser and Xcode iPhone Simulator proof for the foundation visual pass.
-- Messenger remains the highest-value daily-engagement subsystem that still needs foundation hardening before full WebView replacement.
+- Phase 2 requires simulator verification before shared navigation and motion changes can be judged safely.
+- The simulator login path was still timing-fragile, so this pass repairs it with a dev-only, local-API-only, explicit-env bootstrap that reuses existing mobile auth routes.
+- Global navigation remains the next shared foundation continuation once authenticated simulator Home is reliably reachable.
 
 ## Autopilot Queue
 
-1. Messenger / Pulse Command.
-2. Search / Discover.
-3. Activity / Notifications.
-4. Profile identity hub.
-5. Reels, Status, Live, Media, Camera.
-6. Creator, Commerce, Trust, Intelligence, Settings.
+1. Global navigation continuation with trusted simulator QA.
+2. Shared motion system.
+3. Shared screen layout system.
+4. Messenger / Pulse Command.
+5. Search / Discover.
+6. Activity / Notifications.
+7. Profile identity hub.
+8. Reels, Status, Live, Media, Camera.
+9. Creator, Commerce, Trust, Intelligence, Settings.
 
 ## Safety Rules Preserved
 
