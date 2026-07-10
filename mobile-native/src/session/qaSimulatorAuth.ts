@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 import { PULSE_API_BASE_URL } from "../api/config";
 import { RootStackParamList } from "../navigation/types";
 import { AuthState, signIn } from "./auth";
+import { setSessionCookie } from "./sessionStore";
 
 type CameraStudioParams = NonNullable<RootStackParamList["CameraStudio"]>;
 
@@ -18,12 +19,14 @@ export function isQaSimulatorAuthEnabled() {
 }
 
 export async function tryHandleQaSimulatorAuthUrl(url: string): Promise<QaSimulatorAuthResult> {
-  if (!isQaSimulatorAuthEnabled()) return { handled: false, reason: "disabled" };
+  if (!__DEV__) return { handled: false, reason: "disabled" };
 
   const parsed = parseQaUrl(url);
   if (!parsed || !isQaLoginUrl(parsed)) {
     return { handled: false, reason: "not_qa_login" };
   }
+  const qaApiBase = qaApiBaseFromUrl(parsed);
+  if (!isQaSimulatorAuthEnabled() && !qaApiBase) return { handled: false, reason: "disabled" };
 
   const runtimeCredentials = runtimeWebCredentials();
   const identifier =
@@ -35,13 +38,29 @@ export async function tryHandleQaSimulatorAuthUrl(url: string): Promise<QaSimula
   const password = parsed.searchParams.get("password") || runtimeCredentials.password || "";
   if (!identifier.trim() || !password) return { handled: true, reason: "missing_credentials" };
 
-  const authState = await signIn(identifier.trim(), password);
+  const authState = qaApiBase
+    ? await signInWithQaApiBase(qaApiBase, identifier.trim(), password)
+    : await signIn(identifier.trim(), password);
   return {
     handled: true,
     authState,
     cameraRoute: authState.status === "signedIn" ? cameraRouteFromQaUrl(parsed) : undefined,
     redirectTarget: authState.status === "signedIn" ? safeRedirectTarget(parsed) : undefined
   };
+}
+
+async function signInWithQaApiBase(apiBase: string, identifier: string, password: string): Promise<AuthState> {
+  const response = await fetch(`${apiBase}/api/mobile/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identifier, email: identifier, password }),
+    credentials: "include"
+  });
+  const cookie = response.headers.get("set-cookie");
+  if (cookie) await setSessionCookie(cookie.split(";")[0] || cookie);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data?.authenticated || !data?.user) return { status: "signedOut", user: null };
+  return { status: "signedIn", user: data.user };
 }
 
 function runtimeWebCredentials() {
@@ -73,6 +92,12 @@ function isLocalApiBaseUrl(value: string) {
   }
 }
 
+function qaApiBaseFromUrl(parsed: URL) {
+  const value = parsed.searchParams.get("api_base") || parsed.searchParams.get("apiBase") || "";
+  if (!value || !isLocalApiBaseUrl(value)) return "";
+  return value.trim().replace(/\/+$/, "");
+}
+
 function isLocalWebHost(hostname: string) {
   return ["127.0.0.1", "localhost", "::1"].includes(hostname);
 }
@@ -81,6 +106,13 @@ function parseQaUrl(url: string) {
   try {
     return new URL(url);
   } catch {
+    if (url.startsWith("pulsesoc://qa/simulator-login")) {
+      try {
+        return new URL(url.replace(/^pulsesoc:\/\/qa/, "https://qa"));
+      } catch {
+        return null;
+      }
+    }
     return null;
   }
 }

@@ -49,6 +49,15 @@ const FEED_TABS: FeedTab[] = [
   { key: "my_posts", label: "My Posts", description: "Your published posts" }
 ];
 
+const HOME_COMMAND_ITEMS = [
+  { label: "Home", route: "/pulse", icon: "⌂", active: true },
+  { label: "Dashboard", route: "/pulse/dashboard", icon: "▦" },
+  { label: "Reels", route: "/pulse/reels", icon: "▶" },
+  { label: "Videos", route: "/dashboard/media/video-library", icon: "▣" },
+  { label: "Premium", route: "/pulse/premium", icon: "◆" },
+  { label: "Saved", route: "/pulse/saved", icon: "★" }
+];
+
 export function HomeScreen() {
   const navigation = useNavigation<HomeNavigation>();
   const route = useRoute<RouteProp<AppTabParamList, "Home">>();
@@ -318,6 +327,16 @@ export function HomeScreen() {
 
   return (
     <View style={styles.root}>
+      <View pointerEvents="none" style={styles.homeAtmosphereRoot}>
+        <View style={[styles.homeNebula, styles.homeNebulaLeft]} />
+        <View style={[styles.homeNebula, styles.homeNebulaRight]} />
+        <View style={styles.homeGridPlane} />
+        <View style={[styles.homeStar, styles.homeStarOne]} />
+        <View style={[styles.homeStar, styles.homeStarTwo]} />
+        <View style={[styles.homeStar, styles.homeStarThree]} />
+        <View style={[styles.homeSignalWave, styles.homeSignalWaveOne]} />
+        <View style={[styles.homeSignalWave, styles.homeSignalWaveTwo]} />
+      </View>
       <FlatList
         ref={listRef}
         style={styles.list}
@@ -345,6 +364,7 @@ export function HomeScreen() {
             onOpenPulseRadio={() => openDashboardRoute(navigation, "/pulse/music#pulse-radio")}
             onOpenLive={() => navigation.navigate("Tabs", { screen: "Live" })}
             onOpenSafety={() => navigation.navigate("SafetyHub", { title: "Safety Hub" })}
+            onOpenRoute={openHomeRoute}
             onAddStatus={() => navigation.navigate("Tabs", { screen: "Status", params: { openCreator: true } })}
             onOpenStatus={(status) => navigation.navigate("StatusDetail", { statusId: status.id, title: status.author?.display_name || "Status" })}
             onOpenCamera={(mode) => {
@@ -437,6 +457,7 @@ function HomeHeader({
   onOpenPulseRadio,
   onOpenLive,
   onOpenSafety,
+  onOpenRoute,
   onAddStatus,
   onOpenStatus,
   onOpenCamera,
@@ -461,6 +482,7 @@ function HomeHeader({
   onOpenPulseRadio: () => void;
   onOpenLive: () => void;
   onOpenSafety: () => void;
+  onOpenRoute: (routePath: string) => void;
   onAddStatus: () => void;
   onOpenStatus: (status: PulseStatus) => void;
   onOpenCamera: (mode: "photo" | "video" | "reel") => void;
@@ -474,6 +496,7 @@ function HomeHeader({
     <View style={styles.header}>
       <HomeTopBar onOpenDrawer={onOpenDrawer} onOpenSearch={onOpenSearch} onOpenActivity={onOpenActivity} onOpenProfile={onOpenProfile} />
       <View style={[styles.homeCanvas, wideCanvas && styles.homeCanvasWide]}>
+        {wideCanvas ? <HomeCommandRail onOpenRoute={onOpenRoute} onOpenPulseRadio={onOpenPulseRadio} /> : null}
         <View style={styles.homePrimaryColumn}>
           <PulseNetworkHero posts={posts} statuses={statusItems} offline={offline || statusOffline} compact={compactHero} onRefresh={onRefresh} onOpenUndx={onOpenUndx} onOpenPulseRadio={onOpenPulseRadio} onOpenLive={onOpenLive} onOpenSafety={onOpenSafety} />
           <StatusRail
@@ -515,6 +538,77 @@ function HomeHeader({
           />
         ) : null}
       </View>
+    </View>
+  );
+}
+
+function HomeCommandRail({
+  onOpenRoute,
+  onOpenPulseRadio
+}: {
+  onOpenRoute: (routePath: string) => void;
+  onOpenPulseRadio: () => void;
+}) {
+  return (
+    <View style={styles.commandRail}>
+      <LogiNexusPanel style={styles.commandIdentityCard} tone="default">
+        <View style={styles.commandIdentityRow}>
+          <Text style={styles.commandIdentityIcon}>RC</Text>
+          <View style={styles.commandIdentityCopy}>
+            <Text style={styles.commandIdentityTitle} numberOfLines={1}>Your PulseSoc OS</Text>
+            <Text style={styles.commandIdentityMeta} numberOfLines={1}>Navigate, create, learn</Text>
+          </View>
+        </View>
+      </LogiNexusPanel>
+      <View style={styles.commandShortcutGroup}>
+        <Text style={styles.commandSectionTitle}>Today</Text>
+        <Pressable style={styles.commandShortcutCard} onPress={() => onOpenRoute("/pulse/dashboard")}>
+          <Text style={styles.commandShortcutTitle}>Dashboard</Text>
+          <Text style={styles.commandShortcutMeta}>Account command center</Text>
+        </Pressable>
+        <Pressable style={styles.commandShortcutCard} onPress={() => onOpenRoute("/pulse/growth")}>
+          <Text style={styles.commandShortcutTitle}>Promote</Text>
+          <Text style={styles.commandShortcutMeta}>Owner tools</Text>
+        </Pressable>
+      </View>
+      <View style={styles.commandNavGroup}>
+        {HOME_COMMAND_ITEMS.map((item) => (
+          <Pressable
+            key={item.route}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${item.label}`}
+            style={[styles.commandNavItem, item.active && styles.commandNavItemActive]}
+            onPress={() => onOpenRoute(item.route)}
+          >
+            <Text style={styles.commandNavIcon}>{item.icon}</Text>
+            <Text style={styles.commandNavLabel} numberOfLines={1}>{item.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <LogiNexusPanel style={styles.commandRadioPanel} tone="creator">
+        <Text style={styles.commandRadioTitle}>Pulse Radio</Text>
+        <View style={styles.commandRadioTabs}>
+          <Text style={[styles.commandRadioTab, styles.commandRadioTabActive]}>Radio</Text>
+          <Text style={styles.commandRadioTab}>Podcasts</Text>
+          <Text style={styles.commandRadioTab}>Discover</Text>
+        </View>
+        <Pressable style={styles.commandRadioNow} onPress={onOpenPulseRadio}>
+          <View style={styles.commandRadioDot} />
+          <View style={styles.commandRadioCopy}>
+            <Text style={styles.commandRadioNowTitle} numberOfLines={1}>Pulse Radio</Text>
+            <Text style={styles.commandRadioNowMeta} numberOfLines={1}>Approved PulseSoc streams</Text>
+          </View>
+        </Pressable>
+        <View style={styles.commandRadioActions}>
+          <Pressable style={styles.commandRadioPrimary} onPress={onOpenPulseRadio}>
+            <Text style={styles.commandRadioPrimaryText}>Play / Pause</Text>
+          </Pressable>
+          <Pressable style={styles.commandRadioSecondary} onPress={onOpenPulseRadio}>
+            <Text style={styles.commandRadioSecondaryText}>Next</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.commandRadioBody}>Radio loads from approved creator-safe tracks. If no track is available, controls report that state instead of faking playback.</Text>
+      </LogiNexusPanel>
     </View>
   );
 }
@@ -610,33 +704,41 @@ function PulseNetworkHero({
           </View>
         </Pressable>
       </View>
-      <View style={styles.heroBlueprintRow}>
-        <View style={styles.heroMetricStack}>
-          <HeroMetricBlock value={signalMetric} label={posts.length ? "Active signals" : offline ? "Cached signals" : "Signals ready"} tone="default" />
-          <HeroMetricBlock value={liveCount} label="Live broadcasts" tone="danger" onPress={onOpenLive} />
+      {compact ? (
+        <View style={styles.heroCompactMetricRow}>
+          <HeroMetricBlock value={signalMetric} label={posts.length ? "Active signals" : offline ? "Cached" : "Ready"} tone="default" />
+          <HeroMetricBlock value={creatorCount} label="creators" tone="intelligence" />
+          <HeroMetricBlock value={liveCount} label="live" tone="danger" onPress={onOpenLive} />
         </View>
-        <View style={styles.heroMapPanel}>
-          <Text style={styles.heroMapKicker}>Real-time overview</Text>
-          <View style={styles.heroMapSignalLineOne} />
-          <View style={styles.heroMapSignalLineTwo} />
-          <View style={styles.heroMapSignalLineThree} />
-          <View style={[styles.heroOrb, styles.heroOrbInMap]}>
-            <View style={styles.heroRingOuter} />
-            <View style={styles.heroRingInner} />
-            <View style={styles.heroNodeBig} />
-            <View style={[styles.heroNode, styles.heroNodeOne]} />
-            <View style={[styles.heroNode, styles.heroNodeTwo]} />
-            <View style={[styles.heroNode, styles.heroNodeThree]} />
-            <View style={[styles.heroNode, styles.heroNodeFour]} />
-            <Text style={styles.heroOrbText}>LN</Text>
+      ) : (
+        <View style={styles.heroBlueprintRow}>
+          <View style={styles.heroMetricStack}>
+            <HeroMetricBlock value={signalMetric} label={posts.length ? "Active signals" : offline ? "Cached signals" : "Signals ready"} tone="default" />
+            <HeroMetricBlock value={liveCount} label="Live broadcasts" tone="danger" onPress={onOpenLive} />
           </View>
-          <Text style={styles.heroMapCaption} numberOfLines={2}>
-            {offline
-              ? "Cached signals active."
-              : `${creatorCount} creators online.`}
-          </Text>
+          <View style={styles.heroMapPanel}>
+            <Text style={styles.heroMapKicker}>Real-time overview</Text>
+            <View style={styles.heroMapSignalLineOne} />
+            <View style={styles.heroMapSignalLineTwo} />
+            <View style={styles.heroMapSignalLineThree} />
+            <View style={[styles.heroOrb, styles.heroOrbInMap]}>
+              <View style={styles.heroRingOuter} />
+              <View style={styles.heroRingInner} />
+              <View style={styles.heroNodeBig} />
+              <View style={[styles.heroNode, styles.heroNodeOne]} />
+              <View style={[styles.heroNode, styles.heroNodeTwo]} />
+              <View style={[styles.heroNode, styles.heroNodeThree]} />
+              <View style={[styles.heroNode, styles.heroNodeFour]} />
+              <Text style={styles.heroOrbText}>LN</Text>
+            </View>
+            <Text style={styles.heroMapCaption} numberOfLines={2}>
+              {offline
+                ? "Cached signals active."
+                : `${creatorCount} creators online.`}
+            </Text>
+          </View>
         </View>
-      </View>
+      )}
       {compact ? null : (
         <View style={[styles.heroOrb, styles.heroOrbCompact]}>
           <View style={styles.heroRingOuter} />
@@ -936,10 +1038,221 @@ const styles = StyleSheet.create({
   },
   content: {
     alignSelf: "center",
-    maxWidth: 1130,
+    maxWidth: 1480,
     padding: 8,
     paddingBottom: 156,
     width: "100%"
+  },
+  commandIdentityCard: {
+    backgroundColor: "rgba(7, 22, 35, 0.76)",
+    borderColor: "rgba(50, 230, 179, 0.26)",
+    padding: 10
+  },
+  commandIdentityCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  commandIdentityIcon: {
+    backgroundColor: "rgba(121, 210, 255, 0.14)",
+    borderColor: "rgba(50, 230, 179, 0.42)",
+    borderRadius: 12,
+    borderWidth: 1,
+    color: colors.accentStrong,
+    fontSize: 12,
+    fontWeight: "900",
+    height: 34,
+    lineHeight: 32,
+    overflow: "hidden",
+    textAlign: "center",
+    width: 34
+  },
+  commandIdentityMeta: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 2
+  },
+  commandIdentityRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10
+  },
+  commandIdentityTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "900"
+  },
+  commandNavGroup: {
+    backgroundColor: "rgba(4, 16, 27, 0.42)",
+    borderColor: "rgba(121, 210, 255, 0.12)",
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 5,
+    padding: 7
+  },
+  commandNavIcon: {
+    backgroundColor: "rgba(121, 210, 255, 0.1)",
+    borderRadius: 10,
+    color: colors.accentStrong,
+    fontSize: 12,
+    fontWeight: "900",
+    height: 26,
+    lineHeight: 25,
+    overflow: "hidden",
+    textAlign: "center",
+    width: 26
+  },
+  commandNavItem: {
+    alignItems: "center",
+    borderColor: "transparent",
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 38,
+    paddingHorizontal: 8
+  },
+  commandNavItemActive: {
+    backgroundColor: "rgba(50, 230, 179, 0.12)",
+    borderColor: "rgba(50, 230, 179, 0.2)"
+  },
+  commandNavLabel: {
+    color: colors.text,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  commandRadioActions: {
+    flexDirection: "row",
+    gap: 7,
+    marginTop: 8
+  },
+  commandRadioBody: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "700",
+    lineHeight: 15,
+    marginTop: 9
+  },
+  commandRadioCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  commandRadioDot: {
+    backgroundColor: colors.accent,
+    borderRadius: 5,
+    height: 10,
+    width: 10
+  },
+  commandRadioNow: {
+    alignItems: "center",
+    backgroundColor: "rgba(3, 8, 18, 0.56)",
+    borderColor: "rgba(50, 230, 179, 0.18)",
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 9,
+    padding: 9
+  },
+  commandRadioNowMeta: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "800"
+  },
+  commandRadioNowTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  commandRadioPanel: {
+    backgroundColor: "rgba(6, 20, 32, 0.78)",
+    padding: 11
+  },
+  commandRadioPrimary: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    flex: 1,
+    minHeight: 32,
+    justifyContent: "center"
+  },
+  commandRadioPrimaryText: {
+    color: colors.background,
+    fontSize: 11,
+    fontWeight: "900"
+  },
+  commandRadioSecondary: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.055)",
+    borderColor: "rgba(121, 210, 255, 0.16)",
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    minHeight: 32,
+    justifyContent: "center"
+  },
+  commandRadioSecondaryText: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "900"
+  },
+  commandRadioTab: {
+    backgroundColor: "rgba(255,255,255,0.055)",
+    borderRadius: 10,
+    color: colors.muted,
+    flex: 1,
+    fontSize: 10,
+    fontWeight: "900",
+    overflow: "hidden",
+    paddingVertical: 7,
+    textAlign: "center"
+  },
+  commandRadioTabActive: {
+    backgroundColor: colors.accent,
+    color: colors.background
+  },
+  commandRadioTabs: {
+    flexDirection: "row",
+    gap: 5,
+    marginTop: 8
+  },
+  commandRadioTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  commandRail: {
+    gap: 10,
+    width: 210
+  },
+  commandSectionTitle: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+    textTransform: "uppercase"
+  },
+  commandShortcutCard: {
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderColor: "rgba(121, 210, 255, 0.16)",
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 10
+  },
+  commandShortcutGroup: {
+    gap: 7
+  },
+  commandShortcutMeta: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 2
+  },
+  commandShortcutTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "900"
   },
   empty: {
     backgroundColor: colors.surface,
@@ -1108,7 +1421,7 @@ const styles = StyleSheet.create({
   homeCanvasWide: {
     alignItems: "flex-start",
     flexDirection: "row",
-    gap: 12
+    gap: 14
   },
   homePrimaryColumn: {
     flex: 1,
@@ -1285,6 +1598,12 @@ const styles = StyleSheet.create({
     minHeight: 90,
     zIndex: 2
   },
+  heroCompactMetricRow: {
+    flexDirection: "row",
+    gap: 5,
+    marginTop: 6,
+    zIndex: 2
+  },
   heroMoodCopy: {
     flex: 1,
     minWidth: 0
@@ -1365,9 +1684,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     justifyContent: "center",
-    minHeight: 42,
+    minHeight: 38,
     paddingHorizontal: 6,
-    paddingVertical: 4
+    paddingVertical: 3
   },
   heroMetricBlockLabel: {
     color: colors.muted,
@@ -1645,7 +1964,7 @@ const styles = StyleSheet.create({
     textAlign: "left"
   },
   list: {
-    backgroundColor: logiNexus.colors.home.backgroundDeepSpace,
+    backgroundColor: "transparent",
     flex: 1
   },
   metric: {
@@ -1706,6 +2025,67 @@ const styles = StyleSheet.create({
   root: {
     backgroundColor: logiNexus.colors.home.backgroundDeepSpace,
     flex: 1
+  },
+  homeAtmosphereRoot: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: "hidden"
+  },
+  homeGridPlane: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(121, 210, 255, 0.025)",
+    opacity: 0.5
+  },
+  homeNebula: {
+    borderRadius: 260,
+    height: 420,
+    opacity: 0.22,
+    position: "absolute",
+    width: 420
+  },
+  homeNebulaLeft: {
+    backgroundColor: "rgba(50, 230, 179, 0.18)",
+    left: -180,
+    top: 120
+  },
+  homeNebulaRight: {
+    backgroundColor: "rgba(159, 124, 255, 0.2)",
+    right: -160,
+    top: 40
+  },
+  homeSignalWave: {
+    backgroundColor: "rgba(50, 230, 179, 0.16)",
+    borderRadius: 999,
+    height: 2,
+    position: "absolute",
+    width: 42
+  },
+  homeSignalWaveOne: {
+    right: "38%",
+    top: "58%"
+  },
+  homeSignalWaveTwo: {
+    left: "12%",
+    top: "76%",
+    width: 72
+  },
+  homeStar: {
+    backgroundColor: "rgba(121, 210, 255, 0.45)",
+    borderRadius: 2,
+    height: 3,
+    position: "absolute",
+    width: 3
+  },
+  homeStarOne: {
+    left: "18%",
+    top: "14%"
+  },
+  homeStarTwo: {
+    right: "21%",
+    top: "33%"
+  },
+  homeStarThree: {
+    left: "49%",
+    top: "52%"
   },
   sideCard: {
     backgroundColor: "rgba(5, 13, 26, 0.92)",

@@ -441,25 +441,25 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
     flexGrow: 0,
-    gap: 4,
+    gap: 3,
     justifyContent: "center",
-    minHeight: 44,
-    paddingHorizontal: 5,
-    paddingVertical: 5,
-    width: 70
+    minHeight: 40,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    width: 64
   },
   actionGrid: {
     gap: 6,
-    marginTop: 8
+    marginTop: 7
   },
   actionIcon: {
     color: colors.accent,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "900"
   },
   actionText: {
     color: colors.text,
-    fontSize: 9,
+    fontSize: 8.5,
     fontWeight: "900",
     maxWidth: "100%",
     textAlign: "center"
@@ -507,18 +507,18 @@ const styles = StyleSheet.create({
   headerRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 7,
+    gap: 6,
     justifyContent: "space-between"
   },
   identityOrb: {
     alignItems: "center",
     backgroundColor: "rgba(159, 124, 255, 0.18)",
     borderColor: logiNexus.colors.home.borderIntelligence,
-    borderRadius: 20,
+    borderRadius: 18,
     borderWidth: 1,
-    height: 40,
+    height: 36,
     justifyContent: "center",
-    width: 40
+    width: 36
   },
   identityOrbText: {
     color: colors.accentStrong,
@@ -539,9 +539,9 @@ const styles = StyleSheet.create({
   input: {
     color: colors.text,
     flex: 1,
-    fontSize: 15,
-    lineHeight: 20,
-    minHeight: 40,
+    fontSize: 14,
+    lineHeight: 18,
+    minHeight: 36,
     paddingVertical: 2,
     textAlignVertical: "center"
   },
@@ -591,7 +591,7 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.large,
     flex: 1,
     justifyContent: "center",
-    minHeight: 32
+    minHeight: 30
   },
   modeButtonActive: {
     backgroundColor: colors.accent
@@ -603,7 +603,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 5,
-    marginTop: 8,
+    marginTop: 7,
     padding: 3
   },
   modeText: {
@@ -618,8 +618,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.accent,
     borderRadius: 20,
-    marginTop: 9,
-    minHeight: 46,
+    marginTop: 8,
+    minHeight: 44,
     justifyContent: "center"
   },
   publishButtonDisabled: {
@@ -689,7 +689,7 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
     gap: 3,
-    marginTop: 7,
+    marginTop: 6,
     padding: 7
   },
   statusText: {
@@ -711,7 +711,7 @@ const styles = StyleSheet.create({
   wrap: {
     backgroundColor: "rgba(10, 23, 39, 0.92)",
     borderColor: "rgba(97, 216, 255, 0.62)",
-    marginBottom: 8,
-    padding: 8
+    marginBottom: 7,
+    padding: 7
   }
 });
