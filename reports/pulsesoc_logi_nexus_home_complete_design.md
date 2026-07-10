@@ -2,6 +2,18 @@
 
 Status: scoped visual-system milestone completed; this is not Homefeed LogiNexus-complete.
 
+## WebView Homefeed Layout Parity Pass
+
+- Inspected the current authenticated production PulseSoc WebView Homefeed at `https://pulsesoc.com/pulse` and used it as the layout source of truth.
+- Re-aligned native Home around the current production structure: command strip, Pulse Network hero, Status rail, Pulse Composer, Pulse Radio layer, feed filter rail, feed cards, and intelligence/right-side support panels.
+- Added a responsive native Home canvas that keeps the iPhone layout compact while allowing a WebView-style right rail on wider QA/browser surfaces.
+- Added the WebView-style hero mood hierarchy with a server-derived `Curious` network summary and a compact Pulse Radio pill, without introducing fake production metrics.
+- Added a native side rail for `PulseSoc Intelligence`, `Trending Signals`, `Sponsored Signal`, and realtime sync readiness using existing feed/status data and safe route handoffs.
+- Added a compact Pulse Radio dock between the composer and feed filters to match the current WebView information architecture without changing Pulse Radio backend behavior.
+- Preserved all existing Home contracts: publishing, draft recovery, upload queue, feed invalidation, Status routing, media handoff, feed filtering, and server-authoritative mutations.
+- Xcode iPhone Simulator evidence: `reports/screenshots/logi-nexus-home-webview-parity-native-return.png`.
+- QA note: the visible Expo AV deprecation toast is an existing dev-client warning, not a Home layout regression.
+
 ## Inspiration Alignment Pass
 
 - Used the approved Home reference image as directional inspiration for hierarchy, density, and atmosphere.

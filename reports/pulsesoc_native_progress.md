@@ -2,10 +2,10 @@
 
 Date: 2026-07-10
 
-## Latest Mission Status: LogiNexus Homefeed Native Reconstruction / Space Efficiency Pass
+## Latest Mission Status: LogiNexus Homefeed Native Reconstruction / WebView Homefeed Layout Parity Pass
 
-- Home LogiNexus transformation: 80%.
-- Home UX completeness: 90%.
+- Home LogiNexus transformation: 82%.
+- Home UX completeness: 91%.
 - Native foundation/parity: 97%.
 - System consistency: 90%.
 - Release QA confidence: 87%.
@@ -34,6 +34,14 @@ Completed this mission:
 - Tightened the Home-mode command strip, Pulse Network hero, `Your Orbit` rail, Transmission Console, and feed filter rail without changing Home business logic or backend contracts.
 - Verified on Xcode iPhone 17 Pro Simulator that the first Signal Card now begins inside the opening viewport.
 - Captured simulator evidence at `reports/screenshots/logi-nexus-home-iphone17pro-space-efficient-clean.png`.
+- Inspected the current authenticated production WebView Homefeed at `https://pulsesoc.com/pulse` and used it as the source of truth for structure, module order, and density.
+- Re-aligned native Home to the production WebView layout: command strip, Pulse Network hero, Status rail, Pulse Composer, Pulse Radio layer, feed filter rail, feed cards, and supporting intelligence/right-side panels.
+- Added a responsive Home canvas so iPhone keeps the compact native stack while wider QA/browser surfaces can show the WebView-style right-side rail.
+- Added the server-derived hero mood/summary hierarchy and compact Pulse Radio pill without adding fake production metrics.
+- Added the native `HomeWebSideRail` for PulseSoc Intelligence, Trending Signals, Sponsored Signal, and realtime sync readiness using existing feed/status data and safe route handoffs.
+- Added a compact Pulse Radio dock between the Transmission Console and feed rail to preserve the WebView information architecture.
+- Verified the current native bundle in the Xcode iPhone 17 Pro Simulator after local QA authentication returned to the native app.
+- Captured simulator evidence at `reports/screenshots/logi-nexus-home-webview-parity-native-return.png`.
 
 Remaining Home work:
 

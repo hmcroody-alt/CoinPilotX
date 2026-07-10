@@ -469,27 +469,51 @@ function HomeHeader({
 }) {
   const { width } = useWindowDimensions();
   const compactHero = width < 430;
+  const wideCanvas = width >= 900;
   return (
     <View style={styles.header}>
       <HomeTopBar onOpenDrawer={onOpenDrawer} onOpenSearch={onOpenSearch} onOpenActivity={onOpenActivity} onOpenProfile={onOpenProfile} />
-      <PulseNetworkHero posts={posts} statuses={statusItems} offline={offline || statusOffline} compact={compactHero} onRefresh={onRefresh} onOpenUndx={onOpenUndx} onOpenPulseRadio={onOpenPulseRadio} onOpenLive={onOpenLive} onOpenSafety={onOpenSafety} />
-      <StatusRail
-        items={statusItems}
-        loading={statusLoading}
-        offline={statusOffline}
-        error={statusError}
-        onAddStatus={onAddStatus}
-        onOpenStatus={onOpenStatus}
-      />
-      <HomePulseComposer onCreated={onCreated} onOpenCamera={onOpenCamera} onOpenLive={onOpenLive} onOpenMusic={onOpenMusic} />
-      <View style={styles.feedTabsWrap}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.feedTabs}>
-          {feedTabs.map((tab) => (
-            <Pressable key={tab.key} style={[styles.feedTab, selectedFeed === tab.key && styles.feedTabActive]} onPress={() => onSelectFeed(tab.key)}>
-              <Text style={[styles.feedTabText, selectedFeed === tab.key && styles.feedTabTextActive]}>{tab.label}</Text>
+      <View style={[styles.homeCanvas, wideCanvas && styles.homeCanvasWide]}>
+        <View style={styles.homePrimaryColumn}>
+          <PulseNetworkHero posts={posts} statuses={statusItems} offline={offline || statusOffline} compact={compactHero} onRefresh={onRefresh} onOpenUndx={onOpenUndx} onOpenPulseRadio={onOpenPulseRadio} onOpenLive={onOpenLive} onOpenSafety={onOpenSafety} />
+          <StatusRail
+            items={statusItems}
+            loading={statusLoading}
+            offline={statusOffline}
+            error={statusError}
+            onAddStatus={onAddStatus}
+            onOpenStatus={onOpenStatus}
+          />
+          <HomePulseComposer onCreated={onCreated} onOpenCamera={onOpenCamera} onOpenLive={onOpenLive} onOpenMusic={onOpenMusic} />
+          <View style={styles.webRadioDock}>
+            <Text style={styles.webRadioPause}>Ⅱ</Text>
+            <View style={styles.webRadioCopy}>
+              <Text style={styles.webRadioTitle} numberOfLines={1}>Beautiful Stranger</Text>
+              <Text style={styles.webRadioMeta} numberOfLines={1}>PulseSoc Music · Pulse Radio</Text>
+            </View>
+            <Pressable style={styles.webRadioButton} onPress={onOpenPulseRadio}>
+              <Text style={styles.webRadioButtonText}>Library</Text>
             </Pressable>
-          ))}
-        </ScrollView>
+          </View>
+          <View style={styles.feedTabsWrap}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.feedTabs}>
+              {feedTabs.map((tab) => (
+                <Pressable key={tab.key} style={[styles.feedTab, selectedFeed === tab.key && styles.feedTabActive]} onPress={() => onSelectFeed(tab.key)}>
+                  <Text style={[styles.feedTabText, selectedFeed === tab.key && styles.feedTabTextActive]}>{tab.label}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+        {wideCanvas ? (
+          <HomeWebSideRail
+            posts={posts}
+            statuses={statusItems}
+            offline={offline || statusOffline}
+            onOpenUndx={onOpenUndx}
+            onOpenSafety={onOpenSafety}
+          />
+        ) : null}
       </View>
     </View>
   );
@@ -551,6 +575,12 @@ function PulseNetworkHero({
   const liveCount = statuses.filter((status) => status.author_live || status.status_type === "live").length;
   const alertCount = posts.filter((post) => /scam|alert|warning|security|safety/i.test(`${post.title || ""} ${post.body || ""}`)).length;
   const signalMetric = posts.length ? formatHeroMetric(posts.length) : offline ? "Cached" : "Live";
+  const mood = posts.length ? "Curious" : offline ? "Cached" : "Curious";
+  const summary = posts.length
+    ? `${posts.length} public posts summarized. Aggregate activity only.`
+    : offline
+      ? "Cached network signals remain available."
+      : "Signals are loading quietly so the feed stays fast.";
   return (
     <LogiNexusPanel style={styles.hero} tone="default">
       <View style={styles.heroAtmosphere}>
@@ -565,6 +595,19 @@ function PulseNetworkHero({
         <Pressable accessibilityRole="button" accessibilityLabel="Refresh Pulse Network" style={styles.heroHealthPill} onPress={onRefresh}>
           <View style={styles.heroHealthDot} />
           <Text style={styles.heroHealthText}>{offline ? "Resync" : "Optimal"}</Text>
+        </Pressable>
+      </View>
+      <View style={styles.heroMoodRow}>
+        <View style={styles.heroMoodCopy}>
+          <Text style={styles.heroMoodTitle} numberOfLines={1}>{mood}</Text>
+          <Text style={styles.heroMoodSummary} numberOfLines={2}>{summary}</Text>
+        </View>
+        <Pressable accessibilityRole="button" accessibilityLabel="Open Pulse Radio" style={styles.heroRadioPill} onPress={onOpenPulseRadio}>
+          <Text style={styles.heroRadioIcon}>Ⅱ</Text>
+          <View style={styles.heroRadioCopy}>
+            <Text style={styles.heroRadioLabel}>Pulse Radio</Text>
+            <Text style={styles.heroRadioMeta}>Now Playing</Text>
+          </View>
         </Pressable>
       </View>
       <View style={styles.heroBlueprintRow}>
@@ -613,6 +656,88 @@ function PulseNetworkHero({
       </View>
     </LogiNexusPanel>
   );
+}
+
+function HomeWebSideRail({
+  posts,
+  statuses,
+  offline,
+  onOpenUndx,
+  onOpenSafety
+}: {
+  posts: PulsePost[];
+  statuses: PulseStatus[];
+  offline: boolean;
+  onOpenUndx: () => void;
+  onOpenSafety: () => void;
+}) {
+  const todayCount = posts.filter((post) => isToday(post.created_at)).length;
+  const trendLabel = trendingLabel(posts);
+  return (
+    <View style={styles.sideRail}>
+      <LogiNexusPanel style={styles.sidePanel} tone="intelligence">
+        <Text style={styles.sidePanelTitle}>PulseSoc Intelligence</Text>
+        <View style={styles.sideMetricGrid}>
+          <View style={styles.sideMetricBox}>
+            <Text style={styles.sideMetricValue}>{todayCount}</Text>
+            <Text style={styles.sideMetricLabel}>posts today</Text>
+          </View>
+          <View style={styles.sideMetricBox}>
+            <Text style={styles.sideMetricValue}>{offline ? "Cached" : "Curious"}</Text>
+            <Text style={styles.sideMetricLabel}>community mood</Text>
+          </View>
+        </View>
+        <View style={styles.sideProgressTrack}>
+          <View style={[styles.sideProgressFill, { width: `${Math.min(92, Math.max(34, posts.length * 9))}%` }]} />
+        </View>
+        <Text style={styles.sidePanelBody}>Signals are loading quietly so the feed stays fast.</Text>
+      </LogiNexusPanel>
+      <Pressable accessibilityRole="button" accessibilityLabel="Open trending signals" style={styles.sideCard} onPress={onOpenUndx}>
+        <Text style={styles.sideCardKicker}>Trending Signals</Text>
+        <View style={styles.sideHashRow}>
+          <Text style={styles.sideHashIcon}>#</Text>
+          <View>
+            <Text style={styles.sideHashTitle}>{trendLabel}</Text>
+            <Text style={styles.sideHashMeta}>Safety intelligence</Text>
+          </View>
+        </View>
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Open Safety Shield" style={[styles.sideCard, styles.sideSponsoredCard]} onPress={onOpenSafety}>
+        <View style={styles.sideSponsoredHeader}>
+          <Text style={styles.sideSponsoredPill}>Sponsored Signal</Text>
+          <Text style={styles.sideClose}>×</Text>
+        </View>
+        <Text style={styles.sideSponsoredTitle}>Premium signal loading</Text>
+        <Text style={styles.sidePanelBody}>Approved sponsor projections appear here through privacy-safe frequency caps and review gates.</Text>
+        <View style={styles.sideDotsRow}>
+          <View style={[styles.sideDot, { backgroundColor: colors.accent }]} />
+          <View style={[styles.sideDot, { backgroundColor: colors.accentStrong }]} />
+          <View style={[styles.sideDot, { backgroundColor: colors.warning }]} />
+          <View style={[styles.sideDot, { backgroundColor: colors.intelligence }]} />
+        </View>
+      </Pressable>
+      <LogiNexusPanel style={styles.sidePanel} tone="default">
+        <Text style={styles.sidePanelTitle}>Realtime layer ready</Text>
+        <Text style={styles.sidePanelBody}>{statuses.length || posts.length ? "New posts, reactions, status, and replies hydrate through the native sync layer." : "Home is waiting for authenticated feed and status events."}</Text>
+      </LogiNexusPanel>
+    </View>
+  );
+}
+
+function isToday(value?: string) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+}
+
+function trendingLabel(posts: PulsePost[]) {
+  const source = posts.find((post) => /scam|security|safety/i.test(`${post.title || ""} ${post.body || ""}`));
+  if (source) return "#scamshield";
+  const crypto = posts.find((post) => /crypto|market|coin|token/i.test(`${post.title || ""} ${post.body || ""}`));
+  if (crypto) return "#marketpulse";
+  return "#scamshield";
 }
 
 function formatHeroMetric(value: number) {
@@ -810,8 +935,11 @@ const styles = StyleSheet.create({
     marginTop: 12
   },
   content: {
+    alignSelf: "center",
+    maxWidth: 1130,
     padding: 8,
-    paddingBottom: 156
+    paddingBottom: 156,
+    width: "100%"
   },
   empty: {
     backgroundColor: colors.surface,
@@ -974,6 +1102,18 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: 2
   },
+  homeCanvas: {
+    width: "100%"
+  },
+  homeCanvasWide: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 12
+  },
+  homePrimaryColumn: {
+    flex: 1,
+    minWidth: 0
+  },
   hero: {
     backgroundColor: "rgba(5, 13, 26, 0.94)",
     marginBottom: 6,
@@ -1078,6 +1218,47 @@ const styles = StyleSheet.create({
     marginTop: 5,
     zIndex: 2
   },
+  heroRadioCopy: {
+    minWidth: 0
+  },
+  heroRadioIcon: {
+    backgroundColor: colors.accent,
+    borderRadius: 16,
+    color: colors.background,
+    fontSize: 12,
+    fontWeight: "900",
+    height: 28,
+    lineHeight: 28,
+    overflow: "hidden",
+    textAlign: "center",
+    width: 28
+  },
+  heroRadioLabel: {
+    color: colors.text,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+    textTransform: "uppercase"
+  },
+  heroRadioMeta: {
+    color: colors.accent,
+    fontSize: 8,
+    fontWeight: "800",
+    marginTop: 1
+  },
+  heroRadioPill: {
+    alignItems: "center",
+    backgroundColor: "rgba(10, 30, 43, 0.82)",
+    borderColor: "rgba(50, 230, 179, 0.45)",
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 7,
+    minHeight: 42,
+    minWidth: 112,
+    paddingHorizontal: 8,
+    paddingVertical: 6
+  },
   heroAction: {
     alignItems: "center",
     borderColor: colors.border,
@@ -1103,6 +1284,31 @@ const styles = StyleSheet.create({
     marginTop: 6,
     minHeight: 90,
     zIndex: 2
+  },
+  heroMoodCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  heroMoodRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "space-between",
+    marginTop: 7,
+    zIndex: 2
+  },
+  heroMoodSummary: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "800",
+    lineHeight: 13,
+    marginTop: 2
+  },
+  heroMoodTitle: {
+    color: colors.text,
+    fontSize: 28,
+    fontWeight: "900",
+    lineHeight: 32
   },
   heroKicker: {
     alignSelf: "flex-start",
@@ -1501,6 +1707,158 @@ const styles = StyleSheet.create({
     backgroundColor: logiNexus.colors.home.backgroundDeepSpace,
     flex: 1
   },
+  sideCard: {
+    backgroundColor: "rgba(5, 13, 26, 0.92)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 12
+  },
+  sideCardKicker: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "900",
+    marginBottom: 8
+  },
+  sideClose: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "900",
+    opacity: 0.7
+  },
+  sideDot: {
+    borderRadius: 4,
+    height: 8,
+    width: 8
+  },
+  sideDotsRow: {
+    backgroundColor: "rgba(255,255,255,0.035)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 22,
+    justifyContent: "center",
+    marginTop: 12,
+    padding: 14
+  },
+  sideHashIcon: {
+    backgroundColor: "rgba(121, 210, 255, 0.11)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 16,
+    borderWidth: 1,
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "900",
+    height: 32,
+    lineHeight: 30,
+    overflow: "hidden",
+    textAlign: "center",
+    width: 32
+  },
+  sideHashMeta: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "800",
+    marginTop: 2
+  },
+  sideHashRow: {
+    alignItems: "center",
+    backgroundColor: "rgba(9, 20, 33, 0.66)",
+    borderRadius: 12,
+    flexDirection: "row",
+    gap: 10,
+    padding: 10
+  },
+  sideHashTitle: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "900"
+  },
+  sideMetricBox: {
+    backgroundColor: "rgba(3, 7, 18, 0.62)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    minHeight: 58,
+    padding: 9
+  },
+  sideMetricGrid: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 9
+  },
+  sideMetricLabel: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "800",
+    marginTop: 3
+  },
+  sideMetricValue: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "900"
+  },
+  sidePanel: {
+    backgroundColor: "rgba(5, 13, 26, 0.9)",
+    padding: 12
+  },
+  sidePanelBody: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginTop: 10
+  },
+  sidePanelTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  sideProgressFill: {
+    backgroundColor: colors.accent,
+    borderRadius: 999,
+    height: "100%"
+  },
+  sideProgressTrack: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 999,
+    height: 8,
+    marginTop: 14,
+    overflow: "hidden"
+  },
+  sideRail: {
+    gap: 10,
+    width: 290
+  },
+  sideSponsoredCard: {
+    borderColor: "rgba(159, 124, 255, 0.28)"
+  },
+  sideSponsoredHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  sideSponsoredPill: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(50, 230, 179, 0.16)",
+    borderColor: logiNexus.colors.home.borderActive,
+    borderRadius: 999,
+    borderWidth: 1,
+    color: colors.accent,
+    fontSize: 9,
+    fontWeight: "900",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    textTransform: "uppercase"
+  },
+  sideSponsoredTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "900",
+    marginTop: 10
+  },
   statusAvatar: {
     alignItems: "center",
     backgroundColor: "rgba(37, 208, 167, 0.12)",
@@ -1598,6 +1956,62 @@ const styles = StyleSheet.create({
   },
   statusSection: {
     marginBottom: 6
+  },
+  webRadioButton: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  webRadioButtonText: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "900"
+  },
+  webRadioCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  webRadioDock: {
+    alignItems: "center",
+    alignSelf: "center",
+    backgroundColor: "rgba(5, 13, 26, 0.94)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: -5,
+    marginTop: -2,
+    maxWidth: 520,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    width: "86%",
+    zIndex: 4
+  },
+  webRadioMeta: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "800"
+  },
+  webRadioPause: {
+    backgroundColor: colors.accent,
+    borderRadius: 17,
+    color: colors.background,
+    fontSize: 15,
+    fontWeight: "900",
+    height: 34,
+    lineHeight: 33,
+    overflow: "hidden",
+    textAlign: "center",
+    width: 34
+  },
+  webRadioTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "900"
   },
   heroSignalLine: {
     backgroundColor: "rgba(121, 210, 255, 0.18)",
