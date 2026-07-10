@@ -78,6 +78,7 @@ export function PostCard({
               <Text style={styles.authorName} numberOfLines={1}>
                 {displayName}
               </Text>
+              {author.verified || author.premium_verified ? <Text style={styles.verifiedMark}>◆</Text> : null}
               <LogiNexusBadge label={post.visibility || "public"} />
             </View>
             <Text style={styles.meta} numberOfLines={1}>
@@ -305,23 +306,30 @@ function MediaStrip({ post }: { post: PulsePost }) {
 }
 
 function reactionLabel(reaction: string, count?: number) {
-  const label = reaction.replace(/_/g, " ");
+  const labels: Record<string, string> = {
+    fire: "♥",
+    smart: "UNDX",
+    bullish: "Signal",
+    funny: "Pulse"
+  };
+  const label = labels[reaction] || reaction.replace(/_/g, " ");
   const value = Number(count || 0);
   return value ? `${label} ${value}` : label;
 }
 
 const styles = StyleSheet.create({
   actionButton: {
-    borderColor: colors.border,
-    borderRadius: 8,
+    backgroundColor: "rgba(9, 20, 33, 0.56)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: logiNexus.radius.capsule,
     borderWidth: 1,
     minHeight: 34,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 8
   },
   actionButtonActive: {
-    backgroundColor: "rgba(37, 208, 167, 0.14)",
-    borderColor: colors.accent
+    backgroundColor: "rgba(37, 208, 167, 0.16)",
+    borderColor: logiNexus.colors.home.borderActive
   },
   actionRow: {
     flexDirection: "row",
@@ -340,8 +348,8 @@ const styles = StyleSheet.create({
   },
   authorName: {
     color: colors.text,
-    fontSize: 15,
-    fontWeight: "800"
+    ...logiNexus.typography.home.cardAuthor,
+    flexShrink: 1
   },
   authorNameRow: {
     alignItems: "center",
@@ -359,44 +367,49 @@ const styles = StyleSheet.create({
   avatar: {
     backgroundColor: colors.surfaceRaised,
     borderColor: colors.accent,
-    borderRadius: 22,
-    borderWidth: 1,
-    height: 44,
-    width: 44
+    borderRadius: 27,
+    borderWidth: 2,
+    height: 54,
+    width: 54
   },
   avatarFallback: {
     backgroundColor: colors.surfaceRaised,
     borderColor: colors.border,
-    borderRadius: 22,
+    borderRadius: 27,
     borderWidth: 1,
-    height: 44,
-    width: 44
+    height: 54,
+    width: 54
   },
   body: {
     color: colors.text,
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 10
+    ...logiNexus.typography.home.cardBody,
+    marginTop: 12
   },
   card: {
-    marginBottom: 12,
-    padding: 14
+    backgroundColor: "rgba(7, 16, 29, 0.88)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 24,
+    marginBottom: 14,
+    padding: 16
   },
   cardPressed: {
     borderColor: colors.accent
   },
   countRow: {
+    borderTopColor: logiNexus.colors.home.borderSubtle,
+    borderTopWidth: 1,
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 14,
-    marginTop: 12
+    marginTop: 14,
+    paddingTop: 12
   },
   mediaFallback: {
     alignItems: "center",
     aspectRatio: 16 / 10,
-    backgroundColor: colors.surfaceRaised,
-    borderColor: colors.border,
-    borderRadius: logiNexus.radius.large,
+    backgroundColor: "rgba(9, 20, 33, 0.86)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 18,
     borderWidth: 1,
     justifyContent: "center",
     overflow: "hidden",
@@ -415,7 +428,9 @@ const styles = StyleSheet.create({
   mediaImage: {
     aspectRatio: 16 / 10,
     backgroundColor: colors.surfaceRaised,
-    borderRadius: logiNexus.radius.large,
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 18,
+    borderWidth: 1,
     width: "100%"
   },
   mediaWrap: {
@@ -424,8 +439,7 @@ const styles = StyleSheet.create({
   },
   meta: {
     color: colors.muted,
-    fontSize: 12,
-    lineHeight: 17
+    ...logiNexus.typography.home.cardMetadata
   },
   previewAuthor: {
     color: colors.text,
@@ -437,15 +451,15 @@ const styles = StyleSheet.create({
     lineHeight: 19
   },
   previewComments: {
-    borderTopColor: colors.border,
+    borderTopColor: logiNexus.colors.home.borderSubtle,
     borderTopWidth: 1,
     gap: 6,
     marginTop: 12,
     paddingTop: 10
   },
   safetyButton: {
-    borderColor: colors.border,
-    borderRadius: 8,
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: logiNexus.radius.capsule,
     borderWidth: 1,
     minHeight: 32,
     justifyContent: "center",
@@ -464,9 +478,9 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.text,
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: "900",
-    lineHeight: 23,
+    lineHeight: 27,
     marginTop: 12
   },
   utilityButton: {
@@ -482,5 +496,10 @@ const styles = StyleSheet.create({
     color: colors.accentStrong,
     fontSize: 13,
     fontWeight: "800"
+  },
+  verifiedMark: {
+    color: colors.accentStrong,
+    fontSize: 13,
+    fontWeight: "900"
   }
 });

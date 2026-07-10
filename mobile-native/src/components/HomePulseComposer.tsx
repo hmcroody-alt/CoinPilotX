@@ -246,8 +246,8 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
     <LogiNexusPanel style={styles.wrap} tone={mode === "live" ? "danger" : mode === "reel" ? "creator" : "default"}>
       <View style={styles.headerRow}>
         <View>
-          <LogiNexusBadge label="Transmission Console" tone={mode === "live" ? "danger" : mode === "reel" ? "creator" : "default"} />
-          <Text style={styles.title}>Pulse Composer</Text>
+          <LogiNexusBadge label="Pulse Network" tone={mode === "live" ? "danger" : mode === "reel" ? "creator" : "default"} />
+          <Text style={styles.title}>Transmission Console</Text>
         </View>
         <Pressable style={styles.livePill} onPress={onOpenLive}>
           <Text style={styles.liveDot}>●</Text>
@@ -273,7 +273,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
           accessibilityLabel="Home composer text"
           multiline
           maxLength={MAX_BODY}
-          placeholder="What signal are you transmitting?"
+          placeholder="Transmit to the Pulse Network..."
           placeholderTextColor={colors.muted}
           style={styles.input}
           value={body}
@@ -413,15 +413,16 @@ function visibilityLabel(visibility: Visibility) {
 const styles = StyleSheet.create({
   actionButton: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.055)",
-    borderColor: colors.border,
-    borderRadius: logiNexus.radius.medium,
+    backgroundColor: "rgba(9, 20, 33, 0.74)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     flexBasis: "23%",
-    flexDirection: "row",
     gap: 8,
-    minHeight: 54,
-    paddingHorizontal: 10
+    justifyContent: "center",
+    minHeight: 64,
+    paddingHorizontal: 8,
+    paddingVertical: 10
   },
   actionGrid: {
     flexDirection: "row",
@@ -431,14 +432,15 @@ const styles = StyleSheet.create({
   },
   actionIcon: {
     color: colors.accent,
-    fontSize: 17,
+    fontSize: 20,
     fontWeight: "900"
   },
   actionText: {
     color: colors.text,
-    flex: 1,
-    fontSize: 13,
-    fontWeight: "900"
+    fontSize: 12,
+    fontWeight: "900",
+    maxWidth: "100%",
+    textAlign: "center"
   },
   counter: {
     bottom: 12,
@@ -464,8 +466,8 @@ const styles = StyleSheet.create({
   },
   draftPanel: {
     alignItems: "center",
-    backgroundColor: "rgba(37, 208, 167, 0.08)",
-    borderColor: colors.border,
+    backgroundColor: "rgba(37, 208, 167, 0.1)",
+    borderColor: logiNexus.colors.home.borderActive,
     borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
     flexDirection: "row",
@@ -486,17 +488,17 @@ const styles = StyleSheet.create({
   },
   input: {
     color: colors.text,
-    fontSize: 19,
-    lineHeight: 27,
-    minHeight: 156,
+    fontSize: 20,
+    lineHeight: 28,
+    minHeight: 136,
     padding: 18,
     paddingBottom: 36,
     textAlignVertical: "top"
   },
   inputWrap: {
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderRadius: logiNexus.radius.large,
+    backgroundColor: "rgba(3, 7, 18, 0.78)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 24,
     borderWidth: 1,
     marginTop: 14,
     overflow: "hidden"
@@ -508,7 +510,8 @@ const styles = StyleSheet.create({
   livePill: {
     alignItems: "center",
     borderColor: colors.danger,
-    borderRadius: logiNexus.radius.medium,
+    backgroundColor: "rgba(255, 95, 126, 0.1)",
+    borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     flexDirection: "row",
     gap: 8,
@@ -522,7 +525,7 @@ const styles = StyleSheet.create({
   modeButton: {
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.045)",
-    borderRadius: logiNexus.radius.medium,
+    borderRadius: logiNexus.radius.large,
     flex: 1,
     justifyContent: "center",
     minHeight: 50
@@ -531,9 +534,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent
   },
   modeRow: {
-    backgroundColor: "rgba(255,255,255,0.035)",
-    borderColor: colors.border,
-    borderRadius: logiNexus.radius.large,
+    backgroundColor: "rgba(3, 7, 18, 0.4)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 24,
     borderWidth: 1,
     flexDirection: "row",
     gap: 8,
@@ -551,7 +554,7 @@ const styles = StyleSheet.create({
   publishButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
-    borderRadius: logiNexus.radius.large,
+    borderRadius: 24,
     marginTop: 14,
     minHeight: 56,
     justifyContent: "center"
@@ -618,8 +621,10 @@ const styles = StyleSheet.create({
     textAlign: "center"
   },
   statusPanel: {
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderRadius: logiNexus.radius.medium,
+    backgroundColor: "rgba(9, 20, 33, 0.74)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: logiNexus.radius.large,
+    borderWidth: 1,
     gap: 6,
     marginTop: 14,
     padding: 12
@@ -636,11 +641,13 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.text,
-    fontSize: 21,
+    fontSize: 22,
     fontWeight: "900",
     marginTop: 8
   },
   wrap: {
+    backgroundColor: "rgba(11, 27, 44, 0.92)",
+    borderColor: logiNexus.colors.home.borderCreator,
     marginBottom: 14,
     padding: 16
   }

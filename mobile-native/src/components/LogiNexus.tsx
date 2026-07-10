@@ -13,7 +13,7 @@ export function LogiNexusPanel({ children, style, tone = "default" }: SurfacePro
   const color = toneColor(tone);
   return (
     <View style={[styles.panel, { borderColor: color }, style]}>
-      <View pointerEvents="none" style={[styles.panelSignal, { backgroundColor: color }]} />
+      <View style={[styles.panelSignal, { backgroundColor: color }]} />
       {children}
     </View>
   );
@@ -182,6 +182,7 @@ const styles = StyleSheet.create({
     height: 2,
     left: 0,
     opacity: 0.9,
+    pointerEvents: "none",
     position: "absolute",
     right: 0,
     top: 0

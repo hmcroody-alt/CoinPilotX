@@ -1,6 +1,6 @@
 # PulseSoc LogiNexus Design System
 
-Status: phase 1 foundation started.
+Status: phase 1 foundation extended for the native Homefeed.
 
 ## Purpose
 
@@ -14,6 +14,7 @@ The native app is moving from feature parity into a unified PulseSoc experience.
 - Radius tokens: small, medium, large, panel, capsule, circular.
 - Motion duration tokens: instant, quick, standard, reveal, ambient.
 - Depth tokens: none, subtle, panel, floating, modal.
+- Home-specific tokens: deep-space background, network-void surface, Home glass surfaces, signal surfaces, active/intelligence/creator/safety borders, UNDX/radio/live/safety accents, Home hero/card/tab/accessibility typography, and Home depth slots.
 
 ## Implemented Primitives
 
@@ -31,6 +32,8 @@ Phase 1 applies these primitives to native Home:
 
 - PulseSoc command strip top bar.
 - Pulse Network hero.
+- UNDX, Pulse Radio, and Safety Shield hero tiles.
+- Your Orbit status rail.
 - Transmission Console composer wrapper.
 - Feed empty state.
 - Feed card shell and audience badge.
@@ -41,6 +44,7 @@ Phase 1 applies these primitives to native Home:
 - No WebView production paths were changed.
 - UNDX public-facing copy was introduced only where requested by the transformation mission.
 - This is not final UI polish. It is the reusable foundation for app-wide consistency.
+- The latest Homefeed pass is not yet full LogiNexus completion because visible QA, simulator QA, motion, and physical-device-only checks remain separate.
 
 ## Next Design-System Work
 

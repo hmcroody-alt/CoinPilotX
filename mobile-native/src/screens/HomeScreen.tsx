@@ -1,7 +1,7 @@
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Image, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import {
   hidePost,
   listFeed,
@@ -16,7 +16,7 @@ import {
 } from "../api/feed";
 import { listStatuses, loadCachedStatuses, PulseStatus } from "../api/status";
 import { HomePulseComposer } from "../components/HomePulseComposer";
-import { LogiNexusBadge, LogiNexusButton, LogiNexusEmptyState, LogiNexusMetric, LogiNexusPanel, LogiNexusSignalIndicator } from "../components/LogiNexus";
+import { LogiNexusBadge, LogiNexusButton, LogiNexusEmptyState, LogiNexusPanel, LogiNexusSignalIndicator } from "../components/LogiNexus";
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { PostCard } from "../components/PostCard";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
@@ -342,6 +342,7 @@ export function HomeScreen() {
             onOpenProfile={() => navigation.navigate("Tabs", { screen: "Profile" })}
             onRefresh={refreshHome}
             onSelectFeed={selectFeed}
+            onOpenUndx={() => navigation.navigate("Tabs", { screen: "PulseAI" })}
             onOpenPulseRadio={() => openDashboardRoute(navigation, "/pulse/music#pulse-radio")}
             onOpenLive={() => navigation.navigate("Tabs", { screen: "Live" })}
             onOpenSafety={() => navigation.navigate("SafetyHub", { title: "Safety Hub" })}
@@ -434,6 +435,7 @@ function HomeHeader({
   onOpenProfile,
   onRefresh,
   onSelectFeed,
+  onOpenUndx,
   onOpenPulseRadio,
   onOpenLive,
   onOpenSafety,
@@ -458,6 +460,7 @@ function HomeHeader({
   onOpenProfile: () => void;
   onRefresh: () => void;
   onSelectFeed: (feedKey: string) => void;
+  onOpenUndx: () => void;
   onOpenPulseRadio: () => void;
   onOpenLive: () => void;
   onOpenSafety: () => void;
@@ -470,7 +473,7 @@ function HomeHeader({
   return (
     <View style={styles.header}>
       <HomeTopBar onOpenDrawer={onOpenDrawer} onOpenSearch={onOpenSearch} onOpenActivity={onOpenActivity} onOpenProfile={onOpenProfile} />
-      <PulseNetworkHero posts={posts} statuses={statusItems} offline={offline || statusOffline} onRefresh={onRefresh} onOpenPulseRadio={onOpenPulseRadio} onOpenLive={onOpenLive} onOpenSafety={onOpenSafety} />
+      <PulseNetworkHero posts={posts} statuses={statusItems} offline={offline || statusOffline} onRefresh={onRefresh} onOpenUndx={onOpenUndx} onOpenPulseRadio={onOpenPulseRadio} onOpenLive={onOpenLive} onOpenSafety={onOpenSafety} />
       <StatusRail
         items={statusItems}
         loading={statusLoading}
@@ -526,6 +529,7 @@ function PulseNetworkHero({
   statuses,
   offline,
   onRefresh,
+  onOpenUndx,
   onOpenPulseRadio,
   onOpenLive,
   onOpenSafety
@@ -534,6 +538,7 @@ function PulseNetworkHero({
   statuses: PulseStatus[];
   offline: boolean;
   onRefresh: () => void;
+  onOpenUndx: () => void;
   onOpenPulseRadio: () => void;
   onOpenLive: () => void;
   onOpenSafety: () => void;
@@ -548,36 +553,87 @@ function PulseNetworkHero({
   const alertCount = posts.filter((post) => /scam|alert|warning|security|safety/i.test(`${post.title || ""} ${post.body || ""}`)).length;
   return (
     <LogiNexusPanel style={styles.hero} tone="default">
-      <View style={styles.heroOrb}>
-        <View style={styles.heroNodeBig} />
-        <View style={[styles.heroNode, styles.heroNodeOne]} />
-        <View style={[styles.heroNode, styles.heroNodeTwo]} />
-        <View style={[styles.heroNode, styles.heroNodeThree]} />
-        <Text style={styles.heroOrbText}>PN</Text>
+      <View style={styles.heroAtmosphere}>
+        <View style={[styles.heroGlow, styles.heroGlowPrimary]} />
+        <View style={[styles.heroGlow, styles.heroGlowSecondary]} />
       </View>
-      <View style={styles.heroMain}>
-        <View style={styles.heroTopRow}>
+      <View style={styles.heroNetworkRow}>
+        <View style={styles.heroLeft}>
           <LogiNexusBadge label="Pulse Network" />
-          <Pressable style={styles.radioButton} onPress={onOpenPulseRadio}>
-            <Text style={styles.radioPlay}>▶</Text>
-            <Text style={styles.radioText}>Pulse Radio</Text>
-          </Pressable>
+          <Text style={styles.heroMetric}>{posts.length ? `${posts.length}` : offline ? "Cached" : "Live"}</Text>
+          <Text style={styles.heroMetricLabel}>{posts.length ? "Signals active now" : offline ? "Cached signals" : "Network ready"}</Text>
+          <View style={styles.heroDivider} />
+          <Text style={styles.heroLiveMetric}>{liveCount}</Text>
+          <Text style={styles.heroLiveLabel}>Live broadcasts</Text>
         </View>
-        <Text style={styles.heroTitle}>{offline ? "Cached orbit" : "Network alive"}</Text>
-        <Text style={styles.heroSubtitle}>{posts.length} server-authoritative signals loaded. UNDX is watching safety and discovery signals.</Text>
-        {offline ? <Text style={styles.offlinePill}>Connection interrupted. Cached signals remain available.</Text> : null}
-        <View style={styles.metricRow}>
-          <LogiNexusMetric value={creatorCount} label="creators" tone="creator" />
-          <LogiNexusMetric value={liveCount} label="live" tone="danger" />
-          <LogiNexusMetric value={alertCount} label="UNDX alerts" tone="intelligence" />
+        <View style={styles.heroOrb}>
+          <View style={styles.heroRingOuter} />
+          <View style={styles.heroRingInner} />
+          <View style={styles.heroNodeBig} />
+          <View style={[styles.heroNode, styles.heroNodeOne]} />
+          <View style={[styles.heroNode, styles.heroNodeTwo]} />
+          <View style={[styles.heroNode, styles.heroNodeThree]} />
+          <View style={[styles.heroNode, styles.heroNodeFour]} />
+          <Text style={styles.heroOrbText}>LN</Text>
         </View>
-        <View style={styles.heroActions}>
-          <LogiNexusButton label="Live" onPress={onOpenLive} tone="danger" variant="outline" />
-          <LogiNexusButton label="Safety scan" onPress={onOpenSafety} tone="safety" variant="outline" />
-          <LogiNexusButton label="Refresh" onPress={onRefresh} variant="outline" />
-        </View>
+      </View>
+      <Text style={styles.heroSubtitle}>
+        {offline
+          ? "Connection interrupted. Cached signals remain available while PulseSoc resyncs."
+          : `${creatorCount} creators and ${alertCount} UNDX alerts are represented from server-authoritative Home safety and discovery data.`}
+      </Text>
+      <View style={styles.heroTileGrid}>
+        <HeroTile label="UNDX" value={String(alertCount)} body="Important updates" tone="intelligence" icon="◇" onPress={onOpenUndx} />
+        <HeroTile label="Pulse Radio" value="Now playing" body="Open Pulse Radio" tone="creator" icon="≋" onPress={onOpenPulseRadio} />
+        <HeroTile label="Safety Shield" value={String(alertCount)} body="Scan trust signals" tone="safety" icon="⌾" onPress={onOpenSafety} />
+      </View>
+      <View style={styles.heroActions}>
+        <LogiNexusButton label="Live" onPress={onOpenLive} tone="danger" variant="outline" />
+        <LogiNexusButton label="Refresh" onPress={onRefresh} variant="outline" />
       </View>
     </LogiNexusPanel>
+  );
+}
+
+function HeroTile({
+  label,
+  value,
+  body,
+  icon,
+  tone,
+  onPress
+}: {
+  label: string;
+  value: string;
+  body: string;
+  icon: string;
+  tone: "intelligence" | "creator" | "safety";
+  onPress: () => void;
+}) {
+  const borderColor =
+    tone === "intelligence"
+      ? logiNexus.colors.home.borderIntelligence
+      : tone === "safety"
+        ? logiNexus.colors.home.borderSafety
+        : logiNexus.colors.home.borderCreator;
+  const accent =
+    tone === "intelligence"
+      ? logiNexus.colors.home.accentUndx
+      : tone === "safety"
+        ? logiNexus.colors.home.accentSafety
+        : logiNexus.colors.home.accentRadio;
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={`Open ${label}`} style={[styles.heroTile, { borderColor }]} onPress={onPress}>
+      <View style={[styles.heroTileIcon, { borderColor, backgroundColor: `${accent}18` }]}>
+        <Text style={[styles.heroTileIconText, { color: accent }]}>{icon}</Text>
+      </View>
+      <View style={styles.heroTileCopy}>
+        <Text style={styles.heroTileLabel}>{label}</Text>
+        <Text style={[styles.heroTileValue, { color: accent }]}>{value}</Text>
+        <Text style={styles.heroTileBody}>{body}</Text>
+      </View>
+      <Text style={styles.heroTileArrow}>→</Text>
+    </Pressable>
   );
 }
 
@@ -598,6 +654,10 @@ function StatusRail({
 }) {
   return (
     <View style={styles.statusSection}>
+      <View style={styles.statusHeader}>
+        <Text style={styles.statusHeaderKicker}>› Your Orbit</Text>
+        <Text style={styles.statusHeaderAction}>View all →</Text>
+      </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statusRail}>
         <Pressable style={styles.addStatusCard} onPress={onAddStatus}>
           <Text style={styles.addStatusIcon}>+</Text>
@@ -618,7 +678,12 @@ function StatusRail({
         {items.map((status) => (
           <Pressable key={status.id} style={[styles.statusCard, !status.viewed && styles.statusCardUnseen]} onPress={() => onOpenStatus(status)}>
             <View style={styles.statusAvatar}>
-              <Text style={styles.statusAvatarText}>{(status.author?.display_name || status.author_name || "PS").slice(0, 2).toUpperCase()}</Text>
+              {status.author?.avatar_url ? (
+                <Image source={{ uri: status.author.avatar_url }} style={styles.statusAvatarImage} />
+              ) : (
+                <Text style={styles.statusAvatarText}>{(status.author?.display_name || status.author_name || "PS").slice(0, 2).toUpperCase()}</Text>
+              )}
+              <View style={styles.statusOnlineDot} />
             </View>
             <Text style={styles.statusName} numberOfLines={1}>{status.author?.display_name || status.author_name || "PulseSoc"}</Text>
             <Text style={styles.statusMeta}>{status.viewed ? "Seen" : "Unseen"}</Text>
@@ -651,14 +716,14 @@ function profileKeyForPost(post: PulsePost) {
 const styles = StyleSheet.create({
   addStatusCard: {
     alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
+    backgroundColor: logiNexus.colors.home.surfaceGlass,
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     justifyContent: "center",
-    minHeight: 136,
+    minHeight: 128,
     padding: 14,
-    width: 118
+    width: 112
   },
   addStatusIcon: {
     color: colors.background,
@@ -674,7 +739,7 @@ const styles = StyleSheet.create({
   },
   addStatusText: {
     color: colors.text,
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: "900",
     marginTop: 12,
     textAlign: "center"
@@ -691,7 +756,7 @@ const styles = StyleSheet.create({
     marginTop: 12
   },
   content: {
-    padding: 16,
+    padding: 14,
     paddingBottom: 32
   },
   empty: {
@@ -713,16 +778,16 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   feedTab: {
-    borderColor: colors.border,
-    borderRadius: 8,
+    borderColor: "transparent",
+    borderRadius: logiNexus.radius.capsule,
     borderWidth: 1,
     minHeight: 44,
     justifyContent: "center",
     paddingHorizontal: 14
   },
   feedTabActive: {
-    backgroundColor: "rgba(37, 208, 167, 0.16)",
-    borderColor: colors.accent
+    backgroundColor: "rgba(50, 230, 179, 0.13)",
+    borderColor: logiNexus.colors.home.borderActive
   },
   feedTabText: {
     color: colors.muted,
@@ -733,7 +798,7 @@ const styles = StyleSheet.create({
   },
   feedTabs: {
     gap: 10,
-    paddingTop: 12
+    paddingTop: 10
   },
   drawerClose: {
     alignItems: "center",
@@ -841,12 +906,12 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   feedTabsWrap: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
+    backgroundColor: "rgba(7, 16, 29, 0.88)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: logiNexus.radius.panel,
     borderWidth: 1,
     marginBottom: 14,
-    padding: 14
+    padding: 12
   },
   footer: {
     padding: 18
@@ -855,10 +920,32 @@ const styles = StyleSheet.create({
     marginBottom: 2
   },
   hero: {
-    flexDirection: "row",
-    gap: 14,
+    backgroundColor: logiNexus.colors.home.surfaceGlassStrong,
     marginBottom: 14,
-    padding: 16
+    padding: 18
+  },
+  heroAtmosphere: {
+    ...StyleSheet.absoluteFillObject,
+    pointerEvents: "none"
+  },
+  heroGlow: {
+    borderRadius: 180,
+    opacity: 0.18,
+    position: "absolute"
+  },
+  heroGlowPrimary: {
+    backgroundColor: colors.accentStrong,
+    height: 180,
+    right: -70,
+    top: -80,
+    width: 180
+  },
+  heroGlowSecondary: {
+    backgroundColor: colors.intelligence,
+    bottom: -90,
+    height: 210,
+    left: -80,
+    width: 210
   },
   heroAction: {
     alignItems: "center",
@@ -877,7 +964,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
-    marginTop: 12
+    marginTop: 14
   },
   heroKicker: {
     alignSelf: "flex-start",
@@ -894,17 +981,52 @@ const styles = StyleSheet.create({
   heroMain: {
     flex: 1
   },
+  heroLeft: {
+    flex: 0.82,
+    minWidth: 116
+  },
+  heroDivider: {
+    backgroundColor: logiNexus.colors.home.borderSubtle,
+    height: 1,
+    marginVertical: 12,
+    width: "74%"
+  },
+  heroLiveLabel: {
+    color: colors.text,
+    ...logiNexus.typography.home.cardMetadata
+  },
+  heroLiveMetric: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: "900",
+    lineHeight: 29
+  },
+  heroMetric: {
+    color: colors.text,
+    ...logiNexus.typography.home.heroMetric,
+    marginTop: 14
+  },
+  heroMetricLabel: {
+    color: colors.text,
+    ...logiNexus.typography.home.heroSupporting
+  },
+  heroNetworkRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 14,
+    justifyContent: "space-between"
+  },
   heroOrb: {
     alignItems: "center",
     alignSelf: "center",
-    backgroundColor: "rgba(97, 216, 255, 0.06)",
+    backgroundColor: "rgba(97, 216, 255, 0.045)",
     borderColor: "rgba(97, 216, 255, 0.44)",
-    borderRadius: 58,
+    borderRadius: 78,
     borderWidth: 1,
-    height: 112,
+    height: 156,
     justifyContent: "center",
     overflow: "hidden",
-    width: 112
+    width: 156
   },
   heroNode: {
     backgroundColor: colors.accent,
@@ -915,36 +1037,55 @@ const styles = StyleSheet.create({
     width: 10
   },
   heroNodeBig: {
-    backgroundColor: colors.signalSoft,
+    backgroundColor: "rgba(97, 216, 255, 0.12)",
     borderColor: colors.accentStrong,
-    borderRadius: 35,
+    borderRadius: 42,
     borderWidth: 1,
-    height: 70,
+    height: 84,
     position: "absolute",
-    width: 70
+    width: 84
   },
   heroNodeOne: {
     left: 26,
     top: 30
   },
   heroNodeThree: {
-    bottom: 30,
-    left: 36
+    bottom: 38,
+    left: 42
   },
   heroNodeTwo: {
-    right: 28,
-    top: 42
+    right: 34,
+    top: 44
+  },
+  heroNodeFour: {
+    bottom: 44,
+    right: 42
   },
   heroOrbText: {
     color: colors.accentStrong,
     fontSize: 24,
     fontWeight: "900"
   },
+  heroRingInner: {
+    borderColor: "rgba(50, 230, 179, 0.28)",
+    borderRadius: 48,
+    borderWidth: 1,
+    height: 96,
+    position: "absolute",
+    width: 96
+  },
+  heroRingOuter: {
+    borderColor: "rgba(159, 124, 255, 0.28)",
+    borderRadius: 66,
+    borderWidth: 1,
+    height: 132,
+    position: "absolute",
+    width: 132
+  },
   heroSubtitle: {
     color: colors.muted,
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 4
+    ...logiNexus.typography.home.heroSupporting,
+    marginTop: 14
   },
   heroTitle: {
     color: colors.text,
@@ -958,8 +1099,61 @@ const styles = StyleSheet.create({
     gap: 10,
     justifyContent: "space-between"
   },
+  heroTile: {
+    alignItems: "center",
+    backgroundColor: "rgba(3, 7, 18, 0.68)",
+    borderRadius: logiNexus.radius.large,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 74,
+    padding: 12,
+    width: "100%"
+  },
+  heroTileArrow: {
+    color: colors.muted,
+    fontSize: 18,
+    fontWeight: "900"
+  },
+  heroTileBody: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 1
+  },
+  heroTileCopy: {
+    flex: 1
+  },
+  heroTileGrid: {
+    gap: 10,
+    marginTop: 14
+  },
+  heroTileIcon: {
+    alignItems: "center",
+    borderRadius: 18,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: "center",
+    width: 42
+  },
+  heroTileIconText: {
+    fontSize: 20,
+    fontWeight: "900"
+  },
+  heroTileLabel: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    textTransform: "uppercase"
+  },
+  heroTileValue: {
+    fontSize: 13,
+    fontWeight: "900",
+    marginTop: 2
+  },
   list: {
-    backgroundColor: colors.background,
+    backgroundColor: logiNexus.colors.home.backgroundDeepSpace,
     flex: 1
   },
   metric: {
@@ -1018,17 +1212,22 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   root: {
-    backgroundColor: colors.background,
+    backgroundColor: logiNexus.colors.home.backgroundDeepSpace,
     flex: 1
   },
   statusAvatar: {
     alignItems: "center",
     backgroundColor: "rgba(37, 208, 167, 0.12)",
     borderColor: colors.accent,
-    borderRadius: 28,
-    borderWidth: 1,
-    height: 56,
+    borderRadius: 33,
+    borderWidth: 2,
+    height: 66,
     justifyContent: "center",
+    width: 66
+  },
+  statusAvatarImage: {
+    borderRadius: 28,
+    height: 56,
     width: 56
   },
   statusAvatarText: {
@@ -1037,17 +1236,18 @@ const styles = StyleSheet.create({
   },
   statusCard: {
     alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
+    backgroundColor: "transparent",
+    borderColor: "transparent",
+    borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     gap: 6,
-    minHeight: 136,
-    padding: 14,
-    width: 124
+    minHeight: 116,
+    padding: 8,
+    width: 106
   },
   statusCardUnseen: {
-    borderColor: colors.accent
+    backgroundColor: "rgba(50, 230, 179, 0.065)",
+    borderColor: logiNexus.colors.home.borderActive
   },
   statusEmptyCard: {
     alignItems: "center",
@@ -1080,7 +1280,26 @@ const styles = StyleSheet.create({
   statusName: {
     color: colors.text,
     fontSize: 13,
-    fontWeight: "900"
+    fontWeight: "900",
+    textAlign: "center"
+  },
+  statusHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10
+  },
+  statusHeaderAction: {
+    color: colors.accentStrong,
+    fontSize: 12,
+    fontWeight: "900",
+    textTransform: "uppercase"
+  },
+  statusHeaderKicker: {
+    color: colors.accent,
+    ...logiNexus.typography.home.sectionLabel,
+    letterSpacing: 0.8,
+    textTransform: "uppercase"
   },
   statusOffline: {
     color: colors.warning,
@@ -1092,6 +1311,17 @@ const styles = StyleSheet.create({
   },
   statusSection: {
     marginBottom: 14
+  },
+  statusOnlineDot: {
+    backgroundColor: colors.accent,
+    borderColor: logiNexus.colors.home.backgroundDeepSpace,
+    borderRadius: 7,
+    borderWidth: 2,
+    bottom: 5,
+    height: 14,
+    position: "absolute",
+    right: 5,
+    width: 14
   },
   topActions: {
     alignItems: "center",

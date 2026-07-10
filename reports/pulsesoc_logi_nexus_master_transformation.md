@@ -15,6 +15,23 @@ Completed this run:
 - Preserved Home publishing, feed, status, media, safety, and navigation behavior.
 - Added transformation reporting and an audit script.
 
+## Homefeed Visual-System Milestone
+
+Completed:
+
+- Extended shared LogiNexus tokens with Home-specific color, typography, and depth slots.
+- Rebuilt the Pulse Network hero hierarchy around real Home data with UNDX, Pulse Radio, and Safety Shield tiles.
+- Transformed Status into the `Your Orbit` rail with circular avatars, unseen state, and clearer empty/cached language.
+- Updated the composer presentation into the `Transmission Console` while preserving publishing, draft recovery, upload queue, validation, retry, and feed invalidation.
+- Updated Home feed cards toward `Signal Card` presentation while preserving all server-authoritative feed actions.
+
+Not yet complete:
+
+- Full visible QA walkthrough after this visual-system pass.
+- Motion/reduced-motion hardening.
+- Bottom dock final visual fidelity.
+- iPhone simulator and physical-device release checks.
+
 ## Master Navigation Drawer Milestone
 
 Completed:
@@ -38,28 +55,29 @@ Completed:
 
 ## Current Transformation Estimate
 
-- Overall LogiNexus transformation: 14%.
+- Overall LogiNexus transformation: 17%.
 - Native foundation/parity: 96%.
 - System consistency: 89%.
 - Release QA confidence: 87%.
 
 ## Current Weakest LogiNexus Subsystem
 
-Messenger / Pulse Command.
+Homefeed visible QA and interaction polish.
 
 Why:
 
-- Home, the master drawer, global headers, and bottom navigation now share reusable foundation primitives.
-- Messenger is the highest daily-engagement surface still carrying subsystem-specific chrome and needs the next parity and LogiNexus foundation pass before calls, profile, and content verticals.
+- The Homefeed visual-system milestone is now in code, but visible QA, motion/reduced-motion behavior, and final interaction polish are not yet proven.
+- Messenger remains the next major subsystem after Homefeed is visibly verified.
 
 ## Autopilot Queue
 
-1. Messenger / Pulse Command.
-2. Search / Discover.
-3. Activity / Notifications.
-4. Profile identity hub.
-5. Reels, Status, Live, Media, Camera.
-6. Creator, Commerce, Trust, Intelligence, Settings.
+1. Homefeed visible QA and interaction polish.
+2. Messenger / Pulse Command.
+3. Search / Discover.
+4. Activity / Notifications.
+5. Profile identity hub.
+6. Reels, Status, Live, Media, Camera.
+7. Creator, Commerce, Trust, Intelligence, Settings.
 
 ## Safety Rules Preserved
 

@@ -4,7 +4,7 @@ Status: initial inventory.
 
 ## Phase 1 Core Experience
 
-- Home: first transformation pass complete.
+- Home: visual-system milestone complete; full Homefeed LogiNexus completion pending visible QA, motion, bottom-dock polish, and physical-device-only release checks.
 - Global top navigation: foundation complete.
 - Bottom navigation: foundation complete.
 - Master navigation drawer: foundation transformation complete.
@@ -24,3 +24,8 @@ Status: initial inventory.
 ## Later Phases
 
 Content, Creator, Commerce, Trust/Identity, Intelligence, Dashboard, Settings, Help, Auth, release states, and provider boundaries remain in the transformation queue.
+
+## Homefeed Milestone Notes
+
+- Native Home now represents the approved Home hierarchy: command strip, Pulse Network, Your Orbit, Transmission Console, network filter rail, and Signal Stream.
+- Native Home is not yet `LogiNexus-complete`; the next Home-focused milestone should be full visible QA plus interaction/motion hardening before moving to Messenger transformation.
