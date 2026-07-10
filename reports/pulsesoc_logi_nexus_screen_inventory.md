@@ -7,7 +7,7 @@ Status: initial inventory.
 - Home: first transformation pass complete.
 - Global top navigation: pending.
 - Bottom navigation: pending.
-- Master navigation drawer: next.
+- Master navigation drawer: foundation transformation complete.
 - Create flow: pending.
 - Search / Discover: pending.
 - Activity / Notifications: pending.

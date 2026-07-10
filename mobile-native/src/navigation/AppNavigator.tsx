@@ -122,7 +122,7 @@ function TabNavigator() {
       <Tabs.Screen name="Status" component={StatusScreen} />
       <Tabs.Screen name="Messenger" component={MessengerScreen} />
       <Tabs.Screen name="Notifications" component={ActivityInboxScreen} options={{ title: "Activity", tabBarBadge: notificationUnread || undefined }} />
-      <Tabs.Screen name="PulseAI" component={PulseAiScreen} options={{ title: "Pulse AI" }} />
+      <Tabs.Screen name="PulseAI" component={PulseAiScreen} options={{ title: "UNDX" }} />
       <Tabs.Screen name="Profile" component={ProfileScreen} />
       <Tabs.Screen name="Marketplace" component={MarketplaceScreen} />
       <Tabs.Screen name="Settings" component={SettingsScreen} />

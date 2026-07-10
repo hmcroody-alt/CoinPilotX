@@ -15,29 +15,38 @@ Completed this run:
 - Preserved Home publishing, feed, status, media, safety, and navigation behavior.
 - Added transformation reporting and an audit script.
 
+## Master Navigation Drawer Milestone
+
+Completed:
+
+- Replaced the Home-only drawer with a reusable master navigation drawer.
+- Centralized the navigation inventory into `masterNavigationSections`.
+- Added a shared native route dispatcher for drawer and future global navigation actions.
+- Added drawer search, collapsible sections, route descriptions, and native/shell/fallback/gated classification.
+- Updated the public-facing intelligence tab title to `UNDX`.
+
 ## Current Transformation Estimate
 
-- Overall LogiNexus transformation: 8%.
+- Overall LogiNexus transformation: 11%.
 - Native foundation/parity: 96%.
 - System consistency: 88%.
 - Release QA confidence: 87%.
 
 ## Current Weakest LogiNexus Subsystem
 
-Master navigation drawer.
+Global top and bottom navigation.
 
 Why:
 
-- It has broad route coverage but does not yet have the shared searchable/collapsible/live-badge drawer experience required by the final native app.
-- It is the route hub for later subsystem transformations.
+- Home and the master drawer now share the first reusable design-system layer.
+- The bottom tabs and stack headers still use basic React Navigation styling and need the shared LogiNexus command/navigation treatment before Messenger/Profile/Reels transformations.
 
 ## Autopilot Queue
 
-1. Master navigation drawer.
-2. Global top and bottom navigation.
-3. Search / Discover.
-4. Activity / Notifications.
-5. Messenger / UNDX conversation surfaces.
+1. Global top and bottom navigation.
+2. Search / Discover.
+3. Activity / Notifications.
+4. Messenger / UNDX conversation surfaces.
 6. Profile identity hub.
 7. Reels, Status, Live, Media, Camera.
 8. Creator, Commerce, Trust, Intelligence, Settings.

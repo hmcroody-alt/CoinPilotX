@@ -10,9 +10,13 @@ REQUIRED = {
     "home": ROOT / "mobile-native/src/screens/HomeScreen.tsx",
     "composer": ROOT / "mobile-native/src/components/HomePulseComposer.tsx",
     "post card": ROOT / "mobile-native/src/components/PostCard.tsx",
+    "master drawer": ROOT / "mobile-native/src/components/MasterNavigationDrawer.tsx",
+    "navigation inventory": ROOT / "mobile-native/src/navigation/masterNavigation.ts",
+    "route dispatcher": ROOT / "mobile-native/src/navigation/nativeRouteActions.ts",
     "master report": ROOT / "reports/pulsesoc_logi_nexus_master_transformation.md",
     "design report": ROOT / "reports/pulsesoc_logi_nexus_design_system.md",
     "home report": ROOT / "reports/pulsesoc_logi_nexus_home_progress.md",
+    "drawer report": ROOT / "reports/pulsesoc_logi_nexus_master_navigation_drawer.md",
     "visible qa report": ROOT / "reports/pulsesoc_logi_nexus_visible_qa.md",
     "screen inventory": ROOT / "reports/pulsesoc_logi_nexus_screen_inventory.md",
 }
@@ -27,6 +31,13 @@ CHECKS = [
     ("Composer transmission console", "mobile-native/src/components/HomePulseComposer.tsx", "Transmission Console"),
     ("Composer accessibility publish", "mobile-native/src/components/HomePulseComposer.tsx", "accessibilityLabel={mode === \"live\" ? \"Open Live Studio\" : \"Publish Signal\"}"),
     ("Feed cards use primitive", "mobile-native/src/components/PostCard.tsx", "LogiNexusCard"),
+    ("Master drawer component", "mobile-native/src/components/MasterNavigationDrawer.tsx", "export function MasterNavigationDrawer"),
+    ("Master drawer search", "mobile-native/src/components/MasterNavigationDrawer.tsx", "Search PulseSoc navigation"),
+    ("Master drawer inventory", "mobile-native/src/navigation/masterNavigation.ts", "masterNavigationSections"),
+    ("Master drawer UNDX action", "mobile-native/src/navigation/masterNavigation.ts", "Digital Intelligence Companion"),
+    ("Shared route dispatcher", "mobile-native/src/navigation/nativeRouteActions.ts", "export function openNativeRoute"),
+    ("Home uses master drawer", "mobile-native/src/screens/HomeScreen.tsx", "MasterNavigationDrawer"),
+    ("Global tab title uses UNDX", "mobile-native/src/navigation/AppNavigator.tsx", "title: \"UNDX\""),
 ]
 
 
@@ -52,8 +63,12 @@ def main() -> int:
             failures.append(f"{label}: missing {needle!r} in {rel}")
 
     progress = ROOT / "reports/pulsesoc_native_progress.md"
-    if progress.exists() and "LogiNexus Transformation Phase 1" not in progress.read_text(encoding="utf-8"):
-        failures.append("progress report missing LogiNexus Transformation Phase 1 section")
+    if progress.exists():
+        progress_text = progress.read_text(encoding="utf-8")
+        if "LogiNexus Transformation Phase 1" not in progress_text:
+            failures.append("progress report missing LogiNexus Transformation Phase 1 section")
+        if "LogiNexus Master Navigation Drawer Foundation" not in progress_text:
+            failures.append("progress report missing LogiNexus Master Navigation Drawer Foundation section")
 
     if failures:
         print("PulseSoc LogiNexus audit failed:")
@@ -62,7 +77,7 @@ def main() -> int:
         return 1
 
     print("PulseSoc LogiNexus audit passed.")
-    print("Checked shared tokens, primitives, Home copy, composer shell, feed card shell, and reports.")
+    print("Checked shared tokens, primitives, Home, composer, feed cards, master drawer, route inventory, route dispatcher, and reports.")
     return 0
 
 

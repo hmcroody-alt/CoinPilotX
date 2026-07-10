@@ -59,3 +59,34 @@ Console/runtime:
 - Push notification taps.
 - Camera/microphone capture.
 - Real device media upload and background recovery.
+
+## Master Navigation Drawer Visible QA
+
+Status: completed for the foundation drawer milestone.
+
+Verified visibly in the built-in QA browser on `http://localhost:8094` with the local API/proxy stack:
+
+- Signed into the web QA app with a temporary local-only QA account stored outside the repository.
+- Opened Home from the bottom navigation.
+- Opened the master navigation drawer from the Home top bar.
+- Verified the drawer rendered the shared LogiNexus navigation shell.
+- Verified all primary drawer sections were visible:
+  - Primary
+  - Social
+  - Creator / Business
+  - Content
+  - Economy
+  - Intelligence
+  - Trust
+  - Utility
+- Verified drawer search with `seller`.
+- Verified `Seller Store` opened `/pulse/seller-store?title=Seller%20%2F%20Store` without a blank screen.
+- Used browser back to return to Home.
+- Verified drawer search with `UNDX`.
+- Verified `UNDX` opened `/pulse/ai` without a blank screen.
+- Verified native/fallback classifications were visible in the drawer.
+
+QA limitations:
+
+- The local temporary web QA session showed API cards with `Login required` after hard reloads because the web QA cookie path is cross-origin between `localhost:8094` and the local API proxy. The visible route and drawer checks were therefore performed inside the active signed-in single-page app state.
+- This pass did not claim physical-device navigation, push taps, or hardware-only behavior.
