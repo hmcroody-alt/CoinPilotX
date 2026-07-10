@@ -20,7 +20,7 @@ import { LogiNexusBadge, LogiNexusEmptyState, LogiNexusPanel } from "../componen
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { PostCard } from "../components/PostCard";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
-import { LogiNexusGlobalHeader } from "../navigation/GlobalNavigation";
+import { GlobalNavigationBadges, GlobalNavigationIdentity, LogiNexusGlobalHeader } from "../navigation/GlobalNavigation";
 import { openDashboardRoute } from "../navigation/dashboardRouting";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
 import { AppTabParamList, RootStackParamList } from "../navigation/types";
@@ -28,6 +28,11 @@ import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
+
+type HomeScreenProps = {
+  badges?: GlobalNavigationBadges;
+  identity?: GlobalNavigationIdentity;
+};
 
 type FeedTab = {
   key: string;
@@ -58,7 +63,7 @@ const HOME_COMMAND_ITEMS = [
   { label: "Saved", route: "/pulse/saved", icon: "★" }
 ];
 
-export function HomeScreen() {
+export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const navigation = useNavigation<HomeNavigation>();
   const route = useRoute<RouteProp<AppTabParamList, "Home">>();
   const listRef = useRef<FlatList<PulsePost>>(null);
@@ -358,6 +363,8 @@ export function HomeScreen() {
             onOpenSearch={() => navigation.navigate("Tabs", { screen: "Search" })}
             onOpenActivity={() => navigation.navigate("ActivityInbox", { title: "Activity Inbox" })}
             onOpenProfile={() => navigation.navigate("Tabs", { screen: "Profile" })}
+            badges={badges}
+            identity={identity}
             onRefresh={refreshHome}
             onSelectFeed={selectFeed}
             onOpenUndx={() => navigation.navigate("Tabs", { screen: "PulseAI" })}
@@ -451,6 +458,8 @@ function HomeHeader({
   onOpenSearch,
   onOpenActivity,
   onOpenProfile,
+  badges,
+  identity,
   onRefresh,
   onSelectFeed,
   onOpenUndx,
@@ -476,6 +485,8 @@ function HomeHeader({
   onOpenSearch: () => void;
   onOpenActivity: () => void;
   onOpenProfile: () => void;
+  badges?: GlobalNavigationBadges;
+  identity?: GlobalNavigationIdentity;
   onRefresh: () => void;
   onSelectFeed: (feedKey: string) => void;
   onOpenUndx: () => void;
@@ -494,7 +505,7 @@ function HomeHeader({
   const wideCanvas = width >= 900;
   return (
     <View style={styles.header}>
-      <HomeTopBar onOpenDrawer={onOpenDrawer} onOpenSearch={onOpenSearch} onOpenActivity={onOpenActivity} onOpenProfile={onOpenProfile} />
+      <HomeTopBar onOpenDrawer={onOpenDrawer} onOpenSearch={onOpenSearch} onOpenActivity={onOpenActivity} onOpenProfile={onOpenProfile} badges={badges} identity={identity} />
       <View style={[styles.homeCanvas, wideCanvas && styles.homeCanvasWide]}>
         {wideCanvas ? <HomeCommandRail onOpenRoute={onOpenRoute} onOpenPulseRadio={onOpenPulseRadio} /> : null}
         <View style={styles.homePrimaryColumn}>
@@ -617,12 +628,16 @@ function HomeTopBar({
   onOpenDrawer,
   onOpenSearch,
   onOpenActivity,
-  onOpenProfile
+  onOpenProfile,
+  badges,
+  identity
 }: {
   onOpenDrawer: () => void;
   onOpenSearch: () => void;
   onOpenActivity: () => void;
   onOpenProfile: () => void;
+  badges?: GlobalNavigationBadges;
+  identity?: GlobalNavigationIdentity;
 }) {
   return (
     <LogiNexusGlobalHeader
@@ -634,6 +649,8 @@ function HomeTopBar({
       onOpenSearch={onOpenSearch}
       onOpenActivity={onOpenActivity}
       onOpenProfile={onOpenProfile}
+      badges={badges}
+      identity={identity}
       testID="home-global-command-strip"
     />
   );

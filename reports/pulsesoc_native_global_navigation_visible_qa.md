@@ -49,6 +49,12 @@ Roody could visibly watch:
 - Header Activity action open `/pulse/notifications`.
 - Drawer action open Marketplace.
 - Drawer action open UNDX.
+- Xcode iPhone 17 Pro Simulator reached authenticated Home through the repaired local QA bootstrap.
+- Authenticated Home now uses the shared global command-strip state for profile identity and activity/message badges.
+
+Simulator evidence:
+
+- `reports/screenshots/logi-nexus-global-navigation-home-identity-badges.png`
 
 Console/runtime:
 
@@ -57,7 +63,7 @@ Console/runtime:
 Observed limitation:
 
 - React Navigation keeps inactive tab screens in the web DOM, so raw duplicate test-id counts can include preserved inactive headers. Visible-only locator checks resolved to a single active control.
-- Home uses the shared command-strip primitive but does not yet receive global badge/identity props from `AppNavigator`.
+- Physical iPhone badge clear behavior remains provider/device QA.
 - The UNDX route global header uses `UNDX`, but the inner AI screen still contains legacy `Pulse AI` body copy. That belongs to the next Messenger/UNDX subsystem hardening pass, not this shared navigation foundation.
 
 ## Hardware / Provider Checks Not Claimed

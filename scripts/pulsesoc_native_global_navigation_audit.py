@@ -42,6 +42,11 @@ CHECKS = [
     ("Master drawer identity", "mobile-native/src/components/MasterNavigationDrawer.tsx", "DrawerIdentity"),
     ("Master drawer identity test id", "mobile-native/src/components/MasterNavigationDrawer.tsx", "master-drawer-identity"),
     ("Home uses global header", "mobile-native/src/screens/HomeScreen.tsx", "LogiNexusGlobalHeader"),
+    ("Home accepts global badges", "mobile-native/src/screens/HomeScreen.tsx", "badges?: GlobalNavigationBadges"),
+    ("Home accepts global identity", "mobile-native/src/screens/HomeScreen.tsx", "identity?: GlobalNavigationIdentity"),
+    ("Home command strip receives badges", "mobile-native/src/screens/HomeScreen.tsx", "badges={badges}"),
+    ("Home command strip receives identity", "mobile-native/src/screens/HomeScreen.tsx", "identity={identity}"),
+    ("Home tab passes badges", "mobile-native/src/navigation/AppNavigator.tsx", "<HomeScreen badges={badges} identity={identity} />"),
     ("Native dispatcher minimal contract", "mobile-native/src/navigation/nativeRouteActions.ts", "navigate: (...args: any[]) => void"),
     ("Dashboard dispatcher minimal contract", "mobile-native/src/navigation/dashboardRouting.ts", "navigate: (...args: any[]) => void"),
 ]

@@ -56,35 +56,35 @@ Completed:
 - Added shared authenticated identity metadata and drawer identity rendering.
 - Integrated the master drawer with stack and tab route dispatch from the shared navigator.
 - Updated Home to use the shared command-strip primitive without changing Home backend behavior.
+- Wired Home's shared command strip to the global badge and identity state after repairing authenticated simulator QA.
 
 ## Current Transformation Estimate
 
-- Overall LogiNexus transformation: 19%.
+- Overall LogiNexus transformation: 20%.
 - Native foundation/parity: 96%.
-- System consistency: 89%.
+- System consistency: 90%.
 - Release QA confidence: 88%.
 
 ## Current Weakest LogiNexus Subsystem
 
-Xcode iPhone Simulator QA reliability for authenticated transformation review.
+Shared motion system.
 
 Why:
 
-- Phase 2 requires simulator verification before shared navigation and motion changes can be judged safely.
-- The simulator login path was still timing-fragile, so this pass repairs it with a dev-only, local-API-only, explicit-env bootstrap that reuses existing mobile auth routes.
-- Global navigation remains the next shared foundation continuation once authenticated simulator Home is reliably reachable.
+- Xcode iPhone Simulator authenticated QA is now reliable for local visual review.
+- The global navigation layer now covers stack, tab, drawer, Home command strip, identity, and badge state.
+- Motion is the next shared layer that should be centralized before transforming additional screens, so drawer, page, button, card, composer, loading, success, failure, and reduced-motion behavior feel like one operating system.
 
 ## Autopilot Queue
 
-1. Global navigation continuation with trusted simulator QA.
-2. Shared motion system.
-3. Shared screen layout system.
-4. Messenger / Pulse Command.
-5. Search / Discover.
-6. Activity / Notifications.
-7. Profile identity hub.
-8. Reels, Status, Live, Media, Camera.
-9. Creator, Commerce, Trust, Intelligence, Settings.
+1. Shared motion system.
+2. Shared screen layout system.
+3. Messenger / Pulse Command.
+4. Search / Discover.
+5. Activity / Notifications.
+6. Profile identity hub.
+7. Reels, Status, Live, Media, Camera.
+8. Creator, Commerce, Trust, Intelligence, Settings.
 
 ## Safety Rules Preserved
 

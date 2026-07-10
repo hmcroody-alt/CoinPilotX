@@ -99,7 +99,9 @@ function TabNavigator({
       })}
     >
       <Tabs.Screen name="Dashboard" component={UserDashboardScreen} options={{ title: "Mission Control" }} />
-      <Tabs.Screen name="Home" component={HomeScreen} options={{ headerShown: false, title: "Home" }} />
+      <Tabs.Screen name="Home" options={{ headerShown: false, title: "Home" }}>
+        {() => <HomeScreen badges={badges} identity={identity} />}
+      </Tabs.Screen>
       <Tabs.Screen name="Search" component={SearchScreen} options={{ title: "Search" }} />
       <Tabs.Screen name="Saved" component={SavedScreen} options={{ title: "Saved" }} />
       <Tabs.Screen name="Groups" component={GroupsScreen} options={{ title: "Communities" }} />

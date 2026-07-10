@@ -17,6 +17,7 @@ This milestone consolidated the shared native navigation chrome needed before co
 - Reused the existing master drawer and `openNativeRoute` dispatcher for drawer selections.
 - Updated stack and tab headers to render through the shared LogiNexus header where safe.
 - Replaced Home's local top bar shell with the shared global header primitive.
+- Wired Home's shared command strip to the same global badge and identity state used by stack/tab headers.
 - Broadened route-dispatcher navigation contracts to the minimal `navigate(...)` shape so shared dispatch works with stack, tab, and navigation refs without duplicating route logic.
 
 ## Server-Authority Boundaries
@@ -28,16 +29,16 @@ This milestone consolidated the shared native navigation chrome needed before co
 
 ## Current Coverage
 
-- Global top navigation foundation: 82%.
+- Global top navigation foundation: 88%.
 - Bottom navigation foundation: 88%.
 - Active route indication: 84%.
-- Badge/counter integration: 72%.
+- Badge/counter integration: 80%.
 - Drawer integration: 90%.
-- Authenticated identity header: 78%.
+- Authenticated identity header: 84%.
 
 ## Remaining Navigation Gaps
 
-- Home uses the shared command-strip primitive, but because Home owns its top bar locally it does not yet receive the global badge/identity props from `AppNavigator`.
+- Home now receives the shared global badge/identity props while still preserving its local Home layout and header ownership.
 - Physical iPhone safe-area and Dynamic Island behavior still require release-device QA.
 - Push-tap badge clearing and background foreground badge updates remain physical/provider QA.
 - Some nested subsystem screens still have local in-screen titles; those are screen transformation work, not blocker-level global navigation gaps.
