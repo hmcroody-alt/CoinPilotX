@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import { Image, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import { mediaDisplayUrl, mediaKind, PulsePost, pulsePostUrl } from "../api/feed";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "./NativeMediaViewer";
+import { LogiNexusBadge, LogiNexusCard } from "./LogiNexus";
 import { colors } from "../theme/colors";
+import { logiNexus } from "../theme/logiNexus";
 import { compactPreview, formatShortTime } from "../utils/format";
 
 const REACTIONS = ["fire", "smart", "bullish", "funny"];
@@ -54,32 +56,36 @@ export function PostCard({
   return (
     <Pressable
       testID={`home-feed-post-${post.id}`}
-      style={({ pressed }) => [styles.card, pressed && onOpen ? styles.cardPressed : undefined]}
+      style={({ pressed }) => [pressed && onOpen ? styles.cardPressed : undefined]}
       onPress={() => onOpen?.(post)}
       disabled={!onOpen}
     >
-      <Pressable
-        testID={`home-feed-author-${post.id}`}
-        accessibilityRole="button"
-        accessibilityLabel={`Open ${displayName} profile`}
-        style={styles.authorRow}
-        onPress={(event) => {
-          event.stopPropagation();
-          onAuthorPress?.(post);
-        }}
-        disabled={!onAuthorPress}
-      >
-        {author.avatar_url ? <Image source={{ uri: author.avatar_url }} style={styles.avatar} /> : <View style={styles.avatarFallback} />}
-        <View style={styles.authorText}>
-          <Text style={styles.authorName} numberOfLines={1}>
-            {displayName}
-          </Text>
-          <Text style={styles.meta} numberOfLines={1}>
-            {handle ? `@${handle} · ` : ""}
-            {formatShortTime(post.created_at)}
-          </Text>
-        </View>
-      </Pressable>
+      <LogiNexusCard tone={post.viewer_reaction ? "creator" : "default"} style={styles.card}>
+        <Pressable
+          testID={`home-feed-author-${post.id}`}
+          accessibilityRole="button"
+          accessibilityLabel={`Open ${displayName} profile`}
+          style={styles.authorRow}
+          onPress={(event) => {
+            event.stopPropagation();
+            onAuthorPress?.(post);
+          }}
+          disabled={!onAuthorPress}
+        >
+          {author.avatar_url ? <Image source={{ uri: author.avatar_url }} style={styles.avatar} /> : <View style={styles.avatarFallback} />}
+          <View style={styles.authorText}>
+            <View style={styles.authorNameRow}>
+              <Text style={styles.authorName} numberOfLines={1}>
+                {displayName}
+              </Text>
+              <LogiNexusBadge label={post.visibility || "public"} />
+            </View>
+            <Text style={styles.meta} numberOfLines={1}>
+              {handle ? `@${handle} · ` : ""}
+              {formatShortTime(post.created_at)}
+            </Text>
+          </View>
+        </Pressable>
 
       {post.title ? <Text style={styles.title}>{post.title}</Text> : null}
       {body ? <Text style={styles.body}>{body}</Text> : null}
@@ -240,6 +246,7 @@ export function PostCard({
           ))}
         </View>
       ) : null}
+      </LogiNexusCard>
     </Pressable>
   );
 }
@@ -336,6 +343,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800"
   },
+  authorNameRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8
+  },
   authorRow: {
     alignItems: "center",
     flexDirection: "row",
@@ -346,17 +358,19 @@ const styles = StyleSheet.create({
   },
   avatar: {
     backgroundColor: colors.surfaceRaised,
-    borderRadius: 18,
-    height: 36,
-    width: 36
+    borderColor: colors.accent,
+    borderRadius: 22,
+    borderWidth: 1,
+    height: 44,
+    width: 44
   },
   avatarFallback: {
     backgroundColor: colors.surfaceRaised,
     borderColor: colors.border,
-    borderRadius: 18,
+    borderRadius: 22,
     borderWidth: 1,
-    height: 36,
-    width: 36
+    height: 44,
+    width: 44
   },
   body: {
     color: colors.text,
@@ -365,10 +379,6 @@ const styles = StyleSheet.create({
     marginTop: 10
   },
   card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
     marginBottom: 12,
     padding: 14
   },
@@ -386,7 +396,7 @@ const styles = StyleSheet.create({
     aspectRatio: 16 / 10,
     backgroundColor: colors.surfaceRaised,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     justifyContent: "center",
     overflow: "hidden",
@@ -405,7 +415,7 @@ const styles = StyleSheet.create({
   mediaImage: {
     aspectRatio: 16 / 10,
     backgroundColor: colors.surfaceRaised,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.large,
     width: "100%"
   },
   mediaWrap: {

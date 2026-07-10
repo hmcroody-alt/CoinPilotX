@@ -2,10 +2,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { createPost, PulsePost } from "../api/feed";
+import { LogiNexusBadge, LogiNexusPanel } from "./LogiNexus";
 import { MediaUploadPreview } from "../media/MediaUploadPreview";
 import { NativeMediaAsset, NativeMediaUploadResult, uploadResultMediaId } from "../media/nativeMediaUpload";
 import { useNativeMediaUpload } from "../media/useNativeMediaUpload";
 import { colors } from "../theme/colors";
+import { logiNexus } from "../theme/logiNexus";
 
 type ComposerMode = "post" | "reel" | "live";
 type Visibility = "public" | "followers" | "private";
@@ -73,7 +75,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
         if (draft.mediaAsset) media.setAsset(draft.mediaAsset);
         if (draft.mediaResult) setRestoredMediaResult(draft.mediaResult);
         setDraftRecovered(true);
-        setNote(draft.mediaResult ? "Draft recovered with uploaded media ready." : "Draft recovered locally.");
+      setNote(draft.mediaResult ? "Recovered transmission draft with uploaded media ready." : "Recovered transmission draft.");
       })
       .catch(() => undefined)
       .finally(() => {
@@ -120,7 +122,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
     const cleanBody = body.trim();
     if (!cleanBody && !media.asset && !media.result && !restoredMediaResult) {
       setError("Add text or media before publishing.");
-      setNote("Composer validation blocked an empty signal.");
+      setNote("Transmission validation blocked an empty signal.");
       return;
     }
     if (media.uploading) {
@@ -130,7 +132,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
     }
     setPublishing(true);
     setError("");
-    setNote("Publishing through PulseSoc backend.");
+      setNote("Transmitting through the PulseSoc backend.");
     try {
       const uploaded = media.result || restoredMediaResult || (media.asset ? await media.upload({ mode: mode === "reel" ? "reel" : media.asset.mediaType, destination: "feed" }) : null);
       const mediaId = uploaded ? uploadResultMediaId(uploaded) : 0;
@@ -162,12 +164,12 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
       await AsyncStorage.removeItem(DRAFT_KEY).catch(() => undefined);
       setDraftRecovered(false);
       setLastFailedPayload(null);
-      setNote(response.post_id ? "Published. Refreshing Home." : response.message || "Published.");
+      setNote(response.post_id ? "Signal transmitted. Refreshing Home." : response.message || "Signal transmitted.");
       onCreated(response.post);
     } catch (publishError) {
       const message = publishError instanceof Error ? publishError.message : "Publish failed.";
       setError(message);
-      setNote("Publish failed. Retry when the backend is reachable.");
+      setNote("Transmission interrupted. Retry when the backend is reachable.");
     } finally {
       setPublishing(false);
     }
@@ -177,7 +179,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
     if (!lastFailedPayload || publishing) return;
     setPublishing(true);
     setError("");
-    setNote("Retrying the last server-authoritative publish request.");
+    setNote("Retrying the last server-authoritative transmission.");
     try {
       const response = await createPost(lastFailedPayload);
       setBody("");
@@ -191,7 +193,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
       await AsyncStorage.removeItem(DRAFT_KEY).catch(() => undefined);
       setDraftRecovered(false);
       setLastFailedPayload(null);
-      setNote(response.post_id ? "Published after retry. Refreshing Home." : response.message || "Published after retry.");
+      setNote(response.post_id ? "Signal transmitted after retry. Refreshing Home." : response.message || "Signal transmitted after retry.");
       onCreated(response.post);
     } catch (retryError) {
       const message = retryError instanceof Error ? retryError.message : "Retry failed.";
@@ -215,7 +217,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
     await AsyncStorage.removeItem(DRAFT_KEY).catch(() => undefined);
     setDraftRecovered(false);
     setError("");
-    setNote("Draft cleared.");
+    setNote("Transmission draft cleared.");
   }
 
   function cycleVisibility() {
@@ -241,9 +243,12 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
   }
 
   return (
-    <View style={styles.wrap}>
+    <LogiNexusPanel style={styles.wrap} tone={mode === "live" ? "danger" : mode === "reel" ? "creator" : "default"}>
       <View style={styles.headerRow}>
-        <Text style={styles.title}>Pulse Composer</Text>
+        <View>
+          <LogiNexusBadge label="Transmission Console" tone={mode === "live" ? "danger" : mode === "reel" ? "creator" : "default"} />
+          <Text style={styles.title}>Pulse Composer</Text>
+        </View>
         <Pressable style={styles.livePill} onPress={onOpenLive}>
           <Text style={styles.liveDot}>●</Text>
           <Text style={styles.liveText}>LIVE</Text>
@@ -268,7 +273,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
           accessibilityLabel="Home composer text"
           multiline
           maxLength={MAX_BODY}
-          placeholder="What’s happening in your world?"
+          placeholder="What signal are you transmitting?"
           placeholderTextColor={colors.muted}
           style={styles.input}
           value={body}
@@ -316,7 +321,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
       ) : null}
       {draftRecovered ? (
         <View testID="home-composer-recovered-draft" style={styles.draftPanel}>
-          <Text style={styles.draftText}>Recovered saved draft.</Text>
+          <Text style={styles.draftText}>Recovered transmission draft.</Text>
           <Pressable testID="home-composer-clear-draft" style={styles.draftButton} onPress={() => clearDraft().catch(() => undefined)}>
             <Text style={styles.draftButtonText}>Clear Draft</Text>
           </Pressable>
@@ -331,8 +336,15 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
           <Text style={styles.retryText}>{publishing ? "Retrying..." : "Retry Last Publish"}</Text>
         </Pressable>
       ) : null}
-      <Pressable testID="home-composer-publish" style={[styles.publishButton, publishing && styles.publishButtonDisabled]} disabled={publishing} onPress={handlePublish}>
-        <Text style={styles.publishText}>{publishing ? "Publishing..." : mode === "live" ? "Open Live Studio" : "Publish Signal"}</Text>
+      <Pressable
+        testID="home-composer-publish"
+        accessibilityRole="button"
+        accessibilityLabel={mode === "live" ? "Open Live Studio" : "Publish Signal"}
+        style={[styles.publishButton, publishing && styles.publishButtonDisabled]}
+        disabled={publishing}
+        onPress={handlePublish}
+      >
+        <Text style={styles.publishText}>{publishing ? "Transmitting..." : mode === "live" ? "Open Live Studio" : "Publish Signal"}</Text>
       </Pressable>
       <View style={styles.routeRow}>
         <Pressable style={styles.routeButton} onPress={() => onOpenCamera("photo")}>
@@ -345,7 +357,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
           <Text style={styles.routeText}>Reel Camera</Text>
         </Pressable>
       </View>
-    </View>
+    </LogiNexusPanel>
   );
 }
 
@@ -401,9 +413,9 @@ function visibilityLabel(visibility: Visibility) {
 const styles = StyleSheet.create({
   actionButton: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.045)",
+    backgroundColor: "rgba(255,255,255,0.055)",
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
     flexBasis: "23%",
     flexDirection: "row",
@@ -440,7 +452,7 @@ const styles = StyleSheet.create({
   },
   draftButton: {
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 8
@@ -454,7 +466,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(37, 208, 167, 0.08)",
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
@@ -484,7 +496,7 @@ const styles = StyleSheet.create({
   inputWrap: {
     backgroundColor: colors.background,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     marginTop: 14,
     overflow: "hidden"
@@ -496,7 +508,7 @@ const styles = StyleSheet.create({
   livePill: {
     alignItems: "center",
     borderColor: colors.danger,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
     flexDirection: "row",
     gap: 8,
@@ -510,7 +522,7 @@ const styles = StyleSheet.create({
   modeButton: {
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.045)",
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.medium,
     flex: 1,
     justifyContent: "center",
     minHeight: 50
@@ -521,7 +533,7 @@ const styles = StyleSheet.create({
   modeRow: {
     backgroundColor: "rgba(255,255,255,0.035)",
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     flexDirection: "row",
     gap: 8,
@@ -539,7 +551,7 @@ const styles = StyleSheet.create({
   publishButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.large,
     marginTop: 14,
     minHeight: 56,
     justifyContent: "center"
@@ -555,7 +567,7 @@ const styles = StyleSheet.create({
   restoredPanel: {
     backgroundColor: "rgba(255,255,255,0.04)",
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
     gap: 4,
     marginTop: 12,
@@ -574,7 +586,7 @@ const styles = StyleSheet.create({
   retryButton: {
     alignItems: "center",
     borderColor: colors.danger,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
     marginTop: 12,
     minHeight: 42,
@@ -587,7 +599,7 @@ const styles = StyleSheet.create({
   },
   routeButton: {
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
     flex: 1,
     minHeight: 38,
@@ -607,7 +619,7 @@ const styles = StyleSheet.create({
   },
   statusPanel: {
     backgroundColor: "rgba(255,255,255,0.05)",
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.medium,
     gap: 6,
     marginTop: 14,
     padding: 12
@@ -625,13 +637,10 @@ const styles = StyleSheet.create({
   title: {
     color: colors.text,
     fontSize: 21,
-    fontWeight: "900"
+    fontWeight: "900",
+    marginTop: 8
   },
   wrap: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
     marginBottom: 14,
     padding: 16
   }

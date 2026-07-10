@@ -16,11 +16,13 @@ import {
 } from "../api/feed";
 import { listStatuses, loadCachedStatuses, PulseStatus } from "../api/status";
 import { HomePulseComposer } from "../components/HomePulseComposer";
+import { LogiNexusBadge, LogiNexusButton, LogiNexusEmptyState, LogiNexusMetric, LogiNexusPanel, LogiNexusSignalIndicator } from "../components/LogiNexus";
 import { PostCard } from "../components/PostCard";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { openDashboardRoute } from "../navigation/dashboardRouting";
 import { AppTabParamList, RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { logiNexus } from "../theme/logiNexus";
 
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -111,7 +113,7 @@ const HOME_DRAWER_SECTIONS: DrawerSection[] = [
   {
     title: "Intelligence",
     actions: [
-      { label: "Pulse AI", route: "/pulse/ai", status: "native" },
+      { label: "UNDX", route: "/pulse/ai", status: "native" },
       { label: "Intelligence", route: "/pulse/intelligence", status: "native" },
       { label: "Alerts", route: "/pulse/alerts", status: "native" },
       { label: "Courses", route: "/pulse/courses", status: "native" },
@@ -411,7 +413,7 @@ export function HomeScreen() {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.accent} />
-        <Text style={styles.centerText}>Loading PulseSoc Home</Text>
+        <Text style={styles.centerText}>Opening the PulseSoc network</Text>
       </View>
     );
   }
@@ -468,12 +470,11 @@ export function HomeScreen() {
           />
         }
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>{error ? "Feed unavailable" : `${activeTab.label} is quiet`}</Text>
-            <Text style={styles.emptyText}>
-              {error || `The existing PulseSoc feed engine returned no posts for ${activeTab.label}. Pull to refresh or switch tabs.`}
-            </Text>
-          </View>
+          <LogiNexusEmptyState
+            title={error ? "Connection interrupted" : `${activeTab.label} is quiet`}
+            body={error || `No signals matched ${activeTab.label}. Pull to refresh or switch filters.`}
+            tone={error ? "warning" : "default"}
+          />
         }
         renderItem={({ item }) => (
           <PostCard
@@ -613,8 +614,11 @@ function HomeTopBar({
         <Text style={styles.topIconText}>☰</Text>
       </Pressable>
       <View style={styles.topBrand}>
-        <Text style={styles.topBrandLogo}>PS</Text>
-        <Text style={styles.topBrandText}>PulseSoc</Text>
+        <LogiNexusSignalIndicator />
+        <View>
+          <Text style={styles.topBrandText}>PulseSoc</Text>
+          <Text style={styles.topBrandSubtext}>Powered by LogiNexus Intelligence</Text>
+        </View>
       </View>
       <View style={styles.topActions}>
         <Pressable accessibilityRole="button" accessibilityLabel="Search PulseSoc" testID="home-top-search" style={styles.topIconButton} onPress={onOpenSearch}>
@@ -649,8 +653,9 @@ function HomeDrawer({
         <View style={styles.drawerPanel}>
           <View style={styles.drawerHeader}>
             <View>
-              <Text style={styles.drawerKicker}>MISSION CONTROL</Text>
+              <Text style={styles.drawerKicker}>LOGINEXUS NETWORK</Text>
               <Text style={styles.drawerTitle}>PulseSoc</Text>
+              <Text style={styles.drawerSubtitle}>Navigation layer for the native ecosystem.</Text>
             </View>
             <Pressable accessibilityRole="button" accessibilityLabel="Close navigation drawer" style={styles.drawerClose} onPress={onClose}>
               <Text style={styles.drawerCloseText}>×</Text>
@@ -710,48 +715,37 @@ function PulseNetworkHero({
   const liveCount = statuses.filter((status) => status.author_live || status.status_type === "live").length;
   const alertCount = posts.filter((post) => /scam|alert|warning|security|safety/i.test(`${post.title || ""} ${post.body || ""}`)).length;
   return (
-    <View style={styles.hero}>
+    <LogiNexusPanel style={styles.hero} tone="default">
       <View style={styles.heroOrb}>
+        <View style={styles.heroNodeBig} />
+        <View style={[styles.heroNode, styles.heroNodeOne]} />
+        <View style={[styles.heroNode, styles.heroNodeTwo]} />
+        <View style={[styles.heroNode, styles.heroNodeThree]} />
         <Text style={styles.heroOrbText}>PN</Text>
       </View>
       <View style={styles.heroMain}>
         <View style={styles.heroTopRow}>
-          <Text style={styles.heroKicker}>PULSE NETWORK</Text>
+          <LogiNexusBadge label="Pulse Network" />
           <Pressable style={styles.radioButton} onPress={onOpenPulseRadio}>
             <Text style={styles.radioPlay}>▶</Text>
             <Text style={styles.radioText}>Pulse Radio</Text>
           </Pressable>
         </View>
-        <Text style={styles.heroTitle}>Curious</Text>
-        <Text style={styles.heroSubtitle}>{posts.length} native posts loaded. Server-authoritative activity only.</Text>
-        {offline ? <Text style={styles.offlinePill}>Showing cached Home data</Text> : null}
+        <Text style={styles.heroTitle}>{offline ? "Cached orbit" : "Network alive"}</Text>
+        <Text style={styles.heroSubtitle}>{posts.length} server-authoritative signals loaded. UNDX is watching safety and discovery signals.</Text>
+        {offline ? <Text style={styles.offlinePill}>Connection interrupted. Cached signals remain available.</Text> : null}
         <View style={styles.metricRow}>
-          <HeroMetric value={creatorCount} label="creators" />
-          <HeroMetric value={liveCount} label="live" />
-          <HeroMetric value={alertCount} label="AI alerts" />
+          <LogiNexusMetric value={creatorCount} label="creators" tone="creator" />
+          <LogiNexusMetric value={liveCount} label="live" tone="danger" />
+          <LogiNexusMetric value={alertCount} label="UNDX alerts" tone="intelligence" />
         </View>
         <View style={styles.heroActions}>
-          <Pressable style={styles.heroAction} onPress={onOpenLive}>
-            <Text style={styles.heroActionText}>Live</Text>
-          </Pressable>
-          <Pressable style={styles.heroAction} onPress={onOpenSafety}>
-            <Text style={styles.heroActionText}>Safety scan</Text>
-          </Pressable>
-          <Pressable style={styles.heroAction} onPress={onRefresh}>
-            <Text style={styles.heroActionText}>Refresh</Text>
-          </Pressable>
+          <LogiNexusButton label="Live" onPress={onOpenLive} tone="danger" variant="outline" />
+          <LogiNexusButton label="Safety scan" onPress={onOpenSafety} tone="safety" variant="outline" />
+          <LogiNexusButton label="Refresh" onPress={onRefresh} variant="outline" />
         </View>
       </View>
-    </View>
-  );
-}
-
-function HeroMetric({ value, label }: { value: number; label: string }) {
-  return (
-    <View style={styles.metric}>
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
-    </View>
+    </LogiNexusPanel>
   );
 }
 
@@ -785,8 +779,8 @@ function StatusRail({
         ) : null}
         {!loading && !items.length ? (
           <View style={styles.statusEmptyCard}>
-            <Text style={styles.statusEmptyTitle}>No Status yet.</Text>
-            <Text style={styles.statusEmptyText}>{error || "Create one."}</Text>
+            <Text style={styles.statusEmptyTitle}>No active status signals.</Text>
+            <Text style={styles.statusEmptyText}>{error || "Transmit your first update."}</Text>
           </View>
         ) : null}
         {items.map((status) => (
@@ -993,6 +987,12 @@ const styles = StyleSheet.create({
   drawerStatusGated: {
     color: colors.danger
   },
+  drawerSubtitle: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 3
+  },
   drawerTitle: {
     color: colors.text,
     fontSize: 24,
@@ -1023,10 +1023,6 @@ const styles = StyleSheet.create({
     marginBottom: 2
   },
   hero: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
     flexDirection: "row",
     gap: 14,
     marginBottom: 14,
@@ -1047,6 +1043,7 @@ const styles = StyleSheet.create({
   },
   heroActions: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 10,
     marginTop: 12
   },
@@ -1068,16 +1065,46 @@ const styles = StyleSheet.create({
   heroOrb: {
     alignItems: "center",
     alignSelf: "center",
-    backgroundColor: "rgba(37, 208, 167, 0.1)",
-    borderColor: colors.accent,
-    borderRadius: 48,
+    backgroundColor: "rgba(97, 216, 255, 0.06)",
+    borderColor: "rgba(97, 216, 255, 0.44)",
+    borderRadius: 58,
     borderWidth: 1,
-    height: 96,
+    height: 112,
     justifyContent: "center",
-    width: 96
+    overflow: "hidden",
+    width: 112
+  },
+  heroNode: {
+    backgroundColor: colors.accent,
+    borderRadius: 5,
+    height: 10,
+    opacity: 0.78,
+    position: "absolute",
+    width: 10
+  },
+  heroNodeBig: {
+    backgroundColor: colors.signalSoft,
+    borderColor: colors.accentStrong,
+    borderRadius: 35,
+    borderWidth: 1,
+    height: 70,
+    position: "absolute",
+    width: 70
+  },
+  heroNodeOne: {
+    left: 26,
+    top: 30
+  },
+  heroNodeThree: {
+    bottom: 30,
+    left: 36
+  },
+  heroNodeTwo: {
+    right: 28,
+    top: 42
   },
   heroOrbText: {
-    color: colors.accent,
+    color: colors.accentStrong,
     fontSize: 24,
     fontWeight: "900"
   },
@@ -1089,8 +1116,7 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     color: colors.text,
-    fontSize: 42,
-    fontWeight: "900",
+    ...logiNexus.typography.display,
     marginTop: 10
   },
   heroTopRow: {
@@ -1289,8 +1315,14 @@ const styles = StyleSheet.create({
   },
   topBrandText: {
     color: colors.text,
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: "900"
+  },
+  topBrandSubtext: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "800",
+    marginTop: 1
   },
   topIconButton: {
     alignItems: "center",
