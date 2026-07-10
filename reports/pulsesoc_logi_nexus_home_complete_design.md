@@ -63,3 +63,12 @@ Status: scoped visual-system milestone completed; this is not Homefeed LogiNexus
 - Xcode iPhone Simulator remains the primary QA surface for this Homefeed pass.
 - Fixed a local Metro runtime resolver issue for Expo Notifications' `@ide/backoff` dependency so simulator QA can run against the native dev build instead of a stale redbox.
 - Captured authenticated iPhone 17 Pro Simulator evidence after the resolver fix; the remaining visible overlay is the existing app-wide Expo AV deprecation warning toast from the dev client.
+
+## iPhone Size Balance Pass
+
+- Treated the generated image as inspiration for density and hierarchy, not a fixed pixel target.
+- Reduced the shared Home command strip and bottom dock proportions so they do not consume too much vertical space on iPhone.
+- Converted the Pulse Network quick actions from dashboard-like tiles into compact mobile signal chips.
+- Tightened Status rail cards, empty state, avatar rings, and spacing.
+- Made the default Transmission Console compact by showing publish/status/camera-route controls only when there is a draft, media, error, text, retry state, or Live context.
+- Verified on the Xcode iPhone 17 Pro Simulator that the first Home viewport now shows the command strip, hero, Status rail, compact composer, and the beginning of the feed section.

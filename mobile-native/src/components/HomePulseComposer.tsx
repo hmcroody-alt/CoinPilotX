@@ -242,6 +242,25 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
     }
   }
 
+  const hasPublishPayload = Boolean(
+    body.trim() ||
+      media.asset ||
+      media.result ||
+      restoredMediaResult ||
+      lastFailedPayload ||
+      mode === "live"
+  );
+  const hasActiveComposerState = Boolean(
+    error ||
+      draftRecovered ||
+      lastFailedPayload ||
+      media.asset ||
+      media.result ||
+      restoredMediaResult ||
+      media.progress.stage !== "idle" ||
+      media.error
+  );
+
   return (
     <LogiNexusPanel style={styles.wrap} tone={mode === "live" ? "danger" : mode === "reel" ? "creator" : "default"}>
       <View accessible accessibilityLabel="Transmission Console" style={styles.headerRow}>
@@ -325,36 +344,42 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
           </Pressable>
         </View>
       ) : null}
-      <View testID="home-composer-status" style={styles.statusPanel}>
-        <Text style={styles.statusTitle}>{error || selectedMode.note}</Text>
-        <Text style={[styles.statusText, error ? styles.errorText : undefined]}>{error || note}</Text>
-      </View>
+      {hasActiveComposerState ? (
+        <View testID="home-composer-status" style={styles.statusPanel}>
+          <Text style={styles.statusTitle}>{error || selectedMode.note}</Text>
+          <Text style={[styles.statusText, error ? styles.errorText : undefined]}>{error || note}</Text>
+        </View>
+      ) : null}
       {lastFailedPayload ? (
         <Pressable testID="home-composer-retry" style={styles.retryButton} disabled={publishing} onPress={() => retryLastPublish().catch(() => undefined)}>
           <Text style={styles.retryText}>{publishing ? "Retrying..." : "Retry Last Publish"}</Text>
         </Pressable>
       ) : null}
-      <Pressable
-        testID="home-composer-publish"
-        accessibilityRole="button"
-        accessibilityLabel={mode === "live" ? "Open Live Studio" : "Publish Signal"}
-        style={[styles.publishButton, publishing && styles.publishButtonDisabled]}
-        disabled={publishing}
-        onPress={handlePublish}
-      >
-        <Text style={styles.publishText}>{publishing ? "Transmitting..." : mode === "live" ? "Open Live Studio" : "Publish Signal"}</Text>
-      </Pressable>
-      <View style={styles.routeRow}>
-        <Pressable style={styles.routeButton} onPress={() => onOpenCamera("photo")}>
-          <Text style={styles.routeText}>Camera Photo</Text>
+      {hasPublishPayload ? (
+        <Pressable
+          testID="home-composer-publish"
+          accessibilityRole="button"
+          accessibilityLabel={mode === "live" ? "Open Live Studio" : "Publish Signal"}
+          style={[styles.publishButton, publishing && styles.publishButtonDisabled]}
+          disabled={publishing}
+          onPress={handlePublish}
+        >
+          <Text style={styles.publishText}>{publishing ? "Transmitting..." : mode === "live" ? "Open Live Studio" : "Publish Signal"}</Text>
         </Pressable>
-        <Pressable style={styles.routeButton} onPress={() => onOpenCamera("video")}>
-          <Text style={styles.routeText}>Camera Video</Text>
-        </Pressable>
-        <Pressable style={styles.routeButton} onPress={() => onOpenCamera("reel")}>
-          <Text style={styles.routeText}>Reel Camera</Text>
-        </Pressable>
-      </View>
+      ) : null}
+      {mode !== "post" ? (
+        <View style={styles.routeRow}>
+          <Pressable style={styles.routeButton} onPress={() => onOpenCamera("photo")}>
+            <Text style={styles.routeText}>Camera Photo</Text>
+          </Pressable>
+          <Pressable style={styles.routeButton} onPress={() => onOpenCamera("video")}>
+            <Text style={styles.routeText}>Camera Video</Text>
+          </Pressable>
+          <Pressable style={styles.routeButton} onPress={() => onOpenCamera("reel")}>
+            <Text style={styles.routeText}>Reel Camera</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </LogiNexusPanel>
   );
 }
@@ -416,35 +441,35 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     flexBasis: "13.8%",
-    gap: 8,
+    gap: 5,
     justifyContent: "center",
-    minHeight: 58,
-    paddingHorizontal: 6,
-    paddingVertical: 8
+    minHeight: 48,
+    paddingHorizontal: 5,
+    paddingVertical: 6
   },
   actionGrid: {
     flexDirection: "row",
     flexWrap: "nowrap",
-    gap: 8,
-    marginTop: 14
+    gap: 6,
+    marginTop: 10
   },
   actionIcon: {
     color: colors.accent,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "900"
   },
   actionText: {
     color: colors.text,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "900",
     maxWidth: "100%",
     textAlign: "center"
   },
   counter: {
-    bottom: 12,
+    bottom: 8,
     color: colors.accentStrong,
     fontWeight: "900",
-    marginTop: 8,
+    marginTop: 5,
     textAlign: "right"
   },
   errorText: {
@@ -482,18 +507,18 @@ const styles = StyleSheet.create({
   headerRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 12,
+    gap: 9,
     justifyContent: "space-between"
   },
   identityOrb: {
     alignItems: "center",
     backgroundColor: "rgba(159, 124, 255, 0.18)",
     borderColor: logiNexus.colors.home.borderIntelligence,
-    borderRadius: 28,
+    borderRadius: 23,
     borderWidth: 1,
-    height: 56,
+    height: 46,
     justifyContent: "center",
-    width: 56
+    width: 46
   },
   identityOrbText: {
     color: colors.accentStrong,
@@ -514,9 +539,9 @@ const styles = StyleSheet.create({
   input: {
     color: colors.text,
     flex: 1,
-    fontSize: 18,
-    lineHeight: 25,
-    minHeight: 54,
+    fontSize: 16,
+    lineHeight: 22,
+    minHeight: 46,
     paddingVertical: 4,
     textAlignVertical: "center"
   },
@@ -533,8 +558,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 6,
-    minHeight: 38,
-    paddingHorizontal: 12
+    minHeight: 34,
+    paddingHorizontal: 10
   },
   audienceText: {
     color: colors.text,
@@ -552,9 +577,9 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10
+    gap: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 8
   },
   liveText: {
     color: colors.text,
@@ -566,7 +591,7 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.large,
     flex: 1,
     justifyContent: "center",
-    minHeight: 42
+    minHeight: 36
   },
   modeButtonActive: {
     backgroundColor: colors.accent
@@ -577,13 +602,13 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 8,
-    marginTop: 12,
-    padding: 5
+    gap: 6,
+    marginTop: 10,
+    padding: 4
   },
   modeText: {
     color: colors.muted,
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "900"
   },
   modeTextActive: {
@@ -592,9 +617,9 @@ const styles = StyleSheet.create({
   publishButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
-    borderRadius: 24,
-    marginTop: 14,
-    minHeight: 56,
+    borderRadius: 22,
+    marginTop: 11,
+    minHeight: 50,
     justifyContent: "center"
   },
   publishButtonDisabled: {
@@ -602,7 +627,7 @@ const styles = StyleSheet.create({
   },
   publishText: {
     color: colors.background,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "900"
   },
   restoredPanel: {
@@ -663,30 +688,30 @@ const styles = StyleSheet.create({
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: logiNexus.radius.large,
     borderWidth: 1,
-    gap: 4,
-    marginTop: 12,
-    padding: 10
+    gap: 3,
+    marginTop: 9,
+    padding: 8
   },
   statusText: {
     color: colors.muted,
-    fontSize: 13,
-    lineHeight: 19
+    fontSize: 12,
+    lineHeight: 17
   },
   statusTitle: {
     color: colors.text,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900"
   },
   title: {
     color: colors.text,
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: "900",
-    marginTop: 8
+    marginTop: 5
   },
   wrap: {
     backgroundColor: "rgba(10, 23, 39, 0.92)",
     borderColor: "rgba(97, 216, 255, 0.62)",
-    marginBottom: 14,
-    padding: 12
+    marginBottom: 10,
+    padding: 10
   }
 });

@@ -25,12 +25,15 @@ Final simulator evidence:
 
 - `reports/screenshots/logi-nexus-home-iphone17pro-reconstructed-home-final-clean.png`
 - `reports/screenshots/logi-nexus-home-iphone17pro-native-runtime-clean-login.png`
+- `reports/screenshots/logi-nexus-home-iphone17pro-size-feed-visible.png`
+- `reports/screenshots/logi-nexus-home-iphone17pro-size-final-after-npm-ci.png`
 
 ## Result
 
 - Native runtime launches after a fresh Metro cache rebuild.
 - Authenticated native app state was restored through the local QA account.
 - Native Home renders with the reconstructed command strip, compact Pulse Network hero, Status rail, Transmission Console entry, and shared bottom dock.
+- A follow-up iPhone sizing pass reduced the command strip, Pulse Network hero, Status rail, quick-action chips, composer, and bottom dock proportions so the first viewport now shows the feed section beginning below the compact composer.
 - The Expo Notifications `@ide/backoff` runtime resolver issue was fixed by adding a native Metro resolver alias to the installed transitive dependency.
 - The previous redbox is no longer present.
 

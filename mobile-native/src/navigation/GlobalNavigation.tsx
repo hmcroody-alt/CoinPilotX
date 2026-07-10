@@ -239,10 +239,10 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.18)",
     borderRadius: logiNexus.radius.circular,
     borderWidth: 1,
-    height: 44,
+    height: 38,
     justifyContent: "center",
     overflow: "hidden",
-    width: 44
+    width: 38
   },
   avatarImage: {
     height: "100%",
@@ -282,20 +282,20 @@ const styles = StyleSheet.create({
   },
   bottomItem: {
     alignItems: "center",
-    borderRadius: 28,
+    borderRadius: 24,
     flex: 1,
     gap: 4,
     justifyContent: "center",
-    minHeight: 68,
+    minHeight: 58,
     paddingHorizontal: 2,
-    paddingVertical: 8
+    paddingVertical: 6
   },
   bottomItemActive: {
     backgroundColor: "rgba(50, 230, 179, 0.1)"
   },
   bottomCreateItem: {
-    marginTop: -18,
-    minHeight: 86
+    marginTop: -14,
+    minHeight: 74
   },
   bottomLabel: {
     ...logiNexus.typography.metadata,
@@ -311,19 +311,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(3, 8, 18, 0.92)",
     borderColor: "rgba(121, 210, 255, 0.18)",
-    borderRadius: 34,
+    borderRadius: 28,
     borderWidth: 1,
     flexDirection: "row",
     gap: 2,
-    minHeight: 86,
-    padding: 8
+    minHeight: 74,
+    padding: 6
   },
   bottomShell: {
     backgroundColor: "transparent",
     borderTopColor: "transparent",
     borderTopWidth: 0,
     paddingHorizontal: logiNexus.spacing.md,
-    paddingTop: 8
+    paddingTop: 6
   },
   bottomSymbol: {
     alignItems: "center",
@@ -331,9 +331,9 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
     borderRadius: logiNexus.radius.circular,
     borderWidth: 1,
-    height: 38,
+    height: 32,
     justifyContent: "center",
-    width: 38
+    width: 32
   },
   bottomSymbolActive: {
     backgroundColor: colors.accent,
@@ -346,8 +346,8 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(50, 230, 179, 0.2)",
     borderColor: colors.accent,
     borderWidth: 1,
-    height: 64,
-    width: 64
+    height: 54,
+    width: 54
   },
   bottomSymbolText: {
     color: colors.text,
@@ -363,30 +363,30 @@ const styles = StyleSheet.create({
   headerActions: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 8
+    gap: 6
   },
   headerMetaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    marginTop: 8
+    marginTop: 6
   },
   headerRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 10
+    gap: 8
   },
   headerShell: {
     backgroundColor: "rgba(3, 9, 18, 0.96)",
     borderBottomColor: colors.border,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingBottom: 10,
+    paddingBottom: 8,
     paddingHorizontal: logiNexus.spacing.md
   },
   headerShellHome: {
     backgroundColor: logiNexus.colors.home.backgroundDeepSpace,
     borderBottomColor: "transparent",
-    paddingBottom: 14
+    paddingBottom: 10
   },
   headerSubtitle: {
     ...logiNexus.typography.metadata,
@@ -394,9 +394,9 @@ const styles = StyleSheet.create({
   },
   headerSubtitleHome: {
     color: colors.accent,
-    fontSize: 12,
-    letterSpacing: 6,
-    lineHeight: 17,
+    fontSize: 10,
+    letterSpacing: 5,
+    lineHeight: 14,
     textAlign: "center"
   },
   headerTitle: {
@@ -406,6 +406,8 @@ const styles = StyleSheet.create({
   },
   headerTitleHome: {
     ...logiNexus.typography.home.brand,
+    fontSize: 23,
+    lineHeight: 27,
     textAlign: "center"
   },
   iconBadge: {
@@ -427,19 +429,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.055)",
     borderColor: "rgba(255,255,255,0.16)",
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
-    height: 44,
+    height: 38,
     justifyContent: "center",
-    width: 44
+    width: 38
   },
   iconButtonSpacer: {
-    height: 44,
-    width: 44
+    height: 38,
+    width: 38
   },
   iconText: {
     color: colors.text,
-    fontSize: 21,
+    fontSize: 18,
     fontWeight: "900"
   },
   pressed: {

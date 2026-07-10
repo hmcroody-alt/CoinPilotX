@@ -21,6 +21,9 @@ Completed this mission:
 - Used Xcode iPhone Simulator as the primary QA target for this milestone.
 - Fixed the Metro runtime resolver gap for Expo Notifications' `@ide/backoff` dependency and verified the redbox no longer blocks simulator QA.
 - Captured authenticated iPhone 17 Pro Simulator evidence for the reconstructed Home surface.
+- Added a follow-up iPhone size balance pass after simulator review showed the first Home version was still oversized.
+- Tightened the shared Home command strip, bottom dock, hero metrics, quick-action chips, Status rail, and default composer footprint.
+- Verified in the Xcode iPhone 17 Pro Simulator that the feed section now enters the first viewport below the compact composer.
 
 Remaining Home work:
 
