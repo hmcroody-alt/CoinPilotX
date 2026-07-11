@@ -14,6 +14,7 @@
 - State panels replace custom loading/empty wrappers.
 - Active signal rail uses horizontal `FlatList`.
 - No heavy animation or expensive visual effect was added in this milestone.
+- Calls now use shared Pulse Command panels and state panels without adding polling, provider listeners, or heavy animation loops.
 
 ## Remaining Performance QA
 
@@ -40,4 +41,5 @@ Remaining:
 
 - Profile long-thread render cost with populated media.
 - Verify no duplicate polling/listeners during tab switching.
+- Verify call status polling remains one interval per mounted `CallScreen`.
 - Measure typing-state update scope in a populated thread.

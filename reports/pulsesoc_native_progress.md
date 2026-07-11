@@ -2,6 +2,41 @@
 
 Date: 2026-07-10
 
+## Latest Mission Status: Pulse Command Calls Foundation
+
+- Current native migration: 96%.
+- Overall LogiNexus transformation: 19%.
+- Pulse Command transformation: 64%.
+- Calls transformation: 68%.
+- Release QA confidence: 88%.
+
+Completed action:
+
+- Continued inside Pulse Command instead of moving to Search / Discover.
+- Mapped the production WebView Messenger, backend/services, and native API/screen sources into a formal reuse report.
+- Added native rebuild boundaries that require reuse of server-authoritative contracts while rebuilding UI natively.
+- Added a reuse audit that guards against duplicate native surfaces and missing API wrapper reuse.
+- Reused the existing `CallScreen`, `useNativeCallRoom`, and call APIs.
+- Migrated Calls onto shared Pulse Command and LogiNexus layout primitives.
+- Added native readiness metrics for backend state, LiveKit token state, media runtime, and participant count.
+- Preserved server-authoritative call start, accept, decline, hangup, controls, events, and safe web fallback.
+- Added a dedicated calls report and updated the Pulse Command completion audit to prevent regression to one-off call chrome.
+
+Remaining Pulse Command work:
+
+- Extract shared TypeScript domain utilities for message previews, labels, timestamps, presence, delivery state, and action availability.
+- Focused Xcode Simulator capture for Calls after this pass.
+- Complete Groups / Rooms detail depth, member states, provider boundaries, and simulator evidence.
+- Complete offline/reconnect disruption QA and large-text/reduced-motion accessibility pass.
+- Physical-device-only call checks remain for microphone, camera, Bluetooth, push ringing, lock-screen presentation, and background audio.
+
+Recommended next mission: PulseSoc Pulse Command shared domain utility extraction.
+
+Reason for recommendation:
+
+- The WebView reuse map shows several proven behavior rules embedded in DOM-heavy JavaScript.
+- Extracting portable message/conversation/domain rules first prevents duplicate logic before deeper Groups, Rooms, and interaction work continues.
+
 ## Latest Mission Status: LogiNexus Phase 2 Simulator QA Foundation
 
 - Current native migration: 96%.

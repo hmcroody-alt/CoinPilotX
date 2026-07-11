@@ -1,11 +1,9 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   AppState,
   AppStateStatus,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View
@@ -30,8 +28,12 @@ import {
   startConversationCall
 } from "../api/calls";
 import { useNativeCallRoom } from "../calls/useNativeCallRoom";
+import { PulseCommandAction, PulseCommandAvatar, PulseCommandHeader, PulseCommandMetric, PulseCommandPanel } from "../components/PulseCommand";
+import { LogiNexusScrollContainer, LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { logiNexus } from "../theme/logiNexus";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const STATUS_REFRESH_MS = 3200;
 
@@ -50,6 +52,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [minimized, setMinimized] = useState(false);
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const room = useNativeCallRoom();
+  const insets = useSafeAreaInsets();
 
   const title = useMemo(() => {
     if (params.title) return params.title;
@@ -215,41 +218,52 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
     getCallEvents(callId).then(setEvents).catch(() => undefined);
   }, [callId]);
 
-  return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-      <View style={styles.hero}>
-        <Text style={styles.kicker}>PulseSoc Native Calls</Text>
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.subtitle}>
-          {callId ? statusCopy(call, room.connectionState) : "Start or resume a server-authoritative PulseSoc call."}
-        </Text>
-      </View>
+  const statusLabel = callId ? callStatusLabel(call, room.connectionState, connected, incoming, room.connecting) : "Ready";
+  const providerBoundary = room.supported ? "Native media runtime" : "Provider fallback";
 
-      {error || room.error ? <Text style={styles.error}>{error || room.error}</Text> : null}
+  return (
+    <LogiNexusScrollContainer bottomDock={false} contentStyle={[styles.content, { paddingTop: Math.max(insets.top + 12, 24) }]}>
+      <PulseCommandHeader
+        title={title}
+        subtitle={callId ? statusCopy(call, room.connectionState) : "Start or resume a server-authoritative PulseSoc call."}
+        status={statusLabel}
+        tone={connected ? "safety" : incoming ? "danger" : "default"}
+        actions={<PulseCommandAction compact label="Web fallback" tone="warning" onPress={() => openCallWebFallback(callId || undefined, params.conversationId)} />}
+      />
+
+      {error || room.error ? (
+        <LogiNexusStatePanel state="error" title="Call state interrupted" body={error || room.error} style={styles.statePanel} />
+      ) : null}
 
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.accent} />
-        </View>
+        <LogiNexusStatePanel state="loading" title="Synchronizing call" body="Loading PulseSoc call state, provider readiness, and participant signals." loading />
       ) : canStartFromConversation ? (
-        <View style={styles.panel}>
-          <Text style={styles.panelTitle}>Start call</Text>
-          <Text style={styles.panelText}>Uses the existing Communications V2 call engine, LiveKit token route, server permissions, and notification routing.</Text>
+        <PulseCommandPanel style={styles.panel}>
+          <View style={styles.panelHeader}>
+            <PulseCommandAvatar label="CA" active tone="safety" />
+            <View style={styles.panelCopy}>
+              <Text style={styles.panelTitle}>Start Pulse call</Text>
+              <Text style={styles.panelText}>Uses the existing Communications V2 call engine, LiveKit token route, server permissions, and notification routing.</Text>
+            </View>
+          </View>
           <View style={styles.actionRow}>
             <ActionButton label="Voice" busy={actionBusy === "voice"} onPress={() => startCall("audio")} />
-            <ActionButton label="Video" busy={actionBusy === "video"} onPress={() => startCall("video")} />
+            <ActionButton label="Video" tone="accent" busy={actionBusy === "video"} onPress={() => startCall("video")} />
           </View>
-        </View>
+        </PulseCommandPanel>
       ) : call ? (
         <>
-          <View style={styles.callSurface}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{(call.call_type || callType) === "video" ? "VID" : "AUD"}</Text>
-            </View>
+          <PulseCommandPanel tone={connected ? "safety" : incoming ? "danger" : "intelligence"} style={styles.callSurface}>
+            <PulseCommandAvatar label={(call.call_type || callType) === "video" ? "VC" : "AC"} active={connected || incoming} tone={connected ? "safety" : incoming ? "danger" : "intelligence"} />
             <Text style={styles.roomName}>{call.room_name || call.public_id || call.call_id}</Text>
-            <Text style={styles.status}>{connected ? "Connected" : incoming ? "Ringing" : room.connecting ? "Connecting" : "Ready"}</Text>
+            <Text style={styles.status}>{statusLabel}</Text>
             <Text style={styles.meta}>{participantSummary(call)}</Text>
-          </View>
+            <View style={styles.metricRow}>
+              <PulseCommandMetric value={call.call_type === "video" ? "Video" : "Voice"} label="mode" tone="intelligence" />
+              <PulseCommandMetric value={Math.max(1, call.participants?.length || room.participantCount || 1)} label="participants" tone="safety" />
+              <PulseCommandMetric value={room.supported ? "Native" : "Fallback"} label="media" tone={room.supported ? "default" : "warning"} />
+            </View>
+          </PulseCommandPanel>
 
           {incoming && !connected ? (
             <View style={styles.actionRow}>
@@ -267,39 +281,39 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
             </View>
           )}
 
-          <View style={styles.panel}>
+          <PulseCommandPanel style={styles.panel}>
             <Text style={styles.panelTitle}>Native readiness</Text>
             <ReadinessLine label="Backend call state" value={call.status || "loaded"} />
             <ReadinessLine label="LiveKit token" value={call.join?.token ? "available" : call.livekit?.configured ? "request on accept" : "not returned"} />
-            <ReadinessLine label="Native media runtime" value={room.supported ? room.connectionState : "web fallback"} />
+            <ReadinessLine label={providerBoundary} value={room.supported ? room.connectionState : "safe web handoff"} />
             <ReadinessLine label="Participants" value={String(Math.max(1, call.participants?.length || room.participantCount || 1))} />
-          </View>
+          </PulseCommandPanel>
 
-          <View style={styles.panel}>
+          <PulseCommandPanel style={styles.panel}>
             <Text style={styles.panelTitle}>Recent events</Text>
             {events.length ? events.slice(0, 8).map((event, index) => (
               <Text key={`${event.id || index}-${event.event_type || event.type}`} style={styles.panelText}>
                 {event.event_type || event.type || "call:event"} {event.created_at ? `• ${event.created_at}` : ""}
               </Text>
             )) : <Text style={styles.panelText}>No call events returned yet.</Text>}
-          </View>
+          </PulseCommandPanel>
         </>
       ) : (
-        <View style={styles.panel}>
+        <PulseCommandPanel style={styles.panel}>
           <Text style={styles.panelTitle}>Active calls</Text>
           {activeCalls.length ? activeCalls.map((item) => (
             <Pressable key={item.call_id} style={styles.callRow} onPress={() => setCallId(item.call_id)}>
               <Text style={styles.callRowTitle}>{item.call_type === "video" ? "Video call" : "Voice call"}</Text>
               <Text style={styles.panelText}>{item.status || "active"} • {item.call_id}</Text>
             </Pressable>
-          )) : <Text style={styles.panelText}>No active calls returned by `/api/calls/active`.</Text>}
-        </View>
+          )) : (
+            <LogiNexusStatePanel state="empty" title="No active call signals" body="Active calls returned by `/api/calls/active` will appear here." style={styles.inlineStatePanel} />
+          )}
+        </PulseCommandPanel>
       )}
 
-      <Pressable style={styles.fallbackButton} onPress={() => openCallWebFallback(callId || undefined, params.conversationId)}>
-        <Text style={styles.fallbackText}>Open safe web fallback</Text>
-      </Pressable>
-    </ScrollView>
+      <PulseCommandAction label="Open safe web fallback" tone="warning" onPress={() => openCallWebFallback(callId || undefined, params.conversationId)} />
+    </LogiNexusScrollContainer>
   );
 }
 
@@ -351,6 +365,16 @@ function statusCopy(call: PulseCall | null, connectionState: string) {
   return `Call state: ${call.status || connectionState || "ready"}.`;
 }
 
+function callStatusLabel(call: PulseCall | null, connectionState: string, connected: boolean, incoming: boolean, connecting: boolean) {
+  if (connected) return "Connected";
+  if (incoming) return "Ringing";
+  if (connecting) return "Connecting";
+  if (call?.status === "ended") return "Ended";
+  if (call?.status === "failed") return "Failed";
+  if (connectionState && connectionState !== "idle") return connectionState;
+  return call?.status || "Ready";
+}
+
 function participantSummary(call: PulseCall) {
   const names = (call.participants || []).map((participant) => participant.display_name || participant.username).filter(Boolean);
   if (names.length) return names.slice(0, 3).join(", ");
@@ -358,125 +382,77 @@ function participantSummary(call: PulseCall) {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    backgroundColor: colors.background,
-    flex: 1
-  },
   content: {
-    gap: 16,
-    padding: 16,
-    paddingBottom: 32
-  },
-  hero: {
-    gap: 6
-  },
-  kicker: {
-    color: colors.accent,
-    fontSize: 12,
-    fontWeight: "900",
-    textTransform: "uppercase"
-  },
-  title: {
-    color: colors.text,
-    fontSize: 28,
-    fontWeight: "900"
-  },
-  subtitle: {
-    color: colors.muted,
-    fontSize: 14,
-    lineHeight: 20
-  },
-  error: {
-    backgroundColor: "rgba(255,107,107,0.12)",
-    borderColor: colors.danger,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    color: colors.danger,
-    padding: 12
-  },
-  center: {
-    alignItems: "center",
-    minHeight: 180,
-    justifyContent: "center"
+    gap: logiNexus.spacing.lg
   },
   panel: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: 10,
-    padding: 14
+    gap: logiNexus.spacing.md
+  },
+  panelHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: logiNexus.spacing.md
+  },
+  panelCopy: {
+    flex: 1,
+    gap: 4,
+    minWidth: 0
   },
   panelTitle: {
+    ...logiNexus.typography.sectionTitle,
     color: colors.text,
-    fontSize: 17,
-    fontWeight: "900"
   },
   panelText: {
+    ...logiNexus.typography.body,
     color: colors.muted,
-    fontSize: 13,
-    lineHeight: 19
   },
   callSurface: {
     alignItems: "center",
-    backgroundColor: colors.surfaceRaised,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: 8,
-    minHeight: 260,
+    gap: logiNexus.spacing.sm,
+    minHeight: 300,
     justifyContent: "center",
-    padding: 20
-  },
-  avatar: {
-    alignItems: "center",
-    backgroundColor: colors.accentStrong,
-    borderRadius: 42,
-    height: 84,
-    justifyContent: "center",
-    width: 84
-  },
-  avatarText: {
-    color: colors.text,
-    fontSize: 17,
-    fontWeight: "900"
   },
   roomName: {
+    ...logiNexus.typography.sectionTitle,
     color: colors.text,
-    fontSize: 15,
-    fontWeight: "800",
     textAlign: "center"
   },
   status: {
+    ...logiNexus.typography.label,
     color: colors.accent,
-    fontSize: 14,
-    fontWeight: "900"
+    textTransform: "uppercase"
   },
   meta: {
+    ...logiNexus.typography.metadata,
     color: colors.muted,
-    fontSize: 13,
     textAlign: "center"
+  },
+  metricRow: {
+    alignSelf: "stretch",
+    flexDirection: "row",
+    gap: logiNexus.spacing.sm,
+    paddingTop: logiNexus.spacing.sm
   },
   actionRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10
+    gap: logiNexus.spacing.sm
   },
   controls: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10
+    gap: logiNexus.spacing.sm
   },
   actionButton: {
     alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: colors.glass,
+    borderColor: "rgba(97,216,255,0.32)",
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: 1,
     minHeight: 46,
     minWidth: 104,
     justifyContent: "center",
-    paddingHorizontal: 14
+    paddingHorizontal: logiNexus.spacing.lg
   },
   accentButton: {
     backgroundColor: colors.accent,
@@ -486,9 +462,8 @@ const styles = StyleSheet.create({
     borderColor: colors.danger
   },
   actionText: {
+    ...logiNexus.typography.button,
     color: colors.text,
-    fontSize: 13,
-    fontWeight: "900"
   },
   darkText: {
     color: "#07110f"
@@ -501,37 +476,37 @@ const styles = StyleSheet.create({
   },
   readinessRow: {
     alignItems: "center",
+    borderBottomColor: "rgba(255,255,255,0.06)",
+    borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
-    gap: 12,
-    justifyContent: "space-between"
+    gap: logiNexus.spacing.md,
+    justifyContent: "space-between",
+    paddingVertical: logiNexus.spacing.sm
   },
   readinessValue: {
+    ...logiNexus.typography.metadata,
     color: colors.text,
-    fontSize: 13,
-    fontWeight: "800"
+    maxWidth: "48%",
+    textAlign: "right"
   },
   callRow: {
     backgroundColor: "rgba(255,255,255,0.04)",
-    borderRadius: 8,
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: StyleSheet.hairlineWidth,
     gap: 4,
-    padding: 10
+    padding: logiNexus.spacing.md
   },
   callRowTitle: {
+    ...logiNexus.typography.button,
     color: colors.text,
-    fontSize: 14,
-    fontWeight: "900"
   },
-  fallbackButton: {
-    alignItems: "center",
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    minHeight: 44,
-    justifyContent: "center"
+  statePanel: {
+    flex: 0,
+    minHeight: 148
   },
-  fallbackText: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: "800"
+  inlineStatePanel: {
+    flex: 0,
+    minHeight: 160
   }
 });

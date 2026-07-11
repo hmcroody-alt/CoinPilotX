@@ -22,6 +22,7 @@ The fixture flag is ignored unless the API base is localhost or `127.0.0.1`.
 - Calls tab renders active/recent call rows where available.
 - Groups tab renders native group rows and detail/chat routes.
 - Rooms tab renders native room rows and join/chat route.
+- Calls route opens the shared Pulse Command call shell with provider fallback preserved.
 - Direct conversation opens from fixture conversation.
 - Long press opens message action sheet.
 - Reply state appears in composer.
@@ -40,6 +41,9 @@ The fixture flag is ignored unless the API base is localhost or `127.0.0.1`.
 - `reports/screenshots/logi-nexus-messenger/pulse-command-chat-fixture-cached.png`
   - Shows fixture conversation `9001`.
   - Verified cached/reconnect state, media attachment placeholder, voice placeholder, moderated message state, and composer tool row.
+- `reports/screenshots/logi-nexus-messenger/pulse-command-calls-shell-safe-area.png`
+  - Shows the transformed Calls surface in the iPhone 17 Pro simulator.
+  - Verified shared Pulse Command header, safe-area spacing below the Dynamic Island, server-authoritative start-call copy, voice/video entry points, and safe provider fallback.
 
 ## Observed Runtime Warnings
 
@@ -49,6 +53,7 @@ The fixture flag is ignored unless the API base is localhost or `127.0.0.1`.
 ## Remaining Simulator QA
 
 - Long-press action sheet still needs hands-on simulator interaction capture.
-- Calls / Groups / Rooms tab destination clicks need a focused follow-up.
+- Groups / Rooms tab destination clicks need a focused follow-up.
+- Calls still need provider-backed two-device and incoming/ringing state proof.
 - Offline/reconnect needs a real local API disruption test.
 - Large Text and Reduced Motion simulator settings still need a focused accessibility pass.

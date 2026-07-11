@@ -9,6 +9,7 @@
 - `NativeMediaViewer`: reused for image/video message attachment handoff.
 - `IncomingCallLayer`, `CallScreen`, and call APIs: preserved as the native call foundation.
 - `LogiNexusScreenShell`, `LogiNexusStatePanel`, and shared navigation primitives: reused from the existing LogiNexus foundation.
+- `CallScreen`: reused as the authoritative calls route and migrated onto shared Pulse Command primitives.
 
 ## New Shared Primitive
 
@@ -25,7 +26,7 @@ Reason: inbox, chat, groups, rooms, and UNDX need the same command-surface langu
 - Message composer: extend with improved semantic path and safe spacing.
 - Attachments: reuse existing upload and NativeMediaViewer contracts.
 - Voice messages: preserve existing `expo-av` recording path; platform migration away from `expo-av` remains a separate media dependency task.
-- Calls: preserve existing call route/session logic.
+- Calls: extend existing call route/session logic with shared Pulse Command shell, readiness metrics, event panel, and safe provider fallback.
 - Groups/Rooms: extend existing `GroupsScreen`.
 - UNDX: relabel public copy while preserving existing assistant endpoint.
 
@@ -33,6 +34,7 @@ Reason: inbox, chat, groups, rooms, and UNDX need the same command-surface langu
 
 - Shared Pulse Command header/action/search/metric/avatar treatment replaces new one-off styling across Messenger, Chat, Groups, and UNDX.
 - Shared `LogiNexusStatePanel` replaces local loading/empty blocks in the transformed surfaces.
+- Shared Pulse Command shell now also replaces the standalone native call screen chrome.
 # Pulse Command Completion Update
 
 Added / extended in this milestone:
@@ -54,3 +56,8 @@ Added / extended in this milestone:
   - message action sheet
   - deleted/moderated states
   - report/delete/retry/safety actions
+- `mobile-native/src/screens/CallScreen.tsx`
+  - shared Pulse Command header and panel shell
+  - native readiness metrics
+  - safe provider fallback action
+  - LogiNexus loading/error/empty states

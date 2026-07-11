@@ -4,6 +4,17 @@ Status: active vertical completion, not complete.
 
 ## Completed This Milestone
 
+- Added the formal Pulse Command WebView/backend/native code reuse map.
+- Added native rebuild boundaries so future work reuses contracts and business rules but does not copy DOM/UI debt.
+- Added an audit that verifies:
+  - production WebView Messenger source is inventoried
+  - backend/service source is inventoried
+  - native API wrappers remain the contract boundary
+  - no duplicate native Messenger/Chat/Calls/Groups/Rooms surfaces are introduced
+- Completed a scoped Pulse Command Calls foundation pass:
+  - transformed `CallScreen` onto shared Pulse Command and LogiNexus layout primitives
+  - preserved existing call start, accept, decline, hangup, call-control, token, event, and fallback APIs
+  - added clearer native readiness, participant, mode, media-runtime, and empty active-call states
 - Kept the existing native Messenger, Chat, Groups, Calls, and UNDX architecture. No replacement screens were created.
 - Added local-only, explicit Messenger QA fixtures gated by `EXPO_PUBLIC_PULSESOC_QA_MESSENGER_FIXTURES=1` and localhost API base URLs only.
 - Extended native Messenger API typing for pinned, muted, typing, failed, trust, sender, reply, edited, deleted, moderated, and reaction states.
@@ -21,8 +32,20 @@ Status: active vertical completion, not complete.
 
 ## Reused
 
+- Production Messenger V3 source as workflow/data-contract reference:
+  - `templates/pulse_messages_v2.html`
+  - `static/js/pulse_messages_v2.js`
+  - `static/js/pulse_chat_recovery.js`
+  - `static/js/pulse_messenger_media_viewer.js`
+  - `static/pulsesoc_calls.js`
+- Backend/service authority:
+  - `bot.py`
+  - `services/chat_realtime_service.py`
+  - `services/messenger_media_foundation.py`
+  - `services/chat_health_service.py`
 - Existing `/api/pulse/messages/*` conversation, sync, send, seen, typing, search, media upload, react, delete, report, and pin routes.
 - Existing `getActiveCalls`, call screen, and call provider boundary.
+- Existing `useNativeCallRoom`, call join-token, call event, and call-control routes.
 - Existing `listGroups`, `openGroupChat`, `listRooms`, and `joinRoom` APIs.
 - Existing `NativeMediaViewer`.
 - Existing `SafetyHub` for mute/block/report boundary workflows.
@@ -30,9 +53,10 @@ Status: active vertical completion, not complete.
 
 ## Still Incomplete
 
+- Shared TypeScript domain utilities still need extraction for preview text, message type labels, attachment labels, presence labels, delivery labels, timestamps, and action availability.
 - Message forward/share and details surfaces are not complete.
 - Conversation mute/unmute is still a Safety Hub handoff unless a user-safe conversation mute API is exposed.
-- Calls screen itself still needs full LogiNexus transformation and call history states.
+- Calls screen now uses the shared Pulse Command shell, but call history states and two-device provider proof remain incomplete.
 - Group settings, member roles, invitations, member safety actions, and group media remain partial.
 - Rooms detail/provider boundary remains partial.
 - Offline/reconnect queue proof still needs simulator disruption QA.
@@ -40,7 +64,7 @@ Status: active vertical completion, not complete.
 
 ## Current Estimate
 
-- Overall Pulse Command transformation: 58%.
+- Overall Pulse Command transformation: 64%.
 - Inbox: 78%.
 - Conversation list: 82%.
 - Conversation screen: 68%.
@@ -48,13 +72,13 @@ Status: active vertical completion, not complete.
 - Reply/reactions/context menus: 62%.
 - Composer: 68%.
 - Attachments: 60%.
-- Calls: 46%.
+- Calls: 68%.
 - Groups: 58%.
 - Rooms: 50%.
 - UNDX integration: 70%.
 - Safety controls: 60%.
 - Accessibility: 72%.
-- Xcode Simulator QA: 62%.
+- Xcode Simulator QA: 68%.
 
 ## Decision
 

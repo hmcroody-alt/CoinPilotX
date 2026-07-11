@@ -53,6 +53,22 @@ CHECKS = [
             "NativeMediaViewer",
         ],
     ),
+    (
+        "Calls screen reuses Pulse Command shell and preserves provider boundary",
+        ROOT / "mobile-native/src/screens/CallScreen.tsx",
+        [
+            "PulseCommandHeader",
+            "PulseCommandPanel",
+            "PulseCommandMetric",
+            "LogiNexusScrollContainer",
+            "LogiNexusStatePanel",
+            "useNativeCallRoom",
+            "startConversationCall",
+            "requestCallJoinToken",
+            "openCallWebFallback",
+            "sendCallControl",
+        ],
+    ),
 ]
 
 REPORTS = [
@@ -63,6 +79,7 @@ REPORTS = [
     "reports/pulsesoc_logi_nexus_messenger_performance.md",
     "reports/pulsesoc_logi_nexus_messenger_interactions.md",
     "reports/pulsesoc_logi_nexus_messenger_offline_reconnect.md",
+    "reports/pulsesoc_logi_nexus_pulse_command_calls.md",
 ]
 
 
@@ -97,7 +114,7 @@ def main() -> int:
         return 1
 
     print("Pulse Command completion audit passed.")
-    print("Validated local-only populated QA fixtures, native tabbed inbox, server-backed message actions, context sheet, and required reports.")
+    print("Validated local-only populated QA fixtures, native tabbed inbox, server-backed message actions, context sheet, call shell reuse, and required reports.")
     return 0
 
 
