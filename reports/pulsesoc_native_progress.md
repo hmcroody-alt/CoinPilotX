@@ -5119,3 +5119,37 @@ Reason for recommendation:
 
 - Inbox, Chat, and Calls now share more of the production workflow interpretation layer.
 - Groups and Rooms are the weakest nested Pulse Command surfaces and still need shared role/provider state rules plus deeper native detail/action coverage.
+
+## Pulse Command Groups / Rooms Domain Completion
+
+Section: nested communications spaces inside Pulse Command.
+
+Completed action:
+
+- Extended `mobile-native/src/pulseCommand/domain.ts` with group and room presentation-domain rules.
+- Refactored `GroupsScreen` to use shared group title, type, role, summary, badge, accessibility, and action-availability rules.
+- Refactored room cards to use shared room title, summary, badges, accessibility, and provider-aware open/join action rules.
+- Preserved the existing server-authoritative APIs for group join/leave, group chat open, group report, room list, and room join.
+- Extended Pulse Command audits to require Groups / Rooms consumption of the shared domain layer.
+
+Current native status:
+
+- Current native migration: 96%.
+- Overall LogiNexus transformation: 27%.
+- Pulse Command transformation: 71%.
+- Groups transformation: 66%.
+- Rooms transformation: 59%.
+- Code reuse confidence: 89%.
+- Release QA confidence: 88%.
+
+Remaining Pulse Command gaps:
+
+- Calls history/provider labels, attachment open/download/provider boundaries, conversation-level mute/block/pin availability, offline/reconnect copy, and UNDX-specific interaction rules still need shared domain coverage.
+- Groups still need member list, invitations, role management, group media/files/links, and moderation action depth.
+- Rooms still need detail view, participant visualization, live presence, activity/provider boundaries, and scheduled-event surfaces.
+
+Recommended next mission: Pulse Command group detail, member roles, and room detail foundation.
+
+Reason for recommendation:
+
+- Group and room cards now share domain rules, but their nested detail/action surfaces remain below production-ready depth.

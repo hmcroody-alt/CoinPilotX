@@ -14,7 +14,10 @@ Status: active vertical completion, not complete.
 - Extracted shared Pulse Command domain utilities for:
   - conversation titles, previews, timestamps, badges, active presence, and accessibility labels
   - message previews, delivery/read state labels, accessibility labels, typing summaries, reaction icons, optimistic reaction state, and context-menu action availability
+  - group titles, type labels, role labels, summaries, badges, accessibility labels, and membership/chat/report action availability
+  - room titles, summaries, badges, accessibility labels, and join/open/provider-boundary action availability
 - Refactored `MessengerScreen` and `ChatScreen` to consume the shared domain rules instead of interpreting the same server payloads locally.
+- Refactored `GroupsScreen` to consume the shared domain rules for Groups and Rooms instead of locally formatting role, badge, room state, and action availability copy.
 - Completed a scoped Pulse Command Calls foundation pass:
   - transformed `CallScreen` onto shared Pulse Command and LogiNexus layout primitives
   - preserved existing call start, accept, decline, hangup, call-control, token, event, and fallback APIs
@@ -58,7 +61,7 @@ Status: active vertical completion, not complete.
 
 ## Still Incomplete
 
-- Shared TypeScript domain utilities now cover the first high-value presentation rules, but still need expansion for group role labels, room/provider state, call history labels, attachment download/open actions, and conversation-level mute/block availability.
+- Shared TypeScript domain utilities now cover inbox, chat, groups, and rooms presentation rules. They still need expansion for call history labels, attachment download/open actions, conversation-level mute/block/pin availability, offline/reconnect copy, and UNDX-specific suggestion/action rules.
 - Message forward/share and details surfaces are not complete.
 - Conversation mute/unmute is still a Safety Hub handoff unless a user-safe conversation mute API is exposed.
 - Calls screen now uses the shared Pulse Command shell, but call history states and two-device provider proof remain incomplete.
@@ -69,8 +72,8 @@ Status: active vertical completion, not complete.
 
 ## Current Estimate
 
-- Overall Pulse Command transformation: 68%.
-- Inbox: 78%.
+- Overall Pulse Command transformation: 71%.
+- Inbox: 81%.
 - Conversation list: 86%.
 - Conversation screen: 71%.
 - Message bubbles: 70%.
@@ -78,8 +81,8 @@ Status: active vertical completion, not complete.
 - Composer: 68%.
 - Attachments: 60%.
 - Calls: 68%.
-- Groups: 58%.
-- Rooms: 50%.
+- Groups: 66%.
+- Rooms: 59%.
 - UNDX integration: 70%.
 - Safety controls: 64%.
 - Accessibility: 75%.

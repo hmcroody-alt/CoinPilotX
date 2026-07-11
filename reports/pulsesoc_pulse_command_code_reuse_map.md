@@ -57,6 +57,8 @@ Completed this pass:
 
 - Conversation display title, preview text, timestamp, signal badges, active presence, and accessibility label.
 - Message preview text, delivery/read label, accessibility label, typing summary, optimistic reaction state, reaction icon mapping, and message action availability.
+- Group display title, type label, role label, summary, signal badges, accessibility label, and action availability.
+- Room display title, summary, signal badges, accessibility label, and provider-aware open/join action availability.
 
 Still remaining:
 
@@ -64,7 +66,6 @@ Still remaining:
 - Attachment type mapping for open/download/provider boundaries.
 - Conversation action availability.
 - Safety-action eligibility.
-- Group/room role permissions.
 - Call history and provider state labels.
 - Offline/reconnect status mapping.
 

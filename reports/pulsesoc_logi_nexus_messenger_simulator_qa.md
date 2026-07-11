@@ -48,6 +48,10 @@ The fixture flag is ignored unless the API base is localhost or `127.0.0.1`.
   - Shows the populated Pulse Command inbox after extracting shared domain rules out of screen-local code.
   - Verified local QA fixtures, active signal rail, unread counts, and Chats / Calls / Groups / Rooms tab rail still render on iPhone 17 Pro Simulator.
   - Sampled native logs during this smoke showed local API calls returning 200 and no new Pulse Command stack trace.
+- `reports/screenshots/logi-nexus-messenger/pulse-command-groups-rooms-domain-smoke.png`
+  - Shows the Groups & Rooms surface after moving group and room presentation rules into the shared Pulse Command domain layer.
+  - Verified shared group/room labels, room active/unread badges, provider-aware room cards, and existing Safety action in iPhone 17 Pro Simulator.
+  - Visual note: the empty communities panel can sit partly behind the floating dock at the initial scroll position when no groups are returned; this is tracked as a layout refinement, not a data or routing blocker.
 
 ## Observed Runtime Warnings
 
@@ -59,6 +63,7 @@ The fixture flag is ignored unless the API base is localhost or `127.0.0.1`.
 
 - Long-press action sheet still needs hands-on simulator interaction capture.
 - Groups / Rooms tab destination clicks need a focused follow-up.
+- Groups empty-state vertical placement should be tuned so the state panel is not visually low behind the floating dock when there are no communities.
 - Calls still need provider-backed two-device and incoming/ringing state proof.
 - Offline/reconnect needs a real local API disruption test.
 - Large Text and Reduced Motion simulator settings still need a focused accessibility pass.

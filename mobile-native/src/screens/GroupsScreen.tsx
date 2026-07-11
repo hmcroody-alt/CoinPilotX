@@ -28,6 +28,20 @@ import {
 import { PulseCommandAction, PulseCommandHeader, PulseCommandPanel, PulseCommandSearch } from "../components/PulseCommand";
 import { LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
+import {
+  groupAccessibilityLabel,
+  groupActionRules,
+  groupDisplayTitle,
+  groupRoleLabel,
+  groupSignalBadges,
+  groupSummary,
+  groupTypeLabel,
+  roomAccessibilityLabel,
+  roomActionRules,
+  roomDisplayTitle,
+  roomSignalBadges,
+  roomSummary
+} from "../pulseCommand/domain";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { formatShortTime } from "../utils/format";
@@ -274,29 +288,32 @@ function GroupCard({ group, busy, onOpen, onJoin, onChat, onReport }: {
   onChat: (group: PulseGroup) => void;
   onReport: (group: PulseGroup) => void;
 }) {
+  const actions = groupActionRules(group);
+  const actionIsAvailable = (key: ReturnType<typeof groupActionRules>[number]["key"]) => actions.find((action) => action.key === key)?.available;
   return (
-    <Pressable style={styles.card} onPress={() => onOpen(group)}>
-      {group.cover_image_url ? <Image source={{ uri: group.cover_image_url }} style={styles.cover} /> : <View style={styles.coverFallback}><Text style={styles.coverText}>{(group.name || "P").slice(0, 1)}</Text></View>}
+    <Pressable style={styles.card} accessibilityRole="button" accessibilityLabel={groupAccessibilityLabel(group)} onPress={() => onOpen(group)}>
+      {group.cover_image_url ? <Image source={{ uri: group.cover_image_url }} style={styles.cover} /> : <View style={styles.coverFallback}><Text style={styles.coverText}>{groupDisplayTitle(group).slice(0, 1)}</Text></View>}
       <View style={styles.cardBody}>
-        <Text style={styles.cardType}>{group.category || "Community"} · {group.group_type || "public"}</Text>
-        <Text style={styles.cardTitle} numberOfLines={1}>{group.name}</Text>
-        <Text style={styles.cardText} numberOfLines={2}>{group.description || "PulseSoc community"}</Text>
+        <Text style={styles.cardType}>{groupTypeLabel(group)}</Text>
+        <Text style={styles.cardTitle} numberOfLines={1}>{groupDisplayTitle(group)}</Text>
+        <Text style={styles.cardText} numberOfLines={2}>{groupSummary(group)}</Text>
         <View style={styles.pillRow}>
-          <Text style={styles.pill}>{group.member_count || 0} members</Text>
-          <Text style={styles.pill}>{group.post_count || 0} posts</Text>
-          <Text style={styles.pill}>{group.trust_level || "standard"}</Text>
-          {group.viewer_role ? <Text style={styles.pill}>{group.viewer_role}</Text> : null}
+          {groupSignalBadges(group).map((badge) => (
+            <Text key={badge} style={styles.pill}>{badge}</Text>
+          ))}
         </View>
         <View style={styles.actionRow}>
-          <Pressable style={styles.smallButton} disabled={busy} onPress={() => onJoin(group)}>
-            <Text style={styles.smallButtonText}>{group.joined ? "Leave" : "Join"}</Text>
-          </Pressable>
-          <Pressable style={styles.smallButton} disabled={busy} onPress={() => onChat(group)}>
+          {actionIsAvailable("join") || actionIsAvailable("leave") ? (
+            <Pressable accessibilityRole="button" accessibilityLabel={actions[0]?.accessibilityLabel || "Membership action"} style={styles.smallButton} disabled={busy} onPress={() => onJoin(group)}>
+              <Text style={styles.smallButtonText}>{actions[0]?.label || (group.joined ? "Leave" : "Join")}</Text>
+            </Pressable>
+          ) : null}
+          {actionIsAvailable("openChat") ? <Pressable accessibilityRole="button" accessibilityLabel={`Open chat for ${groupDisplayTitle(group)}`} style={styles.smallButton} disabled={busy} onPress={() => onChat(group)}>
             <Text style={styles.smallButtonText}>Chat</Text>
-          </Pressable>
-          <Pressable style={styles.smallButton} disabled={busy} onPress={() => onReport(group)}>
+          </Pressable> : null}
+          {actionIsAvailable("reportGroup") ? <Pressable accessibilityRole="button" accessibilityLabel={`Report ${groupDisplayTitle(group)}`} style={styles.smallButton} disabled={busy} onPress={() => onReport(group)}>
             <Text style={styles.smallButtonText}>Report</Text>
-          </Pressable>
+          </Pressable> : null}
         </View>
       </View>
     </Pressable>
@@ -304,11 +321,17 @@ function GroupCard({ group, busy, onOpen, onJoin, onChat, onReport }: {
 }
 
 function RoomCard({ room, busy, onOpen }: { room: PulseRoom; busy?: boolean; onOpen: (room: PulseRoom) => void }) {
+  const primaryAction = roomActionRules(room).find((action) => action.key === "openRoom");
   return (
-    <Pressable style={styles.roomCard} disabled={busy} onPress={() => onOpen(room)}>
-      <Text style={styles.roomTitle} numberOfLines={1}>{room.title || room.name}</Text>
-      <Text style={styles.roomText} numberOfLines={2}>{room.description || room.pinned_notice || "PulseSoc room"}</Text>
-      <Text style={styles.cardMeta}>{room.online_count || 0} active · {room.unread_count || 0} unread</Text>
+    <Pressable style={styles.roomCard} accessibilityRole="button" accessibilityLabel={roomAccessibilityLabel(room)} disabled={busy} onPress={() => onOpen(room)}>
+      <Text style={styles.roomTitle} numberOfLines={1}>{roomDisplayTitle(room)}</Text>
+      <Text style={styles.roomText} numberOfLines={2}>{roomSummary(room)}</Text>
+      <View style={styles.pillRow}>
+        {roomSignalBadges(room).map((badge) => (
+          <Text key={badge} style={styles.pill}>{badge}</Text>
+        ))}
+      </View>
+      <Text style={styles.cardMeta}>{primaryAction?.label || "Open Room"}</Text>
     </Pressable>
   );
 }
@@ -321,13 +344,15 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport }: {
   onChat: (group: PulseGroup) => void;
   onReport: (group: PulseGroup) => void;
 }) {
+  const groupActions = groupActionRules(group);
+  const actionIsAvailable = (key: ReturnType<typeof groupActionRules>[number]["key"]) => groupActions.find((action) => action.key === key)?.available;
   return (
     <View style={styles.detailOverlay}>
       <View style={styles.detail}>
         <View style={styles.detailHeader}>
           <View style={styles.detailTitleWrap}>
-            <Text style={styles.title} numberOfLines={1}>{group.name}</Text>
-            <Text style={styles.subtitle}>{group.member_count || 0} members · {group.group_type || "public"} · {group.viewer_role || "not joined"}</Text>
+            <Text style={styles.title} numberOfLines={1}>{groupDisplayTitle(group)}</Text>
+            <Text style={styles.subtitle}>{Number(group.member_count || 0)} members · {group.group_type || "public"} · {groupRoleLabel(group)}</Text>
           </View>
           <Pressable style={styles.smallButton} onPress={onClose}>
             <Text style={styles.smallButtonText}>Close</Text>
@@ -335,7 +360,7 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport }: {
         </View>
         <ScrollView contentContainerStyle={styles.detailContent}>
           {group.cover_image_url ? <Image source={{ uri: group.cover_image_url }} style={styles.detailCover} /> : null}
-          <Text style={styles.cardText}>{group.description || "PulseSoc community"}</Text>
+          <Text style={styles.cardText}>{groupSummary(group)}</Text>
           {group.rules ? (
             <View style={styles.rulesBox}>
               <Text style={styles.sectionTitle}>Rules</Text>
@@ -343,15 +368,15 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport }: {
             </View>
           ) : null}
           <View style={styles.actionRow}>
-            <Pressable style={styles.primaryButton} disabled={Boolean(busyKey)} onPress={() => onJoin(group)}>
-              <Text style={styles.primaryText}>{group.joined ? "Leave" : "Join"}</Text>
-            </Pressable>
-            <Pressable style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onChat(group)}>
+            {actionIsAvailable("join") || actionIsAvailable("leave") ? <Pressable style={styles.primaryButton} disabled={Boolean(busyKey)} onPress={() => onJoin(group)}>
+              <Text style={styles.primaryText}>{groupActions[0]?.label || (group.joined ? "Leave" : "Join")}</Text>
+            </Pressable> : null}
+            {actionIsAvailable("openChat") ? <Pressable style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onChat(group)}>
               <Text style={styles.smallButtonText}>Open Chat</Text>
-            </Pressable>
-            <Pressable style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onReport(group)}>
+            </Pressable> : null}
+            {actionIsAvailable("reportGroup") ? <Pressable style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onReport(group)}>
               <Text style={styles.smallButtonText}>Report</Text>
-            </Pressable>
+            </Pressable> : null}
           </View>
           <Text style={styles.sectionTitle}>Community Feed</Text>
           {(group.posts || []).length ? group.posts?.map((post) => <GroupPostCard key={post.id} post={post} />) : <Text style={styles.emptyText}>Group posts will appear here when the existing backend returns them.</Text>}

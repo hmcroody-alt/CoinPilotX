@@ -1,4 +1,5 @@
 import { MessengerConversation, MessengerMessage, MessengerPresence } from "../api/messenger";
+import { PulseGroup, PulseRoom } from "../api/groups";
 import { compactPreview, formatShortTime } from "../utils/format";
 
 export type PulseCommandActionKey =
@@ -10,6 +11,14 @@ export type PulseCommandActionKey =
   | "deleteSelf"
   | "deleteEveryone";
 
+export type PulseCommandCommunityActionKey =
+  | "join"
+  | "leave"
+  | "openChat"
+  | "reportGroup"
+  | "openRoom"
+  | "providerBoundary";
+
 export type PulseCommandActionRule = {
   key: PulseCommandActionKey;
   label: string;
@@ -17,6 +26,16 @@ export type PulseCommandActionRule = {
   available: boolean;
   destructive?: boolean;
   confirmationRequired?: boolean;
+  accessibilityLabel: string;
+};
+
+export type PulseCommandCommunityActionRule = {
+  key: PulseCommandCommunityActionKey;
+  label: string;
+  available: boolean;
+  tone?: "default" | "warning" | "danger" | "safety";
+  destructive?: boolean;
+  providerBoundary?: boolean;
   accessibilityLabel: string;
 };
 
@@ -166,6 +185,118 @@ export function messageActionRules(message: MessengerMessage): PulseCommandActio
       destructive: true,
       confirmationRequired: serverAccepted,
       accessibilityLabel: "Delete message for everyone"
+    }
+  ];
+}
+
+export function groupDisplayTitle(group: Pick<PulseGroup, "name" | "id">) {
+  return group.name || `PulseSoc Group ${group.id}`;
+}
+
+export function groupTypeLabel(group: Pick<PulseGroup, "category" | "group_type">) {
+  return `${group.category || "Community"} · ${group.group_type || "public"}`;
+}
+
+export function groupRoleLabel(group: Pick<PulseGroup, "viewer_role" | "joined" | "can_manage">) {
+  if (group.can_manage) return "manager";
+  if (group.viewer_role) return group.viewer_role;
+  return group.joined ? "member" : "not joined";
+}
+
+export function groupSummary(group: PulseGroup) {
+  return group.description || "PulseSoc community";
+}
+
+export function groupSignalBadges(group: PulseGroup) {
+  const badges = [
+    `${Number(group.member_count || 0)} members`,
+    `${Number(group.post_count || 0)} posts`,
+    group.trust_level || "standard",
+    groupRoleLabel(group)
+  ];
+  if (group.featured) badges.push("featured");
+  if (group.status && group.status !== "active") badges.push(group.status);
+  return badges.filter(Boolean);
+}
+
+export function groupAccessibilityLabel(group: PulseGroup) {
+  return [
+    `Open group ${groupDisplayTitle(group)}`,
+    groupTypeLabel(group),
+    groupRoleLabel(group),
+    `${Number(group.member_count || 0)} members`
+  ].join(", ");
+}
+
+export function groupActionRules(group: PulseGroup): PulseCommandCommunityActionRule[] {
+  const joined = Boolean(group.joined || group.viewer_role);
+  return [
+    {
+      key: joined ? "leave" : "join",
+      label: joined ? "Leave" : "Join",
+      available: true,
+      tone: joined ? "warning" : "default",
+      destructive: joined,
+      accessibilityLabel: joined ? `Leave ${groupDisplayTitle(group)}` : `Join ${groupDisplayTitle(group)}`
+    },
+    {
+      key: "openChat",
+      label: "Chat",
+      available: joined || group.group_type === "public",
+      accessibilityLabel: `Open chat for ${groupDisplayTitle(group)}`
+    },
+    {
+      key: "reportGroup",
+      label: "Report",
+      available: true,
+      tone: "warning",
+      accessibilityLabel: `Report ${groupDisplayTitle(group)}`
+    }
+  ];
+}
+
+export function roomDisplayTitle(room: Pick<PulseRoom, "title" | "name" | "id">) {
+  return room.title || room.name || `PulseSoc Room ${room.id}`;
+}
+
+export function roomSummary(room: PulseRoom) {
+  return room.last_message || room.description || room.pinned_notice || "Persistent PulseSoc room";
+}
+
+export function roomSignalBadges(room: PulseRoom) {
+  const badges = [
+    `${Number(room.online_count || 0)} active`,
+    `${Number(room.unread_count || 0)} unread`
+  ];
+  if (room.partial) badges.push("provider boundary");
+  if (room.energy) badges.push(`energy ${room.energy}`);
+  return badges;
+}
+
+export function roomAccessibilityLabel(room: PulseRoom) {
+  return [
+    `Open room ${roomDisplayTitle(room)}`,
+    `${Number(room.online_count || 0)} active`,
+    `${Number(room.unread_count || 0)} unread`,
+    room.partial ? "provider boundary" : "native room"
+  ].join(", ");
+}
+
+export function roomActionRules(room: PulseRoom): PulseCommandCommunityActionRule[] {
+  return [
+    {
+      key: "openRoom",
+      label: Number(room.conversation_id || 0) ? "Open Room" : "Join Room",
+      available: true,
+      providerBoundary: Boolean(room.partial),
+      accessibilityLabel: `${Number(room.conversation_id || 0) ? "Open" : "Join"} ${roomDisplayTitle(room)}`
+    },
+    {
+      key: "providerBoundary",
+      label: "Provider boundary",
+      available: Boolean(room.partial),
+      providerBoundary: true,
+      accessibilityLabel: `${roomDisplayTitle(room)} has a provider boundary`
     }
   ];
 }

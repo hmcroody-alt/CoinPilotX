@@ -64,6 +64,8 @@ The following have been extracted into `mobile-native/src/pulseCommand/domain.ts
 - optimistic reaction state
 - reaction icon mapping
 - message action availability
+- group display labels, role labels, summaries, badges, accessibility labels, and membership/chat/report action availability
+- room display labels, summaries, badges, accessibility labels, and provider-aware join/open action availability
 
 The following are still portable enough to extract into shared TypeScript utilities:
 
@@ -73,7 +75,6 @@ The following are still portable enough to extract into shared TypeScript utilit
 - `relativeTime`
 - conversation action availability
 - safety action eligibility
-- group/room permission labels
 - call history/provider labels
 - offline/reconnect copy
 
@@ -95,8 +96,6 @@ The following are still portable enough to extract into shared TypeScript utilit
 Extend the shared Pulse Command domain module into:
 
 - conversation-level action availability
-- group role labels
-- room/provider state labels
 - call history/provider labels
 - attachment open/download/provider boundaries
 

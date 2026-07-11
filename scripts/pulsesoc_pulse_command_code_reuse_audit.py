@@ -107,6 +107,14 @@ DOMAIN_NEEDLES = [
     "optimisticReaction",
     "reactionIcon",
     "messageActionRules",
+    "groupDisplayTitle",
+    "groupTypeLabel",
+    "groupRoleLabel",
+    "groupSignalBadges",
+    "groupActionRules",
+    "roomDisplayTitle",
+    "roomSignalBadges",
+    "roomActionRules",
 ]
 
 FORBIDDEN_NATIVE_PATTERNS = [
@@ -165,6 +173,10 @@ def main() -> int:
         for needle in ["messagePreview", "messageDeliveryLabel", "messageActionRules", "typingSummary", "optimisticReaction"]:
             if needle not in chat_screen:
                 failures.append(f"ChatScreen is not consuming shared domain rule: {needle}")
+        groups_screen = read("mobile-native/src/screens/GroupsScreen.tsx")
+        for needle in ["groupActionRules", "groupSignalBadges", "groupAccessibilityLabel", "roomActionRules", "roomSignalBadges", "roomAccessibilityLabel"]:
+            if needle not in groups_screen:
+                failures.append(f"GroupsScreen is not consuming shared domain rule: {needle}")
 
         native_text = "\n".join(
             read(rel)
