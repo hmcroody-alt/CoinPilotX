@@ -21,8 +21,12 @@ import {
   loadCachedGroups,
   openGroupChat,
   PulseGroup,
+  PulseGroupAsset,
+  PulseGroupInvitation,
+  PulseGroupMember,
   PulseGroupPost,
   PulseRoom,
+  PulseRoomParticipant,
   reportGroup
 } from "../api/groups";
 import { PulseCommandAction, PulseCommandHeader, PulseCommandPanel, PulseCommandSearch } from "../components/PulseCommand";
@@ -31,7 +35,14 @@ import { RootStackParamList } from "../navigation/types";
 import {
   groupAccessibilityLabel,
   groupActionRules,
+  groupAssetCategoryLabel,
   groupDisplayTitle,
+  groupInvitationAccessibilityLabel,
+  groupInvitationStateLabel,
+  groupMemberAccessibilityLabel,
+  groupMemberActionRules,
+  groupMemberRoleLabel,
+  groupNotificationLabel,
   groupRoleLabel,
   groupSignalBadges,
   groupSummary,
@@ -39,6 +50,9 @@ import {
   roomAccessibilityLabel,
   roomActionRules,
   roomDisplayTitle,
+  roomParticipantAccessibilityLabel,
+  roomParticipantRoleLabel,
+  roomProviderStateLabel,
   roomSignalBadges,
   roomSummary
 } from "../pulseCommand/domain";
@@ -53,6 +67,7 @@ export function GroupsScreen({ route, navigation }: Props) {
   const [groups, setGroups] = useState<PulseGroup[]>([]);
   const [rooms, setRooms] = useState<PulseRoom[]>([]);
   const [selected, setSelected] = useState<PulseGroup | null>(null);
+  const [selectedRoom, setSelectedRoom] = useState<PulseRoom | null>(null);
   const [query, setQuery] = useState("");
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(false);
@@ -185,6 +200,10 @@ export function GroupsScreen({ route, navigation }: Props) {
     }
   }
 
+  function openRoomDetail(room: PulseRoom) {
+    setSelectedRoom(room);
+  }
+
   async function refreshRooms() {
     try {
       setRooms(await listRooms());
@@ -237,7 +256,7 @@ export function GroupsScreen({ route, navigation }: Props) {
             <Text style={styles.sectionTitle}>Rooms</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.roomRow}>
               {rooms.map((room) => (
-                <RoomCard key={room.id} room={room} busy={busyKey === `room-${room.id}`} onOpen={handleOpenRoom} />
+                <RoomCard key={room.id} room={room} busy={busyKey === `room-${room.id}`} onOpen={openRoomDetail} />
               ))}
               {!rooms.length ? (
                 <PulseCommandPanel style={styles.roomEmpty}>
@@ -274,6 +293,15 @@ export function GroupsScreen({ route, navigation }: Props) {
           onJoin={handleJoin}
           onChat={handleOpenChat}
           onReport={handleReport}
+        />
+      ) : null}
+      {selectedRoom ? (
+        <RoomDetail
+          room={selectedRoom}
+          busyKey={busyKey}
+          onClose={() => setSelectedRoom(null)}
+          onOpen={handleOpenRoom}
+          onReport={(room) => setError(`Report boundary ready for ${roomDisplayTitle(room)}. Room-specific moderation endpoint is not exposed to native yet.`)}
         />
       ) : null}
     </View>
@@ -344,6 +372,8 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport }: {
   onChat: (group: PulseGroup) => void;
   onReport: (group: PulseGroup) => void;
 }) {
+  const sections: GroupDetailSection[] = ["overview", "members", "invitations", "media", "files", "links", "settings"];
+  const [section, setSection] = useState<GroupDetailSection>("overview");
   const groupActions = groupActionRules(group);
   const actionIsAvailable = (key: ReturnType<typeof groupActionRules>[number]["key"]) => groupActions.find((action) => action.key === key)?.available;
   return (
@@ -354,19 +384,25 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport }: {
             <Text style={styles.title} numberOfLines={1}>{groupDisplayTitle(group)}</Text>
             <Text style={styles.subtitle}>{Number(group.member_count || 0)} members · {group.group_type || "public"} · {groupRoleLabel(group)}</Text>
           </View>
-          <Pressable style={styles.smallButton} onPress={onClose}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Close ${groupDisplayTitle(group)} detail`} style={styles.smallButton} onPress={onClose}>
             <Text style={styles.smallButtonText}>Close</Text>
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.detailContent}>
           {group.cover_image_url ? <Image source={{ uri: group.cover_image_url }} style={styles.detailCover} /> : null}
-          <Text style={styles.cardText}>{groupSummary(group)}</Text>
-          {group.rules ? (
-            <View style={styles.rulesBox}>
-              <Text style={styles.sectionTitle}>Rules</Text>
-              <Text style={styles.cardText}>{group.rules}</Text>
-            </View>
-          ) : null}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sectionRail}>
+            {sections.map((item) => (
+              <Pressable
+                key={item}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: section === item }}
+                style={[styles.sectionChip, section === item && styles.sectionChipActive]}
+                onPress={() => setSection(item)}
+              >
+                <Text style={[styles.sectionChipText, section === item && styles.sectionChipTextActive]}>{groupDetailSectionLabel(item)}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
           <View style={styles.actionRow}>
             {actionIsAvailable("join") || actionIsAvailable("leave") ? <Pressable style={styles.primaryButton} disabled={Boolean(busyKey)} onPress={() => onJoin(group)}>
               <Text style={styles.primaryText}>{groupActions[0]?.label || (group.joined ? "Leave" : "Join")}</Text>
@@ -378,12 +414,334 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport }: {
               <Text style={styles.smallButtonText}>Report</Text>
             </Pressable> : null}
           </View>
-          <Text style={styles.sectionTitle}>Community Feed</Text>
-          {(group.posts || []).length ? group.posts?.map((post) => <GroupPostCard key={post.id} post={post} />) : <Text style={styles.emptyText}>Group posts will appear here when the existing backend returns them.</Text>}
+          <GroupDetailSectionView group={group} section={section} />
         </ScrollView>
       </View>
     </View>
   );
+}
+
+type GroupDetailSection = "overview" | "members" | "invitations" | "media" | "files" | "links" | "settings";
+
+function groupDetailSectionLabel(section: GroupDetailSection) {
+  return {
+    overview: "Overview",
+    members: "Members",
+    invitations: "Invitations",
+    media: "Media",
+    files: "Files",
+    links: "Links",
+    settings: "Settings"
+  }[section];
+}
+
+function GroupDetailSectionView({ group, section }: { group: PulseGroup; section: GroupDetailSection }) {
+  if (section === "overview") return <GroupOverview group={group} />;
+  if (section === "members") return <GroupMembers group={group} />;
+  if (section === "invitations") return <GroupInvitations group={group} />;
+  if (section === "media") return <GroupAssets title="Media" assets={group.media || []} emptyTitle="No indexed group media" emptyBody="Native will show photos and videos here when the backend returns an authoritative group media index. Existing media from group posts is shown when available." />;
+  if (section === "files") return <GroupAssets title="Files" assets={group.files || []} emptyTitle="No group files yet" emptyBody="File indexing is a backend contract boundary. Native does not scan private chat history to fabricate a file library." />;
+  if (section === "links") return <GroupAssets title="Links" assets={group.links || []} emptyTitle="No shared links yet" emptyBody="Link indexing is not exposed to native yet. Links will appear here when the server provides a safe group link index." />;
+  return <GroupSettings group={group} />;
+}
+
+function GroupOverview({ group }: { group: PulseGroup }) {
+  return (
+    <View>
+      <Text style={styles.sectionTitle}>Overview</Text>
+      <Text style={styles.cardText}>{groupSummary(group)}</Text>
+      <View style={styles.metricGrid}>
+        <Metric label="Members" value={String(Number(group.member_count || 0))} />
+        <Metric label="Posts" value={String(Number(group.post_count || 0))} />
+        <Metric label="Role" value={groupRoleLabel(group)} />
+        <Metric label="Notify" value={groupNotificationLabel(group)} />
+      </View>
+      {group.owner_name ? <Text style={styles.cardMeta}>Owner: {group.owner_name}</Text> : null}
+      {group.rules ? (
+        <View style={styles.rulesBox}>
+          <Text style={styles.sectionTitle}>Rules</Text>
+          <Text style={styles.cardText}>{group.rules}</Text>
+        </View>
+      ) : (
+        <BoundaryPanel title="Rules unavailable" body="The current group contract did not return rules for this community." />
+      )}
+      <Text style={styles.sectionTitle}>Community Feed</Text>
+      {(group.posts || []).length ? group.posts?.map((post) => <GroupPostCard key={post.id} post={post} />) : <Text style={styles.emptyText}>Group posts will appear here when the existing backend returns them.</Text>}
+    </View>
+  );
+}
+
+function GroupMembers({ group }: { group: PulseGroup }) {
+  const members = group.members || [];
+  return (
+    <View>
+      <Text style={styles.sectionTitle}>Members and Roles</Text>
+      {members.length ? members.map((member) => <GroupMemberRow key={member.id} group={group} member={member} />) : (
+        <BoundaryPanel
+          title="Member roster boundary"
+          body={`The server currently exposes your role (${groupRoleLabel(group)}) and total member count, but not the full native member roster. Native will render role actions here when the member list contract is available.`}
+        />
+      )}
+    </View>
+  );
+}
+
+function GroupMemberRow({ group, member }: { group: PulseGroup; member: PulseGroupMember }) {
+  const actions = groupMemberActionRules(group, member).filter((action) => action.available).slice(0, 3);
+  return (
+    <View style={styles.memberRow} accessibilityLabel={groupMemberAccessibilityLabel(member)}>
+      <Avatar name={member.display_name} uri={member.avatar_url} />
+      <View style={styles.memberMain}>
+        <Text style={styles.cardTitle} numberOfLines={1}>{member.display_name}</Text>
+        <Text style={styles.cardText} numberOfLines={1}>{member.username ? `@${member.username} · ` : ""}{groupMemberRoleLabel(member.role)}{member.presence ? ` · ${member.presence}` : ""}</Text>
+        <View style={styles.actionRow}>
+          {actions.map((action) => (
+            <Pressable key={action.key} accessibilityRole="button" accessibilityLabel={action.accessibilityLabel} style={[styles.inlineAction, action.tone === "danger" && styles.inlineDanger]}>
+              <Text style={styles.inlineActionText}>{action.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function GroupInvitations({ group }: { group: PulseGroup }) {
+  const invitations = group.invitations || [];
+  const requests = group.membership_requests || [];
+  return (
+    <View>
+      <Text style={styles.sectionTitle}>Invitations</Text>
+      {invitations.length ? invitations.map((invite) => <GroupInvitationRow key={invite.id} invitation={invite} />) : (
+        <BoundaryPanel title="No pending invitations exposed" body="Invite/search actions are provider-backed by existing PulseSoc routes. Pending invitations will render here when the backend returns them to native." />
+      )}
+      <Text style={styles.sectionTitle}>Membership Requests</Text>
+      {requests.length ? requests.map((invite) => <GroupInvitationRow key={invite.id} invitation={invite} request />) : (
+        <Text style={styles.emptyText}>No membership requests returned for native review.</Text>
+      )}
+    </View>
+  );
+}
+
+function GroupInvitationRow({ invitation, request }: { invitation: PulseGroupInvitation; request?: boolean }) {
+  return (
+    <View style={styles.memberRow} accessibilityLabel={groupInvitationAccessibilityLabel(invitation)}>
+      <Avatar name={invitation.display_name} uri={invitation.avatar_url} />
+      <View style={styles.memberMain}>
+        <Text style={styles.cardTitle} numberOfLines={1}>{invitation.display_name}</Text>
+        <Text style={styles.cardText} numberOfLines={1}>{request ? "Request" : "Invite"} · {groupInvitationStateLabel(invitation)} · {groupMemberRoleLabel(invitation.role)}</Text>
+        <View style={styles.actionRow}>
+          <Pressable style={styles.inlineAction}><Text style={styles.inlineActionText}>{request ? "Approve boundary" : "Pending"}</Text></Pressable>
+          <Pressable style={[styles.inlineAction, styles.inlineDanger]}><Text style={styles.inlineActionText}>{request ? "Reject boundary" : "Cancel boundary"}</Text></Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function GroupAssets({ title, assets, emptyTitle, emptyBody }: { title: string; assets: PulseGroupAsset[]; emptyTitle: string; emptyBody: string }) {
+  return (
+    <View>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {assets.length ? assets.map((asset) => <GroupAssetCard key={asset.id} asset={asset} />) : <BoundaryPanel title={emptyTitle} body={emptyBody} />}
+    </View>
+  );
+}
+
+function GroupAssetCard({ asset }: { asset: PulseGroupAsset }) {
+  return (
+    <View style={styles.assetCard}>
+      {asset.thumbnail_url || asset.url ? (
+        <Image source={{ uri: asset.thumbnail_url || asset.url }} style={styles.assetThumb} />
+      ) : (
+        <View style={styles.assetFallback}><Text style={styles.coverText}>{groupAssetCategoryLabel(asset).slice(0, 1)}</Text></View>
+      )}
+      <View style={styles.cardBody}>
+        <Text style={styles.cardType}>{groupAssetCategoryLabel(asset)}</Text>
+        <Text style={styles.cardTitle} numberOfLines={2}>{asset.title}</Text>
+        <Text style={styles.cardText} numberOfLines={2}>{asset.url ? "NativeMediaViewer handoff ready where the media contract provides a safe URL." : "No safe media URL returned."}</Text>
+      </View>
+    </View>
+  );
+}
+
+function GroupSettings({ group }: { group: PulseGroup }) {
+  const actions = groupActionRules(group);
+  return (
+    <View>
+      <Text style={styles.sectionTitle}>Settings and Safety</Text>
+      <View style={styles.metricGrid}>
+        <Metric label="Privacy" value={group.privacy || group.group_type || "public"} />
+        <Metric label="Trust" value={group.trust_level || "standard"} />
+        <Metric label="Status" value={group.status || "active"} />
+        <Metric label="Manage" value={group.can_manage ? "allowed" : "member"} />
+      </View>
+      {actions.map((action) => (
+        <View key={action.key} style={styles.permissionRow}>
+          <Text style={styles.cardTitle}>{action.label}</Text>
+          <Text style={styles.cardText}>{action.available ? "Available through the existing server-authoritative contract." : "Hidden by current role or provider state."}</Text>
+        </View>
+      ))}
+      {!group.can_manage ? <BoundaryPanel title="Admin settings gated" body="Edit group, member moderation, and deletion remain hidden unless the existing backend marks the viewer as owner, admin, or moderator." /> : null}
+    </View>
+  );
+}
+
+function RoomDetail({ room, busyKey, onClose, onOpen, onReport }: {
+  room: PulseRoom;
+  busyKey: string;
+  onClose: () => void;
+  onOpen: (room: PulseRoom) => void;
+  onReport: (room: PulseRoom) => void;
+}) {
+  const [section, setSection] = useState<RoomDetailSection>("overview");
+  const sections: RoomDetailSection[] = ["overview", "participants", "activity", "provider"];
+  const actions = roomActionRules(room);
+  const primary = actions.find((action) => action.key === "openRoom");
+  return (
+    <View style={styles.detailOverlay}>
+      <View style={styles.detail}>
+        <View style={styles.detailHeader}>
+          <View style={styles.detailTitleWrap}>
+            <Text style={styles.title} numberOfLines={1}>{roomDisplayTitle(room)}</Text>
+            <Text style={styles.subtitle}>{roomProviderStateLabel(room)} · {Number(room.online_count || 0)} active · {room.current_user_role || "participant boundary"}</Text>
+          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Close ${roomDisplayTitle(room)} detail`} style={styles.smallButton} onPress={onClose}>
+            <Text style={styles.smallButtonText}>Close</Text>
+          </Pressable>
+        </View>
+        <ScrollView contentContainerStyle={styles.detailContent}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sectionRail}>
+            {sections.map((item) => (
+              <Pressable key={item} accessibilityRole="tab" accessibilityState={{ selected: section === item }} style={[styles.sectionChip, section === item && styles.sectionChipActive]} onPress={() => setSection(item)}>
+                <Text style={[styles.sectionChipText, section === item && styles.sectionChipTextActive]}>{roomDetailSectionLabel(item)}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+          <View style={styles.actionRow}>
+            {primary?.available ? (
+              <Pressable style={styles.primaryButton} disabled={Boolean(busyKey)} onPress={() => onOpen(room)}>
+                <Text style={styles.primaryText}>{primary.label}</Text>
+              </Pressable>
+            ) : null}
+            {actions.find((action) => action.key === "providerBoundary")?.available ? (
+              <View style={styles.boundaryPill}><Text style={styles.boundaryPillText}>{roomProviderStateLabel(room)}</Text></View>
+            ) : null}
+            <Pressable style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onReport(room)}>
+              <Text style={styles.smallButtonText}>Report</Text>
+            </Pressable>
+          </View>
+          <RoomDetailSectionView room={room} section={section} />
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
+type RoomDetailSection = "overview" | "participants" | "activity" | "provider";
+
+function roomDetailSectionLabel(section: RoomDetailSection) {
+  return {
+    overview: "Overview",
+    participants: "Participants",
+    activity: "Activity",
+    provider: "Provider"
+  }[section];
+}
+
+function RoomDetailSectionView({ room, section }: { room: PulseRoom; section: RoomDetailSection }) {
+  if (section === "participants") return <RoomParticipants room={room} />;
+  if (section === "activity") return <RoomActivity room={room} />;
+  if (section === "provider") return <RoomProviderBoundary room={room} />;
+  return (
+    <View>
+      <Text style={styles.sectionTitle}>Room Overview</Text>
+      <Text style={styles.cardText}>{roomSummary(room)}</Text>
+      <View style={styles.metricGrid}>
+        <Metric label="Active" value={String(Number(room.online_count || 0))} />
+        <Metric label="Unread" value={String(Number(room.unread_count || 0))} />
+        <Metric label="Privacy" value={room.privacy || "member"} />
+        <Metric label="State" value={roomProviderStateLabel(room)} />
+      </View>
+      {room.pinned_notice ? <BoundaryPanel title="Pinned notice" body={room.pinned_notice} /> : null}
+    </View>
+  );
+}
+
+function RoomParticipants({ room }: { room: PulseRoom }) {
+  const participants = room.participants || [];
+  return (
+    <View>
+      <Text style={styles.sectionTitle}>Participants and Presence</Text>
+      {participants.length ? participants.map((participant) => <RoomParticipantRow key={participant.id} participant={participant} />) : (
+        <BoundaryPanel title="Live presence boundary" body="The current room list exposes aggregate active counts. Native participant identity, roles, and provider connection state will render here when the server/provider returns a safe roster." />
+      )}
+    </View>
+  );
+}
+
+function RoomParticipantRow({ participant }: { participant: PulseRoomParticipant }) {
+  return (
+    <View style={styles.memberRow} accessibilityLabel={roomParticipantAccessibilityLabel(participant)}>
+      <Avatar name={participant.display_name} uri={participant.avatar_url} />
+      <View style={styles.memberMain}>
+        <Text style={styles.cardTitle} numberOfLines={1}>{participant.display_name}</Text>
+        <Text style={styles.cardText} numberOfLines={1}>{roomParticipantRoleLabel(participant)}{participant.provider_state ? ` · ${participant.provider_state}` : ""}{participant.presence ? ` · ${participant.presence}` : ""}</Text>
+      </View>
+    </View>
+  );
+}
+
+function RoomActivity({ room }: { room: PulseRoom }) {
+  const activity = room.activity || [];
+  return (
+    <View>
+      <Text style={styles.sectionTitle}>Room Activity</Text>
+      {activity.length ? activity.map((asset) => <GroupAssetCard key={asset.id} asset={asset} />) : (
+        <BoundaryPanel title="No persistent room activity returned" body="This room currently exposes summary data. Messages, shared media, announcements, and participant events remain tied to the existing chat/provider contracts." />
+      )}
+    </View>
+  );
+}
+
+function RoomProviderBoundary({ room }: { room: PulseRoom }) {
+  return (
+    <View>
+      <Text style={styles.sectionTitle}>Provider Boundary</Text>
+      <BoundaryPanel
+        title={roomProviderStateLabel(room)}
+        body={room.partial ? "This room depends on a provider state that cannot be proven in Simulator. Native can verify routing, layout, permissions, and fallback behavior here; microphone, camera, Bluetooth, and real multi-participant media remain physical-device QA." : "This room can open through the existing Pulse Command chat contract. Live media features remain provider and physical-device gated where applicable."}
+      />
+      <View style={styles.metricGrid}>
+        <Metric label="Provider" value={room.provider || "PulseSoc"} />
+        <Metric label="Room type" value={room.room_type || "room"} />
+        <Metric label="Role" value={room.current_user_role || "member"} />
+        <Metric label="Conversation" value={room.conversation_id ? "available" : "join required"} />
+      </View>
+    </View>
+  );
+}
+
+function BoundaryPanel({ title, body }: { title: string; body: string }) {
+  return (
+    <View style={styles.boundaryPanel}>
+      <Text style={styles.cardTitle}>{title}</Text>
+      <Text style={styles.cardText}>{body}</Text>
+    </View>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.metric}>
+      <Text style={styles.metricValue} numberOfLines={1}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function Avatar({ name, uri }: { name: string; uri?: string }) {
+  return uri ? <Image source={{ uri }} style={styles.avatar} /> : <View style={styles.avatarFallback}><Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text></View>;
 }
 
 function GroupPostCard({ post }: { post: PulseGroupPost }) {
@@ -408,6 +766,76 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8,
     marginTop: 12
+  },
+  assetCard: {
+    backgroundColor: colors.glass,
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.large,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 10,
+    padding: 10
+  },
+  assetFallback: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    height: 72,
+    justifyContent: "center",
+    width: 86
+  },
+  assetThumb: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: 10,
+    height: 72,
+    width: 86
+  },
+  avatar: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: 22,
+    height: 44,
+    width: 44
+  },
+  avatarFallback: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderRadius: 22,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: "center",
+    width: 44
+  },
+  avatarText: {
+    color: colors.accent,
+    fontSize: 17,
+    fontWeight: "900"
+  },
+  boundaryPanel: {
+    backgroundColor: "rgba(97,216,255,0.07)",
+    borderColor: "rgba(97,216,255,0.22)",
+    borderRadius: logiNexus.radius.large,
+    borderWidth: 1,
+    marginTop: 12,
+    padding: 12
+  },
+  boundaryPill: {
+    alignItems: "center",
+    borderColor: "rgba(255,209,102,0.4)",
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 38,
+    paddingHorizontal: 12
+  },
+  boundaryPillText: {
+    color: "#ffd166",
+    fontSize: 12,
+    fontWeight: "900",
+    textTransform: "uppercase"
   },
   card: {
     backgroundColor: colors.glass,
@@ -533,6 +961,64 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     marginBottom: 6
   },
+  inlineAction: {
+    borderColor: colors.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    minHeight: 32,
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  inlineActionText: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "900"
+  },
+  inlineDanger: {
+    borderColor: "rgba(255,107,122,0.34)"
+  },
+  memberMain: {
+    flex: 1,
+    minWidth: 0
+  },
+  memberRow: {
+    alignItems: "flex-start",
+    backgroundColor: colors.glass,
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.large,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 10,
+    padding: 12
+  },
+  metric: {
+    backgroundColor: colors.glass,
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    flex: 1,
+    minWidth: 126,
+    padding: 10
+  },
+  metricGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12
+  },
+  metricLabel: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "900",
+    marginTop: 4,
+    textTransform: "uppercase"
+  },
+  metricValue: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "900"
+  },
   error: {
     color: "#ff9f9f",
     marginTop: 10
@@ -580,6 +1066,14 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 6,
     marginTop: 10
+  },
+  permissionRow: {
+    backgroundColor: colors.glass,
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.large,
+    borderWidth: 1,
+    marginTop: 10,
+    padding: 12
   },
   postCard: {
     backgroundColor: colors.glass,
@@ -646,6 +1140,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "900",
     marginTop: 16
+  },
+  sectionChip: {
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.capsule,
+    borderWidth: 1,
+    minHeight: 34,
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  sectionChipActive: {
+    backgroundColor: "rgba(63,240,160,0.16)",
+    borderColor: colors.accent
+  },
+  sectionChipText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "900"
+  },
+  sectionChipTextActive: {
+    color: colors.text
+  },
+  sectionRail: {
+    gap: 8,
+    paddingBottom: 4
   },
   smallButton: {
     borderColor: colors.border,

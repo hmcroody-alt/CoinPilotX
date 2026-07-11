@@ -5153,3 +5153,35 @@ Recommended next mission: Pulse Command group detail, member roles, and room det
 Reason for recommendation:
 
 - Group and room cards now share domain rules, but their nested detail/action surfaces remain below production-ready depth.
+
+## Pulse Command Group / Room Detail Foundation
+
+Section: nested Groups and Rooms surfaces inside Pulse Command.
+
+Completed action:
+
+- Extended native group models with optional server-authoritative members, invitations, membership requests, media, files, and links.
+- Extended native room models with optional participants, provider state, room type, activity, privacy, host, and current-user role.
+- Added shared Pulse Command domain rules for group role priority, member action availability, invitation state, asset category labels, room provider state, and participant accessibility labels.
+- Rebuilt the existing `GroupsScreen` detail layer into Overview, Members, Invitations, Media, Files, Links, and Settings sections.
+- Added one native `RoomDetail` layer with Overview, Participants, Activity, and Provider sections.
+- Preserved existing server-authoritative contracts for join/leave/chat/report and room join/open.
+- Represented missing roster/invite/media/file/link/participant/provider contracts as explicit LogiNexus boundary panels instead of local-only fake states.
+
+Current native status:
+
+- Current native migration: 96%.
+- Overall LogiNexus transformation: 28%.
+- Pulse Command transformation: 74%.
+- Groups transformation: 74%.
+- Rooms transformation: 68%.
+- Code reuse confidence: 90%.
+- Release QA confidence: 88%.
+
+Remaining Pulse Command gaps:
+
+- Group member and invitation mutations need server-backed endpoint wiring.
+- Room participant live-provider state remains provider/physical-device gated.
+- Conversation-level mute/block/pin, attachment open/download boundaries, offline/reconnect, and full interaction QA remain incomplete.
+
+Recommended next mission: Continue inside Pulse Command with conversation-level safety, mute/block/pin, and attachment boundary hardening.

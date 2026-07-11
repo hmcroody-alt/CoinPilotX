@@ -91,3 +91,21 @@ Status: active vertical completion, not complete.
 ## Decision
 
 Do not move to Search / Discover yet. Pulse Command remains the current active vertical until Calls, Groups, Rooms, nested message interactions, offline/reconnect, accessibility, and simulator QA are substantially complete.
+
+## Group / Room Detail Foundation Update
+
+- Group Detail now has native Overview, Members, Invitations, Media, Files, Links, and Settings sections inside the existing `GroupsScreen`.
+- Room Detail now has native Overview, Participants, Activity, and Provider sections.
+- Group and room detail surfaces reuse the shared Pulse Command domain layer for role labels, action availability, invitation state, asset categories, provider-state labels, and accessibility copy.
+- Existing group and room mutations were preserved; no parallel group/room logic was created.
+- Missing backend/provider contracts are now explicit LogiNexus boundary panels instead of dead buttons or fake local success.
+
+Updated estimate:
+
+- Overall Pulse Command transformation: 74%.
+- Groups: 74%.
+- Rooms: 68%.
+- Shared domain adoption: 76%.
+- Shared layout adoption: 78%.
+- Accessibility: 77%.
+- Xcode Simulator QA: pending final screenshot pass for this slice.

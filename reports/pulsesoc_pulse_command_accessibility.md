@@ -16,6 +16,14 @@ Status: improving; not complete.
 - Context menu focus restoration.
 - Message multi-select semantics.
 - Attachment media viewer semantics for all message media types.
-- Group member and room participant accessibility labels.
+- Simulator VoiceOver verification for group member and room participant labels.
 - Dynamic Type verification in Xcode Simulator.
 - Reduced Motion verification in Xcode Simulator.
+
+## Group / Room Detail Slice
+
+- Added shared member accessibility labels with display name, role, presence, and verification state.
+- Added shared invitation accessibility labels with state and requested role.
+- Added shared room participant accessibility labels with role, presence, and provider state.
+- Group and room section rails use selected-state semantics.
+- Detail close buttons include surface-specific labels.

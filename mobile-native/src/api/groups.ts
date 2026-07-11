@@ -20,6 +20,47 @@ export type PulseGroupPost = {
   updated_at?: string;
 };
 
+export type PulseGroupMember = {
+  id: string;
+  user_id?: number;
+  public_player_id?: string;
+  display_name: string;
+  username?: string;
+  avatar_url?: string;
+  role: string;
+  presence?: string;
+  verified?: boolean;
+  trust_state?: string;
+  status?: string;
+  joined_at?: string;
+};
+
+export type PulseGroupInvitation = {
+  id: string;
+  invitation_id?: string;
+  user_id?: number;
+  display_name: string;
+  username?: string;
+  avatar_url?: string;
+  role?: string;
+  status: string;
+  created_at?: string;
+  expires_at?: string;
+};
+
+export type PulseGroupAsset = {
+  id: string;
+  post_id?: number;
+  message_id?: number;
+  kind: "photo" | "video" | "file" | "audio" | "link" | "unknown";
+  title: string;
+  url?: string;
+  thumbnail_url?: string;
+  file_name?: string;
+  file_size?: number;
+  created_at?: string;
+};
+
 export type PulseGroup = {
   id: number;
   group_id: number;
@@ -38,14 +79,35 @@ export type PulseGroup = {
   viewer_role?: string;
   joined?: boolean;
   can_manage?: boolean;
+  owner_name?: string;
+  notification_state?: string;
+  privacy?: string;
+  members?: PulseGroupMember[];
+  invitations?: PulseGroupInvitation[];
+  membership_requests?: PulseGroupInvitation[];
+  media?: PulseGroupAsset[];
+  files?: PulseGroupAsset[];
+  links?: PulseGroupAsset[];
   posts?: PulseGroupPost[];
   url?: string;
+};
+
+export type PulseRoomParticipant = {
+  id: string;
+  user_id?: number;
+  display_name: string;
+  username?: string;
+  avatar_url?: string;
+  role: string;
+  presence?: string;
+  provider_state?: string;
 };
 
 export type PulseRoom = {
   id: string;
   room_id: string;
   conversation_id?: number;
+  conversation_type?: string;
   name: string;
   title?: string;
   description?: string;
@@ -56,6 +118,14 @@ export type PulseRoom = {
   last_message_at?: string;
   energy?: number;
   partial?: boolean;
+  provider?: string;
+  provider_state?: string;
+  room_type?: string;
+  privacy?: string;
+  host_name?: string;
+  current_user_role?: string;
+  participants?: PulseRoomParticipant[];
+  activity?: PulseGroupAsset[];
 };
 
 export type GroupsResponse = {
@@ -178,6 +248,15 @@ export function normalizeGroup(group: PulseGroup): PulseGroup {
     post_count: Number(group.post_count || 0),
     joined: Boolean(group.joined || group.viewer_role),
     can_manage: Boolean(group.can_manage),
+    owner_name: String(group.owner_name || ""),
+    notification_state: String(group.notification_state || ""),
+    privacy: String(group.privacy || group.group_type || "public"),
+    members: normalizeGroupMembers(group.members || []),
+    invitations: normalizeGroupInvitations(group.invitations || []),
+    membership_requests: normalizeGroupInvitations(group.membership_requests || []),
+    media: normalizeGroupAssets(group.media || deriveAssetsFromPosts(group.posts || [], "media")),
+    files: normalizeGroupAssets(group.files || []),
+    links: normalizeGroupAssets(group.links || []),
     posts: normalizeGroupPosts(group.posts || []),
     url: group.url || `/pulse/groups/${group.slug || id}`
   };
@@ -196,7 +275,15 @@ export function normalizeRooms(rooms: PulseRoom[]) {
       pinned_notice: String(room.pinned_notice || ""),
       online_count: Number(room.online_count || 0),
       unread_count: Number(room.unread_count || 0),
-      energy: Number(room.energy || 0)
+      energy: Number(room.energy || 0),
+      provider: String(room.provider || ""),
+      provider_state: String(room.provider_state || (room.partial ? "provider_boundary" : "available")),
+      room_type: String(room.room_type || room.conversation_type || "room"),
+      privacy: String(room.privacy || "member"),
+      host_name: String(room.host_name || ""),
+      current_user_role: String(room.current_user_role || ""),
+      participants: normalizeRoomParticipants(room.participants || []),
+      activity: normalizeGroupAssets(room.activity || [])
     }))
     .filter((room) => room.id);
 }
@@ -215,4 +302,99 @@ export function normalizeGroupPosts(posts: PulseGroupPost[]) {
       thumbnail_url: String(post.thumbnail_url || "")
     }))
     .filter((post) => post.id > 0);
+}
+
+export function normalizeGroupMembers(members: PulseGroupMember[]) {
+  return (members || [])
+    .map((member) => ({
+      ...member,
+      id: String(member.id || member.user_id || member.public_player_id || ""),
+      user_id: Number(member.user_id || 0),
+      display_name: String(member.display_name || member.username || "PulseSoc Member"),
+      username: String(member.username || ""),
+      avatar_url: String(member.avatar_url || ""),
+      role: String(member.role || "member"),
+      presence: String(member.presence || ""),
+      trust_state: String(member.trust_state || ""),
+      status: String(member.status || "active"),
+      joined_at: String(member.joined_at || "")
+    }))
+    .filter((member) => member.id);
+}
+
+export function normalizeGroupInvitations(invitations: PulseGroupInvitation[]) {
+  return (invitations || [])
+    .map((invite) => ({
+      ...invite,
+      id: String(invite.id || invite.invitation_id || invite.user_id || ""),
+      invitation_id: String(invite.invitation_id || invite.id || ""),
+      user_id: Number(invite.user_id || 0),
+      display_name: String(invite.display_name || invite.username || "PulseSoc Member"),
+      username: String(invite.username || ""),
+      avatar_url: String(invite.avatar_url || ""),
+      role: String(invite.role || "member"),
+      status: String(invite.status || "pending"),
+      created_at: String(invite.created_at || ""),
+      expires_at: String(invite.expires_at || "")
+    }))
+    .filter((invite) => invite.id);
+}
+
+export function normalizeRoomParticipants(participants: PulseRoomParticipant[]) {
+  return (participants || [])
+    .map((participant) => ({
+      ...participant,
+      id: String(participant.id || participant.user_id || ""),
+      user_id: Number(participant.user_id || 0),
+      display_name: String(participant.display_name || participant.username || "PulseSoc Member"),
+      username: String(participant.username || ""),
+      avatar_url: String(participant.avatar_url || ""),
+      role: String(participant.role || "participant"),
+      presence: String(participant.presence || ""),
+      provider_state: String(participant.provider_state || "")
+    }))
+    .filter((participant) => participant.id);
+}
+
+export function normalizeGroupAssets(assets: PulseGroupAsset[]) {
+  return (assets || [])
+    .map((asset) => ({
+      ...asset,
+      id: String(asset.id || asset.post_id || asset.message_id || asset.url || ""),
+      post_id: Number(asset.post_id || 0),
+      message_id: Number(asset.message_id || 0),
+      kind: normalizeAssetKind(asset.kind),
+      title: String(asset.title || asset.file_name || asset.url || "Group asset"),
+      url: String(asset.url || ""),
+      thumbnail_url: String(asset.thumbnail_url || ""),
+      file_name: String(asset.file_name || ""),
+      file_size: Number(asset.file_size || 0),
+      created_at: String(asset.created_at || "")
+    }))
+    .filter((asset) => asset.id);
+}
+
+function deriveAssetsFromPosts(posts: PulseGroupPost[], mode: "media") {
+  if (mode !== "media") return [];
+  return (posts || [])
+    .filter((post) => post.media_url || post.thumbnail_url)
+    .map((post) => ({
+      id: `post-${post.id}`,
+      post_id: post.id,
+      kind: normalizeAssetKind(post.media_type || post.post_type),
+      title: post.title || post.body || "Group media",
+      url: post.media_url,
+      thumbnail_url: post.thumbnail_url,
+      created_at: post.created_at
+    }));
+}
+
+function normalizeAssetKind(value?: string): PulseGroupAsset["kind"] {
+  const kind = String(value || "").toLowerCase();
+  if (kind.includes("image") || kind.includes("photo")) return "photo";
+  if (kind.includes("video") || kind.includes("reel")) return "video";
+  if (kind.includes("audio") || kind.includes("voice")) return "audio";
+  if (kind.includes("file") || kind.includes("document") || kind.includes("pdf")) return "file";
+  if (kind.includes("link") || kind.includes("url")) return "link";
+  return "unknown";
 }

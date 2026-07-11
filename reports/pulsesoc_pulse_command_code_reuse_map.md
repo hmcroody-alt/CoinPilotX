@@ -112,3 +112,43 @@ These currently exist partly in `static/js/pulse_messages_v2.js` and partly in n
 ## Current Decision
 
 Pulse Command is not LogiNexus-complete yet. The next engineering step should extend the shared domain module into group/room/call labels and conversation-level actions before adding deeper Groups/Rooms and offline/reconnect QA.
+
+## Group / Room Detail Reuse Update
+
+Completed after the previous decision:
+
+- `mobile-native/src/api/groups.ts` now accepts optional authoritative detail payloads for members, invitations, membership requests, media, files, links, room participants, room activity, provider state, privacy, host, and current-user role.
+- `mobile-native/src/pulseCommand/domain.ts` now owns group member role priority, member action availability, invitation labels, asset category labels, room provider state labels, and participant accessibility labels.
+- `mobile-native/src/screens/GroupsScreen.tsx` now reuses those rules for the native Group Detail and Room Detail foundations.
+
+Reuse unchanged:
+
+- Group IDs, room IDs, group slugs, membership status, current viewer role, join/leave, open chat, report group, room list, and room join/open contracts.
+
+Extract and share:
+
+- Role priority and role labels.
+- Member action availability.
+- Invitation state copy.
+- Room provider-state copy.
+- Participant role/accessibility copy.
+- Media/file/link category copy.
+
+Native UI rebuild:
+
+- Group Detail section rail.
+- Group Overview, Members, Invitations, Media, Files, Links, and Settings sections.
+- Room Detail section rail.
+- Room Overview, Participants, Activity, and Provider sections.
+
+Provider/device-only boundaries:
+
+- Live room microphone, camera, speaker, Bluetooth, background audio, and real multi-participant media.
+- Full room participant roster until the provider/backend exposes safe participant identity to native.
+
+Remaining:
+
+- Server-backed member roster and invitation mutation endpoints for native.
+- Conversation-level mute/block/pin availability.
+- Attachment open/download provider boundaries.
+- Offline/reconnect proof.

@@ -61,3 +61,26 @@ Added / extended in this milestone:
   - native readiness metrics
   - safe provider fallback action
   - LogiNexus loading/error/empty states
+
+# Groups / Rooms Detail Update
+
+Added / extended in this milestone:
+
+- `mobile-native/src/api/groups.ts`
+  - typed group members
+  - typed group invitations and membership requests
+  - typed group assets for media/files/links
+  - typed room participants and room provider state
+  - normalization for optional detail payloads
+- `mobile-native/src/pulseCommand/domain.ts`
+  - member role labels and priority
+  - group member action rules
+  - invitation state labels
+  - asset category labels
+  - room provider labels
+  - room participant labels and accessibility copy
+- `mobile-native/src/screens/GroupsScreen.tsx`
+  - native Group Detail sections
+  - native Room Detail sections
+  - explicit provider/API boundary panels
+  - no duplicate GroupDetail/RoomSystem implementation

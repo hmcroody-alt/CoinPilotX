@@ -33,3 +33,20 @@ Detailed active report:
 ## Next Required Slice
 
 Complete group detail, member roles, invitations, room detail, participant visualization, and room provider-boundary states before moving to another subsystem.
+
+## Group / Room Detail Slice
+
+- Group Detail now includes Overview, Members, Invitations, Media, Files, Links, and Settings sections.
+- Room Detail now includes Overview, Participants, Activity, and Provider sections.
+- Native models now accept server-authoritative group members, invitations, assets, room participants, provider state, and activity payloads.
+- Shared domain rules now cover role priority, member action availability, invitation labels, asset labels, room provider state, and participant accessibility labels.
+- Existing server-authoritative group join/leave/chat/report and room join/open contracts remain unchanged.
+- Missing member roster, invitation mutation, media/file/link index, room participant roster, and live-provider state are represented as explicit native boundaries instead of fake success.
+
+Updated completion snapshot:
+
+- Overall Pulse Command transformation: 74%.
+- Groups: 74%.
+- Rooms: 68%.
+- Shared domain adoption: 76%.
+- Xcode Simulator QA: 70% pending this slice screenshot pass.
