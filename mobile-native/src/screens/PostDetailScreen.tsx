@@ -1,7 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -25,6 +24,7 @@ import {
   savePost
 } from "../api/feed";
 import { PostCard } from "../components/PostCard";
+import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
@@ -142,19 +142,17 @@ export function PostDetailScreen({ route, navigation }: Props) {
 
   if (loading && !post) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.accent} />
-        <Text style={styles.centerText}>Loading post</Text>
-      </View>
+      <LogiNexusScreenShell>
+        <LogiNexusStatePanel state="loading" title="Loading post" body="Opening the latest server-authoritative signal." loading />
+      </LogiNexusScreenShell>
     );
   }
 
   if (!post) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorTitle}>Post unavailable</Text>
-        <Text style={styles.centerText}>{error || "PulseSoc could not load this post."}</Text>
-      </View>
+      <LogiNexusScreenShell>
+        <LogiNexusStatePanel state="error" title="Post unavailable" body={error || "PulseSoc could not load this post."} />
+      </LogiNexusScreenShell>
     );
   }
 

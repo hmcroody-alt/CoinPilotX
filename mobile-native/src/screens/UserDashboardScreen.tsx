@@ -2,8 +2,9 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
 import { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Animated, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { DashboardCard, DashboardModuleKey, loadUserDashboardState, UserDashboardState } from "../api/dashboard";
+import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { DashboardModuleGroup, DashboardModuleItem, DashboardQuickAction } from "../data/dashboardModules";
 import { classifyDashboardActionRoute, dashboardModuleParamsForRoute, openDashboardRoute } from "../navigation/dashboardRouting";
 import { RootStackParamList } from "../navigation/types";
@@ -57,10 +58,9 @@ export function UserDashboardScreen() {
 
   if (loading && !state) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.accent} />
-        <Text style={styles.centerText}>Opening PulseSoc Mission Control</Text>
-      </View>
+      <LogiNexusScreenShell>
+        <LogiNexusStatePanel state="loading" title="Opening Mission Control" body="Synchronizing dashboard modules, account status, and activity signals." loading />
+      </LogiNexusScreenShell>
     );
   }
 

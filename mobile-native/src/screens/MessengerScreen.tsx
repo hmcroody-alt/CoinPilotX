@@ -1,8 +1,9 @@
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from "react-native";
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from "react-native";
 import { loadCachedConversations, listConversations, MessengerConversation, searchMessenger } from "../api/messenger";
+import { LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { compactPreview, formatShortTime } from "../utils/format";
@@ -66,16 +67,14 @@ export function MessengerScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </View>
       {loading && conversations.length === 0 ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.accent} />
-        </View>
+        <LogiNexusStatePanel state="loading" title="Loading Pulse Command" body="Synchronizing conversations and unread signals." loading />
       ) : (
         <FlatList
           data={conversations}
           keyExtractor={(item) => String(item.id)}
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load({ refresh: true })} />}
-          ListEmptyComponent={<Text style={styles.empty}>{query ? "No matching conversations." : "No conversations loaded yet."}</Text>}
+          ListEmptyComponent={<LogiNexusStatePanel state="empty" title={query ? "No matching conversations" : "No conversations loaded yet"} body={query ? "Try a different name or signal." : "New conversations will appear here as soon as the server has them."} />}
           renderItem={({ item }) => (
             <Pressable
               style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}

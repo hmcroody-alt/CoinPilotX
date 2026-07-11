@@ -1,10 +1,11 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { listFeed, PulsePost } from "../api/feed";
 import { getMyProfile, listPublicProfilePosts, loadCachedProfile, normalizeProfile, profileWebUrl, PulseProfile } from "../api/profile";
 import { PostCard } from "../components/PostCard";
 import { ProfileHeader } from "../components/ProfileHeader";
+import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 
@@ -63,24 +64,23 @@ export function ProfileScreen({ route, navigation }: Props) {
 
   if (loading && !profile) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.accent} />
-        <Text style={styles.centerText}>Loading profile</Text>
-      </View>
+      <LogiNexusScreenShell>
+        <LogiNexusStatePanel state="loading" title="Loading profile" body="Resolving identity, trust, and creator signals." loading />
+      </LogiNexusScreenShell>
     );
   }
 
   if (!profile) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorTitle}>Profile unavailable</Text>
-        <Text style={styles.centerText}>{error || "PulseSoc could not load this profile."}</Text>
+      <LogiNexusScreenShell>
+        <LogiNexusStatePanel state="error" title="Profile unavailable" body={error || "PulseSoc could not load this profile."}>
         {profileKey ? (
           <Pressable style={styles.webButton} onPress={() => Linking.openURL(profileWebUrl(profileKey)).catch(() => undefined)}>
             <Text style={styles.webButtonText}>Open Web Profile</Text>
           </Pressable>
         ) : null}
-      </View>
+        </LogiNexusStatePanel>
+      </LogiNexusScreenShell>
     );
   }
 
