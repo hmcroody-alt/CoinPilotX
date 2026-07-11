@@ -40,6 +40,15 @@ import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMe
 import { PulseCommandAction, PulseCommandHeader, PulseCommandPanel } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
+import {
+  messageAccessibilityLabel,
+  messageActionRules,
+  messageDeliveryLabel,
+  messagePreview,
+  optimisticReaction,
+  reactionIcon,
+  typingSummary
+} from "../pulseCommand/domain";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { formatFileSize, formatShortTime } from "../utils/format";
@@ -231,7 +240,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       body,
       message_type: "text",
       reply_to_message_id: currentReply?.message_id,
-      reply_preview: currentReply ? previewMessage(currentReply) : undefined
+      reply_preview: currentReply ? messagePreview(currentReply) : undefined
     });
   }, [conversationId, draft, replyTo, sendPayload]);
 
@@ -499,7 +508,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           <View style={styles.replyComposer}>
             <View style={styles.replyCopy}>
               <Text style={styles.replyTitle}>Replying to {replyTo.is_mine ? "your message" : replyTo.sender_display_name || "sender"}</Text>
-              <Text style={styles.replyPreview} numberOfLines={1}>{previewMessage(replyTo)}</Text>
+              <Text style={styles.replyPreview} numberOfLines={1}>{messagePreview(replyTo)}</Text>
             </View>
             <Pressable accessibilityRole="button" accessibilityLabel="Cancel reply" style={styles.replyCancel} onPress={() => setReplyTo(null)}>
               <Text style={styles.replyCancelText}>Cancel</Text>
@@ -591,7 +600,7 @@ function MessageBubble({
   const moderated = Boolean(message.moderated_at || message.moderation_state);
   const body = deleted ? "This message was deleted." : moderated ? "This message is unavailable after safety review." : message.body;
   return (
-    <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.theirWrap]} accessible accessibilityLabel={`${mine ? "You" : "Sender"}: ${message.body || message.message_type || "attachment"}, ${statusLabel(status, message.seen_at)}`}>
+    <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.theirWrap]} accessible accessibilityLabel={messageAccessibilityLabel(message)}>
       <Pressable onLongPress={onLongPress} style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble, moderated && styles.moderatedBubble]}>
         {!mine ? <Text style={styles.senderLabel}>{message.sender_display_name || (message.sender_trust_state === "intelligence" ? "UNDX" : "PulseSoc member")}</Text> : null}
         {message.reply_preview ? (
@@ -606,7 +615,7 @@ function MessageBubble({
         <View style={styles.metaRow}>
           <Text style={styles.meta}>{formatShortTime(message.created_at)}</Text>
           {message.edited_at ? <Text style={styles.meta}>Edited</Text> : null}
-          {mine ? <Text style={styles.meta}>{statusLabel(status, message.seen_at)}</Text> : null}
+          {mine ? <Text style={styles.meta}>{messageDeliveryLabel(status, message.seen_at)}</Text> : null}
         </View>
         <ReactionRow reactions={message.reactions} viewerReaction={message.viewer_reaction} onReact={onReact} />
         {status === "failed" ? (
@@ -653,27 +662,31 @@ function MessageActionSheet({
   onSafety: () => void;
 }) {
   if (!message) return null;
-  const failed = (message.local_status || message.delivery_status) === "failed";
+  const actions = messageActionRules(message);
+  const canReact = actions.find((action) => action.key === "react")?.available;
+  const actionIsAvailable = (key: ReturnType<typeof messageActionRules>[number]["key"]) => actions.find((action) => action.key === key)?.available;
   return (
     <Modal transparent animationType="fade" visible onRequestClose={onClose}>
       <Pressable style={styles.sheetBackdrop} onPress={onClose}>
         <PulseCommandPanel style={styles.sheet}>
           <Text style={styles.sheetTitle}>Message controls</Text>
-          <Text style={styles.sheetPreview} numberOfLines={2}>{previewMessage(message)}</Text>
-          <View style={styles.reactionChoices}>
-            {["pulse", "spark", "thanks", "seen"].map((reaction) => (
-              <Pressable key={reaction} style={styles.reactionChoice} onPress={() => onReact(message, reaction)}>
-                <Text style={styles.reactionText}>{reactionIcon(reaction)} {reaction}</Text>
-              </Pressable>
-            ))}
-          </View>
+          <Text style={styles.sheetPreview} numberOfLines={2}>{messagePreview(message)}</Text>
+          {canReact ? (
+            <View style={styles.reactionChoices}>
+              {["pulse", "spark", "thanks", "seen"].map((reaction) => (
+                <Pressable key={reaction} style={styles.reactionChoice} onPress={() => onReact(message, reaction)}>
+                  <Text style={styles.reactionText}>{reactionIcon(reaction)} {reaction}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
           <View style={styles.sheetGrid}>
-            <SheetAction label="Reply" onPress={() => onReply(message)} />
-            {failed ? <SheetAction label="Retry" tone="warning" onPress={() => onRetry(message)} /> : null}
-            <SheetAction label="Report" tone="warning" onPress={() => onReport(message)} />
-            <SheetAction label="Mute / Block" tone="safety" onPress={onSafety} />
-            <SheetAction label="Delete for me" tone="danger" onPress={() => onDelete(message, "self")} />
-            {message.is_mine ? <SheetAction label="Delete for everyone" tone="danger" onPress={() => onDelete(message, "everyone")} /> : null}
+            {actionIsAvailable("reply") ? <SheetAction label="Reply" onPress={() => onReply(message)} /> : null}
+            {actionIsAvailable("retry") ? <SheetAction label="Retry" tone="warning" onPress={() => onRetry(message)} /> : null}
+            {actionIsAvailable("report") ? <SheetAction label="Report" tone="warning" onPress={() => onReport(message)} /> : null}
+            {actionIsAvailable("safety") ? <SheetAction label="Mute / Block" tone="safety" onPress={onSafety} /> : null}
+            {actionIsAvailable("deleteSelf") ? <SheetAction label="Delete for me" tone="danger" onPress={() => onDelete(message, "self")} /> : null}
+            {actionIsAvailable("deleteEveryone") ? <SheetAction label="Delete for everyone" tone="danger" onPress={() => onDelete(message, "everyone")} /> : null}
           </View>
         </PulseCommandPanel>
       </Pressable>
@@ -702,7 +715,7 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
     url: mediaUrl,
     thumbnailUrl,
     title: type === "video" ? "Video attachment" : type === "image" || type === "gif" ? "Image attachment" : "Messenger attachment",
-    subtitle: message.body || statusLabel(message.local_status || message.delivery_status || "sent", message.seen_at),
+    subtitle: message.body || messageDeliveryLabel(message.local_status || message.delivery_status || "sent", message.seen_at),
     sourceUrl: mediaUrl
   };
   if (type === "image" || type === "gif") {
@@ -737,47 +750,6 @@ function absoluteMediaUrl(value?: string) {
   if (/^https?:\/\//i.test(value)) return value;
   if (value.startsWith("/")) return `${PULSE_API_BASE_URL}${value}`;
   return value;
-}
-
-function statusLabel(status: string, seenAt?: string) {
-  if (seenAt || status === "seen" || status === "read") return "Read";
-  if (status === "failed") return "Failed";
-  if (status === "sending") return "Sending";
-  if (status === "delivered") return "Delivered";
-  return "Sent";
-}
-
-function typingSummary(presence?: { typing?: Array<{ display_name?: string; is_typing?: boolean }> }) {
-  const names = presence?.typing?.filter((item) => item.is_typing !== false).map((item) => item.display_name || "Someone") || [];
-  if (!names.length) return "";
-  if (names.length === 1) return `${names[0]} is typing`;
-  return `${names.slice(0, 2).join(", ")} are typing`;
-}
-
-function previewMessage(message: MessengerMessage) {
-  if (message.deleted_at) return "Deleted message";
-  if (message.moderated_at || message.moderation_state) return "Unavailable after safety review";
-  if (message.body) return message.body;
-  if (message.message_type === "image") return "Image attachment";
-  if (message.message_type === "video") return "Video attachment";
-  if (message.message_type === "voice" || message.message_type === "audio") return "Voice message";
-  return "Attachment";
-}
-
-function optimisticReaction(previous: Record<string, number>, reactionType: string) {
-  return {
-    ...previous,
-    [reactionType]: Number(previous?.[reactionType] || 0) + 1
-  };
-}
-
-function reactionIcon(reaction: string) {
-  const key = reaction.toLowerCase();
-  if (key.includes("spark")) return "✦";
-  if (key.includes("thank")) return "✓";
-  if (key.includes("seen")) return "◌";
-  if (key.includes("fire")) return "🔥";
-  return "◈";
 }
 
 const styles = StyleSheet.create({

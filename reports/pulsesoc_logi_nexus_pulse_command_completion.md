@@ -11,6 +11,10 @@ Status: active vertical completion, not complete.
   - backend/service source is inventoried
   - native API wrappers remain the contract boundary
   - no duplicate native Messenger/Chat/Calls/Groups/Rooms surfaces are introduced
+- Extracted shared Pulse Command domain utilities for:
+  - conversation titles, previews, timestamps, badges, active presence, and accessibility labels
+  - message previews, delivery/read state labels, accessibility labels, typing summaries, reaction icons, optimistic reaction state, and context-menu action availability
+- Refactored `MessengerScreen` and `ChatScreen` to consume the shared domain rules instead of interpreting the same server payloads locally.
 - Completed a scoped Pulse Command Calls foundation pass:
   - transformed `CallScreen` onto shared Pulse Command and LogiNexus layout primitives
   - preserved existing call start, accept, decline, hangup, call-control, token, event, and fallback APIs
@@ -50,10 +54,11 @@ Status: active vertical completion, not complete.
 - Existing `NativeMediaViewer`.
 - Existing `SafetyHub` for mute/block/report boundary workflows.
 - Existing `PulseCommand` shared primitives.
+- New shared `mobile-native/src/pulseCommand/domain.ts` as the native presentation-domain boundary for portable Messenger rules extracted from production workflow behavior.
 
 ## Still Incomplete
 
-- Shared TypeScript domain utilities still need extraction for preview text, message type labels, attachment labels, presence labels, delivery labels, timestamps, and action availability.
+- Shared TypeScript domain utilities now cover the first high-value presentation rules, but still need expansion for group role labels, room/provider state, call history labels, attachment download/open actions, and conversation-level mute/block availability.
 - Message forward/share and details surfaces are not complete.
 - Conversation mute/unmute is still a Safety Hub handoff unless a user-safe conversation mute API is exposed.
 - Calls screen now uses the shared Pulse Command shell, but call history states and two-device provider proof remain incomplete.
@@ -64,21 +69,21 @@ Status: active vertical completion, not complete.
 
 ## Current Estimate
 
-- Overall Pulse Command transformation: 64%.
+- Overall Pulse Command transformation: 68%.
 - Inbox: 78%.
-- Conversation list: 82%.
-- Conversation screen: 68%.
-- Message bubbles: 66%.
-- Reply/reactions/context menus: 62%.
+- Conversation list: 86%.
+- Conversation screen: 71%.
+- Message bubbles: 70%.
+- Reply/reactions/context menus: 68%.
 - Composer: 68%.
 - Attachments: 60%.
 - Calls: 68%.
 - Groups: 58%.
 - Rooms: 50%.
 - UNDX integration: 70%.
-- Safety controls: 60%.
-- Accessibility: 72%.
-- Xcode Simulator QA: 68%.
+- Safety controls: 64%.
+- Accessibility: 75%.
+- Xcode Simulator QA: 70%.
 
 ## Decision
 

@@ -16,9 +16,17 @@ import {
 } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
+import {
+  conversationAccessibilityLabel,
+  conversationDisplayTitle,
+  conversationPreview,
+  conversationSignalBadges,
+  conversationTime,
+  isActivePresence
+} from "../pulseCommand/domain";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
-import { compactPreview, formatShortTime } from "../utils/format";
+import { formatShortTime } from "../utils/format";
 
 type PulseCommandTab = "chats" | "calls" | "groups" | "rooms";
 type PulseCommandListItem = MessengerConversation | PulseCall | PulseGroup | PulseRoom;
@@ -78,7 +86,7 @@ export function MessengerScreen() {
   }, [query]);
 
   const unreadTotal = useMemo(() => conversations.reduce((total, item) => total + Number(item.unread_count || 0), 0), [conversations]);
-  const activeSignal = useMemo(() => conversations.filter((item) => ["online", "active", "live"].includes(String(item.presence || "").toLowerCase())).slice(0, 12), [conversations]);
+  const activeSignal = useMemo(() => conversations.filter((item) => isActivePresence(item.presence)).slice(0, 12), [conversations]);
   const tabItems = useMemo(
     () => [
       { key: "chats", label: "Chats", count: unreadTotal },
@@ -166,9 +174,9 @@ export function MessengerScreen() {
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.signalList}
                   renderItem={({ item }) => (
-                    <Pressable accessibilityRole="button" accessibilityLabel={`Open ${item.title || item.name}`} style={styles.signalItem} onPress={() => navigation.navigate("Chat", { conversationId: item.id, title: item.title || item.name })}>
-                      <PulseCommandAvatar label={item.title || item.name} active={["online", "active", "live"].includes(String(item.presence || "").toLowerCase())} />
-                      <Text style={styles.signalName} numberOfLines={1}>{item.title || item.name || "Pulse"}</Text>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`Open ${conversationDisplayTitle(item)}`} style={styles.signalItem} onPress={() => navigation.navigate("Chat", { conversationId: item.id, title: conversationDisplayTitle(item) })}>
+                      <PulseCommandAvatar label={conversationDisplayTitle(item)} active={isActivePresence(item.presence)} />
+                      <Text style={styles.signalName} numberOfLines={1}>{conversationDisplayTitle(item)}</Text>
                     </Pressable>
                   )}
                 />
@@ -190,40 +198,39 @@ export function MessengerScreen() {
 }
 
 function ConversationRow({ item, navigation }: { item: MessengerConversation; navigation: NativeStackNavigationProp<RootStackParamList> }) {
-  const active = ["online", "active", "live"].includes(String(item.presence || "").toLowerCase());
+  const active = isActivePresence(item.presence);
+  const title = conversationDisplayTitle(item);
   return (
     <Pressable
       style={({ pressed }) => [styles.row, item.pinned && styles.pinnedRow, pressed && styles.rowPressed]}
       accessibilityRole="button"
-      accessibilityLabel={`Open ${item.title || item.name || `conversation ${item.id}`}${Number(item.unread_count || 0) ? `, ${item.unread_count} unread` : ""}${item.muted ? ", muted" : ""}${item.pinned ? ", pinned" : ""}`}
-      onPress={() => navigation.navigate("Chat", { conversationId: item.id, title: item.title || item.name })}
+      accessibilityLabel={conversationAccessibilityLabel(item)}
+      onPress={() => navigation.navigate("Chat", { conversationId: item.id, title })}
     >
-      <PulseCommandAvatar label={item.title || item.name} active={active} tone={item.trust_state === "founder" ? "intelligence" : "default"} />
+      <PulseCommandAvatar label={title} active={active} tone={item.trust_state === "founder" ? "intelligence" : "default"} />
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
-          <Text style={styles.title} numberOfLines={1}>{item.title || item.name || `Conversation ${item.id}`}</Text>
-          <Text style={styles.time}>{formatShortTime(item.last_activity_at || item.updated_at)}</Text>
+          <Text style={styles.title} numberOfLines={1}>{title}</Text>
+          <Text style={styles.time}>{conversationTime(item)}</Text>
         </View>
         <Text style={styles.muted} numberOfLines={1}>
-          {item.typing ? "Typing..." : item.failed ? "Delivery failed. Open to retry." : compactPreview(item.latest_message || item.last_message_preview, "Open chat")}
+          {conversationPreview(item)}
         </Text>
         <View style={styles.rowSignals}>
-          {item.pinned ? <Text style={styles.signalPill}>pinned</Text> : null}
-          {item.muted ? <Text style={styles.signalPill}>muted</Text> : null}
-          {item.verified ? <Text style={styles.signalPill}>verified</Text> : null}
-          <Text style={styles.signalPill}>{item.conversation_type || "direct"}</Text>
-          {item.presence ? <Text style={styles.signalPill}>{item.presence}</Text> : null}
+          {conversationSignalBadges(item).map((badge) => (
+            <Text key={badge} style={styles.signalPill}>{badge}</Text>
+          ))}
         </View>
       </View>
       {item.other_public_player_id || item.public_player_id ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Open profile for ${item.title || "conversation member"}`}
+          accessibilityLabel={`Open profile for ${title}`}
           style={styles.profileButton}
           onPress={() =>
             navigation.navigate("ProfileDetail", {
               profileKey: item.other_public_player_id || item.public_player_id,
-              title: item.title || "Profile"
+              title
             })
           }
         >

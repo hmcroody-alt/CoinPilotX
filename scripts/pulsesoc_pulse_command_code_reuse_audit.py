@@ -17,6 +17,7 @@ REQUIRED_FILES = [
     "mobile-native/src/api/messenger.ts",
     "mobile-native/src/api/groups.ts",
     "mobile-native/src/api/calls.ts",
+    "mobile-native/src/pulseCommand/domain.ts",
     "mobile-native/src/screens/MessengerScreen.tsx",
     "mobile-native/src/screens/ChatScreen.tsx",
     "mobile-native/src/screens/CallScreen.tsx",
@@ -94,6 +95,20 @@ NATIVE_API_NEEDLES = {
     ],
 }
 
+DOMAIN_NEEDLES = [
+    "conversationDisplayTitle",
+    "conversationPreview",
+    "conversationSignalBadges",
+    "conversationAccessibilityLabel",
+    "messagePreview",
+    "messageDeliveryLabel",
+    "messageAccessibilityLabel",
+    "typingSummary",
+    "optimisticReaction",
+    "reactionIcon",
+    "messageActionRules",
+]
+
 FORBIDDEN_NATIVE_PATTERNS = [
     "MessengerV2",
     "ChatScreen2",
@@ -136,6 +151,20 @@ def main() -> int:
             missing_needles = [needle for needle in needles if needle not in text]
             if missing_needles:
                 failures.append(f"{rel} missing API/domain reuse markers: {', '.join(missing_needles)}")
+
+        domain_text = read("mobile-native/src/pulseCommand/domain.ts")
+        missing_domain = [needle for needle in DOMAIN_NEEDLES if needle not in domain_text]
+        if missing_domain:
+            failures.append(f"Pulse Command domain utility missing rules: {', '.join(missing_domain)}")
+
+        messenger_screen = read("mobile-native/src/screens/MessengerScreen.tsx")
+        chat_screen = read("mobile-native/src/screens/ChatScreen.tsx")
+        for needle in ["conversationPreview", "conversationSignalBadges", "conversationAccessibilityLabel", "isActivePresence"]:
+            if needle not in messenger_screen:
+                failures.append(f"MessengerScreen is not consuming shared domain rule: {needle}")
+        for needle in ["messagePreview", "messageDeliveryLabel", "messageActionRules", "typingSummary", "optimisticReaction"]:
+            if needle not in chat_screen:
+                failures.append(f"ChatScreen is not consuming shared domain rule: {needle}")
 
         native_text = "\n".join(
             read(rel)

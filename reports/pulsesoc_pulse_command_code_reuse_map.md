@@ -53,18 +53,22 @@ The implementation strategy is:
 
 ### B. Extract and share
 
-- Timestamp formatting.
-- Conversation preview text.
-- Message type labels.
-- Attachment type mapping.
-- Presence-state mapping.
-- Message action availability.
+Completed this pass:
+
+- Conversation display title, preview text, timestamp, signal badges, active presence, and accessibility label.
+- Message preview text, delivery/read label, accessibility label, typing summary, optimistic reaction state, reaction icon mapping, and message action availability.
+
+Still remaining:
+
+- Message type labels beyond preview copy.
+- Attachment type mapping for open/download/provider boundaries.
 - Conversation action availability.
 - Safety-action eligibility.
 - Group/room role permissions.
+- Call history and provider state labels.
 - Offline/reconnect status mapping.
 
-These currently exist partly in `static/js/pulse_messages_v2.js` and partly in native screens. They should move into shared TypeScript domain utilities during the next Pulse Command implementation slices.
+These currently exist partly in `static/js/pulse_messages_v2.js` and partly in native screens. The new `mobile-native/src/pulseCommand/domain.ts` is now the shared native extraction point and should continue absorbing portable rules during the next Pulse Command implementation slices.
 
 ### C. Refactor and extend
 
@@ -106,4 +110,4 @@ These currently exist partly in `static/js/pulse_messages_v2.js` and partly in n
 
 ## Current Decision
 
-Pulse Command is not LogiNexus-complete yet. The next engineering step should extract shared TypeScript domain utilities for message previews, message type labels, timestamps, presence, and action availability before adding deeper Groups/Rooms and message-action UI.
+Pulse Command is not LogiNexus-complete yet. The next engineering step should extend the shared domain module into group/room/call labels and conversation-level actions before adding deeper Groups/Rooms and offline/reconnect QA.

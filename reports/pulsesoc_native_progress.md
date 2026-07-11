@@ -5087,3 +5087,35 @@ Reason for recommendation:
 - Pulse Command now has server-backed message reactions, delete, report, retry, reply state, local-only populated QA fixtures, and in-place Chats / Calls / Groups / Rooms tabs.
 - The subsystem is still not LogiNexus-complete because Calls, Groups, Rooms, offline/reconnect, nested safety, simulator evidence, and accessibility remain below the completion threshold.
 - Search / Discover remains blocked until Pulse Command reaches deep vertical completion.
+
+## Pulse Command Shared Domain Extraction
+
+Section: Messenger / Chat reuse layer for portable production workflow logic.
+
+Completed action:
+
+- Added `mobile-native/src/pulseCommand/domain.ts` as the shared native presentation-domain boundary.
+- Moved conversation title, preview, timestamp, active presence, signal badge, and accessibility-label rules out of `MessengerScreen`.
+- Moved message preview, delivery/read label, typing summary, reaction icon, optimistic reaction, accessibility-label, and message action availability rules out of `ChatScreen`.
+- Updated Pulse Command audits so future work cannot reintroduce duplicated preview/status/action logic in the inbox and conversation screen.
+- Updated reuse and rebuild-boundary reports to document completed extraction and remaining portable logic.
+
+Current native status:
+
+- Current native migration: 96%.
+- Overall LogiNexus transformation: 26%.
+- Pulse Command transformation: 68%.
+- Code reuse confidence: 86%.
+- Release QA confidence: 88%.
+
+Remaining Pulse Command gaps:
+
+- Extend the shared domain module into group role labels, room/provider state, call history labels, attachment open/download/provider boundaries, and conversation-level mute/block/pin availability.
+- Complete Groups, Rooms, offline/reconnect, and nested safety QA before moving to Search / Discover.
+
+Recommended next mission: Pulse Command Groups / Rooms shared domain and detail completion.
+
+Reason for recommendation:
+
+- Inbox, Chat, and Calls now share more of the production workflow interpretation layer.
+- Groups and Rooms are the weakest nested Pulse Command surfaces and still need shared role/provider state rules plus deeper native detail/action coverage.

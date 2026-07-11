@@ -50,20 +50,31 @@ Native owns:
 
 ## Extraction Candidates
 
-The following are portable enough to extract into shared TypeScript utilities:
+The following have been extracted into `mobile-native/src/pulseCommand/domain.ts`:
+
+- `conversationDisplayTitle`
+- `conversationPreview`
+- active presence checks
+- conversation signal badges
+- conversation accessibility labels
+- `messagePreview`
+- `messageDeliveryLabel`
+- message accessibility labels
+- typing summaries
+- optimistic reaction state
+- reaction icon mapping
+- message action availability
+
+The following are still portable enough to extract into shared TypeScript utilities:
 
 - `messageTypeLabel`
-- `conversationPreview`
-- `presenceLabel`
-- `messageDeliveryLabel`
 - `attachmentKind`
 - `formatDuration`
 - `relativeTime`
-- `shortTime`
-- message action availability
 - conversation action availability
 - safety action eligibility
 - group/room permission labels
+- call history/provider labels
 - offline/reconnect copy
 
 ## Current Native Boundaries
@@ -71,6 +82,7 @@ The following are portable enough to extract into shared TypeScript utilities:
 - `mobile-native/src/api/messenger.ts` owns Messenger API typing and normalization.
 - `mobile-native/src/api/groups.ts` owns groups and rooms API typing and normalization.
 - `mobile-native/src/api/calls.ts` owns calls API typing and normalization.
+- `mobile-native/src/pulseCommand/domain.ts` owns shared Pulse Command presentation-domain rules that are portable across native inbox, chat, calls, groups, rooms, and UNDX surfaces.
 - `mobile-native/src/screens/MessengerScreen.tsx` owns the native inbox presentation.
 - `mobile-native/src/screens/ChatScreen.tsx` owns the native conversation presentation.
 - `mobile-native/src/screens/CallScreen.tsx` owns the native call presentation.
@@ -80,14 +92,12 @@ The following are portable enough to extract into shared TypeScript utilities:
 
 ## Next Safe Refactor
 
-Create a shared Pulse Command domain utility module that extracts:
+Extend the shared Pulse Command domain module into:
 
-- timestamp formatting
-- message preview normalization
-- message type labels
-- attachment labels
-- presence labels
-- message delivery labels
-- action availability registry
+- conversation-level action availability
+- group role labels
+- room/provider state labels
+- call history/provider labels
+- attachment open/download/provider boundaries
 
 This should reduce duplicated mapping logic without changing backend behavior.

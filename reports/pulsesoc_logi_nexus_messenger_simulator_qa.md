@@ -44,11 +44,16 @@ The fixture flag is ignored unless the API base is localhost or `127.0.0.1`.
 - `reports/screenshots/logi-nexus-messenger/pulse-command-calls-shell-safe-area.png`
   - Shows the transformed Calls surface in the iPhone 17 Pro simulator.
   - Verified shared Pulse Command header, safe-area spacing below the Dynamic Island, server-authoritative start-call copy, voice/video entry points, and safe provider fallback.
+- `reports/screenshots/logi-nexus-messenger/pulse-command-domain-extraction-smoke.png`
+  - Shows the populated Pulse Command inbox after extracting shared domain rules out of screen-local code.
+  - Verified local QA fixtures, active signal rail, unread counts, and Chats / Calls / Groups / Rooms tab rail still render on iPhone 17 Pro Simulator.
+  - Sampled native logs during this smoke showed local API calls returning 200 and no new Pulse Command stack trace.
 
 ## Observed Runtime Warnings
 
 - The app still shows the known app-wide `expo-av` deprecation warning in development builds.
 - This is tracked as a future media dependency migration item and did not block Pulse Command rendering.
+- A development warning toast was visible in the domain extraction smoke screenshot. The route rendered correctly and sampled simulator logs showed successful local API calls; this remains a QA/runtime cleanliness item, not a Pulse Command domain extraction blocker.
 
 ## Remaining Simulator QA
 
