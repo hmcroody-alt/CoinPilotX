@@ -294,7 +294,7 @@ export function AppNavigator() {
 function subtitleForTab(name: string) {
   if (name === "Dashboard") return "Mission Control";
   if (name === "Messenger") return "Pulse Command";
-  if (name === "PulseAI") return "Digital Intelligence Companion";
+  if (name === "PulseAI") return "UNDX Companion";
   if (name === "Marketplace") return "Commerce layer";
   if (name === "Notifications") return "Activity and notification signals";
   return "Powered by LogiNexus Intelligence";

@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { askPulseAi } from "../api/pulse";
-import { Panel } from "../components/Panel";
-import { Screen } from "../components/Screen";
+import { PulseCommandHeader, PulseCommandPanel } from "../components/PulseCommand";
+import { LogiNexusScrollContainer } from "../components/Screen";
 import { colors } from "../theme/colors";
+import { logiNexus } from "../theme/logiNexus";
 
 export function PulseAiScreen() {
   const [draft, setDraft] = useState("");
@@ -18,24 +19,30 @@ export function PulseAiScreen() {
       const data = await askPulseAi(message);
       setReply(data.response || data.reply || data.message || "");
     } catch (error) {
-      Alert.alert("Pulse AI unavailable", error instanceof Error ? error.message : "Unable to reach Pulse AI.");
+      Alert.alert("UNDX unavailable", error instanceof Error ? error.message : "Unable to reach UNDX.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <Screen title="Pulse AI" subtitle="Native chat surface backed by the existing Pulse AI endpoint.">
-      <Panel>
-        <Text style={styles.reply}>{reply || "Ask Pulse AI for a mission summary, content idea, or account action."}</Text>
-      </Panel>
+    <LogiNexusScrollContainer>
+      <PulseCommandHeader
+        title="UNDX"
+        subtitle="Digital Intelligence Companion. Powered by LogiNexus Intelligence."
+        status={loading ? "Thinking" : "Ready"}
+        tone="intelligence"
+      />
+      <PulseCommandPanel tone="intelligence">
+        <Text style={styles.reply}>{reply || "Ask UNDX for a mission summary, content idea, safety explanation, or account action."}</Text>
+      </PulseCommandPanel>
       <View style={styles.composer}>
-        <TextInput placeholder="Ask Pulse AI" placeholderTextColor={colors.muted} style={styles.input} value={draft} onChangeText={setDraft} />
+        <TextInput accessibilityLabel="Ask UNDX" placeholder="Ask UNDX" placeholderTextColor={colors.muted} style={styles.input} value={draft} onChangeText={setDraft} />
         <Pressable style={styles.button} onPress={submit} disabled={loading}>
           <Text style={styles.buttonText}>{loading ? "..." : "Ask"}</Text>
         </Pressable>
       </View>
-    </Screen>
+    </LogiNexusScrollContainer>
   );
 }
 
@@ -47,12 +54,12 @@ const styles = StyleSheet.create({
   },
   composer: {
     flexDirection: "row",
-    gap: 8
+    gap: logiNexus.spacing.sm
   },
   input: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.glass,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.large,
     borderWidth: StyleSheet.hairlineWidth,
     color: colors.text,
     flex: 1,
@@ -62,7 +69,7 @@ const styles = StyleSheet.create({
   button: {
     alignItems: "center",
     backgroundColor: colors.accent,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.large,
     justifyContent: "center",
     paddingHorizontal: 18
   },

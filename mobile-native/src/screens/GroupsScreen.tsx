@@ -1,7 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Image,
   Pressable,
@@ -9,7 +8,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View
 } from "react-native";
 import {
@@ -27,8 +25,11 @@ import {
   PulseRoom,
   reportGroup
 } from "../api/groups";
+import { PulseCommandAction, PulseCommandHeader, PulseCommandPanel, PulseCommandSearch } from "../components/PulseCommand";
+import { LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { logiNexus } from "../theme/logiNexus";
 import { formatShortTime } from "../utils/format";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "GroupDetail">>;
@@ -184,9 +185,8 @@ export function GroupsScreen({ route, navigation }: Props) {
 
   if (loading && !groups.length) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.accent} />
-        <Text style={styles.centerText}>Loading Communities</Text>
+      <View style={styles.root}>
+        <LogiNexusStatePanel state="loading" title="Loading community channels" body="Synchronizing groups, rooms, and permissions." loading style={styles.statePanel} />
       </View>
     );
   }
@@ -203,16 +203,14 @@ export function GroupsScreen({ route, navigation }: Props) {
         }} />}
         ListHeaderComponent={
           <View style={styles.header}>
-            <Text style={styles.title}>Communities</Text>
-            <Text style={styles.subtitle}>{offline ? "Showing saved communities" : "Groups, communities, and PulseSoc rooms"}</Text>
-            <TextInput
-              style={styles.searchInput}
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search communities"
-              placeholderTextColor={colors.muted}
-              returnKeyType="search"
+            <PulseCommandHeader
+              title="Groups & Rooms"
+              subtitle={offline ? "Showing saved communities from local cache." : "Community channels, rooms, and moderated group spaces."}
+              status={offline ? "Cached" : "Live sync"}
+              tone={offline ? "warning" : "safety"}
+              actions={navigation ? <PulseCommandAction compact label="Safety" tone="safety" onPress={() => navigation.navigate("SafetyHub", { section: "reports", title: "Safety Hub" })} /> : null}
             />
+            <PulseCommandSearch value={query} onChangeText={setQuery} placeholder="Search communities and rooms" />
             {categories.length ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                 {categories.map((category) => (
@@ -227,15 +225,18 @@ export function GroupsScreen({ route, navigation }: Props) {
               {rooms.map((room) => (
                 <RoomCard key={room.id} room={room} busy={busyKey === `room-${room.id}`} onOpen={handleOpenRoom} />
               ))}
+              {!rooms.length ? (
+                <PulseCommandPanel style={styles.roomEmpty}>
+                  <Text style={styles.roomTitle}>No room signals</Text>
+                  <Text style={styles.roomText}>Rooms appear here when the existing backend returns them.</Text>
+                </PulseCommandPanel>
+              ) : null}
             </ScrollView>
             {error ? <Text style={styles.error}>{error}</Text> : null}
           </View>
         }
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>{error ? "Communities unavailable" : "No communities found"}</Text>
-            <Text style={styles.emptyText}>{error || "PulseSoc communities will appear here when the existing backend returns them."}</Text>
-          </View>
+          <LogiNexusStatePanel state={error ? "error" : "empty"} title={error ? "Communities unavailable" : "No communities found"} body={error || "PulseSoc communities will appear here when the existing backend returns them."} style={styles.statePanel} />
         }
         renderItem={({ item }) => (
           <GroupCard
@@ -249,7 +250,7 @@ export function GroupsScreen({ route, navigation }: Props) {
         )}
         onEndReached={() => load("more").catch(() => undefined)}
         onEndReachedThreshold={0.35}
-        ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.footer} color={colors.accent} /> : null}
+        ListFooterComponent={loadingMore ? <Text style={styles.footer}>Loading more community signals...</Text> : null}
       />
       {selected ? (
         <GroupDetail
@@ -384,9 +385,9 @@ const styles = StyleSheet.create({
     marginTop: 12
   },
   card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
+    backgroundColor: colors.glass,
+    borderColor: "rgba(97,216,255,0.24)",
+    borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     flexDirection: "row",
     gap: 12,
@@ -433,7 +434,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
-    paddingBottom: 32
+    paddingBottom: 116
   },
   cover: {
     backgroundColor: colors.surfaceRaised,
@@ -459,7 +460,7 @@ const styles = StyleSheet.create({
   detail: {
     backgroundColor: colors.background,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.panel,
     borderWidth: 1,
     flex: 1,
     margin: 12,
@@ -513,7 +514,7 @@ const styles = StyleSheet.create({
   },
   filter: {
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.capsule,
     borderWidth: 1,
     minHeight: 34,
     paddingHorizontal: 12,
@@ -529,9 +530,14 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   footer: {
-    marginVertical: 12
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
+    marginVertical: 12,
+    textAlign: "center"
   },
   header: {
+    gap: logiNexus.spacing.md,
     marginBottom: 14
   },
   pill: {
@@ -551,7 +557,7 @@ const styles = StyleSheet.create({
     marginTop: 10
   },
   postCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.glass,
     borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
@@ -560,7 +566,7 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     backgroundColor: colors.accent,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.medium,
     justifyContent: "center",
     minHeight: 38,
     paddingHorizontal: 14
@@ -570,9 +576,9 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   roomCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
+    backgroundColor: colors.glass,
+    borderColor: "rgba(63,240,160,0.34)",
+    borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     minHeight: 126,
     padding: 12,
@@ -598,24 +604,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     flex: 1
   },
+  roomEmpty: {
+    minHeight: 126,
+    width: 230
+  },
   rulesBox: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.glass,
     borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
     marginTop: 14,
     padding: 12
-  },
-  searchInput: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    color: colors.text,
-    fontSize: 16,
-    marginTop: 14,
-    minHeight: 46,
-    paddingHorizontal: 12
   },
   sectionTitle: {
     color: colors.text,
@@ -625,7 +624,7 @@ const styles = StyleSheet.create({
   },
   smallButton: {
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
     justifyContent: "center",
     minHeight: 36,
@@ -646,5 +645,8 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 28,
     fontWeight: "900"
+  },
+  statePanel: {
+    margin: 16
   }
 });

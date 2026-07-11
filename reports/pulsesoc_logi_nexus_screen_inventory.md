@@ -14,12 +14,12 @@ Status: initial inventory.
 
 ## Phase 2 Social Core
 
-- Messenger: foundation exists, LogiNexus transformation pending.
-- Conversation screen: foundation exists, transformation pending.
+- Messenger: Pulse Command first LogiNexus milestone complete; full reactions/context menus/calls list/device QA pending.
+- Conversation screen: first LogiNexus milestone complete; full reply/reaction/context menu polish pending.
 - Calls: foundation exists, transformation pending.
 - Incoming call layer: foundation exists, transformation pending.
 - Profile / Edit Profile: foundation exists, transformation pending.
-- Friends / Followers / Communities / Groups / Rooms: foundation exists, transformation pending.
+- Friends / Followers / Communities / Groups / Rooms: groups/rooms first Pulse Command treatment complete; full settings/detail transformation pending.
 
 ## Later Phases
 

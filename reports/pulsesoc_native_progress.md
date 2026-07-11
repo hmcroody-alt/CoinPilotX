@@ -5014,3 +5014,40 @@ Reason for recommendation:
 
 - Home and global navigation now have simulator-backed layout proof.
 - Messenger remains the highest-impact daily-engagement subsystem that still needs foundation hardening before the native app can replace the WebView client.
+
+## LogiNexus Pulse Command Milestone
+
+Section: native Messenger, conversations, groups/rooms, calls entry points, and UNDX communications identity.
+
+Completed action:
+
+- Evolved the existing `MessengerScreen`, `ChatScreen`, `GroupsScreen`, and `PulseAiScreen` instead of creating replacement screens.
+- Added shared `PulseCommand` primitives for command panels, contextual headers, search, segment rail, avatars, actions, and metrics.
+- Preserved existing messenger APIs for conversation listing, search, message sync, send, typing, seen state, uploads, cache, and retry.
+- Preserved existing native call entry routes from conversations.
+- Preserved existing group/room APIs for listing, join/leave, room join, group chat, and report.
+- Replaced visible Pulse AI labels in native screens with UNDX / Digital Intelligence Companion copy while leaving route/API identifiers compatible.
+- Added Pulse Command reports and audit coverage.
+
+Current native status:
+
+- Current native migration: 96%.
+- Overall LogiNexus transformation: 25%.
+- Pulse Command transformation: 42%.
+- Release QA confidence: 88%.
+
+Remaining Pulse Command gaps:
+
+- Full calls list transformation.
+- Full rooms/detail and group settings transformation.
+- Context menus for reply/forward/delete/report/block/mute.
+- Message reactions UI.
+- Hardware-only voice/camera/push/call checks.
+- Long-thread, media-heavy, reduced-motion, and Dynamic Type simulator matrices.
+
+Recommended next mission: PulseSoc Search / Discover LogiNexus Transformation.
+
+Reason for recommendation:
+
+- Pulse Command now has a coherent shared surface across inbox, conversation, groups/rooms, and UNDX without changing message authority.
+- Search / Discover is the next highest-value shared discovery surface because it feeds Home, Messenger, Profile, Marketplace, Creator, Intelligence, and navigation.

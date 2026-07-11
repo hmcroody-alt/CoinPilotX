@@ -67,7 +67,7 @@ export function LoginScreen() {
   return (
     <View style={styles.root}>
       <Text style={styles.brand}>PulseSoc</Text>
-      <Text style={styles.copy}>Native access to Mission Control, messages, alerts, and Pulse AI.</Text>
+      <Text style={styles.copy}>Native access to Mission Control, messages, alerts, and UNDX.</Text>
       <TextInput
         accessibilityLabel="Email or username"
         autoCapitalize="none"

@@ -219,7 +219,7 @@ function relatedNativeRoutes(group: DashboardModuleGroup, module: DashboardModul
     return [
       { label: "Intelligence Center", route: "/dashboard/intelligence", body: "Review streams, forecasts, alerts, sources, and recent events." },
       { label: "Alert Management", route: "/dashboard/crypto/alerts", body: "Create, edit, duplicate, pause, and test crypto/market alerts." },
-      { label: "Pulse AI", route: "/pulse/ai", body: "Use the native AI conversation surface." }
+      { label: "UNDX", route: "/pulse/ai", body: "Use the native Digital Intelligence Companion surface." }
     ];
   }
   if (groupKey === "pulse-radio-media") {

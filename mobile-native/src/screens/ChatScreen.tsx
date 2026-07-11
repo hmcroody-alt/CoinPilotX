@@ -4,7 +4,6 @@ import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   AppState,
   AppStateStatus,
@@ -19,6 +18,7 @@ import {
   TextInput,
   View
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   cacheMessages,
   createLocalMessage,
@@ -33,8 +33,11 @@ import {
 } from "../api/messenger";
 import { PULSE_API_BASE_URL } from "../api/config";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
+import { PulseCommandAction, PulseCommandHeader, PulseCommandPanel } from "../components/PulseCommand";
+import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { logiNexus } from "../theme/logiNexus";
 import { formatFileSize, formatShortTime } from "../utils/format";
 
 const PAGE_SIZE = 40;
@@ -42,6 +45,7 @@ const SYNC_INTERVAL_MS = 2500;
 
 export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, "Chat">) {
   const conversationId = route.params.conversationId;
+  const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<MessengerMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
@@ -346,35 +350,33 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.root}>
+      <LogiNexusScreenShell bottomDock={false} contentStyle={styles.shellContent}>
       <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View style={styles.headerCopy}>
-            <Text style={styles.title} numberOfLines={1}>{route.params.title || "Chat"}</Text>
-            <Text style={styles.presence} numberOfLines={1}>{typing || "Secure PulseSoc messages"}</Text>
-          </View>
-          <View style={styles.callActions}>
-            <Pressable
-              accessibilityLabel="Start voice call"
-              style={styles.callButton}
-              onPress={() => navigation.navigate("Call", { conversationId, callType: "audio", direction: "outgoing", title: route.params.title || "PulseSoc Voice" })}
-            >
-              <Text style={styles.callText}>Voice</Text>
-            </Pressable>
-            <Pressable
-              accessibilityLabel="Start video call"
-              style={styles.callButton}
-              onPress={() => navigation.navigate("Call", { conversationId, callType: "video", direction: "outgoing", title: route.params.title || "PulseSoc Video" })}
-            >
-              <Text style={styles.callText}>Video</Text>
-            </Pressable>
-          </View>
-        </View>
+        <PulseCommandHeader
+          title={route.params.title || "Transmission"}
+          subtitle={typing || "Secure PulseSoc message channel"}
+          status={error ? "Reconnecting" : "Live channel"}
+          tone={error ? "warning" : "default"}
+          actions={
+            <View style={styles.callActions}>
+              <PulseCommandAction
+                compact
+                label="Voice"
+                onPress={() => navigation.navigate("Call", { conversationId, callType: "audio", direction: "outgoing", title: route.params.title || "PulseSoc Voice" })}
+              />
+              <PulseCommandAction
+                compact
+                label="Video"
+                tone="intelligence"
+                onPress={() => navigation.navigate("Call", { conversationId, callType: "video", direction: "outgoing", title: route.params.title || "PulseSoc Video" })}
+              />
+            </View>
+          }
+        />
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {loading && messages.length === 0 ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.accent} />
-        </View>
+        <LogiNexusStatePanel state="loading" title="Opening transmission" body="Loading encrypted conversation history from the server." loading style={styles.loadingPanel} />
       ) : (
         <FlatList
           data={visibleMessages}
@@ -389,16 +391,18 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load({ refresh: true })} />}
           onEndReached={loadOlder}
           onEndReachedThreshold={0.2}
-          ListFooterComponent={loadingOlder ? <ActivityIndicator color={colors.accent} /> : null}
+          ListFooterComponent={loadingOlder ? <Text style={styles.loadingOlder}>Loading older transmissions...</Text> : null}
+          ListEmptyComponent={<LogiNexusStatePanel state="empty" title="No active transmissions" body="Messages in this channel will appear here." style={styles.emptyMessages} />}
           renderItem={({ item }) => <MessageBubble message={item} onRetry={() => retryMessage(item)} />}
         />
       )}
-      <View style={styles.composer}>
+      <PulseCommandPanel style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) + 10 }]}>
         <View style={styles.tools}>
-          <Pressable accessibilityLabel="Attach image" disabled={uploading} style={[styles.iconButton, uploading && styles.disabled]} onPress={attachImage}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Attach image" disabled={uploading} style={[styles.iconButton, uploading && styles.disabled]} onPress={attachImage}>
             <Text style={styles.iconText}>{uploading ? "..." : "Img"}</Text>
           </Pressable>
           <Pressable
+            accessibilityRole="button"
             accessibilityLabel="Open camera"
             disabled={uploading}
             style={[styles.iconButton, uploading && styles.disabled]}
@@ -406,10 +410,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           >
             <Text style={styles.iconText}>Cam</Text>
           </Pressable>
-          <Pressable accessibilityLabel="Attach file" disabled={uploading} style={[styles.iconButton, uploading && styles.disabled]} onPress={attachFile}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Attach file" disabled={uploading} style={[styles.iconButton, uploading && styles.disabled]} onPress={attachFile}>
             <Text style={styles.iconText}>File</Text>
           </Pressable>
-          <Pressable accessibilityLabel="Record voice message" disabled={uploading && !recording} style={[styles.iconButton, recording && styles.recording, uploading && !recording && styles.disabled]} onPress={toggleVoiceRecording}>
+          <Pressable accessibilityRole="button" accessibilityLabel={recording ? "Stop recording voice message" : "Record voice message"} disabled={uploading && !recording} style={[styles.iconButton, recording && styles.recording, uploading && !recording && styles.disabled]} onPress={toggleVoiceRecording}>
             <Text style={styles.iconText}>{recording ? "Stop" : "Mic"}</Text>
           </Pressable>
         </View>
@@ -421,12 +425,14 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             style={styles.input}
             value={draft}
             onChangeText={notifyTyping}
+            accessibilityLabel="Message composer"
           />
-          <Pressable style={({ pressed }) => [styles.sendButton, pressed && styles.pressed]} onPress={submitText}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={!draft.trim()} style={({ pressed }) => [styles.sendButton, !draft.trim() && styles.sendDisabled, pressed && styles.pressed]} onPress={submitText}>
             <Text style={styles.sendText}>Send</Text>
           </Pressable>
         </View>
-      </View>
+      </PulseCommandPanel>
+      </LogiNexusScreenShell>
     </KeyboardAvoidingView>
   );
 }
@@ -435,8 +441,9 @@ function MessageBubble({ message, onRetry }: { message: MessengerMessage; onRetr
   const mine = Boolean(message.is_mine);
   const status = message.local_status || message.delivery_status || "sent";
   return (
-    <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.theirWrap]}>
+    <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.theirWrap]} accessible accessibilityLabel={`${mine ? "You" : "Sender"}: ${message.body || message.message_type || "attachment"}, ${statusLabel(status, message.seen_at)}`}>
       <View style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble]}>
+        {!mine ? <Text style={styles.senderLabel}>PulseSoc member</Text> : null}
         <MessageMedia message={message} />
         {message.body ? <Text style={styles.body}>{message.body}</Text> : null}
         <View style={styles.metaRow}>
@@ -522,63 +529,39 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     flex: 1
   },
+  shellContent: {
+    flex: 1
+  },
   header: {
-    borderBottomColor: colors.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 4,
-    padding: 16
-  },
-  headerTop: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10
-  },
-  headerCopy: {
-    flex: 1,
-    minWidth: 0
-  },
-  title: {
-    color: colors.text,
-    fontSize: 23,
-    fontWeight: "900"
-  },
-  presence: {
-    color: colors.muted,
-    fontSize: 13
+    padding: logiNexus.spacing.md,
+    paddingBottom: logiNexus.spacing.sm
   },
   callActions: {
     flexDirection: "row",
-    gap: 8
-  },
-  callButton: {
-    alignItems: "center",
-    backgroundColor: colors.surfaceRaised,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    minHeight: 34,
-    minWidth: 56,
-    justifyContent: "center",
-    paddingHorizontal: 10
-  },
-  callText: {
-    color: colors.accent,
-    fontSize: 12,
-    fontWeight: "900"
+    gap: logiNexus.spacing.sm
   },
   error: {
     color: colors.warning,
     paddingHorizontal: 16,
     paddingTop: 10
   },
-  center: {
-    alignItems: "center",
-    flex: 1,
-    justifyContent: "center"
+  loadingPanel: {
+    margin: logiNexus.spacing.lg
   },
   list: {
-    gap: 8,
-    padding: 14
+    gap: logiNexus.spacing.sm,
+    padding: logiNexus.spacing.md,
+    paddingTop: logiNexus.spacing.sm
+  },
+  emptyMessages: {
+    marginTop: logiNexus.spacing.xxl
+  },
+  loadingOlder: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
+    padding: logiNexus.spacing.md,
+    textAlign: "center"
   },
   bubbleWrap: {
     flexDirection: "row"
@@ -590,19 +573,21 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start"
   },
   bubble: {
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.large,
     gap: 6,
     maxWidth: "84%",
     minWidth: 88,
-    padding: 10
+    padding: logiNexus.spacing.md
   },
   mineBubble: {
-    backgroundColor: colors.accentStrong
+    backgroundColor: "rgba(50, 230, 179, 0.18)",
+    borderColor: "rgba(50, 230, 179, 0.58)",
+    borderWidth: 1
   },
   theirBubble: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.glass,
     borderColor: colors.border,
-    borderWidth: StyleSheet.hairlineWidth
+    borderWidth: 1
   },
   body: {
     color: colors.text,
@@ -616,18 +601,20 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end"
   },
   meta: {
-    color: "#d8e3f0",
+    color: colors.muted,
     fontSize: 11
   },
   image: {
     aspectRatio: 1.12,
     backgroundColor: colors.surfaceRaised,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.medium,
     width: 220
   },
   attachment: {
     backgroundColor: "rgba(255,255,255,0.08)",
-    borderRadius: 8,
+    borderColor: "rgba(97,216,255,0.24)",
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: StyleSheet.hairlineWidth,
     gap: 3,
     minWidth: 190,
     padding: 10
@@ -638,7 +625,7 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   },
   attachmentMeta: {
-    color: "#d8e3f0",
+    color: colors.muted,
     fontSize: 12
   },
   retry: {
@@ -655,10 +642,10 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   },
   composer: {
-    borderTopColor: colors.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
     gap: 8,
-    padding: 12
+    marginHorizontal: logiNexus.spacing.md,
+    marginTop: logiNexus.spacing.sm,
+    padding: logiNexus.spacing.md
   },
   tools: {
     flexDirection: "row",
@@ -666,9 +653,9 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     alignItems: "center",
-    backgroundColor: colors.surface,
+    backgroundColor: "rgba(255,255,255,0.045)",
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.medium,
     borderWidth: StyleSheet.hairlineWidth,
     minHeight: 36,
     minWidth: 56,
@@ -692,9 +679,9 @@ const styles = StyleSheet.create({
     gap: 8
   },
   input: {
-    backgroundColor: colors.surface,
+    backgroundColor: "rgba(3, 7, 18, 0.72)",
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.large,
     borderWidth: StyleSheet.hairlineWidth,
     color: colors.text,
     flex: 1,
@@ -706,7 +693,7 @@ const styles = StyleSheet.create({
   sendButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
-    borderRadius: 8,
+    borderRadius: logiNexus.radius.large,
     minHeight: 46,
     justifyContent: "center",
     paddingHorizontal: 18
@@ -714,8 +701,18 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.82
   },
+  sendDisabled: {
+    backgroundColor: colors.disabled,
+    opacity: 0.72
+  },
   sendText: {
     color: "#08110f",
     fontWeight: "900"
+  },
+  senderLabel: {
+    color: colors.accentStrong,
+    fontSize: 11,
+    fontWeight: "900",
+    textTransform: "uppercase"
   }
 });

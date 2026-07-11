@@ -122,3 +122,29 @@ Homefeed native reconstruction has moved from foundation parity into the first v
 - Home LogiNexus reconstruction: active milestone.
 - Global navigation: partially transformed through shared header/bottom dock primitives.
 - Full LogiNexus app transformation: not complete.
+
+## Pulse Command Milestone
+
+Completed:
+
+- Transformed the existing native Messenger inbox into the first `Pulse Command` surface.
+- Added shared `PulseCommand` primitives for communications surfaces.
+- Adopted the shared command language in conversation, groups/rooms, and UNDX surfaces.
+- Preserved server-authoritative message send, message sync, typing, seen state, uploads, voice recording, media viewer handoff, calls, groups, and rooms APIs.
+- Updated visible native assistant labels to UNDX while preserving internal route/API compatibility.
+
+Current estimate:
+
+- Overall LogiNexus transformation: 25%.
+- Pulse Command transformation: 42%.
+- Native foundation/parity: 96%.
+- System consistency: 91%.
+- Release QA confidence: 88%.
+
+Current weakest LogiNexus subsystem:
+
+Search / Discover.
+
+Why:
+
+- It is the next shared routing and discovery layer used by Home, Messenger, Marketplace, Profile, Creator, Intelligence, and global navigation.

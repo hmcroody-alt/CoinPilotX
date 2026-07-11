@@ -1,0 +1,340 @@
+import { ReactNode } from "react";
+import { Platform, Pressable, StyleProp, StyleSheet, Text, TextInput, View, ViewStyle, useWindowDimensions } from "react-native";
+import { colors } from "../theme/colors";
+import { logiNexus, LogiNexusTone, toneColor } from "../theme/logiNexus";
+
+export function PulseCommandPanel({ children, style, tone = "default" }: { children: ReactNode; style?: StyleProp<ViewStyle>; tone?: LogiNexusTone }) {
+  const color = toneColor(tone);
+  return (
+    <View style={[styles.panel, { borderColor: `${color}66` }, style]}>
+      <View style={[styles.panelGlow, { backgroundColor: color }]} />
+      {children}
+    </View>
+  );
+}
+
+export function PulseCommandHeader({
+  title,
+  subtitle,
+  status = "Connected",
+  actions,
+  tone = "default"
+}: {
+  title: string;
+  subtitle?: string;
+  status?: string;
+  actions?: ReactNode;
+  tone?: LogiNexusTone;
+}) {
+  const color = toneColor(tone);
+  const { width } = useWindowDimensions();
+  const compact = Platform.OS !== "web" || width < 560;
+  return (
+    <PulseCommandPanel tone={tone} style={[styles.header, compact && styles.headerCompact]}>
+      <View style={styles.headerCopy}>
+        <Text style={styles.eyebrow}>PULSE COMMAND</Text>
+        <Text style={styles.headerTitle} numberOfLines={compact ? 2 : 1}>{title}</Text>
+        {subtitle ? <Text style={styles.headerSubtitle} numberOfLines={2}>{subtitle}</Text> : null}
+      </View>
+      <View style={[styles.headerSide, compact && styles.headerSideCompact]}>
+        <View style={[styles.statusPill, { borderColor: `${color}70`, backgroundColor: `${color}18` }]}>
+          <View style={[styles.statusDot, { backgroundColor: color }]} />
+          <Text style={[styles.statusText, { color }]} numberOfLines={1}>{status}</Text>
+        </View>
+        {actions}
+      </View>
+    </PulseCommandPanel>
+  );
+}
+
+export function PulseCommandSearch({
+  value,
+  onChangeText,
+  placeholder = "Search Pulse Command"
+}: {
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <View style={styles.searchWrap}>
+      <Text style={styles.searchGlyph}>⌕</Text>
+      <TextInput
+        accessibilityLabel={placeholder}
+        autoCapitalize="none"
+        placeholder={placeholder}
+        placeholderTextColor={colors.muted}
+        returnKeyType="search"
+        style={styles.search}
+        value={value}
+        onChangeText={onChangeText}
+      />
+    </View>
+  );
+}
+
+export function PulseCommandSegmentRail({
+  items,
+  selected,
+  onSelect
+}: {
+  items: Array<{ key: string; label: string; count?: number }>;
+  selected: string;
+  onSelect: (key: string) => void;
+}) {
+  return (
+    <View style={styles.segmentRail} accessibilityRole="tablist">
+      {items.map((item) => {
+        const active = item.key === selected;
+        return (
+          <Pressable
+            key={item.key}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
+            style={[styles.segment, active && styles.segmentActive]}
+            onPress={() => onSelect(item.key)}
+          >
+            <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{item.label}</Text>
+            {typeof item.count === "number" && item.count > 0 ? <Text style={styles.segmentCount}>{item.count}</Text> : null}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+export function PulseCommandAvatar({ label, imageUrl, active, tone = "default" }: { label?: string; imageUrl?: string; active?: boolean; tone?: LogiNexusTone }) {
+  const color = toneColor(tone);
+  return (
+    <View style={[styles.avatar, { borderColor: active ? color : colors.border }]}>
+      <Text style={[styles.avatarText, { color }]}>{(label || "P").slice(0, 2).toUpperCase()}</Text>
+      {active ? <View style={[styles.avatarSignal, { backgroundColor: color }]} /> : null}
+    </View>
+  );
+}
+
+export function PulseCommandAction({
+  label,
+  onPress,
+  tone = "default",
+  disabled,
+  compact
+}: {
+  label: string;
+  onPress: () => void;
+  tone?: LogiNexusTone;
+  disabled?: boolean;
+  compact?: boolean;
+}) {
+  const color = toneColor(tone);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.action,
+        compact && styles.actionCompact,
+        { borderColor: `${color}80`, backgroundColor: `${color}16`, opacity: disabled ? 0.5 : pressed ? 0.78 : 1 }
+      ]}
+      onPress={onPress}
+    >
+      <Text style={[styles.actionText, { color }]} numberOfLines={1}>{label}</Text>
+    </Pressable>
+  );
+}
+
+export function PulseCommandMetric({ value, label, tone = "default" }: { value: string | number; label: string; tone?: LogiNexusTone }) {
+  const color = toneColor(tone);
+  return (
+    <View style={styles.metric}>
+      <Text style={[styles.metricValue, { color }]}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  action: {
+    alignItems: "center",
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: logiNexus.spacing.lg
+  },
+  actionCompact: {
+    minHeight: 36,
+    paddingHorizontal: logiNexus.spacing.md
+  },
+  actionText: {
+    ...logiNexus.typography.button
+  },
+  avatar: {
+    alignItems: "center",
+    backgroundColor: "rgba(7, 16, 29, 0.86)",
+    borderRadius: logiNexus.radius.circular,
+    borderWidth: 1,
+    height: 52,
+    justifyContent: "center",
+    width: 52
+  },
+  avatarSignal: {
+    borderColor: colors.background,
+    borderRadius: 7,
+    borderWidth: 2,
+    bottom: 1,
+    height: 14,
+    position: "absolute",
+    right: 1,
+    width: 14
+  },
+  avatarText: {
+    fontSize: 16,
+    fontWeight: "900"
+  },
+  eyebrow: {
+    ...logiNexus.typography.label,
+    color: colors.accent,
+    letterSpacing: 1.4
+  },
+  header: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: logiNexus.spacing.lg,
+    justifyContent: "space-between"
+  },
+  headerCompact: {
+    alignItems: "stretch",
+    flexDirection: "column"
+  },
+  headerCopy: {
+    flex: 1,
+    gap: 3,
+    minWidth: 0
+  },
+  headerSide: {
+    alignItems: "flex-end",
+    gap: logiNexus.spacing.sm
+  },
+  headerSideCompact: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between"
+  },
+  headerSubtitle: {
+    ...logiNexus.typography.body,
+    color: colors.muted
+  },
+  headerTitle: {
+    ...logiNexus.typography.title,
+    color: colors.text
+  },
+  metric: {
+    backgroundColor: "rgba(255,255,255,0.035)",
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: StyleSheet.hairlineWidth,
+    flex: 1,
+    minHeight: 66,
+    padding: logiNexus.spacing.md
+  },
+  metricLabel: {
+    ...logiNexus.typography.metadata,
+    color: colors.muted
+  },
+  metricValue: {
+    ...logiNexus.typography.metric
+  },
+  panel: {
+    backgroundColor: colors.glassStrong,
+    borderRadius: logiNexus.radius.panel,
+    borderWidth: 1,
+    overflow: "hidden",
+    padding: logiNexus.spacing.lg
+  },
+  panelGlow: {
+    height: 2,
+    left: 0,
+    opacity: 0.88,
+    position: "absolute",
+    right: 0,
+    top: 0
+  },
+  search: {
+    ...logiNexus.typography.body,
+    color: colors.text,
+    flex: 1,
+    minHeight: 48,
+    paddingRight: logiNexus.spacing.md
+  },
+  searchGlyph: {
+    color: colors.accentStrong,
+    fontSize: 20,
+    fontWeight: "900",
+    width: 28
+  },
+  searchWrap: {
+    alignItems: "center",
+    backgroundColor: colors.glass,
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.large,
+    borderWidth: 1,
+    flexDirection: "row",
+    minHeight: 52,
+    paddingLeft: logiNexus.spacing.lg
+  },
+  segment: {
+    alignItems: "center",
+    borderColor: "transparent",
+    borderRadius: logiNexus.radius.capsule,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    minHeight: 40,
+    paddingHorizontal: logiNexus.spacing.lg
+  },
+  segmentActive: {
+    backgroundColor: colors.signalDim,
+    borderColor: colors.accent
+  },
+  segmentCount: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: "900"
+  },
+  segmentRail: {
+    backgroundColor: colors.glass,
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.panel,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: logiNexus.spacing.sm,
+    padding: logiNexus.spacing.sm
+  },
+  segmentText: {
+    ...logiNexus.typography.button,
+    color: colors.muted
+  },
+  segmentTextActive: {
+    color: colors.text
+  },
+  statusDot: {
+    borderRadius: 5,
+    height: 10,
+    width: 10
+  },
+  statusPill: {
+    alignItems: "center",
+    borderRadius: logiNexus.radius.capsule,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    minHeight: 30,
+    paddingHorizontal: logiNexus.spacing.md
+  },
+  statusText: {
+    ...logiNexus.typography.metadata
+  }
+});
