@@ -21,3 +21,23 @@
 - Large inbox with many unread conversations.
 - Duplicate fetch-loop monitoring during live simulator walkthrough.
 - Future reaction/context-menu animation should be added through shared motion helpers only.
+# Pulse Command Performance Update
+
+Preserved:
+
+- `FlatList` virtualization for inbox and chat.
+- Existing cache and sync functions.
+- Existing media upload and viewer handoff.
+- Existing call/group/room route APIs.
+
+Improved:
+
+- Calls, Groups, and Rooms now reuse the same native inbox list surface instead of forcing an immediate route transition on tab select.
+- Message context actions are mounted only when a message is selected.
+- QA fixtures are local-only and do not run in production.
+
+Remaining:
+
+- Profile long-thread render cost with populated media.
+- Verify no duplicate polling/listeners during tab switching.
+- Measure typing-state update scope in a populated thread.

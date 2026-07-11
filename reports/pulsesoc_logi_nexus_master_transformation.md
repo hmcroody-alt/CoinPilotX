@@ -143,8 +143,10 @@ Current estimate:
 
 Current weakest LogiNexus subsystem:
 
-Search / Discover.
+Messenger / Pulse Command.
 
 Why:
 
-- It is the next shared routing and discovery layer used by Home, Messenger, Marketplace, Profile, Creator, Intelligence, and global navigation.
+- Pulse Command is now past its first visual foundation, but the full vertical is not complete enough to move to Search / Discover.
+- The current milestone added populated local QA states, server-backed message actions, in-place Calls / Groups / Rooms tabs, reply, reactions, report, delete, retry, and Safety Hub handoff.
+- Remaining nested work is concentrated in Calls, Groups, Rooms, offline/reconnect proof, full accessibility, and simulator evidence.

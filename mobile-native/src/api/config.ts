@@ -8,6 +8,9 @@ const configuredBaseUrl =
   (typeof extra.pulseApiBaseUrl === "string" ? extra.pulseApiBaseUrl : "https://pulsesoc.com");
 
 export const PULSE_API_BASE_URL = normalizeApiBaseUrl(configuredBaseUrl);
+export const PULSESOC_QA_MESSENGER_FIXTURES =
+  process.env.EXPO_PUBLIC_PULSESOC_QA_MESSENGER_FIXTURES === "1" &&
+  /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(PULSE_API_BASE_URL);
 export const EXPO_PROJECT_ID = normalizeOptionalString(
   process.env.EXPO_PUBLIC_EXPO_PROJECT_ID ||
     (typeof easConfig.projectId === "string" ? easConfig.projectId : "") ||

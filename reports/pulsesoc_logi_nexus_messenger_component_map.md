@@ -33,3 +33,24 @@ Reason: inbox, chat, groups, rooms, and UNDX need the same command-surface langu
 
 - Shared Pulse Command header/action/search/metric/avatar treatment replaces new one-off styling across Messenger, Chat, Groups, and UNDX.
 - Shared `LogiNexusStatePanel` replaces local loading/empty blocks in the transformed surfaces.
+# Pulse Command Completion Update
+
+Added / extended in this milestone:
+
+- `mobile-native/src/api/messenger.ts`
+  - local-only populated QA fixtures
+  - message reaction API helper
+  - message delete API helper
+  - message report API helper
+  - conversation pin API helper
+  - richer conversation/message state normalization
+- `mobile-native/src/screens/MessengerScreen.tsx`
+  - in-place Chats / Calls / Groups / Rooms tabs
+  - native row components for conversations, calls, groups, and rooms
+  - server-backed group chat and room join routing
+- `mobile-native/src/screens/ChatScreen.tsx`
+  - reply state
+  - reaction row
+  - message action sheet
+  - deleted/moderated states
+  - report/delete/retry/safety actions

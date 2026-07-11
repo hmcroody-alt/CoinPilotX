@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { loadCachedConversations, listConversations, MessengerConversation, searchMessenger } from "../api/messenger";
 import { PulseCall, getActiveCalls } from "../api/calls";
+import { joinRoom, listGroups, listRooms, openGroupChat, PulseGroup, PulseRoom } from "../api/groups";
 import {
   PulseCommandAction,
   PulseCommandAvatar,
@@ -20,11 +21,14 @@ import { logiNexus } from "../theme/logiNexus";
 import { compactPreview, formatShortTime } from "../utils/format";
 
 type PulseCommandTab = "chats" | "calls" | "groups" | "rooms";
+type PulseCommandListItem = MessengerConversation | PulseCall | PulseGroup | PulseRoom;
 
 export function MessengerScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [conversations, setConversations] = useState<MessengerConversation[]>([]);
   const [activeCalls, setActiveCalls] = useState<PulseCall[]>([]);
+  const [groups, setGroups] = useState<PulseGroup[]>([]);
+  const [rooms, setRooms] = useState<PulseRoom[]>([]);
   const [selectedTab, setSelectedTab] = useState<PulseCommandTab>("chats");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -38,7 +42,17 @@ export function MessengerScreen() {
     try {
       const data = query.trim() ? (await searchMessenger(query.trim())).conversations : await listConversations();
       setConversations(data);
-      getActiveCalls().then((data) => setActiveCalls(data.calls || [])).catch(() => undefined);
+      const [callData, groupData, roomData] = await Promise.allSettled([
+        getActiveCalls(),
+        listGroups({ query: query.trim(), limit: 20 }),
+        listRooms()
+      ]);
+      if (callData.status === "fulfilled") setActiveCalls(callData.value.calls || []);
+      if (groupData.status === "fulfilled") {
+        setGroups(groupData.value.groups || []);
+        if (groupData.value.rooms?.length) setRooms(groupData.value.rooms || []);
+      }
+      if (roomData.status === "fulfilled") setRooms(roomData.value || []);
     } catch (loadError) {
       const cached = await loadCachedConversations();
       setConversations(cached);
@@ -69,17 +83,44 @@ export function MessengerScreen() {
     () => [
       { key: "chats", label: "Chats", count: unreadTotal },
       { key: "calls", label: "Calls", count: activeCalls.length },
-      { key: "groups", label: "Groups" },
-      { key: "rooms", label: "Rooms" }
+      { key: "groups", label: "Groups", count: groups.length },
+      { key: "rooms", label: "Rooms", count: rooms.reduce((total, room) => total + Number(room.unread_count || 0), 0) }
     ],
-    [activeCalls.length, unreadTotal]
+    [activeCalls.length, groups.length, rooms, unreadTotal]
   );
+  const listData = useMemo<PulseCommandListItem[]>(() => {
+    if (selectedTab === "calls") return activeCalls;
+    if (selectedTab === "groups") return groups;
+    if (selectedTab === "rooms") return rooms;
+    return conversations;
+  }, [activeCalls, conversations, groups, rooms, selectedTab]);
 
   function handleTabSelect(next: string) {
-    const tab = next as PulseCommandTab;
-    setSelectedTab(tab);
-    if (tab === "groups" || tab === "rooms") navigation.navigate("Tabs", { screen: "Groups" });
-    if (tab === "calls") navigation.navigate("Call", { title: "PulseSoc Calls" });
+    setSelectedTab(next as PulseCommandTab);
+  }
+
+  async function openGroup(item: PulseGroup) {
+    try {
+      const result = await openGroupChat(item.slug);
+      if (result.conversation_id) navigation.navigate("Chat", { conversationId: result.conversation_id, title: `${item.name} Chat` });
+      else navigation.navigate("GroupDetail", { groupSlug: item.slug, title: item.name });
+    } catch {
+      navigation.navigate("GroupDetail", { groupSlug: item.slug, title: item.name });
+    }
+  }
+
+  async function openRoom(item: PulseRoom) {
+    try {
+      let conversationId = Number(item.conversation_id || 0);
+      if (!conversationId) {
+        const result = await joinRoom(item.room_id || item.id);
+        conversationId = Number(result.conversation_id || 0);
+      }
+      if (conversationId) navigation.navigate("Chat", { conversationId, title: item.title || item.name });
+      else navigation.navigate("Tabs", { screen: "Groups" });
+    } catch {
+      navigation.navigate("Tabs", { screen: "Groups" });
+    }
   }
 
   return (
@@ -87,9 +128,9 @@ export function MessengerScreen() {
       {loading && conversations.length === 0 ? (
         <LogiNexusStatePanel state="loading" title="Loading Pulse Command" body="Synchronizing conversations, calls, and unread signals." loading />
       ) : (
-        <FlatList
-          data={conversations}
-          keyExtractor={(item) => String(item.id)}
+        <FlatList<PulseCommandListItem>
+          data={listData}
+          keyExtractor={(item) => itemKey(selectedTab, item)}
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load({ refresh: true })} />}
           ListHeaderComponent={
@@ -135,52 +176,153 @@ export function MessengerScreen() {
               {error ? <Text style={styles.error}>{error}</Text> : null}
             </View>
           }
-          ListEmptyComponent={<LogiNexusStatePanel state="empty" title={query ? "No matching transmissions" : "No conversations loaded yet"} body={query ? "Try a different name, group, or message signal." : "New conversations will appear here as soon as the server has them."} />}
-          renderItem={({ item }) => (
-            <Pressable
-              style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-              accessibilityRole="button"
-              accessibilityLabel={`Open ${item.title || item.name || `conversation ${item.id}`}${Number(item.unread_count || 0) ? `, ${item.unread_count} unread` : ""}`}
-              onPress={() => navigation.navigate("Chat", { conversationId: item.id, title: item.title || item.name })}
-            >
-              <PulseCommandAvatar label={item.title || item.name} active={["online", "active", "live"].includes(String(item.presence || "").toLowerCase())} />
-              <View style={styles.rowBody}>
-                <View style={styles.rowTop}>
-                  <Text style={styles.title} numberOfLines={1}>{item.title || item.name || `Conversation ${item.id}`}</Text>
-                  <Text style={styles.time}>{formatShortTime(item.last_activity_at || item.updated_at)}</Text>
-                </View>
-                <Text style={styles.muted} numberOfLines={1}>
-                  {compactPreview(item.latest_message || item.last_message_preview, "Open chat")}
-                </Text>
-                <View style={styles.rowSignals}>
-                  <Text style={styles.signalPill}>{item.conversation_type || "direct"}</Text>
-                  {item.presence ? <Text style={styles.signalPill}>{item.presence}</Text> : null}
-                </View>
-              </View>
-              {item.other_public_player_id || item.public_player_id ? (
-                <Pressable
-                  style={styles.profileButton}
-                  onPress={() =>
-                    navigation.navigate("ProfileDetail", {
-                      profileKey: item.other_public_player_id || item.public_player_id,
-                      title: item.title || "Profile"
-                    })
-                  }
-                >
-                  <Text style={styles.profileButtonText}>Profile</Text>
-                </Pressable>
-              ) : null}
-              {Number(item.unread_count || 0) > 0 ? (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{item.unread_count}</Text>
-                </View>
-              ) : null}
-            </Pressable>
-          )}
+          ListEmptyComponent={<LogiNexusStatePanel state="empty" title={emptyTitle(selectedTab, query)} body={emptyBody(selectedTab, query)} />}
+          renderItem={({ item }) => {
+            if (selectedTab === "calls") return <CallRow item={item as PulseCall} onOpen={() => navigation.navigate("Call", { callId: (item as PulseCall).call_id, title: "PulseSoc Call" })} />;
+            if (selectedTab === "groups") return <GroupRow item={item as unknown as PulseGroup} onOpen={() => openGroup(item as unknown as PulseGroup)} onDetail={() => navigation.navigate("GroupDetail", { groupSlug: (item as unknown as PulseGroup).slug, title: (item as unknown as PulseGroup).name })} />;
+            if (selectedTab === "rooms") return <RoomRow item={item as unknown as PulseRoom} onOpen={() => openRoom(item as unknown as PulseRoom)} />;
+            return <ConversationRow item={item as unknown as MessengerConversation} navigation={navigation} />;
+          }}
         />
       )}
     </LogiNexusScreenShell>
   );
+}
+
+function ConversationRow({ item, navigation }: { item: MessengerConversation; navigation: NativeStackNavigationProp<RootStackParamList> }) {
+  const active = ["online", "active", "live"].includes(String(item.presence || "").toLowerCase());
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.row, item.pinned && styles.pinnedRow, pressed && styles.rowPressed]}
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${item.title || item.name || `conversation ${item.id}`}${Number(item.unread_count || 0) ? `, ${item.unread_count} unread` : ""}${item.muted ? ", muted" : ""}${item.pinned ? ", pinned" : ""}`}
+      onPress={() => navigation.navigate("Chat", { conversationId: item.id, title: item.title || item.name })}
+    >
+      <PulseCommandAvatar label={item.title || item.name} active={active} tone={item.trust_state === "founder" ? "intelligence" : "default"} />
+      <View style={styles.rowBody}>
+        <View style={styles.rowTop}>
+          <Text style={styles.title} numberOfLines={1}>{item.title || item.name || `Conversation ${item.id}`}</Text>
+          <Text style={styles.time}>{formatShortTime(item.last_activity_at || item.updated_at)}</Text>
+        </View>
+        <Text style={styles.muted} numberOfLines={1}>
+          {item.typing ? "Typing..." : item.failed ? "Delivery failed. Open to retry." : compactPreview(item.latest_message || item.last_message_preview, "Open chat")}
+        </Text>
+        <View style={styles.rowSignals}>
+          {item.pinned ? <Text style={styles.signalPill}>pinned</Text> : null}
+          {item.muted ? <Text style={styles.signalPill}>muted</Text> : null}
+          {item.verified ? <Text style={styles.signalPill}>verified</Text> : null}
+          <Text style={styles.signalPill}>{item.conversation_type || "direct"}</Text>
+          {item.presence ? <Text style={styles.signalPill}>{item.presence}</Text> : null}
+        </View>
+      </View>
+      {item.other_public_player_id || item.public_player_id ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Open profile for ${item.title || "conversation member"}`}
+          style={styles.profileButton}
+          onPress={() =>
+            navigation.navigate("ProfileDetail", {
+              profileKey: item.other_public_player_id || item.public_player_id,
+              title: item.title || "Profile"
+            })
+          }
+        >
+          <Text style={styles.profileButtonText}>Profile</Text>
+        </Pressable>
+      ) : null}
+      {Number(item.unread_count || 0) > 0 ? (
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{item.unread_count}</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function CallRow({ item, onOpen }: { item: PulseCall; onOpen: () => void }) {
+  const title = item.call_type === "video" ? "Video call" : "Voice call";
+  return (
+    <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]} accessibilityRole="button" accessibilityLabel={`Open ${title}, ${item.status || "active"}`} onPress={onOpen}>
+      <PulseCommandAvatar label={item.call_type === "video" ? "VC" : "AC"} active={!["ended", "missed", "declined", "failed"].includes(String(item.status || "").toLowerCase())} tone={item.status === "missed" ? "danger" : "default"} />
+      <View style={styles.rowBody}>
+        <View style={styles.rowTop}>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.time}>{formatShortTime(item.started_at || item.created_at)}</Text>
+        </View>
+        <Text style={styles.muted}>{item.room_name || item.public_id || item.call_id}</Text>
+        <View style={styles.rowSignals}>
+          <Text style={styles.signalPill}>{item.status || "ready"}</Text>
+          {item.duration_seconds ? <Text style={styles.signalPill}>{item.duration_seconds}s</Text> : null}
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+function GroupRow({ item, onOpen, onDetail }: { item: PulseGroup; onOpen: () => void; onDetail: () => void }) {
+  return (
+    <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]} accessibilityRole="button" accessibilityLabel={`Open group ${item.name}`} onPress={onOpen}>
+      <PulseCommandAvatar label={item.name} active={item.joined} tone="safety" />
+      <View style={styles.rowBody}>
+        <View style={styles.rowTop}>
+          <Text style={styles.title} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.time}>{item.member_count || 0} members</Text>
+        </View>
+        <Text style={styles.muted} numberOfLines={1}>{item.description || "Community channel"}</Text>
+        <View style={styles.rowSignals}>
+          <Text style={styles.signalPill}>{item.category || "community"}</Text>
+          {item.viewer_role ? <Text style={styles.signalPill}>{item.viewer_role}</Text> : null}
+          {item.trust_level ? <Text style={styles.signalPill}>{item.trust_level}</Text> : null}
+        </View>
+      </View>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Open details for ${item.name}`} style={styles.profileButton} onPress={onDetail}>
+        <Text style={styles.profileButtonText}>Details</Text>
+      </Pressable>
+    </Pressable>
+  );
+}
+
+function RoomRow({ item, onOpen }: { item: PulseRoom; onOpen: () => void }) {
+  return (
+    <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]} accessibilityRole="button" accessibilityLabel={`Open room ${item.title || item.name}`} onPress={onOpen}>
+      <PulseCommandAvatar label={item.title || item.name} active={Number(item.online_count || 0) > 0} tone="intelligence" />
+      <View style={styles.rowBody}>
+        <View style={styles.rowTop}>
+          <Text style={styles.title} numberOfLines={1}>{item.title || item.name}</Text>
+          <Text style={styles.time}>{item.online_count || 0} online</Text>
+        </View>
+        <Text style={styles.muted} numberOfLines={1}>{item.last_message || item.description || item.pinned_notice || "Room signal"}</Text>
+        <View style={styles.rowSignals}>
+          <Text style={styles.signalPill}>room</Text>
+          {item.unread_count ? <Text style={styles.signalPill}>{item.unread_count} unread</Text> : null}
+          {item.partial ? <Text style={styles.signalPill}>provider</Text> : null}
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+function itemKey(tab: PulseCommandTab, item: MessengerConversation | PulseCall | PulseGroup | PulseRoom) {
+  if (tab === "calls") return `call-${(item as PulseCall).call_id}`;
+  if (tab === "groups") return `group-${(item as PulseGroup).slug}`;
+  if (tab === "rooms") return `room-${(item as PulseRoom).id}`;
+  return `chat-${(item as MessengerConversation).id}`;
+}
+
+function emptyTitle(tab: PulseCommandTab, query: string) {
+  if (query) return "No matching transmissions";
+  if (tab === "calls") return "No call signals";
+  if (tab === "groups") return "No groups loaded";
+  if (tab === "rooms") return "No rooms loaded";
+  return "No conversations loaded yet";
+}
+
+function emptyBody(tab: PulseCommandTab, query: string) {
+  if (query) return "Try a different name, group, room, or message signal.";
+  if (tab === "calls") return "Active and recent call states appear here when the call engine returns them.";
+  if (tab === "groups") return "Groups are server-authoritative and appear when your account can access them.";
+  if (tab === "rooms") return "Rooms appear when existing PulseSoc room contracts expose them.";
+  return "New conversations will appear here as soon as the server has them.";
 }
 
 const styles = StyleSheet.create({
@@ -214,6 +356,9 @@ const styles = StyleSheet.create({
   },
   rowPressed: {
     backgroundColor: colors.surfaceRaised
+  },
+  pinnedRow: {
+    borderColor: "rgba(189, 132, 255, 0.48)"
   },
   rowBody: {
     flex: 1,

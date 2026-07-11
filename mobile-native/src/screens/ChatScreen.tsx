@@ -10,6 +10,7 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -22,10 +23,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   cacheMessages,
   createLocalMessage,
+  deleteMessage,
   getConversation,
   loadCachedMessages,
   markConversationSeen,
   MessengerMessage,
+  reactToMessage,
+  reportMessage,
   sendConversationMessage,
   sendTyping,
   syncConversation,
@@ -56,6 +60,9 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [recordingStartedAt, setRecordingStartedAt] = useState<number>(0);
   const [uploading, setUploading] = useState(false);
+  const [replyTo, setReplyTo] = useState<MessengerMessage | null>(null);
+  const [selectedMessage, setSelectedMessage] = useState<MessengerMessage | null>(null);
+  const [statusMessage, setStatusMessage] = useState("");
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingAt = useRef(0);
   const appState = useRef<AppStateStatus>(AppState.currentState);
@@ -102,8 +109,13 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setTyping(typingSummary(data.presence));
     } catch (loadError) {
       const cached = await loadCachedMessages(conversationId);
-      if (cached.length) setMessages(cached);
-      setError(loadError instanceof Error ? loadError.message : "Messages could not load.");
+      if (cached.length) {
+        setMessages(cached);
+        setError("");
+        setStatusMessage("Showing cached transmission state while PulseSoc reconnects.");
+      } else {
+        setError(loadError instanceof Error ? loadError.message : "Messages could not load.");
+      }
     } finally {
       setRefreshing(false);
       setLoading(false);
@@ -165,6 +177,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     thumbnail_url?: string;
     file_size?: number;
     duration_seconds?: number;
+    reply_to_message_id?: number;
+    reply_preview?: string;
   }) => {
     const label = payload.body || payload.media_url || "Attachment";
     const local = createLocalMessage(conversationId, label, payload.message_type || "text");
@@ -172,6 +186,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     local.thumbnail_url = payload.thumbnail_url;
     local.file_size = payload.file_size;
     local.duration_seconds = payload.duration_seconds;
+    local.reply_to_message_id = payload.reply_to_message_id;
+    local.reply_preview = payload.reply_preview;
     setMessages((current) => mergeMessages(current, [local]));
     try {
       const sent = await sendConversationMessage(conversationId, {
@@ -208,9 +224,16 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     const body = draft.trim();
     if (!body) return;
     setDraft("");
+    const currentReply = replyTo;
+    setReplyTo(null);
     await sendTyping(conversationId, false).catch(() => undefined);
-    await sendPayload({ body, message_type: "text" });
-  }, [conversationId, draft, sendPayload]);
+    await sendPayload({
+      body,
+      message_type: "text",
+      reply_to_message_id: currentReply?.message_id,
+      reply_preview: currentReply ? previewMessage(currentReply) : undefined
+    });
+  }, [conversationId, draft, replyTo, sendPayload]);
 
   const retryMessage = useCallback(async (message: MessengerMessage) => {
     setMessages((current) => current.filter((item) => item.id !== message.id));
@@ -220,9 +243,72 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       media_url: message.media_url,
       thumbnail_url: message.thumbnail_url,
       file_size: message.file_size,
-      duration_seconds: message.duration_seconds
+      duration_seconds: message.duration_seconds,
+      reply_to_message_id: message.reply_to_message_id,
+      reply_preview: message.reply_preview
     });
   }, [sendPayload]);
+
+  const react = useCallback(async (message: MessengerMessage, reactionType = "pulse") => {
+    if (message.id <= 0) {
+      setStatusMessage("Pending messages can be reacted to after the server accepts them.");
+      return;
+    }
+    const previous = message.reactions || {};
+    setMessages((current) => current.map((item) => item.id === message.id ? { ...item, reactions: optimisticReaction(previous, reactionType), viewer_reaction: reactionType } : item));
+    setStatusMessage("Reaction sent.");
+    try {
+      const result = await reactToMessage(message.id, reactionType);
+      setMessages((current) =>
+        current.map((item) =>
+          item.id === message.id
+            ? {
+                ...item,
+                reactions: result.reactions || item.reactions,
+                viewer_reaction: result.removed ? "" : result.reaction_type || reactionType
+              }
+            : item
+        )
+      );
+    } catch (reactionError) {
+      setMessages((current) => current.map((item) => item.id === message.id ? { ...item, reactions: previous, viewer_reaction: message.viewer_reaction } : item));
+      setStatusMessage(reactionError instanceof Error ? reactionError.message : "Reaction failed.");
+    }
+  }, []);
+
+  const removeMessage = useCallback(async (message: MessengerMessage, scope: "self" | "everyone" = "self") => {
+    if (message.id <= 0) {
+      setMessages((current) => current.filter((item) => item.id !== message.id));
+      setStatusMessage("Local pending message removed.");
+      return;
+    }
+    try {
+      await deleteMessage(message.id, scope);
+      setMessages((current) =>
+        current.map((item) =>
+          item.id === message.id
+            ? { ...item, body: "", deleted_at: new Date().toISOString(), delivery_status: "deleted", message_type: "system" }
+            : item
+        )
+      );
+      setStatusMessage(scope === "everyone" ? "Message deletion requested." : "Message hidden from this device.");
+    } catch (deleteError) {
+      setStatusMessage(deleteError instanceof Error ? deleteError.message : "Delete failed.");
+    }
+  }, []);
+
+  const report = useCallback(async (message: MessengerMessage) => {
+    if (message.id <= 0) {
+      setStatusMessage("Pending messages cannot be reported until the server accepts them.");
+      return;
+    }
+    try {
+      const result = await reportMessage(message.id, "Reported from native Pulse Command");
+      setStatusMessage(result.message || "Message report sent to Trust & Safety.");
+    } catch (reportError) {
+      setStatusMessage(reportError instanceof Error ? reportError.message : "Report failed.");
+    }
+  }, []);
 
   const uploadAndSend = useCallback(async (input: { uri: string; name: string; mimeType: string; voice?: boolean; durationSeconds?: number }) => {
     if (uploading) return;
@@ -393,10 +479,33 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           onEndReachedThreshold={0.2}
           ListFooterComponent={loadingOlder ? <Text style={styles.loadingOlder}>Loading older transmissions...</Text> : null}
           ListEmptyComponent={<LogiNexusStatePanel state="empty" title="No active transmissions" body="Messages in this channel will appear here." style={styles.emptyMessages} />}
-          renderItem={({ item }) => <MessageBubble message={item} onRetry={() => retryMessage(item)} />}
+          renderItem={({ item }) => (
+            <MessageBubble
+              message={item}
+              onRetry={() => retryMessage(item)}
+              onReact={() => react(item)}
+              onLongPress={() => setSelectedMessage(item)}
+            />
+          )}
         />
       )}
       <PulseCommandPanel style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) + 10 }]}>
+        {statusMessage ? (
+          <Pressable accessibilityRole="button" accessibilityLabel="Dismiss message status" style={styles.statusBanner} onPress={() => setStatusMessage("")}>
+            <Text style={styles.statusBannerText}>{statusMessage}</Text>
+          </Pressable>
+        ) : null}
+        {replyTo ? (
+          <View style={styles.replyComposer}>
+            <View style={styles.replyCopy}>
+              <Text style={styles.replyTitle}>Replying to {replyTo.is_mine ? "your message" : replyTo.sender_display_name || "sender"}</Text>
+              <Text style={styles.replyPreview} numberOfLines={1}>{previewMessage(replyTo)}</Text>
+            </View>
+            <Pressable accessibilityRole="button" accessibilityLabel="Cancel reply" style={styles.replyCancel} onPress={() => setReplyTo(null)}>
+              <Text style={styles.replyCancelText}>Cancel</Text>
+            </Pressable>
+          </View>
+        ) : null}
         <View style={styles.tools}>
           <Pressable accessibilityRole="button" accessibilityLabel="Attach image" disabled={uploading} style={[styles.iconButton, uploading && styles.disabled]} onPress={attachImage}>
             <Text style={styles.iconText}>{uploading ? "..." : "Img"}</Text>
@@ -432,31 +541,152 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           </Pressable>
         </View>
       </PulseCommandPanel>
+      <MessageActionSheet
+        message={selectedMessage}
+        onClose={() => setSelectedMessage(null)}
+        onReply={(message) => {
+          setReplyTo(message);
+          setSelectedMessage(null);
+        }}
+        onReact={(message, reactionType) => {
+          react(message, reactionType).catch(() => undefined);
+          setSelectedMessage(null);
+        }}
+        onRetry={(message) => {
+          retryMessage(message).catch(() => undefined);
+          setSelectedMessage(null);
+        }}
+        onDelete={(message, scope) => {
+          removeMessage(message, scope).catch(() => undefined);
+          setSelectedMessage(null);
+        }}
+        onReport={(message) => {
+          report(message).catch(() => undefined);
+          setSelectedMessage(null);
+        }}
+        onSafety={() => {
+          setSelectedMessage(null);
+          navigation.navigate("SafetyHub", { section: "blocks", title: "Safety Hub" });
+        }}
+      />
       </LogiNexusScreenShell>
     </KeyboardAvoidingView>
   );
 }
 
-function MessageBubble({ message, onRetry }: { message: MessengerMessage; onRetry: () => void }) {
+function MessageBubble({
+  message,
+  onRetry,
+  onReact,
+  onLongPress
+}: {
+  message: MessengerMessage;
+  onRetry: () => void;
+  onReact: () => void;
+  onLongPress: () => void;
+}) {
   const mine = Boolean(message.is_mine);
   const status = message.local_status || message.delivery_status || "sent";
+  const deleted = Boolean(message.deleted_at || status === "deleted");
+  const moderated = Boolean(message.moderated_at || message.moderation_state);
+  const body = deleted ? "This message was deleted." : moderated ? "This message is unavailable after safety review." : message.body;
   return (
     <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.theirWrap]} accessible accessibilityLabel={`${mine ? "You" : "Sender"}: ${message.body || message.message_type || "attachment"}, ${statusLabel(status, message.seen_at)}`}>
-      <View style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble]}>
-        {!mine ? <Text style={styles.senderLabel}>PulseSoc member</Text> : null}
-        <MessageMedia message={message} />
-        {message.body ? <Text style={styles.body}>{message.body}</Text> : null}
+      <Pressable onLongPress={onLongPress} style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble, moderated && styles.moderatedBubble]}>
+        {!mine ? <Text style={styles.senderLabel}>{message.sender_display_name || (message.sender_trust_state === "intelligence" ? "UNDX" : "PulseSoc member")}</Text> : null}
+        {message.reply_preview ? (
+          <View style={styles.replyBlock}>
+            <Text style={styles.replyTitle}>Reply</Text>
+            <Text style={styles.replyPreview} numberOfLines={2}>{message.reply_preview}</Text>
+          </View>
+        ) : null}
+        {!deleted && !moderated ? <MessageMedia message={message} /> : null}
+        {body ? <Text style={[styles.body, (deleted || moderated) && styles.systemBody]}>{body}</Text> : null}
+        {message.forwarded ? <Text style={styles.forwarded}>Forwarded signal</Text> : null}
         <View style={styles.metaRow}>
           <Text style={styles.meta}>{formatShortTime(message.created_at)}</Text>
+          {message.edited_at ? <Text style={styles.meta}>Edited</Text> : null}
           {mine ? <Text style={styles.meta}>{statusLabel(status, message.seen_at)}</Text> : null}
         </View>
+        <ReactionRow reactions={message.reactions} viewerReaction={message.viewer_reaction} onReact={onReact} />
         {status === "failed" ? (
           <Pressable style={styles.retry} onPress={onRetry}>
             <Text style={styles.retryText}>Retry failed send</Text>
           </Pressable>
         ) : null}
-      </View>
+      </Pressable>
     </View>
+  );
+}
+
+function ReactionRow({ reactions, viewerReaction, onReact }: { reactions?: Record<string, number>; viewerReaction?: string; onReact: () => void }) {
+  const entries = Object.entries(reactions || {}).filter(([, count]) => Number(count || 0) > 0).slice(0, 4);
+  if (!entries.length && !viewerReaction) return null;
+  return (
+    <View style={styles.reactionRow}>
+      {entries.map(([reaction, count]) => (
+        <Pressable key={reaction} accessibilityRole="button" accessibilityLabel={`React ${reaction}`} style={[styles.reactionPill, viewerReaction === reaction && styles.reactionActive]} onPress={onReact}>
+          <Text style={styles.reactionText}>{reactionIcon(reaction)} {count}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+function MessageActionSheet({
+  message,
+  onClose,
+  onReply,
+  onReact,
+  onRetry,
+  onDelete,
+  onReport,
+  onSafety
+}: {
+  message: MessengerMessage | null;
+  onClose: () => void;
+  onReply: (message: MessengerMessage) => void;
+  onReact: (message: MessengerMessage, reactionType: string) => void;
+  onRetry: (message: MessengerMessage) => void;
+  onDelete: (message: MessengerMessage, scope: "self" | "everyone") => void;
+  onReport: (message: MessengerMessage) => void;
+  onSafety: () => void;
+}) {
+  if (!message) return null;
+  const failed = (message.local_status || message.delivery_status) === "failed";
+  return (
+    <Modal transparent animationType="fade" visible onRequestClose={onClose}>
+      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
+        <PulseCommandPanel style={styles.sheet}>
+          <Text style={styles.sheetTitle}>Message controls</Text>
+          <Text style={styles.sheetPreview} numberOfLines={2}>{previewMessage(message)}</Text>
+          <View style={styles.reactionChoices}>
+            {["pulse", "spark", "thanks", "seen"].map((reaction) => (
+              <Pressable key={reaction} style={styles.reactionChoice} onPress={() => onReact(message, reaction)}>
+                <Text style={styles.reactionText}>{reactionIcon(reaction)} {reaction}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={styles.sheetGrid}>
+            <SheetAction label="Reply" onPress={() => onReply(message)} />
+            {failed ? <SheetAction label="Retry" tone="warning" onPress={() => onRetry(message)} /> : null}
+            <SheetAction label="Report" tone="warning" onPress={() => onReport(message)} />
+            <SheetAction label="Mute / Block" tone="safety" onPress={onSafety} />
+            <SheetAction label="Delete for me" tone="danger" onPress={() => onDelete(message, "self")} />
+            {message.is_mine ? <SheetAction label="Delete for everyone" tone="danger" onPress={() => onDelete(message, "everyone")} /> : null}
+          </View>
+        </PulseCommandPanel>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function SheetAction({ label, onPress, tone = "default" }: { label: string; onPress: () => void; tone?: "default" | "warning" | "danger" | "safety" }) {
+  const textColor = tone === "danger" ? colors.danger : tone === "warning" ? colors.warning : tone === "safety" ? colors.accent : colors.text;
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} style={styles.sheetAction} onPress={onPress}>
+      <Text style={[styles.sheetActionText, { color: textColor }]}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -522,6 +752,32 @@ function typingSummary(presence?: { typing?: Array<{ display_name?: string; is_t
   if (!names.length) return "";
   if (names.length === 1) return `${names[0]} is typing`;
   return `${names.slice(0, 2).join(", ")} are typing`;
+}
+
+function previewMessage(message: MessengerMessage) {
+  if (message.deleted_at) return "Deleted message";
+  if (message.moderated_at || message.moderation_state) return "Unavailable after safety review";
+  if (message.body) return message.body;
+  if (message.message_type === "image") return "Image attachment";
+  if (message.message_type === "video") return "Video attachment";
+  if (message.message_type === "voice" || message.message_type === "audio") return "Voice message";
+  return "Attachment";
+}
+
+function optimisticReaction(previous: Record<string, number>, reactionType: string) {
+  return {
+    ...previous,
+    [reactionType]: Number(previous?.[reactionType] || 0) + 1
+  };
+}
+
+function reactionIcon(reaction: string) {
+  const key = reaction.toLowerCase();
+  if (key.includes("spark")) return "✦";
+  if (key.includes("thank")) return "✓";
+  if (key.includes("seen")) return "◌";
+  if (key.includes("fire")) return "🔥";
+  return "◈";
 }
 
 const styles = StyleSheet.create({
@@ -594,6 +850,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22
   },
+  forwarded: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase"
+  },
   metaRow: {
     alignItems: "center",
     flexDirection: "row",
@@ -603,6 +865,54 @@ const styles = StyleSheet.create({
   meta: {
     color: colors.muted,
     fontSize: 11
+  },
+  moderatedBubble: {
+    borderColor: "rgba(255, 204, 102, 0.35)"
+  },
+  systemBody: {
+    color: colors.muted,
+    fontStyle: "italic"
+  },
+  reactionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6
+  },
+  reactionPill: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.capsule,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 8,
+    paddingVertical: 4
+  },
+  reactionActive: {
+    borderColor: colors.accent
+  },
+  reactionText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "capitalize"
+  },
+  replyBlock: {
+    backgroundColor: "rgba(97,216,255,0.08)",
+    borderLeftColor: colors.accent,
+    borderLeftWidth: 2,
+    borderRadius: logiNexus.radius.medium,
+    gap: 2,
+    padding: 8
+  },
+  replyTitle: {
+    color: colors.accentStrong,
+    fontSize: 11,
+    fontWeight: "900",
+    textTransform: "uppercase"
+  },
+  replyPreview: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18
   },
   image: {
     aspectRatio: 1.12,
@@ -646,6 +956,44 @@ const styles = StyleSheet.create({
     marginHorizontal: logiNexus.spacing.md,
     marginTop: logiNexus.spacing.sm,
     padding: logiNexus.spacing.md
+  },
+  statusBanner: {
+    backgroundColor: "rgba(97,216,255,0.08)",
+    borderColor: "rgba(97,216,255,0.24)",
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 10
+  },
+  statusBannerText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800"
+  },
+  replyComposer: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: 10,
+    padding: 10
+  },
+  replyCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  replyCancel: {
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    paddingVertical: 7
+  },
+  replyCancelText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "900"
   },
   tools: {
     flexDirection: "row",
@@ -714,5 +1062,58 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "900",
     textTransform: "uppercase"
+  },
+  sheetBackdrop: {
+    backgroundColor: "rgba(0,0,0,0.58)",
+    flex: 1,
+    justifyContent: "flex-end",
+    padding: logiNexus.spacing.md
+  },
+  sheet: {
+    gap: logiNexus.spacing.md,
+    padding: logiNexus.spacing.lg
+  },
+  sheetTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "900"
+  },
+  sheetPreview: {
+    color: colors.muted,
+    fontSize: 14,
+    lineHeight: 20
+  },
+  reactionChoices: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8
+  },
+  reactionChoice: {
+    backgroundColor: "rgba(255,255,255,0.055)",
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.capsule,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  sheetGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8
+  },
+  sheetAction: {
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 42,
+    minWidth: "47%",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10
+  },
+  sheetActionText: {
+    fontSize: 13,
+    fontWeight: "900"
   }
 });

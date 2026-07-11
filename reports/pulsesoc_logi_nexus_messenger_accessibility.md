@@ -15,3 +15,18 @@
 - Dynamic Type stress for long conversation titles and long message bodies.
 - Reduced-motion behavior for future message arrival/reaction animation.
 - Focus restoration after future context menu or bottom-sheet actions.
+# Pulse Command Accessibility Update
+
+Added this milestone:
+
+- Conversation rows now announce pinned, muted, unread, and destination state.
+- Calls, groups, and rooms rows use accessible button labels.
+- Message composer reply cancellation is a semantic button.
+- Long-press message controls are exposed through a modal action sheet.
+- Send, retry, report, delete, and Safety Hub actions use semantic button roles.
+
+Remaining:
+
+- Full VoiceOver pass on simulator.
+- Dynamic Type layout proof for long names and action sheet controls.
+- More detailed attachment descriptions for non-image files.

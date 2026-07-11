@@ -14,12 +14,12 @@ Status: initial inventory.
 
 ## Phase 2 Social Core
 
-- Messenger: Pulse Command first LogiNexus milestone complete; full reactions/context menus/calls list/device QA pending.
-- Conversation screen: first LogiNexus milestone complete; full reply/reaction/context menu polish pending.
-- Calls: foundation exists, transformation pending.
+- Messenger: Pulse Command interaction-depth milestone complete; full calls/groups/rooms/device QA pending.
+- Conversation screen: reply, reactions, message action sheet, report/delete/retry/safety handoff added; long-thread/offline simulator proof pending.
+- Calls: in-place Pulse Command tab rows added; full Call screen transformation pending.
 - Incoming call layer: foundation exists, transformation pending.
 - Profile / Edit Profile: foundation exists, transformation pending.
-- Friends / Followers / Communities / Groups / Rooms: groups/rooms first Pulse Command treatment complete; full settings/detail transformation pending.
+- Friends / Followers / Communities / Groups / Rooms: groups/rooms now render as Pulse Command tabs; full settings/detail/member transformation pending.
 
 ## Later Phases
 

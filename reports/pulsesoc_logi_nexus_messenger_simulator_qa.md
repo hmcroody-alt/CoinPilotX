@@ -1,33 +1,54 @@
-# PulseSoc LogiNexus Messenger Simulator QA
+# PulseSoc Pulse Command Simulator QA
 
-Status: completed for first Pulse Command transformation milestone.
+Status: updated Xcode Simulator pass completed for this milestone.
 
-## QA Environment
+## Required Local QA Configuration
 
-- Primary target: Xcode iPhone Simulator.
-- Expected local API/proxy: existing authenticated simulator QA stack.
-- Hardware-only checks remain unclaimed.
+Use the Xcode iPhone Simulator with the local API proxy and explicit local-only populated fixtures:
 
-## Simulator Walkthrough Targets
+```bash
+EXPO_PUBLIC_PULSE_API_BASE_URL=http://127.0.0.1:5107 \
+EXPO_PUBLIC_PULSESOC_QA_AUTO_LOGIN=1 \
+EXPO_PUBLIC_PULSESOC_QA_MESSENGER_FIXTURES=1 \
+npm run --prefix mobile-native start:qa -- --host localhost
+```
 
-- Open Pulse Command inbox.
-- Verify command header, live metrics, search, segment rail, active signal rail, and conversation list.
-- Open a conversation.
-- Verify contextual header, voice/video call entry, message history, loading/empty state, composer, attachment actions, and semantic send button.
-- Open Groups and Rooms from Pulse Command segment rail.
-- Open UNDX and verify Digital Intelligence Companion copy.
-- Confirm no red screen or route loop.
+The fixture flag is ignored unless the API base is localhost or `127.0.0.1`.
+
+## Simulator Checklist
+
+- Pulse Command inbox opens with populated conversations.
+- Chats tab shows pinned, muted, typing, unread, failed, verified, and long-name states.
+- Calls tab renders active/recent call rows where available.
+- Groups tab renders native group rows and detail/chat routes.
+- Rooms tab renders native room rows and join/chat route.
+- Direct conversation opens from fixture conversation.
+- Long press opens message action sheet.
+- Reply state appears in composer.
+- Reaction updates the bubble.
+- Failed message retry is visible.
+- Message report/delete controls are visible.
+- Media attachment opens `NativeMediaViewer`.
+- UNDX conversation remains branded as Digital Intelligence Companion.
 
 ## Current Evidence
 
-- Inbox screenshot: `reports/screenshots/logi-nexus-messenger/inbox-after.png`
-- UNDX screenshot: `reports/screenshots/logi-nexus-messenger/undx.png`
-- Xcode iPhone 17 Pro Simulator launched the native app with local authenticated auto-login using the working local API base `http://127.0.0.1:5107`.
-- Verified Pulse Command inbox renders with command header, metrics, search, tabs, active signal rail, and bottom navigation.
-- Verified UNDX renders with Digital Intelligence Companion copy and the existing assistant endpoint preserved.
+- `reports/screenshots/logi-nexus-messenger/pulse-command-inbox-fixtures-2.png`
+  - Shows Pulse Command in the iPhone 17 Pro simulator with local-only QA fixtures enabled.
+  - Verified 6 populated channels and unread count state.
+  - Verified Chats / Calls / Groups / Rooms tab rail in the native Pulse Command surface.
+- `reports/screenshots/logi-nexus-messenger/pulse-command-chat-fixture-cached.png`
+  - Shows fixture conversation `9001`.
+  - Verified cached/reconnect state, media attachment placeholder, voice placeholder, moderated message state, and composer tool row.
 
-## Caveats
+## Observed Runtime Warnings
 
-- The development build still shows the existing `expo-av` deprecation warning in Metro logs; this is tracked as a future media dependency task.
-- Full direct conversation send QA needs a seeded conversation in the local account.
-- Physical-device-only camera, microphone, push, background call, and audio-route checks are not claimed.
+- The app still shows the known app-wide `expo-av` deprecation warning in development builds.
+- This is tracked as a future media dependency migration item and did not block Pulse Command rendering.
+
+## Remaining Simulator QA
+
+- Long-press action sheet still needs hands-on simulator interaction capture.
+- Calls / Groups / Rooms tab destination clicks need a focused follow-up.
+- Offline/reconnect needs a real local API disruption test.
+- Large Text and Reduced Motion simulator settings still need a focused accessibility pass.

@@ -5045,9 +5045,10 @@ Remaining Pulse Command gaps:
 - Hardware-only voice/camera/push/call checks.
 - Long-thread, media-heavy, reduced-motion, and Dynamic Type simulator matrices.
 
-Recommended next mission: PulseSoc Search / Discover LogiNexus Transformation.
+Recommended next mission: Continue PulseSoc Pulse Command LogiNexus Transformation.
 
 Reason for recommendation:
 
-- Pulse Command now has a coherent shared surface across inbox, conversation, groups/rooms, and UNDX without changing message authority.
-- Search / Discover is the next highest-value shared discovery surface because it feeds Home, Messenger, Profile, Marketplace, Creator, Intelligence, and navigation.
+- Pulse Command now has server-backed message reactions, delete, report, retry, reply state, local-only populated QA fixtures, and in-place Chats / Calls / Groups / Rooms tabs.
+- The subsystem is still not LogiNexus-complete because Calls, Groups, Rooms, offline/reconnect, nested safety, simulator evidence, and accessibility remain below the completion threshold.
+- Search / Discover remains blocked until Pulse Command reaches deep vertical completion.
