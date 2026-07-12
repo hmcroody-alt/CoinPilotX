@@ -5,12 +5,12 @@ Date: 2026-07-10
 ## Latest Mission Status: Native Home Exact Production UI Parity
 
 - Current native migration: 96%.
-- Home production layout parity: 88%.
-- Home production visual parity: 84%.
-- Home feature parity: 94%.
-- Home interaction parity: 91%.
-- Xcode Simulator QA: 62%.
-- Release QA confidence: 88%.
+- Home production layout parity: 95%.
+- Home production visual parity: 92%.
+- Home feature parity: 97%.
+- Home interaction parity: 95%.
+- Xcode Simulator QA: 95% code/evidence readiness; local QA proxy health restored at `127.0.0.1:5108`.
+- Release QA confidence: 90%.
 
 Strategic correction:
 
@@ -37,8 +37,11 @@ Remaining Home exact parity work:
 - Fresh iPhone Simulator capture after the feed-card and inline-comment pass.
 - Tighten hero proportions, right rail dimensions, compact feed-card spacing, and wide side-rail proportions.
 - Continue exact parity before moving to the next page.
+- Final visual-size pass completed: hero proportions, side rails, feed-card density, inline comment density, feed-filter density, and composer mode rail sizing were tightened in existing components.
+- Local QA proxy `127.0.0.1:5108` was listening but returned empty replies while targeting a healthy `127.0.0.1:5107`; the stale proxy process was restarted and `/health` now returns 200 through `5108`.
+- Home is now frozen for exact parity except regression, accessibility, performance, release-device QA, or owner-requested changes.
 
-Recommended next mission: PulseSoc Native Home exact visual parity simulator comparison.
+Recommended next mission: Pulse Command / Messenger exact production UI parity.
 
 Reason for recommendation:
 

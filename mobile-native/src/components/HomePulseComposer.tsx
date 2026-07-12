@@ -469,25 +469,25 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
     flexGrow: 0,
-    gap: 3,
+    gap: 2,
     justifyContent: "center",
     minHeight: 40,
     paddingHorizontal: 4,
     paddingVertical: 4,
-    width: 64
+    width: 62
   },
   actionGrid: {
     gap: 6,
-    marginTop: 7
+    marginTop: 6
   },
   actionIcon: {
     color: colors.accent,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "900"
   },
   actionText: {
     color: colors.text,
-    fontSize: 8.5,
+    fontSize: 8,
     fontWeight: "900",
     maxWidth: "100%",
     textAlign: "center"
@@ -542,11 +542,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(159, 124, 255, 0.18)",
     borderColor: logiNexus.colors.home.borderIntelligence,
-    borderRadius: 18,
+    borderRadius: 17,
     borderWidth: 1,
-    height: 36,
+    height: 34,
     justifyContent: "center",
-    width: 36
+    width: 34
   },
   identityOrbText: {
     color: colors.accentStrong,
@@ -569,7 +569,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     lineHeight: 18,
-    minHeight: 36,
+    minHeight: 34,
     paddingVertical: 2,
     textAlignVertical: "center"
   },
@@ -606,8 +606,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 6,
-    paddingHorizontal: 11,
-    paddingVertical: 8
+    paddingHorizontal: 10,
+    paddingVertical: 7
   },
   liveText: {
     color: colors.text,
@@ -619,8 +619,8 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.large,
     justifyContent: "center",
     minHeight: 30,
-    minWidth: 116,
-    paddingHorizontal: 12
+    minWidth: 108,
+    paddingHorizontal: 10
   },
   modeButtonActive: {
     backgroundColor: colors.accent
@@ -630,12 +630,12 @@ const styles = StyleSheet.create({
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 21,
     borderWidth: 1,
-    marginTop: 7,
+    marginTop: 6,
     maxHeight: 38
   },
   modeRowContent: {
     flexDirection: "row",
-    gap: 5,
+    gap: 4,
     padding: 3
   },
   modeText: {
@@ -649,8 +649,8 @@ const styles = StyleSheet.create({
   publishButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
-    borderRadius: 20,
-    marginTop: 8,
+    borderRadius: 18,
+    marginTop: 7,
     minHeight: 44,
     justifyContent: "center"
   },
@@ -736,14 +736,14 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.text,
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "900",
   },
   titleRow: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 7
+    marginBottom: 6
   },
   wrap: {
     backgroundColor: "rgba(10, 23, 39, 0.92)",

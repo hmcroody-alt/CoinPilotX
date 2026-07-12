@@ -495,12 +495,12 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.capsule,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 6,
+    gap: 5,
     justifyContent: "center",
-    minHeight: 34,
+    minHeight: 40,
     minWidth: 42,
-    paddingHorizontal: 9,
-    paddingVertical: 8
+    paddingHorizontal: 8,
+    paddingVertical: 7
   },
   actionButtonActive: {
     backgroundColor: "rgba(37, 208, 167, 0.16)",
@@ -508,11 +508,11 @@ const styles = StyleSheet.create({
   },
   actionButtonTrailing: {
     marginLeft: "auto",
-    minWidth: 38
+    minWidth: 40
   },
   actionIcon: {
     color: colors.muted,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "900",
     lineHeight: 18
   },
@@ -525,13 +525,13 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 7,
-    marginTop: 12,
-    paddingTop: 10
+    gap: 6,
+    marginTop: 11,
+    paddingTop: 9
   },
   actionText: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "800",
     textTransform: "capitalize"
   },
@@ -546,13 +546,13 @@ const styles = StyleSheet.create({
   authorNameRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 8
+    gap: 7
   },
   authorRow: {
     alignItems: "center",
     flexDirection: "row",
     flex: 1,
-    gap: 10,
+    gap: 9,
     minWidth: 0
   },
   authorText: {
@@ -561,30 +561,30 @@ const styles = StyleSheet.create({
   avatar: {
     backgroundColor: colors.surfaceRaised,
     borderColor: colors.accent,
-    borderRadius: 27,
+    borderRadius: 24,
     borderWidth: 2,
-    height: 54,
-    width: 54
+    height: 48,
+    width: 48
   },
   avatarFallback: {
     backgroundColor: colors.surfaceRaised,
     borderColor: colors.border,
-    borderRadius: 27,
+    borderRadius: 24,
     borderWidth: 1,
-    height: 54,
-    width: 54
+    height: 48,
+    width: 48
   },
   badgeRow: {
     alignItems: "center",
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
-    marginTop: 10
+    gap: 7,
+    marginTop: 8
   },
   body: {
     color: colors.text,
     ...logiNexus.typography.home.cardBody,
-    marginTop: 14
+    marginTop: 12
   },
   commentNotice: {
     color: colors.muted,
@@ -595,9 +595,9 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: "rgba(6, 14, 27, 0.94)",
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 26,
-    marginBottom: 14,
-    padding: 16,
+    borderRadius: 22,
+    marginBottom: 12,
+    padding: 14,
     shadowColor: colors.accent,
     shadowOpacity: 0.1,
     shadowRadius: 18
@@ -605,7 +605,7 @@ const styles = StyleSheet.create({
   cardHeader: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 10,
+    gap: 8,
     justifyContent: "space-between"
   },
   cardPressed: {
@@ -625,15 +625,15 @@ const styles = StyleSheet.create({
     borderColor: "rgba(100, 255, 188, 0.58)",
     borderRadius: logiNexus.radius.capsule,
     borderWidth: 1,
-    minHeight: 34,
-    paddingHorizontal: 13
+    minHeight: 36,
+    paddingHorizontal: 12
   },
   followPillActive: {
     backgroundColor: "rgba(50, 230, 179, 0.14)"
   },
   followPillText: {
     color: colors.accent,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "900",
     lineHeight: 18
   },
@@ -643,17 +643,17 @@ const styles = StyleSheet.create({
   headerActions: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 8
+    gap: 7
   },
   inlineCommentAvatar: {
     alignItems: "center",
     backgroundColor: "rgba(121, 210, 255, 0.13)",
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 15,
+    borderRadius: 14,
     borderWidth: 1,
-    height: 30,
+    height: 28,
     justifyContent: "center",
-    width: 30
+    width: 28
   },
   inlineCommentAvatarText: {
     color: colors.accentStrong,
@@ -664,14 +664,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(4, 11, 22, 0.62)",
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 20,
+    borderRadius: 18,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 7,
-    marginTop: 12,
-    minHeight: 48,
-    paddingHorizontal: 9,
-    paddingVertical: 8
+    gap: 6,
+    marginTop: 10,
+    minHeight: 46,
+    paddingHorizontal: 8,
+    paddingVertical: 7
   },
   inlineCommentInput: {
     color: colors.text,
@@ -687,10 +687,10 @@ const styles = StyleSheet.create({
   inlineCommentSend: {
     alignItems: "center",
     backgroundColor: colors.accent,
-    borderRadius: 16,
-    height: 32,
+    borderRadius: 15,
+    height: 30,
     justifyContent: "center",
-    width: 32
+    width: 30
   },
   inlineCommentSendDisabled: {
     opacity: 0.45
@@ -703,10 +703,10 @@ const styles = StyleSheet.create({
   inlineCommentTool: {
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.045)",
-    borderRadius: 15,
-    height: 30,
+    borderRadius: 14,
+    height: 28,
     justifyContent: "center",
-    width: 30
+    width: 28
   },
   inlineCommentToolText: {
     color: colors.muted,
@@ -718,7 +718,7 @@ const styles = StyleSheet.create({
     aspectRatio: 16 / 10,
     backgroundColor: "rgba(9, 20, 33, 0.86)",
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
     justifyContent: "center",
     overflow: "hidden",
@@ -738,13 +738,13 @@ const styles = StyleSheet.create({
     aspectRatio: 16 / 10,
     backgroundColor: colors.surfaceRaised,
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 20,
+    borderRadius: 16,
     borderWidth: 1,
     width: "100%"
   },
   mediaWrap: {
-    gap: 8,
-    marginTop: 14
+    gap: 7,
+    marginTop: 12
   },
   menuAction: {
     alignItems: "center",
@@ -769,11 +769,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.045)",
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 17,
+    borderRadius: 18,
     borderWidth: 1,
-    height: 34,
+    height: 36,
     justifyContent: "center",
-    width: 34
+    width: 36
   },
   overflowMenu: {
     backgroundColor: "rgba(5, 13, 26, 0.9)",
@@ -783,7 +783,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 7,
-    marginTop: 10,
+    marginTop: 9,
     padding: 8
   },
   overflowText: {
@@ -805,8 +805,8 @@ const styles = StyleSheet.create({
     borderTopColor: logiNexus.colors.home.borderSubtle,
     borderTopWidth: 1,
     gap: 6,
-    marginTop: 12,
-    paddingTop: 10
+    marginTop: 10,
+    paddingTop: 9
   },
   socialAvatarDot: {
     borderColor: colors.background,
@@ -833,8 +833,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
-    marginTop: 12
+    gap: 7,
+    marginTop: 10
   },
   socialContextText: {
     color: colors.muted,

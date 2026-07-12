@@ -42,3 +42,11 @@ Date: 2026-07-11
 ## Obsolete Browser Code Excluded
 
 - DOM selectors, CSS-only hover logic, fixed desktop viewport hacks, browser scroll containers, and Web-only backdrop filters.
+# Final Visual-Size Pass Update
+
+Date: 2026-07-11
+
+- Reused `HomeScreen`, `HomePulseComposer`, `PostCard`, shared navigation, existing feed/comment/publishing APIs, event sync, drawer, and media viewer.
+- Refined existing style tokens and layout values only.
+- No `HomeV2`, `HeroV2`, `PostCard2`, `ComposerNew`, duplicate right rail, duplicate feed, duplicate comment pipeline, or duplicate responsive Home was introduced.
+- Browser-only production layout behavior was used as visual authority, but DOM/CSS implementation details were not copied into native runtime code.
