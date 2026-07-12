@@ -1,6 +1,16 @@
 # PulseSoc Native Migration Progress
 
-Date: 2026-07-10
+Date: 2026-07-12
+
+## Mandatory Native Mission QA Standard
+
+- The Xcode iPhone Simulator is now the primary QA visibility and visual-parity environment throughout every native mission, not an end-only check.
+- The current production WebView PulseSoc application remains the authoritative UI, feature, workflow, backend, and business-logic source; the native app remains a parallel implementation until full release readiness.
+- Every mission must follow `docs/pulsesoc_native_mission_standard.md` and complete `reports/pulsesoc_native_mission_report_template.md`.
+- The locally available representative coverage matrix is iPhone 17e, iPhone 17, iPhone 17 Pro, and iPhone 17 Pro Max on iOS 26.5; each mission must rediscover available devices before QA.
+- Evidence belongs in a dedicated `reports/screenshots/<mission-slug>/` directory, with exact paths recorded in the mission report.
+- Every check must be honestly classified as Simulator verified, Code-path verified, Mock-state verified, or Physical-device-only. Non-applicable required states need an explicit reason.
+- `scripts/pulsesoc_native_mission_standard_audit.py` guards the permanent policy and report template. It does not substitute for opening and inspecting the actual simulator states.
 
 ## Latest Mission Status: Pulse Command Exact Production UI Parity
 
