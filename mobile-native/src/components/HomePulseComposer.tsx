@@ -26,6 +26,13 @@ const MODES: Array<{ key: ComposerMode; label: string; note: string }> = [
   { key: "reel", label: "Reel", note: "Attach a video or use Camera Studio for the native Reel path." },
   { key: "live", label: "Live", note: "Live hosting stays on the existing safe Studio flow." }
 ];
+const PRODUCTION_MODE_BOUNDARIES = [
+  { label: "Marketplace", note: "Marketplace publishing remains on the existing listing composer flow." },
+  { label: "Music", note: "Music selection opens the existing PulseSoc media/music surface." },
+  { label: "Poll", note: "Poll publishing stays behind the existing backend contract boundary." },
+  { label: "Question", note: "Question publishing stays behind the existing backend contract boundary." },
+  { label: "More", note: "More tools stay discoverable without duplicating production workflows." }
+];
 const VISIBILITY: Visibility[] = ["public", "followers", "private"];
 const FEELINGS = ["Curious", "Focused", "Bullish", "Creative"];
 
@@ -263,6 +270,13 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
 
   return (
     <LogiNexusPanel style={styles.wrap} tone={mode === "live" ? "danger" : mode === "reel" ? "creator" : "default"}>
+      <View style={styles.titleRow}>
+        <Text style={styles.title}>Pulse Composer</Text>
+        <View style={styles.livePill}>
+          <Text style={styles.liveDot}>●</Text>
+          <Text style={styles.liveText}>LIVE</Text>
+        </View>
+      </View>
       <View accessible accessibilityLabel="Transmission Console" style={styles.headerRow}>
         <View style={styles.identityOrb}>
           <Text style={styles.identityOrbText}>LN</Text>
@@ -284,7 +298,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
           <Text style={styles.audienceArrow}>⌄</Text>
         </Pressable>
       </View>
-      <View style={styles.modeRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.modeRow} contentContainerStyle={styles.modeRowContent}>
         {MODES.map((item) => (
           <Pressable
             key={item.key}
@@ -296,7 +310,21 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
             <Text style={[styles.modeText, mode === item.key && styles.modeTextActive]}>{item.label}</Text>
           </Pressable>
         ))}
-      </View>
+        {PRODUCTION_MODE_BOUNDARIES.map((item) => (
+          <Pressable
+            key={item.label}
+            testID={`home-composer-boundary-${item.label.toLowerCase()}`}
+            accessibilityLabel={`Composer ${item.label}`}
+            style={styles.modeButton}
+            onPress={() => {
+              if (item.label === "Music") onOpenMusic();
+              setNote(item.note);
+            }}
+          >
+            <Text style={styles.modeText}>{item.label}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionGrid}>
         <ComposerAction testID="home-composer-photo" label="Photo" icon="▧" onPress={() => media.chooseImage().then(() => setNote("Photo selected for PulseSoc upload.")).catch(() => undefined)} />
         <ComposerAction testID="home-composer-video" label="Video" icon="▶" onPress={() => media.chooseVideo().then(() => setNote("Video selected for PulseSoc upload.")).catch(() => undefined)} />
@@ -589,9 +617,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.045)",
     borderRadius: logiNexus.radius.large,
-    flex: 1,
     justifyContent: "center",
-    minHeight: 30
+    minHeight: 30,
+    minWidth: 116,
+    paddingHorizontal: 12
   },
   modeButtonActive: {
     backgroundColor: colors.accent
@@ -601,9 +630,12 @@ const styles = StyleSheet.create({
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 21,
     borderWidth: 1,
+    marginTop: 7,
+    maxHeight: 38
+  },
+  modeRowContent: {
     flexDirection: "row",
     gap: 5,
-    marginTop: 7,
     padding: 3
   },
   modeText: {
@@ -706,7 +738,12 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 18,
     fontWeight: "900",
-    marginTop: 5
+  },
+  titleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 7
   },
   wrap: {
     backgroundColor: "rgba(10, 23, 39, 0.92)",

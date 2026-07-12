@@ -642,7 +642,6 @@ function HomeTopBar({
   return (
     <LogiNexusGlobalHeader
       title="PulseSoc"
-      subtitle="LOGINEXUS"
       mode="home"
       showDrawer
       onOpenDrawer={onOpenDrawer}
@@ -951,7 +950,7 @@ function StatusRail({
   return (
     <View style={styles.statusSection}>
       <View style={styles.statusHeader}>
-        <Text style={styles.statusHeaderKicker}>› Your Orbit</Text>
+        <Text style={styles.statusHeaderKicker}>Status</Text>
         <Text style={styles.statusHeaderAction}>View all →</Text>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statusRail}>
@@ -967,8 +966,8 @@ function StatusRail({
         ) : null}
         {!loading && !items.length ? (
           <View style={styles.statusEmptyCard}>
-            <Text style={styles.statusEmptyTitle}>No active status signals.</Text>
-            <Text style={styles.statusEmptyText}>{error || "Transmit your first update."}</Text>
+            <Text style={styles.statusEmptyTitle}>No Status yet.</Text>
+            <Text style={styles.statusEmptyText}>{error || "Create one."}</Text>
           </View>
         ) : null}
         {items.map((status) => (

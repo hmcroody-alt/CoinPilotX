@@ -2,6 +2,46 @@
 
 Date: 2026-07-10
 
+## Latest Mission Status: Native Home Exact Production UI Parity
+
+- Current native migration: 96%.
+- Home production layout parity: 88%.
+- Home production visual parity: 76%.
+- Home feature parity: 94%.
+- Home interaction parity: 86%.
+- Xcode Simulator QA: 62%.
+- Release QA confidence: 88%.
+
+Strategic correction:
+
+- The current production PulseSoc UI is now the visual, structural, and workflow authority.
+- Native Home must look and behave like the existing production Homefeed, not a separate LogiNexus redesign.
+- LogiNexus work is now treated as the existing production visual language/tokens, not a license to invent alternate layouts.
+
+Completed action:
+
+- Created the Home exact parity inventory from production CSS/source and current native implementation.
+- Added a production UI token map translating production CSS values into native token targets.
+- Reused the existing `HomeScreen`, `HomePulseComposer`, `PostCard`, global header, drawer, bottom navigation, feed/status/composer APIs, and media viewer.
+- Removed non-production Home subtitle text from the native Home command strip.
+- Restored production-facing Status rail copy: `Status`, `No Status yet.`, `Create one.`
+- Extended the existing native `HomePulseComposer` in place with the production `Pulse Composer` title and visible production mode rail entries: Post, Reel, Live, Marketplace, Music, Poll, Question, More.
+- Kept production controls discoverable without duplicating backend logic; unsupported advanced modes are explicit native boundaries.
+- Added `scripts/pulsesoc_native_home_exact_parity_audit.py`.
+
+Remaining Home exact parity work:
+
+- Fresh Xcode iPhone Simulator side-by-side captures against the current production WebView Home.
+- Tighten hero proportions, right rail dimensions, feed-card action row, and inline comment composer parity.
+- Continue exact parity before moving to the next page.
+
+Recommended next mission: PulseSoc Native Home exact visual parity simulator comparison.
+
+Reason for recommendation:
+
+- The structural parity map and production-token audit now exist.
+- The next highest-value work is visual/proportional refinement against fresh simulator evidence, not another conceptual redesign.
+
 ## Latest Mission Status: Pulse Command Calls Foundation
 
 - Current native migration: 96%.
