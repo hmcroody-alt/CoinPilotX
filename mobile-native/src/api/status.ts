@@ -45,6 +45,13 @@ export type PulseStatus = {
   viewed?: boolean;
   view_count?: number;
   completion_rate?: number;
+  owner_analytics?: {
+    views?: number;
+    completion_rate?: number;
+    replies?: number;
+    reactions?: number;
+    shares?: number;
+  };
   reaction_count?: number;
   reply_count?: number;
   share_count?: number;
@@ -215,7 +222,24 @@ export async function updateStatus(statusId: number, payload: { body?: string; v
 }
 
 export async function deleteStatus(statusId: number) {
-  return pulseApi<{ ok?: boolean; status_id?: number; message?: string }>(`/api/pulse/status/${statusId}`, { method: "DELETE" });
+  const result = await pulseApi<{ ok?: boolean; status_id?: number; message?: string }>(`/api/pulse/status/${statusId}`, { method: "DELETE" });
+  await removeStatusFromCache(statusId).catch(() => undefined);
+  return result;
+}
+
+export async function removeStatusFromCache(statusId: number, lane = "for_you") {
+  const cached = await loadCachedStatuses(lane);
+  await cacheStatuses(lane, cached.items.filter((item) => item.id !== statusId), cached.rail_items.filter((item) => item.id !== statusId));
+}
+
+export function reconcileStatusItems(current: PulseStatus[], incoming: PulseStatus[], now = Date.now()) {
+  const byId = new Map<number, PulseStatus>();
+  [...incoming, ...current].forEach((item) => {
+    const status = normalizeStatus(item);
+    const expired = status.expires_at ? Date.parse(status.expires_at) <= now : false;
+    if (status.id > 0 && !expired && !["deleted", "blocked", "expired"].includes(status.fixture_state || "") && !byId.has(status.id)) byId.set(status.id, status);
+  });
+  return Array.from(byId.values()).sort((a, b) => Date.parse(b.created_at || "") - Date.parse(a.created_at || ""));
 }
 
 export function pulseStatusUrl(statusId: number) {

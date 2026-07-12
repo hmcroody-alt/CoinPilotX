@@ -33,6 +33,9 @@ def main() -> int:
     routing = read("mobile-native/src/navigation/notificationRouting.ts")
     config = read("mobile-native/src/api/config.ts")
     creator = read("mobile-native/src/components/StatusCreator.tsx")
+    event_sync = read("mobile-native/src/core/eventSync.ts")
+    app_navigator = read("mobile-native/src/navigation/AppNavigator.tsx")
+    backend = read("bot.py")
 
     for phrase in (
         "does not touch production WebView paths",
@@ -115,6 +118,14 @@ def main() -> int:
     require("CreateStatusRailEntry" in screen and "createRailRing" in screen, "populated rail must keep a discoverable create entry")
     require("useSafeAreaInsets" in creator and "paddingTop: insets.top + 8" in creator, "creator header must clear device safe areas")
     require("useSafeAreaInsets" in card and "top: insets.top + 14" in card, "viewer chrome must clear device safe areas")
+    for token in ("reconcileStatusItems", "removeStatusFromCache", "registerSyncInvalidation", 'registerSyncInvalidation("status"', "reportPulseTarget", "mutePostAuthor", "blockPulseUser", "Status owner analytics"):
+        require(token in api + screen, f"Status lifecycle/reconciliation/safety behavior missing: {token}")
+    require('| "status"' in event_sync and 'result.push("status", "activity")' in event_sync, "shared event sync must classify Status events")
+    require('"status"]' in app_navigator or ', "status"]' in app_navigator, "global native sync must poll Status invalidations")
+    for event in ("pulse_status_created", "pulse_status_viewed", "pulse_status_reaction", "pulse_status_reply", "pulse_status_shared", "pulse_status_updated", "pulse_status_deleted"):
+        require(f'pulse_emit_event("{event}"' in backend, f"canonical backend must emit realtime event: {event}")
+    for label in ("Create a new Status", "upload failed, retry available", "Previous Status", "Next Status", "Publish Status", "Cancel Status creation", "Status caption", "Status music"):
+        require(label in screen + card + creator, f"Status accessibility label missing: {label}")
 
     for token in (
         "accessibilityLabel=\"Previous Status\"",

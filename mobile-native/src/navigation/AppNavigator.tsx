@@ -145,7 +145,7 @@ export function AppNavigator() {
     const unregisterActivity = registerSyncInvalidation("activity", refreshBadgeSync);
     const stopSync = startNativeEventSync({
       fullResyncOnStart: true,
-      subsystems: ["activity", "notifications", "orders", "marketplace", "seller_inventory"]
+      subsystems: ["activity", "notifications", "orders", "marketplace", "seller_inventory", "status"]
     });
     const appState = AppState.addEventListener("change", (state) => {
       if (state === "active") refreshBadges().catch(() => undefined);

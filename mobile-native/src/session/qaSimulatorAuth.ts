@@ -15,7 +15,7 @@ export type QaSimulatorAuthResult = {
 };
 
 export function isQaSimulatorAuthEnabled() {
-  return __DEV__ && isLocalApiBaseUrl(PULSE_API_BASE_URL);
+  return isLocalApiBaseUrl(PULSE_API_BASE_URL);
 }
 
 export function isQaSimulatorAutoLoginEnabled() {

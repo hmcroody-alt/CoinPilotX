@@ -32203,6 +32203,7 @@ def api_pulse_status_create():
         cur.execute("SELECT * FROM pulse_status WHERE id=? LIMIT 1", (status_id,))
         status = pulse_status_payload(cur.fetchone(), user["user_id"])
         conn.close()
+        pulse_emit_event("pulse_status_created", {"status_id": status_id, "trace_id": trace_id, "invalidates": ["status", "activity"]}, user["user_id"], status_id)
         first_media = (status.get("media") or [{}])[0] if isinstance(status, dict) else {}
         return jsonify({
             "ok": True,
@@ -32382,6 +32383,7 @@ def api_pulse_status_view(status_id):
     owner_analytics = {}
     if int(status_row.get("user_id") or 0) == int(user["user_id"]):
         owner_analytics = {"views": view_count, "completion_rate": completion_rate}
+    pulse_emit_event("pulse_status_viewed", {"status_id": int(status_id), "view_count": view_count, "invalidates": ["status"]}, user["user_id"], int(status_id))
     return jsonify({"ok": True, "status_id": int(status_id), "view_count": view_count, "completion_rate": completion_rate, "owner_analytics": owner_analytics})
 
 
@@ -32418,6 +32420,7 @@ def api_pulse_status_react(status_id):
     cur.execute("SELECT COUNT(DISTINCT user_id) AS total FROM pulse_status_reactions WHERE status_id=?", (int(status_id),))
     reaction_count = int((cur.fetchone() or [0])[0] or 0)
     conn.commit(); conn.close()
+    pulse_emit_event("pulse_status_reaction", {"status_id": int(status_id), "reaction_type": reaction, "reaction_count": reaction_count, "invalidates": ["status"]}, user["user_id"], int(status_id))
     return jsonify({"ok": True, "status_id": int(status_id), "reaction_type": reaction, "reaction_count": reaction_count})
 
 
@@ -32486,6 +32489,7 @@ def api_pulse_status_reply(status_id):
         )
         conn.commit()
         conn.close()
+        pulse_emit_event("pulse_status_reply", {"status_id": int(status_id), "reply_id": reply_id, "invalidates": ["status", "activity"]}, user["user_id"], int(status_id))
         return jsonify({"ok": True, "reply": {"id": reply_id, "status_id": int(status_id), "body": body, "created_at": now}, "trace_id": trace_id})
     except Exception as exc:
         logging.exception("PULSE_STATUS_REPLY_FAILED trace_id=%s status_id=%s user_id=%s error=%s", trace_id, status_id, user.get("user_id"), exc)
@@ -32517,6 +32521,7 @@ def api_pulse_status_share(status_id):
     share_count = int((cur.fetchone() or [0])[0] or 0)
     conn.commit()
     conn.close()
+    pulse_emit_event("pulse_status_shared", {"status_id": int(status_id), "share_count": share_count, "invalidates": ["status"]}, user["user_id"], int(status_id))
     return jsonify({"ok": True, "status_id": int(status_id), "share_count": share_count, "trace_id": trace_id})
 
 

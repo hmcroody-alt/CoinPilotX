@@ -13,7 +13,8 @@ export type NativeSyncSubsystem =
   | "safety"
   | "verification"
   | "premium"
-  | "intelligence";
+  | "intelligence"
+  | "status";
 
 export type NativeSyncEvent = {
   event_id?: string | number;
@@ -241,6 +242,9 @@ export function subsystemsForSyncEvent(event: NativeSyncEvent): NativeSyncSubsys
   }
   if (/(alert|intelligence|crypto|market)/.test(haystack)) {
     result.push("intelligence", "activity", "notifications");
+  }
+  if (/(pulse_status|status_created|status_updated|status_deleted|status_viewed|status_reaction|status_reply|status_shared)/.test(haystack)) {
+    result.push("status", "activity");
   }
   return dedupeSubsystems(result.length ? result : ["activity", "notifications"]);
 }

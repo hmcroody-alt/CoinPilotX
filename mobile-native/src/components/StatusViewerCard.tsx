@@ -137,7 +137,7 @@ export function StatusViewerCard({
       ) : null}
 
       <View style={[styles.header, { top: insets.top + 14 }]}>
-        <Pressable style={styles.author} onPress={() => onAuthorPress(status)}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Open ${author.display_name || "member"} profile, Status posted ${formatShortTime(status.created_at) || "recently"}`} style={styles.author} onPress={() => onAuthorPress(status)}>
           {author.avatar_url ? <Image source={{ uri: author.avatar_url }} style={styles.avatar} /> : <View style={styles.avatarFallback} />}
           <View style={styles.authorCopy}>
             <Text style={styles.authorName} numberOfLines={1}>{author.display_name || "PulseSoc member"}</Text>
@@ -155,8 +155,8 @@ export function StatusViewerCard({
       </View>
 
       <View style={styles.caption}>
-        {status.body && kind !== "text" ? <Text style={styles.captionText} numberOfLines={4}>{status.body}</Text> : null}
-        {music ? <Text style={styles.music} numberOfLines={1}>{music}</Text> : null}
+        {status.body && kind !== "text" ? <Text accessibilityLabel={`Status caption, ${status.body}`} style={styles.captionText} numberOfLines={4}>{status.body}</Text> : null}
+        {music ? <Text accessibilityLabel={`Status music, ${music}`} style={styles.music} numberOfLines={1}>{music}</Text> : null}
         <Text style={styles.stats}>{status.view_count || 0} views</Text>
       </View>
     </View>

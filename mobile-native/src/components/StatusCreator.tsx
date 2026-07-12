@@ -173,11 +173,11 @@ export function StatusCreator({ visible, onClose, onCreated }: Props) {
     <Modal visible={visible} animationType="slide" onRequestClose={closeCreator}>
       <View style={styles.root}>
         <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          <Pressable style={styles.headerButton} disabled={publishing || mediaUpload.uploading} onPress={closeCreator}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Cancel Status creation" style={styles.headerButton} disabled={publishing || mediaUpload.uploading} onPress={closeCreator}>
             <Text style={styles.headerButtonText}>Cancel</Text>
           </Pressable>
           <View><Text style={styles.headerKicker}>STATUS STUDIO</Text><Text style={styles.headerTitle}>Create Status</Text></View>
-          <Pressable style={[styles.publishButton, (!canPublish || publishing) && styles.disabled]} disabled={!canPublish || publishing} onPress={publish}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Publish Status" style={[styles.publishButton, (!canPublish || publishing) && styles.disabled]} disabled={!canPublish || publishing} onPress={publish}>
             {publishing ? <ActivityIndicator color={colors.background} /> : <Text style={styles.publishText}>Post</Text>}
           </Pressable>
         </View>

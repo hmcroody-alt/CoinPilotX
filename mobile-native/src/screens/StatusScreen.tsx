@@ -22,6 +22,7 @@ import {
   pulseStatusUrl,
   reactToStatus,
   replyToStatus,
+  reconcileStatusItems,
   shareStatus,
   statusMediaKind,
   statusMediaUrl,
@@ -29,6 +30,9 @@ import {
   trackStatusView,
   updateStatus as updateStatusOnServer
 } from "../api/status";
+import { mutePostAuthor } from "../api/feed";
+import { blockPulseUser, reportPulseTarget } from "../api/support";
+import { registerSyncInvalidation } from "../core/eventSync";
 import { StatusCreator } from "../components/StatusCreator";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
 import { StatusViewerCard } from "../components/StatusViewerCard";
@@ -97,6 +101,8 @@ export function StatusScreen({ route, navigation }: Props) {
     if (route.params?.openCreator) setCreatorOpen(true);
   }, [route.params?.openCreator]);
 
+  useEffect(() => registerSyncInvalidation("status", () => load("refresh")), []);
+
   const activeStatus = useMemo(() => (viewerIndex === null ? null : items[viewerIndex] || null), [items, viewerIndex]);
 
   function openStatus(status: PulseStatus) {
@@ -162,8 +168,8 @@ export function StatusScreen({ route, navigation }: Props) {
 
   function handleCreatedStatus(status?: PulseStatus) {
     if (status?.id) {
-      setItems((current) => [status, ...current.filter((item) => item.id !== status.id)]);
-      setRailItems((current) => [status, ...current.filter((item) => item.id !== status.id)].slice(0, 24));
+      setItems((current) => reconcileStatusItems(current, [status]));
+      setRailItems((current) => reconcileStatusItems(current, [status]).slice(0, 24));
     }
     load("refresh").catch(() => undefined);
   }
@@ -192,10 +198,10 @@ export function StatusScreen({ route, navigation }: Props) {
                 <Text style={styles.subtitle}>{offline ? "Showing saved Status" : "PulseSoc native Status"}</Text>
               </View>
               <View style={styles.headerActions}>
-                <Pressable style={styles.cameraButton} onPress={() => navigation.navigate("CameraStudio", { target: "status", mode: "status", title: "Status Camera" })}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Open Status camera" style={styles.cameraButton} onPress={() => navigation.navigate("CameraStudio", { target: "status", mode: "status", title: "Status Camera" })}>
                   <Text style={styles.cameraText}>Camera</Text>
                 </Pressable>
-                <Pressable style={styles.createButton} onPress={() => setCreatorOpen(true)}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Create Status" style={styles.createButton} onPress={() => setCreatorOpen(true)}>
                   <Text style={styles.createButtonText}>Create</Text>
                 </Pressable>
               </View>
@@ -268,6 +274,11 @@ export function StatusScreen({ route, navigation }: Props) {
           setRailItems((current) => current.filter((item) => item.id !== statusId));
           setViewerIndex(null);
         }}
+        onAuthorRemoved={(userId) => {
+          setItems((current) => current.filter((item) => Number(item.user_id || item.author?.user_id || item.author?.id) !== userId));
+          setRailItems((current) => current.filter((item) => Number(item.user_id || item.author?.user_id || item.author?.id) !== userId));
+          setViewerIndex(null);
+        }}
       />
     </View>
   );
@@ -275,8 +286,10 @@ export function StatusScreen({ route, navigation }: Props) {
 
 function StatusRailBubble({ status, onPress }: { status: PulseStatus; onPress: (status: PulseStatus) => void }) {
   const author = status.author || {};
+  const state = status.fixture_state === "uploading" ? "uploading" : status.fixture_state === "failed" ? "upload failed, retry available" : status.muted ? "muted" : status.author_live ? "live" : status.viewed ? "seen" : "unseen";
+  const stories = Number(status.story_count || 1);
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`Open ${author.display_name || "member"} Status, ${status.viewed ? "seen" : "unseen"}`} style={styles.bubble} onPress={() => onPress(status)}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`Open ${author.display_name || "member"} Status, ${state}, ${stories} ${stories === 1 ? "story" : "stories"}`} style={styles.bubble} onPress={() => onPress(status)}>
       <View style={[styles.bubbleRing, status.viewed ? styles.bubbleViewed : undefined, status.author_live && styles.bubbleLive]}>
         {author.avatar_url ? <Image source={{ uri: author.avatar_url }} style={styles.bubbleAvatar} /> : <View style={styles.bubbleAvatarFallback} />}
       </View>
@@ -291,11 +304,12 @@ function CreateStatusRailEntry({ onPress }: { onPress: () => void }) {
   return <Pressable accessibilityRole="button" accessibilityLabel="Create a new Status" style={styles.bubble} onPress={onPress}><View style={styles.createRailRing}><Text style={styles.createRailPlus}>+</Text></View><Text style={styles.bubbleName}>Your Status</Text><Text style={styles.railState}>Create</Text></Pressable>;
 }
 
-function StatusManageModal({ status, onClose, onUpdated, onDeleted }: {
+function StatusManageModal({ status, onClose, onUpdated, onDeleted, onAuthorRemoved }: {
   status: PulseStatus | null;
   onClose: () => void;
   onUpdated: (status: PulseStatus) => void;
   onDeleted: (statusId: number) => void;
+  onAuthorRemoved: (userId: number) => void;
 }) {
   const [body, setBody] = useState("");
   const [visibility, setVisibility] = useState<"public" | "followers" | "private">("public");
@@ -313,11 +327,21 @@ function StatusManageModal({ status, onClose, onUpdated, onDeleted }: {
         <View style={styles.manageSheet}>
           <Text style={styles.replyTitle}>{status.can_manage ? "Manage Status" : "Status options"}</Text>
           {status.can_manage ? <>
+            <View accessibilityLabel="Status owner analytics" style={styles.analyticsPanel}>
+              <Text style={styles.analyticsTitle}>Status insights</Text>
+              <Text style={styles.analyticsText}>{Number(status.owner_analytics?.views ?? status.view_count ?? 0)} views · {Math.round(Number(status.owner_analytics?.completion_rate ?? status.completion_rate ?? 0) * 100)}% completion</Text>
+              <Text style={styles.analyticsText}>{Number(status.owner_analytics?.reactions ?? status.reaction_count ?? 0)} reactions · {Number(status.owner_analytics?.replies ?? status.reply_count ?? 0)} replies · {Number(status.owner_analytics?.shares ?? status.share_count ?? 0)} shares</Text>
+            </View>
             <TextInput accessibilityLabel="Edit Status caption" style={styles.replyInput} value={body} onChangeText={setBody} multiline />
             <View style={styles.replyActions}>{(["public", "followers", "private"] as const).map((item) => <Pressable key={item} accessibilityRole="button" accessibilityState={{ selected: visibility === item }} style={[styles.visibilityOption, visibility === item && styles.visibilityOptionActive]} onPress={() => setVisibility(item)}><Text style={styles.secondaryText}>{item}</Text></Pressable>)}</View>
             <Pressable accessibilityRole="button" style={styles.primaryButton} disabled={busy} onPress={async () => { setBusy(true); setError(""); try { const result = await updateStatusOnServer(status.id, { body: body.trim(), visibility }); if (result.status) onUpdated(result.status); onClose(); } catch { setError("Status could not be updated. Try again."); } finally { setBusy(false); } }}><Text style={styles.primaryText}>Save changes</Text></Pressable>
             <Pressable accessibilityRole="button" style={styles.deleteButton} disabled={busy} onPress={async () => { setBusy(true); setError(""); try { await deleteStatus(status.id); onDeleted(status.id); onClose(); } catch { setError("Status could not be deleted. Try again."); } finally { setBusy(false); } }}><Text style={styles.deleteText}>Delete Status</Text></Pressable>
-          </> : <Text style={styles.emptyText}>Sharing and reporting follow the current Status privacy and safety rules.</Text>}
+          </> : <>
+            <Text style={styles.emptyText}>Safety actions are enforced by the existing PulseSoc report, mute, and block services.</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Report Status" style={styles.secondaryButton} disabled={busy} onPress={async () => { setBusy(true); setError(""); try { await reportPulseTarget("status", status.id, "Reported from native Status"); onClose(); } catch { setError("Status report could not be submitted. Try again."); } finally { setBusy(false); } }}><Text style={styles.secondaryText}>Report Status</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Mute Status creator" style={styles.secondaryButton} disabled={busy} onPress={async () => { setBusy(true); setError(""); try { await mutePostAuthor({ id: status.id, post_id: status.id, body: status.body || "", author: status.author }); onAuthorRemoved(Number(status.user_id || status.author?.user_id || status.author?.id || 0)); onClose(); } catch { setError("Creator could not be muted. Try again."); } finally { setBusy(false); } }}><Text style={styles.secondaryText}>Mute creator</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Block Status creator" style={styles.deleteButton} disabled={busy} onPress={async () => { setBusy(true); setError(""); try { const userId = Number(status.user_id || status.author?.user_id || status.author?.id || 0); await blockPulseUser({ blockedUserId: userId, publicPlayerId: status.author?.public_player_id || status.author?.username || "", reason: "Blocked from native Status" }); onAuthorRemoved(userId); onClose(); } catch { setError("Creator could not be blocked. Try again."); } finally { setBusy(false); } }}><Text style={styles.deleteText}>Block creator</Text></Pressable>
+          </>}
           {error ? <Text accessibilityLiveRegion="polite" style={styles.errorText}>{error}</Text> : null}
           <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryText}>Close</Text></Pressable>
         </View>
@@ -367,6 +391,7 @@ function ReplyModal({ visible, body, posting, onChangeBody, onSubmit, onClose }:
         <View style={styles.replySheet}>
           <Text style={styles.replyTitle}>Reply to Status</Text>
           <TextInput
+            accessibilityLabel="Status reply"
             style={styles.replyInput}
             value={body}
             onChangeText={onChangeBody}
@@ -609,6 +634,9 @@ const styles = StyleSheet.create({
   },
   storyCount: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 10, height: 20, justifyContent: "center", position: "absolute", right: 4, top: 42, width: 20 },
   storyCountText: { color: colors.background, fontSize: 10, fontWeight: "900" },
+  analyticsPanel: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: 14, borderWidth: 1, gap: 5, padding: 12 },
+  analyticsTitle: { color: colors.text, fontSize: 15, fontWeight: "900" },
+  analyticsText: { color: colors.muted, fontSize: 12, lineHeight: 18 },
   manageBackdrop: { backgroundColor: "rgba(0,0,0,0.62)", flex: 1, justifyContent: "flex-end" },
   manageSheet: { backgroundColor: colors.surface, borderColor: colors.border, borderTopLeftRadius: 26, borderTopRightRadius: 26, borderWidth: 1, gap: 12, padding: 18, paddingBottom: 32 },
   visibilityOption: { borderColor: colors.border, borderRadius: 999, borderWidth: 1, flex: 1, padding: 10 },
