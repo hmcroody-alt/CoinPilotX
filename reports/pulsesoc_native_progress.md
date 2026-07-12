@@ -6,9 +6,9 @@ Date: 2026-07-10
 
 - Current native migration: 96%.
 - Home production layout parity: 88%.
-- Home production visual parity: 76%.
+- Home production visual parity: 84%.
 - Home feature parity: 94%.
-- Home interaction parity: 86%.
+- Home interaction parity: 91%.
 - Xcode Simulator QA: 62%.
 - Release QA confidence: 88%.
 
@@ -27,12 +27,15 @@ Completed action:
 - Restored production-facing Status rail copy: `Status`, `No Status yet.`, `Create one.`
 - Extended the existing native `HomePulseComposer` in place with the production `Pulse Composer` title and visible production mode rail entries: Post, Reel, Live, Marketplace, Music, Poll, Question, More.
 - Kept production controls discoverable without duplicating backend logic; unsupported advanced modes are explicit native boundaries.
+- Refined the existing `PostCard` in place with production-shaped header controls, Like/Comment/Repost/Share/Save action order, social context, overflow safety actions, and inline comment composer.
+- Reused `addPostComment` for Home inline comments and reconciled card preview/comment counts from the server response.
 - Added `scripts/pulsesoc_native_home_exact_parity_audit.py`.
 
 Remaining Home exact parity work:
 
 - Fresh Xcode iPhone Simulator side-by-side captures against the current production WebView Home.
-- Tighten hero proportions, right rail dimensions, feed-card action row, and inline comment composer parity.
+- Fresh iPhone Simulator capture after the feed-card and inline-comment pass.
+- Tighten hero proportions, right rail dimensions, compact feed-card spacing, and wide side-rail proportions.
 - Continue exact parity before moving to the next page.
 
 Recommended next mission: PulseSoc Native Home exact visual parity simulator comparison.

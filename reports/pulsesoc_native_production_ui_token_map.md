@@ -29,6 +29,7 @@ Date: 2026-07-11
 | Status rail `height: 174px` desktop | native adaptive status cards | Web desktop cards translate to compact native rail cards on iPhone |
 | Composer `border-radius` and glass | `HomePulseComposer.styles.wrap` | Existing composer evolved in place |
 | Feed cards `post-card-modern` glass | `PostCard.styles.card` | Native feed card surface |
+| Feed action row and comment dock | `PostCard.styles.actionRow`, `inlineCommentComposer` | Production Like/Comment/Repost/Share/Save and inline comment affordances |
 | Mobile dock blur/glow | `GlobalNavigation.bottomPanel` | Native bottom tab dock |
 
 ## Required Deviation Notes

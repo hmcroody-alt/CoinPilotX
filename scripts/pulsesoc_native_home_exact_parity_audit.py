@@ -51,6 +51,19 @@ def main() -> int:
     for label in ("Comment", "Save", "Repost", "Share", "Report", "Hide", "Block", "Mute", "Follow"):
         require(post_card, label, f"feed card action {label}")
 
+    for needle, label in [
+        ("home-feed-inline-comment", "inline comment composer"),
+        ("home-feed-comment-input", "inline comment input"),
+        ("home-feed-comment-submit", "semantic inline comment submit"),
+        ("Write a comment...", "production inline comment placeholder"),
+        ("home-feed-overflow", "production overflow menu"),
+        ("home-feed-like", "production Like action"),
+        ("Liked by PulseSoc", "production social context row"),
+        ("onSubmitComment", "Home feed comment submit wiring"),
+        ("addPostComment", "server-authoritative comment mutation"),
+    ]:
+        require(post_card + home, needle, label)
+
     for needle in ("--home-bg", "--home-panel", "--home-emerald", "pulse-home-hero", "mobile-bottom-nav"):
         require(production_css, needle, f"production CSS token/source {needle}")
 

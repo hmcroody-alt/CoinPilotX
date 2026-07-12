@@ -24,7 +24,8 @@ Current production PulseSoc is the design authority. The native Home must preser
 | Composer modes | production Post/Reel/Live/Marketplace/Music/Poll/Question/More | `HomePulseComposer` | native publish/media/live routes | Post/Reel/Live mutate or route; Marketplace/Poll/Question/More are explicit backend/provider boundaries. |
 | Composer tools | production Photo/Video/Music/Feeling/Location/Mention/Topic/Public | `HomePulseComposer` | media upload, visibility, route handoffs | Preserve all labels/order with existing upload/publish contracts. |
 | Feed categories | production feed filter rail | `FEED_TABS` in `HomeScreen` | `listFeed({feed, tab})` | Production order preserved: For You through My Posts. |
-| Feed cards | `post-card-modern`, `pulse-feed-post-v3` CSS | `PostCard` | feed actions APIs | Native card preserves author, media, counts, actions, safety controls. |
+| Feed cards | `post-card-modern`, `pulse-feed-post-v3` CSS | `PostCard` | feed actions APIs | Native card preserves author, media, counts, production action row, social context, inline comments, and overflow safety controls. |
+| Inline comments | `pulse-comment-composer-v2`, `/api/pulse/posts/:id/comments` | `PostCard`, `HomeScreen`, `addPostComment` | comment API, event sync | Native Home now uses the existing server-authoritative comment endpoint and updates count/preview from the response. |
 | Media | production media frame/viewer | `MediaStrip`, `NativeMediaViewer` | media URLs from feed payload | Native viewer handoff preserved. |
 | Bottom navigation | production mobile dock | `LogiNexusBottomNavigation` | tab navigator | Preserve Home/Reels/Create/Messages/Profile order. |
 | Loading/empty/error/offline | production state language | `LogiNexusEmptyState`, cached feed/status fallbacks | cache helpers | Native states remain server-authoritative and cached where available. |
@@ -32,7 +33,7 @@ Current production PulseSoc is the design authority. The native Home must preser
 ## Key Differences Remaining
 
 - Production desktop browser top navigation includes nav pills that are not part of the native tab shell on iPhone; wide native web/simulator uses command rail plus shared route state instead.
-- Production post-card inline comment composer is not shown on every native feed card; native routes comments into `PostDetail`.
+- Inline comment attachment/photo/voice tools are explicit native boundaries until production feed-card attachment contracts are exposed to native.
 - Dedicated backend indexes for some right-rail intelligence cards are not exposed to native yet, so native derives lightweight counts from authoritative feed/status data.
 
 ## No Duplicate Implementations

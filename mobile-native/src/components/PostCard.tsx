@@ -1,13 +1,11 @@
-import { useMemo, useState } from "react";
-import { Image, Pressable, Share, StyleSheet, Text, View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import { Image, Pressable, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import { mediaDisplayUrl, mediaKind, PulsePost, pulsePostUrl } from "../api/feed";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "./NativeMediaViewer";
 import { LogiNexusBadge, LogiNexusCard } from "./LogiNexus";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { compactPreview, formatShortTime } from "../utils/format";
-
-const REACTIONS = ["fire", "smart", "bullish", "funny"];
 
 type PostCardProps = {
   post: PulsePost;
@@ -20,6 +18,7 @@ type PostCardProps = {
   onPromote?: (post: PulsePost) => void;
   onShare?: (post: PulsePost) => void;
   onComment?: (post: PulsePost) => void;
+  onSubmitComment?: (post: PulsePost, body: string) => Promise<void> | void;
   onFollow?: (post: PulsePost) => void;
   onReport?: (post: PulsePost) => void;
   onHide?: (post: PulsePost) => void;
@@ -39,6 +38,7 @@ export function PostCard({
   onPromote,
   onShare,
   onComment,
+  onSubmitComment,
   onFollow,
   onReport,
   onHide,
@@ -46,6 +46,11 @@ export function PostCard({
   onMute,
   onAuthorPress
 }: PostCardProps) {
+  const commentInputRef = useRef<TextInput>(null);
+  const [commentBody, setCommentBody] = useState("");
+  const [commentPosting, setCommentPosting] = useState(false);
+  const [commentNotice, setCommentNotice] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
   const author = post.author || {};
   const displayName = author.display_name || author.name || post.author_name || "PulseSoc";
   const handle = author.username || author.handle || post.author_username || "";
@@ -53,6 +58,31 @@ export function PostCard({
   const commentCount = Number(post.comment_count || 0);
   const reactionTotal = Object.values(post.reaction_counts || {}).reduce((sum, count) => sum + Number(count || 0), 0);
   const creatorLabel = author.premium_verified || author.verified ? "Pulse Creator" : "";
+  const viewerLiked = Boolean(post.viewer_reaction);
+
+  async function submitInlineComment() {
+    const bodyText = commentBody.trim();
+    if (!bodyText || commentPosting || !onSubmitComment) return;
+    setCommentPosting(true);
+    setCommentNotice("");
+    try {
+      await onSubmitComment(post, bodyText);
+      setCommentBody("");
+      setCommentNotice("Comment posted.");
+    } catch (err) {
+      setCommentNotice(err instanceof Error ? err.message : "Comment failed. Try again.");
+    } finally {
+      setCommentPosting(false);
+    }
+  }
+
+  function focusComment() {
+    commentInputRef.current?.focus();
+  }
+
+  function showUnavailable(label: string) {
+    setCommentNotice(`${label} comments open in Post Detail when supported.`);
+  }
 
   return (
     <Pressable
@@ -88,105 +118,164 @@ export function PostCard({
               </Text>
             </View>
           </Pressable>
-          {creatorLabel ? <View style={styles.creatorPill}><Text style={styles.creatorPillText}>✦ {creatorLabel}</Text></View> : <LogiNexusBadge label={post.visibility || "public"} />}
+          <View style={styles.headerActions}>
+            {onFollow ? (
+              <Pressable
+                testID={`home-feed-follow-${post.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={`${post.viewer_follows_author ? "Following" : "Follow"} ${displayName}`}
+                style={[styles.followPill, post.viewer_follows_author && styles.followPillActive]}
+                disabled={busy}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  onFollow(post);
+                }}
+              >
+                <Text style={[styles.followPillText, post.viewer_follows_author && styles.followPillTextActive]}>
+                  {post.viewer_follows_author ? "Following" : "Follow"}
+                </Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              testID={`home-feed-overflow-${post.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Open post options for ${displayName}`}
+              accessibilityState={{ expanded: menuOpen }}
+              style={styles.overflowButton}
+              onPress={(event) => {
+                event.stopPropagation();
+                setMenuOpen((open) => !open);
+              }}
+            >
+              <Text style={styles.overflowText}>•••</Text>
+            </Pressable>
+          </View>
         </View>
+
+      <View style={styles.badgeRow}>
+        {creatorLabel ? <View style={styles.creatorPill}><Text style={styles.creatorPillText}>✦ {creatorLabel}</Text></View> : null}
+        <LogiNexusBadge label={post.visibility || "public"} />
+      </View>
 
       {post.title ? <Text style={styles.title}>{post.title}</Text> : null}
       {body ? <Text style={styles.body}>{body}</Text> : null}
       <MediaStrip post={post} />
 
-      <View style={styles.countRow}>
-        <Text style={styles.meta}>{reactionTotal} reactions</Text>
-        <Text style={styles.meta}>{commentCount} comments</Text>
-        <Text style={styles.meta}>{post.repost_count || 0} reposts</Text>
+      <View style={styles.socialContextRow}>
+        <View style={styles.socialAvatars}>
+          <View style={[styles.socialAvatarDot, styles.socialAvatarDotOne]} />
+          <View style={[styles.socialAvatarDot, styles.socialAvatarDotTwo]} />
+          <View style={[styles.socialAvatarDot, styles.socialAvatarDotThree]} />
+        </View>
+        <Text style={styles.socialContextText} numberOfLines={1}>
+          {reactionTotal ? `Liked by PulseSoc and ${reactionTotal} others` : "Be the first to react"}
+        </Text>
+        {commentCount ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`View all ${commentCount} comments`}
+            onPress={(event) => {
+              event.stopPropagation();
+              onComment?.(post);
+            }}
+          >
+            <Text style={styles.viewCommentsText}>View all {commentCount} comments ›</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <View style={styles.actionRow}>
-        {REACTIONS.map((reaction) => (
-          <Pressable
-            key={reaction}
-            testID={`home-feed-reaction-${reaction}-${post.id}`}
-            accessibilityRole="button"
-            accessibilityLabel={`React ${reaction} to post ${post.id}`}
-            style={[styles.actionButton, post.viewer_reaction === reaction ? styles.actionButtonActive : undefined]}
-            disabled={busy}
-            onPress={() => onReact?.(post, reaction)}
-          >
-            <Text style={[styles.actionText, post.viewer_reaction === reaction ? styles.actionTextActive : undefined]}>
-              {reactionLabel(reaction, post.reaction_counts?.[reaction])}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <View style={styles.utilityRow}>
+        <Pressable
+          testID={`home-feed-like-${post.id}`}
+          accessibilityRole="button"
+          accessibilityLabel={`${viewerLiked ? "Liked" : "Like"} post ${post.id}`}
+          style={styles.actionButton}
+          disabled={busy}
+          onPress={(event) => {
+            event.stopPropagation();
+            onReact?.(post, post.viewer_reaction || "fire");
+          }}
+        >
+          <Text style={[styles.actionIcon, viewerLiked && styles.actionIconActive]}>♥</Text>
+          <Text style={[styles.actionText, viewerLiked && styles.actionTextActive]}>{reactionTotal ? compactCount(reactionTotal) : "Like"}</Text>
+        </Pressable>
         {onComment ? (
           <Pressable
             testID={`home-feed-comment-${post.id}`}
             accessibilityRole="button"
-            accessibilityLabel={`Open comments for post ${post.id}`}
-            style={styles.utilityButton}
+            accessibilityLabel={`Comment on post ${post.id}`}
+            style={styles.actionButton}
             disabled={busy}
-            onPress={() => onComment(post)}
+            onPress={(event) => {
+              event.stopPropagation();
+              if (onSubmitComment) focusComment();
+              else onComment(post);
+            }}
           >
-            <Text style={styles.utilityText}>Comment</Text>
+            <Text style={styles.actionIcon}>◯</Text>
+            <Text style={styles.actionText}>{commentCount ? compactCount(commentCount) : "Comment"}</Text>
           </Pressable>
         ) : null}
-        <Pressable
-          testID={`home-feed-save-${post.id}`}
-          accessibilityRole="button"
-          accessibilityLabel={`${post.saved ? "Saved" : "Save"} post ${post.id}`}
-          style={styles.utilityButton}
-          disabled={busy}
-          onPress={() => onSave?.(post)}
-        >
-          <Text style={styles.utilityText}>{post.saved ? "Saved" : "Save"}</Text>
-        </Pressable>
         <Pressable
           testID={`home-feed-repost-${post.id}`}
           accessibilityRole="button"
           accessibilityLabel={`${post.reposted ? "Reposted" : "Repost"} post ${post.id}`}
-          style={styles.utilityButton}
+          style={styles.actionButton}
           disabled={busy}
-          onPress={() => onRepost?.(post)}
+          onPress={(event) => {
+            event.stopPropagation();
+            onRepost?.(post);
+          }}
         >
-          <Text style={styles.utilityText}>{post.reposted ? "Reposted" : "Repost"}</Text>
+          <Text style={[styles.actionIcon, post.reposted && styles.actionIconActive]}>↻</Text>
+          <Text style={[styles.actionText, post.reposted && styles.actionTextActive]}>
+            {post.repost_count ? compactCount(post.repost_count) : "Repost"}
+          </Text>
         </Pressable>
-        {onPromote ? (
-          <Pressable
-            testID={`home-feed-promote-${post.id}`}
-            accessibilityRole="button"
-            accessibilityLabel={`Promote post ${post.id}`}
-            style={styles.utilityButton}
-            disabled={busy}
-            onPress={() => onPromote(post)}
-          >
-            <Text style={styles.utilityText}>Promote</Text>
-          </Pressable>
-        ) : null}
         <Pressable
           testID={`home-feed-share-${post.id}`}
           accessibilityRole="button"
           accessibilityLabel={`Share post ${post.id}`}
-          style={styles.utilityButton}
-          onPress={() => (onShare ? onShare(post) : Share.share({ message: pulsePostUrl(post.id) }))}
+          style={styles.actionButton}
+          onPress={(event) => {
+            event.stopPropagation();
+            onShare ? onShare(post) : Share.share({ message: pulsePostUrl(post.id) });
+          }}
         >
-          <Text style={styles.utilityText}>Share</Text>
+          <Text style={styles.actionIcon}>↗</Text>
+          <Text style={styles.actionText}>{post.share_count ? compactCount(post.share_count) : "Share"}</Text>
+        </Pressable>
+        <Pressable
+          testID={`home-feed-save-${post.id}`}
+          accessibilityRole="button"
+          accessibilityLabel={`${post.saved ? "Saved" : "Save"} post ${post.id}`}
+          style={[styles.actionButton, styles.actionButtonTrailing]}
+          disabled={busy}
+          onPress={(event) => {
+            event.stopPropagation();
+            onSave?.(post);
+          }}
+        >
+          <Text style={[styles.actionIcon, post.saved && styles.actionIconActive]}>□</Text>
         </Pressable>
       </View>
 
-      {onFollow || onReport || onHide || onBlock || onMute ? (
-        <View style={styles.safetyRow}>
-          {onFollow ? (
+      {menuOpen ? (
+        <View style={styles.overflowMenu}>
+          {onPromote ? (
             <Pressable
-              testID={`home-feed-follow-${post.id}`}
+              testID={`home-feed-promote-${post.id}`}
               accessibilityRole="button"
-              accessibilityLabel={`${post.viewer_follows_author ? "Following" : "Follow"} ${displayName}`}
-              style={styles.safetyButton}
+              accessibilityLabel={`Promote post ${post.id}`}
+              style={styles.menuAction}
               disabled={busy}
-              onPress={() => onFollow(post)}
+              onPress={(event) => {
+                event.stopPropagation();
+                setMenuOpen(false);
+                onPromote(post);
+              }}
             >
-              <Text style={styles.safetyText}>{post.viewer_follows_author ? "Following" : "Follow"}</Text>
+              <Text style={styles.menuActionText}>Promote</Text>
             </Pressable>
           ) : null}
           {onReport ? (
@@ -194,11 +283,15 @@ export function PostCard({
               testID={`home-feed-report-${post.id}`}
               accessibilityRole="button"
               accessibilityLabel={`Report post ${post.id}`}
-              style={styles.safetyButton}
+              style={styles.menuAction}
               disabled={busy}
-              onPress={() => onReport(post)}
+              onPress={(event) => {
+                event.stopPropagation();
+                setMenuOpen(false);
+                onReport(post);
+              }}
             >
-              <Text style={styles.safetyText}>Report</Text>
+              <Text style={styles.menuActionText}>Report</Text>
             </Pressable>
           ) : null}
           {onHide ? (
@@ -206,11 +299,15 @@ export function PostCard({
               testID={`home-feed-hide-${post.id}`}
               accessibilityRole="button"
               accessibilityLabel={`Hide post ${post.id}`}
-              style={styles.safetyButton}
+              style={styles.menuAction}
               disabled={busy}
-              onPress={() => onHide(post)}
+              onPress={(event) => {
+                event.stopPropagation();
+                setMenuOpen(false);
+                onHide(post);
+              }}
             >
-              <Text style={styles.safetyText}>Hide</Text>
+              <Text style={styles.menuActionText}>Hide</Text>
             </Pressable>
           ) : null}
           {onBlock ? (
@@ -218,11 +315,15 @@ export function PostCard({
               testID={`home-feed-block-${post.id}`}
               accessibilityRole="button"
               accessibilityLabel={`Block ${displayName}`}
-              style={styles.safetyButton}
+              style={styles.menuAction}
               disabled={busy}
-              onPress={() => onBlock(post)}
+              onPress={(event) => {
+                event.stopPropagation();
+                setMenuOpen(false);
+                onBlock(post);
+              }}
             >
-              <Text style={styles.safetyText}>Block</Text>
+              <Text style={styles.menuActionText}>Block</Text>
             </Pressable>
           ) : null}
           {onMute ? (
@@ -230,11 +331,15 @@ export function PostCard({
               testID={`home-feed-mute-${post.id}`}
               accessibilityRole="button"
               accessibilityLabel={`Mute ${displayName}`}
-              style={styles.safetyButton}
+              style={styles.menuAction}
               disabled={busy}
-              onPress={() => onMute(post)}
+              onPress={(event) => {
+                event.stopPropagation();
+                setMenuOpen(false);
+                onMute(post);
+              }}
             >
-              <Text style={styles.safetyText}>Mute</Text>
+              <Text style={styles.menuActionText}>Mute</Text>
             </Pressable>
           ) : null}
         </View>
@@ -250,6 +355,73 @@ export function PostCard({
           ))}
         </View>
       ) : null}
+
+      {!detail && onSubmitComment ? (
+        <Pressable
+          testID={`home-feed-inline-comment-${post.id}`}
+          style={styles.inlineCommentComposer}
+          onPress={(event) => event.stopPropagation()}
+        >
+          <View style={styles.inlineCommentAvatar}>
+            <Text style={styles.inlineCommentAvatarText}>PS</Text>
+          </View>
+          <TextInput
+            ref={commentInputRef}
+            accessibilityLabel="Write a comment"
+            testID={`home-feed-comment-input-${post.id}`}
+            style={styles.inlineCommentInput}
+            value={commentBody}
+            onChangeText={(next) => {
+              setCommentBody(next);
+              if (commentNotice) setCommentNotice("");
+            }}
+            onSubmitEditing={submitInlineComment}
+            placeholder="Write a comment..."
+            placeholderTextColor={colors.muted}
+            multiline
+            returnKeyType="send"
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Add photo to comment"
+            testID={`home-feed-comment-photo-${post.id}`}
+            style={styles.inlineCommentTool}
+            onPress={(event) => {
+              event.stopPropagation();
+              showUnavailable("Photo");
+            }}
+          >
+            <Text style={styles.inlineCommentToolText}>▣</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Add emoji"
+            testID={`home-feed-comment-emoji-${post.id}`}
+            style={styles.inlineCommentTool}
+            onPress={(event) => {
+              event.stopPropagation();
+              setCommentBody((current) => `${current}${current ? " " : ""}☺`);
+            }}
+          >
+            <Text style={styles.inlineCommentToolText}>☺</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Send comment"
+            accessibilityState={{ disabled: !commentBody.trim() || commentPosting, busy: commentPosting }}
+            testID={`home-feed-comment-submit-${post.id}`}
+            style={[styles.inlineCommentSend, (!commentBody.trim() || commentPosting) && styles.inlineCommentSendDisabled]}
+            disabled={!commentBody.trim() || commentPosting}
+            onPress={(event) => {
+              event.stopPropagation();
+              submitInlineComment();
+            }}
+          >
+            <Text style={styles.inlineCommentSendText}>{commentPosting ? "…" : "➤"}</Text>
+          </Pressable>
+        </Pressable>
+      ) : null}
+      {commentNotice ? <Text style={styles.commentNotice}>{commentNotice}</Text> : null}
       </LogiNexusCard>
     </Pressable>
   );
@@ -308,37 +480,54 @@ function MediaStrip({ post }: { post: PulsePost }) {
   );
 }
 
-function reactionLabel(reaction: string, count?: number) {
-  const labels: Record<string, string> = {
-    fire: "♥",
-    smart: "UNDX",
-    bullish: "Signal",
-    funny: "Pulse"
-  };
-  const label = labels[reaction] || reaction.replace(/_/g, " ");
-  const value = Number(count || 0);
-  return value ? `${label} ${value}` : label;
+function compactCount(value?: number) {
+  const count = Number(value || 0);
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(count >= 10_000_000 ? 0 : 1)}M`;
+  if (count >= 1000) return `${(count / 1000).toFixed(count >= 10_000 ? 0 : 1)}K`;
+  return String(count);
 }
 
 const styles = StyleSheet.create({
   actionButton: {
+    alignItems: "center",
     backgroundColor: "rgba(9, 20, 33, 0.56)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: logiNexus.radius.capsule,
     borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    justifyContent: "center",
     minHeight: 34,
-    paddingHorizontal: 12,
+    minWidth: 42,
+    paddingHorizontal: 9,
     paddingVertical: 8
   },
   actionButtonActive: {
     backgroundColor: "rgba(37, 208, 167, 0.16)",
     borderColor: logiNexus.colors.home.borderActive
   },
+  actionButtonTrailing: {
+    marginLeft: "auto",
+    minWidth: 38
+  },
+  actionIcon: {
+    color: colors.muted,
+    fontSize: 16,
+    fontWeight: "900",
+    lineHeight: 18
+  },
+  actionIconActive: {
+    color: colors.danger
+  },
   actionRow: {
+    alignItems: "center",
+    borderTopColor: logiNexus.colors.home.borderSubtle,
+    borderTopWidth: 1,
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
-    marginTop: 12
+    gap: 7,
+    marginTop: 12,
+    paddingTop: 10
   },
   actionText: {
     color: colors.muted,
@@ -385,10 +574,23 @@ const styles = StyleSheet.create({
     height: 54,
     width: 54
   },
+  badgeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 10
+  },
   body: {
     color: colors.text,
     ...logiNexus.typography.home.cardBody,
     marginTop: 14
+  },
+  commentNotice: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 8
   },
   card: {
     backgroundColor: "rgba(6, 14, 27, 0.94)",
@@ -417,6 +619,99 @@ const styles = StyleSheet.create({
     gap: 14,
     marginTop: 14,
     paddingTop: 12
+  },
+  followPill: {
+    alignItems: "center",
+    borderColor: "rgba(100, 255, 188, 0.58)",
+    borderRadius: logiNexus.radius.capsule,
+    borderWidth: 1,
+    minHeight: 34,
+    paddingHorizontal: 13
+  },
+  followPillActive: {
+    backgroundColor: "rgba(50, 230, 179, 0.14)"
+  },
+  followPillText: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 18
+  },
+  followPillTextActive: {
+    color: colors.accentStrong
+  },
+  headerActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8
+  },
+  inlineCommentAvatar: {
+    alignItems: "center",
+    backgroundColor: "rgba(121, 210, 255, 0.13)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 15,
+    borderWidth: 1,
+    height: 30,
+    justifyContent: "center",
+    width: 30
+  },
+  inlineCommentAvatarText: {
+    color: colors.accentStrong,
+    fontSize: 10,
+    fontWeight: "900"
+  },
+  inlineCommentComposer: {
+    alignItems: "center",
+    backgroundColor: "rgba(4, 11, 22, 0.62)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 7,
+    marginTop: 12,
+    minHeight: 48,
+    paddingHorizontal: 9,
+    paddingVertical: 8
+  },
+  inlineCommentInput: {
+    color: colors.text,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 18,
+    maxHeight: 84,
+    minHeight: 28,
+    minWidth: 0,
+    padding: 0
+  },
+  inlineCommentSend: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderRadius: 16,
+    height: 32,
+    justifyContent: "center",
+    width: 32
+  },
+  inlineCommentSendDisabled: {
+    opacity: 0.45
+  },
+  inlineCommentSendText: {
+    color: colors.background,
+    fontSize: 15,
+    fontWeight: "900"
+  },
+  inlineCommentTool: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderRadius: 15,
+    height: 30,
+    justifyContent: "center",
+    width: 30
+  },
+  inlineCommentToolText: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "900"
   },
   mediaFallback: {
     alignItems: "center",
@@ -451,9 +746,51 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 14
   },
+  menuAction: {
+    alignItems: "center",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 36,
+    paddingHorizontal: 10
+  },
+  menuActionText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "900"
+  },
   meta: {
     color: colors.muted,
     ...logiNexus.typography.home.cardMetadata
+  },
+  overflowButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 17,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: "center",
+    width: 34
+  },
+  overflowMenu: {
+    backgroundColor: "rgba(5, 13, 26, 0.9)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 7,
+    marginTop: 10,
+    padding: 8
+  },
+  overflowText: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 1
   },
   previewAuthor: {
     color: colors.text,
@@ -470,6 +807,40 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 12,
     paddingTop: 10
+  },
+  socialAvatarDot: {
+    borderColor: colors.background,
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 16,
+    marginLeft: -5,
+    width: 16
+  },
+  socialAvatarDotOne: {
+    backgroundColor: colors.accent,
+    marginLeft: 0
+  },
+  socialAvatarDotThree: {
+    backgroundColor: colors.intelligence
+  },
+  socialAvatarDotTwo: {
+    backgroundColor: colors.accentStrong
+  },
+  socialAvatars: {
+    flexDirection: "row"
+  },
+  socialContextRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12
+  },
+  socialContextText: {
+    color: colors.muted,
+    flexShrink: 1,
+    fontSize: 12,
+    fontWeight: "800"
   },
   safetyButton: {
     borderColor: logiNexus.colors.home.borderSubtle,
@@ -510,6 +881,11 @@ const styles = StyleSheet.create({
     color: colors.accentStrong,
     fontSize: 13,
     fontWeight: "800"
+  },
+  viewCommentsText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "900"
   },
   verifiedMark: {
     color: colors.accentStrong,

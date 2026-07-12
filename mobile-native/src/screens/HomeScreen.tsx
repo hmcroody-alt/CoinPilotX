@@ -3,6 +3,7 @@ import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Image, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import {
+  addPostComment,
   hidePost,
   listFeed,
   loadCachedFeed,
@@ -221,6 +222,41 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     await Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined);
   }
 
+  async function handleInlineComment(post: PulsePost, body: string) {
+    setBusyPostId(post.id);
+    const previousCount = Number(post.comment_count || post.comments_count || 0);
+    try {
+      const result = await addPostComment(post.id, body);
+      const nextComment = result.comment;
+      if (nextComment) {
+        updatePost(post.id, {
+          comment_count: previousCount + 1,
+          comments_count: previousCount + 1,
+          preview_comments: [nextComment, ...(post.preview_comments || [])].slice(0, 2)
+        });
+      } else if (result.comments?.length) {
+        updatePost(post.id, {
+          comment_count: result.comments.length,
+          comments_count: result.comments.length,
+          preview_comments: result.comments.slice(0, 2)
+        });
+      } else {
+        await load("refresh");
+      }
+      invalidateNativeSync(["activity", "notifications"], "home_comment", [
+        {
+          event_type: "comment_created",
+          entity_type: "post",
+          entity_id: post.id,
+          invalidates: ["activity", "notifications"],
+          metadata: { source: "native_home_feed_inline_comment" }
+        }
+      ]).catch(() => undefined);
+    } finally {
+      setBusyPostId(null);
+    }
+  }
+
   async function handleFollow(post: PulsePost) {
     setBusyPostId(post.id);
     try {
@@ -412,6 +448,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             onPromote={(post) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: post.id, title: "Promote Post" })}
             onShare={handleShare}
             onComment={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Comments" })}
+            onSubmitComment={handleInlineComment}
             onReport={(post) =>
               navigation.navigate("SafetyHub", {
                 title: "Report",
