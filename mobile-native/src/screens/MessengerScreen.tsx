@@ -145,7 +145,7 @@ export function MessengerScreen() {
             <View style={styles.headerStack}>
               <PulseCommandHeader
                 title="Pulse Command"
-                subtitle="Messages, calls, groups, rooms, and UNDX in one secure nexus."
+                subtitle="Messages, calls, groups, and rooms."
                 status={error ? "Cached link" : "Live sync"}
                 tone={error ? "warning" : "intelligence"}
                 actions={
@@ -164,8 +164,8 @@ export function MessengerScreen() {
               <PulseCommandSegmentRail items={tabItems} selected={selectedTab} onSelect={handleTabSelect} />
               <PulseCommandPanel style={styles.signalRail}>
                 <View style={styles.signalHeader}>
-                  <Text style={styles.signalTitle}>Active signal rail</Text>
-                  <Text style={styles.signalSubtitle}>{activeSignal.length ? "Authoritative presence when available" : "Presence appears when the server publishes it"}</Text>
+                  <Text style={styles.signalTitle}>Active users</Text>
+                  <Text style={styles.signalSubtitle}>{activeSignal.length ? "Online and recent conversations" : "Presence appears when the server publishes it"}</Text>
                 </View>
                 <FlatList
                   horizontal
@@ -317,16 +317,16 @@ function itemKey(tab: PulseCommandTab, item: MessengerConversation | PulseCall |
 }
 
 function emptyTitle(tab: PulseCommandTab, query: string) {
-  if (query) return "No matching transmissions";
-  if (tab === "calls") return "No call signals";
+  if (query) return "No matching messages";
+  if (tab === "calls") return "No calls loaded";
   if (tab === "groups") return "No groups loaded";
   if (tab === "rooms") return "No rooms loaded";
   return "No conversations loaded yet";
 }
 
 function emptyBody(tab: PulseCommandTab, query: string) {
-  if (query) return "Try a different name, group, room, or message signal.";
-  if (tab === "calls") return "Active and recent call states appear here when the call engine returns them.";
+  if (query) return "Try a different name, group, room, or message.";
+  if (tab === "calls") return "Active and recent calls appear here when the call engine returns them.";
   if (tab === "groups") return "Groups are server-authoritative and appear when your account can access them.";
   if (tab === "rooms") return "Rooms appear when existing PulseSoc room contracts expose them.";
   return "New conversations will appear here as soon as the server has them.";
@@ -334,8 +334,8 @@ function emptyBody(tab: PulseCommandTab, query: string) {
 
 const styles = StyleSheet.create({
   list: {
-    gap: logiNexus.spacing.md,
-    padding: logiNexus.spacing.lg,
+    gap: 6,
+    padding: 10,
     paddingBottom: 116
   },
   headerActions: {
@@ -344,7 +344,7 @@ const styles = StyleSheet.create({
     gap: logiNexus.spacing.sm
   },
   headerStack: {
-    gap: logiNexus.spacing.md
+    gap: 10
   },
   metrics: {
     flexDirection: "row",
@@ -352,24 +352,25 @@ const styles = StyleSheet.create({
   },
   row: {
     alignItems: "center",
-    backgroundColor: colors.glass,
-    borderColor: "rgba(97,216,255,0.24)",
-    borderRadius: logiNexus.radius.large,
+    backgroundColor: "rgba(255,255,255,0.028)",
+    borderColor: "rgba(255,255,255,0.06)",
+    borderRadius: 12,
     borderWidth: 1,
     flexDirection: "row",
-    gap: logiNexus.spacing.md,
-    minHeight: 82,
-    padding: logiNexus.spacing.md
+    gap: 10,
+    minHeight: 74,
+    padding: 10
   },
   rowPressed: {
-    backgroundColor: colors.surfaceRaised
+    backgroundColor: "rgba(105,218,240,0.06)",
+    borderColor: "rgba(105,218,240,0.25)"
   },
   pinnedRow: {
     borderColor: "rgba(189, 132, 255, 0.48)"
   },
   rowBody: {
     flex: 1,
-    gap: 5,
+    gap: 3,
     minWidth: 0
   },
   rowSignals: {
@@ -380,52 +381,53 @@ const styles = StyleSheet.create({
   rowTop: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 8
+    gap: 6
   },
   title: {
     color: colors.text,
     flex: 1,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "900"
   },
   muted: {
     color: colors.muted,
-    fontSize: 14,
-    lineHeight: 20
+    fontSize: 12,
+    lineHeight: 16
   },
   profileButton: {
     borderColor: colors.border,
     borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 8
+    minHeight: 32,
+    paddingHorizontal: 8,
+    paddingVertical: 6
   },
   profileButtonText: {
     color: colors.accentStrong,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900"
   },
   time: {
     color: colors.muted,
-    fontSize: 12
+    fontSize: 10
   },
   signalHeader: {
     gap: 2
   },
   signalItem: {
     alignItems: "center",
-    gap: 6,
-    width: 74
+    gap: 5,
+    width: 66
   },
   signalList: {
-    gap: logiNexus.spacing.md,
-    paddingTop: logiNexus.spacing.md
+    gap: 10,
+    paddingTop: 10
   },
   signalName: {
     color: colors.muted,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "800",
-    maxWidth: 72,
+    maxWidth: 64,
     textAlign: "center"
   },
   signalPill: {
@@ -433,36 +435,37 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.capsule,
     borderWidth: StyleSheet.hairlineWidth,
     color: colors.muted,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: "800",
-    paddingHorizontal: 7,
-    paddingVertical: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     textTransform: "uppercase"
   },
   signalRail: {
-    paddingBottom: logiNexus.spacing.md
+    paddingBottom: 10
   },
   signalSubtitle: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700"
   },
   signalTitle: {
     color: colors.text,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "900"
   },
   badge: {
     alignItems: "center",
     backgroundColor: colors.accent,
-    borderRadius: 11,
-    minWidth: 22,
+    borderRadius: 12,
+    minHeight: 23,
+    minWidth: 23,
     paddingHorizontal: 6,
-    paddingVertical: 3
+    paddingVertical: 2
   },
   badgeText: {
     color: "#08110f",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900"
   },
   error: {

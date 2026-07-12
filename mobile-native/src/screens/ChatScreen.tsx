@@ -121,7 +121,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       if (cached.length) {
         setMessages(cached);
         setError("");
-        setStatusMessage("Showing cached transmission state while PulseSoc reconnects.");
+        setStatusMessage("Showing cached messages while PulseSoc reconnects.");
       } else {
         setError(loadError instanceof Error ? loadError.message : "Messages could not load.");
       }
@@ -448,7 +448,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       <LogiNexusScreenShell bottomDock={false} contentStyle={styles.shellContent}>
       <View style={styles.header}>
         <PulseCommandHeader
-          title={route.params.title || "Transmission"}
+          title={route.params.title || "Chat"}
           subtitle={typing || "Secure PulseSoc message channel"}
           status={error ? "Reconnecting" : "Live channel"}
           tone={error ? "warning" : "default"}
@@ -471,7 +471,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {loading && messages.length === 0 ? (
-        <LogiNexusStatePanel state="loading" title="Opening transmission" body="Loading encrypted conversation history from the server." loading style={styles.loadingPanel} />
+        <LogiNexusStatePanel state="loading" title="Opening chat" body="Loading conversation history from the server." loading style={styles.loadingPanel} />
       ) : (
         <FlatList
           data={visibleMessages}
@@ -486,8 +486,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load({ refresh: true })} />}
           onEndReached={loadOlder}
           onEndReachedThreshold={0.2}
-          ListFooterComponent={loadingOlder ? <Text style={styles.loadingOlder}>Loading older transmissions...</Text> : null}
-          ListEmptyComponent={<LogiNexusStatePanel state="empty" title="No active transmissions" body="Messages in this channel will appear here." style={styles.emptyMessages} />}
+          ListFooterComponent={loadingOlder ? <Text style={styles.loadingOlder}>Loading older messages...</Text> : null}
+          ListEmptyComponent={<LogiNexusStatePanel state="empty" title="No messages yet" body="Messages in this chat will appear here." style={styles.emptyMessages} />}
           renderItem={({ item }) => (
             <MessageBubble
               message={item}
@@ -777,9 +777,9 @@ const styles = StyleSheet.create({
     margin: logiNexus.spacing.lg
   },
   list: {
-    gap: logiNexus.spacing.sm,
-    padding: logiNexus.spacing.md,
-    paddingTop: logiNexus.spacing.sm
+    gap: 8,
+    padding: 12,
+    paddingTop: 8
   },
   emptyMessages: {
     marginTop: logiNexus.spacing.xxl
@@ -801,26 +801,29 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start"
   },
   bubble: {
-    borderRadius: logiNexus.radius.large,
+    borderRadius: 17,
     gap: 6,
     maxWidth: "84%",
     minWidth: 88,
-    padding: logiNexus.spacing.md
+    paddingHorizontal: 12,
+    paddingVertical: 10
   },
   mineBubble: {
-    backgroundColor: "rgba(50, 230, 179, 0.18)",
-    borderColor: "rgba(50, 230, 179, 0.58)",
+    backgroundColor: "rgba(34, 171, 119, 0.58)",
+    borderColor: "rgba(56, 221, 160, 0.26)",
+    borderBottomRightRadius: 6,
     borderWidth: 1
   },
   theirBubble: {
-    backgroundColor: colors.glass,
-    borderColor: colors.border,
+    backgroundColor: "rgba(255,255,255,0.052)",
+    borderBottomLeftRadius: 6,
+    borderColor: "rgba(105,218,240,0.13)",
     borderWidth: 1
   },
   body: {
     color: colors.text,
-    fontSize: 16,
-    lineHeight: 22
+    fontSize: 15,
+    lineHeight: 21
   },
   forwarded: {
     color: colors.muted,
@@ -836,7 +839,7 @@ const styles = StyleSheet.create({
   },
   meta: {
     color: colors.muted,
-    fontSize: 11
+    fontSize: 9
   },
   moderatedBubble: {
     borderColor: "rgba(255, 204, 102, 0.35)"
@@ -855,15 +858,15 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: logiNexus.radius.capsule,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 8,
-    paddingVertical: 4
+    paddingHorizontal: 7,
+    paddingVertical: 3
   },
   reactionActive: {
     borderColor: colors.accent
   },
   reactionText: {
     color: colors.text,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "800",
     textTransform: "capitalize"
   },
@@ -871,9 +874,9 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(97,216,255,0.08)",
     borderLeftColor: colors.accent,
     borderLeftWidth: 2,
-    borderRadius: logiNexus.radius.medium,
+    borderRadius: 10,
     gap: 2,
-    padding: 8
+    padding: 7
   },
   replyTitle: {
     color: colors.accentStrong,
@@ -883,19 +886,19 @@ const styles = StyleSheet.create({
   },
   replyPreview: {
     color: colors.muted,
-    fontSize: 13,
-    lineHeight: 18
+    fontSize: 12,
+    lineHeight: 17
   },
   image: {
     aspectRatio: 1.12,
     backgroundColor: colors.surfaceRaised,
-    borderRadius: logiNexus.radius.medium,
+    borderRadius: 12,
     width: 220
   },
   attachment: {
     backgroundColor: "rgba(255,255,255,0.08)",
     borderColor: "rgba(97,216,255,0.24)",
-    borderRadius: logiNexus.radius.medium,
+    borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     gap: 3,
     minWidth: 190,
@@ -903,7 +906,7 @@ const styles = StyleSheet.create({
   },
   attachmentTitle: {
     color: colors.text,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "800"
   },
   attachmentMeta: {
@@ -925,16 +928,16 @@ const styles = StyleSheet.create({
   },
   composer: {
     gap: 8,
-    marginHorizontal: logiNexus.spacing.md,
-    marginTop: logiNexus.spacing.sm,
-    padding: logiNexus.spacing.md
+    marginHorizontal: 10,
+    marginTop: 8,
+    padding: 9
   },
   statusBanner: {
     backgroundColor: "rgba(97,216,255,0.08)",
     borderColor: "rgba(97,216,255,0.24)",
-    borderRadius: logiNexus.radius.medium,
+    borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
-    padding: 10
+    padding: 8
   },
   statusBannerText: {
     color: colors.text,
@@ -945,11 +948,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.045)",
     borderColor: colors.border,
-    borderRadius: logiNexus.radius.medium,
+    borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
     gap: 10,
-    padding: 10
+    padding: 8
   },
   replyCopy: {
     flex: 1,
@@ -957,7 +960,7 @@ const styles = StyleSheet.create({
   },
   replyCancel: {
     borderColor: colors.border,
-    borderRadius: logiNexus.radius.medium,
+    borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 10,
     paddingVertical: 7
@@ -977,8 +980,8 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: logiNexus.radius.medium,
     borderWidth: StyleSheet.hairlineWidth,
-    minHeight: 36,
-    minWidth: 56,
+    minHeight: 44,
+    minWidth: 44,
     justifyContent: "center",
     paddingHorizontal: 10
   },
@@ -1001,7 +1004,7 @@ const styles = StyleSheet.create({
   input: {
     backgroundColor: "rgba(3, 7, 18, 0.72)",
     borderColor: colors.border,
-    borderRadius: logiNexus.radius.large,
+    borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     color: colors.text,
     flex: 1,
@@ -1013,10 +1016,11 @@ const styles = StyleSheet.create({
   sendButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
-    borderRadius: logiNexus.radius.large,
+    borderRadius: 999,
     minHeight: 46,
+    minWidth: 48,
     justifyContent: "center",
-    paddingHorizontal: 18
+    paddingHorizontal: 14
   },
   pressed: {
     opacity: 0.82

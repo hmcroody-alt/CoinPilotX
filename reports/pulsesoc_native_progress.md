@@ -2,6 +2,48 @@
 
 Date: 2026-07-10
 
+## Latest Mission Status: Pulse Command Exact Production UI Parity
+
+- Current native migration: 96%.
+- Pulse Command production layout parity: 84%.
+- Pulse Command production visual parity: 80%.
+- Pulse Command feature parity: 88%.
+- Pulse Command interaction parity: 82%.
+- Xcode Simulator QA: pending fresh exact-parity screenshot matrix after the first density pass.
+- Release QA confidence: 90%.
+
+Strategic correction:
+
+- Home is frozen for exact parity and should not be reopened unless a regression, accessibility issue, performance issue, or owner-requested change appears.
+- Pulse Command / Messenger is now the active exact-parity subsystem.
+- The current production Messenger UI is the visual, structural, and workflow authority.
+
+Completed action:
+
+- Created the Pulse Command exact-parity inventory, layout parity, visual parity, interaction parity, code reuse, and simulator QA reports.
+- Added `scripts/pulsesoc_native_pulse_command_exact_parity_audit.py`.
+- Reused the existing `MessengerScreen`, `ChatScreen`, `PulseCommand` primitives, `pulseCommand/domain.ts`, and Messenger API wrappers.
+- Tightened shared Pulse Command primitives to production Messenger density: 48px avatars, shorter search/tabs, and denser panels.
+- Tightened native Messenger conversation rows toward production CSS values from `static/css/pulse_messages_v2.css`.
+- Replaced non-production Messenger copy such as "transmissions" and "secure nexus" with production-recognizable messaging copy.
+- Tightened native chat bubbles and composer geometry toward production Messenger values while preserving the existing send/upload/retry/offline pipelines.
+
+Remaining Pulse Command exact parity work:
+
+- Fresh authenticated Xcode iPhone Simulator side-by-side captures.
+- Conversation header exact sizing.
+- Date separators, unread divider, context menu, copy/forward/edit/message details.
+- Attachment sheet, document/download, gallery, and voice-message depth.
+- Calls tab exact row/filter parity.
+- Groups and Rooms detail exact production visual parity.
+- Offline/reconnect disruption QA.
+
+Recommended next mission: Continue Pulse Command exact production UI parity.
+
+Reason for recommendation:
+
+- Pulse Command is not frozen and should not move to another subsystem until production layout, visual, interaction, and simulator evidence thresholds are met.
+
 ## Latest Mission Status: Native Home Exact Production UI Parity
 
 - Current native migration: 96%.

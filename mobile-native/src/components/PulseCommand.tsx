@@ -175,22 +175,22 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(7, 16, 29, 0.86)",
     borderRadius: logiNexus.radius.circular,
     borderWidth: 1,
-    height: 52,
+    height: 48,
     justifyContent: "center",
-    width: 52
+    width: 48
   },
   avatarSignal: {
     borderColor: colors.background,
     borderRadius: 7,
     borderWidth: 2,
-    bottom: 1,
-    height: 14,
+    bottom: 0,
+    height: 12,
     position: "absolute",
-    right: 1,
-    width: 14
+    right: 0,
+    width: 12
   },
   avatarText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "900"
   },
   eyebrow: {
@@ -237,8 +237,8 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.medium,
     borderWidth: StyleSheet.hairlineWidth,
     flex: 1,
-    minHeight: 66,
-    padding: logiNexus.spacing.md
+    minHeight: 54,
+    padding: logiNexus.spacing.sm
   },
   metricLabel: {
     ...logiNexus.typography.metadata,
@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.panel,
     borderWidth: 1,
     overflow: "hidden",
-    padding: logiNexus.spacing.lg
+    padding: logiNexus.spacing.md
   },
   panelGlow: {
     height: 2,
@@ -266,7 +266,7 @@ const styles = StyleSheet.create({
     ...logiNexus.typography.body,
     color: colors.text,
     flex: 1,
-    minHeight: 48,
+    minHeight: 44,
     paddingRight: logiNexus.spacing.md
   },
   searchGlyph: {
@@ -282,8 +282,8 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     flexDirection: "row",
-    minHeight: 52,
-    paddingLeft: logiNexus.spacing.lg
+    minHeight: 46,
+    paddingLeft: logiNexus.spacing.md
   },
   segment: {
     alignItems: "center",
@@ -292,8 +292,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 6,
-    minHeight: 40,
-    paddingHorizontal: logiNexus.spacing.lg
+    minHeight: 36,
+    paddingHorizontal: logiNexus.spacing.md
   },
   segmentActive: {
     backgroundColor: colors.signalDim,
@@ -307,11 +307,11 @@ const styles = StyleSheet.create({
   segmentRail: {
     backgroundColor: colors.glass,
     borderColor: colors.border,
-    borderRadius: logiNexus.radius.panel,
+    borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     flexDirection: "row",
     gap: logiNexus.spacing.sm,
-    padding: logiNexus.spacing.sm
+    padding: 5
   },
   segmentText: {
     ...logiNexus.typography.button,

@@ -6,6 +6,7 @@ Date: 2026-07-11
 
 - `static/css/pulse_home_os.css`
 - `static/css/pulse_desktop_feed.css`
+- `static/css/pulse_messages_v2.css`
 
 ## Native Token Targets
 
@@ -31,6 +32,18 @@ Date: 2026-07-11
 | Feed cards `post-card-modern` glass | `PostCard.styles.card` | Native feed card surface |
 | Feed action row and comment dock | `PostCard.styles.actionRow`, `inlineCommentComposer` | Production Like/Comment/Repost/Share/Save and inline comment affordances |
 | Mobile dock blur/glow | `GlobalNavigation.bottomPanel` | Native bottom tab dock |
+| Messenger conversation row `min-height: 72px` | `MessengerScreen.styles.row.minHeight = 74` | Native keeps a 44pt+ touch-safe row while matching production density |
+| Messenger conversation row `grid-template-columns: 48px minmax(0, 1fr) auto` | `PulseCommandAvatar` 48x48 + native flex row | Conversation list rows |
+| Messenger conversation row `padding: 10px`, `gap: 10px`, `border-radius: 12px` | `MessengerScreen.styles.row` | Inbox, Calls, Groups, Rooms rows |
+| Messenger row title `font-size: 14px` | `MessengerScreen.styles.title.fontSize = 14` | Conversation title |
+| Messenger row preview `font-size: 12px` | `MessengerScreen.styles.muted.fontSize = 12` | Last message preview |
+| Messenger badge `min-width: 23px`, `height: 23px` | `MessengerScreen.styles.badge` | Unread counts |
+| Message bubble `max-width: min(720px, 74%)` | `ChatScreen.styles.bubble.maxWidth = 84%` | Native mobile keeps wider max width for small iPhones |
+| Message bubble `padding: 10px 12px`, `border-radius: 17px` | `ChatScreen.styles.bubble` | Incoming/outgoing messages |
+| Outgoing message `border-radius: 17px 17px 6px 17px` | `mineBubble.borderBottomRightRadius = 6` | Outgoing bubble tail |
+| Incoming message `border-radius: 17px 17px 17px 6px` | `theirBubble.borderBottomLeftRadius = 6` | Incoming bubble tail |
+| Composer input `min-height: 46px`, `border-radius: 999px` | `ChatScreen.styles.input` | Conversation composer |
+| Composer send `48px` circular button | `ChatScreen.styles.sendButton` | Native send action |
 
 ## Required Deviation Notes
 
