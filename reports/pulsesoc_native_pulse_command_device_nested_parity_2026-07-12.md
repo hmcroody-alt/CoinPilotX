@@ -1,6 +1,7 @@
 # PulseSoc Native Pulse Command Device and Nested Parity QA
 
-Date: 2026-07-12  
+Date: 2026-07-12
+
 Status: substantial completion, not frozen.
 
 ## Production and reuse
@@ -33,10 +34,13 @@ Directory: `reports/screenshots/native-pulse-command-device-nested-parity-2026-0
 
 ## Classification
 
-Simulator verified: four device widths for inbox hierarchy; populated nested bubbles; context-menu modal; attachment sheet; cached reconnect banner; long content; safe areas and bottom navigation.  
-Mock-state verified: fixture conversations/messages, failed/read/reply/reaction/media/system states.  
-Code-path verified: draft persistence, search debounce, cache fallback, retry, reaction rollback, delete/report, group/room/AI routing, upload handlers.  
-Blocked: unobscured keyboard/composer capture; automatic reconnect reconciliation; fresh group/room/AI nested screenshots; selected-filter auto-scroll evidence.  
+Simulator verified: four device widths for inbox hierarchy; populated nested bubbles; context-menu modal; attachment sheet; cached reconnect banner; long content; safe areas and bottom navigation.
+
+Mock-state verified: fixture conversations/messages, failed/read/reply/reaction/media/system states.
+
+Code-path verified: draft persistence, search debounce, cache fallback, retry, reaction rollback, delete/report, group/room/AI routing, upload handlers.
+
+Blocked: unobscured keyboard/composer capture; automatic reconnect reconciliation; fresh group/room/AI nested screenshots; selected-filter auto-scroll evidence.
 Physical-device-only: real camera/microphone, Bluetooth/speaker, push/lock-screen/background calls, cellular transitions, large uploads, file-provider edges.
 
 ## Honest parity
