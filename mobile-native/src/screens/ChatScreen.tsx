@@ -125,11 +125,13 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     [...current, ...incoming].forEach((message) => {
       const key = message.client_message_id || String(message.id);
       const existing = byKey.get(key);
+      const serverAccepted = message.id > 0 && Boolean(message.client_message_id);
       byKey.set(key, {
         ...existing,
         ...message,
-        local_status: message.local_status || existing?.local_status,
-        local_error: message.local_error || existing?.local_error
+        local_status: serverAccepted ? undefined : message.local_status || existing?.local_status,
+        local_error: serverAccepted ? undefined : message.local_error || existing?.local_error,
+        delivery_status: serverAccepted ? message.delivery_status || "sent" : message.delivery_status || existing?.delivery_status
       });
     });
     return Array.from(byKey.values()).sort((a, b) => a.id - b.id);
@@ -184,7 +186,14 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     if (appState.current !== "active") return;
     try {
       const queued = await drainMessengerQueue(conversationId);
-      if (queued.length) setMessages((current) => mergeMessages(current, queued));
+      if (queued.length) {
+        setStatusMessage("Messages reconnected.");
+        setMessages((current) => {
+          const reconciled = mergeMessages(current, queued);
+          cacheMessages(conversationId, reconciled).catch(() => undefined);
+          return reconciled;
+        });
+      }
       if (!newestMessageId) return;
       const data = await syncConversation(conversationId, newestMessageId);
       if (data.messages?.length) {
@@ -249,24 +258,26 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       };
       replaceLocalMessage(local.id, serverMessage);
       await sync();
-    } catch (sendError) {
+    } catch {
       await enqueueMessengerMessage(conversationId, {
         ...payload,
         client_message_id: local.client_message_id,
         local_created_at: local.created_at
       }).catch(() => undefined);
-      setMessages((current) =>
-        current.map((message) =>
+      setMessages((current) => {
+        const queuedMessages = current.map((message): MessengerMessage =>
           message.id === local.id
             ? {
                 ...message,
                 delivery_status: "queued",
-                local_status: "failed",
-                local_error: sendError instanceof Error ? sendError.message : "Send failed."
+                local_status: "queued",
+                local_error: undefined
               }
             : message
-        )
-      );
+        );
+        cacheMessages(conversationId, queuedMessages).catch(() => undefined);
+        return queuedMessages;
+      });
     }
   }, [conversationId, mergeMessages, replaceLocalMessage, sync]);
 

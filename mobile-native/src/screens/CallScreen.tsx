@@ -307,7 +307,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
               <Text style={styles.panelText}>{item.status || "active"} • {item.call_id}</Text>
             </Pressable>
           )) : (
-            <LogiNexusStatePanel state="empty" title="No active call signals" body="Active calls returned by `/api/calls/active` will appear here." style={styles.inlineStatePanel} />
+            <LogiNexusStatePanel state="empty" title="No active call signals" body="Incoming, outgoing, and active PulseSoc calls will appear here." style={styles.inlineStatePanel} />
           )}
         </PulseCommandPanel>
       )}

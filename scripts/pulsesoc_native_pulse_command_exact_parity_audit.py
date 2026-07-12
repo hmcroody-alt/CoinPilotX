@@ -198,6 +198,10 @@ def main() -> int:
         'delivery_status: "queued"',
         'Keyboard.addListener("keyboardWillShow"',
         "bottom: keyboardHeight",
+        "const serverAccepted = message.id > 0 && Boolean(message.client_message_id)",
+        'setStatusMessage("Messages reconnected.")',
+        "cacheMessages(conversationId, queuedMessages)",
+        'local_status: "queued"',
     ]:
         assert_contains(chat, needle, "ChatScreen", failures)
 
@@ -214,6 +218,11 @@ def main() -> int:
     pulse_ai = read("mobile-native/src/screens/PulseAiScreen.tsx")
     if "Powered by LogiNexus" in pulse_ai:
         failures.append("PulseAiScreen exposes internal LogiNexus branding")
+
+    calls = read("mobile-native/src/screens/CallScreen.tsx")
+    assert_contains(calls, "Incoming, outgoing, and active PulseSoc calls will appear here.", "CallScreen production-facing empty state", failures)
+    if "Active calls returned by `/api/" in calls:
+        failures.append("CallScreen exposes an internal API path in user-facing copy")
 
     domain = read("mobile-native/src/pulseCommand/domain.ts")
     for needle in ["messageActionRules", "conversationPreview", "groupActionRules", "roomActionRules"]:

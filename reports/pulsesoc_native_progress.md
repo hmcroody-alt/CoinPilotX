@@ -5299,3 +5299,12 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Freeze decision: **not simulator-parity frozen**. Live automatic reconnect/server-ID/read/reaction reconciliation, complete nested Group/Room/AI state matrices, and compact/standard keyboard captures remain unproven.
 - Authoritative next recommendation: keep the next mission scoped to Pulse Command evidence and reconciliation; do not advance to another native subsystem yet.
 - Detailed report: `reports/pulsesoc_native_pulse_command_final_simulator_closure_2026-07-12.md`.
+## Pulse Command Live Reconciliation and Nested-State Closure — 2026-07-12
+
+- Controlled-backend integration verified client-ID idempotency, stable server-ID reuse, reply send, realtime typing coalescing, and direct/group/room send-and-reload contracts.
+- Native reconciliation now caches queued bubbles immediately and clears stale local status/error when the authoritative server message replaces the same client ID.
+- Clean-install simulator QA identified and fixed the missing declared `@babel/runtime` dependency.
+- Fresh Pro simulator evidence covers the Calls empty state and populated Groups/Rooms shell; internal API copy was removed from Calls.
+- Freeze decision: **not simulator-parity frozen**. Interactive offline network restoration, compact/standard keyboard proof, and full nested Group/Room/AI/attachment/safety/call matrices remain incomplete.
+- Next recommendation: remain on Pulse Command and repair deterministic authenticated compact/standard UI automation before another evidence mission.
+- Report: `reports/pulsesoc_native_pulse_command_live_reconciliation_nested_closure_2026-07-12.md`.

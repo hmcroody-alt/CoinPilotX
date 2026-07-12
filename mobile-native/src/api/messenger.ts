@@ -64,7 +64,7 @@ export type MessengerMessage = {
   deleted_at?: string;
   moderated_at?: string;
   moderation_state?: string;
-  local_status?: "sending" | "failed" | "sent";
+  local_status?: "sending" | "queued" | "failed" | "sent";
   local_error?: string;
   client_message_id?: string;
 };
