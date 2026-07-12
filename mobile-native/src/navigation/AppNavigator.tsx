@@ -297,7 +297,7 @@ function subtitleForTab(name: string) {
   if (name === "PulseAI") return "UNDX Companion";
   if (name === "Marketplace") return "Commerce layer";
   if (name === "Notifications") return "Activity and notification signals";
-  return "Powered by LogiNexus Intelligence";
+  return "PulseSoc";
 }
 
 function subtitleForStack(name: string) {

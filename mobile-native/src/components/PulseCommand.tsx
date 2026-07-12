@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { Platform, Pressable, StyleProp, StyleSheet, Text, TextInput, View, ViewStyle, useWindowDimensions } from "react-native";
+import { Platform, Pressable, ScrollView, StyleProp, StyleSheet, Text, TextInput, View, ViewStyle, useWindowDimensions } from "react-native";
 import { colors } from "../theme/colors";
 import { logiNexus, LogiNexusTone, toneColor } from "../theme/logiNexus";
 
@@ -83,7 +83,7 @@ export function PulseCommandSegmentRail({
   onSelect: (key: string) => void;
 }) {
   return (
-    <View style={styles.segmentRail} accessibilityRole="tablist">
+    <ScrollView horizontal style={styles.segmentRail} contentContainerStyle={styles.segmentRailContent} showsHorizontalScrollIndicator={false} accessibilityRole="tablist">
       {items.map((item) => {
         const active = item.key === selected;
         return (
@@ -99,7 +99,7 @@ export function PulseCommandSegmentRail({
           </Pressable>
         );
       })}
-    </View>
+    </ScrollView>
   );
 }
 
@@ -309,6 +309,9 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: logiNexus.radius.large,
     borderWidth: 1,
+    flexGrow: 0
+  },
+  segmentRailContent: {
     flexDirection: "row",
     gap: logiNexus.spacing.sm,
     padding: 5

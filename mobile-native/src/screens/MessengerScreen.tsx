@@ -3,17 +3,7 @@ import { useNavigation } from "@react-navigation/native";
 import { useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { loadCachedConversations, listConversations, MessengerConversation, searchMessenger } from "../api/messenger";
-import { PulseCall, getActiveCalls } from "../api/calls";
-import { joinRoom, listGroups, listRooms, openGroupChat, PulseGroup, PulseRoom } from "../api/groups";
-import {
-  PulseCommandAction,
-  PulseCommandAvatar,
-  PulseCommandHeader,
-  PulseCommandMetric,
-  PulseCommandPanel,
-  PulseCommandSearch,
-  PulseCommandSegmentRail
-} from "../components/PulseCommand";
+import { PulseCommandAction, PulseCommandAvatar, PulseCommandPanel, PulseCommandSearch, PulseCommandSegmentRail } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
 import {
@@ -26,18 +16,13 @@ import {
 } from "../pulseCommand/domain";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
-import { formatShortTime } from "../utils/format";
 
-type PulseCommandTab = "chats" | "calls" | "groups" | "rooms";
-type PulseCommandListItem = MessengerConversation | PulseCall | PulseGroup | PulseRoom;
+type ConversationFilter = "all" | "direct" | "groups" | "rooms" | "ai" | "unread";
 
 export function MessengerScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [conversations, setConversations] = useState<MessengerConversation[]>([]);
-  const [activeCalls, setActiveCalls] = useState<PulseCall[]>([]);
-  const [groups, setGroups] = useState<PulseGroup[]>([]);
-  const [rooms, setRooms] = useState<PulseRoom[]>([]);
-  const [selectedTab, setSelectedTab] = useState<PulseCommandTab>("chats");
+  const [selectedFilter, setSelectedFilter] = useState<ConversationFilter>("all");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -50,17 +35,6 @@ export function MessengerScreen() {
     try {
       const data = query.trim() ? (await searchMessenger(query.trim())).conversations : await listConversations();
       setConversations(data);
-      const [callData, groupData, roomData] = await Promise.allSettled([
-        getActiveCalls(),
-        listGroups({ query: query.trim(), limit: 20 }),
-        listRooms()
-      ]);
-      if (callData.status === "fulfilled") setActiveCalls(callData.value.calls || []);
-      if (groupData.status === "fulfilled") {
-        setGroups(groupData.value.groups || []);
-        if (groupData.value.rooms?.length) setRooms(groupData.value.rooms || []);
-      }
-      if (roomData.status === "fulfilled") setRooms(roomData.value || []);
     } catch (loadError) {
       const cached = await loadCachedConversations();
       setConversations(cached);
@@ -72,128 +46,79 @@ export function MessengerScreen() {
   }
 
   useEffect(() => {
-    loadCachedConversations().then((cached) => {
-      if (cached.length) setConversations(cached);
-    });
+    loadCachedConversations().then((cached) => cached.length && setConversations(cached));
     load().catch(() => undefined);
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      load().catch(() => undefined);
-    }, 350);
+    const timer = setTimeout(() => load().catch(() => undefined), 350);
     return () => clearTimeout(timer);
   }, [query]);
 
   const unreadTotal = useMemo(() => conversations.reduce((total, item) => total + Number(item.unread_count || 0), 0), [conversations]);
-  const activeSignal = useMemo(() => conversations.filter((item) => isActivePresence(item.presence)).slice(0, 12), [conversations]);
-  const tabItems = useMemo(
-    () => [
-      { key: "chats", label: "Chats", count: unreadTotal },
-      { key: "calls", label: "Calls", count: activeCalls.length },
-      { key: "groups", label: "Groups", count: groups.length },
-      { key: "rooms", label: "Rooms", count: rooms.reduce((total, room) => total + Number(room.unread_count || 0), 0) }
-    ],
-    [activeCalls.length, groups.length, rooms, unreadTotal]
+  const filteredConversations = useMemo(
+    () => conversations.filter((item) => conversationMatchesFilter(item, selectedFilter)),
+    [conversations, selectedFilter]
   );
-  const listData = useMemo<PulseCommandListItem[]>(() => {
-    if (selectedTab === "calls") return activeCalls;
-    if (selectedTab === "groups") return groups;
-    if (selectedTab === "rooms") return rooms;
-    return conversations;
-  }, [activeCalls, conversations, groups, rooms, selectedTab]);
-
-  function handleTabSelect(next: string) {
-    setSelectedTab(next as PulseCommandTab);
-  }
-
-  async function openGroup(item: PulseGroup) {
-    try {
-      const result = await openGroupChat(item.slug);
-      if (result.conversation_id) navigation.navigate("Chat", { conversationId: result.conversation_id, title: `${item.name} Chat` });
-      else navigation.navigate("GroupDetail", { groupSlug: item.slug, title: item.name });
-    } catch {
-      navigation.navigate("GroupDetail", { groupSlug: item.slug, title: item.name });
-    }
-  }
-
-  async function openRoom(item: PulseRoom) {
-    try {
-      let conversationId = Number(item.conversation_id || 0);
-      if (!conversationId) {
-        const result = await joinRoom(item.room_id || item.id);
-        conversationId = Number(result.conversation_id || 0);
-      }
-      if (conversationId) navigation.navigate("Chat", { conversationId, title: item.title || item.name });
-      else navigation.navigate("Tabs", { screen: "Groups" });
-    } catch {
-      navigation.navigate("Tabs", { screen: "Groups" });
-    }
-  }
+  const filters = useMemo(
+    () => [
+      { key: "all", label: "All" },
+      { key: "direct", label: "Direct" },
+      { key: "groups", label: "Groups" },
+      { key: "rooms", label: "Rooms" },
+      { key: "ai", label: "AI" },
+      { key: "unread", label: "Unread", count: unreadTotal }
+    ],
+    [unreadTotal]
+  );
 
   return (
     <LogiNexusScreenShell>
       {loading && conversations.length === 0 ? (
-        <LogiNexusStatePanel state="loading" title="Loading Pulse Command" body="Synchronizing conversations, calls, and unread signals." loading />
+        <LogiNexusStatePanel state="loading" title="Loading conversations" body="Connecting to PulseSoc Messenger." loading />
       ) : (
-        <FlatList<PulseCommandListItem>
-          data={listData}
-          keyExtractor={(item) => itemKey(selectedTab, item)}
+        <FlatList
+          data={filteredConversations}
+          keyExtractor={(item) => `chat-${item.id}`}
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load({ refresh: true })} />}
           ListHeaderComponent={
             <View style={styles.headerStack}>
-              <PulseCommandHeader
-                title="Pulse Command"
-                subtitle="Messages, calls, groups, and rooms."
-                status={error ? "Cached link" : "Live sync"}
-                tone={error ? "warning" : "intelligence"}
-                actions={
-                  <View style={styles.headerActions}>
-                    <PulseCommandAction compact label="New" onPress={() => navigation.navigate("Search", { title: "New conversation" })} />
-                    <PulseCommandAction compact label="Safety" tone="safety" onPress={() => navigation.navigate("SafetyHub", { title: "Safety Hub", section: "blocks" })} />
-                  </View>
-                }
-              />
-              <View style={styles.metrics}>
-                <PulseCommandMetric value={conversations.length} label="channels" />
-                <PulseCommandMetric value={unreadTotal} label="unread" tone={unreadTotal ? "warning" : "default"} />
-                <PulseCommandMetric value={activeCalls.length} label="active calls" tone={activeCalls.length ? "danger" : "default"} />
-              </View>
-              <PulseCommandSearch value={query} onChangeText={setQuery} placeholder="Search chats, groups, or messages" />
-              <PulseCommandSegmentRail items={tabItems} selected={selectedTab} onSelect={handleTabSelect} />
-              <PulseCommandPanel style={styles.signalRail}>
-                <View style={styles.signalHeader}>
-                  <Text style={styles.signalTitle}>Active users</Text>
-                  <Text style={styles.signalSubtitle}>{activeSignal.length ? "Online and recent conversations" : "Presence appears when the server publishes it"}</Text>
+              <View style={styles.productionHeader}>
+                <View style={styles.headerCopy}>
+                  <Text style={styles.commandTitle}>Pulse Command</Text>
+                  <Text style={styles.commandVersion}>Messenger V3</Text>
                 </View>
-                <FlatList
-                  horizontal
-                  data={activeSignal.length ? activeSignal : conversations.slice(0, 8)}
-                  keyExtractor={(item) => `signal-${item.id}`}
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.signalList}
-                  renderItem={({ item }) => (
-                    <Pressable accessibilityRole="button" accessibilityLabel={`Open ${conversationDisplayTitle(item)}`} style={styles.signalItem} onPress={() => navigation.navigate("Chat", { conversationId: item.id, title: conversationDisplayTitle(item) })}>
-                      <PulseCommandAvatar label={conversationDisplayTitle(item)} active={isActivePresence(item.presence)} />
-                      <Text style={styles.signalName} numberOfLines={1}>{conversationDisplayTitle(item)}</Text>
-                    </Pressable>
-                  )}
-                />
+                <View style={[styles.connectionDot, error && styles.connectionDotWarning]} accessibilityLabel={error ? "Messenger reconnecting" : "Messenger connected"} />
+                <PulseCommandAction compact label="New chat" onPress={() => navigation.navigate("Search", { title: "New conversation" })} />
+              </View>
+              <PulseCommandSearch value={query} onChangeText={setQuery} placeholder="Search people, rooms, and messages" />
+              <PulseCommandSegmentRail items={filters} selected={selectedFilter} onSelect={(key) => setSelectedFilter(key as ConversationFilter)} />
+              <PulseCommandPanel style={styles.quickActions}>
+                <QuickAction title="New Chat" subtitle="Direct message" onPress={() => navigation.navigate("Search", { title: "New conversation" })} />
+                <QuickAction title="Create Group" subtitle="Invite members" onPress={() => navigation.navigate("Tabs", { screen: "Groups" })} />
+                <QuickAction title="Start Room" subtitle="Public or private" onPress={() => navigation.navigate("Tabs", { screen: "Groups" })} />
               </PulseCommandPanel>
-              {error ? <Text style={styles.error}>{error}</Text> : null}
+              {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>Showing cached conversations while Messenger reconnects.</Text> : null}
+              <Text style={styles.sectionLabel}>Recent conversations</Text>
             </View>
           }
-          ListEmptyComponent={<LogiNexusStatePanel state="empty" title={emptyTitle(selectedTab, query)} body={emptyBody(selectedTab, query)} />}
-          renderItem={({ item }) => {
-            if (selectedTab === "calls") return <CallRow item={item as PulseCall} onOpen={() => navigation.navigate("Call", { callId: (item as PulseCall).call_id, title: "PulseSoc Call" })} />;
-            if (selectedTab === "groups") return <GroupRow item={item as unknown as PulseGroup} onOpen={() => openGroup(item as unknown as PulseGroup)} onDetail={() => navigation.navigate("GroupDetail", { groupSlug: (item as unknown as PulseGroup).slug, title: (item as unknown as PulseGroup).name })} />;
-            if (selectedTab === "rooms") return <RoomRow item={item as unknown as PulseRoom} onOpen={() => openRoom(item as unknown as PulseRoom)} />;
-            return <ConversationRow item={item as unknown as MessengerConversation} navigation={navigation} />;
-          }}
+          ListEmptyComponent={
+            <LogiNexusStatePanel state="empty" title={emptyTitle(selectedFilter, query)} body={emptyBody(selectedFilter, query)} />
+          }
+          renderItem={({ item }) => <ConversationRow item={item} navigation={navigation} />}
         />
       )}
     </LogiNexusScreenShell>
+  );
+}
+
+function QuickAction({ title, subtitle, onPress }: { title: string; subtitle: string; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={`${title}, ${subtitle}`} style={({ pressed }) => [styles.quickAction, pressed && styles.rowPressed]} onPress={onPress}>
+      <Text style={styles.quickActionTitle}>{title}</Text>
+      <Text style={styles.quickActionSubtitle}>{subtitle}</Text>
+    </Pressable>
   );
 }
 
@@ -213,263 +138,64 @@ function ConversationRow({ item, navigation }: { item: MessengerConversation; na
           <Text style={styles.title} numberOfLines={1}>{title}</Text>
           <Text style={styles.time}>{conversationTime(item)}</Text>
         </View>
-        <Text style={styles.muted} numberOfLines={1}>
-          {conversationPreview(item)}
-        </Text>
+        <Text style={styles.muted} numberOfLines={1}>{conversationPreview(item)}</Text>
         <View style={styles.rowSignals}>
-          {conversationSignalBadges(item).map((badge) => (
-            <Text key={badge} style={styles.signalPill}>{badge}</Text>
-          ))}
+          {conversationSignalBadges(item).map((badge) => <Text key={badge} style={styles.signalPill}>{badge}</Text>)}
         </View>
       </View>
-      {item.other_public_player_id || item.public_player_id ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Open profile for ${title}`}
-          style={styles.profileButton}
-          onPress={() =>
-            navigation.navigate("ProfileDetail", {
-              profileKey: item.other_public_player_id || item.public_player_id,
-              title
-            })
-          }
-        >
-          <Text style={styles.profileButtonText}>Profile</Text>
-        </Pressable>
-      ) : null}
-      {Number(item.unread_count || 0) > 0 ? (
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{item.unread_count}</Text>
-        </View>
-      ) : null}
+      {Number(item.unread_count || 0) > 0 ? <View style={styles.badge}><Text style={styles.badgeText}>{item.unread_count}</Text></View> : null}
     </Pressable>
   );
 }
 
-function CallRow({ item, onOpen }: { item: PulseCall; onOpen: () => void }) {
-  const title = item.call_type === "video" ? "Video call" : "Voice call";
-  return (
-    <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]} accessibilityRole="button" accessibilityLabel={`Open ${title}, ${item.status || "active"}`} onPress={onOpen}>
-      <PulseCommandAvatar label={item.call_type === "video" ? "VC" : "AC"} active={!["ended", "missed", "declined", "failed"].includes(String(item.status || "").toLowerCase())} tone={item.status === "missed" ? "danger" : "default"} />
-      <View style={styles.rowBody}>
-        <View style={styles.rowTop}>
-          <Text style={styles.title}>{title}</Text>
-          <Text style={styles.time}>{formatShortTime(item.started_at || item.created_at)}</Text>
-        </View>
-        <Text style={styles.muted}>{item.room_name || item.public_id || item.call_id}</Text>
-        <View style={styles.rowSignals}>
-          <Text style={styles.signalPill}>{item.status || "ready"}</Text>
-          {item.duration_seconds ? <Text style={styles.signalPill}>{item.duration_seconds}s</Text> : null}
-        </View>
-      </View>
-    </Pressable>
-  );
+function conversationMatchesFilter(item: MessengerConversation, filter: ConversationFilter) {
+  const type = String(item.conversation_type || "direct").toLowerCase();
+  if (filter === "all") return true;
+  if (filter === "direct") return type === "direct";
+  if (filter === "groups") return type === "group";
+  if (filter === "rooms") return type === "room";
+  if (filter === "ai") return ["ai", "intelligence", "undx"].includes(type);
+  return Number(item.unread_count || 0) > 0;
 }
 
-function GroupRow({ item, onOpen, onDetail }: { item: PulseGroup; onOpen: () => void; onDetail: () => void }) {
-  return (
-    <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]} accessibilityRole="button" accessibilityLabel={`Open group ${item.name}`} onPress={onOpen}>
-      <PulseCommandAvatar label={item.name} active={item.joined} tone="safety" />
-      <View style={styles.rowBody}>
-        <View style={styles.rowTop}>
-          <Text style={styles.title} numberOfLines={1}>{item.name}</Text>
-          <Text style={styles.time}>{item.member_count || 0} members</Text>
-        </View>
-        <Text style={styles.muted} numberOfLines={1}>{item.description || "Community channel"}</Text>
-        <View style={styles.rowSignals}>
-          <Text style={styles.signalPill}>{item.category || "community"}</Text>
-          {item.viewer_role ? <Text style={styles.signalPill}>{item.viewer_role}</Text> : null}
-          {item.trust_level ? <Text style={styles.signalPill}>{item.trust_level}</Text> : null}
-        </View>
-      </View>
-      <Pressable accessibilityRole="button" accessibilityLabel={`Open details for ${item.name}`} style={styles.profileButton} onPress={onDetail}>
-        <Text style={styles.profileButtonText}>Details</Text>
-      </Pressable>
-    </Pressable>
-  );
+function emptyTitle(filter: ConversationFilter, query: string) {
+  if (query) return "No matching conversations";
+  if (filter === "unread") return "You're all caught up";
+  if (filter === "all") return "Choose a chat";
+  return `No ${filter} conversations`;
 }
 
-function RoomRow({ item, onOpen }: { item: PulseRoom; onOpen: () => void }) {
-  return (
-    <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]} accessibilityRole="button" accessibilityLabel={`Open room ${item.title || item.name}`} onPress={onOpen}>
-      <PulseCommandAvatar label={item.title || item.name} active={Number(item.online_count || 0) > 0} tone="intelligence" />
-      <View style={styles.rowBody}>
-        <View style={styles.rowTop}>
-          <Text style={styles.title} numberOfLines={1}>{item.title || item.name}</Text>
-          <Text style={styles.time}>{item.online_count || 0} online</Text>
-        </View>
-        <Text style={styles.muted} numberOfLines={1}>{item.last_message || item.description || item.pinned_notice || "Room signal"}</Text>
-        <View style={styles.rowSignals}>
-          <Text style={styles.signalPill}>room</Text>
-          {item.unread_count ? <Text style={styles.signalPill}>{item.unread_count} unread</Text> : null}
-          {item.partial ? <Text style={styles.signalPill}>provider</Text> : null}
-        </View>
-      </View>
-    </Pressable>
-  );
-}
-
-function itemKey(tab: PulseCommandTab, item: MessengerConversation | PulseCall | PulseGroup | PulseRoom) {
-  if (tab === "calls") return `call-${(item as PulseCall).call_id}`;
-  if (tab === "groups") return `group-${(item as PulseGroup).slug}`;
-  if (tab === "rooms") return `room-${(item as PulseRoom).id}`;
-  return `chat-${(item as MessengerConversation).id}`;
-}
-
-function emptyTitle(tab: PulseCommandTab, query: string) {
-  if (query) return "No matching messages";
-  if (tab === "calls") return "No calls loaded";
-  if (tab === "groups") return "No groups loaded";
-  if (tab === "rooms") return "No rooms loaded";
-  return "No conversations loaded yet";
-}
-
-function emptyBody(tab: PulseCommandTab, query: string) {
-  if (query) return "Try a different name, group, room, or message.";
-  if (tab === "calls") return "Active and recent calls appear here when the call engine returns them.";
-  if (tab === "groups") return "Groups are server-authoritative and appear when your account can access them.";
-  if (tab === "rooms") return "Rooms appear when existing PulseSoc room contracts expose them.";
-  return "New conversations will appear here as soon as the server has them.";
+function emptyBody(filter: ConversationFilter, query: string) {
+  if (query) return "Try a different person, room, or message.";
+  if (filter === "unread") return "New unread conversations will appear here.";
+  return "Your conversations and composer open instantly here.";
 }
 
 const styles = StyleSheet.create({
-  list: {
-    gap: 6,
-    padding: 10,
-    paddingBottom: 116
-  },
-  headerActions: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: logiNexus.spacing.sm
-  },
-  headerStack: {
-    gap: 10
-  },
-  metrics: {
-    flexDirection: "row",
-    gap: logiNexus.spacing.sm
-  },
-  row: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.028)",
-    borderColor: "rgba(255,255,255,0.06)",
-    borderRadius: 12,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 10,
-    minHeight: 74,
-    padding: 10
-  },
-  rowPressed: {
-    backgroundColor: "rgba(105,218,240,0.06)",
-    borderColor: "rgba(105,218,240,0.25)"
-  },
-  pinnedRow: {
-    borderColor: "rgba(189, 132, 255, 0.48)"
-  },
-  rowBody: {
-    flex: 1,
-    gap: 3,
-    minWidth: 0
-  },
-  rowSignals: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6
-  },
-  rowTop: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 6
-  },
-  title: {
-    color: colors.text,
-    flex: 1,
-    fontSize: 14,
-    fontWeight: "900"
-  },
-  muted: {
-    color: colors.muted,
-    fontSize: 12,
-    lineHeight: 16
-  },
-  profileButton: {
-    borderColor: colors.border,
-    borderRadius: logiNexus.radius.medium,
-    borderWidth: 1,
-    minHeight: 32,
-    paddingHorizontal: 8,
-    paddingVertical: 6
-  },
-  profileButtonText: {
-    color: colors.accentStrong,
-    fontSize: 11,
-    fontWeight: "900"
-  },
-  time: {
-    color: colors.muted,
-    fontSize: 10
-  },
-  signalHeader: {
-    gap: 2
-  },
-  signalItem: {
-    alignItems: "center",
-    gap: 5,
-    width: 66
-  },
-  signalList: {
-    gap: 10,
-    paddingTop: 10
-  },
-  signalName: {
-    color: colors.muted,
-    fontSize: 10,
-    fontWeight: "800",
-    maxWidth: 64,
-    textAlign: "center"
-  },
-  signalPill: {
-    borderColor: colors.border,
-    borderRadius: logiNexus.radius.capsule,
-    borderWidth: StyleSheet.hairlineWidth,
-    color: colors.muted,
-    fontSize: 9,
-    fontWeight: "800",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    textTransform: "uppercase"
-  },
-  signalRail: {
-    paddingBottom: 10
-  },
-  signalSubtitle: {
-    color: colors.muted,
-    fontSize: 11,
-    fontWeight: "700"
-  },
-  signalTitle: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "900"
-  },
-  badge: {
-    alignItems: "center",
-    backgroundColor: colors.accent,
-    borderRadius: 12,
-    minHeight: 23,
-    minWidth: 23,
-    paddingHorizontal: 6,
-    paddingVertical: 2
-  },
-  badgeText: {
-    color: "#08110f",
-    fontSize: 11,
-    fontWeight: "900"
-  },
-  error: {
-    color: colors.warning,
-    fontSize: 13
-  }
+  list: { gap: 6, padding: 10, paddingBottom: 116 },
+  headerStack: { gap: 10 },
+  productionHeader: { alignItems: "center", flexDirection: "row", gap: 10, paddingHorizontal: 4 },
+  headerCopy: { flex: 1 },
+  commandTitle: { color: colors.text, fontSize: 22, fontWeight: "900" },
+  commandVersion: { color: colors.muted, fontSize: 12, fontWeight: "700" },
+  connectionDot: { backgroundColor: colors.safety, borderRadius: 6, height: 10, width: 10 },
+  connectionDotWarning: { backgroundColor: colors.warning },
+  quickActions: { flexDirection: "row", gap: 6, padding: 6 },
+  quickAction: { borderColor: colors.border, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, flex: 1, minHeight: 56, padding: 8 },
+  quickActionTitle: { color: colors.text, fontSize: 11, fontWeight: "900" },
+  quickActionSubtitle: { color: colors.muted, fontSize: 9, marginTop: 3 },
+  sectionLabel: { color: colors.muted, fontSize: 11, fontWeight: "800", letterSpacing: 0.7, textTransform: "uppercase" },
+  row: { alignItems: "center", backgroundColor: "rgba(255,255,255,0.028)", borderColor: "rgba(255,255,255,0.06)", borderRadius: 12, borderWidth: 1, flexDirection: "row", gap: 10, minHeight: 70, padding: 10 },
+  rowPressed: { backgroundColor: "rgba(105,218,240,0.06)", borderColor: "rgba(105,218,240,0.25)" },
+  pinnedRow: { borderColor: "rgba(189,132,255,0.48)" },
+  rowBody: { flex: 1, gap: 3, minWidth: 0 },
+  rowTop: { alignItems: "center", flexDirection: "row", gap: 6 },
+  rowSignals: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  title: { color: colors.text, flex: 1, fontSize: 14, fontWeight: "900" },
+  muted: { color: colors.muted, fontSize: 12, lineHeight: 16 },
+  time: { color: colors.muted, fontSize: 10 },
+  signalPill: { borderColor: colors.border, borderRadius: logiNexus.radius.capsule, borderWidth: StyleSheet.hairlineWidth, color: colors.muted, fontSize: 9, fontWeight: "800", paddingHorizontal: 6, paddingVertical: 2, textTransform: "uppercase" },
+  badge: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 12, minHeight: 23, minWidth: 23, paddingHorizontal: 6, paddingVertical: 2 },
+  badgeText: { color: "#08110f", fontSize: 11, fontWeight: "900" },
+  error: { color: colors.warning, fontSize: 12 }
 });

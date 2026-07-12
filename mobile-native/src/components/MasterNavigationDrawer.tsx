@@ -45,7 +45,7 @@ export function MasterNavigationDrawer({ visible, identity, onClose, onOpenRoute
             <View style={styles.drawerTitleRow}>
               <LogiNexusSignalIndicator tone="intelligence" />
               <View style={styles.drawerTitleText}>
-                <Text style={styles.drawerKicker}>LOGINEXUS NETWORK</Text>
+                <Text style={styles.drawerKicker}>PULSESOC NETWORK</Text>
                 <Text style={styles.drawerTitle}>PulseSoc Navigation</Text>
                 <Text style={styles.drawerSubtitle}>Search, classify, and route every native subsystem.</Text>
                 {identity ? <DrawerIdentity identity={identity} /> : null}

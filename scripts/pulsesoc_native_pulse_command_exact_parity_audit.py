@@ -139,18 +139,30 @@ def main() -> int:
 
     messenger = read("mobile-native/src/screens/MessengerScreen.tsx")
     for needle in [
-        'label: "Chats"',
-        'label: "Calls"',
+        'label: "All"',
+        'label: "Direct"',
         'label: "Groups"',
         'label: "Rooms"',
-        'subtitle="Messages, calls, groups, and rooms."',
-        'minHeight: 74',
+        'label: "AI"',
+        'label: "Unread"',
+        'placeholder="Search people, rooms, and messages"',
+        'title="New Chat"',
+        'title="Create Group"',
+        'title="Start Room"',
+        'Recent conversations',
+        'minHeight: 70',
         'borderRadius: 12',
         'fontSize: 14',
         'fontSize: 12',
-        'Active users',
     ]:
         assert_contains(messenger, needle, "MessengerScreen", failures)
+
+    for forbidden in ['label: "Calls"', "Active users", "active calls"]:
+        if forbidden in messenger:
+            failures.append(f"MessengerScreen retains non-production inbox hierarchy: {forbidden}")
+
+    for needle in ["<ScrollView horizontal", "showsHorizontalScrollIndicator={false}"]:
+        assert_contains(pulse_command, needle, "PulseCommand responsive segment rail", failures)
 
     chat = read("mobile-native/src/screens/ChatScreen.tsx")
     for needle in [

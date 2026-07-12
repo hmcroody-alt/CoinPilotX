@@ -15,11 +15,11 @@ Date: 2026-07-12
 ## Latest Mission Status: Pulse Command Exact Production UI Parity
 
 - Current native migration: 96%.
-- Pulse Command production layout parity: 84%.
-- Pulse Command production visual parity: 80%.
+- Pulse Command production layout parity: 89%.
+- Pulse Command production visual parity: 84%.
 - Pulse Command feature parity: 88%.
-- Pulse Command interaction parity: 82%.
-- Xcode Simulator QA: pending fresh exact-parity screenshot matrix after the first density pass.
+- Pulse Command interaction parity: 84%.
+- Xcode Simulator QA: 25% of the mandatory device-size matrix verified in the fresh 2026-07-12 pass (iPhone 17 Pro); compact, standard, and Pro Max remain honestly blocked by fresh-simulator migration/install services.
 - Release QA confidence: 90%.
 
 Strategic correction:
@@ -29,6 +29,12 @@ Strategic correction:
 - The current production Messenger UI is the visual, structural, and workflow authority.
 
 Completed action:
+
+- Inspected the live production WebView Messenger V3 and corrected the native Messenger hierarchy to All/Direct/Groups/Rooms/AI/Unread, production search copy, three production quick actions, and recent conversations.
+- Removed the divergent Messenger metric cards and active-user rail while preserving server-authoritative conversation/search/cache/navigation behavior.
+- Removed internal LogiNexus branding from the visible global native header badge/default subtitle.
+- Built the iOS native app successfully, opened the corrected populated screen in the iPhone 17 Pro simulator, fixed the filter overflow found there, and captured exact evidence under `reports/screenshots/native-pulse-command-production-parity-2026-07-12/`.
+- Recorded remaining device/state gaps honestly in `reports/pulsesoc_native_pulse_command_exact_parity_2026-07-12.md`.
 
 - Created the Pulse Command exact-parity inventory, layout parity, visual parity, interaction parity, code reuse, and simulator QA reports.
 - Added `scripts/pulsesoc_native_pulse_command_exact_parity_audit.py`.

@@ -120,7 +120,7 @@ export function LogiNexusGlobalHeader({
         </View>
       </View>
       {!homeMode ? <View style={styles.headerMetaRow}>
-        <LogiNexusBadge label={intelligenceMode ? "UNDX" : "LogiNexus"} tone={intelligenceMode ? "intelligence" : "default"} />
+        <LogiNexusBadge label={intelligenceMode ? "UNDX" : "PulseSoc"} tone={intelligenceMode ? "intelligence" : "default"} />
         {identity?.attention ? <LogiNexusBadge label="attention" tone="warning" /> : null}
         {badges?.alerts ? <LogiNexusBadge label={`${formatBadge(badges.alerts)} alerts`} tone="intelligence" /> : null}
       </View> : null}

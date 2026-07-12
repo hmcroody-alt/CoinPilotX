@@ -1,6 +1,6 @@
 # PulseSoc Native Pulse Command Simulator QA
 
-Status: partial fresh exact-parity screenshot evidence captured for this milestone.
+Status: partial fresh exact-parity screenshot evidence captured; 2026-07-12 hierarchy correction verified on iPhone 17 Pro.
 
 Primary QA environment: Xcode Simulator.
 
@@ -10,9 +10,15 @@ Required evidence directory:
 
 ## Current simulator coverage
 
-- iPhone 17 Pro: captured for route open, inbox, and chat empty-state/composer geometry.
-- Pro Max: required for next run.
-- Compact iPhone: required for next run.
+- iPhone 17 Pro: corrected production filter/action hierarchy and populated fixture state captured.
+- iPhone 17e, iPhone 17, and iPhone 17 Pro Max: fresh instances entered first-boot migration; compact completed boot but app install/screenshot services then stopped responding. These remain required and are not counted as verified.
+- Current mandatory device-size coverage: 25% (1 of 4).
+
+Latest evidence/report:
+
+- `reports/pulsesoc_native_pulse_command_exact_parity_2026-07-12.md`
+- `reports/screenshots/native-pulse-command-production-parity-2026-07-12/production-webview-default.png`
+- `reports/screenshots/native-pulse-command-production-parity-2026-07-12/iphone17pro-populated.png`
 
 ## Evidence targets
 
