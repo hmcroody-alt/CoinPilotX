@@ -368,7 +368,14 @@ function qaMessages(conversationId: number): MessengerMessage[] {
     qaMessage(conversationId, 4, "outgoing", "Testing a failed retry state.", base + 180_000, { delivery_status: "failed", local_status: "failed", local_error: "QA simulated network failure." }),
     qaMessage(conversationId, 5, "incoming", "Image attachment preview", base + 240_000, { message_type: "image", media_url: "/static/img/pulsesoc_logo.png", thumbnail_url: "/static/img/pulsesoc_logo.png", sender_display_name: "Media QA" }),
     qaMessage(conversationId, 6, "incoming", "Voice note placeholder", base + 300_000, { message_type: "voice", duration_seconds: 12, sender_display_name: "Voice QA" }),
-    qaMessage(conversationId, 7, "incoming", "This moderated sample keeps the UI safe when content is unavailable.", base + 360_000, { moderation_state: "moderated", moderated_at: new Date(base + 360_000).toISOString() })
+    qaMessage(conversationId, 7, "incoming", "This moderated sample keeps the UI safe when content is unavailable.", base + 360_000, { moderation_state: "moderated", moderated_at: new Date(base + 360_000).toISOString() }),
+    qaMessage(conversationId, 9, "incoming", "Short.", base + 380_000, { sender_display_name: "Maria Cherie" }),
+    qaMessage(conversationId, 10, "outgoing", "This is a long multiline PulseSoc message used to verify bubble width, wrapping, bottom anchoring, timestamps, and readable spacing across compact and Pro Max layouts.\nThe second line must remain inside the same production-shaped bubble.", base + 400_000, { delivery_status: "read", seen_at: new Date(base + 410_000).toISOString() }),
+    qaMessage(conversationId, 11, "incoming", "https://pulsesoc.com/pulse/messages", base + 420_000, { sender_display_name: "Link QA" }),
+    qaMessage(conversationId, 12, "incoming", "✨", base + 440_000, { sender_display_name: "Emoji QA" }),
+    qaMessage(conversationId, 13, "incoming", "PulseSoc system notice", base + 460_000, { message_type: "system", sender_display_name: "PulseSoc" }),
+    qaMessage(conversationId, 14, "incoming", "Video attachment preview", base + 480_000, { message_type: "video", media_url: "/static/uploads/pulse_media/qa-video.mp4", sender_display_name: "Media QA" }),
+    qaMessage(conversationId, 15, "incoming", "Pulse Command QA document", base + 500_000, { message_type: "file", media_url: "/static/llms.txt", file_size: 2048, sender_display_name: "Document QA" })
   ];
   if (conversationId === 9002) {
     common.push(qaMessage(conversationId, 8, "incoming", "UNDX is ready to summarize your next creator, safety, or commerce signal.", base + 420_000, { sender_display_name: "UNDX", sender_trust_state: "intelligence", reactions: { spark: 1 } }));

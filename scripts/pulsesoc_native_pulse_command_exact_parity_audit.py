@@ -173,6 +173,12 @@ def main() -> int:
         "fontSize: 15",
         "borderRadius: 999",
         "minWidth: 48",
+        "AsyncStorage.getItem(draftKey)",
+        "AsyncStorage.setItem(draftKey, draft)",
+        "AttachmentActionSheet",
+        'accessibilityLabel="Add attachment"',
+        ">Add attachment<",
+        'EXPO_PUBLIC_PULSESOC_QA_CHAT_STATE',
     ]:
         assert_contains(chat, needle, "ChatScreen", failures)
 

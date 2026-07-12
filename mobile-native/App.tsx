@@ -10,13 +10,19 @@ import { linking } from "./src/navigation/linking";
 import { navigationRef, routeNotificationTarget, setupNotificationResponseRouting } from "./src/navigation/notificationRouting";
 import { RootStackParamList } from "./src/navigation/types";
 import { AuthContext, AuthState, restoreSession } from "./src/session/auth";
-import { tryHandleQaSimulatorAuthUrl } from "./src/session/qaSimulatorAuth";
+import { isQaSimulatorAuthEnabled, tryHandleQaSimulatorAuthUrl } from "./src/session/qaSimulatorAuth";
 import { colors } from "./src/theme/colors";
 
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>({ status: "loading", user: null });
   const [pendingQaCameraRoute, setPendingQaCameraRoute] = useState<RootStackParamList["CameraStudio"] | null>(null);
   const [pendingQaRedirectTarget, setPendingQaRedirectTarget] = useState("");
+
+  useEffect(() => {
+    if (!isQaSimulatorAuthEnabled()) return;
+    const startRoute = String(process.env.EXPO_PUBLIC_PULSESOC_QA_START_ROUTE || "").trim();
+    if (startRoute.startsWith("/") && !startRoute.startsWith("//")) setPendingQaRedirectTarget(startRoute.slice(0, 240));
+  }, []);
 
   useEffect(() => {
     restoreSession().then(setAuthState).catch(() => setAuthState({ status: "signedOut", user: null }));

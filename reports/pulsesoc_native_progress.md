@@ -19,7 +19,9 @@ Date: 2026-07-12
 - Pulse Command production visual parity: 84%.
 - Pulse Command feature parity: 88%.
 - Pulse Command interaction parity: 84%.
-- Xcode Simulator QA: 25% of the mandatory device-size matrix verified in the fresh 2026-07-12 pass (iPhone 17 Pro); compact, standard, and Pro Max remain honestly blocked by fresh-simulator migration/install services.
+- Xcode Simulator QA: 72%; all four device-size classes are now covered. Nested context-menu and attachment-sheet evidence passed; keyboard and reconnect reconciliation remain incomplete.
+- Device-size simulator coverage: 100% after sequential CoreSimulator recovery.
+- Latest report: `reports/pulsesoc_native_pulse_command_device_nested_parity_2026-07-12.md`.
 - Release QA confidence: 90%.
 
 Strategic correction:

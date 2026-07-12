@@ -90,7 +90,7 @@ def main() -> int:
         require(chat_screen, token, "conversation screen behavior")
 
     require(linking, "pulse/messages/:conversationId", "Messenger deep link")
-    require(app, "linking={linking}", "Navigation linking registration")
+    require(app, 'linking={authState.status === "signedIn" ? linking : undefined}', "auth-gated navigation linking registration")
 
     mobile_native = "\n".join(
         path.read_text(encoding="utf-8")

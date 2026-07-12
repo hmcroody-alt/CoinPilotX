@@ -1,4 +1,5 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio } from "expo-av";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
@@ -36,6 +37,7 @@ import {
   uploadMessengerMedia
 } from "../api/messenger";
 import { PULSE_API_BASE_URL } from "../api/config";
+import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
 import { PulseCommandAction, PulseCommandHeader, PulseCommandPanel } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
@@ -71,10 +73,32 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [uploading, setUploading] = useState(false);
   const [replyTo, setReplyTo] = useState<MessengerMessage | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<MessengerMessage | null>(null);
+  const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingAt = useRef(0);
   const appState = useRef<AppStateStatus>(AppState.currentState);
+  const qaChatState = PULSESOC_QA_MESSENGER_FIXTURES ? String(process.env.EXPO_PUBLIC_PULSESOC_QA_CHAT_STATE || "") : "";
+  const draftKey = `pulsesoc.native.messenger.draft.${conversationId}`;
+
+  useEffect(() => {
+    AsyncStorage.getItem(draftKey).then((saved) => {
+      if (saved) setDraft(saved);
+      else if (qaChatState === "keyboard") setDraft("A multiline PulseSoc draft stays visible and persists while the keyboard is open.");
+    }).catch(() => undefined);
+  }, [draftKey, qaChatState]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => AsyncStorage.setItem(draftKey, draft).catch(() => undefined), 180);
+    return () => clearTimeout(timer);
+  }, [draft, draftKey]);
+
+  useEffect(() => {
+    if (!messages.length) return;
+    if (qaChatState === "context-menu") setSelectedMessage(messages.find((message) => !message.is_mine) || messages[0]);
+    if (qaChatState === "attachment-sheet") setAttachmentSheetOpen(true);
+    if (qaChatState === "reply-keyboard") setReplyTo(messages.find((message) => !message.is_mine) || messages[0]);
+  }, [messages.length, qaChatState]);
 
   const newestMessageId = useMemo(
     () => messages.reduce((max, message) => Math.max(max, message.id > 0 ? message.id : 0), 0),
@@ -515,29 +539,13 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             </Pressable>
           </View>
         ) : null}
-        <View style={styles.tools}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Attach image" disabled={uploading} style={[styles.iconButton, uploading && styles.disabled]} onPress={attachImage}>
-            <Text style={styles.iconText}>{uploading ? "..." : "Img"}</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open camera"
-            disabled={uploading}
-            style={[styles.iconButton, uploading && styles.disabled]}
-            onPress={() => navigation.navigate("CameraStudio", { target: "message", mode: "photo", conversationId, title: "Message Camera" })}
-          >
-            <Text style={styles.iconText}>Cam</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Attach file" disabled={uploading} style={[styles.iconButton, uploading && styles.disabled]} onPress={attachFile}>
-            <Text style={styles.iconText}>File</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel={recording ? "Stop recording voice message" : "Record voice message"} disabled={uploading && !recording} style={[styles.iconButton, recording && styles.recording, uploading && !recording && styles.disabled]} onPress={toggleVoiceRecording}>
-            <Text style={styles.iconText}>{recording ? "Stop" : "Mic"}</Text>
-          </Pressable>
-        </View>
         <View style={styles.inputRow}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Add attachment" disabled={uploading} style={[styles.attachmentButton, uploading && styles.disabled]} onPress={() => setAttachmentSheetOpen(true)}>
+            <Text style={styles.attachmentButtonText}>{uploading ? "…" : "+"}</Text>
+          </Pressable>
           <TextInput
             multiline
+            autoFocus={qaChatState === "keyboard" || qaChatState === "reply-keyboard"}
             placeholder="Message"
             placeholderTextColor={colors.muted}
             style={styles.input}
@@ -578,8 +586,37 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           navigation.navigate("SafetyHub", { section: "blocks", title: "Safety Hub" });
         }}
       />
+      <AttachmentActionSheet
+        visible={attachmentSheetOpen}
+        recording={Boolean(recording)}
+        onClose={() => setAttachmentSheetOpen(false)}
+        onImage={() => { setAttachmentSheetOpen(false); attachImage().catch(() => undefined); }}
+        onCamera={() => { setAttachmentSheetOpen(false); navigation.navigate("CameraStudio", { target: "message", mode: "photo", conversationId, title: "Message Camera" }); }}
+        onFile={() => { setAttachmentSheetOpen(false); attachFile().catch(() => undefined); }}
+        onVoice={() => { setAttachmentSheetOpen(false); toggleVoiceRecording().catch(() => undefined); }}
+      />
       </LogiNexusScreenShell>
     </KeyboardAvoidingView>
+  );
+}
+
+function AttachmentActionSheet({ visible, recording, onClose, onImage, onCamera, onFile, onVoice }: { visible: boolean; recording: boolean; onClose: () => void; onImage: () => void; onCamera: () => void; onFile: () => void; onVoice: () => void }) {
+  return (
+    <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Close attachment sheet" style={styles.sheetBackdrop} onPress={onClose}>
+        <PulseCommandPanel style={styles.attachmentSheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Add attachment</Text>
+          <Text style={styles.sheetPreview}>Choose what to add to this message.</Text>
+          <View style={styles.sheetGrid}>
+            <SheetAction label="Photo library" onPress={onImage} />
+            <SheetAction label="Camera" onPress={onCamera} />
+            <SheetAction label="Document" onPress={onFile} />
+            <SheetAction label={recording ? "Stop voice note" : "Voice note"} onPress={onVoice} />
+          </View>
+        </PulseCommandPanel>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -1001,6 +1038,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8
   },
+  attachmentButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderColor: colors.border,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 46,
+    justifyContent: "center",
+    width: 46
+  },
+  attachmentButtonText: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: "700"
+  },
   input: {
     backgroundColor: "rgba(3, 7, 18, 0.72)",
     borderColor: colors.border,
@@ -1048,6 +1100,19 @@ const styles = StyleSheet.create({
   sheet: {
     gap: logiNexus.spacing.md,
     padding: logiNexus.spacing.lg
+  },
+  attachmentSheet: {
+    gap: logiNexus.spacing.md,
+    padding: logiNexus.spacing.lg,
+    paddingBottom: logiNexus.spacing.xxl
+  },
+  sheetHandle: {
+    alignSelf: "center",
+    backgroundColor: colors.muted,
+    borderRadius: 2,
+    height: 4,
+    opacity: 0.7,
+    width: 44
   },
   sheetTitle: {
     color: colors.text,
