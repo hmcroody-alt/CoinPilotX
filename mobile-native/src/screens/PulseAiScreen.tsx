@@ -29,7 +29,7 @@ export function PulseAiScreen() {
     <LogiNexusScrollContainer>
       <PulseCommandHeader
         title="UNDX"
-        subtitle="Digital Intelligence Companion. Powered by LogiNexus Intelligence."
+        subtitle="Digital Intelligence Companion."
         status={loading ? "Thinking" : "Ready"}
         tone="intelligence"
       />

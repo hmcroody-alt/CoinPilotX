@@ -4,6 +4,7 @@ import { pulseApi } from "./pulseApi";
 
 const CONVERSATION_CACHE_KEY = "pulsesoc.native.messenger.conversations";
 const messageCacheKey = (conversationId: number) => `pulsesoc.native.messenger.messages.${conversationId}`;
+const OUTBOUND_QUEUE_KEY = "pulsesoc.native.messenger.outbound_queue";
 
 export type MessengerConversation = {
   id: number;
@@ -190,6 +191,36 @@ export async function sendConversationMessage(conversationId: number, payload: S
       reply_preview: payload.reply_preview || ""
     })
   });
+}
+
+export async function enqueueMessengerMessage(conversationId: number, payload: SendMessagePayload) {
+  const queue = await readOutboundQueue();
+  const clientId = payload.client_message_id || `native-queued-${Date.now()}`;
+  if (!queue.some((item) => item.payload.client_message_id === clientId)) {
+    queue.push({ conversationId, payload: { ...payload, client_message_id: clientId } });
+    await AsyncStorage.setItem(OUTBOUND_QUEUE_KEY, JSON.stringify(queue.slice(-100)));
+  }
+}
+
+export async function drainMessengerQueue(conversationId: number) {
+  const queue = await readOutboundQueue();
+  const remaining: typeof queue = [];
+  const sent: MessengerMessage[] = [];
+  for (const item of queue) {
+    if (item.conversationId !== conversationId) { remaining.push(item); continue; }
+    try {
+      const result = await sendConversationMessage(item.conversationId, item.payload);
+      if (result.data) sent.push(result.data);
+    } catch {
+      remaining.push(item);
+    }
+  }
+  await AsyncStorage.setItem(OUTBOUND_QUEUE_KEY, JSON.stringify(remaining));
+  return sent;
+}
+
+async function readOutboundQueue(): Promise<Array<{ conversationId: number; payload: SendMessagePayload }>> {
+  try { return JSON.parse((await AsyncStorage.getItem(OUTBOUND_QUEUE_KEY)) || "[]"); } catch { return []; }
 }
 
 export async function reactToMessage(messageId: number, reactionType = "pulse") {

@@ -5291,3 +5291,11 @@ Remaining Pulse Command gaps:
 - Conversation-level mute/block/pin, attachment open/download boundaries, offline/reconnect, and full interaction QA remain incomplete.
 
 Recommended next mission: Continue inside Pulse Command with conversation-level safety, mute/block/pin, and attachment boundary hardening.
+## Pulse Command Final Simulator Closure — 2026-07-12
+
+- Added keyboard-coordinate composer positioning, durable client-ID-deduplicated outbound text queuing through the existing Messenger send/sync/cache paths, selected-filter persistence, and restored-selection rail auto-scroll.
+- Fresh simulator evidence proves the Pro Max keyboard/reply composer, restored Unread visibility, Groups/Rooms loading and populated room rendering, and the UNDX empty-history/composer state.
+- Verification passed: dependency install, TypeScript, Expo Doctor 17/17, native iOS simulator build, Pulse Command exact parity, Messenger, Groups, group/room detail, navigation, and mission-standard audits.
+- Freeze decision: **not simulator-parity frozen**. Live automatic reconnect/server-ID/read/reaction reconciliation, complete nested Group/Room/AI state matrices, and compact/standard keyboard captures remain unproven.
+- Authoritative next recommendation: keep the next mission scoped to Pulse Command evidence and reconciliation; do not advance to another native subsystem yet.
+- Detailed report: `reports/pulsesoc_native_pulse_command_final_simulator_closure_2026-07-12.md`.

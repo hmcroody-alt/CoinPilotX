@@ -161,8 +161,22 @@ def main() -> int:
         if forbidden in messenger:
             failures.append(f"MessengerScreen retains non-production inbox hierarchy: {forbidden}")
 
-    for needle in ["<ScrollView horizontal", "showsHorizontalScrollIndicator={false}"]:
+    for needle in [
+        "<ScrollView ref={rail} horizontal",
+        "showsHorizontalScrollIndicator={false}",
+        'testID="pulse-command-filter-rail"',
+        "rail.current?.scrollTo",
+        "accessibilityState={{ selected: active }}",
+    ]:
         assert_contains(pulse_command, needle, "PulseCommand responsive segment rail", failures)
+
+    for needle in [
+        "pulsesoc.native.messenger.filter",
+        "AsyncStorage.getItem(FILTER_KEY)",
+        "AsyncStorage.setItem(FILTER_KEY, selectedFilter)",
+        "EXPO_PUBLIC_PULSESOC_QA_MESSENGER_FILTER",
+    ]:
+        assert_contains(messenger, needle, "Messenger filter persistence", failures)
 
     chat = read("mobile-native/src/screens/ChatScreen.tsx")
     for needle in [
@@ -179,8 +193,27 @@ def main() -> int:
         'accessibilityLabel="Add attachment"',
         ">Add attachment<",
         'EXPO_PUBLIC_PULSESOC_QA_CHAT_STATE',
+        "drainMessengerQueue(conversationId)",
+        "enqueueMessengerMessage(conversationId",
+        'delivery_status: "queued"',
+        'Keyboard.addListener("keyboardWillShow"',
+        "bottom: keyboardHeight",
     ]:
         assert_contains(chat, needle, "ChatScreen", failures)
+
+    messenger_api = read("mobile-native/src/api/messenger.ts")
+    for needle in [
+        "pulsesoc.native.messenger.outbound_queue",
+        "export async function enqueueMessengerMessage",
+        "export async function drainMessengerQueue",
+        "client_message_id === clientId",
+        "sendConversationMessage(item.conversationId, item.payload)",
+    ]:
+        assert_contains(messenger_api, needle, "Messenger outbound queue", failures)
+
+    pulse_ai = read("mobile-native/src/screens/PulseAiScreen.tsx")
+    if "Powered by LogiNexus" in pulse_ai:
+        failures.append("PulseAiScreen exposes internal LogiNexus branding")
 
     domain = read("mobile-native/src/pulseCommand/domain.ts")
     for needle in ["messageActionRules", "conversationPreview", "groupActionRules", "roomActionRules"]:

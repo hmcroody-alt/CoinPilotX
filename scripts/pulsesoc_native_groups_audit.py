@@ -63,7 +63,7 @@ def main() -> int:
         "GroupCard",
         "GroupDetail",
         "GroupPostCard",
-        "TextInput",
+        "PulseCommandSearch",
         "FlatList",
         "RefreshControl",
         "loadCachedGroups",
@@ -101,10 +101,10 @@ def main() -> int:
 
     for phrase in (
         "Groups/Communities + Rooms Foundation",
-        "Native Architecture Health Report + Shared Core Consolidation",
+        "Architecture Health Report + Shared Core Consolidation",
         "Why This Comes Next",
-        "Risk: Medium",
-        "Complexity: Medium",
+        "Risk: Medium-high",
+        "Complexity: Medium-high",
         "Safest Implementation Plan",
     ):
         require(phrase in progress, f"native progress report must include completed Groups and next recommendation: {phrase}")

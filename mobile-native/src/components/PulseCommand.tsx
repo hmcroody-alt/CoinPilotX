@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useRef } from "react";
 import { Platform, Pressable, ScrollView, StyleProp, StyleSheet, Text, TextInput, View, ViewStyle, useWindowDimensions } from "react-native";
 import { colors } from "../theme/colors";
 import { logiNexus, LogiNexusTone, toneColor } from "../theme/logiNexus";
@@ -82,8 +82,13 @@ export function PulseCommandSegmentRail({
   selected: string;
   onSelect: (key: string) => void;
 }) {
+  const rail = useRef<ScrollView>(null);
+  const selectedIndex = Math.max(0, items.findIndex((item) => item.key === selected));
+  useEffect(() => {
+    rail.current?.scrollTo({ x: Math.max(0, selectedIndex * 88 - 24), animated: true });
+  }, [selectedIndex]);
   return (
-    <ScrollView horizontal style={styles.segmentRail} contentContainerStyle={styles.segmentRailContent} showsHorizontalScrollIndicator={false} accessibilityRole="tablist">
+    <ScrollView ref={rail} horizontal style={styles.segmentRail} contentContainerStyle={styles.segmentRailContent} showsHorizontalScrollIndicator={false} accessibilityRole="tablist" testID="pulse-command-filter-rail">
       {items.map((item) => {
         const active = item.key === selected;
         return (
@@ -91,6 +96,7 @@ export function PulseCommandSegmentRail({
             key={item.key}
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
+            testID={`pulse-command-filter-${item.key}`}
             style={[styles.segment, active && styles.segmentActive]}
             onPress={() => onSelect(item.key)}
           >

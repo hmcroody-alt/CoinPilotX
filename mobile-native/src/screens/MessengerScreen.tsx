@@ -1,4 +1,5 @@
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
 import { useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
@@ -18,11 +19,16 @@ import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 
 type ConversationFilter = "all" | "direct" | "groups" | "rooms" | "ai" | "unread";
+const FILTER_KEY = "pulsesoc.native.messenger.filter";
 
 export function MessengerScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [conversations, setConversations] = useState<MessengerConversation[]>([]);
-  const [selectedFilter, setSelectedFilter] = useState<ConversationFilter>("all");
+  const qaFilter = String(process.env.EXPO_PUBLIC_PULSESOC_QA_MESSENGER_FILTER || "").toLowerCase();
+  const validQaFilter = ["all", "direct", "groups", "rooms", "ai", "unread"].includes(qaFilter)
+    ? qaFilter as ConversationFilter
+    : null;
+  const [selectedFilter, setSelectedFilter] = useState<ConversationFilter>(validQaFilter || "all");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -46,6 +52,9 @@ export function MessengerScreen() {
   }
 
   useEffect(() => {
+    if (!validQaFilter) AsyncStorage.getItem(FILTER_KEY).then((value) => {
+      if (["all", "direct", "groups", "rooms", "ai", "unread"].includes(value || "")) setSelectedFilter(value as ConversationFilter);
+    }).catch(() => undefined);
     loadCachedConversations().then((cached) => cached.length && setConversations(cached));
     load().catch(() => undefined);
   }, []);
@@ -54,6 +63,10 @@ export function MessengerScreen() {
     const timer = setTimeout(() => load().catch(() => undefined), 350);
     return () => clearTimeout(timer);
   }, [query]);
+
+  useEffect(() => {
+    AsyncStorage.setItem(FILTER_KEY, selectedFilter).catch(() => undefined);
+  }, [selectedFilter]);
 
   const unreadTotal = useMemo(() => conversations.reduce((total, item) => total + Number(item.unread_count || 0), 0), [conversations]);
   const filteredConversations = useMemo(

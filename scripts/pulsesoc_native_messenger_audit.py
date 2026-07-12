@@ -74,7 +74,8 @@ def main() -> int:
 
     for token in (
         "FlatList",
-        "KeyboardAvoidingView",
+        'Keyboard.addListener("keyboardWillShow"',
+        "keyboardHeight",
         "sendTyping",
         "markConversationSeen",
         "syncConversation",

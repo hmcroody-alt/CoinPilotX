@@ -10,7 +10,7 @@ import {
   AppStateStatus,
   FlatList,
   Image,
-  KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -25,6 +25,8 @@ import {
   cacheMessages,
   createLocalMessage,
   deleteMessage,
+  drainMessengerQueue,
+  enqueueMessengerMessage,
   getConversation,
   loadCachedMessages,
   markConversationSeen,
@@ -74,12 +76,20 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [replyTo, setReplyTo] = useState<MessengerMessage | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<MessengerMessage | null>(null);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [statusMessage, setStatusMessage] = useState("");
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingAt = useRef(0);
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const qaChatState = PULSESOC_QA_MESSENGER_FIXTURES ? String(process.env.EXPO_PUBLIC_PULSESOC_QA_CHAT_STATE || "") : "";
   const draftKey = `pulsesoc.native.messenger.draft.${conversationId}`;
+
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardWillShow", (event) => { setKeyboardVisible(true); setKeyboardHeight(event.endCoordinates.height); });
+    const hide = Keyboard.addListener("keyboardWillHide", () => { setKeyboardVisible(false); setKeyboardHeight(0); });
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   useEffect(() => {
     AsyncStorage.getItem(draftKey).then((saved) => {
@@ -172,8 +182,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
 
   const sync = useCallback(async () => {
     if (appState.current !== "active") return;
-    if (!newestMessageId) return;
     try {
+      const queued = await drainMessengerQueue(conversationId);
+      if (queued.length) setMessages((current) => mergeMessages(current, queued));
+      if (!newestMessageId) return;
       const data = await syncConversation(conversationId, newestMessageId);
       if (data.messages?.length) {
         setMessages((current) => {
@@ -238,12 +250,17 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       replaceLocalMessage(local.id, serverMessage);
       await sync();
     } catch (sendError) {
+      await enqueueMessengerMessage(conversationId, {
+        ...payload,
+        client_message_id: local.client_message_id,
+        local_created_at: local.created_at
+      }).catch(() => undefined);
       setMessages((current) =>
         current.map((message) =>
           message.id === local.id
             ? {
                 ...message,
-                delivery_status: "failed",
+                delivery_status: "queued",
                 local_status: "failed",
                 local_error: sendError instanceof Error ? sendError.message : "Send failed."
               }
@@ -468,7 +485,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   }, [load, sync]);
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.root}>
+    <View style={styles.root}>
       <LogiNexusScreenShell bottomDock={false} contentStyle={styles.shellContent}>
       <View style={styles.header}>
         <PulseCommandHeader
@@ -522,8 +539,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           )}
         />
       )}
-      <PulseCommandPanel style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) + 10 }]}>
-        {statusMessage ? (
+      <PulseCommandPanel style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) + 10 }, keyboardVisible && styles.composerKeyboard, keyboardVisible && { bottom: keyboardHeight }]}>
+        {statusMessage && !keyboardVisible ? (
           <Pressable accessibilityRole="button" accessibilityLabel="Dismiss message status" style={styles.statusBanner} onPress={() => setStatusMessage("")}>
             <Text style={styles.statusBannerText}>{statusMessage}</Text>
           </Pressable>
@@ -596,7 +613,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         onVoice={() => { setAttachmentSheetOpen(false); toggleVoiceRecording().catch(() => undefined); }}
       />
       </LogiNexusScreenShell>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -968,6 +985,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 10,
     marginTop: 8,
     padding: 9
+  },
+  composerKeyboard: {
+    left: 0,
+    marginHorizontal: 10,
+    position: "absolute",
+    right: 0,
+    zIndex: 20
   },
   statusBanner: {
     backgroundColor: "rgba(97,216,255,0.08)",
