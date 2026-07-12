@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   createStatus,
   generateStatusAiStory,
@@ -45,6 +46,7 @@ const modeOptions = [
 ] as const;
 
 export function StatusCreator({ visible, onClose, onCreated }: Props) {
+  const insets = useSafeAreaInsets();
   const uploadOptions = useMemo(() => ({ contextType: "pulse_status", contextId: "draft" }), []);
   const mediaUpload = useNativeMediaUpload(uploadOptions);
   const [body, setBody] = useState("");
@@ -170,7 +172,7 @@ export function StatusCreator({ visible, onClose, onCreated }: Props) {
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={closeCreator}>
       <View style={styles.root}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
           <Pressable style={styles.headerButton} disabled={publishing || mediaUpload.uploading} onPress={closeCreator}>
             <Text style={styles.headerButtonText}>Cancel</Text>
           </Pressable>

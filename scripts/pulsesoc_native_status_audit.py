@@ -31,6 +31,8 @@ def main() -> int:
     types = read("mobile-native/src/navigation/types.ts")
     linking = read("mobile-native/src/navigation/linking.ts")
     routing = read("mobile-native/src/navigation/notificationRouting.ts")
+    config = read("mobile-native/src/api/config.ts")
+    creator = read("mobile-native/src/components/StatusCreator.tsx")
 
     for phrase in (
         "does not touch production WebView paths",
@@ -106,6 +108,13 @@ def main() -> int:
     require("pulse/status" in linking and "pulse/status/:statusId" in linking, "linking must include PulseSoc Status routes")
     require('"StatusDetail"' in routing and "pulse\\/status" in routing and "pulse://status" not in routing, "notification routing must open native Status Detail safely")
     require("mobileStatusMatch" in routing and "StatusDetail" in routing, "notification routing must support backend mobile Status deep links")
+    require("EXPO_PUBLIC_PULSESOC_QA_STATUS_FIXTURES" in config and "127\\.0\\.0\\.1|localhost" in config, "Status fixtures must be explicit and localhost-only")
+    for token in ("statusQaFixtures", 'fixture_state: "uploading"', 'fixture_state: "failed"', 'fixture_state: "expired"', 'fixture_state: "deleted"', 'fixture_state: "blocked"', 'fixture_state: "offline_queued"'):
+        require(token in api, f"deterministic Status lifecycle fixture missing: {token}")
+    require('normalized === "/pulse/status/create"' in routing and "openCreator: true" in routing, "Status creator deep link must resolve before the generic Status route")
+    require("CreateStatusRailEntry" in screen and "createRailRing" in screen, "populated rail must keep a discoverable create entry")
+    require("useSafeAreaInsets" in creator and "paddingTop: insets.top + 8" in creator, "creator header must clear device safe areas")
+    require("useSafeAreaInsets" in card and "top: insets.top + 14" in card, "viewer chrome must clear device safe areas")
 
     for token in (
         "accessibilityLabel=\"Previous Status\"",

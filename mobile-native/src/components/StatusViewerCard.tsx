@@ -1,6 +1,7 @@
 import { ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, Share, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PulseStatus, pulseStatusUrl, statusMediaKind, statusMediaUrl, statusMusicLabel, statusPosterUrl } from "../api/status";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
@@ -38,6 +39,7 @@ export function StatusViewerCard({
   onAuthorPress,
   onViewed
 }: Props) {
+  const insets = useSafeAreaInsets();
   const videoRef = useRef<Video>(null);
   const startedAt = useRef(0);
   const [buffering, setBuffering] = useState(false);
@@ -81,7 +83,7 @@ export function StatusViewerCard({
 
   return (
     <View style={styles.card}>
-      <View style={styles.progressTrack}>
+      <View style={[styles.progressTrack, { top: insets.top + 4 }]}>
         <View style={[styles.progressBar, { width: `${Math.max(3, Math.min(100, Math.round(progress * 100)))}%` }]} />
       </View>
 
@@ -134,7 +136,7 @@ export function StatusViewerCard({
         </View>
       ) : null}
 
-      <View style={styles.header}>
+      <View style={[styles.header, { top: insets.top + 14 }]}>
         <Pressable style={styles.author} onPress={() => onAuthorPress(status)}>
           {author.avatar_url ? <Image source={{ uri: author.avatar_url }} style={styles.avatar} /> : <View style={styles.avatarFallback} />}
           <View style={styles.authorCopy}>

@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { PULSE_API_BASE_URL } from "./config";
+import { PULSE_API_BASE_URL, PULSESOC_QA_STATUS_FIXTURES } from "./config";
 import { mediaDisplayUrl, mediaKind, PulseAuthor, PulseMedia } from "./feed";
 import { pulseApi } from "./pulseApi";
 
@@ -53,6 +53,8 @@ export type PulseStatus = {
   unseen_count?: number;
   creator_status_ids?: number[];
   can_manage?: boolean;
+  muted?: boolean;
+  fixture_state?: "ready" | "uploading" | "failed" | "expired" | "deleted" | "private" | "blocked" | "reported" | "offline_queued";
 };
 
 export type StatusRailResponse = {
@@ -114,8 +116,8 @@ export async function listStatuses(params: { lane?: string } = {}) {
   const lane = params.lane || "for_you";
   const query = new URLSearchParams({ lane });
   const data = await pulseApi<StatusRailResponse>(`/api/pulse/status/rail?${query.toString()}`);
-  const items = normalizeStatuses(data.items || []);
-  const railItems = normalizeStatuses(data.rail_items || []);
+  const items = PULSESOC_QA_STATUS_FIXTURES ? statusQaFixtures() : normalizeStatuses(data.items || []);
+  const railItems = PULSESOC_QA_STATUS_FIXTURES ? items.filter((item) => !["expired", "deleted", "blocked"].includes(item.fixture_state || "")) : normalizeStatuses(data.rail_items || []);
   await cacheStatuses(lane, items, railItems).catch(() => undefined);
   return { ...data, items, rail_items: railItems, lane };
 }
@@ -222,6 +224,38 @@ export function pulseStatusUrl(statusId: number) {
 
 export function normalizeStatuses(items: PulseStatus[]) {
   return items.map(normalizeStatus).filter((status) => status.id > 0);
+}
+
+export function statusQaFixtures(): PulseStatus[] {
+  if (!PULSESOC_QA_STATUS_FIXTURES) return [];
+  const now = Date.now();
+  const image = `${PULSE_API_BASE_URL}/static/uploads/pulse_media/2026/07/04/status-audit-ed8ead33bcab09b0.png`;
+  const video = `${PULSE_API_BASE_URL}/static/uploads/pulse_media/2026/07/04/status-audit-1f07a372cd135689.webm`;
+  const fixture = (id: number, status_type: StatusType, body: string, options: Partial<PulseStatus> = {}): PulseStatus => normalizeStatus({
+    id, status_id: id, user_id: 7000 + id, status_type, body, visibility: "public",
+    created_at: new Date(now - id * 42_000).toISOString(), expires_at: new Date(now + 86_400_000).toISOString(),
+    author: { id: 7000 + id, user_id: 7000 + id, display_name: `Status Pilot ${id - 9100}`, username: `status_pilot_${id}`, avatar_url: "" },
+    story_count: 1, unseen_count: 1, view_count: 18 + id % 9, reaction_count: id % 5, reply_count: id % 3, share_count: id % 4,
+    ...options
+  });
+  return [
+    fixture(9101, "text", "The native Status constellation is live. Fast, calm, and unmistakably PulseSoc.", { can_manage: true, author: { id: 1, user_id: 1, display_name: "Your Status", username: "native_owner", avatar_url: "" }, view_count: 48, reaction_count: 12, reply_count: 5, share_count: 3 }),
+    fixture(9102, "photo", "A luminous image Status with a long caption that remains readable across every iPhone width without hiding the viewer controls.", { media: [{ id: 8102, media_url: image, valid_url: image, media_type: "image" }], story_count: 3 }),
+    fixture(9103, "video", "Video Status · original sound", { media: [{ id: 8103, media_url: video, valid_url: video, media_type: "video", thumbnail_url: image }], viewed: true, unseen_count: 0 }),
+    fixture(9104, "music", "Creator-safe music Status", { music: { track_id: "qa-orbit", title: "Orbit Signal", artist: "PulseSoc Audio", mood: "galactic" } }),
+    fixture(9105, "photo", "Image with subtle music attribution", { media: [{ id: 8105, media_url: image, valid_url: image, media_type: "image" }], music: { track_id: "qa-drift", title: "Soft Drift", artist: "PulseSoc Audio" } }),
+    fixture(9106, "ai", "AI-assisted Status caption, with internal tooling and model details kept private.", { ai_context: { fixture: true } }),
+    fixture(9107, "live", "Live creator preview", { author_live: true, story_count: 2 }),
+    fixture(9108, "text", "Muted creator Status", { muted: true, viewed: true, unseen_count: 0 }),
+    fixture(9109, "text", "Uploading Status", { fixture_state: "uploading" }),
+    fixture(9110, "photo", "Upload failed. Retry is available.", { fixture_state: "failed", media: [{ id: 8110, media_url: image, valid_url: image, media_type: "image" }] }),
+    fixture(9111, "text", "Private audience fixture", { fixture_state: "private", visibility: "private" }),
+    fixture(9112, "text", "Offline queued Status", { fixture_state: "offline_queued" }),
+    fixture(9113, "text", "Expired fixture", { fixture_state: "expired", expires_at: new Date(now - 1_000).toISOString() }),
+    fixture(9114, "text", "Deleted fixture", { fixture_state: "deleted" }),
+    fixture(9115, "text", "Reported fixture", { fixture_state: "reported" }),
+    fixture(9116, "text", "Blocked fixture", { fixture_state: "blocked" })
+  ];
 }
 
 export function normalizeStatus(item: PulseStatus): PulseStatus {

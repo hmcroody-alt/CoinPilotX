@@ -5316,4 +5316,13 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Fresh Pro simulator evidence confirms the Status empty/creator-entry surface; creator modal automation and populated Status data were not reliable enough to claim full evidence.
 - Status is **not focused-subsystem complete**. Complete populated/viewer/creator/owner/realtime/offline matrices and compact/standard/Pro Max QA remain required.
 - Next recommendation: stay on Status; do not select another subsystem yet.
+
+## Native Status Populated Lifecycle Closure — 2026-07-12
+
+- Status remains the active focused subsystem.
+- Added localhost-only, opt-in production-shaped fixtures for populated rail, text/photo/video/music/AI/live/muted/uploading/failed/private/offline/expired/deleted/reported/blocked states; production builds remain server-authoritative.
+- Preserved the create entry in the populated rail and added an exact native `/pulse/status/create` route.
+- Fresh Pro evidence now covers populated rail, viewer chrome, and the complete creator shell. Visual QA found and fixed Dynamic Island collisions in both viewer and creator headers.
+- Status is **not frozen**: compact, standard, and Pro Max evidence plus physical-device media, reduced-motion, VoiceOver, realtime, and full controlled lifecycle execution remain open.
+- Next recommendation: stay on Status until those remaining gates close.
 - Report: `reports/pulsesoc_native_status_complete_design_deep_wiring_2026-07-12.md`.

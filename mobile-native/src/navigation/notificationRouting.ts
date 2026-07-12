@@ -184,6 +184,11 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  if (normalized === "/pulse/status/create" && navigationRef.isReady()) {
+    navigationRef.navigate("Tabs", { screen: "Status", params: { openCreator: true } });
+    return { handled: true, target: normalized };
+  }
+
   if (normalized.startsWith("/pulse/status") && navigationRef.isReady()) {
     const queryStatusId = extractNumericQueryValue(normalized, "status_id") || extractNumericQueryValue(normalized, "status");
     if (queryStatusId) {

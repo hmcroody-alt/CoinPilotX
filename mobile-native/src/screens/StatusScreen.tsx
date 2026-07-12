@@ -34,6 +34,7 @@ import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/
 import { StatusViewerCard } from "../components/StatusViewerCard";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Props = {
   route: { params?: { statusId?: number; title?: string; openCreator?: boolean } };
@@ -43,6 +44,7 @@ type Props = {
 const LANE = "for_you";
 
 export function StatusScreen({ route, navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const initialStatusId = Number(route.params?.statusId || 0);
   const [items, setItems] = useState<PulseStatus[]>([]);
   const [railItems, setRailItems] = useState<PulseStatus[]>([]);
@@ -204,6 +206,7 @@ export function StatusScreen({ route, navigation }: Props) {
               keyExtractor={(item) => `rail-${item.id}`}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.rail}
+              ListHeaderComponent={<CreateStatusRailEntry onPress={() => setCreatorOpen(true)} />}
               renderItem={({ item }) => <StatusRailBubble status={item} onPress={openStatus} />}
             />
           </View>
@@ -242,7 +245,7 @@ export function StatusScreen({ route, navigation }: Props) {
             onViewed={handleViewed}
           />
         ) : null}
-        <Pressable style={styles.close} onPress={() => setViewerIndex(null)}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close Status viewer" style={[styles.close, { top: insets.top + 64 }]} onPress={() => setViewerIndex(null)}>
           <Text style={styles.closeText}>Close</Text>
         </Pressable>
       </Modal>
@@ -279,8 +282,13 @@ function StatusRailBubble({ status, onPress }: { status: PulseStatus; onPress: (
       </View>
       {Number(status.story_count || 1) > 1 ? <View style={styles.storyCount}><Text style={styles.storyCountText}>{status.story_count}</Text></View> : null}
       <Text style={styles.bubbleName} numberOfLines={1}>{author.display_name || "Status"}</Text>
+      {status.muted ? <Text style={styles.railState}>Muted</Text> : status.fixture_state === "uploading" ? <Text style={styles.railState}>Uploading</Text> : status.fixture_state === "failed" ? <Text style={styles.railError}>Retry</Text> : status.author_live ? <Text style={styles.railLive}>Live</Text> : null}
     </Pressable>
   );
+}
+
+function CreateStatusRailEntry({ onPress }: { onPress: () => void }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel="Create a new Status" style={styles.bubble} onPress={onPress}><View style={styles.createRailRing}><Text style={styles.createRailPlus}>+</Text></View><Text style={styles.bubbleName}>Your Status</Text><Text style={styles.railState}>Create</Text></Pressable>;
 }
 
 function StatusManageModal({ status, onClose, onUpdated, onDeleted }: {
@@ -424,6 +432,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.42,
     shadowRadius: 12
   },
+  createRailRing: { alignItems: "center", backgroundColor: "rgba(54,229,143,0.1)", borderColor: colors.accent, borderRadius: 34, borderStyle: "dashed", borderWidth: 2, height: 68, justifyContent: "center", width: 68 },
+  createRailPlus: { color: colors.accent, fontSize: 32, fontWeight: "500" },
+  railState: { color: colors.muted, fontSize: 9, fontWeight: "800", marginTop: 2 },
+  railError: { color: colors.danger, fontSize: 9, fontWeight: "900", marginTop: 2 },
+  railLive: { color: "#ff5fa8", fontSize: 9, fontWeight: "900", marginTop: 2 },
   card: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
