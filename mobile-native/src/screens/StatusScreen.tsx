@@ -15,6 +15,7 @@ import {
   View
 } from "react-native";
 import {
+  deleteStatus,
   listStatuses,
   loadCachedStatuses,
   PulseStatus,
@@ -25,7 +26,8 @@ import {
   statusMediaKind,
   statusMediaUrl,
   statusMusicLabel,
-  trackStatusView
+  trackStatusView,
+  updateStatus as updateStatusOnServer
 } from "../api/status";
 import { StatusCreator } from "../components/StatusCreator";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
@@ -55,6 +57,7 @@ export function StatusScreen({ route, navigation }: Props) {
   const [replyStatus, setReplyStatus] = useState<PulseStatus | null>(null);
   const [replyBody, setReplyBody] = useState("");
   const [postingReply, setPostingReply] = useState(false);
+  const [manageStatus, setManageStatus] = useState<PulseStatus | null>(null);
   const viewed = useRef(new Set<number>());
 
   async function load(mode: "initial" | "refresh" = "initial") {
@@ -208,7 +211,7 @@ export function StatusScreen({ route, navigation }: Props) {
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.emptyTitle}>{error ? "Status unavailable" : "No active Status"}</Text>
-            <Text style={styles.emptyText}>{error || "Active PulseSoc statuses will appear here when the existing backend returns them."}</Text>
+            <Text style={styles.emptyText}>{error || "New Status from people you follow will appear here. Create one to start the moment."}</Text>
           </View>
         }
         renderItem={({ item }) => <StatusListCard status={item} onPress={openStatus} />}
@@ -231,6 +234,7 @@ export function StatusScreen({ route, navigation }: Props) {
             onReact={handleReact}
             onReply={(status) => setReplyStatus(status)}
             onShare={handleShare}
+            onMore={(status) => setManageStatus(status)}
             onAuthorPress={(status) => {
               const key = status.author?.public_player_id || status.author?.username || "";
               if (key) navigation.navigate("ProfileDetail", { profileKey: key, title: status.author?.display_name || "Profile" });
@@ -252,6 +256,16 @@ export function StatusScreen({ route, navigation }: Props) {
         onClose={() => setReplyStatus(null)}
       />
       <StatusCreator visible={creatorOpen} onClose={() => setCreatorOpen(false)} onCreated={handleCreatedStatus} />
+      <StatusManageModal
+        status={manageStatus}
+        onClose={() => setManageStatus(null)}
+        onUpdated={(next) => updateStatus(next.id, next)}
+        onDeleted={(statusId) => {
+          setItems((current) => current.filter((item) => item.id !== statusId));
+          setRailItems((current) => current.filter((item) => item.id !== statusId));
+          setViewerIndex(null);
+        }}
+      />
     </View>
   );
 }
@@ -259,12 +273,48 @@ export function StatusScreen({ route, navigation }: Props) {
 function StatusRailBubble({ status, onPress }: { status: PulseStatus; onPress: (status: PulseStatus) => void }) {
   const author = status.author || {};
   return (
-    <Pressable style={styles.bubble} onPress={() => onPress(status)}>
-      <View style={[styles.bubbleRing, status.viewed ? styles.bubbleViewed : undefined]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`Open ${author.display_name || "member"} Status, ${status.viewed ? "seen" : "unseen"}`} style={styles.bubble} onPress={() => onPress(status)}>
+      <View style={[styles.bubbleRing, status.viewed ? styles.bubbleViewed : undefined, status.author_live && styles.bubbleLive]}>
         {author.avatar_url ? <Image source={{ uri: author.avatar_url }} style={styles.bubbleAvatar} /> : <View style={styles.bubbleAvatarFallback} />}
       </View>
+      {Number(status.story_count || 1) > 1 ? <View style={styles.storyCount}><Text style={styles.storyCountText}>{status.story_count}</Text></View> : null}
       <Text style={styles.bubbleName} numberOfLines={1}>{author.display_name || "Status"}</Text>
     </Pressable>
+  );
+}
+
+function StatusManageModal({ status, onClose, onUpdated, onDeleted }: {
+  status: PulseStatus | null;
+  onClose: () => void;
+  onUpdated: (status: PulseStatus) => void;
+  onDeleted: (statusId: number) => void;
+}) {
+  const [body, setBody] = useState("");
+  const [visibility, setVisibility] = useState<"public" | "followers" | "private">("public");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    setBody(status?.body || "");
+    setVisibility(status?.visibility === "followers" || status?.visibility === "private" ? status.visibility : "public");
+    setError("");
+  }, [status]);
+  if (!status) return null;
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.manageBackdrop}>
+        <View style={styles.manageSheet}>
+          <Text style={styles.replyTitle}>{status.can_manage ? "Manage Status" : "Status options"}</Text>
+          {status.can_manage ? <>
+            <TextInput accessibilityLabel="Edit Status caption" style={styles.replyInput} value={body} onChangeText={setBody} multiline />
+            <View style={styles.replyActions}>{(["public", "followers", "private"] as const).map((item) => <Pressable key={item} accessibilityRole="button" accessibilityState={{ selected: visibility === item }} style={[styles.visibilityOption, visibility === item && styles.visibilityOptionActive]} onPress={() => setVisibility(item)}><Text style={styles.secondaryText}>{item}</Text></Pressable>)}</View>
+            <Pressable accessibilityRole="button" style={styles.primaryButton} disabled={busy} onPress={async () => { setBusy(true); setError(""); try { const result = await updateStatusOnServer(status.id, { body: body.trim(), visibility }); if (result.status) onUpdated(result.status); onClose(); } catch { setError("Status could not be updated. Try again."); } finally { setBusy(false); } }}><Text style={styles.primaryText}>Save changes</Text></Pressable>
+            <Pressable accessibilityRole="button" style={styles.deleteButton} disabled={busy} onPress={async () => { setBusy(true); setError(""); try { await deleteStatus(status.id); onDeleted(status.id); onClose(); } catch { setError("Status could not be deleted. Try again."); } finally { setBusy(false); } }}><Text style={styles.deleteText}>Delete Status</Text></Pressable>
+          </> : <Text style={styles.emptyText}>Sharing and reporting follow the current Status privacy and safety rules.</Text>}
+          {error ? <Text accessibilityLiveRegion="polite" style={styles.errorText}>{error}</Text> : null}
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryText}>Close</Text></Pressable>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -367,6 +417,12 @@ const styles = StyleSheet.create({
   },
   bubbleViewed: {
     borderColor: colors.border
+  },
+  bubbleLive: {
+    borderColor: "#ff5fa8",
+    shadowColor: "#ff5fa8",
+    shadowOpacity: 0.42,
+    shadowRadius: 12
   },
   card: {
     backgroundColor: colors.surface,
@@ -538,6 +594,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     flex: 1
   },
+  storyCount: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 10, height: 20, justifyContent: "center", position: "absolute", right: 4, top: 42, width: 20 },
+  storyCountText: { color: colors.background, fontSize: 10, fontWeight: "900" },
+  manageBackdrop: { backgroundColor: "rgba(0,0,0,0.62)", flex: 1, justifyContent: "flex-end" },
+  manageSheet: { backgroundColor: colors.surface, borderColor: colors.border, borderTopLeftRadius: 26, borderTopRightRadius: 26, borderWidth: 1, gap: 12, padding: 18, paddingBottom: 32 },
+  visibilityOption: { borderColor: colors.border, borderRadius: 999, borderWidth: 1, flex: 1, padding: 10 },
+  visibilityOptionActive: { backgroundColor: "rgba(54,229,143,0.18)", borderColor: colors.accent },
+  deleteButton: { alignItems: "center", borderColor: colors.danger, borderRadius: 14, borderWidth: 1, padding: 12 },
+  deleteText: { color: colors.danger, fontWeight: "900" },
+  errorText: { color: colors.danger, fontWeight: "800" },
   secondaryButton: {
     borderColor: colors.border,
     borderRadius: 8,

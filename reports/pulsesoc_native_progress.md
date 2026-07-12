@@ -5308,3 +5308,12 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Freeze decision: **not simulator-parity frozen**. Interactive offline network restoration, compact/standard keyboard proof, and full nested Group/Room/AI/attachment/safety/call matrices remain incomplete.
 - Next recommendation: remain on Pulse Command and repair deterministic authenticated compact/standard UI automation before another evidence mission.
 - Report: `reports/pulsesoc_native_pulse_command_live_reconciliation_nested_closure_2026-07-12.md`.
+## Focused Native Status Design and Deep Wiring — 2026-07-12
+
+- Strategy changed to one complete native surface at a time; Status is the active focused subsystem.
+- Added owner edit/privacy/delete management through existing PATCH/DELETE APIs, persistent creator drafts, live/multi-story rail signals, timed image progression, hold-to-pause viewer behavior, expanded accessibility semantics, and a premium creator visual pass.
+- Reused canonical Status APIs, shared media upload/viewer/camera infrastructure, music and AI Story APIs, cache, authentication, navigation, deep links, and notification routing.
+- Fresh Pro simulator evidence confirms the Status empty/creator-entry surface; creator modal automation and populated Status data were not reliable enough to claim full evidence.
+- Status is **not focused-subsystem complete**. Complete populated/viewer/creator/owner/realtime/offline matrices and compact/standard/Pro Max QA remain required.
+- Next recommendation: stay on Status; do not select another subsystem yet.
+- Report: `reports/pulsesoc_native_status_complete_design_deep_wiring_2026-07-12.md`.

@@ -87,7 +87,11 @@ def main() -> int:
         "48",
         "72",
         "168",
-        "Advanced editor tools remain available in PulseSoc web",
+        "pulsesoc.native.status.creator.draft",
+        "AsyncStorage.getItem(STATUS_DRAFT_KEY)",
+        "AsyncStorage.setItem(STATUS_DRAFT_KEY",
+        "AsyncStorage.removeItem(STATUS_DRAFT_KEY)",
+        'accessibilityLabel="Status text"',
     ):
         require(token in creator, f"StatusCreator behavior missing: {token}")
 
@@ -99,11 +103,9 @@ def main() -> int:
 
     for phrase in (
         "Status Creator Foundation",
-        "Native Media Viewer Foundation",
-        "Why This Comes Next",
-        "Risk: Medium-high",
-        "Complexity: Medium-high",
-        "Safest Implementation Plan",
+        "Focused Native Status Design and Deep Wiring",
+        "Status is the active focused subsystem",
+        "Next recommendation: stay on Status",
     ):
         require(phrase in progress, f"native progress report must include completed Status Creator and next-feature recommendation: {phrase}")
 

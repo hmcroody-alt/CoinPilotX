@@ -59,6 +59,8 @@ def main() -> int:
         "reactToStatus",
         "replyToStatus",
         "shareStatus",
+        "updateStatus",
+        "deleteStatus",
         "pulseStatusUrl",
         "statusMediaUrl",
         "statusPosterUrl",
@@ -77,6 +79,7 @@ def main() -> int:
         "replyToStatus",
         "shareStatus",
         "ReplyModal",
+        "StatusManageModal",
         "ProfileDetail",
     ):
         require(token in screen, f"native Status screen behavior missing: {token}")
@@ -91,24 +94,42 @@ def main() -> int:
         "onReact",
         "onReply",
         "onShare",
+        "onMore",
+        "setPaused",
         "onViewed",
         "statusMusicLabel",
     ):
         require(token in card, f"native Status viewer behavior missing: {token}")
 
     require("StatusScreen" in navigator and 'name="Status"' in navigator and 'name="StatusDetail"' in navigator, "navigator must register Status")
-    require("Status: undefined" in types and "StatusDetail: { statusId: number" in types, "navigation types must include Status params")
+    require("Status: { openCreator?: boolean; statusId?: number } | undefined" in types and "StatusDetail: { statusId: number" in types, "navigation types must include Status params")
     require("pulse/status" in linking and "pulse/status/:statusId" in linking, "linking must include PulseSoc Status routes")
     require('"StatusDetail"' in routing and "pulse\\/status" in routing and "pulse://status" not in routing, "notification routing must open native Status Detail safely")
     require("mobileStatusMatch" in routing and "StatusDetail" in routing, "notification routing must support backend mobile Status deep links")
 
+    for token in (
+        "accessibilityLabel=\"Previous Status\"",
+        "accessibilityLabel=\"Next Status\"",
+        "accessibilityLabel=\"Status options\"",
+        "onPressIn={() => setPaused(true)}",
+        "setTimeout(() => { markComplete(); onNext(); }, 6000)",
+    ):
+        require(token in card, f"Status viewer interaction/accessibility missing: {token}")
+
+    for token in (
+        "StatusManageModal",
+        "updateStatusOnServer",
+        "deleteStatus(status.id)",
+        "status.author_live && styles.bubbleLive",
+        "status.story_count",
+    ):
+        require(token in screen, f"Status rail/owner lifecycle missing: {token}")
+
     for phrase in (
         "Status Viewer + Status Detail",
-        "Native Media Capture + Upload Foundation",
-        "Why This Comes Next",
-        "Risk: High",
-        "Complexity: High",
-        "Safest Implementation Plan",
+        "Focused Native Status Design and Deep Wiring",
+        "Status is the active focused subsystem",
+        "Next recommendation: stay on Status",
     ):
         require(phrase in progress, f"native progress report must include completed Status and next-feature recommendation: {phrase}")
 

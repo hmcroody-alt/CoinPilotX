@@ -17,6 +17,7 @@ type Props = {
   onReact: (status: PulseStatus, reactionType?: string) => void;
   onReply: (status: PulseStatus) => void;
   onShare: (status: PulseStatus) => void;
+  onMore: (status: PulseStatus) => void;
   onAuthorPress: (status: PulseStatus) => void;
   onViewed?: (status: PulseStatus, watchMs: number, completed?: boolean) => void;
 };
@@ -33,6 +34,7 @@ export function StatusViewerCard({
   onReact,
   onReply,
   onShare,
+  onMore,
   onAuthorPress,
   onViewed
 }: Props) {
@@ -40,6 +42,7 @@ export function StatusViewerCard({
   const startedAt = useRef(0);
   const [buffering, setBuffering] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [paused, setPaused] = useState(false);
   const mediaUrl = useMemo(() => statusMediaUrl(status), [status]);
   const posterUrl = useMemo(() => statusPosterUrl(status), [status]);
   const kind = statusMediaKind(status);
@@ -58,6 +61,17 @@ export function StatusViewerCard({
       videoRef.current?.pauseAsync().catch(() => undefined);
     }
   }, [active, onViewed, status]);
+
+  useEffect(() => {
+    if (!active || paused || kind === "video") return;
+    const timer = setTimeout(() => { markComplete(); onNext(); }, 6000);
+    return () => clearTimeout(timer);
+  }, [active, kind, onNext, paused, status.id]);
+
+  useEffect(() => {
+    if (paused) videoRef.current?.pauseAsync().catch(() => undefined);
+    else if (active) videoRef.current?.playAsync().catch(() => undefined);
+  }, [active, paused]);
 
   function markComplete() {
     if (!startedAt.current) return;
@@ -109,10 +123,10 @@ export function StatusViewerCard({
         </View>
       )}
 
-      <Pressable style={styles.leftTap} onPress={onPrevious} />
-      <Pressable style={styles.rightTap} onPress={onNext} onLongPress={() => onReact(status, "smart")} />
-      <Pressable style={styles.soundTap} onPress={onToggleMuted} />
-      <View style={styles.scrim} pointerEvents="none" />
+      <Pressable accessibilityRole="button" accessibilityLabel="Previous Status" style={styles.leftTap} onPress={onPrevious} onPressIn={() => setPaused(true)} onPressOut={() => setPaused(false)} />
+      <Pressable accessibilityRole="button" accessibilityLabel="Next Status" style={styles.rightTap} onPress={onNext} onPressIn={() => setPaused(true)} onPressOut={() => setPaused(false)} />
+      <Pressable accessibilityRole="button" accessibilityLabel={muted ? "Unmute Status" : "Mute Status"} style={styles.soundTap} onPress={onToggleMuted} />
+      <View style={styles.scrim} />
 
       {buffering ? (
         <View style={styles.buffering}>
@@ -129,6 +143,7 @@ export function StatusViewerCard({
           </View>
         </Pressable>
         <Text style={styles.muteText}>{muted ? "Muted" : "Sound"}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Status options" style={styles.moreButton} onPress={() => onMore(status)}><Text style={styles.moreText}>•••</Text></Pressable>
       </View>
 
       <View style={styles.actions}>
@@ -148,7 +163,7 @@ export function StatusViewerCard({
 
 function Action({ label, value, disabled, onPress }: { label: string; value?: number; disabled?: boolean; onPress: () => void }) {
   return (
-    <Pressable style={[styles.action, disabled ? styles.disabled : undefined]} disabled={disabled} onPress={onPress}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${label} to Status${value ? `, ${value}` : ""}`} style={[styles.action, disabled ? styles.disabled : undefined]} disabled={disabled} onPress={onPress}>
       <Text style={styles.actionText}>{label}</Text>
       {value ? <Text style={styles.actionValue}>{value}</Text> : null}
     </Pressable>
@@ -273,6 +288,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800"
   },
+  moreButton: { alignItems: "center", height: 40, justifyContent: "center", width: 44 },
+  moreText: { color: colors.text, fontSize: 18, fontWeight: "900" },
   progressBar: {
     backgroundColor: colors.accent,
     height: "100%"
@@ -297,6 +314,7 @@ const styles = StyleSheet.create({
   scrim: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.16)",
+    pointerEvents: "none",
     zIndex: 2
   },
   soundTap: {

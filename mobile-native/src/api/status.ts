@@ -204,6 +204,18 @@ export async function shareStatus(statusId: number) {
   });
 }
 
+export async function updateStatus(statusId: number, payload: { body?: string; visibility?: StatusVisibility }) {
+  const data = await pulseApi<StatusCreateResponse>(`/api/pulse/status/${statusId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+  return { ...data, status: data.status ? normalizeStatus(data.status) : undefined };
+}
+
+export async function deleteStatus(statusId: number) {
+  return pulseApi<{ ok?: boolean; status_id?: number; message?: string }>(`/api/pulse/status/${statusId}`, { method: "DELETE" });
+}
+
 export function pulseStatusUrl(statusId: number) {
   return `${PULSE_API_BASE_URL}/pulse/status?status_id=${encodeURIComponent(String(statusId))}`;
 }

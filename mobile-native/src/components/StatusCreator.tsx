@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   createStatus,
@@ -20,6 +21,8 @@ type Props = {
   onClose: () => void;
   onCreated: (status?: PulseStatus) => void;
 };
+
+const STATUS_DRAFT_KEY = "pulsesoc.native.status.creator.draft";
 
 const visibilityOptions = [
   { label: "Public", value: "public" },
@@ -59,10 +62,25 @@ export function StatusCreator({ visible, onClose, onCreated }: Props) {
 
   useEffect(() => {
     if (!visible) return;
+    AsyncStorage.getItem(STATUS_DRAFT_KEY).then((value) => {
+      if (!value) return;
+      const draft = JSON.parse(value) as { body?: string; visibility?: StatusVisibility; durationHours?: number; mode?: StatusType; aiPrompt?: string };
+      setBody(draft.body || "");
+      setVisibility(draft.visibility || "public");
+      setDurationHours(Number(draft.durationHours || 24));
+      setMode(draft.mode || "text");
+      setAiPrompt(draft.aiPrompt || "");
+    }).catch(() => undefined);
     listTrendingStatusMusic({ limit: 6 })
       .then((result) => setMusicItems(result.items || []))
       .catch(() => undefined);
   }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const timer = setTimeout(() => AsyncStorage.setItem(STATUS_DRAFT_KEY, JSON.stringify({ body, visibility, durationHours, mode, aiPrompt })).catch(() => undefined), 180);
+    return () => clearTimeout(timer);
+  }, [aiPrompt, body, durationHours, mode, visibility, visible]);
 
   async function publish() {
     if (!canPublish || publishing) {
@@ -94,6 +112,7 @@ export function StatusCreator({ visible, onClose, onCreated }: Props) {
         }
       });
       resetCreator();
+      await AsyncStorage.removeItem(STATUS_DRAFT_KEY).catch(() => undefined);
       onCreated(result.status);
       onClose();
     } catch (publishError) {
@@ -155,7 +174,7 @@ export function StatusCreator({ visible, onClose, onCreated }: Props) {
           <Pressable style={styles.headerButton} disabled={publishing || mediaUpload.uploading} onPress={closeCreator}>
             <Text style={styles.headerButtonText}>Cancel</Text>
           </Pressable>
-          <Text style={styles.headerTitle}>Create Status</Text>
+          <View><Text style={styles.headerKicker}>STATUS STUDIO</Text><Text style={styles.headerTitle}>Create Status</Text></View>
           <Pressable style={[styles.publishButton, (!canPublish || publishing) && styles.disabled]} disabled={!canPublish || publishing} onPress={publish}>
             {publishing ? <ActivityIndicator color={colors.background} /> : <Text style={styles.publishText}>Post</Text>}
           </Pressable>
@@ -168,6 +187,8 @@ export function StatusCreator({ visible, onClose, onCreated }: Props) {
                 key={option.value}
                 style={[styles.pill, mode === option.value && styles.pillActive]}
                 onPress={() => setMode(option.value)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: mode === option.value }}
               >
                 <Text style={[styles.pillText, mode === option.value && styles.pillTextActive]}>{option.label}</Text>
               </Pressable>
@@ -182,6 +203,7 @@ export function StatusCreator({ visible, onClose, onCreated }: Props) {
             placeholderTextColor={colors.muted}
             multiline
             textAlignVertical="top"
+            accessibilityLabel="Status text"
           />
 
           <View style={styles.selector}>
@@ -190,6 +212,8 @@ export function StatusCreator({ visible, onClose, onCreated }: Props) {
                 key={option.value}
                 style={[styles.pill, visibility === option.value && styles.pillActive]}
                 onPress={() => setVisibility(option.value)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: visibility === option.value }}
               >
                 <Text style={[styles.pillText, visibility === option.value && styles.pillTextActive]}>{option.label}</Text>
               </Pressable>
@@ -202,6 +226,8 @@ export function StatusCreator({ visible, onClose, onCreated }: Props) {
                 key={option.value}
                 style={[styles.pill, durationHours === option.value && styles.pillActive]}
                 onPress={() => setDurationHours(option.value)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: durationHours === option.value }}
               >
                 <Text style={[styles.pillText, durationHours === option.value && styles.pillTextActive]}>{option.label}</Text>
               </Pressable>
@@ -292,8 +318,7 @@ export function StatusCreator({ visible, onClose, onCreated }: Props) {
             </Pressable>
           </View>
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <Text style={styles.fallbackNote}>Advanced editor tools remain available in PulseSoc web until native parity is ready.</Text>
+          {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
         </ScrollView>
       </View>
     </Modal>
@@ -324,15 +349,15 @@ const styles = StyleSheet.create({
     textAlignVertical: "top"
   },
   bodyInput: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
+    backgroundColor: "rgba(10,23,38,0.92)",
+    borderColor: "rgba(91,230,194,0.28)",
+    borderRadius: 22,
     borderWidth: 1,
     color: colors.text,
     fontSize: 18,
     lineHeight: 25,
-    minHeight: 150,
-    padding: 14
+    minHeight: 180,
+    padding: 18
   },
   content: {
     gap: 14,
@@ -346,14 +371,9 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontWeight: "800"
   },
-  fallbackNote: {
-    color: colors.muted,
-    fontSize: 12,
-    lineHeight: 18
-  },
   header: {
     alignItems: "center",
-    backgroundColor: colors.surface,
+    backgroundColor: "rgba(4,11,20,0.96)",
     borderBottomColor: colors.border,
     borderBottomWidth: 1,
     flexDirection: "row",
@@ -374,6 +394,7 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "900"
   },
+  headerKicker: { color: colors.accent, fontSize: 9, fontWeight: "900", letterSpacing: 1.5, textAlign: "center" },
   mediaActions: {
     flexDirection: "row",
     gap: 10
@@ -398,9 +419,9 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   panel: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
+    backgroundColor: "rgba(10,23,38,0.82)",
+    borderColor: "rgba(91,230,194,0.2)",
+    borderRadius: 20,
     borderWidth: 1,
     gap: 10,
     padding: 12
@@ -412,7 +433,7 @@ const styles = StyleSheet.create({
   },
   pill: {
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: 999,
     borderWidth: 1,
     flex: 1,
     paddingVertical: 10
