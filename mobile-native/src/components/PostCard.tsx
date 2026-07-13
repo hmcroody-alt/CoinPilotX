@@ -51,10 +51,13 @@ export function PostCard({
   const [commentPosting, setCommentPosting] = useState(false);
   const [commentNotice, setCommentNotice] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [reactionsOpen, setReactionsOpen] = useState(false);
+  const [bodyExpanded, setBodyExpanded] = useState(Boolean(detail));
   const author = post.author || {};
   const displayName = author.display_name || author.name || post.author_name || "PulseSoc";
   const handle = author.username || author.handle || post.author_username || "";
-  const body = detail ? post.body : compactPreview(post.body, "");
+  const longBody = String(post.body || "").length > 260;
+  const body = detail || bodyExpanded ? post.body : compactPreview(post.body, "");
   const commentCount = Number(post.comment_count || 0);
   const reactionTotal = Object.values(post.reaction_counts || {}).reduce((sum, count) => sum + Number(count || 0), 0);
   const creatorLabel = author.premium_verified || author.verified ? "Pulse Creator" : "";
@@ -78,10 +81,6 @@ export function PostCard({
 
   function focusComment() {
     commentInputRef.current?.focus();
-  }
-
-  function showUnavailable(label: string) {
-    setCommentNotice(`${label} comments open in Post Detail when supported.`);
   }
 
   return (
@@ -159,16 +158,17 @@ export function PostCard({
 
       {post.title ? <Text style={styles.title}>{post.title}</Text> : null}
       {body ? <Text style={styles.body}>{body}</Text> : null}
+      {longBody && !detail ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={bodyExpanded ? "Collapse post" : "Read full post"} onPress={(event) => { event.stopPropagation(); setBodyExpanded((value) => !value); }}>
+          <Text style={styles.readMore}>{bodyExpanded ? "Show less" : "Read more"}</Text>
+        </Pressable>
+      ) : null}
       <MediaStrip post={post} />
 
       <View style={styles.socialContextRow}>
-        <View style={styles.socialAvatars}>
-          <View style={[styles.socialAvatarDot, styles.socialAvatarDotOne]} />
-          <View style={[styles.socialAvatarDot, styles.socialAvatarDotTwo]} />
-          <View style={[styles.socialAvatarDot, styles.socialAvatarDotThree]} />
-        </View>
+        <Text style={styles.reactionSummary} accessibilityLabel={`${reactionTotal} reactions`}>{reactionSummary(post.reaction_counts || {})}</Text>
         <Text style={styles.socialContextText} numberOfLines={1}>
-          {reactionTotal ? `Liked by PulseSoc and ${reactionTotal} others` : "Be the first to react"}
+          {reactionTotal ? `${compactCount(reactionTotal)} reactions` : "Be the first to react"}
         </Text>
         {commentCount ? (
           <Pressable
@@ -191,9 +191,14 @@ export function PostCard({
           accessibilityLabel={`${viewerLiked ? "Liked" : "Like"} post ${post.id}`}
           style={styles.actionButton}
           disabled={busy}
+          accessibilityState={{ selected: viewerLiked, busy: Boolean(busy) }}
+          onLongPress={(event) => {
+            event.stopPropagation();
+            setReactionsOpen((open) => !open);
+          }}
           onPress={(event) => {
             event.stopPropagation();
-            onReact?.(post, post.viewer_reaction || "fire");
+            onReact?.(post, post.viewer_reaction || "love");
           }}
         >
           <Text style={[styles.actionIcon, viewerLiked && styles.actionIconActive]}>♥</Text>
@@ -259,6 +264,28 @@ export function PostCard({
           <Text style={[styles.actionIcon, post.saved && styles.actionIconActive]}>□</Text>
         </Pressable>
       </View>
+
+      {reactionsOpen ? (
+        <View testID={`home-feed-reaction-selector-${post.id}`} accessibilityRole="toolbar" accessibilityLabel="Choose a reaction" style={styles.reactionSelector}>
+          {REACTIONS.map((reaction) => (
+            <Pressable
+              key={reaction.key}
+              accessibilityRole="button"
+              accessibilityLabel={reaction.label}
+              accessibilityState={{ selected: post.viewer_reaction === reaction.key }}
+              style={[styles.reactionChoice, post.viewer_reaction === reaction.key && styles.reactionChoiceActive]}
+              onPress={(event) => {
+                event.stopPropagation();
+                setReactionsOpen(false);
+                onReact?.(post, reaction.key);
+              }}
+            >
+              <Text style={styles.reactionChoiceEmoji}>{reaction.emoji}</Text>
+              <Text style={styles.reactionChoiceLabel}>{reaction.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
 
       {menuOpen ? (
         <View style={styles.overflowMenu}>
@@ -383,18 +410,6 @@ export function PostCard({
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Add photo to comment"
-            testID={`home-feed-comment-photo-${post.id}`}
-            style={styles.inlineCommentTool}
-            onPress={(event) => {
-              event.stopPropagation();
-              showUnavailable("Photo");
-            }}
-          >
-            <Text style={styles.inlineCommentToolText}>▣</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
             accessibilityLabel="Add emoji"
             testID={`home-feed-comment-emoji-${post.id}`}
             style={styles.inlineCommentTool}
@@ -443,23 +458,25 @@ function MediaStrip({ post }: { post: PulsePost }) {
     [author, post.body, post.id, post.media, post.title]
   );
   if (!post.media?.length) return null;
+  const gallery = post.media.length > 1;
   return (
-    <View style={styles.mediaWrap}>
+    <View style={[styles.mediaWrap, gallery && styles.mediaGrid]}>
       {post.media.slice(0, 4).map((media, index) => {
         const url = mediaDisplayUrl(media);
         const kind = mediaKind(media);
         if (kind === "image") {
           return (
-            <Pressable key={`${url}-${index}`} onPress={(event) => {
+            <Pressable style={gallery ? styles.mediaTile : undefined} key={`${url}-${index}`} onPress={(event) => {
               event.stopPropagation();
               setViewerIndex(index);
             }} testID={`home-feed-media-${post.id}-${index}`} accessibilityRole="button" accessibilityLabel={`Open media ${index + 1} for post ${post.id}`}>
-              <Image source={{ uri: url }} style={styles.mediaImage} resizeMode="cover" />
+              <Image source={{ uri: url }} style={[styles.mediaImage, gallery && styles.mediaImageGrid]} resizeMode="cover" />
+              {index === 3 && post.media!.length > 4 ? <View style={styles.mediaMore}><Text style={styles.mediaMoreText}>+{post.media!.length - 4}</Text></View> : null}
             </Pressable>
           );
         }
         return (
-          <Pressable key={`${url}-${index}`} style={styles.mediaFallback} onPress={(event) => {
+          <Pressable key={`${url}-${index}`} style={[styles.mediaFallback, gallery && styles.mediaTile]} onPress={(event) => {
             event.stopPropagation();
             setViewerIndex(index);
           }} testID={`home-feed-media-${post.id}-${index}`} accessibilityRole="button" accessibilityLabel={`Open ${kind} media ${index + 1} for post ${post.id}`}>
@@ -485,6 +502,23 @@ function compactCount(value?: number) {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(count >= 10_000_000 ? 0 : 1)}M`;
   if (count >= 1000) return `${(count / 1000).toFixed(count >= 10_000 ? 0 : 1)}K`;
   return String(count);
+}
+
+const REACTIONS = [
+  { key: "like", emoji: "👍", label: "Like" },
+  { key: "love", emoji: "❤️", label: "Love" },
+  { key: "fire", emoji: "🔥", label: "Fire" },
+  { key: "funny", emoji: "😂", label: "Funny" },
+  { key: "wow", emoji: "😮", label: "Wow" },
+  { key: "rocket", emoji: "🚀", label: "Rocket" }
+] as const;
+
+function reactionSummary(counts: Record<string, number>) {
+  const active = REACTIONS.filter((reaction) => Number(counts[reaction.key] || 0) > 0)
+    .sort((left, right) => Number(counts[right.key] || 0) - Number(counts[left.key] || 0))
+    .slice(0, 3)
+    .map((reaction) => reaction.emoji);
+  return active.length ? active.join("") : "♡";
 }
 
 const styles = StyleSheet.create({
@@ -742,6 +776,36 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     width: "100%"
   },
+  mediaImageGrid: {
+    aspectRatio: 1,
+    height: "100%"
+  },
+  mediaGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap"
+  },
+  mediaMore: {
+    alignItems: "center",
+    backgroundColor: "rgba(2, 8, 17, 0.62)",
+    borderRadius: 16,
+    bottom: 0,
+    justifyContent: "center",
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0
+  },
+  mediaMoreText: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: "900"
+  },
+  mediaTile: {
+    aspectRatio: 1,
+    flexBasis: "48%",
+    flexGrow: 1,
+    overflow: "hidden"
+  },
   mediaWrap: {
     gap: 7,
     marginTop: 12
@@ -808,26 +872,48 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingTop: 9
   },
-  socialAvatarDot: {
-    borderColor: colors.background,
-    borderRadius: 8,
+  readMore: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "900",
+    marginTop: 5
+  },
+  reactionChoice: {
+    alignItems: "center",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 14,
     borderWidth: 1,
-    height: 16,
-    marginLeft: -5,
-    width: 16
+    flex: 1,
+    gap: 2,
+    minHeight: 48,
+    justifyContent: "center"
   },
-  socialAvatarDotOne: {
-    backgroundColor: colors.accent,
-    marginLeft: 0
+  reactionChoiceActive: {
+    backgroundColor: "rgba(47, 225, 180, 0.14)",
+    borderColor: colors.accent
   },
-  socialAvatarDotThree: {
-    backgroundColor: colors.intelligence
+  reactionChoiceEmoji: {
+    fontSize: 16
   },
-  socialAvatarDotTwo: {
-    backgroundColor: colors.accentStrong
+  reactionChoiceLabel: {
+    color: colors.muted,
+    fontSize: 8,
+    fontWeight: "800"
   },
-  socialAvatars: {
-    flexDirection: "row"
+  reactionSelector: {
+    backgroundColor: "rgba(3, 9, 18, 0.92)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 5,
+    marginTop: 8,
+    padding: 6
+  },
+  reactionSummary: {
+    color: colors.text,
+    fontSize: 13,
+    letterSpacing: -2
   },
   socialContextRow: {
     alignItems: "center",

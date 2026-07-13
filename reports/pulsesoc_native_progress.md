@@ -5336,3 +5336,12 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Connected physical iPhones were offline, so real camera/library/audio/upload routing remains `PHYSICAL-DEVICE-ONLY — NOT YET VERIFIED`.
 - Next recommendation: stay on Status for standard-width recovery, interactive accessibility traversal, realtime multi-device/reconnect observation, and physical-device media before freeze.
 - Report: `reports/pulsesoc_native_status_complete_design_deep_wiring_2026-07-12.md`.
+
+## Native Feed Posts Reactive Card and Contract Correction — 2026-07-12
+
+- Feed Posts are the active focused subsystem and are **not ready to freeze**.
+- Reused the existing Home feed, post card, Post Detail, API/cache normalization, media viewer, event sync, navigation and server mutations.
+- Removed fabricated reaction avatars and the dead photo-comment affordance; added production-key reaction selection, correct reaction replacement/removal reconciliation, long-text expansion, responsive image grids and persistent feed selection.
+- TypeScript and the focused Feed Posts audit pass. Complete simulator state coverage, physical interaction evidence, poll/community/repost/music/link rendering, replies, owner edit/delete/analytics and controlled realtime/offline reconciliation remain open.
+- Next recommendation: stay on Feed Posts for canonical post-type normalization and the missing controlled/device lifecycle matrix.
+- Report: `reports/pulsesoc_native_feed_posts_complete_design_deep_wiring_2026-07-12.md`.

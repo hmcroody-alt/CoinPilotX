@@ -132,6 +132,15 @@ export type CreatePostResponse = {
   message?: string;
 };
 
+export type PostReactionResponse = {
+  ok?: boolean;
+  removed?: boolean;
+  reaction_type?: string;
+  reaction_counts?: Record<string, number>;
+  viewer_reaction?: string;
+  post?: PulsePost;
+};
+
 export type FeedParams = {
   feed?: string;
   tab?: string;
@@ -224,7 +233,7 @@ export async function cachePostDetail(postId: number, detail: PostDetailResponse
 }
 
 export async function reactToPost(postId: number, reactionType: string) {
-  return pulseApi<{ ok?: boolean; post?: PulsePost; reaction_counts?: Record<string, number>; viewer_reaction?: string }>(
+  return pulseApi<PostReactionResponse>(
     `/api/pulse/posts/${postId}/react`,
     {
       method: "POST",

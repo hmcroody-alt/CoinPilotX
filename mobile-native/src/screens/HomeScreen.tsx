@@ -1,4 +1,5 @@
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Image, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from "react-native";
@@ -55,6 +56,8 @@ const FEED_TABS: FeedTab[] = [
   { key: "my_posts", label: "My Posts", description: "Your published posts" }
 ];
 
+const FEED_SELECTION_KEY = "pulsesoc.native.home.feed.selection.v1";
+
 const HOME_COMMAND_ITEMS = [
   { label: "Home", route: "/pulse", icon: "⌂", active: true },
   { label: "Dashboard", route: "/pulse/dashboard", icon: "▦" },
@@ -84,6 +87,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const [statusOffline, setStatusOffline] = useState(false);
   const [statusError, setStatusError] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const selectionRestoredRef = useRef(false);
   const activeTab = useMemo(() => FEED_TABS.find((tab) => tab.key === selectedFeed) || FEED_TABS[0], [selectedFeed]);
 
   const loadStatuses = useCallback(async () => {
@@ -144,6 +148,22 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   );
 
   useEffect(() => {
+    AsyncStorage.getItem(FEED_SELECTION_KEY)
+      .then((saved) => {
+        if (saved && FEED_TABS.some((tab) => tab.key === saved)) setSelectedFeed(saved);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        selectionRestoredRef.current = true;
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!selectionRestoredRef.current) return;
+    AsyncStorage.setItem(FEED_SELECTION_KEY, selectedFeed).catch(() => undefined);
+  }, [selectedFeed]);
+
+  useEffect(() => {
     load("initial", selectedFeed).catch(() => undefined);
   }, [load, selectedFeed]);
 
@@ -175,14 +195,15 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   async function handleReact(post: PulsePost, reactionType: string) {
     setBusyPostId(post.id);
     const previous = post.viewer_reaction || "";
+    const removing = previous === reactionType;
     const counts = { ...(post.reaction_counts || {}) };
     if (previous) counts[previous] = Math.max(0, Number(counts[previous] || 0) - 1);
-    counts[reactionType] = Number(counts[reactionType] || 0) + 1;
-    updatePost(post.id, { viewer_reaction: reactionType, reaction_counts: counts });
+    if (!removing) counts[reactionType] = Number(counts[reactionType] || 0) + 1;
+    updatePost(post.id, { viewer_reaction: removing ? "" : reactionType, reaction_counts: counts });
     try {
       const result = await reactToPost(post.id, reactionType);
       updatePost(post.id, {
-        viewer_reaction: result.viewer_reaction || reactionType,
+        viewer_reaction: result.removed ? "" : result.viewer_reaction || result.reaction_type || reactionType,
         reaction_counts: result.reaction_counts || counts
       });
     } catch {

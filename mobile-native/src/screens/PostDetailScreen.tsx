@@ -75,14 +75,15 @@ export function PostDetailScreen({ route, navigation }: Props) {
     if (!post) return;
     setBusy(true);
     const previous = post.viewer_reaction || "";
+    const removing = previous === reactionType;
     const counts = { ...(post.reaction_counts || {}) };
     if (previous) counts[previous] = Math.max(0, Number(counts[previous] || 0) - 1);
-    counts[reactionType] = Number(counts[reactionType] || 0) + 1;
-    setPost({ ...post, viewer_reaction: reactionType, reaction_counts: counts });
+    if (!removing) counts[reactionType] = Number(counts[reactionType] || 0) + 1;
+    setPost({ ...post, viewer_reaction: removing ? "" : reactionType, reaction_counts: counts });
     try {
       const result = await reactToPost(nextPost.id, reactionType);
       setPost((current) =>
-        current ? { ...current, viewer_reaction: result.viewer_reaction || reactionType, reaction_counts: result.reaction_counts || counts } : current
+        current ? { ...current, viewer_reaction: result.removed ? "" : result.viewer_reaction || result.reaction_type || reactionType, reaction_counts: result.reaction_counts || counts } : current
       );
     } catch {
       setPost((current) => (current ? { ...current, viewer_reaction: previous, reaction_counts: post.reaction_counts || {} } : current));
