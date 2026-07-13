@@ -5354,3 +5354,11 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Unsupported per-chat settings remain explicit capability boundaries rather than fake local or unenforced toggles.
 - Next recommendation: stay on Messenger for production-backed preferences and remaining message actions, followed by the complete simulator and physical-device call/media matrix.
 - Report: `reports/pulsesoc_native_messenger_webview_target_deep_wiring_2026-07-12.md`.
+
+## Native Messenger Screenshot-Target Control Center Closure — 2026-07-12
+
+- Rebuilt the native Control Center to match the supplied production dashboard and exact section hierarchy, with searchable production rows, real conversation-derived metrics, persisted device accessibility preferences, native transcript export, safe local-cache clearing, and Safety Hub routing.
+- Added a visible Gear beside inbox search that restores a real recent conversation context, and made Gear the explicit active-chat entry point.
+- No fake E2EE, storage, member, notification, privacy, security-session, or productivity values are shown. Missing production contracts remain visibly locked with precise explanations.
+- Messenger is **not simulator-parity frozen** and cannot replace WebView Messenger yet. Production-backed per-conversation preferences and complete simulator/physical call-media-push matrices remain open.
+- Report: `reports/pulsesoc_native_messenger_screenshot_target_control_center_closure_2026-07-12.md`.

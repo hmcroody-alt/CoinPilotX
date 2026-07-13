@@ -20,6 +20,7 @@ import { logiNexus } from "../theme/logiNexus";
 
 type ConversationFilter = "all" | "direct" | "groups" | "rooms" | "ai" | "unread";
 const FILTER_KEY = "pulsesoc.native.messenger.filter";
+const LAST_CONVERSATION_KEY = "pulsesoc.native.messenger.last_conversation";
 
 export function MessengerScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -33,6 +34,16 @@ export function MessengerScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+
+  async function openConversationControlCenter() {
+    const savedId = Number(await AsyncStorage.getItem(LAST_CONVERSATION_KEY));
+    const active = conversations.find((item) => item.id === savedId) || conversations[0];
+    if (!active) {
+      setError("Open a conversation before using conversation settings.");
+      return;
+    }
+    navigation.navigate("Chat", { conversationId: active.id, title: conversationDisplayTitle(active), openControlCenter: true });
+  }
 
   async function load({ refresh = false } = {}) {
     if (refresh) setRefreshing(true);
@@ -105,7 +116,10 @@ export function MessengerScreen() {
                 <View style={[styles.connectionDot, error && styles.connectionDotWarning]} accessibilityLabel={error ? "Messenger reconnecting" : "Messenger connected"} />
                 <PulseCommandAction compact label="New chat" onPress={() => navigation.navigate("Search", { title: "New conversation" })} />
               </View>
-              <PulseCommandSearch value={query} onChangeText={setQuery} placeholder="Search people, rooms, and messages" />
+              <View style={styles.searchRow}>
+                <View style={styles.searchField}><PulseCommandSearch value={query} onChangeText={setQuery} placeholder="Search people, rooms, messages..." /></View>
+                <Pressable accessibilityRole="button" accessibilityLabel="Open Conversation Control Center" style={styles.gearButton} onPress={() => openConversationControlCenter().catch(() => setError("Conversation settings could not open."))}><Text style={styles.gearButtonText}>⚙</Text></Pressable>
+              </View>
               <PulseCommandSegmentRail items={filters} selected={selectedFilter} onSelect={(key) => setSelectedFilter(key as ConversationFilter)} />
               <PulseCommandPanel style={styles.quickActions}>
                 <QuickAction title="New Chat" subtitle="Direct message" onPress={() => navigation.navigate("Search", { title: "New conversation" })} />
@@ -143,7 +157,10 @@ function ConversationRow({ item, navigation }: { item: MessengerConversation; na
       style={({ pressed }) => [styles.row, item.pinned && styles.pinnedRow, pressed && styles.rowPressed]}
       accessibilityRole="button"
       accessibilityLabel={conversationAccessibilityLabel(item)}
-      onPress={() => navigation.navigate("Chat", { conversationId: item.id, title })}
+      onPress={() => {
+        AsyncStorage.setItem(LAST_CONVERSATION_KEY, String(item.id)).catch(() => undefined);
+        navigation.navigate("Chat", { conversationId: item.id, title });
+      }}
     >
       <PulseCommandAvatar label={title} active={active} tone={item.trust_state === "founder" ? "intelligence" : "default"} />
       <View style={styles.rowBody}>
@@ -193,6 +210,10 @@ const styles = StyleSheet.create({
   commandVersion: { color: colors.muted, fontSize: 12, fontWeight: "700" },
   connectionDot: { backgroundColor: colors.safety, borderRadius: 6, height: 10, width: 10 },
   connectionDotWarning: { backgroundColor: colors.warning },
+  searchRow: { alignItems: "center", flexDirection: "row", gap: 8 },
+  searchField: { flex: 1 },
+  gearButton: { alignItems: "center", backgroundColor: "#0c1830", borderColor: "#24546b", borderRadius: 13, borderWidth: 1, height: 46, justifyContent: "center", width: 46 },
+  gearButtonText: { color: "#61e9f6", fontSize: 21 },
   quickActions: { flexDirection: "row", gap: 6, padding: 6 },
   quickAction: { borderColor: colors.border, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, flex: 1, minHeight: 56, padding: 8 },
   quickActionTitle: { color: colors.text, fontSize: 11, fontWeight: "900" },

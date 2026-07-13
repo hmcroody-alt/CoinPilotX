@@ -26,11 +26,11 @@ def main() -> int:
         require(token in production, f"production target missing: {token}")
     for token in ('label: "All"', 'label: "Direct"', 'label: "Groups"', 'label: "Rooms"', 'label: "AI"', 'label: "Unread"', "loadCachedConversations", "searchMessenger"):
         require(token in inbox, f"native inbox parity missing: {token}")
-    for token in ("ConversationControlCenter", 'label="More"', 'qaChatState === "control-center"', "drainMessengerQueue", "enqueueMessengerMessage", "MessageActionSheet", "AttachmentActionSheet", "toggleVoiceRecording", "keyboardHeight", "syncConversation"):
+    for token in ("ConversationControlCenter", 'label="Gear"', 'qaChatState === "control-center"', "drainMessengerQueue", "enqueueMessengerMessage", "MessageActionSheet", "AttachmentActionSheet", "toggleVoiceRecording", "keyboardHeight", "syncConversation"):
         require(token in chat, f"native conversation parity missing: {token}")
     for section in ("Conversation", "Notifications", "Appearance", "Privacy", "Media", "Productivity", "Storage", "Security", "Accessibility", "Danger Zone"):
         require(section in control, f"Control Center section missing: {section}")
-    for token in ("Search conversation settings", "Export Chat", "Clear Local Cache", "Report Conversation", "Blocked Users", "server-authoritative", "does not claim end-to-end encryption"):
+    for token in ("Search conversation settings", "Export Chat", "Clear Media Cache", "Report Conversation", "Block User", "production-backed Messenger contract", "end-to-end encryption is not claimed"):
         require(token in control, f"Control Center behavior/boundary missing: {token}")
     for token in ("sendConversationMessage", "reactToMessage", "deleteMessage", "reportMessage", "uploadMessengerMedia", "pinConversation", "markConversationSeen", "sendTyping"):
         require(f"function {token}" in api, f"existing Messenger API reuse missing: {token}")

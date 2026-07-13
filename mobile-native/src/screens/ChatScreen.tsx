@@ -113,6 +113,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     if (qaChatState === "control-center") setControlCenterOpen(true);
   }, [messages.length, qaChatState]);
 
+  useEffect(() => {
+    if (route.params.openControlCenter) setControlCenterOpen(true);
+  }, [route.params.openControlCenter]);
+
   const newestMessageId = useMemo(
     () => messages.reduce((max, message) => Math.max(max, message.id > 0 ? message.id : 0), 0),
     [messages]
@@ -520,7 +524,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
                 tone="intelligence"
                 onPress={() => navigation.navigate("Call", { conversationId, callType: "video", direction: "outgoing", title: route.params.title || "PulseSoc Video" })}
               />
-              <PulseCommandAction compact label="More" onPress={() => setControlCenterOpen(true)} />
+              <PulseCommandAction compact label="Gear" onPress={() => setControlCenterOpen(true)} />
             </View>
           }
         />
@@ -632,6 +636,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         conversationId={conversationId}
         title={route.params.title || "Conversation"}
         messages={messages}
+        connected={!error}
         onClose={() => setControlCenterOpen(false)}
         onOpenSafety={(section) => {
           setControlCenterOpen(false);

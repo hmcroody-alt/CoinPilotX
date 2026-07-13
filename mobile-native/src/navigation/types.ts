@@ -48,7 +48,7 @@ export type RootStackParamList = {
     direction?: "incoming" | "outgoing";
     title?: string;
   } | undefined;
-  Chat: { conversationId: number; title?: string };
+  Chat: { conversationId: number; title?: string; openControlCenter?: boolean };
   PostDetail: { postId: number; title?: string };
   Reels: { reelId?: number; title?: string } | undefined;
   ReelDetail: { reelId: number; title?: string };

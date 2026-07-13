@@ -145,7 +145,7 @@ def main() -> int:
         'label: "Rooms"',
         'label: "AI"',
         'label: "Unread"',
-        'placeholder="Search people, rooms, and messages"',
+        'placeholder="Search people, rooms, messages..."',
         'title="New Chat"',
         'title="Create Group"',
         'title="Start Room"',
