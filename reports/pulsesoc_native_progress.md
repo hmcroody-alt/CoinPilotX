@@ -5362,3 +5362,11 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - No fake E2EE, storage, member, notification, privacy, security-session, or productivity values are shown. Missing production contracts remain visibly locked with precise explanations.
 - Messenger is **not simulator-parity frozen** and cannot replace WebView Messenger yet. Production-backed per-conversation preferences and complete simulator/physical call-media-push matrices remain open.
 - Report: `reports/pulsesoc_native_messenger_screenshot_target_control_center_closure_2026-07-12.md`.
+
+## Native Reels Futuristic Design and Deep Wiring — 2026-07-12
+
+- Reels is the active focused subsystem and is **not simulator-parity frozen**.
+- Preserved production Reels feed/detail/comment/reaction/save/share/follow/music/Live/creator routes and reused the existing native player, API wrappers, media normalization, profile, Live and creator destinations.
+- Comments are excluded from feed loading and remain hidden until Comment opens the native sheet. Reactions now have production-backed selection/replacement/removal states. Attached music is a micro-attribution with coordinated audio playback. Production Live records now survive native normalization and Join Live reuses `LiveDetail`.
+- Remaining gaps are realtime event reconciliation, full comment ownership/moderation flows, authorized offline mutation queues, broader analytics, full simulator-width evidence, and physical playback/audio/gesture/thermal QA.
+- Report: `reports/pulsesoc_native_reels_futuristic_deep_wiring_2026-07-12.md`.

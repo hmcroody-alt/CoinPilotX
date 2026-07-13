@@ -36,8 +36,16 @@ def main() -> None:
 
     expect("muxHls=media.mux_playback_id?`https://stream.mux.com/${media.mux_playback_id}.m3u8`" in bot, "Reels force canonical Mux HLS before raw media")
     expect("if(visible&&v===primaryReelVideo(card))" in bot, "only the active visible Reel plays")
-    expect("else{v.pause();v.preload='metadata'}" in bot, "offscreen Reels pause and reduce preload")
-    expect("next.dataset.reelLightPreloaded==='1'" in bot, "Reels preload is single-shot")
+    expect(
+        "offscreen_pause" in bot
+        and "if(card.dataset.reelWindow!=='released')v.preload='metadata'" in bot,
+        "offscreen Reels pause and reduce preload unless released",
+    )
+    expect(
+        "const flag='reelLightPreloaded'+mode" in bot
+        and "card.dataset[flag]==='1'" in bot,
+        "Reels preload is single-shot per adjacent window",
+    )
     expect("Pulse reel stream failed without cache-busting retry" in bot, "Reels avoid infinite stream retry loops")
     expect("playsinline webkit-playsinline" in bot + renderer, "Reels videos have mobile inline playback attributes")
     expect("nativeHlsSupported(video)" in renderer and "pulseNativeHls" in renderer, "Reels inherit native HLS handling")

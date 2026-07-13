@@ -118,14 +118,12 @@ def main() -> int:
     require('"ReelDetail"' in routing and "pulse\\/reels" in routing, "notification routing must open native Reel Detail")
 
     for phrase in (
-        "Reels Player + Reel Detail",
-        "Native Status Viewer + Status Detail",
-        "Why This Comes Next",
-        "Risk: Medium-high",
-        "Complexity: Medium-high",
-        "Safest Implementation Plan",
+        "Native Reels Futuristic Design and Deep Wiring",
+        "Reels is the active focused subsystem",
+        "not simulator-parity frozen",
+        "Remaining gaps",
     ):
-        require(phrase in progress, f"native progress report must include completed Reels and next-feature recommendation: {phrase}")
+        require(phrase in progress, f"native progress report must preserve the active Reels status: {phrase}")
 
     mobile_native = "\n".join(
         path.read_text(encoding="utf-8")

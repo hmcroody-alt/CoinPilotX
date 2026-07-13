@@ -46,11 +46,25 @@ def main() -> None:
     expect("if(visible&&v===primaryReelVideo(card))" in bot, "only active visible Reel video plays")
     expect("playReelVideo(v,true)" in bot, "visible Reel autoplay requests sound by default")
     expect("video.volume=1" in bot and "setReelVideoMuted(card,video,muted,'restore_state',false)" in bot, "Reels attempt unmuted playback before fallback")
-    expect("scheduleReelsPlayback('loadReels')" in bot and "window.addEventListener('pageshow'" in bot, "Reels startup scheduler runs after load and browser restore")
+    expect(
+        "scheduleReelsPlayback('loadReels-first-chunk')" in bot
+        and "scheduleReelsPlayback('loadReels-idle-chunk')" in bot
+        and "window.addEventListener('pageshow'" in bot,
+        "Reels startup scheduler runs after staged load and browser restore",
+    )
     expect("data-reel-sound-label=\"${id}\">${hasAudio?'Audio':'Silent'}" in bot and "blocked?'Tap for sound':'Audio'" in bot, "persistent sound control avoids permanent muted bubble")
-    expect("offscreen_pause" in bot and "v.pause()}v.preload='metadata'" in bot, "offscreen Reel videos pause and drop to metadata preload")
+    expect(
+        "offscreen_pause" in bot
+        and "v.pause()}if(card.dataset.reelWindow!=='released')v.preload='metadata'" in bot,
+        "offscreen Reel videos pause and drop to metadata preload unless released",
+    )
     preload_block = bot[bot.find("function preloadNextReel"):bot.find("function renderRail")]
-    expect("active.nextElementSibling?.nextElementSibling" in preload_block and "media.preload='auto'" in preload_block, "next two Reels preload video source")
+    expect(
+        "active.nextElementSibling?.nextElementSibling" in preload_block
+        and "preload:'auto'" in preload_block
+        and "media.preload=preload" in preload_block,
+        "next two Reels preload video source",
+    )
     tap_block = bot[bot.find("function handleReelMediaTap"):bot.find("reelsFeed.addEventListener('dblclick'")]
     expect("card.dataset.reelAutoplayBlocked==='1'" in tap_block and "setReelsSound(true)" in tap_block, "single tap unlocks blocked autoplay sound before toggling mute")
     expect("setReelsSound(!reelsSoundEnabled)" in tap_block and "video.pause()" not in tap_block, "single tap toggles sound instead of play/pause")
