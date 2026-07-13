@@ -41,6 +41,7 @@ import {
 import { PULSE_API_BASE_URL } from "../api/config";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
+import { ConversationControlCenter } from "../components/ConversationControlCenter";
 import { PulseCommandAction, PulseCommandHeader, PulseCommandPanel } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
@@ -79,6 +80,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [statusMessage, setStatusMessage] = useState("");
+  const [controlCenterOpen, setControlCenterOpen] = useState(false);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingAt = useRef(0);
   const appState = useRef<AppStateStatus>(AppState.currentState);
@@ -108,6 +110,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     if (qaChatState === "context-menu") setSelectedMessage(messages.find((message) => !message.is_mine) || messages[0]);
     if (qaChatState === "attachment-sheet") setAttachmentSheetOpen(true);
     if (qaChatState === "reply-keyboard") setReplyTo(messages.find((message) => !message.is_mine) || messages[0]);
+    if (qaChatState === "control-center") setControlCenterOpen(true);
   }, [messages.length, qaChatState]);
 
   const newestMessageId = useMemo(
@@ -517,6 +520,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
                 tone="intelligence"
                 onPress={() => navigation.navigate("Call", { conversationId, callType: "video", direction: "outgoing", title: route.params.title || "PulseSoc Video" })}
               />
+              <PulseCommandAction compact label="More" onPress={() => setControlCenterOpen(true)} />
             </View>
           }
         />
@@ -622,6 +626,17 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         onCamera={() => { setAttachmentSheetOpen(false); navigation.navigate("CameraStudio", { target: "message", mode: "photo", conversationId, title: "Message Camera" }); }}
         onFile={() => { setAttachmentSheetOpen(false); attachFile().catch(() => undefined); }}
         onVoice={() => { setAttachmentSheetOpen(false); toggleVoiceRecording().catch(() => undefined); }}
+      />
+      <ConversationControlCenter
+        visible={controlCenterOpen}
+        conversationId={conversationId}
+        title={route.params.title || "Conversation"}
+        messages={messages}
+        onClose={() => setControlCenterOpen(false)}
+        onOpenSafety={(section) => {
+          setControlCenterOpen(false);
+          navigation.navigate("SafetyHub", { section, title: section === "reports" ? "Report Conversation" : "Blocked Users" });
+        }}
       />
       </LogiNexusScreenShell>
     </View>

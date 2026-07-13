@@ -5345,3 +5345,12 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - TypeScript and the focused Feed Posts audit pass. Complete simulator state coverage, physical interaction evidence, poll/community/repost/music/link rendering, replies, owner edit/delete/analytics and controlled realtime/offline reconciliation remain open.
 - Next recommendation: stay on Feed Posts for canonical post-type normalization and the missing controlled/device lifecycle matrix.
 - Report: `reports/pulsesoc_native_feed_posts_complete_design_deep_wiring_2026-07-12.md`.
+
+## Native Messenger WebView-Target Control Center Closure — 2026-07-12
+
+- Pulse Command/Messenger is again the active focused subsystem and is **not ready to freeze**.
+- Reused the existing inbox, chat, API/cache/offline queue, Pulse Command primitives, groups, rooms, Pulse AI, call stack, media viewer, deep links and notification routing.
+- Added the missing native Conversation Control Center entry and production section order with search, section expansion, conversation-derived stats, transcript export, safe local-cache clearing, and Safety Hub report/block routing.
+- Unsupported per-chat settings remain explicit capability boundaries rather than fake local or unenforced toggles.
+- Next recommendation: stay on Messenger for production-backed preferences and remaining message actions, followed by the complete simulator and physical-device call/media matrix.
+- Report: `reports/pulsesoc_native_messenger_webview_target_deep_wiring_2026-07-12.md`.
