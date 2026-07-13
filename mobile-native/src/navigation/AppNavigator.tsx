@@ -54,6 +54,7 @@ import { GlobalNavigationBadges, GlobalNavigationIdentity, LogiNexusBottomNaviga
 import { AppTabParamList, RootStackParamList } from "./types";
 import { openNativeRoute } from "./nativeRouteActions";
 import { navigationRef } from "./notificationRouting";
+import { PULSESOC_QA_REELS_FIXTURES } from "../api/config";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<AppTabParamList>();
@@ -145,7 +146,7 @@ export function AppNavigator() {
     const unregisterActivity = registerSyncInvalidation("activity", refreshBadgeSync);
     const stopSync = startNativeEventSync({
       fullResyncOnStart: true,
-      subsystems: ["activity", "notifications", "orders", "marketplace", "seller_inventory", "status"]
+      subsystems: ["activity", "notifications", "orders", "marketplace", "seller_inventory", "status", "reels"]
     });
     const appState = AppState.addEventListener("change", (state) => {
       if (state === "active") refreshBadges().catch(() => undefined);
@@ -184,6 +185,7 @@ export function AppNavigator() {
   return (
     <>
       <Stack.Navigator
+        initialRouteName={PULSESOC_QA_REELS_FIXTURES ? "Reels" : "Tabs"}
         screenOptions={({ route, navigation }) => ({
           contentStyle: { backgroundColor: colors.background },
           header: ({ back, options }) => (

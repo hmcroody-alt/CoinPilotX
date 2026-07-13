@@ -14,7 +14,8 @@ export type NativeSyncSubsystem =
   | "verification"
   | "premium"
   | "intelligence"
-  | "status";
+  | "status"
+  | "reels";
 
 export type NativeSyncEvent = {
   event_id?: string | number;
@@ -246,6 +247,9 @@ export function subsystemsForSyncEvent(event: NativeSyncEvent): NativeSyncSubsys
   if (/(pulse_status|status_created|status_updated|status_deleted|status_viewed|status_reaction|status_reply|status_shared)/.test(haystack)) {
     result.push("status", "activity");
   }
+  if (/(pulse_reel|reel_created|reel_updated|reel_deleted|reel_comment|reel_reaction|reel_live|\/pulse\/reels)/.test(haystack)) {
+    result.push("reels", "activity");
+  }
   return dedupeSubsystems(result.length ? result : ["activity", "notifications"]);
 }
 
@@ -315,6 +319,8 @@ function isNativeSyncSubsystem(value: unknown): value is NativeSyncSubsystem {
     "safety",
     "verification",
     "premium",
-    "intelligence"
+    "intelligence",
+    "status",
+    "reels"
   ].includes(String(value));
 }

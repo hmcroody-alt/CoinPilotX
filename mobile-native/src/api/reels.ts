@@ -4,6 +4,7 @@ import { mediaDisplayUrl, PulseAuthor, PulseComment, PulseMedia, normalizeCommen
 import { pulseApi } from "./pulseApi";
 
 const REELS_CACHE_KEY = "pulsesoc.native.reels.feed";
+const REELS_CACHE_META_KEY = "pulsesoc.native.reels.feed.meta";
 const reelsCacheKey = (lane = "for_you") => `${REELS_CACHE_KEY}.${lane}`;
 const reelDetailCacheKey = (reelId: number) => `pulsesoc.native.reels.detail.${reelId}`;
 
@@ -118,8 +119,23 @@ export async function loadCachedReels(lane = "for_you") {
   }
 }
 
+export async function loadCachedReelsSnapshot(lane = "for_you") {
+  const reels = await loadCachedReels(lane);
+  let cachedAt = 0;
+  try {
+    const raw = await AsyncStorage.getItem(`${REELS_CACHE_META_KEY}.${lane}`);
+    cachedAt = Number(raw || 0);
+  } catch {
+    cachedAt = 0;
+  }
+  return { reels, cachedAt };
+}
+
 export async function cacheReels(reels: PulseReel[], lane = "for_you") {
-  await AsyncStorage.setItem(reelsCacheKey(lane), JSON.stringify(reels.slice(0, 50)));
+  await Promise.all([
+    AsyncStorage.setItem(reelsCacheKey(lane), JSON.stringify(reels.slice(0, 50))),
+    AsyncStorage.setItem(`${REELS_CACHE_META_KEY}.${lane}`, String(Date.now()))
+  ]);
 }
 
 export async function loadCachedReelDetail(reelId: number) {
@@ -165,6 +181,19 @@ export async function reactToReelComment(commentId: number, reactionType = "like
   return pulseApi<{ ok?: boolean; removed?: boolean; reaction_type?: string; reaction_counts?: Record<string, number> }>(`/api/pulse/reels/comments/${commentId}/react`, {
     method: "POST",
     body: JSON.stringify({ reaction_type: reactionType })
+  });
+}
+
+export async function editReelComment(commentId: number, body: string) {
+  return pulseApi<{ ok?: boolean; comment?: PulseComment; message?: string }>(`/api/pulse/reels/comments/${commentId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ body })
+  });
+}
+
+export async function deleteReelComment(commentId: number) {
+  return pulseApi<{ ok?: boolean; deleted?: boolean; message?: string }>(`/api/pulse/reels/comments/${commentId}`, {
+    method: "DELETE"
   });
 }
 
@@ -214,6 +243,13 @@ export async function reportReel(reelId: number, reason = "reported from native 
   return pulseApi<{ ok?: boolean; report_id?: number; message?: string }>("/api/pulse/report", {
     method: "POST",
     body: JSON.stringify({ target_type: "reel", target_id: reelId, reason })
+  });
+}
+
+export async function reportReelComment(commentId: number, reason = "reported from native Reels") {
+  return pulseApi<{ ok?: boolean; report_id?: number; message?: string }>("/api/pulse/report", {
+    method: "POST",
+    body: JSON.stringify({ target_type: "reel_comment", target_id: commentId, reason })
   });
 }
 

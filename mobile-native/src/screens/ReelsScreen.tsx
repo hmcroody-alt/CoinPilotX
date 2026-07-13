@@ -1,7 +1,9 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   ActivityIndicator,
+  Animated,
   AppState,
   Dimensions,
   FlatList,
@@ -25,25 +27,30 @@ import { PulseComment } from "../api/feed";
 import { liveWebUrl } from "../api/live";
 import {
   addReelComment,
+  deleteReelComment,
   followReelCreator,
   listReelComments,
   listReels,
-  loadCachedReels,
+  loadCachedReelsSnapshot,
   markReelNotInterested,
   PulseReel,
   reactToReel,
   reactToReelComment,
   reelWebUrl,
   reportReel,
+  reportReelComment,
   repostReel,
   saveReel,
   shareReel,
   trackReelView
 } from "../api/reels";
+import { PulseApiError } from "../api/pulseApi";
 import { ReelPlayerCard } from "../components/ReelPlayerCard";
+import { registerSyncInvalidation } from "../core/eventSync";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
+import { useAuth } from "../session/auth";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Reels"> | NativeStackScreenProps<RootStackParamList, "ReelDetail">;
 
@@ -51,8 +58,12 @@ const PAGE_SIZE = 8;
 const QA_REELS_STATE = PULSESOC_QA_REELS_FIXTURES ? String(process.env.EXPO_PUBLIC_PULSESOC_QA_REELS_STATE || "").trim().toLowerCase() : "";
 type ReelLane = "for_you" | "following" | "trending" | "music" | "live";
 const REEL_LANES: Array<{ key: ReelLane; label: string }> = [{ key: "for_you", label: "For You" }, { key: "following", label: "Following" }, { key: "trending", label: "Trending" }, { key: "music", label: "Music" }, { key: "live", label: "Live" }];
+type ConnectionState = "loading" | "connecting" | "ready" | "cached" | "offline" | "server_busy" | "maintenance" | "rate_limited" | "auth_expired" | "empty";
+const RETRY_DELAYS = [1_000, 2_000, 5_000, 10_000];
+const QA_RECOVERY_STATES = new Set<ConnectionState>(["loading", "connecting", "offline", "server_busy", "maintenance", "rate_limited", "auth_expired", "empty"]);
 
 export function ReelsScreen({ route, navigation }: Props) {
+  const { authState } = useAuth();
   const insets = useSafeAreaInsets();
   const params = route.params || {};
   const initialReelId = "reelId" in params ? Number(params.reelId || 0) : 0;
@@ -65,7 +76,9 @@ export function ReelsScreen({ route, navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [muted, setMuted] = useState(true);
-  const [error, setError] = useState("");
+  const [connectionState, setConnectionState] = useState<ConnectionState>("loading");
+  const [retryCount, setRetryCount] = useState(0);
+  const [cachedAt, setCachedAt] = useState(0);
   const [offline, setOffline] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [commentReel, setCommentReel] = useState<PulseReel | null>(null);
@@ -81,33 +94,61 @@ export function ReelsScreen({ route, navigation }: Props) {
   const [viewportHeight, setViewportHeight] = useState(Dimensions.get("window").height);
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 72 });
   const qaStateApplied = useRef(false);
+  const loadVersion = useRef(0);
 
   async function load(mode: "initial" | "refresh" | "more" = "initial") {
+    if (mode === "initial" && QA_REELS_STATE && QA_RECOVERY_STATES.has(QA_REELS_STATE as ConnectionState)) {
+      setReels([]);
+      setConnectionState(QA_REELS_STATE as ConnectionState);
+      setLoading(QA_REELS_STATE === "loading");
+      return;
+    }
     if (mode === "more" && (!hasMore || loadingMore)) return;
     const nextOffset = mode === "more" ? offset : 0;
-    setError("");
     setOffline(false);
-    if (mode === "initial") setLoading(true);
+    const version = ++loadVersion.current;
+    if (mode === "initial") {
+      setLoading(true);
+      setConnectionState("loading");
+      const snapshot = await loadCachedReelsSnapshot(lane);
+      if (version !== loadVersion.current) return;
+      if (snapshot.reels.length) {
+        setReels(focusInitialReel(snapshot.reels, initialReelId));
+        setCachedAt(snapshot.cachedAt);
+        setOffline(true);
+        setConnectionState("connecting");
+        setLoading(false);
+      }
+    }
     if (mode === "refresh") setRefreshing(true);
     if (mode === "more") setLoadingMore(true);
     try {
       const data = await listReels({ lane, limit: PAGE_SIZE, offset: nextOffset, includeComments: false });
+      if (version !== loadVersion.current) return;
       const next = mode === "more" ? mergeReels(reels, data.reels || []) : focusInitialReel(data.reels || [], initialReelId);
       setReels(next);
       setOffset(Number(data.next_offset || nextOffset + (data.reels?.length || 0)));
       setHasMore(Boolean(data.has_more));
+      setOffline(false);
+      setRetryCount(0);
+      setConnectionState(next.length ? "ready" : "empty");
       if (initialReelId && mode !== "more") {
         const index = next.findIndex((item) => item.id === initialReelId);
         if (index >= 0) setActiveIndex(index);
       }
     } catch (loadError) {
-      const cached = await loadCachedReels(lane);
-      if (cached.length && mode !== "more") {
-        setReels(focusInitialReel(cached, initialReelId));
+      if (version !== loadVersion.current) return;
+      const snapshot = await loadCachedReelsSnapshot(lane);
+      if (snapshot.reels.length && mode !== "more") {
+        setReels(focusInitialReel(snapshot.reels, initialReelId));
+        setCachedAt(snapshot.cachedAt);
         setOffline(true);
+        setConnectionState("cached");
       } else {
-        setError(loadError instanceof Error ? loadError.message : "Reels could not load.");
+        setConnectionState(classifyConnectionState(loadError));
       }
+      setRetryCount((current) => Math.min(current + 1, RETRY_DELAYS.length));
+      logReelsFailure(loadError, { lane, cacheCount: snapshot.reels.length, retryCount: retryCount + 1 });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -121,6 +162,18 @@ export function ReelsScreen({ route, navigation }: Props) {
     setHasMore(false);
     load("initial").catch(() => undefined);
   }, [initialReelId, lane]);
+
+  useEffect(() => registerSyncInvalidation("reels", () => load("refresh")), [lane, initialReelId]);
+
+  useEffect(() => {
+    if (!appActive || connectionState === "ready" || connectionState === "empty" || connectionState === "auth_expired" || retryCount <= 0) return;
+    const delay = RETRY_DELAYS[Math.min(retryCount - 1, RETRY_DELAYS.length - 1)];
+    const timer = setTimeout(() => {
+      setConnectionState((current) => current === "cached" ? "connecting" : current);
+      load("refresh").catch(() => undefined);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [appActive, connectionState, retryCount, lane]);
 
   useEffect(() => {
     const listener = AppState.addEventListener("change", (state) => setAppActive(state === "active"));
@@ -271,28 +324,32 @@ export function ReelsScreen({ route, navigation }: Props) {
     }
   }
 
+  async function handleDeleteComment(comment: PulseComment) {
+    if (!comment.can_delete && Number(comment.user_id || comment.author?.user_id || 0) !== Number(authState.user?.user_id || 0)) return;
+    const previous = comments;
+    setComments((current) => current.filter((item) => item.id !== comment.id));
+    if (commentReel) updateReel(commentReel.id, { comments_count: Math.max(0, Number(commentReel.comments_count || 0) - 1) });
+    try {
+      await deleteReelComment(comment.id);
+    } catch {
+      setComments(previous);
+      if (commentReel) updateReel(commentReel.id, { comments_count: Number(commentReel.comments_count || 0) });
+    }
+  }
+
   function joinLiveReel(reel: PulseReel) {
     const liveId = Number(reel.live_session_id || reel.live?.live_session_id || 0);
     if (liveId) navigation.navigate("LiveDetail", { liveId, title: reel.title || "PulseSoc Live" });
   }
 
-  if (loading && !reels.length) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.accent} />
-        <Text style={styles.centerText}>Loading Reels</Text>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.root} onLayout={(event) => setViewportHeight(event.nativeEvent.layout.height)}>
+      <GalaxyField />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.laneRailContent} style={[styles.laneRail, { top: insets.top + 6 }]} accessibilityRole="tablist">
         {REEL_LANES.map((item) => <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: lane === item.key }} style={[styles.laneButton, lane === item.key && styles.laneButtonActive]} onPress={() => setLane(item.key)}><Text style={[styles.laneText, lane === item.key && styles.laneTextActive]}>{item.label}</Text></Pressable>)}
       </ScrollView>
       <Pressable accessibilityRole="button" accessibilityLabel="Create Reel" style={[styles.createButton, { top: insets.top + 6 }]} onPress={() => navigation.navigate("CameraStudio", { target: "reel", mode: "reel", title: "Create Reel" })}><Text style={styles.createText}>＋</Text></Pressable>
-      {offline ? <Text style={[styles.statusPill, { top: insets.top + 52 }]}>Saved Reels · reconnecting</Text> : null}
-      {error ? <Text style={[styles.errorPill, { top: insets.top + 52 }]}>{error}</Text> : null}
+      {offline && reels.length ? <View style={[styles.statusPill, { top: insets.top + 52 }]}><Text style={styles.statusPillText}>Saved Reels · {connectionState === "connecting" ? "refreshing" : cacheAge(cachedAt)}</Text></View> : null}
       <FlatList
         data={reels}
         keyExtractor={(item) => String(item.id)}
@@ -335,7 +392,7 @@ export function ReelsScreen({ route, navigation }: Props) {
         onEndReached={() => load("more").catch(() => undefined)}
         onEndReachedThreshold={0.5}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
-        ListEmptyComponent={<Text style={styles.empty}>{error || "No Reels loaded yet."}</Text>}
+        ListEmptyComponent={<ReelsRecovery state={connectionState} loading={loading} onRetry={() => load("refresh").catch(() => undefined)} onExplore={(nextLane) => setLane(nextLane)} />}
         ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.footer} color={colors.accent} /> : null}
         initialNumToRender={2}
         maxToRenderPerBatch={2}
@@ -353,6 +410,9 @@ export function ReelsScreen({ route, navigation }: Props) {
         replyTo={replyTo}
         onReply={setReplyTo}
         onReact={(comment) => reactToReelComment(comment.id).catch(() => undefined)}
+        currentUserId={Number(authState.user?.user_id || 0)}
+        onDelete={(comment) => handleDeleteComment(comment).catch(() => undefined)}
+        onReport={(comment) => reportReelComment(comment.id).catch(() => undefined)}
         onCancelReply={() => setReplyTo(null)}
         onClose={() => { setCommentReel(null); setReplyTo(null); }}
       />
@@ -374,6 +434,9 @@ function CommentsModal({
   replyTo,
   onReply,
   onReact,
+  currentUserId,
+  onDelete,
+  onReport,
   onCancelReply,
   onClose
 }: {
@@ -387,6 +450,9 @@ function CommentsModal({
   replyTo: PulseComment | null;
   onReply: (comment: PulseComment) => void;
   onReact: (comment: PulseComment) => void;
+  currentUserId: number;
+  onDelete: (comment: PulseComment) => void;
+  onReport: (comment: PulseComment) => void;
   onCancelReply: () => void;
   onClose: () => void;
 }) {
@@ -407,7 +473,7 @@ function CommentsModal({
               <View style={styles.comment}>
                 <Text style={styles.commentAuthor}>{item.author?.display_name || item.author?.username || "PulseSoc"}</Text>
                 <Text style={styles.commentBody}>{item.body}</Text>
-                <View style={styles.commentActions}><Text style={styles.commentTime}>{formatShortTime(item.created_at)}</Text><Pressable accessibilityRole="button" onPress={() => onReply(item)}><Text style={styles.commentAction}>Reply</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onReact(item)}><Text style={styles.commentAction}>Like</Text></Pressable></View>
+                <View style={styles.commentActions}><Text style={styles.commentTime}>{formatShortTime(item.created_at)}</Text><Pressable accessibilityRole="button" onPress={() => onReply(item)}><Text style={styles.commentAction}>Reply</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onReact(item)}><Text style={styles.commentAction}>Like</Text></Pressable>{item.can_delete || Number(item.user_id || item.author?.user_id || 0) === currentUserId ? <Pressable accessibilityRole="button" accessibilityLabel="Delete comment" onPress={() => onDelete(item)}><Text style={styles.commentDanger}>Delete</Text></Pressable> : <Pressable accessibilityRole="button" accessibilityLabel="Report comment" onPress={() => onReport(item)}><Text style={styles.commentAction}>Report</Text></Pressable>}</View>
               </View>
             )}
           />
@@ -467,6 +533,110 @@ function focusInitialReel(reels: PulseReel[], reelId: number) {
   return [reels[index], ...reels.slice(0, index), ...reels.slice(index + 1)];
 }
 
+function classifyConnectionState(error: unknown): ConnectionState {
+  if (!(error instanceof PulseApiError)) return "offline";
+  if (error.status === 401 || error.status === 403) return "auth_expired";
+  if (error.status === 429) return "rate_limited";
+  if (error.status === 503 || error.code === "request_unreachable") return "offline";
+  if (error.status === 502 || error.status === 504) return "server_busy";
+  if (error.status >= 500) return "server_busy";
+  return "offline";
+}
+
+function logReelsFailure(error: unknown, context: { lane: ReelLane; cacheCount: number; retryCount: number }) {
+  const apiError = error instanceof PulseApiError ? error : null;
+  console.warn("PULSESOC_REELS_RECOVERY", {
+    endpoint: "/api/pulse/reels/feed",
+    status: apiError?.status || 0,
+    code: apiError?.code || "unknown",
+    lane: context.lane,
+    cache_state: context.cacheCount ? "available" : "empty",
+    retry_count: context.retryCount,
+    platform: Platform.OS
+  });
+}
+
+function cacheAge(cachedAt: number) {
+  if (!cachedAt) return "reconnecting";
+  const minutes = Math.max(0, Math.floor((Date.now() - cachedAt) / 60_000));
+  return minutes < 1 ? "updated just now" : `updated ${minutes}m ago`;
+}
+
+function GalaxyField() {
+  const pulse = useRef(new Animated.Value(0)).current;
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => undefined);
+    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      pulse.setValue(0.35);
+      return;
+    }
+    const animation = Animated.loop(Animated.sequence([
+      Animated.timing(pulse, { toValue: 1, duration: 2_800, useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 0, duration: 2_800, useNativeDriver: true })
+    ]));
+    animation.start();
+    return () => animation.stop();
+  }, [pulse, reduceMotion]);
+
+  return (
+    <View pointerEvents="none" style={styles.galaxy} accessibilityElementsHidden>
+      <Animated.View style={[styles.nebula, styles.nebulaOne, { opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.22, 0.5] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1.08] }) }] }]} />
+      <Animated.View style={[styles.nebula, styles.nebulaTwo, { opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.34, 0.14] }) }]} />
+      {GALAXY_STARS.map((star, index) => <View key={index} style={[styles.star, { left: star.left, top: star.top, width: star.size, height: star.size, opacity: star.opacity }]} />)}
+    </View>
+  );
+}
+
+const GALAXY_STARS = [
+  { left: "8%", top: "18%", size: 2, opacity: 0.7 }, { left: "21%", top: "34%", size: 3, opacity: 0.4 },
+  { left: "78%", top: "23%", size: 2, opacity: 0.8 }, { left: "88%", top: "46%", size: 3, opacity: 0.35 },
+  { left: "16%", top: "67%", size: 2, opacity: 0.5 }, { left: "72%", top: "76%", size: 2, opacity: 0.65 },
+  { left: "43%", top: "12%", size: 2, opacity: 0.45 }, { left: "54%", top: "58%", size: 3, opacity: 0.3 }
+] as const;
+
+const RECOVERY_COPY: Record<Exclude<ConnectionState, "ready" | "cached">, { icon: string; title: string; body: string; action: string }> = {
+  loading: { icon: "◎", title: "Your Galaxy is loading", body: "Finding the newest signals from across PulseSoc.", action: "Loading" },
+  connecting: { icon: "◌", title: "Connecting to Pulse Network", body: "Refreshing your saved Reels quietly.", action: "Refresh now" },
+  offline: { icon: "◇", title: "You're offline", body: "We'll reconnect automatically. Saved Reels appear whenever available.", action: "Try again" },
+  server_busy: { icon: "◉", title: "Pulse Network is catching up", body: "Your Galaxy is still here. We'll retry in the background.", action: "Retry now" },
+  maintenance: { icon: "✦", title: "Galaxy tune-up in progress", body: "Reels will return as soon as the network is ready.", action: "Check again" },
+  rate_limited: { icon: "◷", title: "Taking a short orbit", body: "Reels will reconnect automatically in a moment.", action: "Try again" },
+  auth_expired: { icon: "⌁", title: "Reconnect your account", body: "Your session ended. Sign in again to continue to Reels.", action: "Try again" },
+  empty: { icon: "✧", title: "Welcome to Reels", body: "Discover creators from across the Pulse Galaxy.", action: "Explore Trending" }
+};
+
+function ReelsRecovery({ state, loading, onRetry, onExplore }: { state: ConnectionState; loading: boolean; onRetry: () => void; onExplore: (lane: ReelLane) => void }) {
+  const visibleState = state === "ready" || state === "cached" ? "loading" : state;
+  const copy = RECOVERY_COPY[visibleState];
+  return (
+    <View style={styles.recoveryWrap} accessibilityRole="summary" accessibilityLiveRegion="polite">
+      <View style={styles.skeletonCard}>
+        <View style={styles.skeletonProfile} />
+        <View style={styles.skeletonLines}><View style={[styles.skeletonLine, { width: "58%" }]} /><View style={[styles.skeletonLine, { width: "82%" }]} /></View>
+        <View style={styles.skeletonRail}><View style={styles.skeletonAction} /><View style={styles.skeletonAction} /><View style={styles.skeletonAction} /></View>
+      </View>
+      <View style={styles.recoveryCard}>
+        <Text style={styles.recoveryIcon}>{copy.icon}</Text>
+        <ActivityIndicator animating={loading || ["loading", "connecting", "offline", "server_busy", "rate_limited"].includes(visibleState)} color={colors.accent} />
+        <Text style={styles.recoveryTitle}>{copy.title}</Text>
+        <Text style={styles.recoveryBody}>{copy.body}</Text>
+        {visibleState === "empty" ? (
+          <View style={styles.recoveryActions}><Pressable accessibilityRole="button" style={styles.recoveryButton} onPress={() => onExplore("trending")}><Text style={styles.recoveryButtonText}>Explore Trending</Text></Pressable><Pressable accessibilityRole="button" style={styles.recoverySecondary} onPress={() => onExplore("music")}><Text style={styles.recoverySecondaryText}>Music</Text></Pressable></View>
+        ) : (
+          <Pressable accessibilityRole="button" accessibilityLabel={copy.action} style={styles.recoveryButton} onPress={onRetry}><Text style={styles.recoveryButtonText}>{copy.action}</Text></Pressable>
+        )}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   center: {
     alignItems: "center",
@@ -498,6 +668,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 4
   },
+  commentDanger: { color: colors.danger, fontSize: 11, fontWeight: "800" },
   commentTime: {
     color: colors.muted,
     fontSize: 12,
@@ -523,17 +694,11 @@ const styles = StyleSheet.create({
     padding: 20,
     textAlign: "center"
   },
-  errorPill: {
-    backgroundColor: "rgba(255,107,107,0.18)",
-    borderRadius: 8,
-    color: colors.danger,
-    left: 12,
-    padding: 8,
-    position: "absolute",
-    right: 12,
-    top: 8,
-    zIndex: 20
-  },
+  galaxy: { ...StyleSheet.absoluteFillObject, backgroundColor: "#02050b", overflow: "hidden" },
+  nebula: { borderRadius: 999, position: "absolute" },
+  nebulaOne: { backgroundColor: "rgba(36,218,193,0.22)", height: 330, right: -155, top: 120, width: 330 },
+  nebulaTwo: { backgroundColor: "rgba(93,78,204,0.24)", bottom: 80, height: 390, left: -220, width: 390 },
+  star: { backgroundColor: "#9df9ef", borderRadius: 4, position: "absolute" },
   footer: {
     padding: 20
   },
@@ -578,13 +743,29 @@ const styles = StyleSheet.create({
   replyBanner: { alignItems: "center", backgroundColor: "rgba(97,234,246,0.08)", borderRadius: 10, flexDirection: "row", justifyContent: "space-between", marginBottom: 6, padding: 8 },
   replyText: { color: colors.muted, flex: 1, fontSize: 11 },
   page: {
-    backgroundColor: "#02050b",
+    backgroundColor: "transparent",
     width: "100%"
   },
+  recoveryActions: { flexDirection: "row", gap: 8, marginTop: 6 },
+  recoveryBody: { color: colors.muted, fontSize: 13, lineHeight: 19, maxWidth: 280, textAlign: "center" },
+  recoveryButton: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 16, justifyContent: "center", marginTop: 8, minHeight: 44, paddingHorizontal: 20 },
+  recoveryButtonText: { color: colors.background, fontSize: 13, fontWeight: "900" },
+  recoveryCard: { alignItems: "center", backgroundColor: "rgba(5,17,31,0.90)", borderColor: "rgba(97,234,246,0.30)", borderRadius: 24, borderWidth: 1, gap: 8, marginHorizontal: 24, padding: 22 },
+  recoveryIcon: { color: colors.accentStrong, fontSize: 30 },
+  recoverySecondary: { alignItems: "center", borderColor: colors.border, borderRadius: 16, borderWidth: 1, justifyContent: "center", marginTop: 8, minHeight: 44, paddingHorizontal: 18 },
+  recoverySecondaryText: { color: colors.text, fontSize: 13, fontWeight: "800" },
+  recoveryTitle: { color: colors.text, fontSize: 20, fontWeight: "900", textAlign: "center" },
+  recoveryWrap: { flex: 1, justifyContent: "center", minHeight: Dimensions.get("window").height - 120, paddingBottom: 60, paddingTop: 92 },
   root: {
     backgroundColor: "#02050b",
     flex: 1
   },
+  skeletonAction: { backgroundColor: "rgba(97,234,246,0.12)", borderRadius: 16, height: 32, width: 32 },
+  skeletonCard: { backgroundColor: "rgba(10,24,39,0.44)", borderColor: "rgba(97,234,246,0.15)", borderRadius: 20, borderWidth: 1, height: 164, marginBottom: 14, marginHorizontal: 34, padding: 16 },
+  skeletonLine: { backgroundColor: "rgba(180,211,223,0.13)", borderRadius: 5, height: 9, marginBottom: 8 },
+  skeletonLines: { marginLeft: 52, marginTop: -38 },
+  skeletonProfile: { backgroundColor: "rgba(50,230,179,0.16)", borderColor: "rgba(97,234,246,0.22)", borderRadius: 20, borderWidth: 1, height: 40, width: 40 },
+  skeletonRail: { bottom: 14, gap: 10, position: "absolute", right: 14 },
   sendButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
@@ -624,13 +805,16 @@ const styles = StyleSheet.create({
   sheetPrimary: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 14, minHeight: 44, justifyContent: "center", marginTop: 8 },
   sheetPrimaryText: { color: colors.background, fontWeight: "900" },
   statusPill: {
-    backgroundColor: "rgba(243,185,78,0.18)",
-    borderRadius: 8,
-    color: colors.warning,
+    backgroundColor: "rgba(5,17,31,0.90)",
+    borderColor: "rgba(97,234,246,0.26)",
+    borderRadius: 14,
+    borderWidth: 1,
     left: 12,
-    padding: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     position: "absolute",
     top: 8,
     zIndex: 20
-  }
+  },
+  statusPillText: { color: colors.warning, fontSize: 11, fontWeight: "800" }
 });

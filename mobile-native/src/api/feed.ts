@@ -56,6 +56,15 @@ export type PulseComment = {
   created_at?: string;
   author?: PulseAuthor;
   user?: PulseAuthor;
+  can_edit?: boolean;
+  can_delete?: boolean;
+  edited_at?: string;
+  deleted_at?: string;
+  moderation_status?: string;
+  like_count?: number;
+  viewer_reaction?: string;
+  replies?: PulseComment[];
+  reply_count?: number;
 };
 
 export type PulsePost = {
