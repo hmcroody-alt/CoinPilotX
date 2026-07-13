@@ -555,7 +555,7 @@ function HomeHeader({
             onAddStatus={onAddStatus}
             onOpenStatus={onOpenStatus}
           />
-          <HomePulseComposer onCreated={onCreated} onOpenCamera={onOpenCamera} onOpenLive={onOpenLive} onOpenMusic={onOpenMusic} />
+          <HomePulseComposer identity={identity} onCreated={onCreated} onOpenCamera={onOpenCamera} onOpenLive={onOpenLive} onOpenMusic={onOpenMusic} onOpenRoute={onOpenRoute} />
           <View style={styles.webRadioDock}>
             <Text style={styles.webRadioPause}>Ⅱ</Text>
             <View style={styles.webRadioCopy}>

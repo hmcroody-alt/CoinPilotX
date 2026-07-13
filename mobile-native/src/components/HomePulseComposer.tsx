@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { createPost, PulsePost } from "../api/feed";
 import { LogiNexusPanel } from "./LogiNexus";
 import { MediaUploadPreview } from "../media/MediaUploadPreview";
@@ -8,6 +8,7 @@ import { NativeMediaAsset, NativeMediaUploadResult, uploadResultMediaId } from "
 import { useNativeMediaUpload } from "../media/useNativeMediaUpload";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
+import { GlobalNavigationIdentity } from "../navigation/GlobalNavigation";
 
 type ComposerMode = "post" | "reel" | "live";
 type Visibility = "public" | "followers" | "private";
@@ -17,6 +18,8 @@ type Props = {
   onOpenCamera: (mode: "photo" | "video" | "reel") => void;
   onOpenLive: () => void;
   onOpenMusic: () => void;
+  onOpenRoute: (route: string) => void;
+  identity?: GlobalNavigationIdentity;
 };
 
 const MAX_BODY = 3000;
@@ -26,12 +29,9 @@ const MODES: Array<{ key: ComposerMode; label: string; note: string }> = [
   { key: "reel", label: "Reel", note: "Attach a video or use Camera Studio for the native Reel path." },
   { key: "live", label: "Live", note: "Live hosting stays on the existing safe Studio flow." }
 ];
-const PRODUCTION_MODE_BOUNDARIES = [
-  { label: "Marketplace", note: "Marketplace publishing remains on the existing listing composer flow." },
-  { label: "Music", note: "Music selection opens the existing PulseSoc media/music surface." },
-  { label: "Poll", note: "Poll publishing stays behind the existing backend contract boundary." },
-  { label: "Question", note: "Question publishing stays behind the existing backend contract boundary." },
-  { label: "More", note: "More tools stay discoverable without duplicating production workflows." }
+const PRODUCTION_CREATION_ROUTES = [
+  { label: "Marketplace", route: "/pulse/marketplace/create", icon: "◇" },
+  { label: "Question", route: "/pulse/questions", icon: "?" }
 ];
 const VISIBILITY: Visibility[] = ["public", "followers", "private"];
 const FEELINGS = ["Curious", "Focused", "Bullish", "Creative"];
@@ -48,7 +48,7 @@ type HomeComposerDraft = {
   uploadStage?: string;
 };
 
-export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenMusic }: Props) {
+export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenMusic, onOpenRoute, identity }: Props) {
   const [mode, setMode] = useState<ComposerMode>("post");
   const [body, setBody] = useState("");
   const [visibility, setVisibility] = useState<Visibility>("public");
@@ -60,12 +60,16 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
   const [lastFailedPayload, setLastFailedPayload] = useState<ReturnType<typeof buildCreatePayload> | null>(null);
   const [restoredMediaResult, setRestoredMediaResult] = useState<NativeMediaUploadResult | null>(null);
   const [draftRecovered, setDraftRecovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [showAudience, setShowAudience] = useState(false);
+  const [showTools, setShowTools] = useState(false);
   const mountedRef = useRef(false);
   const skipNextPersistRef = useRef(false);
   const media = useNativeMediaUpload({ contextType: "pulse_post", target: "feed", destination: "feed", mode: "post" });
   const characters = body.length;
   const selectedMode = useMemo(() => MODES.find((item) => item.key === mode) || MODES[0], [mode]);
   const hasDraft = Boolean(body.trim() || topic || feeling || media.asset || media.result || restoredMediaResult);
+  const avatarLabel = identityInitials(identity);
 
   useEffect(() => {
     let active = true;
@@ -227,9 +231,9 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
     setNote("Transmission draft cleared.");
   }
 
-  function cycleVisibility() {
-    const index = VISIBILITY.indexOf(visibility);
-    setVisibility(VISIBILITY[(index + 1) % VISIBILITY.length]);
+  function selectVisibility(nextVisibility: Visibility) {
+    setVisibility(nextVisibility);
+    setShowAudience(false);
     setNote("Audience selector uses existing server-side visibility rules.");
   }
 
@@ -269,17 +273,17 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
   );
 
   return (
-    <LogiNexusPanel style={styles.wrap} tone={mode === "live" ? "danger" : mode === "reel" ? "creator" : "default"}>
+    <LogiNexusPanel style={[styles.wrap, focused && styles.wrapFocused]} tone={mode === "live" ? "danger" : mode === "reel" ? "creator" : "default"}>
       <View style={styles.titleRow}>
-        <Text style={styles.title}>Pulse Composer</Text>
-        <View style={styles.livePill}>
-          <Text style={styles.liveDot}>●</Text>
-          <Text style={styles.liveText}>LIVE</Text>
+        <View>
+          <Text style={styles.eyebrow}>PULSE NETWORK</Text>
+          <Text style={styles.title}>Create a signal</Text>
         </View>
+        <Text style={[styles.readiness, hasPublishPayload && styles.readinessActive]}>{publishing ? "SENDING" : hasPublishPayload ? "READY" : "DRAFT"}</Text>
       </View>
       <View accessible accessibilityLabel="Transmission Console" style={styles.headerRow}>
         <View style={styles.identityOrb}>
-          <Text style={styles.identityOrbText}>LN</Text>
+          {identity?.avatarUrl ? <Image source={{ uri: identity.avatarUrl }} style={styles.identityImage} /> : <Text style={styles.identityOrbText}>{avatarLabel}</Text>}
           <View style={styles.identitySignal} />
         </View>
         <TextInput
@@ -292,13 +296,24 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
           style={styles.input}
           value={body}
           onChangeText={setBody}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
         />
-        <Pressable style={styles.audiencePill} onPress={cycleVisibility}>
+        <Pressable testID="home-composer-audience" accessibilityRole="button" accessibilityLabel={`Audience ${visibilityLabel(visibility)}`} style={styles.audiencePill} onPress={() => setShowAudience((current) => !current)}>
           <Text style={styles.audienceText}>{visibilityLabel(visibility)}</Text>
           <Text style={styles.audienceArrow}>⌄</Text>
         </Pressable>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.modeRow} contentContainerStyle={styles.modeRowContent}>
+      {showAudience ? (
+        <View testID="home-composer-audience-options" style={styles.audienceOptions}>
+          {VISIBILITY.map((option) => (
+            <Pressable key={option} style={[styles.audienceOption, visibility === option && styles.audienceOptionActive]} onPress={() => selectVisibility(option)}>
+              <Text style={[styles.audienceOptionText, visibility === option && styles.audienceOptionTextActive]}>{visibilityLabel(option)}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      <View style={styles.modeRow}>
         {MODES.map((item) => (
           <Pressable
             key={item.key}
@@ -310,22 +325,8 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
             <Text style={[styles.modeText, mode === item.key && styles.modeTextActive]}>{item.label}</Text>
           </Pressable>
         ))}
-        {PRODUCTION_MODE_BOUNDARIES.map((item) => (
-          <Pressable
-            key={item.label}
-            testID={`home-composer-boundary-${item.label.toLowerCase()}`}
-            accessibilityLabel={`Composer ${item.label}`}
-            style={styles.modeButton}
-            onPress={() => {
-              if (item.label === "Music") onOpenMusic();
-              setNote(item.note);
-            }}
-          >
-            <Text style={styles.modeText}>{item.label}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionGrid}>
+      </View>
+      <View style={styles.actionGrid}>
         <ComposerAction testID="home-composer-photo" label="Photo" icon="▧" onPress={() => media.chooseImage().then(() => setNote("Photo selected for PulseSoc upload.")).catch(() => undefined)} />
         <ComposerAction testID="home-composer-video" label="Video" icon="▶" onPress={() => media.chooseVideo().then(() => setNote("Video selected for PulseSoc upload.")).catch(() => undefined)} />
         <ComposerAction label="Music" icon="♪" onPress={() => {
@@ -333,20 +334,34 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
           onOpenMusic();
         }} />
         <ComposerAction label={feeling || "Feeling"} icon="☺" onPress={cycleFeeling} />
-        <ComposerAction label="Location" icon="⌖" onPress={() => {
-          setNote("Location tagging stays server-authoritative and falls back until native contract is exposed.");
-        }} />
-        <ComposerAction label="Mention" icon="@" onPress={() => {
-          setNote("Mention search uses existing PulseSoc people routing when full native picker lands.");
-        }} />
-        <ComposerAction label={topic || "Topic"} icon="#" onPress={() => {
-          const next = topic ? "" : "pulse";
-          setTopic(next);
-          setNote(next ? "Topic tag added for backend publish." : "Topic tag cleared.");
-        }} />
-        <ComposerAction label="More" icon="…" onPress={cycleVisibility} />
-      </ScrollView>
-      <Text testID="home-composer-counter" style={styles.counter}>{characters}/{MAX_BODY}</Text>
+        <ComposerAction testID="home-composer-camera" label="Camera" icon="◎" onPress={() => onOpenCamera(mode === "reel" ? "reel" : "photo")} />
+        <ComposerAction testID="home-composer-more" label={showTools ? "Less" : "More"} icon="…" selected={showTools} onPress={() => setShowTools((current) => !current)} />
+      </View>
+      {showTools ? (
+        <View testID="home-composer-more-tools" style={styles.toolsPanel}>
+          <ComposerAction label={topic || "Topic"} icon="#" onPress={() => {
+            const next = topic ? "" : "pulse";
+            setTopic(next);
+            setNote(next ? "Topic tag added for backend publish." : "Topic tag cleared.");
+          }} />
+          {PRODUCTION_CREATION_ROUTES.map((item) => <ComposerAction key={item.label} label={item.label} icon={item.icon} onPress={() => onOpenRoute(item.route)} />)}
+          <ComposerAction label="Dismiss" icon="⌄" onPress={() => { Keyboard.dismiss(); setShowTools(false); }} />
+        </View>
+      ) : null}
+      <View style={styles.publishRow}>
+        <Text testID="home-composer-counter" style={[styles.counter, characters > MAX_BODY * 0.9 && styles.counterWarning]}>{characters.toLocaleString()}/{MAX_BODY.toLocaleString()}</Text>
+        <Pressable
+          testID="home-composer-publish"
+          accessibilityRole="button"
+          accessibilityLabel={mode === "live" ? "Open Live Studio" : "Publish Signal"}
+          accessibilityState={{ disabled: publishing || !hasPublishPayload }}
+          style={[styles.publishButton, (!hasPublishPayload || publishing) && styles.publishButtonDisabled]}
+          disabled={publishing || !hasPublishPayload}
+          onPress={handlePublish}
+        >
+          <Text style={styles.publishText}>{publishing ? "Transmitting…" : mode === "live" ? "Open Live" : "Transmit"}</Text>
+        </Pressable>
+      </View>
       {media.asset || media.result || media.progress.stage !== "idle" || media.error ? (
         <MediaUploadPreview
           asset={media.asset}
@@ -381,18 +396,6 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
       {lastFailedPayload ? (
         <Pressable testID="home-composer-retry" style={styles.retryButton} disabled={publishing} onPress={() => retryLastPublish().catch(() => undefined)}>
           <Text style={styles.retryText}>{publishing ? "Retrying..." : "Retry Last Publish"}</Text>
-        </Pressable>
-      ) : null}
-      {hasPublishPayload ? (
-        <Pressable
-          testID="home-composer-publish"
-          accessibilityRole="button"
-          accessibilityLabel={mode === "live" ? "Open Live Studio" : "Publish Signal"}
-          style={[styles.publishButton, publishing && styles.publishButtonDisabled]}
-          disabled={publishing}
-          onPress={handlePublish}
-        >
-          <Text style={styles.publishText}>{publishing ? "Transmitting..." : mode === "live" ? "Open Live Studio" : "Publish Signal"}</Text>
         </Pressable>
       ) : null}
       {mode !== "post" ? (
@@ -446,13 +449,18 @@ function restoredMediaKind(result: NativeMediaUploadResult | null) {
   return "";
 }
 
-function ComposerAction({ label, icon, onPress, testID }: { label: string; icon: string; onPress: () => void; testID?: string }) {
+function ComposerAction({ label, icon, onPress, testID, selected = false }: { label: string; icon: string; onPress: () => void; testID?: string; selected?: boolean }) {
   return (
-    <Pressable testID={testID} accessibilityLabel={label} style={styles.actionButton} onPress={onPress}>
+    <Pressable testID={testID} accessibilityLabel={label} accessibilityRole="button" style={({ pressed }) => [styles.actionButton, selected && styles.actionButtonSelected, pressed && styles.pressed]} onPress={onPress}>
       <Text style={styles.actionIcon}>{icon}</Text>
       <Text style={styles.actionText} numberOfLines={1}>{label}</Text>
     </Pressable>
   );
+}
+
+function identityInitials(identity?: GlobalNavigationIdentity) {
+  const source = identity?.displayName || identity?.username || "You";
+  return source.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 }
 
 function visibilityLabel(visibility: Visibility) {
@@ -468,15 +476,22 @@ const styles = StyleSheet.create({
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
-    flexGrow: 0,
+    flexBasis: "23%",
+    flexGrow: 1,
     gap: 2,
     justifyContent: "center",
     minHeight: 40,
     paddingHorizontal: 4,
     paddingVertical: 4,
-    width: 62
+    minWidth: 66
+  },
+  actionButtonSelected: {
+    backgroundColor: "rgba(47, 225, 180, 0.14)",
+    borderColor: colors.accent
   },
   actionGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 6,
     marginTop: 6
   },
@@ -497,8 +512,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
     lineHeight: 15,
-    marginTop: 3,
     textAlign: "right"
+  },
+  counterWarning: {
+    color: colors.danger
   },
   errorText: {
     color: colors.danger
@@ -553,6 +570,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "900"
   },
+  identityImage: {
+    borderRadius: 16,
+    height: 32,
+    width: 32
+  },
   identitySignal: {
     backgroundColor: colors.accent,
     borderColor: logiNexus.colors.home.backgroundDeepSpace,
@@ -594,6 +616,38 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "900"
   },
+  audienceOptions: {
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 7
+  },
+  audienceOption: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flex: 1,
+    minHeight: 34,
+    justifyContent: "center"
+  },
+  audienceOptionActive: {
+    backgroundColor: "rgba(47, 225, 180, 0.14)",
+    borderColor: colors.accent
+  },
+  audienceOptionText: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "800"
+  },
+  audienceOptionTextActive: {
+    color: colors.accent
+  },
+  eyebrow: {
+    color: colors.accent,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.6
+  },
   liveDot: {
     color: colors.danger,
     fontSize: 12
@@ -619,7 +673,8 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.large,
     justifyContent: "center",
     minHeight: 30,
-    minWidth: 108,
+    flex: 1,
+    minWidth: 0,
     paddingHorizontal: 10
   },
   modeButtonActive: {
@@ -631,9 +686,6 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     borderWidth: 1,
     marginTop: 6,
-    maxHeight: 38
-  },
-  modeRowContent: {
     flexDirection: "row",
     gap: 4,
     padding: 3
@@ -650,9 +702,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.accent,
     borderRadius: 18,
-    marginTop: 7,
-    minHeight: 44,
-    justifyContent: "center"
+    justifyContent: "center",
+    minHeight: 38,
+    minWidth: 112,
+    paddingHorizontal: 18
   },
   publishButtonDisabled: {
     opacity: 0.64
@@ -661,6 +714,28 @@ const styles = StyleSheet.create({
     color: colors.background,
     fontSize: 15,
     fontWeight: "900"
+  },
+  publishRow: {
+    alignItems: "center",
+    borderTopColor: logiNexus.colors.home.borderSubtle,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 8,
+    paddingTop: 8
+  },
+  pressed: {
+    opacity: 0.72,
+    transform: [{ scale: 0.98 }]
+  },
+  readiness: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.2
+  },
+  readinessActive: {
+    color: colors.accent
   },
   restoredPanel: {
     backgroundColor: "rgba(255,255,255,0.04)",
@@ -739,6 +814,17 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "900",
   },
+  toolsPanel: {
+    backgroundColor: "rgba(3, 7, 18, 0.42)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 6,
+    padding: 6
+  },
   titleRow: {
     alignItems: "center",
     flexDirection: "row",
@@ -750,5 +836,11 @@ const styles = StyleSheet.create({
     borderColor: "rgba(97, 216, 255, 0.62)",
     marginBottom: 7,
     padding: 7
+  },
+  wrapFocused: {
+    borderColor: colors.accent,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.18,
+    shadowRadius: 10
   }
 });
