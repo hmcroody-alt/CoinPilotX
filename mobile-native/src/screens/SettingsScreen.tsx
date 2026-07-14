@@ -6,7 +6,7 @@ import { openSupportWebFallback } from "../api/support";
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
-import { signOut, useAuth } from "../session/auth";
+import { signOut, signOutEverywhere, useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 
 export function SettingsScreen() {
@@ -20,6 +20,17 @@ export function SettingsScreen() {
 
   async function logout() {
     setAuthState(await signOut());
+  }
+
+  function logoutEverywhere() {
+    Alert.alert("Sign out everywhere?", "This revokes your PulseSoc sessions on every device, including the WebView app.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign out everywhere",
+        style: "destructive",
+        onPress: () => signOutEverywhere().then(setAuthState).catch((error) => Alert.alert("Could not sign out", error instanceof Error ? error.message : "Try again."))
+      }
+    ]);
   }
 
   return (
@@ -108,6 +119,9 @@ export function SettingsScreen() {
         <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={logout}>
           <Text style={styles.secondaryText}>Sign out</Text>
         </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={logoutEverywhere}>
+          <Text style={styles.dangerText}>Sign out on all devices</Text>
+        </Pressable>
       </Panel>
     </Screen>
   );
@@ -145,6 +159,10 @@ const styles = StyleSheet.create({
   },
   secondaryText: {
     color: colors.text,
+    fontWeight: "800"
+  },
+  dangerText: {
+    color: "#ff6b7a",
     fontWeight: "800"
   }
 });

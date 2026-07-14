@@ -12,6 +12,7 @@ import { RootStackParamList } from "./src/navigation/types";
 import { AuthContext, AuthState, restoreSession } from "./src/session/auth";
 import { isQaSimulatorAuthEnabled, tryHandleQaSimulatorAuthUrl } from "./src/session/qaSimulatorAuth";
 import { colors } from "./src/theme/colors";
+import { registerPushDevice } from "./src/api/push";
 
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>({ status: "loading", user: null });
@@ -29,6 +30,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (authState.status !== "signedIn") return;
+    registerPushDevice().catch(() => undefined);
+  }, [authState.status, authState.user?.user_id]);
+
+  useEffect(() => {
     const subscription = setupNotificationResponseRouting();
     return () => subscription.remove();
   }, []);
@@ -40,7 +46,12 @@ export default function App() {
       if (!url) return;
       try {
         const result = await tryHandleQaSimulatorAuthUrl(url);
-        if (!mounted || !result.handled) return;
+        if (!mounted) return;
+        if (!result.handled) {
+          const redirectTarget = authenticatedRedirectTarget(url);
+          if (redirectTarget) setPendingQaRedirectTarget(redirectTarget);
+          return;
+        }
         if (result.authState) setAuthState(result.authState);
         if (result.cameraRoute) setPendingQaCameraRoute(result.cameraRoute);
         if (result.redirectTarget) setPendingQaRedirectTarget(result.redirectTarget);
@@ -129,4 +140,21 @@ export default function App() {
       </AuthContext.Provider>
     </GestureHandlerRootView>
   );
+}
+
+function authenticatedRedirectTarget(rawUrl: string) {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol === "https:" || url.protocol === "http:") {
+      if (!/(^|\.)pulsesoc\.com$/i.test(url.hostname)) return "";
+      return `${url.pathname}${url.search}`.slice(0, 240);
+    }
+    if (url.protocol === "pulsesoc:") {
+      const path = `/${url.hostname}${url.pathname}`.replace(/\/{2,}/g, "/");
+      return `${path}${url.search}`.slice(0, 240);
+    }
+  } catch {
+    return "";
+  }
+  return "";
 }

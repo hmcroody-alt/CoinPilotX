@@ -15,6 +15,10 @@ export class PulseApiError extends Error {
 }
 
 export async function pulseApi<T>(path: string, options: RequestInit = {}): Promise<T> {
+  return pulseApiRequest<T>(path, options, true);
+}
+
+async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefresh: boolean): Promise<T> {
   const headers = new Headers(options.headers || {});
   const body = options.body;
   if (!(body instanceof FormData) && !headers.has("Content-Type")) {
@@ -38,6 +42,11 @@ export async function pulseApi<T>(path: string, options: RequestInit = {}): Prom
   const responseCookie = response.headers.get("set-cookie");
   if (responseCookie) await setSessionCookie(mergeSessionCookies(cookie || "", responseCookie));
 
+  if (response.status === 401 && allowRefresh && cookie && shouldRefresh(path)) {
+    const refreshedCookie = await refreshNativeSession(cookie);
+    if (refreshedCookie) return pulseApiRequest<T>(path, options, false);
+  }
+
   const text = await response.text();
   const data = parseJson(text);
   if (!response.ok || data.ok === false) {
@@ -49,6 +58,33 @@ export async function pulseApi<T>(path: string, options: RequestInit = {}): Prom
   }
 
   return data as T;
+}
+
+function shouldRefresh(path: string) {
+  return !path.startsWith("/api/mobile/auth/") && !path.startsWith("/api/pulse/mobile/auth/");
+}
+
+async function refreshNativeSession(cookie: string) {
+  try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (Platform.OS !== "web") headers.Cookie = cookie;
+    const response = await fetch(`${PULSE_API_BASE_URL}/api/mobile/auth/refresh`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: JSON.stringify({ source: "native_automatic_refresh" })
+    });
+    if (!response.ok) {
+      await setSessionCookie("");
+      return "";
+    }
+    const next = response.headers.get("set-cookie");
+    const merged = next ? mergeSessionCookies(cookie, next) : cookie;
+    await setSessionCookie(merged);
+    return merged;
+  } catch {
+    return "";
+  }
 }
 
 function parseJson(text: string): Record<string, unknown> {

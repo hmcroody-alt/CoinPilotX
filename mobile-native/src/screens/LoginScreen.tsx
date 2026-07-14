@@ -67,7 +67,7 @@ export function LoginScreen() {
   return (
     <View style={styles.root}>
       <Text style={styles.brand}>PulseSoc</Text>
-      <Text style={styles.copy}>Native access to Mission Control, messages, alerts, and UNDX.</Text>
+      <Text style={styles.copy}>Sign in with your existing PulseSoc account. Your profile, followers, content, messages, subscriptions, and settings stay with the same account.</Text>
       <TextInput
         accessibilityLabel="Email or username"
         autoCapitalize="none"
@@ -92,8 +92,11 @@ export function LoginScreen() {
       <Pressable accessibilityRole="button" accessibilityLabel="Sign in" testID="login-submit" style={styles.button} onPress={submit} disabled={loading}>
         <Text style={styles.buttonText}>{loading ? "Signing in" : "Sign in"}</Text>
       </Pressable>
+      <Pressable accessibilityRole="button" onPress={() => navigation.navigate("AccountRecovery")}>
+        <Text style={styles.link}>Forgot password or need email verification?</Text>
+      </Pressable>
       <Pressable accessibilityRole="button" onPress={() => navigation.navigate("Signup")}>
-        <Text style={styles.link}>Create account</Text>
+        <Text style={styles.secondaryLink}>New to PulseSoc? Create an account</Text>
       </Pressable>
     </View>
   );
@@ -140,6 +143,11 @@ const styles = StyleSheet.create({
   },
   link: {
     color: colors.accentStrong,
+    fontWeight: "700",
+    textAlign: "center"
+  },
+  secondaryLink: {
+    color: colors.muted,
     fontWeight: "700",
     textAlign: "center"
   }

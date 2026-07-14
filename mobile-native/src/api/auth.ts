@@ -42,3 +42,24 @@ export function logout() {
     body: JSON.stringify({})
   });
 }
+
+export function logoutAll() {
+  return pulseApi<{ ok: boolean; revoked_count?: number }>("/api/mobile/auth/logout-all", {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}
+
+export function requestPasswordRecovery(email: string) {
+  return pulseApi<{ ok: boolean; message?: string }>("/api/mobile/auth/recover", {
+    method: "POST",
+    body: JSON.stringify({ email })
+  });
+}
+
+export function resendEmailConfirmation(email: string) {
+  return pulseApi<{ ok: boolean; message?: string }>("/api/mobile/auth/resend-confirmation", {
+    method: "POST",
+    body: JSON.stringify({ email })
+  });
+}
