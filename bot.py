@@ -4605,6 +4605,10 @@ def login_security_preflight(email, enforce_challenge=True):
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     auth_event_schema_guard(cur, conn)
+    # Release any schema locks before this request can emit an auth event through
+    # a separate connection. PostgreSQL otherwise allows the security path to
+    # wait on its own uncommitted schema-guard transaction.
+    conn.commit()
     now = datetime.now().isoformat()
     try:
         controls = [
@@ -4732,6 +4736,9 @@ def register_failed_login(email, user_id=0, reason="invalid_credentials"):
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     auth_event_schema_guard(cur, conn)
+    # log_auth_event() intentionally uses its own connection. Commit the schema
+    # guard first so a failed login returns promptly instead of self-deadlocking.
+    conn.commit()
     try:
         ip_count = failed_login_recent_count(cur, "AND ip_address=?", (ip,)) + 1 if ip else 1
         email_count = failed_login_recent_count(cur, "AND email_hash=?", (auth_email_hash(email),)) + 1 if email else 1
