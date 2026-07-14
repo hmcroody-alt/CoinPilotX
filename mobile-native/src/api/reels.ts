@@ -5,6 +5,7 @@ import { pulseApi } from "./pulseApi";
 
 const REELS_CACHE_KEY = "pulsesoc.native.reels.feed";
 const REELS_CACHE_META_KEY = "pulsesoc.native.reels.feed.meta";
+const REEL_COMMENT_DRAFT_KEY = "pulsesoc.native.reels.comment_draft";
 const reelsCacheKey = (lane = "for_you") => `${REELS_CACHE_KEY}.${lane}`;
 const reelDetailCacheKey = (reelId: number) => `pulsesoc.native.reels.detail.${reelId}`;
 
@@ -163,10 +164,17 @@ export async function getReelDetail(reelId: number) {
 }
 
 export async function listReelComments(reelId: number) {
-  const data = await pulseApi<{ ok?: boolean; comments?: PulseComment[]; flat_comments?: PulseComment[]; items?: PulseComment[] }>(
-    `/api/pulse/reels/${reelId}/comments`
-  );
-  return normalizeComments(data.flat_comments || data.comments || data.items || []);
+  return (await getReelComments(reelId)).comments;
+}
+
+export async function getReelComments(reelId: number) {
+  const data = await pulseApi<{ ok?: boolean; comments?: PulseComment[]; flat_comments?: PulseComment[]; items?: PulseComment[]; comments_count?: number }>(`/api/pulse/reels/${reelId}/comments`);
+  const comments = normalizeComments(data.comments || data.items || data.flat_comments || []);
+  return {
+    comments,
+    flatComments: normalizeComments(data.flat_comments || data.comments || data.items || []),
+    commentsCount: Number(data.comments_count ?? data.flat_comments?.length ?? countCommentTree(comments))
+  };
 }
 
 export async function addReelComment(reelId: number, body: string, parentCommentId = 0) {
@@ -253,6 +261,35 @@ export async function reportReelComment(commentId: number, reason = "reported fr
   });
 }
 
+export type ReelCommentDraft = {
+  body: string;
+  replyToCommentId: number;
+  updatedAt: number;
+};
+
+export async function loadReelCommentDraft(reelId: number): Promise<ReelCommentDraft | null> {
+  try {
+    const raw = await AsyncStorage.getItem(`${REEL_COMMENT_DRAFT_KEY}.${reelId}`);
+    if (!raw) return null;
+    const draft = JSON.parse(raw) as ReelCommentDraft;
+    return String(draft.body || "").trim() ? { body: String(draft.body), replyToCommentId: Number(draft.replyToCommentId || 0), updatedAt: Number(draft.updatedAt || 0) } : null;
+  } catch {
+    await clearReelCommentDraft(reelId);
+    return null;
+  }
+}
+
+export async function saveReelCommentDraft(reelId: number, body: string, replyToCommentId = 0) {
+  const cleanBody = String(body || "");
+  if (!cleanBody.trim()) return clearReelCommentDraft(reelId);
+  const draft: ReelCommentDraft = { body: cleanBody, replyToCommentId: Number(replyToCommentId || 0), updatedAt: Date.now() };
+  await AsyncStorage.setItem(`${REEL_COMMENT_DRAFT_KEY}.${reelId}`, JSON.stringify(draft));
+}
+
+export async function clearReelCommentDraft(reelId: number) {
+  await AsyncStorage.removeItem(`${REEL_COMMENT_DRAFT_KEY}.${reelId}`).catch(() => undefined);
+}
+
 export async function trackReelView(reelId: number, watchMs = 0) {
   return pulseApi<{ ok?: boolean; view_count?: number; reel_id?: number }>(`/api/pulse/reels/${reelId}/view`, {
     method: "POST",
@@ -266,6 +303,10 @@ export function reelWebUrl(reelId: number) {
 
 export function normalizeReels(items: PulseReel[]) {
   return items.map(normalizeReel).filter((reel) => reel.id !== 0 && Number.isFinite(reel.id));
+}
+
+function countCommentTree(comments: PulseComment[]): number {
+  return comments.reduce((total, comment) => total + 1 + countCommentTree(comment.replies || []), 0);
 }
 
 export function normalizeReel(item: PulseReel): PulseReel {
@@ -340,5 +381,31 @@ function reelsQaFixtures(): PulseReel[] {
 }
 
 function qaComments(postId: number): PulseComment[] {
-  return [{ id: 91001, comment_id: 91001, post_id: postId, user_id: 9011, body: "The video still owns the screen. This feels fast.", created_at: new Date().toISOString(), author: { user_id: 9011, display_name: "Mira Flux", username: "miraflux" } }];
+  return [{
+    id: 91001,
+    comment_id: 91001,
+    post_id: postId,
+    user_id: 9011,
+    body: "The video still owns the screen. This feels fast.",
+    created_at: new Date().toISOString(),
+    can_edit: false,
+    can_delete: false,
+    reaction_counts: { like: 8 },
+    author: { user_id: 9011, display_name: "Mira Flux", username: "miraflux" },
+    reply_count: 1,
+    replies: [{
+      id: 91002,
+      comment_id: 91002,
+      parent_comment_id: 91001,
+      post_id: postId,
+      user_id: 9001,
+      body: "Replies stay attached to the canonical thread.",
+      created_at: new Date().toISOString(),
+      can_edit: true,
+      can_delete: true,
+      reaction_counts: { like: 3 },
+      author: { user_id: 9001, display_name: "Nova Signal", username: "novasignal" },
+      replies: [],
+    }],
+  }];
 }

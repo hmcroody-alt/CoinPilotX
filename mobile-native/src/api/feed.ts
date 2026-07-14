@@ -50,6 +50,7 @@ export type PulseComment = {
   comment_id: number;
   post_id?: number;
   user_id?: number;
+  parent_comment_id?: number;
   body: string;
   content?: string;
   text?: string;
@@ -58,10 +59,12 @@ export type PulseComment = {
   user?: PulseAuthor;
   can_edit?: boolean;
   can_delete?: boolean;
+  can_moderate?: boolean;
   edited_at?: string;
   deleted_at?: string;
   moderation_status?: string;
   like_count?: number;
+  reaction_counts?: Record<string, number>;
   viewer_reaction?: string;
   replies?: PulseComment[];
   reply_count?: number;
@@ -365,7 +368,9 @@ export function normalizeComment(item: PulseComment, fallbackPostId = 0): PulseC
     comment_id: id,
     post_id: Number(item.post_id || fallbackPostId || 0),
     body: String(item.body || item.content || item.text || ""),
-    author: item.author || item.user || undefined
+    author: item.author || item.user || undefined,
+    replies: normalizeComments(item.replies || [], Number(item.post_id || fallbackPostId || 0)),
+    reply_count: Number(item.reply_count ?? item.replies?.length ?? 0)
   };
 }
 

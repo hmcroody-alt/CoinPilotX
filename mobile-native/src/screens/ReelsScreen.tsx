@@ -27,10 +27,13 @@ import { PulseComment } from "../api/feed";
 import { liveWebUrl } from "../api/live";
 import {
   addReelComment,
+  clearReelCommentDraft,
   deleteReelComment,
+  editReelComment,
   followReelCreator,
-  listReelComments,
+  getReelComments,
   listReels,
+  loadReelCommentDraft,
   loadCachedReelsSnapshot,
   markReelNotInterested,
   PulseReel,
@@ -41,12 +44,14 @@ import {
   reportReelComment,
   repostReel,
   saveReel,
+  saveReelCommentDraft,
   shareReel,
   trackReelView
 } from "../api/reels";
 import { PulseApiError } from "../api/pulseApi";
 import { ReelPlayerCard } from "../components/ReelPlayerCard";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
@@ -84,8 +89,13 @@ export function ReelsScreen({ route, navigation }: Props) {
   const [commentReel, setCommentReel] = useState<PulseReel | null>(null);
   const [comments, setComments] = useState<PulseComment[]>([]);
   const [commentBody, setCommentBody] = useState("");
+  const [commentError, setCommentError] = useState("");
+  const [commentTotal, setCommentTotal] = useState(0);
   const [postingComment, setPostingComment] = useState(false);
   const [replyTo, setReplyTo] = useState<PulseComment | null>(null);
+  const [editingComment, setEditingComment] = useState<PulseComment | null>(null);
+  const [editBody, setEditBody] = useState("");
+  const [editingBusy, setEditingBusy] = useState(false);
   const [reactionReel, setReactionReel] = useState<PulseReel | null>(null);
   const [musicReel, setMusicReel] = useState<PulseReel | null>(null);
   const [moreReel, setMoreReel] = useState<PulseReel | null>(null);
@@ -95,6 +105,7 @@ export function ReelsScreen({ route, navigation }: Props) {
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 72 });
   const qaStateApplied = useRef(false);
   const loadVersion = useRef(0);
+  const activeReelId = useRef(0);
 
   async function load(mode: "initial" | "refresh" | "more" = "initial") {
     if (mode === "initial" && QA_REELS_STATE && QA_RECOVERY_STATES.has(QA_REELS_STATE as ConnectionState)) {
@@ -132,9 +143,11 @@ export function ReelsScreen({ route, navigation }: Props) {
       setOffline(false);
       setRetryCount(0);
       setConnectionState(next.length ? "ready" : "empty");
-      if (initialReelId && mode !== "more") {
-        const index = next.findIndex((item) => item.id === initialReelId);
+      if (mode !== "more") {
+        const preserveReelId = initialReelId || activeReelId.current;
+        const index = preserveReelId ? next.findIndex((item) => item.id === preserveReelId) : -1;
         if (index >= 0) setActiveIndex(index);
+        else setActiveIndex((current) => Math.min(current, Math.max(0, next.length - 1)));
       }
     } catch (loadError) {
       if (version !== loadVersion.current) return;
@@ -163,7 +176,14 @@ export function ReelsScreen({ route, navigation }: Props) {
     load("initial").catch(() => undefined);
   }, [initialReelId, lane]);
 
-  useEffect(() => registerSyncInvalidation("reels", () => load("refresh")), [lane, initialReelId]);
+  useEffect(() => registerSyncInvalidation("reels", () => {
+    load("refresh").catch(() => undefined);
+    if (commentReel) refreshComments(commentReel).catch(() => undefined);
+  }), [lane, initialReelId, commentReel?.id]);
+
+  useEffect(() => {
+    configureReelsAudioSession().catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (!appActive || connectionState === "ready" || connectionState === "empty" || connectionState === "auth_expired" || retryCount <= 0) return;
@@ -198,8 +218,18 @@ export function ReelsScreen({ route, navigation }: Props) {
 
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const next = viewableItems[0]?.index;
+    const item = viewableItems[0]?.item as PulseReel | undefined;
+    if (item?.id) activeReelId.current = item.id;
     if (typeof next === "number") setActiveIndex(next);
   });
+
+  useEffect(() => {
+    if (!commentReel) return;
+    const timer = setTimeout(() => {
+      saveReelCommentDraft(commentReel.id, commentBody, replyTo?.id || 0).catch(() => undefined);
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [commentBody, replyTo?.id, commentReel?.id]);
 
   const updateReel = useCallback((reelId: number, next: Partial<PulseReel>) => {
     setReels((current) => current.map((item) => (item.id === reelId ? { ...item, ...next } : item)));
@@ -297,43 +327,100 @@ export function ReelsScreen({ route, navigation }: Props) {
 
   async function openComments(reel: PulseReel) {
     setCommentReel(reel);
-    setCommentBody("");
+    setCommentError("");
+    setCommentTotal(Number(reel.comments_count || 0));
     setReplyTo(null);
+    setEditingComment(null);
     setComments(reel.preview_comments || []);
+    const draft = await loadReelCommentDraft(reel.id);
+    setCommentBody(draft?.body || "");
     try {
-      setComments(await listReelComments(reel.id));
+      const result = await getReelComments(reel.id);
+      setComments(result.comments);
+      setCommentTotal(result.commentsCount);
+      if (draft?.replyToCommentId) setReplyTo(findComment(result.comments, draft.replyToCommentId));
     } catch {
       setComments(reel.preview_comments || []);
     }
+  }
+
+  async function refreshComments(reel: PulseReel) {
+    const result = await getReelComments(reel.id);
+    setComments(result.comments);
+    setCommentTotal(result.commentsCount);
+    updateReel(reel.id, { comments_count: result.commentsCount });
   }
 
   async function submitComment() {
     if (!commentReel || !commentBody.trim() || postingComment) return;
     const body = commentBody.trim();
     setPostingComment(true);
+    setCommentError("");
     setCommentBody("");
     try {
       const comment = await addReelComment(commentReel.id, body, replyTo?.id || 0);
-      setComments((current) => [comment, ...current]);
-      updateReel(commentReel.id, { comments_count: Number(commentReel.comments_count || 0) + 1 });
+      setComments((current) => replyTo ? insertReply(current, replyTo.id, comment) : [comment, ...current]);
+      setCommentTotal((current) => current + 1);
+      updateReel(commentReel.id, { comments_count: commentTotal + 1 });
+      await clearReelCommentDraft(commentReel.id);
+      setReplyTo(null);
     } catch {
       setCommentBody(body);
+      setCommentError("Saved as a private draft on this device. Posting requires a connection.");
     } finally {
       setPostingComment(false);
-      setReplyTo(null);
+    }
+  }
+
+  function beginEditComment(comment: PulseComment) {
+    if (!comment.can_edit && Number(comment.user_id || comment.author?.user_id || 0) !== Number(authState.user?.user_id || 0)) return;
+    setEditingComment(comment);
+    setEditBody(comment.body);
+    setCommentError("");
+  }
+
+  async function submitEditComment() {
+    if (!editingComment || !editBody.trim() || editingBusy) return;
+    setEditingBusy(true);
+    setCommentError("");
+    try {
+      const result = await editReelComment(editingComment.id, editBody.trim());
+      const updated = result.comment ? { ...editingComment, ...result.comment, body: result.comment.body || editBody.trim(), edited_at: result.comment.edited_at || new Date().toISOString() } : { ...editingComment, body: editBody.trim(), edited_at: new Date().toISOString() };
+      setComments((current) => updateCommentTree(current, editingComment.id, updated));
+      setEditingComment(null);
+      setEditBody("");
+    } catch {
+      setCommentError("That edit was not accepted. Check your connection and ownership, then retry.");
+    } finally {
+      setEditingBusy(false);
     }
   }
 
   async function handleDeleteComment(comment: PulseComment) {
     if (!comment.can_delete && Number(comment.user_id || comment.author?.user_id || 0) !== Number(authState.user?.user_id || 0)) return;
     const previous = comments;
-    setComments((current) => current.filter((item) => item.id !== comment.id));
+    setComments((current) => removeCommentFromTree(current, comment.id));
     if (commentReel) updateReel(commentReel.id, { comments_count: Math.max(0, Number(commentReel.comments_count || 0) - 1) });
     try {
       await deleteReelComment(comment.id);
+      setCommentTotal((current) => Math.max(0, current - 1));
     } catch {
       setComments(previous);
       if (commentReel) updateReel(commentReel.id, { comments_count: Number(commentReel.comments_count || 0) });
+      setCommentError("Delete was not authorized or the network is unavailable.");
+    }
+  }
+
+  async function handleReactToComment(comment: PulseComment) {
+    const previous = comments;
+    const wasActive = Boolean(comment.viewer_reaction);
+    setComments((current) => updateCommentTree(current, comment.id, { ...comment, viewer_reaction: wasActive ? "" : "like", like_count: Math.max(0, Number(comment.like_count || 0) + (wasActive ? -1 : 1)) }));
+    try {
+      const result = await reactToReelComment(comment.id);
+      setComments((current) => updateCommentTree(current, comment.id, { ...comment, viewer_reaction: result.removed ? "" : result.reaction_type || "like", like_count: Number(result.reaction_counts?.like || 0), reaction_counts: result.reaction_counts }));
+    } catch {
+      setComments(previous);
+      setCommentError("Comment reaction needs a connection. No change was saved.");
     }
   }
 
@@ -403,18 +490,27 @@ export function ReelsScreen({ route, navigation }: Props) {
         visible={Boolean(commentReel)}
         reel={commentReel}
         comments={comments}
+        total={commentTotal}
         body={commentBody}
+        error={commentError}
         posting={postingComment}
         onChangeBody={setCommentBody}
         onSubmit={submitComment}
         replyTo={replyTo}
         onReply={setReplyTo}
-        onReact={(comment) => reactToReelComment(comment.id).catch(() => undefined)}
+        onReact={(comment) => handleReactToComment(comment).catch(() => undefined)}
+        editingComment={editingComment}
+        editBody={editBody}
+        editingBusy={editingBusy}
+        onBeginEdit={beginEditComment}
+        onChangeEditBody={setEditBody}
+        onSubmitEdit={() => submitEditComment().catch(() => undefined)}
+        onCancelEdit={() => { setEditingComment(null); setEditBody(""); }}
         currentUserId={Number(authState.user?.user_id || 0)}
         onDelete={(comment) => handleDeleteComment(comment).catch(() => undefined)}
         onReport={(comment) => reportReelComment(comment.id).catch(() => undefined)}
         onCancelReply={() => setReplyTo(null)}
-        onClose={() => { setCommentReel(null); setReplyTo(null); }}
+        onClose={() => { setCommentReel(null); setReplyTo(null); setEditingComment(null); }}
       />
       <ReactionPicker reel={reactionReel} onSelect={(reaction) => { if (reactionReel) handleReact(reactionReel, reaction).catch(() => undefined); setReactionReel(null); }} onClose={() => setReactionReel(null)} />
       <MusicDetail reel={musicReel} onClose={() => setMusicReel(null)} />
@@ -427,13 +523,22 @@ function CommentsModal({
   visible,
   reel,
   comments,
+  total,
   body,
+  error,
   posting,
   onChangeBody,
   onSubmit,
   replyTo,
   onReply,
   onReact,
+  editingComment,
+  editBody,
+  editingBusy,
+  onBeginEdit,
+  onChangeEditBody,
+  onSubmitEdit,
+  onCancelEdit,
   currentUserId,
   onDelete,
   onReport,
@@ -443,44 +548,56 @@ function CommentsModal({
   visible: boolean;
   reel: PulseReel | null;
   comments: PulseComment[];
+  total: number;
   body: string;
+  error: string;
   posting: boolean;
   onChangeBody: (value: string) => void;
   onSubmit: () => void;
   replyTo: PulseComment | null;
   onReply: (comment: PulseComment) => void;
   onReact: (comment: PulseComment) => void;
+  editingComment: PulseComment | null;
+  editBody: string;
+  editingBusy: boolean;
+  onBeginEdit: (comment: PulseComment) => void;
+  onChangeEditBody: (value: string) => void;
+  onSubmitEdit: () => void;
+  onCancelEdit: () => void;
   currentUserId: number;
   onDelete: (comment: PulseComment) => void;
   onReport: (comment: PulseComment) => void;
   onCancelReply: () => void;
   onClose: () => void;
 }) {
+  const [visibleCount, setVisibleCount] = useState(20);
+  const [expandedReplies, setExpandedReplies] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (visible) setVisibleCount(20);
+  }, [visible, reel?.id]);
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView style={styles.modalWrap} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <Pressable style={styles.modalBackdrop} onPress={onClose} />
         <View style={styles.sheet}>
           <View style={styles.sheetHeader}>
-            <View><View style={styles.sheetHandle} /><Text style={styles.sheetTitle}>{reel?.comments_count || comments.length} Comments</Text><Text style={styles.sheetContext} numberOfLines={1}>{reel?.author?.display_name || "PulseSoc creator"} · {reel?.title || "Reel"}</Text></View>
+            <View><View style={styles.sheetHandle} /><Text style={styles.sheetTitle}>{total || comments.length} Comments</Text><Text style={styles.sheetContext} numberOfLines={1}>{reel?.author?.display_name || "PulseSoc creator"} · {reel?.title || "Reel"}</Text></View>
             <Pressable onPress={onClose}><Text style={styles.closeText}>Close</Text></Pressable>
           </View>
           <FlatList
-            data={comments}
+            data={comments.slice(0, visibleCount)}
             keyExtractor={(item, index) => `${item.id}-${index}`}
             ListEmptyComponent={<Text style={styles.empty}>No comments yet.</Text>}
-            renderItem={({ item }) => (
-              <View style={styles.comment}>
-                <Text style={styles.commentAuthor}>{item.author?.display_name || item.author?.username || "PulseSoc"}</Text>
-                <Text style={styles.commentBody}>{item.body}</Text>
-                <View style={styles.commentActions}><Text style={styles.commentTime}>{formatShortTime(item.created_at)}</Text><Pressable accessibilityRole="button" onPress={() => onReply(item)}><Text style={styles.commentAction}>Reply</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onReact(item)}><Text style={styles.commentAction}>Like</Text></Pressable>{item.can_delete || Number(item.user_id || item.author?.user_id || 0) === currentUserId ? <Pressable accessibilityRole="button" accessibilityLabel="Delete comment" onPress={() => onDelete(item)}><Text style={styles.commentDanger}>Delete</Text></Pressable> : <Pressable accessibilityRole="button" accessibilityLabel="Report comment" onPress={() => onReport(item)}><Text style={styles.commentAction}>Report</Text></Pressable>}</View>
-              </View>
-            )}
+            renderItem={({ item }) => <CommentThread comment={item} currentUserId={currentUserId} expanded={expandedReplies.has(item.id)} editingComment={editingComment} editBody={editBody} editingBusy={editingBusy} onToggleReplies={() => setExpandedReplies((current) => toggleSetValue(current, item.id))} onReply={onReply} onReact={onReact} onBeginEdit={onBeginEdit} onChangeEditBody={onChangeEditBody} onSubmitEdit={onSubmitEdit} onCancelEdit={onCancelEdit} onDelete={onDelete} onReport={onReport} />}
+            ListFooterComponent={comments.length > visibleCount ? <Pressable accessibilityRole="button" style={styles.loadMoreComments} onPress={() => setVisibleCount((current) => current + 20)}><Text style={styles.commentAction}>Load more comments</Text></Pressable> : null}
           />
           {reel?.comments_disabled ? (
             <Text style={styles.disabledText}>Comments are disabled for this Reel.</Text>
           ) : (
             <View>
+              {error ? <Text accessibilityLiveRegion="polite" style={styles.commentError}>{error}</Text> : null}
               {replyTo ? <View style={styles.replyBanner}><Text style={styles.replyText}>Replying to {replyTo.author?.display_name || replyTo.author?.username || "comment"}</Text><Pressable onPress={onCancelReply}><Text style={styles.closeText}>Cancel</Text></Pressable></View> : null}
               <View style={styles.composer}>
               <TextInput
@@ -499,6 +616,52 @@ function CommentsModal({
         </View>
       </KeyboardAvoidingView>
     </Modal>
+  );
+}
+
+function CommentThread({ comment, currentUserId, expanded, editingComment, editBody, editingBusy, onToggleReplies, onReply, onReact, onBeginEdit, onChangeEditBody, onSubmitEdit, onCancelEdit, onDelete, onReport, depth = 0 }: {
+  comment: PulseComment;
+  currentUserId: number;
+  expanded: boolean;
+  editingComment: PulseComment | null;
+  editBody: string;
+  editingBusy: boolean;
+  onToggleReplies: () => void;
+  onReply: (comment: PulseComment) => void;
+  onReact: (comment: PulseComment) => void;
+  onBeginEdit: (comment: PulseComment) => void;
+  onChangeEditBody: (value: string) => void;
+  onSubmitEdit: () => void;
+  onCancelEdit: () => void;
+  onDelete: (comment: PulseComment) => void;
+  onReport: (comment: PulseComment) => void;
+  depth?: number;
+}) {
+  const owned = Boolean(comment.can_edit || Number(comment.user_id || comment.author?.user_id || 0) === currentUserId);
+  const deletable = Boolean(comment.can_delete || owned);
+  const replies = comment.replies || [];
+  const editing = editingComment?.id === comment.id;
+  return (
+    <View style={[styles.comment, depth > 0 && styles.replyComment]}>
+      <Text style={styles.commentAuthor}>{comment.author?.display_name || comment.author?.username || "PulseSoc"}</Text>
+      {editing ? (
+        <View style={styles.editComposer}>
+          <TextInput accessibilityLabel="Edit comment" style={styles.editInput} value={editBody} onChangeText={onChangeEditBody} multiline />
+          <View style={styles.commentActions}><Pressable accessibilityRole="button" disabled={!editBody.trim() || editingBusy} onPress={onSubmitEdit}><Text style={styles.commentAction}>{editingBusy ? "Saving" : "Save edit"}</Text></Pressable><Pressable accessibilityRole="button" onPress={onCancelEdit}><Text style={styles.commentAction}>Cancel</Text></Pressable></View>
+        </View>
+      ) : (
+        <Text style={styles.commentBody}>{comment.body}{comment.edited_at ? <Text style={styles.editedLabel}> · edited</Text> : null}</Text>
+      )}
+      <View style={styles.commentActions}>
+        <Text style={styles.commentTime}>{formatShortTime(comment.created_at)}</Text>
+        <Pressable accessibilityRole="button" onPress={() => onReply(comment)}><Text style={styles.commentAction}>Reply</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(comment.viewer_reaction) }} onPress={() => onReact(comment)}><Text style={styles.commentAction}>{comment.viewer_reaction ? "Liked" : "Like"}{comment.like_count ? ` ${comment.like_count}` : ""}</Text></Pressable>
+        {owned ? <Pressable accessibilityRole="button" onPress={() => onBeginEdit(comment)}><Text style={styles.commentAction}>Edit</Text></Pressable> : null}
+        {deletable ? <Pressable accessibilityRole="button" accessibilityLabel="Delete comment" onPress={() => onDelete(comment)}><Text style={styles.commentDanger}>Delete</Text></Pressable> : <Pressable accessibilityRole="button" accessibilityLabel="Report comment" onPress={() => onReport(comment)}><Text style={styles.commentAction}>Report</Text></Pressable>}
+      </View>
+      {replies.length ? <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={onToggleReplies}><Text style={styles.replyToggle}>{expanded ? "Hide replies" : `View ${replies.length} repl${replies.length === 1 ? "y" : "ies"}`}</Text></Pressable> : null}
+      {expanded ? replies.map((reply) => <CommentThread key={reply.id} comment={reply} currentUserId={currentUserId} expanded onToggleReplies={() => undefined} editingComment={editingComment} editBody={editBody} editingBusy={editingBusy} onReply={onReply} onReact={onReact} onBeginEdit={onBeginEdit} onChangeEditBody={onChangeEditBody} onSubmitEdit={onSubmitEdit} onCancelEdit={onCancelEdit} onDelete={onDelete} onReport={onReport} depth={depth + 1} />) : null}
+    </View>
   );
 }
 
@@ -531,6 +694,36 @@ function focusInitialReel(reels: PulseReel[], reelId: number) {
   const index = reels.findIndex((item) => item.id === reelId);
   if (index <= 0) return reels;
   return [reels[index], ...reels.slice(0, index), ...reels.slice(index + 1)];
+}
+
+function findComment(comments: PulseComment[], commentId: number): PulseComment | null {
+  for (const comment of comments) {
+    if (comment.id === commentId) return comment;
+    const nested = findComment(comment.replies || [], commentId);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function insertReply(comments: PulseComment[], parentId: number, reply: PulseComment): PulseComment[] {
+  return comments.map((comment) => comment.id === parentId
+    ? { ...comment, replies: [...(comment.replies || []), reply], reply_count: Number(comment.reply_count || comment.replies?.length || 0) + 1 }
+    : { ...comment, replies: insertReply(comment.replies || [], parentId, reply) });
+}
+
+function updateCommentTree(comments: PulseComment[], commentId: number, next: PulseComment): PulseComment[] {
+  return comments.map((comment) => comment.id === commentId ? { ...comment, ...next } : { ...comment, replies: updateCommentTree(comment.replies || [], commentId, next) });
+}
+
+function removeCommentFromTree(comments: PulseComment[], commentId: number): PulseComment[] {
+  return comments.filter((comment) => comment.id !== commentId).map((comment) => ({ ...comment, replies: removeCommentFromTree(comment.replies || [], commentId) }));
+}
+
+function toggleSetValue(values: Set<number>, value: number) {
+  const next = new Set(values);
+  if (next.has(value)) next.delete(value);
+  else next.add(value);
+  return next;
 }
 
 function classifyConnectionState(error: unknown): ConnectionState {
@@ -669,11 +862,15 @@ const styles = StyleSheet.create({
     marginTop: 4
   },
   commentDanger: { color: colors.danger, fontSize: 11, fontWeight: "800" },
+  commentError: { color: colors.warning, fontSize: 11, lineHeight: 16, paddingBottom: 6 },
   commentTime: {
     color: colors.muted,
     fontSize: 12,
     marginTop: 5
   },
+  editComposer: { gap: 6, marginTop: 6 },
+  editInput: { backgroundColor: colors.surfaceRaised, borderColor: colors.accent, borderRadius: 8, borderWidth: 1, color: colors.text, minHeight: 42, paddingHorizontal: 10, paddingVertical: 8 },
+  editedLabel: { color: colors.muted, fontSize: 10 },
   composer: {
     alignItems: "center",
     borderTopColor: colors.border,
@@ -712,6 +909,7 @@ const styles = StyleSheet.create({
     minHeight: 42,
     paddingHorizontal: 12
   },
+  loadMoreComments: { alignItems: "center", minHeight: 44, justifyContent: "center", paddingVertical: 8 },
   laneButton: { borderRadius: 16, minHeight: 32, justifyContent: "center", paddingHorizontal: 11 },
   laneButtonActive: { backgroundColor: "rgba(47,225,180,0.18)", borderColor: "rgba(97,234,246,0.36)", borderWidth: 1 },
   laneRail: { backgroundColor: "rgba(2,8,18,0.54)", borderColor: "rgba(255,255,255,0.10)", borderRadius: 20, borderWidth: 1, height: 40, left: 10, position: "absolute", right: 58, zIndex: 30 },
@@ -756,6 +954,8 @@ const styles = StyleSheet.create({
   recoverySecondaryText: { color: colors.text, fontSize: 13, fontWeight: "800" },
   recoveryTitle: { color: colors.text, fontSize: 20, fontWeight: "900", textAlign: "center" },
   recoveryWrap: { flex: 1, justifyContent: "center", minHeight: Dimensions.get("window").height - 120, paddingBottom: 60, paddingTop: 92 },
+  replyComment: { borderLeftColor: "rgba(97,234,246,0.24)", borderLeftWidth: 2, marginLeft: 18, paddingLeft: 10 },
+  replyToggle: { color: colors.accent, fontSize: 11, fontWeight: "800", marginTop: 8 },
   root: {
     backgroundColor: "#02050b",
     flex: 1

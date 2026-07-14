@@ -35,7 +35,7 @@ def main() -> int:
     require("normalizeEvents" in sync and "seen.has(id)" in sync, "duplicate realtime-event suppression missing")
     require("REELS_CACHE_META_KEY" in api and "loadCachedReelsSnapshot" in api, "timestamped lane cache missing")
     require("editReelComment" in api and "deleteReelComment" in api and "reportReelComment" in api, "production comment ownership/moderation endpoints not reused")
-    require("item.can_delete" in screen and "currentUserId" in screen, "comment delete action is not ownership guarded")
+    require("comment.can_delete" in screen and "currentUserId" in screen, "comment delete action is not ownership guarded")
     require('/api/pulse/reels/comments/<int:comment_id>", methods=["PATCH", "DELETE"]' in backend, "authoritative comment edit/delete route missing")
     require("LogiNexus" not in screen, "internal design name leaked into user-facing Reels")
     require("react-native-webview" not in (screen + api).lower(), "Reels recovery introduced a WebView")
