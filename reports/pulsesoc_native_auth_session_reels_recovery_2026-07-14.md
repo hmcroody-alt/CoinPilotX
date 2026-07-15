@@ -4,7 +4,7 @@ Date: 2026-07-14
 
 ## Outcome
 
-The native shared-session implementation is repaired, builds successfully for simulator and device, and is installed on the connected iPhone 16 Pro. An earlier build launched successfully; the final rebuilt artifact's automated relaunch was blocked because the device locked. Final relaunch, existing-account login, force-quit restoration, and Reels refresh evidence requires the owner to unlock the device and enter credentials privately.
+The native shared-session implementation is repaired, builds successfully for simulator and device, and is installed and launched on the connected iPhone 16 Pro. The production WebView app and native development app were observed running side by side. Existing-account login, force-quit restoration, and Reels refresh evidence still require the owner to enter credentials privately.
 
 ## Root cause
 
@@ -74,10 +74,9 @@ The native shared-session implementation is repaired, builds successfully for si
 - Development bundle: `com.pulsesoc.nativeapp.dev`.
 - Development display name: `PulseSoc Native Dev`.
 - Installation: PASSED.
-- Earlier artifact launch: PASSED; process remained present after launch.
-- Final rebuilt artifact relaunch: BLOCKED by the iPhone lock screen after successful installation.
+- Final rebuilt artifact launch: PASSED after the owner unlocked the iPhone.
 - Production app preserved: YES, `com.pulsesoc.app` remains installed.
-- Side-by-side installation: YES.
+- Side-by-side installation and runtime presence: YES; the production and development app processes were both observed without exposing device identifiers.
 
 ## Verification
 
@@ -100,6 +99,6 @@ The initial simulator bundle-loader diagnostic was retained only during diagnosi
 
 ## Remaining blocker and exact next test
 
-Open **PulseSoc Native Dev** on the connected iPhone, sign in with an existing production PulseSoc account, open **Reels**, force-close the dev app, reopen it, and confirm the same account and Reels restore without a second login. The owner must enter credentials privately; Codex will not request or store them.
+On the now-running **PulseSoc Native Dev** app, sign in with an existing production PulseSoc account, open **Reels**, force-close the dev app, reopen it, and confirm the same account and Reels restore without a second login. The owner must enter credentials privately; Codex will not request or store them.
 
 Home stabilization, Messenger New Chat, and Profile V2 remain queued behind this physical authentication gate.
