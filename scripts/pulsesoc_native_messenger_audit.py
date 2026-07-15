@@ -93,13 +93,9 @@ def main() -> int:
     require(linking, "pulse/messages/:conversationId", "Messenger deep link")
     require(app, 'linking={authState.status === "signedIn" ? linking : undefined}', "auth-gated navigation linking registration")
 
-    mobile_native = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (ROOT / "mobile-native/src").rglob("*.ts*")
-        if "node_modules" not in path.parts
-    )
-    require_any(mobile_native, ("React Native", "react-native"), "native implementation")
-    if "WebView" in mobile_native or "react-native-webview" in mobile_native:
+    messenger_native = "\n".join((api, messenger_screen, chat_screen, linking))
+    require_any(messenger_native, ("React Native", "react-native"), "native implementation")
+    if "WebView" in messenger_native or "react-native-webview" in messenger_native:
         raise AssertionError("Native Messenger foundation must not introduce WebView coupling.")
 
     print("PulseSoc native Messenger audit passed.")

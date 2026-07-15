@@ -32753,11 +32753,18 @@ def pulse_start_conversation(cur, current_user_id, target_user_id=None, public_p
     if thread:
         thread_id = int(thread.get("id"))
     else:
-        cur.execute(
-            "INSERT INTO pulse_message_threads (user_one_id, user_two_id, source_context, status, created_at, updated_at) VALUES (?, ?, 'pulse', 'active', ?, ?)",
-            (low, high, now, now),
-        )
-        thread_id = int(cur.lastrowid)
+        try:
+            cur.execute(
+                "INSERT INTO pulse_message_threads (user_one_id, user_two_id, source_context, status, created_at, updated_at) VALUES (?, ?, 'pulse', 'active', ?, ?)",
+                (low, high, now, now),
+            )
+            thread_id = int(cur.lastrowid)
+        except sqlite3.IntegrityError:
+            cur.execute("SELECT * FROM pulse_message_threads WHERE user_one_id=? AND user_two_id=? LIMIT 1", (low, high))
+            thread = dict(cur.fetchone() or {})
+            if not thread:
+                raise
+            thread_id = int(thread.get("id") or 0)
     existing_conversation_id = int(thread.get("conversation_id") or 0) if thread else 0
     conversation_id = existing_conversation_id
     if not conversation_id:
@@ -32787,10 +32794,13 @@ def pulse_start_conversation(cur, current_user_id, target_user_id=None, public_p
             (conversation_id, uid),
         )
         if not cur.fetchone():
-            cur.execute(
-                "INSERT INTO pulse_conversation_participants (conversation_id, user_id, role, muted, archived, created_at) VALUES (?, ?, ?, 0, 0, ?)",
-                (conversation_id, uid, role, now),
-            )
+            try:
+                cur.execute(
+                    "INSERT INTO pulse_conversation_participants (conversation_id, user_id, role, muted, archived, created_at) VALUES (?, ?, ?, 0, 0, ?)",
+                    (conversation_id, uid, role, now),
+                )
+            except sqlite3.IntegrityError:
+                pass
     try:
         cur.execute("UPDATE pulse_message_threads SET conversation_id=?, updated_at=? WHERE id=?", (conversation_id, now, thread_id))
     except Exception:
@@ -33225,7 +33235,53 @@ def ensure_pulse_messenger_schema(cur, conn=None):
         created_at TEXT
     )
     """)
+    # Reconcile logical duplicates left by databases that predate canonical
+    # Messenger uniqueness constraints, then enforce those keys in storage.
+    try:
+        cur.execute("""
+            SELECT user_one_id, user_two_id
+            FROM pulse_message_threads
+            WHERE user_one_id IS NOT NULL AND user_two_id IS NOT NULL
+            GROUP BY user_one_id, user_two_id HAVING COUNT(*) > 1
+        """)
+        duplicate_pairs = [tuple(row) for row in cur.fetchall()]
+        for user_one_id, user_two_id in duplicate_pairs:
+            cur.execute(
+                "SELECT id, COALESCE(conversation_id,0) AS conversation_id FROM pulse_message_threads WHERE user_one_id=? AND user_two_id=? ORDER BY CASE WHEN COALESCE(conversation_id,0)>0 THEN 0 ELSE 1 END, id",
+                (user_one_id, user_two_id),
+            )
+            rows = [dict(row) for row in cur.fetchall()]
+            keeper = rows[0]
+            for duplicate in rows[1:]:
+                cur.execute("UPDATE pulse_messages SET thread_id=? WHERE thread_id=?", (keeper["id"], duplicate["id"]))
+                if not int(keeper.get("conversation_id") or 0) and int(duplicate.get("conversation_id") or 0):
+                    keeper["conversation_id"] = int(duplicate["conversation_id"])
+                    cur.execute("UPDATE pulse_message_threads SET conversation_id=? WHERE id=?", (keeper["conversation_id"], keeper["id"]))
+                cur.execute("DELETE FROM pulse_message_threads WHERE id=?", (duplicate["id"],))
+        cur.execute("""
+            DELETE FROM pulse_conversation_participants
+            WHERE conversation_id IS NOT NULL AND user_id IS NOT NULL
+              AND id NOT IN (
+                SELECT MIN(id) FROM pulse_conversation_participants
+                WHERE conversation_id IS NOT NULL AND user_id IS NOT NULL
+                GROUP BY conversation_id, user_id
+              )
+        """)
+        cur.execute("""
+            DELETE FROM pulse_messages
+            WHERE COALESCE(client_message_id,'')!=''
+              AND id NOT IN (
+                SELECT MIN(id) FROM pulse_messages
+                WHERE COALESCE(client_message_id,'')!=''
+                GROUP BY conversation_id, sender_user_id, client_message_id
+              )
+        """)
+    except Exception as exc:
+        logging.warning("Messenger uniqueness reconciliation skipped safely: %s", exc)
     for statement in [
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_pulse_message_threads_users ON pulse_message_threads(user_one_id, user_two_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_pulse_conversation_participants_member ON pulse_conversation_participants(conversation_id, user_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_pulse_messages_client_id ON pulse_messages(conversation_id, sender_user_id, client_message_id) WHERE COALESCE(client_message_id,'')!=''",
         "CREATE INDEX IF NOT EXISTS idx_pulse_conversation_participants_user ON pulse_conversation_participants(user_id, conversation_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_conversation_participants_conversation ON pulse_conversation_participants(conversation_id, user_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_conversation_participants_user_only ON pulse_conversation_participants(user_id)",
@@ -33655,14 +33711,36 @@ def pulse_send_conversation_message(cur, user, conversation_id, body, message_ty
                 "event_name": "message_sync",
             }, 200
     now = datetime.utcnow().isoformat(timespec="seconds")
-    cur.execute(
-        """
-        INSERT INTO pulse_messages
-        (thread_id, conversation_id, sender_user_id, receiver_user_id, body, message_type, media_url, thumbnail_url, media_metadata, file_size, duration_seconds, reply_to_id, client_message_id, local_created_at, delivered_at, delivery_status, status, created_at)
-        VALUES (0, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', 'sent', ?)
-        """,
-        (conversation_id, user["user_id"], body, message_type, media_url, thumbnail_url, json.dumps(metadata, default=str)[:4000], int(file_size or 0), float(duration_seconds or 0), reply_to_id or None, client_message_id, local_created_at, now, now),
-    )
+    try:
+        cur.execute(
+            """
+            INSERT INTO pulse_messages
+            (thread_id, conversation_id, sender_user_id, receiver_user_id, body, message_type, media_url, thumbnail_url, media_metadata, file_size, duration_seconds, reply_to_id, client_message_id, local_created_at, delivered_at, delivery_status, status, created_at)
+            VALUES (0, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', 'sent', ?)
+            """,
+            (conversation_id, user["user_id"], body, message_type, media_url, thumbnail_url, json.dumps(metadata, default=str)[:4000], int(file_size or 0), float(duration_seconds or 0), reply_to_id or None, client_message_id, local_created_at, now, now),
+        )
+    except sqlite3.IntegrityError:
+        if not client_message_id:
+            raise
+        cur.execute(
+            "SELECT * FROM pulse_messages WHERE conversation_id=? AND sender_user_id=? AND client_message_id=? ORDER BY id LIMIT 1",
+            (conversation_id, user["user_id"], client_message_id),
+        )
+        existing = cur.fetchone()
+        if not existing:
+            raise
+        message_payload = _pulse_message_payload(existing, user["user_id"])
+        return {
+            "ok": True,
+            "message": "Message already sent.",
+            "conversation_id": conversation_id,
+            "message_id": int(message_payload.get("id") or 0),
+            "data": message_payload,
+            "delivery_status": message_payload.get("status") or "sent",
+            "idempotent": True,
+            "event_name": "message_sync",
+        }, 200
     message_id = int(cur.lastrowid)
     cur.execute("UPDATE pulse_conversations SET updated_at=?, last_message_at=?, last_activity_at=? WHERE id=?", (now, now, now, conversation_id))
     cur.execute(

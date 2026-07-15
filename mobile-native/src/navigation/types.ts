@@ -50,6 +50,7 @@ export type RootStackParamList = {
     title?: string;
   } | undefined;
   Chat: { conversationId: number; title?: string; openControlCenter?: boolean };
+  NewChat: { initialQuery?: string; targetUserId?: number; title?: string } | undefined;
   PostDetail: { postId: number; title?: string };
   Reels: { reelId?: number; title?: string } | undefined;
   ReelDetail: { reelId: number; title?: string };

@@ -29,6 +29,7 @@ import { EventsScreen } from "../screens/EventsScreen";
 import { LiveScreen } from "../screens/LiveScreen";
 import { MarketplaceScreen } from "../screens/MarketplaceScreen";
 import { MessengerScreen } from "../screens/MessengerScreen";
+import { NewChatScreen } from "../screens/NewChatScreen";
 import { NotificationCenterScreen } from "../screens/NotificationCenterScreen";
 import { NotificationPreferencesScreen } from "../screens/NotificationPreferencesScreen";
 import { PostDetailScreen } from "../screens/PostDetailScreen";
@@ -219,6 +220,7 @@ export function AppNavigator() {
       <Stack.Screen name="CameraStudio" component={CameraStudioScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Call" component={CallScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Chat" component={ChatScreen} options={({ route }) => ({ title: route.params.title || "Chat" })} />
+      <Stack.Screen name="NewChat" component={NewChatScreen} options={{ title: "New Chat" }} />
       <Stack.Screen name="PostDetail" component={PostDetailScreen} options={({ route }) => ({ title: route.params.title || "Post" })} />
       <Stack.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="ReelDetail" component={ReelsScreen} options={{ headerShown: false }} />

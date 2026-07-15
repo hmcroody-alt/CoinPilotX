@@ -1,6 +1,14 @@
 # PulseSoc Native Messenger Progress
 
-Date: 2026-07-04
+Date: 2026-07-14
+
+## 2026-07-14 New Chat Incident Closure
+
+The dead New Chat entry points have been replaced by one native, production-backed flow. Both the top action and the inbox quick action open `NewChatScreen`, which searches the canonical PulseSoc user directory, opens or creates the canonical direct thread, caches that thread for immediate inbox visibility, and then enters the existing native chat screen.
+
+Server-side reconciliation now removes legacy duplicate direct-thread, participant, and non-empty `client_message_id` rows before applying uniqueness indexes. Concurrent controlled opens returned one conversation, and repeated first-message sends returned one canonical message.
+
+Verified in Xcode UI automation on iPhone 17e, iPhone 17 Pro, and iPhone 17 Pro Max simulators. The same signed Release build was installed and launched on the connected iPhone 16 Pro as `PulseSoc Native Dev` (`com.pulsesoc.nativeapp.dev`) against `https://pulsesoc.com`. The App Store identity was not targeted. A private physical-device login/search/send remains user-gated because no controlled production QA credentials are stored in the repository.
 
 ## Scope
 
@@ -84,4 +92,4 @@ The following are implemented in code but still require real-device or simulator
 
 ## Current Status
 
-The native Messenger foundation is now a production-shaped client surface, but it is not ready to replace the WebView Messenger until device QA confirms permissions, uploads, scrolling, push deep links, and long-thread behavior on real iOS and Android hardware.
+New Chat is ready for user inspection on the iPhone 16 Pro and is simulator-verified across compact, Pro, and Pro Max widths. Messenger is not ready to replace the WebView Messenger until the user completes the private physical login/search/send check and later device QA confirms permissions, uploads, scrolling, push deep links, and long-thread behavior on real iOS and Android hardware.

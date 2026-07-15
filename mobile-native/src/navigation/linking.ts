@@ -66,6 +66,13 @@ export const linking: LinkingOptions<RootStackParamList> = {
           conversationId: Number
         }
       },
+      NewChat: {
+        path: "pulse/messages/new",
+        parse: {
+          initialQuery: String,
+          targetUserId: Number
+        }
+      },
       PostDetail: {
         path: "pulse/post/:postId",
         parse: {

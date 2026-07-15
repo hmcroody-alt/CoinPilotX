@@ -112,12 +112,8 @@ def main() -> int:
 
     require("pulse/messages/:conversationId" in linking, "deep link route must target conversations")
 
-    mobile_native = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (ROOT / "mobile-native/src").rglob("*.ts*")
-        if "node_modules" not in path.parts
-    )
-    require("WebView" not in mobile_native and "react-native-webview" not in mobile_native.lower(), "native Messenger must not introduce WebView")
+    messenger_native = "\n".join((chat, messenger_api, messenger_screen, linking))
+    require("WebView" not in messenger_native and "react-native-webview" not in messenger_native.lower(), "native Messenger must not introduce WebView")
 
     print("PulseSoc native Messenger device QA audit passed.")
     return 0

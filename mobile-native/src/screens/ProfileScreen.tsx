@@ -103,6 +103,7 @@ export function ProfileScreen({ route, navigation }: Props) {
             onPremium={() => navigation?.navigate("Premium")}
             onGrowth={() => navigation?.navigate("GrowthCenter", { contentType: "profile", title: "Grow Profile" })}
             onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })}
+            onMessage={() => navigation?.navigate("NewChat", { initialQuery: profile.public_player_id || profile.username || profileKey, targetUserId: profile.user_id, title: `Message ${profile.display_name}` })}
             onRefresh={() => load("refresh").catch(() => undefined)}
           />
           <View style={styles.tabs}>

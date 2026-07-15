@@ -1,7 +1,7 @@
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useNavigation } from "@react-navigation/native";
-import { useEffect, useMemo, useState } from "react";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { loadCachedConversations, listConversations, MessengerConversation, searchMessenger } from "../api/messenger";
 import { PulseCommandAction, PulseCommandAvatar, PulseCommandPanel, PulseCommandSearch, PulseCommandSegmentRail } from "../components/PulseCommand";
@@ -67,8 +67,12 @@ export function MessengerScreen() {
       if (["all", "direct", "groups", "rooms", "ai", "unread"].includes(value || "")) setSelectedFilter(value as ConversationFilter);
     }).catch(() => undefined);
     loadCachedConversations().then((cached) => cached.length && setConversations(cached));
-    load().catch(() => undefined);
   }, []);
+
+  useFocusEffect(useCallback(() => {
+    loadCachedConversations().then((cached) => cached.length && setConversations(cached)).catch(() => undefined);
+    load().catch(() => undefined);
+  }, []));
 
   useEffect(() => {
     const timer = setTimeout(() => load().catch(() => undefined), 350);
@@ -114,7 +118,7 @@ export function MessengerScreen() {
                   <Text style={styles.commandVersion}>Messenger V3</Text>
                 </View>
                 <View style={[styles.connectionDot, error && styles.connectionDotWarning]} accessibilityLabel={error ? "Messenger reconnecting" : "Messenger connected"} />
-                <PulseCommandAction compact label="New chat" onPress={() => navigation.navigate("Search", { title: "New conversation" })} />
+                <PulseCommandAction compact label="New chat" onPress={() => navigation.navigate("NewChat")} />
               </View>
               <View style={styles.searchRow}>
                 <View style={styles.searchField}><PulseCommandSearch value={query} onChangeText={setQuery} placeholder="Search people, rooms, messages..." /></View>
@@ -122,7 +126,7 @@ export function MessengerScreen() {
               </View>
               <PulseCommandSegmentRail items={filters} selected={selectedFilter} onSelect={(key) => setSelectedFilter(key as ConversationFilter)} />
               <PulseCommandPanel style={styles.quickActions}>
-                <QuickAction title="New Chat" subtitle="Direct message" onPress={() => navigation.navigate("Search", { title: "New conversation" })} />
+                <QuickAction title="New Chat" subtitle="Direct message" onPress={() => navigation.navigate("NewChat")} />
                 <QuickAction title="Create Group" subtitle="Invite members" onPress={() => navigation.navigate("Tabs", { screen: "Groups" })} />
                 <QuickAction title="Start Room" subtitle="Public or private" onPress={() => navigation.navigate("Tabs", { screen: "Groups" })} />
               </PulseCommandPanel>

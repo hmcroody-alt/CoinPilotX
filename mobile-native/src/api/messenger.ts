@@ -75,6 +75,28 @@ export type MessengerPresence = {
   [key: string]: unknown;
 };
 
+export type MessengerUserSearchResult = {
+  id: number;
+  user_id: number;
+  display_name: string;
+  public_pulse_id?: string;
+  public_player_id?: string;
+  avatar_url?: string;
+  premium?: boolean;
+  premium_mark?: string;
+  label?: string;
+  is_self?: boolean;
+};
+
+export type DirectConversationResult = {
+  ok: boolean;
+  conversation_id: number;
+  thread_id?: number;
+  target_user_id: number;
+  redirect_url?: string;
+  trace_id?: string;
+};
+
 export type ConversationListResponse = {
   ok: boolean;
   conversations?: MessengerConversation[];
@@ -276,6 +298,55 @@ export async function searchMessenger(query: string) {
   };
 }
 
+export async function searchMessengerUsers(query: string) {
+  const clean = query.trim();
+  if (!clean) return [];
+  const data = await pulseApi<{ ok: boolean; users?: MessengerUserSearchResult[] }>(
+    `/api/pulse/users/search?q=${encodeURIComponent(clean)}`
+  );
+  return (data.users || []).map(normalizeMessengerUser).filter((item) => item.user_id > 0 && !item.is_self);
+}
+
+const directConversationRequests = new Map<number, Promise<DirectConversationResult>>();
+
+export async function openDirectConversation(target: MessengerUserSearchResult) {
+  const targetUserId = Number(target.user_id || target.id || 0);
+  if (targetUserId <= 0) throw new Error("Choose a valid PulseSoc recipient.");
+  const active = directConversationRequests.get(targetUserId);
+  if (active) return active;
+
+  const request = pulseApi<DirectConversationResult>("/api/pulse/messages/direct/open", {
+    method: "POST",
+    body: JSON.stringify({ target_user_id: targetUserId })
+  }).then(async (result) => {
+    const conversationId = Number(result.conversation_id || 0);
+    if (conversationId <= 0) throw new Error("PulseSoc did not return a conversation.");
+    await upsertCachedConversation({
+      id: conversationId,
+      conversation_id: conversationId,
+      title: target.display_name,
+      conversation_type: "direct",
+      avatar_url: target.avatar_url || "",
+      other_public_player_id: target.public_player_id || target.public_pulse_id?.replace(/^@/, "") || "",
+      verified: Boolean(target.premium_mark),
+      trust_state: target.premium ? "premium" : ""
+    });
+    return { ...result, conversation_id: conversationId, target_user_id: targetUserId };
+  }).finally(() => {
+    directConversationRequests.delete(targetUserId);
+  });
+
+  directConversationRequests.set(targetUserId, request);
+  return request;
+}
+
+export async function upsertCachedConversation(conversation: MessengerConversation) {
+  const normalized = normalizeConversations([conversation])[0];
+  if (!normalized) return;
+  const cached = await loadCachedConversations();
+  await cacheConversations([normalized, ...cached.filter((item) => item.id !== normalized.id)]);
+}
+
 export async function uploadMessengerMedia(input: {
   conversationId: number;
   uri: string;
@@ -317,6 +388,21 @@ export function normalizeConversations(items: MessengerConversation[]) {
       };
     })
     .filter((item) => item.id > 0);
+}
+
+function normalizeMessengerUser(item: MessengerUserSearchResult): MessengerUserSearchResult {
+  const id = Number(item.user_id || item.id || 0);
+  return {
+    ...item,
+    id,
+    user_id: id,
+    display_name: String(item.display_name || item.public_pulse_id || item.public_player_id || "PulseSoc member"),
+    public_pulse_id: String(item.public_pulse_id || (item.public_player_id ? `@${item.public_player_id}` : "")),
+    public_player_id: String(item.public_player_id || item.public_pulse_id || "").replace(/^@/, ""),
+    avatar_url: String(item.avatar_url || ""),
+    premium: Boolean(item.premium),
+    is_self: Boolean(item.is_self)
+  };
 }
 
 export function normalizeMessages(items: MessengerMessage[], fallbackConversationId: number) {

@@ -89,6 +89,41 @@ final class PulseSocNativeCameraStudioQATests: XCTestCase {
     capture("auth-return-to-login")
   }
 
+  func testMessengerNewChatCreatesCanonicalConversationAndSendsFirstMessage() throws {
+    authenticateIfNeeded()
+    XCTAssertTrue(app.buttons["Open Messages"].waitForExistence(timeout: 20), "Authenticated native navigation must expose Messenger.")
+    app.buttons["Open Messages"].tap()
+    XCTAssertTrue(app.staticTexts["Messenger V3"].waitForExistence(timeout: 20), "Messenger inbox must open.")
+    capture("new-chat-01-inbox")
+
+    XCTAssertTrue(tapIfVisible("New chat", timeout: 8), "Top New Chat action must be interactive.")
+    XCTAssertTrue(app.staticTexts["Start a conversation"].waitForExistence(timeout: 10), "Dedicated New Chat screen must open.")
+    capture("new-chat-02-empty")
+
+    let search = app.textFields["Search PulseSoc people"]
+    XCTAssertTrue(search.waitForExistence(timeout: 8), "New Chat must expose native people search.")
+    search.tap()
+    search.typeText("native_new_chat_peer")
+    let recipient = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Message Native New Chat Peer")).firstMatch
+    XCTAssertTrue(recipient.waitForExistence(timeout: 15), "Controlled backend user must appear in native search.")
+    capture("new-chat-03-results")
+    recipient.tap()
+
+    let composer = app.textViews.matching(NSPredicate(format: "label BEGINSWITH %@", "Message composer")).firstMatch
+    XCTAssertTrue(composer.waitForExistence(timeout: 15), "Recipient selection must open the canonical conversation.")
+    capture("new-chat-04-conversation")
+    composer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02)).tap()
+    composer.typeText("Hello from native New Chat QA")
+    XCTAssertTrue(app.buttons["Send message"].isHittable, "First-message send must become available.")
+    app.buttons["Send message"].tap()
+    let sentMessage = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Hello from native New Chat QA")).firstMatch
+    XCTAssertTrue(sentMessage.waitForExistence(timeout: 15), "First canonical message must reconcile into the thread.")
+    capture("new-chat-05-first-message")
+    app.swipeDown()
+    XCTAssertTrue(sentMessage.waitForExistence(timeout: 5), "Sent message must remain visible after dismissing the keyboard.")
+    capture("new-chat-06-first-message-keyboard-dismissed")
+  }
+
   private func authenticateIfNeeded() {
     if app.staticTexts["PulseSoc Camera"].waitForExistence(timeout: 3) {
       return

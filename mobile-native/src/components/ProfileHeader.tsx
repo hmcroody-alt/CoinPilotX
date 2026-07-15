@@ -11,9 +11,10 @@ type ProfileHeaderProps = {
   onGrowth?: () => void;
   onRefresh?: () => void;
   onSafety?: () => void;
+  onMessage?: () => void;
 };
 
-export function ProfileHeader({ profile, publicKey, owner, onEdit, onPremium, onGrowth, onRefresh, onSafety }: ProfileHeaderProps) {
+export function ProfileHeader({ profile, publicKey, owner, onEdit, onPremium, onGrowth, onRefresh, onSafety, onMessage }: ProfileHeaderProps) {
   const handle = profile.username || profile.public_player_id || publicKey || "";
   const premium = Boolean(profile.premium_status && profile.premium_status !== "inactive");
   const verified = Boolean(profile.verified_badge || profile.verification_status === "verified");
@@ -55,10 +56,15 @@ export function ProfileHeader({ profile, publicKey, owner, onEdit, onPremium, on
             <Text style={styles.primaryText}>Edit Profile</Text>
           </Pressable>
         ) : (
-          <Pressable style={styles.primaryButton} onPress={() => Share.share({ message: profileWebUrl(publicKey) }).catch(() => undefined)}>
-            <Text style={styles.primaryText}>Share Profile</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Message ${profile.display_name}`} style={styles.primaryButton} onPress={onMessage}>
+            <Text style={styles.primaryText}>Message</Text>
           </Pressable>
         )}
+        {!owner ? (
+          <Pressable style={styles.secondaryButton} onPress={() => Share.share({ message: profileWebUrl(publicKey) }).catch(() => undefined)}>
+            <Text style={styles.secondaryText}>Share</Text>
+          </Pressable>
+        ) : null}
         {owner ? (
           <Pressable style={styles.secondaryButton} onPress={onPremium}>
             <Text style={styles.secondaryText}>Premium</Text>
