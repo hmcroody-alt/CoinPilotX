@@ -82,7 +82,7 @@ The native shared-session implementation is repaired and the reported blank/nonw
 - Development display name: `PulseSoc Native Dev`.
 - Installation: PASSED.
 - Corrected standalone artifact installation: PASSED; it replaced only `com.pulsesoc.nativeapp.dev`.
-- Corrected standalone artifact automated launch: PENDING owner unlock; the embedded bundle and Metro-off simulator launch are verified.
+- Corrected standalone artifact automated launch: PASSED; the embedded bundle, Metro-off simulator launch, and physical process presence are verified.
 - Production app preserved: YES, `com.pulsesoc.app` remains installed.
 - Side-by-side installation and runtime presence: YES; the production and development app processes were both observed without exposing device identifiers.
 
@@ -113,6 +113,6 @@ The initial simulator bundle-loader diagnostic was retained only during diagnosi
 
 ## Remaining blocker and exact next test
 
-Unlock the iPhone and open the newly replaced **PulseSoc Native Dev** app. Confirm the existing-account login screen is visible, sign in with an existing production PulseSoc account, open **Reels**, force-close the dev app, reopen it, and confirm the same account and Reels restore without a second login. The owner must enter credentials privately; Codex will not request or store them.
+On the now-running **PulseSoc Native Dev** app, confirm the existing-account login screen is visible, sign in with an existing production PulseSoc account, open **Reels**, force-close the dev app, reopen it, and confirm the same account and Reels restore without a second login. The owner must enter credentials privately; Codex will not request or store them.
 
 Home stabilization, Messenger New Chat, and Profile V2 remain queued behind this physical authentication gate.
