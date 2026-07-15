@@ -63,12 +63,12 @@ const PAGE_SIZE = 8;
 const QA_REELS_STATE = PULSESOC_QA_REELS_FIXTURES ? String(process.env.EXPO_PUBLIC_PULSESOC_QA_REELS_STATE || "").trim().toLowerCase() : "";
 type ReelLane = "for_you" | "following" | "trending" | "music" | "live";
 const REEL_LANES: Array<{ key: ReelLane; label: string }> = [{ key: "for_you", label: "For You" }, { key: "following", label: "Following" }, { key: "trending", label: "Trending" }, { key: "music", label: "Music" }, { key: "live", label: "Live" }];
-type ConnectionState = "loading" | "connecting" | "ready" | "cached" | "offline" | "server_busy" | "maintenance" | "rate_limited" | "auth_expired" | "empty";
+type ConnectionState = "loading" | "connecting" | "ready" | "cached" | "offline" | "server_busy" | "maintenance" | "rate_limited" | "auth_expired" | "account_restricted" | "empty";
 const RETRY_DELAYS = [1_000, 2_000, 5_000, 10_000];
 const QA_RECOVERY_STATES = new Set<ConnectionState>(["loading", "connecting", "offline", "server_busy", "maintenance", "rate_limited", "auth_expired", "empty"]);
 
 export function ReelsScreen({ route, navigation }: Props) {
-  const { authState } = useAuth();
+  const { authState, requestReauthentication } = useAuth();
   const insets = useSafeAreaInsets();
   const params = route.params || {};
   const initialReelId = "reelId" in params ? Number(params.reelId || 0) : 0;
@@ -479,7 +479,7 @@ export function ReelsScreen({ route, navigation }: Props) {
         onEndReached={() => load("more").catch(() => undefined)}
         onEndReachedThreshold={0.5}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
-        ListEmptyComponent={<ReelsRecovery state={connectionState} loading={loading} onRetry={() => load("refresh").catch(() => undefined)} onExplore={(nextLane) => setLane(nextLane)} />}
+        ListEmptyComponent={<ReelsRecovery state={connectionState} loading={loading} onRetry={() => load("refresh").catch(() => undefined)} onAuthenticate={() => requestReauthentication("/pulse/reels")} onExplore={(nextLane) => setLane(nextLane)} />}
         ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.footer} color={colors.accent} /> : null}
         initialNumToRender={2}
         maxToRenderPerBatch={2}
@@ -728,7 +728,8 @@ function toggleSetValue(values: Set<number>, value: number) {
 
 function classifyConnectionState(error: unknown): ConnectionState {
   if (!(error instanceof PulseApiError)) return "offline";
-  if (error.status === 401 || error.status === 403) return "auth_expired";
+  if (error.status === 401 || error.code === "session_expired") return "auth_expired";
+  if (error.status === 403) return "account_restricted";
   if (error.status === 429) return "rate_limited";
   if (error.status === 503 || error.code === "request_unreachable") return "offline";
   if (error.status === 502 || error.status === 504) return "server_busy";
@@ -801,11 +802,12 @@ const RECOVERY_COPY: Record<Exclude<ConnectionState, "ready" | "cached">, { icon
   server_busy: { icon: "◉", title: "Pulse Network is catching up", body: "Your Galaxy is still here. We'll retry in the background.", action: "Retry now" },
   maintenance: { icon: "✦", title: "Galaxy tune-up in progress", body: "Reels will return as soon as the network is ready.", action: "Check again" },
   rate_limited: { icon: "◷", title: "Taking a short orbit", body: "Reels will reconnect automatically in a moment.", action: "Try again" },
-  auth_expired: { icon: "⌁", title: "Reconnect your account", body: "Your session ended. Sign in again to continue to Reels.", action: "Try again" },
+  auth_expired: { icon: "⌁", title: "Reconnect your account", body: "Your secure session ended. Sign in to restore this Reel and your existing PulseSoc account.", action: "Sign In" },
+  account_restricted: { icon: "!", title: "Reels access is limited", body: "Your account is signed in, but Reels access is currently restricted. Review Account Health for details.", action: "Check again" },
   empty: { icon: "✧", title: "Welcome to Reels", body: "Discover creators from across the Pulse Galaxy.", action: "Explore Trending" }
 };
 
-function ReelsRecovery({ state, loading, onRetry, onExplore }: { state: ConnectionState; loading: boolean; onRetry: () => void; onExplore: (lane: ReelLane) => void }) {
+function ReelsRecovery({ state, loading, onRetry, onAuthenticate, onExplore }: { state: ConnectionState; loading: boolean; onRetry: () => void; onAuthenticate: () => void; onExplore: (lane: ReelLane) => void }) {
   const visibleState = state === "ready" || state === "cached" ? "loading" : state;
   const copy = RECOVERY_COPY[visibleState];
   return (
@@ -822,6 +824,8 @@ function ReelsRecovery({ state, loading, onRetry, onExplore }: { state: Connecti
         <Text style={styles.recoveryBody}>{copy.body}</Text>
         {visibleState === "empty" ? (
           <View style={styles.recoveryActions}><Pressable accessibilityRole="button" style={styles.recoveryButton} onPress={() => onExplore("trending")}><Text style={styles.recoveryButtonText}>Explore Trending</Text></Pressable><Pressable accessibilityRole="button" style={styles.recoverySecondary} onPress={() => onExplore("music")}><Text style={styles.recoverySecondaryText}>Music</Text></Pressable></View>
+        ) : visibleState === "auth_expired" ? (
+          <Pressable accessibilityRole="button" accessibilityLabel="Sign In" style={styles.recoveryButton} onPress={onAuthenticate}><Text style={styles.recoveryButtonText}>Sign In</Text></Pressable>
         ) : (
           <Pressable accessibilityRole="button" accessibilityLabel={copy.action} style={styles.recoveryButton} onPress={onRetry}><Text style={styles.recoveryButtonText}>{copy.action}</Text></Pressable>
         )}

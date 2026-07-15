@@ -92,6 +92,18 @@ def run() -> None:
     assert int((accepted_payload.get("user") or {}).get("user_id") or 0) == USER_ID, accepted_payload
     assert str(accepted_payload.get("refresh_token") or "").startswith("psr_"), "refresh credential missing"
 
+    original_refresh = str(accepted_payload.get("refresh_token") or "")
+    refreshed = client.post(
+        "/api/mobile/auth/refresh",
+        json={"refresh_token": original_refresh, "source": "native-auth-incident-audit"},
+        headers={"User-Agent": "PulseSocNativeApp/auth-incident-audit"},
+    )
+    refreshed_payload = refreshed.get_json() or {}
+    assert refreshed.status_code == 200, refreshed_payload
+    assert int((refreshed_payload.get("user") or {}).get("user_id") or 0) == USER_ID, refreshed_payload
+    assert str(refreshed_payload.get("refresh_token") or "").startswith("psr_"), refreshed_payload
+    assert str(refreshed_payload.get("refresh_token") or "") != original_refresh, "refresh credential did not rotate"
+
     restored = client.get("/api/mobile/auth/session")
     restored_payload = restored.get_json() or {}
     assert restored.status_code == 200, restored_payload
@@ -100,7 +112,7 @@ def run() -> None:
 
     print(
         "PASS: native auth rejects promptly, preserves canonical user_id, "
-        "restores the session, and creates no duplicate user"
+        "rotates refresh credentials, restores the canonical session, and creates no duplicate user"
     )
 
 

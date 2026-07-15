@@ -2,6 +2,28 @@
 
 Date: 2026-07-12
 
+## Latest Mission Status: Native Authentication, Session Refresh, and Reels Recovery
+
+- Date: 2026-07-14.
+- Authentication and Reels recovery are the active release gate; Home, Messenger New Chat, and Profile V2 remain sequenced behind it.
+- Native login continues to use the canonical production mobile authentication routes and production `user_id`; no native identity database or mirrored profile was introduced.
+- Production login responses now persist the rotating access/refresh credential set as one device-bound iOS Keychain envelope, isolated between development and release services.
+- Concurrent authenticated 401 responses now share one refresh operation, rotate credentials atomically, verify the same canonical user ID, and replay each request once.
+- Temporary refresh/backend failures preserve secure credentials and render connectivity recovery; only a proven invalid session clears credentials and opens real Sign In.
+- Reels no longer classifies every 403 as session expiration, and Sign In recovery preserves `/pulse/reels` for post-auth restoration.
+- Xcode iPhone 17 Pro simulator build/runtime: passed. The locally installed Xcode runtime does not include an iPhone 16 Pro simulator profile.
+- Signed physical iPhone 16 Pro build, install, and launch: passed using `com.pulsesoc.nativeapp.dev` / `PulseSoc Native Dev`.
+- Side-by-side protection: passed; production `com.pulsesoc.app` and development `com.pulsesoc.nativeapp.dev` are both installed.
+- Existing-user physical login, force-quit restoration, and post-refresh Reels proof remain pending the owner entering existing credentials directly on the iPhone. No credential was requested or captured by Codex.
+- Mission report: `reports/pulsesoc_native_auth_session_reels_recovery_2026-07-14.md`.
+
+Recommended next mission: Complete the physical existing-account login/relaunch/Reels evidence, then execute Messenger New Chat recovery.
+
+Reason for recommendation:
+
+- The authentication implementation and build/install gates pass, but the release-blocking physical account-continuity proof requires the account owner’s private credential entry.
+- Messenger New Chat depends on this canonical shared session and must not proceed while physical authentication remains unproven.
+
 ## Mandatory Native Mission QA Standard
 
 - The Xcode iPhone Simulator is now the primary QA visibility and visual-parity environment throughout every native mission, not an end-only check.

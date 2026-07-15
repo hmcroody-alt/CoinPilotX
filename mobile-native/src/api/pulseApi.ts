@@ -1,5 +1,13 @@
 import { PULSE_API_BASE_URL } from "./config";
-import { getSessionCookie, setSessionCookie } from "../session/sessionStore";
+import {
+  clearNativeSessionCredentials,
+  getSessionCookie,
+  getSessionEnvelope,
+  NativeSessionEnvelope,
+  setCachedSessionUser,
+  setSessionCookie,
+  setSessionEnvelope
+} from "../session/sessionStore";
 import { Platform } from "react-native";
 
 export class PulseApiError extends Error {
@@ -12,6 +20,18 @@ export class PulseApiError extends Error {
     this.status = status;
     this.code = code;
   }
+}
+
+type SessionInvalidation = { path: string; code: string };
+export type RefreshResult = "refreshed" | "invalid" | "temporary" | "unavailable";
+let refreshPromise: Promise<RefreshResult> | null = null;
+let sessionInvalidationHandler: ((event: SessionInvalidation) => void) | null = null;
+
+export function registerSessionInvalidationHandler(handler: ((event: SessionInvalidation) => void) | null) {
+  sessionInvalidationHandler = handler;
+  return () => {
+    if (sessionInvalidationHandler === handler) sessionInvalidationHandler = null;
+  };
 }
 
 export async function pulseApi<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -42,9 +62,18 @@ async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefre
   const responseCookie = response.headers.get("set-cookie");
   if (responseCookie) await setSessionCookie(mergeSessionCookies(cookie || "", responseCookie));
 
-  if (response.status === 401 && allowRefresh && cookie && shouldRefresh(path)) {
-    const refreshedCookie = await refreshNativeSession(cookie);
-    if (refreshedCookie) return pulseApiRequest<T>(path, options, false);
+  if (response.status === 401 && allowRefresh && shouldRefresh(path)) {
+    const refreshResult = await refreshNativeSession(cookie || "");
+    if (refreshResult === "refreshed") return pulseApiRequest<T>(path, options, false);
+    if (refreshResult === "temporary") {
+      console.warn("PULSESOC_SESSION_REFRESH_TEMPORARY", { path, status: response.status });
+      throw new PulseApiError("PulseSoc could not restore your session yet. Your secure sign-in was preserved.", 503, "session_refresh_temporary");
+    }
+    if (refreshResult === "invalid" || refreshResult === "unavailable") {
+      await setCachedSessionUser(null);
+      console.warn("PULSESOC_SESSION_INVALID", { path, status: response.status });
+      sessionInvalidationHandler?.({ path, code: "session_expired" });
+    }
   }
 
   const text = await response.text();
@@ -53,7 +82,7 @@ async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefre
     throw new PulseApiError(
       String(data.message || data.error || "PulseSoc request failed."),
       response.status,
-      typeof data.error_code === "string" ? data.error_code : undefined
+      typeof data.error_code === "string" ? data.error_code : typeof data.error === "string" ? data.error : undefined
     );
   }
 
@@ -64,26 +93,64 @@ function shouldRefresh(path: string) {
   return !path.startsWith("/api/mobile/auth/") && !path.startsWith("/api/pulse/mobile/auth/");
 }
 
-async function refreshNativeSession(cookie: string) {
+export async function recoverNativeSession(): Promise<RefreshResult> {
+  const cookie = await getSessionCookie();
+  return refreshNativeSession(cookie || "");
+}
+
+async function refreshNativeSession(cookie: string): Promise<RefreshResult> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = performNativeSessionRefresh(cookie).finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
+async function performNativeSessionRefresh(cookie: string): Promise<RefreshResult> {
   try {
+    const envelope = await getSessionEnvelope();
+    if (!envelope?.refreshToken && !cookie) return "unavailable";
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (Platform.OS !== "web") headers.Cookie = cookie;
     const response = await fetch(`${PULSE_API_BASE_URL}/api/mobile/auth/refresh`, {
       method: "POST",
       headers,
       credentials: "include",
-      body: JSON.stringify({ source: "native_automatic_refresh" })
+      body: JSON.stringify({ refresh_token: envelope?.refreshToken || undefined, source: "native_automatic_refresh" })
     });
     if (!response.ok) {
-      await setSessionCookie("");
-      return "";
+      if (response.status === 401 || response.status === 403) {
+        await clearNativeSessionCredentials();
+        await setCachedSessionUser(null);
+        return "invalid";
+      }
+      return "temporary";
     }
+    const data = parseJson(await response.text());
+    const user = data.user as Record<string, unknown> | undefined;
+    const userId = Number(user?.user_id || 0);
+    if (data.authenticated !== true || userId <= 0 || !data.refresh_token) return "temporary";
+    if (envelope?.userId && envelope.userId !== userId) {
+      await clearNativeSessionCredentials();
+      await setCachedSessionUser(null);
+      return "invalid";
+    }
+    const now = Date.now();
+    const nextEnvelope: NativeSessionEnvelope = {
+      version: 1,
+      userId,
+      accessToken: String(data.access_token || ""),
+      accessTokenExpiresAt: now + Number(data.access_token_expires_in || 0) * 1000,
+      refreshToken: String(data.refresh_token),
+      refreshTokenExpiresAt: now + Number(data.refresh_token_expires_in || 0) * 1000
+    };
     const next = response.headers.get("set-cookie");
     const merged = next ? mergeSessionCookies(cookie, next) : cookie;
-    await setSessionCookie(merged);
-    return merged;
+    await setSessionEnvelope(nextEnvelope);
+    await Promise.all([merged ? setSessionCookie(merged) : Promise.resolve(), setCachedSessionUser(user)]);
+    return "refreshed";
   } catch {
-    return "";
+    return "temporary";
   }
 }
 

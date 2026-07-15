@@ -16,6 +16,9 @@ export type SessionResponse = {
   authenticated: boolean;
   user: PulseUser | null;
   refresh_token?: string;
+  refresh_token_expires_in?: number;
+  access_token?: string;
+  access_token_expires_in?: number;
 };
 
 export function getSession() {

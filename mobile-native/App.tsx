@@ -1,6 +1,6 @@
 import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Linking, Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { IncomingCallLayer } from "./src/calls/IncomingCallLayer";
@@ -13,6 +13,7 @@ import { AuthContext, AuthState, restoreSession } from "./src/session/auth";
 import { isQaSimulatorAuthEnabled, tryHandleQaSimulatorAuthUrl } from "./src/session/qaSimulatorAuth";
 import { colors } from "./src/theme/colors";
 import { registerPushDevice } from "./src/api/push";
+import { registerSessionInvalidationHandler } from "./src/api/pulseApi";
 
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>({ status: "loading", user: null });
@@ -28,6 +29,15 @@ export default function App() {
   useEffect(() => {
     restoreSession().then(setAuthState).catch(() => setAuthState({ status: "signedOut", user: null }));
   }, []);
+
+  const requestReauthentication = useCallback((redirectTarget = "") => {
+    if (redirectTarget) setPendingQaRedirectTarget(redirectTarget.slice(0, 240));
+    setAuthState({ status: "signedOut", user: null });
+  }, []);
+
+  useEffect(() => registerSessionInvalidationHandler(({ path }) => {
+    requestReauthentication(path.includes("/reels") ? "/pulse/reels" : "");
+  }), [requestReauthentication]);
 
   useEffect(() => {
     if (authState.status !== "signedIn") return;
@@ -105,7 +115,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [authState.status, pendingQaCameraRoute, pendingQaRedirectTarget]);
 
-  const auth = useMemo(() => ({ authState, setAuthState }), [authState]);
+  const auth = useMemo(() => ({ authState, setAuthState, requestReauthentication }), [authState, requestReauthentication]);
   const theme = useMemo(
     () => ({
       ...DefaultTheme,

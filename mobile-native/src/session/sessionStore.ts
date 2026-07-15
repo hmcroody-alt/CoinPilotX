@@ -4,9 +4,20 @@ import { Platform } from "react-native";
 import { PULSE_API_BASE_URL } from "../api/config";
 
 const COOKIE_KEY = "pulsesoc.native.session.cookie";
+const SESSION_ENVELOPE_KEY = "pulsesoc.native.session.envelope.v1";
 const CACHED_USER_KEY = "pulsesoc.native.session.user";
 const KEYCHAIN_OPTIONS: SecureStore.SecureStoreOptions = {
-  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY
+  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+  keychainService: __DEV__ ? "com.pulsesoc.nativeapp.dev.session" : "com.pulsesoc.nativeapp.session"
+};
+
+export type NativeSessionEnvelope = {
+  version: 1;
+  userId: number;
+  accessToken: string;
+  accessTokenExpiresAt: number;
+  refreshToken: string;
+  refreshTokenExpiresAt: number;
 };
 
 export async function getSessionCookie() {
@@ -41,6 +52,34 @@ export async function setSessionCookie(cookie: string) {
   });
 }
 
+export async function getSessionEnvelope(): Promise<NativeSessionEnvelope | null> {
+  const raw = await getSecureValue(SESSION_ENVELOPE_KEY);
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<NativeSessionEnvelope>;
+    if (value.version !== 1 || !value.refreshToken || Number(value.userId || 0) <= 0) return null;
+    return {
+      version: 1,
+      userId: Number(value.userId),
+      accessToken: String(value.accessToken || ""),
+      accessTokenExpiresAt: Number(value.accessTokenExpiresAt || 0),
+      refreshToken: String(value.refreshToken),
+      refreshTokenExpiresAt: Number(value.refreshTokenExpiresAt || 0)
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function setSessionEnvelope(envelope: NativeSessionEnvelope | null) {
+  if (!envelope) return deleteSecureValue(SESSION_ENVELOPE_KEY);
+  await setSecureValue(SESSION_ENVELOPE_KEY, JSON.stringify(envelope));
+}
+
+export async function clearNativeSessionCredentials() {
+  await Promise.all([setSessionCookie(""), setSessionEnvelope(null)]);
+}
+
 export async function getCachedSessionUser<T>() {
   try {
     const raw = await AsyncStorage.getItem(CACHED_USER_KEY);
@@ -67,4 +106,30 @@ export async function setCachedSessionUser(user: unknown) {
 
 function isLocalQaSession() {
   return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(PULSE_API_BASE_URL);
+}
+
+async function getSecureValue(key: string) {
+  if (Platform.OS === "web") return AsyncStorage.getItem(key);
+  try {
+    return await SecureStore.getItemAsync(key, KEYCHAIN_OPTIONS);
+  } catch (error) {
+    if (!isLocalQaSession()) throw error;
+    return AsyncStorage.getItem(key);
+  }
+}
+
+async function setSecureValue(key: string, value: string) {
+  if (Platform.OS === "web") return AsyncStorage.setItem(key, value);
+  await SecureStore.setItemAsync(key, value, KEYCHAIN_OPTIONS).catch(async (error) => {
+    if (!isLocalQaSession()) throw error;
+    await AsyncStorage.setItem(key, value);
+  });
+}
+
+async function deleteSecureValue(key: string) {
+  if (Platform.OS === "web") return AsyncStorage.removeItem(key);
+  await SecureStore.deleteItemAsync(key, KEYCHAIN_OPTIONS).catch(async (error) => {
+    if (!isLocalQaSession()) throw error;
+    await AsyncStorage.removeItem(key);
+  });
 }
