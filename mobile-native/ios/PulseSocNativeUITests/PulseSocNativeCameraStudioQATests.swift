@@ -1,13 +1,13 @@
 import XCTest
 
 final class PulseSocNativeCameraStudioQATests: XCTestCase {
-  private let app = XCUIApplication(bundleIdentifier: "com.pulsesoc.nativeapp")
+  private let app = XCUIApplication(bundleIdentifier: "com.pulsesoc.nativeapp.dev")
   private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 
   override func setUpWithError() throws {
     continueAfterFailure = false
     app.launchEnvironment["PULSESOC_NATIVE_QA_XCTEST"] = "1"
-    app.launchEnvironment["PULSESOC_NATIVE_QA_BUNDLE_ID"] = "com.pulsesoc.nativeapp"
+    app.launchEnvironment["PULSESOC_NATIVE_QA_BUNDLE_ID"] = "com.pulsesoc.nativeapp.dev"
     app.launch()
     capture("01-app-launch")
   }
@@ -63,6 +63,30 @@ final class PulseSocNativeCameraStudioQATests: XCTestCase {
 
     XCTAssertTrue(waitForAnyVisible(["Publish", "Retake", "Compression policy", "Server validation"], timeout: 10))
     capture("14-preview-publish-controls")
+  }
+
+  func testAuthenticationEntryAndRecovery() throws {
+    let identifier = app.textFields["Email or username"]
+    let password = app.secureTextFields["Password"]
+    let signIn = app.buttons["Sign in"]
+
+    XCTAssertTrue(identifier.waitForExistence(timeout: 15), "Existing-account identifier field must render on a clean launch.")
+    XCTAssertTrue(password.exists, "Existing-account password field must render on a clean launch.")
+    XCTAssertTrue(signIn.exists && signIn.isHittable, "Sign in must be visible and interactive.")
+    XCTAssertTrue(app.buttons["Forgot password or need email verification?"].exists)
+    XCTAssertTrue(app.buttons["New to PulseSoc? Create an account"].exists)
+    capture("auth-clean-login")
+
+    app.buttons["Forgot password or need email verification?"].tap()
+    XCTAssertTrue(app.staticTexts["Recover access"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.textFields["Existing account email"].exists)
+    XCTAssertTrue(app.buttons["Reset password"].exists)
+    XCTAssertTrue(app.buttons["Resend email verification"].exists)
+    capture("auth-recovery")
+
+    app.buttons["Back to sign in"].tap()
+    XCTAssertTrue(app.textFields["Email or username"].waitForExistence(timeout: 10))
+    capture("auth-return-to-login")
   }
 
   private func authenticateIfNeeded() {

@@ -12,8 +12,12 @@ Date: 2026-07-12
 - Temporary refresh/backend failures preserve secure credentials and render connectivity recovery; only a proven invalid session clears credentials and opens real Sign In.
 - Reels no longer classifies every 403 as session expiration, and Sign In recovery preserves `/pulse/reels` for post-auth restoration.
 - Xcode iPhone 17 Pro simulator build/runtime: passed. The locally installed Xcode runtime does not include an iPhone 16 Pro simulator profile.
-- Signed physical iPhone 16 Pro build, install, and launch: passed using `com.pulsesoc.nativeapp.dev` / `PulseSoc Native Dev`.
+- Earlier signed physical iPhone 16 Pro build, install, and launch: passed using `com.pulsesoc.nativeapp.dev` / `PulseSoc Native Dev`.
 - Side-by-side protection: passed; production `com.pulsesoc.app` and development `com.pulsesoc.nativeapp.dev` are both installed.
+- Follow-up physical diagnosis found that a later Debug install had overwritten the standalone development artifact and depended on Mac-only Metro, explaining the owner's blank/nonworking launch.
+- Xcode iPhone 17 Simulator now passes a clean signed-out authentication UI test covering login, recovery, email verification, and return-to-login with 0 failures; a separate Release artifact launches the login screen with Metro stopped.
+- The iPhone development copy has been replaced with a signed Release artifact using the development identity, production API, no QA fixture flags, and an embedded JavaScript bundle. Production remains untouched.
+- Added `scripts/install_pulsesoc_native_dev_iphone.sh` to make the safe standalone side-by-side installation repeatable and to refuse production identity or missing-bundle artifacts.
 - Existing-user physical login, force-quit restoration, and post-refresh Reels proof remain pending the owner entering existing credentials directly on the iPhone. No credential was requested or captured by Codex.
 - Mission report: `reports/pulsesoc_native_auth_session_reels_recovery_2026-07-14.md`.
 
