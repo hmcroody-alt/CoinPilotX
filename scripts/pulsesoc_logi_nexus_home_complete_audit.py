@@ -35,12 +35,12 @@ CHECKS = [
     ("Home inspiration signal lines", "mobile-native/src/screens/HomeScreen.tsx", "heroSignalLine"),
     ("WebView layout side rail", "mobile-native/src/screens/HomeScreen.tsx", "function HomeWebSideRail"),
     ("WebView hero mood hierarchy", "mobile-native/src/screens/HomeScreen.tsx", "heroMoodTitle"),
-    ("WebView Pulse Radio dock", "mobile-native/src/screens/HomeScreen.tsx", "webRadioDock"),
+    ("Home Pulse Radio hero control", "mobile-native/src/screens/HomeScreen.tsx", "home-pulse-radio-toggle"),
     ("Home metric formatter", "mobile-native/src/screens/HomeScreen.tsx", "formatHeroMetric"),
     ("UNDX hero route", "mobile-native/src/screens/HomeScreen.tsx", 'label="UNDX"'),
     ("Pulse Radio hero tile", "mobile-native/src/screens/HomeScreen.tsx", 'label="Pulse Radio"'),
     ("Safety Shield hero tile", "mobile-native/src/screens/HomeScreen.tsx", 'label="Safety Shield"'),
-    ("Your Orbit label", "mobile-native/src/screens/HomeScreen.tsx", "Your Orbit"),
+    ("Status rail", "mobile-native/src/screens/HomeScreen.tsx", "function StatusRail"),
     ("Status avatar imagery", "mobile-native/src/screens/HomeScreen.tsx", "statusAvatarImage"),
     ("Transmission Console compact identity", "mobile-native/src/components/HomePulseComposer.tsx", "identityOrb"),
     ("Transmission placeholder", "mobile-native/src/components/HomePulseComposer.tsx", "Transmit to the Pulse Network"),
@@ -51,7 +51,7 @@ CHECKS = [
     ("Signal Card creator pill", "mobile-native/src/components/PostCard.tsx", "creatorPill"),
     ("Signal Card media viewer preserved", "mobile-native/src/components/PostCard.tsx", "NativeMediaViewer"),
     ("Signal Card safety actions preserved", "mobile-native/src/components/PostCard.tsx", "home-feed-mute"),
-    ("Global Home header LOGINEXUS label", "mobile-native/src/screens/HomeScreen.tsx", 'subtitle="LOGINEXUS"'),
+    ("Global Home PulseSoc title", "mobile-native/src/screens/HomeScreen.tsx", 'title="PulseSoc"'),
     ("Floating create dock", "mobile-native/src/navigation/GlobalNavigation.tsx", "bottomCreateSymbol"),
     ("Report status honesty", "reports/pulsesoc_logi_nexus_home_complete_design.md", "not Homefeed LogiNexus-complete"),
     ("Visible QA status honesty", "reports/pulsesoc_logi_nexus_home_visible_qa.md", "full Homefeed LogiNexus QA remains pending"),
@@ -90,7 +90,7 @@ def main() -> int:
         return 1
 
     print("PulseSoc LogiNexus Homefeed audit passed.")
-    print("Verified scoped Home design tokens, hero tiles, Your Orbit rail, Transmission Console styling, Signal Card styling, reports, and preserved server-authoritative behavior.")
+    print("Verified scoped Home design tokens, hero tiles, Status rail, Transmission Console styling, Signal Card styling, reports, and preserved server-authoritative behavior.")
     return 0
 
 

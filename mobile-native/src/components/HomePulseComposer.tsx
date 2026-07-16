@@ -20,6 +20,7 @@ type Props = {
   onOpenMusic: () => void;
   onOpenRoute: (route: string) => void;
   identity?: GlobalNavigationIdentity;
+  initiallyExpanded?: boolean;
 };
 
 const MAX_BODY = 3000;
@@ -48,7 +49,7 @@ type HomeComposerDraft = {
   uploadStage?: string;
 };
 
-export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenMusic, onOpenRoute, identity }: Props) {
+export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenMusic, onOpenRoute, identity, initiallyExpanded = false }: Props) {
   const [mode, setMode] = useState<ComposerMode>("post");
   const [body, setBody] = useState("");
   const [visibility, setVisibility] = useState<Visibility>("public");
@@ -63,6 +64,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
   const [focused, setFocused] = useState(false);
   const [showAudience, setShowAudience] = useState(false);
   const [showTools, setShowTools] = useState(false);
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   const mountedRef = useRef(false);
   const skipNextPersistRef = useRef(false);
   const media = useNativeMediaUpload({ contextType: "pulse_post", target: "feed", destination: "feed", mode: "post" });
@@ -86,7 +88,8 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
         if (draft.mediaAsset) media.setAsset(draft.mediaAsset);
         if (draft.mediaResult) setRestoredMediaResult(draft.mediaResult);
         setDraftRecovered(true);
-      setNote(draft.mediaResult ? "Recovered transmission draft with uploaded media ready." : "Recovered transmission draft.");
+        setExpanded(true);
+        setNote(draft.mediaResult ? "Recovered transmission draft with uploaded media ready." : "Recovered transmission draft.");
       })
       .catch(() => undefined)
       .finally(() => {
@@ -96,6 +99,10 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (initiallyExpanded) setExpanded(true);
+  }, [initiallyExpanded]);
 
   useEffect(() => {
     if (!mountedRef.current) return;
@@ -175,6 +182,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
       await AsyncStorage.removeItem(DRAFT_KEY).catch(() => undefined);
       setDraftRecovered(false);
       setLastFailedPayload(null);
+      setExpanded(false);
       setNote(response.post_id ? "Signal transmitted. Refreshing Home." : response.message || "Signal transmitted.");
       onCreated(response.post);
     } catch (publishError) {
@@ -204,6 +212,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
       await AsyncStorage.removeItem(DRAFT_KEY).catch(() => undefined);
       setDraftRecovered(false);
       setLastFailedPayload(null);
+      setExpanded(false);
       setNote(response.post_id ? "Signal transmitted after retry. Refreshing Home." : response.message || "Signal transmitted after retry.");
       onCreated(response.post);
     } catch (retryError) {
@@ -229,6 +238,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
     setDraftRecovered(false);
     setError("");
     setNote("Transmission draft cleared.");
+    setExpanded(false);
   }
 
   function selectVisibility(nextVisibility: Visibility) {
@@ -279,8 +289,35 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
           <Text style={styles.eyebrow}>PULSE NETWORK</Text>
           <Text style={styles.title}>Create a signal</Text>
         </View>
-        <Text style={[styles.readiness, hasPublishPayload && styles.readinessActive]}>{publishing ? "SENDING" : hasPublishPayload ? "READY" : "DRAFT"}</Text>
+        <View style={styles.titleActions}>
+          <Text style={[styles.readiness, hasPublishPayload && styles.readinessActive]}>{publishing ? "SENDING" : hasPublishPayload ? "READY" : "DRAFT"}</Text>
+          {expanded ? (
+            <Pressable testID="home-composer-collapse" accessibilityRole="button" accessibilityLabel="Collapse composer" style={styles.collapseButton} onPress={() => { Keyboard.dismiss(); setExpanded(false); }}>
+              <Text style={styles.collapseButtonText}>⌃</Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
+      {!expanded ? (
+        <Pressable
+          testID="home-composer-expand"
+          accessibilityRole="button"
+          accessibilityLabel={hasDraft ? "Open saved Pulse composer draft" : "Open Pulse composer"}
+          style={({ pressed }) => [styles.collapsedComposer, pressed && styles.pressed]}
+          onPress={() => setExpanded(true)}
+        >
+          <View style={styles.identityOrb}>
+            {identity?.avatarUrl ? <Image source={{ uri: identity.avatarUrl }} style={styles.identityImage} /> : <Text style={styles.identityOrbText}>{avatarLabel}</Text>}
+            <View style={styles.identitySignal} />
+          </View>
+          <View style={styles.collapsedCopy}>
+            <Text style={styles.collapsedPrompt} numberOfLines={1}>{body.trim() || "Transmit to the Pulse Network…"}</Text>
+            <Text style={styles.collapsedMeta}>{hasDraft ? "Saved draft · Tap to continue" : `${visibilityLabel(visibility)} · Tap to create`}</Text>
+          </View>
+          <Text style={styles.collapsedOpen}>＋</Text>
+        </Pressable>
+      ) : (
+      <>
       <View accessible accessibilityLabel="Transmission Console" style={styles.headerRow}>
         <View style={styles.identityOrb}>
           {identity?.avatarUrl ? <Image source={{ uri: identity.avatarUrl }} style={styles.identityImage} /> : <Text style={styles.identityOrbText}>{avatarLabel}</Text>}
@@ -411,6 +448,8 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
           </Pressable>
         </View>
       ) : null}
+      </>
+      )}
     </LogiNexusPanel>
   );
 }
@@ -516,6 +555,52 @@ const styles = StyleSheet.create({
   },
   counterWarning: {
     color: colors.danger
+  },
+  collapsedComposer: {
+    alignItems: "center",
+    backgroundColor: "rgba(3, 11, 24, 0.7)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 9,
+    minHeight: 52,
+    paddingHorizontal: 9,
+    paddingVertical: 7
+  },
+  collapsedCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  collapsedMeta: {
+    color: colors.accent,
+    fontSize: 9,
+    fontWeight: "800",
+    marginTop: 2
+  },
+  collapsedOpen: {
+    color: colors.accent,
+    fontSize: 22,
+    fontWeight: "700"
+  },
+  collapsedPrompt: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "700"
+  },
+  collapseButton: {
+    alignItems: "center",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 24,
+    justifyContent: "center",
+    width: 28
+  },
+  collapseButtonText: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "900"
   },
   errorText: {
     color: colors.danger
@@ -830,6 +915,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 6
+  },
+  titleActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8
   },
   wrap: {
     backgroundColor: "rgba(10, 23, 39, 0.92)",

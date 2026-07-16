@@ -52,6 +52,7 @@ import { PulseApiError } from "../api/pulseApi";
 import { ReelPlayerCard } from "../components/ReelPlayerCard";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
+import { pausePulseRadio } from "../core/pulseRadio";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
@@ -182,7 +183,9 @@ export function ReelsScreen({ route, navigation }: Props) {
   }), [lane, initialReelId, commentReel?.id]);
 
   useEffect(() => {
-    configureReelsAudioSession().catch(() => undefined);
+    pausePulseRadio()
+      .catch(() => undefined)
+      .finally(() => configureReelsAudioSession().catch(() => undefined));
   }, []);
 
   useEffect(() => {

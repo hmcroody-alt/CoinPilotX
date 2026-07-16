@@ -34,6 +34,7 @@ import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { pausePulseRadio } from "../core/pulseRadio";
 
 const STATUS_REFRESH_MS = 3200;
 
@@ -53,6 +54,10 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const room = useNativeCallRoom();
   const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    pausePulseRadio().catch(() => undefined);
+  }, []);
 
   const title = useMemo(() => {
     if (params.title) return params.title;

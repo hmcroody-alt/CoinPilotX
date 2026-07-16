@@ -5396,3 +5396,14 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Comments are excluded from feed loading and remain hidden until Comment opens the native sheet. Reactions now have production-backed selection/replacement/removal states. Attached music is a micro-attribution with coordinated audio playback. Production Live records now survive native normalization and Join Live reuses `LiveDetail`.
 - Remaining gaps are realtime event reconciliation, full comment ownership/moderation flows, authorized offline mutation queues, broader analytics, full simulator-width evidence, and physical playback/audio/gesture/thermal QA.
 - Report: `reports/pulsesoc_native_reels_futuristic_deep_wiring_2026-07-12.md`.
+
+## Native Home Lightweight Futuristic and Paused-Radio Redesign — 2026-07-16
+
+- Home remains the active focused subsystem and is **not frozen**.
+- Removed the fabricated persistent Home mini-player and its layout/touch area; Pulse Radio now starts paused, performs no startup fetch/audio activation, and requires explicit Play.
+- Added one shared native radio coordinator over the existing production catalog and play-event contracts, with connecting/buffering/playing/paused/offline/error semantics and Call/Reels/background priority.
+- Composer now starts collapsed unless a real saved draft or explicit route intent exists; canonical feed, Status, media, navigation, and WebView behavior remain intact.
+- Fresh Release simulator evidence passes compact, standard, iPhone 16 Pro, and Pro Max layouts. The controlled backend had no approved radio tracks, so explicit retry is proven but real playing is not.
+- A signed, embedded Debug device artifact passes with the side-by-side identity `com.pulsesoc.nativeapp.dev` / `PulseSoc Native Dev`. Physical installation is blocked because the iPhone 16 Pro is currently unavailable to Xcode.
+- Next recommendation: stay on Home for physical iPhone 16 Pro install and real radio/call/Low Power/VoiceOver closure before freeze or subsystem movement.
+- Report: `reports/pulsesoc_native_home_lightweight_futuristic_radio_paused_redesign_2026-07-16.md`.

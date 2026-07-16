@@ -22,6 +22,7 @@ import { LogiNexusBadge, LogiNexusEmptyState, LogiNexusPanel } from "../componen
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { PostCard } from "../components/PostCard";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
+import { getPulseRadioState, PulseRadioState, subscribePulseRadio, togglePulseRadio } from "../core/pulseRadio";
 import { GlobalNavigationBadges, GlobalNavigationIdentity, LogiNexusGlobalHeader } from "../navigation/GlobalNavigation";
 import { openDashboardRoute } from "../navigation/dashboardRouting";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
@@ -87,8 +88,11 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const [statusOffline, setStatusOffline] = useState(false);
   const [statusError, setStatusError] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [radio, setRadio] = useState<PulseRadioState>(getPulseRadioState());
   const selectionRestoredRef = useRef(false);
   const activeTab = useMemo(() => FEED_TABS.find((tab) => tab.key === selectedFeed) || FEED_TABS[0], [selectedFeed]);
+
+  useEffect(() => subscribePulseRadio(setRadio), []);
 
   const loadStatuses = useCallback(async () => {
     setStatusLoading(true);
@@ -400,6 +404,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         <View style={[styles.homeSignalWave, styles.homeSignalWaveTwo]} />
       </View>
       <FlatList
+        testID="native-home-feed"
         ref={listRef}
         style={styles.list}
         contentContainerStyle={styles.content}
@@ -422,14 +427,18 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             onOpenProfile={() => navigation.navigate("Tabs", { screen: "Profile" })}
             badges={badges}
             identity={identity}
+            initiallyExpandComposer={Boolean(route.params?.openComposer)}
             onRefresh={refreshHome}
             onSelectFeed={selectFeed}
             onOpenUndx={() => navigation.navigate("Tabs", { screen: "PulseAI" })}
-            onOpenPulseRadio={() => openDashboardRoute(navigation, "/pulse/music#pulse-radio")}
+            radio={radio}
+            onTogglePulseRadio={() => togglePulseRadio().catch(() => undefined)}
+            onOpenRadioLibrary={() => openDashboardRoute(navigation, "/pulse/music#pulse-radio")}
             onOpenLive={() => navigation.navigate("Tabs", { screen: "Live" })}
             onOpenSafety={() => navigation.navigate("SafetyHub", { title: "Safety Hub" })}
             onOpenRoute={openHomeRoute}
             onAddStatus={() => navigation.navigate("Tabs", { screen: "Status", params: { openCreator: true } })}
+            onViewStatuses={() => navigation.navigate("Tabs", { screen: "Status" })}
             onOpenStatus={(status) => navigation.navigate("StatusDetail", { statusId: status.id, title: status.author?.display_name || "Status" })}
             onOpenCamera={(mode) => {
               if (mode === "reel") navigation.navigate("CameraStudio", { target: "reel", mode: "reel", title: "Reel Camera" });
@@ -518,14 +527,18 @@ function HomeHeader({
   onOpenProfile,
   badges,
   identity,
+  initiallyExpandComposer,
   onRefresh,
   onSelectFeed,
   onOpenUndx,
-  onOpenPulseRadio,
+  radio,
+  onTogglePulseRadio,
+  onOpenRadioLibrary,
   onOpenLive,
   onOpenSafety,
   onOpenRoute,
   onAddStatus,
+  onViewStatuses,
   onOpenStatus,
   onOpenCamera,
   onCreated,
@@ -545,14 +558,18 @@ function HomeHeader({
   onOpenProfile: () => void;
   badges?: GlobalNavigationBadges;
   identity?: GlobalNavigationIdentity;
+  initiallyExpandComposer: boolean;
   onRefresh: () => void;
   onSelectFeed: (feedKey: string) => void;
   onOpenUndx: () => void;
-  onOpenPulseRadio: () => void;
+  radio: PulseRadioState;
+  onTogglePulseRadio: () => void;
+  onOpenRadioLibrary: () => void;
   onOpenLive: () => void;
   onOpenSafety: () => void;
   onOpenRoute: (routePath: string) => void;
   onAddStatus: () => void;
+  onViewStatuses: () => void;
   onOpenStatus: (status: PulseStatus) => void;
   onOpenCamera: (mode: "photo" | "video" | "reel") => void;
   onCreated: (post?: PulsePost) => void;
@@ -565,9 +582,9 @@ function HomeHeader({
     <View style={styles.header}>
       <HomeTopBar onOpenDrawer={onOpenDrawer} onOpenSearch={onOpenSearch} onOpenActivity={onOpenActivity} onOpenProfile={onOpenProfile} badges={badges} identity={identity} />
       <View style={[styles.homeCanvas, wideCanvas && styles.homeCanvasWide]}>
-        {wideCanvas ? <HomeCommandRail onOpenRoute={onOpenRoute} onOpenPulseRadio={onOpenPulseRadio} /> : null}
+        {wideCanvas ? <HomeCommandRail onOpenRoute={onOpenRoute} onOpenPulseRadio={onOpenRadioLibrary} /> : null}
         <View style={styles.homePrimaryColumn}>
-          <PulseNetworkHero posts={posts} statuses={statusItems} offline={offline || statusOffline} compact={compactHero} onRefresh={onRefresh} onOpenUndx={onOpenUndx} onOpenPulseRadio={onOpenPulseRadio} onOpenLive={onOpenLive} onOpenSafety={onOpenSafety} />
+          <PulseNetworkHero posts={posts} statuses={statusItems} offline={offline || statusOffline} compact={compactHero} radio={radio} onRefresh={onRefresh} onOpenUndx={onOpenUndx} onTogglePulseRadio={onTogglePulseRadio} onOpenRadioLibrary={onOpenRadioLibrary} onOpenLive={onOpenLive} onOpenSafety={onOpenSafety} />
           <StatusRail
             items={statusItems}
             loading={statusLoading}
@@ -575,18 +592,9 @@ function HomeHeader({
             error={statusError}
             onAddStatus={onAddStatus}
             onOpenStatus={onOpenStatus}
+            onViewAll={onViewStatuses}
           />
-          <HomePulseComposer identity={identity} onCreated={onCreated} onOpenCamera={onOpenCamera} onOpenLive={onOpenLive} onOpenMusic={onOpenMusic} onOpenRoute={onOpenRoute} />
-          <View style={styles.webRadioDock}>
-            <Text style={styles.webRadioPause}>Ⅱ</Text>
-            <View style={styles.webRadioCopy}>
-              <Text style={styles.webRadioTitle} numberOfLines={1}>Beautiful Stranger</Text>
-              <Text style={styles.webRadioMeta} numberOfLines={1}>PulseSoc Music · Pulse Radio</Text>
-            </View>
-            <Pressable style={styles.webRadioButton} onPress={onOpenPulseRadio}>
-              <Text style={styles.webRadioButtonText}>Library</Text>
-            </Pressable>
-          </View>
+          <HomePulseComposer initiallyExpanded={initiallyExpandComposer} identity={identity} onCreated={onCreated} onOpenCamera={onOpenCamera} onOpenLive={onOpenLive} onOpenMusic={onOpenMusic} onOpenRoute={onOpenRoute} />
           <View style={styles.feedTabsWrap}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.feedTabs}>
               {feedTabs.map((tab) => (
@@ -719,7 +727,9 @@ function PulseNetworkHero({
   offline,
   onRefresh,
   onOpenUndx,
-  onOpenPulseRadio,
+  radio,
+  onTogglePulseRadio,
+  onOpenRadioLibrary,
   onOpenLive,
   onOpenSafety,
   compact
@@ -728,9 +738,11 @@ function PulseNetworkHero({
   statuses: PulseStatus[];
   offline: boolean;
   compact: boolean;
+  radio: PulseRadioState;
   onRefresh: () => void;
   onOpenUndx: () => void;
-  onOpenPulseRadio: () => void;
+  onTogglePulseRadio: () => void;
+  onOpenRadioLibrary: () => void;
   onOpenLive: () => void;
   onOpenSafety: () => void;
 }) {
@@ -770,11 +782,20 @@ function PulseNetworkHero({
           <Text style={styles.heroMoodTitle} numberOfLines={1}>{mood}</Text>
           <Text style={styles.heroMoodSummary} numberOfLines={2}>{summary}</Text>
         </View>
-        <Pressable accessibilityRole="button" accessibilityLabel="Open Pulse Radio" style={styles.heroRadioPill} onPress={onOpenPulseRadio}>
-          <Text style={styles.heroRadioIcon}>Ⅱ</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={radio.status === "playing" ? "Pause Pulse Radio" : "Play Pulse Radio"}
+          accessibilityState={{ busy: radio.status === "connecting" || radio.status === "buffering" }}
+          testID="home-pulse-radio-toggle"
+          style={[styles.heroRadioPill, radio.status === "playing" && styles.heroRadioPillPlaying]}
+          onPress={onTogglePulseRadio}
+        >
+          <Text style={styles.heroRadioIcon}>{radio.status === "playing" ? "Ⅱ" : radio.status === "connecting" || radio.status === "buffering" ? "…" : "▶"}</Text>
           <View style={styles.heroRadioCopy}>
             <Text style={styles.heroRadioLabel}>Pulse Radio</Text>
-            <Text style={styles.heroRadioMeta}>Now Playing</Text>
+            <Text style={[styles.heroRadioMeta, (radio.status === "error" || radio.status === "offline") && styles.heroRadioMetaError]} numberOfLines={1}>
+              {radio.message}
+            </Text>
           </View>
         </Pressable>
       </View>
@@ -827,7 +848,7 @@ function PulseNetworkHero({
       )}
       <View style={styles.heroQuickRow}>
         <HeroTile label="UNDX" value={String(alertCount)} body="UNDX alerts" tone="intelligence" icon="◇" onPress={onOpenUndx} />
-        <HeroTile label="Pulse Radio" value="Radio" body="Open streams" tone="creator" icon="≋" onPress={onOpenPulseRadio} />
+        <HeroTile label="Pulse Radio" value={radio.status === "playing" ? "Playing" : "Radio"} body="Open library" tone="creator" icon="≋" onPress={onOpenRadioLibrary} />
         <HeroTile label="Safety Shield" value={String(alertCount)} body="Scan ready" tone="safety" icon="⌾" onPress={onOpenSafety} />
       </View>
     </LogiNexusPanel>
@@ -996,7 +1017,8 @@ function StatusRail({
   offline,
   error,
   onAddStatus,
-  onOpenStatus
+  onOpenStatus,
+  onViewAll
 }: {
   items: PulseStatus[];
   loading: boolean;
@@ -1004,12 +1026,15 @@ function StatusRail({
   error: string;
   onAddStatus: () => void;
   onOpenStatus: (status: PulseStatus) => void;
+  onViewAll: () => void;
 }) {
   return (
     <View style={styles.statusSection}>
       <View style={styles.statusHeader}>
         <Text style={styles.statusHeaderKicker}>Status</Text>
-        <Text style={styles.statusHeaderAction}>View all →</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="View all Statuses" testID="home-status-view-all" onPress={onViewAll}>
+          <Text style={styles.statusHeaderAction}>View all →</Text>
+        </Pressable>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statusRail}>
         <Pressable style={styles.addStatusCard} onPress={onAddStatus}>
@@ -1024,8 +1049,8 @@ function StatusRail({
         ) : null}
         {!loading && !items.length ? (
           <View style={styles.statusEmptyCard}>
-            <Text style={styles.statusEmptyTitle}>No Status yet.</Text>
-            <Text style={styles.statusEmptyText}>{error || "Create one."}</Text>
+            <Text style={styles.statusEmptyTitle}>No Status signals yet</Text>
+            <Text style={styles.statusEmptyText}>{error || "Create the first signal."}</Text>
           </View>
         ) : null}
         {items.map((status) => (
@@ -1114,7 +1139,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     maxWidth: 1480,
     padding: 8,
-    paddingBottom: 156,
+    paddingBottom: 118,
     width: "100%"
   },
   commandIdentityCard: {
@@ -1633,6 +1658,9 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginTop: 1
   },
+  heroRadioMetaError: {
+    color: colors.danger
+  },
   heroRadioPill: {
     alignItems: "center",
     backgroundColor: "rgba(10, 30, 43, 0.82)",
@@ -1645,6 +1673,10 @@ const styles = StyleSheet.create({
     minWidth: 108,
     paddingHorizontal: 8,
     paddingVertical: 6
+  },
+  heroRadioPillPlaying: {
+    backgroundColor: "rgba(24, 66, 74, 0.9)",
+    borderColor: colors.accent
   },
   heroAction: {
     alignItems: "center",
@@ -2410,62 +2442,6 @@ const styles = StyleSheet.create({
   },
   statusSection: {
     marginBottom: 6
-  },
-  webRadioButton: {
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8
-  },
-  webRadioButtonText: {
-    color: colors.text,
-    fontSize: 11,
-    fontWeight: "900"
-  },
-  webRadioCopy: {
-    flex: 1,
-    minWidth: 0
-  },
-  webRadioDock: {
-    alignItems: "center",
-    alignSelf: "center",
-    backgroundColor: "rgba(5, 13, 26, 0.94)",
-    borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 20,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: -5,
-    marginTop: -2,
-    maxWidth: 520,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    width: "86%",
-    zIndex: 4
-  },
-  webRadioMeta: {
-    color: colors.muted,
-    fontSize: 10,
-    fontWeight: "800"
-  },
-  webRadioPause: {
-    backgroundColor: colors.accent,
-    borderRadius: 17,
-    color: colors.background,
-    fontSize: 15,
-    fontWeight: "900",
-    height: 34,
-    lineHeight: 33,
-    overflow: "hidden",
-    textAlign: "center",
-    width: 34
-  },
-  webRadioTitle: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "900"
   },
   heroSignalLine: {
     backgroundColor: "rgba(121, 210, 255, 0.18)",
