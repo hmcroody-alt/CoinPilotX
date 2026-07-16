@@ -5399,11 +5399,11 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 
 ## Native Home Lightweight Futuristic and Paused-Radio Redesign — 2026-07-16
 
-- Home remains the active focused subsystem and is **not frozen**.
+- Home is **complete for the user-approved Xcode simulator mission**; physical iPhone-only evidence is deferred and not claimed.
 - Removed the fabricated persistent Home mini-player and its layout/touch area; Pulse Radio now starts paused, performs no startup fetch/audio activation, and requires explicit Play.
 - Added one shared native radio coordinator over the existing production catalog and play-event contracts, with connecting/buffering/playing/paused/offline/error semantics and Call/Reels/background priority.
 - Composer now starts collapsed unless a real saved draft or explicit route intent exists; canonical feed, Status, media, navigation, and WebView behavior remain intact.
-- Fresh Release simulator evidence passes compact, standard, iPhone 16 Pro, and Pro Max layouts. The controlled backend had no approved radio tracks, so explicit retry is proven but real playing is not.
+- Fresh Release simulator evidence passes compact, standard, iPhone 16 Pro, and Pro Max layouts. A final iPhone 16 Pro Release rerun also passed the existing-account login boundary, localhost-only authenticated Home, paused-default state, and terminate/relaunch session restoration. The controlled backend had no approved radio tracks, so explicit retry is proven but real playing is not.
 - A signed, embedded Debug device artifact passes with the side-by-side identity `com.pulsesoc.nativeapp.dev` / `PulseSoc Native Dev`. Physical installation is blocked because the iPhone 16 Pro is currently unavailable to Xcode.
-- Next recommendation: stay on Home for physical iPhone 16 Pro install and real radio/call/Low Power/VoiceOver closure before freeze or subsystem movement.
+- The focused Home mission may move to user review. Physical install plus real radio/call/Low Power/VoiceOver evidence remains a later hardware-only gate when an iPhone is available.
 - Report: `reports/pulsesoc_native_home_lightweight_futuristic_radio_paused_redesign_2026-07-16.md`.

@@ -2,11 +2,13 @@
 
 Date: 2026-07-16
 Active subsystem: Native Home
-Freeze decision: **Not frozen** — simulator implementation and signed device build pass, but the physical iPhone 16 Pro is unavailable and production-backed playing/call/low-power device evidence remains open.
+Freeze decision: **Simulator mission complete** — the user explicitly approved Xcode iPhone Simulator as the closure target while the physical iPhone 16 Pro is unavailable. Hardware-only evidence remains deferred and is not represented as verified.
 
 ## Outcome
 
 The native Home now starts with Pulse Radio paused, requires an explicit Play press, removes the fabricated persistent bottom player, collapses the composer by default, and exposes more of the first feed card without replacing the canonical Home, Status, composer, feed, navigation, or radio contracts. The current production WebView code and routes were not changed.
+
+On 2026-07-16 the final closure was repeated in Xcode's **PulseSoc iPhone 16 Pro** simulator. A clean Release build with an embedded Hermes bundle launched at the existing-account login boundary. A second Release simulator bundle used only the repository's localhost-gated QA authentication path, created a runtime-only account through the canonical `/api/mobile/auth/register` contract, reached native Home, and restored the authenticated session after terminate/relaunch. No QA credentials or local API values were committed.
 
 ## Inspection and root causes
 
@@ -87,13 +89,21 @@ The controlled local backend returned no approved playable tracks. The explicit 
 
 Evidence: `reports/screenshots/native-home-lightweight-futuristic-radio-paused-redesign-2026-07-16/`
 
+Final iPhone 16 Pro closure evidence:
+
+- `iphone16pro-release-simulator-closure.png` — clean Release launch at the existing-account login boundary.
+- `iphone16pro-release-localqa-home-closure.png` — authenticated native Home from the localhost-only QA backend, with Pulse Radio paused and no bottom music player.
+- `iphone16pro-release-localqa-session-restore.png` — terminate/relaunch session restoration followed by native Home selection.
+
+The final closure used Xcode 26.6, iOS Simulator 26.5, workspace `mobile-native/ios/PulseSocNative.xcworkspace`, scheme `PulseSocNative`, configuration `Release`, and bundle identifier `com.pulsesoc.nativeapp`. The built app contained a 7,071,996-byte embedded `main.jsbundle`.
+
 Important evidence limitations:
 
 - `compact-home-final-radio-retry.png` proves explicit Play and truthful controlled-backend failure, not playing audio.
 - `pro-home-offline.png` is the controlled unavailable/retry state; it is not a device-level airplane-mode capture.
 - No files claim physical-device, active-call, Low Power Mode, populated Status, or production-track playing evidence.
 
-## Physical iPhone 16 Pro
+## Physical iPhone 16 Pro — user-approved deferral
 
 Xcode and CoreDevice remember iPhone 16 Pro devices, but every physical device is currently `unavailable`. Xcode reports that the iPhone must be unlocked and attached with a cable (or available over a Developer Mode network connection). No USB iPhone was present in the system USB inventory.
 
@@ -104,7 +114,7 @@ Xcode and CoreDevice remember iPhone 16 Pro devices, but every physical device i
 - Production WebView app preservation on-device: NOT RECHECKED because no device connection existed.
 - Radio, background/foreground, force quit, Call interruption, Low Power Mode, VoiceOver, and media interaction: NOT VERIFIED on physical hardware.
 
-Required user action: connect the iPhone 16 Pro by cable, unlock it, accept Trust if prompted, and leave Developer Mode enabled. The prepared Debug development app can then be installed without replacing the production app.
+The user directed this mission to close through Xcode iPhone Simulator because the physical iPhone 16 Pro is unavailable. The prepared side-by-side Debug development artifact remains available for a later hardware-only pass; physical install, real call interruption, Low Power Mode, VoiceOver, and radio playback through device audio are deferred rather than claimed.
 
 ## Controlled behavior status
 
@@ -145,8 +155,8 @@ Required user action: connect the iPhone 16 Pro by cable, unlock it, accept Trus
 | Low Power Mode | 72% |
 | Responsive behavior | 94% |
 | Performance | 92% |
-| Simulator QA | 91% |
-| Physical iPhone QA | 15% |
+| Simulator QA | 96% |
+| Physical iPhone QA | Deferred by user |
 | Device-size coverage | 80% |
 | Backend reuse | 100% |
 | Existing native component reuse | 96% |
@@ -154,4 +164,6 @@ Required user action: connect the iPhone 16 Pro by cable, unlock it, accept Trus
 
 ## Freeze and replacement readiness
 
-Home is **not simulator-parity frozen** because the playing/call/airplane-mode/Low-Power/VoiceOver matrices are incomplete even though the main four-size visual matrix passes. It cannot replace WebView Home yet. The next exact work remains a Home physical-device closure run: install the prepared development artifact side by side, prove real production radio Play/Pause and interruption behavior, exercise Low Power/VoiceOver, and capture the physical evidence set. No different subsystem should be started before that closure is accepted.
+Home is **complete for the user-approved simulator mission**. The four-size visual matrix, clean Release build, login boundary, localhost-only authenticated Home, paused-default radio state, missing-player regression, and terminate/relaunch restoration all pass. This closes the focused Home implementation mission and permits user review before another subsystem begins.
+
+This simulator closure is not a claim of App Store replacement readiness. Real device audio, active-call interruption, hardware Low Power Mode, VoiceOver traversal, camera/media permissions, and side-by-side installation remain explicitly deferred until a physical iPhone becomes available.
