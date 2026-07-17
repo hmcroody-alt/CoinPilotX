@@ -11,8 +11,11 @@ Home must never display the bottom active-call popup showing caller name, `Voice
 - Updated the existing `IncomingCallLayer` route policy.
 - Added an explicit hidden route set for the floating active-call overlay:
   - `Home`
+  - `Tabs`
   - `Call`
 - Added a navigation-state subscription so the call layer reacts to current route changes instead of relying on a stale route read.
+- The route policy now evaluates the full active route chain instead of one current-route string, covering nested tab state such as `Tabs -> Home`.
+- Unknown or not-yet-ready routes fail closed, so the popup does not flash on Home before navigation state resolves.
 - Preserved the active call polling, QA call fixture, accept/decline/end functions, and canonical `Call` route navigation.
 
 ## Home Behavior
@@ -44,6 +47,7 @@ Code-path verified:
 - Active call state still stores in `floatingCall`.
 - Existing call open/end functions remain intact.
 - Home suppression is a route policy, not a visual hide.
+- The tab navigator parent is hidden as a conservative guard because Home is nested inside `Tabs` and the production account can report the parent route before the focused Home child is available.
 - QA active-call deep links seed `floatingCall`, but this simulator showed the iOS "Open in PulseSoc Native?" confirmation sheet and macOS Assistive Access is disabled, so the active-call Home state was verified by code path and audit rather than a clean no-prompt screenshot.
 
 Screenshot evidence:

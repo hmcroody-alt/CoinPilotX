@@ -19,7 +19,15 @@ import { qaIncomingCallFromUrl } from "./incomingCallQa";
 
 const ACTIVE_CALL_REFRESH_MS = 4200;
 const SILENCED_CALL_TTL_MS = 15 * 60 * 1000;
-const HIDDEN_FLOATING_CALL_ROUTES = new Set(["Home", "Call"]);
+const HIDDEN_FLOATING_CALL_ROUTES = new Set(["Home", "Tabs", "Call"]);
+
+type RouteStateSnapshot = {
+  index?: number;
+  routes?: Array<{
+    name?: string;
+    state?: RouteStateSnapshot;
+  }>;
+};
 
 type IncomingCallLayerProps = {
   signedIn: boolean;
@@ -37,9 +45,9 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
   const pulse = useRef(new Animated.Value(0)).current;
   const floatPulse = useRef(new Animated.Value(0)).current;
   const reducedMotion = useLogiNexusReducedMotion();
-  const [currentRouteName, setCurrentRouteName] = useState("");
+  const [currentRouteNames, setCurrentRouteNames] = useState<string[]>([]);
 
-  const showFloatingCall = Boolean(floatingCall && !incomingCall && shouldShowFloatingCallOnRoute(currentRouteName));
+  const showFloatingCall = Boolean(floatingCall && !incomingCall && shouldShowFloatingCallOnRoutes(currentRouteNames));
 
   const refreshActiveCalls = useCallback(async () => {
     if (!signedIn || appState.current !== "active") return;
@@ -174,15 +182,15 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
   useEffect(() => {
     let readyCheck: ReturnType<typeof setInterval> | null = null;
 
-    function syncCurrentRouteName() {
-      setCurrentRouteName(navigationRef.isReady() ? navigationRef.getCurrentRoute()?.name || "" : "");
+    function syncCurrentRouteNames() {
+      setCurrentRouteNames(activeRouteNamesFromNavigation());
     }
 
-    syncCurrentRouteName();
-    const unsubscribe = navigationRef.addListener("state", syncCurrentRouteName);
+    syncCurrentRouteNames();
+    const unsubscribe = navigationRef.addListener("state", syncCurrentRouteNames);
     if (!navigationRef.isReady()) {
       readyCheck = setInterval(() => {
-        syncCurrentRouteName();
+        syncCurrentRouteNames();
         if (navigationRef.isReady() && readyCheck) {
           clearInterval(readyCheck);
           readyCheck = null;
@@ -330,8 +338,27 @@ function isFloatingActiveCall(call: PulseCall) {
   return Boolean(call.call_id && ["accepted", "connecting", "connected", "active", "reconnecting"].includes(String(call.status || "")));
 }
 
-function shouldShowFloatingCallOnRoute(routeName: string) {
-  return !HIDDEN_FLOATING_CALL_ROUTES.has(routeName);
+function shouldShowFloatingCallOnRoutes(routeNames: string[]) {
+  if (!routeNames.length) return false;
+  return !routeNames.some((routeName) => HIDDEN_FLOATING_CALL_ROUTES.has(routeName));
+}
+
+function activeRouteNamesFromNavigation() {
+  if (!navigationRef.isReady()) return [];
+  const names = activeRouteNamesFromState(navigationRef.getRootState() as RouteStateSnapshot | undefined);
+  const currentRouteName = navigationRef.getCurrentRoute()?.name || "";
+  if (currentRouteName && !names.includes(currentRouteName)) names.push(currentRouteName);
+  return names;
+}
+
+function activeRouteNamesFromState(state?: RouteStateSnapshot): string[] {
+  const routes = state?.routes || [];
+  if (!routes.length) return [];
+  const routeIndex = Math.max(0, Math.min(Number(state?.index || 0), routes.length - 1));
+  const route = routes[routeIndex];
+  const names = route?.name ? [route.name] : [];
+  if (route?.state) names.push(...activeRouteNamesFromState(route.state));
+  return names;
 }
 
 function pruneIgnoredCalls(ignored: Map<string, number>) {
