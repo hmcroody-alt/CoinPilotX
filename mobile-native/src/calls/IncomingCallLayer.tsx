@@ -19,6 +19,7 @@ import { qaIncomingCallFromUrl } from "./incomingCallQa";
 
 const ACTIVE_CALL_REFRESH_MS = 4200;
 const SILENCED_CALL_TTL_MS = 15 * 60 * 1000;
+const HIDDEN_FLOATING_CALL_ROUTES = new Set(["Home", "Call"]);
 
 type IncomingCallLayerProps = {
   signedIn: boolean;
@@ -36,9 +37,9 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
   const pulse = useRef(new Animated.Value(0)).current;
   const floatPulse = useRef(new Animated.Value(0)).current;
   const reducedMotion = useLogiNexusReducedMotion();
+  const [currentRouteName, setCurrentRouteName] = useState("");
 
-  const currentRouteName = navigationRef.isReady() ? navigationRef.getCurrentRoute()?.name : "";
-  const showFloatingCall = Boolean(floatingCall && !incomingCall && currentRouteName !== "Call");
+  const showFloatingCall = Boolean(floatingCall && !incomingCall && shouldShowFloatingCallOnRoute(currentRouteName));
 
   const refreshActiveCalls = useCallback(async () => {
     if (!signedIn || appState.current !== "active") return;
@@ -169,6 +170,30 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
       notificationSubscription.remove();
     };
   }, [refreshActiveCalls, signedIn]);
+
+  useEffect(() => {
+    let readyCheck: ReturnType<typeof setInterval> | null = null;
+
+    function syncCurrentRouteName() {
+      setCurrentRouteName(navigationRef.isReady() ? navigationRef.getCurrentRoute()?.name || "" : "");
+    }
+
+    syncCurrentRouteName();
+    const unsubscribe = navigationRef.addListener("state", syncCurrentRouteName);
+    if (!navigationRef.isReady()) {
+      readyCheck = setInterval(() => {
+        syncCurrentRouteName();
+        if (navigationRef.isReady() && readyCheck) {
+          clearInterval(readyCheck);
+          readyCheck = null;
+        }
+      }, 250);
+    }
+    return () => {
+      if (readyCheck) clearInterval(readyCheck);
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     if (!signedIn) return;
@@ -303,6 +328,10 @@ function isIncomingRingingCall(call: PulseCall, currentUserId: number | undefine
 
 function isFloatingActiveCall(call: PulseCall) {
   return Boolean(call.call_id && ["accepted", "connecting", "connected", "active", "reconnecting"].includes(String(call.status || "")));
+}
+
+function shouldShowFloatingCallOnRoute(routeName: string) {
+  return !HIDDEN_FLOATING_CALL_ROUTES.has(routeName);
 }
 
 function pruneIgnoredCalls(ignored: Map<string, number>) {
