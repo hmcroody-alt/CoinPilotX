@@ -5407,3 +5407,12 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - A signed, embedded Debug device artifact passes with the side-by-side identity `com.pulsesoc.nativeapp.dev` / `PulseSoc Native Dev`. Physical installation is blocked because the iPhone 16 Pro is currently unavailable to Xcode.
 - The focused Home mission may move to user review. Physical install plus real radio/call/Low Power/VoiceOver evidence remains a later hardware-only gate when an iPhone is available.
 - Report: `reports/pulsesoc_native_home_lightweight_futuristic_radio_paused_redesign_2026-07-16.md`.
+
+## Native iPhone 16 Pro Installation Enablement — 2026-07-16
+
+- The cable-connected iPhone 16 Pro is paired, available to Xcode, and running iOS 18.7.3.
+- The current native build passed device compilation, automatic development signing, installation, launch, and a five-second no-immediate-crash process check.
+- Side-by-side protection passed after installation: production `PulseSoc` remains `com.pulsesoc.app`; development `PulseSoc Native Dev` remains `com.pulsesoc.nativeapp.dev`.
+- Physical-device testing is now enabled. Visible login, Status, permissions, media, upload, radio, backgrounding, accessibility, and interruption checks remain user-interaction gates rather than automated claims.
+- Status remains the active physical-device test focus; installation does not freeze it or move work to another subsystem.
+- Report: `reports/pulsesoc_native_iphone16pro_installation_2026-07-16.md`.

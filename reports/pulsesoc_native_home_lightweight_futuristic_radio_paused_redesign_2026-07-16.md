@@ -167,3 +167,11 @@ The user directed this mission to close through Xcode iPhone Simulator because t
 Home is **complete for the user-approved simulator mission**. The four-size visual matrix, clean Release build, login boundary, localhost-only authenticated Home, paused-default radio state, missing-player regression, and terminate/relaunch restoration all pass. This closes the focused Home implementation mission and permits user review before another subsystem begins.
 
 This simulator closure is not a claim of App Store replacement readiness. Real device audio, active-call interruption, hardware Low Power Mode, VoiceOver traversal, camera/media permissions, and side-by-side installation remain explicitly deferred until a physical iPhone becomes available.
+
+## Physical iPhone 16 Pro installation closure — 2026-07-16
+
+The iPhone 16 Pro subsequently became available over USB. The current native source was rebuilt, automatically signed, installed, and launched as `PulseSoc Native Dev` (`com.pulsesoc.nativeapp.dev`). The process remained alive after launch with no immediate crash.
+
+Post-install inspection confirmed that the App Store WebView application remains separately installed as `PulseSoc` (`com.pulsesoc.app`, version 1.0.0 build 27). The development app remains version 0.1.0 build 1. The production bundle was never targeted.
+
+This supersedes the earlier installation deferral only. Visible login, Home, Status, media permission, radio, backgrounding, call-interruption, Low Power Mode, and VoiceOver checks still require user interaction on the handset and are not claimed as automated passes. Detailed evidence: `reports/pulsesoc_native_iphone16pro_installation_2026-07-16.md`.
