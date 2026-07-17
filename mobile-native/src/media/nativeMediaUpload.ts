@@ -67,10 +67,13 @@ export type UploadController = {
   cancel: () => void;
 };
 
-const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
-const MAX_VIDEO_BYTES = 1024 * 1024 * 1024;
-const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "heif"]);
-const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "m4v", "webm"]);
+// These defaults mirror the authoritative media_service.py limits. The server
+// remains authoritative when an environment-specific limit is lower.
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_GIF_BYTES = 8 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 150 * 1024 * 1024;
+const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif"]);
+const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "webm"]);
 
 export type CameraCompressionPolicy = {
   key: string;
@@ -93,16 +96,27 @@ export const mediaUploadIntegrationTargets = [
 ];
 
 export async function pickNativeImage() {
+  const picked = await pickNativeImages(1);
+  return { asset: picked.assets[0] || null, progress: picked.progress };
+}
+
+export async function pickNativeImages(limit = 4) {
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!permission.granted) return { asset: null, progress: deniedProgress("Photo library permission is required.") };
+  if (!permission.granted) return { assets: [], progress: deniedProgress("Photo library permission is required. Open Settings to allow photo access.") };
   const result = await ImagePicker.launchImageLibraryAsync({
     allowsEditing: false,
+    allowsMultipleSelection: limit > 1,
     mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    orderedSelection: limit > 1,
+    selectionLimit: Math.max(1, Math.min(4, limit)),
     quality: 0.92
   });
-  if (result.canceled || !result.assets?.[0]) return { asset: null, progress: idleProgress("Image selection cancelled.") };
-  const asset = await normalizePickedAsset(result.assets[0], "image");
-  return { asset, progress: selectedProgress(asset) };
+  if (result.canceled || !result.assets?.length) return { assets: [], progress: idleProgress("Image selection cancelled.") };
+  const assets = await Promise.all(result.assets.slice(0, limit).map((asset) => normalizePickedAsset(asset, "image")));
+  return {
+    assets,
+    progress: { stage: "selected" as const, percent: 0, message: `${assets.length} image${assets.length === 1 ? "" : "s"} selected.` }
+  };
 }
 
 export async function pickNativeVideo() {
@@ -171,11 +185,12 @@ export function cameraCompressionPolicy(mode: "photo" | "video" | "status" | "re
 export function validateNativeMedia(asset: NativeMediaAsset) {
   const ext = extensionFor(asset.name || asset.uri);
   if (asset.mediaType === "image") {
-    if (ext && !IMAGE_EXTENSIONS.has(ext)) return "Choose a JPG, PNG, WEBP, GIF, HEIC, or HEIF image.";
-    if (asset.size && asset.size > MAX_IMAGE_BYTES) return "Image is too large. Choose an image under 25 MB.";
+    if (ext && !IMAGE_EXTENSIONS.has(ext)) return "Choose a JPG, PNG, WEBP, or GIF image. HEIC is not accepted by the production upload service yet.";
+    const limit = ext === "gif" ? MAX_GIF_BYTES : MAX_IMAGE_BYTES;
+    if (asset.size && asset.size > limit) return `Image is too large. Choose ${ext === "gif" ? "a GIF under 8 MB" : "an image under 5 MB"}.`;
   } else {
-    if (ext && !VIDEO_EXTENSIONS.has(ext)) return "Choose an MP4, MOV, M4V, or WEBM video.";
-    if (asset.size && asset.size > MAX_VIDEO_BYTES) return "Video is too large for native upload. Choose a smaller video.";
+    if (ext && !VIDEO_EXTENSIONS.has(ext)) return "Choose an MP4, MOV, or WEBM video.";
+    if (asset.size && asset.size > MAX_VIDEO_BYTES) return "Video is too large. Choose a video under 150 MB.";
   }
   if (!asset.uri) return "Media file is missing.";
   return "";
@@ -317,7 +332,6 @@ function mimeTypeFor(name: string, mediaType: "image" | "video") {
   if (ext === "png") return "image/png";
   if (ext === "webp") return "image/webp";
   if (ext === "gif") return "image/gif";
-  if (ext === "heic" || ext === "heif") return "image/heic";
   return "image/jpeg";
 }
 

@@ -130,10 +130,11 @@ export type PostDetailResponse = {
 export type CreatePostPayload = {
   body: string;
   title?: string;
-  post_type?: "text" | "image" | "video" | string;
+  post_type?: "text" | "image" | "video" | "gif" | "poll" | "scam_report" | string;
   visibility?: "public" | "followers" | "private";
   media_ids?: number[];
   tags?: string[];
+  music_track_id?: string;
 };
 
 export type CreatePostResponse = {
@@ -216,7 +217,8 @@ export async function createPost(payload: CreatePostPayload) {
       post_type: payload.post_type || "text",
       visibility: payload.visibility || "public",
       media_ids: payload.media_ids || [],
-      tags: payload.tags || []
+      tags: payload.tags || [],
+      music_track_id: payload.music_track_id || ""
     })
   });
   const post = data.post ? normalizePost(data.post) : undefined;

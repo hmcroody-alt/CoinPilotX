@@ -83,6 +83,54 @@ export type ReelsFeedResponse = {
   next_offset?: number;
 };
 
+export type CreateReelPayload = {
+  title?: string;
+  caption?: string;
+  category?: string;
+  visibility?: "public" | "followers" | "private";
+  media_ids: number[];
+  music_track_id?: string;
+  share_to_feed?: boolean;
+};
+
+export type CreateReelResponse = {
+  ok?: boolean;
+  success?: boolean;
+  reel_id?: number;
+  post_id?: number;
+  media_id?: number;
+  processing_status?: string;
+  mux_status?: string;
+  next_url?: string;
+  reel?: PulseReel;
+  data?: { reel?: PulseReel };
+  message?: string;
+};
+
+export async function createReel(payload: CreateReelPayload) {
+  const data = await pulseApi<CreateReelResponse>("/api/pulse/reels/create", {
+    method: "POST",
+    body: JSON.stringify({
+      title: payload.title || "PulseSoc Reel",
+      caption: payload.caption || "",
+      category: payload.category || "Community",
+      visibility: payload.visibility || "public",
+      privacy: payload.visibility || "public",
+      post_type: "video",
+      media_ids: payload.media_ids,
+      music_track_id: payload.music_track_id || "",
+      audio_track_id: payload.music_track_id || "",
+      share_to_feed: Boolean(payload.share_to_feed)
+    })
+  });
+  return {
+    ...data,
+    reel_id: Number(data.reel_id || data.reel?.id || data.data?.reel?.id || 0),
+    post_id: Number(data.post_id || data.reel?.post_id || data.data?.reel?.post_id || 0),
+    reel: data.reel || data.data?.reel
+  };
+}
+
 export async function listReels(params: { lane?: string; category?: string; limit?: number; offset?: number; includeComments?: boolean } = {}) {
   if (PULSESOC_QA_REELS_FIXTURES) {
     const all = reelsQaFixtures();

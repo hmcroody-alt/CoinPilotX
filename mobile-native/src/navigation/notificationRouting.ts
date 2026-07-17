@@ -342,6 +342,11 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  if (normalized === "/pulse/compose" && navigationRef.isReady()) {
+    navigationRef.navigate("Tabs", { screen: "Home", params: { openComposer: true } });
+    return { handled: true, target: normalized };
+  }
+
   const webTarget = `${PULSE_API_BASE_URL}${normalized}`;
   const supported = await Linking.canOpenURL(webTarget).catch(() => false);
   if (supported) {
