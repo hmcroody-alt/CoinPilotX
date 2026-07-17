@@ -3,6 +3,7 @@ import { PULSE_API_BASE_URL } from "../api/config";
 import { RootStackParamList } from "../navigation/types";
 import { AuthState, signIn } from "./auth";
 import { setSessionCookie } from "./sessionStore";
+import { canUseTemporaryQaAccount, isLocalApiBaseUrl } from "./qaTemporaryAccount";
 
 type CameraStudioParams = NonNullable<RootStackParamList["CameraStudio"]>;
 
@@ -19,7 +20,7 @@ export function isQaSimulatorAuthEnabled() {
 }
 
 export function isQaSimulatorAutoLoginEnabled() {
-  return isQaSimulatorAuthEnabled() && process.env.EXPO_PUBLIC_PULSESOC_QA_AUTO_LOGIN === "1";
+  return canUseTemporaryQaAccount();
 }
 
 export async function createQaSimulatorLocalSession(): Promise<AuthState> {
@@ -118,15 +119,6 @@ function isQaLoginUrl(parsed: URL) {
     return isLocalWebHost(parsed.hostname) && parsed.pathname === "/qa/simulator-login";
   }
   return parsed.hostname === "qa" && parsed.pathname === "/simulator-login";
-}
-
-export function isLocalApiBaseUrl(value: string) {
-  try {
-    const parsed = new URL(value);
-    return ["127.0.0.1", "localhost", "::1"].includes(parsed.hostname);
-  } catch {
-    return false;
-  }
 }
 
 function qaApiBaseFromUrl(parsed: URL) {

@@ -8,6 +8,7 @@ import {
   setSessionCookie,
   setSessionEnvelope
 } from "../session/sessionStore";
+import { shouldRejectTemporaryQaUser } from "../session/qaTemporaryAccount";
 import { Platform } from "react-native";
 
 export class PulseApiError extends Error {
@@ -139,6 +140,11 @@ async function performNativeSessionRefresh(cookie: string): Promise<RefreshResul
     const user = data.user as Record<string, unknown> | undefined;
     const userId = Number(user?.user_id || 0);
     if (data.authenticated !== true || userId <= 0 || !data.refresh_token) return "temporary";
+    if (shouldRejectTemporaryQaUser(user)) {
+      await clearNativeSessionCredentials();
+      await setCachedSessionUser(null);
+      return "invalid";
+    }
     if (envelope?.userId && envelope.userId !== userId) {
       await clearNativeSessionCredentials();
       await setCachedSessionUser(null);

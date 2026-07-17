@@ -10,6 +10,7 @@ import {
   setCachedSessionUser,
   setSessionEnvelope
 } from "./sessionStore";
+import { shouldRejectTemporaryQaUser } from "./qaTemporaryAccount";
 
 export type AuthState = {
   status: "loading" | "signedIn" | "signedOut";
@@ -34,6 +35,7 @@ export async function restoreSession(): Promise<AuthState> {
   try {
     const session = await getSession();
     if (session.authenticated && session.user && Number(session.user.user_id || 0) > 0) {
+      if (shouldRejectTemporaryQaUser(session.user)) return clearTemporaryQaSession();
       await setCachedSessionUser(session.user);
       return { status: "signedIn", user: session.user };
     }
@@ -41,6 +43,7 @@ export async function restoreSession(): Promise<AuthState> {
     if (recovery === "refreshed") {
       const restored = await getSession();
       if (restored.authenticated && restored.user && Number(restored.user.user_id || 0) > 0) {
+        if (shouldRejectTemporaryQaUser(restored.user)) return clearTemporaryQaSession();
         await setCachedSessionUser(restored.user);
         return { status: "signedIn", user: restored.user };
       }
@@ -63,6 +66,7 @@ export async function restoreSession(): Promise<AuthState> {
 export async function signIn(identifier: string, password: string): Promise<AuthState> {
   const session = await login(identifier, password);
   if (!session.authenticated || !session.user || Number(session.user.user_id || 0) <= 0) return { status: "signedOut", user: null };
+  if (shouldRejectTemporaryQaUser(session.user)) return clearTemporaryQaSession();
   await persistSessionEnvelope(session);
   await setCachedSessionUser(session.user);
   return { status: "signedIn", user: session.user };
@@ -108,8 +112,15 @@ async function persistSessionEnvelope(session: SessionResponse) {
 async function restoreCachedSession(): Promise<AuthState> {
   const [cookie, envelope, cachedUser] = await Promise.all([getSessionCookie(), getSessionEnvelope(), getCachedSessionUser<PulseUser>()]);
   const userId = Number(cachedUser?.user_id || 0);
+  if (shouldRejectTemporaryQaUser(cachedUser)) return clearTemporaryQaSession();
   if ((cookie || envelope?.refreshToken) && cachedUser && userId > 0 && (!envelope?.userId || envelope.userId === userId)) {
     return { status: "signedIn", user: cachedUser };
   }
+  return { status: "signedOut", user: null };
+}
+
+async function clearTemporaryQaSession(): Promise<AuthState> {
+  await clearNativeSessionCredentials();
+  await setCachedSessionUser(null);
   return { status: "signedOut", user: null };
 }
