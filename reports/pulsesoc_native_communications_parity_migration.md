@@ -116,9 +116,9 @@ The mission explicitly requires the production communication implementation matr
 | Delete/report | WebView menu/safety | `/delete`, `/report`, backend permission checks | `deleteMessage`, `reportMessage` | Server authority | Native confirmation/menu UI | Delete-for-everyone mapping needs exact payload review | Unauthorized delete/report state | Role/user permission QA |
 | Attachments | Web media viewer/upload | `/api/pulse/messages/media/upload`, `/api/messages/media/*`, v2 `/attachments/upload` | `uploadMessengerMedia`, `NativeMediaViewer` handoff | Production media URLs, metadata, upload store | Native picker/device UI | Voice/video/document compatibility not fully proven | Incompatible media or orphan uploads | Native media visible/playable in WebView and reverse |
 | Voice messages | Web voice-note upload/playback | Existing media upload with `voice`, `duration_seconds`, v2 `attachment_kind`, waveform metadata | `ChatScreen.tsx` recording/upload path | Upload route and duration metadata | Native recording/playback controls | Container/codec/MIME matrix not fully proven | WebView cannot play native voice if unsupported codec | Record/send/play both directions |
-| Audio calls | Web call JS/global overlay | v2 `/voice/start`, `/api/calls/*`, `pulsesoc_communications_engine` | `api/calls.ts`, `CallScreen.tsx`, `IncomingCallLayer.tsx`, `useNativeCallRoom` | `call_id`, LiveKit token, participants/status | Native device audio controls | Physical audio route/Bluetooth/lock screen not proven | Phantom/duplicate call sessions | Native-WebView call lifecycle and no Home popup |
+| Audio calls | Web call JS/global overlay | v2 `/voice/start`, `/api/calls/*`, `pulsesoc_communications_engine` | `api/calls.ts`, `CallScreen.tsx`, `IncomingCallLayer.tsx`, `useNativeCallRoom` | `call_id`, LiveKit token, participants/status | Native device audio controls | Physical audio route/Bluetooth/lock screen not proven | Phantom/duplicate call sessions | Native-WebView call lifecycle and no global mini popup |
 | Video calls | Web call JS/LiveKit | v2 `/video/start`, `/api/calls/*`, LiveKit webhook | `CallScreen.tsx`, `useNativeCallRoom` | Same signaling and token contract | Native camera preview/toggle | Camera/mic physical QA required | Duplicate media streams/session leak | Physical iPhone camera/mic call QA |
-| Active call overlay | `pulsesoc_global_call_overlay.js` | `/api/calls/active` | `IncomingCallLayer.tsx` | Active-call fetch/state | Route-aware native presentation | Product says no Home floating popup | Home touch interception if overlay leaks | Active call on Home: no popup; Call screen still manages |
+| Active call overlay | `pulsesoc_global_call_overlay.js` | `/api/calls/active` | `IncomingCallLayer.tsx` | Active-call fetch/state | Dedicated Call screen only | Product rejected the native mini popup globally | Touch interception or reserved inset if overlay leaks | Active call on any route: no mini popup; Call screen still manages |
 | Push/deep links | Web notification targets | notification APIs, route targets | `notificationRouting.ts`, `linking.ts` | Existing target IDs and route paths | Native presentation/routing | Real push/tap physical QA pending | Wrong conversation/call opens | Push to message/call route on device |
 
 ## Backend Routes Reused
@@ -196,7 +196,7 @@ None in this gate. No database migration, destructive schema change, or ID rewri
 - Native optimistic messages use `client_message_id` and must reconcile to server-confirmed `message_id`.
 - No native-only conversation, room, call, presence, push, or attachment backend was introduced.
 - Existing WebView routes remain untouched by this gate.
-- Home active-call floating popup remains suppressed through route policy while active call state and canonical Call screen remain intact.
+- The rejected active-call mini popup is removed globally while active call state and the canonical Call screen remain intact.
 
 ## Verification Status
 
@@ -206,7 +206,7 @@ Simulator:
 
 Code-path/audit:
 
-- New audit validates production route contracts, native API reuse, call endpoints, LiveKit native connection path, and Home call-overlay suppression.
+- New audit validates production route contracts, native API reuse, call endpoints, LiveKit native connection path, and global active-call mini-popup removal.
 
 Cross-client:
 

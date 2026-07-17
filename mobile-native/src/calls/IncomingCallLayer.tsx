@@ -11,7 +11,7 @@ import {
   Text,
   View
 } from "react-native";
-import { acceptCall, declineCall, endCall, getActiveCalls, markRingSeen, PulseCall, PulseCallParticipant } from "../api/calls";
+import { acceptCall, declineCall, getActiveCalls, markRingSeen, PulseCall, PulseCallParticipant } from "../api/calls";
 import { navigationRef } from "../navigation/notificationRouting";
 import { colors } from "../theme/colors";
 import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
@@ -19,15 +19,6 @@ import { qaIncomingCallFromUrl } from "./incomingCallQa";
 
 const ACTIVE_CALL_REFRESH_MS = 4200;
 const SILENCED_CALL_TTL_MS = 15 * 60 * 1000;
-const HIDDEN_FLOATING_CALL_ROUTES = new Set(["Home", "Tabs", "Call"]);
-
-type RouteStateSnapshot = {
-  index?: number;
-  routes?: Array<{
-    name?: string;
-    state?: RouteStateSnapshot;
-  }>;
-};
 
 type IncomingCallLayerProps = {
   signedIn: boolean;
@@ -43,11 +34,7 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
   const ringSeenCalls = useRef<Set<string>>(new Set());
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const pulse = useRef(new Animated.Value(0)).current;
-  const floatPulse = useRef(new Animated.Value(0)).current;
   const reducedMotion = useLogiNexusReducedMotion();
-  const [currentRouteNames, setCurrentRouteNames] = useState<string[]>([]);
-
-  const showFloatingCall = Boolean(floatingCall && !incomingCall && shouldShowFloatingCallOnRoutes(currentRouteNames));
 
   const refreshActiveCalls = useCallback(async () => {
     if (!signedIn || appState.current !== "active") return;
@@ -129,30 +116,6 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
     setIncomingCall(null);
   }, [incomingCall]);
 
-  const openFloatingCall = useCallback(() => {
-    if (!floatingCall?.call_id || !navigationRef.isReady()) return;
-    navigationRef.navigate("Call", {
-      callId: floatingCall.call_id,
-      conversationId: floatingCall.conversation_id,
-      callType: floatingCall.call_type,
-      direction: "incoming",
-      title: floatingCall.call_type === "video" ? "PulseSoc Video" : "PulseSoc Voice"
-    });
-  }, [floatingCall]);
-
-  const endFloatingCall = useCallback(async () => {
-    if (!floatingCall?.call_id) return;
-    setBusyAction("end-floating");
-    try {
-      await endCall(floatingCall.call_id, "native_floating_end");
-      setFloatingCall(null);
-    } catch {
-      // Keep the bubble visible so the user can retry or reopen the call.
-    } finally {
-      setBusyAction("");
-    }
-  }, [floatingCall]);
-
   useEffect(() => {
     if (!signedIn) {
       setIncomingCall(null);
@@ -180,30 +143,6 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
   }, [refreshActiveCalls, signedIn]);
 
   useEffect(() => {
-    let readyCheck: ReturnType<typeof setInterval> | null = null;
-
-    function syncCurrentRouteNames() {
-      setCurrentRouteNames(activeRouteNamesFromNavigation());
-    }
-
-    syncCurrentRouteNames();
-    const unsubscribe = navigationRef.addListener("state", syncCurrentRouteNames);
-    if (!navigationRef.isReady()) {
-      readyCheck = setInterval(() => {
-        syncCurrentRouteNames();
-        if (navigationRef.isReady() && readyCheck) {
-          clearInterval(readyCheck);
-          readyCheck = null;
-        }
-      }, 250);
-    }
-    return () => {
-      if (readyCheck) clearInterval(readyCheck);
-      unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
     if (!signedIn) return;
     Linking.getInitialURL().then(seedQaCallFromUrl).catch(() => undefined);
     const subscription = Linking.addEventListener("url", (event) => {
@@ -223,18 +162,6 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
     animation.start();
     return () => animation.stop();
   }, [incomingCall, pulse, reducedMotion]);
-
-  useEffect(() => {
-    if (!showFloatingCall) return;
-    floatPulse.setValue(0);
-    if (reducedMotion) {
-      floatPulse.setValue(0.5);
-      return undefined;
-    }
-    const animation = createLogiNexusAmbientPulse(floatPulse, { duration: 2400 });
-    animation.start();
-    return () => animation.stop();
-  }, [floatPulse, showFloatingCall, reducedMotion]);
 
   const caller = useMemo(() => callerParticipant(incomingCall || floatingCall), [floatingCall, incomingCall]);
 
@@ -300,27 +227,6 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
         </View>
       ) : null}
 
-      {showFloatingCall ? (
-        <Animated.View
-          style={[
-            styles.callBubble,
-            {
-              transform: [{ scale: floatPulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, 1.035, 1] }) }]
-            }
-          ]}
-        >
-          <Pressable accessibilityLabel="Open active call" style={styles.callBubbleMain} onPress={openFloatingCall}>
-            <View style={styles.callBubbleDot} />
-            <View style={styles.callBubbleCopy}>
-              <Text style={styles.callBubbleTitle} numberOfLines={1}>{caller.display_name || caller.username || "Active call"}</Text>
-              <Text style={styles.callBubbleMeta}>{floatingCall?.call_type === "video" ? "Video" : "Voice"} in progress</Text>
-            </View>
-          </Pressable>
-          <Pressable accessibilityLabel="End active call" disabled={busyAction === "end-floating"} style={styles.callBubbleEnd} onPress={endFloatingCall}>
-            <Text style={styles.callBubbleEndText}>{busyAction === "end-floating" ? "..." : "End"}</Text>
-          </Pressable>
-        </Animated.View>
-      ) : null}
     </>
   );
 }
@@ -336,29 +242,6 @@ function isIncomingRingingCall(call: PulseCall, currentUserId: number | undefine
 
 function isFloatingActiveCall(call: PulseCall) {
   return Boolean(call.call_id && ["accepted", "connecting", "connected", "active", "reconnecting"].includes(String(call.status || "")));
-}
-
-function shouldShowFloatingCallOnRoutes(routeNames: string[]) {
-  if (!routeNames.length) return false;
-  return !routeNames.some((routeName) => HIDDEN_FLOATING_CALL_ROUTES.has(routeName));
-}
-
-function activeRouteNamesFromNavigation() {
-  if (!navigationRef.isReady()) return [];
-  const names = activeRouteNamesFromState(navigationRef.getRootState() as RouteStateSnapshot | undefined);
-  const currentRouteName = navigationRef.getCurrentRoute()?.name || "";
-  if (currentRouteName && !names.includes(currentRouteName)) names.push(currentRouteName);
-  return names;
-}
-
-function activeRouteNamesFromState(state?: RouteStateSnapshot): string[] {
-  const routes = state?.routes || [];
-  if (!routes.length) return [];
-  const routeIndex = Math.max(0, Math.min(Number(state?.index || 0), routes.length - 1));
-  const route = routes[routeIndex];
-  const names = route?.name ? [route.name] : [];
-  if (route?.state) names.push(...activeRouteNamesFromState(route.state));
-  return names;
 }
 
 function pruneIgnoredCalls(ignored: Map<string, number>) {
@@ -538,64 +421,5 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 13,
     fontWeight: "800"
-  },
-  callBubble: {
-    alignItems: "center",
-    backgroundColor: "rgba(16,18,20,0.94)",
-    borderColor: "rgba(37,208,167,0.42)",
-    borderRadius: 999,
-    borderWidth: 1,
-    bottom: 22,
-    flexDirection: "row",
-    gap: 8,
-    left: 18,
-    padding: 8,
-    position: "absolute",
-    right: 18,
-    shadowColor: colors.accent,
-    shadowOpacity: 0.22,
-    shadowRadius: 18,
-    zIndex: 45
-  },
-  callBubbleMain: {
-    alignItems: "center",
-    flex: 1,
-    flexDirection: "row",
-    gap: 10,
-    minHeight: 48
-  },
-  callBubbleDot: {
-    backgroundColor: colors.accent,
-    borderRadius: 12,
-    height: 24,
-    width: 24
-  },
-  callBubbleCopy: {
-    flex: 1,
-    minWidth: 0
-  },
-  callBubbleTitle: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "900"
-  },
-  callBubbleMeta: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: "700"
-  },
-  callBubbleEnd: {
-    alignItems: "center",
-    borderColor: colors.danger,
-    borderRadius: 999,
-    borderWidth: 1,
-    minHeight: 40,
-    justifyContent: "center",
-    paddingHorizontal: 16
-  },
-  callBubbleEndText: {
-    color: colors.danger,
-    fontSize: 12,
-    fontWeight: "900"
   }
 });

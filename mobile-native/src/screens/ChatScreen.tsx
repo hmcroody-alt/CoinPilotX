@@ -35,6 +35,7 @@ import {
   reportMessage,
   sendConversationMessage,
   sendTyping,
+  updateCachedConversationPreview,
   syncConversation,
   uploadMessengerMedia
 } from "../api/messenger";
@@ -70,6 +71,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [refreshing, setRefreshing] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState("");
+  const [initialFetchComplete, setInitialFetchComplete] = useState(false);
+  const [usingCachedMessages, setUsingCachedMessages] = useState(false);
   const [typing, setTyping] = useState("");
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [recordingStartedAt, setRecordingStartedAt] = useState<number>(0);
@@ -126,6 +129,18 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     [messages]
   );
   const visibleMessages = useMemo(() => [...messages].reverse(), [messages]);
+  const hasMessages = messages.length > 0;
+  const showInitialLoading = loading && !hasMessages && !initialFetchComplete && !error;
+  const showFatalError = Boolean(error && !hasMessages && !loading);
+  const showEmptyConversation = Boolean(initialFetchComplete && !loading && !error && !hasMessages);
+  const headerStatus = error
+    ? hasMessages
+      ? "Reconnecting"
+      : "Messages unavailable"
+    : usingCachedMessages
+      ? "Cached history"
+      : "Live channel";
+  const headerTone = error ? "warning" : usingCachedMessages ? "warning" : "default";
 
   const mergeMessages = useCallback((current: MessengerMessage[], incoming: MessengerMessage[]) => {
     const byKey = new Map<string, MessengerMessage>();
@@ -156,6 +171,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       const data = await getConversation(conversationId, { limit: PAGE_SIZE });
       const nextMessages = data.messages || [];
       setMessages(nextMessages);
+      setUsingCachedMessages(false);
+      setStatusMessage("");
       await cacheMessages(conversationId, nextMessages);
       await markConversationSeen(conversationId).catch(() => undefined);
       setTyping(typingSummary(data.presence));
@@ -163,12 +180,15 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       const cached = await loadCachedMessages(conversationId);
       if (cached.length) {
         setMessages(cached);
+        setUsingCachedMessages(true);
         setError("");
         setStatusMessage("Showing cached messages while PulseSoc reconnects.");
       } else {
+        setUsingCachedMessages(false);
         setError(loadError instanceof Error ? loadError.message : "Messages could not load.");
       }
     } finally {
+      setInitialFetchComplete(true);
       setRefreshing(false);
       setLoading(false);
     }
@@ -212,11 +232,13 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         await markConversationSeen(conversationId).catch(() => undefined);
       }
       setTyping(typingSummary(data.presence));
+      setUsingCachedMessages(false);
       setError("");
     } catch {
       setTyping("");
+      if (messages.length) setStatusMessage("Realtime reconnecting. Message history remains visible.");
     }
-  }, [conversationId, mergeMessages, newestMessageId]);
+  }, [conversationId, mergeMessages, messages.length, newestMessageId]);
 
   const notifyTyping = useCallback((value: string) => {
     setDraft(value);
@@ -264,6 +286,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         local_status: "sent"
       };
       replaceLocalMessage(local.id, serverMessage);
+      await updateCachedConversationPreview(conversationId, label, serverMessage.created_at || new Date().toISOString()).catch(() => undefined);
       await sync();
     } catch {
       await enqueueMessengerMessage(conversationId, {
@@ -474,7 +497,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   useEffect(() => {
     let mounted = true;
     loadCachedMessages(conversationId).then((cached) => {
-      if (mounted && cached.length) setMessages(cached);
+      if (mounted && cached.length) {
+        setMessages(cached);
+        setUsingCachedMessages(true);
+      }
     });
     load().catch(() => undefined);
     return () => {
@@ -509,8 +535,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         <PulseCommandHeader
           title={route.params.title || "Chat"}
           subtitle={typing || "Secure PulseSoc message channel"}
-          status={error ? "Reconnecting" : "Live channel"}
-          tone={error ? "warning" : "default"}
+          status={headerStatus}
+          tone={headerTone}
           actions={
             <View style={styles.callActions}>
               <PulseCommandAction
@@ -529,9 +555,19 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           }
         />
       </View>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {loading && messages.length === 0 ? (
+      {error && hasMessages ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Retry loading messages" style={styles.errorBanner} onPress={() => load({ refresh: true })}>
+          <Text style={styles.error}>{error}</Text>
+        </Pressable>
+      ) : null}
+      {showInitialLoading ? (
         <LogiNexusStatePanel state="loading" title="Opening chat" body="Loading conversation history from the server." loading style={styles.loadingPanel} />
+      ) : showFatalError ? (
+        <LogiNexusStatePanel state="error" title="Messages could not load" body={error || "PulseSoc could not load this conversation. Tap retry to reconnect to the canonical message history."} style={styles.loadingPanel}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Retry loading messages" style={styles.retryStateButton} onPress={() => load({ refresh: true })}>
+            <Text style={styles.retryStateText}>Retry</Text>
+          </Pressable>
+        </LogiNexusStatePanel>
       ) : (
         <FlatList
           data={visibleMessages}
@@ -547,7 +583,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           onEndReached={loadOlder}
           onEndReachedThreshold={0.2}
           ListFooterComponent={loadingOlder ? <Text style={styles.loadingOlder}>Loading older messages...</Text> : null}
-          ListEmptyComponent={<LogiNexusStatePanel state="empty" title="No messages yet" body="Messages in this chat will appear here." style={styles.emptyMessages} />}
+          ListEmptyComponent={showEmptyConversation ? <LogiNexusStatePanel state="empty" title="No messages yet" body="Messages in this chat will appear here." style={styles.emptyMessages} /> : null}
           renderItem={({ item }) => (
             <MessageBubble
               message={item}
@@ -857,6 +893,30 @@ const styles = StyleSheet.create({
     color: colors.warning,
     paddingHorizontal: 16,
     paddingTop: 10
+  },
+  errorBanner: {
+    backgroundColor: "rgba(255, 204, 102, 0.08)",
+    borderColor: "rgba(255, 204, 102, 0.34)",
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginHorizontal: logiNexus.spacing.md,
+    marginTop: logiNexus.spacing.xs,
+    paddingBottom: logiNexus.spacing.sm
+  },
+  retryStateButton: {
+    alignSelf: "center",
+    backgroundColor: colors.accent,
+    borderRadius: logiNexus.radius.capsule,
+    marginTop: logiNexus.spacing.md,
+    minHeight: 44,
+    paddingHorizontal: logiNexus.spacing.lg,
+    paddingVertical: logiNexus.spacing.sm
+  },
+  retryStateText: {
+    color: "#03120f",
+    fontSize: 13,
+    fontWeight: "900",
+    textAlign: "center"
   },
   loadingPanel: {
     margin: logiNexus.spacing.lg

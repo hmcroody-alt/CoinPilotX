@@ -2,6 +2,50 @@
 
 Date: 2026-07-12
 
+## Latest Mission Status: Native Chat State Correction and Global Call Popup Removal
+
+- Date: 2026-07-16.
+- Scope: Pulse Command conversation state hierarchy plus global active-call mini-popup removal.
+- Home status: frozen exact parity preserved.
+- Call functionality: preserved.
+
+Completed action:
+
+- Removed the rejected active voice/video call mini popup globally from `IncomingCallLayer`; the visual caller-name, `Voice in progress` / `Video in progress`, and `End` mini-controller branch no longer mounts on any route.
+- Kept active call state, active-call polling, QA call fixture handling, incoming full-screen call handling, canonical Call route navigation, and call APIs intact.
+- Replaced the native Chat contradictory loading/error/empty rendering with mutually exclusive initial-loading, cached-history reconnecting, fatal-error, and successful-empty states.
+- Added `scripts/pulsesoc_native_home_call_overlay_audit.py`.
+- Added `scripts/pulsesoc_native_chat_parity_overlay_audit.py`.
+- Added `reports/pulsesoc_native_home_call_overlay_removal.md`.
+- Added `reports/pulsesoc_native_chat_conversation_parity_overlay.md`.
+
+Simulator evidence:
+
+- `/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-chat-popup-removal/current-simulator-state.png`
+- `/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-chat-popup-removal/native-app-after-reopen.png`
+
+Remaining release QA:
+
+- Physical-device audio routing, Bluetooth, lock-screen push behavior, background call audio, and app-killed call behavior remain physical-device-only.
+- Controlled account QA remains required to prove the exact WebView conversation history appears in native for the same canonical conversation ID.
+
+## Latest Mission Status: Native Profile V2 Living Identity
+
+- Date: 2026-07-15.
+- Profile is the active subsystem and remains gated on owner visual review before another mission begins.
+- The supplied Profile/customization/theme/layout/stats/media/music mockups informed hierarchy and atmosphere only; the app uses canonical PulseSoc data and existing native tokens.
+- Native public profiles now load from a canonical JSON adapter over the existing identity, posts, follow graph, and theme records instead of being inferred from the first feed post.
+- Living Profile motion respects system Reduce Motion, and customization persists through the existing Premium profile-theme contract with additive layout/module/motion columns.
+- Public Message opens the canonical Messenger direct conversation; Follow uses the existing follow-toggle contract.
+- Xcode iPhone 16 Pro UI test passed with 1 test and 0 failures. Visual geometry also passed on compact and iPhone 16 Pro Max simulators.
+- Evidence: `reports/pulsesoc_native_profile_progress.md` and `reports/screenshots/native-profile-v2-2026-07-15/`.
+- The signed standalone Release development build passed installation on the physical iPhone 16 Pro as `PulseSoc Native Dev` / `com.pulsesoc.nativeapp.dev`, with an embedded JavaScript bundle and production API configuration. The installer did not target the production WebView identity.
+- Automated launch was refused because the phone was locked; final unlocked launch, side-by-side visual confirmation, and controlled real-account Profile actions remain the device gates.
+
+Recommended next action: Reconnect and unlock the physical iPhone 16 Pro, launch the installed side-by-side development app, complete controlled Profile smoke checks, and stop for owner inspection.
+
+Reason: the simulator implementation is visually and structurally verified, but physical media, keyboard, network, Message, and Follow behavior must be observed before Profile can freeze.
+
 ## Latest Mission Status: Native Authentication, Session Refresh, and Reels Recovery
 
 - Date: 2026-07-14.

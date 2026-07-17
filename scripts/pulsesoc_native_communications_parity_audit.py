@@ -124,16 +124,17 @@ def main() -> int:
         failures,
     )
 
+    require("Voice in progress" not in incoming_layer and "Video in progress" not in incoming_layer, "active-call mini popup copy must be removed globally", failures)
+    require("callBubbleMain" not in incoming_layer, "active-call mini popup main Pressable must not mount", failures)
+    require("callBubbleEnd" not in incoming_layer, "active-call mini popup End button must not mount", failures)
+    require("showFloatingCall" not in incoming_layer, "route-specific mini popup visibility policy should not remain", failures)
     require_all(
         incoming_layer,
         [
-            'const HIDDEN_FLOATING_CALL_ROUTES = new Set(["Home", "Tabs", "Call"])',
-            "shouldShowFloatingCallOnRoutes(currentRouteNames)",
-            "if (!routeNames.length) return false",
             "setFloatingCall(connected || null)",
             'navigationRef.navigate("Call"',
         ],
-        "Home call popup suppression and canonical call route",
+        "active call state and canonical call route",
         failures,
     )
 
@@ -170,7 +171,7 @@ def main() -> int:
         return 1
 
     print("PulseSoc native communications parity audit passed.")
-    print("Validated mapped production messaging/call contracts, native API reuse, data-safety gate, and Home call-popup suppression.")
+    print("Validated mapped production messaging/call contracts, native API reuse, data-safety gate, and global call-popup removal.")
     return 0
 
 

@@ -23,12 +23,11 @@ def main() -> int:
     layer = read("mobile-native/src/calls/IncomingCallLayer.tsx")
     report = read("reports/pulsesoc_native_home_call_overlay_removal.md")
 
-    require('const HIDDEN_FLOATING_CALL_ROUTES = new Set(["Home", "Tabs", "Call"])' in layer, "Home, Tabs, and Call must be explicit hidden floating-call routes", failures)
-    require("shouldShowFloatingCallOnRoutes(currentRouteNames)" in layer, "floating-call visibility must use full route-chain policy", failures)
-    require("activeRouteNamesFromNavigation()" in layer, "call layer must derive the active nested route chain", failures)
-    require('navigationRef.addListener("state", syncCurrentRouteNames)' in layer, "call layer must subscribe to route changes", failures)
-    require("if (!routeNames.length) return false" in layer, "unknown routes must fail closed instead of rendering the popup", failures)
-    require("setFloatingCall(connected || null)" in layer, "active call state must remain preserved while overlay is suppressed", failures)
+    require("Voice in progress" not in layer and "Video in progress" not in layer, "active-call mini popup copy must be removed globally", failures)
+    require("callBubbleMain" not in layer, "active-call mini popup main Pressable must not mount", failures)
+    require("callBubbleEnd" not in layer, "active-call mini popup End button must not mount", failures)
+    require("showFloatingCall" not in layer, "route-specific mini popup visibility policy should not remain", failures)
+    require("setFloatingCall(connected || null)" in layer, "active call state must remain preserved while visual popup is removed", failures)
     require('navigationRef.navigate("Call"' in layer, "canonical Call route must remain available", failures)
     require('currentRouteName !== "Call"' not in layer, "old one-off Call-only visibility guard should not remain", failures)
 
@@ -48,7 +47,7 @@ def main() -> int:
         return 1
 
     print("PulseSoc native Home call overlay audit passed.")
-    print("Validated Home route suppression, route-state subscription, preserved active call state, and canonical Call route access.")
+    print("Validated global active-call mini popup removal, preserved active call state, and canonical Call route access.")
     return 0
 
 

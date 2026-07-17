@@ -4,28 +4,24 @@ Date: 2026-07-16
 
 ## Requirement
 
-Home must never display the bottom active-call popup showing caller name, `Voice in progress`, or `End`, even when a legitimate voice or video call is active.
+The native app must never display the bottom active-call popup showing caller name, `Voice in progress`, or `End`, even when a legitimate voice or video call is active.
 
 ## Implementation
 
-- Updated the existing `IncomingCallLayer` route policy.
-- Added an explicit hidden route set for the floating active-call overlay:
-  - `Home`
-  - `Tabs`
-  - `Call`
-- Added a navigation-state subscription so the call layer reacts to current route changes instead of relying on a stale route read.
-- The route policy now evaluates the full active route chain instead of one current-route string, covering nested tab state such as `Tabs -> Home`.
-- Unknown or not-yet-ready routes fail closed, so the popup does not flash on Home before navigation state resolves.
-- Preserved the active call polling, QA call fixture, accept/decline/end functions, and canonical `Call` route navigation.
+- Removed the active-call mini-controller render branch from the existing `IncomingCallLayer`.
+- Removed the popup copy, active-call mini Pressable, End mini-button, route-specific visibility policy, navigation route subscription, and mini-controller pulse animation.
+- Preserved active-call polling through `getActiveCalls()`, QA call fixture behavior, incoming accept/decline handling, and canonical `Call` route navigation.
+- The app no longer relies on route gating for this popup because the product requirement is global removal.
 
-## Home Behavior
+## App Behavior
 
 - Home never mounts the active-call popup.
-- Home does not reserve layout space for the active-call popup.
-- Home does not render the popup invisibly.
-- Home bottom navigation remains visible and tappable.
+- Messages, Chat, Profile, Reels, Create, and other native routes never mount the active-call popup.
+- The app does not reserve layout space for the active-call popup.
+- The app does not render the popup invisibly.
+- Bottom navigation remains visible and tappable.
 - No bottom padding is reserved for the removed popup.
-- The overlay cannot intercept Home touches because it is not mounted on Home.
+- The removed popup cannot intercept touches because its visual branch is not mounted.
 
 ## Preserved Call Functionality
 
@@ -45,9 +41,8 @@ Simulator verified:
 Code-path verified:
 
 - Active call state still stores in `floatingCall`.
-- Existing call open/end functions remain intact.
-- Home suppression is a route policy, not a visual hide.
-- The tab navigator parent is hidden as a conservative guard because Home is nested inside `Tabs` and the production account can report the parent route before the focused Home child is available.
+- Dedicated Call route navigation remains intact through incoming-call accept flow.
+- The rejected mini-controller copy, Pressable, End button, route policy, route subscription, and visual animation are absent from `IncomingCallLayer`.
 - QA active-call deep links seed `floatingCall`, but this simulator showed the iOS "Open in PulseSoc Native?" confirmation sheet and macOS Assistive Access is disabled, so the active-call Home state was verified by code path and audit rather than a clean no-prompt screenshot.
 
 Screenshot evidence:
