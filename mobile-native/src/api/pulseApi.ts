@@ -45,7 +45,16 @@ async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefre
     headers.set("Content-Type", "application/json");
   }
 
-  const cookie = await getSessionCookie();
+  let [cookie, envelope] = await Promise.all([getSessionCookie(), getSessionEnvelope()]);
+  if (allowRefresh && shouldRefresh(path) && envelope?.refreshToken && (!envelope.accessToken || envelope.accessTokenExpiresAt <= Date.now() + 5000)) {
+    const refreshResult = await refreshNativeSession(cookie || "");
+    if (refreshResult === "refreshed") {
+      [cookie, envelope] = await Promise.all([getSessionCookie(), getSessionEnvelope()]);
+    }
+  }
+  if (envelope?.accessToken && envelope.accessTokenExpiresAt > Date.now() + 5000 && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${envelope.accessToken}`);
+  }
   if (cookie && Platform.OS !== "web") headers.set("Cookie", cookie);
 
   let response: Response;

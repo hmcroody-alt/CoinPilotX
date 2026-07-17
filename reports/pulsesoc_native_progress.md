@@ -2,6 +2,33 @@
 
 Date: 2026-07-12
 
+## Latest Mission Status: Native Auth Immediate Logout Fix
+
+- Date: 2026-07-17.
+- Scope: native existing-account session continuity.
+- Owner symptom: native login immediately returned to signed out.
+
+Completed action:
+
+- Native API requests now send the existing secure mobile access token as `Authorization: Bearer ...` when it is still valid.
+- Native API requests now proactively refresh missing or near-expiry access tokens through the existing single-flight refresh path before protected calls.
+- Backend `account_user_id()` now accepts valid mobile Bearer access tokens before falling back to persistent-cookie refresh.
+- Refresh-token recovery, cookie compatibility, WebView sessions, logout, and logout-all behavior remain intact.
+- Added `scripts/pulsesoc_native_auth_immediate_logout_audit.py`.
+- Added `reports/pulsesoc_native_auth_immediate_logout_fix_2026-07-17.md`.
+
+Verification:
+
+- `venv/bin/python scripts/pulsesoc_native_auth_immediate_logout_audit.py`
+- `npm run --prefix mobile-native typecheck`
+- `python3 -m py_compile bot.py`
+- `git diff --check`
+
+Remaining release QA:
+
+- Owner must sign into the installed native app with private credentials and confirm it stays signed in.
+- Physical iPhone force-quit/relaunch session restoration remains the final proof.
+
 ## Latest Mission Status: Native Chat State Correction and Global Call Popup Removal
 
 - Date: 2026-07-16.
