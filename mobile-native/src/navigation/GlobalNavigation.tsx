@@ -90,10 +90,23 @@ export function LogiNexusGlobalHeader({
         <View style={[styles.titleBlock, homeMode && styles.titleBlockHome]}>
           <View style={styles.brandRow}>
             {homeMode ? null : <LogiNexusSignalIndicator active tone={intelligenceMode ? "intelligence" : "default"} />}
-            <Text style={[styles.headerTitle, homeMode && styles.headerTitleHome]} numberOfLines={1}>
-              {title}
-            </Text>
+            {homeMode && title === "PulseSoc" ? (
+              <Text style={[styles.headerTitle, styles.headerTitleHome]} numberOfLines={1}>
+                Pulse<Text style={styles.headerTitleHomeAccent}>Soc</Text>
+              </Text>
+            ) : (
+              <Text style={[styles.headerTitle, homeMode && styles.headerTitleHome]} numberOfLines={1}>
+                {title}
+              </Text>
+            )}
           </View>
+          {homeMode ? (
+            <View pointerEvents="none" style={styles.homeBrandSignal}>
+              <View style={styles.homeBrandSignalPrimary} />
+              <Text style={styles.homeBrandPulse}>⌁</Text>
+              <View style={styles.homeBrandSignalSecondary} />
+            </View>
+          ) : null}
           {subtitle ? (
             <Text style={[styles.headerSubtitle, homeMode && styles.headerSubtitleHome]} numberOfLines={1}>
               {subtitle}
@@ -409,6 +422,35 @@ const styles = StyleSheet.create({
     fontSize: 21,
     lineHeight: 24,
     textAlign: "center"
+  },
+  headerTitleHomeAccent: {
+    color: "#9f7cff"
+  },
+  homeBrandPulse: {
+    color: colors.accent,
+    fontSize: 17,
+    fontWeight: "900",
+    lineHeight: 13,
+    marginHorizontal: -2,
+    marginTop: -4
+  },
+  homeBrandSignal: {
+    alignItems: "center",
+    flexDirection: "row",
+    height: 10,
+    justifyContent: "center",
+    marginTop: 1,
+    width: 74
+  },
+  homeBrandSignalPrimary: {
+    backgroundColor: colors.accent,
+    height: 1,
+    width: 30
+  },
+  homeBrandSignalSecondary: {
+    backgroundColor: "#9f7cff",
+    height: 1,
+    width: 30
   },
   iconBadge: {
     alignItems: "center",

@@ -16,7 +16,7 @@ import {
   savePost,
   toggleFollowAuthor
 } from "../api/feed";
-import { listStatuses, loadCachedStatuses, PulseStatus } from "../api/status";
+import { listStatuses, loadCachedStatuses, PulseStatus, statusPosterUrl } from "../api/status";
 import { HomePulseComposer } from "../components/HomePulseComposer";
 import { LogiNexusBadge, LogiNexusEmptyState, LogiNexusPanel } from "../components/LogiNexus";
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
@@ -766,6 +766,17 @@ function PulseNetworkHero({
       <View style={styles.heroAtmosphere}>
         <View style={[styles.heroGlow, styles.heroGlowPrimary]} />
         <View style={[styles.heroGlow, styles.heroGlowSecondary]} />
+        <View style={styles.heroPlanet}>
+          <View style={styles.heroPlanetLight} />
+          <View style={styles.heroPlanetShadow} />
+        </View>
+        <View style={styles.heroSkyline}>
+          {[18, 34, 24, 46, 30, 58, 38, 50, 27, 42, 22].map((height, index) => (
+            <View key={`${height}-${index}`} style={[styles.heroSkylineTower, { height }]}>
+              <View style={styles.heroSkylineLight} />
+            </View>
+          ))}
+        </View>
         <View style={[styles.heroSignalLine, styles.heroSignalLineOne]} />
         <View style={[styles.heroSignalLine, styles.heroSignalLineTwo]} />
         <View style={[styles.heroSignalLine, styles.heroSignalLineThree]} />
@@ -796,6 +807,11 @@ function PulseNetworkHero({
             <Text style={[styles.heroRadioMeta, (radio.status === "error" || radio.status === "offline") && styles.heroRadioMetaError]} numberOfLines={1}>
               {radio.message}
             </Text>
+          </View>
+          <View pointerEvents="none" style={styles.heroRadioWave}>
+            {[8, 15, 11, 20, 13, 17, 9].map((height, index) => (
+              <View key={`${height}-${index}`} style={[styles.heroRadioWaveBar, { height }, radio.status === "playing" && styles.heroRadioWaveBarPlaying]} />
+            ))}
           </View>
         </Pressable>
       </View>
@@ -1056,8 +1072,8 @@ function StatusRail({
         {items.map((status) => (
           <Pressable key={status.id} style={[styles.statusCard, !status.viewed && styles.statusCardUnseen]} onPress={() => onOpenStatus(status)}>
             <View style={styles.statusAvatar}>
-              {status.author?.avatar_url ? (
-                <Image source={{ uri: status.author.avatar_url }} style={styles.statusAvatarImage} />
+              {statusPosterUrl(status) || status.author?.avatar_url || status.author_avatar_url ? (
+                <Image source={{ uri: statusPosterUrl(status) || status.author?.avatar_url || status.author_avatar_url }} style={styles.statusAvatarImage} />
               ) : (
                 <Text style={styles.statusAvatarText}>{(status.author?.display_name || status.author_name || "PS").slice(0, 2).toUpperCase()}</Text>
               )}
@@ -1372,16 +1388,14 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   feedTab: {
-    borderColor: "transparent",
-    borderRadius: logiNexus.radius.capsule,
-    borderWidth: 1,
-    minHeight: 32,
+    borderBottomColor: "transparent",
+    borderBottomWidth: 2,
+    minHeight: 38,
     justifyContent: "center",
-    paddingHorizontal: 10
+    paddingHorizontal: 12
   },
   feedTabActive: {
-    backgroundColor: "rgba(50, 230, 179, 0.13)",
-    borderColor: logiNexus.colors.home.borderActive
+    borderBottomColor: colors.accent
   },
   feedTabText: {
     color: colors.muted,
@@ -1500,13 +1514,12 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   feedTabsWrap: {
-    backgroundColor: "rgba(7, 16, 29, 0.9)",
-    borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 18,
-    borderWidth: 1,
+    backgroundColor: "rgba(3, 9, 18, 0.62)",
+    borderBottomColor: logiNexus.colors.home.borderSubtle,
+    borderBottomWidth: 1,
     marginBottom: 10,
-    paddingHorizontal: 7,
-    paddingVertical: 4
+    paddingHorizontal: 2,
+    paddingVertical: 0
   },
   footer: {
     padding: 18
@@ -1535,6 +1548,60 @@ const styles = StyleSheet.create({
   heroAtmosphere: {
     ...StyleSheet.absoluteFillObject,
     pointerEvents: "none"
+  },
+  heroPlanet: {
+    backgroundColor: "rgba(26, 72, 102, 0.72)",
+    borderColor: "rgba(91, 221, 255, 0.34)",
+    borderRadius: 120,
+    borderWidth: 1,
+    height: 230,
+    overflow: "hidden",
+    position: "absolute",
+    right: -58,
+    top: 28,
+    transform: [{ rotate: "-8deg" }],
+    width: 230
+  },
+  heroPlanetLight: {
+    backgroundColor: "rgba(45, 229, 183, 0.16)",
+    borderRadius: 90,
+    height: 180,
+    left: -36,
+    position: "absolute",
+    top: -30,
+    width: 180
+  },
+  heroPlanetShadow: {
+    backgroundColor: "rgba(5, 10, 28, 0.72)",
+    borderRadius: 100,
+    bottom: -35,
+    height: 200,
+    position: "absolute",
+    right: -48,
+    width: 200
+  },
+  heroSkyline: {
+    alignItems: "flex-end",
+    bottom: 38,
+    flexDirection: "row",
+    gap: 4,
+    opacity: 0.48,
+    position: "absolute",
+    right: 4
+  },
+  heroSkylineTower: {
+    backgroundColor: "rgba(7, 15, 32, 0.94)",
+    borderTopColor: "rgba(159, 124, 255, 0.46)",
+    borderTopWidth: 1,
+    justifyContent: "flex-start",
+    width: 8
+  },
+  heroSkylineLight: {
+    alignSelf: "center",
+    backgroundColor: "rgba(50, 230, 179, 0.74)",
+    height: 2,
+    marginTop: 7,
+    width: 2
   },
   heroGlow: {
     borderRadius: 180,
@@ -1631,19 +1698,20 @@ const styles = StyleSheet.create({
     zIndex: 2
   },
   heroRadioCopy: {
+    flex: 1,
     minWidth: 0
   },
   heroRadioIcon: {
     backgroundColor: colors.accent,
-    borderRadius: 15,
+    borderRadius: 24,
     color: colors.background,
-    fontSize: 12,
+    fontSize: 15,
     fontWeight: "900",
-    height: 26,
-    lineHeight: 26,
+    height: 46,
+    lineHeight: 46,
     overflow: "hidden",
     textAlign: "center",
-    width: 26
+    width: 46
   },
   heroRadioLabel: {
     color: colors.text,
@@ -1665,18 +1733,38 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(10, 30, 43, 0.82)",
     borderColor: "rgba(50, 230, 179, 0.45)",
-    borderRadius: 17,
+    borderRadius: 24,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 7,
-    minHeight: 40,
-    minWidth: 108,
-    paddingHorizontal: 8,
-    paddingVertical: 6
+    flexShrink: 0,
+    flexWrap: "wrap",
+    gap: 8,
+    minHeight: 70,
+    minWidth: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    width: 168
   },
   heroRadioPillPlaying: {
     backgroundColor: "rgba(24, 66, 74, 0.9)",
     borderColor: colors.accent
+  },
+  heroRadioWave: {
+    alignItems: "center",
+    flexBasis: "100%",
+    flexDirection: "row",
+    gap: 3,
+    height: 20,
+    justifyContent: "flex-end",
+    paddingRight: 3
+  },
+  heroRadioWaveBar: {
+    backgroundColor: "rgba(121, 210, 255, 0.42)",
+    borderRadius: 2,
+    width: 3
+  },
+  heroRadioWaveBarPlaying: {
+    backgroundColor: colors.accent
   },
   heroAction: {
     alignItems: "center",
@@ -1712,7 +1800,7 @@ const styles = StyleSheet.create({
   },
   heroMoodCopy: {
     flex: 1,
-    minWidth: 0
+    minWidth: 118
   },
   heroMoodRow: {
     alignItems: "flex-start",
@@ -2349,16 +2437,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(37, 208, 167, 0.12)",
     borderColor: colors.accent,
-    borderRadius: 22,
+    borderRadius: 29,
     borderWidth: 2,
-    height: 44,
+    height: 58,
     justifyContent: "center",
-    width: 44
+    width: 58
   },
   statusAvatarImage: {
-    borderRadius: 18,
-    height: 36,
-    width: 36
+    borderRadius: 25,
+    height: 50,
+    width: 50
   },
   statusAvatarText: {
     color: colors.accent,
@@ -2371,9 +2459,9 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     gap: 4,
-    minHeight: 64,
+    minHeight: 84,
     padding: 3,
-    width: 62
+    width: 74
   },
   statusCardUnseen: {
     backgroundColor: "rgba(50, 230, 179, 0.065)",
@@ -2469,10 +2557,10 @@ const styles = StyleSheet.create({
     borderColor: logiNexus.colors.home.backgroundDeepSpace,
     borderRadius: 6,
     borderWidth: 2,
-    bottom: 3,
+    bottom: 4,
     height: 12,
     position: "absolute",
-    right: 3,
+    right: 4,
     width: 12
   },
   topActions: {

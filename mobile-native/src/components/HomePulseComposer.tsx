@@ -299,23 +299,56 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
         </View>
       </View>
       {!expanded ? (
-        <Pressable
-          testID="home-composer-expand"
-          accessibilityRole="button"
-          accessibilityLabel={hasDraft ? "Open saved Pulse composer draft" : "Open Pulse composer"}
-          style={({ pressed }) => [styles.collapsedComposer, pressed && styles.pressed]}
-          onPress={() => setExpanded(true)}
-        >
-          <View style={styles.identityOrb}>
-            {identity?.avatarUrl ? <Image source={{ uri: identity.avatarUrl }} style={styles.identityImage} /> : <Text style={styles.identityOrbText}>{avatarLabel}</Text>}
-            <View style={styles.identitySignal} />
+        <View style={styles.collapsedShell}>
+          <Pressable
+            testID="home-composer-expand"
+            accessibilityRole="button"
+            accessibilityLabel={hasDraft ? "Open saved Pulse composer draft" : "Open Pulse composer"}
+            style={({ pressed }) => [styles.collapsedComposer, pressed && styles.pressed]}
+            onPress={() => setExpanded(true)}
+          >
+            <View style={styles.identityOrb}>
+              {identity?.avatarUrl ? <Image source={{ uri: identity.avatarUrl }} style={styles.identityImage} /> : <Text style={styles.identityOrbText}>{avatarLabel}</Text>}
+              <View style={styles.identitySignal} />
+            </View>
+            <View style={styles.collapsedCopy}>
+              <Text style={styles.collapsedPrompt} numberOfLines={1}>{body.trim() || "Transmit to the Pulse Network…"}</Text>
+              <Text style={styles.collapsedMeta}>{hasDraft ? "Saved draft · Tap to continue" : `${visibilityLabel(visibility)} · Tap to create`}</Text>
+            </View>
+            <Text style={styles.collapsedOpen}>＋</Text>
+          </Pressable>
+          <View style={[styles.modeRow, styles.collapsedModeRow]}>
+            {MODES.map((item) => (
+              <Pressable
+                key={item.key}
+                accessibilityLabel={`Open ${item.label} composer`}
+                style={[styles.modeButton, mode === item.key && styles.modeButtonActive]}
+                onPress={() => { selectMode(item.key); setExpanded(true); }}
+              >
+                <Text style={[styles.modeText, mode === item.key && styles.modeTextActive]}>{item.label}</Text>
+              </Pressable>
+            ))}
           </View>
-          <View style={styles.collapsedCopy}>
-            <Text style={styles.collapsedPrompt} numberOfLines={1}>{body.trim() || "Transmit to the Pulse Network…"}</Text>
-            <Text style={styles.collapsedMeta}>{hasDraft ? "Saved draft · Tap to continue" : `${visibilityLabel(visibility)} · Tap to create`}</Text>
+          <View style={[styles.actionGrid, styles.collapsedActionGrid]}>
+            <ComposerAction label="Photo" icon="▧" onPress={() => { setExpanded(true); media.chooseImage().then(() => setNote("Photo selected for PulseSoc upload.")).catch(() => undefined); }} />
+            <ComposerAction label="Video" icon="▶" onPress={() => { setExpanded(true); media.chooseVideo().then(() => setNote("Video selected for PulseSoc upload.")).catch(() => undefined); }} />
+            <ComposerAction label="Music" icon="♪" onPress={onOpenMusic} />
+            <ComposerAction label={feeling || "Feeling"} icon="☺" onPress={() => { cycleFeeling(); setExpanded(true); }} />
+            <ComposerAction label="Camera" icon="◎" onPress={() => onOpenCamera("photo")} />
+            <ComposerAction label="More" icon="…" onPress={() => { setExpanded(true); setShowTools(true); }} />
           </View>
-          <Text style={styles.collapsedOpen}>＋</Text>
-        </Pressable>
+          <View style={[styles.publishRow, styles.collapsedPublishRow]}>
+            <Text style={styles.counter}>{characters.toLocaleString()}/{MAX_BODY.toLocaleString()}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open composer to transmit"
+              style={[styles.publishButton, !hasPublishPayload && styles.publishButtonDisabled]}
+              onPress={() => hasPublishPayload ? handlePublish() : setExpanded(true)}
+            >
+              <Text style={styles.publishText}>⌁ Transmit</Text>
+            </Pressable>
+          </View>
+        </View>
       ) : (
       <>
       <View accessible accessibilityLabel="Transmission Console" style={styles.headerRow}>
@@ -567,6 +600,18 @@ const styles = StyleSheet.create({
     minHeight: 52,
     paddingHorizontal: 9,
     paddingVertical: 7
+  },
+  collapsedShell: {
+    gap: 6
+  },
+  collapsedModeRow: {
+    marginTop: 0
+  },
+  collapsedActionGrid: {
+    marginTop: 0
+  },
+  collapsedPublishRow: {
+    marginTop: 0
   },
   collapsedCopy: {
     flex: 1,
