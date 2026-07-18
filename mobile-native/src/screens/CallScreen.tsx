@@ -46,11 +46,12 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [call, setCall] = useState<PulseCall | null>(null);
   const [activeCalls, setActiveCalls] = useState<PulseCall[]>([]);
   const [events, setEvents] = useState<PulseCallEvent[]>([]);
-  const [loading, setLoading] = useState(Boolean(initialCallId));
+  const [loading, setLoading] = useState(Boolean(initialCallId || (params.conversationId && params.direction === "outgoing")));
   const [actionBusy, setActionBusy] = useState("");
   const [error, setError] = useState("");
   const [speakerEnabled, setSpeakerEnabled] = useState(true);
   const [minimized, setMinimized] = useState(false);
+  const autoStartRequested = useRef(false);
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const room = useNativeCallRoom();
   const insets = useSafeAreaInsets();
@@ -98,6 +99,13 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setActionBusy("");
     }
   }, [callType, params.conversationId, room]);
+
+  useEffect(() => {
+    if (!canStartFromConversation || params.direction !== "outgoing" || autoStartRequested.current) return;
+    autoStartRequested.current = true;
+    setLoading(true);
+    startCall(callType).finally(() => setLoading(false));
+  }, [callType, canStartFromConversation, params.direction, startCall]);
 
   const answer = useCallback(async () => {
     if (!callId) return;
@@ -190,17 +198,19 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
       });
       markRingSeen(callId).catch(() => undefined);
       refresh().catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Call could not load."));
+    } else if (canStartFromConversation && params.direction === "outgoing") {
+      setLoading(true);
     } else {
       loadCachedActiveCalls().then((cached) => {
         if (mounted) setActiveCalls(cached.calls || []);
       });
       refresh().catch(() => undefined);
+      setLoading(false);
     }
-    setLoading(false);
     return () => {
       mounted = false;
     };
-  }, [callId, refresh]);
+  }, [callId, canStartFromConversation, params.direction, refresh]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -242,7 +252,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
 
       {loading ? (
         <LogiNexusStatePanel state="loading" title="Synchronizing call" body="Loading PulseSoc call state, provider readiness, and participant signals." loading />
-      ) : canStartFromConversation ? (
+      ) : canStartFromConversation && params.direction !== "outgoing" ? (
         <PulseCommandPanel style={styles.panel}>
           <View style={styles.panelHeader}>
             <PulseCommandAvatar label="CA" active tone="safety" />

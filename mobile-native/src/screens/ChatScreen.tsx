@@ -658,6 +658,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         </>
       )}
       <PulseCommandPanel style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) + 10 }, keyboardVisible && styles.composerKeyboard, keyboardVisible && { bottom: keyboardHeight }]}>
+        <View pointerEvents="none" style={styles.composerSignalLine} />
         {statusMessage && !keyboardVisible ? (
           <Pressable accessibilityRole="button" accessibilityLabel="Dismiss message status" style={styles.statusBanner} onPress={() => setStatusMessage("")}>
             <Text style={styles.statusBannerText}>{statusMessage}</Text>
@@ -1214,12 +1215,29 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   },
   composer: {
-    backgroundColor: "rgba(3,13,25,0.98)",
-    borderColor: "rgba(97,216,255,0.28)",
-    gap: 8,
+    backgroundColor: "rgba(2,10,20,0.98)",
+    borderColor: "rgba(65,236,198,0.48)",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    gap: 10,
     marginHorizontal: 0,
     marginTop: 0,
-    padding: 10
+    overflow: "hidden",
+    padding: 12,
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 24
+  },
+  composerSignalLine: {
+    backgroundColor: "rgba(65,236,198,0.78)",
+    borderRadius: 2,
+    height: 2,
+    left: 18,
+    position: "absolute",
+    right: 18,
+    top: 0
   },
   composerKeyboard: {
     left: 0,
@@ -1295,59 +1313,67 @@ const styles = StyleSheet.create({
   inputRow: {
     alignItems: "flex-end",
     flexDirection: "row",
-    gap: 8
+    gap: 9,
+    minHeight: 58
   },
   attachmentButton: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.045)",
-    borderColor: colors.border,
+    backgroundColor: "rgba(65,236,198,0.1)",
+    borderColor: "rgba(65,236,198,0.22)",
     borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 46,
+    borderWidth: 1,
+    height: 54,
     justifyContent: "center",
-    minWidth: 48,
-    width: 48
+    minWidth: 54,
+    width: 54
   },
   attachmentButtonText: {
-    color: colors.text,
-    fontSize: 24,
-    fontWeight: "700"
+    color: colors.accent,
+    fontSize: 30,
+    fontWeight: "700",
+    marginTop: -2
   },
   input: {
-    backgroundColor: "rgba(3, 7, 18, 0.72)",
-    borderColor: colors.accentStrong,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: "rgba(2,9,19,0.92)",
+    borderColor: "rgba(97,216,255,0.5)",
+    borderRadius: 28,
+    borderWidth: 1,
     color: colors.text,
     flex: 1,
     maxHeight: 118,
-    minHeight: 48,
-    paddingHorizontal: 12,
-    paddingVertical: 10
+    minHeight: 54,
+    paddingHorizontal: 17,
+    paddingVertical: 13
   },
   sendButton: {
     alignItems: "center",
-    backgroundColor: colors.accent,
+    backgroundColor: "rgba(65,236,198,0.96)",
     borderRadius: 999,
-    minHeight: 50,
-    minWidth: 50,
+    minHeight: 56,
+    minWidth: 56,
     justifyContent: "center",
-    paddingHorizontal: 14
+    paddingHorizontal: 14,
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.34,
+    shadowRadius: 14
   },
   pressed: {
     opacity: 0.82
   },
   sendDisabled: {
-    backgroundColor: colors.disabled,
-    opacity: 0.72
+    backgroundColor: "rgba(146,161,181,0.2)",
+    borderColor: "rgba(146,161,181,0.18)",
+    borderWidth: 1,
+    opacity: 0.82
   },
   sendText: {
     color: "#08110f",
     fontSize: 20,
     fontWeight: "900"
   },
-  composerCircleButton: { alignItems: "center", backgroundColor: "rgba(255,255,255,0.04)", borderColor: colors.border, borderRadius: 24, borderWidth: 1, height: 46, justifyContent: "center", width: 42 },
-  composerCircleText: { color: colors.text, fontSize: 17, fontWeight: "800" },
+  composerCircleButton: { alignItems: "center", backgroundColor: "rgba(255,255,255,0.045)", borderColor: "rgba(97,216,255,0.26)", borderRadius: 999, borderWidth: 1, height: 54, justifyContent: "center", width: 54 },
+  composerCircleText: { color: colors.text, fontSize: 19, fontWeight: "800" },
   senderLabel: {
     color: colors.accentStrong,
     fontSize: 11,
