@@ -112,11 +112,22 @@ def main() -> int:
     messenger_api = (ROOT / "mobile-native/src/api/messenger.ts").read_text(encoding="utf-8")
     new_chat = (ROOT / "mobile-native/src/screens/NewChatScreen.tsx").read_text(encoding="utf-8")
     inbox = (ROOT / "mobile-native/src/screens/MessengerScreen.tsx").read_text(encoding="utf-8")
-    for token in ("/api/pulse/users/search", "/api/pulse/messages/direct/open", "directConversationRequests", "upsertCachedConversation"):
+    for token in (
+        'const MESSENGER_API = "/api/pulse/communications/v2"',
+        "${MESSENGER_API}/people/search",
+        "${MESSENGER_API}/direct/open",
+        "directConversationRequests",
+        "upsertCachedConversation",
+        "subscribeConversationUpdates",
+        "updateCachedConversationPreview",
+    ):
         require(token in messenger_api, f"native API wiring includes {token}")
-    for token in ("new-chat-search-input", "No people found", "requestReauthentication", "Message ${item.display_name}"):
+    for token in ("new-chat-search-input", "No people found", "requestReauthentication", "Message ${item.display_name}", "searchSequence", "Clear people search"):
         require(token in new_chat, f"New Chat state includes {token}")
-    require(inbox.count('navigation.navigate("NewChat")') == 2, "both visible New Chat entries share one route")
+    require(inbox.count('navigation.navigate("NewChat"') == 1, "one shared New Chat navigation coordinator")
+    require(inbox.count("onPress={() => openNewChat()}") == 2, "both visible New Chat entries use the shared coordinator")
+    for token in ("Sign in to open Messenger", "Messenger could not load", "Showing cached conversations", "searchUsers", "subscribeConversationUpdates"):
+        require(token in inbox, f"inbox recovery state includes {token}")
 
     print("PulseSoc native Messenger New Chat audit passed.")
     return 0

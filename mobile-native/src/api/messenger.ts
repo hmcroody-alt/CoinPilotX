@@ -2,9 +2,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "./config";
 import { pulseApi } from "./pulseApi";
 
-const CONVERSATION_CACHE_KEY = "pulsesoc.native.messenger.conversations";
-const messageCacheKey = (conversationId: number) => `pulsesoc.native.messenger.messages.${conversationId}`;
-const OUTBOUND_QUEUE_KEY = "pulsesoc.native.messenger.outbound_queue";
+const CONVERSATION_CACHE_KEY = "pulsesoc.native.messenger.v2.conversations";
+const messageCacheKey = (conversationId: number) => `pulsesoc.native.messenger.v2.messages.${conversationId}`;
+const OUTBOUND_QUEUE_KEY = "pulsesoc.native.messenger.v2.outbound_queue";
+const MESSENGER_API = "/api/pulse/communications/v2";
+const conversationListeners = new Set<(conversation: MessengerConversation) => void>();
 
 export type MessengerConversation = {
   id: number;
@@ -109,6 +111,7 @@ export type ConversationResponse = {
   messages?: MessengerMessage[];
   items?: MessengerMessage[];
   presence?: MessengerPresence;
+  typing?: Array<{ user_id?: number; is_typing?: boolean; display_name?: string }>;
   last_message_id?: number;
   poll_interval_ms?: number;
   sync_interval_ms?: number;
@@ -125,11 +128,14 @@ export type SendMessagePayload = {
   local_created_at?: string;
   reply_to_message_id?: number;
   reply_preview?: string;
+  media_ids?: number[];
 };
 
 export type MediaUploadResult = {
   ok: boolean;
+  media_id?: number;
   media_url?: string;
+  playback_url?: string;
   thumbnail_url?: string;
   message_type?: string;
   type?: string;
@@ -138,7 +144,7 @@ export type MediaUploadResult = {
 };
 
 export async function listConversations() {
-  const data = await pulseApi<ConversationListResponse>("/api/pulse/messages/conversations");
+  const data = await pulseApi<ConversationListResponse>(`${MESSENGER_API}/conversations`);
   const conversations = withQaConversations(normalizeConversations(data.conversations || data.items || []));
   await cacheConversations(conversations);
   return conversations;
@@ -164,17 +170,20 @@ export async function getConversation(conversationId: number, params: { limit?: 
   if (params.limit) query.set("limit", String(params.limit));
   if (params.beforeId) query.set("before_id", String(params.beforeId));
   const suffix = query.toString() ? `?${query.toString()}` : "";
-  const data = await pulseApi<ConversationResponse>(`/api/pulse/messages/${conversationId}/messages${suffix}`);
+  const data = await pulseApi<ConversationResponse>(`${MESSENGER_API}/conversations/${conversationId}/messages${suffix}`);
   const messages = withQaMessages(conversationId, normalizeMessages(data.messages || data.items || [], conversationId));
   if (!params.beforeId) await cacheMessages(conversationId, messages);
   return { ...data, messages };
 }
 
 export async function syncConversation(conversationId: number, afterId = 0) {
-  const data = await pulseApi<ConversationResponse>(`/api/pulse/messages/${conversationId}/sync?after_id=${afterId}&limit=80`);
+  const data = await pulseApi<ConversationResponse>(`${MESSENGER_API}/conversations/${conversationId}/messages?limit=80`);
+  const messages = normalizeMessages(data.messages || data.items || [], conversationId)
+    .filter((message) => message.id > afterId);
   return {
     ...data,
-    messages: withQaMessages(conversationId, normalizeMessages(data.messages || [], conversationId))
+    presence: data.presence || { typing: data.typing || [] },
+    messages: withQaMessages(conversationId, messages)
   };
 }
 
@@ -195,7 +204,7 @@ export async function cacheMessages(conversationId: number, messages: MessengerM
 }
 
 export async function sendConversationMessage(conversationId: number, payload: SendMessagePayload) {
-  return pulseApi<{ ok: boolean; message?: string; data?: MessengerMessage; message_id?: number }>(`/api/pulse/messages/${conversationId}/send`, {
+  const result = await pulseApi<{ ok: boolean; message?: MessengerMessage | string; data?: MessengerMessage; message_id?: number }>(`${MESSENGER_API}/conversations/${conversationId}/messages`, {
     method: "POST",
     body: JSON.stringify({
       body: payload.body || "",
@@ -210,9 +219,16 @@ export async function sendConversationMessage(conversationId: number, payload: S
       client_message_id: payload.client_message_id || "",
       local_created_at: payload.local_created_at || "",
       reply_to_message_id: payload.reply_to_message_id || 0,
-      reply_preview: payload.reply_preview || ""
+      reply_preview: payload.reply_preview || "",
+      media_ids: payload.media_ids || []
     })
   });
+  const serverMessage = typeof result.message === "object"
+    ? normalizeMessages([result.message], conversationId)[0]
+    : result.data
+      ? normalizeMessages([result.data], conversationId)[0]
+      : undefined;
+  return { ...result, data: serverMessage };
 }
 
 export async function enqueueMessengerMessage(conversationId: number, payload: SendMessagePayload) {
@@ -246,65 +262,74 @@ async function readOutboundQueue(): Promise<Array<{ conversationId: number; payl
 }
 
 export async function reactToMessage(messageId: number, reactionType = "pulse") {
-  return pulseApi<{ ok?: boolean; removed?: boolean; reaction_type?: string; reactions?: Record<string, number> }>(
-    `/api/pulse/messages/${messageId}/react`,
+  const result = await pulseApi<{ ok?: boolean; message?: MessengerMessage }>(
+    `${MESSENGER_API}/messages/${messageId}/reactions`,
     {
       method: "POST",
-      body: JSON.stringify({ reaction_type: reactionType })
+      body: JSON.stringify({ reaction: reactionType, reaction_type: reactionType })
     }
   );
+  const message = result.message ? normalizeMessages([result.message], 0)[0] : undefined;
+  return {
+    ...result,
+    removed: !message?.viewer_reaction,
+    reaction_type: message?.viewer_reaction || "",
+    reactions: message?.reactions
+  };
 }
 
 export async function deleteMessage(messageId: number, scope: "self" | "everyone" = "self") {
-  return pulseApi<{ ok?: boolean; deleted?: boolean; message?: string }>(`/api/pulse/messages/${messageId}/delete`, {
-    method: "POST",
-    body: JSON.stringify({ scope })
+  return pulseApi<{ ok?: boolean; deleted?: boolean; message?: string }>(`${MESSENGER_API}/messages/${messageId}`, {
+    method: "DELETE",
+    body: JSON.stringify({ delete_for: scope })
   });
 }
 
 export async function reportMessage(messageId: number, reason = "Needs review") {
-  return pulseApi<{ ok?: boolean; report_id?: number; message?: string }>(`/api/pulse/messages/${messageId}/report`, {
+  return pulseApi<{ ok?: boolean; report_id?: number; message?: string }>(`${MESSENGER_API}/messages/${messageId}/report`, {
     method: "POST",
     body: JSON.stringify({ reason })
   });
 }
 
 export async function pinConversation(conversationId: number, pinned = true) {
-  return pulseApi<{ ok?: boolean; pinned?: boolean; message?: string }>(`/api/pulse/messages/${conversationId}/pin`, {
+  return pulseApi<{ ok?: boolean; pinned?: boolean; message?: string }>(`${MESSENGER_API}/conversations/${conversationId}/pin`, {
     method: "POST",
     body: JSON.stringify({ pinned })
   });
 }
 
 export async function markConversationSeen(conversationId: number) {
-  return pulseApi<{ ok: boolean; last_read_message_id?: number }>(`/api/pulse/messages/${conversationId}/seen`, { method: "POST" });
+  return pulseApi<{ ok: boolean; last_read_message_id?: number }>(`${MESSENGER_API}/conversations/${conversationId}/read`, { method: "POST" });
 }
 
 export async function sendTyping(conversationId: number, typing: boolean) {
-  return pulseApi<{ ok: boolean; typing: boolean }>(`/api/pulse/messages/${conversationId}/typing`, {
+  return pulseApi<{ ok: boolean; typing?: boolean; is_typing?: boolean }>(`${MESSENGER_API}/conversations/${conversationId}/typing`, {
     method: "POST",
     body: JSON.stringify({ typing, is_typing: typing })
   });
 }
 
 export async function searchMessenger(query: string) {
-  const data = await pulseApi<{ ok: boolean; conversations?: MessengerConversation[]; messages?: MessengerMessage[]; users?: Array<Record<string, unknown>> }>(
-    `/api/pulse/messages/search?q=${encodeURIComponent(query)}`
-  );
+  const encoded = encodeURIComponent(query);
+  const [messageData, peopleData] = await Promise.all([
+    pulseApi<{ ok: boolean; messages?: MessengerMessage[]; items?: MessengerMessage[] }>(`${MESSENGER_API}/search?q=${encoded}`),
+    pulseApi<{ ok: boolean; people?: MessengerUserSearchResult[]; items?: MessengerUserSearchResult[] }>(`${MESSENGER_API}/people/search?q=${encoded}`)
+  ]);
   return {
-    conversations: normalizeConversations(data.conversations || []),
-    messages: normalizeMessages(data.messages || [], 0),
-    users: data.users || []
+    conversations: [],
+    messages: normalizeMessages(messageData.messages || messageData.items || [], 0),
+    users: (peopleData.people || peopleData.items || []).map(normalizeMessengerUser).filter((item) => item.user_id > 0 && !item.is_self)
   };
 }
 
 export async function searchMessengerUsers(query: string) {
   const clean = query.trim();
   if (!clean) return [];
-  const data = await pulseApi<{ ok: boolean; users?: MessengerUserSearchResult[] }>(
-    `/api/pulse/users/search?q=${encodeURIComponent(clean)}`
+  const data = await pulseApi<{ ok: boolean; people?: MessengerUserSearchResult[]; items?: MessengerUserSearchResult[] }>(
+    `${MESSENGER_API}/people/search?q=${encodeURIComponent(clean)}`
   );
-  return (data.users || []).map(normalizeMessengerUser).filter((item) => item.user_id > 0 && !item.is_self);
+  return (data.people || data.items || []).map(normalizeMessengerUser).filter((item) => item.user_id > 0 && !item.is_self);
 }
 
 const directConversationRequests = new Map<number, Promise<DirectConversationResult>>();
@@ -315,7 +340,7 @@ export async function openDirectConversation(target: MessengerUserSearchResult) 
   const active = directConversationRequests.get(targetUserId);
   if (active) return active;
 
-  const request = pulseApi<DirectConversationResult>("/api/pulse/messages/direct/open", {
+  const request = pulseApi<DirectConversationResult>(`${MESSENGER_API}/direct/open`, {
     method: "POST",
     body: JSON.stringify({ target_user_id: targetUserId })
   }).then(async (result) => {
@@ -345,6 +370,29 @@ export async function upsertCachedConversation(conversation: MessengerConversati
   if (!normalized) return;
   const cached = await loadCachedConversations();
   await cacheConversations([normalized, ...cached.filter((item) => item.id !== normalized.id)]);
+  conversationListeners.forEach((listener) => listener(normalized));
+}
+
+export function subscribeConversationUpdates(listener: (conversation: MessengerConversation) => void) {
+  conversationListeners.add(listener);
+  return () => {
+    conversationListeners.delete(listener);
+  };
+}
+
+export async function updateCachedConversationPreview(conversationId: number, preview: string, timestamp = new Date().toISOString()) {
+  const cached = await loadCachedConversations();
+  const existing = cached.find((item) => item.id === conversationId);
+  if (!existing) return;
+  await upsertCachedConversation({
+    ...existing,
+    latest_message: preview,
+    last_message_preview: preview,
+    last_activity_at: timestamp,
+    updated_at: timestamp,
+    failed: false,
+    delivery_status: "sent"
+  });
 }
 
 export async function uploadMessengerMedia(input: {
@@ -357,28 +405,67 @@ export async function uploadMessengerMedia(input: {
 }) {
   const form = new FormData();
   form.append("conversation_id", String(input.conversationId));
-  if (input.voice) form.append("voice", "true");
+  if (input.voice) {
+    form.append("voice", "true");
+    form.append("attachment_kind", "voice");
+  }
   if (input.durationSeconds) form.append("duration_seconds", String(input.durationSeconds));
   form.append("file", {
     uri: input.uri,
     name: input.name,
     type: input.mimeType
   } as unknown as Blob);
-  return pulseApi<MediaUploadResult>("/api/pulse/messages/media/upload", {
+  const result = await pulseApi<MediaUploadResult>(`${MESSENGER_API}/attachments/upload`, {
     method: "POST",
     body: form
   });
+  const media = result.media || {};
+  const mediaId = Number(media.id || media.media_id || result.media_id || 0);
+  const mediaUrl = String(
+    result.media_url ||
+    result.playback_url ||
+    media.media_url ||
+    media.url ||
+    media.valid_url ||
+    media.playback_url ||
+    ""
+  );
+  return {
+    ...result,
+    media_id: mediaId,
+    media_url: mediaUrl,
+    playback_url: String(result.playback_url || media.playback_url || ""),
+    thumbnail_url: String(result.thumbnail_url || media.thumbnail_url || media.poster_url || ""),
+    message_type: String(result.message_type || result.type || media.media_type || (input.voice ? "voice" : "file")),
+    file_size: Number(result.file_size || media.file_size || media.file_size_bytes || 0)
+  };
 }
 
 export function normalizeConversations(items: MessengerConversation[]) {
-  return items
+  const normalized = items
     .map((item) => {
       const id = Number(item.conversation_id || item.id || 0);
+      const raw = item as MessengerConversation & {
+        display_name?: unknown;
+        last_message?: unknown;
+        presence?: unknown;
+        type?: unknown;
+      };
       return {
         ...item,
         id,
         conversation_id: id,
-        title: item.title || item.name || `Conversation ${id}`,
+        title: safeText(item.title) || safeText(item.name) || safeText(raw.display_name) || `Conversation ${id}`,
+        name: safeText(item.name),
+        conversation_type: safeText(item.conversation_type) || safeText(raw.type) || "direct",
+        latest_message: messageText(item.latest_message || raw.last_message),
+        last_message_preview: messageText(item.last_message_preview),
+        last_activity_at: safeText(item.last_activity_at),
+        updated_at: safeText(item.updated_at),
+        avatar_url: safeText(item.avatar_url),
+        presence: normalizePresence(raw.presence),
+        trust_state: safeText(item.trust_state),
+        delivery_status: safeText(item.delivery_status),
         unread_count: Number(item.unread_count || 0),
         pinned: Boolean(item.pinned),
         muted: Boolean(item.muted),
@@ -388,6 +475,12 @@ export function normalizeConversations(items: MessengerConversation[]) {
       };
     })
     .filter((item) => item.id > 0);
+  const byId = new Map<number, MessengerConversation>();
+  normalized.forEach((item) => {
+    const current = byId.get(item.id);
+    if (!current || conversationSortTime(item) >= conversationSortTime(current)) byId.set(item.id, item);
+  });
+  return Array.from(byId.values()).sort((a, b) => conversationSortTime(b) - conversationSortTime(a));
 }
 
 function normalizeMessengerUser(item: MessengerUserSearchResult): MessengerUserSearchResult {
@@ -414,24 +507,78 @@ export function normalizeMessages(items: MessengerMessage[], fallbackConversatio
         id,
         message_id: id,
         conversation_id: Number(item.conversation_id || fallbackConversationId || 0),
-        body: item.body || item.content || item.text || "",
-        message_type: item.message_type || item.type || "text",
-        delivery_status: item.delivery_status || item.status || item.local_status || "sent",
+        body: messageText(item.body || item.content || item.text),
+        message_type: safeText(item.message_type) || safeText(item.type) || "text",
+        delivery_status: safeText(item.delivery_status) || safeText(item.status) || safeText(item.local_status) || "sent",
         file_size: Number(item.file_size || 0),
         duration_seconds: Number(item.duration_seconds || item.duration || 0),
-        reactions: normalizeReactionCounts(item.reactions || {}),
+        reactions: normalizeReactionCounts(item.reactions),
+        viewer_reaction: safeText(item.viewer_reaction) || safeText((item as MessengerMessage & { my_reaction?: string }).my_reaction),
+        media_url: safeText(item.media_url) || attachmentValue(item, "url") || attachmentValue(item, "cdn_url") || attachmentValue(item, "playback_url"),
+        thumbnail_url: safeText(item.thumbnail_url) || attachmentValue(item, "thumbnail_url"),
+        reply_preview: messageText(item.reply_preview),
+        sender_display_name: safeText(item.sender_display_name),
+        sender_trust_state: safeText(item.sender_trust_state),
+        created_at: safeText(item.created_at),
+        edited_at: safeText(item.edited_at),
+        deleted_at: safeText(item.deleted_at),
+        moderated_at: safeText(item.moderated_at),
+        moderation_state: safeText(item.moderation_state),
         reply_to_message_id: Number(item.reply_to_message_id || 0) || undefined
       };
     })
     .filter((item) => item.id > 0);
 }
 
-function normalizeReactionCounts(input: Record<string, number>) {
-  return Object.entries(input || {}).reduce<Record<string, number>>((next, [key, value]) => {
+function safeText(value: unknown) {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return "";
+}
+
+function messageText(value: unknown) {
+  const direct = safeText(value);
+  if (direct) return direct;
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  return safeText(record.body) || safeText(record.content) || safeText(record.text) || safeText(record.preview) || "";
+}
+
+function normalizePresence(value: unknown) {
+  const direct = safeText(value).toLowerCase();
+  if (direct) return direct;
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  return (safeText(record.status) || safeText(record.presence) || safeText(record.state)).toLowerCase();
+}
+
+function conversationSortTime(item: Pick<MessengerConversation, "last_activity_at" | "updated_at">) {
+  const value = Date.parse(item.last_activity_at || item.updated_at || "");
+  return Number.isFinite(value) ? value : 0;
+}
+
+function normalizeReactionCounts(input: unknown) {
+  if (Array.isArray(input)) {
+    return input.reduce<Record<string, number>>((next, item) => {
+      if (!item || typeof item !== "object") return next;
+      const reaction = item as { reaction_type?: string; count?: number };
+      const key = String(reaction.reaction_type || "");
+      const count = Number(reaction.count || 0);
+      if (key && count > 0) next[key] = count;
+      return next;
+    }, {});
+  }
+  return Object.entries((input || {}) as Record<string, number>).reduce<Record<string, number>>((next, [key, value]) => {
     const count = Number(value || 0);
     if (count > 0) next[key] = count;
     return next;
   }, {});
+}
+
+function attachmentValue(item: MessengerMessage, key: string) {
+  const attachments = (item as MessengerMessage & { attachments?: Array<Record<string, unknown>> }).attachments;
+  if (!Array.isArray(attachments) || !attachments[0]) return "";
+  return String(attachments[0][key] || "");
 }
 
 function withQaConversations(conversations: MessengerConversation[]) {

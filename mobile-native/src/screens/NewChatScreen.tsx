@@ -29,11 +29,13 @@ export function NewChatScreen({ route, navigation }: Props) {
   const [openingUserId, setOpeningUserId] = useState(0);
   const [error, setError] = useState("");
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchSequence = useRef(0);
 
   useEffect(() => {
     const clean = query.trim();
     if (debounce.current) clearTimeout(debounce.current);
     if (!clean) {
+      searchSequence.current += 1;
       setResults([]);
       setError("");
       setLoading(false);
@@ -48,15 +50,19 @@ export function NewChatScreen({ route, navigation }: Props) {
   async function runSearch(value = query.trim()) {
     const clean = value.trim();
     if (!clean) return;
+    const sequence = ++searchSequence.current;
     setLoading(true);
     setError("");
     try {
-      setResults(await searchMessengerUsers(clean));
+      const next = await searchMessengerUsers(clean);
+      if (sequence !== searchSequence.current) return;
+      setResults(next);
     } catch (searchError) {
+      if (sequence !== searchSequence.current) return;
       setResults([]);
       setError(messageForError(searchError, "People search could not load."));
     } finally {
-      setLoading(false);
+      if (sequence === searchSequence.current) setLoading(false);
     }
   }
 
@@ -102,20 +108,23 @@ export function NewChatScreen({ route, navigation }: Props) {
             <Text style={styles.title}>Start a conversation</Text>
             <Text style={styles.subtitle}>Search the real PulseSoc network. Existing direct chats reopen automatically.</Text>
           </View>
-          <TextInput
-            testID="new-chat-search-input"
-            accessibilityLabel="Search PulseSoc people"
-            autoFocus
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-            value={query}
-            onChangeText={setQuery}
-            onSubmitEditing={() => runSearch()}
-            placeholder="Name, username, or Pulse ID"
-            placeholderTextColor={colors.muted}
-            style={styles.searchInput}
-          />
+          <View style={styles.searchShell}>
+            <TextInput
+              testID="new-chat-search-input"
+              accessibilityLabel="Search PulseSoc people"
+              autoFocus
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              value={query}
+              onChangeText={setQuery}
+              onSubmitEditing={() => runSearch()}
+              placeholder="Name, username, or Pulse ID"
+              placeholderTextColor={colors.muted}
+              style={styles.searchInput}
+            />
+            {query ? <Pressable accessibilityRole="button" accessibilityLabel="Clear people search" onPress={() => setQuery("")} style={styles.clearButton}><Text style={styles.clearText}>Clear</Text></Pressable> : null}
+          </View>
           {error ? (
             <View accessibilityLiveRegion="polite" style={styles.errorPanel}>
               <Text style={styles.errorText}>{error}</Text>
@@ -187,7 +196,10 @@ const styles = StyleSheet.create({
   eyebrow: { color: colors.accent, fontSize: 11, fontWeight: "900", letterSpacing: 1.1, textTransform: "uppercase" },
   title: { color: colors.text, fontSize: 25, fontWeight: "900" },
   subtitle: { color: colors.muted, fontSize: 13, lineHeight: 19 },
-  searchInput: { backgroundColor: colors.surfaceRaised, borderColor: colors.accentStrong, borderRadius: 14, borderWidth: 1, color: colors.text, fontSize: 16, minHeight: 52, paddingHorizontal: 15 },
+  searchShell: { alignItems: "center", backgroundColor: colors.surfaceRaised, borderColor: colors.accentStrong, borderRadius: 14, borderWidth: 1, flexDirection: "row", minHeight: 52 },
+  searchInput: { color: colors.text, flex: 1, fontSize: 16, minHeight: 50, paddingHorizontal: 15 },
+  clearButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: 13 },
+  clearText: { color: colors.accent, fontSize: 12, fontWeight: "900" },
   results: { flexGrow: 1, gap: 8, paddingBottom: 30 },
   loading: { alignItems: "center", flexDirection: "row", gap: 9, paddingVertical: 12 },
   loadingText: { color: colors.muted, fontSize: 13, fontWeight: "700" },

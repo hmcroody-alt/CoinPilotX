@@ -2,11 +2,22 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
-import { loadCachedConversations, listConversations, MessengerConversation, searchMessenger } from "../api/messenger";
-import { PulseCommandAction, PulseCommandAvatar, PulseCommandPanel, PulseCommandSearch, PulseCommandSegmentRail } from "../components/PulseCommand";
+import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  loadCachedConversations,
+  listConversations,
+  MessengerConversation,
+  MessengerUserSearchResult,
+  openDirectConversation,
+  searchMessenger,
+  subscribeConversationUpdates
+} from "../api/messenger";
+import { PulseApiError } from "../api/pulseApi";
+import { PulseCommandAction, PulseCommandAvatar, PulseCommandOrb, PulseCommandPanel, PulseCommandSearch, PulseCommandSegmentRail } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
+import { useAuth } from "../session/auth";
 import {
   conversationAccessibilityLabel,
   conversationDisplayTitle,
@@ -24,7 +35,11 @@ const LAST_CONVERSATION_KEY = "pulsesoc.native.messenger.last_conversation";
 
 export function MessengerScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
+  const { authState, requestReauthentication } = useAuth();
   const [conversations, setConversations] = useState<MessengerConversation[]>([]);
+  const [searchUsers, setSearchUsers] = useState<MessengerUserSearchResult[]>([]);
+  const [openingUserId, setOpeningUserId] = useState(0);
   const qaFilter = String(process.env.EXPO_PUBLIC_PULSESOC_QA_MESSENGER_FILTER || "").toLowerCase();
   const validQaFilter = ["all", "direct", "groups", "rooms", "ai", "unread"].includes(qaFilter)
     ? qaFilter as ConversationFilter
@@ -34,6 +49,10 @@ export function MessengerScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+
+  const openNewChat = useCallback((initialQuery = "") => {
+    navigation.navigate("NewChat", initialQuery ? { initialQuery } : undefined);
+  }, [navigation]);
 
   async function openConversationControlCenter() {
     const savedId = Number(await AsyncStorage.getItem(LAST_CONVERSATION_KEY));
@@ -50,9 +69,19 @@ export function MessengerScreen() {
     else setLoading(true);
     setError("");
     try {
-      const data = query.trim() ? (await searchMessenger(query.trim())).conversations : await listConversations();
-      setConversations(data);
+      if (query.trim()) {
+        const data = await searchMessenger(query.trim());
+        setConversations(data.conversations);
+        setSearchUsers(data.users);
+      } else {
+        setConversations(await listConversations());
+        setSearchUsers([]);
+      }
     } catch (loadError) {
+      setSearchUsers([]);
+      if (loadError instanceof PulseApiError && loadError.status === 401) {
+        requestReauthentication("/pulse/messages");
+      }
       const cached = await loadCachedConversations();
       setConversations(cached);
       setError(loadError instanceof Error ? loadError.message : "Messenger could not load.");
@@ -67,6 +96,9 @@ export function MessengerScreen() {
       if (["all", "direct", "groups", "rooms", "ai", "unread"].includes(value || "")) setSelectedFilter(value as ConversationFilter);
     }).catch(() => undefined);
     loadCachedConversations().then((cached) => cached.length && setConversations(cached));
+    return subscribeConversationUpdates((conversation) => {
+      setConversations((current) => [conversation, ...current.filter((item) => item.id !== conversation.id)]);
+    });
   }, []);
 
   useFocusEffect(useCallback(() => {
@@ -88,6 +120,10 @@ export function MessengerScreen() {
     () => conversations.filter((item) => conversationMatchesFilter(item, selectedFilter)),
     [conversations, selectedFilter]
   );
+  const activeConversations = useMemo(
+    () => conversations.filter((item) => isActivePresence(item.presence) || item.typing).slice(0, 8),
+    [conversations]
+  );
   const filters = useMemo(
     () => [
       { key: "all", label: "All" },
@@ -100,6 +136,32 @@ export function MessengerScreen() {
     [unreadTotal]
   );
 
+  async function openSearchUser(user: MessengerUserSearchResult) {
+    if (openingUserId) return;
+    setOpeningUserId(user.user_id);
+    setError("");
+    try {
+      const result = await openDirectConversation(user);
+      navigation.navigate("Chat", { conversationId: result.conversation_id, title: user.display_name, avatarUrl: user.avatar_url });
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : "This conversation could not be opened.");
+    } finally {
+      setOpeningUserId(0);
+    }
+  }
+
+  if (authState.status !== "signedIn") {
+    return (
+      <LogiNexusScreenShell>
+        <View style={styles.permissionPage}>
+          <LogiNexusStatePanel state="permission" title="Sign in to open Messenger" body="Pulse Command uses your existing PulseSoc identity and conversations.">
+            <Pressable accessibilityRole="button" style={styles.retryButton} onPress={() => requestReauthentication("/pulse/messages")}><Text style={styles.retryText}>Sign in</Text></Pressable>
+          </LogiNexusStatePanel>
+        </View>
+      </LogiNexusScreenShell>
+    );
+  }
+
   return (
     <LogiNexusScreenShell>
       {loading && conversations.length === 0 ? (
@@ -108,35 +170,66 @@ export function MessengerScreen() {
         <FlatList
           data={filteredConversations}
           keyExtractor={(item) => `chat-${item.id}`}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingTop: Math.max(insets.top, 12) }]}
           refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load({ refresh: true })} />}
           ListHeaderComponent={
             <View style={styles.headerStack}>
               <View style={styles.productionHeader}>
                 <View style={styles.headerCopy}>
-                  <Text style={styles.commandTitle}>Pulse Command</Text>
-                  <Text style={styles.commandVersion}>Messenger V3</Text>
+                  <View style={styles.brandLockup}>
+                    <PulseCommandOrb size={54} warning={Boolean(error)} />
+                    <View>
+                      <Text style={styles.commandTitle}>Pulse Command</Text>
+                      <Text style={styles.commandVersion}>Messenger V3</Text>
+                    </View>
+                  </View>
                 </View>
-                <View style={[styles.connectionDot, error && styles.connectionDotWarning]} accessibilityLabel={error ? "Messenger reconnecting" : "Messenger connected"} />
-                <PulseCommandAction compact label="New chat" onPress={() => navigation.navigate("NewChat")} />
+                <PulseCommandAction compact label="＋" onPress={() => openNewChat()} />
               </View>
               <View style={styles.searchRow}>
                 <View style={styles.searchField}><PulseCommandSearch value={query} onChangeText={setQuery} placeholder="Search people, rooms, messages..." /></View>
                 <Pressable accessibilityRole="button" accessibilityLabel="Open Conversation Control Center" style={styles.gearButton} onPress={() => openConversationControlCenter().catch(() => setError("Conversation settings could not open."))}><Text style={styles.gearButtonText}>⚙</Text></Pressable>
               </View>
               <PulseCommandSegmentRail items={filters} selected={selectedFilter} onSelect={(key) => setSelectedFilter(key as ConversationFilter)} />
+              {activeConversations.length ? (
+                <ScrollView horizontal contentContainerStyle={styles.presenceRail} showsHorizontalScrollIndicator={false} accessibilityLabel="Active PulseSoc conversations">
+                  {activeConversations.map((item) => {
+                    const title = conversationDisplayTitle(item);
+                    return (
+                      <Pressable key={`active-${item.id}`} accessibilityRole="button" accessibilityLabel={`Open ${title}, active now`} style={styles.presenceItem} onPress={() => navigation.navigate("Chat", { conversationId: item.id, title, avatarUrl: item.avatar_url, presence: item.presence })}>
+                        <PulseCommandAvatar label={title} imageUrl={item.avatar_url} active size={54} tone={item.trust_state === "founder" ? "intelligence" : "default"} />
+                        <Text style={styles.presenceName} numberOfLines={1}>{title}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              ) : null}
               <PulseCommandPanel style={styles.quickActions}>
-                <QuickAction title="New Chat" subtitle="Direct message" onPress={() => navigation.navigate("NewChat")} />
-                <QuickAction title="Create Group" subtitle="Invite members" onPress={() => navigation.navigate("Tabs", { screen: "Groups" })} />
-                <QuickAction title="Start Room" subtitle="Public or private" onPress={() => navigation.navigate("Tabs", { screen: "Groups" })} />
+                <QuickAction icon="＋" title="New Chat" subtitle="Direct message" primary onPress={() => openNewChat()} />
+                <QuickAction icon="◎" title="Create Group" subtitle="Invite members" onPress={() => navigation.navigate("Tabs", { screen: "Groups" })} />
+                <QuickAction icon="◉" title="Start Room" subtitle="Public or private" onPress={() => navigation.navigate("Tabs", { screen: "Groups" })} />
               </PulseCommandPanel>
-              {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>Showing cached conversations while Messenger reconnects.</Text> : null}
+              {query.trim() && searchUsers.length ? (
+                <View style={styles.peopleResults}>
+                  <Text style={styles.sectionLabel}>People</Text>
+                  {searchUsers.map((user) => (
+                    <Pressable key={`people-${user.user_id}`} accessibilityRole="button" accessibilityLabel={`Message ${user.display_name}`} disabled={openingUserId > 0} onPress={() => openSearchUser(user)} style={({ pressed }) => [styles.personRow, pressed && styles.rowPressed]}>
+                      <PulseCommandAvatar label={user.display_name} imageUrl={user.avatar_url} active={false} />
+                      <View style={styles.personCopy}><Text style={styles.title} numberOfLines={1}>{user.display_name}</Text><Text style={styles.muted} numberOfLines={1}>{user.public_pulse_id || "PulseSoc member"}</Text></View>
+                      <Text style={styles.personAction}>{openingUserId === user.user_id ? "Opening…" : "Message"}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+              {error && conversations.length ? <Text accessibilityLiveRegion="polite" style={styles.error}>Showing cached conversations while Messenger reconnects.</Text> : null}
               <Text style={styles.sectionLabel}>Recent conversations</Text>
             </View>
           }
-          ListEmptyComponent={
-            <LogiNexusStatePanel state="empty" title={emptyTitle(selectedFilter, query)} body={emptyBody(selectedFilter, query)} />
-          }
+          ListEmptyComponent={error ? (
+            <LogiNexusStatePanel state="error" title="Messenger could not load" body={error}>
+              <Pressable accessibilityRole="button" style={styles.retryButton} onPress={() => load()}><Text style={styles.retryText}>Retry</Text></Pressable>
+            </LogiNexusStatePanel>
+          ) : <LogiNexusStatePanel state="empty" title={emptyTitle(selectedFilter, query)} body={emptyBody(selectedFilter, query)} />}
           renderItem={({ item }) => <ConversationRow item={item} navigation={navigation} />}
         />
       )}
@@ -144,11 +237,11 @@ export function MessengerScreen() {
   );
 }
 
-function QuickAction({ title, subtitle, onPress }: { title: string; subtitle: string; onPress: () => void }) {
+function QuickAction({ icon, title, subtitle, primary, onPress }: { icon: string; title: string; subtitle: string; primary?: boolean; onPress: () => void }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${title}, ${subtitle}`} style={({ pressed }) => [styles.quickAction, pressed && styles.rowPressed]} onPress={onPress}>
-      <Text style={styles.quickActionTitle}>{title}</Text>
-      <Text style={styles.quickActionSubtitle}>{subtitle}</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${title}, ${subtitle}`} style={({ pressed }) => [styles.quickAction, primary && styles.quickActionPrimary, pressed && styles.rowPressed]} onPress={onPress}>
+      <View style={styles.quickActionIcon}><Text style={styles.quickActionIconText}>{icon}</Text></View>
+      <View style={styles.quickActionCopy}><Text style={[styles.quickActionTitle, primary && styles.quickActionPrimaryText]}>{title}</Text><Text style={[styles.quickActionSubtitle, primary && styles.quickActionPrimarySubtitle]}>{subtitle}</Text></View>
     </Pressable>
   );
 }
@@ -163,10 +256,10 @@ function ConversationRow({ item, navigation }: { item: MessengerConversation; na
       accessibilityLabel={conversationAccessibilityLabel(item)}
       onPress={() => {
         AsyncStorage.setItem(LAST_CONVERSATION_KEY, String(item.id)).catch(() => undefined);
-        navigation.navigate("Chat", { conversationId: item.id, title });
+        navigation.navigate("Chat", { conversationId: item.id, title, avatarUrl: item.avatar_url, presence: item.presence });
       }}
     >
-      <PulseCommandAvatar label={title} active={active} tone={item.trust_state === "founder" ? "intelligence" : "default"} />
+      <PulseCommandAvatar label={title} imageUrl={item.avatar_url} active={active} tone={item.trust_state === "founder" ? "intelligence" : "default"} size={52} />
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
           <Text style={styles.title} numberOfLines={1}>{title}</Text>
@@ -206,26 +299,39 @@ function emptyBody(filter: ConversationFilter, query: string) {
 }
 
 const styles = StyleSheet.create({
+  permissionPage: { flex: 1, justifyContent: "center", padding: 16 },
   list: { gap: 6, padding: 10, paddingBottom: 116 },
   headerStack: { gap: 10 },
-  productionHeader: { alignItems: "center", flexDirection: "row", gap: 10, paddingHorizontal: 4 },
+  productionHeader: { alignItems: "center", borderBottomColor: "rgba(97,233,246,0.14)", borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", gap: 10, paddingBottom: 10, paddingHorizontal: 4 },
   headerCopy: { flex: 1 },
+  brandLockup: { alignItems: "center", flexDirection: "row", gap: 12 },
   commandTitle: { color: colors.text, fontSize: 22, fontWeight: "900" },
   commandVersion: { color: colors.muted, fontSize: 12, fontWeight: "700" },
-  connectionDot: { backgroundColor: colors.safety, borderRadius: 6, height: 10, width: 10 },
-  connectionDotWarning: { backgroundColor: colors.warning },
   searchRow: { alignItems: "center", flexDirection: "row", gap: 8 },
   searchField: { flex: 1 },
   gearButton: { alignItems: "center", backgroundColor: "#0c1830", borderColor: "#24546b", borderRadius: 13, borderWidth: 1, height: 46, justifyContent: "center", width: 46 },
   gearButtonText: { color: "#61e9f6", fontSize: 21 },
-  quickActions: { flexDirection: "row", gap: 6, padding: 6 },
-  quickAction: { borderColor: colors.border, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, flex: 1, minHeight: 56, padding: 8 },
+  presenceRail: { gap: 14, paddingHorizontal: 2, paddingVertical: 4 },
+  presenceItem: { alignItems: "center", gap: 5, width: 64 },
+  presenceName: { color: colors.muted, fontSize: 10, maxWidth: 64 },
+  quickActions: { flexDirection: "row", gap: 8, padding: 7 },
+  quickAction: { alignItems: "center", borderColor: colors.border, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, flex: 1, flexDirection: "row", gap: 7, minHeight: 66, padding: 8 },
+  quickActionPrimary: { backgroundColor: "rgba(77,228,196,0.9)", borderColor: "rgba(132,255,228,0.96)", shadowColor: colors.accent, shadowOpacity: 0.28, shadowRadius: 12 },
+  quickActionIcon: { alignItems: "center", backgroundColor: "rgba(97,233,246,0.08)", borderColor: "rgba(97,233,246,0.22)", borderRadius: 10, borderWidth: 1, height: 34, justifyContent: "center", width: 34 },
+  quickActionIconText: { color: colors.accentStrong, fontSize: 16, fontWeight: "900" },
+  quickActionCopy: { flex: 1, minWidth: 0 },
   quickActionTitle: { color: colors.text, fontSize: 11, fontWeight: "900" },
+  quickActionPrimaryText: { color: "#061410" },
   quickActionSubtitle: { color: colors.muted, fontSize: 9, marginTop: 3 },
+  quickActionPrimarySubtitle: { color: "rgba(6,20,16,0.68)" },
   sectionLabel: { color: colors.muted, fontSize: 11, fontWeight: "800", letterSpacing: 0.7, textTransform: "uppercase" },
-  row: { alignItems: "center", backgroundColor: "rgba(255,255,255,0.028)", borderColor: "rgba(255,255,255,0.06)", borderRadius: 12, borderWidth: 1, flexDirection: "row", gap: 10, minHeight: 70, padding: 10 },
+  peopleResults: { gap: 6 },
+  personRow: { alignItems: "center", backgroundColor: "rgba(105,218,240,0.045)", borderColor: "rgba(105,218,240,0.18)", borderRadius: 12, borderWidth: 1, flexDirection: "row", gap: 9, minHeight: 62, padding: 8 },
+  personCopy: { flex: 1, minWidth: 0 },
+  personAction: { color: colors.accent, fontSize: 11, fontWeight: "900" },
+  row: { alignItems: "center", backgroundColor: "rgba(9,18,34,0.9)", borderColor: "rgba(105,218,240,0.11)", borderRadius: 15, borderWidth: 1, flexDirection: "row", gap: 11, minHeight: 70, padding: 11 },
   rowPressed: { backgroundColor: "rgba(105,218,240,0.06)", borderColor: "rgba(105,218,240,0.25)" },
-  pinnedRow: { borderColor: "rgba(189,132,255,0.48)" },
+  pinnedRow: { borderColor: "rgba(77,228,196,0.56)", shadowColor: colors.accent, shadowOpacity: 0.1, shadowRadius: 10 },
   rowBody: { flex: 1, gap: 3, minWidth: 0 },
   rowTop: { alignItems: "center", flexDirection: "row", gap: 6 },
   rowSignals: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
@@ -235,5 +341,7 @@ const styles = StyleSheet.create({
   signalPill: { borderColor: colors.border, borderRadius: logiNexus.radius.capsule, borderWidth: StyleSheet.hairlineWidth, color: colors.muted, fontSize: 9, fontWeight: "800", paddingHorizontal: 6, paddingVertical: 2, textTransform: "uppercase" },
   badge: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 12, minHeight: 23, minWidth: 23, paddingHorizontal: 6, paddingVertical: 2 },
   badgeText: { color: "#08110f", fontSize: 11, fontWeight: "900" },
-  error: { color: colors.warning, fontSize: 12 }
+  error: { color: colors.warning, fontSize: 12 },
+  retryButton: { alignSelf: "center", backgroundColor: colors.signalDim, borderColor: colors.accent, borderRadius: 10, borderWidth: 1, marginTop: 8, paddingHorizontal: 14, paddingVertical: 9 },
+  retryText: { color: colors.accent, fontSize: 12, fontWeight: "900" }
 });
