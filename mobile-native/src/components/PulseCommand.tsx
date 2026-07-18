@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useRef } from "react";
-import { Platform, Pressable, ScrollView, StyleProp, StyleSheet, Text, TextInput, View, ViewStyle, useWindowDimensions } from "react-native";
+import { Animated, Image, Platform, Pressable, ScrollView, StyleProp, StyleSheet, Text, TextInput, View, ViewStyle, useWindowDimensions } from "react-native";
 import { colors } from "../theme/colors";
 import { logiNexus, LogiNexusTone, toneColor } from "../theme/logiNexus";
 
@@ -109,11 +109,34 @@ export function PulseCommandSegmentRail({
   );
 }
 
-export function PulseCommandAvatar({ label, imageUrl, active, tone = "default" }: { label?: string; imageUrl?: string; active?: boolean; tone?: LogiNexusTone }) {
+export function PulseCommandOrb({ size = 48, warning = false }: { size?: number; warning?: boolean }) {
+  const pulse = useRef(new Animated.Value(0.42)).current;
+  const color = warning ? colors.danger : colors.accent;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { duration: 1150, toValue: 0.9, useNativeDriver: true }),
+        Animated.timing(pulse, { duration: 1150, toValue: 0.42, useNativeDriver: true })
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [pulse]);
+
+  return (
+    <View accessibilityLabel={warning ? "Pulse Command connection warning" : "Pulse Command connected"} style={[styles.orbFrame, { borderRadius: size / 2, height: size, width: size }]}>
+      <Animated.View style={[styles.orbHalo, { backgroundColor: color, borderRadius: size / 2, opacity: pulse, transform: [{ scale: pulse }] }]} />
+      <View style={[styles.orbCore, { backgroundColor: color, borderRadius: size * 0.18, height: size * 0.36, width: size * 0.36 }]} />
+    </View>
+  );
+}
+
+export function PulseCommandAvatar({ label, imageUrl, active, tone = "default", size = 48 }: { label?: string; imageUrl?: string; active?: boolean; tone?: LogiNexusTone; size?: number }) {
   const color = toneColor(tone);
   return (
-    <View style={[styles.avatar, { borderColor: active ? color : colors.border }]}>
-      <Text style={[styles.avatarText, { color }]}>{(label || "P").slice(0, 2).toUpperCase()}</Text>
+    <View style={[styles.avatar, { borderColor: active ? color : colors.border, borderRadius: size / 2, height: size, width: size }]}>
+      {imageUrl ? <Image accessibilityIgnoresInvertColors source={{ uri: imageUrl }} style={styles.avatarImage} /> : <Text style={[styles.avatarText, { color }]}>{(label || "P").slice(0, 2).toUpperCase()}</Text>}
       {active ? <View style={[styles.avatarSignal, { backgroundColor: color }]} /> : null}
     </View>
   );
@@ -195,6 +218,11 @@ const styles = StyleSheet.create({
     right: 0,
     width: 12
   },
+  avatarImage: {
+    borderRadius: 999,
+    height: "100%",
+    width: "100%"
+  },
   avatarText: {
     fontSize: 14,
     fontWeight: "900"
@@ -252,6 +280,24 @@ const styles = StyleSheet.create({
   },
   metricValue: {
     ...logiNexus.typography.metric
+  },
+  orbCore: {
+    shadowColor: colors.accent,
+    shadowOpacity: 0.86,
+    shadowRadius: 10
+  },
+  orbFrame: {
+    alignItems: "center",
+    backgroundColor: "rgba(7, 16, 29, 0.92)",
+    borderColor: "rgba(90, 232, 200, 0.32)",
+    borderWidth: 1,
+    justifyContent: "center",
+    overflow: "hidden"
+  },
+  orbHalo: {
+    height: "82%",
+    position: "absolute",
+    width: "82%"
   },
   panel: {
     backgroundColor: colors.glassStrong,

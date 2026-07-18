@@ -4,6 +4,7 @@
     "slug": "pulsesoc-native",
     "scheme": "pulsesoc",
     "version": "0.1.0",
+    "newArchEnabled": false,
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -26,6 +27,7 @@
       ]
     },
     "plugins": [
+      "./plugins/withLegacyIosFmtCompatibility",
       "expo-secure-store",
       "expo-notifications",
       "expo-camera",

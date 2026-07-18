@@ -49,7 +49,13 @@ export type RootStackParamList = {
     direction?: "incoming" | "outgoing";
     title?: string;
   } | undefined;
-  Chat: { conversationId: number; title?: string; openControlCenter?: boolean };
+  Chat: {
+    conversationId: number;
+    title?: string;
+    avatarUrl?: string;
+    presence?: string;
+    openControlCenter?: boolean;
+  };
   NewChat: { initialQuery?: string; targetUserId?: number; title?: string } | undefined;
   PostDetail: { postId: number; title?: string };
   Reels: { reelId?: number; title?: string } | undefined;
