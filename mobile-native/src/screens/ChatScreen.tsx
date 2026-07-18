@@ -32,6 +32,7 @@ import {
   drainMessengerQueue,
   enqueueMessengerMessage,
   getConversation,
+  isRetryableMessengerSendError,
   loadCachedMessages,
   markConversationSeen,
   MessengerMessage,
@@ -374,6 +375,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     file_size?: number;
     duration_seconds?: number;
     media_ids?: number[];
+    attachment_ids?: number[];
     reply_to_message_id?: number;
     reply_preview?: string;
   }) => {
@@ -403,27 +405,44 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       await updateCachedConversationPreview(conversationId, label, serverMessage.created_at || new Date().toISOString()).catch(() => undefined);
       await sync();
       return "sent" as const;
-    } catch {
-      await enqueueMessengerMessage(conversationId, {
-        ...payload,
-        client_message_id: local.client_message_id,
-        local_created_at: local.created_at
-      }).catch(() => undefined);
+    } catch (sendError) {
+      if (isRetryableMessengerSendError(sendError)) {
+        await enqueueMessengerMessage(conversationId, {
+          ...payload,
+          client_message_id: local.client_message_id,
+          local_created_at: local.created_at
+        }).catch(() => undefined);
+        setMessages((current) => {
+          const queuedMessages = current.map((message): MessengerMessage =>
+            message.id === local.id
+              ? {
+                  ...message,
+                  delivery_status: "queued",
+                  local_status: "queued",
+                  local_error: undefined
+                }
+              : message
+          );
+          cacheMessages(conversationId, queuedMessages).catch(() => undefined);
+          return queuedMessages;
+        });
+        return "queued" as const;
+      }
       setMessages((current) => {
-        const queuedMessages = current.map((message): MessengerMessage =>
+        const failedMessages = current.map((message): MessengerMessage =>
           message.id === local.id
             ? {
                 ...message,
-                delivery_status: "queued",
-                local_status: "queued",
-                local_error: undefined
+                delivery_status: "failed",
+                local_status: "failed",
+                local_error: sendError instanceof Error ? sendError.message : "Message could not be sent."
               }
             : message
         );
-        cacheMessages(conversationId, queuedMessages).catch(() => undefined);
-        return queuedMessages;
+        cacheMessages(conversationId, failedMessages).catch(() => undefined);
+        return failedMessages;
       });
-      return "queued" as const;
+      throw sendError;
     }
   }, [conversationId, mergeMessages, replaceLocalMessage, sync]);
 
@@ -517,7 +536,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     }
   }, []);
 
-  const uploadAndSend = useCallback(async (input: { uri: string; name: string; mimeType: string; voice?: boolean; durationSeconds?: number }) => {
+  const uploadAndSend = useCallback(async (input: { uri: string; name: string; mimeType: string; sizeBytes?: number; voice?: boolean; durationSeconds?: number }) => {
     if (uploading) return;
     setUploading(true);
     setStatusMessage(input.voice ? "Sending voice message…" : "Uploading attachment…");
@@ -527,12 +546,13 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         uri: input.uri,
         name: input.name,
         mimeType: input.mimeType,
+        sizeBytes: "sizeBytes" in input ? Number(input.sizeBytes || 0) : 0,
         voice: input.voice,
         durationSeconds: input.durationSeconds
       });
-      const mediaId = Number(uploaded.media_id || 0);
-      if (!mediaId || !uploaded.media_url) {
-        throw new Error("PulseSoc did not return a durable media attachment. Please retry.");
+      const attachmentId = Number(uploaded.attachment_id || 0);
+      if (!attachmentId) {
+        throw new Error("PulseSoc did not return a durable Messenger attachment. Please retry.");
       }
       const delivery = await sendPayload({
         body: input.name,
@@ -541,7 +561,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         thumbnail_url: uploaded.thumbnail_url,
         file_size: uploaded.file_size,
         duration_seconds: input.durationSeconds,
-        media_ids: [mediaId]
+        attachment_ids: [attachmentId]
       });
       setStatusMessage(
         delivery === "queued"
@@ -579,7 +599,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       await uploadAndSend({
         uri: asset.uri,
         name: asset.fileName || `pulsesoc-image-${Date.now()}.jpg`,
-        mimeType: asset.mimeType || "image/jpeg"
+        mimeType: asset.mimeType || "image/jpeg",
+        sizeBytes: asset.fileSize || 0
       });
     } catch (imageError) {
       const message = imageError instanceof Error ? imageError.message : "The image picker could not open.";
@@ -606,7 +627,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       await uploadAndSend({
         uri: asset.uri,
         name: asset.fileName || `pulsesoc-video-${Date.now()}.mov`,
-        mimeType: asset.mimeType || "video/quicktime"
+        mimeType: asset.mimeType || "video/quicktime",
+        sizeBytes: asset.fileSize || 0
       });
     } catch (videoError) {
       const message = videoError instanceof Error ? videoError.message : "The video picker could not open.";
@@ -626,7 +648,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       await uploadAndSend({
         uri: asset.uri,
         name: asset.name || `pulsesoc-file-${Date.now()}`,
-        mimeType: asset.mimeType || "application/octet-stream"
+        mimeType: asset.mimeType || "application/octet-stream",
+        sizeBytes: asset.size || 0
       });
     } catch (fileError) {
       const message = fileError instanceof Error ? fileError.message : "The file picker could not open.";

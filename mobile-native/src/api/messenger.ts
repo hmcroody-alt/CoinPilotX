@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "./config";
-import { pulseApi } from "./pulseApi";
+import { PulseApiError, pulseApi } from "./pulseApi";
 
 const CONVERSATION_CACHE_KEY = "pulsesoc.native.messenger.v2.conversations";
 const messageCacheKey = (conversationId: number) => `pulsesoc.native.messenger.v2.messages.${conversationId}`;
@@ -129,17 +129,23 @@ export type SendMessagePayload = {
   reply_to_message_id?: number;
   reply_preview?: string;
   media_ids?: number[];
+  attachment_ids?: number[];
 };
 
 export type MediaUploadResult = {
   ok: boolean;
   media_id?: number;
+  attachment_id?: number;
   media_url?: string;
   playback_url?: string;
   thumbnail_url?: string;
+  download_url?: string;
+  signed_url?: string;
   message_type?: string;
   type?: string;
+  media_type?: string;
   file_size?: number;
+  size_bytes?: number;
   media?: Record<string, unknown>;
 };
 
@@ -220,7 +226,9 @@ export async function sendConversationMessage(conversationId: number, payload: S
       local_created_at: payload.local_created_at || "",
       reply_to_message_id: payload.reply_to_message_id || 0,
       reply_preview: payload.reply_preview || "",
-      media_ids: payload.media_ids || []
+      media_ids: payload.media_ids || [],
+      attachment_ids: payload.attachment_ids || [],
+      message_attachment_ids: payload.attachment_ids || []
     })
   });
   const serverMessage = typeof result.message === "object"
@@ -400,6 +408,72 @@ export async function uploadMessengerMedia(input: {
   uri: string;
   name: string;
   mimeType: string;
+  sizeBytes?: number;
+  voice?: boolean;
+  durationSeconds?: number;
+}) {
+  const mimeType = messengerFoundationMimeType(input.mimeType, input.name, input.voice);
+  const mediaType = messengerFoundationMediaType(input.name, mimeType, input.voice);
+  const init = await pulseApi<{ ok?: boolean; attachment_id?: number }>("/api/messages/media/init", {
+    method: "POST",
+    body: JSON.stringify({
+      conversation_id: input.conversationId,
+      media_type: mediaType,
+      filename: input.name || `pulse-${mediaType}-${Date.now()}`,
+      mime_type: mimeType,
+      size_bytes: Math.max(0, Number(input.sizeBytes || 0))
+    })
+  });
+  const attachmentId = Number(init.attachment_id || 0);
+  if (!attachmentId) throw new PulseApiError("Media upload did not return an attachment id.", 502, "attachment_init_failed");
+
+  const form = new FormData();
+  form.append("attachment_id", String(attachmentId));
+  if (input.durationSeconds) {
+    const durationMs = Math.max(1, Math.round(input.durationSeconds * 1000));
+    form.append("duration_ms", String(durationMs));
+    form.append("duration_seconds", String(input.durationSeconds));
+  }
+  form.append("file", {
+    uri: input.uri,
+    name: input.name,
+    type: mimeType
+  } as unknown as Blob);
+  await pulseApi<MediaUploadResult>("/api/messages/media/upload", {
+    method: "POST",
+    body: form
+  });
+  const completed = await pulseApi<MediaUploadResult>("/api/messages/media/complete", {
+    method: "POST",
+    body: JSON.stringify({
+      attachment_id: attachmentId,
+      duration_ms: input.durationSeconds ? Math.max(1, Math.round(input.durationSeconds * 1000)) : "",
+      width: "",
+      height: "",
+      waveform_json: ""
+    })
+  });
+  const downloadUrl = String(completed.download_url || `/api/messages/media/${attachmentId}/download`);
+  return {
+    ...completed,
+    attachment_id: attachmentId,
+    media_id: Number(completed.media_id || 0),
+    media_url: String(completed.signed_url || completed.media_url || downloadUrl),
+    playback_url: String(completed.playback_url || completed.signed_url || downloadUrl),
+    thumbnail_url: String(completed.thumbnail_url || ""),
+    download_url: downloadUrl,
+    message_type: input.voice ? "voice" : mediaType === "photo" ? "image" : mediaType,
+    type: input.voice ? "voice" : mediaType === "photo" ? "image" : mediaType,
+    file_size: Number(completed.file_size || completed.size_bytes || 0)
+  };
+}
+
+export async function uploadMessengerMediaLegacy(input: {
+  conversationId: number;
+  uri: string;
+  name: string;
+  mimeType: string;
+  sizeBytes?: number;
   voice?: boolean;
   durationSeconds?: number;
 }) {
@@ -439,6 +513,40 @@ export async function uploadMessengerMedia(input: {
     message_type: String(result.message_type || result.type || media.media_type || (input.voice ? "voice" : "file")),
     file_size: Number(result.file_size || media.file_size || media.file_size_bytes || 0)
   };
+}
+
+export function isRetryableMessengerSendError(error: unknown) {
+  if (!(error instanceof PulseApiError)) return false;
+  if (error.status === 0 || error.status === 408 || error.status >= 500) return true;
+  return ["request_unreachable", "timeout", "network_error", "service_unavailable"].includes(String(error.code || ""));
+}
+
+function messengerFoundationMediaType(name: string, mimeType: string, voice?: boolean) {
+  if (voice) return "voice";
+  const normalized = String(mimeType || "").toLowerCase();
+  const lowerName = String(name || "").toLowerCase();
+  if (normalized.startsWith("image/") || /\.(jpg|jpeg|png|gif|webp|avif)$/i.test(lowerName)) return "photo";
+  if (normalized.startsWith("video/") || /\.(mp4|mov|m4v|webm)$/i.test(lowerName)) return "video";
+  if (normalized.startsWith("audio/") || /\.(mp3|m4a|wav|ogg|webm|aac)$/i.test(lowerName)) return "voice";
+  return "file";
+}
+
+function messengerFoundationMimeType(mimeType: string, name: string, voice?: boolean) {
+  const provided = String(mimeType || "").split(";", 1)[0].toLowerCase();
+  if (provided) return provided;
+  const ext = String(name || "").split(".").pop()?.toLowerCase() || "";
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  if (ext === "png") return "image/png";
+  if (ext === "gif") return "image/gif";
+  if (ext === "webp") return "image/webp";
+  if (ext === "mp4") return "video/mp4";
+  if (ext === "mov") return "video/quicktime";
+  if (ext === "m4a" || voice) return "audio/mp4";
+  if (ext === "mp3") return "audio/mpeg";
+  if (ext === "wav") return "audio/wav";
+  if (ext === "ogg") return "audio/ogg";
+  if (ext === "aac") return "audio/aac";
+  return "application/octet-stream";
 }
 
 export function normalizeConversations(items: MessengerConversation[]) {
