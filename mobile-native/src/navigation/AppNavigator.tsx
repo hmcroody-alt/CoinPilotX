@@ -219,7 +219,7 @@ export function AppNavigator() {
       <Stack.Screen name="DashboardModuleDetail" component={DashboardModuleDetailScreen} options={({ route }) => ({ title: route.params?.title || "Dashboard Module" })} />
       <Stack.Screen name="CameraStudio" component={CameraStudioScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Call" component={CallScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Chat" component={ChatScreen} options={({ route }) => ({ title: route.params.title || "Chat" })} />
+      <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} />
       <Stack.Screen name="NewChat" component={NewChatScreen} options={{ title: "New Chat" }} />
       <Stack.Screen name="PostDetail" component={PostDetailScreen} options={({ route }) => ({ title: route.params.title || "Post" })} />
       <Stack.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />

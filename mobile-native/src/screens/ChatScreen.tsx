@@ -1,4 +1,5 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio } from "expo-av";
 import * as DocumentPicker from "expo-document-picker";
@@ -46,7 +47,7 @@ import { PULSE_API_BASE_URL } from "../api/config";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
 import { ConversationControlCenter } from "../components/ConversationControlCenter";
-import { PulseCommandAction, PulseCommandAvatar, PulseCommandPanel } from "../components/PulseCommand";
+import { PulseCommandAvatar, PulseCommandPanel } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
 import {
@@ -115,6 +116,51 @@ function AmbientPulseField() {
       <Animated.View style={[styles.ambientOrbSmall, { opacity: drift.interpolate({ inputRange: [0, 1], outputRange: [1, 0.55] }), transform: [{ translateX: drift.interpolate({ inputRange: [0, 1], outputRange: [0, 20] }) }, { translateY: drift.interpolate({ inputRange: [0, 1], outputRange: [0, -18] }) }] }]} />
       <View style={styles.ambientSignalLine} />
     </View>
+  );
+}
+
+function SignalIconButton({
+  accessibilityLabel,
+  icon,
+  onPress,
+  tone = "signal",
+  active = false,
+  disabled = false,
+  size = 44
+}: {
+  accessibilityLabel: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  tone?: "signal" | "intelligence" | "danger";
+  active?: boolean;
+  disabled?: boolean;
+  size?: number;
+}) {
+  const pulse = useRef(new Animated.Value(0)).current;
+  const color = tone === "danger" ? colors.danger : tone === "intelligence" ? "#a77cff" : colors.accent;
+  useEffect(() => {
+    let loop: Animated.CompositeAnimation | null = null;
+    AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
+      if (reduced) return;
+      loop = Animated.loop(Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 1350, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 1350, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
+      ]));
+      loop.start();
+    }).catch(() => undefined);
+    return () => loop?.stop();
+  }, [pulse]);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [styles.signalButton, { borderColor: `${color}88`, height: size, opacity: disabled ? 0.45 : pressed ? 0.72 : 1, width: size }, active && { backgroundColor: `${color}24` }]}
+    >
+      <Animated.View pointerEvents="none" style={[styles.signalButtonHalo, { backgroundColor: color, opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.05, active ? 0.28 : 0.15] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.72, 1.16] }) }] }]} />
+      <Ionicons name={icon} size={Math.round(size * 0.46)} color={color} />
+    </Pressable>
   );
 }
 
@@ -356,6 +402,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       replaceLocalMessage(local.id, serverMessage);
       await updateCachedConversationPreview(conversationId, label, serverMessage.created_at || new Date().toISOString()).catch(() => undefined);
       await sync();
+      return "sent" as const;
     } catch {
       await enqueueMessengerMessage(conversationId, {
         ...payload,
@@ -376,6 +423,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         cacheMessages(conversationId, queuedMessages).catch(() => undefined);
         return queuedMessages;
       });
+      return "queued" as const;
     }
   }, [conversationId, mergeMessages, replaceLocalMessage, sync]);
 
@@ -472,6 +520,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const uploadAndSend = useCallback(async (input: { uri: string; name: string; mimeType: string; voice?: boolean; durationSeconds?: number }) => {
     if (uploading) return;
     setUploading(true);
+    setStatusMessage(input.voice ? "Sending voice message…" : "Uploading attachment…");
     try {
       const uploaded = await uploadMessengerMedia({
         conversationId,
@@ -481,86 +530,150 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         voice: input.voice,
         durationSeconds: input.durationSeconds
       });
-      await sendPayload({
+      const mediaId = Number(uploaded.media_id || 0);
+      if (!mediaId || !uploaded.media_url) {
+        throw new Error("PulseSoc did not return a durable media attachment. Please retry.");
+      }
+      const delivery = await sendPayload({
         body: input.name,
         message_type: uploaded.message_type || uploaded.type || (input.voice ? "voice" : "file"),
         media_url: uploaded.media_url,
         thumbnail_url: uploaded.thumbnail_url,
         file_size: uploaded.file_size,
         duration_seconds: input.durationSeconds,
-        media_ids: uploaded.media_id ? [uploaded.media_id] : []
+        media_ids: [mediaId]
       });
+      setStatusMessage(
+        delivery === "queued"
+          ? input.voice
+            ? "Voice message queued. It will send when realtime reconnects."
+            : "Attachment queued. It will send when realtime reconnects."
+          : input.voice
+            ? "Voice message sent."
+            : "Attachment sent."
+      );
     } catch (uploadError) {
-      Alert.alert("Attachment failed", uploadError instanceof Error ? uploadError.message : "Attachment could not be sent.");
+      const message = uploadError instanceof Error ? uploadError.message : "Attachment could not be sent.";
+      setStatusMessage(message);
+      Alert.alert("Attachment failed", message);
     } finally {
       setUploading(false);
     }
   }, [conversationId, sendPayload, uploading]);
 
   const attachImage = useCallback(async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("Photos unavailable", "Photo access was not granted.");
-      return;
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Photos unavailable", "Allow photo access in Settings to share an image.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.78,
+        allowsEditing: false,
+        base64: false
+      });
+      if (result.canceled || !result.assets[0]) return;
+      const asset = result.assets[0];
+      await uploadAndSend({
+        uri: asset.uri,
+        name: asset.fileName || `pulsesoc-image-${Date.now()}.jpg`,
+        mimeType: asset.mimeType || "image/jpeg"
+      });
+    } catch (imageError) {
+      const message = imageError instanceof Error ? imageError.message : "The image picker could not open.";
+      setStatusMessage(message);
+      Alert.alert("Image sharing unavailable", message);
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.82,
-      allowsEditing: false
-    });
-    if (result.canceled || !result.assets[0]) return;
-    const asset = result.assets[0];
-    await uploadAndSend({
-      uri: asset.uri,
-      name: asset.fileName || `pulsesoc-image-${Date.now()}.jpg`,
-      mimeType: asset.mimeType || "image/jpeg"
-    });
+  }, [uploadAndSend]);
+
+  const attachVideo = useCallback(async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Videos unavailable", "Allow photo access in Settings to share a video.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        allowsEditing: false,
+        videoMaxDuration: 120,
+        videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium
+      });
+      if (result.canceled || !result.assets[0]) return;
+      const asset = result.assets[0];
+      await uploadAndSend({
+        uri: asset.uri,
+        name: asset.fileName || `pulsesoc-video-${Date.now()}.mov`,
+        mimeType: asset.mimeType || "video/quicktime"
+      });
+    } catch (videoError) {
+      const message = videoError instanceof Error ? videoError.message : "The video picker could not open.";
+      setStatusMessage(message);
+      Alert.alert("Video sharing unavailable", message);
+    }
   }, [uploadAndSend]);
 
   const attachFile = useCallback(async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      copyToCacheDirectory: true,
-      multiple: false
-    });
-    if (result.canceled || !result.assets[0]) return;
-    const asset = result.assets[0];
-    await uploadAndSend({
-      uri: asset.uri,
-      name: asset.name || `pulsesoc-file-${Date.now()}`,
-      mimeType: asset.mimeType || "application/octet-stream"
-    });
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: false
+      });
+      if (result.canceled || !result.assets[0]) return;
+      const asset = result.assets[0];
+      await uploadAndSend({
+        uri: asset.uri,
+        name: asset.name || `pulsesoc-file-${Date.now()}`,
+        mimeType: asset.mimeType || "application/octet-stream"
+      });
+    } catch (fileError) {
+      const message = fileError instanceof Error ? fileError.message : "The file picker could not open.";
+      setStatusMessage(message);
+      Alert.alert("File sharing unavailable", message);
+    }
   }, [uploadAndSend]);
 
   const toggleVoiceRecording = useCallback(async () => {
-    if (recording) {
-      const activeRecording = recording;
-      setRecording(null);
-      await activeRecording.stopAndUnloadAsync();
-      const uri = activeRecording.getURI();
-      const durationSeconds = Math.max(1, Math.round((Date.now() - recordingStartedAt) / 1000));
-      if (uri) {
+    try {
+      if (recording) {
+        const activeRecording = recording;
+        setRecording(null);
+        await activeRecording.stopAndUnloadAsync();
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => undefined);
+        const uri = activeRecording.getURI();
+        const durationSeconds = Math.max(1, Math.round((Date.now() - recordingStartedAt) / 1000));
+        if (!uri) throw new Error("The recording did not produce an audio file.");
         await uploadAndSend({
           uri,
           name: `pulsesoc-voice-${Date.now()}.m4a`,
-          mimeType: "audio/m4a",
+          mimeType: "audio/mp4",
           voice: true,
           durationSeconds
         });
+        return;
       }
-      return;
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Microphone unavailable", "Allow microphone access in Settings to send a voice message.");
+        return;
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true
+      });
+      const started = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      setRecording(started.recording);
+      setRecordingStartedAt(Date.now());
+      setStatusMessage("Recording voice message… tap the microphone again to send.");
+    } catch (recordingError) {
+      setRecording(null);
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => undefined);
+      const message = recordingError instanceof Error ? recordingError.message : "Voice recording could not start.";
+      setStatusMessage(message);
+      Alert.alert("Voice message unavailable", message);
     }
-    const permission = await Audio.requestPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("Microphone unavailable", "Microphone access was not granted.");
-      return;
-    }
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: true,
-      playsInSilentModeIOS: true
-    });
-    const started = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-    setRecording(started.recording);
-    setRecordingStartedAt(Date.now());
   }, [recording, recordingStartedAt, uploadAndSend]);
 
   useEffect(() => {
@@ -609,9 +722,9 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             <View style={styles.threadStatusRow}><LiveStatusDot warning={Boolean(error)} /><Text style={styles.threadSubtitle} numberOfLines={1}>{typing || (isPresenceActive(route.params.presence) ? "Online · Direct" : headerStatus)}</Text></View>
           </View>
           <View style={styles.callActions}>
-            <PulseCommandAction compact label="☎" onPress={() => navigation.navigate("Call", { conversationId, callType: "audio", direction: "outgoing", title: route.params.title || "PulseSoc Voice" })} />
-            <PulseCommandAction compact label="▣" tone="intelligence" onPress={() => navigation.navigate("Call", { conversationId, callType: "video", direction: "outgoing", title: route.params.title || "PulseSoc Video" })} />
-            <PulseCommandAction compact label="⋮" onPress={() => setControlCenterOpen(true)} />
+            <SignalIconButton accessibilityLabel="Start audio call" icon="call-outline" onPress={() => navigation.navigate("Call", { conversationId, callType: "audio", direction: "outgoing", title: route.params.title || "PulseSoc Voice" })} />
+            <SignalIconButton accessibilityLabel="Start video call" icon="videocam-outline" tone="intelligence" onPress={() => navigation.navigate("Call", { conversationId, callType: "video", direction: "outgoing", title: route.params.title || "PulseSoc Video" })} />
+            <SignalIconButton accessibilityLabel="Open conversation controls" icon="ellipsis-vertical" onPress={() => setControlCenterOpen(true)} />
           </View>
         </View>
       </View>
@@ -675,9 +788,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           </View>
         ) : null}
         <View style={styles.inputRow}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Add attachment" disabled={uploading} style={[styles.attachmentButton, uploading && styles.disabled]} onPress={() => setAttachmentSheetOpen(true)}>
-            <Text style={styles.attachmentButtonText}>{uploading ? "…" : "+"}</Text>
-          </Pressable>
+          <SignalIconButton accessibilityLabel={uploading ? "Uploading attachment" : "Add attachment"} icon={uploading ? "cloud-upload-outline" : "add"} disabled={uploading} size={46} onPress={() => setAttachmentSheetOpen(true)} />
           <TextInput
             multiline
             autoFocus={qaChatState === "keyboard" || qaChatState === "reply-keyboard"}
@@ -688,8 +799,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             onChangeText={notifyTyping}
             accessibilityLabel="Message composer"
           />
-          <Pressable accessibilityRole="button" accessibilityLabel="Add smiling emoji" style={styles.composerCircleButton} onPress={() => setDraft((current) => `${current}😊`)}><Text style={styles.composerCircleText}>☺</Text></Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel={recording ? "Stop voice message" : "Record voice message"} disabled={uploading} style={[styles.composerCircleButton, recording && styles.recording]} onPress={() => toggleVoiceRecording().catch(() => undefined)}><Text style={styles.composerCircleText}>●</Text></Pressable>
+          <SignalIconButton accessibilityLabel="Add smiling emoji" icon="happy-outline" size={42} onPress={() => setDraft((current) => `${current}😊`)} />
+          <SignalIconButton accessibilityLabel={recording ? "Stop and send voice message" : "Record voice message"} icon={recording ? "stop" : "mic-outline"} tone={recording ? "danger" : "signal"} active={Boolean(recording)} disabled={uploading} size={42} onPress={() => toggleVoiceRecording().catch(() => undefined)} />
           <Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={!draft.trim()} style={({ pressed }) => [styles.sendButton, !draft.trim() && styles.sendDisabled, pressed && styles.pressed]} onPress={submitText}>
             <Text style={styles.sendText}>➤</Text>
           </Pressable>
@@ -728,6 +839,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         recording={Boolean(recording)}
         onClose={() => setAttachmentSheetOpen(false)}
         onImage={() => { setAttachmentSheetOpen(false); attachImage().catch(() => undefined); }}
+        onVideo={() => { setAttachmentSheetOpen(false); attachVideo().catch(() => undefined); }}
         onCamera={() => { setAttachmentSheetOpen(false); navigation.navigate("CameraStudio", { target: "message", mode: "photo", conversationId, title: "Message Camera" }); }}
         onFile={() => { setAttachmentSheetOpen(false); attachFile().catch(() => undefined); }}
         onVoice={() => { setAttachmentSheetOpen(false); toggleVoiceRecording().catch(() => undefined); }}
@@ -749,23 +861,35 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   );
 }
 
-function AttachmentActionSheet({ visible, recording, onClose, onImage, onCamera, onFile, onVoice }: { visible: boolean; recording: boolean; onClose: () => void; onImage: () => void; onCamera: () => void; onFile: () => void; onVoice: () => void }) {
+function AttachmentActionSheet({ visible, recording, onClose, onImage, onVideo, onCamera, onFile, onVoice }: { visible: boolean; recording: boolean; onClose: () => void; onImage: () => void; onVideo: () => void; onCamera: () => void; onFile: () => void; onVoice: () => void }) {
   return (
     <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
       <Pressable accessibilityRole="button" accessibilityLabel="Close attachment sheet" style={styles.sheetBackdrop} onPress={onClose}>
         <PulseCommandPanel style={styles.attachmentSheet}>
           <View style={styles.sheetHandle} />
           <Text style={styles.sheetTitle}>Add attachment</Text>
-          <Text style={styles.sheetPreview}>Choose what to add to this message.</Text>
+          <Text style={styles.sheetPreview}>Share through PulseSoc’s secure media channel.</Text>
           <View style={styles.sheetGrid}>
-            <SheetAction label="Photo library" onPress={onImage} />
-            <SheetAction label="Camera" onPress={onCamera} />
-            <SheetAction label="Document" onPress={onFile} />
-            <SheetAction label={recording ? "Stop voice note" : "Voice note"} onPress={onVoice} />
+            <MediaSheetAction icon="images-outline" label="Photo" detail="Optimized image" onPress={onImage} />
+            <MediaSheetAction icon="videocam-outline" label="Video" detail="Up to 2 minutes" tone="intelligence" onPress={onVideo} />
+            <MediaSheetAction icon="camera-outline" label="Camera" detail="Capture now" onPress={onCamera} />
+            <MediaSheetAction icon="document-text-outline" label="Document" detail="Secure file" tone="intelligence" onPress={onFile} />
+            <MediaSheetAction icon={recording ? "stop" : "mic-outline"} label={recording ? "Stop & send" : "Voice note"} detail={recording ? "Recording now" : "Fast audio message"} tone={recording ? "danger" : "signal"} onPress={onVoice} />
           </View>
         </PulseCommandPanel>
       </Pressable>
     </Modal>
+  );
+}
+
+function MediaSheetAction({ icon, label, detail, onPress, tone = "signal" }: { icon: keyof typeof Ionicons.glyphMap; label: string; detail: string; onPress: () => void; tone?: "signal" | "intelligence" | "danger" }) {
+  const color = tone === "danger" ? colors.danger : tone === "intelligence" ? "#a77cff" : colors.accent;
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={`${label}. ${detail}`} style={({ pressed }) => [styles.mediaSheetAction, { borderColor: `${color}66` }, pressed && styles.pressed]} onPress={onPress}>
+      <View style={[styles.mediaSheetIcon, { backgroundColor: `${color}16`, borderColor: `${color}72` }]}><Ionicons name={icon} size={23} color={color} /></View>
+      <View style={styles.mediaSheetCopy}><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82} style={styles.mediaSheetLabel}>{label}</Text><Text style={styles.mediaSheetDetail}>{detail}</Text></View>
+      <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+    </Pressable>
   );
 }
 
@@ -1015,6 +1139,20 @@ const styles = StyleSheet.create({
   callActions: {
     flexDirection: "row",
     gap: 5
+  },
+  signalButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(4,16,28,0.9)",
+    borderRadius: 15,
+    borderWidth: 1,
+    justifyContent: "center",
+    overflow: "hidden"
+  },
+  signalButtonHalo: {
+    borderRadius: 999,
+    height: "86%",
+    position: "absolute",
+    width: "86%"
   },
   error: {
     color: colors.warning,
@@ -1281,9 +1419,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 10
   },
-  recording: {
-    borderColor: colors.danger
-  },
   disabled: {
     opacity: 0.55
   },
@@ -1296,22 +1431,6 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     flexDirection: "row",
     gap: 8
-  },
-  attachmentButton: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.045)",
-    borderColor: colors.border,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 46,
-    justifyContent: "center",
-    minWidth: 48,
-    width: 48
-  },
-  attachmentButtonText: {
-    color: colors.text,
-    fontSize: 24,
-    fontWeight: "700"
   },
   input: {
     backgroundColor: "rgba(3, 7, 18, 0.72)",
@@ -1346,8 +1465,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "900"
   },
-  composerCircleButton: { alignItems: "center", backgroundColor: "rgba(255,255,255,0.04)", borderColor: colors.border, borderRadius: 24, borderWidth: 1, height: 46, justifyContent: "center", width: 42 },
-  composerCircleText: { color: colors.text, fontSize: 17, fontWeight: "800" },
   senderLabel: {
     color: colors.accentStrong,
     fontSize: 11,
@@ -1419,5 +1536,41 @@ const styles = StyleSheet.create({
   sheetActionText: {
     fontSize: 13,
     fontWeight: "900"
+  },
+  mediaSheetAction: {
+    alignItems: "center",
+    backgroundColor: "rgba(5,16,31,0.9)",
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 68,
+    minWidth: "47%",
+    padding: 10
+  },
+  mediaSheetIcon: {
+    alignItems: "center",
+    borderRadius: 13,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: "center",
+    width: 42
+  },
+  mediaSheetCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0
+  },
+  mediaSheetLabel: {
+    color: colors.text,
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 17
+  },
+  mediaSheetDetail: {
+    color: colors.muted,
+    fontSize: 10,
+    lineHeight: 14
   }
 });

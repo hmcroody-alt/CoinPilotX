@@ -28,6 +28,7 @@
     },
     "plugins": [
       "./plugins/withLegacyIosFmtCompatibility",
+      "expo-font",
       "expo-secure-store",
       "expo-notifications",
       "expo-camera",
