@@ -3,6 +3,9 @@ import requests
 
 
 BREVO_SMTP_URL = "https://api.brevo.com/v3/smtp/email"
+OFFICIAL_SUPPORT_EMAIL = "support@pulsesoc.com"
+OFFICIAL_PRODUCT_NAME = "PulseSoc"
+OFFICIAL_COMPANY_NAME = "CoinPlotXAI Inc."
 
 
 def _truthy_env(key, default=True):
@@ -16,6 +19,27 @@ def _coalesce(*values):
         if value:
             return value
     return ""
+
+
+def _clean_env(key):
+    return (os.getenv(key) or "").strip()
+
+
+def product_name():
+    return _clean_env("PRODUCT_NAME") or OFFICIAL_PRODUCT_NAME
+
+
+def company_name():
+    return _clean_env("COMPANY_NAME") or OFFICIAL_COMPANY_NAME
+
+
+def support_email():
+    return (
+        _clean_env("PUBLIC_SUPPORT_EMAIL")
+        or _clean_env("SUPPORT_EMAIL")
+        or _clean_env("BREVO_REPLY_TO")
+        or OFFICIAL_SUPPORT_EMAIL
+    )
 
 
 def brevo_api_key_config():
@@ -39,27 +63,28 @@ def brevo_api_key_config():
 def sender_config(channel="transactional", from_email=None, from_name=None):
     channel = (channel or "transactional").lower()
     if channel == "support":
-        default_email = os.getenv("SUPPORT_EMAIL") or os.getenv("SUPPORT_FROM_ADDRESS") or "support@pulsesoc.com"
-        default_name = os.getenv("SUPPORT_FROM_NAME", "PulseSoc Support")
+        default_email = support_email()
+        default_name = _clean_env("SUPPORT_FROM_NAME") or f"{product_name()} Support"
     elif channel == "security":
-        default_email = os.getenv("SECURITY_EMAIL") or os.getenv("SECURITY_FROM_ADDRESS") or "security@pulsesoc.com"
-        default_name = os.getenv("SECURITY_FROM_NAME", "PulseSoc Security")
+        default_email = support_email()
+        default_name = _clean_env("SECURITY_FROM_NAME") or f"{product_name()} Security"
     else:
-        default_email = os.getenv("DEFAULT_FROM_EMAIL") or "noreply@pulsesoc.com"
-        default_name = "PulseSoc"
+        default_email = support_email()
+        default_name = product_name()
     sender_candidates = [
         ("explicit", from_email),
-        ("BREVO_FROM_EMAIL", os.getenv("BREVO_FROM_EMAIL")),
-        ("BREVO_SENDER", os.getenv("BREVO_SENDER")),
-        ("BREVO_SENDER_EMAIL", os.getenv("BREVO_SENDER_EMAIL")),
-        ("MAIL_FROM_ADDRESS", os.getenv("MAIL_FROM_ADDRESS")),
-        ("DEFAULT_FROM_EMAIL", os.getenv("DEFAULT_FROM_EMAIL")),
+        ("BREVO_SENDER_EMAIL", _clean_env("BREVO_SENDER_EMAIL")),
+        ("BREVO_FROM_EMAIL", _clean_env("BREVO_FROM_EMAIL")),
+        ("BREVO_SENDER", _clean_env("BREVO_SENDER")),
+        ("MAIL_FROM_ADDRESS", _clean_env("MAIL_FROM_ADDRESS")),
+        ("DEFAULT_FROM_EMAIL", _clean_env("DEFAULT_FROM_EMAIL")),
         ("channel_default", default_email),
     ]
     name_candidates = [
         ("explicit", from_name),
-        ("BREVO_SENDER_NAME", os.getenv("BREVO_SENDER_NAME")),
-        ("MAIL_FROM_NAME", os.getenv("MAIL_FROM_NAME")),
+        ("BREVO_SENDER_NAME", _clean_env("BREVO_SENDER_NAME")),
+        ("PRODUCT_NAME", product_name()),
+        ("MAIL_FROM_NAME", _clean_env("MAIL_FROM_NAME")),
         ("channel_default", default_name),
     ]
     sender_email = ""
@@ -86,8 +111,50 @@ def sender_config(channel="transactional", from_email=None, from_name=None):
     }
 
 
+def reply_to_config(channel="transactional"):
+    channel = (channel or "transactional").lower()
+    sender = sender_config(channel=channel)
+    reply_candidates = [
+        ("BREVO_REPLY_TO", _clean_env("BREVO_REPLY_TO")),
+        ("PUBLIC_SUPPORT_EMAIL", _clean_env("PUBLIC_SUPPORT_EMAIL")),
+        ("SUPPORT_EMAIL", _clean_env("SUPPORT_EMAIL")),
+        ("SUPPORT_FROM_ADDRESS", _clean_env("SUPPORT_FROM_ADDRESS")),
+        ("BREVO_SENDER_EMAIL", _clean_env("BREVO_SENDER_EMAIL")),
+        ("sender", sender.get("email")),
+        ("official_support", OFFICIAL_SUPPORT_EMAIL),
+    ]
+    name_candidates = [
+        ("BREVO_REPLY_TO_NAME", _clean_env("BREVO_REPLY_TO_NAME")),
+        ("SUPPORT_FROM_NAME", _clean_env("SUPPORT_FROM_NAME")),
+        ("BREVO_SENDER_NAME", _clean_env("BREVO_SENDER_NAME")),
+        ("PRODUCT_NAME", product_name()),
+    ]
+    reply_email = ""
+    reply_source = ""
+    for source, value in reply_candidates:
+        if value:
+            reply_email = value
+            reply_source = source
+            break
+    reply_name = ""
+    reply_name_source = ""
+    for source, value in name_candidates:
+        if value:
+            reply_name = value
+            reply_name_source = source
+            break
+    return {
+        "email": reply_email,
+        "name": reply_name or product_name(),
+        "channel": channel,
+        "email_source": reply_source,
+        "name_source": reply_name_source,
+    }
+
+
 def provider_status():
     config = sender_config()
+    reply_to = reply_to_config()
     api_key_config = brevo_api_key_config()
     api_key = api_key_config["value"]
     missing = []
@@ -107,10 +174,14 @@ def provider_status():
         "sender_name_configured": bool(config.get("name")),
         "default_from_email_configured": bool(os.getenv("DEFAULT_FROM_EMAIL")),
         "support_email_configured": bool(os.getenv("SUPPORT_EMAIL")),
+        "public_support_email_configured": bool(os.getenv("PUBLIC_SUPPORT_EMAIL")),
         "security_email_configured": bool(os.getenv("SECURITY_EMAIL")),
         "missing_fields": missing,
         "sender_email": config["email"],
         "sender_name": config["name"],
+        "reply_to_email": reply_to["email"],
+        "reply_to_name": reply_to["name"],
+        "reply_to_email_source": reply_to.get("email_source") or "",
         "sender_email_source": config.get("email_source") or "",
         "sender_name_source": config.get("name_source") or "",
         "sender_domain": sender_domain,
@@ -121,6 +192,7 @@ def provider_status():
 def send_brevo_email(to_email, subject, text_body, html_body="", from_email=None, from_name=None, channel="transactional"):
     api_key = brevo_api_key_config()["value"]
     config = sender_config(channel=channel, from_email=from_email, from_name=from_name)
+    reply_to = reply_to_config(channel=channel)
     if not _truthy_env("BREVO_EMAIL_ENABLED", True):
         return {
             "ok": False,
@@ -129,9 +201,10 @@ def send_brevo_email(to_email, subject, text_body, html_body="", from_email=None
             "error": "Brevo email notifications are disabled.",
             "error_code": "brevo_email_disabled",
             "sender": config,
+            "reply_to": reply_to,
         }
     if not to_email:
-        return {"ok": False, "status_code": None, "response": {"message": "recipient email missing"}, "error": "recipient email missing", "sender": config}
+        return {"ok": False, "status_code": None, "response": {"message": "recipient email missing"}, "error": "recipient email missing", "sender": config, "reply_to": reply_to}
     missing = []
     if not api_key:
         missing.append("BREVO_API_KEY")
@@ -146,18 +219,22 @@ def send_brevo_email(to_email, subject, text_body, html_body="", from_email=None
             "error_code": "brevo_not_configured",
             "missing_fields": missing,
             "sender": config,
+            "reply_to": reply_to,
         }
+    payload = {
+        "sender": {"email": config["email"], "name": config["name"]},
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "textContent": text_body or "",
+        "htmlContent": html_body or (text_body or "").replace("\n", "<br>"),
+    }
+    if reply_to.get("email"):
+        payload["replyTo"] = {"email": reply_to["email"], "name": reply_to["name"]}
     try:
         response = requests.post(
             BREVO_SMTP_URL,
             headers={"api-key": api_key, "Content-Type": "application/json", "Accept": "application/json"},
-            json={
-                "sender": {"email": config["email"], "name": config["name"]},
-                "to": [{"email": to_email}],
-                "subject": subject,
-                "textContent": text_body or "",
-                "htmlContent": html_body or (text_body or "").replace("\n", "<br>"),
-            },
+            json=payload,
             timeout=15,
         )
         try:
@@ -204,9 +281,10 @@ def send_brevo_email(to_email, subject, text_body, html_body="", from_email=None
             "error": error,
             "error_code": error_code,
             "sender": config,
+            "reply_to": reply_to,
         }
     except Exception as exc:
-        return {"ok": False, "status_code": None, "response": {}, "provider_response": {}, "message_id": "", "error": str(exc), "sender": config}
+        return {"ok": False, "status_code": None, "response": {}, "provider_response": {}, "message_id": "", "error": str(exc), "sender": config, "reply_to": reply_to}
 
 
 def send_email(to_email, subject, html_body, text_body=None, email_type=None, user_id=None, metadata=None, channel="transactional", from_email=None, from_name=None):
@@ -225,7 +303,7 @@ def send_welcome_email(user):
     name = (user or {}).get("full_name") or "there"
     return send_email(
         (user or {}).get("email"),
-        "Welcome to PulseSoc — Powered by CoinPilotXAI",
+        "Welcome to PulseSoc",
         f"<p>Hi {name}, welcome to PulseSoc.</p>",
         f"Hi {name}, welcome to PulseSoc.",
     )
@@ -340,7 +418,7 @@ def send_trial_ended_email(user):
 def send_admin_invitation_email(admin_user, invite_url):
     return send_email(
         (admin_user or {}).get("email"),
-        "CoinPlotXAI Inc. admin invitation",
+        "PulseSoc admin invitation",
         f"<p><a href='{invite_url}'>Accept admin invitation</a></p>",
         f"Accept admin invitation: {invite_url}",
     )

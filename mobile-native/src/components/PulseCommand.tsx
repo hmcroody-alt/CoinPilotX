@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useRef } from "react";
-import { Platform, Pressable, ScrollView, StyleProp, StyleSheet, Text, TextInput, View, ViewStyle, useWindowDimensions } from "react-native";
+import { AccessibilityInfo, Animated, Easing, Image, Platform, Pressable, ScrollView, StyleProp, StyleSheet, Text, TextInput, View, ViewStyle, useWindowDimensions } from "react-native";
 import { colors } from "../theme/colors";
 import { logiNexus, LogiNexusTone, toneColor } from "../theme/logiNexus";
 
@@ -109,14 +109,42 @@ export function PulseCommandSegmentRail({
   );
 }
 
-export function PulseCommandAvatar({ label, imageUrl, active, tone = "default" }: { label?: string; imageUrl?: string; active?: boolean; tone?: LogiNexusTone }) {
+export function PulseCommandAvatar({ label, imageUrl, active, tone = "default", size = 48 }: { label?: string; imageUrl?: string; active?: boolean; tone?: LogiNexusTone; size?: number }) {
   const color = toneColor(tone);
   return (
-    <View style={[styles.avatar, { borderColor: active ? color : colors.border }]}>
-      <Text style={[styles.avatarText, { color }]}>{(label || "P").slice(0, 2).toUpperCase()}</Text>
+    <View style={[styles.avatar, { borderColor: active ? color : colors.border, borderRadius: size / 2, height: size, width: size }]}>
+      {imageUrl ? <Image source={{ uri: imageUrl }} style={[styles.avatarImage, { borderRadius: size / 2 }]} resizeMode="cover" /> : <Text style={[styles.avatarText, { color }]}>{initials(label)}</Text>}
       {active ? <View style={[styles.avatarSignal, { backgroundColor: color }]} /> : null}
     </View>
   );
+}
+
+export function PulseCommandOrb({ size = 58, warning = false }: { size?: number; warning?: boolean }) {
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    let animation: Animated.CompositeAnimation | null = null;
+    AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
+      if (reduced) return;
+      animation = Animated.loop(Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 1500, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
+      ]));
+      animation.start();
+    }).catch(() => undefined);
+    return () => animation?.stop();
+  }, [pulse]);
+  const tone = warning ? colors.warning : colors.accent;
+  return (
+    <View accessibilityLabel={warning ? "Pulse Command reconnecting" : "Pulse Command connected"} style={[styles.orb, { height: size, width: size, borderRadius: size / 2 }]}>
+      <Animated.View style={[styles.orbHalo, { borderColor: tone, borderRadius: size / 2, transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1.1] }) }], opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.38, 0.08] }) }]} />
+      <View style={[styles.orbCore, { backgroundColor: tone, shadowColor: tone }]} />
+    </View>
+  );
+}
+
+function initials(label?: string) {
+  const parts = String(label || "P").trim().split(/\s+/).filter(Boolean);
+  return (parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}` : parts[0]?.slice(0, 2) || "P").toUpperCase();
 }
 
 export function PulseCommandAction({
@@ -195,9 +223,33 @@ const styles = StyleSheet.create({
     right: 0,
     width: 12
   },
+  avatarImage: {
+    height: "100%",
+    width: "100%"
+  },
   avatarText: {
     fontSize: 14,
     fontWeight: "900"
+  },
+  orb: {
+    alignItems: "center",
+    backgroundColor: "rgba(8,20,33,0.96)",
+    borderColor: "rgba(97,233,246,0.2)",
+    borderWidth: 1,
+    justifyContent: "center"
+  },
+  orbHalo: {
+    borderWidth: 1,
+    height: "86%",
+    position: "absolute",
+    width: "86%"
+  },
+  orbCore: {
+    borderRadius: 999,
+    height: "44%",
+    shadowOpacity: 0.9,
+    shadowRadius: 12,
+    width: "44%"
   },
   eyebrow: {
     ...logiNexus.typography.label,

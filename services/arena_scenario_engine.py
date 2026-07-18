@@ -1,4 +1,4 @@
-"""Continuous scenario generation for CoinPilotXAI Arena."""
+"""Continuous scenario generation for CoinPlotXAI Arena."""
 
 from __future__ import annotations
 

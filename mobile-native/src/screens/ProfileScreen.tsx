@@ -2,7 +2,8 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useState } from "react";
 import { FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { listFeed, PulsePost } from "../api/feed";
-import { getMyProfile, listPublicProfilePosts, loadCachedProfile, normalizeProfile, profileWebUrl, PulseProfile } from "../api/profile";
+import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileWebUrl, PulseProfile, toggleProfileFollow } from "../api/profile";
+import { MessengerUserSearchResult, openDirectConversation } from "../api/messenger";
 import { PostCard } from "../components/PostCard";
 import { ProfileHeader } from "../components/ProfileHeader";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
@@ -22,6 +23,8 @@ export function ProfileScreen({ route, navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [offline, setOffline] = useState(false);
   const [error, setError] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
+  const [followBusy, setFollowBusy] = useState(false);
 
   const visiblePosts = useMemo(() => (tab === "media" ? posts.filter((post) => post.media?.length) : posts), [posts, tab]);
 
@@ -38,12 +41,12 @@ export function ProfileScreen({ route, navigation }: Props) {
         const feed = key ? await listFeed({ feed: "for_you", profile: key, limit: 20, offset: 0 }) : { posts: [] };
         setPosts(feed.posts || []);
       } else {
-        const feedPosts = await listPublicProfilePosts(profileKey);
+        const [publicProfile, feedPosts] = await Promise.all([getPublicProfile(profileKey), listPublicProfilePosts(profileKey)]);
         setPosts(feedPosts);
-        setProfile(profileFromPublicPosts(profileKey, feedPosts));
+        setProfile(publicProfile);
       }
     } catch (loadError) {
-      const cached = owner ? await loadCachedProfile("me") : null;
+      const cached = await loadCachedProfile(owner ? "me" : profileKey);
       if (cached) {
         setProfile(cached);
         setOffline(true);
@@ -61,6 +64,42 @@ export function ProfileScreen({ route, navigation }: Props) {
   useEffect(() => {
     load("initial").catch(() => undefined);
   }, [profileKey]);
+
+  async function followProfile() {
+    if (!profile || owner || followBusy) return;
+    setFollowBusy(true);
+    setActionMessage("");
+    try {
+      const result = await toggleProfileFollow(profile);
+      const following = Boolean(result.following);
+      setProfile((current) => current ? { ...current, viewer_follows: following, follower_count: Math.max(0, Number(current.follower_count || 0) + (following ? 1 : -1)) } : current);
+      setActionMessage(following ? `Following ${profile.display_name}.` : `Unfollowed ${profile.display_name}.`);
+    } catch (followError) {
+      setActionMessage(followError instanceof Error ? followError.message : "Follow action failed.");
+    } finally {
+      setFollowBusy(false);
+    }
+  }
+
+  async function messageProfile() {
+    if (!profile || owner) return;
+    setActionMessage("Opening secure conversation…");
+    try {
+      const target: MessengerUserSearchResult = {
+        id: profile.user_id,
+        user_id: profile.user_id,
+        display_name: profile.display_name,
+        public_player_id: profile.public_player_id || profile.username || profileKey,
+        avatar_url: profile.avatar_url || "",
+        premium: Boolean(profile.premium_status),
+        premium_mark: profile.verified_badge ? "verified" : ""
+      };
+      const result = await openDirectConversation(target);
+      navigation?.navigate("Chat", { conversationId: result.conversation_id, title: profile.display_name });
+    } catch (messageError) {
+      setActionMessage(messageError instanceof Error ? messageError.message : "Conversation could not open.");
+    }
+  }
 
   if (loading && !profile) {
     return (
@@ -95,15 +134,18 @@ export function ProfileScreen({ route, navigation }: Props) {
         <View style={styles.header}>
           {offline ? <Text style={styles.offline}>Showing saved profile</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
+          {actionMessage ? <Text accessibilityLiveRegion="polite" style={styles.actionMessage}>{actionMessage}</Text> : null}
           <ProfileHeader
             profile={profile}
             publicKey={profileKey}
             owner={owner}
+            followBusy={followBusy}
             onEdit={() => navigation?.navigate("ProfileEdit")}
-            onPremium={() => navigation?.navigate("Premium")}
+            onCustomize={() => navigation?.navigate("ProfileEdit")}
             onGrowth={() => navigation?.navigate("GrowthCenter", { contentType: "profile", title: "Grow Profile" })}
             onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })}
-            onMessage={() => navigation?.navigate("NewChat", { initialQuery: profile.public_player_id || profile.username || profileKey, targetUserId: profile.user_id, title: `Message ${profile.display_name}` })}
+            onMessage={() => messageProfile().catch(() => undefined)}
+            onFollow={() => followProfile().catch(() => undefined)}
             onRefresh={() => load("refresh").catch(() => undefined)}
           />
           <View style={styles.tabs}>
@@ -167,23 +209,17 @@ function AboutPanel({ profile, profileKey, owner, onVerification, onSafety, onSe
   );
 }
 
-function profileFromPublicPosts(profileKey: string, posts: PulsePost[]) {
-  const first = posts[0];
-  const author = first?.author || {};
-  return normalizeProfile({
-    user_id: Number(author.user_id || author.id || 0),
-    display_name: author.display_name || author.name || profileKey,
-    username: author.username || author.handle || "",
-    public_player_id: author.public_player_id || profileKey,
-    avatar_url: author.avatar_url || "",
-    premium_status: author.premium || author.premium_verified ? "active" : "",
-    post_count: posts.length,
-    media_count: posts.filter((post) => post.media?.length).length,
-    bio: posts.length ? "" : "Open the full PulseSoc profile for details."
-  });
-}
-
 const styles = StyleSheet.create({
+  actionMessage: {
+    backgroundColor: colors.signalSoft,
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    color: colors.accentStrong,
+    fontSize: 13,
+    marginBottom: 10,
+    padding: 10
+  },
   about: {
     backgroundColor: colors.surface,
     borderColor: colors.border,

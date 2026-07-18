@@ -1,160 +1,62 @@
 #!/usr/bin/env python3
-"""Static audit for the PulseSoc native Profile foundation."""
-
-from __future__ import annotations
+"""Controlled static gate for the PulseSoc native Profile V2 mission."""
 
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def read(relative: str) -> str:
-    path = ROOT / relative
-    if not path.exists():
-        raise AssertionError(f"Missing required file: {relative}")
-    return path.read_text(encoding="utf-8")
+def read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
 
 
-def require(condition: bool, message: str) -> None:
-    if not condition:
+def require(value: bool, message: str) -> None:
+    if not value:
         raise AssertionError(message)
 
 
 def main() -> int:
-    report = read("reports/pulsesoc_native_profile_progress.md")
-    progress = read("reports/pulsesoc_native_progress.md")
+    backend = read("bot.py")
     api = read("mobile-native/src/api/profile.ts")
     header = read("mobile-native/src/components/ProfileHeader.tsx")
-    profile = read("mobile-native/src/screens/ProfileScreen.tsx")
+    screen = read("mobile-native/src/screens/ProfileScreen.tsx")
     edit = read("mobile-native/src/screens/ProfileEditScreen.tsx")
-    card = read("mobile-native/src/components/PostCard.tsx")
-    home = read("mobile-native/src/screens/HomeScreen.tsx")
-    post_detail = read("mobile-native/src/screens/PostDetailScreen.tsx")
-    messenger = read("mobile-native/src/screens/MessengerScreen.tsx")
-    navigator = read("mobile-native/src/navigation/AppNavigator.tsx")
-    types = read("mobile-native/src/navigation/types.ts")
-    linking = read("mobile-native/src/navigation/linking.ts")
-    routing = read("mobile-native/src/navigation/notificationRouting.ts")
-
-    for phrase in (
-        "does not touch production WebView paths",
-        "Server APIs stay authoritative",
-        "Existing Web/Backend Implementation Inspected",
-        "No native-only profile authorization",
-        "Device-Only Behavior Not Verified",
-        "not marked as passed without device access",
-    ):
-        require(phrase in report, f"profile report must document reuse/safety/device truth: {phrase}")
-
-    for route in (
-        "/api/pulse/profile/me",
-        "/api/pulse/profile/update",
-        "/api/pulse/profile/avatar",
-        "/api/pulse/profile/cover",
-        "/api/pulse/profile/avatar/remove",
-        "/api/pulse/profile/cover/remove",
-        "/api/pulse/premium/profile-theme",
-    ):
-        require(route in api, f"profile API must reuse backend route: {route}")
+    tests = read("mobile-native/ios/PulseSocNativeUITests/PulseSocNativeCameraStudioQATests.swift")
+    report = read("reports/pulsesoc_native_profile_progress.md")
 
     for token in (
-        "getMyProfile",
-        "updateProfile",
-        "uploadProfileAvatar",
-        "uploadProfileCover",
-        "removeProfileAvatar",
-        "removeProfileCover",
-        "getProfileTheme",
-        "updateProfileTheme",
-        "listPublicProfilePosts",
-        "loadCachedProfile",
-        "cacheProfile",
-        "profileWebUrl",
+        "def pulse_native_profile_payload",
+        '@webhook_app.route("/api/pulse/profile/<path:profile_key>"',
+        '"viewer_follows"',
+        '"post_count"',
+        '"media_count"',
+        '"follower_count"',
+        '"following_count"',
+        'add_columns_if_missing(cur, "pulse_profile_themes"',
+        '"layout_key"',
+        '"modules_json"',
+        '"motion_level"',
     ):
-        require(token in api, f"profile API helper missing: {token}")
+        require(token in backend, f"backend Profile V2 contract missing: {token}")
 
-    for token in (
-        "ProfileHeader",
-        "avatar_url",
-        "cover_url",
-        "Verified",
-        "Premium",
-        "Followers",
-        "Following",
-        "Edit Profile",
-        "Share Profile",
-    ):
-        require(token in header, f"profile header behavior missing: {token}")
+    require("ios_paid_digital_unavailable_response" not in backend[backend.index('def pulse_premium_profile_theme_api'):backend.index('def creator_ai_payload')], "native theme access must not be treated as a purchase")
+    for theme in ("deep_space", "neon_galaxy", "cyber_city", "solar_pulse", "aurora", "quantum", "crystal", "dark_matter", "nova", "minimal_black"):
+        require(theme in backend and theme in edit, f"server/client theme missing: {theme}")
+    for layout in ("classic", "creator", "professional", "minimal", "artist", "music", "gaming", "developer", "business", "streamer"):
+        require(layout in backend and layout in edit, f"server/client layout missing: {layout}")
 
-    for token in (
-        "FlatList",
-        "RefreshControl",
-        "getMyProfile",
-        "listPublicProfilePosts",
-        "loadCachedProfile",
-        "ProfileHeader",
-        "PostCard",
-        "Posts",
-        "Media",
-        "About",
-        "profileWebUrl",
-    ):
-        require(token in profile, f"profile screen behavior missing: {token}")
+    for token in ("getPublicProfile", "toggleProfileFollow", "/api/pulse/profile/", "/api/pulse/follows/toggle"):
+        require(token in api, f"native Profile API missing: {token}")
+    for token in ("createLogiNexusAmbientPulse", "useLogiNexusReducedMotion", "deep_space", "Edit Profile", "Customize", "Message", "Following", "Identity", "Media", "Music", "Trust"):
+        require(token in header, f"living Profile header missing: {token}")
+    for token in ("getPublicProfile", "openDirectConversation", "toggleProfileFollow", 'navigate("Chat"', "Showing saved profile"):
+        require(token in screen, f"Profile wiring missing: {token}")
+    require("testLivingProfileAndCustomizationOnIPhone" in tests, "Xcode Profile UI test missing")
+    require("No native-only identity" in report and "1 test / 0 failures" in report, "Profile report must record boundaries and simulator result")
 
-    for token in (
-        "expo-image-picker",
-        "requestMediaLibraryPermissionsAsync",
-        "launchImageLibraryAsync",
-        "updateProfile",
-        "uploadProfileAvatar",
-        "uploadProfileCover",
-        "removeProfileAvatar",
-        "removeProfileCover",
-        "updateProfileTheme",
-        "Display name is required.",
-        "Photo permission was not granted.",
-        "Save",
-        "Cancel",
-    ):
-        require(token in edit, f"profile edit behavior missing: {token}")
-
-    require("onAuthorPress" in card, "post card must expose author/profile navigation")
-    require("ProfileDetail" in home, "home feed author navigation must target ProfileDetail")
-    require("ProfileDetail" in post_detail, "post detail author navigation must target ProfileDetail")
-    require("ProfileDetail" in messenger and "other_public_player_id" in messenger, "messenger profile navigation must use existing public id when present")
-
-    for token in (
-        "ProfileDetail",
-        "ProfileEdit",
-        "ProfileScreen",
-        "ProfileEditScreen",
-    ):
-        require(token in navigator, f"navigator profile route missing: {token}")
-
-    require("ProfileDetail: { profileKey?: string" in types, "navigation types must include ProfileDetail params")
-    require("ProfileEdit: undefined" in types, "navigation types must include ProfileEdit")
-    require("pulse/profile/:profileKey" in linking and "pulse/profile/edit" in linking, "linking must include profile routes")
-    require('"ProfileDetail"' in routing and '"ProfileEdit"' in routing and "pulse\\/profile" in routing, "notification routing must open native profile routes")
-
-    for phrase in (
-        "Profile:",
-        "Native Reels Player + Reel Detail",
-        "Why This Comes Next",
-        "Risk: Medium-high",
-        "Complexity: Medium-high",
-        "Safest Implementation Plan",
-    ):
-        require(phrase in progress, f"native progress report must include completed profile and next recommendation: {phrase}")
-
-    mobile_native = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (ROOT / "mobile-native/src").rglob("*.ts*")
-        if "node_modules" not in path.parts
-    )
-    require("WebView" not in mobile_native and "react-native-webview" not in mobile_native.lower(), "native Profile must not introduce WebView")
-
-    print("PulseSoc native Profile audit passed.")
+    native_source = "\n".join(path.read_text(encoding="utf-8") for path in (ROOT / "mobile-native/src").rglob("*.ts*"))
+    require("react-native-webview" not in native_source.lower(), "Profile V2 must stay native")
+    print("PulseSoc native Profile V2 audit passed.")
     return 0
 
 

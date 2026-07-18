@@ -1,4 +1,4 @@
-"""Privacy-first data classification for CoinPilotXAI intelligence products."""
+"""Privacy-first data classification for CoinPlotXAI intelligence products."""
 
 from __future__ import annotations
 

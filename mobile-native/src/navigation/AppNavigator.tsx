@@ -111,7 +111,7 @@ function TabNavigator({
       <Tabs.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />
       <Tabs.Screen name="Create" component={CreateTabScreen} options={{ title: "Create" }} />
       <Tabs.Screen name="Status" component={StatusScreen} options={{ title: "Status" }} />
-      <Tabs.Screen name="Messenger" component={MessengerScreen} options={{ title: "Messages" }} />
+      <Tabs.Screen name="Messenger" component={MessengerScreen} options={{ headerShown: false, title: "Messages" }} />
       <Tabs.Screen name="Notifications" component={ActivityInboxScreen} options={{ title: "Activity" }} />
       <Tabs.Screen name="PulseAI" component={PulseAiScreen} options={{ title: "UNDX" }} />
       <Tabs.Screen name="Profile" component={ProfileScreen} options={{ title: "Profile" }} />
@@ -219,7 +219,7 @@ export function AppNavigator() {
       <Stack.Screen name="DashboardModuleDetail" component={DashboardModuleDetailScreen} options={({ route }) => ({ title: route.params?.title || "Dashboard Module" })} />
       <Stack.Screen name="CameraStudio" component={CameraStudioScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Call" component={CallScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Chat" component={ChatScreen} options={({ route }) => ({ title: route.params.title || "Chat" })} />
+      <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} />
       <Stack.Screen name="NewChat" component={NewChatScreen} options={{ title: "New Chat" }} />
       <Stack.Screen name="PostDetail" component={PostDetailScreen} options={({ route }) => ({ title: route.params.title || "Post" })} />
       <Stack.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />

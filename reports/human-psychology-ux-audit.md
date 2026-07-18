@@ -1,4 +1,4 @@
-# CoinPilotXAI Human Psychology UX Audit
+# CoinPlotXAI Human Psychology UX Audit
 
 Date: 2026-05-15
 

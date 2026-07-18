@@ -148,7 +148,7 @@ export function ReelPlayerCard({
         </View>
       )}
       <Pressable accessibilityRole="button" accessibilityLabel={muted ? "Play Reel with sound" : "Mute Reel"} style={styles.tapLayer} onPress={handleTap} onLongPress={() => onOpenReactions(reel)} />
-      <View style={styles.scrim} pointerEvents="none" />
+      <View style={styles.scrim} />
       {buffering ? (
         <View style={styles.buffering}>
           <ActivityIndicator color={colors.accent} />
@@ -366,6 +366,7 @@ const styles = StyleSheet.create({
   scrim: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.18)",
+    pointerEvents: "none",
     zIndex: 1
   },
   sound: {

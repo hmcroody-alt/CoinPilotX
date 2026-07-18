@@ -1,4 +1,4 @@
-"""Persistent Auto Signals monitoring for CoinPilotXAI."""
+"""Persistent Auto Signals monitoring for CoinPlotXAI."""
 
 from __future__ import annotations
 

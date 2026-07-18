@@ -11,6 +11,10 @@ export type PulseProfileTheme = {
   accent_color?: string;
   background_style?: string;
   active?: boolean;
+  layout_key?: string;
+  modules?: string[];
+  modules_json?: string;
+  motion_level?: "subtle" | "balanced" | "reduced";
 };
 
 export type PulseProfile = {
@@ -40,6 +44,8 @@ export type PulseProfile = {
   media_count?: number;
   badges?: string[];
   theme?: PulseProfileTheme;
+  viewer_follows?: boolean;
+  is_self?: boolean;
 };
 
 export type ProfileUpdatePayload = {
@@ -64,6 +70,13 @@ export async function getMyProfile() {
   const next = { ...profile, theme: theme || profile.theme };
   await cacheProfile("me", next);
   return next;
+}
+
+export async function getPublicProfile(profileKey: string) {
+  const data = await pulseApi<{ ok?: boolean; profile?: PulseProfile }>(`/api/pulse/profile/${encodeURIComponent(profileKey)}`);
+  const profile = normalizeProfile(data.profile || {});
+  await cacheProfile(profileKey, profile);
+  return profile;
 }
 
 export async function updateProfile(payload: ProfileUpdatePayload) {
@@ -149,16 +162,30 @@ export async function getProfileTheme() {
 }
 
 export async function updateProfileTheme(theme: PulseProfileTheme) {
-  const data = await pulseApi<{ ok?: boolean; theme_key?: string; message?: string }>("/api/pulse/premium/profile-theme", {
+  const data = await pulseApi<{ ok?: boolean; theme_key?: string; layout_key?: string; motion_level?: PulseProfileTheme["motion_level"]; modules?: string[]; message?: string }>("/api/pulse/premium/profile-theme", {
     method: "POST",
     body: JSON.stringify({
-      theme_key: theme.theme_key || "midnight_elite",
-      accent_color: theme.accent_color || "#ffd166"
+      theme_key: theme.theme_key || "deep_space",
+      accent_color: theme.accent_color || "#32e6b3",
+      layout_key: theme.layout_key || "classic",
+      motion_level: theme.motion_level || "balanced",
+      modules: theme.modules || []
     })
   });
-  const next = { ...theme, theme_key: data.theme_key || theme.theme_key };
+  const next = { ...theme, ...data, theme_key: data.theme_key || theme.theme_key };
   await AsyncStorage.setItem(PROFILE_THEME_CACHE_KEY, JSON.stringify(next));
   return next;
+}
+
+export async function toggleProfileFollow(profile: PulseProfile) {
+  return pulseApi<{ ok?: boolean; following?: boolean; message?: string }>("/api/pulse/follows/toggle", {
+    method: "POST",
+    body: JSON.stringify({
+      followed_user_id: profile.user_id,
+      public_player_id: profile.public_player_id || profile.username || "",
+      followed_public_player_id: profile.public_player_id || profile.username || ""
+    })
+  });
 }
 
 export async function listPublicProfilePosts(profileKey: string) {
@@ -202,7 +229,29 @@ export function normalizeProfile(input: Partial<PulseProfile>): PulseProfile {
     post_count: Number(profile.post_count || 0),
     media_count: Number(profile.media_count || 0),
     badges: profile.badges || [],
-    theme: profile.theme || {}
+    theme: normalizeTheme(profile.theme || {}),
+    viewer_follows: Boolean(profile.viewer_follows),
+    is_self: Boolean(profile.is_self)
+  };
+}
+
+function normalizeTheme(theme: PulseProfileTheme): PulseProfileTheme {
+  let modules = theme.modules || [];
+  if (!modules.length && theme.modules_json) {
+    try {
+      const parsed = JSON.parse(theme.modules_json);
+      if (Array.isArray(parsed)) modules = parsed.map(String);
+    } catch {
+      modules = [];
+    }
+  }
+  return {
+    ...theme,
+    theme_key: theme.theme_key || "deep_space",
+    accent_color: theme.accent_color || "#32e6b3",
+    layout_key: theme.layout_key || "classic",
+    motion_level: theme.motion_level || "balanced",
+    modules
   };
 }
 

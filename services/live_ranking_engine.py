@@ -53,7 +53,7 @@ def empty_live_card() -> dict:
     return {
         "id": 0,
         "title": "PulseSoc Live is ready",
-        "creator_name": "CoinPilotXAI",
+        "creator_name": "CoinPlotXAI",
         "category": "Live discovery",
         "viewer_count": 0,
         "ai_rating": "Ready",

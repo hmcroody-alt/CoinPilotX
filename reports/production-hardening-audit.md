@@ -1,4 +1,4 @@
-# CoinPilotXAI Production Hardening Audit
+# CoinPlotXAI Production Hardening Audit
 
 Date: 2026-05-15
 
@@ -6,7 +6,7 @@ Date: 2026-05-15
 
 - Replaced homepage market navigation links that pointed to `#market-board` with `/quote`, so users land on the real Live Quote Market Center.
 - Added premium trust-first market backgrounds for homepage market/prediction sections and quote pages using `.psych-market-bg`, `.intelligence-glow-bg`, `.quote-cta-glow`, `.soft-data-grid`, and `.trust-gradient-panel`.
-- Added `/predictions/crypto` as an original CoinPilotXAI crypto predictions intelligence page with probability cards, source labels, logged-out action routing, external trade disclosure, and safety language.
+- Added `/predictions/crypto` as an original CoinPlotXAI crypto predictions intelligence page with probability cards, source labels, logged-out action routing, external trade disclosure, and safety language.
 - Added category/status filtering to `/api/predictions`.
 - Added additional educational crypto prediction scenarios for BTC, ETH, and altcoin liquidity.
 - Added admin operational visibility routes for `/admin/email-health`, `/admin/system/health`, and `/admin/system/errors`.

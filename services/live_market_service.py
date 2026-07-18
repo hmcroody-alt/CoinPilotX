@@ -1,4 +1,4 @@
-"""Provider orchestration for CoinPilotXAI live market intelligence.
+"""Provider orchestration for CoinPlotXAI live market intelligence.
 
 This module is intentionally defensive: it normalizes provider output, caches
 short lived responses, and returns honest fallback states instead of pretending

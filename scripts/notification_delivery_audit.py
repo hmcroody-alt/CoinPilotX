@@ -19,10 +19,10 @@ def main():
     for column in ["trace_id", "retry_count", "delivery_status", "last_webhook_event"]:
         if column not in BOT:
             failures.append(f"email log column missing: {column}")
-    for env_name in ["DEFAULT_FROM_EMAIL", "SUPPORT_EMAIL", "SECURITY_EMAIL", "PUBLIC_BASE_URL"]:
+    for env_name in ["DEFAULT_FROM_EMAIL", "SUPPORT_EMAIL", "PUBLIC_SUPPORT_EMAIL", "BREVO_REPLY_TO", "COMPANY_NAME", "PRODUCT_NAME", "SECURITY_EMAIL", "PUBLIC_BASE_URL"]:
         if env_name not in BOT:
             failures.append(f"production email diagnostic missing env: {env_name}")
-    for marker in ["sender_email_masked", "sender_email_source", "sender_domain", "using_default_sender"]:
+    for marker in ["sender_email_masked", "reply_to_email_masked", "sender_email_source", "reply_to_email_source", "sender_domain", "using_default_sender"]:
         if marker not in BOT:
             failures.append(f"safe production email diagnostic missing marker: {marker}")
     if '"sender": (result.get("sender")' in BOT:

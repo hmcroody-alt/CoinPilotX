@@ -5,7 +5,7 @@
 - Public product brand: `Pulse`
 - Public domain: `PulseSoc.com`
 - Legal operator: `CoinPlotXAI Inc.`
-- Footer/legal phrasing: `Pulse — Powered by CoinPilotXAI`
+- Footer/legal phrasing: `PulseSoc™ • Built by CoinPlotXAI Inc.`
 
 ## Files Updated
 
@@ -18,8 +18,8 @@
 
 New audit coverage checks:
 
-- `CoinPilotXAI Pulse` is not present in public app shells.
-- `Pulse Roast Battle | CoinPilotXAI` is not present.
+- `CoinPlotXAI Pulse` is not present in public app shells.
+- `Pulse Roast Battle | CoinPlotXAI` is not present.
 - Homepage title, Open Graph title, Twitter title, manifest, and schema use Pulse-first naming.
 - Roast Battle shell uses `Pulse`.
 - Pulse Live and Pulse post fallbacks use Pulse-first naming.

@@ -2,7 +2,7 @@
 
 ## Summary
 
-Corrected the exact legal company display name from `CoinPilotXAI Inc.` to `CoinPlotXAI Inc.` everywhere it was safe to change in repo text files. This was intentionally not a broad product/repository rename. Bare `CoinPilotXAI`, domains, cache keys, service identifiers, package names, routes, and provider object identifiers were left untouched unless they were part of the exact legal company phrase.
+Corrected the exact legal company display name from `CoinPlotXAI Inc.` to `CoinPlotXAI Inc.` everywhere it was safe to change in repo text files. This was intentionally not a broad product/repository rename. Bare `CoinPlotXAI`, domains, cache keys, service identifiers, package names, routes, and provider object identifiers were left untouched unless they were part of the exact legal company phrase.
 
 ## Safe Corrections Applied
 

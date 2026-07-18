@@ -13,11 +13,11 @@ PUBLIC_FILES = [
 for path in PUBLIC_FILES:
     text = path.read_text(encoding="utf-8")
     for token in [
-        "CoinPilotXAI Pulse",
-        "| CoinPilotXAI Pulse",
-        "Pulse Roast Battle | CoinPilotXAI",
-        "Pulse - Roast Battle | CoinPilotXAI",
-        "CoinPilotXAI Platform",
+        "CoinPlotXAI Pulse",
+        "| CoinPlotXAI Pulse",
+        "Pulse Roast Battle | CoinPlotXAI",
+        "Pulse - Roast Battle | CoinPlotXAI",
+        "CoinPlotXAI Platform",
     ]:
         assert token not in text, f"{path.relative_to(ROOT)} still contains old public brand token: {token}"
         print("PASS: absent", path.relative_to(ROOT), token)

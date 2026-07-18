@@ -1,4 +1,4 @@
-"""Global intelligence graph foundation for CoinPilotXAI.
+"""Global intelligence graph foundation for CoinPlotXAI.
 
 The graph connects social, creator, education, safety, market, and commerce
 entities without exposing private user data. Scores are deterministic and safe

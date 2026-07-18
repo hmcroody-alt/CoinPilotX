@@ -127,7 +127,7 @@
       "details": ""
     },
     {
-      "name": "Pulse Alert radar replaces old alert icon",
+      "name": "Header uses global notification bell",
       "ok": true,
       "details": ""
     },
