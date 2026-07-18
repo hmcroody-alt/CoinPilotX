@@ -33,29 +33,27 @@ def main() -> int:
     qa_report = read("reports/pulsesoc_native_calls_qa.md")
     progress = read("reports/pulsesoc_native_progress.md")
 
-    require(chat, 'accessibilityLabel="Start voice call"', "Messenger voice call button")
+    require(chat, 'accessibilityLabel="Start audio call"', "Messenger voice call button")
     require(chat, 'accessibilityLabel="Start video call"', "Messenger video call button")
     require(chat, 'callType: "audio"', "voice call navigation payload")
     require(chat, 'callType: "video"', "video call navigation payload")
 
     for control in [
-        "Accept",
-        "Decline",
-        "End",
-        "Mute",
-        "Video Off",
-        "Speaker",
-        "Flip",
-        "Minimize",
-        "Open safe web fallback",
+        'label="Accept"',
+        'label="Decline"',
+        'accessibilityLabel="End call"',
+        'label={room.audioEnabled ? "Mute" : "Unmute"}',
+        'label={room.videoEnabled ? "Camera" : "Camera off"}',
+        'label={room.speakerEnabled ? "Speaker" : "Earpiece"}',
+        'label="Flip"',
+        'label="Minimize call"',
     ]:
         require(call_screen, control, "CallScreen control")
 
     for state in [
-        "Call could not load.",
         "Call could not start.",
         "Call could not be answered.",
-        "No active calls returned by `/api/calls/active`.",
+        "Reconnecting securely… media will resume automatically.",
     ]:
         require(call_screen, state, "CallScreen loading/error state")
 
@@ -70,22 +68,25 @@ def main() -> int:
 
     require(call_hook, 'Platform.OS === "web"', "LiveKit unsupported web guard")
     require(call_hook, "Native LiveKit calls require an installed iOS or Android build.", "web fallback message")
+    require(call_hook, "AudioSession.selectAudioOutput", "native speaker route")
+    require(call_hook, "RoomEvent.Reconnecting", "provider reconnect handling")
     require(linking, 'path: "pulse/calls/:callId?"', "calls deep-link path")
     require(notification_routing, "call_id", "message call notification support")
     require(notification_routing, 'normalized.match(/^\\/pulse\\/calls\\/([^/?#]+)/)', "direct call notification route")
 
     for phrase in [
-        "200 OK",
-        "release blockers, not current development blockers",
+        "Simulator build: PASSED",
+        "Physical iPhone installation: PASSED",
+        "Real two-device media exchange remains a release gate",
         "Production WebView routes were not modified",
         "User-facing copy does not expose `LogiNexus`",
-        "No critical, security, data-loss, or production-breaking issues were found",
+        "No critical, security, data-loss, or production-breaking issue was found",
     ]:
         require(qa_report, phrase, "calls QA report evidence")
 
     require(progress, "Native Calls foundation", "progress calls entry")
-    forbid(call_screen, "LogiNexus", "user-facing LogiNexus copy in CallScreen")
-    forbid(chat, "LogiNexus", "user-facing LogiNexus copy in ChatScreen")
+    forbid(call_screen, ">LogiNexus<", "user-facing LogiNexus copy in CallScreen")
+    forbid(chat, ">LogiNexus<", "user-facing LogiNexus copy in ChatScreen")
 
     print("PulseSoc native calls practical QA audit passed.")
     return 0

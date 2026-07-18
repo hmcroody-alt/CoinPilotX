@@ -15,6 +15,7 @@ type Props = {
   connected?: boolean;
   onClose: () => void;
   onOpenSafety: (section: "reports" | "blocks") => void;
+  onStartCall: (callType: "audio" | "video") => void;
 };
 
 type Section = "conversation" | "notifications" | "appearance" | "privacy" | "media" | "security" | "productivity" | "storage" | "accessibility" | "danger";
@@ -36,7 +37,7 @@ const SECTION_META: Array<{ key: Section; label: string; icon: string; subtitle:
 
 const DEFAULT_PREFS: LocalPreferences = { reduceMotion: false, highContrast: false, haptics: true, largeText: false };
 
-export function ConversationControlCenter({ visible, conversationId, title, messages, connected = true, onClose, onOpenSafety }: Props) {
+export function ConversationControlCenter({ visible, conversationId, title, messages, connected = true, onClose, onOpenSafety, onStartCall }: Props) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Section[]>(["conversation"]);
   const [notice, setNotice] = useState("");
@@ -101,7 +102,7 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
             <View style={styles.dashboard}>
               <View style={styles.contactLine}><View style={styles.avatar}><Text style={styles.avatarText}>{initials(title)}</Text></View><View style={styles.contactCopy}><Text style={styles.contactName}>{title}</Text><Text style={styles.online}>{connected ? "Online" : "Reconnecting"} · Conversation</Text></View></View>
               <View style={styles.quickGrid}><Quick label="Search" icon="⌕" onPress={() => setQuery("message")} /><Quick label="Shared Media" icon="▧" onPress={() => setOpen(["conversation", "media"])} /><Quick label="Members" icon="♟" onPress={() => setOpen(["conversation"])} /></View>
-              <View style={styles.actionGrid}><Quick label="Search" icon="⌕" onPress={() => setQuery("search")} /><Quick label="Call" icon="☎" disabled /><Quick label="Video" icon="▣" disabled /><Quick label="Mute" icon="🔕" disabled /><Quick label="Pin" icon="📌" disabled /><Quick label="Archive" icon="▤" disabled /></View>
+              <View style={styles.actionGrid}><Quick label="Search" icon="⌕" onPress={() => setQuery("search")} /><Quick label="Call" icon="☎" onPress={() => onStartCall("audio")} /><Quick label="Video" icon="▣" onPress={() => onStartCall("video")} /><Quick label="Mute" icon="🔕" disabled /><Quick label="Pin" icon="📌" disabled /><Quick label="Archive" icon="▤" disabled /></View>
               <View style={styles.metrics}><DashboardMetric label="Protection" value="TLS session" /><DashboardMetric label="Members" value={participantCount ? String(participantCount) : "Unknown"} /><DashboardMetric label="Media Files" value={String(media.length)} /><DashboardMetric label="Known Storage" value={formatFileSize(mediaBytes)} /><DashboardMetric label="Unread" value={String(unread)} /><DashboardMetric label="Connection" value={connected ? "Connected" : "Reconnecting"} /></View>
             </View>
             <View style={styles.searchWrap}><Text style={styles.searchIcon}>⌕</Text><TextInput accessibilityLabel="Search conversation settings" value={query} onChangeText={setQuery} placeholder="Search settings..." placeholderTextColor={colors.muted} style={styles.search} /></View>

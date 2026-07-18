@@ -37,7 +37,7 @@ def main() -> int:
     require(checks, "incoming call is urgent and push eligible", "priority=\"urgent\"" in service and '"push"' in service and '"call"' in service)
     require(checks, "incoming call realtime fanout exists", "_publish_call_realtime" in service and "communication_call_incoming" in service and "call_started" in service)
     require(checks, "frontend listens for incoming calls", "handleIncomingRealtime" in call_js and "communication_call_incoming" in call_js and "call_started" in call_js)
-    require(checks, "frontend polls active calls", "pollActiveCalls" in call_js and "/active" in call_js and "POLL_MS" in call_js)
+    require(checks, "frontend polls active calls", "pollActiveCalls" in call_js and "/active" in call_js and "POLL_FALLBACK_MS" in call_js and "POLL_CONNECTED_MS" in call_js)
     require(checks, "frontend wakes on app restore", "wakeCallPolling" in call_js and "pageshow" in call_js and "visibilitychange" in call_js and "focus" in call_js)
     require(checks, "incoming overlay has accept and decline", "data-call-accept" in call_js and "data-call-decline" in call_js and "showIncoming" in call_js)
     require(checks, "recipient ring acknowledgement route exists", '"/api/calls/<path:call_id>/ring-seen"' in routes and "api_ring_seen" in routes)

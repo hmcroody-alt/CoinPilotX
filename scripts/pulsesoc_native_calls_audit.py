@@ -27,6 +27,8 @@ def main() -> int:
     call_screen = read("mobile-native/src/screens/CallScreen.tsx")
     call_hook = read("mobile-native/src/calls/useNativeCallRoom.ts")
     chat = read("mobile-native/src/screens/ChatScreen.tsx")
+    incoming_layer = read("mobile-native/src/calls/IncomingCallLayer.tsx")
+    control_center = read("mobile-native/src/components/ConversationControlCenter.tsx")
     nav_types = read("mobile-native/src/navigation/types.ts")
     app_nav = read("mobile-native/src/navigation/AppNavigator.tsx")
     linking = read("mobile-native/src/navigation/linking.ts")
@@ -62,6 +64,19 @@ def main() -> int:
     require(call_hook, 'await import("@livekit/react-native")', "dynamic native LiveKit import")
     require(call_hook, 'await import("livekit-client")', "dynamic LiveKit client import")
     require(call_hook, "registerGlobals", "LiveKit native globals registration")
+    for snippet in [
+        "AudioSession.startAudioSession",
+        "AudioSession.selectAudioOutput",
+        "RoomEvent.Reconnecting",
+        "RoomEvent.Reconnected",
+        "RoomEvent.ConnectionQualityChanged",
+        "adaptiveStream: true",
+        "dynacast: true",
+        "echoCancellation: true",
+        "noiseSuppression: true",
+        "autoGainControl: true",
+    ]:
+        require(call_hook, snippet, "production-parity native media behavior")
 
     for snippet in [
         "startConversationCall",
@@ -72,10 +87,17 @@ def main() -> int:
         "markCallConnected",
         "sendCallControl",
         "openCallWebFallback",
+        "submitCallQuality",
+        "VideoView",
+        "AppState.addEventListener",
     ]:
         require(call_screen, snippet, "CallScreen server-authoritative flow")
 
     require(chat, 'navigation.navigate("Call"', "Chat call entry points")
+    require(control_center, "onStartCall", "control-center call entry points")
+    require(incoming_layer, 'navigationRef.navigate("Call"', "incoming and minimized call restoration")
+    require(incoming_layer, "endCall", "minimized call end control")
+    require(incoming_layer, 'getCurrentRoute()?.name === "Call"', "duplicate call capsule suppression")
     require(nav_types, "Call:", "Call route type")
     require(app_nav, 'name="Call"', "Call stack route")
     require(linking, 'path: "pulse/calls/:callId?"', "Call deep-link route")
@@ -86,7 +108,7 @@ def main() -> int:
         "production WebView app",
         "Communications V2 call engine",
         "LiveKit token generation",
-        "release blockers, not development blockers",
+        "Real two-device media exchange remains a release gate",
     ]:
         require(report, phrase, "calls progress report honesty")
 

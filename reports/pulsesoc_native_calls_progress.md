@@ -1,5 +1,7 @@
 # PulseSoc Native Calls Foundation Progress
 
+Updated: 2026-07-18
+
 ## Scope
 
 Native LiveKit Calls foundation was added as a parallel native client surface for `com.pulsesoc.nativeapp`. The production WebView app and production PulseSoc call backend remain authoritative and untouched.
@@ -47,43 +49,54 @@ Native components/services reused:
 
 - Added `mobile-native/src/api/calls.ts` as a typed API wrapper over the existing PulseSoc call endpoints.
 - Added `mobile-native/src/calls/useNativeCallRoom.ts` for native-only LiveKit room connection, guarded so QA browser/web receives safe fallback behavior.
+- Reused the production LiveKit connection contract while adding native adaptive stream, dynacast, simulcast, DTX, RED, echo cancellation, noise suppression, and automatic gain control.
+- Wired the native iOS audio session to real speaker/earpiece selection, with the native route picker available from a long press.
+- Added provider reconnect/reconnected handling, connection-quality state, media-device errors, participant/track lifecycle handling, and local/remote camera track state.
 - Added `mobile-native/src/screens/CallScreen.tsx` with:
   - active-call list fallback,
   - conversation call start,
   - incoming call accept/decline,
   - end call,
-  - LiveKit join-token connection shell,
+  - LiveKit join-token connection and local/remote video rendering,
   - mute/unmute,
   - camera enable/disable,
-  - speaker state,
+  - real speaker/earpiece routing,
   - camera switch,
   - minimize/restore,
+  - automatic reconnect state and secure media-resume feedback,
+  - elapsed call duration and quality reporting,
+  - background/foreground visibility synchronization,
   - call state refresh,
-  - call event display,
   - safe web fallback.
-- Added voice/video buttons to native Chat without changing the production WebView Messenger.
+- Added voice/video buttons to native Chat and its Conversation Control Center without changing the production WebView Messenger.
+- Added a compact active-call restore capsule after minimization, suppressed while the dedicated Call screen is visible so the call header is never duplicated.
 - Added native route and deep-link support for `/pulse/calls/<call_id>`.
 - Routed existing message notification links containing `call_id` into the native Call screen.
 
 ## QA Status
 
-Static verification is required before merge/commit:
+Verified on 2026-07-18:
 
 - `npm run --prefix mobile-native typecheck`
 - `cd mobile-native && EXPO_DOCTOR_ENABLE_DIRECTORY_CHECK=0 npx expo-doctor --verbose`
 - `venv/bin/python scripts/pulsesoc_native_calls_audit.py`
 - `git diff --check`
+- iPhone 16 Pro simulator Debug build
+- Signed Release build for the connected iPhone 16 Pro
+- Side-by-side physical installation as `com.pulsesoc.nativeapp.dev`
+- Physical launch with the production API base URL
+- Simulator incoming video-call route and full-screen call presentation
 
 Not yet claimed:
 
-- Physical iPhone/Android LiveKit audio/video quality.
+- Real two-user LiveKit audio/video exchange and quality measurement.
 - APNs/FCM incoming-call lock-screen behavior.
 - Bluetooth route controls.
 - Background audio continuity.
 - Real two-device incoming/outgoing call handoff.
-- Native camera/microphone call permissions on physical devices.
+- End-to-end native camera/microphone permission acceptance during a real second-party call.
 
-These remain release blockers, not development blockers.
+The production-backed foundation is installed and usable for device QA. Real two-device media exchange remains a release gate; it is not falsely claimed by a one-device build or synthetic incoming-call screen.
 
 ## Risk
 
@@ -93,4 +106,4 @@ Reason: calls combine LiveKit media, device audio sessions, camera/microphone pe
 
 ## Recommended Next Action
 
-Run a practical QA browser/static pass for call routing and then continue with the next highest-value native implementation. Do not block development on full physical call QA yet. Full two-device iOS/Android LiveKit call QA should be scheduled before any production replacement or App Store submission.
+Run a controlled two-account, two-device call: create from WebView, answer in native, verify remote audio/video, speaker/Bluetooth routing, background/foreground recovery, reconnect, decline/end propagation, duration, and quality submission. Complete CallKit/APNs lock-screen certification before any production replacement or App Store submission.

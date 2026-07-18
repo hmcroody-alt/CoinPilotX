@@ -875,6 +875,15 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         messages={messages}
         connected={!error}
         onClose={() => setControlCenterOpen(false)}
+        onStartCall={(callType) => {
+          setControlCenterOpen(false);
+          navigation.navigate("Call", {
+            conversationId,
+            callType,
+            direction: "outgoing",
+            title: route.params.title || (callType === "video" ? "PulseSoc Video" : "PulseSoc Voice")
+          });
+        }}
         onOpenSafety={(section) => {
           setControlCenterOpen(false);
           navigation.navigate("SafetyHub", { section, title: section === "reports" ? "Report Conversation" : "Blocked Users" });
