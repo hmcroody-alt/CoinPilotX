@@ -719,6 +719,76 @@ def pulse_ai_export_memory():
     return _timed_json("pulse_ai_export_memory", run)
 
 
+@comm_v2_blueprint.patch("/api/pulse-ai/memory/<int:memory_id>")
+def pulse_ai_correct_memory(memory_id: int):
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulse_ai_service
+
+        return pulse_ai_service.correct_memory(user["user_id"], memory_id, request.get_json(silent=True) or {})
+
+    return _timed_json("pulse_ai_correct_memory", run)
+
+
+@comm_v2_blueprint.delete("/api/pulse-ai/memory/<int:memory_id>")
+def pulse_ai_delete_memory(memory_id: int):
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulse_ai_service
+
+        return pulse_ai_service.delete_memory(user["user_id"], memory_id)
+
+    return _timed_json("pulse_ai_delete_memory", run)
+
+
+@comm_v2_blueprint.get("/api/pulse-ai/missions/<mission_id>")
+def pulse_ai_get_mission(mission_id: str):
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulse_ai_service
+
+        return pulse_ai_service.get_mission(user["user_id"], mission_id)
+
+    return _timed_json("pulse_ai_get_mission", run)
+
+
+@comm_v2_blueprint.post("/api/pulse-ai/missions/<mission_id>/cancel")
+def pulse_ai_cancel_mission(mission_id: str):
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulse_ai_service
+
+        return pulse_ai_service.cancel_mission(user["user_id"], mission_id)
+
+    return _timed_json("pulse_ai_cancel_mission", run)
+
+
+@comm_v2_blueprint.post("/api/pulse-ai/tools/simulate")
+def pulse_ai_simulate_tool():
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulse_ai_service
+
+        return pulse_ai_service.simulate_tool(user["user_id"], request.get_json(silent=True) or {})
+
+    return _timed_json("pulse_ai_simulate_tool", run)
+
+
 @comm_v2_blueprint.get(f"{API_PREFIX}/realtime/stream")
 @comm_v2_blueprint.get("/api/pulse/comm/v2/realtime/stream")
 def realtime_stream():
