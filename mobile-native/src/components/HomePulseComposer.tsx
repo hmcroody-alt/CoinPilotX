@@ -736,18 +736,18 @@ const styles = StyleSheet.create({
   },
   collapsedComposer: {
     alignItems: "center",
-    backgroundColor: "rgba(3, 10, 21, 0.54)",
+    backgroundColor: "rgba(3, 10, 21, 0.62)",
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 18,
+    borderRadius: 28,
     borderWidth: 1,
     flexDirection: "row",
     gap: 12,
-    minHeight: 52,
-    paddingHorizontal: 8,
-    paddingVertical: 7
+    minHeight: 70,
+    paddingHorizontal: 14,
+    paddingVertical: 11
   },
   collapsedShell: {
-    gap: 7
+    gap: 12
   },
   collapsedModeRow: {
     marginTop: 0
@@ -764,18 +764,18 @@ const styles = StyleSheet.create({
   },
   collapsedMeta: {
     color: colors.accent,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: "800",
-    marginTop: 2
+    marginTop: 5
   },
   collapsedOpen: {
     color: colors.accent,
-    fontSize: 25,
+    fontSize: 28,
     fontWeight: "700"
   },
   collapsedPrompt: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: 18,
     fontWeight: "700"
   },
   collapsedQuickRow: {
@@ -787,24 +787,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(3, 9, 18, 0.42)",
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 16,
+    borderRadius: 23,
     borderWidth: 1,
     flex: 1,
     flexDirection: "row",
     gap: 0,
-    minHeight: 44,
+    minHeight: 58,
     overflow: "hidden",
-    padding: 3
+    padding: 5
   },
   collapsedCreateButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
     borderColor: "rgba(255,255,255,0.2)",
-    borderRadius: 20,
+    borderRadius: 26,
     borderWidth: 1,
     justifyContent: "center",
-    minHeight: 44,
-    paddingHorizontal: 18
+    minHeight: 58,
+    paddingHorizontal: 24,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.28,
+    shadowRadius: 18
   },
   collapsedCreateText: {
     color: colors.background,
@@ -867,32 +870,33 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(159, 124, 255, 0.18)",
     borderColor: logiNexus.colors.home.borderIntelligence,
-    borderRadius: 20,
+    borderRadius: 31,
     borderWidth: 1,
-    height: 40,
+    height: 62,
     justifyContent: "center",
-    width: 40
+    overflow: "hidden",
+    width: 62
   },
   identityOrbText: {
     color: colors.accentStrong,
-    fontSize: 14,
+    fontSize: 17,
     fontWeight: "900"
   },
   identityImage: {
-    borderRadius: 19,
-    height: 38,
-    width: 38
+    borderRadius: 30,
+    height: 60,
+    width: 60
   },
   identitySignal: {
     backgroundColor: colors.accent,
     borderColor: logiNexus.colors.home.backgroundDeepSpace,
-    borderRadius: 5,
+    borderRadius: 8,
     borderWidth: 2,
-    bottom: 1,
-    height: 10,
+    bottom: 3,
+    height: 15,
     position: "absolute",
-    right: 1,
-    width: 10
+    right: 3,
+    width: 15
   },
   input: {
     color: colors.text,
@@ -952,9 +956,10 @@ const styles = StyleSheet.create({
   },
   eyebrow: {
     color: colors.accent,
-    fontSize: 9,
+    fontSize: 18,
     fontWeight: "900",
-    letterSpacing: 1.6
+    letterSpacing: 4,
+    textTransform: "uppercase"
   },
   liveDot: {
     color: colors.danger,

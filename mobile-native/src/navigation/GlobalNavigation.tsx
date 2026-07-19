@@ -82,11 +82,11 @@ export function LogiNexusGlobalHeader({
     <View style={[styles.headerShell, homeMode && styles.headerShellHome, { paddingTop: Math.max(insets.top, 10) }]} testID={testID}>
       <View style={styles.headerRow}>
         {canGoBack ? (
-          <IconButton label="Back" icon="chevron-back" testID="global-header-back" onPress={onBack} />
+          <IconButton label="Back" icon="chevron-back" home={homeMode} testID="global-header-back" onPress={onBack} />
         ) : showDrawer ? (
-          <IconButton label="Open PulseSoc navigation drawer" icon="menu" testID="global-header-drawer" onPress={onOpenDrawer} />
+          <IconButton label="Open PulseSoc navigation drawer" icon="menu" home={homeMode} testID="global-header-drawer" onPress={onOpenDrawer} />
         ) : (
-          <View style={styles.iconButtonSpacer} />
+          <View style={[styles.iconButtonSpacer, homeMode && styles.iconButtonSpacerHome]} />
         )}
 
         <View style={[styles.titleBlock, homeMode && styles.titleBlockHome]}>
@@ -117,15 +117,15 @@ export function LogiNexusGlobalHeader({
         </View>
 
         <View style={styles.headerActions}>
-          {onOpenSearch ? <IconButton label="Search PulseSoc" icon="search" testID="global-header-search" onPress={onOpenSearch} /> : null}
-          {onOpenMessages ? <IconButton label="Open Messages" icon="chatbubble-ellipses-outline" badge={messageCount} testID="global-header-messages" onPress={onOpenMessages} /> : null}
-          {onOpenActivity ? <IconButton label="Open Activity Inbox" icon="notifications-outline" badge={activityCount} testID="global-header-activity" onPress={onOpenActivity} /> : null}
+          {onOpenSearch ? <IconButton label="Search PulseSoc" icon="search" home={homeMode} testID="global-header-search" onPress={onOpenSearch} /> : null}
+          {onOpenMessages ? <IconButton label="Open Messages" icon="chatbubble-ellipses-outline" home={homeMode} badge={messageCount} testID="global-header-messages" onPress={onOpenMessages} /> : null}
+          {onOpenActivity ? <IconButton label="Open Activity Inbox" icon="notifications-outline" home={homeMode} badge={activityCount} testID="global-header-activity" onPress={onOpenActivity} /> : null}
           {onOpenProfile ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Open Profile"
               testID="global-header-profile"
-              style={({ pressed }) => [styles.avatarButton, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.avatarButton, homeMode && styles.avatarButtonHome, pressed && styles.pressed]}
               onPress={onOpenProfile}
             >
               {identity?.avatarUrl ? <Image source={{ uri: identity.avatarUrl }} style={styles.avatarImage} /> : <Text style={styles.avatarText}>{initials}</Text>}
@@ -212,20 +212,20 @@ export function openPrimaryCreate(navigation: NavigationProp<ParamListBase>) {
   (navigation as any).navigate("Home", { openComposer: true });
 }
 
-function IconButton({ label, icon, badge, testID, onPress }: { label: string; icon: keyof typeof Ionicons.glyphMap; badge?: number; testID?: string; onPress?: () => void }) {
+function IconButton({ label, icon, badge, testID, home, onPress }: { label: string; icon: keyof typeof Ionicons.glyphMap; badge?: number; testID?: string; home?: boolean; onPress?: () => void }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
       disabled={!onPress}
       testID={testID}
-      style={({ pressed }) => [styles.iconButton, pressed && styles.pressed, !onPress && styles.disabled]}
+      style={({ pressed }) => [styles.iconButton, home && styles.iconButtonHome, pressed && styles.pressed, !onPress && styles.disabled]}
       onPress={() => {
         Haptics.selectionAsync().catch(() => undefined);
         onPress?.();
       }}
     >
-      <Ionicons name={icon} size={25} style={styles.iconText} />
+      <Ionicons name={icon} size={home ? 29 : 25} style={[styles.iconText, home && styles.iconTextHome]} />
       {badge ? (
         <View style={styles.iconBadge}>
           <Text style={styles.iconBadgeText}>{formatBadge(badge)}</Text>
@@ -262,6 +262,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
     width: 38
+  },
+  avatarButtonHome: {
+    borderRadius: 24,
+    height: 48,
+    shadowColor: "#9f7cff",
+    shadowOpacity: 0.24,
+    shadowRadius: 14,
+    width: 48
   },
   avatarImage: {
     height: "100%",
@@ -301,11 +309,11 @@ const styles = StyleSheet.create({
   },
   bottomItem: {
     alignItems: "center",
-    borderRadius: 26,
+    borderRadius: 30,
     flex: 1,
     gap: 4,
     justifyContent: "center",
-    minHeight: 66,
+    minHeight: 72,
     paddingHorizontal: 2,
     paddingVertical: 6
   },
@@ -313,8 +321,8 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(50, 230, 179, 0.14)"
   },
   bottomCreateItem: {
-    marginTop: -28,
-    minHeight: 92
+    marginTop: -32,
+    minHeight: 98
   },
   bottomLabel: {
     ...logiNexus.typography.metadata,
@@ -328,14 +336,14 @@ const styles = StyleSheet.create({
   },
   bottomPanel: {
     alignItems: "center",
-    backgroundColor: "rgba(5, 10, 20, 0.88)",
+    backgroundColor: "rgba(8, 16, 29, 0.9)",
     borderColor: "rgba(121, 210, 255, 0.24)",
-    borderRadius: 34,
+    borderRadius: 38,
     borderWidth: 1,
     flexDirection: "row",
     gap: 4,
-    minHeight: 96,
-    padding: 8,
+    minHeight: 106,
+    padding: 10,
     shadowColor: colors.accent,
     shadowOpacity: 0.16,
     shadowRadius: 22
@@ -345,7 +353,7 @@ const styles = StyleSheet.create({
     borderTopColor: "transparent",
     borderTopWidth: 0,
     paddingHorizontal: logiNexus.spacing.md,
-    paddingTop: 8
+    paddingTop: 10
   },
   bottomSymbol: {
     alignItems: "center",
@@ -353,9 +361,9 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
     borderRadius: logiNexus.radius.circular,
     borderWidth: 1,
-    height: 40,
+    height: 46,
     justifyContent: "center",
-    width: 40
+    width: 46
   },
   bottomSymbolActive: {
     backgroundColor: colors.accent,
@@ -368,11 +376,11 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(3, 10, 21, 0.88)",
     borderColor: "rgba(121, 210, 255, 0.95)",
     borderWidth: 1,
-    height: 72,
+    height: 82,
     shadowColor: "#9f7cff",
     shadowOpacity: 0.2,
     shadowRadius: 18,
-    width: 72
+    width: 82
   },
   bottomSymbolText: {
     color: colors.text,
@@ -388,7 +396,7 @@ const styles = StyleSheet.create({
   headerActions: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 5
+    gap: 8
   },
   headerMetaRow: {
     flexDirection: "row",
@@ -399,7 +407,7 @@ const styles = StyleSheet.create({
   headerRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 6
+    gap: 10
   },
   headerShell: {
     backgroundColor: "rgba(3, 9, 18, 0.96)",
@@ -411,7 +419,7 @@ const styles = StyleSheet.create({
   headerShellHome: {
     backgroundColor: logiNexus.colors.home.backgroundDeepSpace,
     borderBottomColor: "transparent",
-    paddingBottom: 5
+    paddingBottom: 18
   },
   headerSubtitle: {
     ...logiNexus.typography.metadata,
@@ -431,8 +439,8 @@ const styles = StyleSheet.create({
   },
   headerTitleHome: {
     ...logiNexus.typography.home.brand,
-    fontSize: 21,
-    lineHeight: 25,
+    fontSize: 28,
+    lineHeight: 34,
     textAlign: "center"
   },
   headerTitleHomeAccent: {
@@ -440,29 +448,29 @@ const styles = StyleSheet.create({
   },
   homeBrandPulse: {
     color: colors.accent,
-    fontSize: 17,
+    fontSize: 21,
     fontWeight: "900",
-    lineHeight: 13,
+    lineHeight: 16,
     marginHorizontal: -2,
     marginTop: -4
   },
   homeBrandSignal: {
     alignItems: "center",
     flexDirection: "row",
-    height: 8,
+    height: 10,
     justifyContent: "center",
-    marginTop: 1,
-    width: 82
+    marginTop: 3,
+    width: 120
   },
   homeBrandSignalPrimary: {
     backgroundColor: colors.accent,
     height: 1,
-    width: 39
+    width: 58
   },
   homeBrandSignalSecondary: {
     backgroundColor: "#9f7cff",
     height: 1,
-    width: 39
+    width: 58
   },
   iconBadge: {
     alignItems: "center",
@@ -489,14 +497,31 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 38
   },
+  iconButtonHome: {
+    backgroundColor: "rgba(255,255,255,0.055)",
+    borderColor: "rgba(255,255,255,0.2)",
+    borderRadius: 25,
+    height: 50,
+    shadowColor: colors.accentStrong,
+    shadowOpacity: 0.11,
+    shadowRadius: 14,
+    width: 50
+  },
   iconButtonSpacer: {
     height: 38,
     width: 38
+  },
+  iconButtonSpacerHome: {
+    height: 50,
+    width: 50
   },
   iconText: {
     color: colors.text,
     fontSize: 19,
     fontWeight: "900"
+  },
+  iconTextHome: {
+    fontSize: 25
   },
   pressed: {
     opacity: 0.72,
