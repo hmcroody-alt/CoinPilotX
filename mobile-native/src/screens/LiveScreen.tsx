@@ -37,6 +37,7 @@ import {
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
+import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "LiveDetail">>;
 
@@ -57,6 +58,7 @@ export function LiveScreen({ route, navigation }: Props) {
   const [muted, setMuted] = useState(true);
   const [playbackFailed, setPlaybackFailed] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const videoRef = useRef<Video>(null);
 
   async function load(mode: "initial" | "refresh" = "initial") {
     setError("");
@@ -229,6 +231,21 @@ export function LiveScreen({ route, navigation }: Props) {
   const playbackUrl = useMemo(() => livePlaybackUrl(state || active), [state, active]);
   const posterUrl = useMemo(() => livePosterUrl(state || active), [state, active]);
   const canPlayNative = liveSupportsNativePlayback(state || active) && !playbackFailed;
+  const playbackOwnerId = `live:${activeLiveId}`;
+
+  useEffect(() => {
+    if (!activeLiveId || !canPlayNative || !playbackUrl) {
+      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+      return;
+    }
+    claimMediaPlayback({
+      id: playbackOwnerId,
+      kind: "live",
+      pause: () => videoRef.current?.pauseAsync().then(() => undefined),
+      stop: () => videoRef.current?.stopAsync().then(() => undefined)
+    }).then((granted) => granted ? videoRef.current?.playAsync() : undefined).catch(() => undefined);
+    return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
+  }, [activeLiveId, canPlayNative, playbackOwnerId, playbackUrl]);
 
   useEffect(() => {
     setPlaybackFailed(false);
@@ -264,10 +281,11 @@ export function LiveScreen({ route, navigation }: Props) {
             {posterUrl ? <Image source={{ uri: posterUrl }} style={styles.poster} resizeMode="cover" blurRadius={playbackUrl ? 0 : 2} /> : null}
             {canPlayNative && playbackUrl ? (
               <Video
+                ref={videoRef}
                 source={{ uri: playbackUrl }}
                 style={styles.video}
                 resizeMode={ResizeMode.COVER}
-                shouldPlay
+                shouldPlay={false}
                 isMuted={muted}
                 usePoster={Boolean(posterUrl)}
                 posterSource={posterUrl ? { uri: posterUrl } : undefined}

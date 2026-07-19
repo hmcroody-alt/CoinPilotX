@@ -5,6 +5,7 @@ import { PanGestureHandler, PinchGestureHandler, State } from "react-native-gest
 import { mediaDisplayUrl, mediaKind, PulseAuthor, PulseMedia } from "../api/feed";
 import { pollNativeMediaProcessing } from "../media/nativeMediaUpload";
 import { colors } from "../theme/colors";
+import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 
 export type NativeMediaViewerItem = {
   id?: number;
@@ -47,6 +48,7 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
   const [buffering, setBuffering] = useState(false);
   const [checking, setChecking] = useState(false);
   const [processingMessage, setProcessingMessage] = useState("");
+  const videoRef = useRef<Video>(null);
   const scale = useRef(new Animated.Value(1)).current;
   const translateY = useRef(new Animated.Value(0)).current;
   const item = items[index] || items[0];
@@ -55,6 +57,21 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
   const processing = isProcessing(item);
   const canGoPrevious = index > 0;
   const canGoNext = index < items.length - 1;
+  const playbackOwnerId = `media-viewer:${item?.id || index}`;
+
+  useEffect(() => {
+    if (!visible || kind !== "video" || !item?.url) {
+      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+      return;
+    }
+    claimMediaPlayback({
+      id: playbackOwnerId,
+      kind: "viewer",
+      pause: () => videoRef.current?.pauseAsync().then(() => undefined),
+      stop: () => videoRef.current?.stopAsync().then(() => undefined)
+    }).then((granted) => granted ? videoRef.current?.playAsync() : undefined).catch(() => undefined);
+    return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
+  }, [item?.url, kind, playbackOwnerId, visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -139,11 +156,12 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
               </PinchGestureHandler>
             ) : kind === "video" && item.url && !failed ? (
               <Video
+                ref={videoRef}
                 source={{ uri: item.url }}
                 style={styles.video}
                 resizeMode={ResizeMode.CONTAIN}
                 useNativeControls
-                shouldPlay
+                shouldPlay={false}
                 isLooping={false}
                 usePoster={Boolean(item.thumbnailUrl)}
                 posterSource={item.thumbnailUrl ? { uri: item.thumbnailUrl } : undefined}

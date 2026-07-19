@@ -36,6 +36,7 @@ import { stopVoiceMessagePlayback } from "../core/voiceMessagePlayback";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
+import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 
 const STATUS_REFRESH_MS = 4200;
 const TERMINAL_CALL_STATES = new Set(["ended", "declined", "missed", "failed", "busy", "canceled", "cancelled", "expired", "rejected", "disconnected"]);
@@ -71,6 +72,8 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const glow = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     stopVoiceMessagePlayback("call_opened").catch(() => undefined);
+    claimMediaPlayback({ id: "native-call", kind: "call", pause: () => undefined }).catch(() => undefined);
+    return () => { releaseMediaPlayback("native-call").catch(() => undefined); };
   }, []);
 
   const callType: PulseCallType = call?.call_type === "video" ? "video" : requestedType;

@@ -449,6 +449,7 @@ export function ReelsScreen({ route, navigation }: Props) {
               reel={item}
               active={index === activeIndex && appActive && !shareOpen && !commentReel && !reactionReel && !musicReel && !moreReel}
               muted={muted}
+              offline={offline}
               contentTop={insets.top + 56}
               busy={busyId === item.id}
               onToggleMuted={() => setMuted((current) => !current)}

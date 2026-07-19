@@ -12,6 +12,7 @@ import {
   setSessionEnvelope
 } from "./sessionStore";
 import { shouldRejectTemporaryQaUser } from "./qaTemporaryAccount";
+import { clearUserScopedMediaState } from "../media/mediaSessionCleanup";
 
 export type AuthState = {
   status: "loading" | "signedIn" | "signedOut";
@@ -84,6 +85,7 @@ export async function createAccount(payload: { full_name: string; username: stri
 export async function signOut(): Promise<AuthState> {
   await unregisterPushDevice({ preservePreferences: true, reason: "logout" }).catch(() => undefined);
   await logout().catch(() => undefined);
+  await clearUserScopedMediaState();
   await clearNativeSessionCredentials();
   await setCachedSessionUser(null);
   return { status: "signedOut", user: null };
@@ -92,6 +94,7 @@ export async function signOut(): Promise<AuthState> {
 export async function signOutEverywhere(): Promise<AuthState> {
   await unregisterPushDevice({ preservePreferences: true, reason: "logout" }).catch(() => undefined);
   await logoutAll();
+  await clearUserScopedMediaState();
   await clearNativeSessionCredentials();
   await setCachedSessionUser(null);
   return { status: "signedOut", user: null };

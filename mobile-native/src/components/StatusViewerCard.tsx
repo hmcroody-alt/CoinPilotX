@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PulseStatus, pulseStatusUrl, statusMediaKind, statusMediaUrl, statusMusicLabel, statusPosterUrl } from "../api/status";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
+import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 
 type Props = {
   status: PulseStatus;
@@ -50,19 +51,27 @@ export function StatusViewerCard({
   const kind = statusMediaKind(status);
   const author = status.author || {};
   const music = statusMusicLabel(status);
+  const playbackOwnerId = `status:${status.id}`;
 
   useEffect(() => {
     if (active) {
       startedAt.current = Date.now();
-      videoRef.current?.playAsync().catch(() => undefined);
+      claimMediaPlayback({
+        id: playbackOwnerId,
+        kind: "status",
+        pause: () => videoRef.current?.pauseAsync().then(() => undefined),
+        stop: () => videoRef.current?.stopAsync().then(() => undefined)
+      }).then((granted) => granted ? videoRef.current?.playAsync() : undefined).catch(() => undefined);
     } else {
       if (startedAt.current) {
         onViewed?.(status, Date.now() - startedAt.current, false);
         startedAt.current = 0;
       }
       videoRef.current?.pauseAsync().catch(() => undefined);
+      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
     }
-  }, [active, onViewed, status]);
+    return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
+  }, [active, onViewed, playbackOwnerId, status]);
 
   useEffect(() => {
     if (!active || paused || kind === "video") return;
@@ -93,7 +102,7 @@ export function StatusViewerCard({
           source={{ uri: mediaUrl }}
           style={styles.media}
           resizeMode={ResizeMode.COVER}
-          shouldPlay={active}
+          shouldPlay={false}
           isLooping={false}
           isMuted={muted}
           usePoster={Boolean(posterUrl)}

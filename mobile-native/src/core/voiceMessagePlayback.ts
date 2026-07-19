@@ -1,6 +1,7 @@
 import { Audio, AVPlaybackStatus, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 import { AppState } from "react-native";
 import { pausePulseRadio } from "./pulseRadio";
+import { claimMediaPlayback, releaseMediaPlayback } from "./mediaPlaybackCoordinator";
 
 export type VoicePlaybackStatus = "idle" | "loading" | "playing" | "paused" | "error";
 
@@ -88,7 +89,7 @@ export async function releaseVoicePlayback(messageId: string) {
   snapshots.delete(messageId);
 }
 
-export async function stopVoiceMessagePlayback(_reason = "stopped") {
+export async function stopVoiceMessagePlayback(_reason = "stopped", releaseOwnership = true) {
   generation += 1;
   const previousId = activeMessageId;
   const previousSound = sound;
@@ -99,6 +100,7 @@ export async function stopVoiceMessagePlayback(_reason = "stopped") {
     const previous = getVoicePlaybackSnapshot(previousId);
     update(previousId, { status: "idle", positionMillis: 0, error: "", durationMillis: previous.durationMillis });
   }
+  if (releaseOwnership) await releaseMediaPlayback("voice-message");
 }
 
 async function startVoicePlayback(request: PlayRequest, rate: number) {
@@ -114,6 +116,13 @@ async function startVoicePlayback(request: PlayRequest, rate: number) {
   });
   try {
     await pausePulseRadio().catch(() => undefined);
+    const granted = await claimMediaPlayback({
+      id: "voice-message",
+      kind: "voice",
+      pause: () => stopVoiceMessagePlayback("interrupted", false),
+      stop: () => stopVoiceMessagePlayback("interrupted", false)
+    });
+    if (!granted) throw new Error("Another media session is active.");
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
       staysActiveInBackground: false,
@@ -138,6 +147,7 @@ async function startVoicePlayback(request: PlayRequest, rate: number) {
     if (attempt !== generation) return;
     sound = null;
     update(request.messageId, { status: "error", error: "Voice message unavailable. Tap to retry." });
+    await releaseMediaPlayback("voice-message").catch(() => undefined);
   }
 }
 

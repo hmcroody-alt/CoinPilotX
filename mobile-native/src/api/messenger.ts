@@ -689,53 +689,6 @@ export function resolveLocalMessengerFileSize(uri: string, declaredSize?: number
   }
 }
 
-export async function uploadMessengerMediaLegacy(input: {
-  conversationId: number;
-  uri: string;
-  name: string;
-  mimeType: string;
-  sizeBytes?: number;
-  voice?: boolean;
-  durationSeconds?: number;
-}) {
-  const form = new FormData();
-  form.append("conversation_id", String(input.conversationId));
-  if (input.voice) {
-    form.append("voice", "true");
-    form.append("attachment_kind", "voice");
-  }
-  if (input.durationSeconds) form.append("duration_seconds", String(input.durationSeconds));
-  form.append("file", {
-    uri: input.uri,
-    name: input.name,
-    type: input.mimeType
-  } as unknown as Blob);
-  const result = await pulseApi<MediaUploadResult>(`${MESSENGER_API}/attachments/upload`, {
-    method: "POST",
-    body: form
-  });
-  const media = result.media || {};
-  const mediaId = Number(media.id || media.media_id || result.media_id || 0);
-  const mediaUrl = String(
-    result.media_url ||
-    result.playback_url ||
-    media.media_url ||
-    media.url ||
-    media.valid_url ||
-    media.playback_url ||
-    ""
-  );
-  return {
-    ...result,
-    media_id: mediaId,
-    media_url: mediaUrl,
-    playback_url: String(result.playback_url || media.playback_url || ""),
-    thumbnail_url: String(result.thumbnail_url || media.thumbnail_url || media.poster_url || ""),
-    message_type: String(result.message_type || result.type || media.media_type || (input.voice ? "voice" : "file")),
-    file_size: Number(result.file_size || media.file_size || media.file_size_bytes || 0)
-  };
-}
-
 export function isRetryableMessengerSendError(error: unknown) {
   if (!(error instanceof PulseApiError)) return false;
   if (error.status === 0 || error.status === 408 || error.status >= 500) return true;

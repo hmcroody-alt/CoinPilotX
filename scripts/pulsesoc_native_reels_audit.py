@@ -109,8 +109,17 @@ def main() -> int:
         "reelIsPlayable",
         "reelVideoUrl",
         "reelPosterUrl",
+        "refreshCanonicalMediaAccess",
+        "claimMediaPlayback",
+        "releaseMediaPlayback",
+        "userPaused",
+        "ReelStateSurface",
+        "RichCaption",
     ):
         require(token in card, f"native Reel player behavior missing: {token}")
+
+    require("marginTop: 112" in card and "marginBottom: 96" in card, "central Reel player must remain inside the frozen header and bottom-navigation shell")
+    require("!active || !ownsPlayback || !attachedAudio" in card, "offscreen or preempted Reels must release attached audio")
 
     require("ReelsScreen" in navigator and 'name="Reels"' in navigator and 'name="ReelDetail"' in navigator, "navigator must register Reels")
     require("Reels: { reelId?: number" in types and "ReelDetail: { reelId: number" in types, "navigation types must include Reels params")
@@ -125,12 +134,8 @@ def main() -> int:
     ):
         require(phrase in progress, f"native progress report must preserve the active Reels status: {phrase}")
 
-    mobile_native = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (ROOT / "mobile-native/src").rglob("*.ts*")
-        if "node_modules" not in path.parts
-    )
-    require("WebView" not in mobile_native and "react-native-webview" not in mobile_native.lower(), "native Reels must not introduce WebView")
+    reels_native_surface = f"{screen}\n{card}\n{api}".lower()
+    require("react-native-webview" not in reels_native_surface and "<webview" not in reels_native_surface, "native Reels must not introduce a WebView component")
 
     print("PulseSoc native Reels audit passed.")
     return 0

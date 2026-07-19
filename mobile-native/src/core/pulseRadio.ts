@@ -1,6 +1,7 @@
 import { Audio, AVPlaybackStatus, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 import { AppState } from "react-native";
 import { listPulseRadioTracks, PulseRadioTrack, recordPulseRadioPlay } from "../api/radio";
+import { claimMediaPlayback, releaseMediaPlayback } from "./mediaPlaybackCoordinator";
 
 export type PulseRadioState = {
   status: "paused" | "connecting" | "buffering" | "playing" | "error" | "offline";
@@ -39,15 +40,21 @@ export async function togglePulseRadio() {
 export async function playPulseRadio() {
   if (state.status === "playing" || state.status === "connecting" || state.status === "buffering") return;
   const generation = ++intentGeneration;
+  const granted = await claimMediaPlayback({ id: "pulse-radio", kind: "radio", pause: () => pausePulseRadio(false), stop: () => pausePulseRadio(false) });
+  if (!granted) {
+    update({ status: "paused", message: "Pulse Radio pauses while higher-priority media is active." });
+    return;
+  }
   await startPlayback(generation);
 }
 
-export async function pausePulseRadio() {
+export async function pausePulseRadio(releaseOwnership = true) {
   intentGeneration += 1;
   const activeSound = sound;
   sound = null;
   if (activeSound) await activeSound.unloadAsync().catch(() => undefined);
   update({ status: "paused", message: state.track ? "Paused" : "Tap to play" });
+  if (releaseOwnership) await releaseMediaPlayback("pulse-radio");
 }
 
 async function startPlayback(generation: number) {
@@ -80,6 +87,7 @@ async function startPlayback(generation: number) {
       status: offline ? "offline" : "error",
       message: offline ? "Connect to the internet to play Pulse Radio." : "Pulse Radio is unavailable. Tap to retry."
     });
+    await releaseMediaPlayback("pulse-radio").catch(() => undefined);
   }
 }
 

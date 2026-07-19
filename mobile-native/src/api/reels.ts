@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PULSE_API_BASE_URL, PULSESOC_QA_REELS_FIXTURES } from "./config";
 import { mediaDisplayUrl, PulseAuthor, PulseComment, PulseMedia, normalizeComments } from "./feed";
 import { pulseApi } from "./pulseApi";
+import { isLikelyExpiringMediaUrl, mediaRecordForCache } from "../media/mediaContract";
 
 const REELS_CACHE_KEY = "pulsesoc.native.reels.feed";
 const REELS_CACHE_META_KEY = "pulsesoc.native.reels.feed.meta";
@@ -40,6 +41,12 @@ export type PulseReel = {
   poster_url?: string;
   processing_status?: string;
   transcoding_status?: string;
+  moderation_status?: string;
+  availability?: string;
+  visibility_state?: string;
+  restriction_reason?: string;
+  deleted_at?: string;
+  is_removed?: boolean;
   comments_disabled?: boolean;
   reactions_disabled?: boolean;
   can_manage?: boolean;
@@ -182,7 +189,7 @@ export async function loadCachedReelsSnapshot(lane = "for_you") {
 
 export async function cacheReels(reels: PulseReel[], lane = "for_you") {
   await Promise.all([
-    AsyncStorage.setItem(reelsCacheKey(lane), JSON.stringify(reels.slice(0, 50))),
+    AsyncStorage.setItem(reelsCacheKey(lane), JSON.stringify(reels.slice(0, 50).map(reelForCache))),
     AsyncStorage.setItem(`${REELS_CACHE_META_KEY}.${lane}`, String(Date.now()))
   ]);
 }
@@ -350,7 +357,12 @@ export function reelWebUrl(reelId: number) {
 }
 
 export function normalizeReels(items: PulseReel[]) {
-  return items.map(normalizeReel).filter((reel) => reel.id !== 0 && Number.isFinite(reel.id));
+  const seen = new Set<number>();
+  return items.map(normalizeReel).filter((reel) => {
+    if (reel.id === 0 || !Number.isFinite(reel.id) || seen.has(reel.id)) return false;
+    seen.add(reel.id);
+    return true;
+  });
 }
 
 function countCommentTree(comments: PulseComment[]): number {
@@ -413,6 +425,14 @@ function normalizeReelMedia(item: PulseReel) {
 
 function normalizeReactionCounts(counts: Record<string, number>) {
   return Object.fromEntries(Object.entries(counts || {}).map(([key, value]) => [key, Number(value || 0)]));
+}
+
+function reelForCache(reel: PulseReel): PulseReel {
+  const audio = reel.audio ? { ...reel.audio } : undefined;
+  if (audio?.audio_url && isLikelyExpiringMediaUrl(audio.audio_url)) delete audio.audio_url;
+  if (audio?.attached_audio_url && isLikelyExpiringMediaUrl(audio.attached_audio_url)) delete audio.attached_audio_url;
+  if (audio?.preview_url && isLikelyExpiringMediaUrl(audio.preview_url)) delete audio.preview_url;
+  return { ...reel, media: (reel.media || []).map(mediaRecordForCache), audio };
 }
 
 function reelsQaFixtures(): PulseReel[] {

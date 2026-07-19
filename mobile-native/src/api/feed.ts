@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
+import { CanonicalMediaRecord, mediaRecordForCache } from "../media/mediaContract";
 
 const FEED_CACHE_PREFIX = "pulsesoc.native.feed.";
 const POST_CACHE_PREFIX = "pulsesoc.native.post.";
@@ -20,30 +21,7 @@ export type PulseAuthor = {
   premium_verified?: boolean;
 };
 
-export type PulseMedia = {
-  id?: number;
-  type?: string;
-  media_type?: string;
-  url?: string;
-  media_url?: string;
-  thumbnail_url?: string;
-  poster_url?: string;
-  playback_url?: string;
-  mux_playback_id?: string;
-  mux_hls_url?: string;
-  hls_url?: string;
-  valid_url?: string;
-  cdn_url?: string;
-  playback_mime_type?: string;
-  is_available?: boolean;
-  has_audio?: boolean;
-  attached_audio_url?: string;
-  mime_type?: string;
-  alt?: string;
-  width?: number;
-  height?: number;
-  status?: string;
-};
+export type PulseMedia = CanonicalMediaRecord;
 
 export type PulseComment = {
   id: number;
@@ -196,7 +174,7 @@ export async function loadCachedFeed(feed = "for_you") {
 }
 
 export async function cacheFeed(feed: string, posts: PulsePost[]) {
-  await AsyncStorage.setItem(`${FEED_CACHE_PREFIX}${feed}`, JSON.stringify(posts.slice(0, 80)));
+  await AsyncStorage.setItem(`${FEED_CACHE_PREFIX}${feed}`, JSON.stringify(posts.slice(0, 80).map(postForCache)));
 }
 
 export async function getPostDetail(postId: number) {
@@ -243,7 +221,7 @@ export async function loadCachedPostDetail(postId: number) {
 }
 
 export async function cachePostDetail(postId: number, detail: PostDetailResponse) {
-  await AsyncStorage.setItem(`${POST_CACHE_PREFIX}${postId}`, JSON.stringify(detail));
+  await AsyncStorage.setItem(`${POST_CACHE_PREFIX}${postId}`, JSON.stringify({ ...detail, post: detail.post ? postForCache(detail.post) : undefined }));
 }
 
 export async function reactToPost(postId: number, reactionType: string) {
@@ -412,4 +390,8 @@ function normalizeMedia(items: PulseMedia[], item: PulsePost) {
 
 function normalizeReactionCounts(counts: Record<string, number>) {
   return Object.fromEntries(Object.entries(counts || {}).map(([key, value]) => [key, Number(value || 0)]));
+}
+
+function postForCache(post: PulsePost): PulsePost {
+  return { ...post, media: (post.media || []).map(mediaRecordForCache) };
 }
