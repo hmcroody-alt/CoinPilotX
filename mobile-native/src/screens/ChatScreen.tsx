@@ -35,13 +35,17 @@ import {
   drainMessengerQueue,
   enqueueMessengerMessage,
   getConversation,
+  getPulseAiConversation,
   isRetryableMessengerSendError,
   loadCachedMessages,
   markConversationSeen,
   MessengerMessage,
+  PULSE_AI_CONVERSATION_ID,
+  PULSE_AI_DISPLAY_NAME,
   reactToMessage,
   reportMessage,
   sendConversationMessage,
+  sendPulseAiMessage,
   sendTyping,
   updateCachedConversationPreview,
   syncConversation,
@@ -180,6 +184,7 @@ function SignalIconButton({
 
 export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, "Chat">) {
   const conversationId = route.params.conversationId;
+  const assistantConversation = conversationId === PULSE_AI_CONVERSATION_ID;
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<MessengerMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -201,7 +206,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [controlCenterOpen, setControlCenterOpen] = useState(false);
-  const [threadTitle, setThreadTitle] = useState(route.params.title || "Messenger");
+  const [threadTitle, setThreadTitle] = useState(assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Messenger");
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingAt = useRef(0);
   const appState = useRef<AppStateStatus>(AppState.currentState);
@@ -267,6 +272,9 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     : usingCachedMessages
       ? "Cached history"
       : "Live channel";
+  const headerSubtitle = assistantConversation
+    ? typing || (error ? "Service reconnecting" : usingCachedMessages ? "Cached history" : "Available · PulseSoc Intelligence")
+    : typing || (isPresenceActive(route.params.presence) ? "Online · Direct" : headerStatus);
 
   const mergeMessages = useCallback((current: MessengerMessage[], incoming: MessengerMessage[]) => {
     const byKey = new Map<string, MessengerMessage>();
@@ -294,7 +302,9 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     else setLoading(true);
     setError("");
     try {
-      const data = await getConversation(conversationId, { limit: PAGE_SIZE });
+      const data = assistantConversation
+        ? await getPulseAiConversation({ limit: PAGE_SIZE })
+        : await getConversation(conversationId, { limit: PAGE_SIZE });
       const nextMessages = data.messages || [];
       if (data.conversation) {
         const title = String(data.conversation.title || data.conversation.name || "").trim();
@@ -304,7 +314,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setUsingCachedMessages(false);
       setStatusMessage("");
       await cacheMessages(conversationId, nextMessages);
-      await markConversationSeen(conversationId).catch(() => undefined);
+      if (!assistantConversation) await markConversationSeen(conversationId).catch(() => undefined);
       setTyping(typingSummary(data.presence));
     } catch (loadError) {
       const cached = await loadCachedMessages(conversationId);
@@ -322,9 +332,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setRefreshing(false);
       setLoading(false);
     }
-  }, [conversationId]);
+  }, [assistantConversation, conversationId]);
 
   const loadOlder = useCallback(async () => {
+    if (assistantConversation) return;
     if (loadingOlder || oldestMessageId === Number.MAX_SAFE_INTEGER) return;
     setLoadingOlder(true);
     try {
@@ -337,10 +348,27 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     } finally {
       setLoadingOlder(false);
     }
-  }, [conversationId, loadingOlder, mergeMessages, oldestMessageId]);
+  }, [assistantConversation, conversationId, loadingOlder, mergeMessages, oldestMessageId]);
 
   const sync = useCallback(async () => {
     if (appState.current !== "active") return;
+    if (assistantConversation) {
+      if (!messages.length) return;
+      try {
+        const data = await getPulseAiConversation({ limit: 80 });
+        setMessages((current) => {
+          const merged = mergeMessages(current, data.messages || []);
+          cacheMessages(conversationId, merged).catch(() => undefined);
+          return merged;
+        });
+        setUsingCachedMessages(false);
+        setError("");
+        setStatusMessage("");
+      } catch {
+        if (messages.length) setStatusMessage("UNDX reconnecting. Conversation history remains visible.");
+      }
+      return;
+    }
     if (isLocalMessengerFixtureConversation(conversationId)) {
       setTyping(qaFixtureTyping(conversationId));
       setUsingCachedMessages(false);
@@ -375,10 +403,11 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setTyping("");
       if (messages.length) setStatusMessage("Realtime reconnecting. Message history remains visible.");
     }
-  }, [conversationId, mergeMessages, messages.length, newestMessageId]);
+  }, [assistantConversation, conversationId, mergeMessages, messages.length, newestMessageId]);
 
   const notifyTyping = useCallback((value: string) => {
     setDraft(value);
+    if (assistantConversation) return;
     const now = Date.now();
     if (now - lastTypingAt.current > 1800) {
       lastTypingAt.current = now;
@@ -388,7 +417,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     typingTimer.current = setTimeout(() => {
       sendTyping(conversationId, false).catch(() => undefined);
     }, 1200);
-  }, [conversationId]);
+  }, [assistantConversation, conversationId]);
 
   const sendPayload = useCallback(async (payload: {
     body?: string;
@@ -402,6 +431,41 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     reply_to_message_id?: number;
     reply_preview?: string;
   }) => {
+    if (assistantConversation) {
+      if ((payload.message_type || "text") !== "text" || payload.media_url || payload.attachment_ids?.length || payload.media_ids?.length) {
+        setStatusMessage("UNDX supports text conversation in native chat right now.");
+        return "failed" as const;
+      }
+      const body = (payload.body || "").trim();
+      if (!body) return "failed" as const;
+      const local = createLocalMessage(conversationId, body, "text");
+      setMessages((current) => mergeMessages(current, [local]));
+      setTyping("UNDX is typing");
+      setStatusMessage("UNDX is thinking...");
+      try {
+        const data = await sendPulseAiMessage({ body, client_message_id: local.client_message_id });
+        const nextMessages = data.messages || [];
+        setMessages(nextMessages);
+        await cacheMessages(conversationId, nextMessages);
+        await updateCachedConversationPreview(conversationId, body, new Date().toISOString()).catch(() => undefined);
+        setTyping("");
+        setStatusMessage("");
+        return "sent" as const;
+      } catch (sendError) {
+        setTyping("");
+        const cached = await loadCachedMessages(conversationId);
+        const failedMessages = mergeMessages(cached.length ? cached : messages, [{
+          ...local,
+          delivery_status: "failed",
+          local_status: "failed",
+          local_error: sendError instanceof Error ? sendError.message : "UNDX could not respond."
+        }]);
+        setMessages(failedMessages);
+        await cacheMessages(conversationId, failedMessages);
+        setStatusMessage(sendError instanceof Error ? sendError.message : "UNDX is temporarily unavailable.");
+        throw sendError;
+      }
+    }
     const payloadType = normalizedMessageType(payload.message_type || "text");
     const label = payload.body?.trim() || mediaPreviewLabel(payloadType, Boolean(payload.media_url));
     const local = createLocalMessage(conversationId, payload.body || "", payload.message_type || "text");
@@ -468,7 +532,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       });
       throw sendError;
     }
-  }, [conversationId, mergeMessages, replaceLocalMessage, sync]);
+  }, [assistantConversation, conversationId, mergeMessages, messages, replaceLocalMessage, sync]);
 
   const submitText = useCallback(async () => {
     const body = draft.trim();
@@ -476,14 +540,14 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     setDraft("");
     const currentReply = replyTo;
     setReplyTo(null);
-    await sendTyping(conversationId, false).catch(() => undefined);
+    if (!assistantConversation) await sendTyping(conversationId, false).catch(() => undefined);
     await sendPayload({
       body,
       message_type: "text",
       reply_to_message_id: currentReply?.message_id,
       reply_preview: currentReply ? messagePreview(currentReply) : undefined
     });
-  }, [conversationId, draft, replyTo, sendPayload]);
+  }, [assistantConversation, conversationId, draft, replyTo, sendPayload]);
 
   const retryMessage = useCallback(async (message: MessengerMessage) => {
     setMessages((current) => current.filter((item) => item.id !== message.id));
@@ -561,6 +625,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   }, []);
 
   const uploadAndSend = useCallback(async (input: { uri: string; name: string; mimeType: string; sizeBytes?: number; voice?: boolean; durationSeconds?: number }) => {
+    if (assistantConversation) {
+      setStatusMessage("UNDX supports text conversation in native chat right now. Attachments stay in human chats until the backend enables assistant media.");
+      return;
+    }
     if (uploading) return;
     setUploading(true);
     setStatusMessage(input.voice ? "Sending voice message…" : "Uploading attachment…");
@@ -603,7 +671,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     } finally {
       setUploading(false);
     }
-  }, [conversationId, sendPayload, uploading]);
+  }, [assistantConversation, conversationId, sendPayload, uploading]);
 
   const attachImage = useCallback(async () => {
     try {
@@ -769,9 +837,9 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     return () => {
       mounted = false;
       if (typingTimer.current) clearTimeout(typingTimer.current);
-      sendTyping(conversationId, false).catch(() => undefined);
+      if (!assistantConversation) sendTyping(conversationId, false).catch(() => undefined);
     };
-  }, [conversationId, load]);
+  }, [assistantConversation, conversationId, load]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -797,14 +865,14 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 10) }]}>
         <View style={styles.threadHeader}>
           <Pressable accessibilityRole="button" accessibilityLabel="Back to conversations" style={styles.backButton} onPress={() => navigation.goBack()}><Text style={styles.backButtonText}>‹</Text></Pressable>
-          <PulseCommandAvatar label={route.params.title || "Chat"} imageUrl={route.params.avatarUrl} active={isPresenceActive(route.params.presence)} size={48} />
+          <PulseCommandAvatar label={assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Chat"} imageUrl={assistantConversation ? undefined : route.params.avatarUrl} active={assistantConversation || isPresenceActive(route.params.presence)} size={48} tone={assistantConversation ? "intelligence" : "default"} />
           <View style={styles.threadIdentity}>
             <Text style={styles.threadTitle} numberOfLines={1}>{threadTitle}</Text>
-            <View style={styles.threadStatusRow}><LiveStatusDot warning={Boolean(error)} /><Text style={styles.threadSubtitle} numberOfLines={1}>{typing || (isPresenceActive(route.params.presence) ? "Online · Direct" : headerStatus)}</Text></View>
+            <View style={styles.threadStatusRow}><LiveStatusDot warning={Boolean(error)} /><Text style={styles.threadSubtitle} numberOfLines={1}>{headerSubtitle}</Text></View>
           </View>
           <View style={styles.callActions}>
-            <SignalIconButton accessibilityLabel="Start audio call" icon="call-outline" onPress={() => navigation.navigate("Call", { conversationId, callType: "audio", direction: "outgoing", title: threadTitle })} />
-            <SignalIconButton accessibilityLabel="Start video call" icon="videocam-outline" tone="intelligence" onPress={() => navigation.navigate("Call", { conversationId, callType: "video", direction: "outgoing", title: threadTitle })} />
+            {!assistantConversation ? <SignalIconButton accessibilityLabel="Start audio call" icon="call-outline" onPress={() => navigation.navigate("Call", { conversationId, callType: "audio", direction: "outgoing", title: threadTitle })} /> : null}
+            {!assistantConversation ? <SignalIconButton accessibilityLabel="Start video call" icon="videocam-outline" tone="intelligence" onPress={() => navigation.navigate("Call", { conversationId, callType: "video", direction: "outgoing", title: threadTitle })} /> : null}
             <SignalIconButton accessibilityLabel="Open conversation controls" icon="ellipsis-vertical" onPress={() => setControlCenterOpen(true)} />
           </View>
         </View>
@@ -839,7 +907,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           onEndReached={loadOlder}
           onEndReachedThreshold={0.2}
           ListFooterComponent={loadingOlder ? <Text style={styles.loadingOlder}>Loading older messages...</Text> : null}
-          ListEmptyComponent={showEmptyConversation ? <LogiNexusStatePanel state="empty" title="No messages yet" body="Messages in this chat will appear here." style={styles.emptyMessages} /> : null}
+          ListEmptyComponent={showEmptyConversation ? <LogiNexusStatePanel state="empty" title={assistantConversation ? "UNDX is ready" : "No messages yet"} body={assistantConversation ? "Message UNDX to start the conversation." : "Messages in this chat will appear here."} style={styles.emptyMessages} /> : null}
           renderItem={({ item }) => (
             <MessageBubble
               message={item}
@@ -856,7 +924,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         <View pointerEvents="none" style={styles.composerSignalLine} />
         <View style={styles.composerMetaRow}>
           <View style={styles.composerMetaIdentity}><LiveStatusDot warning={Boolean(error)} /><Text style={styles.composerKicker}>PULSE LINK</Text></View>
-          <Text style={[styles.composerState, showVoiceCapture && styles.composerStateRecording]}>{showVoiceCapture ? "RECORDING" : uploading ? "SENDING MEDIA" : error ? "RECONNECTING" : "SECURE · READY"}</Text>
+          <Text style={[styles.composerState, showVoiceCapture && styles.composerStateRecording]}>{showVoiceCapture ? "RECORDING" : uploading ? "SENDING MEDIA" : error ? "RECONNECTING" : assistantConversation ? "UNDX · READY" : "SECURE · READY"}</Text>
         </View>
         {statusMessage && !keyboardVisible ? (
           <Pressable accessibilityRole="button" accessibilityLabel="Dismiss message status" style={styles.statusBanner} onPress={() => setStatusMessage("")}>
@@ -883,19 +951,19 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             onSend={() => toggleVoiceRecording().catch(() => undefined)}
           />
         ) : <View style={styles.inputRow}>
-          <SignalIconButton accessibilityLabel={uploading ? "Uploading attachment" : "Add attachment"} icon={uploading ? "cloud-upload-outline" : "add"} disabled={uploading} size={46} onPress={() => setAttachmentSheetOpen(true)} />
+          <SignalIconButton accessibilityLabel={assistantConversation ? "UNDX attachment support unavailable" : uploading ? "Uploading attachment" : "Add attachment"} icon={uploading ? "cloud-upload-outline" : "add"} disabled={uploading || assistantConversation} size={46} onPress={() => assistantConversation ? setStatusMessage("UNDX supports text conversation in native chat right now.") : setAttachmentSheetOpen(true)} />
           <TextInput
             multiline
             autoFocus={qaChatState === "keyboard" || qaChatState === "reply-keyboard"}
-            placeholder="Message"
+            placeholder={assistantConversation ? "Message UNDX…" : "Message"}
             placeholderTextColor={colors.muted}
             style={styles.input}
             value={draft}
             onChangeText={notifyTyping}
-            accessibilityLabel="Message composer"
+            accessibilityLabel={assistantConversation ? "Message UNDX composer" : "Message composer"}
           />
           <SignalIconButton accessibilityLabel="Add smiling emoji" icon="happy-outline" size={42} onPress={() => setDraft((current) => `${current}😊`)} />
-          <SignalIconButton accessibilityLabel="Record voice message" icon="mic-outline" disabled={uploading} size={42} onPress={() => toggleVoiceRecording().catch(() => undefined)} />
+          <SignalIconButton accessibilityLabel={assistantConversation ? "UNDX voice messages unavailable" : "Record voice message"} icon="mic-outline" disabled={uploading || assistantConversation} size={42} onPress={() => assistantConversation ? setStatusMessage("UNDX voice messages are not enabled in native chat yet.") : toggleVoiceRecording().catch(() => undefined)} />
           <Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={!draft.trim()} style={({ pressed }) => [styles.sendButton, !draft.trim() && styles.sendDisabled, pressed && styles.pressed]} onPress={submitText}>
             <Text style={styles.sendText}>➤</Text>
           </Pressable>
@@ -943,11 +1011,12 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       <ConversationControlCenter
         visible={controlCenterOpen}
         conversationId={conversationId}
-        title={route.params.title || "Conversation"}
+        title={assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Conversation"}
         messages={messages}
         connected={!error}
+        assistantConversation={assistantConversation}
         onClose={() => setControlCenterOpen(false)}
-        onStartCall={(callType) => {
+        onStartCall={!assistantConversation ? (callType) => {
           setControlCenterOpen(false);
           navigation.navigate("Call", {
             conversationId,
@@ -955,7 +1024,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             direction: "outgoing",
             title: threadTitle
           });
-        }}
+        } : undefined}
         onOpenSafety={(section) => {
           setControlCenterOpen(false);
           navigation.navigate("SafetyHub", { section, title: section === "reports" ? "Report Conversation" : "Blocked Users" });

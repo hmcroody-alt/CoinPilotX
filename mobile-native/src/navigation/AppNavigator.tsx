@@ -113,7 +113,7 @@ function TabNavigator({
         <Tabs.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />
         <Tabs.Screen name="Create" component={CreateTabScreen} options={{ title: "Create" }} />
         <Tabs.Screen name="Status" component={StatusScreen} options={{ title: "Status" }} />
-        <Tabs.Screen name="Messenger" component={MessengerScreen} options={{ title: "Messages" }} />
+        <Tabs.Screen name="Messenger" component={MessengerScreen} options={{ headerShown: false, title: "Messages" }} />
         <Tabs.Screen name="Notifications" component={ActivityInboxScreen} options={{ title: "Activity" }} />
         <Tabs.Screen name="PulseAI" component={PulseAiScreen} options={{ title: "UNDX" }} />
         <Tabs.Screen name="Profile" component={ProfileScreen} options={{ title: "Profile" }} />
@@ -301,7 +301,7 @@ export function AppNavigator() {
 function subtitleForTab(name: string) {
   if (name === "Dashboard") return "Mission Control";
   if (name === "Messenger") return "Pulse Command";
-  if (name === "PulseAI") return "UNDX Companion";
+  if (name === "PulseAI") return "PulseSoc Intelligence";
   if (name === "Marketplace") return "Commerce layer";
   if (name === "Notifications") return "Activity and notification signals";
   return "PulseSoc";

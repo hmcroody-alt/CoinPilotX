@@ -8,6 +8,8 @@ import {
   loadCachedConversations,
   listConversations,
   MessengerConversation,
+  PULSE_AI_CONVERSATION_ID,
+  PULSE_AI_DISPLAY_NAME,
   subscribeConversationUpdates
 } from "../api/messenger";
 import { PulseApiError } from "../api/pulseApi";
@@ -30,14 +32,14 @@ import { logiNexus } from "../theme/logiNexus";
 type ConversationFilter = "all" | "direct" | "groups" | "rooms" | "ai" | "unread";
 const FILTER_KEY = "pulsesoc.native.messenger.filter";
 const LAST_CONVERSATION_KEY = "pulsesoc.native.messenger.last_conversation";
-const DEFAULT_UNDX_AI_CONVERSATION_ID = -900001;
 const DEFAULT_UNDX_AI_CONVERSATION: MessengerConversation = {
-  id: DEFAULT_UNDX_AI_CONVERSATION_ID,
-  conversation_id: DEFAULT_UNDX_AI_CONVERSATION_ID,
-  title: "UNDX AI",
+  id: PULSE_AI_CONVERSATION_ID,
+  conversation_id: PULSE_AI_CONVERSATION_ID,
+  title: PULSE_AI_DISPLAY_NAME,
   conversation_type: "ai",
-  latest_message: "Ask UNDX to analyze your network, risk, markets, or next move.",
-  presence: "active",
+  latest_message: "Message UNDX",
+  last_message_preview: "Message UNDX",
+  presence: "available",
   pinned: true,
   trust_state: "intelligence",
   verified: true
@@ -244,7 +246,7 @@ function quickActionAccentColor(accent: QuickActionAccent) {
 function ConversationRow({ item, navigation }: { item: MessengerConversation; navigation: NativeStackNavigationProp<RootStackParamList> }) {
   const active = isActivePresence(item.presence);
   const title = conversationDisplayTitle(item);
-  const opensUndxAi = item.conversation_id === DEFAULT_UNDX_AI_CONVERSATION_ID;
+  const opensUndxAi = item.conversation_id === PULSE_AI_CONVERSATION_ID;
   return (
     <Pressable
       style={({ pressed }) => [styles.row, item.pinned && styles.pinnedRow, pressed && styles.rowPressed]}
@@ -252,7 +254,8 @@ function ConversationRow({ item, navigation }: { item: MessengerConversation; na
       accessibilityLabel={conversationAccessibilityLabel(item)}
       onPress={() => {
         if (opensUndxAi) {
-          navigation.navigate("Tabs", { screen: "PulseAI" });
+          AsyncStorage.setItem(LAST_CONVERSATION_KEY, String(PULSE_AI_CONVERSATION_ID)).catch(() => undefined);
+          navigation.navigate("Chat", { conversationId: PULSE_AI_CONVERSATION_ID, title: PULSE_AI_DISPLAY_NAME, presence: "available" });
           return;
         }
         AsyncStorage.setItem(LAST_CONVERSATION_KEY, String(item.id)).catch(() => undefined);
@@ -292,7 +295,10 @@ function withDefaultUndxAiConversation(items: MessengerConversation[]) {
       ? {
           ...DEFAULT_UNDX_AI_CONVERSATION,
           ...items[undxIndex],
-          title: "UNDX AI",
+          id: PULSE_AI_CONVERSATION_ID,
+          conversation_id: PULSE_AI_CONVERSATION_ID,
+          title: PULSE_AI_DISPLAY_NAME,
+          name: PULSE_AI_DISPLAY_NAME,
           conversation_type: "ai",
           latest_message: items[undxIndex].latest_message || items[undxIndex].last_message_preview || DEFAULT_UNDX_AI_CONVERSATION.latest_message,
           pinned: true,
@@ -307,7 +313,7 @@ function withDefaultUndxAiConversation(items: MessengerConversation[]) {
 function isUndxAiConversation(item: MessengerConversation) {
   const title = `${item.title || ""} ${item.name || ""}`.toLowerCase();
   const type = String(item.conversation_type || "").toLowerCase();
-  return title.includes("undx") || ["intelligence", "undx"].includes(type);
+  return item.conversation_id === PULSE_AI_CONVERSATION_ID || title.includes("undx") || ["ai", "intelligence", "undx", "assistant"].includes(type);
 }
 
 function emptyTitle(filter: ConversationFilter) {

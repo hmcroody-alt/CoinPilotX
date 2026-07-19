@@ -5563,3 +5563,15 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - iPhone 16 Pro simulator build/install/launch passed, but the current session lands on the real login screen. Home visual evidence is blocked until real-account sign-in or a safe authenticated QA path is available.
 - This is **not frozen** until Xcode iPhone Simulator visual QA confirms compact/standard/Pro/Pro Max Home layouts and no clipping/regression.
 - Report: `reports/pulsesoc_native_home_generated_concept_mapping.md`.
+
+## Native UNDX Normal Messenger Conversation — 2026-07-19
+
+- Converted the old UNDX command/form surface into the canonical native Messenger conversation path.
+- Reused the production Pulse AI conversation contract from WebView: canonical conversation id `-9001001`, `/api/pulse-ai/conversation`, and `/api/pulse-ai/message`.
+- Removed the standalone `Ask UNDX` input/card path from `PulseAiScreen`; the route now bridges into `ChatScreen`.
+- Messenger now pins/open UNDX through the same ChatScreen, message list, bubbles, drafts, composer, keyboard behavior, and control sheet used by normal conversations.
+- UNDX is text-first to match the inspected production contract. Attachment and voice controls are disabled with explicit backend boundaries instead of fake uploads.
+- Audio/video call controls are hidden for UNDX, and the assistant control-center profile prevents human/group-only actions from hitting Communications V2 endpoints.
+- Focused audit passes. Full native typecheck and global `git diff --check` remain blocked by unrelated conflict markers in `mobile-native/src/components/ReelPlayerCard.tsx`.
+- Xcode Simulator proof is still required with a signed-in account: open Messenger, tap UNDX, send a prompt, verify the response, and confirm the old command form is gone.
+- Report: `reports/pulsesoc_native_undx_chat_conversation.md`.

@@ -21,6 +21,7 @@ import {
   searchConversationMessages,
   updateConversationControlSetting
 } from "../api/messenger";
+import { PULSE_AI_CONVERSATION_ID, PULSE_AI_DISPLAY_NAME } from "../api/messenger";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { formatFileSize } from "../utils/format";
@@ -32,9 +33,10 @@ type Props = {
   title: string;
   messages: MessengerMessage[];
   connected?: boolean;
+  assistantConversation?: boolean;
   onClose: () => void;
   onOpenSafety: (section: "reports" | "blocks") => void;
-  onStartCall: (callType: "audio" | "video") => void;
+  onStartCall?: (callType: "audio" | "video") => void;
 };
 
 type Section = "conversation" | "notifications" | "appearance" | "privacy" | "media" | "security" | "productivity" | "storage" | "accessibility" | "danger";
@@ -114,7 +116,73 @@ const OPTIONS: Record<string, SelectOption[]> = {
 
 const OFFLINE_REASON = "Connect to PulseSoc to sync this control.";
 
-export function ConversationControlCenter({ visible, conversationId, title, messages, connected = true, onClose, onOpenSafety, onStartCall }: Props) {
+function createAssistantControlData(messageCount: number, connected: boolean): ConversationControlData {
+  return {
+    ok: true,
+    conversation: {
+      id: PULSE_AI_CONVERSATION_ID,
+      conversation_id: PULSE_AI_CONVERSATION_ID,
+      title: PULSE_AI_DISPLAY_NAME,
+      name: PULSE_AI_DISPLAY_NAME,
+      conversation_type: "ai",
+      member_count: 2,
+      pinned: true,
+      muted: false,
+      trust_state: "intelligence",
+      verified: true,
+      capabilities: {
+        search: true,
+        members: true,
+        shared_media: false,
+        message_stats: true,
+        pin: true,
+        archive: false,
+        mark_unread: false,
+        mute: false,
+        report: true,
+        block: false,
+        voice_call: false,
+        video_call: false,
+        export_chat: true
+      }
+    },
+    stats: {
+      messages: messageCount,
+      media_files: 0,
+      photos: 0,
+      videos: 0,
+      voice: 0,
+      files: 0,
+      links: 0,
+      storage_used_bytes: 0,
+      unread: 0,
+      members: 2,
+      connection: connected ? "Connected" : "Reconnecting",
+      security_label: "PulseSoc intelligence conversation",
+      activity_status: "Available",
+      muted: false,
+      pinned: true
+    },
+    settings: {},
+    capabilities: {
+      search: true,
+      members: true,
+      shared_media: false,
+      message_stats: true,
+      pin: true,
+      archive: false,
+      mark_unread: false,
+      mute: false,
+      report: true,
+      block: false,
+      voice_call: false,
+      video_call: false,
+      export_chat: true
+    }
+  };
+}
+
+export function ConversationControlCenter({ visible, conversationId, title, messages, connected = true, assistantConversation = false, onClose, onOpenSafety, onStartCall }: Props) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Section[]>(["conversation"]);
   const [notice, setNotice] = useState("");
@@ -137,6 +205,11 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
     if (!visible || !conversationId) return;
     setLoading(true);
     try {
+      if (assistantConversation) {
+        setControlData(createAssistantControlData(messages.length, connected));
+        setNotice("");
+        return;
+      }
       const next = await getConversationControlCenter(conversationId);
       setControlData(next);
       setNotice("");
@@ -145,7 +218,7 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
     } finally {
       setLoading(false);
     }
-  }, [conversationId, visible]);
+  }, [assistantConversation, connected, conversationId, messages.length, visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -191,7 +264,9 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
   const normalizedQuery = query.trim().toLowerCase();
   const sections = SECTION_META.map((section) => ({ ...section, rows: rows[section.key].filter((row) => !normalizedQuery || `${section.label} ${section.subtitle} ${row.label} ${row.detail || ""} ${row.value || ""}`.toLowerCase().includes(normalizedQuery)) }))
     .filter((section) => !normalizedQuery || section.rows.length > 0);
-  const statusText = conversation?.conversation_type === "direct"
+  const statusText = assistantConversation
+    ? "Available · PulseSoc Intelligence"
+    : conversation?.conversation_type === "direct"
     ? `${stats.activity_status} · Direct Conversation`
     : `${stats.members || "Unknown"} members · ${conversation?.conversation_type || "Conversation"}`;
 
@@ -270,6 +345,20 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
     }
     setChatSearchLoading(true);
     try {
+      if (assistantConversation) {
+        const results = messages.filter((message) => {
+          const haystack = `${message.sender_display_name || ""} ${message.body || ""} ${message.content || ""} ${message.text || ""}`.toLowerCase();
+          return haystack.includes(clean.toLowerCase());
+        });
+        setDetail({
+          title: "Search Chat",
+          subtitle: `${results.length} local result${results.length === 1 ? "" : "s"} for “${clean}”`,
+          kind: "search",
+          lines: results.map((message) => `${message.is_mine ? "You" : PULSE_AI_DISPLAY_NAME}: ${message.body || message.content || message.text || "[message]"}`)
+        });
+        setNotice("");
+        return;
+      }
       const results = await searchConversationMessages(conversationId, clean);
       setDetail({
         title: "Search Chat",
@@ -286,6 +375,22 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
   }
 
   async function exportChat() {
+    if (assistantConversation) {
+      const payload = JSON.stringify({
+        conversation_id: PULSE_AI_CONVERSATION_ID,
+        title: PULSE_AI_DISPLAY_NAME,
+        exported_at: new Date().toISOString(),
+        messages: messages.map((message) => ({
+          id: message.id,
+          sender: message.is_mine ? "You" : PULSE_AI_DISPLAY_NAME,
+          body: message.body || message.content || message.text || "",
+          created_at: message.created_at
+        }))
+      }, null, 2);
+      await Share.share({ title: "UNDX conversation export", message: payload });
+      setNotice("UNDX conversation export opened in the native share sheet.");
+      return;
+    }
     setSavingKey("export-chat");
     try {
       const data = await exportConversationControlData(conversationId);
@@ -306,6 +411,10 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
 
   async function saveSetting(row: RowSpec, nextValue: boolean | string) {
     if (!row.setting) return;
+    if (assistantConversation) {
+      setNotice("UNDX uses the shared Messenger composer. These per-chat settings stay with production human and group conversations.");
+      return;
+    }
     const key = `${row.setting.section}.${row.setting.key}`;
     setSavingKey(key);
     try {
@@ -350,12 +459,31 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
     const run = async () => {
       switch (row.action) {
         case "members":
+          if (assistantConversation) {
+            setDetail({ title: "Participants", subtitle: "PulseSoc intelligence chat", lines: ["You", "UNDX · PulseSoc Intelligence"] });
+            return;
+          }
           return loadMembers();
         case "shared-media":
+          if (assistantConversation) {
+            setNotice("UNDX native chat is text-first right now. Attachments are disabled until the assistant media contract is available.");
+            return;
+          }
           return loadSharedMedia("all");
         case "shared-files":
+          if (assistantConversation) {
+            setNotice("UNDX native chat is text-first right now. Files are disabled until the assistant media contract is available.");
+            return;
+          }
           return loadSharedMedia("files");
         case "shared-links":
+          if (assistantConversation) {
+            const links = messages
+              .map((message) => message.body || message.content || message.text || "")
+              .flatMap((body) => body.match(/https?:\/\/\S+/g) || []);
+            setDetail({ title: "Shared Links", subtitle: `${links.length} local link${links.length === 1 ? "" : "s"}`, lines: links });
+            return;
+          }
           return loadLinks();
         case "pinned-messages":
           return loadPinnedMessages();
@@ -372,12 +500,24 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
         case "export-chat":
           return exportChat();
         case "start-audio-call":
+          if (!onStartCall) {
+            setNotice("Audio calls are not enabled for this conversation.");
+            return;
+          }
           onClose();
           return onStartCall("audio");
         case "start-video-call":
+          if (!onStartCall) {
+            setNotice("Video calls are not enabled for this conversation.");
+            return;
+          }
           onClose();
           return onStartCall("video");
         case "mute": {
+          if (assistantConversation) {
+            setNotice("UNDX remains pinned and available in Messenger.");
+            return;
+          }
           setSavingKey("mute");
           const data = await muteConversation(conversationId);
           setNotice(data.message || (data.muted ? "Conversation muted." : "Conversation unmuted."));
@@ -386,6 +526,10 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
           return;
         }
         case "pin": {
+          if (assistantConversation) {
+            setNotice("UNDX is pinned in Messenger.");
+            return;
+          }
           setSavingKey("pin");
           const data = await pinConversation(conversationId, !stats.pinned);
           setNotice(data.message || (data.pinned ? "Conversation pinned." : "Conversation unpinned."));
@@ -394,6 +538,10 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
           return;
         }
         case "archive": {
+          if (assistantConversation) {
+            setNotice("UNDX cannot be archived because it is the canonical PulseSoc intelligence conversation.");
+            return;
+          }
           setSavingKey("archive");
           const data = await archiveConversation(conversationId);
           setNotice(data.message || "Conversation archived.");
@@ -402,6 +550,10 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
           return;
         }
         case "mark-unread": {
+          if (assistantConversation) {
+            setNotice("UNDX unread state is managed by the assistant conversation history.");
+            return;
+          }
           setSavingKey("mark-unread");
           const data = await markConversationUnread(conversationId);
           setNotice(data.message || "Conversation marked unread.");
@@ -489,7 +641,7 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
               <View style={styles.contactLine}>
                 <View style={styles.avatar}><Text style={styles.avatarText}>{initials(title)}</Text></View>
                 <View style={styles.contactCopy}>
-                  <Text style={styles.contactName} numberOfLines={1}>{conversation?.title || title}</Text>
+                  <Text style={styles.contactName} numberOfLines={1}>{assistantConversation ? PULSE_AI_DISPLAY_NAME : conversation?.title || title}</Text>
                   <Text style={styles.online}>{statusText}</Text>
                 </View>
                 {loading ? <ActivityIndicator color={colors.accent} /> : null}
@@ -497,7 +649,7 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
               <View style={styles.quickGrid}>
                 <Quick label="Search Chat" icon="⌕" disabled={!can("search")} onPress={() => executeAction({ label: "Search Chat", icon: "⌕", action: "search-chat", disabled: !can("search"), disabledReason: "Search is not enabled for this conversation." })} />
                 <Quick label="Shared Media" icon="▧" disabled={!can("shared_media")} onPress={() => executeAction({ label: "Shared Media", icon: "▧", action: "shared-media", disabled: !can("shared_media"), disabledReason: "Shared media is not enabled for this conversation." })} />
-                <Quick label="Members" icon="♟" disabled={!can("members")} onPress={() => executeAction({ label: "Members", icon: "♟", action: "members", disabled: !can("members"), disabledReason: "Members are not available for this conversation." })} />
+                <Quick label={assistantConversation ? "Identity" : "Members"} icon="♟" disabled={!can("members")} onPress={() => executeAction({ label: assistantConversation ? "Identity" : "Members", icon: "♟", action: "members", disabled: !can("members"), disabledReason: "Members are not available for this conversation." })} />
               </View>
               <View style={styles.actionGrid}>
                 <Quick label="Audio Call" icon="☎" disabled={!can("voice_call") || !onStartCall} onPress={() => executeAction({ label: "Audio Call", icon: "☎", action: "start-audio-call", disabled: !can("voice_call") || !onStartCall, disabledReason: "Audio calls are not enabled for this conversation." })} />

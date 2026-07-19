@@ -9,6 +9,10 @@ const OUTBOUND_QUEUE_KEY = "pulsesoc.native.messenger.v2.outbound_queue";
 const MESSENGER_API = "/api/pulse/communications/v2";
 const conversationListeners = new Set<(conversation: MessengerConversation) => void>();
 
+export const PULSE_AI_CONVERSATION_ID = -9001001;
+export const PULSE_AI_USER_ID = -9001001;
+export const PULSE_AI_DISPLAY_NAME = "UNDX";
+
 export type MessengerConversation = {
   id: number;
   conversation_id: number;
@@ -120,6 +124,8 @@ export type ConversationResponse = {
   last_message_id?: number;
   poll_interval_ms?: number;
   sync_interval_ms?: number;
+  quick_prompts?: string[];
+  settings?: Record<string, unknown>;
 };
 
 export type ConversationControlSettings = Record<string, Record<string, boolean | string | number>>;
@@ -288,7 +294,51 @@ export async function getConversation(conversationId: number, params: { limit?: 
   return { ...data, messages };
 }
 
+export async function getPulseAiConversation(params: { limit?: number } = {}) {
+  const query = new URLSearchParams();
+  query.set("limit", String(params.limit || 80));
+  const data = await pulseApi<ConversationResponse>(`/api/pulse-ai/conversation?${query.toString()}`);
+  const conversation = normalizePulseAiConversation(data.conversation);
+  const messages = normalizePulseAiMessages(data.messages || data.items || []);
+  await cacheMessages(PULSE_AI_CONVERSATION_ID, messages);
+  await upsertCachedConversation(conversation).catch(() => undefined);
+  return {
+    ...data,
+    conversation,
+    messages,
+    presence: { typing: [] }
+  };
+}
+
+export async function sendPulseAiMessage(payload: { body: string; client_message_id?: string }) {
+  const data = await pulseApi<ConversationResponse & { reply?: string; latency_ms?: number; correlation_id?: string }>("/api/pulse-ai/message", {
+    method: "POST",
+    body: JSON.stringify({
+      message: payload.body,
+      body: payload.body,
+      client_message_id: payload.client_message_id || ""
+    })
+  });
+  const conversation = normalizePulseAiConversation(data.conversation);
+  const messages = normalizePulseAiMessages(data.messages || data.items || []);
+  await cacheMessages(PULSE_AI_CONVERSATION_ID, messages);
+  await upsertCachedConversation(conversation).catch(() => undefined);
+  return {
+    ...data,
+    conversation,
+    messages
+  };
+}
+
 export async function syncConversation(conversationId: number, afterId = 0) {
+  if (conversationId === PULSE_AI_CONVERSATION_ID) {
+    const data = await getPulseAiConversation({ limit: 80 });
+    return {
+      ...data,
+      messages: (data.messages || []).filter((message) => message.id > afterId),
+      presence: { typing: [] }
+    };
+  }
   const data = await pulseApi<ConversationResponse>(`${MESSENGER_API}/conversations/${conversationId}/messages?limit=80`);
   const messages = normalizeMessages(data.messages || data.items || [], conversationId)
     .filter((message) => message.id > afterId);
@@ -316,6 +366,12 @@ export async function cacheMessages(conversationId: number, messages: MessengerM
 }
 
 export async function sendConversationMessage(conversationId: number, payload: SendMessagePayload) {
+  if (conversationId === PULSE_AI_CONVERSATION_ID) {
+    const data = await sendPulseAiMessage({ body: payload.body || "", client_message_id: payload.client_message_id });
+    const serverMessage = (data.messages || []).find((message) => message.client_message_id === payload.client_message_id)
+      || (data.messages || []).filter((message) => message.is_mine).slice(-1)[0];
+    return { ok: true, data: serverMessage, message_id: serverMessage?.id };
+  }
   const result = await pulseApi<{ ok: boolean; message?: MessengerMessage | string; data?: MessengerMessage; message_id?: number }>(`${MESSENGER_API}/conversations/${conversationId}/messages`, {
     method: "POST",
     body: JSON.stringify({
@@ -612,6 +668,9 @@ export async function uploadMessengerMedia(input: {
   voice?: boolean;
   durationSeconds?: number;
 }) {
+  if (input.conversationId === PULSE_AI_CONVERSATION_ID) {
+    throw new PulseApiError("UNDX supports text conversation in native chat right now. Remove the attachment and send a message.", 400, "pulse_ai_text_only");
+  }
   const mimeType = messengerFoundationMimeType(input.mimeType, input.name, input.voice);
   const mediaType = messengerFoundationMediaType(input.name, mimeType, input.voice);
   const sizeBytes = resolveLocalMessengerFileSize(input.uri, input.sizeBytes);
@@ -761,13 +820,64 @@ export function normalizeConversations(items: MessengerConversation[]) {
         verified: Boolean(item.verified)
       };
     })
-    .filter((item) => item.id > 0);
+    .filter((item) => item.id > 0 || item.id === PULSE_AI_CONVERSATION_ID);
   const byId = new Map<number, MessengerConversation>();
   normalized.forEach((item) => {
     const current = byId.get(item.id);
     if (!current || conversationSortTime(item) >= conversationSortTime(current)) byId.set(item.id, item);
   });
   return Array.from(byId.values()).sort((a, b) => conversationSortTime(b) - conversationSortTime(a));
+}
+
+function normalizePulseAiConversation(item?: MessengerConversation): MessengerConversation {
+  const now = new Date().toISOString();
+  const normalized = normalizeConversations([
+    {
+      ...(item || {}),
+      id: PULSE_AI_CONVERSATION_ID,
+      conversation_id: PULSE_AI_CONVERSATION_ID,
+      title: PULSE_AI_DISPLAY_NAME,
+      name: PULSE_AI_DISPLAY_NAME,
+      conversation_type: "ai",
+      latest_message: item?.latest_message || item?.last_message_preview || "Message UNDX",
+      last_message_preview: item?.last_message_preview || item?.latest_message || "Message UNDX",
+      last_activity_at: item?.last_activity_at || item?.updated_at || now,
+      updated_at: item?.updated_at || now,
+      presence: "available",
+      pinned: true,
+      trust_state: "intelligence",
+      verified: true
+    }
+  ])[0];
+  return normalized || {
+    id: PULSE_AI_CONVERSATION_ID,
+    conversation_id: PULSE_AI_CONVERSATION_ID,
+    title: PULSE_AI_DISPLAY_NAME,
+    name: PULSE_AI_DISPLAY_NAME,
+    conversation_type: "ai",
+    latest_message: "Message UNDX",
+    last_message_preview: "Message UNDX",
+    last_activity_at: now,
+    updated_at: now,
+    presence: "available",
+    pinned: true,
+    trust_state: "intelligence",
+    verified: true
+  };
+}
+
+function normalizePulseAiMessages(items: MessengerMessage[]) {
+  return normalizeMessages(items, PULSE_AI_CONVERSATION_ID).map((message) => {
+    const mine = Boolean(message.is_mine);
+    return {
+      ...message,
+      conversation_id: PULSE_AI_CONVERSATION_ID,
+      sender_user_id: mine ? message.sender_user_id : PULSE_AI_USER_ID,
+      sender_id: mine ? message.sender_id : PULSE_AI_USER_ID,
+      sender_display_name: mine ? message.sender_display_name || "You" : PULSE_AI_DISPLAY_NAME,
+      sender_trust_state: mine ? message.sender_trust_state : "intelligence"
+    };
+  });
 }
 
 function normalizeMessengerUser(item: MessengerUserSearchResult): MessengerUserSearchResult {
