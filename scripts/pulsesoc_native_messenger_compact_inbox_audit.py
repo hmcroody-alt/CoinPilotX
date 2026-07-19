@@ -95,10 +95,12 @@ def main() -> int:
     for needle in [
         "Hero removed: YES",
         "Reserved hero space removed: YES",
-        "Settings gear: PASS",
+        "Settings: PASS",
         "Search: PASS",
         "Active-contact routing: PASS",
-        "Performance posture",
+        "Performance",
+        "Physical iPhone: PENDING",
+        "Safe to replace WebView Messenger inbox: NO",
         "Remaining blockers",
     ]:
         require(report, needle, "compact inbox report", failures)
