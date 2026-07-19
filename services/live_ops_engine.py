@@ -1,4 +1,4 @@
-"""Live-ops planning for the CoinPilotXAI core loop."""
+"""Live-ops planning for the CoinPlotXAI core loop."""
 
 import json
 import sqlite3

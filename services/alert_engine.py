@@ -1,4 +1,4 @@
-"""Production alert engine for CoinPilotXAI.
+"""Production alert engine for CoinPlotXAI.
 
 Alert rules are stored in the database, evaluated by a worker/manual endpoint,
 and dispatched through the centralized notification services with delivery logs.
@@ -1419,8 +1419,8 @@ def send_test_alert(rule_id, user_id):
 def test_delivery_channel(user_id, channel, client_state=None):
     channel = (channel or "").strip().lower()
     client_state = client_state or {}
-    title = f"CoinPilotXAI {channel.title()} alert test"
-    body = "This is a setup test for CoinPilotXAI alert delivery."
+    title = f"CoinPlotXAI {channel.title()} alert test"
+    body = "This is a setup test for CoinPlotXAI alert delivery."
     metadata = {"url": "/notifications", "test": True, "channel": channel}
     readiness = channel_readiness(user_id, browser_permission=client_state.get("permission"), require_recent_test=False)
     user = _user_record(user_id)

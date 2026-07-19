@@ -294,7 +294,7 @@ def analyze_text(text):
         "Red Flags:\n" + "\n".join(f"• {item}" for item in red_flag_text[:10]) + "\n\n"
         f"Why It Matters:\n{explanation}\n\n"
         "Safe Actions:\n" + "\n".join(f"• {item}" for item in safe_actions) + "\n\n"
-        "CoinPilotXAI uses advanced AI and rule-based threat detection to identify many common and emerging scam patterns, but users should still verify independently.\n"
+        "CoinPlotXAI uses advanced AI and rule-based threat detection to identify many common and emerging scam patterns, but users should still verify independently.\n"
         f"{DISCLAIMER}"
     )
     return {

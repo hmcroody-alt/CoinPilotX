@@ -30,7 +30,7 @@ def main():
         'stripe.checkout.Session.create',
         '"mode": "subscription"',
         '"plan": "founder_premium"',
-        '"company": "CoinPilotXAI Inc."',
+        '"company": "CoinPlotXAI Inc."',
         '"environment": stripe_environment_label()',
         '"price_id": STRIPE_FOUNDER_PRICE_ID',
         'stripe.billing_portal.Session.create',

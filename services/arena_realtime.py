@@ -1,4 +1,4 @@
-"""Lightweight realtime payload helpers for CoinPilotXAI Arena.
+"""Lightweight realtime payload helpers for CoinPlotXAI Arena.
 
 The app can run these over polling today and upgrade to SocketIO/SSE later
 without changing the response shape.

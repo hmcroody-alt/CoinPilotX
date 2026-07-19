@@ -76,7 +76,7 @@ def _safe_record(record):
         "country": (record.get("country") or "").strip(),
         "email_opt_in": _truthy(record.get("email_opt_in")),
         "sms_opt_in": _truthy(record.get("sms_opt_in")),
-        "source": (record.get("source") or "coinpilotxai").strip(),
+        "source": (record.get("source") or "coinplotxai").strip(),
         "signup_date": record.get("signup_date") or record.get("created_at") or record.get("signup_time") or datetime.now().isoformat(),
         "plan": (record.get("plan") or record.get("subscription_plan") or "free").strip(),
         "telegram_linked": _telegram_linked(record),

@@ -14,7 +14,7 @@
     {
       "name": "Push jobs remain durable pending work",
       "ok": true,
-      "details": "[{'push_type': 'account_login', 'status': 'pending', 'attempts': 0, 'max_attempts': 5, 'trace_id': '2696d7a212d1'}, {'push_type': 'new_device', 'status': 'pending', 'attempts': 0, 'max_attempts': 5, 'trace_id': 'f0e5a111bc0b'}]"
+      "details": "[{'push_type': 'account_login', 'status': 'pending', 'attempts': 0, 'max_attempts': 5, 'trace_id': '375f45c1a73b'}, {'push_type': 'new_device', 'status': 'pending', 'attempts': 0, 'max_attempts': 5, 'trace_id': '6c58c9d79603'}]"
     },
     {
       "name": "In-app delivery rows are written",
@@ -68,19 +68,19 @@
         "status": "pending",
         "attempts": 0,
         "max_attempts": 5,
-        "trace_id": "2696d7a212d1"
+        "trace_id": "375f45c1a73b"
       },
       {
         "push_type": "new_device",
         "status": "pending",
         "attempts": 0,
         "max_attempts": 5,
-        "trace_id": "f0e5a111bc0b"
+        "trace_id": "6c58c9d79603"
       }
     ],
     "push_trace_records": [
-      "PUSH_TRACE stage=push_job_queued {\"job_id\": \"push_1fd313a09a0bf1a43043bb67\", \"notification_id\": 1543, \"push_type\": \"account_login\", \"trace_id\": \"2696d7a212d1\", \"transactional\": true, \"user_id\": 9950781}",
-      "PUSH_TRACE stage=push_job_queued {\"job_id\": \"push_5d3b5da0bf265377f3ac67a1\", \"notification_id\": 1544, \"push_type\": \"new_device\", \"trace_id\": \"f0e5a111bc0b\", \"transactional\": true, \"user_id\": 9950781}"
+      "PUSH_TRACE stage=push_job_queued {\"job_id\": \"push_2f28eab9757a2494420028ac\", \"notification_id\": 1554, \"push_type\": \"account_login\", \"trace_id\": \"375f45c1a73b\", \"transactional\": true, \"user_id\": 9950781}",
+      "PUSH_TRACE stage=push_job_queued {\"job_id\": \"push_a872652349e576dd9849f1fe\", \"notification_id\": 1555, \"push_type\": \"new_device\", \"trace_id\": \"6c58c9d79603\", \"transactional\": true, \"user_id\": 9950781}"
     ]
   }
 }

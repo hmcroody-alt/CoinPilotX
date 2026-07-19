@@ -1,4 +1,4 @@
-"""Safety checks for the CoinPilotXAI PulseSoc Feed."""
+"""Safety checks for the CoinPlotXAI PulseSoc Feed."""
 
 from __future__ import annotations
 

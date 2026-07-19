@@ -1,4 +1,4 @@
-# CoinPilotXAI Payment Email Repair Report
+# CoinPlotXAI Payment Email Repair Report
 
 Date: 2026-05-12
 

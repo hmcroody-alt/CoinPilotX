@@ -1,5 +1,25 @@
 # PulseSoc LogiNexus Home UI/UX Audit
 
+## Inspiration Alignment Update
+
+- Reference image direction applied as inspiration, not a pixel-copy target.
+- Command strip now better matches the centered PulseSoc identity, compact action controls, and visible `LOGINEXUS` label.
+- Hero hierarchy now better matches the approved concept: network metric, live broadcast metric, ambient signal lines, and right-side UNDX / Pulse Radio / Safety Shield stack where space allows.
+- Status rail now uses lighter orbital treatment with circular status nodes and reduced card weight.
+- Composer now better matches the compact transmission surface in the reference while keeping the same server-authoritative publish contract.
+- Signal Cards now carry stronger creator identity and media framing.
+- Floating bottom dock moved closer to the reference with a more prominent center Create action.
+
+This remains a foundation visual pass. Final motion polish, full animation timing, cross-device visual tuning, and physical-device haptics are not complete.
+
+## Xcode iPhone Simulator Review
+
+- Used the iPhone 17 Pro Simulator to verify the native Home surface rather than relying on the web QA browser alone.
+- The first native simulator Home capture showed the Pulse Network hero text overlapping the orbit graphic on iPhone width.
+- The Home hero now uses a compact stacked layout for narrow devices, resolving the overlap while preserving the reference-inspired hierarchy.
+- The shared bottom navigation was tightened so primary labels are less likely to clip on iPhone widths.
+- A dev warning overlay remains in development builds because the app still imports `expo-av`; replacing that dependency is a separate media-platform task, not a Home visual fix.
+
 Status: first scoped Homefeed transformation pass.
 
 ## Improved

@@ -1,4 +1,4 @@
-"""Privacy-safe user trust scoring helpers for CoinPilotXAI."""
+"""Privacy-safe user trust scoring helpers for CoinPlotXAI."""
 
 from __future__ import annotations
 

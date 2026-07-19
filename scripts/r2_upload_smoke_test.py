@@ -63,7 +63,7 @@ def cdn_get(url: str, expected_mime: str):
     last_error = ""
     for _ in range(8):
         try:
-            req = Request(url, headers={"User-Agent": "CoinPilotXAI-R2-Smoke-Test/1.0"})
+            req = Request(url, headers={"User-Agent": "CoinPlotXAI-R2-Smoke-Test/1.0"})
             with urlopen(req, timeout=10) as response:
                 content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
                 body = response.read(32)

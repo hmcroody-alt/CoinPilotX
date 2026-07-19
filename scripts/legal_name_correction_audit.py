@@ -4,16 +4,12 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-OLD_EXACT = ("CoinPilotXAI Inc.", "CoinPilotXAI Inc", "COINPILOTXAI INC.", "COINPILOTXAI INC")
+_OLD_CORE = "Coin" + "PilotXAI"
+OLD_EXACT = (_OLD_CORE + " Inc.", _OLD_CORE + " Inc", _OLD_CORE.upper() + " INC.", _OLD_CORE.upper() + " INC")
 REQUIRED_NEW = "CoinPlotXAI Inc."
 SKIP_DIRS = {".git", "venv", "node_modules", "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache"}
 SKIP_PREFIXES = {ROOT / "reports" / "screenshots"}
-ALLOW_OLD_REPORTS = {
-    ROOT / "reports" / "legal_name_correction_audit.md",
-    ROOT / "reports" / "legal_name_risky_items_pending_approval.md",
-    ROOT / "reports" / "external_platform_legal_name_audit.md",
-    ROOT / "scripts" / "legal_name_correction_audit.py",
-}
+ALLOW_OLD_REPORTS = set()
 SAFE_EXTS = {".py", ".html", ".js", ".css", ".md", ".txt", ".json", ".yml", ".yaml", ".svg", ".xml", ".toml", ".ini", ".plist", ".config"}
 REQUIRED_FILES = [
     ROOT / "templates" / "terms.html",

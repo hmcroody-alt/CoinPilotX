@@ -14,11 +14,19 @@ import {
 } from "../api/profile";
 import { colors } from "../theme/colors";
 
-const THEMES: PulseProfileTheme[] = [
-  { theme_key: "midnight_elite", accent_color: "#ffd166" },
-  { theme_key: "market_cyan", accent_color: "#4f8cff" },
-  { theme_key: "creator_green", accent_color: "#25d0a7" }
+const THEMES: Array<PulseProfileTheme & { label: string }> = [
+  { theme_key: "deep_space", label: "Deep Space", accent_color: "#32e6b3" },
+  { theme_key: "neon_galaxy", label: "Neon Galaxy", accent_color: "#d95cff" },
+  { theme_key: "cyber_city", label: "Cyber City", accent_color: "#32c8ff" },
+  { theme_key: "solar_pulse", label: "Solar Pulse", accent_color: "#ff9f43" },
+  { theme_key: "aurora", label: "Aurora", accent_color: "#72f6a8" },
+  { theme_key: "quantum", label: "Quantum", accent_color: "#8f7cff" },
+  { theme_key: "crystal", label: "Crystal", accent_color: "#8df7ff" },
+  { theme_key: "dark_matter", label: "Dark Matter", accent_color: "#9f7cff" },
+  { theme_key: "nova", label: "Nova", accent_color: "#ff5f7e" },
+  { theme_key: "minimal_black", label: "Minimal Black", accent_color: "#d7e2ea" }
 ];
+const LAYOUTS = ["classic", "creator", "professional", "minimal", "artist", "music", "gaming", "developer", "business", "streamer"];
 
 export function ProfileEditScreen() {
   const [profile, setProfile] = useState<PulseProfile | null>(null);
@@ -199,14 +207,24 @@ export function ProfileEditScreen() {
           <Segment label="Public" active={visibility === "public"} onPress={() => setVisibility("public")} />
           <Segment label="Private" active={visibility === "private"} onPress={() => setVisibility("private")} />
         </View>
+        <Text style={styles.sectionTitle}>Living identity</Text>
+        <Text style={styles.sectionCopy}>Choose an atmospheric theme, layout, and motion level. Your canonical profile data never changes.</Text>
         <Text style={styles.label}>Profile theme</Text>
         <View style={styles.themeRow}>
           {THEMES.map((item) => (
-            <Pressable key={item.theme_key} style={[styles.theme, theme.theme_key === item.theme_key ? styles.themeActive : undefined]} onPress={() => setTheme(item)}>
+            <Pressable accessibilityRole="button" accessibilityState={{ selected: theme.theme_key === item.theme_key }} key={item.theme_key} style={[styles.theme, theme.theme_key === item.theme_key ? styles.themeActive : undefined]} onPress={() => setTheme((current) => ({ ...current, theme_key: item.theme_key, accent_color: item.accent_color }))}>
               <View style={[styles.swatch, { backgroundColor: item.accent_color }]} />
-              <Text style={styles.themeText}>{String(item.theme_key || "").replace(/_/g, " ")}</Text>
+              <Text style={styles.themeText}>{item.label}</Text>
             </Pressable>
           ))}
+        </View>
+        <Text style={styles.label}>Layout style</Text>
+        <View style={styles.themeRow}>
+          {LAYOUTS.map((item) => <Pressable accessibilityRole="button" accessibilityState={{ selected: theme.layout_key === item }} key={item} style={[styles.layoutChoice, theme.layout_key === item && styles.themeActive]} onPress={() => setTheme((current) => ({ ...current, layout_key: item }))}><Text style={styles.themeText}>{item.replace(/_/g, " ")}</Text></Pressable>)}
+        </View>
+        <Text style={styles.label}>Motion</Text>
+        <View style={styles.segment}>
+          {(["subtle", "balanced", "reduced"] as const).map((item) => <Segment key={item} label={item[0].toUpperCase() + item.slice(1)} active={(theme.motion_level || "balanced") === item} onPress={() => setTheme((current) => ({ ...current, motion_level: item }))} />)}
         </View>
         <View style={styles.saveRow}>
           <Pressable style={[styles.saveButton, saving && styles.disabled]} disabled={saving} onPress={save}>
@@ -338,6 +356,15 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     textTransform: "uppercase"
   },
+  layoutChoice: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 42,
+    justifyContent: "center",
+    paddingHorizontal: 10
+  },
   mediaActions: {
     flex: 1,
     flexDirection: "row",
@@ -372,6 +399,16 @@ const styles = StyleSheet.create({
   root: {
     backgroundColor: colors.background,
     flex: 1
+  },
+  sectionCopy: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 19
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: "900"
   },
   saveButton: {
     alignItems: "center",

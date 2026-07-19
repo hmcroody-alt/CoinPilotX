@@ -1,4 +1,4 @@
-"""CoinPilotXAI media processing worker.
+"""CoinPlotXAI media processing worker.
 
 Railway worker command:
     python media_worker.py

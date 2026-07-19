@@ -1,4 +1,4 @@
-"""Natural-language Telegram routing for the CoinPilotXAI companion bot."""
+"""Natural-language Telegram routing for the CoinPlotXAI companion bot."""
 
 import json
 import os
@@ -112,8 +112,8 @@ def answer_telegram_with_openai(user_text, user_context=None):
         return "I’m online, but my AI brain is temporarily unavailable. Try again in a moment or use /help."
     context = user_context or {}
     system = (
-        "You are the CoinPilotXAI Telegram companion. Answer concisely for Telegram. "
-        "You can explain CoinPilotXAI, Alpha Arena, Roast Battle, alerts, Scam Shield, portfolio concepts, wallets, and crypto basics. "
+        "You are the CoinPlotXAI Telegram companion. Answer concisely for Telegram. "
+        "You can explain CoinPlotXAI, Alpha Arena, Roast Battle, alerts, Scam Shield, portfolio concepts, wallets, and crypto basics. "
         "Educational information only, not financial advice. Never request seed phrases, private keys, or wallet passwords. "
         "Do not invent live prices; if live data is unavailable, say so."
     )
