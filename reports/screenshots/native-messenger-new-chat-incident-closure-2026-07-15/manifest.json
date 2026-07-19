@@ -1,0 +1,71 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "C980AEE0-2D07-4D98-8A37-D0447A6A908B",
+        "deviceName" : "PulseSoc iPhone 16 Pro",
+        "exportedFileName" : "463E4933-D745-447E-B9F4-92B50B012B7C.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "PulseSocNative-CameraStudio-new-chat-06-first-message-keyboard-dismissed_0_1EA4A22A-FE6B-4071-A869-F4206288A73B.png",
+        "timestamp" : 1784180328.314
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "C980AEE0-2D07-4D98-8A37-D0447A6A908B",
+        "deviceName" : "PulseSoc iPhone 16 Pro",
+        "exportedFileName" : "3FB353E1-4F0A-4CEC-86DF-07836E5A9064.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "PulseSocNative-CameraStudio-new-chat-05-first-message_0_4728B75A-4ED4-461E-9B02-C053C3420AF8.png",
+        "timestamp" : 1784180326.402
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "C980AEE0-2D07-4D98-8A37-D0447A6A908B",
+        "deviceName" : "PulseSoc iPhone 16 Pro",
+        "exportedFileName" : "3096F804-8A66-419D-857A-1B53AC21BF28.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "PulseSocNative-CameraStudio-new-chat-04-conversation_0_72190354-3523-4AEE-AC4F-CA5E9395932F.png",
+        "timestamp" : 1784180323.134
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "C980AEE0-2D07-4D98-8A37-D0447A6A908B",
+        "deviceName" : "PulseSoc iPhone 16 Pro",
+        "exportedFileName" : "A540CA8B-2C50-4096-8B9F-BCAEFE3C7D13.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "PulseSocNative-CameraStudio-new-chat-03-results_0_A96BBB46-494E-4835-BE9C-E0B6AAD8B7D8.png",
+        "timestamp" : 1784180321.083
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "C980AEE0-2D07-4D98-8A37-D0447A6A908B",
+        "deviceName" : "PulseSoc iPhone 16 Pro",
+        "exportedFileName" : "0FDCE044-A9F8-4F40-AF71-A540C9CECB69.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "PulseSocNative-CameraStudio-new-chat-02-empty_0_64813C78-712C-401A-AF3B-098A3F95E9CC.png",
+        "timestamp" : 1784180317.605
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "C980AEE0-2D07-4D98-8A37-D0447A6A908B",
+        "deviceName" : "PulseSoc iPhone 16 Pro",
+        "exportedFileName" : "AC499B12-6F8D-4107-A764-5542A76738EA.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "PulseSocNative-CameraStudio-new-chat-01-inbox_0_826C564F-1488-40AA-8796-7F1F5479741C.png",
+        "timestamp" : 1784180314.444
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "C980AEE0-2D07-4D98-8A37-D0447A6A908B",
+        "deviceName" : "PulseSoc iPhone 16 Pro",
+        "exportedFileName" : "1A6D9B81-5814-4A71-BD2E-5B0277A73726.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "PulseSocNative-CameraStudio-01-app-launch_0_9368DD86-0E4F-4EE1-913D-E3BC7945CE1B.png",
+        "timestamp" : 1784180308.399
+      }
+    ],
+    "testIdentifier" : "PulseSocNativeCameraStudioQATests/testMessengerNewChatCreatesCanonicalConversationAndSendsFirstMessage()",
+    "testIdentifierURL" : "test://com.apple.xcode/PulseSocNative/PulseSocNativeUITests/PulseSocNativeCameraStudioQATests/testMessengerNewChatCreatesCanonicalConversationAndSendsFirstMessage"
+  }
+]
