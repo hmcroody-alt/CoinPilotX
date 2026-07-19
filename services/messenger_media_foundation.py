@@ -46,6 +46,13 @@ ALLOWED_MIME_TYPES: dict[str, dict[str, Any]] = {
     "audio/ogg": {"media_type": "voice", "extensions": {"ogg", "oga"}},
 }
 
+MIME_ALIASES = {
+    "audio/x-m4a": "audio/mp4",
+    "audio/m4a": "audio/mp4",
+    "audio/mp4a-latm": "audio/mp4",
+    "application/x-m4a": "audio/mp4",
+}
+
 DEFAULT_EXTENSION_BY_MIME = {
     "image/jpeg": "jpg",
     "image/png": "png",
@@ -232,7 +239,8 @@ def max_size_for(media_type: str) -> int:
 
 
 def _normalize_mime(mime_type: str) -> str:
-    return str(mime_type or "").split(";", 1)[0].strip().lower()
+    cleaned = str(mime_type or "").split(";", 1)[0].strip().lower()
+    return MIME_ALIASES.get(cleaned, cleaned)
 
 
 def sanitize_filename(filename: str) -> str:
@@ -569,6 +577,8 @@ def upload_file(cur: Any, conn: Any, user: dict[str, Any], attachment_id: int, f
         raise MessengerMediaError("invalid_upload_state", "This attachment cannot be uploaded in its current state.", 409)
     expected_mime = _normalize_mime(_row_get(row, "mime_type", ""))
     actual_mime = _normalize_mime(getattr(file_storage, "mimetype", "") or expected_mime)
+    if actual_mime == "application/octet-stream" and expected_mime in ALLOWED_MIME_TYPES:
+        actual_mime = expected_mime
     if actual_mime and actual_mime != expected_mime:
         raise MessengerMediaError("mime_type_mismatch", "Uploaded file type does not match the initialized attachment.", 415)
     media_type = str(_row_get(row, "media_type", "file") or "file")

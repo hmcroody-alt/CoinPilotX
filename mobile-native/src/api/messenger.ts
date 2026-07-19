@@ -555,6 +555,11 @@ function messengerFoundationMediaType(name: string, mimeType: string, voice?: bo
 
 function messengerFoundationMimeType(mimeType: string, name: string, voice?: boolean) {
   const provided = String(mimeType || "").split(";", 1)[0].toLowerCase();
+  if (voice) {
+    if (provided === "audio/x-m4a" || provided === "audio/m4a" || provided === "audio/mp4a-latm" || provided === "application/x-m4a") return "audio/mp4";
+    if (provided === "application/octet-stream") return "audio/mp4";
+    if (provided) return provided;
+  }
   if (provided) return provided;
   const ext = String(name || "").split(".").pop()?.toLowerCase() || "";
   if (ext === "jpg" || ext === "jpeg") return "image/jpeg";

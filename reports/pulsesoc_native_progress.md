@@ -2,6 +2,17 @@
 
 Date: 2026-07-18
 
+## Latest Mission Status: Native Messenger Voice Attachment MIME Repair
+
+- Date: 2026-07-18.
+- Scope: Pulse Command voice-message attachment failure reported from the native conversation screen.
+- Root cause: iOS voice recordings can arrive through multipart as `audio/x-m4a`, `audio/m4a`, `audio/mp4a-latm`, or `application/octet-stream` while the durable Messenger attachment was initialized as `audio/mp4`; the backend foundation required exact MIME equality and rejected the upload before completion.
+- Native fix: `mobile-native/src/api/messenger.ts` now canonicalizes iOS voice MIME aliases to `audio/mp4` before `/api/messages/media/init`.
+- Backend fix: `services/messenger_media_foundation.py` now normalizes M4A aliases and allows multipart octet-stream to inherit the already initialized, server-supported attachment MIME.
+- Existing Messenger foundation preserved: `/api/messages/media/init`, `/api/messages/media/upload`, `/api/messages/media/complete`, and Communications V2 `attachment_ids` delivery remain the only path.
+- Added regression coverage to `scripts/pulsesoc_native_voice_message_audit.py`.
+- Report: `reports/pulsesoc_native_messenger_voice_attachment_mime_fix_2026-07-18.md`.
+
 ## Latest Mission Status: Native Home Generated Concept Visual Reconstruction
 
 - Date: 2026-07-18.

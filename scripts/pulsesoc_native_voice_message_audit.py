@@ -21,6 +21,8 @@ def main() -> int:
         ('import { File } from "expo-file-system"', "native filesystem metadata"),
         ("resolveLocalMessengerFileSize(input.uri, input.sizeBytes)", "pre-init byte resolution"),
         ("size_bytes: sizeBytes", "declared byte contract"),
+        ('provided === "audio/x-m4a"', "iOS M4A MIME alias normalization"),
+        ('provided === "application/octet-stream"', "iOS multipart fallback normalization"),
         ('"/api/messages/media/init"', "production init route"),
         ('"/api/messages/media/upload"', "production upload route"),
         ('"/api/messages/media/complete"', "production completion route"),
@@ -41,6 +43,8 @@ def main() -> int:
 
     for needle, label in (
         ('"audio/mp4": {"media_type": "voice"', "M4A voice support"),
+        ('"audio/x-m4a": "audio/mp4"', "backend M4A MIME alias"),
+        ('actual_mime == "application/octet-stream"', "backend multipart fallback"),
         ('MessengerMediaError("invalid_size", "File size is required."', "server-authoritative size validation"),
         ("def init_upload", "production upload foundation"),
         ("def upload_file", "production private upload"),
