@@ -952,8 +952,11 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         params.append(int(viewer_user_id))
         where.append("NOT EXISTS (SELECT 1 FROM pulse_post_hides ph WHERE ph.user_id=? AND ph.post_id=p.id)")
         params.append(int(viewer_user_id))
-        where.append("NOT EXISTS (SELECT 1 FROM pulse_user_mutes pum WHERE pum.user_id=? AND pum.muted_user_id=p.user_id AND (pum.muted_until IS NULL OR pum.muted_until='' OR pum.muted_until>datetime('now')))")
-        params.append(int(viewer_user_id))
+        # muted_until is a canonical ISO text field in both SQLite and PostgreSQL.
+        # Compare it with an ISO parameter so PostgreSQL never attempts the invalid
+        # text > timestamptz operation produced by translating datetime('now').
+        where.append("NOT EXISTS (SELECT 1 FROM pulse_user_mutes pum WHERE pum.user_id=? AND pum.muted_user_id=p.user_id AND (pum.muted_until IS NULL OR pum.muted_until='' OR pum.muted_until>?))")
+        params.extend([int(viewer_user_id), _now()])
     if feed == "following" and viewer_user_id:
         where.append("p.user_id IN (SELECT followed_user_id FROM pulse_follows WHERE follower_user_id=?)")
         params.append(int(viewer_user_id))
@@ -1091,8 +1094,8 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
             params.append(int(viewer_user_id))
             where.append("NOT EXISTS (SELECT 1 FROM pulse_post_hides ph WHERE ph.user_id=? AND ph.post_id=p.id)")
             params.append(int(viewer_user_id))
-            where.append("NOT EXISTS (SELECT 1 FROM pulse_user_mutes pum WHERE pum.user_id=? AND pum.muted_user_id=p.user_id AND (pum.muted_until IS NULL OR pum.muted_until='' OR pum.muted_until>datetime('now')))")
-            params.append(int(viewer_user_id))
+            where.append("NOT EXISTS (SELECT 1 FROM pulse_user_mutes pum WHERE pum.user_id=? AND pum.muted_user_id=p.user_id AND (pum.muted_until IS NULL OR pum.muted_until='' OR pum.muted_until>?))")
+            params.extend([int(viewer_user_id), _now()])
     conn = user_context.connect()
     cur = conn.cursor()
     _ensure_home_safety_tables(cur)

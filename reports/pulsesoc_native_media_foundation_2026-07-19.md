@@ -62,6 +62,8 @@ Images/videos use the same production multipart route and server limits (5 MB im
 
 ## Verification evidence
 
+- Production Reels recovery root cause: **FIXED IN SOURCE**. Railway logs proved the authenticated iPhone request reached `GET /api/pulse/reels/feed` and failed with PostgreSQL `operator does not exist: text > timestamp with time zone`. `pulse_user_mutes.muted_until` is a canonical ISO text field; the feed now compares it with a bound ISO timestamp parameter instead of a translated SQL timestamp expression. The Reels audit rejects regression to the incompatible comparison.
+
 - TypeScript: **PASS** (`tsc --noEmit`) after the central player implementation.
 - Expo Doctor: **PASS**, 17/17 checks from the completed foundation checkpoint; focused resume run returned without a reported failure.
 - Media foundation audit: **PASS** (`scripts/pulsesoc_native_media_foundation_audit.py`).

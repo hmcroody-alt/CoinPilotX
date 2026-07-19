@@ -31,6 +31,7 @@ def main() -> int:
     types = read("mobile-native/src/navigation/types.ts")
     linking = read("mobile-native/src/navigation/linking.ts")
     routing = read("mobile-native/src/navigation/notificationRouting.ts")
+    feed_engine = read("services/pulse_feed_engine.py")
 
     for phrase in (
         "does not touch production WebView paths",
@@ -120,6 +121,8 @@ def main() -> int:
 
     require("marginTop: 112" in card and "marginBottom: 96" in card, "central Reel player must remain inside the frozen header and bottom-navigation shell")
     require("!active || !ownsPlayback || !attachedAudio" in card, "offscreen or preempted Reels must release attached audio")
+    require("pum.muted_until>datetime('now')" not in feed_engine, "Reels feed must not compare PostgreSQL text muted_until directly with a timestamp")
+    require("pum.muted_until>?" in feed_engine and "params.extend([int(viewer_user_id), _now()])" in feed_engine, "Reels feed must compare canonical ISO mute timestamps using a bound ISO value")
 
     require("ReelsScreen" in navigator and 'name="Reels"' in navigator and 'name="ReelDetail"' in navigator, "navigator must register Reels")
     require("Reels: { reelId?: number" in types and "ReelDetail: { reelId: number" in types, "navigation types must include Reels params")
