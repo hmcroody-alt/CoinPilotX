@@ -182,11 +182,11 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
         const nextHeight = Math.ceil(event.nativeEvent.layout.height);
         setShellHeight((current) => (current === nextHeight ? current : nextHeight));
       }}
-      pointerEvents={hidden ? "none" : "auto"}
+      pointerEvents={hidden ? "none" : "box-none"}
       style={[styles.bottomShell, { paddingBottom: Math.max(insets.bottom, 10), opacity, transform: [{ translateY }] }]}
       testID="global-bottom-navigation"
     >
-      <View style={styles.bottomPanel}>
+      <View pointerEvents="auto" style={styles.bottomPanel}>
         {PRIMARY_TABS.map((item) => {
           const route = state.routes.find((candidate) => candidate.name === item.routeName);
           const active = activeRoute === item.routeName || (item.name === "Create" && activeRoute === "Create");

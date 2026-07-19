@@ -92,12 +92,12 @@ function useHomeAmbientMotionEnabled() {
 export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const navigation = useNavigation<HomeNavigation>();
   const route = useRoute<RouteProp<AppTabParamList, "Home">>();
-  const bottomNavScroll = useBottomNavScrollVisibility();
   const listRef = useRef<FlatList<PulsePost>>(null);
   const offsetRef = useRef(0);
   const hasMoreRef = useRef(false);
   const loadingMoreRef = useRef(false);
   const [posts, setPosts] = useState<PulsePost[]>([]);
+  const bottomNavScroll = useBottomNavScrollVisibility({ enabled: posts.length > 0 });
   const [selectedFeed, setSelectedFeed] = useState(FEED_TABS[0].key);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -1179,7 +1179,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     maxWidth: 1480,
     padding: 12,
-    paddingBottom: 126,
+    paddingBottom: 172,
     width: "100%"
   },
   commandIdentityCard: {
