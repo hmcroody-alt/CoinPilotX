@@ -1,0 +1,125 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "backend canonical routes",
+      "status": "pass",
+      "detail": "existing notification, push, preference, and sync routes are present"
+    },
+    {
+      "name": "device cleanup preserves preferences",
+      "status": "pass",
+      "detail": "push unsubscribe supports logout cleanup without globally disabling push"
+    },
+    {
+      "name": "default preference provisioning",
+      "status": "pass",
+      "detail": "notification OS provisions missing default rows idempotently"
+    },
+    {
+      "name": "respect quiet hours and mutes",
+      "status": "pass",
+      "detail": "notification rules enforce quiet hours and muted actors/conversations"
+    },
+    {
+      "name": "queued delivery pipeline",
+      "status": "pass",
+      "detail": "backend creates deduped delivery jobs instead of native-only pushes"
+    },
+    {
+      "name": "legacy category mapping retained",
+      "status": "pass",
+      "detail": "existing legacy notification categories remain available"
+    },
+    {
+      "name": "native push route reuse",
+      "status": "pass",
+      "detail": "native registration and cleanup use existing backend push routes"
+    },
+    {
+      "name": "Expo plus native push tokens",
+      "status": "pass",
+      "detail": "native sends Expo token and APNs/FCM token metadata when available"
+    },
+    {
+      "name": "push registration cache",
+      "status": "pass",
+      "detail": "native caches registration for logout/account-switch cleanup"
+    },
+    {
+      "name": "logout cleanup order",
+      "status": "pass",
+      "detail": "native revokes this device before clearing the authenticated session"
+    },
+    {
+      "name": "native notification API reuse",
+      "status": "pass",
+      "detail": "native notification client uses canonical list/read/delete/resolve/preferences routes"
+    },
+    {
+      "name": "canonical badge helper split",
+      "status": "pass",
+      "detail": "native separates total, alert, and chat counts from backend fields"
+    },
+    {
+      "name": "OS badge uses total unread",
+      "status": "pass",
+      "detail": "app shell drives OS badge from canonical total unread counts"
+    },
+    {
+      "name": "activity inbox backend source",
+      "status": "pass",
+      "detail": "activity inbox is derived from canonical notifications, messages, and calls"
+    },
+    {
+      "name": "activity cache",
+      "status": "pass",
+      "detail": "activity inbox has offline cache without creating native-only alert records"
+    },
+    {
+      "name": "activity category coverage",
+      "status": "pass",
+      "detail": "required native alert categories are present"
+    },
+    {
+      "name": "realtime sync reuse",
+      "status": "pass",
+      "detail": "native uses backend sync events for notification/activity invalidation"
+    },
+    {
+      "name": "deep link routing coverage",
+      "status": "pass",
+      "detail": "native routes canonical backend notification targets"
+    },
+    {
+      "name": "linking config coverage",
+      "status": "pass",
+      "detail": "native linking accepts canonical app/web schemes for alerts"
+    },
+    {
+      "name": "crypto alert backend reuse",
+      "status": "pass",
+      "detail": "native alert management uses existing crypto/alert endpoints"
+    },
+    {
+      "name": "no static 99+ badges",
+      "status": "pass",
+      "detail": "99+ appears only in the shared formatter, not as static UI state"
+    },
+    {
+      "name": "no duplicate native alert backend routes",
+      "status": "pass",
+      "detail": "backend does not expose native-only notification endpoints"
+    },
+    {
+      "name": "no native-only alert storage",
+      "status": "pass",
+      "detail": "native source does not define separate alert tables or IDs"
+    },
+    {
+      "name": "authoritative report present",
+      "status": "pass",
+      "detail": "report contains matrix and honest verification boundary"
+    }
+  ]
+}

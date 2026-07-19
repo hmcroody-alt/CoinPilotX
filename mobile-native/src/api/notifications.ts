@@ -29,6 +29,7 @@ export type NotificationBadgeCounts = {
   alert_unread_count?: number;
   chat_unread_count?: number;
   total_unread_count?: number;
+  legacy_pulse_unread_count?: number;
 };
 
 export type NotificationPreferences = {
@@ -115,7 +116,26 @@ export async function updateNotificationExperience(experience: Record<string, un
 }
 
 export function unreadCount(counts?: NotificationBadgeCounts) {
-  return Number(counts?.alert_unread_count ?? counts?.unread_count ?? counts?.count ?? 0);
+  return alertUnreadCount(counts);
+}
+
+export function alertUnreadCount(counts?: NotificationBadgeCounts) {
+  return normalizeCount(counts?.alert_unread_count ?? counts?.unread_count ?? counts?.count);
+}
+
+export function chatUnreadCount(counts?: NotificationBadgeCounts) {
+  return normalizeCount(counts?.chat_unread_count);
+}
+
+export function totalUnreadCount(counts?: NotificationBadgeCounts) {
+  const explicitTotal = normalizeCount(counts?.total_unread_count);
+  if (explicitTotal > 0) return explicitTotal;
+  return alertUnreadCount(counts) + chatUnreadCount(counts);
+}
+
+function normalizeCount(value: unknown) {
+  const count = Number(value || 0);
+  return Number.isFinite(count) && count > 0 ? count : 0;
 }
 
 export function normalizeNotifications(items: PulseNotification[]) {

@@ -27908,10 +27908,15 @@ def api_push_unsubscribe():
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 401
     payload = request.get_json(silent=True) or {}
-    result = notification_service.unsubscribe_push(user["user_id"], payload.get("endpoint") or "")
-    os_device_result = pulsesoc_notification_system.disable_device_token(user["user_id"], payload.get("endpoint") or payload.get("device_id") or payload.get("token") or "")
-    notification_service.update_preferences(user["user_id"], {"enable_push_notifications": False})
-    pulsesoc_notification_system.update_preferences(user["user_id"], {"enable_push_notifications": False})
+    device_token = payload.get("endpoint") or payload.get("device_id") or payload.get("token") or payload.get("native_token") or ""
+    result = notification_service.unsubscribe_push(user["user_id"], payload.get("endpoint") or payload.get("token") or "")
+    os_device_result = pulsesoc_notification_system.disable_device_token(user["user_id"], device_token)
+    preserve_preferences = bool(payload.get("preserve_preferences") or payload.get("preservePreferences"))
+    if preserve_preferences:
+        result["preferences_preserved"] = True
+    else:
+        notification_service.update_preferences(user["user_id"], {"enable_push_notifications": False})
+        pulsesoc_notification_system.update_preferences(user["user_id"], {"enable_push_notifications": False})
     result["notification_os_device"] = os_device_result
     log_product_event(user["user_id"], "push_subscription_removed", {"ok": result.get("ok")})
     response = jsonify(result)

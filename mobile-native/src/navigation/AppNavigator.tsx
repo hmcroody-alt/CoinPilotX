@@ -4,7 +4,7 @@ import { useNavigation } from "@react-navigation/native";
 import * as Notifications from "expo-notifications";
 import { useCallback, useEffect, useState } from "react";
 import { AppState } from "react-native";
-import { getNotificationBadgeCounts, unreadCount } from "../api/notifications";
+import { alertUnreadCount, chatUnreadCount, getNotificationBadgeCounts, totalUnreadCount } from "../api/notifications";
 import { getMyProfile, PulseProfile } from "../api/profile";
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { invalidateNativeSync, registerSyncInvalidation, startNativeEventSync } from "../core/eventSync";
@@ -130,9 +130,9 @@ export function AppNavigator() {
   const refreshBadges = useCallback(async () => {
     try {
       const counts = await getNotificationBadgeCounts();
-      const activity = unreadCount(counts);
-      const messages = Number(counts.chat_unread_count || 0);
-      const alerts = Number(counts.alert_unread_count || 0);
+      const activity = totalUnreadCount(counts);
+      const messages = chatUnreadCount(counts);
+      const alerts = alertUnreadCount(counts);
       setBadges({ activity, messages, alerts });
       await Notifications.setBadgeCountAsync(activity).catch(() => undefined);
     } catch {

@@ -10,7 +10,7 @@ import {
   NotificationBadgeCounts,
   PulseNotification,
   resolveNotificationTarget,
-  unreadCount
+  totalUnreadCount
 } from "./notifications";
 
 const ACTIVITY_INBOX_CACHE_KEY = "pulsesoc.native.activity.inbox";
@@ -132,7 +132,7 @@ function normalizeActivityInboxState(input: {
   return {
     items,
     counts: input.counts || {},
-    unreadTotal: unreadCount(input.counts),
+    unreadTotal: totalUnreadCount(input.counts),
     categoryCounts: countUnreadByCategory(items),
     loadedFromCache: input.loadedFromCache,
     serverAuthoritative: true
@@ -145,7 +145,7 @@ function normalizeCachedActivityInboxState(input: ActivityInboxState): ActivityI
     ...input,
     items,
     counts: input.counts || {},
-    unreadTotal: Number(input.unreadTotal || unreadCount(input.counts)),
+    unreadTotal: Number(input.unreadTotal || totalUnreadCount(input.counts)),
     categoryCounts: countUnreadByCategory(items),
     serverAuthoritative: true
   };

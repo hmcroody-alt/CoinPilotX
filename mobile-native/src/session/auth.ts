@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react";
 import { getSession, login, logout, logoutAll, PulseUser, SessionResponse, signup } from "../api/auth";
+import { unregisterPushDevice } from "../api/push";
 import { PulseApiError, recoverNativeSession } from "../api/pulseApi";
 import {
   clearNativeSessionCredentials,
@@ -81,6 +82,7 @@ export async function createAccount(payload: { full_name: string; username: stri
 }
 
 export async function signOut(): Promise<AuthState> {
+  await unregisterPushDevice({ preservePreferences: true, reason: "logout" }).catch(() => undefined);
   await logout().catch(() => undefined);
   await clearNativeSessionCredentials();
   await setCachedSessionUser(null);
@@ -88,6 +90,7 @@ export async function signOut(): Promise<AuthState> {
 }
 
 export async function signOutEverywhere(): Promise<AuthState> {
+  await unregisterPushDevice({ preservePreferences: true, reason: "logout" }).catch(() => undefined);
   await logoutAll();
   await clearNativeSessionCredentials();
   await setCachedSessionUser(null);
