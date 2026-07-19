@@ -2584,11 +2584,12 @@
       else item.removeAttribute("aria-current");
     });
 
-    let lastY = window.scrollY || 0;
+    let lastY = Math.max(0, window.scrollY || 0);
     let ticking = false;
     let keyboardOpen = false;
-    let pinned = false;
-    const threshold = 10;
+    let dockHidden = false;
+    const threshold = 8;
+    const topRevealY = 96;
 
     function interactiveOpen() {
       const active = document.activeElement;
@@ -2606,11 +2607,19 @@
         document.querySelector("#createSheet.open, .create-sheet.open, .post-sheet.open, .pulse-media-lightbox.open, .pulse-promotion-modal.open, [data-status-viewer].open, #pulseStatusStoryViewer.open");
     }
 
+    function canHideDock() {
+      const doc = document.documentElement;
+      const scrollable = Math.max(doc.scrollHeight, document.body?.scrollHeight || 0);
+      const viewport = window.innerHeight || doc.clientHeight || 0;
+      return scrollable - viewport > topRevealY + 80;
+    }
+
     function setDockHidden(hidden) {
       const shouldPin = !!interactiveOpen();
-      pinned = shouldPin;
+      if (!canHideDock()) hidden = false;
       dock.classList.toggle("is-pinned", shouldPin);
       if (shouldPin) hidden = false;
+      dockHidden = !!hidden;
       dock.classList.toggle("is-hidden", !!hidden);
       dock.setAttribute("aria-hidden", hidden ? "true" : "false");
       document.body.classList.toggle("pulse-dock-hidden", !!hidden);
@@ -2622,10 +2631,15 @@
       const y = Math.max(0, window.scrollY || 0);
       const delta = y - lastY;
       if (Math.abs(delta) < threshold) {
-        setDockHidden(dock.classList.contains("is-hidden") && !pinned);
+        setDockHidden(dockHidden);
+        lastY = y;
         return;
       }
-      setDockHidden(delta > 0 && y > 120);
+      if (y <= topRevealY || delta < 0) {
+        setDockHidden(false);
+      } else if (delta > 0) {
+        setDockHidden(true);
+      }
       lastY = y;
     }
 
@@ -2636,6 +2650,8 @@
     }
 
     window.addEventListener("scroll", requestDockUpdate, { passive: true });
+    window.addEventListener("resize", requestDockUpdate, { passive: true });
+    window.addEventListener("pageshow", requestDockUpdate, { passive: true });
     window.addEventListener("focusin", requestDockUpdate, true);
     window.addEventListener("focusout", () => window.setTimeout(requestDockUpdate, 90), true);
     document.addEventListener("click", () => window.setTimeout(requestDockUpdate, 30), true);

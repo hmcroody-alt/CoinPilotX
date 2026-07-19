@@ -176,8 +176,8 @@ def main() -> int:
     assert "classifyDashboardActionRoute(module.route)" in detail_screen, "Module detail shell must display route classification."
     assert "DashboardComposeAlias" in app_navigator and "DashboardMusicAlias" in app_navigator, "Quick-action direct URL aliases must be registered."
     assert 'DashboardComposeAlias: "pulse/compose"' in linking, "Direct /pulse/compose alias must be linked."
-    assert 'DashboardMusicAlias: "pulse/music"' in linking, "Direct /pulse/music alias must be linked."
-    assert '"/pulse/compose"' in action_alias and '"/pulse/music"' in action_alias, "Alias screen must delegate to the same dashboard router."
+    assert 'Music:' in linking and 'path: "pulse/music"' in linking, "Direct /pulse/music must open the native Music screen."
+    assert '"/pulse/compose"' in action_alias and 'navigation.replace("Music"' in action_alias, "Alias screen must delegate compose and redirect legacy music native."
 
     for token in [
         "Dashboard Quick Action Parity Hardening",

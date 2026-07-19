@@ -13,8 +13,12 @@ export function DashboardActionAliasScreen({ navigation, route }: Props) {
   const targetRoute = route.name === "DashboardComposeAlias" ? "/pulse/compose" : "/pulse/music";
 
   useEffect(() => {
+    if (route.name === "DashboardMusicAlias") {
+      navigation.replace("Music", { title: "PulseSoc Music" });
+      return;
+    }
     openDashboardRoute(navigation as unknown as DashboardNavigation, targetRoute);
-  }, [navigation, targetRoute]);
+  }, [navigation, route.name, targetRoute]);
 
   return (
     <View style={styles.center}>

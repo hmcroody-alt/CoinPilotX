@@ -1,4 +1,4 @@
-"""Provider fallback router for Pulse AI.
+"""Provider fallback router for UNDX.
 
 The router reads provider configuration from environment variables and never
 returns provider secrets or raw provider errors to users.
@@ -219,7 +219,7 @@ def generate_response(messages: list[dict[str, str]], correlation_id: str = "", 
             "ok": False,
             "error": "ai_unavailable",
             "reason": "provider_config_missing",
-            "message": "Pulse AI is temporarily unavailable. Please try again soon.",
+            "message": "UNDX is temporarily unavailable. Please try again soon.",
             "correlation_id": correlation_id,
             "attempts": attempts,
         }
@@ -255,7 +255,7 @@ def generate_response(messages: list[dict[str, str]], correlation_id: str = "", 
         "ok": False,
         "error": "ai_unavailable",
         "reason": "all_providers_failed",
-        "message": "Pulse AI is temporarily unavailable. Please try again soon.",
+        "message": "UNDX is temporarily unavailable. Please try again soon.",
         "correlation_id": correlation_id,
         "attempts": attempts,
     }

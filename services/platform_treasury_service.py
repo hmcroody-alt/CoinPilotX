@@ -44,7 +44,7 @@ def ensure_platform_wallet(currency: str = "USD", wallet_key: str = "platform_fe
         (wallet_key, currency, available_balance_cents, pending_balance_cents, lifetime_revenue_cents, lifetime_refunds_cents, status, metadata_json, created_at, updated_at)
         VALUES (?, ?, 0, 0, 0, 0, 'active', ?, ?, ?)
         """,
-        (wallet_key, currency, json.dumps({"purpose": "CoinPilotXAI platform fee treasury"}), now, now),
+        (wallet_key, currency, json.dumps({"purpose": "CoinPlotXAI platform fee treasury"}), now, now),
     )
     wallet_id = cur.lastrowid
     conn.commit()

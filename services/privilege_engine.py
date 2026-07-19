@@ -1,4 +1,4 @@
-"""CoinPilotXAI user privilege ladder and unlock helpers."""
+"""CoinPlotXAI user privilege ladder and unlock helpers."""
 
 from __future__ import annotations
 

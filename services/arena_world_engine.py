@@ -1,4 +1,4 @@
-"""Persistent world-state engine for CoinPilotXAI Arena.
+"""Persistent world-state engine for CoinPlotXAI Arena.
 
 Everything here is educational, simulated, and non-financial. The world state
 is used to make Arena feel alive without creating gambling mechanics.

@@ -49,7 +49,7 @@ forbidden_tokens = [
     "/walletscan",
     "/btcstats",
     "/mempool",
-    "CoinPilotXAI Alpha Arena",
+    "CoinPlotXAI Alpha Arena",
 ]
 for token in forbidden_tokens:
     assert token not in INDEX, f"homepage still exposes old command/link token: {token}"

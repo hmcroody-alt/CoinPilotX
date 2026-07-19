@@ -12,6 +12,9 @@ const conversationListeners = new Set<(conversation: MessengerConversation) => v
 export const PULSE_AI_CONVERSATION_ID = -9001001;
 export const PULSE_AI_USER_ID = -9001001;
 export const PULSE_AI_DISPLAY_NAME = "UNDX";
+export const PULSE_AI_AGENT_ID = "undx";
+export const PULSE_AI_ASSISTANT_ID = "undx";
+export const PULSE_AI_CONVERSATION_TYPE = "undx_intelligence";
 
 export type MessengerConversation = {
   id: number;
@@ -316,7 +319,13 @@ export async function sendPulseAiMessage(payload: { body: string; client_message
     body: JSON.stringify({
       message: payload.body,
       body: payload.body,
-      client_message_id: payload.client_message_id || ""
+      client_message_id: payload.client_message_id || "",
+      conversation_id: PULSE_AI_CONVERSATION_ID,
+      participant_id: PULSE_AI_USER_ID,
+      agent_id: PULSE_AI_AGENT_ID,
+      assistant_id: PULSE_AI_ASSISTANT_ID,
+      conversation_type: PULSE_AI_CONVERSATION_TYPE,
+      identity: PULSE_AI_DISPLAY_NAME
     })
   });
   const conversation = normalizePulseAiConversation(data.conversation);
@@ -838,7 +847,7 @@ function normalizePulseAiConversation(item?: MessengerConversation): MessengerCo
       conversation_id: PULSE_AI_CONVERSATION_ID,
       title: PULSE_AI_DISPLAY_NAME,
       name: PULSE_AI_DISPLAY_NAME,
-      conversation_type: "ai",
+      conversation_type: item?.conversation_type || PULSE_AI_CONVERSATION_TYPE,
       latest_message: item?.latest_message || item?.last_message_preview || "Message UNDX",
       last_message_preview: item?.last_message_preview || item?.latest_message || "Message UNDX",
       last_activity_at: item?.last_activity_at || item?.updated_at || now,
@@ -854,7 +863,7 @@ function normalizePulseAiConversation(item?: MessengerConversation): MessengerCo
     conversation_id: PULSE_AI_CONVERSATION_ID,
     title: PULSE_AI_DISPLAY_NAME,
     name: PULSE_AI_DISPLAY_NAME,
-    conversation_type: "ai",
+    conversation_type: PULSE_AI_CONVERSATION_TYPE,
     latest_message: "Message UNDX",
     last_message_preview: "Message UNDX",
     last_activity_at: now,

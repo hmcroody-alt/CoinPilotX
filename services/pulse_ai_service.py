@@ -1,4 +1,8 @@
-"""Pulse AI Messenger service and privacy-safe learning foundation."""
+"""UNDX Messenger service and privacy-safe learning foundation.
+
+The route and table names still use the legacy pulse_ai prefix for production
+compatibility. User-facing identity is server-enforced as UNDX.
+"""
 
 from __future__ import annotations
 
@@ -10,13 +14,24 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search
+from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search, undx_architecture, undx_policy
 
 
 LOGGER = logging.getLogger(__name__)
 PULSE_AI_CONVERSATION_ID = -9001001
 PULSE_AI_USER_ID = -9001001
+UNDX_AGENT_ID = "undx"
+UNDX_ASSISTANT_ID = "undx"
+UNDX_CONVERSATION_TYPE = "undx_intelligence"
+UNDX_DISPLAY_NAME = "UNDX"
+UNDX_DESCRIPTION = "PulseSOC Intelligence Companion"
 MAX_MESSAGE_CHARS = 4000
+UNDX_IDENTITY_REPLY = (
+    "I’m UNDX — PulseSOC’s AGI-class digital intelligence companion. "
+    "Think of me as your absurdly well-read digital co-pilot: sharp, fast, "
+    "useful, and thankfully not asking for a coffee break."
+)
+UNDX_UNAVAILABLE_MESSAGE = "UNDX is temporarily unavailable. Please try again soon."
 
 
 def _bot():
@@ -35,6 +50,40 @@ def _trace() -> str:
 
 def _clean(value: Any, limit: int = 4000) -> str:
     return re.sub(r"<[^>]*>", "", str(value or "")).replace("\x00", " ").strip()[:limit]
+
+
+def _is_undx_identity_question(value: str) -> bool:
+    text = re.sub(r"[^a-z0-9 ]+", " ", str(value or "").lower())
+    text = " ".join(text.split())
+    if not text:
+        return False
+    mentions_undx = "undx" in text or "pulse ai" in text or "pulseai" in text
+    identity_intent = any(
+        phrase in text
+        for phrase in (
+            "who are you",
+            "what are you",
+            "what is your name",
+            "who is undx",
+            "what is undx",
+            "are you undx",
+            "are you not undx",
+            "are you pulse ai",
+            "your name",
+        )
+    )
+    return identity_intent or (mentions_undx and any(word in text for word in ("who", "what", "are", "name")))
+
+
+def _enforce_undx_reply_identity(value: Any, user_prompt: str = "") -> str:
+    text = _clean(value, 6000)
+    if _is_undx_identity_question(user_prompt):
+        lowered = text.lower()
+        if "pulse ai" in lowered or "don't know" in lowered or "do not know" in lowered or "not sure" in lowered:
+            return UNDX_IDENTITY_REPLY
+    text = re.sub(r"\bPulse\s*AI\b", UNDX_DISPLAY_NAME, text, flags=re.IGNORECASE)
+    text = re.sub(r"\bGalaxy Assistant\b", UNDX_DESCRIPTION, text, flags=re.IGNORECASE)
+    return text or UNDX_UNAVAILABLE_MESSAGE
 
 
 def _json_loads(value: str | None, fallback: Any = None) -> Any:
@@ -253,6 +302,7 @@ def ensure_schema(cur=None, conn=None) -> None:
             """
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_ai_safety_events_user ON pulse_ai_safety_events(user_id, created_at)")
+        undx_architecture.ensure_schema(cur)
         _seed_foundation(cur)
         if conn:
             conn.commit()
@@ -301,9 +351,23 @@ def _conversation_row(cur, user_id: int) -> dict:
         """
         INSERT INTO pulse_ai_conversations
         (public_id, user_id, title, status, pinned_at, metadata_json, created_at, updated_at)
-        VALUES (?, ?, 'Pulse AI', 'active', ?, ?, ?, ?)
+        VALUES (?, ?, ?, 'active', ?, ?, ?, ?)
         """,
-        (public_id, int(user_id), now, json.dumps({"assistant": "galaxy_assistant"}), now, now),
+        (
+            public_id,
+            int(user_id),
+            UNDX_DISPLAY_NAME,
+            now,
+            json.dumps({
+                "assistant": UNDX_AGENT_ID,
+                "assistant_id": UNDX_ASSISTANT_ID,
+                "agent_id": UNDX_AGENT_ID,
+                "conversation_type": UNDX_CONVERSATION_TYPE,
+                "legacy_route": "pulse_ai",
+            }),
+            now,
+            now,
+        ),
     )
     cur.execute("SELECT * FROM pulse_ai_conversations WHERE user_id=? LIMIT 1", (int(user_id),))
     return dict(cur.fetchone())
@@ -328,12 +392,16 @@ def _conversation_payload(row: dict, unread_count: int = 0) -> dict:
         "conversation_id": PULSE_AI_CONVERSATION_ID,
         "id": PULSE_AI_CONVERSATION_ID,
         "public_id": row.get("public_id") or "pulse-ai",
-        "conversation_type": "assistant",
+        "conversation_type": UNDX_CONVERSATION_TYPE,
         "type": "ai",
+        "assistant_id": UNDX_ASSISTANT_ID,
+        "agent_id": UNDX_AGENT_ID,
+        "participant_id": PULSE_AI_USER_ID,
         "is_ai": True,
         "ai_assistant": True,
-        "title": "Pulse AI",
-        "description": "Galaxy Assistant",
+        "title": UNDX_DISPLAY_NAME,
+        "name": UNDX_DISPLAY_NAME,
+        "description": UNDX_DESCRIPTION,
         "member_count": 2,
         "pinned": True,
         "muted": False,
@@ -341,7 +409,7 @@ def _conversation_payload(row: dict, unread_count: int = 0) -> dict:
         "presence": {"status": "online", "active_now": True, "presence_visible": True},
         "last_message_at": row.get("last_message_at") or row.get("updated_at") or row.get("created_at"),
         "last_activity_at": row.get("last_message_at") or row.get("updated_at") or row.get("created_at"),
-        "last_message_preview": "Ask me anything about PulseSoc.",
+        "last_message_preview": "Message UNDX",
         "verified": True,
     }
 
@@ -358,10 +426,11 @@ def _message_payload(row: dict, current_user_id: int) -> dict:
         "sender_id": int(current_user_id) if mine else PULSE_AI_USER_ID,
         "sender": {
             "user_id": int(current_user_id) if mine else PULSE_AI_USER_ID,
-            "display_name": "You" if mine else "Pulse AI",
+            "display_name": "You" if mine else UNDX_DISPLAY_NAME,
             "avatar_url": "",
         },
-        "sender_display_name": "You" if mine else "Pulse AI",
+        "sender_display_name": "You" if mine else UNDX_DISPLAY_NAME,
+        "sender_trust_state": "intelligence" if not mine else "",
         "is_mine": mine,
         "is_ai": not mine,
         "message_type": "text",
@@ -572,7 +641,7 @@ def get_conversation(user_id: int, limit: int = 80) -> dict:
         settings = _settings_row(cur, int(user_id))
         messages = _messages_for_conversation(cur, conversation, int(user_id), limit)
         if not messages:
-            greeting = "Welcome to Pulse AI. Ask me anything about PulseSoc, your alerts, Messenger, Reels, music, crypto signals, or how to explore the galaxy."
+            greeting = "Welcome to UNDX. Ask me about PulseSOC, alerts, Messenger, Reels, music, crypto signals, safety, or how to move through the network."
             _insert_message(cur, int(conversation["id"]), int(user_id), "assistant", greeting, metadata={"kind": "greeting"})
             conn.commit()
             cur.execute("SELECT * FROM pulse_ai_conversations WHERE id=? LIMIT 1", (int(conversation["id"]),))
@@ -595,7 +664,7 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
     body = _clean(pulse_ai_safety.redact_sensitive_text(raw_body, MAX_MESSAGE_CHARS), MAX_MESSAGE_CHARS)
     correlation_id = _trace()
     if not body:
-        return {"ok": False, "error": "empty_message", "message": "Ask Pulse AI something first.", "correlation_id": correlation_id, "http_status": 400}
+        return {"ok": False, "error": "empty_message", "message": "Ask UNDX something first.", "correlation_id": correlation_id, "http_status": 400}
     conn, cur = _open_db()
     started = time.perf_counter()
     try:
@@ -605,7 +674,7 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
         if not allowed:
             _record_learning_event(cur, int(user_id), "rate_limited", "pulse_ai_messenger", {"limit_per_minute": limit})
             conn.commit()
-            return {"ok": False, "error": "rate_limited", "message": "Pulse AI is receiving too many messages. Pause for a moment and try again.", "correlation_id": correlation_id, "http_status": 429}
+            return {"ok": False, "error": "rate_limited", "message": "UNDX is receiving too many messages. Pause for a moment and try again.", "correlation_id": correlation_id, "http_status": 429}
         user_message_id = _insert_message(cur, int(conversation["id"]), int(user_id), "user", body, metadata={"client_message_id": payload.get("client_message_id") or ""})
 
         route = pulse_ai_router.classify(body)
@@ -649,7 +718,40 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
             if web_context:
                 knowledge.insert(0, {"id": 0, "title": "Live web search context", "category": "web_search", "body": web_context})
         user_memory = _user_memory(cur, int(user_id), settings)
-        prompt_messages = pulse_ai_knowledge.build_messages(body, _history_for_prompt(current_messages[:-1], settings), knowledge, user_memory)
+        compiled_policy = undx_policy.compile_context(body)
+        architecture_plan = undx_architecture.build_plan(
+            int(user_id),
+            body,
+            compiled_policy,
+            str(payload.get("client_message_id") or user_message_id),
+        )
+        if compiled_policy.get("reasoning_mode") in {"deep", "deliberate", "strategic", "crisis", "high_stakes"} or payload.get("persist_mission") is True:
+            undx_architecture.persist_plan(
+                cur,
+                int(user_id),
+                int(conversation["id"]),
+                architecture_plan,
+                compiled_policy["schema_version"],
+            )
+        architecture_verification = undx_architecture.adversarial_verify(body, {
+            **architecture_plan,
+            "requires_confirmation": compiled_policy["requires_confirmation"],
+        })
+        prompt_messages = pulse_ai_knowledge.build_messages(
+            body,
+            _history_for_prompt(current_messages[:-1], settings),
+            knowledge,
+            user_memory,
+            compiled_policy=compiled_policy["system_context"],
+        )
+        prompt_messages.insert(1, {
+            "role": "system",
+            "content": (
+                "Server-enforced identity: the assistant for this request is UNDX. "
+                "agent_id=undx; assistant_id=undx; participant_id=-9001001; "
+                "conversation_type=undx_intelligence. Do not identify as Pulse AI."
+            ),
+        })
         if safety.get("category") == "cyber":
             prompt_messages.insert(1, {"role": "system", "content": pulse_ai_safety.safety_prompt_addendum(safety.get("mode") or "")})
         if search_result and not search_result.get("ok"):
@@ -658,12 +760,13 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
         result = pulse_ai_provider_router.generate_response(prompt_messages, correlation_id=correlation_id, task=task)
         _record_provider_events(cur, int(user_id), task, result, correlation_id)
         if result.get("ok"):
+            reply = _enforce_undx_reply_identity(result.get("reply") or "", body)
             assistant_id = _insert_message(
                 cur,
                 int(conversation["id"]),
                 int(user_id),
                 "assistant",
-                _clean(result.get("reply") or "", 6000),
+                reply,
                 provider=result.get("provider") or "",
                 provider_model=result.get("model") or "",
                 latency_ms=int(result.get("latency_ms") or 0),
@@ -678,6 +781,28 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
                         "result_count": len(search_result.get("results") or []),
                     },
                     "safety": {"category": safety.get("category"), "mode": safety.get("mode")},
+                    "policy": {
+                        "schema_version": compiled_policy["schema_version"],
+                        "pack_version": compiled_policy["pack_version"],
+                        "domains": compiled_policy["domains"],
+                        "reasoning_mode": compiled_policy["reasoning_mode"],
+                        "tool_names": compiled_policy["tool_names"],
+                        "requires_confirmation": compiled_policy["requires_confirmation"],
+                    },
+                    "architecture": {
+                        "mission_id": architecture_plan["mission_id"],
+                        "risk_level": architecture_plan["risk_level"],
+                        "reasoning_mode": architecture_plan["reasoning_mode"],
+                        "skills": architecture_plan["skills"],
+                        "status": architecture_plan["status"],
+                        "verifier": architecture_verification,
+                    },
+                    "assistant": {
+                        "name": UNDX_DISPLAY_NAME,
+                        "agent_id": UNDX_AGENT_ID,
+                        "assistant_id": UNDX_ASSISTANT_ID,
+                        "conversation_type": UNDX_CONVERSATION_TYPE,
+                    },
                 },
             )
             _record_learning_event(cur, int(user_id), "message_answered", "pulse_ai_messenger", {"provider": result.get("provider"), "latency_ms": result.get("latency_ms"), "message_id": assistant_id, "task": task, "web_search_used": bool(search_result)})
@@ -687,13 +812,13 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
                 "ok": True,
                 "message_id": assistant_id,
                 "user_message_id": user_message_id,
-                "reply": result.get("reply") or "",
+                "reply": reply,
                 "provider": result.get("provider") or "",
                 "latency_ms": int(result.get("latency_ms") or 0),
                 "correlation_id": correlation_id,
                 **refreshed,
             }
-        safe_message = result.get("message") or "Pulse AI is temporarily unavailable. Please try again soon."
+        safe_message = _enforce_undx_reply_identity(result.get("message") or UNDX_UNAVAILABLE_MESSAGE)
         assistant_id = _insert_message(
             cur,
             int(conversation["id"]),
@@ -722,7 +847,7 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
     except Exception as exc:
         LOGGER.exception("PULSE_AI_MESSAGE_FAILED user_id=%s correlation_id=%s error=%s", int(user_id), correlation_id, exc.__class__.__name__)
         conn.rollback()
-        return {"ok": False, "error": "ai_unavailable", "message": "Pulse AI is temporarily unavailable. Please try again soon.", "correlation_id": correlation_id, "http_status": 500}
+        return {"ok": False, "error": "ai_unavailable", "message": UNDX_UNAVAILABLE_MESSAGE, "correlation_id": correlation_id, "http_status": 500}
     finally:
         conn.close()
 
@@ -745,7 +870,10 @@ def status() -> dict:
     web_status = pulse_ai_web_search.provider_status()
     return {
         "ok": True,
-        "assistant": "Pulse AI",
+        "assistant": UNDX_DISPLAY_NAME,
+        "agent_id": UNDX_AGENT_ID,
+        "assistant_id": UNDX_ASSISTANT_ID,
+        "conversation_type": UNDX_CONVERSATION_TYPE,
         "conversation_id": PULSE_AI_CONVERSATION_ID,
         "providers": provider_status.get("providers") or [],
         "configured_count": provider_status.get("configured_count") or 0,
@@ -807,7 +935,7 @@ def clear_memory(user_id: int) -> dict:
         cur.execute("UPDATE pulse_ai_user_memory SET status='deleted', deleted_at=?, updated_at=? WHERE user_id=? AND COALESCE(deleted_at,'')=''", (now, now, int(user_id)))
         _record_learning_event(cur, int(user_id), "memory_cleared", "pulse_ai_settings")
         conn.commit()
-        return {"ok": True, "message": "Pulse AI memory cleared."}
+        return {"ok": True, "message": "UNDX memory cleared."}
     finally:
         conn.close()
 
@@ -815,11 +943,94 @@ def clear_memory(user_id: int) -> dict:
 def export_memory(user_id: int) -> dict:
     conn, cur = _open_db()
     try:
-        cur.execute("SELECT memory_key, memory_value, source, status, created_at, updated_at FROM pulse_ai_user_memory WHERE user_id=? AND COALESCE(deleted_at,'')=''", (int(user_id),))
+        cur.execute("SELECT id, memory_key, memory_value, source, status, created_at, updated_at FROM pulse_ai_user_memory WHERE user_id=? AND COALESCE(deleted_at,'')=''", (int(user_id),))
         memories = [dict(row) for row in cur.fetchall()]
         return {"ok": True, "items": memories, "count": len(memories)}
     finally:
         conn.close()
+
+
+def correct_memory(user_id: int, memory_id: int, payload: dict | None = None) -> dict:
+    payload = payload or {}
+    value = _clean(payload.get("value") or payload.get("memory_value") or "", 1200)
+    if not value:
+        return {"ok": False, "error": "invalid_memory_value", "message": "Provide the corrected memory value.", "http_status": 400}
+    conn, cur = _open_db()
+    try:
+        cur.execute("SELECT * FROM pulse_ai_user_memory WHERE id=? AND user_id=? AND COALESCE(deleted_at,'')='' LIMIT 1", (int(memory_id), int(user_id)))
+        row = cur.fetchone()
+        if not row:
+            return {"ok": False, "error": "memory_not_found", "message": "That UNDX memory is unavailable.", "http_status": 404}
+        previous = dict(row)
+        timestamp = _now()
+        cur.execute("UPDATE pulse_ai_user_memory SET memory_value=?, source='user_correction', updated_at=? WHERE id=? AND user_id=?", (value, timestamp, int(memory_id), int(user_id)))
+        cur.execute(
+            """INSERT INTO pulse_ai_memory_provenance
+            (memory_id, user_id, provenance, confidence, sensitivity, correction_history_json,
+             supersedes_memory_id, last_verified_at, deletion_policy, created_at, updated_at)
+            VALUES (?, ?, 'user_correction', 1.0, 'user_scoped', ?, ?, ?, 'user_delete', ?, ?)""",
+            (int(memory_id), int(user_id), json.dumps([{"previous": previous.get("memory_value"), "corrected_at": timestamp}])[:4000], int(memory_id), timestamp, timestamp, timestamp),
+        )
+        _record_learning_event(cur, int(user_id), "memory_corrected", "pulse_ai_memory", {"memory_id": int(memory_id)})
+        conn.commit()
+        return {"ok": True, "memory_id": int(memory_id), "message": "UNDX memory corrected."}
+    finally:
+        conn.close()
+
+
+def delete_memory(user_id: int, memory_id: int) -> dict:
+    conn, cur = _open_db()
+    try:
+        timestamp = _now()
+        cur.execute("UPDATE pulse_ai_user_memory SET status='deleted', deleted_at=?, updated_at=? WHERE id=? AND user_id=? AND COALESCE(deleted_at,'')=''", (timestamp, timestamp, int(memory_id), int(user_id)))
+        if int(cur.rowcount or 0) < 1:
+            return {"ok": False, "error": "memory_not_found", "message": "That UNDX memory is unavailable.", "http_status": 404}
+        _record_learning_event(cur, int(user_id), "memory_deleted", "pulse_ai_memory", {"memory_id": int(memory_id)})
+        conn.commit()
+        return {"ok": True, "memory_id": int(memory_id), "message": "UNDX memory deleted."}
+    finally:
+        conn.close()
+
+
+def get_mission(user_id: int, mission_id: str) -> dict:
+    conn, cur = _open_db()
+    try:
+        mission = undx_architecture.resume_plan(cur, int(user_id), _clean(mission_id, 120))
+        if not mission:
+            return {"ok": False, "error": "mission_not_found", "message": "That UNDX mission is unavailable.", "http_status": 404}
+        return {"ok": True, "mission": mission}
+    finally:
+        conn.close()
+
+
+def cancel_mission(user_id: int, mission_id: str) -> dict:
+    conn, cur = _open_db()
+    try:
+        timestamp = _now()
+        cur.execute(
+            "UPDATE pulse_ai_missions SET status='cancelled', updated_at=? WHERE mission_id=? AND user_id=? AND status NOT IN ('succeeded','failed','cancelled')",
+            (timestamp, _clean(mission_id, 120), int(user_id)),
+        )
+        if int(cur.rowcount or 0) < 1:
+            return {"ok": False, "error": "mission_not_cancellable", "message": "That UNDX mission is unavailable or already complete.", "http_status": 404}
+        cur.execute(
+            "UPDATE pulse_ai_task_nodes SET status='cancelled', updated_at=? WHERE mission_id=? AND user_id=? AND status NOT IN ('succeeded','failed','cancelled')",
+            (timestamp, _clean(mission_id, 120), int(user_id)),
+        )
+        conn.commit()
+        return {"ok": True, "mission_id": _clean(mission_id, 120), "status": "cancelled"}
+    finally:
+        conn.close()
+
+
+def simulate_tool(user_id: int, payload: dict | None = None) -> dict:
+    payload = payload or {}
+    tool_name = _clean(payload.get("tool_name") or "", 120)
+    try:
+        simulation = undx_architecture.simulate_operation(tool_name, payload.get("arguments") or {}, _clean(payload.get("failure_scenario") or "", 80))
+    except ValueError:
+        return {"ok": False, "error": "tool_not_registered", "message": "That tool is not available to UNDX.", "http_status": 404}
+    return {"ok": True, "user_id": int(user_id), "simulation": simulation}
 
 
 def record_feedback(user_id: int, payload: dict | None = None) -> dict:
@@ -831,7 +1042,7 @@ def record_feedback(user_id: int, payload: dict | None = None) -> dict:
     try:
         settings = _settings_row(cur, int(user_id))
         if not int(settings.get("improve_from_feedback") or 0):
-            return {"ok": False, "error": "feedback_disabled", "message": "Pulse AI feedback learning is disabled in your settings.", "http_status": 403}
+            return {"ok": False, "error": "feedback_disabled", "message": "UNDX feedback learning is disabled in your settings.", "http_status": 403}
         now = _now()
         public_id = f"pai_feedback_{secrets.token_urlsafe(10)}"
         message_id = int(payload.get("message_id") or 0)
@@ -853,7 +1064,7 @@ def record_feedback(user_id: int, payload: dict | None = None) -> dict:
             )
         _record_learning_event(cur, int(user_id), "feedback_recorded", "pulse_ai_feedback", {"rating": rating, "message_id": message_id})
         conn.commit()
-        return {"ok": True, "feedback_id": feedback_id, "status": "queued_review", "message": "Thanks. Pulse AI will use this feedback safely."}
+        return {"ok": True, "feedback_id": feedback_id, "status": "queued_review", "message": "Thanks. UNDX will use this feedback safely."}
     finally:
         conn.close()
 

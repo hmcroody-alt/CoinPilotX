@@ -5578,3 +5578,16 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Full native typecheck is now blocked by unrelated errors in `mobile-native/src/screens/HomeScreen.tsx` and `mobile-native/src/screens/MusicScreen.tsx`.
 - Manual visual proof remains required: tap UNDX on simulator or physical device, send a prompt, verify the response, and confirm the old command form is gone.
 - Report: `reports/pulsesoc_native_undx_chat_conversation.md`.
+
+## Native UNDX Real Brain Identity Pipeline — 2026-07-19
+
+- Corrected the production assistant backend identity from the legacy public `Pulse AI` persona to canonical `UNDX` while preserving legacy `/api/pulse-ai/*` routes and `pulse_ai_*` tables for compatibility.
+- Reused the same production conversation, message persistence, provider routing, web-search, safety, feedback, and memory code paths instead of creating a native-only assistant backend.
+- Added server-owned UNDX identity constants: name `UNDX`, agent id `undx`, assistant id `undx`, participant id `-9001001`, and conversation type `undx_intelligence`.
+- Replaced the core provider system prompt with UNDX as PulseSOC's AGI-class digital intelligence companion and added a server-side anti-drift instruction so providers do not identify as Pulse AI.
+- Added backend response enforcement before persistence so identity questions and legacy-provider text cannot store `Pulse AI` as the assistant identity.
+- Updated native `sendPulseAiMessage` to include canonical UNDX metadata while keeping the server authoritative.
+- Added `scripts/pulsesoc_undx_identity_backend_audit.py`; focused backend/native identity audits, Python compile, `npm ci`, native typecheck, Expo Doctor, and `git diff --check` pass.
+- Xcode iPhone Simulator build/install exited successfully after dependency refresh. Visual prompt-response proof remains blocked: the Debug app first redboxed with `No script URL provided`; Metro was started, but the follow-up simulator screenshot/relaunch step was rejected by the environment escalated-action usage limit.
+- Physical iPhone verification for this exact identity response remains blocked by the same escalated-action usage limit. Prior UNDX work already proved physical build/install/launch, but not this final identity prompt-response.
+- Report: `reports/pulsesoc_undx_real_brain_identity_pipeline.md`.
