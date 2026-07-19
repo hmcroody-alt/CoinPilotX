@@ -593,8 +593,8 @@ export function normalizeConversations(items: MessengerConversation[]) {
         title: safeText(item.title) || safeText(item.name) || safeText(raw.display_name) || `Conversation ${id}`,
         name: safeText(item.name),
         conversation_type: safeText(item.conversation_type) || safeText(raw.type) || "direct",
-        latest_message: messageText(item.latest_message || raw.last_message),
-        last_message_preview: messageText(item.last_message_preview),
+        latest_message: normalizeMessengerPreview(messageText(item.latest_message || raw.last_message)),
+        last_message_preview: normalizeMessengerPreview(messageText(item.last_message_preview)),
         last_activity_at: safeText(item.last_activity_at),
         updated_at: safeText(item.updated_at),
         avatar_url: safeText(item.avatar_url),
@@ -637,13 +637,15 @@ export function normalizeMessages(items: MessengerMessage[], fallbackConversatio
   return items
     .map((item) => {
       const id = Number(item.message_id || item.id || 0);
+      const messageType = safeText(item.message_type) || safeText(item.type) || "text";
+      const body = normalizeMessengerBody(messageText(item.body || item.content || item.text), messageType);
       return {
         ...item,
         id,
         message_id: id,
         conversation_id: Number(item.conversation_id || fallbackConversationId || 0),
-        body: messageText(item.body || item.content || item.text),
-        message_type: safeText(item.message_type) || safeText(item.type) || "text",
+        body,
+        message_type: messageType,
         delivery_status: safeText(item.delivery_status) || safeText(item.status) || safeText(item.local_status) || "sent",
         file_size: Number(item.file_size || 0),
         duration_seconds: Number(item.duration_seconds || item.duration || 0),
@@ -669,6 +671,23 @@ function safeText(value: unknown) {
   if (typeof value === "string") return value.trim();
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return "";
+}
+
+function normalizeMessengerBody(value: string, messageType?: string) {
+  if (isVoiceMessageType(messageType) && isGeneratedVoiceFilename(value)) return "";
+  return value;
+}
+
+function normalizeMessengerPreview(value: string) {
+  return isGeneratedVoiceFilename(value) ? "Voice message" : value;
+}
+
+function isVoiceMessageType(value?: string) {
+  return ["voice", "audio", "voice_message", "audio_message"].includes(String(value || "").toLowerCase());
+}
+
+function isGeneratedVoiceFilename(value?: string) {
+  return /^pulsesoc[-_ ]voice[-_]\d+\.(m4a|mp4|aac|mp3|wav|webm|ogg)$/i.test(String(value || "").trim());
 }
 
 function messageText(value: unknown) {

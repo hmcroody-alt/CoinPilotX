@@ -64,7 +64,8 @@ export function conversationDisplayTitle(item: Pick<MessengerConversation, "id" 
 export function conversationPreview(item: MessengerConversation) {
   if (item.typing) return "Typing...";
   if (item.failed || item.delivery_status === "failed") return "Delivery failed. Open to retry.";
-  return compactPreview(item.latest_message || item.last_message_preview, "Open chat");
+  const preview = item.latest_message || item.last_message_preview;
+  return compactPreview(isGeneratedVoiceFilename(preview) ? "Voice message" : preview, "Open chat");
 }
 
 export function conversationTime(item: MessengerConversation) {
@@ -94,13 +95,17 @@ export function conversationAccessibilityLabel(item: MessengerConversation) {
 export function messagePreview(message: MessengerMessage) {
   if (message.deleted_at) return "Deleted message";
   if (message.moderated_at || message.moderation_state) return "Unavailable after safety review";
-  if (message.body) return message.body;
   const type = String(message.message_type || message.type || "").toLowerCase();
+  if (type === "voice" || type === "audio" || type === "voice_message" || type === "audio_message") return "Voice message";
+  if (message.body) return message.body;
   if (type === "image" || type === "gif") return "Image attachment";
   if (type === "video") return "Video attachment";
-  if (type === "voice" || type === "audio") return "Voice message";
   if (type === "document" || type === "file") return "File attachment";
   return "Attachment";
+}
+
+function isGeneratedVoiceFilename(value?: string) {
+  return /^pulsesoc[-_ ]voice[-_]\d+\.(m4a|mp4|aac|mp3|wav|webm|ogg)$/i.test(String(value || "").trim());
 }
 
 export function messageDeliveryLabel(status?: string, seenAt?: string) {

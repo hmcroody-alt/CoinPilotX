@@ -387,8 +387,9 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     reply_to_message_id?: number;
     reply_preview?: string;
   }) => {
-    const label = payload.body || payload.media_url || "Attachment";
-    const local = createLocalMessage(conversationId, label, payload.message_type || "text");
+    const payloadType = normalizedMessageType(payload.message_type || "text");
+    const label = payload.body?.trim() || mediaPreviewLabel(payloadType, Boolean(payload.media_url));
+    const local = createLocalMessage(conversationId, payload.body || "", payload.message_type || "text");
     local.media_url = payload.media_url;
     local.thumbnail_url = payload.thumbnail_url;
     local.file_size = payload.file_size;
@@ -472,7 +473,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const retryMessage = useCallback(async (message: MessengerMessage) => {
     setMessages((current) => current.filter((item) => item.id !== message.id));
     await sendPayload({
-      body: message.body || "",
+      body: isVoiceLikeMessage(message) ? "" : message.body || "",
       message_type: message.message_type || "text",
       media_url: message.media_url,
       thumbnail_url: message.thumbnail_url,
@@ -563,7 +564,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         throw new Error("PulseSoc did not return a durable Messenger attachment. Please retry.");
       }
       const delivery = await sendPayload({
-        body: input.name,
+        body: input.voice ? "" : input.name,
         message_type: uploaded.message_type || uploaded.type || (input.voice ? "voice" : "file"),
         media_url: uploaded.media_url,
         thumbnail_url: uploaded.thumbnail_url,
@@ -1028,7 +1029,7 @@ function MessageBubble({
   const status = message.local_status || message.delivery_status || "sent";
   const deleted = Boolean(message.deleted_at || status === "deleted");
   const moderated = Boolean(message.moderated_at || message.moderation_state);
-  const body = deleted ? "This message was deleted." : moderated ? "This message is unavailable after safety review." : message.body;
+  const body = deleted ? "This message was deleted." : moderated ? "This message is unavailable after safety review." : displayMessageBody(message);
   return (
     <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.theirWrap]} accessible accessibilityLabel={messageAccessibilityLabel(message)}>
       <Pressable onLongPress={onLongPress} style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble, moderated && styles.moderatedBubble]}>
@@ -1209,7 +1210,7 @@ function VoiceMessageCard({ url, durationSeconds, title }: { url: string; durati
       <View style={styles.voiceControls}>
         <Pressable accessibilityRole="button" accessibilityLabel={playing ? "Pause voice message" : "Play voice message"} style={styles.voicePlay} onPress={() => togglePlayback().catch(() => undefined)}><Ionicons name={playing ? "pause" : "play"} size={20} color="#03120f" /></Pressable>
         <View style={styles.voiceTimeline}>
-          <View style={styles.waveform}>{Array.from({ length: 22 }).map((_, index) => <View key={index} style={[styles.waveBar, index % 4 === 2 && styles.waveBarPurple, { height: 7 + ((index * 7) % 18), opacity: index / 22 <= progress ? 1 : 0.3 }]} />)}</View>
+          <View style={styles.waveform}>{Array.from({ length: 18 }).map((_, index) => <View key={index} style={[styles.waveBar, index % 4 === 2 && styles.waveBarPurple, { height: 6 + ((index * 7) % 16), opacity: index / 18 <= progress ? 1 : 0.3 }]} />)}</View>
           <View style={styles.voiceTimeRow}><Text style={styles.attachmentMeta}>{formatDuration(position)}</Text><Text style={styles.attachmentMeta}>{formatDuration(duration)}</Text></View>
         </View>
         <Pressable accessibilityRole="button" accessibilityLabel={`Playback speed ${rate} times`} style={styles.voiceRate} onPress={() => cycleRate().catch(() => undefined)}><Text style={styles.voiceRateText}>{rate}x</Text></Pressable>
@@ -1222,6 +1223,31 @@ function VoiceMessageCard({ url, durationSeconds, title }: { url: string; durati
 function formatDuration(seconds: number) {
   const safe = Math.max(0, Math.floor(seconds || 0));
   return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, "0")}`;
+}
+
+function normalizedMessageType(value?: string) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isVoiceType(type?: string) {
+  return ["voice", "audio", "voice_message", "audio_message"].includes(normalizedMessageType(type));
+}
+
+function isVoiceLikeMessage(message: MessengerMessage) {
+  return isVoiceType(message.message_type || message.type);
+}
+
+function displayMessageBody(message: MessengerMessage) {
+  if (isVoiceLikeMessage(message)) return "";
+  return message.body || "";
+}
+
+function mediaPreviewLabel(type: string, hasMedia: boolean) {
+  if (isVoiceType(type)) return "Voice message";
+  if (type === "image" || type === "gif") return "Photo";
+  if (type === "video") return "Video";
+  if (type === "file" || type === "document") return "File attachment";
+  return hasMedia ? "Attachment" : "Message";
 }
 
 function isPresenceActive(value?: string) {
@@ -1444,21 +1470,21 @@ const styles = StyleSheet.create({
     minWidth: 190,
     padding: 10
   },
-  voiceCard: { backgroundColor: "rgba(2,17,31,0.94)", borderColor: "rgba(65,236,198,0.52)", borderRadius: 18, borderWidth: 1, gap: 8, minWidth: 258, overflow: "hidden", padding: 12, shadowColor: "#41ecc6", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.2, shadowRadius: 16 },
-  voiceCardGlow: { backgroundColor: "rgba(148,92,255,0.16)", borderRadius: 80, height: 92, position: "absolute", right: -28, top: -34, width: 132 },
+  voiceCard: { backgroundColor: "rgba(2,17,31,0.94)", borderColor: "rgba(65,236,198,0.52)", borderRadius: 16, borderWidth: 1, gap: 6, minWidth: 224, overflow: "hidden", paddingHorizontal: 10, paddingVertical: 9, shadowColor: "#41ecc6", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.2, shadowRadius: 14 },
+  voiceCardGlow: { backgroundColor: "rgba(148,92,255,0.14)", borderRadius: 68, height: 78, position: "absolute", right: -24, top: -30, width: 112 },
   voiceCardHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   voiceCardIdentity: { alignItems: "center", flexDirection: "row", gap: 6 },
   voiceCardKicker: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1.25 },
   voiceCardDuration: { color: "#b9a5ff", fontSize: 11, fontWeight: "900" },
   voiceCardLabel: { color: colors.muted, fontSize: 10, fontWeight: "700" },
-  voiceControls: { alignItems: "center", flexDirection: "row", gap: 9 },
-  voicePlay: { alignItems: "center", backgroundColor: colors.accent, borderColor: "rgba(255,255,255,0.52)", borderRadius: 24, borderWidth: 1, height: 46, justifyContent: "center", shadowColor: colors.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.34, shadowRadius: 12, width: 46 },
-  voiceTimeline: { flex: 1, gap: 4, minWidth: 120 },
-  waveform: { alignItems: "center", flexDirection: "row", gap: 2, height: 30 },
+  voiceControls: { alignItems: "center", flexDirection: "row", gap: 8 },
+  voicePlay: { alignItems: "center", backgroundColor: colors.accent, borderColor: "rgba(255,255,255,0.52)", borderRadius: 21, borderWidth: 1, height: 42, justifyContent: "center", shadowColor: colors.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.34, shadowRadius: 10, width: 42 },
+  voiceTimeline: { flex: 1, gap: 3, minWidth: 104 },
+  waveform: { alignItems: "center", flexDirection: "row", gap: 2, height: 26 },
   waveBar: { backgroundColor: colors.accentStrong, borderRadius: 2, flex: 1, minWidth: 2 },
   waveBarPurple: { backgroundColor: "#a77cff" },
   voiceTimeRow: { flexDirection: "row", justifyContent: "space-between" },
-  voiceRate: { alignItems: "center", backgroundColor: "rgba(167,124,255,0.13)", borderColor: "rgba(167,124,255,0.62)", borderRadius: 12, borderWidth: 1, minHeight: 34, minWidth: 42, justifyContent: "center" },
+  voiceRate: { alignItems: "center", backgroundColor: "rgba(167,124,255,0.13)", borderColor: "rgba(167,124,255,0.62)", borderRadius: 11, borderWidth: 1, minHeight: 32, minWidth: 38, justifyContent: "center" },
   voiceRateText: { color: "#d7caff", fontSize: 12, fontWeight: "900" },
   attachmentTitle: {
     color: colors.text,
