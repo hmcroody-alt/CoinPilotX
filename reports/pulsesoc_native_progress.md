@@ -2,6 +2,17 @@
 
 Date: 2026-07-18
 
+## Latest Mission Status: Native Voice Message Compact Bubble
+
+- Replaced the nested native `VOICE PULSE` media card with one compact horizontal player inside the canonical incoming/outgoing message bubble.
+- Removed the redundant heading, security subtitle, duplicate current/total time row, and all technical filename/path/URL fallbacks.
+- Expanded legacy normalization to reuse attachment duration, waveform, playback URL, and attachment ID without changing production records.
+- Added one shared voice playback coordinator with play, pause, replay, seek, `1x`/`1.5x`/`2x`, localized 250 ms progress updates, retry, Pulse Radio coordination, background cleanup, row cleanup, and call-entry cleanup.
+- Preserved Communications V2 upload/send contracts, message IDs, attachment IDs, WebView player markup, and backend serialization.
+- Release builds passed for iPhone Simulator and arm64 iPhone; the side-by-side `PulseSoc Native Dev` build was installed and launched on the connected iPhone 16 Pro under `com.pulsesoc.nativeapp.dev`.
+- Internal-beta gate remains open for hands-on audible playback, cross-client playback, Bluetooth/headset/interruption, authenticated simulator visual, and measured performance checks.
+- Evidence: `reports/pulsesoc_native_voice_message_compact_redesign_2026-07-18.md`.
+
 ## Latest Mission Status: Native Messenger Voice Attachment MIME Repair
 
 - Date: 2026-07-18.

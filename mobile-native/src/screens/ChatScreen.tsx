@@ -5,9 +5,10 @@ import { Audio } from "expo-av";
 import { File } from "expo-file-system";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
+  ActivityIndicator,
   Alert,
   Animated,
   AppState,
@@ -52,6 +53,16 @@ import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMe
 import { ConversationControlCenter } from "../components/ConversationControlCenter";
 import { PulseCommandAvatar, PulseCommandPanel } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
+import {
+  cycleVoicePlaybackRate,
+  retryVoicePlayback,
+  seekVoicePlayback,
+  seekVoicePlaybackBy,
+  stopVoiceMessagePlayback,
+  subscribeVoicePlayback,
+  toggleVoicePlayback,
+  VoicePlaybackSnapshot
+} from "../core/voiceMessagePlayback";
 import { RootStackParamList } from "../navigation/types";
 import {
   messageAccessibilityLabel,
@@ -196,6 +207,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const qaChatState = PULSESOC_QA_MESSENGER_FIXTURES ? String(process.env.EXPO_PUBLIC_PULSESOC_QA_CHAT_STATE || "") : "";
   const draftKey = `pulsesoc.native.messenger.draft.${conversationId}`;
+
+  useEffect(() => () => {
+    stopVoiceMessagePlayback("conversation_closed").catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     const show = Keyboard.addListener("keyboardWillShow", () => setKeyboardVisible(true));
@@ -1030,8 +1045,9 @@ function MessageBubble({
   const deleted = Boolean(message.deleted_at || status === "deleted");
   const moderated = Boolean(message.moderated_at || message.moderation_state);
   const body = deleted ? "This message was deleted." : moderated ? "This message is unavailable after safety review." : displayMessageBody(message);
+  const voiceMessage = isVoiceLikeMessage(message);
   return (
-    <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.theirWrap]} accessible accessibilityLabel={messageAccessibilityLabel(message)}>
+    <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.theirWrap]} accessible={!voiceMessage} accessibilityLabel={messageAccessibilityLabel(message)}>
       <Pressable onLongPress={onLongPress} style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble, moderated && styles.moderatedBubble]}>
         {!mine ? <Text style={styles.senderLabel}>{message.sender_display_name || (message.sender_trust_state === "intelligence" ? "UNDX" : "PulseSoc member")}</Text> : null}
         {message.reply_preview ? (
@@ -1139,6 +1155,14 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
   const type = (message.message_type || "text").toLowerCase();
   const mediaUrl = absoluteMediaUrl(message.media_url);
   const thumbnailUrl = absoluteMediaUrl(message.thumbnail_url || message.media_url);
+  if (isVoiceType(type) && !mediaUrl) {
+    return (
+      <View accessible accessibilityRole="text" accessibilityLabel={`${messageAccessibilityLabel(message)}. Voice message unavailable.`} style={styles.voiceUnavailable}>
+        <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
+        <Text style={styles.voiceUnavailableText}>Voice message unavailable</Text>
+      </View>
+    );
+  }
   if (!mediaUrl) return null;
   const viewerItem: NativeMediaViewerItem = {
     id: Number(message.id || message.message_id || 0),
@@ -1159,8 +1183,8 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
       </>
     );
   }
-  if (type === "voice" || type === "audio") {
-    return <VoiceMessageCard url={mediaUrl} durationSeconds={Number(message.duration_seconds || 0)} title={type === "voice" ? "Voice message" : "Audio message"} />;
+  if (isVoiceType(type)) {
+    return <VoiceMessageCard message={message} url={mediaUrl} />;
   }
   return (
     <Pressable style={styles.attachment} onPress={() => (type === "video" ? setViewerOpen(true) : undefined)}>
@@ -1171,58 +1195,83 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
   );
 }
 
-function VoiceMessageCard({ url, durationSeconds, title }: { url: string; durationSeconds: number; title: string }) {
-  const soundRef = useRef<Audio.Sound | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const [position, setPosition] = useState(0);
-  const [duration, setDuration] = useState(Math.max(1, durationSeconds));
-  const [rate, setRate] = useState(1);
-  useEffect(() => () => { soundRef.current?.unloadAsync().catch(() => undefined); }, []);
-  async function togglePlayback() {
-    if (!soundRef.current) {
-      const created = await Audio.Sound.createAsync({ uri: url }, { shouldPlay: true, rate, shouldCorrectPitch: true }, (status) => {
-        if (!status.isLoaded) return;
-        setPlaying(status.isPlaying);
-        setPosition(Math.floor(status.positionMillis / 1000));
-        setDuration(Math.max(1, Math.floor((status.durationMillis || duration * 1000) / 1000)));
-        if (status.didJustFinish) setPosition(0);
-      });
-      soundRef.current = created.sound;
-      return;
-    }
-    const status = await soundRef.current.getStatusAsync();
-    if (status.isLoaded && status.isPlaying) await soundRef.current.pauseAsync();
-    else await soundRef.current.playAsync();
-  }
-  async function cycleRate() {
-    const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1;
-    setRate(next);
-    await soundRef.current?.setRateAsync(next, true).catch(() => undefined);
-  }
-  const progress = Math.min(1, position / Math.max(1, duration));
+const VoiceMessageCard = memo(function VoiceMessageCard({ message, url }: { message: MessengerMessage; url: string }) {
+  const messageId = String(message.message_id || message.id);
+  const metadataDurationMillis = Math.max(0, Number(message.duration_seconds || message.duration || 0) * 1000);
+  const [snapshot, setSnapshot] = useState<VoicePlaybackSnapshot>({
+    messageId,
+    status: "idle",
+    positionMillis: 0,
+    durationMillis: metadataDurationMillis,
+    rate: 1,
+    error: ""
+  });
+  const timelineWidth = useRef(1);
+  const waveform = useMemo(() => normalizedWaveform(message.waveform, messageId), [message.waveform, messageId]);
+  useEffect(() => subscribeVoicePlayback(messageId, metadataDurationMillis, setSnapshot), [messageId, metadataDurationMillis]);
+  const durationMillis = Math.max(snapshot.durationMillis, metadataDurationMillis);
+  const progress = Math.min(1, snapshot.positionMillis / Math.max(1, durationMillis));
+  const playing = snapshot.status === "playing";
+  const loading = snapshot.status === "loading";
+  const failed = snapshot.status === "error";
+  const request = { messageId, url, durationMillis: metadataDurationMillis };
+  const toggle = () => (failed ? retryVoicePlayback(request) : toggleVoicePlayback(request));
+  const changeRate = async () => {
+    const next = await cycleVoicePlaybackRate(messageId);
+    AccessibilityInfo.announceForAccessibility(`Playback speed ${next} times`);
+  };
   return (
     <View style={styles.voiceCard}>
-      <View pointerEvents="none" style={styles.voiceCardGlow} />
-      <View style={styles.voiceCardHeader}>
-        <View style={styles.voiceCardIdentity}><Ionicons name="radio-outline" size={14} color={colors.accent} /><Text style={styles.voiceCardKicker}>VOICE PULSE</Text></View>
-        <Text style={styles.voiceCardDuration}>{formatDuration(duration)}</Text>
-      </View>
+      <View accessible accessibilityRole="text" accessibilityLabel={messageAccessibilityLabel(message)} style={styles.voiceSemanticSummary} />
       <View style={styles.voiceControls}>
-        <Pressable accessibilityRole="button" accessibilityLabel={playing ? "Pause voice message" : "Play voice message"} style={styles.voicePlay} onPress={() => togglePlayback().catch(() => undefined)}><Ionicons name={playing ? "pause" : "play"} size={20} color="#03120f" /></Pressable>
-        <View style={styles.voiceTimeline}>
-          <View style={styles.waveform}>{Array.from({ length: 18 }).map((_, index) => <View key={index} style={[styles.waveBar, index % 4 === 2 && styles.waveBarPurple, { height: 6 + ((index * 7) % 16), opacity: index / 18 <= progress ? 1 : 0.3 }]} />)}</View>
-          <View style={styles.voiceTimeRow}><Text style={styles.attachmentMeta}>{formatDuration(position)}</Text><Text style={styles.attachmentMeta}>{formatDuration(duration)}</Text></View>
-        </View>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Playback speed ${rate} times`} style={styles.voiceRate} onPress={() => cycleRate().catch(() => undefined)}><Text style={styles.voiceRateText}>{rate}x</Text></Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={failed ? "Retry voice message" : playing ? "Pause voice message" : "Play voice message"}
+          accessibilityState={{ busy: loading }}
+          hitSlop={4}
+          style={({ pressed }) => [styles.voicePlay, failed && styles.voicePlayError, pressed && styles.voicePressed]}
+          onPress={() => toggle().catch(() => undefined)}
+        >
+          {loading ? <ActivityIndicator color="#03120f" size="small" /> : <Ionicons name={failed ? "refresh" : playing ? "pause" : "play"} size={19} color="#03120f" />}
+        </Pressable>
+        <Pressable
+          accessibilityRole="adjustable"
+          accessibilityLabel="Voice message progress"
+          accessibilityValue={{ min: 0, max: Math.max(1, Math.round(durationMillis / 1000)), now: Math.round(snapshot.positionMillis / 1000), text: `${formatDuration(snapshot.positionMillis / 1000)} of ${formatDuration(durationMillis / 1000)}` }}
+          accessibilityActions={[{ name: "increment", label: "Forward 5 seconds" }, { name: "decrement", label: "Back 5 seconds" }]}
+          style={styles.voiceTimeline}
+          onAccessibilityAction={(event) => seekVoicePlaybackBy(messageId, event.nativeEvent.actionName === "increment" ? 5000 : -5000).catch(() => undefined)}
+          onLayout={(event) => { timelineWidth.current = Math.max(1, event.nativeEvent.layout.width); }}
+          onPress={(event) => seekVoicePlayback(messageId, event.nativeEvent.locationX / timelineWidth.current).catch(() => undefined)}
+        >
+          {failed ? <Text numberOfLines={1} style={styles.voiceError}>Couldn’t play · Retry</Text> : (
+            <View style={styles.waveform}>
+              {waveform.map((level, index) => (
+                <View key={index} style={[styles.waveBar, index % 4 === 2 && styles.waveBarPurple, index / waveform.length <= progress ? styles.waveBarPlayed : styles.waveBarPending, { height: 7 + level * 14 }]} />
+              ))}
+            </View>
+          )}
+        </Pressable>
+        <Text accessibilityLabel={`Duration ${formatDuration(durationMillis / 1000)}`} style={styles.voiceDuration}>{formatDuration(durationMillis / 1000)}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Playback speed ${snapshot.rate} times`} hitSlop={5} style={({ pressed }) => [styles.voiceRate, pressed && styles.voicePressed]} onPress={() => changeRate().catch(() => undefined)}>
+          <Text style={styles.voiceRateText}>{snapshot.rate}x</Text>
+        </Pressable>
       </View>
-      <Text style={styles.voiceCardLabel}>{title} · end-to-end private channel</Text>
     </View>
   );
-}
+});
 
 function formatDuration(seconds: number) {
   const safe = Math.max(0, Math.floor(seconds || 0));
   return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, "0")}`;
+}
+
+function normalizedWaveform(input: number[] | undefined, seed: string) {
+  if (Array.isArray(input) && input.length) {
+    return input.slice(0, 22).map((value) => Math.max(0.08, Math.min(1, Number(value || 0) > 1 ? Number(value || 0) / 100 : Number(value || 0))));
+  }
+  const numericSeed = seed.split("").reduce((total, value) => total + value.charCodeAt(0), 0);
+  return Array.from({ length: 18 }, (_, index) => 0.18 + (((numericSeed + index * 17) % 70) / 100));
 }
 
 function normalizedMessageType(value?: string) {
@@ -1238,7 +1287,6 @@ function isVoiceLikeMessage(message: MessengerMessage) {
 }
 
 function displayMessageBody(message: MessengerMessage) {
-  if (isVoiceLikeMessage(message)) return "";
   return message.body || "";
 }
 
@@ -1470,21 +1518,23 @@ const styles = StyleSheet.create({
     minWidth: 190,
     padding: 10
   },
-  voiceCard: { backgroundColor: "rgba(2,17,31,0.94)", borderColor: "rgba(65,236,198,0.52)", borderRadius: 16, borderWidth: 1, gap: 6, minWidth: 224, overflow: "hidden", paddingHorizontal: 10, paddingVertical: 9, shadowColor: "#41ecc6", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.2, shadowRadius: 14 },
-  voiceCardGlow: { backgroundColor: "rgba(148,92,255,0.14)", borderRadius: 68, height: 78, position: "absolute", right: -24, top: -30, width: 112 },
-  voiceCardHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-  voiceCardIdentity: { alignItems: "center", flexDirection: "row", gap: 6 },
-  voiceCardKicker: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1.25 },
-  voiceCardDuration: { color: "#b9a5ff", fontSize: 11, fontWeight: "900" },
-  voiceCardLabel: { color: colors.muted, fontSize: 10, fontWeight: "700" },
-  voiceControls: { alignItems: "center", flexDirection: "row", gap: 8 },
-  voicePlay: { alignItems: "center", backgroundColor: colors.accent, borderColor: "rgba(255,255,255,0.52)", borderRadius: 21, borderWidth: 1, height: 42, justifyContent: "center", shadowColor: colors.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.34, shadowRadius: 10, width: 42 },
-  voiceTimeline: { flex: 1, gap: 3, minWidth: 104 },
-  waveform: { alignItems: "center", flexDirection: "row", gap: 2, height: 26 },
-  waveBar: { backgroundColor: colors.accentStrong, borderRadius: 2, flex: 1, minWidth: 2 },
-  waveBarPurple: { backgroundColor: "#a77cff" },
-  voiceTimeRow: { flexDirection: "row", justifyContent: "space-between" },
-  voiceRate: { alignItems: "center", backgroundColor: "rgba(167,124,255,0.13)", borderColor: "rgba(167,124,255,0.62)", borderRadius: 11, borderWidth: 1, minHeight: 32, minWidth: 38, justifyContent: "center" },
+  voiceCard: { minWidth: 222, paddingVertical: 1 },
+  voiceSemanticSummary: { height: 1, left: 0, opacity: 0, position: "absolute", top: 0, width: 1 },
+  voiceControls: { alignItems: "center", flexDirection: "row", gap: 7, minHeight: 44 },
+  voicePlay: { alignItems: "center", backgroundColor: colors.accent, borderColor: "rgba(255,255,255,0.5)", borderRadius: 22, borderWidth: 1, height: 44, justifyContent: "center", shadowColor: colors.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.25, shadowRadius: 8, width: 44 },
+  voicePlayError: { backgroundColor: colors.danger, borderColor: "rgba(255,255,255,0.58)" },
+  voicePressed: { opacity: 0.78, transform: [{ scale: 0.96 }] },
+  voiceTimeline: { flex: 1, justifyContent: "center", minHeight: 44, minWidth: 92 },
+  waveform: { alignItems: "center", flexDirection: "row", gap: 2, height: 28 },
+  waveBar: { borderRadius: 2, flex: 1, maxWidth: 4, minWidth: 2 },
+  waveBarPlayed: { backgroundColor: colors.accentStrong, opacity: 1 },
+  waveBarPending: { backgroundColor: "rgba(185,205,222,0.42)" },
+  waveBarPurple: { borderColor: "rgba(167,124,255,0.72)", borderWidth: StyleSheet.hairlineWidth },
+  voiceError: { color: colors.danger, fontSize: 11, fontWeight: "800" },
+  voiceUnavailable: { alignItems: "center", flexDirection: "row", gap: 7, minHeight: 44, minWidth: 210 },
+  voiceUnavailableText: { color: colors.danger, fontSize: 12, fontWeight: "800" },
+  voiceDuration: { color: colors.text, fontSize: 11, fontVariant: ["tabular-nums"], fontWeight: "800" },
+  voiceRate: { alignItems: "center", backgroundColor: "rgba(167,124,255,0.13)", borderColor: "rgba(167,124,255,0.62)", borderRadius: 11, borderWidth: 1, minHeight: 32, minWidth: 36, justifyContent: "center" },
   voiceRateText: { color: "#d7caff", fontSize: 12, fontWeight: "900" },
   attachmentTitle: {
     color: colors.text,

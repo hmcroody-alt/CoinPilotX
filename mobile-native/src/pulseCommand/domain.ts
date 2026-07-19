@@ -105,7 +105,7 @@ export function messagePreview(message: MessengerMessage) {
 }
 
 function isGeneratedVoiceFilename(value?: string) {
-  return /^pulsesoc[-_ ]voice[-_]\d+\.(m4a|mp4|aac|mp3|wav|webm|ogg)$/i.test(String(value || "").trim());
+  return /^(?:pulsesoc[-_ ]voice[-_]\d+|[^\s/\\]+)\.(m4a|mp4|aac|mp3|wav|webm|ogg)$/i.test(String(value || "").trim());
 }
 
 export function messageDeliveryLabel(status?: string, seenAt?: string) {
@@ -121,6 +121,12 @@ export function messageDeliveryLabel(status?: string, seenAt?: string) {
 export function messageAccessibilityLabel(message: MessengerMessage) {
   const sender = message.is_mine ? "You" : message.sender_display_name || (message.sender_trust_state === "intelligence" ? "UNDX" : "Sender");
   const delivery = messageDeliveryLabel(message.local_status || message.delivery_status || message.status, message.seen_at);
+  const type = String(message.message_type || message.type || "").toLowerCase();
+  if (["voice", "audio", "voice_message", "audio_message"].includes(type)) {
+    const duration = Math.max(0, Math.round(Number(message.duration_seconds || message.duration || 0)));
+    const durationLabel = duration >= 60 ? `${Math.floor(duration / 60)} minutes ${duration % 60} seconds` : `${duration} seconds`;
+    return `${sender}: Voice message, ${durationLabel}, ${formatShortTime(message.created_at)}, ${delivery}`;
+  }
   return `${sender}: ${messagePreview(message)}, ${delivery}`;
 }
 

@@ -32,6 +32,7 @@ import {
 } from "../api/calls";
 import { useNativeCallRoom } from "../calls/useNativeCallRoom";
 import { pausePulseRadio } from "../core/pulseRadio";
+import { stopVoiceMessagePlayback } from "../core/voiceMessagePlayback";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
@@ -68,6 +69,9 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const insets = useSafeAreaInsets();
   const reducedMotion = useLogiNexusReducedMotion();
   const glow = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    stopVoiceMessagePlayback("call_opened").catch(() => undefined);
+  }, []);
 
   const callType: PulseCallType = call?.call_type === "video" ? "video" : requestedType;
   const incoming = params.direction === "incoming";

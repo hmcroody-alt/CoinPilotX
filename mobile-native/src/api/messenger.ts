@@ -50,6 +50,10 @@ export type MessengerMessage = {
   file_size?: number;
   duration?: number;
   duration_seconds?: number;
+  waveform?: number[];
+  attachment_id?: number;
+  attachment_ids?: number[];
+  attachments?: Array<Record<string, unknown>>;
   delivery_status?: string;
   status?: string;
   created_at?: string;
@@ -639,6 +643,7 @@ export function normalizeMessages(items: MessengerMessage[], fallbackConversatio
       const id = Number(item.message_id || item.id || 0);
       const messageType = safeText(item.message_type) || safeText(item.type) || "text";
       const body = normalizeMessengerBody(messageText(item.body || item.content || item.text), messageType);
+      const attachment = firstAttachment(item);
       return {
         ...item,
         id,
@@ -648,7 +653,9 @@ export function normalizeMessages(items: MessengerMessage[], fallbackConversatio
         message_type: messageType,
         delivery_status: safeText(item.delivery_status) || safeText(item.status) || safeText(item.local_status) || "sent",
         file_size: Number(item.file_size || 0),
-        duration_seconds: Number(item.duration_seconds || item.duration || 0),
+        duration_seconds: Number(item.duration_seconds || item.duration || attachment?.duration_seconds || attachment?.duration || 0),
+        waveform: normalizeVoiceWaveform(item.waveform || attachment?.waveform || attachment?.waveform_json),
+        attachment_id: Number(item.attachment_id || attachment?.attachment_id || attachment?.id || 0) || undefined,
         reactions: normalizeReactionCounts(item.reactions),
         viewer_reaction: safeText(item.viewer_reaction) || safeText((item as MessengerMessage & { my_reaction?: string }).my_reaction),
         media_url: safeText(item.media_url) || attachmentValue(item, "url") || attachmentValue(item, "cdn_url") || attachmentValue(item, "playback_url"),
@@ -674,12 +681,12 @@ function safeText(value: unknown) {
 }
 
 function normalizeMessengerBody(value: string, messageType?: string) {
-  if (isVoiceMessageType(messageType) && isGeneratedVoiceFilename(value)) return "";
+  if (isVoiceMessageType(messageType) && isTechnicalVoiceValue(value)) return "";
   return value;
 }
 
 function normalizeMessengerPreview(value: string) {
-  return isGeneratedVoiceFilename(value) ? "Voice message" : value;
+  return isTechnicalVoiceValue(value) ? "Voice message" : value;
 }
 
 function isVoiceMessageType(value?: string) {
@@ -688,6 +695,31 @@ function isVoiceMessageType(value?: string) {
 
 function isGeneratedVoiceFilename(value?: string) {
   return /^pulsesoc[-_ ]voice[-_]\d+\.(m4a|mp4|aac|mp3|wav|webm|ogg)$/i.test(String(value || "").trim());
+}
+
+function isTechnicalVoiceValue(value?: string) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return false;
+  return isGeneratedVoiceFilename(normalized)
+    || /^(?:file:\/\/|https?:\/\/|\/).+/i.test(normalized)
+    || /^[^\s/\\]+\.(m4a|mp4|aac|mp3|wav|webm|ogg)$/i.test(normalized)
+    || /^(?:storage|object|media)[-_ ]?(?:key|id)\s*[:=]/i.test(normalized);
+}
+
+function normalizeVoiceWaveform(value: unknown) {
+  let candidate = value;
+  if (typeof candidate === "string") {
+    try { candidate = JSON.parse(candidate); } catch { candidate = []; }
+  }
+  if (!Array.isArray(candidate)) return [];
+  return candidate.slice(0, 80).map((level) => {
+    const numeric = Number(level || 0);
+    return Math.max(0, Math.min(1, numeric > 1 ? numeric / 100 : numeric));
+  });
+}
+
+function firstAttachment(item: MessengerMessage) {
+  return Array.isArray(item.attachments) && item.attachments[0] ? item.attachments[0] : undefined;
 }
 
 function messageText(value: unknown) {
@@ -730,9 +762,8 @@ function normalizeReactionCounts(input: unknown) {
 }
 
 function attachmentValue(item: MessengerMessage, key: string) {
-  const attachments = (item as MessengerMessage & { attachments?: Array<Record<string, unknown>> }).attachments;
-  if (!Array.isArray(attachments) || !attachments[0]) return "";
-  return String(attachments[0][key] || "");
+  const attachment = firstAttachment(item);
+  return String(attachment?.[key] || "");
 }
 
 function withQaConversations(conversations: MessengerConversation[]) {
@@ -785,7 +816,7 @@ function qaMessages(conversationId: number): MessengerMessage[] {
     qaMessage(conversationId, 3, "incoming", "Reply, reaction, report, delete, and media states should all be visible.", base + 130_000, { reply_to_message_id: 2, reply_preview: "Keep the backend authoritative..." }),
     qaMessage(conversationId, 4, "outgoing", "Testing a failed retry state.", base + 180_000, { delivery_status: "failed", local_status: "failed", local_error: "QA simulated network failure." }),
     qaMessage(conversationId, 5, "incoming", "Image attachment preview", base + 240_000, { message_type: "image", media_url: "/static/img/pulsesoc_logo.png", thumbnail_url: "/static/img/pulsesoc_logo.png", sender_display_name: "Media QA" }),
-    qaMessage(conversationId, 6, "incoming", "Voice note placeholder", base + 300_000, { message_type: "voice", duration_seconds: 12, sender_display_name: "Voice QA" }),
+    qaMessage(conversationId, 6, "incoming", "pulsesoc-voice-1784432743856.m4a", base + 300_000, { message_type: "voice", media_url: "/static/sounds/notification-soft.wav", duration_seconds: 12, waveform: [0.2, 0.48, 0.72, 0.35, 0.9, 0.56, 0.28, 0.66, 0.42, 0.78], sender_display_name: "Voice QA" }),
     qaMessage(conversationId, 7, "incoming", "This moderated sample keeps the UI safe when content is unavailable.", base + 360_000, { moderation_state: "moderated", moderated_at: new Date(base + 360_000).toISOString() }),
     qaMessage(conversationId, 9, "incoming", "Short.", base + 380_000, { sender_display_name: "Maria Cherie" }),
     qaMessage(conversationId, 10, "outgoing", "This is a long multiline PulseSoc message used to verify bubble width, wrapping, bottom anchoring, timestamps, and readable spacing across compact and Pro Max layouts.\nThe second line must remain inside the same production-shaped bubble.", base + 400_000, { delivery_status: "read", seen_at: new Date(base + 410_000).toISOString() }),
@@ -793,7 +824,8 @@ function qaMessages(conversationId: number): MessengerMessage[] {
     qaMessage(conversationId, 12, "incoming", "✨", base + 440_000, { sender_display_name: "Emoji QA" }),
     qaMessage(conversationId, 13, "incoming", "PulseSoc system notice", base + 460_000, { message_type: "system", sender_display_name: "PulseSoc" }),
     qaMessage(conversationId, 14, "incoming", "Video attachment preview", base + 480_000, { message_type: "video", media_url: "/static/uploads/pulse_media/qa-video.mp4", sender_display_name: "Media QA" }),
-    qaMessage(conversationId, 15, "incoming", "Pulse Command QA document", base + 500_000, { message_type: "file", media_url: "/static/llms.txt", file_size: 2048, sender_display_name: "Document QA" })
+    qaMessage(conversationId, 15, "incoming", "Pulse Command QA document", base + 500_000, { message_type: "file", media_url: "/static/llms.txt", file_size: 2048, sender_display_name: "Document QA" }),
+    qaMessage(conversationId, 16, "outgoing", "", base + 520_000, { message_type: "audio_message", media_url: "/static/sounds/notification-soft.wav", duration_seconds: 1, delivery_status: "read", seen_at: new Date(base + 530_000).toISOString() })
   ];
   if (conversationId === 9002) {
     common.push(qaMessage(conversationId, 8, "incoming", "UNDX is ready to summarize your next creator, safety, or commerce signal.", base + 420_000, { sender_display_name: "UNDX", sender_trust_state: "intelligence", reactions: { spark: 1 } }));
