@@ -2,6 +2,21 @@
 
 Date: 2026-07-18
 
+## Latest Mission Status: Native Home Generated Concept Visual Reconstruction
+
+- Date: 2026-07-18.
+- Scope: owner-requested native Home visual reconstruction using the generated image as direct visual inspiration while preserving existing production Home wiring.
+- Reused existing `HomeScreen`, `HomePulseComposer`, `LogiNexusGlobalHeader`, and `LogiNexusBottomNavigation`; no `HomeV2`, duplicate composer, duplicate feed, duplicate status rail, or duplicate navigation implementation was created.
+- Tightened the authenticated Home first viewport to match the generated concept's visual economy: centered PulseSoc command strip, compact glass Pulse Network hero, static atmospheric network art, compact Status rail, compact Create a signal composer, visible feed-filter rail, and floating bottom dock.
+- Preserved backend/business wiring for feed loading, status loading, composer publishing, media upload, Pulse Radio, UNDX, Safety, Live, drawer, and bottom-tab route dispatch.
+- Performance decision: background depth is code-native static atmosphere rather than animated image loops, avoiding render-loop cost while retaining the intended futuristic visual mood.
+- Xcode iPhone Simulator Release build/install/launch passed on `PulseSoc iPhone 16 Pro`.
+- Final authenticated simulator evidence: `reports/screenshots/native-home-generated-concept/iphone16pro-native-concept-final-home.png`.
+
+Remaining Home caveat:
+
+- This was a generated-concept visual pass, not a replacement for full production-WebView parity. Account-specific live data can still change label wrapping and status density.
+
 ## Latest Mission Status: Native Call-State P0 and Compact Messenger Composer
 
 - Traced the phantom `ACTIVE PULSESOC CALL — Vilson` banner through the globally mounted `IncomingCallLayer`, `/api/calls/active`, canonical participant serialization, and stale non-terminal backend rows.

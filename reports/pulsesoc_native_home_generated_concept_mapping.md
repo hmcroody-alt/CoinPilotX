@@ -17,13 +17,13 @@ This pass maps the user-approved generated Home concept onto the existing native
 
 | Generated reference area | Native implementation | Result |
 | --- | --- | --- |
-| Compact command strip | `LogiNexusGlobalHeader` home mode | Enlarged home wordmark rhythm, circular command buttons, avatar treatment, and signal underline while preserving drawer/search/activity/profile wiring. |
-| Pulse Network hero | `PulseNetworkHero` | Rebalanced into a taller cinematic glass panel with static atmospheric planet, skyline, signal lines, larger Pulse Radio module, larger metrics, and three functional quick tiles. |
+| Compact command strip | `LogiNexusGlobalHeader` home mode | Rebalanced into the generated concept's centered brand rhythm, circular command buttons, avatar treatment, compact signal underline, and production drawer/search/activity/profile wiring. |
+| Pulse Network hero | `PulseNetworkHero` | Rebuilt in place as a compact cinematic glass panel with static atmospheric planet, skyline, signal lines, Pulse Radio module, metrics, and three functional quick tiles. |
 | Background atmosphere | `HomeScreen` static atmosphere views | Uses lightweight static React Native views only. No timer-driven background animation or moving image loop was added. |
-| Status row | `StatusRail` | Raised avatar/add-status proportions and spacing to match the concept while preserving Status API data and routes. |
-| Create a signal composer | `HomePulseComposer` collapsed state | Replaced the extra compact mode row with one wired quick-action strip plus Create button. Photo/video/camera still call the existing picker/camera routes; Create expands the existing composer. |
-| Feed filter rail | `HomeScreen` feed tabs | Increased tab legibility and spacing while preserving feed selection keys, persistence, and API reload behavior. |
-| Floating dock | `LogiNexusBottomNavigation` | Enlarged glass dock, active Home treatment, and centered Create affordance while preserving the existing tab navigator and route dispatch. |
+| Status row | `StatusRail` | Tightened avatar/add-status proportions and spacing to match the concept while preserving Status API data and routes. |
+| Create a signal composer | `HomePulseComposer` collapsed state | Uses one compact wired quick-action strip plus Create button. Photo/video/camera still call the existing picker/camera routes; Create expands the existing composer. |
+| Feed filter rail | `HomeScreen` feed tabs | Positioned inside the first viewport above the dock while preserving feed selection keys, persistence, and API reload behavior. |
+| Floating dock | `LogiNexusBottomNavigation` | Retains glass dock, active Home treatment, and centered Create affordance while preserving the existing tab navigator and route dispatch. |
 
 ## Wiring Preservation
 
@@ -41,10 +41,11 @@ The generated concept implies living/moving background imagery. This implementat
 ## QA Status
 
 - Code-path verified through source inspection.
-- Focused generated-concept audit passed.
-- `npm ci --prefix mobile-native --no-audit --no-fund --progress=false` passed.
-- `npm run --prefix mobile-native typecheck` passed.
-- `cd mobile-native && EXPO_DOCTOR_ENABLE_DIRECTORY_CHECK=0 npx expo-doctor --verbose` passed 17/17.
-- Xcode iPhone Simulator build/install/launch passed on `PulseSoc iPhone 16 Pro`.
-- Screenshot captured at `reports/screenshots/native-home-generated-concept/iphone16pro-home-generated-concept.png`.
-- Visual Home QA remains blocked because the current simulator session opens the real login screen. Home evidence must be captured after real-account sign-in or a safe authenticated QA path.
+- Xcode iPhone Simulator Release build/install/launch passed on `PulseSoc iPhone 16 Pro`.
+- Authenticated real-account Home was opened through visible simulator navigation from the native bottom dock.
+- Final clean simulator evidence: `reports/screenshots/native-home-generated-concept/iphone16pro-native-concept-final-home.png`.
+- Earlier comparison evidence retained:
+  - `reports/screenshots/native-home-generated-concept/iphone16pro-native-after-real-login.png`
+  - `reports/screenshots/native-home-generated-concept/iphone16pro-native-concept-pass3.png`
+  - `reports/screenshots/native-home-generated-concept/iphone16pro-native-concept-final-home-clean.png`
+- Remaining visual substitutions are intentional: the background is static code-native atmosphere rather than animated bitmap imagery, and live production data may alter copy width and status density by account state.
