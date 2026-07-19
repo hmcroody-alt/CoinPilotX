@@ -5500,3 +5500,13 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Physical-device testing is now enabled. Visible login, Status, permissions, media, upload, radio, backgrounding, accessibility, and interruption checks remain user-interaction gates rather than automated claims.
 - Status remains the active physical-device test focus; installation does not freeze it or move work to another subsystem.
 - Report: `reports/pulsesoc_native_iphone16pro_installation_2026-07-16.md`.
+
+## Native Home Generated Concept Mapping — 2026-07-18
+
+- Mapped the user-approved generated Home concept onto the existing native Home, composer, and global navigation primitives without creating `HomeV2` or changing backend contracts.
+- Preserved Home feed, Status, Pulse Radio, composer publish/upload/draft, UNDX/Safety/Live routing, bottom-tab routing, and event-sync wiring.
+- Added static atmospheric depth and larger concept-aligned proportions for the command strip, Pulse Network hero, Status rail, compact composer, feed filters, and floating dock.
+- Performance guard: no animated background images, timers, or new render loops were added. The background is static layered native views that imply motion without per-frame overhead.
+- iPhone 16 Pro simulator build/install/launch passed, but the current session lands on the real login screen. Home visual evidence is blocked until real-account sign-in or a safe authenticated QA path is available.
+- This is **not frozen** until Xcode iPhone Simulator visual QA confirms compact/standard/Pro/Pro Max Home layouts and no clipping/regression.
+- Report: `reports/pulsesoc_native_home_generated_concept_mapping.md`.
