@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -18,6 +19,16 @@ import requests
 LOGGER = logging.getLogger(__name__)
 TRUE_VALUES = {"1", "true", "yes", "on"}
 DEFAULT_TIMEOUT_SECONDS = 18
+UNDX_IDENTITY_REQUIRED_PHRASE = "canonical name is UNDX"
+UNDX_IDENTITY_BLOCK = """You are UNDX, PulseSOC’s intelligence companion.
+
+Your canonical name is UNDX.
+When asked your name, identity, or role, answer that you are UNDX.
+Never identify yourself as Pulse AI, ChatGPT, a generic assistant, or an unknown bot.
+Do not claim to be human, conscious, sentient, or omniscient.
+Your identity must remain consistent across native, WebView, streaming, retries,
+fallback models, tool calls, summaries, and resumed conversations."""
+UNDX_IDENTITY_SAFE_REPLY = "I’m UNDX, PulseSOC’s intelligence companion."
 
 
 @dataclass(frozen=True)
@@ -44,6 +55,43 @@ class PulseAIProviderError(RuntimeError):
         self.provider = provider
         self.reason = reason
         self.status_code = status_code
+
+
+def prepare_undx_model_request(messages: list[dict[str, str]], correlation_id: str = "") -> list[dict[str, str]]:
+    """Build the final provider request and fail closed if identity is absent."""
+    final_messages = [{"role": "system", "content": UNDX_IDENTITY_BLOCK}]
+    final_messages.extend(dict(item) for item in messages if isinstance(item, dict))
+    final_system_context = "\n\n".join(
+        str(item.get("content") or "") for item in final_messages if item.get("role") == "system"
+    )
+    try:
+        assert UNDX_IDENTITY_REQUIRED_PHRASE in final_system_context
+    except AssertionError:
+        LOGGER.error("identity_configuration_error correlation_id=%s", correlation_id)
+        raise PulseAIProviderError("undx_identity", "identity_configuration_error")
+    LOGGER.info(
+        "UNDX_FINAL_MODEL_REQUEST correlation_id=%s identity_present=true system_context=%r roles=%s",
+        correlation_id,
+        UNDX_IDENTITY_BLOCK,
+        [str(item.get("role") or "") for item in final_messages],
+    )
+    return final_messages
+
+
+def undx_identity_violation(reply: str) -> str:
+    text = " ".join(str(reply or "").lower().replace("’", "'").split())
+    rules = (
+        (r"\bpulse\s*ai\b", "pulse_ai_identity"),
+        (r"\b(chatgpt|unknown bot|generic assistant)\b", "alternate_identity"),
+        (r"\b(i am not|i'm not) undx\b", "undx_denial"),
+        (r"\b(i (do not|don't) know|never heard of) undx\b", "undx_unknown"),
+        (r"\bmy name is (?!undx\b)[a-z0-9_-]+", "alternate_name"),
+        (r"\b(i am|i'm) (a )?(human|conscious|sentient)\b", "human_or_conscious_claim"),
+    )
+    for pattern, reason in rules:
+        if re.search(pattern, text):
+            return reason
+    return ""
 
 
 def _env_text(key: str, default: str = "") -> str:
@@ -213,6 +261,17 @@ def _call_provider(config: ProviderConfig, messages: list[dict[str, str]]) -> st
 
 def generate_response(messages: list[dict[str, str]], correlation_id: str = "", task: str = "general") -> dict[str, Any]:
     attempts: list[dict[str, Any]] = []
+    try:
+        final_messages = prepare_undx_model_request(messages, correlation_id)
+    except PulseAIProviderError:
+        return {
+            "ok": False,
+            "error": "identity_configuration_error",
+            "reason": "identity_configuration_error",
+            "message": "UNDX is temporarily unavailable. Please try again soon.",
+            "correlation_id": correlation_id,
+            "attempts": attempts,
+        }
     providers = configured_providers_for_task(task)
     if not providers:
         return {
@@ -226,16 +285,42 @@ def generate_response(messages: list[dict[str, str]], correlation_id: str = "", 
     for config in providers:
         started = time.perf_counter()
         try:
-            reply = _call_provider(config, messages)
+            reply = _call_provider(config, final_messages)
             latency_ms = int((time.perf_counter() - started) * 1000)
             if not reply:
                 raise PulseAIProviderError(config.name, "empty_response")
+            violation = undx_identity_violation(reply)
+            regenerated = False
+            if violation:
+                LOGGER.warning(
+                    "UNDX_IDENTITY_RESPONSE_REJECTED provider=%s reason=%s correlation_id=%s",
+                    config.name,
+                    violation,
+                    correlation_id,
+                )
+                correction = {
+                    "role": "system",
+                    "content": "Identity verification failed. Regenerate the answer while preserving the canonical UNDX identity above.",
+                }
+                reply = _call_provider(config, [final_messages[0], correction, *final_messages[1:]])
+                regenerated = True
+                violation = undx_identity_violation(reply)
+            if violation:
+                LOGGER.error(
+                    "UNDX_IDENTITY_RESPONSE_BLOCKED provider=%s reason=%s correlation_id=%s",
+                    config.name,
+                    violation,
+                    correlation_id,
+                )
+                reply = UNDX_IDENTITY_SAFE_REPLY
             return {
                 "ok": True,
                 "reply": reply,
                 "provider": config.name,
                 "model": _model_for(config),
                 "latency_ms": latency_ms,
+                "identity_regenerated": regenerated,
+                "identity_validated": True,
                 "attempts": attempts + [{"provider": config.name, "ok": True, "latency_ms": latency_ms}],
             }
         except (requests.RequestException, PulseAIProviderError) as exc:

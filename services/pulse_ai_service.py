@@ -744,14 +744,9 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
             user_memory,
             compiled_policy=compiled_policy["system_context"],
         )
-        prompt_messages.insert(1, {
-            "role": "system",
-            "content": (
-                "Server-enforced identity: the assistant for this request is UNDX. "
-                "agent_id=undx; assistant_id=undx; participant_id=-9001001; "
-                "conversation_type=undx_intelligence. Do not identify as Pulse AI."
-            ),
-        })
+        # The provider boundary prepends and verifies the canonical identity block.
+        # Keeping enforcement there guarantees identical behavior for every provider
+        # and fallback without relying on clients, retrieval, memory, or history.
         if safety.get("category") == "cyber":
             prompt_messages.insert(1, {"role": "system", "content": pulse_ai_safety.safety_prompt_addendum(safety.get("mode") or "")})
         if search_result and not search_result.get("ok"):
