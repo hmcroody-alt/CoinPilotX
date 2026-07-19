@@ -11,7 +11,7 @@ REQUIRED = {
         "heroRadioPill",
         "heroQuickRow",
         "homeAtmosphereRoot",
-        "onTogglePulseRadio",
+        "PulseRadioHeroControl",
         "onOpenUndx",
         "onOpenSafety",
     ],

@@ -1,5 +1,7 @@
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { NavigationProp, ParamListBase } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LogiNexusBadge, LogiNexusSignalIndicator } from "../components/LogiNexus";
@@ -43,14 +45,14 @@ const PRIMARY_TABS: Array<{
   name: keyof AppTabParamList;
   label: string;
   routeName: keyof AppTabParamList;
-  symbol: string;
+  icon: keyof typeof Ionicons.glyphMap;
   accessibilityLabel: string;
 }> = [
-  { name: "Home", routeName: "Home", label: "Home", symbol: "⌂", accessibilityLabel: "Open Home" },
-  { name: "Reels", routeName: "Reels", label: "Reels", symbol: "▶", accessibilityLabel: "Open Reels" },
-  { name: "Create", routeName: "Create", label: "Create", symbol: "+", accessibilityLabel: "Open Create" },
-  { name: "Messenger", routeName: "Messenger", label: "Messages", symbol: "☵", accessibilityLabel: "Open Messages" },
-  { name: "Profile", routeName: "Profile", label: "Profile", symbol: "◉", accessibilityLabel: "Open Profile" }
+  { name: "Home", routeName: "Home", label: "Home", icon: "home-outline", accessibilityLabel: "Open Home" },
+  { name: "Reels", routeName: "Reels", label: "Reels", icon: "play-circle-outline", accessibilityLabel: "Open Reels" },
+  { name: "Create", routeName: "Create", label: "Create", icon: "add", accessibilityLabel: "Open Create" },
+  { name: "Messenger", routeName: "Messenger", label: "Messages", icon: "chatbubble-ellipses-outline", accessibilityLabel: "Open Messages" },
+  { name: "Profile", routeName: "Profile", label: "Profile", icon: "person-circle-outline", accessibilityLabel: "Open Profile" }
 ];
 
 export function LogiNexusGlobalHeader({
@@ -80,9 +82,9 @@ export function LogiNexusGlobalHeader({
     <View style={[styles.headerShell, homeMode && styles.headerShellHome, { paddingTop: Math.max(insets.top, 10) }]} testID={testID}>
       <View style={styles.headerRow}>
         {canGoBack ? (
-          <IconButton label="Back" symbol="‹" testID="global-header-back" onPress={onBack} />
+          <IconButton label="Back" icon="chevron-back" testID="global-header-back" onPress={onBack} />
         ) : showDrawer ? (
-          <IconButton label="Open PulseSoc navigation drawer" symbol="☰" testID="global-header-drawer" onPress={onOpenDrawer} />
+          <IconButton label="Open PulseSoc navigation drawer" icon="menu" testID="global-header-drawer" onPress={onOpenDrawer} />
         ) : (
           <View style={styles.iconButtonSpacer} />
         )}
@@ -115,9 +117,9 @@ export function LogiNexusGlobalHeader({
         </View>
 
         <View style={styles.headerActions}>
-          {onOpenSearch ? <IconButton label="Search PulseSoc" symbol="⌕" testID="global-header-search" onPress={onOpenSearch} /> : null}
-          {onOpenMessages ? <IconButton label="Open Messages" symbol="☏" badge={messageCount} testID="global-header-messages" onPress={onOpenMessages} /> : null}
-          {onOpenActivity ? <IconButton label="Open Activity Inbox" symbol="◔" badge={activityCount} testID="global-header-activity" onPress={onOpenActivity} /> : null}
+          {onOpenSearch ? <IconButton label="Search PulseSoc" icon="search" testID="global-header-search" onPress={onOpenSearch} /> : null}
+          {onOpenMessages ? <IconButton label="Open Messages" icon="chatbubble-ellipses-outline" badge={messageCount} testID="global-header-messages" onPress={onOpenMessages} /> : null}
+          {onOpenActivity ? <IconButton label="Open Activity Inbox" icon="notifications-outline" badge={activityCount} testID="global-header-activity" onPress={onOpenActivity} /> : null}
           {onOpenProfile ? (
             <Pressable
               accessibilityRole="button"
@@ -169,6 +171,7 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
                 pressed && styles.pressed
               ]}
               onPress={() => {
+                Haptics.selectionAsync().catch(() => undefined);
                 if (item.name === "Create") {
                   navigation.navigate("Home", { openComposer: true });
                   return;
@@ -187,7 +190,7 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
               }}
             >
               <View style={[styles.bottomSymbol, item.name === "Create" && styles.bottomCreateSymbol, active && styles.bottomSymbolActive]}>
-                <Text style={[styles.bottomSymbolText, active && styles.bottomSymbolTextActive]}>{item.symbol}</Text>
+                <Ionicons name={item.icon} size={item.name === "Create" ? 34 : 26} style={[styles.bottomSymbolText, active && styles.bottomSymbolTextActive]} />
                 {badge ? (
                   <View style={styles.bottomBadge}>
                     <Text style={styles.bottomBadgeText}>{formatBadge(badge)}</Text>
@@ -209,7 +212,7 @@ export function openPrimaryCreate(navigation: NavigationProp<ParamListBase>) {
   (navigation as any).navigate("Home", { openComposer: true });
 }
 
-function IconButton({ label, symbol, badge, testID, onPress }: { label: string; symbol: string; badge?: number; testID?: string; onPress?: () => void }) {
+function IconButton({ label, icon, badge, testID, onPress }: { label: string; icon: keyof typeof Ionicons.glyphMap; badge?: number; testID?: string; onPress?: () => void }) {
   return (
     <Pressable
       accessibilityRole="button"
@@ -217,9 +220,12 @@ function IconButton({ label, symbol, badge, testID, onPress }: { label: string; 
       disabled={!onPress}
       testID={testID}
       style={({ pressed }) => [styles.iconButton, pressed && styles.pressed, !onPress && styles.disabled]}
-      onPress={onPress}
+      onPress={() => {
+        Haptics.selectionAsync().catch(() => undefined);
+        onPress?.();
+      }}
     >
-      <Text style={styles.iconText}>{symbol}</Text>
+      <Ionicons name={icon} size={25} style={styles.iconText} />
       {badge ? (
         <View style={styles.iconBadge}>
           <Text style={styles.iconBadgeText}>{formatBadge(badge)}</Text>

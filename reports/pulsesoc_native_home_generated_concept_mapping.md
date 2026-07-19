@@ -19,7 +19,7 @@ This pass maps the user-approved generated Home concept onto the existing native
 | --- | --- | --- |
 | Compact command strip | `LogiNexusGlobalHeader` home mode | Rebalanced into the generated concept's centered brand rhythm, circular command buttons, avatar treatment, compact signal underline, and production drawer/search/activity/profile wiring. |
 | Pulse Network hero | `PulseNetworkHero` | Rebuilt in place as a compact cinematic glass panel with static atmospheric planet, skyline, signal lines, Pulse Radio module, metrics, and three functional quick tiles. |
-| Background atmosphere | `HomeScreen` static atmosphere views | Uses lightweight static React Native views only. No timer-driven background animation or moving image loop was added. |
+| Background atmosphere | `HomeScreen` native atmosphere views | Uses lightweight clipped React Native layers plus native-driver transform/opacity ambience. Motion is gated by focus, foreground state, Reduce Motion, and Low Power Mode; no video or particle engine was added. |
 | Status row | `StatusRail` | Tightened avatar/add-status proportions and spacing to match the concept while preserving Status API data and routes. |
 | Create a signal composer | `HomePulseComposer` collapsed state | Uses one compact wired quick-action strip plus Create button. Photo/video/camera still call the existing picker/camera routes; Create expands the existing composer. |
 | Feed filter rail | `HomeScreen` feed tabs | Positioned inside the first viewport above the dock while preserving feed selection keys, persistence, and API reload behavior. |
@@ -36,7 +36,7 @@ This pass maps the user-approved generated Home concept onto the existing native
 
 ## Performance Decision
 
-The generated concept implies living/moving background imagery. This implementation uses static layered geometry and static signal lines to create motion-like depth without extra render loops, image animation, or per-frame JavaScript work. Runtime animation should be added later only where it is reduced-motion aware and profiler-safe.
+The generated concept implies living/moving background imagery. This implementation uses layered native geometry with very slow native-driver transform/opacity loops. The loops stop when Home is unfocused, the app backgrounds, Reduce Motion is enabled, or Low Power Mode is enabled, and the Radio subscription is isolated from feed/Composer/Status rendering.
 
 ## QA Status
 

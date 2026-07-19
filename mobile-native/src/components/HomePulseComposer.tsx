@@ -397,12 +397,9 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
   return (
     <LogiNexusPanel style={[styles.wrap, focused && styles.wrapFocused]} tone={mode === "live" ? "danger" : mode === "reel" ? "creator" : "default"}>
       <View style={styles.titleRow}>
-        <View>
-          <Text style={styles.eyebrow}>PULSE NETWORK</Text>
-          <Text style={styles.title}>Create a signal</Text>
-        </View>
+        <Text style={styles.eyebrow}>CREATE A SIGNAL</Text>
         <View style={styles.titleActions}>
-          <Text style={[styles.readiness, hasPublishPayload && styles.readinessActive]}>{publishing ? "SENDING" : hasPublishPayload ? "READY" : "DRAFT"}</Text>
+          {publishing || hasDraft ? <Text style={[styles.readiness, hasDraft && styles.readinessActive]}>{publishing ? "SENDING" : "DRAFT"}</Text> : null}
           {expanded ? (
             <Pressable testID="home-composer-collapse" accessibilityRole="button" accessibilityLabel="Collapse composer" style={styles.collapseButton} onPress={() => { Keyboard.dismiss(); setExpanded(false); }}>
               <Text style={styles.collapseButtonText}>⌃</Text>
@@ -427,7 +424,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
               <Text style={styles.collapsedPrompt} numberOfLines={1}>{body.trim() || "Transmit to the Pulse Network…"}</Text>
               <Text style={styles.collapsedMeta}>{hasDraft ? "Saved draft · Tap to continue" : `${visibilityLabel(visibility)} · Tap to create`}</Text>
             </View>
-            <Text style={styles.collapsedOpen}>＋</Text>
+            <Text accessibilityLabel="Composer mood and emoji options" style={styles.collapsedOpen}>☺</Text>
           </Pressable>
           <View style={styles.collapsedQuickRow}>
             <View style={styles.collapsedQuickTools}>
@@ -700,7 +697,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     gap: 2,
     justifyContent: "center",
-    minHeight: 48,
+    minHeight: 44,
     minWidth: 72,
     paddingHorizontal: 8,
     paddingVertical: 6

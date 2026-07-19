@@ -28,6 +28,22 @@ Remaining Home caveat:
 
 - This was a generated-concept visual pass, not a replacement for full production-WebView parity. Account-specific live data can still change label wrapping and status density.
 
+## Latest Mission Status: Approved Native Home Reference
+
+- Reworked the existing native Home hierarchy to the approved compact reference without creating parallel feed, Status, Composer, radio, identity, or navigation systems.
+- Preserved production APIs/routes and removed fabricated hero fallbacks; network state is now truthful (`Connected`/`Cached`) and empty metrics use an em dash.
+- Added performance-safe native-driver hero ambience gated by route focus, app foreground state, Reduce Motion, and Low Power Mode.
+- Isolated Pulse Radio rendering, kept playback paused by default, and retained explicit user-start behavior.
+- Compacted hero metrics/system cards and the canonical collapsed Composer; `DRAFT` now appears only for a real draft.
+- Replaced approximate navigation glyphs with native iconography and brief press haptics while retaining Home, Reels, Create, Messages, Profile order.
+- Kept Home visible during feed loading so a correct first-content loading/empty/error state appears immediately below filters.
+- Xcode Release simulator build and iPhone 16 Pro runtime passed; live inspection drove a second density correction so the filter rail now remains visible in the first viewport.
+- The production-API Release artifact was signed, installed, and launched on the physical iPhone 16 Pro as `PulseSoc Native Dev` / `com.pulsesoc.nativeapp.dev`; its process remained alive after launch.
+- TypeScript, both Home audits, Expo Doctor 17/17, Release simulator/device builds, and `git diff --check` passed.
+- Evidence and matrix: `reports/pulsesoc_native_home_approved_reference_2026-07-18.md`.
+
+Remaining gates are owner visual approval, real-account interaction checks, authenticated compact/Pro Max Home evidence, runtime accessibility passes, and profiler measurements.
+
 ## Latest Mission Status: Native Call-State P0 and Compact Messenger Composer
 
 - Traced the phantom `ACTIVE PULSESOC CALL — Vilson` banner through the globally mounted `IncomingCallLayer`, `/api/calls/active`, canonical participant serialization, and stale non-terminal backend rows.

@@ -1,8 +1,9 @@
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Image, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import * as Battery from "expo-battery";
+import { RouteProp, useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Easing, FlatList, Image, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import {
   addPostComment,
   hidePost,
@@ -68,6 +69,25 @@ const HOME_COMMAND_ITEMS = [
   { label: "Saved", route: "/pulse/saved", icon: "★" }
 ];
 
+function useHomeAmbientMotionEnabled() {
+  const focused = useIsFocused();
+  const lowPowerMode = Battery.useLowPowerMode();
+  const [appActive, setAppActive] = useState(AppState.currentState === "active");
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => undefined);
+    const motion = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
+    const appState = AppState.addEventListener("change", (next) => setAppActive(next === "active"));
+    return () => {
+      motion.remove();
+      appState.remove();
+    };
+  }, []);
+
+  return focused && appActive && !reduceMotion && !lowPowerMode;
+}
+
 export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const navigation = useNavigation<HomeNavigation>();
   const route = useRoute<RouteProp<AppTabParamList, "Home">>();
@@ -88,11 +108,9 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const [statusOffline, setStatusOffline] = useState(false);
   const [statusError, setStatusError] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [radio, setRadio] = useState<PulseRadioState>(getPulseRadioState());
+  const ambientMotionEnabled = useHomeAmbientMotionEnabled();
   const selectionRestoredRef = useRef(false);
   const activeTab = useMemo(() => FEED_TABS.find((tab) => tab.key === selectedFeed) || FEED_TABS[0], [selectedFeed]);
-
-  useEffect(() => subscribePulseRadio(setRadio), []);
 
   const loadStatuses = useCallback(async () => {
     setStatusLoading(true);
@@ -382,15 +400,6 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     openNativeRoute(navigation, routePath);
   }
 
-  if (loading && !posts.length) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.accent} />
-        <Text style={styles.centerText}>Opening the PulseSoc network</Text>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.root}>
       <View pointerEvents="none" style={styles.homeAtmosphereRoot}>
@@ -431,8 +440,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             onRefresh={refreshHome}
             onSelectFeed={selectFeed}
             onOpenUndx={() => navigation.navigate("Tabs", { screen: "PulseAI" })}
-            radio={radio}
-            onTogglePulseRadio={() => togglePulseRadio().catch(() => undefined)}
+            ambientMotionEnabled={ambientMotionEnabled}
             onOpenRadioLibrary={() => openDashboardRoute(navigation, "/pulse/music#pulse-radio")}
             onOpenLive={() => navigation.navigate("Tabs", { screen: "Live" })}
             onOpenSafety={() => navigation.navigate("SafetyHub", { title: "Safety Hub" })}
@@ -462,8 +470,8 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         }
         ListEmptyComponent={
           <LogiNexusEmptyState
-            title={error ? "Connection interrupted" : `${activeTab.label} is quiet`}
-            body={error || `No signals matched ${activeTab.label}. Pull to refresh or switch filters.`}
+            title={loading ? "Opening the PulseSoc network" : error ? "Connection interrupted" : `${activeTab.label} is quiet`}
+            body={loading ? "Loading your canonical feed…" : error || `No signals matched ${activeTab.label}. Pull to refresh or switch filters.`}
             tone={error ? "warning" : "default"}
           />
         }
@@ -527,12 +535,11 @@ function HomeHeader({
   onOpenProfile,
   badges,
   identity,
+  ambientMotionEnabled,
   initiallyExpandComposer,
   onRefresh,
   onSelectFeed,
   onOpenUndx,
-  radio,
-  onTogglePulseRadio,
   onOpenRadioLibrary,
   onOpenLive,
   onOpenSafety,
@@ -558,12 +565,11 @@ function HomeHeader({
   onOpenProfile: () => void;
   badges?: GlobalNavigationBadges;
   identity?: GlobalNavigationIdentity;
+  ambientMotionEnabled: boolean;
   initiallyExpandComposer: boolean;
   onRefresh: () => void;
   onSelectFeed: (feedKey: string) => void;
   onOpenUndx: () => void;
-  radio: PulseRadioState;
-  onTogglePulseRadio: () => void;
   onOpenRadioLibrary: () => void;
   onOpenLive: () => void;
   onOpenSafety: () => void;
@@ -584,7 +590,7 @@ function HomeHeader({
       <View style={[styles.homeCanvas, wideCanvas && styles.homeCanvasWide]}>
         {wideCanvas ? <HomeCommandRail onOpenRoute={onOpenRoute} onOpenPulseRadio={onOpenRadioLibrary} /> : null}
         <View style={styles.homePrimaryColumn}>
-          <PulseNetworkHero posts={posts} statuses={statusItems} offline={offline || statusOffline} compact={compactHero} radio={radio} onRefresh={onRefresh} onOpenUndx={onOpenUndx} onTogglePulseRadio={onTogglePulseRadio} onOpenRadioLibrary={onOpenRadioLibrary} onOpenLive={onOpenLive} onOpenSafety={onOpenSafety} />
+          <PulseNetworkHero posts={posts} statuses={statusItems} offline={offline || statusOffline} compact={compactHero} ambientMotionEnabled={ambientMotionEnabled} onRefresh={onRefresh} onOpenUndx={onOpenUndx} onOpenRadioLibrary={onOpenRadioLibrary} onOpenLive={onOpenLive} onOpenSafety={onOpenSafety} />
           <StatusRail
             items={statusItems}
             loading={statusLoading}
@@ -725,10 +731,9 @@ function PulseNetworkHero({
   posts,
   statuses,
   offline,
+  ambientMotionEnabled,
   onRefresh,
   onOpenUndx,
-  radio,
-  onTogglePulseRadio,
   onOpenRadioLibrary,
   onOpenLive,
   onOpenSafety,
@@ -738,14 +743,46 @@ function PulseNetworkHero({
   statuses: PulseStatus[];
   offline: boolean;
   compact: boolean;
-  radio: PulseRadioState;
+  ambientMotionEnabled: boolean;
   onRefresh: () => void;
   onOpenUndx: () => void;
-  onTogglePulseRadio: () => void;
   onOpenRadioLibrary: () => void;
   onOpenLive: () => void;
   onOpenSafety: () => void;
 }) {
+  const planetDrift = useRef(new Animated.Value(0)).current;
+  const networkBreath = useRef(new Animated.Value(0)).current;
+  const glowBreath = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animations = [planetDrift, networkBreath, glowBreath];
+    animations.forEach((animation) => animation.stopAnimation());
+    if (!ambientMotionEnabled) {
+      animations.forEach((animation) => animation.setValue(0));
+      return;
+    }
+    const planet = Animated.loop(Animated.sequence([
+      Animated.timing(planetDrift, { toValue: 1, duration: 24000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      Animated.timing(planetDrift, { toValue: 0, duration: 24000, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
+    ]));
+    const network = Animated.loop(Animated.sequence([
+      Animated.timing(networkBreath, { toValue: 1, duration: 9000, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(networkBreath, { toValue: 0, duration: 9000, easing: Easing.inOut(Easing.quad), useNativeDriver: true })
+    ]));
+    const glow = Animated.loop(Animated.sequence([
+      Animated.timing(glowBreath, { toValue: 1, duration: 12000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      Animated.timing(glowBreath, { toValue: 0, duration: 12000, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
+    ]));
+    planet.start();
+    network.start();
+    glow.start();
+    return () => {
+      planet.stop();
+      network.stop();
+      glow.stop();
+    };
+  }, [ambientMotionEnabled, glowBreath, networkBreath, planetDrift]);
+
   const creatorCount = new Set(
     [
       ...posts.map((post) => post.author?.id || post.author?.user_id || post.author_username || post.author_name),
@@ -754,7 +791,7 @@ function PulseNetworkHero({
   ).size;
   const liveCount = statuses.filter((status) => status.author_live || status.status_type === "live").length;
   const alertCount = posts.filter((post) => /scam|alert|warning|security|safety/i.test(`${post.title || ""} ${post.body || ""}`)).length;
-  const signalMetric = posts.length ? formatHeroMetric(posts.length) : offline ? "Cached" : "Live";
+  const signalMetric = posts.length ? formatHeroMetric(posts.length) : offline ? "Cached" : "—";
   const mood = posts.length ? "Curious" : offline ? "Cached" : "Curious";
   const summary = posts.length
     ? `${posts.length} public posts summarized. Aggregate activity only.`
@@ -762,14 +799,14 @@ function PulseNetworkHero({
       ? "Cached network signals remain available."
       : "Signals are loading quietly so the feed stays fast.";
   return (
-    <LogiNexusPanel style={styles.hero} tone="default">
-      <View style={styles.heroAtmosphere}>
-        <View style={[styles.heroGlow, styles.heroGlowPrimary]} />
+    <LogiNexusPanel style={[styles.hero, compact && styles.heroCompact]} tone="default">
+      <View pointerEvents="none" style={styles.heroAtmosphere}>
+        <Animated.View style={[styles.heroGlow, styles.heroGlowPrimary, { opacity: glowBreath.interpolate({ inputRange: [0, 1], outputRange: [0.12, 0.2] }), transform: [{ scale: glowBreath.interpolate({ inputRange: [0, 1], outputRange: [1, 1.015] }) }] }]} />
         <View style={[styles.heroGlow, styles.heroGlowSecondary]} />
-        <View style={styles.heroPlanet}>
+        <Animated.View style={[styles.heroPlanet, { transform: [{ translateX: planetDrift.interpolate({ inputRange: [0, 1], outputRange: [0, 5] }) }, { translateY: planetDrift.interpolate({ inputRange: [0, 1], outputRange: [0, 3] }) }, { rotate: "-8deg" }] }]}>
           <View style={styles.heroPlanetLight} />
           <View style={styles.heroPlanetShadow} />
-        </View>
+        </Animated.View>
         <View style={styles.heroSkyline}>
           {[18, 34, 24, 46, 30, 58, 38, 50, 27, 42, 22].map((height, index) => (
             <View key={`${height}-${index}`} style={[styles.heroSkylineTower, { height }]}>
@@ -777,15 +814,20 @@ function PulseNetworkHero({
             </View>
           ))}
         </View>
-        <View style={[styles.heroSignalLine, styles.heroSignalLineOne]} />
-        <View style={[styles.heroSignalLine, styles.heroSignalLineTwo]} />
-        <View style={[styles.heroSignalLine, styles.heroSignalLineThree]} />
+        <Animated.View style={[styles.heroNetworkLayer, { opacity: networkBreath.interpolate({ inputRange: [0, 1], outputRange: [0.52, 0.9] }) }]}>
+          <View style={[styles.heroSignalLine, styles.heroSignalLineOne]} />
+          <View style={[styles.heroSignalLine, styles.heroSignalLineTwo]} />
+          <View style={[styles.heroSignalLine, styles.heroSignalLineThree]} />
+          <View style={[styles.heroNetworkNode, styles.heroNetworkNodeOne]} />
+          <View style={[styles.heroNetworkNode, styles.heroNetworkNodeTwo]} />
+          <View style={[styles.heroNetworkNode, styles.heroNetworkNodeThree]} />
+        </Animated.View>
       </View>
       <View style={styles.heroTopLine}>
         <LogiNexusBadge label="Pulse Network" />
         <Pressable accessibilityRole="button" accessibilityLabel="Refresh Pulse Network" style={styles.heroHealthPill} onPress={onRefresh}>
           <View style={styles.heroHealthDot} />
-          <Text style={styles.heroHealthText}>{offline ? "Resync" : "Optimal"}</Text>
+          <Text style={styles.heroHealthText}>{offline ? "Cached" : "Connected"}</Text>
         </Pressable>
       </View>
       <View style={styles.heroMoodRow}>
@@ -793,83 +835,54 @@ function PulseNetworkHero({
           <Text style={styles.heroMoodTitle} numberOfLines={1}>{mood}</Text>
           <Text style={styles.heroMoodSummary} numberOfLines={2}>{summary}</Text>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={radio.status === "playing" ? "Pause Pulse Radio" : "Play Pulse Radio"}
-          accessibilityState={{ busy: radio.status === "connecting" || radio.status === "buffering" }}
-          testID="home-pulse-radio-toggle"
-          style={[styles.heroRadioPill, radio.status === "playing" && styles.heroRadioPillPlaying]}
-          onPress={onTogglePulseRadio}
-        >
-          <Text style={styles.heroRadioIcon}>{radio.status === "playing" ? "Ⅱ" : radio.status === "connecting" || radio.status === "buffering" ? "…" : "▶"}</Text>
-          <View style={styles.heroRadioCopy}>
-            <Text style={styles.heroRadioLabel}>Pulse Radio</Text>
-            <Text style={[styles.heroRadioMeta, (radio.status === "error" || radio.status === "offline") && styles.heroRadioMetaError]} numberOfLines={1}>
-              {radio.message}
-            </Text>
-          </View>
-          <View pointerEvents="none" style={styles.heroRadioWave}>
-            {[8, 15, 11, 20, 13, 17, 9].map((height, index) => (
-              <View key={`${height}-${index}`} style={[styles.heroRadioWaveBar, { height }, radio.status === "playing" && styles.heroRadioWaveBarPlaying]} />
-            ))}
-          </View>
-        </Pressable>
+        <PulseRadioHeroControl />
       </View>
-      {compact ? (
-        <View style={styles.heroCompactMetricRow}>
-          <HeroMetricBlock value={signalMetric} label={posts.length ? "Active signals" : offline ? "Cached" : "Ready"} tone="default" />
-          <HeroMetricBlock value={creatorCount} label="creators" tone="intelligence" />
-          <HeroMetricBlock value={liveCount} label="live" tone="danger" onPress={onOpenLive} />
-        </View>
-      ) : (
-        <View style={styles.heroBlueprintRow}>
-          <View style={styles.heroMetricStack}>
-            <HeroMetricBlock value={signalMetric} label={posts.length ? "Active signals" : offline ? "Cached signals" : "Signals ready"} tone="default" />
-            <HeroMetricBlock value={liveCount} label="Live broadcasts" tone="danger" onPress={onOpenLive} />
-          </View>
-          <View style={styles.heroMapPanel}>
-            <Text style={styles.heroMapKicker}>Real-time overview</Text>
-            <View style={styles.heroMapSignalLineOne} />
-            <View style={styles.heroMapSignalLineTwo} />
-            <View style={styles.heroMapSignalLineThree} />
-            <View style={[styles.heroOrb, styles.heroOrbInMap]}>
-              <View style={styles.heroRingOuter} />
-              <View style={styles.heroRingInner} />
-              <View style={styles.heroNodeBig} />
-              <View style={[styles.heroNode, styles.heroNodeOne]} />
-              <View style={[styles.heroNode, styles.heroNodeTwo]} />
-              <View style={[styles.heroNode, styles.heroNodeThree]} />
-              <View style={[styles.heroNode, styles.heroNodeFour]} />
-              <Text style={styles.heroOrbText}>LN</Text>
-            </View>
-            <Text style={styles.heroMapCaption} numberOfLines={2}>
-              {offline
-                ? "Cached signals active."
-                : `${creatorCount} creators online.`}
-            </Text>
-          </View>
-        </View>
-      )}
-      {compact ? null : (
-        <View style={[styles.heroOrb, styles.heroOrbCompact]}>
-          <View style={styles.heroRingOuter} />
-          <View style={styles.heroRingInner} />
-          <View style={styles.heroNodeBig} />
-          <View style={[styles.heroNode, styles.heroNodeOne]} />
-          <View style={[styles.heroNode, styles.heroNodeTwo]} />
-          <View style={[styles.heroNode, styles.heroNodeThree]} />
-          <View style={[styles.heroNode, styles.heroNodeFour]} />
-          <Text style={styles.heroOrbText}>LN</Text>
-        </View>
-      )}
+      <View style={styles.heroCompactMetricRow}>
+        <HeroMetricBlock value={signalMetric} label={posts.length ? "Signals" : offline ? "Cached" : "Ready"} tone="default" />
+        <HeroMetricBlock value={creatorCount} label="creators" tone="intelligence" />
+        <HeroMetricBlock value={liveCount} label="live" tone="danger" onPress={onOpenLive} />
+      </View>
       <View style={styles.heroQuickRow}>
         <HeroTile label="UNDX" value={String(alertCount)} body="UNDX alerts" tone="intelligence" icon="◇" onPress={onOpenUndx} />
-        <HeroTile label="Pulse Radio" value={radio.status === "playing" ? "Playing" : "Radio"} body="Open library" tone="creator" icon="≋" onPress={onOpenRadioLibrary} />
+        <HeroTile label="Pulse Radio" value="Radio" body="Open library" tone="creator" icon="≋" onPress={onOpenRadioLibrary} />
         <HeroTile label="Safety Shield" value={String(alertCount)} body="Scan ready" tone="safety" icon="⌾" onPress={onOpenSafety} />
       </View>
     </LogiNexusPanel>
   );
 }
+
+const PulseRadioHeroControl = memo(function PulseRadioHeroControl() {
+  const [radio, setRadio] = useState<PulseRadioState>(getPulseRadioState());
+  useEffect(() => subscribePulseRadio(setRadio), []);
+  const busy = radio.status === "connecting" || radio.status === "buffering";
+  const playing = radio.status === "playing";
+  const unavailable = radio.status === "error" || radio.status === "offline";
+  const stateLabel = playing ? "playing" : busy ? "connecting" : unavailable ? "unavailable" : "paused";
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Pulse Radio, ${stateLabel}`}
+      accessibilityHint={playing ? "Pauses Pulse Radio" : "Starts Pulse Radio"}
+      accessibilityState={{ busy }}
+      testID="home-pulse-radio-toggle"
+      style={[styles.heroRadioPill, playing && styles.heroRadioPillPlaying]}
+      onPress={() => togglePulseRadio().catch(() => undefined)}
+    >
+      <View style={[styles.heroRadioOrb, playing && styles.heroRadioOrbPlaying]}>
+        <Text style={styles.heroRadioIcon}>{playing ? "Ⅱ" : busy ? "…" : "▶"}</Text>
+      </View>
+      <View style={styles.heroRadioCopy}>
+        <Text style={styles.heroRadioLabel}>Pulse Radio</Text>
+        <Text style={[styles.heroRadioMeta, unavailable && styles.heroRadioMetaError]} numberOfLines={1}>{radio.message}</Text>
+      </View>
+      <View pointerEvents="none" style={styles.heroRadioWave}>
+        {[8, 15, 11, 20, 13, 17, 9].map((height, index) => (
+          <View key={`${height}-${index}`} style={[styles.heroRadioWaveBar, { height: playing ? height : Math.min(8, height) }, playing && styles.heroRadioWaveBarPlaying]} />
+        ))}
+      </View>
+    </Pressable>
+  );
+});
 
 function HomeWebSideRail({
   posts,
@@ -1550,6 +1563,9 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     padding: 8
   },
+  heroCompact: {
+    minHeight: 190
+  },
   heroAtmosphere: {
     ...StyleSheet.absoluteFillObject,
     pointerEvents: "none"
@@ -1708,16 +1724,28 @@ const styles = StyleSheet.create({
     minWidth: 0
   },
   heroRadioIcon: {
-    backgroundColor: colors.accent,
-    borderRadius: 23,
     color: colors.background,
     fontSize: 14,
     fontWeight: "900",
-    height: 46,
     lineHeight: 46,
-    overflow: "hidden",
-    textAlign: "center",
+    textAlign: "center"
+  },
+  heroRadioOrb: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderColor: "rgba(141, 247, 255, 0.82)",
+    borderRadius: 23,
+    borderWidth: 1,
+    height: 46,
+    justifyContent: "center",
+    shadowColor: colors.accent,
+    shadowOpacity: 0.32,
+    shadowRadius: 14,
     width: 46
+  },
+  heroRadioOrbPlaying: {
+    backgroundColor: colors.creator,
+    borderColor: colors.focus
   },
   heroRadioLabel: {
     color: colors.text,
@@ -1886,6 +1914,7 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     borderWidth: 1,
     justifyContent: "center",
+    flex: 1,
     minHeight: 43,
     paddingHorizontal: 7,
     paddingVertical: 6
@@ -2121,6 +2150,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
     marginTop: 1,
+    display: "none",
     textAlign: "center"
   },
   heroTileCopy: {
@@ -2560,6 +2590,31 @@ const styles = StyleSheet.create({
     right: 104,
     top: 166,
     transform: [{ rotate: "8deg" }]
+  },
+  heroNetworkLayer: {
+    ...StyleSheet.absoluteFillObject
+  },
+  heroNetworkNode: {
+    backgroundColor: colors.accentStrong,
+    borderRadius: 3,
+    height: 5,
+    position: "absolute",
+    shadowColor: colors.accentStrong,
+    shadowOpacity: 0.55,
+    shadowRadius: 7,
+    width: 5
+  },
+  heroNetworkNodeOne: {
+    left: 112,
+    top: 128
+  },
+  heroNetworkNodeTwo: {
+    right: 118,
+    top: 164
+  },
+  heroNetworkNodeThree: {
+    bottom: 72,
+    left: 78
   },
   statusOnlineDot: {
     backgroundColor: colors.accent,
