@@ -45,9 +45,9 @@ The media automation is only active when the existing simulator QA auth boundary
 - The app still authenticates through `/api/mobile/auth/login`.
 - Upload still uses `/api/pulse/media/upload`.
 - Preview still uses `/api/pulse/camera/preview`.
-- Feed publish still uses `/api/pulse/posts/create-from-camera`.
+- Feed publish uses the canonical production route `/api/pulse/posts`.
 - Status publish still uses existing Status APIs.
-- Reel publish still uses `/api/pulse/reels/create-from-camera`.
+- Reel publish uses the canonical production route `/api/pulse/reels/create`.
 
 No production WebView route was touched.
 

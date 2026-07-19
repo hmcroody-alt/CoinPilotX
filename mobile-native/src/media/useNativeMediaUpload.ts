@@ -17,12 +17,24 @@ import {
 const idle: UploadProgress = { stage: "idle", percent: 0, message: "Media upload ready." };
 
 export function useNativeMediaUpload(defaultOptions: NativeMediaUploadOptions) {
-  const [asset, setAsset] = useState<NativeMediaAsset | null>(null);
+  const [asset, setAssetState] = useState<NativeMediaAsset | null>(null);
   const [result, setResult] = useState<NativeMediaUploadResult | null>(null);
   const [progress, setProgress] = useState<UploadProgress>(idle);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const controllerRef = useRef<UploadController | null>(null);
+
+  const setAsset = useCallback((nextAsset: NativeMediaAsset | null) => {
+    controllerRef.current?.cancel();
+    controllerRef.current = null;
+    setAssetState(nextAsset);
+    setResult(null);
+    setError("");
+    setUploading(false);
+    setProgress(nextAsset
+      ? { stage: "selected", percent: 0, message: `${nextAsset.mediaType === "video" ? "Video" : "Image"} selected.` }
+      : idle);
+  }, []);
 
   const chooseImage = useCallback(async () => {
     setError("");
@@ -68,9 +80,16 @@ export function useNativeMediaUpload(defaultOptions: NativeMediaUploadOptions) {
       const uploaded = await uploadTask.promise;
       const mediaId = uploadResultMediaId(uploaded);
       const finalResult = mediaId ? await pollNativeMediaProcessing(mediaId, 8, 1500, setProgress) : uploaded;
-      setResult(finalResult || uploaded);
-      setProgress({ stage: "ready", percent: 100, message: "Media uploaded." });
-      return finalResult || uploaded;
+      const result = finalResult || uploaded;
+      const media = result.media || {};
+      const processingStatus = String(result.processing_status || media.processing_status || "").toLowerCase();
+      const muxStatus = String(result.mux_status || media.mux_status || "").toLowerCase();
+      const ready = processingStatus === "ready" || ["ready", "asset_ready", "available"].includes(muxStatus);
+      setResult(result);
+      setProgress(ready
+        ? { stage: "ready", percent: 100, message: "Media is ready to publish." }
+        : { stage: "processing", percent: 99, message: "Upload complete. Video processing continues." });
+      return result;
     } catch (uploadError) {
       const message = uploadError instanceof Error ? uploadError.message : "Upload failed.";
       const cancelled = /cancel/i.test(message);
@@ -95,7 +114,7 @@ export function useNativeMediaUpload(defaultOptions: NativeMediaUploadOptions) {
   const reset = useCallback(() => {
     controllerRef.current?.cancel();
     controllerRef.current = null;
-    setAsset(null);
+    setAssetState(null);
     setResult(null);
     setError("");
     setUploading(false);

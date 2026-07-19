@@ -56,8 +56,8 @@ def main() -> int:
             "/api/pulse/media/mux/direct-upload",
             "/api/pulse/media/mux/direct-upload/complete",
             "/api/pulse/camera/preview",
-            "/api/pulse/posts/create-from-camera",
-            "/api/pulse/reels/create-from-camera",
+            "/api/pulse/posts",
+            "/api/pulse/reels/create",
             "Not device verified",
             "safe web fallback",
         ],
@@ -70,13 +70,9 @@ def main() -> int:
             "getCameraConfig",
             "createCameraPreview",
             "markCameraPreviewPublished",
-            "createPostFromCamera",
-            "createReelFromCamera",
             "/api/pulse/camera/config",
             "/api/pulse/camera/preview",
             "/api/pulse/camera/preview/mark-published",
-            "/api/pulse/posts/create-from-camera",
-            "/api/pulse/reels/create-from-camera",
         ],
     )
 
@@ -95,8 +91,10 @@ def main() -> int:
             "uploadMessengerMedia",
             "sendConversationMessage",
             "createStatus",
-            "createPostFromCamera",
-            "createReelFromCamera",
+            "createPost",
+            "createReel",
+            "findExistingPostByMediaId",
+            "findExistingReelByMediaId",
             "openWebFallback",
             "device-unverified",
         ],
@@ -110,6 +108,8 @@ def main() -> int:
     require("CameraStudio" in chat and "target: \"message\"" in chat, "Messenger exposes native camera entry")
     require("cameraCompressionPolicy" in media_upload and "compression_policy" in media_upload, "shared media upload carries camera compression policy metadata")
     require("nativeMediaAssetFromUri" in media_upload, "shared media upload can accept CameraView captured assets")
+    require('from "../api/feed"' in camera_screen and 'from "../api/reels"' in camera_screen, "Camera Studio must reuse canonical Post and Reel API clients")
+    require("createPostFromCamera" not in camera_screen and "createReelFromCamera" not in camera_screen, "Camera Studio must not publish through legacy camera-only routes")
     require("Native Camera Studio + Media Compression/Preview Foundation" in progress, "progress report recommends or records camera studio foundation")
 
     forbidden = [

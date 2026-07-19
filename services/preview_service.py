@@ -8,6 +8,7 @@ import sqlite3
 import time
 from datetime import datetime, timedelta
 
+from . import db as db_service
 from . import user_context
 
 
@@ -34,10 +35,8 @@ def create_preview(user_id: int, destination: str, media: dict, metadata: dict |
         conn = user_context.connect()
         cur = conn.cursor()
         try:
-            try:
+            if not db_service.IS_POSTGRES:
                 cur.execute("PRAGMA busy_timeout=5000")
-            except Exception:
-                pass
             cur.execute(
                 """
                 INSERT INTO pulse_camera_previews
