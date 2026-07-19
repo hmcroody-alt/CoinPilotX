@@ -79,7 +79,15 @@ export type RootStackParamList = {
   EventDetail: { eventId: number; title?: string };
   LiveScheduleGateway: { title?: string } | undefined;
   LiveEventCreateGateway: { title?: string } | undefined;
-  ProfileDetail: { profileKey?: string; title?: string } | undefined;
+  ProfileDetail: {
+    profileKey?: string;
+    userId?: number;
+    profileId?: string;
+    publicPlayerId?: string;
+    username?: string;
+    source?: string;
+    title?: string;
+  } | undefined;
   ProfileEdit: undefined;
   Premium: undefined;
   CreatorStudio: undefined;

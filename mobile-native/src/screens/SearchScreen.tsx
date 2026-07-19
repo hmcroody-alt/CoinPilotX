@@ -23,6 +23,7 @@ import {
   searchPulse,
   SEARCH_GROUPS
 } from "../api/search";
+import { profileNavigationParams, resolveProfileTarget } from "../api/profileTarget";
 import { routeNotificationTarget } from "../navigation/notificationRouting";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -45,7 +46,7 @@ const DISCOVERY_TABS: Array<{ key: DiscoveryTab; label: string; groups: PulseSea
   { key: "hashtags", label: "Hashtags", groups: [] }
 ];
 
-export function SearchScreen({ route }: Props) {
+export function SearchScreen({ route, navigation }: Props) {
   const initialQuery = String(route?.params?.query || "");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [query, setQuery] = useState(initialQuery);
@@ -117,6 +118,12 @@ export function SearchScreen({ route }: Props) {
   }
 
   async function openResult(item: PulseSearchResult) {
+    const profileTarget = isProfileResult(item) ? resolveProfileTarget({ ...item, source: "search" }) : null;
+    const params = profileNavigationParams(profileTarget, item.title || "Profile");
+    if (params && navigation) {
+      navigation.navigate("ProfileDetail", params);
+      return;
+    }
     await routeNotificationTarget(item.url || "/pulse/search").catch(() => undefined);
   }
 
@@ -252,6 +259,12 @@ function flattenResults(results: PulseSearchResults | null, activeTab: Discovery
   if (!results) return [];
   const tab = DISCOVERY_TABS.find((item) => item.key === activeTab) || DISCOVERY_TABS[0];
   return tab.groups.flatMap((group) => results[group] || []);
+}
+
+function isProfileResult(item: PulseSearchResult) {
+  const type = String(item.type || "").toLowerCase();
+  const url = String(item.url || "");
+  return type === "creator" || type === "person" || type === "people" || type === "user" || /^\/pulse\/(@|profile\/|u\/|id\/)/.test(url);
 }
 
 const styles = StyleSheet.create({

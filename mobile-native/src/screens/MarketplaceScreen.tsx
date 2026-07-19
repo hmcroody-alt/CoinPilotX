@@ -28,6 +28,7 @@ import {
 } from "../api/marketplace";
 import { PULSE_API_BASE_URL } from "../api/config";
 import { mediaDisplayUrl } from "../api/feed";
+import { profileNavigationParams, resolveProfileTarget } from "../api/profileTarget";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { RootStackParamList } from "../navigation/types";
@@ -212,8 +213,14 @@ export function MarketplaceScreen({ route, navigation }: Props) {
         onContactSeller={handleContactSeller}
         onCheckout={handleCheckout}
         onProfile={(listing) => {
-          const key = listing.seller_public_player_id || listing.seller_username || "";
-          if (key) navigation?.navigate("ProfileDetail", { profileKey: key, title: listing.seller_name || "Seller" });
+          const params = profileNavigationParams(resolveProfileTarget({
+            userId: listing.seller_user_id,
+            public_player_id: listing.seller_public_player_id,
+            username: listing.seller_username,
+            display_name: listing.seller_name,
+            source: "marketplace"
+          }), listing.seller_name || "Seller");
+          if (params) navigation?.navigate("ProfileDetail", params);
         }}
       />
     </View>

@@ -18,6 +18,11 @@ export type PulseSearchGroupKey =
 
 export type PulseSearchResult = {
   id?: number | string;
+  user_id?: number | string;
+  profile_id?: number | string;
+  public_player_id?: string;
+  public_pulse_id?: string;
+  username?: string;
   title?: string;
   description?: string;
   type?: string;
@@ -124,11 +129,20 @@ export function defaultTrendingSearches() {
 function normalizeResultList(items: PulseSearchResult[]) {
   return (items || []).map((item) => ({
     ...item,
+    user_id: item.user_id || (isCreatorResult(item) ? item.id : undefined),
+    public_player_id: String(item.public_player_id || item.public_pulse_id || "").replace(/^@/, ""),
+    public_pulse_id: item.public_pulse_id || (item.public_player_id ? `@${String(item.public_player_id).replace(/^@/, "")}` : undefined),
+    username: item.username ? String(item.username).replace(/^@/, "") : undefined,
     title: String(item.title || "PulseSoc result"),
     description: String(item.description || item.meta || ""),
     type: String(item.type || "PulseSoc"),
     url: String(item.url || "/pulse")
   }));
+}
+
+function isCreatorResult(item: PulseSearchResult) {
+  const type = String(item.type || "").toLowerCase();
+  return type === "creator" || type === "person" || type === "people" || type === "user";
 }
 
 function normalizeRecentSearches(items: string[]) {

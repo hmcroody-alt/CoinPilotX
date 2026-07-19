@@ -1,7 +1,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PULSE_API_BASE_URL } from "./config";
 import { listFeed, PulsePost } from "./feed";
-import { pulseApi } from "./pulseApi";
+import { PulseApiError, pulseApi } from "./pulseApi";
+import {
+  NativeProfileTarget,
+  ProfileTargetInput,
+  profileCacheKey,
+  profileLookupKey,
+  profileTargetFromAuthor,
+  profileWebUrlForTarget,
+  resolveProfileTarget
+} from "./profileTarget";
 
 const PROFILE_CACHE_PREFIX = "pulsesoc.native.profile.";
 const PROFILE_THEME_CACHE_KEY = "pulsesoc.native.profile.theme";
@@ -11,6 +20,10 @@ export type PulseProfileTheme = {
   accent_color?: string;
   background_style?: string;
   active?: boolean;
+  layout_key?: string;
+  modules?: string[];
+  modules_json?: string;
+  motion_level?: "subtle" | "balanced" | "reduced";
 };
 
 export type PulseProfile = {
@@ -31,6 +44,8 @@ export type PulseProfile = {
   expertise_tags_json?: string;
   profile_visibility?: "public" | "private";
   account_status?: string;
+  profile_state?: "available" | "private" | "blocked" | "restricted" | "deactivated" | "deleted" | "not_found" | "unavailable";
+  canonical_profile_key?: string;
   premium_status?: string;
   verification_status?: string;
   verified_badge?: boolean | number;
@@ -40,6 +55,8 @@ export type PulseProfile = {
   media_count?: number;
   badges?: string[];
   theme?: PulseProfileTheme;
+  viewer_follows?: boolean;
+  is_self?: boolean;
 };
 
 export type ProfileUpdatePayload = {
@@ -64,6 +81,27 @@ export async function getMyProfile() {
   const next = { ...profile, theme: theme || profile.theme };
   await cacheProfile("me", next);
   return next;
+}
+
+export type ProfileErrorState = {
+  title: string;
+  body: string;
+  status?: number;
+  retryable: boolean;
+  offline: boolean;
+  canOpenWebFallback: boolean;
+};
+
+export async function getPublicProfile(input: ProfileTargetInput | NativeProfileTarget) {
+  const target = resolveProfileTarget(input);
+  const lookupKey = target ? profileLookupKey(target) : "";
+  if (!target || !lookupKey) {
+    throw new PulseApiError("PulseSoc could not resolve this profile target.", 400, "profile_target_unresolved");
+  }
+  const data = await pulseApi<{ ok?: boolean; profile?: PulseProfile }>(`/api/pulse/profile/${encodeURIComponent(lookupKey)}`);
+  const profile = normalizeProfile(data.profile || {});
+  await cacheProfileAliases(target, profile);
+  return profile;
 }
 
 export async function updateProfile(payload: ProfileUpdatePayload) {
@@ -149,36 +187,63 @@ export async function getProfileTheme() {
 }
 
 export async function updateProfileTheme(theme: PulseProfileTheme) {
-  const data = await pulseApi<{ ok?: boolean; theme_key?: string; message?: string }>("/api/pulse/premium/profile-theme", {
+  const data = await pulseApi<{ ok?: boolean; theme_key?: string; layout_key?: string; motion_level?: PulseProfileTheme["motion_level"]; modules?: string[]; message?: string }>("/api/pulse/premium/profile-theme", {
     method: "POST",
     body: JSON.stringify({
-      theme_key: theme.theme_key || "midnight_elite",
-      accent_color: theme.accent_color || "#ffd166"
+      theme_key: theme.theme_key || "deep_space",
+      accent_color: theme.accent_color || "#32e6b3",
+      layout_key: theme.layout_key || "classic",
+      motion_level: theme.motion_level || "balanced",
+      modules: theme.modules || []
     })
   });
-  const next = { ...theme, theme_key: data.theme_key || theme.theme_key };
+  const next = { ...theme, ...data, theme_key: data.theme_key || theme.theme_key };
   await AsyncStorage.setItem(PROFILE_THEME_CACHE_KEY, JSON.stringify(next));
   return next;
 }
 
-export async function listPublicProfilePosts(profileKey: string) {
-  const data = await listFeed({ feed: "for_you", profile: profileKey, limit: 20, offset: 0 });
+export async function toggleProfileFollow(profile: PulseProfile) {
+  return pulseApi<{ ok?: boolean; following?: boolean; message?: string }>("/api/pulse/follows/toggle", {
+    method: "POST",
+    body: JSON.stringify({
+      followed_user_id: profile.user_id,
+      public_player_id: profile.public_player_id || profile.username || "",
+      followed_public_player_id: profile.public_player_id || profile.username || ""
+    })
+  });
+}
+
+export async function listPublicProfilePosts(input: ProfileTargetInput | NativeProfileTarget) {
+  const target = resolveProfileTarget(input);
+  const lookupKey = target?.publicPlayerId || target?.username || (target?.profileKey && !/^\d+$/.test(target.profileKey) ? target.profileKey : "");
+  if (!target || !lookupKey) return [];
+  const data = await listFeed({ feed: "for_you", profile: lookupKey, limit: 20, offset: 0 });
   return data.posts || [];
 }
 
-export async function loadCachedProfile(cacheKey = "me") {
+export async function loadCachedProfile(cacheKey: string | NativeProfileTarget = "me") {
+  const resolvedCacheKey = typeof cacheKey === "string" ? cacheKey : profileCacheKey(cacheKey);
   try {
-    const cached = await AsyncStorage.getItem(`${PROFILE_CACHE_PREFIX}${cacheKey}`);
+    const cached = await AsyncStorage.getItem(`${PROFILE_CACHE_PREFIX}${resolvedCacheKey}`);
     if (!cached) return null;
     return normalizeProfile(JSON.parse(cached) as PulseProfile);
   } catch {
-    await AsyncStorage.removeItem(`${PROFILE_CACHE_PREFIX}${cacheKey}`).catch(() => undefined);
+    await AsyncStorage.removeItem(`${PROFILE_CACHE_PREFIX}${resolvedCacheKey}`).catch(() => undefined);
     return null;
   }
 }
 
 export async function cacheProfile(cacheKey: string, profile: PulseProfile) {
   await AsyncStorage.setItem(`${PROFILE_CACHE_PREFIX}${cacheKey}`, JSON.stringify(profile));
+}
+
+export async function cacheProfileAliases(target: NativeProfileTarget, profile: PulseProfile) {
+  const aliases = new Set<string>([profileCacheKey(target)]);
+  if (profile.user_id) aliases.add(`user:${profile.user_id}`);
+  if (profile.public_player_id) aliases.add(`public:${String(profile.public_player_id).toLowerCase()}`);
+  if (profile.username) aliases.add(`username:${String(profile.username).toLowerCase()}`);
+  if (target.profileKey && !/\s/.test(target.profileKey)) aliases.add(`public:${target.profileKey.toLowerCase()}`);
+  await Promise.all(Array.from(aliases).filter(Boolean).map((key) => cacheProfile(key, profile)));
 }
 
 export function normalizeProfile(input: Partial<PulseProfile>): PulseProfile {
@@ -197,21 +262,122 @@ export function normalizeProfile(input: Partial<PulseProfile>): PulseProfile {
     social_links: profile.social_links || profile.social_links_json || "",
     expertise_tags: profile.expertise_tags || profile.expertise_tags_json || "",
     profile_visibility: profile.profile_visibility === "private" ? "private" : "public",
+    account_status: profile.account_status || "active",
+    profile_state: profile.profile_state || "available",
+    canonical_profile_key: profile.canonical_profile_key || profile.public_player_id || profile.username || String(profile.user_id || ""),
     follower_count: Number(profile.follower_count || 0),
     following_count: Number(profile.following_count || 0),
     post_count: Number(profile.post_count || 0),
     media_count: Number(profile.media_count || 0),
     badges: profile.badges || [],
-    theme: profile.theme || {}
+    theme: normalizeTheme(profile.theme || {}),
+    viewer_follows: Boolean(profile.viewer_follows),
+    is_self: Boolean(profile.is_self)
+  };
+}
+
+function normalizeTheme(theme: PulseProfileTheme): PulseProfileTheme {
+  let modules = theme.modules || [];
+  if (!modules.length && theme.modules_json) {
+    try {
+      const parsed = JSON.parse(theme.modules_json);
+      if (Array.isArray(parsed)) modules = parsed.map(String);
+    } catch {
+      modules = [];
+    }
+  }
+  return {
+    ...theme,
+    theme_key: theme.theme_key || "deep_space",
+    accent_color: theme.accent_color || "#32e6b3",
+    layout_key: theme.layout_key || "classic",
+    motion_level: theme.motion_level || "balanced",
+    modules
   };
 }
 
 export function profileKeyFromPost(post: PulsePost) {
-  return post.author?.public_player_id || post.author?.username || post.author_username || "";
+  return profileTargetFromPost(post)?.profileKey || "";
 }
 
-export function profileWebUrl(profileKey?: string) {
-  return profileKey ? `${PULSE_API_BASE_URL}/pulse/profile/${encodeURIComponent(profileKey)}` : `${PULSE_API_BASE_URL}/pulse/profile`;
+export function profileTargetFromPost(post: PulsePost) {
+  return profileTargetFromAuthor(post.author as Record<string, unknown> | undefined, post as unknown as Record<string, unknown>);
+}
+
+export function profileWebUrl(profileKey?: ProfileTargetInput | NativeProfileTarget) {
+  return profileKey ? profileWebUrlForTarget(profileKey) : `${PULSE_API_BASE_URL}/pulse/profile`;
+}
+
+export function profileErrorState(error: unknown): ProfileErrorState {
+  if (error instanceof PulseApiError) {
+    if (error.status === 401) {
+      return {
+        title: "Session expired",
+        body: "Sign in again to open this PulseSoc profile.",
+        status: error.status,
+        retryable: true,
+        offline: false,
+        canOpenWebFallback: false
+      };
+    }
+    if (error.status === 403) {
+      return {
+        title: "Private or restricted profile",
+        body: "This PulseSoc profile exists, but your account does not currently have permission to view it.",
+        status: error.status,
+        retryable: false,
+        offline: false,
+        canOpenWebFallback: false
+      };
+    }
+    if (error.status === 404) {
+      return {
+        title: "Profile not found",
+        body: "PulseSoc could not match this canonical profile identity. Try again from search or open the web profile as a fallback.",
+        status: error.status,
+        retryable: false,
+        offline: false,
+        canOpenWebFallback: true
+      };
+    }
+    if (error.status === 410) {
+      return {
+        title: "Account inactive",
+        body: "This PulseSoc account is deactivated or deleted and cannot be opened natively.",
+        status: error.status,
+        retryable: false,
+        offline: false,
+        canOpenWebFallback: false
+      };
+    }
+    if (error.status === 429) {
+      return {
+        title: "Profile lookup is cooling down",
+        body: "PulseSoc is rate-limiting this profile lookup. Wait a moment and retry.",
+        status: error.status,
+        retryable: true,
+        offline: false,
+        canOpenWebFallback: false
+      };
+    }
+    if (error.status >= 500 || error.code === "request_unreachable") {
+      return {
+        title: error.code === "request_unreachable" ? "Connection issue" : "Profile service temporarily unavailable",
+        body: "The native profile route could not reach PulseSoc. Retry without losing your place.",
+        status: error.status,
+        retryable: true,
+        offline: error.code === "request_unreachable",
+        canOpenWebFallback: true
+      };
+    }
+  }
+  return {
+    title: "Profile could not load",
+    body: "PulseSoc could not load this profile through the native route. Retry the request.",
+    retryable: true,
+    offline: false,
+    canOpenWebFallback: true
+  };
 }
 
 function absoluteProfileUrl(url: string) {
