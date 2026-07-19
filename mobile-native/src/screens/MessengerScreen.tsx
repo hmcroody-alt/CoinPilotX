@@ -180,7 +180,7 @@ export function MessengerScreen() {
               </View>
               <PulseCommandSegmentRail items={filters} selected={selectedFilter} onSelect={(key) => setSelectedFilter(key as ConversationFilter)} />
               {activeConversations.length ? (
-                <ScrollView horizontal contentContainerStyle={styles.presenceRail} showsHorizontalScrollIndicator={false} accessibilityLabel="Active PulseSoc conversations">
+                <ScrollView horizontal style={styles.presenceRailShell} contentContainerStyle={styles.presenceRail} showsHorizontalScrollIndicator={false} accessibilityLabel="Active PulseSoc conversations">
                   {activeConversations.map((item) => {
                     const title = conversationDisplayTitle(item);
                     return (
@@ -193,9 +193,9 @@ export function MessengerScreen() {
                 </ScrollView>
               ) : null}
               <PulseCommandPanel style={styles.quickActions}>
-                <QuickAction icon="＋" title="New Chat" subtitle="Direct message" primary onPress={() => openNewChat()} />
-                <QuickAction icon="◎" title="Create Group" subtitle="Invite members" onPress={() => navigation.navigate("Tabs", { screen: "Groups" })} />
-                <QuickAction icon="◉" title="Start Room" subtitle="Public or private" onPress={() => navigation.navigate("Tabs", { screen: "Groups" })} />
+                <QuickAction icon="＋" title="New Chat" subtitle="Direct message" accent="chat" primary onPress={() => openNewChat()} />
+                <QuickAction icon="◎" title="Create Group" subtitle="Invite members" accent="group" onPress={() => navigation.navigate("Tabs", { screen: "Groups" })} />
+                <QuickAction icon="◉" title="Start Room" subtitle="Public or private" accent="room" onPress={() => navigation.navigate("Tabs", { screen: "Groups" })} />
               </PulseCommandPanel>
               {query.trim() && searchUsers.length ? (
                 <View style={styles.peopleResults}>
@@ -225,13 +225,32 @@ export function MessengerScreen() {
   );
 }
 
-function QuickAction({ icon, title, subtitle, primary, onPress }: { icon: string; title: string; subtitle: string; primary?: boolean; onPress: () => void }) {
+type QuickActionAccent = "chat" | "group" | "room";
+
+function QuickAction({ icon, title, subtitle, primary, accent, onPress }: { icon: string; title: string; subtitle: string; primary?: boolean; accent: QuickActionAccent; onPress: () => void }) {
+  const accentColor = quickActionAccentColor(accent);
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${title}, ${subtitle}`} style={({ pressed }) => [styles.quickAction, primary && styles.quickActionPrimary, pressed && styles.rowPressed]} onPress={onPress}>
-      <View style={styles.quickActionIcon}><Text style={styles.quickActionIconText}>{icon}</Text></View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${title}, ${subtitle}`}
+      style={({ pressed }) => [
+        styles.quickAction,
+        { borderColor: `${accentColor}44`, backgroundColor: `${accentColor}12` },
+        primary && styles.quickActionPrimary,
+        pressed && styles.rowPressed
+      ]}
+      onPress={onPress}
+    >
+      <View style={[styles.quickActionIcon, { borderColor: `${accentColor}55`, backgroundColor: `${accentColor}16` }]}><Text style={[styles.quickActionIconText, { color: accentColor }]}>{icon}</Text></View>
       <View style={styles.quickActionCopy}><Text style={[styles.quickActionTitle, primary && styles.quickActionPrimaryText]}>{title}</Text><Text style={[styles.quickActionSubtitle, primary && styles.quickActionPrimarySubtitle]}>{subtitle}</Text></View>
     </Pressable>
   );
+}
+
+function quickActionAccentColor(accent: QuickActionAccent) {
+  if (accent === "group") return "#73f27d";
+  if (accent === "room") return "#a77cff";
+  return "#3eeed1";
 }
 
 function ConversationRow({ item, navigation }: { item: MessengerConversation; navigation: NativeStackNavigationProp<RootStackParamList> }) {
@@ -292,14 +311,15 @@ const styles = StyleSheet.create({
   headerStack: { gap: 6 },
   searchRow: { alignItems: "center", flexDirection: "row", gap: 6 },
   searchField: { flex: 1 },
-  gearButton: { alignItems: "center", backgroundColor: "#0c1830", borderColor: "#24546b", borderRadius: 12, borderWidth: 1, height: 44, justifyContent: "center", width: 44 },
-  gearButtonText: { color: "#61e9f6", fontSize: 21 },
-  presenceRail: { gap: 10, paddingHorizontal: 1, paddingVertical: 2 },
+  gearButton: { alignItems: "center", backgroundColor: "rgba(15,28,48,0.94)", borderColor: "rgba(97,216,255,0.46)", borderRadius: 12, borderWidth: 1, height: 44, justifyContent: "center", shadowColor: "#61d8ff", shadowOpacity: 0.18, shadowRadius: 10, width: 44 },
+  gearButtonText: { color: "#73f5ff", fontSize: 21 },
+  presenceRailShell: { backgroundColor: "rgba(11,24,34,0.78)", borderColor: "rgba(97,216,255,0.18)", borderRadius: 15, borderWidth: 1 },
+  presenceRail: { gap: 10, paddingHorizontal: 10, paddingVertical: 7 },
   presenceItem: { alignItems: "center", gap: 3, width: 58 },
   presenceName: { color: colors.muted, fontSize: 10, maxWidth: 58 },
-  quickActions: { flexDirection: "row", gap: 6, padding: 5 },
+  quickActions: { backgroundColor: "rgba(6,16,28,0.88)", borderColor: "rgba(97,216,255,0.22)", flexDirection: "row", gap: 6, padding: 5 },
   quickAction: { alignItems: "center", borderColor: colors.border, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, flex: 1, flexDirection: "row", gap: 6, minHeight: 56, padding: 6 },
-  quickActionPrimary: { backgroundColor: "rgba(77,228,196,0.9)", borderColor: "rgba(132,255,228,0.96)", shadowColor: colors.accent, shadowOpacity: 0.28, shadowRadius: 12 },
+  quickActionPrimary: { backgroundColor: "rgba(77,228,196,0.86)", borderColor: "rgba(132,255,228,0.96)", shadowColor: colors.accent, shadowOpacity: 0.34, shadowRadius: 12 },
   quickActionIcon: { alignItems: "center", backgroundColor: "rgba(97,233,246,0.08)", borderColor: "rgba(97,233,246,0.22)", borderRadius: 9, borderWidth: 1, height: 30, justifyContent: "center", width: 30 },
   quickActionIconText: { color: colors.accentStrong, fontSize: 16, fontWeight: "900" },
   quickActionCopy: { flex: 1, minWidth: 0 },
@@ -307,22 +327,22 @@ const styles = StyleSheet.create({
   quickActionPrimaryText: { color: "#061410" },
   quickActionSubtitle: { color: colors.muted, fontSize: 9, marginTop: 1 },
   quickActionPrimarySubtitle: { color: "rgba(6,20,16,0.68)" },
-  sectionLabel: { color: colors.muted, fontSize: 11, fontWeight: "800", letterSpacing: 0.7, textTransform: "uppercase" },
+  sectionLabel: { color: "#b7c5d8", fontSize: 11, fontWeight: "800", letterSpacing: 0.7, textTransform: "uppercase" },
   peopleResults: { gap: 4 },
   personRow: { alignItems: "center", backgroundColor: "rgba(105,218,240,0.045)", borderColor: "rgba(105,218,240,0.18)", borderRadius: 11, borderWidth: 1, flexDirection: "row", gap: 8, minHeight: 56, padding: 7 },
   personCopy: { flex: 1, minWidth: 0 },
   personAction: { color: colors.accent, fontSize: 11, fontWeight: "900" },
-  row: { alignItems: "center", backgroundColor: "rgba(9,18,34,0.9)", borderColor: "rgba(105,218,240,0.11)", borderRadius: 13, borderWidth: 1, flexDirection: "row", gap: 9, minHeight: 64, padding: 9 },
+  row: { alignItems: "center", backgroundColor: "rgba(9,20,36,0.94)", borderColor: "rgba(105,218,240,0.16)", borderRadius: 13, borderWidth: 1, flexDirection: "row", gap: 9, minHeight: 64, padding: 9, shadowColor: "#61d8ff", shadowOpacity: 0.08, shadowRadius: 8 },
   rowPressed: { backgroundColor: "rgba(105,218,240,0.06)", borderColor: "rgba(105,218,240,0.25)" },
   pinnedRow: { borderColor: "rgba(77,228,196,0.56)", shadowColor: colors.accent, shadowOpacity: 0.1, shadowRadius: 10 },
   rowBody: { flex: 1, gap: 2, minWidth: 0 },
   rowTop: { alignItems: "center", flexDirection: "row", gap: 6 },
   rowSignals: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
   title: { color: colors.text, flex: 1, fontSize: 14, fontWeight: "900" },
-  muted: { color: colors.muted, fontSize: 12, lineHeight: 16 },
+  muted: { color: "#a9b7c9", fontSize: 12, lineHeight: 16 },
   time: { color: colors.muted, fontSize: 10 },
-  signalPill: { borderColor: colors.border, borderRadius: logiNexus.radius.capsule, borderWidth: StyleSheet.hairlineWidth, color: colors.muted, fontSize: 9, fontWeight: "800", paddingHorizontal: 6, paddingVertical: 2, textTransform: "uppercase" },
-  badge: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 12, minHeight: 23, minWidth: 23, paddingHorizontal: 6, paddingVertical: 2 },
+  signalPill: { backgroundColor: "rgba(63,240,160,0.11)", borderColor: "rgba(63,240,160,0.22)", borderRadius: logiNexus.radius.capsule, borderWidth: StyleSheet.hairlineWidth, color: "#94f6b1", fontSize: 9, fontWeight: "800", paddingHorizontal: 6, paddingVertical: 2, textTransform: "uppercase" },
+  badge: { alignItems: "center", backgroundColor: "#3bdfff", borderRadius: 12, minHeight: 23, minWidth: 23, paddingHorizontal: 6, paddingVertical: 2, shadowColor: "#3bdfff", shadowOpacity: 0.38, shadowRadius: 8 },
   badgeText: { color: "#08110f", fontSize: 11, fontWeight: "900" },
   error: { color: colors.warning, fontSize: 12 },
   retryButton: { alignSelf: "center", backgroundColor: colors.signalDim, borderColor: colors.accent, borderRadius: 10, borderWidth: 1, marginTop: 8, paddingHorizontal: 14, paddingVertical: 9 },
