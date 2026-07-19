@@ -85,7 +85,17 @@ export function useComposerMediaQueue(defaultOptions: NativeMediaUploadOptions) 
       if (!mediaId) throw new Error("Upload completed but media did not attach. Please retry.");
       const finalResult = await pollNativeMediaProcessing(mediaId, 8, 1500, (progress) => updateItem(item.id, { progress }));
       const result = finalResult || uploaded;
-      updateItem(item.id, { result, error: "", progress: { stage: "ready", percent: 100, message: "Media is ready." } });
+      const media = result.media || {};
+      const processingStatus = String(result.processing_status || media.processing_status || "").toLowerCase();
+      const muxStatus = String(result.mux_status || media.mux_status || "").toLowerCase();
+      const ready = processingStatus === "ready" || ["ready", "asset_ready", "available"].includes(muxStatus);
+      updateItem(item.id, {
+        result,
+        error: "",
+        progress: ready
+          ? { stage: "ready", percent: 100, message: "Media is ready." }
+          : { stage: "processing", percent: 99, message: "Upload complete. Video processing continues." }
+      });
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Upload failed.";

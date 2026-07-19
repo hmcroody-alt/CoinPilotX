@@ -84071,6 +84071,10 @@ def pulse_sync_video_processing_rows(cur, media_id, row, *, webhook_received_at=
         "db_ready_update_at": row.get("db_ready_update_at") or (now if processing_status == "ready" else ""),
         "updated_at": now,
     }
+    # Never use SQLite GLOB in this production path. Besides being invalid on
+    # PostgreSQL, catching that syntax error leaves the transaction aborted.
+    # Resolve the canonical numeric publication context in Python instead.
+    publication_context_id = safe_int(row.get("context_id"), 0)
     for table in ("pulse_reels", "pulse_videos"):
         try:
             columns = table_columns(cur, table)
@@ -84083,8 +84087,8 @@ def pulse_sync_video_processing_rows(cur, media_id, row, *, webhook_received_at=
             if table == "pulse_reels":
                 if "video_url" in columns and playback_url:
                     assignments.append("video_url=?"); values.append(playback_url)
-                where = "post_id IN (SELECT context_id FROM chat_media_uploads WHERE id=? AND context_id GLOB '[0-9]*') OR id IN (SELECT context_id FROM chat_media_uploads WHERE id=? AND context_id GLOB '[0-9]*')"
-                values.extend([media_id, media_id])
+                where = "post_id=? OR id=?"
+                values.extend([publication_context_id, publication_context_id])
             else:
                 if "playback_url" in columns and playback_url:
                     assignments.append("playback_url=?"); values.append(playback_url)

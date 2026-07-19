@@ -5,12 +5,12 @@ import {
   CameraMode,
   CameraTarget,
   createCameraPreview,
-  createPostFromCamera,
-  createReelFromCamera,
   getCameraConfig,
   markCameraPreviewPublished,
   PulseCameraConfig
 } from "../api/camera";
+import { createPost, listFeed, PulsePost } from "../api/feed";
+import { createReel, listReels, PulseReel } from "../api/reels";
 import { PULSE_API_BASE_URL } from "../api/config";
 import { sendConversationMessage, uploadMessengerMedia } from "../api/messenger";
 import { uploadProfileAvatar, uploadProfileCover } from "../api/profile";
@@ -80,6 +80,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   const [selectedEffect, setSelectedEffect] = useState("natural");
   const [recording, setRecording] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [publishStage, setPublishStage] = useState<"idle" | "validating" | "uploading" | "processing" | "publishing" | "published" | "failed">("idle");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const cameraRef = useRef<CameraView | null>(null);
@@ -227,14 +228,17 @@ export function CameraStudioScreen({ route, navigation }: Props) {
       return;
     }
     setPublishing(true);
+    setPublishStage("validating");
     setError("");
     setMessage("");
     try {
       const result = await publishForDestination(mediaUpload.asset);
+      setPublishStage("published");
       setMessage(result.message || "Camera media published.");
       mediaUpload.reset();
       navigateAfterPublish(result);
     } catch (publishError) {
+      setPublishStage("failed");
       setError(publishError instanceof Error ? publishError.message : "Camera publish failed.");
     } finally {
       setPublishing(false);
@@ -269,7 +273,12 @@ export function CameraStudioScreen({ route, navigation }: Props) {
       return { ok: true, message: "Media sent to Messenger.", conversationId };
     }
 
-    const uploaded = await mediaUpload.upload(uploadOptions);
+    setPublishStage(mediaUpload.result && uploadResultMediaId(mediaUpload.result) ? "processing" : "uploading");
+    // A publish retry must reuse the canonical media record that already
+    // received the bytes. Re-uploading here creates orphaned duplicates.
+    const uploaded = mediaUpload.result && uploadResultMediaId(mediaUpload.result)
+      ? mediaUpload.result
+      : await mediaUpload.upload(uploadOptions);
     const mediaId = uploaded ? uploadResultMediaId(uploaded) : 0;
     const media = uploaded?.media || {};
     const mediaUrl = uploaded?.media_url || uploaded?.playback_url || media.media_url || media.valid_url || media.playback_url || "";
@@ -283,6 +292,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
       beauty_key: selectedEffect
     }).catch(() => null);
     const previewToken = preview?.preview_token || preview?.token || "";
+    setPublishStage("publishing");
 
     if (destination.key === "status") {
       const status = await createStatus({
@@ -299,24 +309,36 @@ export function CameraStudioScreen({ route, navigation }: Props) {
     }
 
     if (destination.key === "reel") {
-      const reel = await createReelFromCamera({
-        media_id: mediaId,
-        media_url: mediaUrl,
-        thumbnail_url: media.thumbnail_url || media.poster_url || mediaUrl,
+      const existing = await findExistingReelByMediaId(mediaId);
+      if (existing) {
+        await markCameraPreviewPublished({ preview_token: previewToken, entity_type: "reel", entity_id: existing.reel_id }).catch(() => undefined);
+        return { ...existing, message: "Server-confirmed Reel restored without republishing." };
+      }
+      const reel = await createReel({
+        media_ids: [mediaId],
         caption: caption.trim(),
-        title: caption.trim() || "Camera Reel"
+        title: caption.trim() || "Camera Reel",
+        visibility: privacy,
+        share_to_feed: false
       });
-      await markCameraPreviewPublished({ preview_token: previewToken, entity_type: "reel", entity_id: Number(reel.reel_id || 0) }).catch(() => undefined);
+      if (!reel.reel_id || !reel.post_id) throw new Error("Reel publication did not return canonical identifiers. Your uploaded video is preserved for retry.");
+      await markCameraPreviewPublished({ preview_token: previewToken, entity_type: "reel", entity_id: reel.reel_id }).catch(() => undefined);
       return { ...reel, message: reel.message || "Reel created." };
     }
 
-    const post = await createPostFromCamera({
-      media_id: mediaId,
-      media_url: mediaUrl,
+    const existing = await findExistingPostByMediaId(mediaId);
+    if (existing) {
+      await markCameraPreviewPublished({ preview_token: previewToken, entity_type: "post", entity_id: existing.post_id }).catch(() => undefined);
+      return { ok: true, post: existing, post_id: existing.post_id, message: "Server-confirmed post restored without republishing." };
+    }
+    const post = await createPost({
+      media_ids: [mediaId],
       body: caption.trim() || "Created with PulseSoc Camera",
       title: caption.trim() ? "PulseSoc Camera" : "",
-      post_type: asset.mediaType
+      post_type: asset.mediaType,
+      visibility: privacy
     });
+    if (!post.post_id || !post.post) throw new Error("Post publication did not return a canonical post. Your uploaded media is preserved for retry.");
     await markCameraPreviewPublished({ preview_token: previewToken, entity_type: "post", entity_id: post.post_id }).catch(() => undefined);
     return { ...post, message: post.message || "Post published." };
   }
@@ -461,13 +483,13 @@ export function CameraStudioScreen({ route, navigation }: Props) {
         />
 
         <View style={styles.policyBox}>
-          <Text style={styles.policyTitle}>Compression policy</Text>
-          <Text style={styles.policyText}>{policy.key} · {captureMode === "video" ? policy.videoQuality : `${Math.round(policy.imageQuality * 100)}% image quality`}</Text>
+          <Text style={styles.policyTitle}>Capture & upload policy</Text>
+          <Text style={styles.policyText}>{policy.key} · {captureMode === "video" ? `${policy.videoQuality} capture target` : `${Math.round(policy.imageQuality * 100)}% image capture quality`}</Text>
           <Text style={styles.policyText}>Server validation, moderation, storage, and processing remain authoritative.</Text>
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        {message ? <Text style={styles.message}>{message}</Text> : null}
+        {message ? <Text style={styles.message}>{message}</Text> : publishStage !== "idle" ? <Text style={styles.message}>{publishStageLabel(publishStage)}</Text> : null}
 
         <View style={styles.actionRow}>
           <Pressable style={styles.secondaryButton} disabled={publishing || mediaUpload.uploading} onPress={mediaUpload.reset}>
@@ -482,6 +504,32 @@ export function CameraStudioScreen({ route, navigation }: Props) {
       </ScrollView>
     </View>
   );
+}
+
+async function findExistingPostByMediaId(mediaId: number): Promise<PulsePost | null> {
+  if (!mediaId) return null;
+  const response = await listFeed({ feed: "my_posts", limit: 30 }).catch(() => null);
+  return (response?.posts || []).find((post) => postMediaIds(post).includes(mediaId)) || null;
+}
+
+async function findExistingReelByMediaId(mediaId: number): Promise<PulseReel | null> {
+  if (!mediaId) return null;
+  const response = await listReels({ lane: "for_you", limit: 40 }).catch(() => null);
+  return (response?.reels || []).find((reel) => (reel.media || []).some((item) => Number(item.id || item.media_id || 0) === mediaId)) || null;
+}
+
+function postMediaIds(post: PulsePost) {
+  return (post.media || []).map((item) => Number(item.id || item.media_id || 0)).filter(Boolean);
+}
+
+function publishStageLabel(stage: "idle" | "validating" | "uploading" | "processing" | "publishing" | "published" | "failed") {
+  if (stage === "validating") return "Validating selected media.";
+  if (stage === "uploading") return "Uploading media bytes.";
+  if (stage === "processing") return "Using the uploaded media record.";
+  if (stage === "publishing") return "Creating the canonical publication.";
+  if (stage === "published") return "Publication confirmed.";
+  if (stage === "failed") return "Publication stopped. Your draft and uploaded media are preserved.";
+  return "";
 }
 
 function destinationFromParams(params?: RootStackParamList["CameraStudio"]): DestinationOption {

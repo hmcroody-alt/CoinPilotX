@@ -6,7 +6,7 @@ Date: 2026-07-04
 
 Built the Native Camera Studio foundation as a parallel native client surface.
 
-Production WebView camera routes were not modified. The native app continues to reuse existing PulseSoc backend APIs, media validation, storage, moderation, Mux/R2 processing, profile/media rules, Messenger media rules, Status rules, and create-from-camera behavior.
+Production WebView camera routes were not modified. The native app continues to reuse existing PulseSoc backend APIs, media validation, storage, moderation, Mux/R2 processing, profile/media rules, Messenger media rules, Status rules, and canonical Post/Reel publishing behavior.
 
 ## Implemented
 
@@ -17,7 +17,7 @@ Production WebView camera routes were not modified. The native app continues to 
 - Added camera config wrapper for `GET /api/pulse/camera/config`.
 - Added preview wrapper for `POST /api/pulse/camera/preview`.
 - Added preview publish marker for `POST /api/pulse/camera/preview/mark-published`.
-- Added create-from-camera wrappers for `POST /api/pulse/posts/create-from-camera` and `POST /api/pulse/reels/create-from-camera`.
+- Camera Studio now publishes through the production WebView contracts: `POST /api/pulse/posts` and `POST /api/pulse/reels/create`.
 - Added native photo/video capture shell using `expo-camera`.
 - Added front/back camera switch.
 - Added microphone permission handling for video capture.
@@ -37,8 +37,8 @@ Production WebView camera routes were not modified. The native app continues to 
 - `/api/pulse/media/mux/direct-upload/complete`
 - `/api/pulse/camera/preview`
 - `/api/pulse/camera/preview/mark-published`
-- `/api/pulse/posts/create-from-camera`
-- `/api/pulse/reels/create-from-camera`
+- `/api/pulse/posts`
+- `/api/pulse/reels/create`
 - Existing Status APIs
 - Existing Profile avatar/cover APIs
 - Existing Messenger media upload/send APIs
