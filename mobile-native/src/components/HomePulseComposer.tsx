@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Image, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { createPost, listFeed, PulsePost } from "../api/feed";
 import { ComposerMusicTrack, suggestComposerMusic } from "../api/composerMusic";
+import { composerMusicTrackFromPulseMusic, consumePulseMusicSelection } from "../api/music";
 import { CreateReelPayload, createReel, listReels, PulseReel } from "../api/reels";
 import { LogiNexusPanel } from "./LogiNexus";
 import { ComposerMediaQueue } from "../media/ComposerMediaQueue";
@@ -24,6 +25,7 @@ type Props = {
   onOpenRoute: (route: string) => void;
   identity?: GlobalNavigationIdentity;
   initiallyExpanded?: boolean;
+  initialMode?: "post" | "reel";
 };
 
 const MAX_BODY = 3000;
@@ -71,7 +73,7 @@ type FailedReelPublish = {
 
 type FailedPublish = FailedPostPublish | FailedReelPublish;
 
-export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenMusic, onOpenRoute, identity, initiallyExpanded = false }: Props) {
+export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenMusic, onOpenRoute, identity, initiallyExpanded = false, initialMode = "post" }: Props) {
   const [mode, setMode] = useState<ComposerMode>("post");
   const [body, setBody] = useState("");
   const [visibility, setVisibility] = useState<Visibility>("public");
@@ -130,8 +132,20 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
   }, []);
 
   useEffect(() => {
-    if (initiallyExpanded) setExpanded(true);
-  }, [initiallyExpanded]);
+    if (!initiallyExpanded) return;
+    setExpanded(true);
+    setMode(initialMode === "reel" ? "reel" : "post");
+    const surface = initialMode === "reel" ? "reel" : "video";
+    consumePulseMusicSelection(surface)
+      .then((selection) => {
+        if (!selection?.track) return;
+        const nextTrack = composerMusicTrackFromPulseMusic(selection.track);
+        setMusicTrack(nextTrack);
+        setShowMusic(false);
+        setNote(`Approved music attached: ${nextTrack.title} · ${nextTrack.artist}`);
+      })
+      .catch(() => undefined);
+  }, [initialMode, initiallyExpanded]);
 
   useEffect(() => () => {
     musicPreviewRef.current?.unloadAsync().catch(() => undefined);

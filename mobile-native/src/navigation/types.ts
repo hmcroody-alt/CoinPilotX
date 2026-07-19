@@ -8,7 +8,7 @@ export type AuthStackParamList = {
 
 export type AppTabParamList = {
   Dashboard: undefined;
-  Home: { openComposer?: boolean } | undefined;
+  Home: { openComposer?: boolean; composerMode?: "post" | "reel" } | undefined;
   Search: { query?: string } | undefined;
   Saved: undefined;
   Groups: undefined;
@@ -30,6 +30,7 @@ export type RootStackParamList = {
   UserDashboardWeb: { title?: string } | undefined;
   DashboardComposeAlias: undefined;
   DashboardMusicAlias: undefined;
+  Music: { trackId?: string; track?: string; artistId?: number; artist?: number; openUpload?: boolean; title?: string } | undefined;
   DashboardLegacyModule: { legacyGroup?: string; legacyModule?: string; legacySubmodule?: string; title?: string } | undefined;
   DashboardModuleDetail: { groupKey: string; moduleKey: string; title?: string };
   CameraStudio: {

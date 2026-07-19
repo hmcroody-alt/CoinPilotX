@@ -40,6 +40,10 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
     navigation.navigate("Tabs", { screen: "Home", params: { openComposer: true } });
     return;
   }
+  if (isMusicRoutePath(path)) {
+    navigation.navigate("Music", musicRouteParams(normalized));
+    return;
+  }
   if (path === "/pulse" || path === "/dashboard/creator/posts") {
     navigation.navigate("Tabs", { screen: "Home", params: queryBoolean(normalized, "composer") || queryBoolean(normalized, "openComposer") ? { openComposer: true } : undefined });
     return;
@@ -164,7 +168,7 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
     navigation.navigate("DashboardModuleDetail", moduleParams);
     return;
   }
-  if (path.includes("/videos") || path.includes("/music")) {
+  if (path.includes("/videos")) {
     openDashboardWebFallback(normalized);
     return;
   }
@@ -364,6 +368,7 @@ function isKnownNativeDashboardPath(path: string) {
     "/pulse/reels",
     "/pulse/status",
     "/pulse/live",
+    "/pulse/music",
     "/pulse/marketplace",
     "/pulse/seller-store",
     "/pulse/merchant",
@@ -409,7 +414,31 @@ function isKnownSafeFallbackPath(path: string) {
   return [
     "/pulse/live/studio",
     "/pulse/videos",
-    "/pulse/music",
     "/dashboard/home"
   ].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
+function isMusicRoutePath(path: string) {
+  return (
+    path === "/pulse/music" ||
+    path.startsWith("/pulse/music/") ||
+    path === "/dashboard/media/music-library" ||
+    path === "/dashboard/media/pulse-radio" ||
+    path === "/dashboard/media/upload-music" ||
+    path === "/dashboard/media/playlists" ||
+    path === "/dashboard/media/radio-studio"
+  );
+}
+
+function musicRouteParams(route: string): RootStackParamList["Music"] {
+  const trackId = queryValue(route, "track") || queryValue(route, "music") || queryValue(route, "music_track_id") || "";
+  const artistId = Number(queryValue(route, "artist") || queryValue(route, "artist_id") || 0);
+  const path = normalizeDashboardPath(route);
+  const openUpload = route.includes("#music-upload") || path === "/dashboard/media/upload-music";
+  return {
+    ...(trackId ? { trackId } : {}),
+    ...(artistId ? { artistId } : {}),
+    ...(openUpload ? { openUpload: true } : {}),
+    title: "PulseSoc Music"
+  };
 }

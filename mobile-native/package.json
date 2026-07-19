@@ -16,7 +16,8 @@
     "build:android:development": "npx eas-cli build --platform android --profile development",
     "build:ios:development": "npx eas-cli build --platform ios --profile development",
     "build:ios:simulator": "npx eas-cli build --platform ios --profile development-simulator",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
   },
   "dependencies": {
     "@babel/runtime": "^7.29.7",
@@ -55,7 +56,14 @@
     "react-native-web": "^0.21.0"
   },
   "devDependencies": {
+    "@testing-library/react-native": "^14.0.1",
     "@types/react": "~19.1.10",
+    "jest": "~29.7.0",
+    "jest-expo": "~54.0.17",
+    "react-test-renderer": "^19.2.7",
     "typescript": "~5.9.2"
+  },
+  "jest": {
+    "preset": "jest-expo"
   }
 }

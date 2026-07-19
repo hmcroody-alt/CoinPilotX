@@ -61,7 +61,7 @@ export const masterNavigationSections: MasterNavigationSection[] = [
       { label: "Add Status", route: "/pulse/status/create", status: "native", description: "Status creator entry." },
       { label: "Live Viewer", route: "/pulse/live", status: "native", description: "Native Live discovery and viewer foundation." },
       { label: "Live Studio", route: "/pulse/live/studio", status: "fallback", description: "Hosting remains on safe web fallback." },
-      { label: "Pulse Radio", route: "/pulse/music#pulse-radio", status: "fallback", description: "Pulse Radio provider/media boundary." }
+      { label: "Pulse Radio", route: "/pulse/music#pulse-radio", status: "native", description: "Native PulseSoc Music, upload portal, and approved radio pool." }
     ]
   },
   {

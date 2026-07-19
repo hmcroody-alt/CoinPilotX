@@ -441,6 +441,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             badges={badges}
             identity={identity}
             initiallyExpandComposer={Boolean(route.params?.openComposer)}
+            initialComposerMode={route.params?.composerMode || "post"}
             onRefresh={refreshHome}
             onSelectFeed={selectFeed}
             onOpenUndx={() => navigation.navigate("Tabs", { screen: "PulseAI" })}
@@ -544,6 +545,7 @@ function HomeHeader({
   identity,
   ambientMotionEnabled,
   initiallyExpandComposer,
+  initialComposerMode,
   onRefresh,
   onSelectFeed,
   onOpenUndx,
@@ -574,6 +576,7 @@ function HomeHeader({
   identity?: GlobalNavigationIdentity;
   ambientMotionEnabled: boolean;
   initiallyExpandComposer: boolean;
+  initialComposerMode: "post" | "reel";
   onRefresh: () => void;
   onSelectFeed: (feedKey: string) => void;
   onOpenUndx: () => void;
@@ -607,7 +610,16 @@ function HomeHeader({
             onOpenStatus={onOpenStatus}
             onViewAll={onViewStatuses}
           />
-          <HomePulseComposer initiallyExpanded={initiallyExpandComposer} identity={identity} onCreated={onCreated} onOpenCamera={onOpenCamera} onOpenLive={onOpenLive} onOpenMusic={onOpenMusic} onOpenRoute={onOpenRoute} />
+          <HomePulseComposer
+            initiallyExpanded={initiallyExpandComposer}
+            initialMode={initialComposerMode}
+            identity={identity}
+            onCreated={onCreated}
+            onOpenCamera={onOpenCamera}
+            onOpenLive={onOpenLive}
+            onOpenMusic={onOpenMusic}
+            onOpenRoute={onOpenRoute}
+          />
           <View style={styles.feedTabsWrap}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.feedTabs}>
               {feedTabs.map((tab) => (

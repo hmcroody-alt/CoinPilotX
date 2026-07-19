@@ -90,6 +90,11 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  if (normalized.startsWith("/pulse/music") && navigationRef.isReady()) {
+    navigationRef.navigate("Music", musicRouteParams(normalized));
+    return { handled: true, target: normalized };
+  }
+
   const groupMatch = normalized.match(/^\/pulse\/groups\/([^/?#]+)/);
   if (groupMatch?.[1] && navigationRef.isReady()) {
     navigationRef.navigate("GroupDetail", { groupSlug: decodeURIComponent(groupMatch[1]), title: "Community" });
@@ -396,6 +401,17 @@ function extractStringQueryValue(target: string, name: string) {
   const query = target.split("?")[1]?.split("#")[0] || "";
   if (!query) return "";
   return new URLSearchParams(query).get(name) || "";
+}
+
+function musicRouteParams(target: string): RootStackParamList["Music"] {
+  const trackId = extractStringQueryValue(target, "track") || extractStringQueryValue(target, "music") || extractStringQueryValue(target, "music_track_id");
+  const artistId = extractNumericQueryValue(target, "artist") || extractNumericQueryValue(target, "artist_id");
+  return {
+    ...(trackId ? { trackId } : {}),
+    ...(artistId ? { artistId } : {}),
+    ...(target.includes("#music-upload") ? { openUpload: true } : {}),
+    title: "PulseSoc Music"
+  };
 }
 
 function accountSectionForTarget(target: string): "account" | "security" | "privacy" | "devices" | "" {

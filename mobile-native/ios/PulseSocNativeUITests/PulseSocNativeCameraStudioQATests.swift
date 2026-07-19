@@ -89,6 +89,22 @@ final class PulseSocNativeCameraStudioQATests: XCTestCase {
     capture("auth-return-to-login")
   }
 
+  func testLivingProfileAndCustomizationOnIPhone() throws {
+    authenticateIfNeeded()
+    if !app.staticTexts["Deep Space"].waitForExistence(timeout: 20) {
+      _ = tapIfVisible("Profile", timeout: 8) || tapIfVisible("Open Profile", timeout: 8)
+    }
+    XCTAssertTrue(app.staticTexts["Deep Space"].waitForExistence(timeout: 20), "Living Profile theme marker must render.")
+    XCTAssertTrue(app.buttons["Edit Profile"].exists, "Owner profile must expose Edit Profile.")
+    XCTAssertTrue(app.buttons["Customize"].exists, "Owner profile must expose Customize.")
+    XCTAssertTrue(app.staticTexts["Identity"].exists && app.staticTexts["Media"].exists && app.staticTexts["Music"].exists && app.staticTexts["Trust"].exists)
+    capture("profile-v2-01-living-identity")
+
+    app.buttons["Customize"].tap()
+    XCTAssertTrue(app.staticTexts["Living identity"].waitForExistence(timeout: 12), "Customize must open the existing profile editor.")
+    capture("profile-v2-02-customize-theme")
+  }
+
   func testMessengerNewChatCreatesCanonicalConversationAndSendsFirstMessage() throws {
     authenticateIfNeeded()
     XCTAssertTrue(app.buttons["Open Messages"].waitForExistence(timeout: 20), "Authenticated native navigation must expose Messenger.")

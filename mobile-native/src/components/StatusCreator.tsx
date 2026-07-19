@@ -12,6 +12,7 @@ import {
   StatusType,
   StatusVisibility
 } from "../api/status";
+import { consumePulseMusicSelection } from "../api/music";
 import { uploadResultMediaId } from "../media/nativeMediaUpload";
 import { MediaUploadPreview } from "../media/MediaUploadPreview";
 import { useNativeMediaUpload } from "../media/useNativeMediaUpload";
@@ -75,6 +76,28 @@ export function StatusCreator({ visible, onClose, onCreated }: Props) {
     }).catch(() => undefined);
     listTrendingStatusMusic({ limit: 6 })
       .then((result) => setMusicItems(result.items || []))
+      .catch(() => undefined);
+    consumePulseMusicSelection("status")
+      .then((selection) => {
+        if (!selection?.track) return;
+        const track = selection.track;
+        const statusTrack: PulseStatusMusic = {
+          id: track.id,
+          track_id: track.id,
+          title: track.title,
+          artist: track.artist,
+          audio_title: track.title,
+          audio_artist: track.artist,
+          audio_url: track.audioUrl,
+          preview_url: track.previewUrl || track.audioUrl,
+          mood: track.mood,
+          genre: track.genre,
+          duration_seconds: track.durationSeconds
+        };
+        setSelectedMusic(statusTrack);
+        setMode("text");
+        setBody((current) => current || `${track.title} · ${track.artist}`);
+      })
       .catch(() => undefined);
   }, [visible]);
 

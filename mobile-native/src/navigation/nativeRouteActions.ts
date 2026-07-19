@@ -29,6 +29,7 @@ export function openNativeRoute(navigation: NativeRouteNavigation, routePath: st
   else if (routePath === "/pulse/groups") navigation.navigate("Tabs", { screen: "Groups" });
   else if (routePath === "/pulse/saved") navigation.navigate("Tabs", { screen: "Saved" });
   else if (routePath === "/pulse/live") navigation.navigate("Tabs", { screen: "Live" });
+  else if (routePath.startsWith("/pulse/music")) navigation.navigate("Music", musicParamsFromRoute(routePath));
   else if (routePath === "/pulse/events") navigation.navigate("Events", { title: "Events" });
   else if (routePath === "/pulse/marketplace") navigation.navigate("Tabs", { screen: "Marketplace" });
   else if (routePath === "/pulse/marketplace/create") navigation.navigate("MarketplaceCreateGateway", { title: "Create Listing" });
@@ -49,4 +50,17 @@ export function openNativeRoute(navigation: NativeRouteNavigation, routePath: st
   else if (routePath === "/terms") navigation.navigate("TrustSafetyHelp", { title: "Terms" });
   else if (routePath === "/privacy") navigation.navigate("TrustSafetyHelp", { title: "Privacy Policy" });
   else openDashboardRoute(navigation, routePath);
+}
+
+function musicParamsFromRoute(routePath: string) {
+  const query = String(routePath || "").split("?")[1]?.split("#")[0] || "";
+  const params = new URLSearchParams(query);
+  const trackId = params.get("track") || params.get("music") || params.get("music_track_id") || "";
+  const artistId = Number(params.get("artist") || params.get("artist_id") || 0);
+  return {
+    ...(trackId ? { trackId } : {}),
+    ...(artistId ? { artistId } : {}),
+    ...(routePath.includes("#music-upload") ? { openUpload: true } : {}),
+    title: "PulseSoc Music"
+  };
 }

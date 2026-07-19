@@ -268,7 +268,8 @@ export function CameraStudioScreen({ route, navigation }: Props) {
         message_type: uploaded.message_type || uploaded.type || asset.mediaType,
         media_url: uploaded.media_url || "",
         thumbnail_url: uploaded.thumbnail_url || "",
-        file_size: uploaded.file_size || asset.size || 0
+        file_size: uploaded.file_size || asset.size || 0,
+        media_ids: uploaded.media_id ? [uploaded.media_id] : []
       });
       return { ok: true, message: "Media sent to Messenger.", conversationId };
     }

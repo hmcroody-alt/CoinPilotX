@@ -29,6 +29,7 @@ import { EventsScreen } from "../screens/EventsScreen";
 import { LiveScreen } from "../screens/LiveScreen";
 import { MarketplaceScreen } from "../screens/MarketplaceScreen";
 import { MessengerScreen } from "../screens/MessengerScreen";
+import { MusicScreen } from "../screens/MusicScreen";
 import { NewChatScreen } from "../screens/NewChatScreen";
 import { NotificationCenterScreen } from "../screens/NotificationCenterScreen";
 import { NotificationPreferencesScreen } from "../screens/NotificationPreferencesScreen";
@@ -218,6 +219,7 @@ export function AppNavigator() {
       <Stack.Screen name="UserDashboardWeb" component={UserDashboardScreen} options={{ title: "Dashboard" }} />
       <Stack.Screen name="DashboardComposeAlias" component={DashboardActionAliasScreen} options={{ title: "Create Post" }} />
       <Stack.Screen name="DashboardMusicAlias" component={DashboardActionAliasScreen} options={{ title: "Pulse Radio" }} />
+      <Stack.Screen name="Music" component={MusicScreen} options={({ route }) => ({ title: route.params?.title || "PulseSoc Music" })} />
       <Stack.Screen name="DashboardLegacyModule" component={DashboardLegacyModuleScreen} options={{ title: "Dashboard Module" }} />
       <Stack.Screen name="DashboardModuleDetail" component={DashboardModuleDetailScreen} options={({ route }) => ({ title: route.params?.title || "Dashboard Module" })} />
       <Stack.Screen name="CameraStudio" component={CameraStudioScreen} options={{ headerShown: false }} />
