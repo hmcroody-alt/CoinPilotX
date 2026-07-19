@@ -37,11 +37,18 @@ The capture policy text is now truthful: 1080p is a camera capture target, not p
 
 ## Verification status
 
-- TypeScript typecheck: passed after repair.
-- Focused Post/Reel behavior audit: required before commit.
+- Production commit: `4d52d57b` (`Repair native post and reel publishing`) pushed to `origin/main`.
+- Railway deployment: active and successful for CoinPilotX; all project services returned to Online.
+- Production health: `GET https://pulsesoc.com/health` returned `{"ok":true,"service":"coinpilotx-web"}` after deployment.
+- TypeScript typecheck: passed before commit and again in the clean integration worktree.
+- Focused Post/Reel behavior audit: passed before commit and again after integration onto current `origin/main`.
 - Canonical backend Reel final-step audit: passed locally.
-- Simulator build/install/publication: pending.
-- Signed physical-device build/install/publication: pending.
+- iPhone 16 Pro simulator build: passed for the native workspace/scheme; install and process launch passed. Authenticated publication remains pending.
+- Signed physical-device build: passed on iPhone 16 Pro with Xcode 26.6, Debug configuration, Apple Development signing, and embedded JavaScript bundle.
+- Physical install/launch: passed for `PulseSoc Native Dev` using bundle `com.pulsesoc.nativeapp.dev`.
+- Side-by-side preservation: confirmed; `com.pulsesoc.nativeapp` and `com.pulsesoc.nativeapp.dev` remained installed separately.
+- Physical Post publication: pending a controlled user action in the authenticated app.
+- Physical Reel publication: pending a controlled user action in the authenticated app.
 - WebView/native cross-client visibility: pending.
 
 Physical-device acceptance remains open until a controlled Post and Reel are created after production deployment, opened by canonical ID on the iPhone, and observed in WebView. No physical or cross-client PASS claim is made by this report before that evidence exists.
