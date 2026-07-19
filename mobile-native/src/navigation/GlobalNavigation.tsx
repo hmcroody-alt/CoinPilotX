@@ -250,12 +250,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(159, 124, 255, 0.2)",
     borderColor: "rgba(121, 210, 255, 0.32)",
-    borderRadius: logiNexus.radius.circular,
+    borderRadius: 19,
     borderWidth: 1,
-    height: 44,
+    height: 38,
     justifyContent: "center",
     overflow: "hidden",
-    width: 44
+    width: 38
   },
   avatarImage: {
     height: "100%",
@@ -382,7 +382,7 @@ const styles = StyleSheet.create({
   headerActions: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 6
+    gap: 5
   },
   headerMetaRow: {
     flexDirection: "row",
@@ -393,7 +393,7 @@ const styles = StyleSheet.create({
   headerRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 8
+    gap: 6
   },
   headerShell: {
     backgroundColor: "rgba(3, 9, 18, 0.96)",
@@ -405,7 +405,7 @@ const styles = StyleSheet.create({
   headerShellHome: {
     backgroundColor: logiNexus.colors.home.backgroundDeepSpace,
     borderBottomColor: "transparent",
-    paddingBottom: 14
+    paddingBottom: 5
   },
   headerSubtitle: {
     ...logiNexus.typography.metadata,
@@ -425,8 +425,8 @@ const styles = StyleSheet.create({
   },
   headerTitleHome: {
     ...logiNexus.typography.home.brand,
-    fontSize: 27,
-    lineHeight: 32,
+    fontSize: 21,
+    lineHeight: 25,
     textAlign: "center"
   },
   headerTitleHomeAccent: {
@@ -443,10 +443,10 @@ const styles = StyleSheet.create({
   homeBrandSignal: {
     alignItems: "center",
     flexDirection: "row",
-    height: 10,
+    height: 8,
     justifyContent: "center",
     marginTop: 1,
-    width: 96
+    width: 82
   },
   homeBrandSignalPrimary: {
     backgroundColor: colors.accent,
@@ -477,19 +477,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.045)",
     borderColor: "rgba(255,255,255,0.18)",
-    borderRadius: 22,
+    borderRadius: 19,
     borderWidth: 1,
-    height: 48,
+    height: 38,
     justifyContent: "center",
-    width: 48
+    width: 38
   },
   iconButtonSpacer: {
-    height: 48,
-    width: 48
+    height: 38,
+    width: 38
   },
   iconText: {
     color: colors.text,
-    fontSize: 24,
+    fontSize: 19,
     fontWeight: "900"
   },
   pressed: {

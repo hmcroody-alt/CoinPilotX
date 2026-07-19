@@ -992,7 +992,7 @@ function HeroTile({
         <Text style={[styles.heroTileIconText, { color: accent }]}>{icon}</Text>
       </View>
       <View style={styles.heroTileCopy}>
-        <Text style={styles.heroTileLabel} numberOfLines={1}>{label}</Text>
+        <Text style={styles.heroTileLabel} numberOfLines={2}>{label}</Text>
         <Text style={[styles.heroTileValue, { color: accent }]} numberOfLines={1}>{value}</Text>
         <Text style={styles.heroTileBody} numberOfLines={1}>{body}</Text>
       </View>
@@ -1115,29 +1115,29 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.large,
     borderWidth: 0,
     justifyContent: "center",
-    minHeight: 108,
+    minHeight: 78,
     padding: 3,
-    width: 82
+    width: 64
   },
   addStatusIcon: {
     color: colors.accent,
     backgroundColor: "rgba(3, 7, 18, 0.86)",
     borderColor: logiNexus.colors.home.borderActive,
-    borderRadius: 32,
+    borderRadius: 24,
     borderWidth: 1,
-    fontSize: 30,
+    fontSize: 25,
     fontWeight: "900",
-    height: 68,
-    lineHeight: 64,
+    height: 50,
+    lineHeight: 47,
     overflow: "hidden",
     textAlign: "center",
-    width: 68
+    width: 50
   },
   addStatusText: {
     color: colors.text,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "900",
-    marginTop: 4,
+    marginTop: 3,
     textAlign: "center"
   },
   center: {
@@ -1154,7 +1154,7 @@ const styles = StyleSheet.create({
   content: {
     alignSelf: "center",
     maxWidth: 1480,
-    padding: 12,
+    padding: 8,
     paddingBottom: 126,
     width: "100%"
   },
@@ -1544,11 +1544,11 @@ const styles = StyleSheet.create({
   hero: {
     backgroundColor: "rgba(5, 15, 29, 0.88)",
     borderColor: "rgba(50, 230, 179, 0.34)",
-    borderRadius: 24,
-    marginBottom: 16,
-    minHeight: 300,
+    borderRadius: 20,
+    marginBottom: 8,
+    minHeight: 196,
     overflow: "hidden",
-    padding: 13
+    padding: 8
   },
   heroAtmosphere: {
     ...StyleSheet.absoluteFillObject,
@@ -1557,15 +1557,15 @@ const styles = StyleSheet.create({
   heroPlanet: {
     backgroundColor: "rgba(24, 82, 118, 0.62)",
     borderColor: "rgba(91, 221, 255, 0.34)",
-    borderRadius: 120,
+    borderRadius: 92,
     borderWidth: 1,
-    height: 260,
+    height: 174,
     overflow: "hidden",
     position: "absolute",
-    right: -66,
-    top: 54,
+    right: -44,
+    top: 42,
     transform: [{ rotate: "-8deg" }],
-    width: 260
+    width: 174
   },
   heroPlanetLight: {
     backgroundColor: "rgba(45, 229, 183, 0.16)",
@@ -1587,7 +1587,7 @@ const styles = StyleSheet.create({
   },
   heroSkyline: {
     alignItems: "flex-end",
-    bottom: 54,
+    bottom: 24,
     flexDirection: "row",
     gap: 4,
     opacity: 0.42,
@@ -1632,7 +1632,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
     justifyContent: "space-between",
-    marginBottom: 10,
+    marginBottom: 6,
     zIndex: 2
   },
   heroHealthPill: {
@@ -1643,8 +1643,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 6,
-    minHeight: 30,
-    paddingHorizontal: 12
+    minHeight: 27,
+    paddingHorizontal: 10
   },
   heroHealthDot: {
     backgroundColor: colors.accent,
@@ -1657,7 +1657,7 @@ const styles = StyleSheet.create({
   },
   heroHealthText: {
     color: colors.accent,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900"
   },
   heroHeadline: {
@@ -1699,8 +1699,8 @@ const styles = StyleSheet.create({
   },
   heroQuickRow: {
     flexDirection: "row",
-    gap: 10,
-    marginTop: 16,
+    gap: 7,
+    marginTop: 7,
     zIndex: 2
   },
   heroRadioCopy: {
@@ -1709,26 +1709,26 @@ const styles = StyleSheet.create({
   },
   heroRadioIcon: {
     backgroundColor: colors.accent,
-    borderRadius: 32,
+    borderRadius: 23,
     color: colors.background,
-    fontSize: 17,
+    fontSize: 14,
     fontWeight: "900",
-    height: 64,
-    lineHeight: 64,
+    height: 46,
+    lineHeight: 46,
     overflow: "hidden",
     textAlign: "center",
-    width: 64
+    width: 46
   },
   heroRadioLabel: {
     color: colors.text,
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.6,
     textTransform: "uppercase"
   },
   heroRadioMeta: {
     color: colors.accent,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "800",
     marginTop: 1
   },
@@ -1739,17 +1739,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(10, 30, 43, 0.82)",
     borderColor: "rgba(50, 230, 179, 0.45)",
-    borderRadius: 26,
+    borderRadius: 22,
     borderWidth: 1,
     flexDirection: "row",
     flexShrink: 0,
     flexWrap: "wrap",
-    gap: 14,
-    minHeight: 98,
+    gap: 8,
+    minHeight: 62,
     minWidth: 0,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    width: 190
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+    width: 142
   },
   heroRadioPillPlaying: {
     backgroundColor: "rgba(24, 66, 74, 0.9)",
@@ -1760,7 +1760,7 @@ const styles = StyleSheet.create({
     flexBasis: "100%",
     flexDirection: "row",
     gap: 3,
-    height: 24,
+    height: 14,
     justifyContent: "flex-end",
     paddingRight: 3
   },
@@ -1800,8 +1800,8 @@ const styles = StyleSheet.create({
   },
   heroCompactMetricRow: {
     flexDirection: "row",
-    gap: 8,
-    marginTop: 76,
+    gap: 6,
+    marginTop: 7,
     zIndex: 2
   },
   heroMoodCopy: {
@@ -1813,23 +1813,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
     justifyContent: "space-between",
-    marginTop: 4,
-    minHeight: 114,
+    marginTop: 2,
+    minHeight: 68,
     zIndex: 2
   },
   heroMoodSummary: {
     color: colors.muted,
-    fontSize: 15,
+    fontSize: 11,
     fontWeight: "800",
-    lineHeight: 22,
-    marginTop: 8,
-    maxWidth: 220
+    lineHeight: 15,
+    marginTop: 4,
+    maxWidth: 142
   },
   heroMoodTitle: {
     color: colors.text,
-    fontSize: 34,
+    fontSize: 26,
     fontWeight: "900",
-    lineHeight: 40
+    lineHeight: 30
   },
   heroKicker: {
     alignSelf: "flex-start",
@@ -1883,24 +1883,24 @@ const styles = StyleSheet.create({
   },
   heroMetricBlock: {
     backgroundColor: "rgba(3, 7, 18, 0.48)",
-    borderRadius: 16,
+    borderRadius: 13,
     borderWidth: 1,
     justifyContent: "center",
-    minHeight: 62,
-    paddingHorizontal: 10,
-    paddingVertical: 8
+    minHeight: 43,
+    paddingHorizontal: 7,
+    paddingVertical: 6
   },
   heroMetricBlockLabel: {
     color: colors.muted,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "800",
-    lineHeight: 14,
-    marginTop: 4
+    lineHeight: 12,
+    marginTop: 3
   },
   heroMetricBlockValue: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: "900",
-    lineHeight: 28
+    lineHeight: 21
   },
   heroMetricStack: {
     gap: 5,
@@ -2097,22 +2097,22 @@ const styles = StyleSheet.create({
   heroTile: {
     alignItems: "center",
     backgroundColor: "rgba(3, 9, 19, 0.66)",
-    borderRadius: 18,
+    borderRadius: 15,
     borderWidth: 1,
     flex: 1,
     flexDirection: "row",
-    gap: 9,
+    gap: 6,
     justifyContent: "center",
-    minHeight: 64,
+    minHeight: 44,
     minWidth: 0,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
+    paddingHorizontal: 7,
+    paddingVertical: 6,
     zIndex: 2
   },
   heroTileArrow: {
     color: colors.muted,
     display: "none",
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: "900",
     opacity: 0.55
   },
@@ -2141,11 +2141,11 @@ const styles = StyleSheet.create({
   },
   heroTileIcon: {
     alignItems: "center",
-    borderRadius: 15,
+    borderRadius: 12,
     borderWidth: 1,
-    height: 30,
+    height: 24,
     justifyContent: "center",
-    width: 30
+    width: 24
   },
   heroTileIconText: {
     fontSize: 14,
@@ -2153,7 +2153,7 @@ const styles = StyleSheet.create({
   },
   heroTileLabel: {
     color: colors.text,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: "900",
     letterSpacing: 0.2,
     textAlign: "left",
@@ -2445,16 +2445,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(37, 208, 167, 0.12)",
     borderColor: colors.accent,
-    borderRadius: 34,
+    borderRadius: 25,
     borderWidth: 2,
-    height: 68,
+    height: 50,
     justifyContent: "center",
-    width: 68
+    width: 50
   },
   statusAvatarImage: {
-    borderRadius: 30,
-    height: 60,
-    width: 60
+    borderRadius: 23,
+    height: 46,
+    width: 46
   },
   statusAvatarText: {
     color: colors.accent,
@@ -2467,9 +2467,9 @@ const styles = StyleSheet.create({
     borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     gap: 4,
-    minHeight: 108,
+    minHeight: 78,
     padding: 3,
-    width: 82
+    width: 64
   },
   statusCardUnseen: {
     backgroundColor: "rgba(50, 230, 179, 0.065)",
@@ -2483,9 +2483,9 @@ const styles = StyleSheet.create({
     borderStyle: "dashed",
     borderWidth: 1,
     justifyContent: "center",
-    minHeight: 78,
+    minHeight: 62,
     padding: 8,
-    width: 136
+    width: 122
   },
   statusEmptyText: {
     color: colors.muted,
@@ -2514,7 +2514,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 8
+    marginBottom: 5
   },
   statusHeaderAction: {
     color: colors.accentStrong,
@@ -2525,7 +2525,7 @@ const styles = StyleSheet.create({
   statusHeaderKicker: {
     color: colors.accent,
     ...logiNexus.typography.home.sectionLabel,
-    fontSize: 16,
+    fontSize: 14,
     letterSpacing: 2,
     textTransform: "uppercase"
   },
@@ -2535,10 +2535,10 @@ const styles = StyleSheet.create({
     marginTop: 8
   },
   statusRail: {
-    gap: 12
+    gap: 9
   },
   statusSection: {
-    marginBottom: 14
+    marginBottom: 8
   },
   heroSignalLine: {
     backgroundColor: "rgba(121, 210, 255, 0.18)",
