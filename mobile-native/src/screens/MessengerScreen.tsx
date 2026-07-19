@@ -29,6 +29,18 @@ import { logiNexus } from "../theme/logiNexus";
 type ConversationFilter = "all" | "direct" | "groups" | "rooms" | "ai" | "unread";
 const FILTER_KEY = "pulsesoc.native.messenger.filter";
 const LAST_CONVERSATION_KEY = "pulsesoc.native.messenger.last_conversation";
+const DEFAULT_UNDX_AI_CONVERSATION_ID = -900001;
+const DEFAULT_UNDX_AI_CONVERSATION: MessengerConversation = {
+  id: DEFAULT_UNDX_AI_CONVERSATION_ID,
+  conversation_id: DEFAULT_UNDX_AI_CONVERSATION_ID,
+  title: "UNDX AI",
+  conversation_type: "ai",
+  latest_message: "Ask UNDX to analyze your network, risk, markets, or next move.",
+  presence: "active",
+  pinned: true,
+  trust_state: "intelligence",
+  verified: true
+};
 
 export function MessengerScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -94,13 +106,17 @@ export function MessengerScreen() {
   }, [selectedFilter]);
 
   const unreadTotal = useMemo(() => conversations.reduce((total, item) => total + Number(item.unread_count || 0), 0), [conversations]);
+  const conversationsWithUndxAi = useMemo(
+    () => withDefaultUndxAiConversation(conversations),
+    [conversations]
+  );
   const filteredConversations = useMemo(
-    () => conversations.filter((item) => conversationMatchesFilter(item, selectedFilter)),
-    [conversations, selectedFilter]
+    () => conversationsWithUndxAi.filter((item) => conversationMatchesFilter(item, selectedFilter)),
+    [conversationsWithUndxAi, selectedFilter]
   );
   const activeConversations = useMemo(
-    () => conversations.filter((item) => isActivePresence(item.presence) || item.typing).slice(0, 8),
-    [conversations]
+    () => conversationsWithUndxAi.filter((item) => isActivePresence(item.presence) || item.typing).slice(0, 8),
+    [conversationsWithUndxAi]
   );
   const filters = useMemo(
     () => [
@@ -223,17 +239,22 @@ function quickActionAccentColor(accent: QuickActionAccent) {
 function ConversationRow({ item, navigation }: { item: MessengerConversation; navigation: NativeStackNavigationProp<RootStackParamList> }) {
   const active = isActivePresence(item.presence);
   const title = conversationDisplayTitle(item);
+  const opensUndxAi = item.conversation_id === DEFAULT_UNDX_AI_CONVERSATION_ID;
   return (
     <Pressable
       style={({ pressed }) => [styles.row, item.pinned && styles.pinnedRow, pressed && styles.rowPressed]}
       accessibilityRole="button"
       accessibilityLabel={conversationAccessibilityLabel(item)}
       onPress={() => {
+        if (opensUndxAi) {
+          navigation.navigate("Tabs", { screen: "PulseAI" });
+          return;
+        }
         AsyncStorage.setItem(LAST_CONVERSATION_KEY, String(item.id)).catch(() => undefined);
         navigation.navigate("Chat", { conversationId: item.id, title, avatarUrl: item.avatar_url, presence: item.presence });
       }}
     >
-      <PulseCommandAvatar label={title} imageUrl={item.avatar_url} active={active} tone={item.trust_state === "founder" ? "intelligence" : "default"} size={48} />
+      <PulseCommandAvatar label={title} imageUrl={item.avatar_url} active={active} tone={item.trust_state === "founder" || item.trust_state === "intelligence" ? "intelligence" : "default"} size={48} />
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
           <Text style={styles.title} numberOfLines={1}>{title}</Text>
@@ -257,6 +278,31 @@ function conversationMatchesFilter(item: MessengerConversation, filter: Conversa
   if (filter === "rooms") return type === "room";
   if (filter === "ai") return ["ai", "intelligence", "undx"].includes(type);
   return Number(item.unread_count || 0) > 0;
+}
+
+function withDefaultUndxAiConversation(items: MessengerConversation[]) {
+  const undxIndex = items.findIndex(isUndxAiConversation);
+  const undxConversation =
+    undxIndex >= 0
+      ? {
+          ...DEFAULT_UNDX_AI_CONVERSATION,
+          ...items[undxIndex],
+          title: "UNDX AI",
+          conversation_type: "ai",
+          latest_message: items[undxIndex].latest_message || items[undxIndex].last_message_preview || DEFAULT_UNDX_AI_CONVERSATION.latest_message,
+          pinned: true,
+          trust_state: items[undxIndex].trust_state || "intelligence",
+          verified: true
+        }
+      : DEFAULT_UNDX_AI_CONVERSATION;
+  const rest = undxIndex >= 0 ? items.filter((_, index) => index !== undxIndex) : items;
+  return [undxConversation, ...rest];
+}
+
+function isUndxAiConversation(item: MessengerConversation) {
+  const title = `${item.title || ""} ${item.name || ""}`.toLowerCase();
+  const type = String(item.conversation_type || "").toLowerCase();
+  return title.includes("undx") || ["intelligence", "undx"].includes(type);
 }
 
 function emptyTitle(filter: ConversationFilter) {
