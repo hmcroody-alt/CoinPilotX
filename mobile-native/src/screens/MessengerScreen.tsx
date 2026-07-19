@@ -3,6 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   loadCachedConversations,
   listConversations,
@@ -31,6 +32,7 @@ const LAST_CONVERSATION_KEY = "pulsesoc.native.messenger.last_conversation";
 
 export function MessengerScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
   const { authState, requestReauthentication } = useAuth();
   const loadSequence = useRef(0);
   const [conversations, setConversations] = useState<MessengerConversation[]>([]);
@@ -129,7 +131,7 @@ export function MessengerScreen() {
       <FlatList
         data={filteredConversations}
         keyExtractor={(item) => `chat-${item.id}`}
-        contentContainerStyle={[styles.list, { paddingTop: 0 }]}
+        contentContainerStyle={[styles.list, { paddingTop: Math.max(insets.top + 4, 36) }]}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load({ refresh: true })} />}
         initialNumToRender={10}
         maxToRenderPerBatch={8}
