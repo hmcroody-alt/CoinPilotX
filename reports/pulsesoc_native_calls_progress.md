@@ -2,6 +2,14 @@
 
 Updated: 2026-07-18
 
+## 2026-07-18 — Native voice-message foundation repair
+
+- Fixed the native M4A recorder path so it resolves the actual file byte size before calling the production private Messenger media-init contract.
+- Reused the canonical init/upload/complete plus `attachment_ids` delivery sequence; no legacy or call-upload route was introduced.
+- Added metered native recording, explicit discard/send controls, compact neon capture waveform, and redesigned voice playback cards.
+- Added `scripts/pulsesoc_native_voice_message_audit.py` and a focused evidence report.
+- Physical authenticated delivery remains a required post-install confirmation.
+
 ## Scope
 
 Native LiveKit Calls foundation was added as a parallel native client surface for `com.pulsesoc.nativeapp`. The production WebView app and production PulseSoc call backend remain authoritative and untouched.

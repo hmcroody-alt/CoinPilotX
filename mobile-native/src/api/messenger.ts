@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { File } from "expo-file-system";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "./config";
 import { PulseApiError, pulseApi } from "./pulseApi";
 
@@ -414,6 +415,16 @@ export async function uploadMessengerMedia(input: {
 }) {
   const mimeType = messengerFoundationMimeType(input.mimeType, input.name, input.voice);
   const mediaType = messengerFoundationMediaType(input.name, mimeType, input.voice);
+  const sizeBytes = resolveLocalMessengerFileSize(input.uri, input.sizeBytes);
+  if (sizeBytes <= 0) {
+    throw new PulseApiError(
+      input.voice
+        ? "PulseSoc could not read this recording. Record the voice message again."
+        : "PulseSoc could not read this attachment. Choose the file again.",
+      400,
+      "local_file_size_unavailable"
+    );
+  }
   const init = await pulseApi<{ ok?: boolean; attachment_id?: number }>("/api/messages/media/init", {
     method: "POST",
     body: JSON.stringify({
@@ -421,7 +432,7 @@ export async function uploadMessengerMedia(input: {
       media_type: mediaType,
       filename: input.name || `pulse-${mediaType}-${Date.now()}`,
       mime_type: mimeType,
-      size_bytes: Math.max(0, Number(input.sizeBytes || 0))
+      size_bytes: sizeBytes
     })
   });
   const attachmentId = Number(init.attachment_id || 0);
@@ -464,8 +475,19 @@ export async function uploadMessengerMedia(input: {
     download_url: downloadUrl,
     message_type: input.voice ? "voice" : mediaType === "photo" ? "image" : mediaType,
     type: input.voice ? "voice" : mediaType === "photo" ? "image" : mediaType,
-    file_size: Number(completed.file_size || completed.size_bytes || 0)
+    file_size: Number(completed.file_size || completed.size_bytes || sizeBytes)
   };
+}
+
+export function resolveLocalMessengerFileSize(uri: string, declaredSize?: number) {
+  const provided = Math.max(0, Number(declaredSize || 0));
+  if (provided > 0) return provided;
+  try {
+    const file = new File(uri);
+    return file.exists ? Math.max(0, Number(file.size || 0)) : 0;
+  } catch {
+    return 0;
+  }
 }
 
 export async function uploadMessengerMediaLegacy(input: {

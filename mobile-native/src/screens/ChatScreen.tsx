@@ -2,6 +2,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio } from "expo-av";
+import { File } from "expo-file-system";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -180,6 +181,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [typing, setTyping] = useState("");
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [recordingStartedAt, setRecordingStartedAt] = useState<number>(0);
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
+  const [recordingLevels, setRecordingLevels] = useState<number[]>(() => Array.from({ length: 24 }, () => 0.14));
   const [uploading, setUploading] = useState(false);
   const [replyTo, setReplyTo] = useState<MessengerMessage | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<MessengerMessage | null>(null);
@@ -218,6 +221,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     if (qaChatState === "attachment-sheet") setAttachmentSheetOpen(true);
     if (qaChatState === "reply-keyboard") setReplyTo(messages.find((message) => !message.is_mine) || messages[0]);
     if (qaChatState === "control-center") setControlCenterOpen(true);
+    if (qaChatState === "voice-recording") {
+      setRecordingElapsed(12);
+      setRecordingLevels(Array.from({ length: 24 }, (_, index) => 0.16 + ((index * 17) % 68) / 100));
+    }
   }, [messages.length, qaChatState]);
 
   useEffect(() => {
@@ -237,6 +244,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const showInitialLoading = loading && !hasMessages && !initialFetchComplete && !error;
   const showFatalError = Boolean(error && !hasMessages && !loading);
   const showEmptyConversation = Boolean(initialFetchComplete && !loading && !error && !hasMessages);
+  const showVoiceCapture = Boolean(recording) || qaChatState === "voice-recording";
   const headerStatus = error
     ? hasMessages
       ? "Reconnecting"
@@ -575,7 +583,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     } catch (uploadError) {
       const message = uploadError instanceof Error ? uploadError.message : "Attachment could not be sent.";
       setStatusMessage(message);
-      Alert.alert("Attachment failed", message);
+      Alert.alert(input.voice ? "Voice message failed" : "Attachment failed", message);
     } finally {
       setUploading(false);
     }
@@ -663,10 +671,12 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       if (recording) {
         const activeRecording = recording;
         setRecording(null);
-        await activeRecording.stopAndUnloadAsync();
+        const stopped = await activeRecording.stopAndUnloadAsync();
         await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => undefined);
         const uri = activeRecording.getURI();
-        const durationSeconds = Math.max(1, Math.round((Date.now() - recordingStartedAt) / 1000));
+        const durationSeconds = Math.max(1, Math.round(Number(stopped.durationMillis || Date.now() - recordingStartedAt) / 1000));
+        setRecordingElapsed(0);
+        setRecordingLevels(Array.from({ length: 24 }, () => 0.14));
         if (!uri) throw new Error("The recording did not produce an audio file.");
         await uploadAndSend({
           uri,
@@ -686,7 +696,18 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true
       });
-      const started = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      setRecordingElapsed(0);
+      setRecordingLevels(Array.from({ length: 24 }, () => 0.14));
+      const started = await Audio.Recording.createAsync(
+        { ...Audio.RecordingOptionsPresets.HIGH_QUALITY, isMeteringEnabled: true },
+        (status) => {
+          if (!status.isRecording) return;
+          setRecordingElapsed(Math.max(0, Math.floor(status.durationMillis / 1000)));
+          const level = Math.max(0.08, Math.min(1, (Number(status.metering ?? -54) + 60) / 60));
+          setRecordingLevels((current) => [...current.slice(-23), level]);
+        },
+        160
+      );
       setRecording(started.recording);
       setRecordingStartedAt(Date.now());
       setStatusMessage("Recording voice message… tap the microphone again to send.");
@@ -698,6 +719,27 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       Alert.alert("Voice message unavailable", message);
     }
   }, [recording, recordingStartedAt, uploadAndSend]);
+
+  const cancelVoiceRecording = useCallback(async () => {
+    const activeRecording = recording;
+    if (!activeRecording) return;
+    setRecording(null);
+    try {
+      await activeRecording.stopAndUnloadAsync();
+      const uri = activeRecording.getURI();
+      if (uri) {
+        const file = new File(uri);
+        if (file.exists) file.delete();
+      }
+    } catch {
+      // The recorder may already be stopped by an interruption; local teardown still wins.
+    } finally {
+      setRecordingElapsed(0);
+      setRecordingLevels(Array.from({ length: 24 }, () => 0.14));
+      setStatusMessage("Voice recording discarded.");
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => undefined);
+    }
+  }, [recording]);
 
   useEffect(() => {
     let mounted = true;
@@ -798,7 +840,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         <View pointerEvents="none" style={styles.composerSignalLine} />
         <View style={styles.composerMetaRow}>
           <View style={styles.composerMetaIdentity}><LiveStatusDot warning={Boolean(error)} /><Text style={styles.composerKicker}>PULSE LINK</Text></View>
-          <Text style={[styles.composerState, recording && styles.composerStateRecording]}>{recording ? "RECORDING" : uploading ? "SENDING MEDIA" : error ? "RECONNECTING" : "SECURE · READY"}</Text>
+          <Text style={[styles.composerState, showVoiceCapture && styles.composerStateRecording]}>{showVoiceCapture ? "RECORDING" : uploading ? "SENDING MEDIA" : error ? "RECONNECTING" : "SECURE · READY"}</Text>
         </View>
         {statusMessage && !keyboardVisible ? (
           <Pressable accessibilityRole="button" accessibilityLabel="Dismiss message status" style={styles.statusBanner} onPress={() => setStatusMessage("")}>
@@ -816,7 +858,15 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             </Pressable>
           </View>
         ) : null}
-        <View style={styles.inputRow}>
+        {showVoiceCapture ? (
+          <VoiceCaptureDock
+            elapsed={recordingElapsed}
+            levels={recordingLevels}
+            disabled={uploading || qaChatState === "voice-recording"}
+            onCancel={() => cancelVoiceRecording().catch(() => undefined)}
+            onSend={() => toggleVoiceRecording().catch(() => undefined)}
+          />
+        ) : <View style={styles.inputRow}>
           <SignalIconButton accessibilityLabel={uploading ? "Uploading attachment" : "Add attachment"} icon={uploading ? "cloud-upload-outline" : "add"} disabled={uploading} size={46} onPress={() => setAttachmentSheetOpen(true)} />
           <TextInput
             multiline
@@ -829,11 +879,11 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             accessibilityLabel="Message composer"
           />
           <SignalIconButton accessibilityLabel="Add smiling emoji" icon="happy-outline" size={42} onPress={() => setDraft((current) => `${current}😊`)} />
-          <SignalIconButton accessibilityLabel={recording ? "Stop and send voice message" : "Record voice message"} icon={recording ? "stop" : "mic-outline"} tone={recording ? "danger" : "signal"} active={Boolean(recording)} disabled={uploading} size={42} onPress={() => toggleVoiceRecording().catch(() => undefined)} />
+          <SignalIconButton accessibilityLabel="Record voice message" icon="mic-outline" disabled={uploading} size={42} onPress={() => toggleVoiceRecording().catch(() => undefined)} />
           <Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={!draft.trim()} style={({ pressed }) => [styles.sendButton, !draft.trim() && styles.sendDisabled, pressed && styles.pressed]} onPress={submitText}>
             <Text style={styles.sendText}>➤</Text>
           </Pressable>
-        </View>
+        </View>}
       </PulseCommandPanel>
       </KeyboardAvoidingView>
       <MessageActionSheet
@@ -896,6 +946,37 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         }}
       />
       </LogiNexusScreenShell>
+    </View>
+  );
+}
+
+function VoiceCaptureDock({ elapsed, levels, disabled, onCancel, onSend }: { elapsed: number; levels: number[]; disabled: boolean; onCancel: () => void; onSend: () => void }) {
+  return (
+    <View accessibilityLabel={`Recording voice message. ${formatDuration(elapsed)}`} style={styles.voiceCaptureDock}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Discard voice recording" disabled={disabled} style={({ pressed }) => [styles.voiceCaptureCancel, pressed && styles.pressed]} onPress={onCancel}>
+        <Ionicons name="trash-outline" size={20} color="#ff6685" />
+      </Pressable>
+      <View style={styles.voiceCaptureBody}>
+        <View style={styles.voiceCaptureHeader}>
+          <View style={styles.voiceCaptureLive}><View style={styles.voiceCaptureLiveDot} /><Text style={styles.voiceCaptureKicker}>LIVE VOICE PULSE</Text></View>
+          <Text style={styles.voiceCaptureTime}>{formatDuration(elapsed)}</Text>
+        </View>
+        <View pointerEvents="none" style={styles.voiceCaptureWaveform}>
+          {levels.map((level, index) => (
+            <View
+              key={index}
+              style={[
+                styles.voiceCaptureBar,
+                index % 3 === 1 && styles.voiceCaptureBarPurple,
+                { height: 5 + Math.round(Math.max(0.08, level) * 23) }
+              ]}
+            />
+          ))}
+        </View>
+      </View>
+      <Pressable accessibilityRole="button" accessibilityLabel="Stop and send voice message" disabled={disabled} style={({ pressed }) => [styles.voiceCaptureSend, pressed && styles.pressed, disabled && styles.disabled]} onPress={onSend}>
+        <Ionicons name="send" size={21} color="#03120f" />
+      </Pressable>
     </View>
   );
 }
@@ -1120,15 +1201,20 @@ function VoiceMessageCard({ url, durationSeconds, title }: { url: string; durati
   const progress = Math.min(1, position / Math.max(1, duration));
   return (
     <View style={styles.voiceCard}>
-      <Text style={styles.attachmentTitle}>{title}</Text>
+      <View pointerEvents="none" style={styles.voiceCardGlow} />
+      <View style={styles.voiceCardHeader}>
+        <View style={styles.voiceCardIdentity}><Ionicons name="radio-outline" size={14} color={colors.accent} /><Text style={styles.voiceCardKicker}>VOICE PULSE</Text></View>
+        <Text style={styles.voiceCardDuration}>{formatDuration(duration)}</Text>
+      </View>
       <View style={styles.voiceControls}>
-        <Pressable accessibilityRole="button" accessibilityLabel={playing ? "Pause voice message" : "Play voice message"} style={styles.voicePlay} onPress={() => togglePlayback().catch(() => undefined)}><Text style={styles.voicePlayText}>{playing ? "Ⅱ" : "▶"}</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={playing ? "Pause voice message" : "Play voice message"} style={styles.voicePlay} onPress={() => togglePlayback().catch(() => undefined)}><Ionicons name={playing ? "pause" : "play"} size={20} color="#03120f" /></Pressable>
         <View style={styles.voiceTimeline}>
-          <View style={styles.waveform}>{Array.from({ length: 22 }).map((_, index) => <View key={index} style={[styles.waveBar, { height: 7 + ((index * 7) % 18), opacity: index / 22 <= progress ? 1 : 0.38 }]} />)}</View>
+          <View style={styles.waveform}>{Array.from({ length: 22 }).map((_, index) => <View key={index} style={[styles.waveBar, index % 4 === 2 && styles.waveBarPurple, { height: 7 + ((index * 7) % 18), opacity: index / 22 <= progress ? 1 : 0.3 }]} />)}</View>
           <View style={styles.voiceTimeRow}><Text style={styles.attachmentMeta}>{formatDuration(position)}</Text><Text style={styles.attachmentMeta}>{formatDuration(duration)}</Text></View>
         </View>
         <Pressable accessibilityRole="button" accessibilityLabel={`Playback speed ${rate} times`} style={styles.voiceRate} onPress={() => cycleRate().catch(() => undefined)}><Text style={styles.voiceRateText}>{rate}x</Text></Pressable>
       </View>
+      <Text style={styles.voiceCardLabel}>{title} · end-to-end private channel</Text>
     </View>
   );
 }
@@ -1358,16 +1444,22 @@ const styles = StyleSheet.create({
     minWidth: 190,
     padding: 10
   },
-  voiceCard: { backgroundColor: "rgba(3,18,32,0.76)", borderColor: "rgba(97,216,255,0.2)", borderRadius: 14, borderWidth: 1, gap: 8, minWidth: 250, padding: 10 },
+  voiceCard: { backgroundColor: "rgba(2,17,31,0.94)", borderColor: "rgba(65,236,198,0.52)", borderRadius: 18, borderWidth: 1, gap: 8, minWidth: 258, overflow: "hidden", padding: 12, shadowColor: "#41ecc6", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.2, shadowRadius: 16 },
+  voiceCardGlow: { backgroundColor: "rgba(148,92,255,0.16)", borderRadius: 80, height: 92, position: "absolute", right: -28, top: -34, width: 132 },
+  voiceCardHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  voiceCardIdentity: { alignItems: "center", flexDirection: "row", gap: 6 },
+  voiceCardKicker: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1.25 },
+  voiceCardDuration: { color: "#b9a5ff", fontSize: 11, fontWeight: "900" },
+  voiceCardLabel: { color: colors.muted, fontSize: 10, fontWeight: "700" },
   voiceControls: { alignItems: "center", flexDirection: "row", gap: 9 },
-  voicePlay: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 24, height: 46, justifyContent: "center", width: 46 },
-  voicePlayText: { color: "#04130f", fontSize: 17, fontWeight: "900" },
+  voicePlay: { alignItems: "center", backgroundColor: colors.accent, borderColor: "rgba(255,255,255,0.52)", borderRadius: 24, borderWidth: 1, height: 46, justifyContent: "center", shadowColor: colors.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.34, shadowRadius: 12, width: 46 },
   voiceTimeline: { flex: 1, gap: 4, minWidth: 120 },
   waveform: { alignItems: "center", flexDirection: "row", gap: 2, height: 30 },
   waveBar: { backgroundColor: colors.accentStrong, borderRadius: 2, flex: 1, minWidth: 2 },
+  waveBarPurple: { backgroundColor: "#a77cff" },
   voiceTimeRow: { flexDirection: "row", justifyContent: "space-between" },
-  voiceRate: { alignItems: "center", borderColor: colors.border, borderRadius: 12, borderWidth: 1, minHeight: 34, minWidth: 40, justifyContent: "center" },
-  voiceRateText: { color: colors.text, fontSize: 12, fontWeight: "900" },
+  voiceRate: { alignItems: "center", backgroundColor: "rgba(167,124,255,0.13)", borderColor: "rgba(167,124,255,0.62)", borderRadius: 12, borderWidth: 1, minHeight: 34, minWidth: 42, justifyContent: "center" },
+  voiceRateText: { color: "#d7caff", fontSize: 12, fontWeight: "900" },
   attachmentTitle: {
     color: colors.text,
     fontSize: 14,
@@ -1520,6 +1612,33 @@ const styles = StyleSheet.create({
     gap: 7,
     minHeight: 48
   },
+  voiceCaptureDock: {
+    alignItems: "center",
+    backgroundColor: "rgba(4,18,31,0.96)",
+    borderColor: "rgba(255,75,116,0.46)",
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 58,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+    shadowColor: "#ff4b74",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 18
+  },
+  voiceCaptureCancel: { alignItems: "center", backgroundColor: "rgba(255,75,116,0.1)", borderColor: "rgba(255,102,133,0.5)", borderRadius: 16, borderWidth: 1, height: 42, justifyContent: "center", width: 42 },
+  voiceCaptureBody: { flex: 1, gap: 4, minWidth: 0 },
+  voiceCaptureHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  voiceCaptureLive: { alignItems: "center", flexDirection: "row", gap: 6 },
+  voiceCaptureLiveDot: { backgroundColor: "#ff4b74", borderRadius: 4, height: 7, shadowColor: "#ff4b74", shadowOpacity: 0.72, shadowRadius: 7, width: 7 },
+  voiceCaptureKicker: { color: "#ff8da6", fontSize: 9, fontWeight: "900", letterSpacing: 1.1 },
+  voiceCaptureTime: { color: colors.text, fontSize: 11, fontVariant: ["tabular-nums"], fontWeight: "900" },
+  voiceCaptureWaveform: { alignItems: "center", flexDirection: "row", gap: 2, height: 28 },
+  voiceCaptureBar: { backgroundColor: colors.accent, borderRadius: 2, flex: 1, maxWidth: 5, minWidth: 2 },
+  voiceCaptureBarPurple: { backgroundColor: "#a77cff" },
+  voiceCaptureSend: { alignItems: "center", backgroundColor: colors.accent, borderColor: "rgba(255,255,255,0.56)", borderRadius: 23, borderWidth: 1, height: 46, justifyContent: "center", shadowColor: colors.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.42, shadowRadius: 14, width: 46 },
   input: {
     backgroundColor: "rgba(2,9,19,0.92)",
     borderColor: "rgba(97,216,255,0.5)",
