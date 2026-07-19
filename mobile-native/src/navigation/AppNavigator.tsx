@@ -50,6 +50,7 @@ import { VerificationCenterScreen } from "../screens/VerificationCenterScreen";
 import { UserDashboardScreen } from "../screens/UserDashboardScreen";
 import { ChatScreen } from "../screens/ChatScreen";
 import { colors } from "../theme/colors";
+import { BottomNavVisibilityProvider } from "./BottomNavVisibility";
 import { useAuth } from "../session/auth";
 import { GlobalNavigationBadges, GlobalNavigationIdentity, LogiNexusBottomNavigation, LogiNexusGlobalHeader } from "./GlobalNavigation";
 import { AppTabParamList, RootStackParamList } from "./types";
@@ -80,44 +81,46 @@ function TabNavigator({
   onOpenDrawer: () => void;
 }) {
   return (
-    <Tabs.Navigator
-      tabBar={(props) => <LogiNexusBottomNavigation {...props} badges={badges} />}
-      screenOptions={({ navigation, route }) => ({
-        header: ({ options }) => (
-          <LogiNexusGlobalHeader
-            title={String(options.title || route.name)}
-            subtitle={subtitleForTab(route.name)}
-            mode={route.name === "PulseAI" ? "intelligence" : "standard"}
-            showDrawer
-            onOpenDrawer={onOpenDrawer}
-            onOpenSearch={() => navigation.navigate("Search")}
-            onOpenActivity={() => navigation.navigate("Notifications")}
-            onOpenMessages={() => navigation.navigate("Messenger")}
-            onOpenProfile={() => navigation.navigate("Profile")}
-            badges={badges}
-            identity={identity}
-          />
-        )
-      })}
-    >
-      <Tabs.Screen name="Dashboard" component={UserDashboardScreen} options={{ title: "Mission Control" }} />
-      <Tabs.Screen name="Home" options={{ headerShown: false, title: "Home" }}>
-        {() => <HomeScreen badges={badges} identity={identity} />}
-      </Tabs.Screen>
-      <Tabs.Screen name="Search" component={SearchScreen} options={{ title: "Search" }} />
-      <Tabs.Screen name="Saved" component={SavedScreen} options={{ title: "Saved" }} />
-      <Tabs.Screen name="Groups" component={GroupsScreen} options={{ title: "Communities" }} />
-      <Tabs.Screen name="Live" component={LiveScreen} options={{ title: "Live" }} />
-      <Tabs.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />
-      <Tabs.Screen name="Create" component={CreateTabScreen} options={{ title: "Create" }} />
-      <Tabs.Screen name="Status" component={StatusScreen} options={{ title: "Status" }} />
-      <Tabs.Screen name="Messenger" component={MessengerScreen} options={{ title: "Messages" }} />
-      <Tabs.Screen name="Notifications" component={ActivityInboxScreen} options={{ title: "Activity" }} />
-      <Tabs.Screen name="PulseAI" component={PulseAiScreen} options={{ title: "UNDX" }} />
-      <Tabs.Screen name="Profile" component={ProfileScreen} options={{ title: "Profile" }} />
-      <Tabs.Screen name="Marketplace" component={MarketplaceScreen} options={{ title: "Marketplace" }} />
-      <Tabs.Screen name="Settings" component={SettingsScreen} options={{ title: "Settings" }} />
-    </Tabs.Navigator>
+    <BottomNavVisibilityProvider>
+      <Tabs.Navigator
+        tabBar={(props) => <LogiNexusBottomNavigation {...props} badges={badges} />}
+        screenOptions={({ navigation, route }) => ({
+          header: ({ options }) => (
+            <LogiNexusGlobalHeader
+              title={String(options.title || route.name)}
+              subtitle={subtitleForTab(route.name)}
+              mode={route.name === "PulseAI" ? "intelligence" : "standard"}
+              showDrawer
+              onOpenDrawer={onOpenDrawer}
+              onOpenSearch={() => navigation.navigate("Search")}
+              onOpenActivity={() => navigation.navigate("Notifications")}
+              onOpenMessages={() => navigation.navigate("Messenger")}
+              onOpenProfile={() => navigation.navigate("Profile")}
+              badges={badges}
+              identity={identity}
+            />
+          )
+        })}
+      >
+        <Tabs.Screen name="Dashboard" component={UserDashboardScreen} options={{ title: "Mission Control" }} />
+        <Tabs.Screen name="Home" options={{ headerShown: false, title: "Home" }}>
+          {() => <HomeScreen badges={badges} identity={identity} />}
+        </Tabs.Screen>
+        <Tabs.Screen name="Search" component={SearchScreen} options={{ title: "Search" }} />
+        <Tabs.Screen name="Saved" component={SavedScreen} options={{ title: "Saved" }} />
+        <Tabs.Screen name="Groups" component={GroupsScreen} options={{ title: "Communities" }} />
+        <Tabs.Screen name="Live" component={LiveScreen} options={{ title: "Live" }} />
+        <Tabs.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />
+        <Tabs.Screen name="Create" component={CreateTabScreen} options={{ title: "Create" }} />
+        <Tabs.Screen name="Status" component={StatusScreen} options={{ title: "Status" }} />
+        <Tabs.Screen name="Messenger" component={MessengerScreen} options={{ title: "Messages" }} />
+        <Tabs.Screen name="Notifications" component={ActivityInboxScreen} options={{ title: "Activity" }} />
+        <Tabs.Screen name="PulseAI" component={PulseAiScreen} options={{ title: "UNDX" }} />
+        <Tabs.Screen name="Profile" component={ProfileScreen} options={{ title: "Profile" }} />
+        <Tabs.Screen name="Marketplace" component={MarketplaceScreen} options={{ title: "Marketplace" }} />
+        <Tabs.Screen name="Settings" component={SettingsScreen} options={{ title: "Settings" }} />
+      </Tabs.Navigator>
+    </BottomNavVisibilityProvider>
   );
 }
 

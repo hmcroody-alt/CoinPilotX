@@ -2,11 +2,13 @@ import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Animated, Image, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LogiNexusBadge, LogiNexusSignalIndicator } from "../components/LogiNexus";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
+import { useBottomNavVisibility } from "./BottomNavVisibility";
 import { AppTabParamList } from "./types";
 
 export type GlobalNavigationBadges = {
@@ -146,9 +148,44 @@ export function LogiNexusGlobalHeader({
 export function LogiNexusBottomNavigation({ state, descriptors, navigation, badges }: BottomTabBarProps & { badges?: GlobalNavigationBadges }) {
   const insets = useSafeAreaInsets();
   const activeRoute = state.routes[state.index]?.name as keyof AppTabParamList | undefined;
+  const { hidden, showBottomNav } = useBottomNavVisibility();
+  const hiddenProgress = useRef(new Animated.Value(0)).current;
+  const [shellHeight, setShellHeight] = useState(0);
+
+  useEffect(() => {
+    Animated.timing(hiddenProgress, {
+      duration: hidden ? 180 : 210,
+      toValue: hidden ? 1 : 0,
+      useNativeDriver: true
+    }).start();
+  }, [hidden, hiddenProgress]);
+
+  useEffect(() => {
+    showBottomNav();
+  }, [activeRoute, showBottomNav]);
+
+  const offscreenDistance = Math.max(shellHeight, 180) + Math.max(insets.bottom, 10) + 64;
+  const translateY = hiddenProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, offscreenDistance]
+  });
+  const opacity = hiddenProgress.interpolate({
+    inputRange: [0, 0.72, 1],
+    outputRange: [1, 0.48, 0]
+  });
 
   return (
-    <View style={[styles.bottomShell, { paddingBottom: Math.max(insets.bottom, 10) }]} testID="global-bottom-navigation">
+    <Animated.View
+      accessibilityElementsHidden={hidden}
+      importantForAccessibility={hidden ? "no-hide-descendants" : "auto"}
+      onLayout={(event: LayoutChangeEvent) => {
+        const nextHeight = Math.ceil(event.nativeEvent.layout.height);
+        setShellHeight((current) => (current === nextHeight ? current : nextHeight));
+      }}
+      pointerEvents={hidden ? "none" : "auto"}
+      style={[styles.bottomShell, { paddingBottom: Math.max(insets.bottom, 10), opacity, transform: [{ translateY }] }]}
+      testID="global-bottom-navigation"
+    >
       <View style={styles.bottomPanel}>
         {PRIMARY_TABS.map((item) => {
           const route = state.routes.find((candidate) => candidate.name === item.routeName);
@@ -204,7 +241,7 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
           );
         })}
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -352,8 +389,14 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     borderTopColor: "transparent",
     borderTopWidth: 0,
+    bottom: 0,
+    elevation: 40,
+    left: 0,
     paddingHorizontal: logiNexus.spacing.md,
-    paddingTop: 10
+    paddingTop: 10,
+    position: "absolute",
+    right: 0,
+    zIndex: 40
   },
   bottomSymbol: {
     alignItems: "center",

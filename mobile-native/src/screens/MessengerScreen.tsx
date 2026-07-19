@@ -13,6 +13,7 @@ import {
 import { PulseApiError } from "../api/pulseApi";
 import { PulseCommandAvatar, PulseCommandPanel, PulseCommandSegmentRail } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
+import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../session/auth";
 import {
@@ -45,6 +46,7 @@ const DEFAULT_UNDX_AI_CONVERSATION: MessengerConversation = {
 export function MessengerScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
+  const bottomNavScroll = useBottomNavScrollVisibility();
   const { authState, requestReauthentication } = useAuth();
   const loadSequence = useRef(0);
   const [conversations, setConversations] = useState<MessengerConversation[]>([]);
@@ -187,6 +189,9 @@ export function MessengerScreen() {
           </LogiNexusStatePanel>
         ) : <LogiNexusStatePanel state="empty" title={emptyTitle(selectedFilter)} body={emptyBody(selectedFilter)} />}
         renderItem={({ item }) => <ConversationRow item={item} navigation={navigation} />}
+        onScroll={bottomNavScroll.onScroll}
+        onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
+        scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
       />
     </LogiNexusScreenShell>
   );
