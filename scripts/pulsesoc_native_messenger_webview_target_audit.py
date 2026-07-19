@@ -26,7 +26,7 @@ def main() -> int:
         require(token in production, f"production target missing: {token}")
     for token in ('label: "All"', 'label: "Direct"', 'label: "Groups"', 'label: "Rooms"', 'label: "AI"', 'label: "Unread"', "loadCachedConversations", "searchMessenger"):
         require(token in inbox, f"native inbox parity missing: {token}")
-    for token in ("ConversationControlCenter", 'label="Gear"', 'qaChatState === "control-center"', "drainMessengerQueue", "enqueueMessengerMessage", "MessageActionSheet", "AttachmentActionSheet", "toggleVoiceRecording", "keyboardHeight", "syncConversation"):
+    for token in ("ConversationControlCenter", 'accessibilityLabel="Open conversation controls"', 'qaChatState === "control-center"', "drainMessengerQueue", "enqueueMessengerMessage", "MessageActionSheet", "AttachmentActionSheet", "toggleVoiceRecording", "KeyboardAvoidingView", "syncConversation"):
         require(token in chat, f"native conversation parity missing: {token}")
     for section in ("Conversation", "Notifications", "Appearance", "Privacy", "Media", "Productivity", "Storage", "Security", "Accessibility", "Danger Zone"):
         require(section in control, f"Control Center section missing: {section}")

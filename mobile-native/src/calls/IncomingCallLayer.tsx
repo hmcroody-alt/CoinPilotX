@@ -1,5 +1,4 @@
 import * as Notifications from "expo-notifications";
-import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
@@ -12,7 +11,7 @@ import {
   Text,
   View
 } from "react-native";
-import { acceptCall, declineCall, endCall, getActiveCalls, markRingSeen, PulseCall, PulseCallParticipant } from "../api/calls";
+import { acceptCall, declineCall, getActiveCalls, markRingSeen, PulseCall, PulseCallParticipant } from "../api/calls";
 import { navigationRef } from "../navigation/notificationRouting";
 import { colors } from "../theme/colors";
 import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
@@ -28,7 +27,6 @@ type IncomingCallLayerProps = {
 
 export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayerProps) {
   const [incomingCall, setIncomingCall] = useState<PulseCall | null>(null);
-  const [floatingCall, setFloatingCall] = useState<PulseCall | null>(null);
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
   const ignoredCalls = useRef<Map<string, number>>(new Map());
@@ -43,7 +41,6 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
     const calls = active.calls || [];
     pruneIgnoredCalls(ignoredCalls.current);
     const ringing = calls.find((call) => isIncomingRingingCall(call, currentUserId, ignoredCalls.current));
-    const connected = calls.find((call) => isFloatingActiveCall(call));
 
     if (ringing) {
       setIncomingCall(ringing);
@@ -55,20 +52,13 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
     } else {
       setIncomingCall(null);
     }
-    const callScreenVisible = navigationRef.isReady() && navigationRef.getCurrentRoute()?.name === "Call";
-    setFloatingCall(callScreenVisible ? null : connected || null);
   }, [currentUserId, signedIn]);
 
   const seedQaCallFromUrl = useCallback((url: string | null) => {
     const fixture = qaIncomingCallFromUrl(url, currentUserId);
     if (!fixture) return false;
-    if (isFloatingActiveCall(fixture)) {
-      setFloatingCall(fixture);
-      setIncomingCall(null);
-    } else {
-      setIncomingCall(fixture);
-      setFloatingCall(null);
-    }
+    if (!isIncomingRingingCall(fixture, currentUserId, ignoredCalls.current)) return false;
+    setIncomingCall(fixture);
     setError("");
     return true;
   }, [currentUserId]);
@@ -79,15 +69,15 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
     setError("");
     try {
       const call = await acceptCall(incomingCall.call_id);
+      const acceptedCaller = callerParticipant(call);
       setIncomingCall(null);
-      setFloatingCall(null);
       if (navigationRef.isReady()) {
         navigationRef.navigate("Call", {
           callId: call.call_id,
           conversationId: call.conversation_id,
           callType: call.call_type,
           direction: "incoming",
-          title: call.call_type === "video" ? "PulseSoc Video" : "PulseSoc Voice"
+          title: acceptedCaller.display_name || acceptedCaller.username || "Incoming caller"
         });
       }
     } catch (acceptError) {
@@ -118,34 +108,9 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
     setIncomingCall(null);
   }, [incomingCall]);
 
-  const restoreFloatingCall = useCallback(() => {
-    if (!floatingCall?.call_id || !navigationRef.isReady()) return;
-    navigationRef.navigate("Call", {
-      callId: floatingCall.call_id,
-      conversationId: floatingCall.conversation_id,
-      callType: floatingCall.call_type,
-      direction: "incoming",
-      title: floatingCall.call_type === "video" ? "PulseSoc Video" : "PulseSoc Voice"
-    });
-  }, [floatingCall]);
-
-  const endFloatingCall = useCallback(async () => {
-    if (!floatingCall?.call_id) return;
-    setBusyAction("end-floating");
-    try {
-      await endCall(floatingCall.call_id, "native_floating_hangup");
-      setFloatingCall(null);
-    } catch (endError) {
-      setError(endError instanceof Error ? endError.message : "Call could not end.");
-    } finally {
-      setBusyAction("");
-    }
-  }, [floatingCall]);
-
   useEffect(() => {
     if (!signedIn) {
       setIncomingCall(null);
-      setFloatingCall(null);
       ringSeenCalls.current.clear();
       return;
     }
@@ -189,7 +154,7 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
     return () => animation.stop();
   }, [incomingCall, pulse, reducedMotion]);
 
-  const caller = useMemo(() => callerParticipant(incomingCall || floatingCall), [floatingCall, incomingCall]);
+  const caller = useMemo(() => callerParticipant(incomingCall), [incomingCall]);
 
   if (!signedIn) return null;
 
@@ -227,7 +192,7 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
           <View style={styles.incomingContent}>
             <Text style={styles.kicker}>Incoming PulseSoc call</Text>
             <Avatar participant={caller} callType={incomingCall.call_type} />
-            <Text style={styles.callerName} numberOfLines={1}>{caller.display_name || caller.username || "PulseSoc"}</Text>
+            <Text style={styles.callerName} numberOfLines={1}>{caller.display_name || caller.username || "Incoming caller"}</Text>
             <Text style={styles.callType}>{incomingCall.call_type === "video" ? "Video call" : "Voice call"}</Text>
             <Text style={styles.stateText}>{stateCopy(incomingCall.status)}</Text>
             {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -253,29 +218,6 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
         </View>
       ) : null}
 
-      {!incomingCall && floatingCall ? (
-        <View pointerEvents="box-none" style={styles.floatingLayer}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Return to active PulseSoc call"
-            style={({ pressed }) => [styles.floatingCall, pressed && styles.floatingPressed]}
-            onPress={restoreFloatingCall}
-          >
-            <View style={styles.floatingSignal}>
-              <Ionicons name={floatingCall.call_type === "video" ? "videocam" : "call"} color="#04100d" size={20} />
-            </View>
-            <View style={styles.floatingCopy}>
-              <Text style={styles.floatingKicker}>ACTIVE PULSESOC CALL</Text>
-              <Text style={styles.floatingTitle} numberOfLines={1}>{caller.display_name || caller.username || "PulseSoc"}</Text>
-            </View>
-            <Ionicons name="chevron-forward" color={colors.text} size={20} />
-            <Pressable accessibilityRole="button" accessibilityLabel="End active call" disabled={busyAction === "end-floating"} style={styles.floatingEnd} onPress={(event) => { event.stopPropagation(); endFloatingCall(); }}>
-              <Ionicons name="call" color="#fff" size={18} style={styles.floatingEndIcon} />
-            </Pressable>
-          </Pressable>
-        </View>
-      ) : null}
-
     </>
   );
 }
@@ -287,10 +229,6 @@ function isIncomingRingingCall(call: PulseCall, currentUserId: number | undefine
   const participant = call.participant || (call.participants || []).find((item) => Number(item.user_id) === Number(currentUserId));
   if (!participant) return true;
   return String(participant.role || "").toLowerCase() === "callee" || String(participant.status || "").toLowerCase() === "ringing";
-}
-
-function isFloatingActiveCall(call: PulseCall) {
-  return Boolean(call.call_id && ["accepted", "connecting", "connected", "active", "reconnecting"].includes(String(call.status || "")));
 }
 
 function pruneIgnoredCalls(ignored: Map<string, number>) {
@@ -318,7 +256,7 @@ function stateCopy(status?: string) {
 }
 
 function Avatar({ participant, callType }: { participant: PulseCallParticipant; callType?: string }) {
-  const initials = initialsFor(participant.display_name || participant.username || (callType === "video" ? "Video" : "Voice"));
+  const initials = initialsFor(participant.display_name || participant.username || "?");
   return (
     <View style={styles.avatarShell}>
       {participant.avatar_url ? <Image source={{ uri: participant.avatar_url }} style={styles.avatarImage} /> : <Text style={styles.avatarInitials}>{initials}</Text>}
@@ -327,8 +265,8 @@ function Avatar({ participant, callType }: { participant: PulseCallParticipant; 
 }
 
 function initialsFor(name: string) {
-  const parts = String(name || "PS").trim().split(/\s+/).slice(0, 2);
-  return parts.map((part) => part[0]?.toUpperCase() || "").join("") || "PS";
+  const parts = String(name || "?").trim().split(/\s+/).slice(0, 2);
+  return parts.map((part) => part[0]?.toUpperCase() || "").join("") || "?";
 }
 
 const styles = StyleSheet.create({
@@ -470,68 +408,5 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 13,
     fontWeight: "800"
-  },
-  floatingLayer: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: "center",
-    justifyContent: "flex-start",
-    paddingHorizontal: 16,
-    paddingTop: 58,
-    zIndex: 48
-  },
-  floatingCall: {
-    alignItems: "center",
-    backgroundColor: "rgba(4,15,28,0.96)",
-    borderColor: "rgba(48,230,185,0.58)",
-    borderRadius: 25,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 10,
-    maxWidth: 420,
-    minHeight: 66,
-    paddingHorizontal: 10,
-    shadowColor: colors.accent,
-    shadowOpacity: 0.32,
-    shadowRadius: 18,
-    width: "100%"
-  },
-  floatingSignal: {
-    alignItems: "center",
-    backgroundColor: colors.accent,
-    borderRadius: 18,
-    height: 40,
-    justifyContent: "center",
-    width: 40
-  },
-  floatingCopy: {
-    flex: 1,
-    minWidth: 0
-  },
-  floatingKicker: {
-    color: colors.accent,
-    fontSize: 9,
-    fontWeight: "900",
-    letterSpacing: 1.2
-  },
-  floatingTitle: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "900",
-    marginTop: 2
-  },
-  floatingEnd: {
-    alignItems: "center",
-    backgroundColor: "#d93f61",
-    borderRadius: 17,
-    height: 34,
-    justifyContent: "center",
-    width: 34
-  },
-  floatingEndIcon: {
-    transform: [{ rotate: "135deg" }]
-  },
-  floatingPressed: {
-    opacity: 0.82,
-    transform: [{ scale: 0.985 }]
   }
 });

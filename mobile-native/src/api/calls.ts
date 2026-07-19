@@ -1,4 +1,5 @@
 import { Linking } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
@@ -108,7 +109,7 @@ export type CallControlAction =
   | "visibility";
 
 export async function startConversationCall(conversationId: number, callType: PulseCallType) {
-  const endpoint = `/api/pulse/comm/v2/conversations/${encodeURIComponent(String(conversationId))}/${callType === "video" ? "video" : "voice"}/start`;
+  const endpoint = `/api/pulse/communications/v2/conversations/${encodeURIComponent(String(conversationId))}/${callType === "video" ? "video" : "voice"}/start`;
   const data = await pulseApi<PulseCall>(endpoint, {
     method: "POST",
     body: JSON.stringify({ source: "native", call_type: callType })
@@ -183,7 +184,6 @@ export async function getCallStatus(callId: string) {
 export async function getActiveCalls() {
   const data = await pulseApi<ActiveCallsResponse>("/api/calls/active");
   const calls = normalizeCalls(data.calls || data.items || []);
-  await writeJsonCache(ACTIVE_CALLS_CACHE_KEY, { ...data, calls }).catch(() => undefined);
   return { ...data, calls };
 }
 
@@ -221,11 +221,9 @@ export async function sendCallControl(callId: string, action: CallControlAction,
 }
 
 export async function loadCachedActiveCalls() {
-  const cached = await readJsonCache<ActiveCallsResponse>(ACTIVE_CALLS_CACHE_KEY, (data) => ({
-    ...data,
-    calls: normalizeCalls(data.calls || data.items || [])
-  }));
-  return cached || { calls: [] };
+  // Cached call metadata is never authoritative evidence that media is active.
+  await AsyncStorage.removeItem(ACTIVE_CALLS_CACHE_KEY).catch(() => undefined);
+  return { calls: [] };
 }
 
 export async function loadCachedCallStatus(callId: string) {

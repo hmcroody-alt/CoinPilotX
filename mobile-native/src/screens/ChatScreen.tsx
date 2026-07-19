@@ -15,6 +15,7 @@ import {
   FlatList,
   Image,
   Keyboard,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -184,7 +185,6 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [selectedMessage, setSelectedMessage] = useState<MessengerMessage | null>(null);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [statusMessage, setStatusMessage] = useState("");
   const [controlCenterOpen, setControlCenterOpen] = useState(false);
   const [threadTitle, setThreadTitle] = useState(route.params.title || "Messenger");
@@ -195,8 +195,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const draftKey = `pulsesoc.native.messenger.draft.${conversationId}`;
 
   useEffect(() => {
-    const show = Keyboard.addListener("keyboardWillShow", (event) => { setKeyboardVisible(true); setKeyboardHeight(event.endCoordinates.height); });
-    const hide = Keyboard.addListener("keyboardWillHide", () => { setKeyboardVisible(false); setKeyboardHeight(0); });
+    const show = Keyboard.addListener("keyboardWillShow", () => setKeyboardVisible(true));
+    const hide = Keyboard.addListener("keyboardWillHide", () => setKeyboardVisible(false));
     return () => { show.remove(); hide.remove(); };
   }, []);
 
@@ -745,8 +745,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             <View style={styles.threadStatusRow}><LiveStatusDot warning={Boolean(error)} /><Text style={styles.threadSubtitle} numberOfLines={1}>{typing || (isPresenceActive(route.params.presence) ? "Online · Direct" : headerStatus)}</Text></View>
           </View>
           <View style={styles.callActions}>
-            <SignalIconButton accessibilityLabel="Start audio call" icon="call-outline" onPress={() => navigation.navigate("Call", { conversationId, callType: "audio", direction: "outgoing", title: route.params.title || "PulseSoc Voice" })} />
-            <SignalIconButton accessibilityLabel="Start video call" icon="videocam-outline" tone="intelligence" onPress={() => navigation.navigate("Call", { conversationId, callType: "video", direction: "outgoing", title: route.params.title || "PulseSoc Video" })} />
+            <SignalIconButton accessibilityLabel="Start audio call" icon="call-outline" onPress={() => navigation.navigate("Call", { conversationId, callType: "audio", direction: "outgoing", title: threadTitle })} />
+            <SignalIconButton accessibilityLabel="Start video call" icon="videocam-outline" tone="intelligence" onPress={() => navigation.navigate("Call", { conversationId, callType: "video", direction: "outgoing", title: threadTitle })} />
             <SignalIconButton accessibilityLabel="Open conversation controls" icon="ellipsis-vertical" onPress={() => setControlCenterOpen(true)} />
           </View>
         </View>
@@ -793,8 +793,13 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         />
         </>
       )}
-      <PulseCommandPanel style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) + 10 }, keyboardVisible && styles.composerKeyboard, keyboardVisible && { bottom: keyboardHeight }]}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0} style={styles.composerAvoider}>
+      <PulseCommandPanel style={[styles.composer, { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 8) }, keyboardVisible && styles.composerKeyboard]}>
         <View pointerEvents="none" style={styles.composerSignalLine} />
+        <View style={styles.composerMetaRow}>
+          <View style={styles.composerMetaIdentity}><LiveStatusDot warning={Boolean(error)} /><Text style={styles.composerKicker}>PULSE LINK</Text></View>
+          <Text style={[styles.composerState, recording && styles.composerStateRecording]}>{recording ? "RECORDING" : uploading ? "SENDING MEDIA" : error ? "RECONNECTING" : "SECURE · READY"}</Text>
+        </View>
         {statusMessage && !keyboardVisible ? (
           <Pressable accessibilityRole="button" accessibilityLabel="Dismiss message status" style={styles.statusBanner} onPress={() => setStatusMessage("")}>
             <Text style={styles.statusBannerText}>{statusMessage}</Text>
@@ -830,6 +835,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           </Pressable>
         </View>
       </PulseCommandPanel>
+      </KeyboardAvoidingView>
       <MessageActionSheet
         message={selectedMessage}
         onClose={() => setSelectedMessage(null)}
@@ -881,7 +887,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             conversationId,
             callType,
             direction: "outgoing",
-            title: route.params.title || (callType === "video" ? "PulseSoc Video" : "PulseSoc Voice")
+            title: threadTitle
           });
         }}
         onOpenSafety={(section) => {
@@ -1158,7 +1164,7 @@ const styles = StyleSheet.create({
     padding: logiNexus.spacing.sm,
     paddingBottom: logiNexus.spacing.sm
   },
-  threadHeader: { alignItems: "center", flexDirection: "row", gap: 8, minHeight: 62 },
+  threadHeader: { alignItems: "center", flexDirection: "row", gap: 8, minHeight: 56 },
   backButton: { alignItems: "center", backgroundColor: "rgba(255,255,255,0.035)", borderColor: colors.border, borderRadius: 13, borderWidth: 1, height: 46, justifyContent: "center", width: 42 },
   backButtonText: { color: colors.text, fontSize: 30, fontWeight: "400", marginTop: -3 },
   threadIdentity: { flex: 1, gap: 3, minWidth: 0 },
@@ -1387,18 +1393,24 @@ const styles = StyleSheet.create({
   composer: {
     backgroundColor: "rgba(2,10,20,0.98)",
     borderColor: "rgba(65,236,198,0.48)",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
     borderWidth: 1,
-    gap: 10,
+    gap: 5,
     marginHorizontal: 0,
     marginTop: 0,
     overflow: "hidden",
-    padding: 12,
+    paddingHorizontal: 10,
+    paddingTop: 7,
     shadowColor: colors.accent,
     shadowOffset: { width: 0, height: -8 },
     shadowOpacity: 0.22,
     shadowRadius: 24
+  },
+  composerAvoider: {
+    backgroundColor: colors.background,
+    flexShrink: 0,
+    width: "100%"
   },
   composerSignalLine: {
     backgroundColor: "rgba(65,236,198,0.78)",
@@ -1410,11 +1422,36 @@ const styles = StyleSheet.create({
     top: 0
   },
   composerKeyboard: {
-    left: 0,
-    marginHorizontal: 10,
-    position: "absolute",
-    right: 0,
-    zIndex: 20
+    borderRadius: 18,
+    marginHorizontal: 8,
+    shadowOpacity: 0.16
+  },
+  composerMetaRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 18,
+    paddingHorizontal: 4
+  },
+  composerMetaIdentity: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6
+  },
+  composerKicker: {
+    color: colors.accent,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.4
+  },
+  composerState: {
+    color: colors.muted,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 0.8
+  },
+  composerStateRecording: {
+    color: colors.danger
   },
   statusBanner: {
     backgroundColor: "rgba(97,216,255,0.08)",
@@ -1478,31 +1515,32 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   },
   inputRow: {
-    alignItems: "flex-end",
+    alignItems: "center",
     flexDirection: "row",
-    gap: 9,
-    minHeight: 58
+    gap: 7,
+    minHeight: 48
   },
   input: {
     backgroundColor: "rgba(2,9,19,0.92)",
     borderColor: "rgba(97,216,255,0.5)",
-    borderRadius: 28,
+    borderRadius: 23,
     borderWidth: 1,
     color: colors.text,
     flex: 1,
-    maxHeight: 118,
-    minHeight: 54,
-    paddingHorizontal: 17,
-    paddingVertical: 13
+    fontSize: 16,
+    maxHeight: 76,
+    minHeight: 44,
+    paddingHorizontal: 14,
+    paddingVertical: 8
   },
   sendButton: {
     alignItems: "center",
     backgroundColor: "rgba(65,236,198,0.96)",
     borderRadius: 999,
-    minHeight: 56,
-    minWidth: 56,
+    minHeight: 46,
+    minWidth: 46,
     justifyContent: "center",
-    paddingHorizontal: 14,
+    paddingHorizontal: 11,
     shadowColor: colors.accent,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.34,

@@ -27,7 +27,8 @@ def main() -> int:
     require("callBubbleMain" not in layer, "active-call mini popup main Pressable must not mount", failures)
     require("callBubbleEnd" not in layer, "active-call mini popup End button must not mount", failures)
     require("showFloatingCall" not in layer, "route-specific mini popup visibility policy should not remain", failures)
-    require("setFloatingCall(connected || null)" in layer, "active call state must remain preserved while visual popup is removed", failures)
+    require("floatingCall" not in layer, "cached/global active call state must not survive banner removal", failures)
+    require("isIncomingRingingCall" in layer, "global layer must be limited to validated incoming ringing calls", failures)
     require('navigationRef.navigate("Call"' in layer, "canonical Call route must remain available", failures)
     require('currentRouteName !== "Call"' not in layer, "old one-off Call-only visibility guard should not remain", failures)
 
@@ -47,7 +48,7 @@ def main() -> int:
         return 1
 
     print("PulseSoc native Home call overlay audit passed.")
-    print("Validated global active-call mini popup removal, preserved active call state, and canonical Call route access.")
+    print("Validated global active-call mini popup removal, incoming-only routing, and canonical Call route access.")
     return 0
 
 

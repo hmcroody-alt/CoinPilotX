@@ -120,8 +120,8 @@ CALL_INDEXES = (
 
 VALID_CALL_TYPES = {"audio", "video"}
 VALID_CALL_SCOPES = {"direct", "group", "live", "room"}
-ACTIVE_STATUSES = {"created", "ringing", "connecting", "connected", "reconnecting"}
-FINAL_STATUSES = {"ended", "missed", "declined", "failed", "canceled"}
+ACTIVE_STATUSES = {"created", "ringing", "accepted", "connecting", "connected", "active", "reconnecting"}
+FINAL_STATUSES = {"ended", "missed", "declined", "failed", "canceled", "cancelled", "expired", "rejected", "disconnected"}
 ALLOWED_TRANSITIONS = {
     "created": {"ringing", "connecting", "declined", "missed", "canceled", "failed"},
     "ringing": {"accepted", "connecting", "declined", "missed", "canceled", "failed"},
@@ -933,6 +933,51 @@ def _mark_missed_stale_calls_cur(cur: Any, timeout_seconds: int = 45) -> int:
     return updated
 
 
+def _expire_stale_active_calls_cur(cur: Any) -> int:
+    """End non-ringing sessions that can no longer prove current call activity."""
+    timeouts = {
+        "created": int(os.getenv("PULSESOC_CALL_CREATED_STALE_SECONDS", "60") or 60),
+        "accepted": int(os.getenv("PULSESOC_CALL_CONNECTING_STALE_SECONDS", "120") or 120),
+        "connecting": int(os.getenv("PULSESOC_CALL_CONNECTING_STALE_SECONDS", "120") or 120),
+        "reconnecting": int(os.getenv("PULSESOC_CALL_RECONNECTING_STALE_SECONDS", "180") or 180),
+        "connected": int(os.getenv("PULSESOC_CALL_CONNECTED_STALE_SECONDS", "21600") or 21600),
+        "active": int(os.getenv("PULSESOC_CALL_CONNECTED_STALE_SECONDS", "21600") or 21600),
+    }
+    placeholders = ",".join(["?"] * len(timeouts))
+    cur.execute(
+        f"SELECT * FROM communication_calls WHERE status IN ({placeholders}) ORDER BY id ASC",
+        tuple(timeouts),
+    )
+    now_ts = time.time()
+    now = _now()
+    updated = 0
+    for row in cur.fetchall():
+        call = dict(row)
+        status = str(call.get("status") or "created").lower()
+        timestamp = call.get("updated_at") or call.get("answered_at") or call.get("started_at") or call.get("created_at")
+        try:
+            activity_ts = datetime.fromisoformat(str(timestamp or "").replace("Z", "+00:00")).timestamp()
+        except Exception:
+            activity_ts = 0
+        if activity_ts and now_ts - activity_ts <= max(30, int(timeouts.get(status) or 120)):
+            continue
+        _transition(cur, call, "expired", 0, f"stale_{status}_timeout")
+        cur.execute(
+            """
+            UPDATE communication_call_participants
+            SET status=CASE WHEN status IN ('joined','ringing') THEN 'left' ELSE status END,
+                left_at=CASE WHEN status IN ('joined','ringing') THEN ? ELSE left_at END,
+                updated_at=?
+            WHERE call_id=?
+            """,
+            (now, now, int(call["id"])),
+        )
+        refreshed = _get_call(cur, call.get("public_id") or call.get("id") or "")
+        _emit_call_sync_event(cur, refreshed, "call_expired", 0, status="expired", reason=f"stale_{status}_timeout")
+        updated += 1
+    return updated
+
+
 def _publish_call_realtime(
     cur: Any,
     call: dict[str, Any],
@@ -1327,8 +1372,9 @@ def end_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | None =
 def call_status(user_id: int, call_ref: str | int) -> dict[str, Any]:
     conn, cur = _open_db()
     try:
-        _mark_missed_stale_calls_cur(cur)
-        conn.commit()
+        changed = _mark_missed_stale_calls_cur(cur) + _expire_stale_active_calls_cur(cur)
+        if changed:
+            conn.commit()
         call = _get_call(cur, call_ref)
         if not call:
             return _err("Call not found.", 404, "missing_call")
@@ -1343,7 +1389,8 @@ def active_calls(user_id: int) -> dict[str, Any]:
     conn, cur = _open_db()
     try:
         missed = _mark_missed_stale_calls_cur(cur)
-        if missed:
+        expired = _expire_stale_active_calls_cur(cur)
+        if missed or expired:
             conn.commit()
         placeholders = ",".join(["?"] * len(ACTIVE_STATUSES))
         cur.execute(
@@ -1351,12 +1398,14 @@ def active_calls(user_id: int) -> dict[str, Any]:
             SELECT c.*
             FROM communication_calls c
             JOIN communication_call_participants p ON p.call_id=c.id
-            WHERE p.user_id=? AND c.status IN ({placeholders})
+            WHERE p.user_id=?
+              AND p.status IN ('joined','ringing')
+              AND c.status IN ({placeholders})
             ORDER BY c.id DESC
             """,
             (int(user_id), *sorted(ACTIVE_STATUSES)),
         )
-        return _ok({"calls": [_serialize_call(cur, dict(row), int(user_id)) for row in cur.fetchall()], "missed_marked": missed})
+        return _ok({"calls": [_serialize_call(cur, dict(row), int(user_id)) for row in cur.fetchall()], "missed_marked": missed, "expired_marked": expired})
     finally:
         conn.close()
 

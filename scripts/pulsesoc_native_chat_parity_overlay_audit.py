@@ -29,7 +29,8 @@ def main() -> int:
     require("callBubbleMain" not in incoming, "global floating active-call Pressable must not mount", failures)
     require("callBubbleEnd" not in incoming, "global floating active-call End button must not mount", failures)
     require("showFloatingCall" not in incoming, "route-specific floating call visibility policy should be removed", failures)
-    require("setFloatingCall(connected || null)" in incoming, "active call state polling should remain preserved", failures)
+    require("floatingCall" not in incoming, "cached/global active call state should be removed with the banner", failures)
+    require("isIncomingRingingCall" in incoming, "global layer should be limited to validated incoming ringing calls", failures)
     require('navigationRef.navigate("Call"' in incoming, "dedicated Call route should remain canonical", failures)
 
     require("showInitialLoading" in chat, "chat must expose initial loading state", failures)
@@ -41,11 +42,11 @@ def main() -> int:
     require("Realtime reconnecting. Message history remains visible." in chat, "realtime reconnect must not erase message history", failures)
 
     for needle in [
-        "/api/pulse/messages/${conversationId}/messages",
-        "/api/pulse/messages/${conversationId}/send",
-        "/api/pulse/messages/${conversationId}/sync",
-        "/api/pulse/messages/${conversationId}/seen",
-        "/api/pulse/messages/media/upload",
+        'const MESSENGER_API = "/api/pulse/communications/v2"',
+        "`${MESSENGER_API}/conversations/${conversationId}/messages`",
+        '"/api/messages/media/init"',
+        '"/api/messages/media/upload"',
+        '"/api/messages/media/complete"',
     ]:
       require(needle in messenger, f"native messenger API must preserve canonical route `{needle}`", failures)
 

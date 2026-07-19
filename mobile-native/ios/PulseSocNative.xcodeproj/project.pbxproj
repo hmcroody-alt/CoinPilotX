@@ -456,6 +456,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 0FD7B5B89B9D6C773598B9D4 /* Pods-PulseSocNative.debug.xcconfig */;
 			buildSettings = {
+				PULSESOC_DISPLAY_NAME = "PulseSoc Native Dev";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = PulseSocNative/PulseSocNative.entitlements;
@@ -495,6 +496,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = EAC5A819D3DC67F7FBC2249A /* Pods-PulseSocNative.release.xcconfig */;
 			buildSettings = {
+				PULSESOC_DISPLAY_NAME = "PulseSoc Native";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = PulseSocNative/PulseSocNative.entitlements;

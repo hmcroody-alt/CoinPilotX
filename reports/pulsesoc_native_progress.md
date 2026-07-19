@@ -1,6 +1,19 @@
 # PulseSoc Native Migration Progress
 
-Date: 2026-07-12
+Date: 2026-07-18
+
+## Latest Mission Status: Native Call-State P0 and Compact Messenger Composer
+
+- Traced the phantom `ACTIVE PULSESOC CALL — Vilson` banner through the globally mounted `IncomingCallLayer`, `/api/calls/active`, canonical participant serialization, and stale non-terminal backend rows.
+- Removed the active-call mini-controller branch entirely while retaining full-screen incoming ringing and the dedicated Call route.
+- Added server-authoritative stale-call expiry and participant-status validation; isolated behavior QA proves stale connected calls become terminal and cannot reappear as active.
+- Corrected native call creation to the production Communications V2 voice/video start routes and replaced the global upload-specific 404 misclassification.
+- Compacted the Messenger header, Call screen, and `PULSE LINK` composer; multiline input is bounded and the software keyboard no longer leaves a dead panel gap.
+- TypeScript, Expo Doctor 17/17, call audits, stale-state behavior audit, Debug simulator runtime, and Release simulator build passed.
+- Built, signed, installed, and launched the production-API Release artifact on the USB-connected iPhone 16 Pro as `PulseSoc Native Dev` / `com.pulsesoc.nativeapp.dev`. The production `com.pulsesoc.app` identity was never targeted.
+- Evidence: `reports/pulsesoc_native_call_p0_root_cause_2026-07-18.md` and `reports/screenshots/native-call-p0-2026-07-18/`.
+
+Remaining release gate: real two-account audio/video calls, Bluetooth/headset routing, background recovery, native-to-WebView interoperability, and measured LiveKit quality remain unverified. Calls are not approved for internal beta until those physical tests pass.
 
 ## Latest Mission Status: Native Auth Immediate Logout Fix
 

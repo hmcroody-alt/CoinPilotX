@@ -19,7 +19,6 @@ import {
   declineCall,
   endCall,
   getCallStatus,
-  loadCachedCallStatus,
   markCallConnected,
   markRingSeen,
   openCallWebFallback,
@@ -38,7 +37,7 @@ import { colors } from "../theme/colors";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 
 const STATUS_REFRESH_MS = 4200;
-const TERMINAL_CALL_STATES = new Set(["ended", "declined", "missed", "failed", "busy", "cancelled"]);
+const TERMINAL_CALL_STATES = new Set(["ended", "declined", "missed", "failed", "busy", "canceled", "cancelled", "expired", "rejected", "disconnected"]);
 
 type NativeVideoViewProps = {
   videoTrack?: any;
@@ -73,9 +72,9 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const callType: PulseCallType = call?.call_type === "video" ? "video" : requestedType;
   const incoming = params.direction === "incoming";
   const terminal = TERMINAL_CALL_STATES.has(String(call?.status || ""));
-  const connected = room.connected || ["connected", "active"].includes(String(call?.status || ""));
+  const connected = room.connected;
   const caller = useMemo(() => callParticipant(call, incoming), [call, incoming]);
-  const title = params.title || caller.display_name || caller.username || (callType === "video" ? "PulseSoc Video" : "PulseSoc Voice");
+  const title = caller.display_name || caller.username || params.title || "Connecting participant";
 
   useEffect(() => {
     pausePulseRadio().catch(() => undefined);
@@ -119,7 +118,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
       }).catch(() => undefined);
     } catch (joinError) {
       joinRequested.current = false;
-      setError(joinError instanceof Error ? joinError.message : "Call media could not connect.");
+      setError(friendlyCallError(joinError, "connect"));
     }
   }, [room.connect, room.connected, room.connecting]);
 
@@ -133,7 +132,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setCallId(next.call_id);
       await connectProvider(next, requestedType);
     } catch (startError) {
-      setError(startError instanceof Error ? startError.message : "Call could not start.");
+      setError(friendlyCallError(startError, "start"));
     } finally {
       setLoading(false);
       setActionBusy("");
@@ -149,14 +148,11 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   useEffect(() => {
     let mounted = true;
     if (!callId) return undefined;
-    loadCachedCallStatus(callId).then((cached) => {
-      if (mounted && cached) setCall(cached);
-    });
     markRingSeen(callId).catch(() => undefined);
     refresh().catch((loadError) => {
       if (mounted) {
         setLoading(false);
-        setError(loadError instanceof Error ? loadError.message : "Call state could not load.");
+        setError(friendlyCallError(loadError, "load"));
       }
     });
     return () => { mounted = false; };
@@ -227,7 +223,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setCall(next);
       await connectProvider(next, next.call_type === "video" ? "video" : requestedType);
     } catch (answerError) {
-      setError(answerError instanceof Error ? answerError.message : "Call could not be answered.");
+      setError(friendlyCallError(answerError, "answer"));
     } finally {
       setActionBusy("");
     }
@@ -241,7 +237,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
       await room.disconnect("declined");
       navigation.goBack();
     } catch (declineError) {
-      setError(declineError instanceof Error ? declineError.message : "Call could not be declined.");
+      setError(friendlyCallError(declineError, "decline"));
     } finally {
       setActionBusy("");
     }
@@ -255,7 +251,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
       await room.disconnect("native_hangup");
       navigation.goBack();
     } catch (hangupError) {
-      setError(hangupError instanceof Error ? hangupError.message : "Call could not end.");
+      setError(friendlyCallError(hangupError, "end"));
     } finally {
       setActionBusy("");
     }
@@ -267,7 +263,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
       await action();
       if (callId) await sendCallControl(callId, backendAction, payload).catch(() => undefined);
     } catch (mediaError) {
-      setError(mediaError instanceof Error ? mediaError.message : "Media control failed.");
+      setError(friendlyCallError(mediaError, "media"));
     }
   }, [callId]);
 
@@ -349,7 +345,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
         <View style={[styles.controlDock, { paddingBottom: Math.max(insets.bottom + 16, 28) }]}>
           <View style={styles.qualityPill}>
             <Ionicons name="shield-checkmark-outline" size={15} color={colors.accent} />
-            <Text style={styles.qualityText}>{room.reconnecting ? "RECONNECTING" : `${room.connectionQuality.toUpperCase()} · ${Math.max(1, room.participantCount)} IN CALL`}</Text>
+            <Text style={styles.qualityText}>{room.reconnecting ? "RECONNECTING" : `${qualityLabel(room.connectionQuality, room.connected)} · ${Math.max(1, room.participantCount)} IN CALL`}</Text>
           </View>
           <View style={styles.controlRow}>
             <CallControl label={room.audioEnabled ? "Mute" : "Unmute"} icon={room.audioEnabled ? "mic" : "mic-off"} active={!room.audioEnabled} onPress={() => runMediaAction(() => room.setMicrophoneEnabled(!room.audioEnabled), room.audioEnabled ? "mute-audio" : "unmute-audio")} />
@@ -394,7 +390,7 @@ function CallControl({ label, icon, active, danger, busy, disabled, onLongPress,
 }
 
 function Avatar({ participant, large = false }: { participant: PulseCallParticipant; large?: boolean }) {
-  const name = participant.display_name || participant.username || "PulseSoc";
+  const name = participant.display_name || participant.username || "?";
   return (
     <View style={[styles.avatarShell, large && styles.avatarLarge]}>
       {participant.avatar_url ? <Image source={{ uri: participant.avatar_url }} style={styles.avatarImage} /> : <Text style={[styles.avatarInitials, large && styles.avatarInitialsLarge]}>{initialsFor(name)}</Text>}
@@ -425,6 +421,28 @@ function callStatusLabel(call: PulseCall | null, providerState: string, reconnec
   return status || "Preparing call";
 }
 
+function qualityLabel(quality: string, connected: boolean) {
+  const value = String(quality || "").toLowerCase();
+  if (["excellent", "good", "poor", "lost"].includes(value)) return value.toUpperCase();
+  return connected ? "SECURE LINK" : "CONNECTING";
+}
+
+function friendlyCallError(error: unknown, action: "start" | "load" | "connect" | "answer" | "decline" | "end" | "media") {
+  const raw = error instanceof Error ? error.message : "";
+  const text = raw.toLowerCase();
+  if (text.includes("microphone") || text.includes("audio permission")) return "Microphone access is required to place this call.";
+  if (text.includes("camera") || text.includes("video permission")) return "Camera access is required for video calls.";
+  if (text.includes("busy")) return "The other participant is unavailable.";
+  if (text.includes("network") || text.includes("unreachable") || text.includes("connection")) return "Couldn’t connect. Check your connection and try again.";
+  if (action === "start" || text.includes("upload endpoint") || text.includes("not found")) return "Unable to start the call. Please try again.";
+  if (action === "answer") return "The call could not be answered.";
+  if (action === "decline") return "The call could not be declined.";
+  if (action === "end") return "The call could not end cleanly. Please try again.";
+  if (action === "media") return "The call control could not be updated.";
+  if (action === "load") return "The call is no longer available.";
+  return "Couldn’t connect to the call.";
+}
+
 function formatDuration(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -438,16 +456,16 @@ const styles = StyleSheet.create({
   planet: { position: "absolute", width: 520, height: 520, borderRadius: 260, backgroundColor: "rgba(25,64,102,0.24)", right: -220, top: 160, borderWidth: 1, borderColor: "rgba(97,216,255,0.12)" },
   signalHalo: { position: "absolute", width: 280, height: 280, borderRadius: 140, borderWidth: 2, borderColor: colors.accent, shadowColor: colors.accent, shadowOpacity: 0.8, shadowRadius: 38 },
   topLayer: { ...StyleSheet.absoluteFillObject, justifyContent: "flex-start" },
-  topBar: { alignItems: "center", flexDirection: "row", gap: 12, paddingHorizontal: 18 },
-  circleButton: { width: 52, height: 52, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(4,12,25,0.78)", borderWidth: 1, borderColor: "rgba(97,216,255,0.25)" },
+  topBar: { alignItems: "center", flexDirection: "row", gap: 9, paddingHorizontal: 14 },
+  circleButton: { width: 46, height: 46, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(4,12,25,0.78)", borderWidth: 1, borderColor: "rgba(97,216,255,0.25)" },
   identity: { flex: 1, alignItems: "center", minWidth: 0 },
   kicker: { color: colors.accent, fontSize: 11, fontWeight: "900", letterSpacing: 2 },
-  title: { color: colors.text, fontSize: 22, fontWeight: "900", marginTop: 3, maxWidth: "100%" },
+  title: { color: colors.text, fontSize: 20, fontWeight: "900", marginTop: 2, maxWidth: "100%" },
   statusRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
   liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent },
   warningDot: { backgroundColor: "#ffbf55" },
   status: { color: "#aebbd0", fontSize: 13, fontWeight: "700" },
-  localPreviewShell: { position: "absolute", top: 112, right: 18, width: 112, height: 160, borderRadius: 24, overflow: "hidden", borderWidth: 2, borderColor: colors.accent, backgroundColor: "#091522", shadowColor: colors.accent, shadowOpacity: 0.35, shadowRadius: 18 },
+  localPreviewShell: { position: "absolute", top: 92, right: 14, width: 102, height: 144, borderRadius: 20, overflow: "hidden", borderWidth: 2, borderColor: colors.accent, backgroundColor: "#091522", shadowColor: colors.accent, shadowOpacity: 0.35, shadowRadius: 18 },
   localPreview: { width: "100%", height: "100%" },
   connectionBanner: { alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 9, backgroundColor: "rgba(7,24,37,0.92)", borderColor: "rgba(48,230,185,0.4)", borderWidth: 1, borderRadius: 18, marginTop: 20, maxWidth: "90%", paddingHorizontal: 14, paddingVertical: 10 },
   errorBanner: { borderColor: "rgba(255,83,125,0.48)" },
@@ -459,11 +477,11 @@ const styles = StyleSheet.create({
   doneButton: { marginTop: 12, minWidth: 150, borderRadius: 24, backgroundColor: colors.accent, alignItems: "center", paddingVertical: 14 },
   doneText: { color: "#03100d", fontWeight: "900", fontSize: 16 },
   incomingActions: { position: "absolute", bottom: 0, left: 0, right: 0, flexDirection: "row", justifyContent: "center", gap: 56, paddingHorizontal: 24, paddingTop: 24, backgroundColor: "rgba(2,7,14,0.75)" },
-  controlDock: { position: "absolute", bottom: 0, left: 0, right: 0, alignItems: "center", gap: 18, paddingTop: 18, paddingHorizontal: 16, backgroundColor: "rgba(2,7,14,0.88)", borderTopColor: "rgba(97,216,255,0.18)", borderTopWidth: 1 },
+  controlDock: { position: "absolute", bottom: 0, left: 0, right: 0, alignItems: "center", gap: 12, paddingTop: 12, paddingHorizontal: 14, backgroundColor: "rgba(2,7,14,0.88)", borderTopColor: "rgba(97,216,255,0.18)", borderTopWidth: 1 },
   qualityPill: { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "rgba(48,230,185,0.08)", borderWidth: 1, borderColor: "rgba(48,230,185,0.24)", borderRadius: 18, paddingHorizontal: 12, paddingVertical: 7 },
   qualityText: { color: "#aef4df", fontSize: 11, fontWeight: "900", letterSpacing: 1 },
   controlRow: { flexDirection: "row", justifyContent: "space-between", width: "100%", maxWidth: 430 },
-  control: { alignItems: "center", justifyContent: "center", gap: 7, width: 76, minHeight: 76, borderRadius: 28, backgroundColor: "rgba(17,29,45,0.94)", borderWidth: 1, borderColor: "rgba(97,216,255,0.2)" },
+  control: { alignItems: "center", justifyContent: "center", gap: 5, width: 68, minHeight: 68, borderRadius: 24, backgroundColor: "rgba(17,29,45,0.94)", borderWidth: 1, borderColor: "rgba(97,216,255,0.2)" },
   controlActive: { backgroundColor: colors.accent, borderColor: colors.accent, shadowColor: colors.accent, shadowOpacity: 0.4, shadowRadius: 14 },
   controlDanger: { borderColor: "rgba(255,83,125,0.55)", backgroundColor: "rgba(70,12,30,0.82)" },
   controlLabel: { color: colors.text, fontSize: 11, fontWeight: "800" },
@@ -474,7 +492,7 @@ const styles = StyleSheet.create({
   endIcon: { transform: [{ rotate: "135deg" }] },
   endText: { color: "#fff", fontWeight: "900", fontSize: 16 },
   avatarShell: { width: 96, height: 96, borderRadius: 48, alignItems: "center", justifyContent: "center", backgroundColor: "#122239", borderWidth: 2, borderColor: colors.accent, overflow: "visible" },
-  avatarLarge: { width: 196, height: 196, borderRadius: 98, borderWidth: 3, shadowColor: colors.accent, shadowOpacity: 0.55, shadowRadius: 30 },
+  avatarLarge: { width: 164, height: 164, borderRadius: 82, borderWidth: 3, shadowColor: colors.accent, shadowOpacity: 0.55, shadowRadius: 30 },
   avatarImage: { width: "100%", height: "100%", borderRadius: 999 },
   avatarInitials: { color: colors.text, fontWeight: "900", fontSize: 28 },
   avatarInitialsLarge: { fontSize: 54 },

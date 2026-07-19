@@ -4,7 +4,7 @@ import { PULSE_API_BASE_URL } from "../api/config";
 export function qaIncomingCallFromUrl(url: string | null, currentUserId?: number): PulseCall | null {
   if (!url || !isIncomingCallQaEnabled(url)) return null;
   const parsed = parseUrl(url);
-  if (!parsed) return null;
+  if (!parsed || !isDedicatedIncomingCallQaRoute(parsed)) return null;
   const incoming = truthy(parsed.searchParams.get("qa_incoming_call"));
   const active = truthy(parsed.searchParams.get("qa_active_call"));
   if (!incoming && !active) return null;
@@ -41,6 +41,11 @@ export function qaIncomingCallFromUrl(url: string | null, currentUserId?: number
       status
     }
   };
+}
+
+function isDedicatedIncomingCallQaRoute(parsed: URL) {
+  if (parsed.protocol === "pulsesoc:") return parsed.hostname === "qa" && parsed.pathname === "/incoming-call";
+  return isLocalUrl(parsed.toString()) && parsed.pathname === "/qa/incoming-call";
 }
 
 export function isIncomingCallQaEnabled(url: string) {

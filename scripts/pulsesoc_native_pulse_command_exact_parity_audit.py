@@ -186,18 +186,18 @@ def main() -> int:
         "borderBottomLeftRadius: 6",
         "fontSize: 15",
         "borderRadius: 999",
-        "minWidth: 48",
+        "minWidth: 46",
         "AsyncStorage.getItem(draftKey)",
         "AsyncStorage.setItem(draftKey, draft)",
         "AttachmentActionSheet",
-        'accessibilityLabel="Add attachment"',
+        'accessibilityLabel={uploading ? "Uploading attachment" : "Add attachment"}',
         ">Add attachment<",
         'EXPO_PUBLIC_PULSESOC_QA_CHAT_STATE',
         "drainMessengerQueue(conversationId)",
         "enqueueMessengerMessage(conversationId",
         'delivery_status: "queued"',
         'Keyboard.addListener("keyboardWillShow"',
-        "bottom: keyboardHeight",
+        "KeyboardAvoidingView",
         "const serverAccepted = message.id > 0 && Boolean(message.client_message_id)",
         'setStatusMessage("Messages reconnected.")',
         "cacheMessages(conversationId, queuedMessages)",
@@ -207,7 +207,7 @@ def main() -> int:
 
     messenger_api = read("mobile-native/src/api/messenger.ts")
     for needle in [
-        "pulsesoc.native.messenger.outbound_queue",
+        "pulsesoc.native.messenger.v2.outbound_queue",
         "export async function enqueueMessengerMessage",
         "export async function drainMessengerQueue",
         "client_message_id === clientId",
@@ -220,7 +220,8 @@ def main() -> int:
         failures.append("PulseAiScreen exposes internal LogiNexus branding")
 
     calls = read("mobile-native/src/screens/CallScreen.tsx")
-    assert_contains(calls, "Incoming, outgoing, and active PulseSoc calls will appear here.", "CallScreen production-facing empty state", failures)
+    for needle in ("Opening secure call", "Incoming call", "Preparing call", "Call {String(call?.status || \"ended\")}"):
+        assert_contains(calls, needle, "CallScreen production-facing state", failures)
     if "Active calls returned by `/api/" in calls:
         failures.append("CallScreen exposes an internal API path in user-facing copy")
 

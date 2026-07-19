@@ -43,14 +43,15 @@ def main() -> int:
         require(report, phrase, "Messenger progress report coverage")
 
     for route in (
-        "/api/pulse/messages/conversations",
-        "/api/pulse/messages/${conversationId}/messages",
-        "/api/pulse/messages/${conversationId}/send",
-        "/api/pulse/messages/${conversationId}/sync",
-        "/api/pulse/messages/${conversationId}/typing",
-        "/api/pulse/messages/${conversationId}/seen",
-        "/api/pulse/messages/search",
-        "/api/pulse/messages/media/upload",
+        'const MESSENGER_API = "/api/pulse/communications/v2"',
+        "`${MESSENGER_API}/conversations`",
+        "`${MESSENGER_API}/conversations/${conversationId}/messages",
+        "`${MESSENGER_API}/conversations/${conversationId}/typing`",
+        "`${MESSENGER_API}/conversations/${conversationId}/read`",
+        "`${MESSENGER_API}/search?q=${encoded}`",
+        '"/api/messages/media/init"',
+        '"/api/messages/media/upload"',
+        '"/api/messages/media/complete"',
     ):
         require(api, route, "reused Messenger API route")
 
@@ -75,7 +76,7 @@ def main() -> int:
     for token in (
         "FlatList",
         'Keyboard.addListener("keyboardWillShow"',
-        "keyboardHeight",
+        "KeyboardAvoidingView",
         "sendTyping",
         "markConversationSeen",
         "syncConversation",

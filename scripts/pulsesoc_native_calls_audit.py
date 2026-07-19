@@ -33,6 +33,9 @@ def main() -> int:
     app_nav = read("mobile-native/src/navigation/AppNavigator.tsx")
     linking = read("mobile-native/src/navigation/linking.ts")
     notification_routing = read("mobile-native/src/navigation/notificationRouting.ts")
+    backend_routes = read("pulse_communications_v2/routes.py")
+    backend_engine = read("services/pulsesoc_communications_engine.py")
+    error_handler = read("bot.py")
     report = read("reports/pulsesoc_native_calls_progress.md")
 
     for endpoint in [
@@ -43,7 +46,7 @@ def main() -> int:
         "/api/calls/${encodeURIComponent(callId)}/status",
         "/api/calls/${encodeURIComponent(callId)}/connected",
         "/api/conversations/${encodeURIComponent(String(conversationId))}/calls",
-        "/api/pulse/comm/v2/conversations/${encodeURIComponent(String(conversationId))}/",
+        "/api/pulse/communications/v2/conversations/${encodeURIComponent(String(conversationId))}/",
     ]:
         require(calls_api, endpoint, "call API endpoint wrapper")
 
@@ -95,9 +98,24 @@ def main() -> int:
 
     require(chat, 'navigation.navigate("Call"', "Chat call entry points")
     require(control_center, "onStartCall", "control-center call entry points")
-    require(incoming_layer, 'navigationRef.navigate("Call"', "incoming and minimized call restoration")
-    require(incoming_layer, "endCall", "minimized call end control")
-    require(incoming_layer, 'getCurrentRoute()?.name === "Call"', "duplicate call capsule suppression")
+    require(incoming_layer, 'navigationRef.navigate("Call"', "incoming call routing")
+    for forbidden in ["ACTIVE PULSESOC CALL", "floatingCall", "callBubbleMain", "callBubbleEnd", "endCall"]:
+        if forbidden in incoming_layer:
+            raise AssertionError(f"Global active-call banner residue remains: {forbidden}")
+    require(incoming_layer, "isIncomingRingingCall", "incoming-only global call validation")
+    require(calls_api, 'AsyncStorage.removeItem(ACTIVE_CALLS_CACHE_KEY)', "cached active-call proof removal")
+    if "/api/pulse/comm/v2/conversations/${encodeURIComponent(String(conversationId))}/" in calls_api:
+        raise AssertionError("Obsolete native conversation call route remains")
+    require(backend_routes, 'API_PREFIX = "/api/pulse/communications/v2"', "canonical conversation call prefix")
+    require(backend_engine, "_expire_stale_active_calls_cur", "server stale active-call cleanup")
+    require(backend_engine, "p.status IN ('joined','ringing')", "active-call participant validation")
+    require(backend_engine, '"expired"', "terminal expired call state")
+    if "Upload endpoint was not found." in error_handler:
+        raise AssertionError("Generic 404 handler still mislabels call route failures as uploads")
+    require(error_handler, '"call_route_not_found"', "call-specific safe 404 mapping")
+    require(chat, "KeyboardAvoidingView", "keyboard-aware compact composer")
+    if "keyboardHeight" in chat:
+        raise AssertionError("Manual keyboard-height composer offset remains")
     require(nav_types, "Call:", "Call route type")
     require(app_nav, 'name="Call"', "Call stack route")
     require(linking, 'path: "pulse/calls/:callId?"', "Call deep-link route")

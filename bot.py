@@ -11225,20 +11225,34 @@ def friendly_unhandled_exception(error):
             code = int(getattr(error, "code", 500) or 500)
             message = "Request failed."
             error_key = "http_error"
+            is_call_request = request.path.startswith(("/api/calls/", "/api/pulse/communications/v2/"))
+            is_upload_request = request.path.startswith(("/api/messages/media/", "/api/uploads/", "/api/media/"))
             if code == 401:
                 message = "Session expired. Please sign in and retry."
                 error_key = "session_expired"
             elif code == 403:
-                message = "Upload was blocked by site security. Please try again or contact support."
+                message = "You do not have permission to use this call." if is_call_request else "This request was blocked by site security."
                 error_key = "access_denied"
             elif code == 404:
-                message = "Upload endpoint was not found."
-                error_key = "not_found"
+                if is_call_request:
+                    message = "Unable to start the call. Please try again."
+                    error_key = "call_route_not_found"
+                else:
+                    message = "The requested PulseSoc service was not found."
+                    error_key = "not_found"
+            elif code == 405:
+                message = "This call action is not available." if is_call_request else "This request method is not supported."
+                error_key = "method_not_allowed"
             elif code == 413:
                 message = "File too large. Choose a smaller video or photo."
                 error_key = "file_too_large"
             elif code >= 500:
-                message = "Upload failed. Please retry or contact support with this trace ID."
+                if is_call_request:
+                    message = "PulseSoc could not prepare the call. Please retry with this trace ID."
+                elif is_upload_request:
+                    message = "Upload failed. Please retry or contact support with this trace ID."
+                else:
+                    message = "PulseSoc hit a temporary service issue. Please retry with this trace ID."
                 error_key = "server_error"
             logging.warning(
                 "API_HTTP_EXCEPTION trace_id=%s status=%s path=%s method=%s description=%s",

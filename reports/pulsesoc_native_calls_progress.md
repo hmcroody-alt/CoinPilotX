@@ -10,8 +10,8 @@ Native LiveKit Calls foundation was added as a parallel native client surface fo
 
 Existing PulseSoc backend/API behavior reused:
 
-- `POST /api/pulse/comm/v2/conversations/<conversation_ref>/voice/start`
-- `POST /api/pulse/comm/v2/conversations/<conversation_ref>/video/start`
+- `POST /api/pulse/communications/v2/conversations/<conversation_ref>/voice/start`
+- `POST /api/pulse/communications/v2/conversations/<conversation_ref>/video/start`
 - `POST /api/calls/start`
 - `POST /api/calls/<call_id>/accept`
 - `POST /api/calls/<call_id>/ring-seen`
@@ -69,7 +69,11 @@ Native components/services reused:
   - call state refresh,
   - safe web fallback.
 - Added voice/video buttons to native Chat and its Conversation Control Center without changing the production WebView Messenger.
-- Added a compact active-call restore capsule after minimization, suppressed while the dedicated Call screen is visible so the call header is never duplicated.
+- Removed the global active-call restore capsule entirely. Legitimate call controls live only on the dedicated Call screen; the global layer is incoming-ringing-only.
+- Added server-authoritative stale non-ringing call expiry and current-participant validation so locally cached metadata cannot prove an active call.
+- Corrected native conversation call creation to the production `/api/pulse/communications/v2` call routes and removed the misleading global upload-specific 404 copy.
+- Compacted the dedicated Call layout and keyboard-aware Messenger composer without manual keyboard-height offsets.
+- Added configuration-specific native display names so Debug/dev installs read `PulseSoc Native Dev` while Release remains `PulseSoc Native` unless a device-QA build explicitly overrides it.
 - Added native route and deep-link support for `/pulse/calls/<call_id>`.
 - Routed existing message notification links containing `call_id` into the native Call screen.
 
@@ -86,6 +90,9 @@ Verified on 2026-07-18:
 - Side-by-side physical installation as `com.pulsesoc.nativeapp.dev`
 - Physical launch with the production API base URL
 - Simulator incoming video-call route and full-screen call presentation
+- Simulator cold launch after a QA URL, proving no incoming/active call survives process restart without a canonical server call
+- Compact `PULSE LINK` composer with bounded multiline growth and no dead keyboard gap
+- Behavior-level stale-call cleanup using the real Communications engine against an isolated database
 
 Not yet claimed:
 

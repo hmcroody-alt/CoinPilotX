@@ -51,14 +51,14 @@ def main() -> int:
         require(call_screen, control, "CallScreen control")
 
     for state in [
-        "Call could not start.",
-        "Call could not be answered.",
+        "Unable to start the call",
+        "The call could not be answered.",
         "Reconnecting securely… media will resume automatically.",
     ]:
         require(call_screen, state, "CallScreen loading/error state")
 
     for endpoint in [
-        "/api/pulse/comm/v2/conversations/",
+        "/api/pulse/communications/v2/conversations/",
         "/api/calls/${encodeURIComponent(callId)}/accept",
         "/api/calls/${encodeURIComponent(callId)}/decline",
         "/api/calls/${encodeURIComponent(callId)}/end",
