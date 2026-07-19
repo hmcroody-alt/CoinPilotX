@@ -17,6 +17,8 @@ import {
   savePost,
   toggleFollowAuthor
 } from "../api/feed";
+import { profileTargetFromPost } from "../api/profile";
+import { profileNavigationParams } from "../api/profileTarget";
 import { listStatuses, loadCachedStatuses, PulseStatus, statusPosterUrl } from "../api/status";
 import { HomePulseComposer } from "../components/HomePulseComposer";
 import { LogiNexusBadge, LogiNexusEmptyState, LogiNexusPanel } from "../components/LogiNexus";
@@ -508,8 +510,8 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             onMute={handleMute}
             onFollow={handleFollow}
             onAuthorPress={(post) => {
-              const key = profileKeyForPost(post);
-              if (key) navigation.navigate("ProfileDetail", { profileKey: key, title: post.author?.display_name || "Profile" });
+              const params = profileNavigationParams(profileTargetFromPost(post), post.author?.display_name || "Profile");
+              if (params) navigation.navigate("ProfileDetail", params);
             }}
           />
         )}
@@ -1116,19 +1118,6 @@ function StatusPlaceholder({ message }: { message: string }) {
 function mergePosts(current: PulsePost[], incoming: PulsePost[]) {
   const seen = new Set(current.map((post) => post.id));
   return [...current, ...incoming.filter((post) => !seen.has(post.id))];
-}
-
-function profileKeyForPost(post: PulsePost) {
-  const key =
-    post.author?.public_player_id ||
-    post.author?.username ||
-    post.author_username ||
-    post.author?.user_id ||
-    post.author?.id ||
-    post.author?.display_name ||
-    post.author_name ||
-    "";
-  return String(key).trim();
 }
 
 const styles = StyleSheet.create({

@@ -49,6 +49,7 @@ import {
   trackReelView
 } from "../api/reels";
 import { PulseApiError } from "../api/pulseApi";
+import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
 import { ReelPlayerCard } from "../components/ReelPlayerCard";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
@@ -464,8 +465,9 @@ export function ReelsScreen({ route, navigation }: Props) {
               onReport={handleReport}
               onFollowCreator={handleFollowCreator}
               onAuthorPress={(reel) => {
-                const key = reel.author?.public_player_id || reel.author?.username || "";
-                if (key) navigation.navigate("ProfileDetail", { profileKey: key, title: reel.author?.display_name || "Profile" });
+                const target = profileTargetFromAuthor(reel.author as Record<string, unknown> | undefined, reel as unknown as Record<string, unknown>);
+                const params = profileNavigationParams(target, reel.author?.display_name || "Profile");
+                if (params) navigation.navigate("ProfileDetail", params);
               }}
               onOpenMusic={setMusicReel}
               onOpenMore={setMoreReel}

@@ -1,8 +1,17 @@
-import { LinkingOptions } from "@react-navigation/native";
+import { getStateFromPath, LinkingOptions } from "@react-navigation/native";
+import { profileNavigationParams, profileTargetFromUrl } from "../api/profileTarget";
 import { RootStackParamList } from "./types";
 
 export const linking: LinkingOptions<RootStackParamList> = {
   prefixes: ["pulsesoc://", "https://pulsesoc.com"],
+  getStateFromPath(path, options) {
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    const profileParams = profileNavigationParams(profileTargetFromUrl(normalizedPath), "Profile");
+    if (profileParams) {
+      return { routes: [{ name: "ProfileDetail", params: profileParams }] };
+    }
+    return getStateFromPath(path, options);
+  },
   config: {
     screens: {
       Tabs: {

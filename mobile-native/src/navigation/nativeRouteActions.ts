@@ -1,3 +1,4 @@
+import { profileNavigationParams, profileTargetFromUrl } from "../api/profileTarget";
 import { openDashboardRoute } from "./dashboardRouting";
 
 export type NativeRouteNavigation = {
@@ -5,6 +6,11 @@ export type NativeRouteNavigation = {
 };
 
 export function openNativeRoute(navigation: NativeRouteNavigation, routePath: string) {
+  const profileParams = profileNavigationParams(profileTargetFromUrl(routePath), "Profile");
+  if (profileParams) {
+    navigation.navigate("ProfileDetail", profileParams);
+    return;
+  }
   if (routePath === "/pulse") navigation.navigate("Tabs", { screen: "Home" });
   else if (routePath === "/pulse/dashboard") navigation.navigate("Tabs", { screen: "Dashboard" });
   else if (routePath === "/pulse/search") navigation.navigate("Tabs", { screen: "Search" });

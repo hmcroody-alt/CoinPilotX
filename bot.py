@@ -104,7 +104,7 @@ print("REDIS_URL present=", bool(os.environ.get("REDIS_URL")), flush=True)
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 from flask import Flask, request, render_template, send_from_directory, send_file, jsonify, Response, session, redirect, url_for, has_request_context, abort, g
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from werkzeug.routing import RequestRedirect
@@ -30226,10 +30226,12 @@ def api_pulse_search():
         (like, like, like, limit),
         lambda r: {
             "id": r.get("user_id"),
+            "user_id": r.get("user_id"),
+            "username": r.get("username") or "",
             "title": r.get("display_name") or r.get("username") or "PulseSoc creator",
             "description": (r.get("full_name") or r.get("username") or "Creator on PulseSoc")[:160],
             "type": "creator",
-            "url": f"/pulse/profile/{r.get('username') or r.get('user_id')}",
+            "url": pulse_profile_canonical_path(r.get("user_id"), cur),
             "avatar_url": r.get("avatar_url") or "",
             "meta": "Creator",
         },
@@ -30248,10 +30250,12 @@ def api_pulse_search():
             (like, like, limit),
             lambda r: {
                 "id": r.get("user_id"),
+                "user_id": r.get("user_id"),
+                "username": r.get("username") or "",
                 "title": r.get("display_name") or r.get("username") or "PulseSoc creator",
                 "description": r.get("username") or "Creator on PulseSoc",
                 "type": "creator",
-                "url": f"/pulse/profile/{r.get('username') or r.get('user_id')}",
+                "url": pulse_profile_canonical_path(r.get("user_id"), cur),
                 "meta": "Creator",
             },
         )
@@ -30260,10 +30264,14 @@ def api_pulse_search():
         results["creators"] = [
             {
                 "id": creator.get("user_id"),
+                "user_id": creator.get("user_id"),
+                "public_player_id": creator.get("public_player_id") or "",
+                "public_pulse_id": creator.get("public_pulse_id") or "",
+                "username": creator.get("username") or "",
                 "title": creator.get("display_name") or creator.get("username") or creator.get("public_pulse_id") or "PulseSoc creator",
                 "description": creator.get("public_pulse_id") or creator.get("username") or "Creator on PulseSoc",
                 "type": "creator",
-                "url": f"/pulse/profile/{creator.get('public_pulse_id') or creator.get('username') or creator.get('user_id')}",
+                "url": pulse_profile_canonical_path(creator.get("user_id"), cur),
                 "avatar_url": creator.get("avatar_url") or creator.get("avatar_thumbnail_url") or "",
                 "meta": "Creator",
             }
@@ -34553,6 +34561,7 @@ def pulse_search_users(cur, query, viewer_user_id=0, limit=12, allow_email=False
             "id": int(item.get("user_id") or 0),
             "user_id": int(item.get("user_id") or 0),
             "display_name": ident.get("name") or item.get("display_name") or item.get("full_name") or item.get("username") or "PulseSoc user",
+            "username": ident.get("username") or item.get("username") or "",
             "public_pulse_id": public_id,
             "public_player_id": public_id.lstrip("@"),
             "avatar_url": ident.get("avatar_url") or item.get("avatar_url") or "",
@@ -34581,6 +34590,57 @@ def pulse_user_id_from_public(cur, public_player_id):
             "SELECT user_id FROM users WHERE lower(username)=lower(?) OR lower(display_name)=lower(?) OR lower(full_name)=lower(?) LIMIT 1",
             (lookup, lookup, lookup),
         )
+        row = cur.fetchone()
+        if row:
+            return int(dict(row).get("user_id") or 0)
+    except Exception:
+        pass
+    lower_lookup = lookup.lower()
+    if lower_lookup.isdigit() or (lower_lookup.startswith("-") and lower_lookup[1:].isdigit()):
+        try:
+            cur.execute("SELECT user_id FROM users WHERE user_id=? LIMIT 1", (int(lower_lookup),))
+            row = cur.fetchone()
+            if row:
+                return int(dict(row).get("user_id") or 0)
+        except Exception:
+            pass
+    if lower_lookup.startswith(("pilot-", "pulse-")):
+        try:
+            suffix = lower_lookup.rsplit("-", 1)[-1]
+            cur.execute("SELECT user_id FROM users WHERE CAST(ABS(user_id) AS TEXT) LIKE ? ORDER BY user_id DESC LIMIT 1", (f"%{suffix}",))
+            row = cur.fetchone()
+            if row:
+                return int(dict(row).get("user_id") or 0)
+        except Exception:
+            return None
+    return None
+
+
+def pulse_user_id_from_profile_key(cur, profile_key):
+    profile_key = str(profile_key or "").strip()
+    if not profile_key:
+        return None
+    lookup = profile_key[1:] if profile_key.startswith("@") else profile_key
+    for prefix in ("/pulse/@", "/pulse/u/", "/pulse/id/", "/pulse/profile/"):
+        if lookup.startswith(prefix):
+            lookup = lookup[len(prefix):].split("?", 1)[0].split("#", 1)[0]
+            break
+    try:
+        lookup = unquote(lookup)
+    except Exception:
+        pass
+    lookup = lookup.strip().lstrip("@")
+    if not lookup or any(ch.isspace() for ch in lookup):
+        return None
+    try:
+        cur.execute("SELECT user_id FROM arena_profiles WHERE lower(public_player_id)=lower(?) LIMIT 1", (lookup,))
+        row = cur.fetchone()
+        if row:
+            return int(dict(row).get("user_id") or 0)
+    except Exception:
+        pass
+    try:
+        cur.execute("SELECT user_id FROM users WHERE lower(username)=lower(?) LIMIT 1", (lookup,))
         row = cur.fetchone()
         if row:
             return int(dict(row).get("user_id") or 0)
@@ -84555,14 +84615,99 @@ def api_pulse_profile_update():
     })
 
 
+def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
+    target_user_id = int(target_user_id or 0)
+    cur.execute("SELECT * FROM users WHERE user_id=? LIMIT 1", (target_user_id,))
+    account = dict(cur.fetchone() or {})
+    if not account:
+        return None
+    ident = pulse_identity_for_user(cur, target_user_id)
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_posts WHERE user_id=? AND deleted_at IS NULL", (target_user_id,))
+    post_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_posts WHERE user_id=? AND deleted_at IS NULL AND COALESCE(media_ids_json,'') NOT IN ('', '[]')", (target_user_id,))
+    media_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_follows WHERE followed_user_id=?", (target_user_id,))
+    follower_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_follows WHERE follower_user_id=?", (target_user_id,))
+    following_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("SELECT 1 FROM pulse_follows WHERE follower_user_id=? AND followed_user_id=? LIMIT 1", (int(viewer_user_id or 0), target_user_id))
+    viewer_follows = bool(cur.fetchone())
+    cur.execute("SELECT * FROM pulse_profile_themes WHERE user_id=? AND active=1 ORDER BY updated_at DESC LIMIT 1", (target_user_id,))
+    theme = dict(cur.fetchone() or {})
+    modules = []
+    try:
+        modules = json.loads(theme.get("modules_json") or "[]")
+    except Exception:
+        modules = []
+    theme["modules"] = modules if isinstance(modules, list) else []
+    payload = pulse_mobile_user_payload(account)
+    payload.update({
+        "display_name": ident.get("name") or ident.get("display_name") or payload.get("display_name"),
+        "username": ident.get("username") or payload.get("username"),
+        "public_player_id": ident.get("public_player_id") or payload.get("public_player_id"),
+        "avatar_url": ident.get("avatar_url") or payload.get("avatar_url"),
+        "cover_url": ident.get("banner_url") or payload.get("cover_url"),
+        "banner_url": ident.get("banner_url") or payload.get("banner_url"),
+        "bio": ident.get("bio") or account.get("bio") or "",
+        "badges": ident.get("badges") or [],
+        "verified_badge": bool(ident.get("premium_verified") or "verified" in (ident.get("badge_keys") or [])),
+        "premium_status": account.get("premium_status") or ("active" if ident.get("premium_mark") else ""),
+        "profile_visibility": account.get("profile_visibility") or "public",
+        "account_status": account.get("account_status") or account.get("status") or "active",
+        "profile_state": "available",
+        "canonical_profile_key": ident.get("public_player_id") or ident.get("username") or str(target_user_id),
+        "social_links": account.get("social_links") or account.get("social_links_json") or "",
+        "expertise_tags": account.get("expertise_tags") or account.get("expertise_tags_json") or "",
+        "post_count": post_count,
+        "media_count": media_count,
+        "follower_count": follower_count,
+        "following_count": following_count,
+        "viewer_follows": viewer_follows,
+        "is_self": target_user_id == int(viewer_user_id or 0),
+        "theme": theme or {"theme_key": "deep_space", "accent_color": "#32e6b3", "layout_key": "classic", "motion_level": "balanced", "modules": []},
+    })
+    return payload
+
+
+@webhook_app.route("/api/pulse/profile/<path:profile_key>", methods=["GET"])
+def api_pulse_public_profile(profile_key):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    target_user_id = pulse_user_id_from_profile_key(cur, profile_key)
+    if not target_user_id:
+        conn.close()
+        return api_error("Profile not found.", 404)
+    cur.execute("SELECT user_id, COALESCE(account_status, 'active') AS account_status, COALESCE(profile_visibility, 'public') AS profile_visibility FROM users WHERE user_id=? LIMIT 1", (target_user_id,))
+    account_state = dict(cur.fetchone() or {})
+    normalized_status = str(account_state.get("account_status") or "active").lower()
+    if normalized_status in {"deleted", "deactivated", "disabled", "closed"}:
+        conn.close()
+        return api_error("This PulseSoc account is no longer available.", 410)
+    if normalized_status in {"suspended", "restricted", "banned"}:
+        conn.close()
+        return api_error("This PulseSoc profile is restricted.", 403)
+    if str(account_state.get("profile_visibility") or "public").lower() == "private" and int(target_user_id) != int(user["user_id"]):
+        conn.close()
+        return api_error("This PulseSoc profile is private.", 403)
+    payload = pulse_native_profile_payload(cur, target_user_id, user["user_id"])
+    conn.close()
+    if not payload:
+        return api_error("Profile not found.", 404)
+    return jsonify({"ok": True, "profile": payload})
+
+
 @webhook_app.route("/api/pulse/profile/me", methods=["GET"])
 def api_pulse_profile_me():
     init_db()
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    fresh = load_account_by_id(user["user_id"]) or user
-    payload = pulse_mobile_user_payload(fresh)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    payload = pulse_native_profile_payload(cur, user["user_id"], user["user_id"])
+    conn.close()
     return jsonify({"ok": True, "items": [payload], "user": payload})
 
 

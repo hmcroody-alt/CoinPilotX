@@ -31,6 +31,7 @@ import {
   updateStatus as updateStatusOnServer
 } from "../api/status";
 import { mutePostAuthor } from "../api/feed";
+import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
 import { blockPulseUser, reportPulseTarget } from "../api/support";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { StatusCreator } from "../components/StatusCreator";
@@ -245,8 +246,9 @@ export function StatusScreen({ route, navigation }: Props) {
             onShare={handleShare}
             onMore={(status) => setManageStatus(status)}
             onAuthorPress={(status) => {
-              const key = status.author?.public_player_id || status.author?.username || "";
-              if (key) navigation.navigate("ProfileDetail", { profileKey: key, title: status.author?.display_name || "Profile" });
+              const target = profileTargetFromAuthor(status.author as Record<string, unknown> | undefined, status as unknown as Record<string, unknown>);
+              const params = profileNavigationParams(target, status.author?.display_name || status.author_name || "Profile");
+              if (params) navigation.navigate("ProfileDetail", params);
             }}
             onViewed={handleViewed}
           />

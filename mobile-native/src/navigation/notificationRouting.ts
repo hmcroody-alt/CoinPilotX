@@ -2,6 +2,7 @@ import { Linking } from "react-native";
 import * as Notifications from "expo-notifications";
 import { createNavigationContainerRef } from "@react-navigation/native";
 import { PULSE_API_BASE_URL } from "../api/config";
+import { profileNavigationParams, profileTargetFromUrl } from "../api/profileTarget";
 import { dashboardModuleParamsForRoute } from "./dashboardRouting";
 import { RootStackParamList } from "./types";
 
@@ -209,9 +210,10 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
-  const profileMatch = normalized.match(/^\/pulse\/profile\/([^/?#]+)/);
-  if (profileMatch?.[1] && navigationRef.isReady()) {
-    navigationRef.navigate("ProfileDetail", { profileKey: decodeURIComponent(profileMatch[1]), title: "Profile" });
+  const profileTarget = profileTargetFromUrl(normalized);
+  const profileParams = profileNavigationParams(profileTarget, "Profile");
+  if (profileParams && navigationRef.isReady()) {
+    navigationRef.navigate("ProfileDetail", profileParams);
     return { handled: true, target: normalized };
   }
 

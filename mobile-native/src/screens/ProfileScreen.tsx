@@ -2,10 +2,13 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useState } from "react";
 import { FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { listFeed, PulsePost } from "../api/feed";
-import { getMyProfile, listPublicProfilePosts, loadCachedProfile, normalizeProfile, profileWebUrl, PulseProfile } from "../api/profile";
+import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, profileWebUrl, PulseProfile, toggleProfileFollow } from "../api/profile";
+import { MessengerUserSearchResult, openDirectConversation } from "../api/messenger";
+import { NativeProfileTarget, profileNavigationParams, profileTargetFromAuthor, resolveProfileTarget } from "../api/profileTarget";
 import { PostCard } from "../components/PostCard";
 import { ProfileHeader } from "../components/ProfileHeader";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
+import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 
@@ -13,20 +16,29 @@ type Props = Partial<NativeStackScreenProps<RootStackParamList, "ProfileDetail">
 type TabKey = "posts" | "media" | "about";
 
 export function ProfileScreen({ route, navigation }: Props) {
-  const profileKey = route?.params?.profileKey || "";
-  const owner = !profileKey;
+  const bottomNavScroll = useBottomNavScrollVisibility();
+  const profileTarget = useMemo<NativeProfileTarget | null>(() => resolveProfileTarget(route?.params || null), [
+    route?.params?.profileKey,
+    route?.params?.userId,
+    route?.params?.publicPlayerId,
+    route?.params?.username
+  ]);
+  const profileKey = profileTarget?.profileKey || "";
+  const owner = !profileTarget;
   const [profile, setProfile] = useState<PulseProfile | null>(null);
   const [posts, setPosts] = useState<PulsePost[]>([]);
   const [tab, setTab] = useState<TabKey>("posts");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [offline, setOffline] = useState(false);
-  const [error, setError] = useState("");
+  const [errorState, setErrorState] = useState<ReturnType<typeof profileErrorState> | null>(null);
+  const [actionMessage, setActionMessage] = useState("");
+  const [followBusy, setFollowBusy] = useState(false);
 
   const visiblePosts = useMemo(() => (tab === "media" ? posts.filter((post) => post.media?.length) : posts), [posts, tab]);
 
   async function load(mode: "initial" | "refresh" = "initial") {
-    setError("");
+    setErrorState(null);
     setOffline(false);
     if (mode === "initial") setLoading(true);
     if (mode === "refresh") setRefreshing(true);
@@ -38,19 +50,21 @@ export function ProfileScreen({ route, navigation }: Props) {
         const feed = key ? await listFeed({ feed: "for_you", profile: key, limit: 20, offset: 0 }) : { posts: [] };
         setPosts(feed.posts || []);
       } else {
-        const feedPosts = await listPublicProfilePosts(profileKey);
+        const [publicProfile, feedPosts] = await Promise.all([getPublicProfile(profileTarget), listPublicProfilePosts(profileTarget)]);
         setPosts(feedPosts);
-        setProfile(profileFromPublicPosts(profileKey, feedPosts));
+        setProfile(publicProfile);
       }
     } catch (loadError) {
-      const cached = owner ? await loadCachedProfile("me") : null;
+      const mappedError = profileErrorState(loadError);
+      const cached = await loadCachedProfile(owner ? "me" : profileTarget || profileKey);
       if (cached) {
         setProfile(cached);
-        setOffline(true);
+        setOffline(Boolean(mappedError.offline || mappedError.retryable));
+        setErrorState(mappedError.retryable ? mappedError : null);
       } else if (!owner && posts.length) {
         setOffline(true);
       } else {
-        setError(loadError instanceof Error ? loadError.message : "Profile could not load.");
+        setErrorState(mappedError);
       }
     } finally {
       setLoading(false);
@@ -62,6 +76,42 @@ export function ProfileScreen({ route, navigation }: Props) {
     load("initial").catch(() => undefined);
   }, [profileKey]);
 
+  async function followProfile() {
+    if (!profile || owner || followBusy) return;
+    setFollowBusy(true);
+    setActionMessage("");
+    try {
+      const result = await toggleProfileFollow(profile);
+      const following = Boolean(result.following);
+      setProfile((current) => current ? { ...current, viewer_follows: following, follower_count: Math.max(0, Number(current.follower_count || 0) + (following ? 1 : -1)) } : current);
+      setActionMessage(following ? `Following ${profile.display_name}.` : `Unfollowed ${profile.display_name}.`);
+    } catch (followError) {
+      setActionMessage(followError instanceof Error ? followError.message : "Follow action failed.");
+    } finally {
+      setFollowBusy(false);
+    }
+  }
+
+  async function messageProfile() {
+    if (!profile || owner) return;
+    setActionMessage("Opening secure conversation…");
+    try {
+      const target: MessengerUserSearchResult = {
+        id: profile.user_id,
+        user_id: profile.user_id,
+        display_name: profile.display_name,
+        public_player_id: profile.public_player_id || profile.username || profileTarget?.publicPlayerId || profileKey,
+        avatar_url: profile.avatar_url || "",
+        premium: Boolean(profile.premium_status),
+        premium_mark: profile.verified_badge ? "verified" : ""
+      };
+      const result = await openDirectConversation(target);
+      navigation?.navigate("Chat", { conversationId: result.conversation_id, title: profile.display_name });
+    } catch (messageError) {
+      setActionMessage(messageError instanceof Error ? messageError.message : "Conversation could not open.");
+    }
+  }
+
   if (loading && !profile) {
     return (
       <LogiNexusScreenShell>
@@ -71,12 +121,18 @@ export function ProfileScreen({ route, navigation }: Props) {
   }
 
   if (!profile) {
+    const state = errorState || profileErrorState(new Error("Profile could not load."));
     return (
       <LogiNexusScreenShell>
-        <LogiNexusStatePanel state="error" title="Profile unavailable" body={error || "PulseSoc could not load this profile."}>
-        {profileKey ? (
-          <Pressable style={styles.webButton} onPress={() => Linking.openURL(profileWebUrl(profileKey)).catch(() => undefined)}>
-            <Text style={styles.webButtonText}>Open Web Profile</Text>
+        <LogiNexusStatePanel state="error" title={state.title} body={state.body}>
+        {state.retryable ? (
+          <Pressable style={styles.retryButton} onPress={() => load("refresh").catch(() => undefined)}>
+            <Text style={styles.retryButtonText}>Retry native profile</Text>
+          </Pressable>
+        ) : null}
+        {profileTarget && state.canOpenWebFallback ? (
+          <Pressable style={styles.webButton} onPress={() => Linking.openURL(profileWebUrl(profileTarget)).catch(() => undefined)}>
+            <Text style={styles.webButtonText}>Open web fallback</Text>
           </Pressable>
         ) : null}
         </LogiNexusStatePanel>
@@ -94,16 +150,19 @@ export function ProfileScreen({ route, navigation }: Props) {
       ListHeaderComponent={
         <View style={styles.header}>
           {offline ? <Text style={styles.offline}>Showing saved profile</Text> : null}
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {errorState ? <Text style={styles.error}>{errorState.body}</Text> : null}
+          {actionMessage ? <Text accessibilityLiveRegion="polite" style={styles.actionMessage}>{actionMessage}</Text> : null}
           <ProfileHeader
             profile={profile}
             publicKey={profileKey}
             owner={owner}
+            followBusy={followBusy}
             onEdit={() => navigation?.navigate("ProfileEdit")}
-            onPremium={() => navigation?.navigate("Premium")}
+            onCustomize={() => navigation?.navigate("ProfileEdit")}
             onGrowth={() => navigation?.navigate("GrowthCenter", { contentType: "profile", title: "Grow Profile" })}
             onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })}
-            onMessage={() => navigation?.navigate("NewChat", { initialQuery: profile.public_player_id || profile.username || profileKey, targetUserId: profile.user_id, title: `Message ${profile.display_name}` })}
+            onMessage={() => messageProfile().catch(() => undefined)}
+            onFollow={() => followProfile().catch(() => undefined)}
             onRefresh={() => load("refresh").catch(() => undefined)}
           />
           <View style={styles.tabs}>
@@ -111,7 +170,7 @@ export function ProfileScreen({ route, navigation }: Props) {
             <TabButton label="Media" value="media" active={tab} onPress={setTab} />
             <TabButton label="About" value="about" active={tab} onPress={setTab} />
           </View>
-          {tab === "about" ? <AboutPanel profile={profile} profileKey={profileKey} owner={owner} onVerification={() => navigation?.navigate("VerificationCenter", { title: "Verification Center" })} onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })} onSellerStore={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })} /> : null}
+          {tab === "about" ? <AboutPanel profile={profile} profileTarget={profileTarget} owner={owner} onVerification={() => navigation?.navigate("VerificationCenter", { title: "Verification Center" })} onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })} onSellerStore={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })} /> : null}
         </View>
       }
       ListEmptyComponent={tab === "about" ? null : <Text style={styles.empty}>{tab === "media" ? "No media posts loaded." : "No profile posts loaded."}</Text>}
@@ -120,11 +179,15 @@ export function ProfileScreen({ route, navigation }: Props) {
           post={item}
           onOpen={(post) => navigation?.navigate("PostDetail", { postId: post.id, title: "Post" })}
           onAuthorPress={(post) => {
-            const key = post.author?.public_player_id || post.author?.username || "";
-            if (key) navigation?.navigate("ProfileDetail", { profileKey: key, title: post.author?.display_name || "Profile" });
+            const target = profileTargetFromAuthor(post.author as Record<string, unknown> | undefined, post as unknown as Record<string, unknown>);
+            const params = profileNavigationParams(target, post.author?.display_name || "Profile");
+            if (params) navigation?.navigate("ProfileDetail", params);
           }}
         />
       )}
+      onScroll={bottomNavScroll.onScroll}
+      onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
+      scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
     />
   );
 }
@@ -137,7 +200,7 @@ function TabButton({ label, value, active, onPress }: { label: string; value: Ta
   );
 }
 
-function AboutPanel({ profile, profileKey, owner, onVerification, onSafety, onSellerStore }: { profile: PulseProfile; profileKey: string; owner: boolean; onVerification: () => void; onSafety: () => void; onSellerStore: () => void }) {
+function AboutPanel({ profile, profileTarget, owner, onVerification, onSafety, onSellerStore }: { profile: PulseProfile; profileTarget: NativeProfileTarget | null; owner: boolean; onVerification: () => void; onSafety: () => void; onSellerStore: () => void }) {
   return (
     <View style={styles.about}>
       <Text style={styles.aboutTitle}>About</Text>
@@ -160,30 +223,24 @@ function AboutPanel({ profile, profileKey, owner, onVerification, onSafety, onSe
       <Pressable style={styles.webLink} onPress={onSafety}>
         <Text style={styles.webLinkText}>Open Safety Hub</Text>
       </Pressable>
-      <Pressable style={styles.webLink} onPress={() => Linking.openURL(profileWebUrl(owner ? undefined : profileKey)).catch(() => undefined)}>
+      <Pressable style={styles.webLink} onPress={() => Linking.openURL(profileWebUrl(owner ? undefined : profileTarget || profile)).catch(() => undefined)}>
         <Text style={styles.webLinkText}>Open full PulseSoc profile</Text>
       </Pressable>
     </View>
   );
 }
 
-function profileFromPublicPosts(profileKey: string, posts: PulsePost[]) {
-  const first = posts[0];
-  const author = first?.author || {};
-  return normalizeProfile({
-    user_id: Number(author.user_id || author.id || 0),
-    display_name: author.display_name || author.name || profileKey,
-    username: author.username || author.handle || "",
-    public_player_id: author.public_player_id || profileKey,
-    avatar_url: author.avatar_url || "",
-    premium_status: author.premium || author.premium_verified ? "active" : "",
-    post_count: posts.length,
-    media_count: posts.filter((post) => post.media?.length).length,
-    bio: posts.length ? "" : "Open the full PulseSoc profile for details."
-  });
-}
-
 const styles = StyleSheet.create({
+  actionMessage: {
+    backgroundColor: colors.signalSoft,
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    color: colors.accentStrong,
+    fontSize: 13,
+    marginBottom: 10,
+    padding: 10
+  },
   about: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
@@ -251,6 +308,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: 10
   },
+  retryButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 8,
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 11
+  },
+  retryButtonText: {
+    color: colors.background,
+    fontWeight: "900"
+  },
   tab: {
     alignItems: "center",
     borderColor: colors.border,
@@ -278,14 +346,16 @@ const styles = StyleSheet.create({
     marginTop: 12
   },
   webButton: {
-    backgroundColor: colors.accent,
+    backgroundColor: "transparent",
+    borderColor: colors.border,
     borderRadius: 8,
+    borderWidth: 1,
     marginTop: 16,
     paddingHorizontal: 16,
     paddingVertical: 11
   },
   webButtonText: {
-    color: colors.background,
+    color: colors.accentStrong,
     fontWeight: "900"
   },
   webLink: {

@@ -34,6 +34,7 @@ import {
   reactToLive,
   sendLiveChat
 } from "../api/live";
+import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
@@ -189,8 +190,9 @@ export function LiveScreen({ route, navigation }: Props) {
   }
 
   function navigateToHostProfile(item: PulseLiveItem | null | undefined) {
-    const profileKey = String(item?.author?.username || item?.author?.public_player_id || item?.author?.user_id || "").trim();
-    if (profileKey) navigation?.navigate("ProfileDetail", { profileKey, title: item?.creator_name || "Profile" });
+    const target = profileTargetFromAuthor((item?.author || item?.creator) as Record<string, unknown> | undefined, item as unknown as Record<string, unknown>);
+    const params = profileNavigationParams(target, item?.creator_name || "Profile");
+    if (params) navigation?.navigate("ProfileDetail", params);
   }
 
   useEffect(() => {

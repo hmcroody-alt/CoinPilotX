@@ -23,6 +23,8 @@ import {
   repostPost,
   savePost
 } from "../api/feed";
+import { profileTargetFromPost } from "../api/profile";
+import { profileNavigationParams } from "../api/profileTarget";
 import { PostCard } from "../components/PostCard";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
@@ -179,8 +181,8 @@ export function PostDetailScreen({ route, navigation }: Props) {
               onPromote={(item) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: item.id, title: "Promote Post" })}
               onShare={(item) => Share.share({ message: pulsePostUrl(item.id) }).catch(() => undefined)}
               onAuthorPress={(item) => {
-                const key = item.author?.public_player_id || item.author?.username || "";
-                if (key) navigation.navigate("ProfileDetail", { profileKey: key, title: item.author?.display_name || "Profile" });
+                const params = profileNavigationParams(profileTargetFromPost(item), item.author?.display_name || "Profile");
+                if (params) navigation.navigate("ProfileDetail", params);
               }}
             />
             <View style={styles.commentComposer}>
