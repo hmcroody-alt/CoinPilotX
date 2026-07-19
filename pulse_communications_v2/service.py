@@ -2595,22 +2595,37 @@ def search_messages(user_id: int, query: str = "", filters: dict | None = None) 
     limit = max(1, min(int(filters.get("limit") or 25), 50))
     conn, cur = _open_db()
     try:
+        conversation_ref = filters.get("conversation_id") or filters.get("conversation_ref") or filters.get("thread_id") or ""
+        conversation_id = 0
+        if conversation_ref:
+            conversation, access = _conversation_access(cur, user_id, conversation_ref)
+            if access == "missing":
+                return _err("Conversation not found.", 404, "not_found")
+            if access != "ok":
+                return _err("You do not have access to this conversation.", 403, "forbidden")
+            conversation_id = int(conversation["id"])
+        conversation_clause = "AND m.conversation_id=?" if conversation_id else ""
+        params = [int(user_id), f"%{query}%"]
+        if conversation_id:
+            params.append(conversation_id)
+        params.append(limit)
         cur.execute(
-            """
+            f"""
             SELECT DISTINCT m.*
             FROM comm_v2_messages m
             JOIN comm_v2_conversations c ON c.id=m.conversation_id
             LEFT JOIN comm_v2_participants p ON p.conversation_id=c.id AND p.user_id=? AND p.membership_state='active' AND COALESCE(p.left_at,'')=''
             WHERE COALESCE(m.deleted_at,'')='' AND COALESCE(c.deleted_at,'')='' AND c.status='active'
               AND m.body LIKE ?
+              {conversation_clause}
               AND (p.id IS NOT NULL OR (c.conversation_type='room' AND c.privacy='public' AND c.is_discoverable=1))
             ORDER BY m.id DESC
             LIMIT ?
             """,
-            (int(user_id), f"%{query}%", limit),
+            params,
         )
         items = _message_payloads(cur, [_row(row) for row in cur.fetchall()], user_id)
-        return _ok({"messages": items, "items": items, "query": query})
+        return _ok({"messages": items, "items": items, "query": query, "conversation_id": conversation_id or ""})
     finally:
         conn.close()
 
@@ -3067,10 +3082,10 @@ def conversation_control_center(user_id: int, conversation_ref: int | str) -> di
                 "mute": True,
                 "report": True,
                 "block": payload.get("conversation_type") == "direct",
-                "voice_call": False,
-                "video_call": False,
+                "voice_call": True,
+                "video_call": True,
                 "effects": False,
-                "export_chat": False,
+                "export_chat": True,
                 "schedule_message": False,
                 "privacy_lock": False,
                 "disappearing_messages": False,

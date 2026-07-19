@@ -122,6 +122,107 @@ export type ConversationResponse = {
   sync_interval_ms?: number;
 };
 
+export type ConversationControlSettings = Record<string, Record<string, boolean | string | number>>;
+
+export type ConversationControlCapabilities = {
+  search?: boolean;
+  members?: boolean;
+  shared_media?: boolean;
+  message_stats?: boolean;
+  pin?: boolean;
+  archive?: boolean;
+  mark_unread?: boolean;
+  mute?: boolean;
+  report?: boolean;
+  block?: boolean;
+  voice_call?: boolean;
+  video_call?: boolean;
+  effects?: boolean;
+  export_chat?: boolean;
+  [key: string]: boolean | string | number | undefined;
+};
+
+export type ConversationControlMember = {
+  user_id?: number;
+  role?: string;
+  joined_at?: string;
+  last_seen_at?: string;
+  display_name?: string;
+  avatar_url?: string;
+  presence?: string;
+  active_now?: boolean;
+};
+
+export type ConversationControlStats = {
+  messages?: number;
+  media_files?: number;
+  photos?: number;
+  videos?: number;
+  voice?: number;
+  files?: number;
+  links?: number;
+  storage_used_bytes?: number;
+  unread?: number;
+  members?: number;
+  connection?: string;
+  security_label?: string;
+  activity_status?: string;
+  muted?: boolean;
+  pinned?: boolean;
+  role?: string;
+  [key: string]: boolean | string | number | undefined;
+};
+
+export type ConversationControlData = {
+  ok?: boolean;
+  conversation?: MessengerConversation & {
+    member_count?: number;
+    is_group?: boolean;
+    is_admin?: boolean;
+    viewer_role?: string;
+    members?: ConversationControlMember[];
+    stats?: ConversationControlStats;
+    settings?: ConversationControlSettings;
+    capabilities?: ConversationControlCapabilities;
+    participants_preview?: ConversationControlMember[];
+  };
+  members?: ConversationControlMember[];
+  stats?: ConversationControlStats;
+  settings?: ConversationControlSettings;
+  capabilities?: ConversationControlCapabilities;
+  message?: string;
+};
+
+export type ConversationControlMediaItem = {
+  id?: number;
+  message_id?: number;
+  media_type?: string;
+  mime_type?: string;
+  file_size_bytes?: number;
+  duration_seconds?: number;
+  url?: string;
+  thumbnail_url?: string;
+  created_at?: string;
+  sender_user_id?: number;
+  sender_display_name?: string;
+  body_preview?: string;
+};
+
+export type ConversationControlExport = {
+  conversation_id?: number;
+  generated_at?: string;
+  message_count?: number;
+  messages?: Array<{
+    id?: number;
+    sender_user_id?: number;
+    sender_display_name?: string;
+    message_type?: string;
+    body?: string;
+    created_at?: string;
+    edited_at?: string;
+  }>;
+};
+
 export type SendMessagePayload = {
   body?: string;
   message_type?: string;
@@ -323,6 +424,80 @@ export async function sendTyping(conversationId: number, typing: boolean) {
   });
 }
 
+export async function getConversationControlCenter(conversationId: number) {
+  const data = await pulseApi<ConversationControlData>(`${MESSENGER_API}/conversations/${conversationId}/control-center`);
+  return normalizeConversationControlData(data);
+}
+
+export async function updateConversationControlSetting(conversationId: number, section: string, key: string, value: boolean | string | number) {
+  const data = await pulseApi<ConversationControlData>(`${MESSENGER_API}/conversations/${conversationId}/control-center`, {
+    method: "PATCH",
+    body: JSON.stringify({ section, key, value })
+  });
+  return normalizeConversationControlData(data);
+}
+
+export async function listConversationMembers(conversationId: number) {
+  const data = await pulseApi<{ ok?: boolean; members?: ConversationControlMember[] }>(`${MESSENGER_API}/conversations/${conversationId}/members`);
+  return data.members || [];
+}
+
+export async function listConversationControlMedia(conversationId: number, kind = "all", limit = 60) {
+  const query = new URLSearchParams({ kind, limit: String(limit) });
+  return pulseApi<{ ok?: boolean; items?: ConversationControlMediaItem[]; count?: number; kind?: string }>(
+    `${MESSENGER_API}/conversations/${conversationId}/control-center/media?${query.toString()}`
+  );
+}
+
+export async function listConversationControlLinks(conversationId: number, limit = 80) {
+  return pulseApi<{ ok?: boolean; items?: Array<Record<string, unknown>>; count?: number }>(
+    `${MESSENGER_API}/conversations/${conversationId}/control-center/links?limit=${encodeURIComponent(String(limit))}`
+  );
+}
+
+export async function listConversationPinnedMessages(conversationId: number, limit = 50) {
+  return pulseApi<{ ok?: boolean; items?: MessengerMessage[]; count?: number }>(
+    `${MESSENGER_API}/conversations/${conversationId}/control-center/pins?limit=${encodeURIComponent(String(limit))}`
+  );
+}
+
+export async function exportConversationControlData(conversationId: number) {
+  return pulseApi<{ ok?: boolean; export?: ConversationControlExport; filename?: string; conversation?: MessengerConversation }>(
+    `${MESSENGER_API}/conversations/${conversationId}/control-center/export`
+  );
+}
+
+export async function runConversationControlAction(conversationId: number, action: string, body?: string) {
+  return pulseApi<{ ok?: boolean; message?: string; settings?: ConversationControlSettings; conversation_id?: number }>(
+    `${MESSENGER_API}/conversations/${conversationId}/control-center/action`,
+    {
+      method: "POST",
+      body: JSON.stringify(body ? { action, body } : { action })
+    }
+  );
+}
+
+export async function muteConversation(conversationId: number) {
+  return pulseApi<{ ok?: boolean; muted?: boolean; muted_until?: string; message?: string }>(`${MESSENGER_API}/conversations/${conversationId}/mute`, {
+    method: "POST",
+    body: "{}"
+  });
+}
+
+export async function archiveConversation(conversationId: number) {
+  return pulseApi<{ ok?: boolean; archived?: boolean; message?: string }>(`${MESSENGER_API}/conversations/${conversationId}/archive`, {
+    method: "POST",
+    body: "{}"
+  });
+}
+
+export async function markConversationUnread(conversationId: number) {
+  return pulseApi<{ ok?: boolean; unread_count?: number; message?: string }>(`${MESSENGER_API}/conversations/${conversationId}/unread`, {
+    method: "POST",
+    body: "{}"
+  });
+}
+
 export async function searchMessenger(query: string) {
   const encoded = encodeURIComponent(query);
   const [messageData, peopleData] = await Promise.all([
@@ -334,6 +509,16 @@ export async function searchMessenger(query: string) {
     messages: normalizeMessages(messageData.messages || messageData.items || [], 0),
     users: (peopleData.people || peopleData.items || []).map(normalizeMessengerUser).filter((item) => item.user_id > 0 && !item.is_self)
   };
+}
+
+export async function searchConversationMessages(conversationId: number, query: string) {
+  const clean = query.trim();
+  if (!clean) return [];
+  const encoded = encodeURIComponent(clean);
+  const data = await pulseApi<{ ok: boolean; messages?: MessengerMessage[]; items?: MessengerMessage[] }>(
+    `${MESSENGER_API}/search?q=${encoded}&conversation_id=${encodeURIComponent(String(conversationId))}&limit=50`
+  );
+  return normalizeMessages(data.messages || data.items || [], conversationId);
 }
 
 export async function searchMessengerUsers(query: string) {
@@ -391,6 +576,16 @@ export function subscribeConversationUpdates(listener: (conversation: MessengerC
   return () => {
     conversationListeners.delete(listener);
   };
+}
+
+function normalizeConversationControlData(data: ConversationControlData): ConversationControlData {
+  const rawConversation = data.conversation ? normalizeConversations([data.conversation])[0] : undefined;
+  const conversation = rawConversation ? { ...data.conversation, ...rawConversation } : data.conversation;
+  const stats = data.stats || conversation?.stats || {};
+  const settings = data.settings || conversation?.settings || {};
+  const capabilities = data.capabilities || conversation?.capabilities || {};
+  const members = data.members || conversation?.members || conversation?.participants_preview || [];
+  return { ...data, conversation, stats, settings, capabilities, members };
 }
 
 export async function updateCachedConversationPreview(conversationId: number, preview: string, timestamp = new Date().toISOString()) {

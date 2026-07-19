@@ -1,0 +1,285 @@
+{
+  "checks": [
+    {
+      "check": "native component exists",
+      "detail": "mobile-native/src/components/ConversationControlCenter.tsx",
+      "passed": true
+    },
+    {
+      "check": "native API exists",
+      "detail": "mobile-native/src/api/messenger.ts",
+      "passed": true
+    },
+    {
+      "check": "backend routes exist",
+      "detail": "pulse_communications_v2/routes.py",
+      "passed": true
+    },
+    {
+      "check": "backend service exists",
+      "detail": "pulse_communications_v2/service.py",
+      "passed": true
+    },
+    {
+      "check": "forbidden token absent: Locked",
+      "detail": "Locked",
+      "passed": true
+    },
+    {
+      "check": "forbidden token absent: Requires a production-backed Messenger contract",
+      "detail": "Requires a production-backed Messenger contract",
+      "passed": true
+    },
+    {
+      "check": "forbidden token absent: href=\"#\"",
+      "detail": "href=\"#\"",
+      "passed": true
+    },
+    {
+      "check": "forbidden token absent: javascript:void(0)",
+      "detail": "javascript:void(0)",
+      "passed": true
+    },
+    {
+      "check": "native helper present: getConversationControlCenter",
+      "detail": "getConversationControlCenter",
+      "passed": true
+    },
+    {
+      "check": "native helper present: updateConversationControlSetting",
+      "detail": "updateConversationControlSetting",
+      "passed": true
+    },
+    {
+      "check": "native helper present: listConversationMembers",
+      "detail": "listConversationMembers",
+      "passed": true
+    },
+    {
+      "check": "native helper present: listConversationControlMedia",
+      "detail": "listConversationControlMedia",
+      "passed": true
+    },
+    {
+      "check": "native helper present: listConversationControlLinks",
+      "detail": "listConversationControlLinks",
+      "passed": true
+    },
+    {
+      "check": "native helper present: listConversationPinnedMessages",
+      "detail": "listConversationPinnedMessages",
+      "passed": true
+    },
+    {
+      "check": "native helper present: exportConversationControlData",
+      "detail": "exportConversationControlData",
+      "passed": true
+    },
+    {
+      "check": "native helper present: runConversationControlAction",
+      "detail": "runConversationControlAction",
+      "passed": true
+    },
+    {
+      "check": "native helper present: muteConversation",
+      "detail": "muteConversation",
+      "passed": true
+    },
+    {
+      "check": "native helper present: archiveConversation",
+      "detail": "archiveConversation",
+      "passed": true
+    },
+    {
+      "check": "native helper present: markConversationUnread",
+      "detail": "markConversationUnread",
+      "passed": true
+    },
+    {
+      "check": "native helper present: searchConversationMessages",
+      "detail": "searchConversationMessages",
+      "passed": true
+    },
+    {
+      "check": "backend route present: /control-center",
+      "detail": "/control-center",
+      "passed": true
+    },
+    {
+      "check": "backend route present: /control-center/media",
+      "detail": "/control-center/media",
+      "passed": true
+    },
+    {
+      "check": "backend route present: /control-center/links",
+      "detail": "/control-center/links",
+      "passed": true
+    },
+    {
+      "check": "backend route present: /control-center/pins",
+      "detail": "/control-center/pins",
+      "passed": true
+    },
+    {
+      "check": "backend route present: /control-center/export",
+      "detail": "/control-center/export",
+      "passed": true
+    },
+    {
+      "check": "backend route present: /control-center/action",
+      "detail": "/control-center/action",
+      "passed": true
+    },
+    {
+      "check": "backend route present: /members",
+      "detail": "/members",
+      "passed": true
+    },
+    {
+      "check": "backend route present: /pin",
+      "detail": "/pin",
+      "passed": true
+    },
+    {
+      "check": "backend route present: /mute",
+      "detail": "/mute",
+      "passed": true
+    },
+    {
+      "check": "backend route present: /archive",
+      "detail": "/archive",
+      "passed": true
+    },
+    {
+      "check": "backend route present: /unread",
+      "detail": "/unread",
+      "passed": true
+    },
+    {
+      "check": "native control present: Quick label=\"Search Chat\"",
+      "detail": "Quick label=\"Search Chat\"",
+      "passed": true
+    },
+    {
+      "check": "native control present: Quick label=\"Shared Media\"",
+      "detail": "Quick label=\"Shared Media\"",
+      "passed": true
+    },
+    {
+      "check": "native control present: Quick label=\"Members\"",
+      "detail": "Quick label=\"Members\"",
+      "passed": true
+    },
+    {
+      "check": "native control present: Quick label=\"Audio Call\"",
+      "detail": "Quick label=\"Audio Call\"",
+      "passed": true
+    },
+    {
+      "check": "native control present: Quick label=\"Video Call\"",
+      "detail": "Quick label=\"Video Call\"",
+      "passed": true
+    },
+    {
+      "check": "native control present: action(\"View Members\"",
+      "detail": "action(\"View Members\"",
+      "passed": true
+    },
+    {
+      "check": "native control present: action(\"Shared Media\"",
+      "detail": "action(\"Shared Media\"",
+      "passed": true
+    },
+    {
+      "check": "native control present: action(\"Pinned Messages\"",
+      "detail": "action(\"Pinned Messages\"",
+      "passed": true
+    },
+    {
+      "check": "native control present: action(\"Search Chat\"",
+      "detail": "action(\"Search Chat\"",
+      "passed": true
+    },
+    {
+      "check": "native control present: action(\"Message Stats\"",
+      "detail": "action(\"Message Stats\"",
+      "passed": true
+    },
+    {
+      "check": "native control present: action(\"Media Storage\"",
+      "detail": "action(\"Media Storage\"",
+      "passed": true
+    },
+    {
+      "check": "native control present: action(\"Export Chat\"",
+      "detail": "action(\"Export Chat\"",
+      "passed": true
+    },
+    {
+      "check": "native control present: setting(\"Mute Conversation\"",
+      "detail": "setting(\"Mute Conversation\"",
+      "passed": true
+    },
+    {
+      "check": "native control present: setting(\"Read Receipts\"",
+      "detail": "setting(\"Read Receipts\"",
+      "passed": true
+    },
+    {
+      "check": "native control present: danger(\"Clear Conversation\"",
+      "detail": "danger(\"Clear Conversation\"",
+      "passed": true
+    },
+    {
+      "check": "native control present: danger(\"Delete Conversation\"",
+      "detail": "danger(\"Delete Conversation\"",
+      "passed": true
+    },
+    {
+      "check": "duplicate quick Search removed",
+      "detail": "old generic Search quick action must not exist",
+      "passed": true
+    },
+    {
+      "check": "only one quick Search Chat",
+      "detail": "count=1",
+      "passed": true
+    },
+    {
+      "check": "server settings are patched",
+      "detail": "settings use canonical control-center PATCH",
+      "passed": true
+    },
+    {
+      "check": "conversation search is scoped",
+      "detail": "search endpoint filters by accessible conversation",
+      "passed": true
+    },
+    {
+      "check": "call capability exposed",
+      "detail": "server advertises real call routes",
+      "passed": true
+    },
+    {
+      "check": "export capability exposed",
+      "detail": "server advertises export endpoint",
+      "passed": true
+    },
+    {
+      "check": "unavailable copy is product-facing",
+      "detail": "no developer contract copy",
+      "passed": true
+    },
+    {
+      "check": "mission report exists",
+      "detail": "reports/pulsesoc_native_conversation_control_center_report.md",
+      "passed": true
+    }
+  ],
+  "ok": true,
+  "summary": {
+    "failed": 0,
+    "passed": 55,
+    "total": 55
+  }
+}
