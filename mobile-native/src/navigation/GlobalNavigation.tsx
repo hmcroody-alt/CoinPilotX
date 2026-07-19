@@ -264,12 +264,12 @@ const styles = StyleSheet.create({
     width: 38
   },
   avatarButtonHome: {
-    borderRadius: 24,
-    height: 48,
+    borderRadius: 23,
+    height: 46,
     shadowColor: "#9f7cff",
     shadowOpacity: 0.24,
     shadowRadius: 14,
-    width: 48
+    width: 46
   },
   avatarImage: {
     height: "100%",
@@ -396,7 +396,7 @@ const styles = StyleSheet.create({
   headerActions: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 8
+    gap: 6
   },
   headerMetaRow: {
     flexDirection: "row",
@@ -407,7 +407,7 @@ const styles = StyleSheet.create({
   headerRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 10
+    gap: 8
   },
   headerShell: {
     backgroundColor: "rgba(3, 9, 18, 0.96)",
@@ -439,8 +439,8 @@ const styles = StyleSheet.create({
   },
   headerTitleHome: {
     ...logiNexus.typography.home.brand,
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 25,
+    lineHeight: 31,
     textAlign: "center"
   },
   headerTitleHomeAccent: {
@@ -500,20 +500,20 @@ const styles = StyleSheet.create({
   iconButtonHome: {
     backgroundColor: "rgba(255,255,255,0.055)",
     borderColor: "rgba(255,255,255,0.2)",
-    borderRadius: 25,
-    height: 50,
+    borderRadius: 23,
+    height: 46,
     shadowColor: colors.accentStrong,
     shadowOpacity: 0.11,
     shadowRadius: 14,
-    width: 50
+    width: 46
   },
   iconButtonSpacer: {
     height: 38,
     width: 38
   },
   iconButtonSpacerHome: {
-    height: 50,
-    width: 50
+    height: 46,
+    width: 46
   },
   iconText: {
     color: colors.text,
@@ -537,7 +537,7 @@ const styles = StyleSheet.create({
   brandRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 8,
+    gap: 4,
     justifyContent: "center"
   }
 });

@@ -1736,21 +1736,21 @@ const styles = StyleSheet.create({
     color: colors.background,
     fontSize: 17,
     fontWeight: "900",
-    lineHeight: 46,
+    lineHeight: 42,
     textAlign: "center"
   },
   heroRadioOrb: {
     alignItems: "center",
     backgroundColor: colors.accent,
     borderColor: "rgba(141, 247, 255, 0.82)",
-    borderRadius: 23,
+    borderRadius: 21,
     borderWidth: 1,
-    height: 46,
+    height: 42,
     justifyContent: "center",
     shadowColor: colors.accent,
     shadowOpacity: 0.32,
     shadowRadius: 14,
-    width: 46
+    width: 42
   },
   heroRadioOrbPlaying: {
     backgroundColor: colors.creator,
@@ -1758,9 +1758,9 @@ const styles = StyleSheet.create({
   },
   heroRadioLabel: {
     color: colors.text,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "900",
-    letterSpacing: 1.6,
+    letterSpacing: 1.8,
     textTransform: "uppercase"
   },
   heroRadioMeta: {
@@ -1776,17 +1776,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(10, 30, 43, 0.76)",
     borderColor: "rgba(121, 210, 255, 0.25)",
-    borderRadius: 28,
+    borderRadius: 26,
     borderWidth: 1,
     flexDirection: "row",
     flexShrink: 0,
     flexWrap: "wrap",
-    gap: 10,
-    minHeight: 86,
+    gap: 8,
+    minHeight: 82,
     minWidth: 0,
-    paddingHorizontal: 13,
-    paddingVertical: 12,
-    width: 174
+    paddingHorizontal: 11,
+    paddingVertical: 11,
+    width: 156
   },
   heroRadioPillPlaying: {
     backgroundColor: "rgba(24, 66, 74, 0.9)",
@@ -1843,7 +1843,7 @@ const styles = StyleSheet.create({
   },
   heroMoodCopy: {
     flex: 1,
-    minWidth: 118
+    minWidth: 0
   },
   heroMoodRow: {
     alignItems: "flex-start",
@@ -1856,17 +1856,17 @@ const styles = StyleSheet.create({
   },
   heroMoodSummary: {
     color: colors.muted,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "800",
-    lineHeight: 23,
+    lineHeight: 20,
     marginTop: 9,
-    maxWidth: 190
+    maxWidth: 174
   },
   heroMoodTitle: {
     color: colors.text,
-    fontSize: 44,
+    fontSize: 38,
     fontWeight: "900",
-    lineHeight: 50
+    lineHeight: 44
   },
   heroKicker: {
     alignSelf: "flex-start",
@@ -2138,13 +2138,13 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     flex: 1,
-    flexDirection: "row",
-    gap: 9,
+    flexDirection: "column",
+    gap: 7,
     justifyContent: "center",
-    minHeight: 66,
+    minHeight: 78,
     minWidth: 0,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 9,
     zIndex: 2
   },
   heroTileArrow: {
@@ -2163,8 +2163,9 @@ const styles = StyleSheet.create({
     textAlign: "center"
   },
   heroTileCopy: {
-    alignItems: "flex-start",
+    alignItems: "center",
     flex: 1,
+    justifyContent: "center",
     minWidth: 0
   },
   heroTileColumn: {
@@ -2180,29 +2181,29 @@ const styles = StyleSheet.create({
   },
   heroTileIcon: {
     alignItems: "center",
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
-    height: 38,
+    height: 34,
     justifyContent: "center",
-    width: 38
+    width: 34
   },
   heroTileIconText: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "900"
   },
   heroTileLabel: {
     color: colors.text,
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: "900",
-    letterSpacing: 0.2,
-    textAlign: "left",
+    letterSpacing: 0.9,
+    textAlign: "center",
     textTransform: "uppercase"
   },
   heroTileValue: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "900",
     marginTop: 1,
-    textAlign: "left"
+    textAlign: "center"
   },
   list: {
     backgroundColor: "transparent",
