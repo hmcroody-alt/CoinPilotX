@@ -64,11 +64,11 @@ def prepare_undx_model_request(messages: list[dict[str, str]], correlation_id: s
     final_system_context = "\n\n".join(
         str(item.get("content") or "") for item in final_messages if item.get("role") == "system"
     )
-    try:
-        assert UNDX_IDENTITY_REQUIRED_PHRASE in final_system_context
-    except AssertionError:
+    identity_present = UNDX_IDENTITY_REQUIRED_PHRASE in final_system_context
+    if not identity_present:
         LOGGER.error("identity_configuration_error correlation_id=%s", correlation_id)
         raise PulseAIProviderError("undx_identity", "identity_configuration_error")
+    assert UNDX_IDENTITY_REQUIRED_PHRASE in final_system_context
     LOGGER.info(
         "UNDX_FINAL_MODEL_REQUEST correlation_id=%s identity_present=true system_context=%r roles=%s",
         correlation_id,
