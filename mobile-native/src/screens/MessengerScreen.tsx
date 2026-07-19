@@ -3,20 +3,14 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   loadCachedConversations,
   listConversations,
   MessengerConversation,
-  MessengerMessage,
-  MessengerUserSearchResult,
-  openDirectConversation,
-  searchMessenger,
   subscribeConversationUpdates
 } from "../api/messenger";
 import { PulseApiError } from "../api/pulseApi";
-import { PulseCommandAvatar, PulseCommandPanel, PulseCommandSearch, PulseCommandSegmentRail } from "../components/PulseCommand";
-import { LogiNexusSignalIndicator } from "../components/LogiNexus";
+import { PulseCommandAvatar, PulseCommandPanel, PulseCommandSegmentRail } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../session/auth";
@@ -37,19 +31,14 @@ const LAST_CONVERSATION_KEY = "pulsesoc.native.messenger.last_conversation";
 
 export function MessengerScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const insets = useSafeAreaInsets();
   const { authState, requestReauthentication } = useAuth();
   const loadSequence = useRef(0);
   const [conversations, setConversations] = useState<MessengerConversation[]>([]);
-  const [searchUsers, setSearchUsers] = useState<MessengerUserSearchResult[]>([]);
-  const [searchMessages, setSearchMessages] = useState<MessengerMessage[]>([]);
-  const [openingUserId, setOpeningUserId] = useState(0);
   const qaFilter = String(process.env.EXPO_PUBLIC_PULSESOC_QA_MESSENGER_FILTER || "").toLowerCase();
   const validQaFilter = ["all", "direct", "groups", "rooms", "ai", "unread"].includes(qaFilter)
     ? qaFilter as ConversationFilter
     : null;
   const [selectedFilter, setSelectedFilter] = useState<ConversationFilter>(validQaFilter || "all");
-  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -58,40 +47,17 @@ export function MessengerScreen() {
     navigation.navigate("NewChat", initialQuery ? { initialQuery } : undefined);
   }, [navigation]);
 
-  async function openConversationControlCenter() {
-    const savedId = Number(await AsyncStorage.getItem(LAST_CONVERSATION_KEY));
-    const active = conversations.find((item) => item.id === savedId) || conversations[0];
-    if (!active) {
-      setError("Open a conversation before using conversation settings.");
-      return;
-    }
-    navigation.navigate("Chat", { conversationId: active.id, title: conversationDisplayTitle(active), openControlCenter: true });
-  }
-
   async function load({ refresh = false } = {}) {
     const sequence = ++loadSequence.current;
-    const activeQuery = query.trim();
     if (refresh) setRefreshing(true);
     else setLoading(true);
     setError("");
     try {
-      if (activeQuery) {
-        const data = await searchMessenger(activeQuery);
-        if (sequence !== loadSequence.current) return;
-        setConversations(data.conversations);
-        setSearchUsers(data.users);
-        setSearchMessages(data.messages);
-      } else {
-        const nextConversations = await listConversations();
-        if (sequence !== loadSequence.current) return;
-        setConversations(nextConversations);
-        setSearchUsers([]);
-        setSearchMessages([]);
-      }
+      const nextConversations = await listConversations();
+      if (sequence !== loadSequence.current) return;
+      setConversations(nextConversations);
     } catch (loadError) {
       if (sequence !== loadSequence.current) return;
-      setSearchUsers([]);
-      setSearchMessages([]);
       if (loadError instanceof PulseApiError && loadError.status === 401) {
         requestReauthentication("/pulse/messages");
       }
@@ -122,11 +88,6 @@ export function MessengerScreen() {
   }, []));
 
   useEffect(() => {
-    const timer = setTimeout(() => load().catch(() => undefined), 350);
-    return () => clearTimeout(timer);
-  }, [query]);
-
-  useEffect(() => {
     AsyncStorage.setItem(FILTER_KEY, selectedFilter).catch(() => undefined);
   }, [selectedFilter]);
 
@@ -151,20 +112,6 @@ export function MessengerScreen() {
     [unreadTotal]
   );
 
-  async function openSearchUser(user: MessengerUserSearchResult) {
-    if (openingUserId) return;
-    setOpeningUserId(user.user_id);
-    setError("");
-    try {
-      const result = await openDirectConversation(user);
-      navigation.navigate("Chat", { conversationId: result.conversation_id, title: user.display_name, avatarUrl: user.avatar_url });
-    } catch (openError) {
-      setError(openError instanceof Error ? openError.message : "This conversation could not be opened.");
-    } finally {
-      setOpeningUserId(0);
-    }
-  }
-
   if (authState.status !== "signedIn") {
     return (
       <LogiNexusScreenShell>
@@ -182,7 +129,7 @@ export function MessengerScreen() {
       <FlatList
         data={filteredConversations}
         keyExtractor={(item) => `chat-${item.id}`}
-        contentContainerStyle={[styles.list, { paddingTop: Math.max(insets.top, 8) }]}
+        contentContainerStyle={[styles.list, { paddingTop: 0 }]}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load({ refresh: true })} />}
         initialNumToRender={10}
         maxToRenderPerBatch={8}
@@ -191,23 +138,6 @@ export function MessengerScreen() {
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={styles.headerStack}>
-            <View style={styles.compactHeader} testID="messenger-compact-header">
-              <View style={styles.compactBrandMark}>
-                <LogiNexusSignalIndicator active />
-              </View>
-              <View style={styles.compactTitleBlock}>
-                <Text style={styles.compactTitle} numberOfLines={1}>Messages</Text>
-                <Text style={styles.compactSubtitle} numberOfLines={1}>Pulse Command</Text>
-              </View>
-              <View style={styles.compactHeaderActions}>
-                <Pressable accessibilityRole="button" accessibilityLabel="Open Messenger safety controls" style={styles.headerIconButton} onPress={() => navigation.navigate("SafetyHub", { title: "Safety Hub", section: "overview" })}><Text style={styles.headerIconText}>◇</Text></Pressable>
-                <Pressable accessibilityRole="button" accessibilityLabel="Start a new chat" style={styles.headerIconButton} onPress={() => openNewChat()}><Text style={styles.headerIconText}>＋</Text></Pressable>
-              </View>
-            </View>
-            <View style={styles.searchRow} testID="messenger-search-row">
-              <View style={styles.searchField}><PulseCommandSearch value={query} onChangeText={setQuery} placeholder="Search people, rooms, messages..." /></View>
-              <Pressable accessibilityRole="button" accessibilityLabel="Open Conversation Control Center" style={styles.gearButton} onPress={() => openConversationControlCenter().catch(() => setError("Conversation settings could not open."))}><Text style={styles.gearButtonText}>⚙</Text></Pressable>
-            </View>
             <PulseCommandSegmentRail items={filters} selected={selectedFilter} onSelect={(key) => setSelectedFilter(key as ConversationFilter)} />
             <ScrollView horizontal style={styles.presenceRailShell} contentContainerStyle={styles.presenceRail} showsHorizontalScrollIndicator={false} accessibilityLabel="Active PulseSoc conversations" testID="messenger-active-rail">
               <Pressable accessibilityRole="button" accessibilityLabel="Start a new direct conversation" style={styles.presenceItem} onPress={() => openNewChat()}>
@@ -229,30 +159,6 @@ export function MessengerScreen() {
               <QuickAction icon="◎" title="Create Group" subtitle="Invite members" accent="group" onPress={() => navigation.navigate("Tabs", { screen: "Groups" })} />
               <QuickAction icon="◉" title="Start Room" subtitle="Public or private" accent="room" onPress={() => navigation.navigate("Tabs", { screen: "Groups" })} />
             </PulseCommandPanel>
-            {query.trim() && searchUsers.length ? (
-              <View style={styles.peopleResults}>
-                <Text style={styles.sectionLabel}>People</Text>
-                {searchUsers.map((user) => (
-                  <Pressable key={`people-${user.user_id}`} accessibilityRole="button" accessibilityLabel={`Message ${user.display_name}`} disabled={openingUserId > 0} onPress={() => openSearchUser(user)} style={({ pressed }) => [styles.personRow, pressed && styles.rowPressed]}>
-                    <PulseCommandAvatar label={user.display_name} imageUrl={user.avatar_url} active={false} />
-                    <View style={styles.personCopy}><Text style={styles.title} numberOfLines={1}>{user.display_name}</Text><Text style={styles.muted} numberOfLines={1}>{user.public_pulse_id || "PulseSoc member"}</Text></View>
-                    <Text style={styles.personAction}>{openingUserId === user.user_id ? "Opening..." : "Message"}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
-            {query.trim() && searchMessages.length ? (
-              <View style={styles.peopleResults}>
-                <Text style={styles.sectionLabel}>Messages</Text>
-                {searchMessages.slice(0, 6).map((message) => (
-                  <Pressable key={`message-${message.id}`} accessibilityRole="button" accessibilityLabel="Open matching message" onPress={() => navigation.navigate("Chat", { conversationId: message.conversation_id, title: "Search result" })} style={({ pressed }) => [styles.personRow, pressed && styles.rowPressed]}>
-                    <View style={styles.searchMessageIcon}><Text style={styles.searchMessageIconText}>⌕</Text></View>
-                    <View style={styles.personCopy}><Text style={styles.title} numberOfLines={1}>{message.body || "Message match"}</Text><Text style={styles.muted} numberOfLines={1}>{message.created_at ? new Date(message.created_at).toLocaleString() : "PulseSoc message"}</Text></View>
-                    <Text style={styles.personAction}>Open</Text>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
             {error && conversations.length ? <Text accessibilityLiveRegion="polite" style={styles.error}>Showing cached conversations while Messenger reconnects.</Text> : null}
             <Text style={styles.sectionLabel} testID="messenger-recent-heading">Recent conversations</Text>
           </View>
@@ -261,7 +167,7 @@ export function MessengerScreen() {
           <LogiNexusStatePanel state="error" title="Messenger could not load" body={error}>
             <Pressable accessibilityRole="button" style={styles.retryButton} onPress={() => load()}><Text style={styles.retryText}>Retry</Text></Pressable>
           </LogiNexusStatePanel>
-        ) : <LogiNexusStatePanel state="empty" title={emptyTitle(selectedFilter, query)} body={emptyBody(selectedFilter, query)} />}
+        ) : <LogiNexusStatePanel state="empty" title={emptyTitle(selectedFilter)} body={emptyBody(selectedFilter)} />}
         renderItem={({ item }) => <ConversationRow item={item} navigation={navigation} />}
       />
     </LogiNexusScreenShell>
@@ -351,15 +257,13 @@ function conversationMatchesFilter(item: MessengerConversation, filter: Conversa
   return Number(item.unread_count || 0) > 0;
 }
 
-function emptyTitle(filter: ConversationFilter, query: string) {
-  if (query) return "No matching conversations";
+function emptyTitle(filter: ConversationFilter) {
   if (filter === "unread") return "You're all caught up";
   if (filter === "all") return "Choose a chat";
   return `No ${filter} conversations`;
 }
 
-function emptyBody(filter: ConversationFilter, query: string) {
-  if (query) return "Try a different person, room, or message.";
+function emptyBody(filter: ConversationFilter) {
   if (filter === "unread") return "New unread conversations will appear here.";
   return "Your conversations and composer open instantly here.";
 }
@@ -368,18 +272,6 @@ const styles = StyleSheet.create({
   permissionPage: { flex: 1, justifyContent: "center", padding: 16 },
   list: { gap: 4, padding: 8, paddingBottom: 108 },
   headerStack: { gap: 6 },
-  compactHeader: { alignItems: "center", flexDirection: "row", gap: 9, minHeight: 48 },
-  compactBrandMark: { alignItems: "center", backgroundColor: "rgba(97,216,255,0.08)", borderColor: "rgba(97,216,255,0.22)", borderRadius: 14, borderWidth: 1, height: 44, justifyContent: "center", width: 44 },
-  compactHeaderActions: { alignItems: "center", flexDirection: "row", gap: 6 },
-  compactSubtitle: { color: "#3eeed1", fontSize: 13, fontWeight: "800", lineHeight: 16 },
-  compactTitle: { color: colors.text, fontSize: 26, fontWeight: "900", lineHeight: 30 },
-  compactTitleBlock: { flex: 1, minWidth: 0 },
-  headerIconButton: { alignItems: "center", backgroundColor: "rgba(15,28,48,0.94)", borderColor: "rgba(97,216,255,0.32)", borderRadius: 13, borderWidth: 1, height: 44, justifyContent: "center", shadowColor: "#61d8ff", shadowOpacity: 0.14, shadowRadius: 9, width: 44 },
-  headerIconText: { color: "#dffcff", fontSize: 22, fontWeight: "900" },
-  searchRow: { alignItems: "center", flexDirection: "row", gap: 6 },
-  searchField: { flex: 1 },
-  gearButton: { alignItems: "center", backgroundColor: "rgba(15,28,48,0.94)", borderColor: "rgba(97,216,255,0.46)", borderRadius: 12, borderWidth: 1, height: 44, justifyContent: "center", shadowColor: "#61d8ff", shadowOpacity: 0.18, shadowRadius: 10, width: 44 },
-  gearButtonText: { color: "#73f5ff", fontSize: 21 },
   presenceRailShell: { backgroundColor: "rgba(11,24,34,0.78)", borderColor: "rgba(97,216,255,0.18)", borderRadius: 15, borderWidth: 1 },
   presenceRail: { gap: 10, paddingHorizontal: 10, paddingVertical: 7 },
   addPresenceAvatar: { alignItems: "center", borderColor: "rgba(61,223,255,0.72)", borderRadius: 25, borderStyle: "dashed", borderWidth: 1, height: 50, justifyContent: "center", width: 50 },
@@ -397,12 +289,6 @@ const styles = StyleSheet.create({
   quickActionSubtitle: { color: colors.muted, fontSize: 9, marginTop: 1 },
   quickActionPrimarySubtitle: { color: "rgba(6,20,16,0.68)" },
   sectionLabel: { color: "#b7c5d8", fontSize: 11, fontWeight: "800", letterSpacing: 0.7, textTransform: "uppercase" },
-  peopleResults: { gap: 4 },
-  personRow: { alignItems: "center", backgroundColor: "rgba(105,218,240,0.045)", borderColor: "rgba(105,218,240,0.18)", borderRadius: 11, borderWidth: 1, flexDirection: "row", gap: 8, minHeight: 56, padding: 7 },
-  personCopy: { flex: 1, minWidth: 0 },
-  personAction: { color: colors.accent, fontSize: 11, fontWeight: "900" },
-  searchMessageIcon: { alignItems: "center", backgroundColor: "rgba(159,124,255,0.12)", borderColor: "rgba(159,124,255,0.36)", borderRadius: 11, borderWidth: 1, height: 42, justifyContent: "center", width: 42 },
-  searchMessageIconText: { color: "#a77cff", fontSize: 20, fontWeight: "900" },
   row: { alignItems: "center", backgroundColor: "rgba(9,20,36,0.94)", borderColor: "rgba(105,218,240,0.16)", borderRadius: 13, borderWidth: 1, flexDirection: "row", gap: 9, minHeight: 64, padding: 9, shadowColor: "#61d8ff", shadowOpacity: 0.08, shadowRadius: 8 },
   rowPressed: { backgroundColor: "rgba(105,218,240,0.06)", borderColor: "rgba(105,218,240,0.25)" },
   pinnedRow: { borderColor: "rgba(77,228,196,0.56)", shadowColor: colors.accent, shadowOpacity: 0.1, shadowRadius: 10 },
