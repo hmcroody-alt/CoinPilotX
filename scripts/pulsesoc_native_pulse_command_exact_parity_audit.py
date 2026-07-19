@@ -150,14 +150,22 @@ def main() -> int:
         'title="Create Group"',
         'title="Start Room"',
         'Recent conversations',
-        'minHeight: 70',
+        'testID="messenger-compact-header"',
+        'testID="messenger-search-row"',
+        'testID="messenger-active-rail"',
+        'testID="messenger-skeleton-list"',
+        'minHeight: 64',
+        'gap: 4',
         'borderRadius: 12',
         'fontSize: 14',
         'fontSize: 12',
+        'removeClippedSubviews',
+        'maxToRenderPerBatch={8}',
+        'windowSize={7}',
     ]:
         assert_contains(messenger, needle, "MessengerScreen", failures)
 
-    for forbidden in ['label: "Calls"', "Active users", "active calls"]:
+    for forbidden in ['label: "Calls"', "Active users", "active calls", "productionHeader", "commandVersion", "Messenger V3"]:
         if forbidden in messenger:
             failures.append(f"MessengerScreen retains non-production inbox hierarchy: {forbidden}")
 
