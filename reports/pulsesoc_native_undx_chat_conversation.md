@@ -47,17 +47,29 @@ UNDX now behaves as a canonical native Messenger participant instead of a separa
 
 ## Verification
 
-- `venv/bin/python scripts/pulsesoc_native_undx_chat_conversation_audit.py`
-- `npm run --prefix mobile-native typecheck`
-- `git diff --check`
+- `venv/bin/python scripts/pulsesoc_native_undx_chat_conversation_audit.py` — PASS.
+- `npm run --prefix mobile-native typecheck` — blocked by unrelated errors in `mobile-native/src/screens/HomeScreen.tsx` and `mobile-native/src/screens/MusicScreen.tsx`.
+- Focused `git diff --check` over UNDX/Messenger files and the Metro blocker fix — PASS.
 
-## Known Verification Limitation
+## Xcode Simulator QA — 2026-07-19
 
-Typecheck is currently blocked before it reaches these files by unrelated merge-conflict markers in `mobile-native/src/components/ReelPlayerCard.tsx`. This mission did not modify that file.
+- Device: `PulseSoc iPhone 16 Pro` simulator (`C980AEE0-2D07-4D98-8A37-D0447A6A908B`).
+- Build/install/launch: PASS after resolving unrelated conflict markers in `mobile-native/src/components/ReelPlayerCard.tsx`.
+- Messenger route: PASS. `/pulse/messages` opened native Messenger and showed the pinned canonical `UNDX` row.
+- Screenshot evidence:
+  - `reports/screenshots/native-undx-chat-simulator-physical-2026-07-19/simulator-launch.png`
+  - `reports/screenshots/native-undx-chat-simulator-physical-2026-07-19/simulator-messages-deeplink.png`
+  - `reports/screenshots/native-undx-chat-simulator-physical-2026-07-19/simulator-before-undx-tap.png`
+- Limitation: `simctl ui` on the installed runtime does not support tap injection, and direct negative-id deep link `/pulse/messages/-9001001` fell through to the web fallback. Manual simulator tapping is still required to capture the final UNDX ChatScreen visual state.
 
-## Simulator QA
+## Physical iPhone QA — 2026-07-19
 
-Xcode Simulator visual QA remains required for final release confirmation:
+- Device: `P3r7or`, paired physical iPhone 16 Pro (`F45E640F-6D02-514E-877C-B764E8D6818F`, iOS 18.7.3).
+- Build/install: PASS with automatic signing team `87ZC69AGSR`.
+- Launch: PASS. `devicectl device process launch --device F45E640F-6D02-514E-877C-B764E8D6818F com.pulsesoc.nativeapp.dev` launched the app successfully.
+- Limitation: this `devicectl` version does not expose a physical-device screenshot command. Visual proof requires Roody to observe the device screen or a separate capture method.
+
+## Remaining Manual QA
 
 - Open Messenger.
 - Open UNDX row.
@@ -66,4 +78,3 @@ Xcode Simulator visual QA remains required for final release confirmation:
 - Send a text prompt.
 - Confirm assistant response returns from production `/api/pulse-ai/message`.
 - Confirm attachment and microphone controls show the text-first boundary and do not upload.
-

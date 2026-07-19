@@ -5572,6 +5572,9 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Messenger now pins/open UNDX through the same ChatScreen, message list, bubbles, drafts, composer, keyboard behavior, and control sheet used by normal conversations.
 - UNDX is text-first to match the inspected production contract. Attachment and voice controls are disabled with explicit backend boundaries instead of fake uploads.
 - Audio/video call controls are hidden for UNDX, and the assistant control-center profile prevents human/group-only actions from hitting Communications V2 endpoints.
-- Focused audit passes. Full native typecheck and global `git diff --check` remain blocked by unrelated conflict markers in `mobile-native/src/components/ReelPlayerCard.tsx`.
-- Xcode Simulator proof is still required with a signed-in account: open Messenger, tap UNDX, send a prompt, verify the response, and confirm the old command form is gone.
+- Focused audit passes. The Xcode iPhone 16 Pro simulator now builds, installs, launches, and opens native Messenger; the pinned `UNDX` row is visible.
+- Resolved unrelated conflict markers in `mobile-native/src/components/ReelPlayerCard.tsx` because they blocked Metro bundling and all simulator/physical QA.
+- Physical iPhone 16 Pro (`P3r7or`) build/install/launch passes through Xcode/devicectl. Physical screenshot capture is not available through the installed `devicectl`.
+- Full native typecheck is now blocked by unrelated errors in `mobile-native/src/screens/HomeScreen.tsx` and `mobile-native/src/screens/MusicScreen.tsx`.
+- Manual visual proof remains required: tap UNDX on simulator or physical device, send a prompt, verify the response, and confirm the old command form is gone.
 - Report: `reports/pulsesoc_native_undx_chat_conversation.md`.
