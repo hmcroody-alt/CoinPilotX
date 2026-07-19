@@ -24,6 +24,7 @@ import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { PostCard } from "../components/PostCard";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { getPulseRadioState, PulseRadioState, subscribePulseRadio, togglePulseRadio } from "../core/pulseRadio";
+import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
 import { GlobalNavigationBadges, GlobalNavigationIdentity, LogiNexusGlobalHeader } from "../navigation/GlobalNavigation";
 import { openDashboardRoute } from "../navigation/dashboardRouting";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
@@ -91,6 +92,7 @@ function useHomeAmbientMotionEnabled() {
 export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const navigation = useNavigation<HomeNavigation>();
   const route = useRoute<RouteProp<AppTabParamList, "Home">>();
+  const bottomNavScroll = useBottomNavScrollVisibility();
   const listRef = useRef<FlatList<PulsePost>>(null);
   const offsetRef = useRef(0);
   const hasMoreRef = useRef(false);
@@ -514,6 +516,9 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         onEndReached={() => load("more").catch(() => undefined)}
         onEndReachedThreshold={0.35}
         ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.footer} color={colors.accent} /> : null}
+        onScroll={bottomNavScroll.onScroll}
+        onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
+        scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
       />
       <MasterNavigationDrawer visible={drawerOpen} onClose={() => setDrawerOpen(false)} onOpenRoute={openHomeRoute} />
     </View>
