@@ -248,14 +248,14 @@ function initialsFor(value: string) {
 const styles = StyleSheet.create({
   avatarButton: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(159, 124, 255, 0.2)",
+    borderColor: "rgba(121, 210, 255, 0.32)",
     borderRadius: logiNexus.radius.circular,
     borderWidth: 1,
-    height: 38,
+    height: 44,
     justifyContent: "center",
     overflow: "hidden",
-    width: 38
+    width: 44
   },
   avatarImage: {
     height: "100%",
@@ -295,26 +295,26 @@ const styles = StyleSheet.create({
   },
   bottomItem: {
     alignItems: "center",
-    borderRadius: 24,
+    borderRadius: 26,
     flex: 1,
     gap: 4,
     justifyContent: "center",
-    minHeight: 58,
+    minHeight: 66,
     paddingHorizontal: 2,
     paddingVertical: 6
   },
   bottomItemActive: {
-    backgroundColor: "rgba(50, 230, 179, 0.1)"
+    backgroundColor: "rgba(50, 230, 179, 0.14)"
   },
   bottomCreateItem: {
-    marginTop: -14,
-    minHeight: 74
+    marginTop: -28,
+    minHeight: 92
   },
   bottomLabel: {
     ...logiNexus.typography.metadata,
     color: colors.muted,
-    fontSize: 11,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     textAlign: "center"
   },
   bottomLabelActive: {
@@ -322,21 +322,24 @@ const styles = StyleSheet.create({
   },
   bottomPanel: {
     alignItems: "center",
-    backgroundColor: "rgba(3, 8, 18, 0.92)",
-    borderColor: "rgba(121, 210, 255, 0.18)",
-    borderRadius: 28,
+    backgroundColor: "rgba(5, 10, 20, 0.88)",
+    borderColor: "rgba(121, 210, 255, 0.24)",
+    borderRadius: 34,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 2,
-    minHeight: 74,
-    padding: 6
+    gap: 4,
+    minHeight: 96,
+    padding: 8,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.16,
+    shadowRadius: 22
   },
   bottomShell: {
     backgroundColor: "transparent",
     borderTopColor: "transparent",
     borderTopWidth: 0,
     paddingHorizontal: logiNexus.spacing.md,
-    paddingTop: 6
+    paddingTop: 8
   },
   bottomSymbol: {
     alignItems: "center",
@@ -344,27 +347,30 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
     borderRadius: logiNexus.radius.circular,
     borderWidth: 1,
-    height: 32,
+    height: 40,
     justifyContent: "center",
-    width: 32
+    width: 40
   },
   bottomSymbolActive: {
     backgroundColor: colors.accent,
     borderColor: colors.accent,
     shadowColor: colors.accent,
     shadowOpacity: 0.35,
-    shadowRadius: 18
+    shadowRadius: 22
   },
   bottomCreateSymbol: {
-    backgroundColor: "rgba(50, 230, 179, 0.2)",
-    borderColor: colors.accent,
+    backgroundColor: "rgba(3, 10, 21, 0.88)",
+    borderColor: "rgba(121, 210, 255, 0.95)",
     borderWidth: 1,
-    height: 54,
-    width: 54
+    height: 72,
+    shadowColor: "#9f7cff",
+    shadowOpacity: 0.2,
+    shadowRadius: 18,
+    width: 72
   },
   bottomSymbolText: {
     color: colors.text,
-    fontSize: 17,
+    fontSize: 22,
     fontWeight: "900"
   },
   bottomSymbolTextActive: {
@@ -399,7 +405,7 @@ const styles = StyleSheet.create({
   headerShellHome: {
     backgroundColor: logiNexus.colors.home.backgroundDeepSpace,
     borderBottomColor: "transparent",
-    paddingBottom: 6
+    paddingBottom: 14
   },
   headerSubtitle: {
     ...logiNexus.typography.metadata,
@@ -419,8 +425,8 @@ const styles = StyleSheet.create({
   },
   headerTitleHome: {
     ...logiNexus.typography.home.brand,
-    fontSize: 21,
-    lineHeight: 24,
+    fontSize: 27,
+    lineHeight: 32,
     textAlign: "center"
   },
   headerTitleHomeAccent: {
@@ -440,17 +446,17 @@ const styles = StyleSheet.create({
     height: 10,
     justifyContent: "center",
     marginTop: 1,
-    width: 74
+    width: 96
   },
   homeBrandSignalPrimary: {
     backgroundColor: colors.accent,
     height: 1,
-    width: 30
+    width: 39
   },
   homeBrandSignalSecondary: {
     backgroundColor: "#9f7cff",
     height: 1,
-    width: 30
+    width: 39
   },
   iconBadge: {
     alignItems: "center",
@@ -469,21 +475,21 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.055)",
-    borderColor: "rgba(255,255,255,0.16)",
-    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderColor: "rgba(255,255,255,0.18)",
+    borderRadius: 22,
     borderWidth: 1,
-    height: 36,
+    height: 48,
     justifyContent: "center",
-    width: 36
+    width: 48
   },
   iconButtonSpacer: {
-    height: 36,
-    width: 36
+    height: 48,
+    width: 48
   },
   iconText: {
     color: colors.text,
-    fontSize: 18,
+    fontSize: 24,
     fontWeight: "900"
   },
   pressed: {

@@ -429,15 +429,24 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenLive, onOpenM
             </View>
             <Text style={styles.collapsedOpen}>＋</Text>
           </Pressable>
-          <View style={[styles.modeRow, styles.collapsedModeRow]}>
-            <Pressable accessibilityLabel="Open post composer" style={[styles.modeButton, styles.modeButtonActive]} onPress={() => { selectMode("post"); setExpanded(true); }}>
-              <Text style={[styles.modeText, styles.modeTextActive]}>Create</Text>
+          <View style={styles.collapsedQuickRow}>
+            <View style={styles.collapsedQuickTools}>
+              <ComposerAction label="Photo" icon="▧" onPress={() => { setExpanded(true); media.chooseImages().then((assets) => setNote(assets.length ? `${assets.length} photo${assets.length === 1 ? "" : "s"} added to the upload queue.` : "No photos selected. If access was denied, allow Photos in Settings.")).catch((selectionError) => setError(selectionError instanceof Error ? selectionError.message : "Photos could not open.")); }} />
+              <ComposerAction label="Video" icon="▶" onPress={() => { setExpanded(true); media.chooseVideo().then((asset) => setNote(asset ? "Video selected for PulseSoc upload." : "No video selected. If access was denied, allow Photos in Settings.")).catch((selectionError) => setError(selectionError instanceof Error ? selectionError.message : "Videos could not open.")); }} />
+              <ComposerAction label="Camera" icon="◎" onPress={() => onOpenCamera("photo")} />
+            </View>
+            <Pressable
+              testID="home-composer-create-compact"
+              accessibilityRole="button"
+              accessibilityLabel="Open Pulse composer"
+              style={({ pressed }) => [styles.collapsedCreateButton, pressed && styles.pressed]}
+              onPress={() => {
+                selectMode("post");
+                setExpanded(true);
+              }}
+            >
+              <Text style={styles.collapsedCreateText}>Create</Text>
             </Pressable>
-          </View>
-          <View style={[styles.actionGrid, styles.collapsedActionGrid]}>
-            <ComposerAction label="Photo" icon="▧" onPress={() => { setExpanded(true); media.chooseImages().then((assets) => setNote(assets.length ? `${assets.length} photo${assets.length === 1 ? "" : "s"} added to the upload queue.` : "No photos selected. If access was denied, allow Photos in Settings.")).catch((selectionError) => setError(selectionError instanceof Error ? selectionError.message : "Photos could not open.")); }} />
-            <ComposerAction label="Video" icon="▶" onPress={() => { setExpanded(true); media.chooseVideo().then((asset) => setNote(asset ? "Video selected for PulseSoc upload." : "No video selected. If access was denied, allow Photos in Settings.")).catch((selectionError) => setError(selectionError instanceof Error ? selectionError.message : "Videos could not open.")); }} />
-            <ComposerAction label="Camera" icon="◎" onPress={() => onOpenCamera("photo")} />
           </View>
         </View>
       ) : (
@@ -684,18 +693,17 @@ function visibilityLabel(visibility: Visibility) {
 const styles = StyleSheet.create({
   actionButton: {
     alignItems: "center",
-    backgroundColor: "rgba(9, 20, 33, 0.74)",
+    backgroundColor: "rgba(9, 20, 33, 0.54)",
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: logiNexus.radius.medium,
+    borderRadius: 16,
     borderWidth: 1,
-    flexBasis: "23%",
     flexGrow: 1,
     gap: 2,
     justifyContent: "center",
-    minHeight: 44,
-    paddingHorizontal: 4,
-    paddingVertical: 4,
-    minWidth: 66
+    minHeight: 48,
+    minWidth: 72,
+    paddingHorizontal: 8,
+    paddingVertical: 6
   },
   actionButtonSelected: {
     backgroundColor: "rgba(47, 225, 180, 0.14)",
@@ -708,13 +716,13 @@ const styles = StyleSheet.create({
     marginTop: 6
   },
   actionIcon: {
-    color: colors.accent,
-    fontSize: 14,
+    color: "#b5c7ff",
+    fontSize: 17,
     fontWeight: "900"
   },
   actionText: {
     color: colors.text,
-    fontSize: 8,
+    fontSize: 12,
     fontWeight: "900",
     maxWidth: "100%",
     textAlign: "center"
@@ -731,18 +739,18 @@ const styles = StyleSheet.create({
   },
   collapsedComposer: {
     alignItems: "center",
-    backgroundColor: "rgba(3, 11, 24, 0.7)",
+    backgroundColor: "rgba(3, 10, 21, 0.54)",
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 18,
+    borderRadius: 22,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 9,
-    minHeight: 52,
-    paddingHorizontal: 9,
-    paddingVertical: 7
+    gap: 12,
+    minHeight: 72,
+    paddingHorizontal: 12,
+    paddingVertical: 10
   },
   collapsedShell: {
-    gap: 6
+    gap: 12
   },
   collapsedModeRow: {
     marginTop: 0
@@ -759,19 +767,52 @@ const styles = StyleSheet.create({
   },
   collapsedMeta: {
     color: colors.accent,
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: "800",
     marginTop: 2
   },
   collapsedOpen: {
     color: colors.accent,
-    fontSize: 22,
+    fontSize: 30,
     fontWeight: "700"
   },
   collapsedPrompt: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: 18,
     fontWeight: "700"
+  },
+  collapsedQuickRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10
+  },
+  collapsedQuickTools: {
+    alignItems: "center",
+    backgroundColor: "rgba(3, 9, 18, 0.42)",
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 20,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: "row",
+    gap: 0,
+    minHeight: 58,
+    overflow: "hidden",
+    padding: 4
+  },
+  collapsedCreateButton: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderColor: "rgba(255,255,255,0.2)",
+    borderRadius: 24,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 58,
+    paddingHorizontal: 24
+  },
+  collapsedCreateText: {
+    color: colors.background,
+    fontSize: 16,
+    fontWeight: "900"
   },
   collapseButton: {
     alignItems: "center",
@@ -829,11 +870,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(159, 124, 255, 0.18)",
     borderColor: logiNexus.colors.home.borderIntelligence,
-    borderRadius: 17,
+    borderRadius: 24,
     borderWidth: 1,
-    height: 34,
+    height: 48,
     justifyContent: "center",
-    width: 34
+    width: 48
   },
   identityOrbText: {
     color: colors.accentStrong,
@@ -841,9 +882,9 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   identityImage: {
-    borderRadius: 16,
-    height: 32,
-    width: 32
+    borderRadius: 23,
+    height: 46,
+    width: 46
   },
   identitySignal: {
     backgroundColor: colors.accent,
@@ -859,9 +900,9 @@ const styles = StyleSheet.create({
   input: {
     color: colors.text,
     flex: 1,
-    fontSize: 14,
-    lineHeight: 18,
-    minHeight: 34,
+    fontSize: 17,
+    lineHeight: 22,
+    minHeight: 42,
     paddingVertical: 2,
     textAlignVertical: "center"
   },
@@ -1175,7 +1216,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.text,
-    fontSize: 17,
+    fontSize: 26,
     fontWeight: "900",
   },
   toolsPanel: {
@@ -1193,7 +1234,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 6
+    marginBottom: 12
   },
   titleActions: {
     alignItems: "center",
@@ -1201,10 +1242,11 @@ const styles = StyleSheet.create({
     gap: 8
   },
   wrap: {
-    backgroundColor: "rgba(10, 23, 39, 0.92)",
-    borderColor: "rgba(97, 216, 255, 0.62)",
-    marginBottom: 7,
-    padding: 7
+    backgroundColor: "rgba(7, 19, 32, 0.82)",
+    borderColor: "rgba(97, 216, 255, 0.38)",
+    borderRadius: 24,
+    marginBottom: 16,
+    padding: 13
   },
   wrapFocused: {
     borderColor: colors.accent,
