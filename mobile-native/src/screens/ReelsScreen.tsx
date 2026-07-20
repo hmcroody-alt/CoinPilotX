@@ -8,6 +8,7 @@ import {
   AppState,
   Dimensions,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -58,6 +59,7 @@ import { ReelPlayerCard } from "../components/ReelPlayerCard";
 import { classifyReelMedia } from "../reels/reelMediaKind";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
+import { registerReelsReselectHandler } from "../navigation/reelsReselect";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
@@ -113,6 +115,10 @@ export function ReelsScreen({ route, navigation }: Props) {
   const qaStateApplied = useRef(false);
   const loadVersion = useRef(0);
   const activeReelId = useRef(0);
+  const listRef = useRef<FlatList<PulseReel>>(null);
+  // Guards against overlapping reselect-refreshes so a rapid burst of
+  // double-taps cannot launch multiple concurrent feed refreshes.
+  const reselectingRef = useRef(false);
 
   async function load(mode: "initial" | "refresh" | "more" = "initial") {
     if (mode === "initial" && QA_REELS_STATE && QA_RECOVERY_STATES.has(QA_REELS_STATE as ConnectionState)) {
@@ -187,6 +193,32 @@ export function ReelsScreen({ route, navigation }: Props) {
     load("refresh").catch(() => undefined);
     if (commentReel) refreshComments(commentReel).catch(() => undefined);
   }), [lane, initialReelId, commentReel?.id]);
+
+  // Double-tapping the Reels bottom-tab while Reels is already the active route
+  // scrolls the feed back to the top and refreshes the CURRENTLY-selected lane
+  // (For You / Following / Trending / Music / Live) — it never forces the lane
+  // back to "For You". Momentum is cancelled by the scrollToOffset, the keyboard
+  // and any non-critical overlays (comments / reactions / music / more / share)
+  // are dismissed, and playback resumes on the new top item via activeIndex 0.
+  // A single re-tap is a no-op; only the double-tap reaches this handler.
+  useEffect(() => registerReelsReselectHandler(async () => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    Keyboard.dismiss();
+    setCommentReel(null);
+    setReactionReel(null);
+    setMusicReel(null);
+    setMoreReel(null);
+    setShareOpen(false);
+    setActiveIndex(0);
+    if (reselectingRef.current) return;
+    reselectingRef.current = true;
+    try {
+      await load("refresh");
+      AccessibilityInfo.announceForAccessibility?.("Reels refreshed");
+    } finally {
+      reselectingRef.current = false;
+    }
+  }), [lane, initialReelId]);
 
   useEffect(() => {
     configureReelsAudioSession().catch(() => undefined);
@@ -492,6 +524,7 @@ export function ReelsScreen({ route, navigation }: Props) {
       <Pressable accessibilityRole="button" accessibilityLabel="Create Reel" style={[styles.createButton, { top: insets.top + 6 }]} onPress={() => navigation.navigate("Tabs", { screen: "Home", params: { openComposer: true, composerMode: "reel" } })}><Text style={styles.createText}>＋</Text></Pressable>
       {offline && reels.length ? <View style={[styles.statusPill, { top: insets.top + 52 }]}><Text style={styles.statusPillText}>Saved Reels · {connectionState === "connecting" ? "refreshing" : cacheAge(cachedAt)}</Text></View> : null}
       <FlatList
+        ref={listRef}
         data={reels}
         keyExtractor={(item) => String(item.id)}
         renderItem={({ item, index }) => (

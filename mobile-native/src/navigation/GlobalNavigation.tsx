@@ -12,6 +12,7 @@ import { logiNexus } from "../theme/logiNexus";
 import { useBottomNavVisibility } from "./BottomNavVisibility";
 import { resolveBottomNavPolicy } from "./bottomNavPolicy";
 import { triggerHomeReselect } from "./homeReselect";
+import { triggerReelsReselect } from "./reelsReselect";
 import { AppTabParamList } from "./types";
 
 export type GlobalNavigationBadges = {
@@ -45,6 +46,11 @@ type HeaderProps = {
   identity?: GlobalNavigationIdentity;
   testID?: string;
 };
+
+// Max gap between two taps on the already-active Reels tab to count as a
+// double-tap. 320ms matches the platform double-tap feel without being so long
+// that two deliberate single taps are misread as one gesture.
+const REELS_DOUBLE_TAP_MS = 320;
 
 const PRIMARY_TABS: Array<{
   name: keyof AppTabParamList;
@@ -151,6 +157,9 @@ export function LogiNexusGlobalHeader({
 export function LogiNexusBottomNavigation({ state, descriptors, navigation, badges }: BottomTabBarProps & { badges?: GlobalNavigationBadges }) {
   const insets = useSafeAreaInsets();
   const activeRoute = state.routes[state.index]?.name as keyof AppTabParamList | undefined;
+  // Timestamp of the last tap on the Reels tab while it was already active, used
+  // to recognise a double-tap (second tap within DOUBLE_TAP_MS) → reselect.
+  const lastReelsTapRef = useRef(0);
   const { hidden: requestedHidden, showBottomNav } = useBottomNavVisibility();
   const hidden = resolveBottomNavPolicy(activeRoute) === "always-visible" ? false : requestedHidden;
   const hiddenProgress = useRef(new Animated.Value(0)).current;
@@ -211,6 +220,14 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
               accessibilityRole="tab"
               accessibilityLabel={item.accessibilityLabel}
               accessibilityState={{ selected: active, disabled }}
+              accessibilityActions={item.name === "Reels" && active ? [{ name: "refresh", label: "Refresh Reels" }] : undefined}
+              onAccessibilityAction={
+                item.name === "Reels" && active
+                  ? (event) => {
+                      if (event.nativeEvent.actionName === "refresh") triggerReelsReselect();
+                    }
+                  : undefined
+              }
               testID={`global-bottom-${String(item.name).toLowerCase()}`}
               disabled={disabled}
               style={({ pressed }) => [
@@ -227,6 +244,19 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
                 }
                 if (item.name === "Home" && active) {
                   triggerHomeReselect();
+                  return;
+                }
+                if (item.name === "Reels" && active) {
+                  // Already on Reels: only a DOUBLE-tap (two taps within the
+                  // window) triggers scroll-to-top + refresh. A lone tap is a
+                  // no-op (we're already here) and simply arms the window.
+                  const now = Date.now();
+                  if (now - lastReelsTapRef.current <= REELS_DOUBLE_TAP_MS) {
+                    lastReelsTapRef.current = 0;
+                    triggerReelsReselect();
+                  } else {
+                    lastReelsTapRef.current = now;
+                  }
                   return;
                 }
                 const event = route

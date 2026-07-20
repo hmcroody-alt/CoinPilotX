@@ -107,6 +107,18 @@ export function useNativeCallRoom() {
         globalsRegistered = true;
       }
       audioSessionRef.current = livekitNative.AudioSession;
+      // ROOT-CAUSE FIX (mirrors useLiveBroadcastRoom): autoConfigureAudioSession
+      // is false, so LiveKit will not set the iOS AVAudioSession category. Put it
+      // into playAndRecord/videoChat BEFORE starting the session so the mic
+      // actually captures — otherwise the published audio track is silent.
+      if (Platform.OS === "ios" && typeof livekitNative.AudioSession.setAppleAudioConfiguration === "function") {
+        await livekitNative.AudioSession.setAppleAudioConfiguration({
+          audioCategory: "playAndRecord",
+          audioMode: "videoChat",
+          audioCategoryOptions: ["allowBluetooth", "allowBluetoothA2DP", "allowAirPlay", "defaultToSpeaker"]
+        }).catch(() => undefined);
+      }
+      await livekitNative.AudioSession.configureAudio({ ios: { defaultOutput: "speaker" } }).catch(() => undefined);
       await livekitNative.AudioSession.startAudioSession();
 
       const room = new livekitClient.Room({
