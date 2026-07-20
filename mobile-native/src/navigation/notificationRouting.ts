@@ -14,17 +14,67 @@ export type NotificationRouteResult = {
   reason?: string;
 };
 
-export function setupNotificationResponseRouting() {
-  return Notifications.addNotificationResponseReceivedListener((response) => {
-    routeNotificationData(response.notification.request.content.data).catch(() => undefined);
-  });
+type NotificationResponseRoutingOptions = {
+  canRoute?: () => boolean;
+  onDeferred?: (target: string) => void;
+  includeLastResponse?: boolean;
+};
+
+let lastNotificationResponseKey = "";
+let lastNotificationResponseAt = 0;
+
+export function setupNotificationResponseRouting(options: NotificationResponseRoutingOptions = {}) {
+  const handleResponse = (response: Notifications.NotificationResponse | null) => {
+    if (!response) return;
+    const target = notificationTargetFromData(response.notification.request.content.data);
+    const responseKey = String(response.notification.request.identifier || target || "notification");
+    const now = Date.now();
+    if (responseKey === lastNotificationResponseKey && now - lastNotificationResponseAt < 5000) return;
+    lastNotificationResponseKey = responseKey;
+    lastNotificationResponseAt = now;
+    if (options.canRoute && !options.canRoute()) {
+      options.onDeferred?.(target || "/pulse/notifications");
+      return;
+    }
+    routeNotificationTarget(target).catch(() => undefined);
+  };
+  const subscription = Notifications.addNotificationResponseReceivedListener(handleResponse);
+  if (options.includeLastResponse !== false) {
+    Notifications.getLastNotificationResponseAsync().then(handleResponse).catch(() => undefined);
+  }
+  return subscription;
 }
 
 export async function routeNotificationData(data: Notifications.NotificationContent["data"] = {}): Promise<NotificationRouteResult> {
-  const target = normalizeNotificationTarget(
-    String(data?.target_url || data?.deep_link || data?.url || data?.web_url || data?.native_url || data?.app_url || "")
-  );
-  return routeNotificationTarget(target);
+  return routeNotificationTarget(notificationTargetFromData(data));
+}
+
+export function notificationTargetFromData(data: Notifications.NotificationContent["data"] = {}) {
+  const nested = data?.data && typeof data.data === "object" && !Array.isArray(data.data)
+    ? data.data as Record<string, unknown>
+    : {};
+  const payload = { ...nested, ...data } as Record<string, unknown>;
+  const explicit = stringPayloadValue(payload, "target_url", "deep_link", "route", "url", "web_url", "native_url", "app_url", "mobile_deep_link", "deepLink");
+  if (explicit) return normalizeNotificationTarget(explicit);
+
+  const eventType = stringPayloadValue(payload, "event_type", "notification_type", "push_type", "type").toLowerCase();
+  const callId = stringPayloadValue(payload, "call_id", "callId");
+  const conversationId = numericPayloadValue(payload, "conversation_id", "conversationId");
+  const reelId = numericPayloadValue(payload, "reel_id", "reelId");
+  const postId = numericPayloadValue(payload, "post_id", "postId");
+  const statusId = numericPayloadValue(payload, "status_id", "statusId");
+  const groupSlug = stringPayloadValue(payload, "group_slug", "groupSlug");
+  const actorProfile = stringPayloadValue(payload, "actor_public_player_id", "public_player_id", "username");
+
+  if (callId) return `/pulse/calls/${encodeURIComponent(callId)}`;
+  if (conversationId && /(message|chat|call|reply|mention)/.test(eventType)) return `/pulse/messages/${conversationId}`;
+  if (reelId) return `/pulse/reels/${reelId}`;
+  if (postId) return `/pulse/post/${postId}`;
+  if (statusId) return `/pulse/status/${statusId}`;
+  if (groupSlug) return `/pulse/groups/${encodeURIComponent(groupSlug)}`;
+  if (conversationId) return `/pulse/messages/${conversationId}`;
+  if (actorProfile && /(follow|profile|verification)/.test(eventType)) return `/pulse/profile/${encodeURIComponent(actorProfile.replace(/^@/, ""))}`;
+  return "/pulse/notifications";
 }
 
 export async function routeNotificationTarget(target: string): Promise<NotificationRouteResult> {
@@ -379,9 +429,38 @@ export function normalizeNotificationTarget(raw: string) {
     if (!["pulsesoc.com", "www.pulsesoc.com"].includes(parsed.hostname.toLowerCase())) return "";
     value = `${parsed.pathname}${parsed.search}${parsed.hash}`;
   }
+  value = normalizeNativeShorthandPath(value);
   if (!value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return "";
   if (value.startsWith("/api/") || value.startsWith("/static/") || value.startsWith("/admin/")) return "";
   return value;
+}
+
+function normalizeNativeShorthandPath(value: string) {
+  const mappings: Array<[RegExp, string]> = [
+    [/^\/post\/(\d+)/, "/pulse/post/$1"],
+    [/^\/reel(?:s)?\/(\d+)/, "/pulse/reels/$1"],
+    [/^\/message(?:s)?\/(\d+)/, "/pulse/messages/$1"],
+    [/^\/call(?:s)?\/([^/?#]+)/, "/pulse/calls/$1"],
+    [/^\/profile\/([^/?#]+)/, "/pulse/profile/$1"]
+  ];
+  for (const [pattern, replacement] of mappings) {
+    if (pattern.test(value)) return value.replace(pattern, replacement);
+  }
+  return value;
+}
+
+function stringPayloadValue(payload: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "string" && value.trim()) return value.trim().slice(0, 500);
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return "";
+}
+
+function numericPayloadValue(payload: Record<string, unknown>, ...keys: string[]) {
+  const value = Number(stringPayloadValue(payload, ...keys) || 0);
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
 }
 
 function navigateToNotifications() {

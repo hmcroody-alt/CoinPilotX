@@ -10,25 +10,16 @@ import {
 import { getPushPermissionState, registerPushDevice } from "../api/push";
 import { colors } from "../theme/colors";
 
-const DEFAULT_CATEGORIES = [
-  ["chat_message", "Chat Messages"],
-  ["comments", "Comments"],
-  ["likes", "Likes"],
-  ["mentions", "Mentions"],
-  ["follows", "Follows"],
-  ["live", "Live"],
-  ["crypto", "Crypto Alerts"],
-  ["intelligence", "Intelligence Alerts"],
-  ["marketplace", "Marketplace"],
-  ["purchase", "Purchases"],
-  ["premium", "Premium"],
-  ["security", "Security"]
-] as const;
+const FALLBACK_CATEGORIES = [
+  "chat_message", "group_message", "room_message", "comment", "reply", "reaction", "follow", "status", "mentions",
+  "live", "crypto", "intelligence", "marketplace", "purchase", "premium", "security", "marketing"
+];
 
 const CHANNELS = ["in_app", "push", "email", "sms"] as const;
 
 export function NotificationPreferencesScreen() {
   const [preferences, setPreferences] = useState<NotificationPreferences>({});
+  const [categories, setCategories] = useState<string[]>(FALLBACK_CATEGORIES);
   const [quietHours, setQuietHours] = useState(false);
   const [sound, setSound] = useState(true);
   const [vibration, setVibration] = useState(true);
@@ -40,7 +31,9 @@ export function NotificationPreferencesScreen() {
     try {
       const [prefData, experienceData] = await Promise.all([getNotificationPreferences(), getNotificationExperience()]);
       const permission = await getPushPermissionState();
-      setPreferences(seedPreferences(prefData.preferences || {}));
+      const serverCategories = normalizeCategories(prefData.categories, prefData.preferences);
+      setCategories(serverCategories);
+      setPreferences(seedPreferences(prefData.preferences || {}, serverCategories));
       const experience = experienceData.experience || {};
       setQuietHours(Boolean(experience.quiet_hours_enabled));
       setSound(experience.enable_notification_sound !== false);
@@ -48,7 +41,7 @@ export function NotificationPreferencesScreen() {
       setPushStatus(permission.message);
       setStatus("Preferences loaded.");
     } catch (error) {
-      setPreferences(seedPreferences({}));
+      setPreferences(seedPreferences({}, FALLBACK_CATEGORIES));
       setStatus(error instanceof Error ? error.message : "Notification preferences could not load.");
     }
   }
@@ -83,7 +76,7 @@ export function NotificationPreferencesScreen() {
       ...current,
       [category]: {
         ...(current[category] || {}),
-        [channel]: category === "security" && channel === "in_app" ? true : value
+        [channel]: isRequiredSecurityChannel(category, channel) ? true : value
       }
     }));
   }
@@ -114,17 +107,17 @@ export function NotificationPreferencesScreen() {
       </View>
       <View style={styles.panel}>
         <Text style={styles.panelTitle}>Categories</Text>
-        {DEFAULT_CATEGORIES.map(([category, label]) => (
+        {categories.map((category) => (
           <View key={category} style={styles.categoryBlock}>
-            <Text style={styles.categoryTitle}>{label}</Text>
+            <Text style={styles.categoryTitle}>{categoryLabel(category)}</Text>
             <View style={styles.channelGrid}>
               {CHANNELS.map((channel) => (
                 <ToggleRow
                   compact
                   key={`${category}-${channel}`}
                   label={channel.replace("_", " ")}
-                  value={Boolean(preferences[category]?.[channel]) || (category === "security" && channel === "in_app")}
-                  disabled={category === "security" && channel === "in_app"}
+                  value={Boolean(preferences[category]?.[channel]) || isRequiredSecurityChannel(category, channel)}
+                  disabled={isRequiredSecurityChannel(category, channel)}
                   onValueChange={(value) => toggle(category, channel, value)}
                 />
               ))}
@@ -161,9 +154,9 @@ function ToggleRow({
   );
 }
 
-function seedPreferences(existing: NotificationPreferences) {
+function seedPreferences(existing: NotificationPreferences, categories: string[]) {
   const next: NotificationPreferences = {};
-  DEFAULT_CATEGORIES.forEach(([category]) => {
+  categories.forEach((category) => {
     next[category] = {
       in_app: existing[category]?.in_app ?? true,
       push: existing[category]?.push ?? true,
@@ -171,8 +164,24 @@ function seedPreferences(existing: NotificationPreferences) {
       sms: existing[category]?.sms ?? true
     };
   });
-  next.security = { ...(next.security || {}), in_app: true };
+  if (next.security) next.security = { ...next.security, in_app: true, email: true };
   return next;
+}
+
+function normalizeCategories(serverCategories?: string[], existing: NotificationPreferences = {}) {
+  const source = [...(serverCategories || []), ...Object.keys(existing)];
+  const unique = Array.from(new Set(source.map((value) => String(value || "").trim()).filter(Boolean)));
+  return unique.length ? unique : FALLBACK_CATEGORIES;
+}
+
+function categoryLabel(category: string) {
+  return category
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function isRequiredSecurityChannel(category: string, channel: (typeof CHANNELS)[number]) {
+  return category === "security" && (channel === "in_app" || channel === "email");
 }
 
 const styles = StyleSheet.create({
