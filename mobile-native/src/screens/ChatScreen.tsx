@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Appearance,
   AppState,
   AppStateStatus,
   Easing,
@@ -54,8 +55,9 @@ import {
   syncConversation,
   uploadMessengerMedia
 } from "../api/messenger";
-import { PULSE_API_BASE_URL } from "../api/config";
+import { APP_VERSION, PULSE_API_BASE_URL } from "../api/config";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
+import { buildUndxUiContext, UndxUiContext } from "../undx/undxContext";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
 import { ConversationControlCenter } from "../components/ConversationControlCenter";
 import { PulseCommandAvatar, PulseCommandPanel } from "../components/PulseCommand";
@@ -183,6 +185,45 @@ function SignalIconButton({
       <Ionicons name={icon} size={Math.round(size * 0.46)} color={color} />
     </Pressable>
   );
+}
+
+function readOriginRoute(navigation: { getState?: () => unknown }): string | null {
+  try {
+    const state = navigation.getState?.() as { index?: number; routes?: Array<{ name?: string }> } | undefined;
+    if (!state || !Array.isArray(state.routes)) return null;
+    const index = typeof state.index === "number" ? state.index : state.routes.length - 1;
+    const prior = state.routes[index - 1];
+    return prior && typeof prior.name === "string" ? prior.name : null;
+  } catch {
+    return null;
+  }
+}
+
+async function collectUndxUiContext(
+  navigation: { getState?: () => unknown },
+  conversationId: number
+): Promise<UndxUiContext> {
+  const [screenReaderEnabled, reduceMotionEnabled] = await Promise.all([
+    AccessibilityInfo.isScreenReaderEnabled().catch(() => null),
+    AccessibilityInfo.isReduceMotionEnabled().catch(() => null)
+  ]);
+  let timezone: string | null = null;
+  try {
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    timezone = null;
+  }
+  return buildUndxUiContext({
+    surface: "undx_chat",
+    originRoute: readOriginRoute(navigation),
+    platform: Platform.OS,
+    appVersion: APP_VERSION || null,
+    screenReaderEnabled,
+    reduceMotionEnabled,
+    colorScheme: Appearance.getColorScheme(),
+    timezone,
+    selectedConversationId: conversationId
+  });
 }
 
 export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, "Chat">) {
@@ -451,7 +492,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         const data = await sendPulseAiMessage({
           body,
           client_message_id: local.client_message_id,
-          ui_context: { current_route: "Chat", selected_conversation_id: conversationId }
+          ui_context: await collectUndxUiContext(navigation, conversationId)
         });
         const nextMessages = data.messages || [];
         setMessages(nextMessages);
@@ -542,7 +583,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       });
       throw sendError;
     }
-  }, [assistantConversation, conversationId, mergeMessages, messages, replaceLocalMessage, sync]);
+  }, [assistantConversation, conversationId, mergeMessages, messages, navigation, replaceLocalMessage, sync]);
 
   const submitText = useCallback(async () => {
     const body = draft.trim();

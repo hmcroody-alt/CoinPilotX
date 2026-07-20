@@ -17,6 +17,10 @@ export const PULSESOC_QA_STATUS_FIXTURES =
 export const PULSESOC_QA_REELS_FIXTURES =
   process.env.EXPO_PUBLIC_PULSESOC_QA_REELS_FIXTURES === "1" &&
   /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(PULSE_API_BASE_URL);
+export const APP_VERSION = normalizeOptionalString(
+  (typeof Constants.expoConfig?.version === "string" ? Constants.expoConfig.version : "") ||
+    (typeof extra.appVersion === "string" ? extra.appVersion : "")
+);
 export const EXPO_PROJECT_ID = normalizeOptionalString(
   process.env.EXPO_PUBLIC_EXPO_PROJECT_ID ||
     (typeof easConfig.projectId === "string" ? easConfig.projectId : "") ||
