@@ -23,6 +23,7 @@ import {
   ViewToken
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
 import { PULSESOC_QA_REELS_FIXTURES } from "../api/config";
 import { PulseComment } from "../api/feed";
 import { liveWebUrl } from "../api/live";
@@ -54,6 +55,7 @@ import { PulseApiError } from "../api/pulseApi";
 import { describeDeleteError } from "../api/deleteErrors";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
 import { ReelPlayerCard } from "../components/ReelPlayerCard";
+import { classifyReelMedia } from "../reels/reelMediaKind";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { RootStackParamList } from "../navigation/types";
@@ -74,6 +76,7 @@ const QA_RECOVERY_STATES = new Set<ConnectionState>(["loading", "connecting", "o
 export function ReelsScreen({ route, navigation }: Props) {
   const { authState, requestReauthentication } = useAuth();
   const insets = useSafeAreaInsets();
+  const bottomNavScroll = useBottomNavScrollVisibility({ topRevealY: 40, minimumScrollableDistance: 40 });
   const params = route.params || {};
   const initialReelId = "reelId" in params ? Number(params.reelId || 0) : 0;
   const [reels, setReels] = useState<PulseReel[]>([]);
@@ -467,6 +470,16 @@ export function ReelsScreen({ route, navigation }: Props) {
 
   function joinLiveReel(reel: PulseReel) {
     const liveId = Number(reel.live_session_id || reel.live?.live_session_id || 0);
+    if (classifyReelMedia(reel) === "replay") {
+      navigation.navigate("ReplayViewer", {
+        liveId: liveId || undefined,
+        replayUrl: reel.live?.playback_url || reel.video_url || undefined,
+        poster: reel.poster_url || reel.live?.preview_url || undefined,
+        title: reel.title || "Replay",
+        creator: reel.author?.display_name || undefined
+      });
+      return;
+    }
     if (liveId) navigation.navigate("LiveDetail", { liveId, title: reel.title || "PulseSoc Live" });
   }
 
@@ -517,6 +530,9 @@ export function ReelsScreen({ route, navigation }: Props) {
         showsVerticalScrollIndicator={false}
         snapToInterval={viewportHeight}
         decelerationRate="fast"
+        onScroll={bottomNavScroll.onScroll}
+        onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
+        scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
         viewabilityConfig={viewabilityConfig.current}
         onViewableItemsChanged={onViewableItemsChanged.current}
         onEndReached={() => load("more").catch(() => undefined)}

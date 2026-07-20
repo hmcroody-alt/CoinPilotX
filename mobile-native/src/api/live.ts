@@ -6,8 +6,10 @@ import { pulseApi } from "./pulseApi";
 import {
   buildLiveStartPayload,
   normalizeGuestRequests,
+  normalizeLiveGuests,
   normalizeLiveKitCredentials,
   normalizeLiveStartResult,
+  type LiveGuest,
   type LiveGuestRequest,
   type LiveKitCredentials,
   type LiveStartResult
@@ -249,6 +251,28 @@ export async function listJoinRequests(liveId: number): Promise<LiveGuestRequest
   const data = await pulseApi<{ requests?: unknown }>(`/api/pulse/live/${liveId}/join-requests`);
   return normalizeGuestRequests(data.requests);
 }
+
+/**
+ * Host guest-management snapshot: pending join requests plus the active guests
+ * already on stage. One call to the real `GET /join-requests` endpoint, which
+ * returns both arrays. Host-gated by the backend.
+ */
+export async function listGuestManagement(liveId: number): Promise<{ requests: LiveGuestRequest[]; guests: LiveGuest[] }> {
+  const data = await pulseApi<{ requests?: unknown; guests?: unknown }>(`/api/pulse/live/${liveId}/join-requests`);
+  return { requests: normalizeGuestRequests(data.requests), guests: normalizeLiveGuests(data.guests) };
+}
+
+/** Mute, unmute, or remove an active guest (host only). Wired to the real guest-action endpoint. */
+export async function guestAction(liveId: number, guestId: number, action: "mute" | "unmute" | "remove") {
+  return pulseApi<{ ok?: boolean; status?: string; guest_id?: number; message?: string }>(
+    `/api/pulse/live/${liveId}/guests/${guestId}/${action}`,
+    { method: "POST", body: JSON.stringify({ source: "native" }) }
+  );
+}
+
+export const muteGuest = (liveId: number, guestId: number) => guestAction(liveId, guestId, "mute");
+export const unmuteGuest = (liveId: number, guestId: number) => guestAction(liveId, guestId, "unmute");
+export const removeGuest = (liveId: number, guestId: number) => guestAction(liveId, guestId, "remove");
 
 /** Accept or deny a pending guest/co-host join request (host only). */
 export async function respondToJoinRequest(liveId: number, requestId: number, action: "accept" | "deny") {

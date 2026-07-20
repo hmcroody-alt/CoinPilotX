@@ -42,6 +42,7 @@ import { ProfileEditScreen } from "../screens/ProfileEditScreen";
 import { PulseAiScreen } from "../screens/PulseAiScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
 import { ReelsScreen } from "../screens/ReelsScreen";
+import { ReplayViewerScreen } from "../screens/ReplayViewerScreen";
 import { SavedScreen } from "../screens/SavedScreen";
 import { SafetyHubScreen } from "../screens/SafetyHubScreen";
 import { SearchScreen } from "../screens/SearchScreen";
@@ -87,6 +88,7 @@ function TabNavigator({
   return (
     <BottomNavVisibilityProvider>
       <Tabs.Navigator
+        initialRouteName="Home"
         tabBar={(props) => <LogiNexusBottomNavigation {...props} badges={badges} />}
         screenOptions={({ navigation, route }) => ({
           header: ({ options }) => (
@@ -250,6 +252,7 @@ export function AppNavigator() {
       <Stack.Screen name="LiveDetail" component={LiveScreen} options={({ route }) => ({ title: route.params?.title || "Live" })} />
       <Stack.Screen name="LiveStudio" component={LiveStudioScreen} options={({ route }) => ({ title: route.params?.title || "Live Studio" })} />
       <Stack.Screen name="NativeLiveHost" component={LiveHostSessionScreen} options={{ headerShown: false, gestureEnabled: false }} />
+      <Stack.Screen name="ReplayViewer" component={ReplayViewerScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Events" component={EventsScreen} options={({ route }) => ({ title: route.params?.title || "Events" })} />
       <Stack.Screen name="EventDetail" component={EventsScreen} options={({ route }) => ({ title: route.params?.title || "Event" })} />
       <Stack.Screen name="LiveScheduleGateway" component={EventsScreen} options={{ title: "Schedule Live" }} />

@@ -4,6 +4,8 @@ import {
   formatViewerCount,
   normalizeGuestRequest,
   normalizeGuestRequests,
+  normalizeLiveGuest,
+  normalizeLiveGuests,
   normalizeLiveKitCredentials,
   normalizeLiveStartResult,
   pendingGuestRequests
@@ -162,6 +164,45 @@ describe("normalizeGuestRequest(s)", () => {
       { request_id: 3, user_id: 3, status: "requested" }
     ]);
     expect(pendingGuestRequests(list).map((item) => item.requestId).sort()).toEqual([1, 3]);
+  });
+});
+
+describe("normalizeLiveGuest(s)", () => {
+  it("normalizes an active guest payload from the backend", () => {
+    const guest = normalizeLiveGuest({
+      id: 12,
+      user_id: 88,
+      display_name: "Nova",
+      avatar_url: "a.png",
+      role: "cohost",
+      role_label: "Co-host",
+      status: "active",
+      audio_muted: 1,
+      video_enabled: true,
+      joined_at: "2026-07-20T10:00:00Z"
+    });
+    expect(guest).toEqual({
+      guestId: 12,
+      userId: 88,
+      displayName: "Nova",
+      avatarUrl: "a.png",
+      role: "cohost",
+      roleLabel: "Co-host",
+      status: "active",
+      audioMuted: true,
+      videoEnabled: true,
+      joinedAt: "2026-07-20T10:00:00Z"
+    });
+  });
+
+  it("drops guests without a usable guest id and dedupes by id", () => {
+    expect(normalizeLiveGuest({ user_id: 5 })).toBeNull();
+    const list = normalizeLiveGuests([
+      { id: 1, user_id: 1 },
+      { id: 2, user_id: 2 },
+      { id: 1, user_id: 1 }
+    ]);
+    expect(list.map((item) => item.guestId)).toEqual([1, 2]);
   });
 });
 

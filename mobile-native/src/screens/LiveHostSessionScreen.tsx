@@ -6,10 +6,13 @@ import {
   endLive,
   getLiveKitToken,
   getLiveState,
-  listJoinRequests,
-  respondToJoinRequest
+  listGuestManagement,
+  muteGuest,
+  removeGuest,
+  respondToJoinRequest,
+  unmuteGuest
 } from "../api/live";
-import { elapsedLabel, formatViewerCount, type LiveGuestRequest } from "../live/liveSession";
+import { elapsedLabel, formatViewerCount, type LiveGuest, type LiveGuestRequest } from "../live/liveSession";
 import { useLiveBroadcastRoom, type LiveParticipant } from "../live/useLiveBroadcastRoom";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -33,9 +36,11 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
   const [fatalError, setFatalError] = useState("");
   const [viewerCount, setViewerCount] = useState(0);
   const [requests, setRequests] = useState<LiveGuestRequest[]>([]);
+  const [activeGuests, setActiveGuests] = useState<LiveGuest[]>([]);
   const [elapsed, setElapsed] = useState(0);
   const [ending, setEnding] = useState(false);
   const [busyRequestId, setBusyRequestId] = useState(0);
+  const [busyGuestId, setBusyGuestId] = useState(0);
   const startedAtRef = useRef<number>(0);
   const endedRef = useRef(false);
 
@@ -95,12 +100,13 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
 
   const refreshLiveMeta = useCallback(async () => {
     if (liveId <= 0) return;
-    const [state, pending] = await Promise.all([
+    const [state, management] = await Promise.all([
       getLiveState(liveId).catch(() => null),
-      listJoinRequests(liveId).catch(() => [] as LiveGuestRequest[])
+      listGuestManagement(liveId).catch(() => ({ requests: [] as LiveGuestRequest[], guests: [] as LiveGuest[] }))
     ]);
     if (state) setViewerCount(Number(state.viewer_count || 0));
-    setRequests(pending);
+    setRequests(management.requests);
+    setActiveGuests(management.guests);
   }, [liveId]);
 
   useEffect(() => {
@@ -140,6 +146,38 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
       }
     },
     [liveId]
+  );
+
+  const moderateGuest = useCallback(
+    async (guest: LiveGuest, action: "mute" | "unmute" | "remove") => {
+      setBusyGuestId(guest.guestId);
+      try {
+        if (action === "remove") {
+          await removeGuest(liveId, guest.guestId);
+          setActiveGuests((current) => current.filter((item) => item.guestId !== guest.guestId));
+        } else {
+          await (action === "mute" ? muteGuest : unmuteGuest)(liveId, guest.guestId);
+          setActiveGuests((current) =>
+            current.map((item) => (item.guestId === guest.guestId ? { ...item, audioMuted: action === "mute" } : item))
+          );
+        }
+      } catch (error) {
+        Alert.alert("Could not update guest", error instanceof Error ? error.message : "Please try again.");
+      } finally {
+        setBusyGuestId(0);
+      }
+    },
+    [liveId]
+  );
+
+  const confirmRemoveGuest = useCallback(
+    (guest: LiveGuest) => {
+      Alert.alert("Remove guest?", `Remove ${guest.displayName} from the broadcast? They stop publishing immediately.`, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Remove", style: "destructive", onPress: () => moderateGuest(guest, "remove").catch(() => undefined) }
+      ]);
+    },
+    [moderateGuest]
   );
 
   const toggleMic = useCallback(() => {
@@ -263,6 +301,40 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
                   onPress={() => respond(request, "deny").catch(() => undefined)}
                 >
                   <Text style={styles.denyText}>Deny</Text>
+                </Pressable>
+              </View>
+            ))
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>On stage</Text>
+          {activeGuests.length === 0 ? (
+            <Text style={styles.sectionEmpty}>No guests are publishing yet. Accepted guests appear here to mute or remove.</Text>
+          ) : (
+            activeGuests.map((guest) => (
+              <View key={guest.guestId} style={styles.requestRow}>
+                <View style={styles.requestBody}>
+                  <Text style={styles.requestName} numberOfLines={1}>
+                    {guest.displayName}
+                  </Text>
+                  <Text style={styles.requestMeta} numberOfLines={1}>
+                    {guest.roleLabel} · {guest.audioMuted ? "muted" : "live audio"}
+                  </Text>
+                </View>
+                <Pressable
+                  style={[styles.requestAction, guest.audioMuted ? styles.acceptAction : styles.denyAction]}
+                  disabled={busyGuestId === guest.guestId}
+                  onPress={() => moderateGuest(guest, guest.audioMuted ? "unmute" : "mute").catch(() => undefined)}
+                >
+                  <Text style={guest.audioMuted ? styles.acceptText : styles.denyText}>{guest.audioMuted ? "Unmute" : "Mute"}</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.requestAction, styles.denyAction]}
+                  disabled={busyGuestId === guest.guestId}
+                  onPress={() => confirmRemoveGuest(guest)}
+                >
+                  <Text style={styles.removeText}>Remove</Text>
                 </Pressable>
               </View>
             ))
@@ -442,6 +514,10 @@ const styles = StyleSheet.create({
   requestName: {
     color: colors.text,
     fontSize: 15,
+    fontWeight: "800"
+  },
+  removeText: {
+    color: colors.danger,
     fontWeight: "800"
   },
   requestRow: {

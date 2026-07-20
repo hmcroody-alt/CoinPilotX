@@ -53,6 +53,19 @@ export type LiveGuestRequest = {
   requestedAt: string;
 };
 
+export type LiveGuest = {
+  guestId: number;
+  userId: number;
+  displayName: string;
+  avatarUrl: string;
+  role: string;
+  roleLabel: string;
+  status: string;
+  audioMuted: boolean;
+  videoEnabled: boolean;
+  joinedAt: string;
+};
+
 const CATEGORY_BY_LIVE_TYPE: Record<LiveTypeKey, string> = {
   solo: "Just Chatting",
   guest: "Collab",
@@ -174,6 +187,41 @@ export function normalizeGuestRequests(raw: unknown): LiveGuestRequest[] {
     out.push(req);
   }
   return out.sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+}
+
+export function normalizeLiveGuest(raw: Record<string, unknown> | null | undefined): LiveGuest | null {
+  const data = raw || {};
+  const guestId = toNum(data.id ?? data.guest_id);
+  const userId = toNum(data.user_id);
+  if (guestId <= 0) return null;
+  const role = toStr(data.role, "cohost");
+  return {
+    guestId,
+    userId,
+    displayName: toStr(data.display_name ?? data.username, "Guest"),
+    avatarUrl: toStr(data.avatar_url),
+    role,
+    roleLabel: toStr(data.role_label, role === "cohost" ? "Co-host" : "Guest"),
+    status: toStr(data.status, "active"),
+    audioMuted: toBool(data.audio_muted),
+    videoEnabled: toBool(data.video_enabled),
+    joinedAt: toStr(data.joined_at ?? data.live_at)
+  };
+}
+
+/** Dedupe active guests by guest id, preserving backend layout order. */
+export function normalizeLiveGuests(raw: unknown): LiveGuest[] {
+  const list = Array.isArray(raw) ? raw : [];
+  const seen = new Set<number>();
+  const out: LiveGuest[] = [];
+  for (const entry of list) {
+    const guest = normalizeLiveGuest(entry as Record<string, unknown>);
+    if (!guest) continue;
+    if (seen.has(guest.guestId)) continue;
+    seen.add(guest.guestId);
+    out.push(guest);
+  }
+  return out;
 }
 
 export function pendingGuestRequests(requests: LiveGuestRequest[]): LiveGuestRequest[] {
