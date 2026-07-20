@@ -1,7 +1,7 @@
 import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Linking, Platform, View } from "react-native";
+import { ActivityIndicator, AppState, Linking, Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { IncomingCallLayer } from "./src/calls/IncomingCallLayer";
 import { AppNavigator } from "./src/navigation/AppNavigator";
@@ -12,13 +12,14 @@ import { RootStackParamList } from "./src/navigation/types";
 import { AuthContext, AuthState, restoreSession } from "./src/session/auth";
 import { isQaSimulatorAuthEnabled, tryHandleQaSimulatorAuthUrl } from "./src/session/qaSimulatorAuth";
 import { colors } from "./src/theme/colors";
-import { registerPushDevice } from "./src/api/push";
+import { registerPushDevice, syncPushDeviceRegistration } from "./src/api/push";
 import { registerSessionInvalidationHandler } from "./src/api/pulseApi";
 
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>({ status: "loading", user: null });
   const [pendingQaCameraRoute, setPendingQaCameraRoute] = useState<RootStackParamList["CameraStudio"] | null>(null);
   const [pendingQaRedirectTarget, setPendingQaRedirectTarget] = useState("");
+  const [pendingNotificationTarget, setPendingNotificationTarget] = useState("");
 
   useEffect(() => {
     if (!isQaSimulatorAuthEnabled()) return;
@@ -42,12 +43,35 @@ export default function App() {
   useEffect(() => {
     if (authState.status !== "signedIn") return;
     registerPushDevice().catch(() => undefined);
+    const appState = AppState.addEventListener("change", (state) => {
+      if (state === "active") syncPushDeviceRegistration().catch(() => undefined);
+    });
+    return () => appState.remove();
   }, [authState.status, authState.user?.user_id]);
 
   useEffect(() => {
-    const subscription = setupNotificationResponseRouting();
+    const subscription = setupNotificationResponseRouting({
+      canRoute: () => authState.status === "signedIn",
+      onDeferred: (target) => setPendingNotificationTarget(target)
+    });
     return () => subscription.remove();
-  }, []);
+  }, [authState.status]);
+
+  useEffect(() => {
+    if (authState.status !== "signedIn" || !pendingNotificationTarget) return;
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts += 1;
+      if (navigationRef.isReady()) {
+        routeNotificationTarget(pendingNotificationTarget).catch(() => undefined);
+        setPendingNotificationTarget("");
+        clearInterval(interval);
+      } else if (attempts >= 20) {
+        clearInterval(interval);
+      }
+    }, 150);
+    return () => clearInterval(interval);
+  }, [authState.status, pendingNotificationTarget]);
 
   useEffect(() => {
     let mounted = true;
