@@ -1,5 +1,5 @@
 import { profileNavigationParams, profileTargetFromUrl } from "../api/profileTarget";
-import { openDashboardRoute } from "./dashboardRouting";
+import { openDashboardRoute, openDashboardWebFallback } from "./dashboardRouting";
 
 export type NativeRouteNavigation = {
   navigate: (...args: any[]) => void;
@@ -14,7 +14,8 @@ export function openNativeRoute(navigation: NativeRouteNavigation, routePath: st
   if (routePath === "/pulse") navigation.navigate("Tabs", { screen: "Home" });
   else if (routePath === "/pulse/dashboard") navigation.navigate("Tabs", { screen: "Dashboard" });
   else if (routePath === "/pulse/search") navigation.navigate("Tabs", { screen: "Search" });
-  else if (routePath === "/pulse/activity" || routePath === "/pulse/notifications") navigation.navigate("ActivityInbox", { title: "Activity Inbox" });
+  else if (routePath === "/pulse/activity") navigation.navigate("ActivityInbox", { title: "Activity Inbox" });
+  else if (routePath === "/pulse/notifications") navigation.navigate("NotificationCenter");
   else if (routePath === "/pulse/messages") navigation.navigate("Tabs", { screen: "Messenger" });
   else if (routePath === "/pulse/calls/qa-call-1") navigation.navigate("Call", { callId: "qa-call-1", callType: "video", title: "Call" });
   else if (routePath === "/pulse/profile") navigation.navigate("Tabs", { screen: "Profile" });
@@ -47,8 +48,7 @@ export function openNativeRoute(navigation: NativeRouteNavigation, routePath: st
   else if (routePath === "/pulse/intelligence") navigation.navigate("IntelligenceCenter", { title: "Intelligence" });
   else if (routePath === "/pulse/alerts") navigation.navigate("AlertManagement", { title: "Alerts" });
   else if (routePath === "/pulse/courses") navigation.navigate("Courses", { title: "Courses" });
-  else if (routePath === "/terms") navigation.navigate("TrustSafetyHelp", { title: "Terms" });
-  else if (routePath === "/privacy") navigation.navigate("TrustSafetyHelp", { title: "Privacy Policy" });
+  else if (routePath === "/terms" || routePath === "/privacy") openDashboardWebFallback(routePath);
   else openDashboardRoute(navigation, routePath);
 }
 

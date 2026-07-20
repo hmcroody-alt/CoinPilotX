@@ -64,7 +64,20 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
     openDashboardWebFallback(normalized);
     return;
   }
-  if (path.includes("/notifications") || path.includes("/activity")) {
+  if (
+    path === "/dashboard/network/notifications" ||
+    path.includes("/notification-preferences") ||
+    path.includes("/notifications/preferences") ||
+    path.includes("/notifications/settings")
+  ) {
+    navigation.navigate("NotificationPreferences");
+    return;
+  }
+  if (path.includes("/notifications")) {
+    navigation.navigate("NotificationCenter");
+    return;
+  }
+  if (path.includes("/activity")) {
     navigation.navigate("ActivityInbox", { title: "Activity Inbox" });
     return;
   }
