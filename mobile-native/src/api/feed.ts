@@ -255,6 +255,12 @@ export async function hidePost(postId: number, reason = "Hidden from Home") {
   });
 }
 
+export async function deletePost(postId: number) {
+  return pulseApi<{ ok?: boolean; message?: string; post_id?: number }>(`/api/pulse/posts/${postId}`, {
+    method: "DELETE"
+  });
+}
+
 export async function toggleFollowAuthor(post: PulsePost) {
   const author = post.author || post.user || {};
   const publicPlayerId = author.public_player_id || post.author_public_player_id || author.username || post.author_username || "";

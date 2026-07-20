@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import {
   addPostComment,
+  deletePost,
   getPostDetail,
   loadCachedPostDetail,
   PulseComment,
@@ -23,11 +24,15 @@ import {
   repostPost,
   savePost
 } from "../api/feed";
+import { isContentOwner } from "../api/contentOwnership";
+import { describeDeleteError } from "../api/deleteErrors";
 import { profileTargetFromPost } from "../api/profile";
 import { profileNavigationParams } from "../api/profileTarget";
 import { PostCard } from "../components/PostCard";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
+import { invalidateNativeSync } from "../core/eventSync";
 import { RootStackParamList } from "../navigation/types";
+import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 
@@ -35,6 +40,8 @@ type Props = NativeStackScreenProps<RootStackParamList, "PostDetail">;
 
 export function PostDetailScreen({ route, navigation }: Props) {
   const postId = route.params.postId;
+  const { authState } = useAuth();
+  const currentUserId = Number(authState.user?.user_id || 0);
   const [post, setPost] = useState<PulsePost | null>(null);
   const [comments, setComments] = useState<PulseComment[]>([]);
   const [commentBody, setCommentBody] = useState("");
@@ -44,6 +51,7 @@ export function PostDetailScreen({ route, navigation }: Props) {
   const [offline, setOffline] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function load(mode: "initial" | "refresh" = "initial") {
     setError("");
@@ -143,6 +151,29 @@ export function PostDetailScreen({ route, navigation }: Props) {
     }
   }
 
+  async function handleDelete(target: PulsePost) {
+    if (deleting) return;
+    setDeleting(true);
+    setBusy(true);
+    try {
+      await deletePost(target.id);
+      invalidateNativeSync(["activity", "notifications"], "post_detail_delete", [
+        {
+          event_type: "pulse_post_deleted",
+          entity_type: "post",
+          entity_id: target.id,
+          invalidates: ["activity", "notifications"],
+          metadata: { source: "native_post_detail" }
+        }
+      ]).catch(() => undefined);
+      navigation.goBack();
+    } catch (err) {
+      setError(describeDeleteError(err, "Post"));
+      setDeleting(false);
+      setBusy(false);
+    }
+  }
+
   if (loading && !post) {
     return (
       <LogiNexusScreenShell>
@@ -181,6 +212,7 @@ export function PostDetailScreen({ route, navigation }: Props) {
               onRepost={handleRepost}
               onPromote={(item) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: item.id, title: "Promote Post" })}
               onShare={(item) => Share.share({ message: pulsePostUrl(item.id) }).catch(() => undefined)}
+              onDelete={isContentOwner(post, currentUserId) ? handleDelete : undefined}
               onAuthorPress={(item) => {
                 const params = profileNavigationParams(profileTargetFromPost(item), item.author?.display_name || "Profile");
                 if (params) navigation.navigate("ProfileDetail", params);

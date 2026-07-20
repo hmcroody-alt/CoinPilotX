@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Image, Pressable, Share, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, Image, Pressable, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import { ResizeMode, Video } from "expo-av";
 import * as Haptics from "expo-haptics";
 import { mediaDisplayUrl, mediaKind, PulseMedia, PulsePost, pulsePostUrl } from "../api/feed";
@@ -34,6 +34,7 @@ type PostCardProps = {
   onHide?: (post: PulsePost) => void;
   onBlock?: (post: PulsePost) => void;
   onMute?: (post: PulsePost) => void;
+  onDelete?: (post: PulsePost) => void;
   onAuthorPress?: (post: PulsePost) => void;
 };
 
@@ -57,6 +58,7 @@ export function PostCard({
   onHide,
   onBlock,
   onMute,
+  onDelete,
   onAuthorPress
 }: PostCardProps) {
   const commentInputRef = useRef<TextInput>(null);
@@ -389,6 +391,33 @@ export function PostCard({
               }}
             >
               <Text style={styles.menuActionText}>Mute</Text>
+            </Pressable>
+          ) : null}
+          {onDelete ? (
+            <Pressable
+              testID={`home-feed-delete-${post.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Delete post ${post.id}`}
+              style={styles.menuAction}
+              disabled={busy}
+              onPress={(event) => {
+                event.stopPropagation();
+                setMenuOpen(false);
+                Alert.alert(
+                  "Delete post?",
+                  "This removes the post for everyone. This cannot be undone.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Delete",
+                      style: "destructive",
+                      onPress: () => onDelete(post)
+                    }
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.menuActionDangerText}>Delete</Text>
             </Pressable>
           ) : null}
         </View>
@@ -1074,6 +1103,11 @@ const styles = StyleSheet.create({
   },
   menuActionText: {
     color: colors.text,
+    fontSize: 12,
+    fontWeight: "900"
+  },
+  menuActionDangerText: {
+    color: colors.danger,
     fontSize: 12,
     fontWeight: "900"
   },

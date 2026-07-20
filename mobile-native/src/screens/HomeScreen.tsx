@@ -6,6 +6,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Easing, FlatList, Image, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View, ViewToken, useWindowDimensions } from "react-native";
 import {
   addPostComment,
+  deletePost,
   hidePost,
   listFeed,
   loadCachedFeed,
@@ -17,6 +18,8 @@ import {
   savePost,
   toggleFollowAuthor
 } from "../api/feed";
+import { isContentOwner } from "../api/contentOwnership";
+import { describeDeleteError } from "../api/deleteErrors";
 import { profileTargetFromPost } from "../api/profile";
 import { profileNavigationParams } from "../api/profileTarget";
 import { listStatuses, loadCachedStatuses, PulseStatus, statusPosterUrl } from "../api/status";
@@ -32,6 +35,7 @@ import { openDashboardRoute } from "../navigation/dashboardRouting";
 import { registerHomeReselectHandler } from "../navigation/homeReselect";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
 import { AppTabParamList, RootStackParamList } from "../navigation/types";
+import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 
@@ -95,6 +99,8 @@ function useHomeAmbientMotionEnabled() {
 export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const navigation = useNavigation<HomeNavigation>();
   const route = useRoute<RouteProp<AppTabParamList, "Home">>();
+  const { authState } = useAuth();
+  const currentUserId = Number(authState.user?.user_id || 0);
   const listRef = useRef<FlatList<PulsePost>>(null);
   const offsetRef = useRef(0);
   const hasMoreRef = useRef(false);
@@ -406,6 +412,29 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     }
   }
 
+  async function handleDelete(post: PulsePost) {
+    if (busyPostId === post.id) return;
+    setBusyPostId(post.id);
+    try {
+      await deletePost(post.id);
+      setPosts((current) => current.filter((item) => item.id !== post.id));
+      if (activePostId === post.id) setActivePostId(null);
+      invalidateNativeSync(["activity", "notifications"], "home_delete", [
+        {
+          event_type: "pulse_post_deleted",
+          entity_type: "post",
+          entity_id: post.id,
+          invalidates: ["activity", "notifications"],
+          metadata: { source: "native_home_feed" }
+        }
+      ]).catch(() => undefined);
+    } catch (err) {
+      setError(describeDeleteError(err, "Post"));
+    } finally {
+      setBusyPostId(null);
+    }
+  }
+
   function selectFeed(feedKey: string) {
     if (feedKey === selectedFeed) return;
     setSelectedFeed(feedKey);
@@ -548,6 +577,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             }
             onMute={handleMute}
             onFollow={handleFollow}
+            onDelete={isContentOwner(item, currentUserId) ? handleDelete : undefined}
             onAuthorPress={(post) => {
               const params = profileNavigationParams(profileTargetFromPost(post), post.author?.display_name || "Profile");
               if (params) navigation.navigate("ProfileDetail", params);

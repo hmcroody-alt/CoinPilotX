@@ -1,13 +1,15 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useState } from "react";
 import { FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
-import { listFeed, PulsePost } from "../api/feed";
+import { deletePost, listFeed, PulsePost } from "../api/feed";
+import { describeDeleteError } from "../api/deleteErrors";
 import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, profileWebUrl, PulseProfile, toggleProfileFollow } from "../api/profile";
 import { MessengerUserSearchResult, openDirectConversation } from "../api/messenger";
 import { NativeProfileTarget, profileNavigationParams, profileTargetFromAuthor, resolveProfileTarget } from "../api/profileTarget";
 import { PostCard } from "../components/PostCard";
 import { ProfileHeader } from "../components/ProfileHeader";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
+import { invalidateNativeSync } from "../core/eventSync";
 import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -34,6 +36,7 @@ export function ProfileScreen({ route, navigation }: Props) {
   const [errorState, setErrorState] = useState<ReturnType<typeof profileErrorState> | null>(null);
   const [actionMessage, setActionMessage] = useState("");
   const [followBusy, setFollowBusy] = useState(false);
+  const [busyPostId, setBusyPostId] = useState<number | null>(null);
 
   const visiblePosts = useMemo(() => (tab === "media" ? posts.filter((post) => post.media?.length) : posts), [posts, tab]);
 
@@ -112,6 +115,28 @@ export function ProfileScreen({ route, navigation }: Props) {
     }
   }
 
+  async function handleDeletePost(post: PulsePost) {
+    if (busyPostId === post.id) return;
+    setBusyPostId(post.id);
+    try {
+      await deletePost(post.id);
+      setPosts((current) => current.filter((item) => item.id !== post.id));
+      invalidateNativeSync(["activity", "notifications"], "profile_delete", [
+        {
+          event_type: "pulse_post_deleted",
+          entity_type: "post",
+          entity_id: post.id,
+          invalidates: ["activity", "notifications"],
+          metadata: { source: "native_profile" }
+        }
+      ]).catch(() => undefined);
+    } catch (deleteError) {
+      setActionMessage(describeDeleteError(deleteError, "Post"));
+    } finally {
+      setBusyPostId(null);
+    }
+  }
+
   if (loading && !profile) {
     return (
       <LogiNexusScreenShell>
@@ -177,7 +202,9 @@ export function ProfileScreen({ route, navigation }: Props) {
       renderItem={({ item }) => (
         <PostCard
           post={item}
+          busy={busyPostId === item.id}
           onOpen={(post) => navigation?.navigate("PostDetail", { postId: post.id, title: "Post" })}
+          onDelete={owner ? handleDeletePost : undefined}
           onAuthorPress={(post) => {
             const target = profileTargetFromAuthor(post.author as Record<string, unknown> | undefined, post as unknown as Record<string, unknown>);
             const params = profileNavigationParams(target, post.author?.display_name || "Profile");
