@@ -1,7 +1,7 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useState } from "react";
-import { FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
-import { deletePost, listFeed, PulsePost } from "../api/feed";
+import { FlatList, Linking, Pressable, RefreshControl, Share, StyleSheet, Text, View } from "react-native";
+import { deletePost, listFeed, PulsePost, pulsePostUrl, reactToPost, savePost } from "../api/feed";
 import { describeDeleteError } from "../api/deleteErrors";
 import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, profileWebUrl, PulseProfile, toggleProfileFollow } from "../api/profile";
 import { MessengerUserSearchResult, openDirectConversation } from "../api/messenger";
@@ -115,6 +115,44 @@ export function ProfileScreen({ route, navigation }: Props) {
     }
   }
 
+  function updateProfilePost(id: number, patch: Partial<PulsePost>) {
+    setPosts((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }
+
+  async function handleSave(post: PulsePost) {
+    if (busyPostId === post.id) return;
+    const wasSaved = Boolean(post.saved ?? post.is_saved);
+    setBusyPostId(post.id);
+    updateProfilePost(post.id, { saved: !wasSaved });
+    try {
+      const result = await savePost(post.id);
+      updateProfilePost(post.id, { saved: Boolean(result.saved ?? result.is_saved ?? !wasSaved) });
+    } catch {
+      updateProfilePost(post.id, { saved: wasSaved });
+    } finally {
+      setBusyPostId(null);
+    }
+  }
+
+  async function handleReact(post: PulsePost, reactionType: string) {
+    if (busyPostId === post.id) return;
+    const previous = post.viewer_reaction || "";
+    const removing = previous === reactionType;
+    setBusyPostId(post.id);
+    updateProfilePost(post.id, { viewer_reaction: removing ? "" : reactionType });
+    try {
+      const result = await reactToPost(post.id, reactionType);
+      updateProfilePost(post.id, {
+        viewer_reaction: String(result.viewer_reaction ?? (removing ? "" : reactionType)),
+        reaction_counts: result.reaction_counts ?? post.reaction_counts
+      });
+    } catch {
+      updateProfilePost(post.id, { viewer_reaction: previous });
+    } finally {
+      setBusyPostId(null);
+    }
+  }
+
   async function handleDeletePost(post: PulsePost) {
     if (busyPostId === post.id) return;
     setBusyPostId(post.id);
@@ -204,6 +242,10 @@ export function ProfileScreen({ route, navigation }: Props) {
           post={item}
           busy={busyPostId === item.id}
           onOpen={(post) => navigation?.navigate("PostDetail", { postId: post.id, title: "Post" })}
+          onReact={handleReact}
+          onSave={handleSave}
+          onComment={(post) => navigation?.navigate("PostDetail", { postId: post.id, title: "Comments" })}
+          onShare={(post) => Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined)}
           onDelete={owner ? handleDeletePost : undefined}
           onAuthorPress={(post) => {
             const target = profileTargetFromAuthor(post.author as Record<string, unknown> | undefined, post as unknown as Record<string, unknown>);

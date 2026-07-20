@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, Image, Pressable, Share, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, Image, Pressable, Share, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { ResizeMode, Video } from "expo-av";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,6 +15,26 @@ const MEDIA_ASPECT_MIN = 0.55;
 const MEDIA_ASPECT_MAX = 1.91;
 const COLLAPSED_BODY_LINES = 4;
 
+// Shared media layout contract for feed posts. Feed photo/video default to
+// fullBleed so media reaches the true feed-viewport edges regardless of the
+// per-screen list padding. Only media escapes the text content column.
+export type PostMediaLayout = "fullBleed" | "inset";
+
+// Derive the horizontal bleed from the measured card width and the actual
+// window width instead of a per-screen magic inset. When fullBleed, the media
+// container is pulled out symmetrically so it spans the full viewport width.
+export function computeMediaBleedStyle(
+  layout: PostMediaLayout,
+  windowWidth: number,
+  cardWidth: number
+): { marginHorizontal: number; width?: number } {
+  if (layout !== "fullBleed") return { marginHorizontal: 0 };
+  if (!(windowWidth > 0) || !(cardWidth > 0)) return { marginHorizontal: 0 };
+  const bleed = Math.max(0, (windowWidth - cardWidth) / 2);
+  if (bleed <= 0) return { marginHorizontal: 0 };
+  return { marginHorizontal: -bleed, width: windowWidth };
+}
+
 const VISIBILITY_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   public: "globe-outline",
   followers: "people-outline",
@@ -28,7 +48,7 @@ type PostCardProps = {
   busy?: boolean;
   active?: boolean;
   motionEnabled?: boolean;
-  edgeInset?: number;
+  mediaLayout?: PostMediaLayout;
   onOpen?: (post: PulsePost) => void;
   onReact?: (post: PulsePost, reactionType: string) => void;
   onSave?: (post: PulsePost) => void;
@@ -52,7 +72,7 @@ export function PostCard({
   busy,
   active = false,
   motionEnabled = true,
-  edgeInset = 12,
+  mediaLayout = "fullBleed",
   onOpen,
   onReact,
   onSave,
@@ -69,6 +89,9 @@ export function PostCard({
   onDelete,
   onAuthorPress
 }: PostCardProps) {
+  const { width: windowWidth } = useWindowDimensions();
+  const [cardWidth, setCardWidth] = useState(0);
+  const mediaBleedStyle = computeMediaBleedStyle(mediaLayout, windowWidth, cardWidth);
   const commentInputRef = useRef<TextInput>(null);
   const [commentBody, setCommentBody] = useState("");
   const [commentPosting, setCommentPosting] = useState(false);
@@ -91,6 +114,7 @@ export function PostCard({
   const reactionTotal = Object.values(post.reaction_counts || {}).reduce((sum, count) => sum + Number(count || 0), 0);
   const creatorLabel = author.premium_verified || author.verified ? "Pulse Creator" : "";
   const viewerLiked = Boolean(post.viewer_reaction);
+  const viewerSaved = Boolean(post.saved ?? post.is_saved);
 
   async function submitInlineComment() {
     const bodyText = commentBody.trim();
@@ -130,7 +154,7 @@ export function PostCard({
       onPress={() => onOpen?.(post)}
       disabled={!onOpen}
     >
-      <View style={styles.card}>
+      <View style={styles.card} onLayout={(event) => setCardWidth(event.nativeEvent.layout.width)}>
       <View style={styles.cardInset}>
         <View style={styles.cardHeader}>
           <Pressable
@@ -229,7 +253,7 @@ export function PostCard({
       </View>
 
       {post.media?.length ? (
-        <View style={[styles.mediaBleed, { marginHorizontal: -edgeInset }]}>
+        <View style={[styles.mediaBleed, mediaBleedStyle]}>
           <MediaStrip post={post} active={active} motionEnabled={motionEnabled} onReact={onReact} />
         </View>
       ) : null}
@@ -321,6 +345,23 @@ export function PostCard({
           <Text style={styles.actionIcon}>↗</Text>
           <Text style={styles.actionText}>{post.share_count ? compactCount(post.share_count) : "Share"}</Text>
         </Pressable>
+        {onSave ? (
+          <Pressable
+            testID={`home-feed-save-${post.id}`}
+            accessibilityRole="button"
+            accessibilityLabel={`${viewerSaved ? "Saved" : "Save"} post ${post.id}`}
+            accessibilityState={{ selected: viewerSaved, busy: Boolean(busy) }}
+            style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
+            disabled={busy}
+            onPress={(event) => {
+              event.stopPropagation();
+              onSave(post);
+            }}
+          >
+            <Ionicons name={viewerSaved ? "bookmark" : "bookmark-outline"} size={16} color={viewerSaved ? colors.accent : colors.muted} />
+            <Text style={[styles.actionText, viewerSaved && styles.actionTextActive]}>{viewerSaved ? "Saved" : "Save"}</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {reactionsOpen ? (

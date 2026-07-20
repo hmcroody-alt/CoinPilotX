@@ -619,7 +619,6 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
               busy={busyPostId === item.id}
               active={activePostId === item.id}
               motionEnabled={ambientMotionEnabled}
-              edgeInset={12}
               onOpen={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Post" })}
               onReact={handleReact}
               onSave={handleSave}
