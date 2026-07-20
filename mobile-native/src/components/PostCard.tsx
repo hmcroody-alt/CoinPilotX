@@ -285,19 +285,6 @@ export function PostCard({
           <Text style={styles.actionIcon}>↗</Text>
           <Text style={styles.actionText}>{post.share_count ? compactCount(post.share_count) : "Share"}</Text>
         </Pressable>
-        <Pressable
-          testID={`home-feed-save-${post.id}`}
-          accessibilityRole="button"
-          accessibilityLabel={`${post.saved ? "Saved" : "Save"} post ${post.id}`}
-          style={[styles.actionButton, styles.actionButtonTrailing]}
-          disabled={busy}
-          onPress={(event) => {
-            event.stopPropagation();
-            onSave?.(post);
-          }}
-        >
-          <Text style={[styles.actionIcon, post.saved && styles.actionIconActive]}>□</Text>
-        </Pressable>
       </View>
 
       {reactionsOpen ? (
@@ -782,10 +769,6 @@ const styles = StyleSheet.create({
   actionButtonActive: {
     backgroundColor: "rgba(37, 208, 167, 0.16)",
     borderColor: logiNexus.colors.home.borderActive
-  },
-  actionButtonTrailing: {
-    marginLeft: "auto",
-    minWidth: 40
   },
   actionIcon: {
     color: colors.muted,
