@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, AppState, Linking, Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import { IncomingCallLayer } from "./src/calls/IncomingCallLayer";
 import { AppNavigator } from "./src/navigation/AppNavigator";
 import { AuthNavigator } from "./src/navigation/AuthNavigator";
@@ -165,13 +166,15 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthContext.Provider value={auth}>
-        <NavigationContainer ref={navigationRef} theme={theme} linking={authState.status === "signedIn" ? linking : undefined}>
-          <StatusBar style="light" />
-          {authState.status === "signedIn" ? <AppNavigator /> : <AuthNavigator />}
-        </NavigationContainer>
-        <IncomingCallLayer signedIn={authState.status === "signedIn"} currentUserId={authState.user?.user_id} />
-      </AuthContext.Provider>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <AuthContext.Provider value={auth}>
+          <NavigationContainer ref={navigationRef} theme={theme} linking={authState.status === "signedIn" ? linking : undefined}>
+            <StatusBar style="light" />
+            {authState.status === "signedIn" ? <AppNavigator /> : <AuthNavigator />}
+          </NavigationContainer>
+          <IncomingCallLayer signedIn={authState.status === "signedIn"} currentUserId={authState.user?.user_id} />
+        </AuthContext.Provider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
