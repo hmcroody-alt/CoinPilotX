@@ -3,13 +3,14 @@ import { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useEffect, useRef, useState } from "react";
-import { Animated, Image, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, Animated, Image, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LogiNexusBadge, LogiNexusSignalIndicator } from "../components/LogiNexus";
 import { getPulseRadioState, playNextTrack, PulseRadioState, subscribePulseRadio, togglePulseRadio } from "../core/pulseRadio";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { useBottomNavVisibility } from "./BottomNavVisibility";
+import { resolveBottomNavPolicy } from "./bottomNavPolicy";
 import { triggerHomeReselect } from "./homeReselect";
 import { AppTabParamList } from "./types";
 
@@ -150,17 +151,25 @@ export function LogiNexusGlobalHeader({
 export function LogiNexusBottomNavigation({ state, descriptors, navigation, badges }: BottomTabBarProps & { badges?: GlobalNavigationBadges }) {
   const insets = useSafeAreaInsets();
   const activeRoute = state.routes[state.index]?.name as keyof AppTabParamList | undefined;
-  const { hidden, showBottomNav } = useBottomNavVisibility();
+  const { hidden: requestedHidden, showBottomNav } = useBottomNavVisibility();
+  const hidden = resolveBottomNavPolicy(activeRoute) === "always-visible" ? false : requestedHidden;
   const hiddenProgress = useRef(new Animated.Value(0)).current;
   const [shellHeight, setShellHeight] = useState(0);
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => undefined);
+    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     Animated.timing(hiddenProgress, {
-      duration: hidden ? 180 : 210,
+      duration: reduceMotion ? 0 : hidden ? 180 : 210,
       toValue: hidden ? 1 : 0,
       useNativeDriver: true
     }).start();
-  }, [hidden, hiddenProgress]);
+  }, [hidden, hiddenProgress, reduceMotion]);
 
   useEffect(() => {
     showBottomNav();

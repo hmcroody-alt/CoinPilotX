@@ -523,7 +523,6 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         <View style={[styles.homeStar, styles.homeStarThree]} />
         <View style={[styles.homeSignalWave, styles.homeSignalWaveOne]} />
         <View style={[styles.homeSignalWave, styles.homeSignalWaveTwo]} />
-        <StaticUFOField />
       </View>
       <FlatList
         testID="native-home-feed"
@@ -662,6 +661,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
         scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
       />
+      <StaticUFOField />
       <MasterNavigationDrawer visible={drawerOpen} onClose={() => setDrawerOpen(false)} onOpenRoute={openHomeRoute} />
       <WelcomeUfoOverlay active={isFocused && currentUserId > 0} />
     </View>

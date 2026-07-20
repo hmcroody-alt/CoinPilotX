@@ -90,7 +90,7 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
     return;
   }
   if (path.includes("/reels")) {
-    navigation.navigate("Reels", { title: "Reels" });
+    navigation.navigate("Tabs", { screen: "Reels" });
     return;
   }
   if (path.includes("/status") || path.includes("/statuses")) {

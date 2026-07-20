@@ -2,17 +2,25 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Animated, Image, Pressable, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import { ResizeMode, Video } from "expo-av";
 import * as Haptics from "expo-haptics";
+import { Ionicons } from "@expo/vector-icons";
 import { mediaDisplayUrl, mediaKind, PulseMedia, PulsePost, pulsePostUrl } from "../api/feed";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "./NativeMediaViewer";
-import { LogiNexusBadge } from "./LogiNexus";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { canonicalMediaPlaybackUrl, refreshCanonicalMediaAccess } from "../media/mediaAccess";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
-import { compactPreview, formatShortTime } from "../utils/format";
+import { formatShortTime } from "../utils/format";
 
 const MEDIA_ASPECT_MIN = 0.55;
 const MEDIA_ASPECT_MAX = 1.91;
+const COLLAPSED_BODY_LINES = 4;
+
+const VISIBILITY_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  public: "globe-outline",
+  followers: "people-outline",
+  friends: "people-outline",
+  private: "lock-closed-outline"
+};
 
 type PostCardProps = {
   post: PulsePost;
@@ -69,12 +77,16 @@ export function PostCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const [reactionsOpen, setReactionsOpen] = useState(false);
   const [bodyExpanded, setBodyExpanded] = useState(Boolean(detail));
+  const [bodyTruncated, setBodyTruncated] = useState(false);
   const likeScale = useRef(new Animated.Value(1)).current;
   const author = post.author || {};
   const displayName = author.display_name || author.name || post.author_name || "PulseSoc";
   const handle = author.username || author.handle || post.author_username || "";
-  const longBody = String(post.body || "").length > 260;
-  const body = detail || bodyExpanded ? post.body : compactPreview(post.body, "");
+  const body = post.body || "";
+  const showReadMore = !detail && bodyTruncated;
+  const visibilityKey = String(post.visibility || "public").toLowerCase();
+  const visibilityIcon = VISIBILITY_ICON[visibilityKey] || "globe-outline";
+  const visibilityLabel = visibilityKey.charAt(0).toUpperCase() + visibilityKey.slice(1);
   const commentCount = Number(post.comment_count || 0);
   const reactionTotal = Object.values(post.reaction_counts || {}).reduce((sum, count) => sum + Number(count || 0), 0);
   const creatorLabel = author.premium_verified || author.verified ? "Pulse Creator" : "";
@@ -138,12 +150,17 @@ export function PostCard({
                 <Text style={styles.authorName} numberOfLines={1}>
                   {displayName}
                 </Text>
-                {author.verified || author.premium_verified ? <Text style={styles.verifiedMark}>◆</Text> : null}
+                {author.verified || author.premium_verified ? (
+                  <Ionicons name="checkmark-circle" size={15} color={colors.accent} style={styles.verifiedMark} />
+                ) : null}
               </View>
-              <Text style={styles.meta} numberOfLines={1}>
-                {handle ? `@${handle} · ` : ""}
-                {formatShortTime(post.created_at)} · {post.visibility || "public"}
-              </Text>
+              <View style={styles.metaRow}>
+                <Text style={styles.meta} numberOfLines={1}>
+                  {handle ? `@${handle} · ` : ""}
+                  {formatShortTime(post.created_at)} · {visibilityLabel}
+                </Text>
+                <Ionicons name={visibilityIcon} size={11} color={colors.muted} style={styles.metaVisibilityIcon} />
+              </View>
             </View>
           </Pressable>
           <View style={styles.headerActions}>
@@ -180,14 +197,31 @@ export function PostCard({
           </View>
         </View>
 
-      <View style={styles.badgeRow}>
-        {creatorLabel ? <View style={styles.creatorPill}><Text style={styles.creatorPillText}>✦ {creatorLabel}</Text></View> : null}
-        <LogiNexusBadge label={post.visibility || "public"} />
-      </View>
+      {creatorLabel ? (
+        <View style={styles.badgeRow}>
+          <View style={styles.creatorPill}><Text style={styles.creatorPillText}>✦ {creatorLabel}</Text></View>
+        </View>
+      ) : null}
 
-      {post.title ? <Text style={styles.title}>{post.title}</Text> : null}
-      {body ? <Text style={styles.body}>{body}</Text> : null}
-      {longBody && !detail ? (
+      {post.title ? (
+        <Text style={styles.title} numberOfLines={detail ? undefined : 2}>
+          {post.title}
+        </Text>
+      ) : null}
+      {body && !detail ? (
+        <Text
+          style={[styles.body, styles.bodyMeasure]}
+          onTextLayout={(event) => setBodyTruncated(event.nativeEvent.lines.length > COLLAPSED_BODY_LINES)}
+        >
+          {body}
+        </Text>
+      ) : null}
+      {body ? (
+        <Text style={styles.body} numberOfLines={detail || bodyExpanded ? undefined : COLLAPSED_BODY_LINES}>
+          {body}
+        </Text>
+      ) : null}
+      {showReadMore ? (
         <Pressable accessibilityRole="button" accessibilityLabel={bodyExpanded ? "Collapse post" : "Read full post"} onPress={(event) => { event.stopPropagation(); setBodyExpanded((value) => !value); }}>
           <Text style={styles.readMore}>{bodyExpanded ? "Show less" : "Read more"}</Text>
         </Pressable>
@@ -225,7 +259,7 @@ export function PostCard({
           testID={`home-feed-like-${post.id}`}
           accessibilityRole="button"
           accessibilityLabel={`${viewerLiked ? "Liked" : "Like"} post ${post.id}`}
-          style={styles.actionButton}
+          style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
           disabled={busy}
           accessibilityState={{ selected: viewerLiked, busy: Boolean(busy) }}
           onLongPress={(event) => {
@@ -246,7 +280,7 @@ export function PostCard({
             testID={`home-feed-comment-${post.id}`}
             accessibilityRole="button"
             accessibilityLabel={`Comment on post ${post.id}`}
-            style={styles.actionButton}
+            style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
             disabled={busy}
             onPress={(event) => {
               event.stopPropagation();
@@ -262,7 +296,7 @@ export function PostCard({
           testID={`home-feed-repost-${post.id}`}
           accessibilityRole="button"
           accessibilityLabel={`${post.reposted ? "Reposted" : "Repost"} post ${post.id}`}
-          style={styles.actionButton}
+          style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
           disabled={busy}
           onPress={(event) => {
             event.stopPropagation();
@@ -278,7 +312,7 @@ export function PostCard({
           testID={`home-feed-share-${post.id}`}
           accessibilityRole="button"
           accessibilityLabel={`Share post ${post.id}`}
-          style={styles.actionButton}
+          style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
           onPress={(event) => {
             event.stopPropagation();
             onShare ? onShare(post) : Share.share({ message: pulsePostUrl(post.id) });
@@ -787,21 +821,16 @@ function reactionSummary(counts: Record<string, number>) {
 const styles = StyleSheet.create({
   actionButton: {
     alignItems: "center",
-    backgroundColor: "rgba(9, 20, 33, 0.56)",
-    borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: logiNexus.radius.capsule,
-    borderWidth: 1,
+    borderRadius: logiNexus.radius.medium,
+    flex: 1,
     flexDirection: "row",
-    gap: 5,
+    gap: 6,
     justifyContent: "center",
-    minHeight: 40,
-    minWidth: 42,
-    paddingHorizontal: 8,
-    paddingVertical: 7
+    minHeight: 38,
+    paddingVertical: 9
   },
-  actionButtonActive: {
-    backgroundColor: "rgba(37, 208, 167, 0.16)",
-    borderColor: logiNexus.colors.home.borderActive
+  actionButtonPressed: {
+    backgroundColor: "rgba(255, 255, 255, 0.05)"
   },
   actionIcon: {
     color: colors.muted,
@@ -817,10 +846,8 @@ const styles = StyleSheet.create({
     borderTopColor: logiNexus.colors.home.borderSubtle,
     borderTopWidth: 1,
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginTop: 11,
-    paddingTop: 9
+    marginTop: 10,
+    paddingTop: 4
   },
   actionText: {
     color: colors.muted,
@@ -877,7 +904,16 @@ const styles = StyleSheet.create({
   body: {
     color: colors.text,
     ...logiNexus.typography.home.cardBody,
-    marginTop: 12
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 10
+  },
+  bodyMeasure: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    opacity: 0,
+    zIndex: -1
   },
   commentNotice: {
     color: colors.muted,
@@ -1113,7 +1149,17 @@ const styles = StyleSheet.create({
   },
   meta: {
     color: colors.muted,
-    ...logiNexus.typography.home.cardMetadata
+    ...logiNexus.typography.home.cardMetadata,
+    flexShrink: 1
+  },
+  metaRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+    marginTop: 2
+  },
+  metaVisibilityIcon: {
+    marginTop: 1
   },
   overflowButton: {
     alignItems: "center",
@@ -1235,10 +1281,10 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.text,
-    fontSize: 22,
-    fontWeight: "900",
-    lineHeight: 27,
-    marginTop: 14
+    fontSize: 19,
+    fontWeight: "800",
+    lineHeight: 24,
+    marginTop: 12
   },
   utilityButton: {
     minHeight: 34,
@@ -1260,9 +1306,7 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   verifiedMark: {
-    color: colors.accentStrong,
-    fontSize: 13,
-    fontWeight: "900"
+    marginTop: 1
   },
   creatorPill: {
     backgroundColor: "rgba(159, 124, 255, 0.22)",
