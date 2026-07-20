@@ -53,7 +53,6 @@ import { profileNavigationParams, profileTargetFromAuthor } from "../api/profile
 import { ReelPlayerCard } from "../components/ReelPlayerCard";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
-import { pausePulseRadio } from "../core/pulseRadio";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
@@ -184,9 +183,7 @@ export function ReelsScreen({ route, navigation }: Props) {
   }), [lane, initialReelId, commentReel?.id]);
 
   useEffect(() => {
-    pausePulseRadio()
-      .catch(() => undefined)
-      .finally(() => configureReelsAudioSession().catch(() => undefined));
+    configureReelsAudioSession().catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -439,7 +436,7 @@ export function ReelsScreen({ route, navigation }: Props) {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.laneRailContent} style={[styles.laneRail, { top: insets.top + 6 }]} accessibilityRole="tablist">
         {REEL_LANES.map((item) => <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: lane === item.key }} style={[styles.laneButton, lane === item.key && styles.laneButtonActive]} onPress={() => setLane(item.key)}><Text style={[styles.laneText, lane === item.key && styles.laneTextActive]}>{item.label}</Text></Pressable>)}
       </ScrollView>
-      <Pressable accessibilityRole="button" accessibilityLabel="Create Reel" style={[styles.createButton, { top: insets.top + 6 }]} onPress={() => navigation.navigate("CameraStudio", { target: "reel", mode: "reel", title: "Create Reel" })}><Text style={styles.createText}>＋</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Create Reel" style={[styles.createButton, { top: insets.top + 6 }]} onPress={() => navigation.navigate("Tabs", { screen: "Home", params: { openComposer: true, composerMode: "reel" } })}><Text style={styles.createText}>＋</Text></Pressable>
       {offline && reels.length ? <View style={[styles.statusPill, { top: insets.top + 52 }]}><Text style={styles.statusPillText}>Saved Reels · {connectionState === "connecting" ? "refreshing" : cacheAge(cachedAt)}</Text></View> : null}
       <FlatList
         data={reels}

@@ -86,7 +86,7 @@ export function ReelPlayerCard({
   }, [initialSource, reel.id]);
 
   useEffect(() => {
-    if (active) {
+    if (active && !muted) {
       watchStartedAt.current = Date.now();
       claimMediaPlayback({
         id: playbackOwnerId,
@@ -103,6 +103,11 @@ export function ReelPlayerCard({
         setOwnsPlayback(granted);
         return granted ? videoRef.current?.playAsync() : undefined;
       }).catch(() => setOwnsPlayback(false));
+    } else if (active) {
+      watchStartedAt.current = Date.now();
+      setOwnsPlayback(false);
+      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+      videoRef.current?.playAsync().catch(() => undefined);
     } else {
       setOwnsPlayback(false);
       if (watchStartedAt.current) {
@@ -113,7 +118,7 @@ export function ReelPlayerCard({
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
     }
     return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
-  }, [active, onViewable, playbackOwnerId, reel]);
+  }, [active, muted, onViewable, playbackOwnerId, reel]);
 
   useEffect(() => {
     let cancelled = false;

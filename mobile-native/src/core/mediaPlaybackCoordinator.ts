@@ -14,7 +14,9 @@ const listeners = new Set<(owner: PlaybackOwner | null) => void>();
 const PRIORITY: Record<MediaPlaybackKind, number> = { call: 100, recording: 90, live: 70, voice: 60, viewer: 50, status: 40, reel: 40, feed: 35, music_preview: 30, radio: 20 };
 
 AppState.addEventListener("change", (next) => {
-  if (next !== "active") releaseMediaPlayback(undefined, "backgrounded").catch(() => undefined);
+  if (next === "active") return;
+  if (activeOwner?.kind === "radio") return;
+  releaseMediaPlayback(undefined, "backgrounded").catch(() => undefined);
 });
 
 export function getActiveMediaPlayback() {

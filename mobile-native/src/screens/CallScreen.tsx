@@ -31,7 +31,6 @@ import {
   submitCallQuality
 } from "../api/calls";
 import { useNativeCallRoom } from "../calls/useNativeCallRoom";
-import { pausePulseRadio } from "../core/pulseRadio";
 import { stopVoiceMessagePlayback } from "../core/voiceMessagePlayback";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -84,7 +83,6 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const title = caller.display_name || caller.username || params.title || "Connecting participant";
 
   useEffect(() => {
-    pausePulseRadio().catch(() => undefined);
     if (Platform.OS !== "web") {
       import("@livekit/react-native")
         .then((module) => setVideoViewComponent(() => module.VideoView as ComponentType<NativeVideoViewProps>))

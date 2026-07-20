@@ -9,6 +9,7 @@ import { LogiNexusBadge, LogiNexusSignalIndicator } from "../components/LogiNexu
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { useBottomNavVisibility } from "./BottomNavVisibility";
+import { triggerHomeReselect } from "./homeReselect";
 import { AppTabParamList } from "./types";
 
 export type GlobalNavigationBadges = {
@@ -211,6 +212,10 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
                 Haptics.selectionAsync().catch(() => undefined);
                 if (item.name === "Create") {
                   navigation.navigate("Home", { openComposer: true });
+                  return;
+                }
+                if (item.name === "Home" && active) {
+                  triggerHomeReselect();
                   return;
                 }
                 const event = route

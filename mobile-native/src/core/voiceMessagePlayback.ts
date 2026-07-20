@@ -1,6 +1,5 @@
 import { Audio, AVPlaybackStatus, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 import { AppState } from "react-native";
-import { pausePulseRadio } from "./pulseRadio";
 import { claimMediaPlayback, releaseMediaPlayback } from "./mediaPlaybackCoordinator";
 
 export type VoicePlaybackStatus = "idle" | "loading" | "playing" | "paused" | "error";
@@ -115,7 +114,6 @@ async function startVoicePlayback(request: PlayRequest, rate: number) {
     rate
   });
   try {
-    await pausePulseRadio().catch(() => undefined);
     const granted = await claimMediaPlayback({
       id: "voice-message",
       kind: "voice",

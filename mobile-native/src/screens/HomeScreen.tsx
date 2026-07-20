@@ -29,6 +29,7 @@ import { getPulseRadioState, PulseRadioState, subscribePulseRadio, togglePulseRa
 import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
 import { GlobalNavigationBadges, GlobalNavigationIdentity, LogiNexusGlobalHeader } from "../navigation/GlobalNavigation";
 import { openDashboardRoute } from "../navigation/dashboardRouting";
+import { registerHomeReselectHandler } from "../navigation/homeReselect";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
 import { AppTabParamList, RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -98,6 +99,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const offsetRef = useRef(0);
   const hasMoreRef = useRef(false);
   const loadingMoreRef = useRef(false);
+  const refreshingRef = useRef(false);
   const [posts, setPosts] = useState<PulsePost[]>([]);
   const bottomNavScroll = useBottomNavScrollVisibility({ enabled: posts.length > 0 });
   const [selectedFeed, setSelectedFeed] = useState(FEED_TABS[0].key);
@@ -147,11 +149,15 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const load = useCallback(
     async (mode: "initial" | "refresh" | "more" = "initial", feedKey = selectedFeed) => {
       if (mode === "more" && (!hasMoreRef.current || loadingMoreRef.current)) return;
+      if (mode === "refresh" && refreshingRef.current) return;
       const nextOffset = mode === "more" ? offsetRef.current : 0;
       setError("");
       setOffline(false);
       if (mode === "initial") setLoading(true);
-      if (mode === "refresh") setRefreshing(true);
+      if (mode === "refresh") {
+        refreshingRef.current = true;
+        setRefreshing(true);
+      }
       if (mode === "more") {
         loadingMoreRef.current = true;
         setLoadingMore(true);
@@ -172,6 +178,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       } finally {
         setLoading(false);
         setRefreshing(false);
+        if (mode === "refresh") refreshingRef.current = false;
         loadingMoreRef.current = false;
         setLoadingMore(false);
       }
@@ -219,6 +226,15 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       stopMarketplace();
     };
   }, [load]);
+
+  useEffect(() => registerHomeReselectHandler(async () => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    loadStatuses().catch(() => undefined);
+    if (!refreshingRef.current) {
+      await load("refresh");
+      AccessibilityInfo.announceForAccessibility?.("Home refreshed");
+    }
+  }), [load, loadStatuses]);
 
   const updatePost = useCallback((postId: number, next: Partial<PulsePost>) => {
     setPosts((current) => current.map((post) => (post.id === postId ? { ...post, ...next } : post)));
@@ -401,6 +417,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   }
 
   function refreshHome() {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
     loadStatuses().catch(() => undefined);
     load("refresh").catch(() => undefined);
   }
@@ -448,6 +465,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             identity={identity}
             initiallyExpandComposer={Boolean(route.params?.openComposer)}
             initialComposerMode={route.params?.composerMode || "post"}
+            captureReturnNonce={route.params?.composerReturnNonce || ""}
             onRefresh={refreshHome}
             onSelectFeed={selectFeed}
             onOpenUndx={() => navigation.navigate("Tabs", { screen: "PulseAI" })}
@@ -459,9 +477,17 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             onAddStatus={() => navigation.navigate("Tabs", { screen: "Status", params: { openCreator: true } })}
             onViewStatuses={() => navigation.navigate("Tabs", { screen: "Status" })}
             onOpenStatus={(status) => navigation.navigate("StatusDetail", { statusId: status.id, title: status.author?.display_name || "Status" })}
-            onOpenCamera={(mode) => {
-              if (mode === "reel") navigation.navigate("CameraStudio", { target: "reel", mode: "reel", title: "Reel Camera" });
-              else navigation.navigate("CameraStudio", { target: "feed", mode, title: mode === "video" ? "Video Camera" : "Camera" });
+            onOpenCamera={(cameraMode, composerMode) => {
+              const target = composerMode === "status" ? "status" : composerMode === "reel" ? "reel" : "feed";
+              const routeMode = composerMode === "status" ? "status" : composerMode === "reel" ? "reel" : cameraMode === "video" ? "video" : "photo";
+              navigation.navigate("CameraStudio", {
+                target,
+                mode: routeMode,
+                captureMode: cameraMode === "reel" ? "video" : cameraMode,
+                returnToComposer: true,
+                composerMode,
+                title: composerMode === "reel" ? "Reel Camera" : composerMode === "status" ? "Status Camera" : cameraMode === "video" ? "Video Camera" : "Camera"
+              });
             }}
             onCreated={(post) => {
               if (post) setPosts((current) => [post, ...current.filter((item) => item.id !== post.id)]);
@@ -475,8 +501,9 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
                 }
               ]).catch(() => undefined);
               load("refresh").catch(() => undefined);
+              loadStatuses().catch(() => undefined);
             }}
-            onOpenMusic={() => openDashboardRoute(navigation, "/dashboard/media/music-library")}
+            onOpenMusic={() => navigation.navigate("Music", { title: "PulseSoc Music" })}
           />
         }
         ListEmptyComponent={
@@ -557,6 +584,7 @@ function HomeHeader({
   ambientMotionEnabled,
   initiallyExpandComposer,
   initialComposerMode,
+  captureReturnNonce,
   onRefresh,
   onSelectFeed,
   onOpenUndx,
@@ -587,7 +615,8 @@ function HomeHeader({
   identity?: GlobalNavigationIdentity;
   ambientMotionEnabled: boolean;
   initiallyExpandComposer: boolean;
-  initialComposerMode: "post" | "reel";
+  initialComposerMode: "post" | "status" | "reel";
+  captureReturnNonce: string;
   onRefresh: () => void;
   onSelectFeed: (feedKey: string) => void;
   onOpenUndx: () => void;
@@ -598,9 +627,9 @@ function HomeHeader({
   onAddStatus: () => void;
   onViewStatuses: () => void;
   onOpenStatus: (status: PulseStatus) => void;
-  onOpenCamera: (mode: "photo" | "video" | "reel") => void;
+  onOpenCamera: (mode: "photo" | "video" | "reel", composerMode: "post" | "status" | "reel") => void;
   onCreated: (post?: PulsePost) => void;
-  onOpenMusic: () => void;
+  onOpenMusic: (composerMode: "post" | "status" | "reel") => void;
 }) {
   const { width } = useWindowDimensions();
   const compactHero = width < 360;
@@ -624,10 +653,10 @@ function HomeHeader({
           <HomePulseComposer
             initiallyExpanded={initiallyExpandComposer}
             initialMode={initialComposerMode}
+            captureReturnNonce={captureReturnNonce}
             identity={identity}
             onCreated={onCreated}
             onOpenCamera={onOpenCamera}
-            onOpenLive={onOpenLive}
             onOpenMusic={onOpenMusic}
             onOpenRoute={onOpenRoute}
           />
@@ -887,12 +916,13 @@ const PulseRadioHeroControl = memo(function PulseRadioHeroControl() {
   const busy = radio.status === "connecting" || radio.status === "buffering";
   const playing = radio.status === "playing";
   const unavailable = radio.status === "error" || radio.status === "offline";
-  const stateLabel = playing ? "playing" : busy ? "connecting" : unavailable ? "unavailable" : "paused";
+  const interrupted = radio.userWantsPlayback && Boolean(radio.interruptedBy);
+  const stateLabel = playing ? "playing" : busy ? "connecting" : unavailable ? "unavailable" : interrupted ? "paused for active audio" : "paused";
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`Pulse Radio, ${stateLabel}`}
-      accessibilityHint={playing ? "Pauses Pulse Radio" : "Starts Pulse Radio"}
+      accessibilityHint={playing ? "Pauses Pulse Radio" : interrupted ? "Keeps Pulse Radio paused instead of resuming after active audio ends" : "Starts Pulse Radio"}
       accessibilityState={{ busy }}
       testID="home-pulse-radio-toggle"
       style={[styles.heroRadioPill, playing && styles.heroRadioPillPlaying]}

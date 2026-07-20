@@ -631,6 +631,7 @@ function FeedInlineVideo({
   const poster = mediaPosterUrl(media);
   const playbackOwnerId = `feed:${postId}:${media.id || 0}`;
   const canAutoplay = active && motionEnabled;
+  const audibleAutoplay = canAutoplay && !muted;
 
   useEffect(() => {
     setSource(canonicalMediaPlaybackUrl(media));
@@ -639,7 +640,7 @@ function FeedInlineVideo({
   }, [media]);
 
   useEffect(() => {
-    if (canAutoplay) {
+    if (audibleAutoplay) {
       claimMediaPlayback({
         id: playbackOwnerId,
         kind: "feed",
@@ -648,6 +649,9 @@ function FeedInlineVideo({
       })
         .then((granted) => (granted ? videoRef.current?.playAsync() : undefined))
         .catch(() => undefined);
+    } else if (canAutoplay) {
+      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+      videoRef.current?.playAsync().catch(() => undefined);
     } else {
       videoRef.current?.pauseAsync().catch(() => undefined);
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
@@ -655,7 +659,7 @@ function FeedInlineVideo({
     return () => {
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
     };
-  }, [canAutoplay, playbackOwnerId]);
+  }, [audibleAutoplay, canAutoplay, playbackOwnerId]);
 
   async function recover() {
     if (refreshAttempted.current) {

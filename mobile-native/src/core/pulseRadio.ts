@@ -1,23 +1,27 @@
 import { Audio, AVPlaybackStatus, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
-import { AppState } from "react-native";
 import { listPulseRadioTracks, PulseRadioTrack, recordPulseRadioPlay } from "../api/radio";
-import { claimMediaPlayback, releaseMediaPlayback } from "./mediaPlaybackCoordinator";
+import { claimMediaPlayback, releaseMediaPlayback, subscribeMediaPlayback } from "./mediaPlaybackCoordinator";
 
 export type PulseRadioState = {
   status: "paused" | "connecting" | "buffering" | "playing" | "error" | "offline";
   track: PulseRadioTrack | null;
   message: string;
+  userWantsPlayback: boolean;
+  interruptedBy: string | null;
 };
 
 const listeners = new Set<(state: PulseRadioState) => void>();
-let state: PulseRadioState = { status: "paused", track: null, message: "Tap to play" };
+let state: PulseRadioState = { status: "paused", track: null, message: "Tap to play", userWantsPlayback: false, interruptedBy: null };
 let sound: Audio.Sound | null = null;
 let tracks: PulseRadioTrack[] = [];
 let trackIndex = 0;
 let intentGeneration = 0;
+let resumeScheduled = false;
+let lastInterruptionOwner: string | null = null;
 
-AppState.addEventListener("change", (next) => {
-  if (next !== "active" && state.status === "playing") pausePulseRadio().catch(() => undefined);
+subscribeMediaPlayback((owner) => {
+  if (owner?.id && owner.id !== "pulse-radio") lastInterruptionOwner = owner.kind;
+  if (!owner && state.userWantsPlayback && state.interruptedBy) scheduleRadioResume();
 });
 
 export function getPulseRadioState() {
@@ -34,15 +38,17 @@ export function subscribePulseRadio(listener: (next: PulseRadioState) => void) {
 
 export async function togglePulseRadio() {
   if (state.status === "playing" || state.status === "connecting" || state.status === "buffering") return pausePulseRadio();
+  if (state.userWantsPlayback && state.interruptedBy) return pausePulseRadio();
   return playPulseRadio();
 }
 
 export async function playPulseRadio() {
   if (state.status === "playing" || state.status === "connecting" || state.status === "buffering") return;
   const generation = ++intentGeneration;
+  update({ userWantsPlayback: true, interruptedBy: null });
   const granted = await claimMediaPlayback({ id: "pulse-radio", kind: "radio", pause: () => pausePulseRadio(false), stop: () => pausePulseRadio(false) });
   if (!granted) {
-    update({ status: "paused", message: "Pulse Radio pauses while higher-priority media is active." });
+    update({ status: "paused", message: "Pulse Radio is paused for active audio.", interruptedBy: lastInterruptionOwner || "active_audio" });
     return;
   }
   await startPlayback(generation);
@@ -50,10 +56,16 @@ export async function playPulseRadio() {
 
 export async function pausePulseRadio(releaseOwnership = true) {
   intentGeneration += 1;
+  const interruptedBy = releaseOwnership ? null : lastInterruptionOwner || "active_audio";
   const activeSound = sound;
   sound = null;
   if (activeSound) await activeSound.unloadAsync().catch(() => undefined);
-  update({ status: "paused", message: state.track ? "Paused" : "Tap to play" });
+  update({
+    status: "paused",
+    message: interruptedBy ? "Pulse Radio paused for active audio." : state.track ? "Paused" : "Tap to play",
+    userWantsPlayback: releaseOwnership ? false : state.userWantsPlayback,
+    interruptedBy
+  });
   if (releaseOwnership) await releaseMediaPlayback("pulse-radio");
 }
 
@@ -115,13 +127,23 @@ function handlePlaybackStatus(playback: AVPlaybackStatus, generation: number) {
 async function configureAudio() {
   await Audio.setAudioModeAsync({
     allowsRecordingIOS: false,
-    staysActiveInBackground: false,
+    staysActiveInBackground: true,
     playsInSilentModeIOS: true,
     interruptionModeIOS: InterruptionModeIOS.DoNotMix,
     interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
-    shouldDuckAndroid: true,
+    shouldDuckAndroid: false,
     playThroughEarpieceAndroid: false
   });
+}
+
+function scheduleRadioResume() {
+  if (resumeScheduled) return;
+  resumeScheduled = true;
+  setTimeout(() => {
+    resumeScheduled = false;
+    if (!state.userWantsPlayback || !state.interruptedBy) return;
+    playPulseRadio().catch(() => undefined);
+  }, 180);
 }
 
 function update(patch: Partial<PulseRadioState>) {

@@ -57,7 +57,7 @@ export function StatusViewerCard({
   const playbackOwnerId = `status:${status.id}`;
 
   useEffect(() => {
-    if (active) {
+    if (active && kind === "video" && !muted) {
       startedAt.current = Date.now();
       claimMediaPlayback({
         id: playbackOwnerId,
@@ -65,6 +65,10 @@ export function StatusViewerCard({
         pause: () => videoRef.current?.pauseAsync().then(() => undefined),
         stop: () => videoRef.current?.stopAsync().then(() => undefined)
       }).then((granted) => granted ? videoRef.current?.playAsync() : undefined).catch(() => undefined);
+    } else if (active) {
+      startedAt.current = Date.now();
+      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+      if (kind === "video") videoRef.current?.playAsync().catch(() => undefined);
     } else {
       if (startedAt.current) {
         onViewed?.(status, Date.now() - startedAt.current, false);
@@ -74,7 +78,7 @@ export function StatusViewerCard({
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
     }
     return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
-  }, [active, onViewed, playbackOwnerId, status]);
+  }, [active, kind, muted, onViewed, playbackOwnerId, status]);
 
   useEffect(() => {
     if (!active || paused || kind === "video") return;

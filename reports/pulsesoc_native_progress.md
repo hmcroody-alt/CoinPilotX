@@ -2,6 +2,27 @@
 
 Date: 2026-07-18
 
+## Latest Mission Status: Native WebView Replacement Readiness Audit
+
+- Date: 2026-07-19.
+- Scope: full static release-readiness check for replacing the production WebView app with the native PulseSoc app under the rule that no user flow should redirect to web.
+- Result: **NO-GO** for a once-and-for-all WebView replacement today.
+- Added `scripts/pulsesoc_native_webview_replacement_audit.py`.
+- Added `reports/pulsesoc_native_webview_replacement_readiness.md`.
+- Added machine-readable evidence at `reports/pulsesoc_native_webview_replacement_readiness.json`.
+- Audit found 96 native routes and 45 native screen files, but only 13 of 26 critical surface groups pass the strict native-only static gate.
+- Audit found no mounted `react-native-webview` component in `mobile-native/src`; the blockers are remaining URL exits and fallback policies.
+- Hard web-exit/fallback findings: 63.
+- Main blocker families: dashboard safe-web fallback routing, notification web target opening, profile web fallback buttons, marketplace/seller URL exits, camera advanced fallback, live fallback copy, search fallback copy, course/event fallback copy, and API helpers whose only behavior is `Linking.openURL`.
+
+Next highest-value mission:
+
+- Native Web Redirect Elimination Phase 1: navigation, dashboard, notification, profile, and search.
+
+Reason:
+
+- These are shared escape hatches that can redirect users out of native from many places. Fixing route policy first creates the enforcement gate required before commerce, creator, live, education, and provider-heavy flows can become native-only.
+
 ## Latest Mission Status: Native Voice Message Compact Bubble
 
 - Replaced the nested native `VOICE PULSE` media card with one compact horizontal player inside the canonical incoming/outgoing message bubble.
@@ -5578,3 +5599,28 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Full native typecheck is now blocked by unrelated errors in `mobile-native/src/screens/HomeScreen.tsx` and `mobile-native/src/screens/MusicScreen.tsx`.
 - Manual visual proof remains required: tap UNDX on simulator or physical device, send a prompt, verify the response, and confirm the old command form is gone.
 - Report: `reports/pulsesoc_native_undx_chat_conversation.md`.
+
+## Native UNDX Real Brain Identity Pipeline — 2026-07-19
+
+- Corrected the production assistant backend identity from the legacy public `Pulse AI` persona to canonical `UNDX` while preserving legacy `/api/pulse-ai/*` routes and `pulse_ai_*` tables for compatibility.
+- Reused the same production conversation, message persistence, provider routing, web-search, safety, feedback, and memory code paths instead of creating a native-only assistant backend.
+- Added server-owned UNDX identity constants: name `UNDX`, agent id `undx`, assistant id `undx`, participant id `-9001001`, and conversation type `undx_intelligence`.
+- Replaced the core provider system prompt with UNDX as PulseSOC's AGI-class digital intelligence companion and added a server-side anti-drift instruction so providers do not identify as Pulse AI.
+- Added backend response enforcement before persistence so identity questions and legacy-provider text cannot store `Pulse AI` as the assistant identity.
+- Updated native `sendPulseAiMessage` to include canonical UNDX metadata while keeping the server authoritative.
+- Added `scripts/pulsesoc_undx_identity_backend_audit.py`; focused backend/native identity audits, Python compile, `npm ci`, native typecheck, Expo Doctor, and `git diff --check` pass.
+- Xcode iPhone Simulator build/install exited successfully after dependency refresh. Visual prompt-response proof remains blocked: the Debug app first redboxed with `No script URL provided`; Metro was started, but the follow-up simulator screenshot/relaunch step was rejected by the environment escalated-action usage limit.
+- Physical iPhone verification for this exact identity response remains blocked by the same escalated-action usage limit. Prior UNDX work already proved physical build/install/launch, but not this final identity prompt-response.
+- Report: `reports/pulsesoc_undx_real_brain_identity_pipeline.md`.
+
+## Native Persistent Radio and Home Reselect — 2026-07-19
+
+- Converted PulseSoc Radio into a persistent native player coordinated by `mediaPlaybackCoordinator` instead of a screen-owned Music player.
+- Added iOS background audio configuration in Expo and native Info.plist, and configured the radio audio session to remain active in background with no app-media ducking.
+- Preserved explicit user playback intent across call, voice-message, Reel, Status, feed-video, Live, viewer, and preview interruptions; radio resumes only when the higher-priority owner releases and the user did not manually pause.
+- Stopped muted Reels, Status videos, and feed videos from unnecessarily claiming audio ownership, so silent video playback does not interrupt Pulse Radio.
+- Added an active-Home bottom-tab reselect handler that scrolls Home to the top and performs one guarded refresh through the existing feed/status loading path.
+- `npm ci`, native typecheck, Expo Doctor, Jest, focused persistent-radio audit, and `git diff --check` pass.
+- Xcode iPhone Simulator launch evidence was captured on the booted PulseSoc iPhone 16 Pro. Home visual reselect proof remains code-path/audit verified in this run because the deep-link attempt opened a web surface.
+- Physical devices were detected by Xcode but all were offline, so lock-screen/background/Bluetooth/call-interruption hardware proof remains physical-device-only release QA.
+- Report: `reports/pulsesoc_native_persistent_radio_home_reselect_2026-07-19.md`.
