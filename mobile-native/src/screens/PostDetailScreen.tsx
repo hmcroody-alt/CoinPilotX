@@ -175,6 +175,7 @@ export function PostDetailScreen({ route, navigation }: Props) {
               post={post}
               detail
               busy={busy}
+              edgeInset={16}
               onReact={handleReact}
               onSave={handleSave}
               onRepost={handleRepost}

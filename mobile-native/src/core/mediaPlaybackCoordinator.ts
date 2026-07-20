@@ -1,6 +1,6 @@
 import { AppState } from "react-native";
 
-export type MediaPlaybackKind = "call" | "recording" | "live" | "voice" | "radio" | "reel" | "status" | "viewer" | "music_preview";
+export type MediaPlaybackKind = "call" | "recording" | "live" | "voice" | "radio" | "reel" | "status" | "viewer" | "music_preview" | "feed";
 
 type PlaybackOwner = {
   id: string;
@@ -11,7 +11,7 @@ type PlaybackOwner = {
 
 let activeOwner: PlaybackOwner | null = null;
 const listeners = new Set<(owner: PlaybackOwner | null) => void>();
-const PRIORITY: Record<MediaPlaybackKind, number> = { call: 100, recording: 90, live: 70, voice: 60, viewer: 50, status: 40, reel: 40, music_preview: 30, radio: 20 };
+const PRIORITY: Record<MediaPlaybackKind, number> = { call: 100, recording: 90, live: 70, voice: 60, viewer: 50, status: 40, reel: 40, feed: 35, music_preview: 30, radio: 20 };
 
 AppState.addEventListener("change", (next) => {
   if (next !== "active") releaseMediaPlayback(undefined, "backgrounded").catch(() => undefined);

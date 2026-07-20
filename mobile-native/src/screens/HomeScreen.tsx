@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Battery from "expo-battery";
 import { RouteProp, useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Easing, FlatList, Image, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Easing, FlatList, Image, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View, ViewToken, useWindowDimensions } from "react-native";
 import {
   addPostComment,
   hidePost,
@@ -113,6 +113,12 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const [statusError, setStatusError] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const ambientMotionEnabled = useHomeAmbientMotionEnabled();
+  const [activePostId, setActivePostId] = useState<number | null>(null);
+  const feedViewabilityConfig = useRef({ itemVisiblePercentThreshold: 72 }).current;
+  const onFeedViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    const item = viewableItems.find((token) => token.isViewable)?.item as PulsePost | undefined;
+    setActivePostId(item ? item.id : null);
+  }).current;
   const selectionRestoredRef = useRef(false);
   const activeTab = useMemo(() => FEED_TABS.find((tab) => tab.key === selectedFeed) || FEED_TABS[0], [selectedFeed]);
 
@@ -480,10 +486,15 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             tone={error ? "warning" : "default"}
           />
         }
+        viewabilityConfig={feedViewabilityConfig}
+        onViewableItemsChanged={onFeedViewableItemsChanged}
         renderItem={({ item }) => (
           <PostCard
             post={item}
             busy={busyPostId === item.id}
+            active={activePostId === item.id}
+            motionEnabled={ambientMotionEnabled}
+            edgeInset={12}
             onOpen={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Post" })}
             onReact={handleReact}
             onSave={handleSave}

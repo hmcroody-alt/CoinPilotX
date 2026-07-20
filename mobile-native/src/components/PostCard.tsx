@@ -1,16 +1,26 @@
-import { useMemo, useRef, useState } from "react";
-import { Image, Pressable, Share, StyleSheet, Text, TextInput, View } from "react-native";
-import { mediaDisplayUrl, mediaKind, PulsePost, pulsePostUrl } from "../api/feed";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Animated, Image, Pressable, Share, StyleSheet, Text, TextInput, View } from "react-native";
+import { ResizeMode, Video } from "expo-av";
+import * as Haptics from "expo-haptics";
+import { mediaDisplayUrl, mediaKind, PulseMedia, PulsePost, pulsePostUrl } from "../api/feed";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "./NativeMediaViewer";
-import { LogiNexusBadge, LogiNexusCard } from "./LogiNexus";
+import { LogiNexusBadge } from "./LogiNexus";
+import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
+import { canonicalMediaPlaybackUrl, refreshCanonicalMediaAccess } from "../media/mediaAccess";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { compactPreview, formatShortTime } from "../utils/format";
+
+const MEDIA_ASPECT_MIN = 0.55;
+const MEDIA_ASPECT_MAX = 1.91;
 
 type PostCardProps = {
   post: PulsePost;
   detail?: boolean;
   busy?: boolean;
+  active?: boolean;
+  motionEnabled?: boolean;
+  edgeInset?: number;
   onOpen?: (post: PulsePost) => void;
   onReact?: (post: PulsePost, reactionType: string) => void;
   onSave?: (post: PulsePost) => void;
@@ -31,6 +41,9 @@ export function PostCard({
   post,
   detail,
   busy,
+  active = false,
+  motionEnabled = true,
+  edgeInset = 12,
   onOpen,
   onReact,
   onSave,
@@ -50,9 +63,11 @@ export function PostCard({
   const [commentBody, setCommentBody] = useState("");
   const [commentPosting, setCommentPosting] = useState(false);
   const [commentNotice, setCommentNotice] = useState("");
+  const [commentComposerOpen, setCommentComposerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [reactionsOpen, setReactionsOpen] = useState(false);
   const [bodyExpanded, setBodyExpanded] = useState(Boolean(detail));
+  const likeScale = useRef(new Animated.Value(1)).current;
   const author = post.author || {};
   const displayName = author.display_name || author.name || post.author_name || "PulseSoc";
   const handle = author.username || author.handle || post.author_username || "";
@@ -79,8 +94,19 @@ export function PostCard({
     }
   }
 
-  function focusComment() {
-    commentInputRef.current?.focus();
+  function toggleCommentComposer() {
+    setCommentComposerOpen((open) => {
+      const next = !open;
+      if (next) requestAnimationFrame(() => commentInputRef.current?.focus());
+      return next;
+    });
+  }
+
+  function pulseReaction() {
+    if (!motionEnabled) return;
+    likeScale.setValue(0.55);
+    Animated.spring(likeScale, { toValue: 1, useNativeDriver: true, friction: 3, tension: 140 }).start();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
   }
 
   return (
@@ -90,7 +116,8 @@ export function PostCard({
       onPress={() => onOpen?.(post)}
       disabled={!onOpen}
     >
-      <LogiNexusCard tone={post.viewer_reaction ? "creator" : "default"} style={styles.card}>
+      <View style={styles.card}>
+      <View style={styles.cardInset}>
         <View style={styles.cardHeader}>
           <Pressable
             testID={`home-feed-author-${post.id}`}
@@ -163,8 +190,15 @@ export function PostCard({
           <Text style={styles.readMore}>{bodyExpanded ? "Show less" : "Read more"}</Text>
         </Pressable>
       ) : null}
-      <MediaStrip post={post} />
+      </View>
 
+      {post.media?.length ? (
+        <View style={[styles.mediaBleed, { marginHorizontal: -edgeInset }]}>
+          <MediaStrip post={post} active={active} motionEnabled={motionEnabled} onReact={onReact} />
+        </View>
+      ) : null}
+
+      <View style={styles.cardInset}>
       <View style={styles.socialContextRow}>
         <Text style={styles.reactionSummary} accessibilityLabel={`${reactionTotal} reactions`}>{reactionSummary(post.reaction_counts || {})}</Text>
         <Text style={styles.socialContextText} numberOfLines={1}>
@@ -198,10 +232,11 @@ export function PostCard({
           }}
           onPress={(event) => {
             event.stopPropagation();
+            pulseReaction();
             onReact?.(post, post.viewer_reaction || "love");
           }}
         >
-          <Text style={[styles.actionIcon, viewerLiked && styles.actionIconActive]}>♥</Text>
+          <Animated.Text style={[styles.actionIcon, viewerLiked && styles.actionIconActive, { transform: [{ scale: likeScale }] }]}>♥</Animated.Text>
           <Text style={[styles.actionText, viewerLiked && styles.actionTextActive]}>{reactionTotal ? compactCount(reactionTotal) : "Like"}</Text>
         </Pressable>
         {onComment ? (
@@ -213,12 +248,12 @@ export function PostCard({
             disabled={busy}
             onPress={(event) => {
               event.stopPropagation();
-              if (onSubmitComment) focusComment();
+              if (onSubmitComment) toggleCommentComposer();
               else onComment(post);
             }}
           >
-            <Text style={styles.actionIcon}>◯</Text>
-            <Text style={styles.actionText}>{commentCount ? compactCount(commentCount) : "Comment"}</Text>
+            <Text style={[styles.actionIcon, commentComposerOpen && styles.actionIconActive]}>◯</Text>
+            <Text style={[styles.actionText, commentComposerOpen && styles.actionTextActive]}>{commentCount ? compactCount(commentCount) : "Comment"}</Text>
           </Pressable>
         ) : null}
         <Pressable
@@ -383,7 +418,7 @@ export function PostCard({
         </View>
       ) : null}
 
-      {!detail && onSubmitComment ? (
+      {!detail && onSubmitComment && commentComposerOpen ? (
         <Pressable
           testID={`home-feed-inline-comment-${post.id}`}
           style={styles.inlineCommentComposer}
@@ -437,14 +472,32 @@ export function PostCard({
         </Pressable>
       ) : null}
       {commentNotice ? <Text style={styles.commentNotice}>{commentNotice}</Text> : null}
-      </LogiNexusCard>
+      </View>
+      </View>
     </Pressable>
   );
 }
 
-function MediaStrip({ post }: { post: PulsePost }) {
+function clampedMediaAspect(media: PulseMedia) {
+  const explicit = Number(media.aspect_ratio || 0);
+  const width = Number(media.width || 0);
+  const height = Number(media.height || 0);
+  const raw = explicit > 0 ? explicit : width > 0 && height > 0 ? width / height : 0;
+  if (!Number.isFinite(raw) || raw <= 0) return 4 / 5;
+  return Math.min(MEDIA_ASPECT_MAX, Math.max(MEDIA_ASPECT_MIN, raw));
+}
+
+function mediaPosterUrl(media: PulseMedia) {
+  return mediaDisplayUrl({
+    ...media,
+    media_url: media.thumbnail_url || media.poster_url || media.valid_url || media.media_url || media.url || ""
+  });
+}
+
+function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost; active: boolean; motionEnabled: boolean; onReact?: (post: PulsePost, reactionType: string) => void }) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const author = post.author || {};
+  const likeMedia = onReact ? () => onReact(post, post.viewer_reaction || "love") : undefined;
   const viewerItems = useMemo(
     () =>
       (post.media || []).map((media) =>
@@ -458,33 +511,101 @@ function MediaStrip({ post }: { post: PulsePost }) {
     [author, post.body, post.id, post.media, post.title]
   );
   if (!post.media?.length) return null;
-  const gallery = post.media.length > 1;
+  const items = post.media.slice(0, 4);
+  const gallery = items.length > 1;
+
+  if (!gallery) {
+    const media = items[0];
+    const kind = mediaKind(media);
+    const aspect = clampedMediaAspect(media);
+    if (kind === "video") {
+      return (
+        <View>
+          <FeedInlineVideo
+            media={media}
+            postId={post.id}
+            aspect={aspect}
+            active={active}
+            motionEnabled={motionEnabled}
+            onOpenViewer={() => setViewerIndex(0)}
+          />
+          <NativeMediaViewer
+            visible={viewerIndex !== null}
+            items={viewerItems}
+            initialIndex={viewerIndex || 0}
+            title="Post media"
+            onClose={() => setViewerIndex(null)}
+            onShare={() => Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined)}
+          />
+        </View>
+      );
+    }
+    const url = mediaDisplayUrl(media);
+    return (
+      <View>
+        <Pressable
+          style={styles.mediaSingleWrap}
+          onPress={(event) => {
+            event.stopPropagation();
+            setViewerIndex(0);
+          }}
+          testID={`home-feed-media-${post.id}-0`}
+          accessibilityRole="button"
+          accessibilityLabel={`Open media 1 for post ${post.id}`}
+        >
+          <Image source={{ uri: url }} style={[styles.mediaSingleImage, { aspectRatio: aspect }]} resizeMode="cover" />
+        </Pressable>
+        <NativeMediaViewer
+          visible={viewerIndex !== null}
+          items={viewerItems}
+          initialIndex={viewerIndex || 0}
+          title="Post media"
+          onClose={() => setViewerIndex(null)}
+          onShare={() => Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined)}
+          onLike={likeMedia}
+        />
+      </View>
+    );
+  }
+
   return (
-    <View style={[styles.mediaWrap, gallery && styles.mediaGrid]}>
-      {post.media.slice(0, 4).map((media, index) => {
-        const url = mediaDisplayUrl(media);
-        const kind = mediaKind(media);
-        if (kind === "image") {
+    <View>
+      <View style={styles.mediaGrid}>
+        {items.map((media, index) => {
+          const url = mediaDisplayUrl(media);
+          const poster = mediaPosterUrl(media);
+          const kind = mediaKind(media);
           return (
-            <Pressable style={gallery ? styles.mediaTile : undefined} key={`${url}-${index}`} onPress={(event) => {
-              event.stopPropagation();
-              setViewerIndex(index);
-            }} testID={`home-feed-media-${post.id}-${index}`} accessibilityRole="button" accessibilityLabel={`Open media ${index + 1} for post ${post.id}`}>
-              <Image source={{ uri: url }} style={[styles.mediaImage, gallery && styles.mediaImageGrid]} resizeMode="cover" />
-              {index === 3 && post.media!.length > 4 ? <View style={styles.mediaMore}><Text style={styles.mediaMoreText}>+{post.media!.length - 4}</Text></View> : null}
+            <Pressable
+              style={styles.mediaTile}
+              key={`${url}-${index}`}
+              onPress={(event) => {
+                event.stopPropagation();
+                setViewerIndex(index);
+              }}
+              testID={`home-feed-media-${post.id}-${index}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${kind} media ${index + 1} for post ${post.id}`}
+            >
+              {kind === "image" ? (
+                <Image source={{ uri: url }} style={styles.mediaTileImage} resizeMode="cover" />
+              ) : (
+                <View style={styles.mediaTileVideoFallback}>
+                  {poster ? <Image source={{ uri: poster }} style={styles.mediaTileImage} resizeMode="cover" /> : null}
+                  <View style={styles.mediaTilePlayBadge}>
+                    <Text style={styles.mediaTilePlayIcon}>▶</Text>
+                  </View>
+                </View>
+              )}
+              {index === 3 && post.media!.length > 4 ? (
+                <View style={styles.mediaMore}>
+                  <Text style={styles.mediaMoreText}>+{post.media!.length - 4}</Text>
+                </View>
+              ) : null}
             </Pressable>
           );
-        }
-        return (
-          <Pressable key={`${url}-${index}`} style={[styles.mediaFallback, gallery && styles.mediaTile]} onPress={(event) => {
-            event.stopPropagation();
-            setViewerIndex(index);
-          }} testID={`home-feed-media-${post.id}-${index}`} accessibilityRole="button" accessibilityLabel={`Open ${kind} media ${index + 1} for post ${post.id}`}>
-            <Text style={styles.mediaFallbackTitle}>{kind === "video" ? "Video" : "Attachment"}</Text>
-            <Text style={styles.mediaFallbackText}>Open viewer</Text>
-          </Pressable>
-        );
-      })}
+        })}
+      </View>
       <NativeMediaViewer
         visible={viewerIndex !== null}
         items={viewerItems}
@@ -492,8 +613,130 @@ function MediaStrip({ post }: { post: PulsePost }) {
         title="Post media"
         onClose={() => setViewerIndex(null)}
         onShare={() => Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined)}
+        onLike={likeMedia}
       />
     </View>
+  );
+}
+
+function FeedInlineVideo({
+  media,
+  postId,
+  aspect,
+  active,
+  motionEnabled,
+  onOpenViewer
+}: {
+  media: PulseMedia;
+  postId: number;
+  aspect: number;
+  active: boolean;
+  motionEnabled: boolean;
+  onOpenViewer: () => void;
+}) {
+  const videoRef = useRef<Video>(null);
+  const refreshAttempted = useRef(false);
+  const [muted, setMuted] = useState(true);
+  const [buffering, setBuffering] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [refreshingUrl, setRefreshingUrl] = useState(false);
+  const [source, setSource] = useState(() => canonicalMediaPlaybackUrl(media));
+  const poster = mediaPosterUrl(media);
+  const playbackOwnerId = `feed:${postId}:${media.id || 0}`;
+  const canAutoplay = active && motionEnabled;
+
+  useEffect(() => {
+    setSource(canonicalMediaPlaybackUrl(media));
+    setFailed(false);
+    refreshAttempted.current = false;
+  }, [media]);
+
+  useEffect(() => {
+    if (canAutoplay) {
+      claimMediaPlayback({
+        id: playbackOwnerId,
+        kind: "feed",
+        pause: () => videoRef.current?.pauseAsync().then(() => undefined).catch(() => undefined),
+        stop: () => videoRef.current?.stopAsync().then(() => undefined).catch(() => undefined)
+      })
+        .then((granted) => (granted ? videoRef.current?.playAsync() : undefined))
+        .catch(() => undefined);
+    } else {
+      videoRef.current?.pauseAsync().catch(() => undefined);
+      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+    }
+    return () => {
+      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+    };
+  }, [canAutoplay, playbackOwnerId]);
+
+  async function recover() {
+    if (refreshAttempted.current) {
+      setFailed(true);
+      return;
+    }
+    refreshAttempted.current = true;
+    setRefreshingUrl(true);
+    try {
+      const refreshed = await refreshCanonicalMediaAccess(media);
+      if (!refreshed.url) throw new Error("unavailable");
+      setSource(refreshed.url);
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    } finally {
+      setRefreshingUrl(false);
+    }
+  }
+
+  return (
+    <Pressable
+      style={[styles.mediaSingleWrap, { aspectRatio: aspect }]}
+      onPress={(event) => {
+        event.stopPropagation();
+        onOpenViewer();
+      }}
+      accessibilityRole="button"
+      accessibilityLabel="Open video"
+    >
+      {poster ? <Image source={{ uri: poster }} style={StyleSheet.absoluteFillObject} resizeMode="cover" /> : null}
+      {!failed && source ? (
+        <Video
+          ref={videoRef}
+          source={{ uri: source }}
+          style={StyleSheet.absoluteFillObject}
+          resizeMode={ResizeMode.COVER}
+          shouldPlay={false}
+          isMuted={muted}
+          isLooping
+          progressUpdateIntervalMillis={400}
+          onPlaybackStatusUpdate={(status) => {
+            if (!status.isLoaded) {
+              if (status.error) recover().catch(() => undefined);
+              return;
+            }
+            setBuffering(Boolean(status.isBuffering));
+          }}
+          onError={() => recover().catch(() => undefined)}
+        />
+      ) : null}
+      {buffering || refreshingUrl ? (
+        <View style={styles.mediaVideoBuffering}>
+          <ActivityIndicator color={colors.accent} />
+        </View>
+      ) : null}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={muted ? "Unmute video" : "Mute video"}
+        style={styles.mediaVideoMute}
+        onPress={(event) => {
+          event.stopPropagation();
+          setMuted((value) => !value);
+        }}
+      >
+        <Text style={styles.mediaVideoMuteText}>{muted ? "⌁" : "◖))"}</Text>
+      </Pressable>
+    </Pressable>
   );
 }
 
@@ -627,14 +870,16 @@ const styles = StyleSheet.create({
     marginTop: 8
   },
   card: {
-    backgroundColor: "rgba(6, 14, 27, 0.94)",
-    borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 22,
-    marginBottom: 12,
-    padding: 14,
-    shadowColor: colors.accent,
-    shadowOpacity: 0.1,
-    shadowRadius: 18
+    borderBottomColor: logiNexus.colors.home.borderSubtle,
+    borderBottomWidth: 1,
+    paddingBottom: 14,
+    paddingTop: 14
+  },
+  cardInset: {
+    paddingHorizontal: 16
+  },
+  mediaBleed: {
+    marginTop: 12
   },
   cardHeader: {
     alignItems: "center",
@@ -643,7 +888,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between"
   },
   cardPressed: {
-    borderColor: colors.accent
+    backgroundColor: "rgba(255, 255, 255, 0.03)"
   },
   countRow: {
     borderTopColor: logiNexus.colors.home.borderSubtle,
@@ -747,42 +992,72 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "900"
   },
-  mediaFallback: {
-    alignItems: "center",
-    aspectRatio: 16 / 10,
-    backgroundColor: "rgba(9, 20, 33, 0.86)",
-    borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 16,
-    borderWidth: 1,
-    justifyContent: "center",
+  mediaSingleWrap: {
+    backgroundColor: colors.surfaceRaised,
     overflow: "hidden",
     width: "100%"
   },
-  mediaFallbackText: {
-    color: colors.muted,
-    fontSize: 12,
-    marginTop: 4
-  },
-  mediaFallbackTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "800"
-  },
-  mediaImage: {
-    aspectRatio: 16 / 10,
+  mediaSingleImage: {
     backgroundColor: colors.surfaceRaised,
-    borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 16,
-    borderWidth: 1,
     width: "100%"
-  },
-  mediaImageGrid: {
-    aspectRatio: 1,
-    height: "100%"
   },
   mediaGrid: {
     flexDirection: "row",
-    flexWrap: "wrap"
+    flexWrap: "wrap",
+    gap: 2
+  },
+  mediaTile: {
+    aspectRatio: 1,
+    flexBasis: "49.4%",
+    flexGrow: 1,
+    overflow: "hidden"
+  },
+  mediaTileImage: {
+    height: "100%",
+    width: "100%"
+  },
+  mediaTileVideoFallback: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceRaised,
+    height: "100%",
+    justifyContent: "center",
+    width: "100%"
+  },
+  mediaTilePlayBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(2, 8, 17, 0.55)",
+    borderRadius: 20,
+    height: 40,
+    justifyContent: "center",
+    position: "absolute",
+    width: 40
+  },
+  mediaTilePlayIcon: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "900",
+    marginLeft: 2
+  },
+  mediaVideoBuffering: {
+    alignItems: "center",
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center"
+  },
+  mediaVideoMute: {
+    alignItems: "center",
+    backgroundColor: "rgba(2, 10, 20, 0.62)",
+    borderRadius: 15,
+    bottom: 10,
+    height: 30,
+    justifyContent: "center",
+    position: "absolute",
+    right: 10,
+    width: 34
+  },
+  mediaVideoMuteText: {
+    color: "#68f3de",
+    fontSize: 10,
+    fontWeight: "900"
   },
   mediaMore: {
     alignItems: "center",
@@ -799,16 +1074,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 24,
     fontWeight: "900"
-  },
-  mediaTile: {
-    aspectRatio: 1,
-    flexBasis: "48%",
-    flexGrow: 1,
-    overflow: "hidden"
-  },
-  mediaWrap: {
-    gap: 7,
-    marginTop: 12
   },
   menuAction: {
     alignItems: "center",
