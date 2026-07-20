@@ -6,8 +6,6 @@ import {
   CreatorState,
   getCreatorState,
   loadCachedCreatorState,
-  openCreatorWebFallback,
-  plannerWebRoute,
   saveContentPlannerItem
 } from "../api/creator";
 import { Panel } from "../components/Panel";
@@ -186,13 +184,6 @@ export function ContentPlannerScreen({ route, navigation }: Props) {
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Gateway tools</Text>
-        <Gateway label="Content Planner Web" body="Full planner board and backend checklist state." onPress={() => openCreatorWebFallback(plannerWebRoute("planner")).catch(() => undefined)} />
-        <Gateway label="Draft Studio Web" body="Advanced draft editing and version-history unavailable states." onPress={() => openCreatorWebFallback(plannerWebRoute("drafts")).catch(() => undefined)} />
-        <Gateway label="Post Scheduler Web" body="Backend-owned queue review and schedule validation." onPress={() => openCreatorWebFallback(plannerWebRoute("scheduler")).catch(() => undefined)} />
-      </Panel>
-
-      <Panel>
         <Text style={styles.sectionTitle}>Publish safety</Text>
         <Text style={styles.muted}>Publish now, recurring schedules, bulk scheduling, smart rescheduling, and version history stay on safe fallback until backend contracts expose native authority.</Text>
       </Panel>
@@ -265,19 +256,6 @@ function Toggle({ label, value, onPress }: { label: string; value: boolean; onPr
       <View style={[styles.toggleDot, value ? styles.toggleDotOn : undefined]} />
       <Text style={styles.toggleText}>{label}</Text>
       <Text style={styles.toggleState}>{value ? "Yes" : "No"}</Text>
-    </Pressable>
-  );
-}
-
-function Gateway({ label, body, onPress }: { label: string; body: string; onPress: () => void }) {
-  return (
-    <Pressable style={styles.gateway} onPress={onPress}>
-      <View style={styles.gatewayPulse} />
-      <View style={styles.gatewayBody}>
-        <Text style={styles.gatewayTitle}>{label}</Text>
-        <Text style={styles.muted}>{body}</Text>
-      </View>
-      <Text style={styles.gatewayOpen}>Open</Text>
     </Pressable>
   );
 }

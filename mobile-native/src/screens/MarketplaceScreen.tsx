@@ -4,7 +4,6 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
-  Linking,
   Modal,
   Pressable,
   RefreshControl,
@@ -26,7 +25,7 @@ import {
   searchMarketplace,
   startMarketplaceSellerChat
 } from "../api/marketplace";
-import { PULSE_API_BASE_URL } from "../api/config";
+import { DIGITAL_COMMERCE_ENABLED } from "../api/config";
 import { mediaDisplayUrl } from "../api/feed";
 import { profileNavigationParams, resolveProfileTarget } from "../api/profileTarget";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
@@ -114,7 +113,7 @@ export function MarketplaceScreen({ route, navigation }: Props) {
 
   async function handleContactSeller(listing: MarketplaceListing) {
     if (!listing.seller_user_id) {
-      await Linking.openURL(marketplaceWebUrl(listing.id)).catch(() => undefined);
+      setError("This seller cannot be messaged from the app yet.");
       return;
     }
     setBusyId(listing.id);
@@ -122,8 +121,8 @@ export function MarketplaceScreen({ route, navigation }: Props) {
       const result = await startMarketplaceSellerChat(listing.seller_user_id);
       if (result.conversation_id && navigation) {
         navigation.navigate("Chat", { conversationId: result.conversation_id, title: listing.seller_name || "Seller" });
-      } else if (result.next_url) {
-        await Linking.openURL(result.next_url.startsWith("http") ? result.next_url : `${PULSE_API_BASE_URL}${result.next_url}`).catch(() => undefined);
+      } else {
+        setError("Seller chat is not available for this listing yet.");
       }
     } catch (contactError) {
       setError(contactError instanceof Error ? contactError.message : "Seller chat could not be opened.");
@@ -293,9 +292,6 @@ function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onCo
           <Pressable style={styles.closeButton} onPress={onClose}>
             <Text style={styles.closeText}>Close</Text>
           </Pressable>
-          <Pressable style={styles.webButton} onPress={() => Linking.openURL(marketplaceWebUrl(listing.id)).catch(() => undefined)}>
-            <Text style={styles.webButtonText}>Open Web</Text>
-          </Pressable>
         </View>
         <Pressable disabled={!viewerItems.length} onPress={() => setViewerOpen(true)}>
           {cover ? <Image source={{ uri: cover }} style={styles.detailCover} resizeMode="cover" /> : <View style={styles.detailCoverFallback}><Text style={styles.coverText}>No media loaded</Text></View>}
@@ -317,9 +313,11 @@ function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onCo
           <Pressable style={styles.primaryButton} disabled={busy} onPress={() => onContactSeller(listing)}>
             <Text style={styles.primaryText}>Contact Seller</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} disabled={busy} onPress={() => onCheckout(listing)}>
-            <Text style={styles.secondaryText}>Checkout</Text>
-          </Pressable>
+          {DIGITAL_COMMERCE_ENABLED ? (
+            <Pressable style={styles.secondaryButton} disabled={busy} onPress={() => onCheckout(listing)}>
+              <Text style={styles.secondaryText}>Checkout</Text>
+            </Pressable>
+          ) : null}
           <Pressable style={styles.secondaryButton} disabled={busy || listing.saved} onPress={() => onSave(listing)}>
             <Text style={styles.secondaryText}>{listing.saved ? "Saved" : "Save"}</Text>
           </Pressable>

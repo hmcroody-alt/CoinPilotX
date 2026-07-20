@@ -14,6 +14,7 @@ import {
   sellerStoreWebUrl,
   updateMarketplaceSellerListing
 } from "../api/marketplace";
+import { DIGITAL_COMMERCE_ENABLED } from "../api/config";
 import { mediaDisplayUrl } from "../api/feed";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
 import { Panel } from "../components/Panel";
@@ -227,18 +228,15 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           <Metric label="Orders loaded" value={String(orders.length)} />
         </View>
         <View style={styles.actionRow}>
-          <Pressable style={styles.primaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl("dashboard")).catch(() => undefined)}>
-            <Text style={styles.primaryText}>Open Merchant Dashboard</Text>
-          </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
-            <Text style={styles.secondaryText}>Marketplace</Text>
+          <Pressable style={styles.primaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
+            <Text style={styles.primaryText}>Marketplace</Text>
           </Pressable>
         </View>
       </Panel>
 
       <Panel>
         <Text style={styles.sectionTitle}>Merchant application</Text>
-        <Text style={styles.copy}>Submit the native quick application to the existing seller endpoint, then use the protected web application for private document upload and admin review.</Text>
+        <Text style={styles.copy}>Submit the native seller application to the existing seller endpoint. Document verification and admin review are completed by PulseSoc after your application is received.</Text>
         <TextInput
           style={styles.input}
           value={displayName}
@@ -258,9 +256,6 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         <View style={styles.actionRow}>
           <Pressable style={styles.primaryButton} disabled={busy === "apply"} onPress={submitApplication}>
             <Text style={styles.primaryText}>{busy === "apply" ? "Saving..." : "Save Seller Application"}</Text>
-          </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl("apply")).catch(() => undefined)}>
-            <Text style={styles.secondaryText}>Full Application</Text>
           </Pressable>
         </View>
       </Panel>
@@ -336,9 +331,6 @@ export function SellerStoreScreen({ route, navigation }: Props) {
               <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: "Marketplace Media" })}>
                 <Text style={styles.secondaryText}>Add Media</Text>
               </Pressable>
-              <Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl("create")).catch(() => undefined)}>
-                <Text style={styles.secondaryText}>Advanced Edit Web</Text>
-              </Pressable>
             </View>
             <View style={styles.actionRow}>
               <Pressable
@@ -401,14 +393,18 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           </View>
         ))}
         {!orders.length ? <Text style={styles.emptyText}>No seller orders loaded.</Text> : null}
-        <View style={styles.actionRow}>
-          <Pressable style={styles.primaryButton} disabled={busy === "payout"} onPress={startPayoutConnect}>
-            <Text style={styles.primaryText}>{busy === "payout" ? "Checking..." : "Connect Payouts"}</Text>
-          </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl("payouts")).catch(() => undefined)}>
-            <Text style={styles.secondaryText}>Payout Web</Text>
-          </Pressable>
-        </View>
+        {DIGITAL_COMMERCE_ENABLED ? (
+          <View style={styles.actionRow}>
+            <Pressable style={styles.primaryButton} disabled={busy === "payout"} onPress={startPayoutConnect}>
+              <Text style={styles.primaryText}>{busy === "payout" ? "Checking..." : "Connect Payouts"}</Text>
+            </Pressable>
+            <Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl("payouts")).catch(() => undefined)}>
+              <Text style={styles.secondaryText}>Payout Web</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <Text style={styles.meta}>Payout onboarding and payout release are managed by PulseSoc and its payment provider. You will be notified when your payouts are ready.</Text>
+        )}
       </Panel>
 
       <Panel>

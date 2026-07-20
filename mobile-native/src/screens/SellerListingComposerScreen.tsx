@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { createMarketplaceListing, sellerStoreWebUrl } from "../api/marketplace";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { createMarketplaceListing } from "../api/marketplace";
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
 import { colors } from "../theme/colors";
@@ -101,7 +101,7 @@ export function SellerListingComposerScreen({ navigation }: Props) {
 
       <Panel>
         <Text style={styles.sectionTitle}>Product media</Text>
-        <Text style={styles.copy}>Use Camera Studio or the existing protected web uploader to create marketplace draft media, then attach the returned product media IDs here. The backend rejects listings without an approved merchant and cover photo.</Text>
+        <Text style={styles.copy}>Use Camera Studio to create marketplace draft media, then attach the returned product media IDs here. The backend rejects listings without an approved merchant and cover photo.</Text>
         <TextInput
           style={styles.input}
           value={mediaIdsText}
@@ -114,9 +114,6 @@ export function SellerListingComposerScreen({ navigation }: Props) {
         <View style={styles.actionRow}>
           <Pressable style={styles.primaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: "Marketplace Media" })}>
             <Text style={styles.primaryText}>Capture Media</Text>
-          </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl("create")).catch(() => undefined)}>
-            <Text style={styles.secondaryText}>Web Uploader</Text>
           </Pressable>
         </View>
       </Panel>

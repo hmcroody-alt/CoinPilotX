@@ -542,9 +542,6 @@ export function CameraStudioScreen({ route, navigation }: Props) {
               <Text style={styles.effectText}>{effect.replace("_", " ")}</Text>
             </Pressable>
           ))}
-          <Pressable style={styles.effectButton} onPress={openWebFallback}>
-            <Text style={styles.effectText}>Advanced FX</Text>
-          </Pressable>
         </View>
 
         <TextInput

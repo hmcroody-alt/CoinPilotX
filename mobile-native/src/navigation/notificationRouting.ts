@@ -12,7 +12,59 @@ export type NotificationRouteResult = {
   handled: boolean;
   target: string;
   reason?: string;
+  // Original normalized path (query/fragment stripped) when no native route matched.
+  // Retained for diagnostics so repeated fallbacks reveal missing native route families.
+  fallbackFrom?: string;
 };
+
+export type NotificationRouteReport = {
+  reason: string;
+  targetFamily: string;
+  handled: boolean;
+};
+
+export type NotificationRouteReporter = (report: NotificationRouteReport) => void;
+
+let routeResolutionReporter: NotificationRouteReporter | null = null;
+
+export function setNotificationRouteReporter(reporter: NotificationRouteReporter | null) {
+  routeResolutionReporter = reporter;
+}
+
+// Coarse, non-sensitive route family: drops query/fragment, collapses numeric/opaque ids,
+// and keeps at most three leading segments (e.g. "/pulse/foo/123?token=x" -> "/pulse/foo/:id").
+export function notificationTargetFamily(target: string) {
+  const path = String(target || "").split("?")[0].split("#")[0];
+  const segments = path
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => (/^\d+$/.test(segment) || segment.length > 24 ? ":id" : segment));
+  return `/${segments.slice(0, 3).join("/")}`;
+}
+
+function defaultNotificationRouteReporter(): NotificationRouteReporter | null {
+  if (typeof __DEV__ !== "undefined" && __DEV__) {
+    return (report) => {
+      if (report.reason === "native_fallback") {
+        // QA-only signal: a notification/saved/search target had no native route and was
+        // recovered into the Activity Inbox. Repeated families here are the migration backlog.
+        console.warn(`[notificationRouting] native_fallback for family ${report.targetFamily}`);
+      }
+    };
+  }
+  return null;
+}
+
+function reportNotificationRoute(result: NotificationRouteResult) {
+  const reporter = routeResolutionReporter || defaultNotificationRouteReporter();
+  if (!reporter) return;
+  const source = result.fallbackFrom || result.target;
+  reporter({
+    reason: result.reason || (result.handled ? "native_resolved" : "unhandled"),
+    targetFamily: notificationTargetFamily(source),
+    handled: result.handled
+  });
+}
 
 type NotificationResponseRoutingOptions = {
   canRoute?: () => boolean;
@@ -78,6 +130,12 @@ export function notificationTargetFromData(data: Notifications.NotificationConte
 }
 
 export async function routeNotificationTarget(target: string): Promise<NotificationRouteResult> {
+  const result = await resolveNotificationTarget(target);
+  reportNotificationRoute(result);
+  return result;
+}
+
+async function resolveNotificationTarget(target: string): Promise<NotificationRouteResult> {
   const normalized = normalizeNotificationTarget(target);
   if (!normalized) {
     navigateToNotifications();
@@ -403,15 +461,34 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
-  const webTarget = `${PULSE_API_BASE_URL}${normalized}`;
-  const supported = await Linking.canOpenURL(webTarget).catch(() => false);
-  if (supported) {
-    await Linking.openURL(webTarget);
-    return { handled: false, target: normalized, reason: "opened_web_fallback" };
+  // Public legal documents are the only intentional web exception here — they have no
+  // native surface yet. Every other path that reaches this point is an internal PulseSoc
+  // route with no native destination; route it natively to the Activity Inbox rather than
+  // dropping the user (who tapped a notification, saved item, or search result) into a browser.
+  if (isIntentionalWebExceptionTarget(normalized)) {
+    const webTarget = `${PULSE_API_BASE_URL}${normalized}`;
+    const supported = await Linking.canOpenURL(webTarget).catch(() => false);
+    if (supported) {
+      await Linking.openURL(webTarget);
+      return { handled: true, target: normalized, reason: "intentional_web_exception" };
+    }
   }
 
   navigateToNotifications();
-  return { handled: true, target: "/pulse/notifications", reason: "unsupported_target" };
+  return {
+    handled: true,
+    target: "/pulse/notifications",
+    reason: "native_fallback",
+    fallbackFrom: normalized.split("?")[0].split("#")[0]
+  };
+}
+
+const INTENTIONAL_WEB_EXCEPTION_PREFIXES = ["/terms", "/privacy", "/legal", "/cookies", "/licenses", "/copyright"];
+
+function isIntentionalWebExceptionTarget(target: string) {
+  return INTENTIONAL_WEB_EXCEPTION_PREFIXES.some(
+    (prefix) => target === prefix || target.startsWith(`${prefix}/`) || target.startsWith(`${prefix}?`)
+  );
 }
 
 export function normalizeNotificationTarget(raw: string) {

@@ -135,8 +135,7 @@ export function IntelligenceCenterScreen({ route, navigation }: Props) {
       {subsystem ? (
         <Panel>
           <Text style={styles.sectionTitle}>Requested subsystem</Text>
-          <Text style={styles.muted}>{subsystem.replace(/[_-]/g, " ")} uses the existing PulseSoc Intelligence route until this subsystem has a dedicated native payload.</Text>
-          <Action label="Open Subsystem" onPress={() => openIntelligenceWebFallback(`/dashboard/intelligence/${subsystem}`).catch(() => undefined)} />
+          <Text style={styles.muted}>{subsystem.replace(/[_-]/g, " ")} is managed by PulseSoc Intelligence and will surface here natively once a dedicated payload is available.</Text>
         </Panel>
       ) : null}
 
@@ -182,11 +181,10 @@ export function IntelligenceCenterScreen({ route, navigation }: Props) {
 
       <Panel>
         <Text style={styles.sectionTitle}>Advanced tools</Text>
-        <Text style={styles.muted}>Advanced editing, provider administration, collector management, intelligence sources, and unsupported alert operations stay on existing PulseSoc web flows.</Text>
+        <Text style={styles.muted}>Advanced editing, provider administration, collector management, intelligence sources, and unsupported alert operations stay server-managed by PulseSoc.</Text>
         <View style={styles.actionGrid}>
-          <Action label="Open Intelligence Web" onPress={() => openIntelligenceWebFallback("/dashboard/intelligence").catch(() => undefined)} />
           <Action label="Manage Alerts" onPress={() => navigation.navigate("AlertManagement", { title: "Alerts" })} />
-          <Action label="Create Alert" onPress={() => openIntelligenceWebFallback("/dashboard/crypto/alerts/create").catch(() => undefined)} />
+          <Action label="Create Alert" onPress={() => navigation.navigate("AlertManagement", { title: "Alerts" })} />
         </View>
       </Panel>
     </ScrollView>

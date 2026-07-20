@@ -248,9 +248,6 @@ export function CreatorStudioScreen({ navigation }: Props) {
             <Text style={styles.toolState}>{card.state || "BETA"}</Text>
           </Pressable>
         ))}
-        <Pressable style={styles.secondaryButton} onPress={() => openCreatorWebFallback("/pulse/creator-studio").catch(() => undefined)}>
-          <Text style={styles.secondaryText}>Open Full Web Creator Studio</Text>
-        </Pressable>
       </Panel>
     </ScrollView>
   );

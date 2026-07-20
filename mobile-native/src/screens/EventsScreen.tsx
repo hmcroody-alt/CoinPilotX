@@ -15,7 +15,6 @@ import {
 import {
   listScheduledLiveEvents,
   loadCachedScheduledLiveEvents,
-  openEventsWebFallback,
   PulseScheduledEvent
 } from "../api/events";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
@@ -155,9 +154,6 @@ export function EventsScreen({ route, navigation }: Props) {
             <Pressable style={styles.secondaryButton} onPress={() => shareEvent(selected)}>
               <Text style={styles.secondaryButtonText}>Share</Text>
             </Pressable>
-            <Pressable style={styles.secondaryButton} onPress={() => openEventsWebFallback("schedule").catch(() => undefined)}>
-              <Text style={styles.secondaryButtonText}>Schedule Web</Text>
-            </Pressable>
             <Pressable style={styles.secondaryButton} onPress={() => navigation?.navigate("LiveStudio", { title: "Live Studio" })}>
               <Text style={styles.secondaryButtonText}>Go Live</Text>
             </Pressable>
@@ -191,9 +187,6 @@ export function EventsScreen({ route, navigation }: Props) {
               <Pressable style={styles.primaryButton} onPress={() => load("refresh").catch(() => undefined)}>
                 <Text style={styles.primaryButtonText}>Refresh</Text>
               </Pressable>
-              <Pressable style={styles.secondaryButton} onPress={() => openEventsWebFallback(routeMode === "create" ? "create" : "schedule").catch(() => undefined)}>
-                <Text style={styles.secondaryButtonText}>{routeMode === "create" ? "Create Web" : "Schedule Web"}</Text>
-              </Pressable>
             </View>
           </View>
           {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -206,15 +199,12 @@ export function EventsScreen({ route, navigation }: Props) {
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No scheduled events yet</Text>
           <Text style={styles.emptyText}>PulseSoc will show scheduled Live events here when `/api/pulse/live-now` returns scheduled data.</Text>
-          <Pressable style={styles.secondaryButton} onPress={() => openEventsWebFallback("events").catch(() => undefined)}>
-            <Text style={styles.secondaryButtonText}>Open Events Web</Text>
-          </Pressable>
         </View>
       }
       ListFooterComponent={
         <View style={styles.footer}>
-          <Text style={styles.sectionTitle}>Fallbacks</Text>
-          <GatewayRow title="Create Live Event" body="Uses the current Live Studio and backend eligibility rules." onPress={() => openEventsWebFallback("create").catch(() => undefined)} />
+          <Text style={styles.sectionTitle}>Go live</Text>
+          <GatewayRow title="Create Live Event" body="Uses the current Live Studio and backend eligibility rules." onPress={() => navigation?.navigate("LiveStudio", { title: "Live Studio" })} />
           <GatewayRow title="Live Studio" body="Set up your device, camera, and network, then broadcast natively in-app." onPress={() => navigation?.navigate("LiveStudio", { title: "Live Studio" })} />
         </View>
       }

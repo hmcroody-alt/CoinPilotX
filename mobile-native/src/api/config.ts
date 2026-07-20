@@ -8,6 +8,11 @@ const configuredBaseUrl =
   (typeof extra.pulseApiBaseUrl === "string" ? extra.pulseApiBaseUrl : "https://pulsesoc.com");
 
 export const PULSE_API_BASE_URL = normalizeApiBaseUrl(configuredBaseUrl);
+// Digital purchases (Premium checkout/billing, marketplace checkout, payout onboarding)
+// currently route to external web/Stripe. Apple Guideline 3.1.1 requires StoreKit for
+// in-app digital goods, which is not yet implemented, so these entry points are hidden
+// unless a build explicitly opts in. Default OFF for App Store / production builds.
+export const DIGITAL_COMMERCE_ENABLED = process.env.EXPO_PUBLIC_DIGITAL_COMMERCE_ENABLED === "1";
 export const PULSESOC_QA_MESSENGER_FIXTURES =
   process.env.EXPO_PUBLIC_PULSESOC_QA_MESSENGER_FIXTURES === "1" &&
   /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(PULSE_API_BASE_URL);

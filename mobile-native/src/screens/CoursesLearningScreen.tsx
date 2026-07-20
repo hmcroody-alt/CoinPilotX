@@ -12,6 +12,7 @@ import {
   TextInput,
   View
 } from "react-native";
+import { DIGITAL_COMMERCE_ENABLED } from "../api/config";
 import {
   askLearningTutor,
   getLearningLesson,
@@ -230,11 +231,13 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
           </Pressable>
           {tutorAnswer ? <Text style={styles.answer}>{tutorAnswer}</Text> : <Text style={styles.muted}>Tutor answers use the existing education AI endpoint and safety rules.</Text>}
         </Panel>
-        <Panel>
-          <Text style={styles.sectionTitle}>Fallbacks</Text>
-          <Gateway label="Open Lesson Web" body="Full lesson, quiz, and any unsupported media/player behavior." onPress={() => openLearningWebFallback(learningWebRoute("education", selectedLesson.slug)).catch(() => undefined)} />
-          <Gateway label="Course Catalog Web" body="Paid-course-ready catalog, enrollment, checkout, and teacher compliance surfaces." onPress={() => openLearningWebFallback(learningWebRoute("courses")).catch(() => undefined)} />
-        </Panel>
+        {DIGITAL_COMMERCE_ENABLED ? (
+          <Panel>
+            <Text style={styles.sectionTitle}>Fallbacks</Text>
+            <Gateway label="Open Lesson Web" body="Full lesson, quiz, and any unsupported media/player behavior." onPress={() => openLearningWebFallback(learningWebRoute("education", selectedLesson.slug)).catch(() => undefined)} />
+            <Gateway label="Course Catalog Web" body="Paid-course-ready catalog, enrollment, checkout, and teacher compliance surfaces." onPress={() => openLearningWebFallback(learningWebRoute("courses")).catch(() => undefined)} />
+          </Panel>
+        ) : null}
       </ScrollView>
     );
   }
@@ -249,13 +252,15 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
         </View>
         <Panel>
           <Text style={styles.sectionTitle}>Backend authority preserved</Text>
-          <Text style={styles.muted}>Course creation, paid enrollment, lesson editing, teacher approval, checkout, and advanced player behavior remain web/provider-owned until dedicated native contracts exist.</Text>
+          <Text style={styles.muted}>Course creation, paid enrollment, lesson editing, teacher approval, checkout, and advanced player behavior are managed by PulseSoc.</Text>
         </Panel>
-        <Panel>
-          <Gateway label="Open Course Catalog" body="Browse the production course catalog." onPress={() => openLearningWebFallback(learningWebRoute("courses", courseId || undefined)).catch(() => undefined)} />
-          <Gateway label="Teacher Profile" body="Open the existing trusted educator profile surface." onPress={() => openLearningWebFallback(learningWebRoute("teachers", teacherId || undefined)).catch(() => undefined)} />
-          <Gateway label="Teacher Dashboard" body="Teacher applications, lessons, payouts, and review status." onPress={() => openLearningWebFallback(learningWebRoute("teacher-dashboard")).catch(() => undefined)} />
-        </Panel>
+        {DIGITAL_COMMERCE_ENABLED ? (
+          <Panel>
+            <Gateway label="Open Course Catalog" body="Browse the production course catalog." onPress={() => openLearningWebFallback(learningWebRoute("courses", courseId || undefined)).catch(() => undefined)} />
+            <Gateway label="Teacher Profile" body="Open the existing trusted educator profile surface." onPress={() => openLearningWebFallback(learningWebRoute("teachers", teacherId || undefined)).catch(() => undefined)} />
+            <Gateway label="Teacher Dashboard" body="Teacher applications, lessons, payouts, and review status." onPress={() => openLearningWebFallback(learningWebRoute("teacher-dashboard")).catch(() => undefined)} />
+          </Panel>
+        ) : null}
       </ScrollView>
     );
   }
@@ -286,12 +291,14 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
               </Pressable>
             ))}
           </ScrollView>
-          <Panel>
-            <Text style={styles.sectionTitle}>Course gateway</Text>
-            <Gateway label="PulseSoc Courses" body="Production catalog, paid-course readiness, enrollment, and checkout fallback." onPress={() => openLearningWebFallback(learningWebRoute("courses")).catch(() => undefined)} />
-            <Gateway label="Teacher Dashboard" body="Teacher applications, lesson editing, payouts, and review status." onPress={() => openLearningWebFallback(learningWebRoute("teacher-dashboard")).catch(() => undefined)} />
-            <Gateway label="Create Course" body="Course creation stays on existing server validation and review workflows." onPress={() => openLearningWebFallback(learningWebRoute("create")).catch(() => undefined)} />
-          </Panel>
+          {DIGITAL_COMMERCE_ENABLED ? (
+            <Panel>
+              <Text style={styles.sectionTitle}>Course gateway</Text>
+              <Gateway label="PulseSoc Courses" body="Production catalog, paid-course readiness, enrollment, and checkout fallback." onPress={() => openLearningWebFallback(learningWebRoute("courses")).catch(() => undefined)} />
+              <Gateway label="Teacher Dashboard" body="Teacher applications, lesson editing, payouts, and review status." onPress={() => openLearningWebFallback(learningWebRoute("teacher-dashboard")).catch(() => undefined)} />
+              <Gateway label="Create Course" body="Course creation stays on existing server validation and review workflows." onPress={() => openLearningWebFallback(learningWebRoute("create")).catch(() => undefined)} />
+            </Panel>
+          ) : null}
           {recent.length ? (
             <Panel>
               <Text style={styles.sectionTitle}>Continue learning</Text>

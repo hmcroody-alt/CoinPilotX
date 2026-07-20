@@ -1,9 +1,9 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useState } from "react";
-import { FlatList, Linking, Pressable, RefreshControl, Share, StyleSheet, Text, View } from "react-native";
+import { FlatList, Pressable, RefreshControl, Share, StyleSheet, Text, View } from "react-native";
 import { deletePost, listFeed, PulsePost, pulsePostUrl, reactToPost, savePost } from "../api/feed";
 import { describeDeleteError } from "../api/deleteErrors";
-import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, profileWebUrl, PulseProfile, toggleProfileFollow } from "../api/profile";
+import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
 import { MessengerUserSearchResult, openDirectConversation } from "../api/messenger";
 import { NativeProfileTarget, profileNavigationParams, profileTargetFromAuthor, resolveProfileTarget } from "../api/profileTarget";
 import { PostCard } from "../components/PostCard";
@@ -193,11 +193,6 @@ export function ProfileScreen({ route, navigation }: Props) {
             <Text style={styles.retryButtonText}>Retry native profile</Text>
           </Pressable>
         ) : null}
-        {profileTarget && state.canOpenWebFallback ? (
-          <Pressable style={styles.webButton} onPress={() => Linking.openURL(profileWebUrl(profileTarget)).catch(() => undefined)}>
-            <Text style={styles.webButtonText}>Open web fallback</Text>
-          </Pressable>
-        ) : null}
         </LogiNexusStatePanel>
       </LogiNexusScreenShell>
     );
@@ -233,7 +228,7 @@ export function ProfileScreen({ route, navigation }: Props) {
             <TabButton label="Media" value="media" active={tab} onPress={setTab} />
             <TabButton label="About" value="about" active={tab} onPress={setTab} />
           </View>
-          {tab === "about" ? <AboutPanel profile={profile} profileTarget={profileTarget} owner={owner} onVerification={() => navigation?.navigate("VerificationCenter", { title: "Verification Center" })} onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })} onSellerStore={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })} /> : null}
+          {tab === "about" ? <AboutPanel profile={profile} owner={owner} onVerification={() => navigation?.navigate("VerificationCenter", { title: "Verification Center" })} onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })} onSellerStore={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })} /> : null}
         </View>
       }
       ListEmptyComponent={tab === "about" ? null : <Text style={styles.empty}>{tab === "media" ? "No media posts loaded." : "No profile posts loaded."}</Text>}
@@ -269,7 +264,7 @@ function TabButton({ label, value, active, onPress }: { label: string; value: Ta
   );
 }
 
-function AboutPanel({ profile, profileTarget, owner, onVerification, onSafety, onSellerStore }: { profile: PulseProfile; profileTarget: NativeProfileTarget | null; owner: boolean; onVerification: () => void; onSafety: () => void; onSellerStore: () => void }) {
+function AboutPanel({ profile, owner, onVerification, onSafety, onSellerStore }: { profile: PulseProfile; owner: boolean; onVerification: () => void; onSafety: () => void; onSellerStore: () => void }) {
   return (
     <View style={styles.about}>
       <Text style={styles.aboutTitle}>About</Text>
@@ -291,9 +286,6 @@ function AboutPanel({ profile, profileTarget, owner, onVerification, onSafety, o
       ) : null}
       <Pressable style={styles.webLink} onPress={onSafety}>
         <Text style={styles.webLinkText}>Open Safety Hub</Text>
-      </Pressable>
-      <Pressable style={styles.webLink} onPress={() => Linking.openURL(profileWebUrl(owner ? undefined : profileTarget || profile)).catch(() => undefined)}>
-        <Text style={styles.webLinkText}>Open full PulseSoc profile</Text>
       </Pressable>
     </View>
   );
