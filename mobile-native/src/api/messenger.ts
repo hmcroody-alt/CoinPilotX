@@ -129,6 +129,21 @@ export type ConversationResponse = {
   sync_interval_ms?: number;
   quick_prompts?: string[];
   settings?: Record<string, unknown>;
+  response_components?: UndxResponseComponent[];
+};
+
+export type UndxResponseComponent = {
+  component: "confirmation_card" | "progress_card" | "draft_preview" | "settings_summary" | "conflict_resolution_card" | "verified_success_card" | "honest_failure_card";
+  action_name?: string;
+  target?: string;
+  current_value?: string;
+  proposed_value?: string;
+  risk_summary?: string;
+  confirmation_id?: string;
+  confirmation_token?: string;
+  expires_at?: string;
+  status?: string;
+  value?: string;
 };
 
 export type ConversationControlSettings = Record<string, Record<string, boolean | string | number>>;
@@ -313,7 +328,7 @@ export async function getPulseAiConversation(params: { limit?: number } = {}) {
   };
 }
 
-export async function sendPulseAiMessage(payload: { body: string; client_message_id?: string }) {
+export async function sendPulseAiMessage(payload: { body: string; client_message_id?: string; ui_context?: Record<string, unknown> }) {
   const data = await pulseApi<ConversationResponse & { reply?: string; latency_ms?: number; correlation_id?: string }>("/api/pulse-ai/message", {
     method: "POST",
     body: JSON.stringify({
@@ -325,7 +340,8 @@ export async function sendPulseAiMessage(payload: { body: string; client_message
       agent_id: PULSE_AI_AGENT_ID,
       assistant_id: PULSE_AI_ASSISTANT_ID,
       conversation_type: PULSE_AI_CONVERSATION_TYPE,
-      identity: PULSE_AI_DISPLAY_NAME
+      identity: PULSE_AI_DISPLAY_NAME,
+      ui_context: payload.ui_context || {}
     })
   });
   const conversation = normalizePulseAiConversation(data.conversation);
@@ -337,6 +353,13 @@ export async function sendPulseAiMessage(payload: { body: string; client_message
     conversation,
     messages
   };
+}
+
+export async function confirmPulseAiAction(confirmationToken: string) {
+  return pulseApi<{ ok: boolean; message?: string; response_components?: UndxResponseComponent[] }>("/api/pulse-ai/actions/confirm", {
+    method: "POST",
+    body: JSON.stringify({ confirmation_token: confirmationToken })
+  });
 }
 
 export async function syncConversation(conversationId: number, afterId = 0) {

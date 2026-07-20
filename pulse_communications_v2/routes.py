@@ -789,6 +789,20 @@ def pulse_ai_simulate_tool():
     return _timed_json("pulse_ai_simulate_tool", run)
 
 
+@comm_v2_blueprint.post("/api/pulse-ai/actions/confirm")
+def pulse_ai_confirm_action():
+    user, denied = _require_user()
+    if denied:
+        return denied
+
+    def run():
+        from services import pulse_ai_service
+
+        return pulse_ai_service.confirm_action(user["user_id"], request.get_json(silent=True) or {})
+
+    return _timed_json("pulse_ai_confirm_action", run)
+
+
 @comm_v2_blueprint.get(f"{API_PREFIX}/realtime/stream")
 @comm_v2_blueprint.get("/api/pulse/comm/v2/realtime/stream")
 def realtime_stream():

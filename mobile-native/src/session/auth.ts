@@ -13,6 +13,7 @@ import {
 } from "./sessionStore";
 import { shouldRejectTemporaryQaUser } from "./qaTemporaryAccount";
 import { clearUserScopedMediaState } from "../media/mediaSessionCleanup";
+import { rememberAccount } from "./rememberedAccounts";
 
 export type AuthState = {
   status: "loading" | "signedIn" | "signedOut";
@@ -71,6 +72,7 @@ export async function signIn(identifier: string, password: string): Promise<Auth
   if (shouldRejectTemporaryQaUser(session.user)) return clearTemporaryQaSession();
   await persistSessionEnvelope(session);
   await setCachedSessionUser(session.user);
+  await rememberAccount(session.user).catch(() => undefined);
   return { status: "signedIn", user: session.user };
 }
 
@@ -79,6 +81,7 @@ export async function createAccount(payload: { full_name: string; username: stri
   if (!session.authenticated || !session.user) return { status: "signedOut", user: null };
   await persistSessionEnvelope(session);
   await setCachedSessionUser(session.user);
+  await rememberAccount(session.user).catch(() => undefined);
   return { status: "signedIn", user: session.user };
 }
 

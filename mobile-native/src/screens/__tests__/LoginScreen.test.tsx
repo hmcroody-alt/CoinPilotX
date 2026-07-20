@@ -1,0 +1,198 @@
+import React from "react";
+import { Alert } from "react-native";
+import { fireEvent, render, waitFor, act } from "@testing-library/react-native";
+
+jest.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 })
+}));
+
+const mockNavigate = jest.fn();
+jest.mock("@react-navigation/native", () => ({
+  useNavigation: () => ({ navigate: mockNavigate })
+}));
+
+const mockSetAuthState = jest.fn();
+jest.mock("../../session/auth", () => ({
+  signIn: jest.fn(),
+  useAuth: () => ({ setAuthState: mockSetAuthState, authState: { status: "signedOut", user: null } })
+}));
+
+jest.mock("../../session/qaSimulatorAuth", () => ({
+  isQaSimulatorAutoLoginEnabled: () => false,
+  createQaSimulatorLocalSession: jest.fn(),
+  tryHandleQaSimulatorAuthUrl: jest.fn()
+}));
+
+jest.mock("../../session/sessionStore", () => ({
+  getCachedSessionUser: jest.fn().mockResolvedValue(null)
+}));
+
+jest.mock("../../session/biometricAuth", () => ({
+  authenticateWithBiometrics: jest.fn(),
+  confirmAndEnableBiometricLogin: jest.fn(),
+  getBiometricCapability: jest.fn(),
+  isBiometricEnabledForCurrentSession: jest.fn()
+}));
+
+jest.mock("../../session/rememberedAccounts", () => ({
+  listRememberedAccounts: jest.fn().mockResolvedValue([])
+}));
+
+jest.mock("react-native/Libraries/Linking/Linking", () => ({
+  default: {
+    getInitialURL: jest.fn().mockResolvedValue(null),
+    addEventListener: jest.fn(() => ({ remove: jest.fn() }))
+  }
+}));
+
+import { signIn } from "../../session/auth";
+import { PulseApiError } from "../../api/pulseApi";
+import {
+  authenticateWithBiometrics,
+  confirmAndEnableBiometricLogin,
+  getBiometricCapability,
+  isBiometricEnabledForCurrentSession
+} from "../../session/biometricAuth";
+import { LoginScreen } from "../LoginScreen";
+
+const mockedSignIn = signIn as jest.Mock;
+const mockedAuthenticateWithBiometrics = authenticateWithBiometrics as jest.Mock;
+const mockedConfirmAndEnableBiometricLogin = confirmAndEnableBiometricLogin as jest.Mock;
+const mockedGetBiometricCapability = getBiometricCapability as jest.Mock;
+const mockedIsBiometricEnabledForCurrentSession = isBiometricEnabledForCurrentSession as jest.Mock;
+
+function setDefaultBiometricState() {
+  mockedGetBiometricCapability.mockResolvedValue({ available: false, kind: "none", reason: "no_hardware" });
+  mockedIsBiometricEnabledForCurrentSession.mockResolvedValue(false);
+}
+
+describe("LoginScreen", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setDefaultBiometricState();
+    jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+  });
+
+  it("renders the manual sign-in form", async () => {
+    const { getByTestId } = render(<LoginScreen />);
+    await waitFor(() => expect(getByTestId("login-identifier")).toBeTruthy());
+    expect(getByTestId("login-password")).toBeTruthy();
+    expect(getByTestId("login-submit")).toBeTruthy();
+  });
+
+  it("disables the submit button until both fields are filled", async () => {
+    const { getByTestId } = render(<LoginScreen />);
+    await waitFor(() => expect(getByTestId("login-identifier")).toBeTruthy());
+    expect(getByTestId("login-submit").props.accessibilityState?.disabled).toBe(true);
+    fireEvent.changeText(getByTestId("login-identifier"), "user@example.com");
+    fireEvent.changeText(getByTestId("login-password"), "password123");
+    await waitFor(() => expect(getByTestId("login-submit").props.accessibilityState?.disabled).toBe(false));
+  });
+
+  it("shows an error message on invalid credentials", async () => {
+    mockedSignIn.mockResolvedValue({ status: "signedOut", user: null });
+    const { getByTestId, findByTestId } = render(<LoginScreen />);
+    await waitFor(() => expect(getByTestId("login-identifier")).toBeTruthy());
+    fireEvent.changeText(getByTestId("login-identifier"), "user@example.com");
+    fireEvent.changeText(getByTestId("login-password"), "wrongpass");
+    fireEvent.press(getByTestId("login-submit"));
+    const errorText = await findByTestId("login-form-error");
+    expect(errorText.props.children).toMatch(/doesn't match our records/);
+    expect(mockSetAuthState).not.toHaveBeenCalled();
+  });
+
+  it("maps a network-unreachable error to an offline message", async () => {
+    mockedSignIn.mockRejectedValue(new PulseApiError("unreachable", 503, "request_unreachable"));
+    const { getByTestId, findByTestId } = render(<LoginScreen />);
+    await waitFor(() => expect(getByTestId("login-identifier")).toBeTruthy());
+    fireEvent.changeText(getByTestId("login-identifier"), "user@example.com");
+    fireEvent.changeText(getByTestId("login-password"), "password123");
+    fireEvent.press(getByTestId("login-submit"));
+    const errorText = await findByTestId("login-form-error");
+    expect(errorText.props.children).toMatch(/could not be reached/);
+  });
+
+  it("signs the user in and updates auth state on success", async () => {
+    mockedSignIn.mockResolvedValue({ status: "signedIn", user: { user_id: 5, username: "alex" } });
+    const { getByTestId } = render(<LoginScreen />);
+    await waitFor(() => expect(getByTestId("login-identifier")).toBeTruthy());
+    fireEvent.changeText(getByTestId("login-identifier"), "alex@example.com");
+    fireEvent.changeText(getByTestId("login-password"), "password123");
+    fireEvent.press(getByTestId("login-submit"));
+    await waitFor(() =>
+      expect(mockSetAuthState).toHaveBeenCalledWith({ status: "signedIn", user: { user_id: 5, username: "alex" } })
+    );
+  });
+
+  it("prevents a duplicate submission while one is already in flight", async () => {
+    let resolveSignIn: (value: unknown) => void = () => undefined;
+    mockedSignIn.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSignIn = resolve;
+      })
+    );
+    const { getByTestId } = render(<LoginScreen />);
+    await waitFor(() => expect(getByTestId("login-identifier")).toBeTruthy());
+    fireEvent.changeText(getByTestId("login-identifier"), "alex@example.com");
+    fireEvent.changeText(getByTestId("login-password"), "password123");
+    fireEvent.press(getByTestId("login-submit"));
+    fireEvent.press(getByTestId("login-submit"));
+    await act(async () => {
+      resolveSignIn({ status: "signedIn", user: { user_id: 5 } });
+    });
+    expect(mockedSignIn).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the Face ID button when biometric login is available and enabled", async () => {
+    mockedGetBiometricCapability.mockResolvedValue({ available: true, kind: "faceId" });
+    mockedIsBiometricEnabledForCurrentSession.mockResolvedValue(true);
+    const { findByTestId } = render(<LoginScreen />);
+    expect(await findByTestId("biometric-login-button")).toBeTruthy();
+  });
+
+  it("hides the Face ID button when biometrics are unavailable", async () => {
+    setDefaultBiometricState();
+    const { getByTestId, queryByTestId } = render(<LoginScreen />);
+    await waitFor(() => expect(getByTestId("login-identifier")).toBeTruthy());
+    expect(queryByTestId("biometric-login-button")).toBeNull();
+  });
+
+  it("signs in via biometrics and updates auth state on success", async () => {
+    mockedGetBiometricCapability.mockResolvedValue({ available: true, kind: "faceId" });
+    mockedIsBiometricEnabledForCurrentSession.mockResolvedValue(true);
+    mockedAuthenticateWithBiometrics.mockResolvedValue({
+      outcome: "success",
+      authState: { status: "signedIn", user: { user_id: 5 } }
+    });
+    const { findByTestId } = render(<LoginScreen />);
+    const biometricButton = await findByTestId("biometric-login-button");
+    fireEvent.press(biometricButton);
+    await waitFor(() => expect(mockSetAuthState).toHaveBeenCalledWith({ status: "signedIn", user: { user_id: 5 } }));
+  });
+
+  it("prompts for manual sign-in when biometric session validation fails", async () => {
+    mockedGetBiometricCapability.mockResolvedValue({ available: true, kind: "faceId" });
+    mockedIsBiometricEnabledForCurrentSession.mockResolvedValue(true);
+    mockedAuthenticateWithBiometrics.mockResolvedValue({ outcome: "session_invalid" });
+    const alertSpy = jest.spyOn(Alert, "alert");
+    const { findByTestId } = render(<LoginScreen />);
+    const biometricButton = await findByTestId("biometric-login-button");
+    fireEvent.press(biometricButton);
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith("Sign in required", expect.any(String)));
+    expect(mockSetAuthState).not.toHaveBeenCalled();
+  });
+
+  it("navigates to the signup screen when create account is pressed", async () => {
+    const { getByTestId } = render(<LoginScreen />);
+    await waitFor(() => expect(getByTestId("create-account-button")).toBeTruthy());
+    fireEvent.press(getByTestId("create-account-button"));
+    expect(mockNavigate).toHaveBeenCalledWith("Signup");
+  });
+
+  it("navigates to account recovery when forgot password is pressed", async () => {
+    const { getByTestId } = render(<LoginScreen />);
+    await waitFor(() => expect(getByTestId("forgot-password-link")).toBeTruthy());
+    fireEvent.press(getByTestId("forgot-password-link"));
+    expect(mockNavigate).toHaveBeenCalledWith("AccountRecovery");
+  });
+});

@@ -103,12 +103,23 @@ def ensure_schema(cur) -> None:
             user_id INTEGER NOT NULL, allowed_actions_json TEXT, denied_actions_json TEXT,
             entity_scope_json TEXT, maximum_frequency INTEGER, maximum_cost REAL,
             expires_at TEXT, revocation_method TEXT, status TEXT, created_at TEXT, updated_at TEXT)""",
+        """CREATE TABLE IF NOT EXISTS pulse_ai_confirmations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, confirmation_id TEXT UNIQUE NOT NULL,
+            token_hash TEXT UNIQUE NOT NULL, user_id INTEGER NOT NULL, action_id TEXT NOT NULL,
+            action_version TEXT NOT NULL, target_id TEXT, argument_hash TEXT NOT NULL,
+            arguments_json TEXT, status TEXT, expires_at TEXT, consumed_at TEXT,
+            created_at TEXT, updated_at TEXT)""",
+        """CREATE TABLE IF NOT EXISTS pulse_ai_client_contexts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+            conversation_id INTEGER NOT NULL, context_json TEXT, updated_at TEXT,
+            UNIQUE(user_id, conversation_id))""",
     )
     for statement in statements:
         cur.execute(statement)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_ai_missions_user ON pulse_ai_missions(user_id, updated_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_ai_nodes_mission ON pulse_ai_task_nodes(mission_id, id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_ai_memory_provenance_user ON pulse_ai_memory_provenance(user_id, memory_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_ai_confirmations_user ON pulse_ai_confirmations(user_id, status, expires_at)")
     seed_registries(cur)
 
 
@@ -371,3 +382,88 @@ def record_tool_result(cur, user_id: int, prepared: dict[str, Any], result: dict
          status, clean(correlation_id, 120), canonical_id, json.dumps(result, default=str)[:8000], json.dumps(verification), timestamp, timestamp),
     )
     return {"status": status, "canonical_entity_id": canonical_id, "verification": verification}
+
+
+ALLOWED_UI_CONTEXT = {
+    "current_route", "selected_conversation_id", "selected_profile_id", "selected_post_id",
+    "selected_reel_id", "selected_media_ids", "visible_setting_category", "compose_draft_id",
+}
+
+
+def sanitize_ui_context(value: Any) -> dict[str, Any]:
+    """Accept bounded client hints only; authorization remains server-side."""
+    if not isinstance(value, dict):
+        return {}
+    safe: dict[str, Any] = {}
+    for key in ALLOWED_UI_CONTEXT:
+        item = value.get(key)
+        if isinstance(item, list):
+            safe[key] = [clean(part, 120) for part in item[:12]]
+        elif isinstance(item, (str, int)):
+            safe[key] = clean(item, 240)
+    return safe
+
+
+def notification_action_from_text(message: str) -> dict[str, Any] | None:
+    text = " ".join(str(message or "").lower().split())
+    enabled = any(term in text for term in ("turn on", "enable"))
+    disabled = any(term in text for term in ("turn off", "disable"))
+    if not (enabled or disabled) or "notification" not in text:
+        return None
+    category_terms = (("posts", ("post", "posts")), ("messages", ("message", "messages")),
+                      ("reels", ("reel", "reels")), ("calls", ("call", "calls")),
+                      ("alerts", ("alert", "alerts")))
+    category = next((name for name, terms in category_terms if any(term in text for term in terms)), "global")
+    return {
+        "action_id": "notifications.preference.update",
+        "action_version": "4.0",
+        "tool_name": "pulsesoc.notification_preferences.update",
+        "target_id": category,
+        "arguments": {"category": category, "push": bool(enabled)},
+        "current_value": "server_read_required",
+        "proposed_value": "on" if enabled else "off",
+        "risk_level": "medium",
+    }
+
+
+def create_confirmation(cur, user_id: int, action: dict[str, Any], *, ttl_seconds: int = 300) -> dict[str, Any]:
+    arguments = action.get("arguments") or {}
+    normalized = json.dumps(arguments, sort_keys=True, separators=(",", ":"))
+    argument_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    confirmation_id = "undx_confirm_" + secrets.token_hex(10)
+    timestamp = datetime.now(timezone.utc)
+    expires_at = datetime.fromtimestamp(timestamp.timestamp() + max(30, min(int(ttl_seconds), 300)), timezone.utc).isoformat(timespec="seconds")
+    cur.execute(
+        """INSERT INTO pulse_ai_confirmations
+        (confirmation_id, token_hash, user_id, action_id, action_version, target_id,
+         argument_hash, arguments_json, status, expires_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)""",
+        (confirmation_id, token_hash, int(user_id), clean(action.get("action_id"), 120),
+         clean(action.get("action_version") or "4.0", 40), clean(action.get("target_id"), 160),
+         argument_hash, normalized, expires_at, timestamp.isoformat(timespec="seconds"), timestamp.isoformat(timespec="seconds")),
+    )
+    return {"confirmation_id": confirmation_id, "confirmation_token": raw_token, "expires_at": expires_at}
+
+
+def consume_confirmation(cur, user_id: int, token: str) -> dict[str, Any] | None:
+    token_hash = hashlib.sha256(clean(token, 500).encode("utf-8")).hexdigest()
+    cur.execute(
+        """SELECT * FROM pulse_ai_confirmations
+        WHERE token_hash=? AND user_id=? AND status='pending' AND expires_at>? LIMIT 1""",
+        (token_hash, int(user_id), now()),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    timestamp = now()
+    cur.execute(
+        "UPDATE pulse_ai_confirmations SET status='consumed', consumed_at=?, updated_at=? WHERE id=? AND status='pending'",
+        (timestamp, timestamp, int(result["id"])),
+    )
+    if int(cur.rowcount or 0) != 1:
+        return None
+    result["arguments"] = json.loads(result.get("arguments_json") or "{}")
+    return result

@@ -30,6 +30,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   cacheMessages,
+  confirmPulseAiAction,
   createLocalMessage,
   deleteMessage,
   drainMessengerQueue,
@@ -48,6 +49,7 @@ import {
   sendPulseAiMessage,
   sendTyping,
   updateCachedConversationPreview,
+  UndxResponseComponent,
   syncConversation,
   uploadMessengerMedia
 } from "../api/messenger";
@@ -206,6 +208,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [controlCenterOpen, setControlCenterOpen] = useState(false);
+  const [undxComponents, setUndxComponents] = useState<UndxResponseComponent[]>([]);
+  const [undxActionBusy, setUndxActionBusy] = useState(false);
   const [threadTitle, setThreadTitle] = useState(assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Messenger");
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingAt = useRef(0);
@@ -443,13 +447,18 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setTyping("UNDX is typing");
       setStatusMessage("UNDX is thinking...");
       try {
-        const data = await sendPulseAiMessage({ body, client_message_id: local.client_message_id });
+        const data = await sendPulseAiMessage({
+          body,
+          client_message_id: local.client_message_id,
+          ui_context: { current_route: "Chat", selected_conversation_id: conversationId }
+        });
         const nextMessages = data.messages || [];
         setMessages(nextMessages);
         await cacheMessages(conversationId, nextMessages);
         await updateCachedConversationPreview(conversationId, body, new Date().toISOString()).catch(() => undefined);
         setTyping("");
         setStatusMessage("");
+        setUndxComponents(data.response_components || []);
         return "sent" as const;
       } catch (sendError) {
         setTyping("");
@@ -919,6 +928,34 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         />
         </>
       )}
+      {assistantConversation && undxComponents.length ? (
+        <View accessibilityLabel="UNDX action cards" style={styles.undxActionRail}>
+          {undxComponents.map((component, index) => (
+            <View key={`${component.component}-${component.confirmation_id || index}`} style={styles.undxActionCard}>
+              <Text style={styles.undxActionKicker}>{component.component === "confirmation_card" ? "CONFIRM ACTION" : "VERIFIED RESULT"}</Text>
+              <Text style={styles.undxActionTitle}>{component.action_name || "UNDX operation"}</Text>
+              <Text style={styles.undxActionBody}>{component.target || "PulseSOC"}: {component.current_value ? `${component.current_value} → ` : ""}{component.proposed_value || component.value || component.status || "pending"}</Text>
+              {component.risk_summary ? <Text style={styles.undxActionRisk}>{component.risk_summary}</Text> : null}
+              {component.component === "confirmation_card" && component.confirmation_token ? (
+                <View style={styles.undxActionButtons}>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Cancel UNDX action" disabled={undxActionBusy} style={styles.undxActionCancel} onPress={() => setUndxComponents([])}>
+                    <Text style={styles.undxActionCancelText}>Cancel</Text>
+                  </Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Confirm UNDX action" disabled={undxActionBusy} style={styles.undxActionConfirm} onPress={() => {
+                    setUndxActionBusy(true);
+                    confirmPulseAiAction(component.confirmation_token || "").then((result) => {
+                      setUndxComponents(result.response_components || []);
+                      setStatusMessage(result.message || "UNDX action finished.");
+                    }).catch((actionError) => setStatusMessage(actionError instanceof Error ? actionError.message : "UNDX action failed.")).finally(() => setUndxActionBusy(false));
+                  }}>
+                    {undxActionBusy ? <ActivityIndicator color="#06101b" /> : <Text style={styles.undxActionConfirmText}>Confirm</Text>}
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ) : null}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0} style={styles.composerAvoider}>
       <PulseCommandPanel style={[styles.composer, { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 8) }, keyboardVisible && styles.composerKeyboard]}>
         <View pointerEvents="none" style={styles.composerSignalLine} />
@@ -1813,6 +1850,28 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.82
   },
+  undxActionRail: {
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  undxActionCard: {
+    backgroundColor: "rgba(15,25,46,0.98)",
+    borderColor: "rgba(167,124,255,0.62)",
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 6,
+    padding: 14
+  },
+  undxActionKicker: { color: "#a77cff", fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
+  undxActionTitle: { color: colors.text, fontSize: 16, fontWeight: "900" },
+  undxActionBody: { color: colors.text, fontSize: 14, lineHeight: 20 },
+  undxActionRisk: { color: colors.muted, fontSize: 12, lineHeight: 17 },
+  undxActionButtons: { flexDirection: "row", gap: 8, marginTop: 4 },
+  undxActionCancel: { alignItems: "center", borderColor: colors.border, borderRadius: 12, borderWidth: 1, flex: 1, minHeight: 44, justifyContent: "center" },
+  undxActionCancelText: { color: colors.text, fontWeight: "900" },
+  undxActionConfirm: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 12, flex: 1, minHeight: 44, justifyContent: "center" },
+  undxActionConfirmText: { color: "#06101b", fontWeight: "900" },
   sendDisabled: {
     backgroundColor: "rgba(146,161,181,0.2)",
     borderColor: "rgba(146,161,181,0.18)",

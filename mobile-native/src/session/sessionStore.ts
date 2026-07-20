@@ -6,6 +6,7 @@ import { PULSE_API_BASE_URL } from "../api/config";
 const COOKIE_KEY = "pulsesoc.native.session.cookie";
 const SESSION_ENVELOPE_KEY = "pulsesoc.native.session.envelope.v1";
 const CACHED_USER_KEY = "pulsesoc.native.session.user";
+export const BIOMETRIC_USER_KEY = "pulsesoc.native.session.biometric.userId";
 const KEYCHAIN_OPTIONS: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
   keychainService: __DEV__ ? "com.pulsesoc.nativeapp.dev.session" : "com.pulsesoc.nativeapp.session"
@@ -77,7 +78,7 @@ export async function setSessionEnvelope(envelope: NativeSessionEnvelope | null)
 }
 
 export async function clearNativeSessionCredentials() {
-  await Promise.all([setSessionCookie(""), setSessionEnvelope(null)]);
+  await Promise.all([setSessionCookie(""), setSessionEnvelope(null), deleteSecureValue(BIOMETRIC_USER_KEY)]);
 }
 
 export async function getCachedSessionUser<T>() {

@@ -21,10 +21,13 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = ROOT / "backend" / "undx" / "config" / "undx_intelligence_bootstrap.yaml"
 V2_CONFIG_PATH = ROOT / "backend" / "undx" / "config" / "undx_intelligence_bootstrap_v2.yaml"
 V3_CONFIG_PATH = ROOT / "backend" / "undx" / "config" / "undx_intelligence_bootstrap_v3.yaml"
+V4_CONFIG_PATH = ROOT / "backend" / "undx" / "config" / "undx_training_v4_nexus_core.yaml"
 CONFIG_ENV = "UNDX_INTELLIGENCE_CONFIG_PATH"
 CONFIG_VERSION_ENV = "UNDX_CONFIG_VERSION"
 V2_ENABLED_ENV = "UNDX_V2_ENABLED"
 V2_HASH_ENV = "UNDX_V2_CONFIG_SHA256"
+V4_ACTIONS_ENV = "UNDX_V4_ACTIONS"
+V4_KILL_SWITCH_ENV = "UNDX_V4_DISABLE_WRITES"
 MAX_POLICY_CHARS = 9000
 
 # Conceptual names map to existing authenticated production routes. The model
@@ -39,6 +42,8 @@ PRODUCTION_TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     "pulsesoc.create_reel": {"method": "POST", "route": "/api/pulse/reels/create", "risk": "high", "confirmation": True, "canonical_key": "reel_id"},
     "pulsesoc.get_alerts": {"method": "GET", "route": "/api/pulse/intelligence/state", "risk": "medium", "confirmation": False, "canonical_key": "alert_id"},
     "pulsesoc.get_crypto_alert": {"method": "GET", "route": "/api/crypto/alerts", "risk": "medium", "confirmation": False, "canonical_key": "alert_definition_id"},
+    "pulsesoc.notification_preferences.read": {"method": "GET", "route": "/api/pulse/notifications/preferences", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
+    "pulsesoc.notification_preferences.update": {"method": "PATCH", "route": "/api/pulse/notifications/preferences", "risk": "medium", "confirmation": True, "canonical_key": "user_id", "verification_route": "/api/pulse/notifications/preferences"},
     "pulsesoc.media.init": {"method": "POST", "route": "/api/messages/media/init", "risk": "medium", "confirmation": False, "canonical_key": "attachment_id"},
     "pulsesoc.media.upload": {"method": "POST", "route": "/api/messages/media/upload", "risk": "medium", "confirmation": False, "canonical_key": "attachment_id"},
     "pulsesoc.media.complete": {"method": "POST", "route": "/api/messages/media/complete", "risk": "medium", "confirmation": False, "canonical_key": "attachment_id"},
@@ -90,6 +95,7 @@ def _load_cached(path_text: str, mtime_ns: int) -> dict[str, Any]:
         (parsed.get("evaluation_framework") or {}).get("release_gates")
         or (parsed.get("evals_v2") or {}).get("release_gates")
         or (parsed.get("evaluation_v3") or {}).get("gates")
+        or (parsed.get("evaluation") or {}).get("release_gates")
     )
     if not parsed.get("schema_version") or not gates:
         raise UNDXPolicyError("UNDX policy version or release gates are missing")
@@ -106,7 +112,9 @@ def load_policy() -> dict[str, Any]:
 
 
 def load_policy_version(version: str) -> dict[str, Any]:
-    if str(version).startswith("3"):
+    if str(version).startswith("4"):
+        path = V4_CONFIG_PATH
+    elif str(version).startswith("3"):
         path = V3_CONFIG_PATH
     elif str(version).startswith("2"):
         path = V2_CONFIG_PATH
@@ -132,12 +140,14 @@ def v2_status() -> dict[str, Any]:
 
 
 def active_config_path() -> Path:
-    selected = os.getenv(CONFIG_VERSION_ENV, "3.0").strip()
+    selected = os.getenv(CONFIG_VERSION_ENV, "4.0").strip()
     if selected.startswith("1"):
         return _config_path()
     if selected.startswith("2"):
         return V2_CONFIG_PATH if v2_status()["enabled"] else _config_path()
-    return V3_CONFIG_PATH
+    if selected.startswith("3"):
+        return V3_CONFIG_PATH
+    return V4_CONFIG_PATH
 
 
 def policy_metadata() -> dict[str, Any]:
@@ -150,6 +160,9 @@ def policy_metadata() -> dict[str, Any]:
         "sha256": hashlib.sha256(raw).hexdigest(),
         "path": str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else path.name,
         "v2": v2_status(),
+        "codename": str(policy.get("codename") or policy.get("system_codename") or ""),
+        "v4_actions_enabled": _truthy(os.getenv(V4_ACTIONS_ENV)),
+        "v4_writes_disabled": _truthy(os.getenv(V4_KILL_SWITCH_ENV)),
     }
 
 
@@ -191,6 +204,8 @@ def compile_context(message: str, *, include_tools: bool = True) -> dict[str, An
     is_v2 = str(policy.get("schema_version") or "").startswith("2")
     if str(policy.get("schema_version") or "").startswith("3"):
         return _compile_v3_context(policy, message, include_tools=include_tools)
+    if str(policy.get("schema_version") or "").startswith("4"):
+        return _compile_v4_context(policy, message, include_tools=include_tools)
     if is_v2:
         return _compile_v2_context(policy, message, include_tools=include_tools)
     identity = policy["identity"]
@@ -356,6 +371,67 @@ def _v3_reasoning_mode(message: str) -> str:
     return "rapid"
 
 
+def _compile_v4_context(policy: dict[str, Any], message: str, *, include_tools: bool) -> dict[str, Any]:
+    """Compile NEXUS CORE policy fragments without serializing the V4 pack."""
+    identity = policy["identity"]
+    mode = _v4_reasoning_mode(message)
+    domains = _domains(message)
+    sections = [
+        "Canonical identity:\n"
+        f"- Your canonical name is {identity['canonical_name']}.\n"
+        f"- Role: {identity['canonical_role']}; {identity['operating_role']}.\n"
+        f"- Statement: {identity['identity_statement'].strip()}",
+        _render_rules("Operational principles", policy["core_principles"]),
+        _render_rules("Context authority", policy["UI_context_awareness"]["rules"]),
+        _render_rules("Action orchestration", policy["action_orchestration"]["stages"]),
+        _render_rules("Tool governance", policy["tool_governance"]["rules"]),
+        _render_rules("Retrieved content boundaries", policy["retrieval_v4"]["anti_injection"]),
+        _render_rules("Verification rules", [policy["verification"]["critical_rule"]]),
+    ]
+    if mode in {"deep", "mission", "high_stakes"}:
+        sections.append(_render_rules("Mission stop conditions", policy["hierarchical_planning"]["stop_conditions"]))
+    if mode in {"mission", "high_stakes"}:
+        sections.append(_render_rules("Never autonomous", policy["delegated_autonomy"]["never_autonomous"]))
+    if "media" in domains:
+        sections.append(_render_rules("Attachment security", policy["security"]["attachments"]))
+    tool_names = _select_tools(domains, message) if include_tools else []
+    if tool_names:
+        sections.append("Authorized existing production tools for this request:\n" + "\n".join(
+            f"- {name}: {PRODUCTION_TOOL_REGISTRY[name]}" for name in tool_names
+        ))
+    compiled = "\n\n".join(sections).strip()
+    if len(compiled) > MAX_POLICY_CHARS:
+        raise UNDXPolicyError("Compiled v4 policy exceeded its server-side size bound")
+    write_tools = [name for name in tool_names if PRODUCTION_TOOL_REGISTRY[name].get("method") in {"POST", "PATCH", "PUT", "DELETE"}]
+    writes_enabled = _truthy(os.getenv(V4_ACTIONS_ENV)) and not _truthy(os.getenv(V4_KILL_SWITCH_ENV))
+    return {
+        "system_context": compiled,
+        "schema_version": "4.0",
+        "pack_version": _pack_version(V4_CONFIG_PATH),
+        "codename": "NEXUS CORE",
+        "domains": domains,
+        "reasoning_mode": mode,
+        "tool_names": tool_names,
+        "write_tool_names": write_tools,
+        "writes_enabled": writes_enabled,
+        "requires_confirmation": any(PRODUCTION_TOOL_REGISTRY[name].get("confirmation") for name in tool_names),
+        "compiled_chars": len(compiled),
+    }
+
+
+def _v4_reasoning_mode(message: str) -> str:
+    text = str(message or "").lower()
+    if any(term in text for term in HIGH_STAKES_TERMS):
+        return "high_stakes"
+    if any(term in text for term in ("every monday", "schedule", "multi-step", "mission", "then remind", "across")):
+        return "mission"
+    if len(text) > 600 or any(term in text for term in ("research", "architecture", "debug", "analyze", "compare")):
+        return "deep"
+    if len(text) < 80 and not _domains(text):
+        return "instant"
+    return "standard"
+
+
 def _select_tools(domains: list[str], message: str) -> list[str]:
     text = str(message or "").lower()
     selected: list[str] = []
@@ -372,6 +448,10 @@ def _select_tools(domains: list[str], message: str) -> list[str]:
         selected.append("pulsesoc.create_reel")
     if "alerts" in domains:
         selected.append("pulsesoc.get_alerts")
+        if "notification" in text:
+            selected.append("pulsesoc.notification_preferences.read")
+            if any(term in text for term in ("turn on", "turn off", "enable", "disable")):
+                selected.append("pulsesoc.notification_preferences.update")
     if "crypto" in domains:
         selected.append("pulsesoc.get_crypto_alert")
     if "media" in domains:

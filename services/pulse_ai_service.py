@@ -719,6 +719,30 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
                 knowledge.insert(0, {"id": 0, "title": "Live web search context", "category": "web_search", "body": web_context})
         user_memory = _user_memory(cur, int(user_id), settings)
         compiled_policy = undx_policy.compile_context(body)
+        ui_context = undx_architecture.sanitize_ui_context(payload.get("ui_context"))
+        if ui_context:
+            cur.execute(
+                """INSERT INTO pulse_ai_client_contexts (user_id, conversation_id, context_json, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, conversation_id) DO UPDATE SET context_json=excluded.context_json, updated_at=excluded.updated_at""",
+                (int(user_id), int(conversation["id"]), json.dumps(ui_context), _now()),
+            )
+        pending_action = None
+        if compiled_policy.get("schema_version") == "4.0":
+            action = undx_architecture.notification_action_from_text(body)
+            if action:
+                confirmation = undx_architecture.create_confirmation(cur, int(user_id), action)
+                pending_action = {
+                    "component": "confirmation_card",
+                    "action_name": "Update notification preference",
+                    "target": action["target_id"],
+                    "current_value": action["current_value"],
+                    "proposed_value": action["proposed_value"],
+                    "risk_summary": "This changes your server-managed notification settings.",
+                    "confirmation_id": confirmation["confirmation_id"],
+                    "confirmation_token": confirmation["confirmation_token"],
+                    "expires_at": confirmation["expires_at"],
+                }
         architecture_plan = undx_architecture.build_plan(
             int(user_id),
             body,
@@ -783,7 +807,10 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
                         "reasoning_mode": compiled_policy["reasoning_mode"],
                         "tool_names": compiled_policy["tool_names"],
                         "requires_confirmation": compiled_policy["requires_confirmation"],
+                        "writes_enabled": compiled_policy.get("writes_enabled", False),
                     },
+                    "ui_context": ui_context,
+                    "response_components": [pending_action] if pending_action else [],
                     "architecture": {
                         "mission_id": architecture_plan["mission_id"],
                         "risk_level": architecture_plan["risk_level"],
@@ -811,6 +838,7 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
                 "provider": result.get("provider") or "",
                 "latency_ms": int(result.get("latency_ms") or 0),
                 "correlation_id": correlation_id,
+                "response_components": [pending_action] if pending_action else [],
                 **refreshed,
             }
         safe_message = _enforce_undx_reply_identity(result.get("message") or UNDX_UNAVAILABLE_MESSAGE)
@@ -1026,6 +1054,66 @@ def simulate_tool(user_id: int, payload: dict | None = None) -> dict:
     except ValueError:
         return {"ok": False, "error": "tool_not_registered", "message": "That tool is not available to UNDX.", "http_status": 404}
     return {"ok": True, "user_id": int(user_id), "simulation": simulation}
+
+
+def confirm_action(user_id: int, payload: dict | None = None) -> dict:
+    """Consume one server-bound confirmation and verify the canonical write."""
+    payload = payload or {}
+    if not undx_policy.policy_metadata().get("v4_actions_enabled") or undx_policy.policy_metadata().get("v4_writes_disabled"):
+        return {"ok": False, "error": "undx_v4_writes_disabled", "message": "UNDX V4 actions are currently read-only.", "http_status": 503}
+    token = _clean(payload.get("confirmation_token") or "", 500)
+    if not token:
+        return {"ok": False, "error": "confirmation_required", "message": "A valid UNDX confirmation is required.", "http_status": 400}
+    conn, cur = _open_db()
+    try:
+        confirmation = undx_architecture.consume_confirmation(cur, int(user_id), token)
+        if not confirmation:
+            conn.rollback()
+            return {"ok": False, "error": "confirmation_invalid", "message": "That confirmation expired, was already used, or belongs to another account.", "http_status": 409}
+        if confirmation.get("action_id") != "notifications.preference.update":
+            conn.rollback()
+            return {"ok": False, "error": "action_not_supported", "message": "That action is not available.", "http_status": 400}
+        from services import pulsesoc_notification_system
+
+        arguments = confirmation.get("arguments") or {}
+        category = _clean(arguments.get("category") or "global", 80)
+        proposed = bool(arguments.get("push"))
+        before = pulsesoc_notification_system.get_preferences(int(user_id))
+        if category == "global":
+            write_payload = {"enable_push_notifications": proposed}
+        else:
+            current_category = dict((before.get("preferences") or {}).get(category) or {})
+            write_payload = {category: {**current_category, "push": proposed}}
+        pulsesoc_notification_system.update_preferences(int(user_id), write_payload)
+        after = pulsesoc_notification_system.get_preferences(int(user_id))
+        if category == "global":
+            actual = bool((after.get("experience") or {}).get("enable_push_notifications"))
+        else:
+            actual = bool(((after.get("preferences") or {}).get(category) or {}).get("push"))
+        verified = actual == proposed
+        timestamp = _now()
+        cur.execute(
+            "UPDATE pulse_ai_confirmations SET status=?, updated_at=? WHERE id=?",
+            ("verified" if verified else "failed_verification", timestamp, int(confirmation["id"])),
+        )
+        conn.commit()
+        return {
+            "ok": verified,
+            "status": "verified_success" if verified else "failed",
+            "action_id": confirmation["action_id"],
+            "target": category,
+            "verified_value": actual,
+            "response_components": [{
+                "component": "verified_success_card" if verified else "honest_failure_card",
+                "action_name": "Update notification preference",
+                "target": category,
+                "status": "verified" if verified else "verification_failed",
+                "value": "on" if actual else "off",
+            }],
+            "message": f"Verified: {category} notifications are {'on' if actual else 'off'}." if verified else "UNDX could not verify the notification change.",
+        }
+    finally:
+        conn.close()
 
 
 def record_feedback(user_id: int, payload: dict | None = None) -> dict:

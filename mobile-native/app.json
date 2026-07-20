@@ -13,7 +13,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "PulseSoc uses the camera for native status, reels, profile media, and calls.",
         "NSMicrophoneUsageDescription": "PulseSoc uses the microphone for native voice/video calls and media capture.",
-        "NSPhotoLibraryUsageDescription": "PulseSoc uses the photo library for profile, chat, status, and reels uploads."
+        "NSPhotoLibraryUsageDescription": "PulseSoc uses the photo library for profile, chat, status, and reels uploads.",
+        "NSFaceIDUsageDescription": "PulseSoc uses Face ID to unlock your saved sign-in securely."
       }
     },
     "android": {
@@ -23,7 +24,9 @@
         "RECORD_AUDIO",
         "READ_MEDIA_IMAGES",
         "READ_MEDIA_VIDEO",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT"
       ]
     },
     "plugins": [
@@ -33,7 +36,8 @@
       "expo-secure-store",
       "expo-notifications",
       "expo-camera",
-      "expo-image-picker"
+      "expo-image-picker",
+      "expo-local-authentication"
     ],
     "extra": {
       "pulseApiBaseUrl": "https://pulsesoc.com",
