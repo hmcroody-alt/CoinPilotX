@@ -260,6 +260,12 @@ export async function deleteReelComment(commentId: number) {
   });
 }
 
+export async function deleteReel(reelId: number) {
+  return pulseApi<{ ok?: boolean; message?: string; reel_id?: number; trace_id?: string }>(`/api/pulse/reels/${reelId}`, {
+    method: "DELETE"
+  });
+}
+
 export async function reactToReel(reelId: number, reactionType = "fire") {
   return pulseApi<{ ok?: boolean; removed?: boolean; reaction_type?: string; reaction_counts?: Record<string, number>; reel_id?: number }>(
     `/api/pulse/reels/${reelId}/react`,

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  Alert,
   Animated,
   AppState,
   Dimensions,
@@ -28,6 +29,7 @@ import { liveWebUrl } from "../api/live";
 import {
   addReelComment,
   clearReelCommentDraft,
+  deleteReel,
   deleteReelComment,
   editReelComment,
   followReelCreator,
@@ -49,9 +51,10 @@ import {
   trackReelView
 } from "../api/reels";
 import { PulseApiError } from "../api/pulseApi";
+import { describeDeleteError } from "../api/deleteErrors";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
 import { ReelPlayerCard } from "../components/ReelPlayerCard";
-import { registerSyncInvalidation } from "../core/eventSync";
+import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -311,6 +314,43 @@ export function ReelsScreen({ route, navigation }: Props) {
     }
   }
 
+  async function handleDeleteReel(reel: PulseReel) {
+    if (busyId === reel.id) return;
+    setBusyId(reel.id);
+    try {
+      await deleteReel(reel.id);
+      if (commentReel?.id === reel.id) setCommentReel(null);
+      if (reactionReel?.id === reel.id) setReactionReel(null);
+      if (musicReel?.id === reel.id) setMusicReel(null);
+      if (moreReel?.id === reel.id) setMoreReel(null);
+      setReels((current) => current.filter((item) => item.id !== reel.id));
+      invalidateNativeSync(["activity", "notifications"], "reels_delete", [
+        {
+          event_type: "pulse_reel_deleted",
+          entity_type: "reel",
+          entity_id: reel.id,
+          invalidates: ["activity", "notifications"],
+          metadata: { source: "native_reels" }
+        }
+      ]).catch(() => undefined);
+    } catch (err) {
+      Alert.alert("Reel not deleted", describeDeleteError(err, "Reel"));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function confirmDeleteReel(reel: PulseReel) {
+    Alert.alert(
+      "Delete Reel?",
+      "This removes the Reel for everyone. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => handleDeleteReel(reel).catch(() => undefined) }
+      ]
+    );
+  }
+
   async function handleFollowCreator(reel: PulseReel) {
     setBusyId(reel.id);
     const original = Boolean(reel.viewer_follows_author);
@@ -517,7 +557,7 @@ export function ReelsScreen({ route, navigation }: Props) {
       />
       <ReactionPicker reel={reactionReel} onSelect={(reaction) => { if (reactionReel) handleReact(reactionReel, reaction).catch(() => undefined); setReactionReel(null); }} onClose={() => setReactionReel(null)} />
       <MusicDetail reel={musicReel} onClose={() => setMusicReel(null)} />
-      <ReelMoreMenu reel={moreReel} onClose={() => setMoreReel(null)} onRepost={(reel) => { setMoreReel(null); handleRepost(reel).catch(() => undefined); }} onLess={(reel) => { setMoreReel(null); handleNotInterested(reel).catch(() => undefined); }} onReport={(reel) => { setMoreReel(null); handleReport(reel).catch(() => undefined); }} onPromote={(reel) => { setMoreReel(null); navigation.navigate("GrowthCenter", { contentType: "reel", contentId: reel.id, title: "Promote Reel" }); }} />
+      <ReelMoreMenu reel={moreReel} onClose={() => setMoreReel(null)} onRepost={(reel) => { setMoreReel(null); handleRepost(reel).catch(() => undefined); }} onLess={(reel) => { setMoreReel(null); handleNotInterested(reel).catch(() => undefined); }} onReport={(reel) => { setMoreReel(null); handleReport(reel).catch(() => undefined); }} onPromote={(reel) => { setMoreReel(null); navigation.navigate("GrowthCenter", { contentType: "reel", contentId: reel.id, title: "Promote Reel" }); }} onDelete={(reel) => { setMoreReel(null); confirmDeleteReel(reel); }} />
     </View>
   );
 }
@@ -679,10 +719,10 @@ function MusicDetail({ reel, onClose }: { reel: PulseReel | null; onClose: () =>
   return <Modal visible={Boolean(reel)} transparent animationType="slide" onRequestClose={onClose}><Pressable style={styles.modalWrap} onPress={onClose}><Pressable style={styles.compactSheet} onPress={(event) => event.stopPropagation()}><View style={styles.sheetHandle} /><Text style={styles.musicGlyph}>♪</Text><Text style={styles.sheetTitle}>{audio?.title || "Original audio"}</Text><Text style={styles.sheetContext}>{audio?.artist || "PulseSoc creator audio"}</Text><Text style={styles.boundaryText}>PulseSoc keeps this sound synced to the Reel while the video remains the focus.</Text><Pressable style={styles.sheetPrimary} onPress={onClose}><Text style={styles.sheetPrimaryText}>Done</Text></Pressable></Pressable></Pressable></Modal>;
 }
 
-function ReelMoreMenu({ reel, onClose, onRepost, onLess, onReport, onPromote }: { reel: PulseReel | null; onClose: () => void; onRepost: (reel: PulseReel) => void; onLess: (reel: PulseReel) => void; onReport: (reel: PulseReel) => void; onPromote: (reel: PulseReel) => void }) {
+function ReelMoreMenu({ reel, onClose, onRepost, onLess, onReport, onPromote, onDelete }: { reel: PulseReel | null; onClose: () => void; onRepost: (reel: PulseReel) => void; onLess: (reel: PulseReel) => void; onReport: (reel: PulseReel) => void; onPromote: (reel: PulseReel) => void; onDelete: (reel: PulseReel) => void }) {
   if (!reel) return null;
   const live = Boolean(reel.live_session_id || reel.live?.live_session_id);
-  return <Modal visible transparent animationType="slide" onRequestClose={onClose}><Pressable style={styles.modalWrap} onPress={onClose}><Pressable style={styles.compactSheet} onPress={(event) => event.stopPropagation()}><View style={styles.sheetHandle} /><Text style={styles.sheetTitle}>{live ? "Live options" : "Reel options"}</Text>{live ? <Text style={styles.boundaryText}>Join Live to use the existing Live viewer, chat, moderation, and co-host controls.</Text> : <><MenuAction label={reel.reposted ? "Reposted" : "Repost"} onPress={() => onRepost(reel)} />{reel.can_manage ? <MenuAction label="Promote Reel" onPress={() => onPromote(reel)} /> : null}<MenuAction label="Not interested" onPress={() => onLess(reel)} /><MenuAction label="Report Reel" danger onPress={() => onReport(reel)} /></>}<MenuAction label="Cancel" onPress={onClose} /></Pressable></Pressable></Modal>;
+  return <Modal visible transparent animationType="slide" onRequestClose={onClose}><Pressable style={styles.modalWrap} onPress={onClose}><Pressable style={styles.compactSheet} onPress={(event) => event.stopPropagation()}><View style={styles.sheetHandle} /><Text style={styles.sheetTitle}>{live ? "Live options" : "Reel options"}</Text>{live ? <Text style={styles.boundaryText}>Join Live to use the existing Live viewer, chat, moderation, and co-host controls.</Text> : <><MenuAction label={reel.reposted ? "Reposted" : "Repost"} onPress={() => onRepost(reel)} />{reel.can_manage ? <MenuAction label="Promote Reel" onPress={() => onPromote(reel)} /> : null}<MenuAction label="Not interested" onPress={() => onLess(reel)} /><MenuAction label="Report Reel" danger onPress={() => onReport(reel)} />{reel.can_manage ? <MenuAction label="Delete Reel" danger onPress={() => onDelete(reel)} /> : null}</>}<MenuAction label="Cancel" onPress={onClose} /></Pressable></Pressable></Modal>;
 }
 
 function MenuAction({ label, danger, onPress }: { label: string; danger?: boolean; onPress: () => void }) { return <Pressable accessibilityRole="button" style={styles.menuAction} onPress={onPress}><Text style={[styles.menuActionText, danger && styles.menuDanger]}>{label}</Text><Text style={styles.menuChevron}>›</Text></Pressable>; }
