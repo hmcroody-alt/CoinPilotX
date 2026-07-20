@@ -31,6 +31,7 @@ def parse_search_request(message: str) -> dict[str, Any] | None:
     if not any(term in text for term in ("find ", "search ", "show me", "only show", "trending")):
         return None
     content_type = "all"
+    resource_type = "crypto_alert" if "alert" in text and any(term in text for term in ("crypto", "coin", "bitcoin", "ethereum")) else "content"
     if "reel" in text:
         content_type = "reel"
     elif "video" in text:
@@ -46,12 +47,59 @@ def parse_search_request(message: str) -> dict[str, Any] | None:
         "topic": topic,
         "terms": list(TOPIC_EXPANSIONS.get(topic, (topic,)))[:10],
         "content_type": content_type,
+        "resource_type": resource_type,
+        "owner_only": any(term in text for term in ("i created", "i made", "my alert", "my crypto")),
         "days": days,
         "saved_only": "saved" in text,
         "following_only": "people i follow" in text or "creators i follow" in text,
         "sort": "trending" if "trending" in text else "newest" if "newest" in text else "relevance",
         "limit": 10,
     }
+
+
+def search_owned_crypto_alerts(cur, user_id: int, query: str, filters: dict[str, Any]) -> dict[str, Any]:
+    """Read canonical alert definitions with an unconditional account boundary."""
+    clauses = ["user_id=?", "deleted_at IS NULL", "COALESCE(status,'active')!='deleted'"]
+    params: list[Any] = [int(user_id)]
+    if int(filters.get("days") or 0) > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=int(filters["days"]))
+        clauses.append("created_at>=?")
+        params.append(cutoff.isoformat(timespec="seconds"))
+    cur.execute(
+        f"""SELECT id, alert_type, symbol, target, condition, threshold_value,
+                   target_value, status, active, created_at, last_triggered_at, trigger_count
+            FROM alert_rules WHERE {' AND '.join(clauses)}
+            ORDER BY created_at DESC LIMIT ?""",
+        (*params, min(20, max(1, int(filters.get("limit") or 10)))),
+    )
+    results = []
+    for row in cur.fetchall():
+        item = dict(row)
+        symbol = _clean(item.get("symbol") or item.get("target") or "Crypto", 40)
+        condition = _clean(item.get("condition") or item.get("alert_type") or "alert", 60)
+        threshold = item.get("threshold_value") if item.get("threshold_value") is not None else item.get("target_value")
+        alert_id = int(item["id"])
+        results.append({
+            "canonical_content_id": alert_id,
+            "content_type": "crypto_alert",
+            "creator_id": int(user_id),
+            "preview_text": f"{symbol} {condition} {threshold if threshold is not None else ''}".strip(),
+            "thumbnail_or_media_reference": "",
+            "created_at": item.get("created_at") or "",
+            "engagement_summary": {"trigger_count": int(item.get("trigger_count") or 0)},
+            "deep_link": f"/pulse/crypto/alerts/{alert_id}",
+            "visibility_reason": "account_owner_only",
+            "relevance_reason": "Matches your crypto alerts",
+            "status": item.get("status") or ("active" if item.get("active") else "paused"),
+            "last_triggered_at": item.get("last_triggered_at") or "",
+        })
+    return {"ok": True, "results": results, "filters": filters, "privacy_filter_status": "account_owner_enforced"}
+
+
+def search_authorized_resources(cur, user_id: int, query: str, filters: dict[str, Any]) -> dict[str, Any]:
+    if filters.get("resource_type") == "crypto_alert":
+        return search_owned_crypto_alerts(cur, user_id, query, filters)
+    return search_visible_content(cur, user_id, query, filters)
 
 
 def search_visible_content(cur, user_id: int, query: str, filters: dict[str, Any]) -> dict[str, Any]:

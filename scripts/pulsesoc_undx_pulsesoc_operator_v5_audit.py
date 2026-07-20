@@ -43,6 +43,7 @@ def main() -> int:
     parsed_love = undx_operator.parse_search_request("Find PulseSOC posts about love.") or {}
     parsed_crypto = undx_operator.parse_search_request("Find crypto Reels from this week.") or {}
     parsed_saved = undx_operator.parse_search_request("Find the money video I saved.") or {}
+    parsed_owned_alerts = undx_operator.parse_search_request("Find every crypto alert I created this month.") or {}
     test_db = sqlite3.connect(":memory:")
     test_db.row_factory = sqlite3.Row
     test_cur = test_db.cursor()
@@ -52,13 +53,21 @@ def main() -> int:
           status TEXT, engagement_score REAL, created_at TEXT, deleted_at TEXT, preview_url TEXT, playback_url TEXT);
         CREATE TABLE pulse_post_saves (post_id INTEGER, user_id INTEGER);
         CREATE TABLE pulse_follows (followed_user_id INTEGER, follower_user_id INTEGER);
+        CREATE TABLE alert_rules (id INTEGER PRIMARY KEY, user_id INTEGER, alert_type TEXT, symbol TEXT,
+          target TEXT, condition TEXT, threshold_value REAL, target_value REAL, status TEXT, active INTEGER,
+          created_at TEXT, deleted_at TEXT, last_triggered_at TEXT, trigger_count INTEGER);
         INSERT INTO pulse_posts VALUES
           (1, 20, 'text', 'Love and relationships', 'A public story about love', '[]', '[]', 'public', 'approved', 'published', 4, '2026-07-19T12:00:00+00:00', NULL, '', ''),
           (2, 21, 'text', 'Private love note', 'must never leak', '[]', '[]', 'private', 'approved', 'published', 100, '2026-07-19T12:00:00+00:00', NULL, '', ''),
           (3, 22, 'reel', 'Crypto Reel', 'bitcoin this week', '[]', '[]', 'public', 'blocked', 'published', 100, '2026-07-19T12:00:00+00:00', NULL, '', '');
+        INSERT INTO alert_rules VALUES
+          (41, 10, 'coin_price', 'BTC', 'BTC', 'above', 100000, 100000, 'active', 1, '2026-07-19T12:00:00+00:00', NULL, NULL, 0),
+          (42, 11, 'coin_price', 'ETH', 'ETH', 'below', 2000, 2000, 'active', 1, '2026-07-19T12:00:00+00:00', NULL, NULL, 0);
     """)
     visible_fixture = undx_operator.search_visible_content(test_cur, 10, "Find posts about love", parsed_love)
     fixture_ids = [item["canonical_content_id"] for item in visible_fixture["results"]]
+    owned_alert_fixture = undx_operator.search_authorized_resources(test_cur, 10, "Find every crypto alert I created this month", parsed_owned_alerts)
+    owned_alert_ids = [item["canonical_content_id"] for item in owned_alert_fixture["results"]]
     sources = {
         "policy": (ROOT / "services/undx_policy.py").read_text(),
         "architecture": (ROOT / "services/undx_architecture.py").read_text(),
@@ -85,6 +94,8 @@ def main() -> int:
         "love_posts_parsed": parsed_love.get("topic") == "love" and parsed_love.get("content_type") == "post",
         "crypto_week_reels_parsed": parsed_crypto.get("topic") == "crypto" and parsed_crypto.get("content_type") == "reel" and parsed_crypto.get("days") == 7,
         "saved_money_video_parsed": parsed_saved.get("topic") == "money" and parsed_saved.get("content_type") == "video" and parsed_saved.get("saved_only") is True,
+        "owned_crypto_alert_intent_parsed": parsed_owned_alerts.get("resource_type") == "crypto_alert" and parsed_owned_alerts.get("owner_only") is True and parsed_owned_alerts.get("days") == 30,
+        "owned_crypto_alert_scope_enforced": owned_alert_ids == [41] and owned_alert_fixture.get("privacy_filter_status") == "account_owner_enforced",
         "privacy_before_hydration": "pulse_visibility_decision" in sources["operator"] and "if not allowed" in sources["operator"],
         "private_and_blocked_fixture_excluded": fixture_ids == [1],
         "canonical_ids_and_deep_links": "canonical_content_id" in sources["operator"] and 'f"/pulse/post/{post_id}"' in sources["operator"],

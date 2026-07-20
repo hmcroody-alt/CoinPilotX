@@ -748,7 +748,7 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
         if compiled_policy.get("schema_version") == "5.0" and compiled_policy.get("search_intent") and compiled_policy.get("search_enabled"):
             search_filters = undx_operator.parse_search_request(body)
             if search_filters:
-                operator_search = undx_operator.search_visible_content(cur, int(user_id), body, search_filters)
+                operator_search = undx_operator.search_authorized_resources(cur, int(user_id), body, search_filters)
                 search_session_id = undx_operator.persist_search_session(
                     cur, int(user_id), int(conversation["id"]), body, search_filters, operator_search.get("results") or []
                 )
