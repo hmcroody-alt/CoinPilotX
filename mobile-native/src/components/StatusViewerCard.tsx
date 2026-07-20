@@ -7,6 +7,7 @@ import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { LikeBurst, LikeBurstHandle } from "../media/MediaGestureFeedback";
+import { StatusActionRail, StatusReactionType } from "./StatusActionRail";
 
 type Props = {
   status: PulseStatus;
@@ -107,7 +108,7 @@ export function StatusViewerCard({
       const x = event?.nativeEvent?.locationX ?? (side === "left" ? 90 : 260);
       const y = event?.nativeEvent?.locationY ?? 320;
       likeBurstRef.current?.trigger(x, y);
-      onReact(status, "fire");
+      onReact(status, "love");
       return;
     }
     nav();
@@ -181,11 +182,16 @@ export function StatusViewerCard({
         <Pressable accessibilityRole="button" accessibilityLabel="Status options" style={styles.moreButton} onPress={() => onMore(status)}><Text style={styles.moreText}>•••</Text></Pressable>
       </View>
 
-      <View style={styles.actions}>
-        <Action label="React" value={status.reaction_count || 0} disabled={busy} onPress={() => onReact(status, "fire")} />
-        <Action label="Reply" value={status.reply_count || 0} disabled={busy} onPress={() => onReply(status)} />
-        <Action label="Share" value={status.share_count || 0} disabled={busy} onPress={() => onShare(status)} />
-      </View>
+      <StatusActionRail
+        reactionCount={status.reaction_count || 0}
+        selectedReaction={status.viewer_reaction}
+        reactionPending={busy}
+        replyPending={busy}
+        sharePending={busy}
+        onReact={(reactionType: StatusReactionType) => onReact(status, reactionType)}
+        onReply={() => onReply(status)}
+        onShare={() => onShare(status)}
+      />
 
       <View style={styles.caption}>
         {status.body && kind !== "text" ? <Text accessibilityLabel={`Status caption, ${status.body}`} style={styles.captionText} numberOfLines={4}>{status.body}</Text> : null}
@@ -196,44 +202,7 @@ export function StatusViewerCard({
   );
 }
 
-function Action({ label, value, disabled, onPress }: { label: string; value?: number; disabled?: boolean; onPress: () => void }) {
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${label} to Status${value ? `, ${value}` : ""}`} style={[styles.action, disabled ? styles.disabled : undefined]} disabled={disabled} onPress={onPress}>
-      <Text style={styles.actionText}>{label}</Text>
-      {value ? <Text style={styles.actionValue}>{value}</Text> : null}
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
-  action: {
-    alignItems: "center",
-    backgroundColor: "rgba(8, 15, 28, 0.62)",
-    borderColor: "rgba(255,255,255,0.16)",
-    borderRadius: 16,
-    borderWidth: 1,
-    minHeight: 50,
-    justifyContent: "center",
-    paddingHorizontal: 8,
-    width: 66
-  },
-  actionText: {
-    color: colors.text,
-    fontSize: 11,
-    fontWeight: "900"
-  },
-  actionValue: {
-    color: colors.muted,
-    fontSize: 10,
-    marginTop: 2
-  },
-  actions: {
-    gap: 9,
-    position: "absolute",
-    right: 10,
-    top: "38%",
-    zIndex: 7
-  },
   author: {
     alignItems: "center",
     flex: 1,
@@ -288,9 +257,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#02050b",
     flex: 1,
     overflow: "hidden"
-  },
-  disabled: {
-    opacity: 0.45
   },
   header: {
     alignItems: "center",

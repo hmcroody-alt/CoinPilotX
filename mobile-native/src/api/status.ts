@@ -53,6 +53,7 @@ export type PulseStatus = {
     shares?: number;
   };
   reaction_count?: number;
+  viewer_reaction?: string;
   reply_count?: number;
   share_count?: number;
   author_live?: boolean;
@@ -193,7 +194,7 @@ export async function trackStatusView(statusId: number, params: { completed?: bo
 }
 
 export async function reactToStatus(statusId: number, reactionType = "fire") {
-  return pulseApi<{ ok?: boolean; status_id?: number; reaction_type?: string; reaction_count?: number }>(`/api/pulse/status/${statusId}/react`, {
+  return pulseApi<{ ok?: boolean; status_id?: number; reaction_type?: string; viewer_reaction?: string; reaction_count?: number }>(`/api/pulse/status/${statusId}/react`, {
     method: "POST",
     body: JSON.stringify({ reaction_type: reactionType })
   });

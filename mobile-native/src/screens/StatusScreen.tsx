@@ -66,6 +66,8 @@ export function StatusScreen({ route, navigation }: Props) {
   const [postingReply, setPostingReply] = useState(false);
   const [manageStatus, setManageStatus] = useState<PulseStatus | null>(null);
   const viewed = useRef(new Set<number>());
+  const pendingActions = useRef(new Set<string>());
+  const reactionVersions = useRef(new Map<number, number>());
 
   async function load(mode: "initial" | "refresh" = "initial") {
     setError("");
@@ -127,25 +129,44 @@ export function StatusScreen({ route, navigation }: Props) {
     }
   }
 
-  async function handleReact(status: PulseStatus, reactionType = "fire") {
+  async function handleReact(status: PulseStatus, reactionType = "love") {
+    const actionKey = `reaction:${status.id}`;
+    if (pendingActions.current.has(actionKey)) return;
+    pendingActions.current.add(actionKey);
+    const version = (reactionVersions.current.get(status.id) || 0) + 1;
+    reactionVersions.current.set(status.id, version);
+    const previousReaction = status.viewer_reaction || "";
+    const previousCount = Number(status.reaction_count || 0);
+    const optimisticCount = previousReaction ? previousCount : previousCount + 1;
     setBusyId(status.id);
-    updateStatus(status.id, { reaction_count: Number(status.reaction_count || 0) + 1 });
+    updateStatus(status.id, { reaction_count: optimisticCount, viewer_reaction: reactionType });
     try {
       const result = await reactToStatus(status.id, reactionType);
-      updateStatus(status.id, { reaction_count: Number(result.reaction_count || status.reaction_count || 0) });
+      if (reactionVersions.current.get(status.id) !== version) return;
+      updateStatus(status.id, {
+        reaction_count: Number(result.reaction_count ?? optimisticCount),
+        viewer_reaction: result.viewer_reaction || result.reaction_type || reactionType
+      });
     } catch {
-      updateStatus(status.id, { reaction_count: status.reaction_count || 0 });
+      if (reactionVersions.current.get(status.id) === version) {
+        updateStatus(status.id, { reaction_count: previousCount, viewer_reaction: previousReaction });
+      }
     } finally {
-      setBusyId(null);
+      pendingActions.current.delete(actionKey);
+      if (reactionVersions.current.get(status.id) === version) setBusyId(null);
     }
   }
 
   async function handleShare(status: PulseStatus) {
+    const actionKey = `share:${status.id}`;
+    if (pendingActions.current.has(actionKey)) return;
+    pendingActions.current.add(actionKey);
     setBusyId(status.id);
     try {
       const result = await shareStatus(status.id);
       updateStatus(status.id, { share_count: Number(result.share_count || status.share_count || 0) });
     } finally {
+      pendingActions.current.delete(actionKey);
       setBusyId(null);
     }
     await Share.share({ message: pulseStatusUrl(status.id) }).catch(() => undefined);
@@ -393,6 +414,7 @@ function ReplyModal({ visible, body, posting, onChangeBody, onSubmit, onClose }:
         <View style={styles.replySheet}>
           <Text style={styles.replyTitle}>Reply to Status</Text>
           <TextInput
+            autoFocus
             accessibilityLabel="Status reply"
             style={styles.replyInput}
             value={body}
