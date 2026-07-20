@@ -733,6 +733,16 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
             action = undx_architecture.notification_action_from_text(body)
             if action and (compiled_policy.get("schema_version") == "4.0" or compiled_policy.get("writes_enabled")):
                 action["action_version"] = compiled_policy.get("schema_version") or "4.0"
+                from services import pulsesoc_notification_system
+
+                current_preferences = pulsesoc_notification_system.get_preferences(int(user_id))
+                action_category = _clean(action.get("target_id") or "global", 80)
+                if action_category == "global":
+                    current_push = bool((current_preferences.get("experience") or {}).get("enable_push_notifications"))
+                else:
+                    current_push = bool(((current_preferences.get("preferences") or {}).get(action_category) or {}).get("push"))
+                action["current_value"] = "on" if current_push else "off"
+                action["arguments"] = {**(action.get("arguments") or {}), "expected_current_push": current_push}
                 confirmation = undx_architecture.create_confirmation(cur, int(user_id), action)
                 pending_action = {
                     "component": "confirmation_card",
@@ -1100,6 +1110,23 @@ def confirm_action(user_id: int, payload: dict | None = None) -> dict:
         category = _clean(arguments.get("category") or "global", 80)
         proposed = bool(arguments.get("push"))
         before = pulsesoc_notification_system.get_preferences(int(user_id))
+        expected_current = arguments.get("expected_current_push")
+        if category == "global":
+            observed_before = bool((before.get("experience") or {}).get("enable_push_notifications"))
+        else:
+            observed_before = bool(((before.get("preferences") or {}).get(category) or {}).get("push"))
+        if expected_current is None or observed_before != bool(expected_current):
+            cur.execute(
+                "UPDATE pulse_ai_confirmations SET status='stale_state', updated_at=? WHERE id=?",
+                (_now(), int(confirmation["id"])),
+            )
+            conn.commit()
+            return {
+                "ok": False,
+                "error": "confirmation_state_changed",
+                "message": "Your notification setting changed after this confirmation was created. Review the current state and confirm again.",
+                "http_status": 409,
+            }
         if category == "global":
             write_payload = {"enable_push_notifications": proposed}
         else:
