@@ -6,6 +6,10 @@ import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackC
 import { refreshCanonicalMediaAccess } from "../media/mediaAccess";
 import { LikeBurst, LikeBurstHandle, MuteGlyphPulse, MuteGlyphPulseHandle } from "../media/MediaGestureFeedback";
 import { useTapMuteLike } from "../media/useTapMuteLike";
+import { classifyReelMedia } from "../reels/reelMediaKind";
+import { ReelPhotoSurface } from "./reels/ReelPhotoSurface";
+import { ReelCarouselSurface } from "./reels/ReelCarouselSurface";
+import { ReelLiveViewerSurface } from "./reels/ReelLiveViewerSurface";
 import { colors } from "../theme/colors";
 
 type ReelPlayerCardProps = {
@@ -68,11 +72,13 @@ export function ReelPlayerCard({
   const [failed, setFailed] = useState(false);
   const [ownsPlayback, setOwnsPlayback] = useState(false);
   const [refreshingUrl, setRefreshingUrl] = useState(false);
-  const [source, setSource] = useState(() => reelVideoUrl(reel));
-  const initialSource = useMemo(() => reelVideoUrl(reel), [reel]);
+  const [source, setSource] = useState(() => reelVideoUrl(reel) || reel.live?.playback_url || "");
+  const initialSource = useMemo(() => reelVideoUrl(reel) || reel.live?.playback_url || "", [reel]);
   const poster = useMemo(() => reelPosterUrl(reel), [reel]);
   const author = reel.author || {};
-  const isLive = String(reel.content_type || reel.post_type || "").toLowerCase() === "live" || Boolean(reel.live_session_id || reel.live?.live_session_id);
+  const kind = useMemo(() => classifyReelMedia(reel), [reel]);
+  const isVideoKind = kind === "video" || kind === "replay";
+  const isLive = kind === "livestream";
   const attachedAudio = reel.audio?.attached_audio_url || reel.audio?.audio_url || "";
   const playbackOwnerId = `reel:${reel.id}`;
   const media = reel.media?.[0];
@@ -86,6 +92,15 @@ export function ReelPlayerCard({
   }, [initialSource, reel.id]);
 
   useEffect(() => {
+    if (!isVideoKind) {
+      if (active) {
+        watchStartedAt.current = Date.now();
+      } else if (watchStartedAt.current) {
+        onViewable?.(reel, Date.now() - watchStartedAt.current);
+        watchStartedAt.current = 0;
+      }
+      return;
+    }
     if (active && !muted) {
       watchStartedAt.current = Date.now();
       claimMediaPlayback({
@@ -118,12 +133,12 @@ export function ReelPlayerCard({
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
     }
     return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
-  }, [active, muted, onViewable, playbackOwnerId, reel]);
+  }, [active, muted, onViewable, playbackOwnerId, reel, isVideoKind]);
 
   useEffect(() => {
     let cancelled = false;
     async function syncAttachedAudio() {
-      if (!active || !ownsPlayback || !attachedAudio) {
+      if (!isVideoKind || !active || !ownsPlayback || !attachedAudio) {
         const existing = attachedSoundRef.current;
         attachedSoundRef.current = null;
         if (existing) await existing.unloadAsync().catch(() => undefined);
@@ -142,7 +157,7 @@ export function ReelPlayerCard({
     }
     syncAttachedAudio().catch(() => undefined);
     return () => { cancelled = true; };
-  }, [active, attachedAudio, muted, ownsPlayback, reel.audio?.audio_start_time, reel.audio?.audio_volume]);
+  }, [active, attachedAudio, muted, ownsPlayback, reel.audio?.audio_start_time, reel.audio?.audio_volume, isVideoKind]);
 
   useEffect(() => () => {
     attachedSoundRef.current?.unloadAsync().catch(() => undefined);
@@ -150,10 +165,10 @@ export function ReelPlayerCard({
   }, [attachedAudio]);
 
   useEffect(() => {
-    if (!active || !ownsPlayback) return;
+    if (!isVideoKind || !active || !ownsPlayback) return;
     videoRef.current?.playAsync().catch(() => undefined);
     attachedSoundRef.current?.setStatusAsync({ shouldPlay: !muted, isMuted: muted }).catch(() => undefined);
-  }, [active, muted, ownsPlayback]);
+  }, [active, muted, ownsPlayback, isVideoKind]);
 
   const { onPress: handleTap } = useTapMuteLike({
     onToggleMuted,
@@ -185,7 +200,13 @@ export function ReelPlayerCard({
   return (
     <View style={styles.card}>
       {poster ? <Image source={{ uri: poster }} style={styles.poster} resizeMode="cover" blurRadius={active ? 0 : 3} /> : null}
-      {contentState === "playable" && source ? (
+      {kind === "photo" ? (
+        <ReelPhotoSurface reel={reel} />
+      ) : kind === "carousel" ? (
+        <ReelCarouselSurface reel={reel} active={active} muted={muted} />
+      ) : kind === "livestream" ? (
+        <ReelLiveViewerSurface reel={reel} active={active} muted={muted} poster={poster} />
+      ) : contentState === "playable" && source ? (
         <Video
           ref={videoRef}
           source={{ uri: source }}
@@ -215,7 +236,7 @@ export function ReelPlayerCard({
           recoverPlaybackUrl().catch(() => undefined);
         }} onShare={() => Share.share({ message: reelWebUrl(reel.id) }).catch(() => undefined)} />
       )}
-      {contentState === "playable" ? <Pressable accessibilityRole="button" accessibilityLabel={muted ? "Reel muted. Tap to unmute, double tap to like." : "Reel sound on. Tap to mute, double tap to like."} style={styles.tapLayer} onPress={handleTap} onLongPress={() => onOpenReactions(reel)} /> : null}
+      {isVideoKind && contentState === "playable" ? <Pressable accessibilityRole="button" accessibilityLabel={muted ? "Reel muted. Tap to unmute, double tap to like." : "Reel sound on. Tap to mute, double tap to like."} style={styles.tapLayer} onPress={handleTap} onLongPress={() => onOpenReactions(reel)} /> : null}
       <View style={styles.scrim} pointerEvents="none" />
       {buffering || refreshingUrl ? <View style={styles.buffering}><View style={styles.bufferingCore}><ActivityIndicator color="#36f0cf" /><Text style={styles.bufferingText}>{refreshingUrl ? "Refreshing Reel" : "Tuning signal"}</Text></View></View> : null}
       <LikeBurst ref={likeBurstRef} />
