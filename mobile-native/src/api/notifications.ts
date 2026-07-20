@@ -44,6 +44,7 @@ export type NotificationPreferences = {
 export type NotificationPreferencesResponse = {
   ok?: boolean;
   preferences?: NotificationPreferences;
+  categories?: string[];
   experience?: Record<string, unknown>;
   push_status?: Record<string, unknown>;
 };

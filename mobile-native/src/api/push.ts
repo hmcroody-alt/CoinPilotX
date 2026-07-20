@@ -21,6 +21,7 @@ export type PushPermissionState = {
 };
 
 type CachedPushRegistration = {
+  installationId: string;
   endpoint: string;
   token: string;
   provider: string;
@@ -31,6 +32,8 @@ type CachedPushRegistration = {
 };
 
 const PUSH_REGISTRATION_CACHE_KEY = "pulsesoc.native.push.registration";
+const PUSH_INSTALLATION_ID_KEY = "pulsesoc.native.push.installation_id";
+let activePushRegistration: Promise<PushRegistrationResult> | null = null;
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -43,13 +46,33 @@ Notifications.setNotificationHandler({
 });
 
 export async function registerPushDevice(): Promise<PushRegistrationResult> {
+  if (activePushRegistration) return activePushRegistration;
+  activePushRegistration = performPushRegistration(true).finally(() => {
+    activePushRegistration = null;
+  });
+  return activePushRegistration;
+}
+
+export async function syncPushDeviceRegistration(): Promise<PushRegistrationResult> {
+  if (activePushRegistration) return activePushRegistration;
+  activePushRegistration = performPushRegistration(false).finally(() => {
+    activePushRegistration = null;
+  });
+  return activePushRegistration;
+}
+
+async function performPushRegistration(requestPermission: boolean): Promise<PushRegistrationResult> {
   try {
     if (!Device.isDevice) {
       return { ok: false, message: "Push registration requires a physical device." };
     }
 
     const current = await Notifications.getPermissionsAsync();
-    const permission = current.granted ? current : await Notifications.requestPermissionsAsync();
+    const permission = current.granted
+      ? current
+      : requestPermission && current.canAskAgain
+        ? await Notifications.requestPermissionsAsync()
+        : current;
     if (!permission.granted) return { ok: false, message: "Push permission was not granted." };
 
     if (Platform.OS === "android") {
@@ -73,8 +96,19 @@ export async function registerPushDevice(): Promise<PushRegistrationResult> {
     const nativeToken = await Notifications.getDevicePushTokenAsync().catch(() => null);
     const nativeTokenType = String(nativeToken?.type || platformPushProvider());
     const nativeTokenValue = String(nativeToken?.data || "");
+    const cached = await readCachedPushRegistration();
+    const installationId = cached?.installationId || await getPushInstallationId();
+    if (cached?.endpoint && cached.endpoint !== token.data) {
+      await revokePushEndpoint(cached.endpoint, {
+        installationId,
+        preservePreferences: true,
+        reason: "token_refresh"
+      }).catch(() => undefined);
+    }
     const deviceLabel = [Device.manufacturer, Device.modelName, Device.osName, Device.osVersion].filter(Boolean).join(" ");
     const payload = {
+      device_id: installationId,
+      installation_id: installationId,
       endpoint: token.data,
       provider: "expo",
       push_provider: "expo",
@@ -102,6 +136,7 @@ export async function registerPushDevice(): Promise<PushRegistrationResult> {
     });
     if (result.ok !== false) {
       await cachePushRegistration({
+        installationId,
         endpoint: token.data,
         token: token.data,
         provider: "expo",
@@ -127,26 +162,24 @@ export async function unregisterPushDevice(options: { preservePreferences?: bool
     const currentExpoToken = Device.isDevice && permission?.granted
       ? await getCurrentExpoPushToken().catch(() => "")
       : "";
-    const endpoint = currentExpoToken || cached?.endpoint || cached?.token || "";
-    const nativeToken = cached?.nativeToken || "";
-    if (!endpoint && !nativeToken) {
+    const endpoints = Array.from(new Set([currentExpoToken, cached?.endpoint, cached?.token].filter(Boolean) as string[]));
+    if (!endpoints.length) {
       await clearCachedPushRegistration();
       await Notifications.setBadgeCountAsync(0).catch(() => undefined);
       return { ok: true, message: "No native push registration was cached for this device." };
     }
-    const result = await pulseApi<PushRegistrationResult>("/api/push/unsubscribe", {
-      method: "POST",
-      body: JSON.stringify({
-        endpoint,
-        token: endpoint,
-        native_token: nativeToken || undefined,
-        provider: cached?.provider || "expo",
-        device_type: cached?.deviceType || "native",
-        platform: cached?.platform || Platform.OS,
-        preserve_preferences: options.preservePreferences !== false,
-        logout_cleanup: options.reason === "logout"
-      })
-    });
+    let result: PushRegistrationResult = { ok: true };
+    for (const endpoint of endpoints) {
+      const revoked = await revokePushEndpoint(endpoint, {
+        installationId: cached?.installationId,
+        preservePreferences: options.preservePreferences !== false,
+        reason: options.reason || "logout",
+        provider: cached?.provider,
+        deviceType: cached?.deviceType,
+        platform: cached?.platform
+      });
+      if (revoked.ok === false) result = revoked;
+    }
     await clearCachedPushRegistration();
     await Notifications.setBadgeCountAsync(0).catch(() => undefined);
     return result;
@@ -183,6 +216,38 @@ async function readCachedPushRegistration() {
 
 async function clearCachedPushRegistration() {
   await SecureStore.deleteItemAsync(PUSH_REGISTRATION_CACHE_KEY).catch(() => undefined);
+}
+
+async function getPushInstallationId() {
+  const existing = await SecureStore.getItemAsync(PUSH_INSTALLATION_ID_KEY).catch(() => "");
+  if (existing) return existing;
+  const generated = `native-${Platform.OS}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+  await SecureStore.setItemAsync(PUSH_INSTALLATION_ID_KEY, generated).catch(() => undefined);
+  return generated;
+}
+
+async function revokePushEndpoint(endpoint: string, options: {
+  installationId?: string;
+  preservePreferences?: boolean;
+  reason?: string;
+  provider?: string;
+  deviceType?: string;
+  platform?: string;
+}) {
+  return pulseApi<PushRegistrationResult>("/api/push/unsubscribe", {
+    method: "POST",
+    body: JSON.stringify({
+      endpoint,
+      token: endpoint,
+      device_id: options.installationId || undefined,
+      provider: options.provider || "expo",
+      device_type: options.deviceType || "native",
+      platform: options.platform || Platform.OS,
+      preserve_preferences: options.preservePreferences !== false,
+      logout_cleanup: options.reason === "logout",
+      token_refresh: options.reason === "token_refresh"
+    })
+  });
 }
 
 function platformPushProvider() {
