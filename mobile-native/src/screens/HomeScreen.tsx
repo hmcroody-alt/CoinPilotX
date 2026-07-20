@@ -27,6 +27,11 @@ import { HomePulseComposer } from "../components/HomePulseComposer";
 import { LogiNexusBadge, LogiNexusEmptyState, LogiNexusPanel } from "../components/LogiNexus";
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { PostCard } from "../components/PostCard";
+import { SponsoredAdCard } from "../components/SponsoredAdCard";
+import { WelcomeUfoOverlay } from "../components/WelcomeUfoOverlay";
+import { StaticUFOField } from "../components/StaticUFOField";
+import { fetchSponsoredAds, SponsoredAd } from "../api/ads";
+import { FeedRow, injectAds } from "../feed/injectAds";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { getPulseRadioState, PulseRadioState, subscribePulseRadio, togglePulseRadio } from "../core/pulseRadio";
 import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
@@ -40,6 +45,8 @@ import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
+
+type HomeFeedRow = FeedRow<PulsePost>;
 
 type HomeScreenProps = {
   badges?: GlobalNavigationBadges;
@@ -100,8 +107,9 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const navigation = useNavigation<HomeNavigation>();
   const route = useRoute<RouteProp<AppTabParamList, "Home">>();
   const { authState } = useAuth();
+  const isFocused = useIsFocused();
   const currentUserId = Number(authState.user?.user_id || 0);
-  const listRef = useRef<FlatList<PulsePost>>(null);
+  const listRef = useRef<FlatList<HomeFeedRow>>(null);
   const offsetRef = useRef(0);
   const hasMoreRef = useRef(false);
   const loadingMoreRef = useRef(false);
@@ -122,13 +130,59 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const ambientMotionEnabled = useHomeAmbientMotionEnabled();
   const [activePostId, setActivePostId] = useState<number | null>(null);
+  const [ads, setAds] = useState<SponsoredAd[]>([]);
+  const [hiddenAdKeys, setHiddenAdKeys] = useState<Set<string>>(() => new Set());
+  const [viewableAdKeys, setViewableAdKeys] = useState<Set<string>>(() => new Set());
   const feedViewabilityConfig = useRef({ itemVisiblePercentThreshold: 72 }).current;
   const onFeedViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    const item = viewableItems.find((token) => token.isViewable)?.item as PulsePost | undefined;
-    setActivePostId(item ? item.id : null);
+    let nextActivePostId: number | null = null;
+    const nextViewableAdKeys = new Set<string>();
+    for (const token of viewableItems) {
+      if (!token.isViewable) continue;
+      const row = token.item as HomeFeedRow | undefined;
+      if (!row) continue;
+      if (row.type === "post" && nextActivePostId == null) nextActivePostId = row.post.id;
+      if (row.type === "ad") nextViewableAdKeys.add(row.key);
+    }
+    setActivePostId(nextActivePostId);
+    setViewableAdKeys((current) => {
+      if (current.size === nextViewableAdKeys.size && [...current].every((key) => nextViewableAdKeys.has(key))) {
+        return current;
+      }
+      return nextViewableAdKeys;
+    });
   }).current;
   const selectionRestoredRef = useRef(false);
   const activeTab = useMemo(() => FEED_TABS.find((tab) => tab.key === selectedFeed) || FEED_TABS[0], [selectedFeed]);
+
+  const isAuthenticated = currentUserId > 0;
+
+  const loadAds = useCallback(
+    async (feedKey = selectedFeed) => {
+      if (!isAuthenticated) return;
+      const served = await fetchSponsoredAds({ context: "home", feedContext: feedKey, limit: 3 });
+      setAds(served);
+    },
+    [isAuthenticated, selectedFeed]
+  );
+
+  const availableAds = useMemo(
+    () => ads.filter((ad) => !hiddenAdKeys.has(`${ad.campaignId}:${ad.creativeId}`)),
+    [ads, hiddenAdKeys]
+  );
+
+  const feedRows = useMemo<HomeFeedRow[]>(
+    () => injectAds(posts, availableAds, { interval: 5, leadIn: 3 }),
+    [posts, availableAds]
+  );
+
+  const handleHideAd = useCallback((ad: SponsoredAd) => {
+    setHiddenAdKeys((current) => {
+      const next = new Set(current);
+      next.add(`${ad.campaignId}:${ad.creativeId}`);
+      return next;
+    });
+  }, []);
 
   const loadStatuses = useCallback(async () => {
     setStatusLoading(true);
@@ -210,7 +264,8 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
 
   useEffect(() => {
     load("initial", selectedFeed).catch(() => undefined);
-  }, [load, selectedFeed]);
+    loadAds(selectedFeed).catch(() => undefined);
+  }, [load, loadAds, selectedFeed]);
 
   useEffect(() => {
     loadStatuses().catch(() => undefined);
@@ -449,6 +504,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
     loadStatuses().catch(() => undefined);
     load("refresh").catch(() => undefined);
+    loadAds().catch(() => undefined);
   }
 
   function openHomeRoute(routePath: string) {
@@ -467,14 +523,15 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         <View style={[styles.homeStar, styles.homeStarThree]} />
         <View style={[styles.homeSignalWave, styles.homeSignalWaveOne]} />
         <View style={[styles.homeSignalWave, styles.homeSignalWaveTwo]} />
+        <StaticUFOField />
       </View>
       <FlatList
         testID="native-home-feed"
         ref={listRef}
         style={styles.list}
         contentContainerStyle={styles.content}
-        data={posts}
-        keyExtractor={(item) => String(item.id)}
+        data={feedRows}
+        keyExtractor={(row) => row.key}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => refreshHome()} />}
         ListHeaderComponent={
           <HomeHeader
@@ -544,46 +601,60 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         }
         viewabilityConfig={feedViewabilityConfig}
         onViewableItemsChanged={onFeedViewableItemsChanged}
-        renderItem={({ item }) => (
-          <PostCard
-            post={item}
-            busy={busyPostId === item.id}
-            active={activePostId === item.id}
-            motionEnabled={ambientMotionEnabled}
-            edgeInset={12}
-            onOpen={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Post" })}
-            onReact={handleReact}
-            onSave={handleSave}
-            onRepost={handleRepost}
-            onPromote={(post) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: post.id, title: "Promote Post" })}
-            onShare={handleShare}
-            onComment={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Comments" })}
-            onSubmitComment={handleInlineComment}
-            onReport={(post) =>
-              navigation.navigate("SafetyHub", {
-                title: "Report",
-                section: "reports",
-                reportType: "post",
-                reportTarget: String(post.id)
-              })
-            }
-            onHide={handleHide}
-            onBlock={(post) =>
-              navigation.navigate("SafetyHub", {
-                title: "Blocked Users",
-                section: "blocks",
-                blockTarget: post.author?.public_player_id || post.author_public_player_id || post.author?.username || post.author_username || ""
-              })
-            }
-            onMute={handleMute}
-            onFollow={handleFollow}
-            onDelete={isContentOwner(item, currentUserId) ? handleDelete : undefined}
-            onAuthorPress={(post) => {
-              const params = profileNavigationParams(profileTargetFromPost(post), post.author?.display_name || "Profile");
-              if (params) navigation.navigate("ProfileDetail", params);
-            }}
-          />
-        )}
+        renderItem={({ item: row }) => {
+          if (row.type === "ad") {
+            return (
+              <SponsoredAdCard
+                ad={row.ad}
+                isViewable={viewableAdKeys.has(row.key)}
+                edgeInset={12}
+                navigation={navigation}
+                onHide={handleHideAd}
+              />
+            );
+          }
+          const item = row.post;
+          return (
+            <PostCard
+              post={item}
+              busy={busyPostId === item.id}
+              active={activePostId === item.id}
+              motionEnabled={ambientMotionEnabled}
+              edgeInset={12}
+              onOpen={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Post" })}
+              onReact={handleReact}
+              onSave={handleSave}
+              onRepost={handleRepost}
+              onPromote={(post) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: post.id, title: "Promote Post" })}
+              onShare={handleShare}
+              onComment={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Comments" })}
+              onSubmitComment={handleInlineComment}
+              onReport={(post) =>
+                navigation.navigate("SafetyHub", {
+                  title: "Report",
+                  section: "reports",
+                  reportType: "post",
+                  reportTarget: String(post.id)
+                })
+              }
+              onHide={handleHide}
+              onBlock={(post) =>
+                navigation.navigate("SafetyHub", {
+                  title: "Blocked Users",
+                  section: "blocks",
+                  blockTarget: post.author?.public_player_id || post.author_public_player_id || post.author?.username || post.author_username || ""
+                })
+              }
+              onMute={handleMute}
+              onFollow={handleFollow}
+              onDelete={isContentOwner(item, currentUserId) ? handleDelete : undefined}
+              onAuthorPress={(post) => {
+                const params = profileNavigationParams(profileTargetFromPost(post), post.author?.display_name || "Profile");
+                if (params) navigation.navigate("ProfileDetail", params);
+              }}
+            />
+          );
+        }}
         onEndReached={() => load("more").catch(() => undefined)}
         onEndReachedThreshold={0.35}
         ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.footer} color={colors.accent} /> : null}
@@ -592,6 +663,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
       />
       <MasterNavigationDrawer visible={drawerOpen} onClose={() => setDrawerOpen(false)} onOpenRoute={openHomeRoute} />
+      <WelcomeUfoOverlay active={isFocused && currentUserId > 0} />
     </View>
   );
 }

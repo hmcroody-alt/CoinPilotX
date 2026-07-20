@@ -15363,6 +15363,13 @@ def pulse_ads_json_payload():
 
 
 def pulse_ads_verify_write():
+    # Native app requests authenticate with a signed Authorization: Bearer token.
+    # Those are inherently CSRF-safe (a cross-site attacker cannot attach the
+    # custom header), so a verified mobile access token satisfies the write gate
+    # without a form/header CSRF token. The ad endpoints resolve the user before
+    # calling this, which is what sets g.mobile_access_user_id.
+    if getattr(g, "mobile_access_user_id", None):
+        return True
     session_token = session.get("csrf_token")
     header_token = request.headers.get("X-CSRF-Token") or request.headers.get("X-CSRFToken")
     return bool(
