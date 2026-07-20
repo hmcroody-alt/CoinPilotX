@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -7,11 +8,77 @@ import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
 import { signOut, signOutEverywhere, useAuth } from "../session/auth";
+import {
+  BiometricCapability,
+  confirmAndEnableBiometricLogin,
+  disableBiometricLogin,
+  getBiometricCapability,
+  isBiometricEnabledForCurrentSession
+} from "../session/biometricAuth";
 import { colors } from "../theme/colors";
 
 export function SettingsScreen() {
-  const { setAuthState } = useAuth();
+  const { authState, setAuthState } = useAuth();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const currentUserId = Number(authState.user?.user_id || 0);
+
+  const [biometricCapability, setBiometricCapability] = useState<BiometricCapability | null>(null);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [biometricBusy, setBiometricBusy] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([getBiometricCapability(), isBiometricEnabledForCurrentSession()])
+      .then(([capability, enabled]) => {
+        if (!mounted) return;
+        setBiometricCapability(capability);
+        setBiometricEnabled(enabled);
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const biometricLabel = biometricCapability?.kind === "touchId" ? "Touch ID" : "Face ID";
+
+  async function toggleBiometric() {
+    if (biometricBusy || !currentUserId) return;
+    setBiometricBusy(true);
+    try {
+      if (biometricEnabled) {
+        await new Promise<void>((resolve) => {
+          Alert.alert(
+            `Turn off ${biometricLabel}?`,
+            `Your saved biometric sign-in will be removed from this device. You'll use your password next time.`,
+            [
+              { text: "Cancel", style: "cancel", onPress: () => resolve() },
+              {
+                text: "Turn off",
+                style: "destructive",
+                onPress: async () => {
+                  await disableBiometricLogin().catch(() => undefined);
+                  setBiometricEnabled(false);
+                  resolve();
+                }
+              }
+            ]
+          );
+        });
+      } else {
+        const enabled = await confirmAndEnableBiometricLogin(currentUserId).catch(() => false);
+        setBiometricEnabled(enabled);
+        Alert.alert(
+          enabled ? `${biometricLabel} enabled` : `${biometricLabel} not enabled`,
+          enabled
+            ? `Tap ${biometricLabel} on the sign-in screen to unlock PulseSoc next time.`
+            : "We couldn't confirm your biometrics. Your password sign-in still works."
+        );
+      }
+    } finally {
+      setBiometricBusy(false);
+    }
+  }
 
   async function enablePush() {
     const result = await registerPushDevice();
@@ -42,6 +109,9 @@ export function SettingsScreen() {
         </Pressable>
         <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("NotificationPreferences")}>
           <Text style={styles.secondaryText}>Notification preferences</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("RegionTime")}>
+          <Text style={styles.secondaryText}>Language, Region & Time</Text>
         </Pressable>
         <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("ActivityInbox", { title: "Activity Inbox" })}>
           <Text style={styles.secondaryText}>Activity Inbox</Text>
@@ -115,6 +185,37 @@ export function SettingsScreen() {
         <Text style={styles.muted}>Camera, microphone, media compression, and LiveKit call controls are Phase 2/3 QA-gated.</Text>
       </Panel>
       <Panel>
+        <Text style={styles.title}>Login and Security</Text>
+        {biometricCapability?.available ? (
+          <>
+            <Text style={styles.muted}>
+              {biometricEnabled
+                ? `${biometricLabel} is on. Unlock PulseSoc with ${biometricLabel} instead of your password. Your password still works as a fallback.`
+                : `Turn on ${biometricLabel} to unlock PulseSoc without typing your password. PulseSoc never receives or stores your face.`}
+            </Text>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: biometricEnabled, disabled: biometricBusy || !currentUserId }}
+              accessibilityLabel={biometricEnabled ? `Turn off ${biometricLabel}` : `Enable ${biometricLabel}`}
+              testID="settings-biometric-toggle"
+              disabled={biometricBusy || !currentUserId}
+              style={[biometricEnabled ? styles.secondaryButton : styles.button, (biometricBusy || !currentUserId) && styles.disabledButton]}
+              onPress={toggleBiometric}
+            >
+              <Text style={biometricEnabled ? styles.secondaryText : styles.buttonText}>
+                {biometricBusy ? "Please wait…" : biometricEnabled ? `Turn off ${biometricLabel}` : `Enable ${biometricLabel}`}
+              </Text>
+            </Pressable>
+          </>
+        ) : (
+          <Text style={styles.muted}>
+            {biometricCapability?.reason === "not_enrolled"
+              ? "Set up Face ID or Touch ID in your device settings to unlock PulseSoc with biometrics."
+              : "This device does not support Face ID or Touch ID."}
+          </Text>
+        )}
+      </Panel>
+      <Panel>
         <Text style={styles.title}>Session</Text>
         <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={logout}>
           <Text style={styles.secondaryText}>Sign out</Text>
@@ -160,6 +261,9 @@ const styles = StyleSheet.create({
   secondaryText: {
     color: colors.text,
     fontWeight: "800"
+  },
+  disabledButton: {
+    opacity: 0.5
   },
   dangerText: {
     color: "#ff6b7a",
