@@ -54,7 +54,8 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
     const mode = queryValue(normalized, "mode") || modeFromPath;
     navigation.navigate("CameraStudio", {
       target: target || "feed",
-      mode: mode === "video" || mode === "status" || mode === "reel" ? mode : "photo",
+      mode: mode === "video" || mode === "status" || mode === "reel" || mode === "live" ? mode : "photo",
+      captureMode: mode === "live" ? "live" : mode === "video" || mode === "reel" ? "video" : "photo",
       title: "Camera Studio"
     });
     return;

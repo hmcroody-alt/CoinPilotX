@@ -15,6 +15,7 @@ import { PULSE_API_BASE_URL } from "../api/config";
 import { sendConversationMessage, uploadMessengerMedia } from "../api/messenger";
 import { uploadProfileAvatar, uploadProfileCover } from "../api/profile";
 import { createStatus, StatusVisibility } from "../api/status";
+import { createComposerModeFromCameraTarget, saveCreateCameraCaptureResult } from "../create/createComposerHandoff";
 import { MediaUploadPreview } from "../media/MediaUploadPreview";
 import {
   cameraCompressionPolicy,
@@ -36,6 +37,7 @@ type Props = {
 };
 
 type DestinationKey = "feed" | "status" | "reel" | "avatar" | "cover" | "message" | "creator" | "marketplace";
+type NativeCaptureMode = "photo" | "video" | "live";
 
 type DestinationOption = {
   key: DestinationKey;
@@ -68,7 +70,7 @@ const nativeUnsupportedDestinations = new Set<DestinationKey>(["creator", "marke
 export function CameraStudioScreen({ route, navigation }: Props) {
   const initialDestination = destinationFromParams(route.params);
   const [destination, setDestination] = useState<DestinationOption>(initialDestination);
-  const [captureMode, setCaptureMode] = useState<"photo" | "video">(initialModeFromParams(route.params, initialDestination));
+  const [captureMode, setCaptureMode] = useState<NativeCaptureMode>(initialModeFromParams(route.params, initialDestination));
   const [cameraFacing, setCameraFacing] = useState<CameraType>("back");
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -102,6 +104,9 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   const mediaUpload = useNativeMediaUpload(uploadOptions);
   const policy = cameraCompressionPolicy(captureMode === "video" ? "video" : destination.mode, destination.key);
   const nativeCameraUnavailable = Platform.OS === "web";
+  const composerReturnMode = Boolean(route.params?.returnToComposer);
+  const composerMode = route.params?.composerMode || createComposerModeFromCameraTarget(destination.key, destination.mode);
+  const liveStudioUrl = `${PULSE_API_BASE_URL}/pulse/live/studio?context_type=native_camera`;
 
   useEffect(() => {
     getCameraConfig({ target: destination.target, mode: destination.mode })
@@ -110,8 +115,9 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   }, [destination.mode, destination.target]);
 
   useEffect(() => {
+    if (route.params?.captureMode || route.params?.mode === "live") return;
     setCaptureMode(destination.mode === "reel" || destination.mode === "video" ? "video" : "photo");
-  }, [destination.mode]);
+  }, [destination.mode, route.params?.captureMode, route.params?.mode]);
 
   useEffect(() => {
     const nextDestination = destinationFromParams(route.params);
@@ -160,6 +166,10 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   }
 
   async function capture() {
+    if (captureMode === "live") {
+      openLiveStudio();
+      return;
+    }
     if (nativeUnsupportedDestinations.has(destination.key)) {
       openWebFallback();
       return;
@@ -182,8 +192,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
         height: photo.height,
         mimeType: "image/jpeg"
       });
-      mediaUpload.setAsset(asset);
-      setMessage("Photo captured. Review and publish when ready.");
+      await handleCapturedAsset(asset);
     } catch (captureError) {
       setError(captureError instanceof Error ? captureError.message : "Photo capture failed.");
     }
@@ -203,8 +212,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
       });
       if (!video?.uri) throw new Error("Camera did not return a video.");
       const asset = await nativeMediaAssetFromUri(video.uri, "video", { mimeType: "video/mp4" });
-      mediaUpload.setAsset(asset);
-      setMessage("Video captured. Review and publish when ready.");
+      await handleCapturedAsset(asset);
     } catch (captureError) {
       setError(captureError instanceof Error ? captureError.message : "Video capture failed.");
     } finally {
@@ -214,8 +222,39 @@ export function CameraStudioScreen({ route, navigation }: Props) {
 
   async function chooseFromGallery() {
     setError("");
+    if (captureMode === "live") {
+      openLiveStudio();
+      return;
+    }
     const asset = captureMode === "video" ? await mediaUpload.chooseVideo() : await mediaUpload.chooseImage();
-    if (asset) setMessage("Media selected from gallery.");
+    if (asset) await handleCapturedAsset(asset);
+  }
+
+  async function handleCapturedAsset(asset: NativeMediaAsset) {
+    if (!composerReturnMode) {
+      mediaUpload.setAsset(asset);
+      setMessage(`${asset.mediaType === "video" ? "Video" : "Photo"} captured. Review and publish when ready.`);
+      return;
+    }
+    const saved = await saveCreateCameraCaptureResult({
+      asset,
+      composerMode,
+      captureMode: asset.mediaType === "video" ? "video" : "photo"
+    });
+    setMessage("Capture saved. Returning to the Create composer.");
+    navigation.navigate("Tabs", {
+      screen: "Home",
+      params: {
+        openComposer: true,
+        composerMode: saved.composerMode,
+        composerReturnNonce: saved.id
+      }
+    });
+  }
+
+  function openLiveStudio() {
+    setMessage("Native Live host publishing is not promoted from Camera yet. Opening the existing production Live Studio.");
+    Linking.openURL(liveStudioUrl).catch(() => setError("Production Live Studio could not open."));
   }
 
   async function publish() {
@@ -360,7 +399,15 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   return (
     <View style={styles.root}>
       <View style={styles.stage}>
-        {nativeCameraUnavailable ? (
+        {captureMode === "live" ? (
+          <View style={styles.webFallback}>
+            <Text style={styles.webTitle}>Live uses the production Studio</Text>
+            <Text style={styles.webText}>Browser Live, LiveKit, Mux, co-hosting, moderation, and stream health remain on the existing verified Studio flow. Native Camera will not fake a broadcast.</Text>
+            <Pressable style={styles.primaryButton} onPress={openLiveStudio}>
+              <Text style={styles.primaryText}>Open Live Studio</Text>
+            </Pressable>
+          </View>
+        ) : nativeCameraUnavailable ? (
           <View style={styles.webFallback}>
             <Text style={styles.webTitle}>Camera preview requires a device build</Text>
             <Text style={styles.webText}>Use gallery fallback in QA browser. Real camera, microphone, compression, and recording remain device-unverified.</Text>
@@ -396,6 +443,9 @@ export function CameraStudioScreen({ route, navigation }: Props) {
             <Pressable style={[styles.modeButton, captureMode === "video" && styles.modeActive]} onPress={() => setCaptureMode("video")}>
               <Text style={styles.modeText}>Video</Text>
             </Pressable>
+            <Pressable style={[styles.modeButton, captureMode === "live" && styles.modeActive]} onPress={() => setCaptureMode("live")}>
+              <Text style={styles.modeText}>Live</Text>
+            </Pressable>
           </View>
           <Pressable style={styles.iconButton} onPress={() => setCameraFacing((current) => (current === "back" ? "front" : "back"))}>
             <Text style={styles.iconText}>Flip</Text>
@@ -404,10 +454,10 @@ export function CameraStudioScreen({ route, navigation }: Props) {
 
         <View style={styles.captureDock}>
           <Pressable style={styles.dockButton} onPress={chooseFromGallery}>
-            <Text style={styles.dockText}>Gallery</Text>
+            <Text style={styles.dockText}>{captureMode === "live" ? "Studio" : "Gallery"}</Text>
           </Pressable>
           <Pressable style={[styles.captureButton, recording && styles.recording]} disabled={publishing} onPress={capture}>
-            <Text style={styles.captureText}>{recording ? "Stop" : captureMode === "video" ? "Record" : "Snap"}</Text>
+            <Text style={styles.captureText}>{recording ? "Stop" : captureMode === "live" ? "Live" : captureMode === "video" ? "Record" : "Snap"}</Text>
           </Pressable>
           <Pressable
             style={[styles.dockButton, captureMode !== "video" && styles.disabled]}
@@ -424,8 +474,15 @@ export function CameraStudioScreen({ route, navigation }: Props) {
             <Text style={styles.dockText}>{micEnabled ? "Mic" : "Muted"}</Text>
           </Pressable>
         </View>
+        {composerReturnMode ? (
+          <View style={styles.returnStatusPanel}>
+            <Text style={styles.returnTitle}>{composerMode === "status" ? "Status Camera" : composerMode === "reel" ? "Reel Camera" : "Feed Camera"}</Text>
+            <Text style={[styles.returnText, error ? styles.error : undefined]}>{error || message || "Capture media here. Publishing stays in the Create composer."}</Text>
+          </View>
+        ) : null}
       </View>
 
+      {composerReturnMode ? null : (
       <ScrollView style={styles.panel} contentContainerStyle={styles.panelContent} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>PulseSoc Camera</Text>
         <Text style={styles.subtitle}>
@@ -503,6 +560,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
 
         <Text style={styles.deviceNote}>Camera, microphone, recording, compression, and large upload behavior require real-device QA before release claims.</Text>
       </ScrollView>
+      )}
     </View>
   );
 }
@@ -538,8 +596,9 @@ function destinationFromParams(params?: RootStackParamList["CameraStudio"]): Des
   return destinations.find((item) => item.key === target || item.target === target || item.mode === target) || destinations[0];
 }
 
-function initialModeFromParams(params: RootStackParamList["CameraStudio"] | undefined, destination: DestinationOption): "photo" | "video" {
+function initialModeFromParams(params: RootStackParamList["CameraStudio"] | undefined, destination: DestinationOption): NativeCaptureMode {
   const raw = String(params?.captureMode || params?.mode || destination.mode || "").toLowerCase();
+  if (raw === "live") return "live";
   return raw === "video" || raw === "reel" ? "video" : "photo";
 }
 
@@ -736,6 +795,30 @@ const styles = StyleSheet.create({
   },
   recording: {
     backgroundColor: colors.danger
+  },
+  returnStatusPanel: {
+    backgroundColor: "rgba(2, 7, 16, 0.74)",
+    borderColor: "rgba(47, 225, 180, 0.26)",
+    borderRadius: 18,
+    borderWidth: 1,
+    bottom: 122,
+    left: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    position: "absolute",
+    right: 18
+  },
+  returnText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+    marginTop: 3
+  },
+  returnTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "900"
   },
   root: {
     backgroundColor: colors.background,

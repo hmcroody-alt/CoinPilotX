@@ -197,11 +197,11 @@ function normalizeTarget(value: string | null): CameraStudioParams["target"] | u
 }
 
 function normalizeMode(value: string | null): CameraStudioParams["mode"] | undefined {
-  if (value === "photo" || value === "video" || value === "status" || value === "reel") return value;
+  if (value === "photo" || value === "video" || value === "status" || value === "reel" || value === "live") return value;
   return undefined;
 }
 
 function normalizeCaptureMode(value: string | null): CameraStudioParams["captureMode"] | undefined {
-  if (value === "photo" || value === "video") return value;
+  if (value === "photo" || value === "video" || value === "live") return value;
   return undefined;
 }
