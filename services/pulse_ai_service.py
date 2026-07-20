@@ -718,7 +718,7 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
             if web_context:
                 knowledge.insert(0, {"id": 0, "title": "Live web search context", "category": "web_search", "body": web_context})
         user_memory = _user_memory(cur, int(user_id), settings)
-        compiled_policy = undx_policy.compile_context(body)
+        compiled_policy = undx_policy.compile_context(body, user_id=int(user_id))
         ui_context = undx_architecture.sanitize_ui_context(payload.get("ui_context"))
         if ui_context:
             cur.execute(
@@ -1077,8 +1077,11 @@ def simulate_tool(user_id: int, payload: dict | None = None) -> dict:
 def confirm_action(user_id: int, payload: dict | None = None) -> dict:
     """Consume one server-bound confirmation and verify the canonical write."""
     payload = payload or {}
-    if not undx_policy.policy_metadata().get("v4_actions_enabled") or undx_policy.policy_metadata().get("v4_writes_disabled"):
-        return {"ok": False, "error": "undx_v4_writes_disabled", "message": "UNDX V4 actions are currently read-only.", "http_status": 503}
+    metadata = undx_policy.policy_metadata()
+    v4_allowed = metadata.get("v4_actions_enabled") and not metadata.get("v4_writes_disabled")
+    v5_allowed = undx_policy.v5_user_enabled(int(user_id)) and metadata.get("v5_notification_actions_enabled") and not metadata.get("v4_writes_disabled")
+    if not (v4_allowed or v5_allowed):
+        return {"ok": False, "error": "undx_actions_disabled", "message": "UNDX actions are currently read-only for this account.", "http_status": 503}
     token = _clean(payload.get("confirmation_token") or "", 500)
     if not token:
         return {"ok": False, "error": "confirmation_required", "message": "A valid UNDX confirmation is required.", "http_status": 400}

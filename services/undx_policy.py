@@ -33,6 +33,7 @@ V5_ENABLED_ENV = "UNDX_V5_ENABLED"
 V5_SEARCH_ENV = "UNDX_V5_CONTENT_SEARCH"
 V5_ACTIONS_ENV = "UNDX_V5_NOTIFICATION_ACTIONS"
 V5_SEARCH_KILL_SWITCH_ENV = "UNDX_V5_DISABLE_SEARCH"
+V5_QA_USERS_ENV = "UNDX_V5_QA_USER_IDS"
 MAX_POLICY_CHARS = 9000
 
 # Conceptual names map to existing authenticated production routes. The model
@@ -84,6 +85,14 @@ def _config_path() -> Path:
 
 def _truthy(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def v5_user_enabled(user_id: int | None) -> bool:
+    """Require both the master flag and an explicit server-owned QA cohort."""
+    if not _truthy(os.getenv(V5_ENABLED_ENV)) or not int(user_id or 0):
+        return False
+    allowed = {part.strip() for part in os.getenv(V5_QA_USERS_ENV, "").split(",") if part.strip().isdigit()}
+    return str(int(user_id or 0)) in allowed
 
 
 @lru_cache(maxsize=2)
@@ -177,6 +186,7 @@ def policy_metadata() -> dict[str, Any]:
         "v5_enabled": _truthy(os.getenv(V5_ENABLED_ENV)),
         "v5_search_enabled": _truthy(os.getenv(V5_SEARCH_ENV)) and not _truthy(os.getenv(V5_SEARCH_KILL_SWITCH_ENV)),
         "v5_notification_actions_enabled": _truthy(os.getenv(V5_ACTIONS_ENV)),
+        "v5_qa_cohort_configured": bool(os.getenv(V5_QA_USERS_ENV, "").strip()),
     }
 
 
@@ -210,7 +220,7 @@ def _render_rules(title: str, values: Any, limit: int = 18) -> str:
     return title + ":\n" + "\n".join(lines)
 
 
-def compile_context(message: str, *, include_tools: bool = True) -> dict[str, Any]:
+def compile_context(message: str, *, include_tools: bool = True, user_id: int | None = None) -> dict[str, Any]:
     """Compile bounded server policy for one request; never return the full pack."""
     policy = load_policy()
     domains = _domains(message)
@@ -220,8 +230,10 @@ def compile_context(message: str, *, include_tools: bool = True) -> dict[str, An
         return _compile_v3_context(policy, message, include_tools=include_tools)
     if str(policy.get("schema_version") or "").startswith("4"):
         return _compile_v4_context(policy, message, include_tools=include_tools)
+    if str(policy.get("schema_version") or "").startswith("5") and not v5_user_enabled(user_id):
+        return _compile_v4_context(load_policy_version("4.0"), message, include_tools=include_tools)
     if str(policy.get("schema_version") or "").startswith("5"):
-        return _compile_v5_context(policy, message, include_tools=include_tools)
+        return _compile_v5_context(policy, message, include_tools=include_tools, user_id=user_id)
     if is_v2:
         return _compile_v2_context(policy, message, include_tools=include_tools)
     identity = policy["identity"]
@@ -448,7 +460,7 @@ def _v4_reasoning_mode(message: str) -> str:
     return "standard"
 
 
-def _compile_v5_context(policy: dict[str, Any], message: str, *, include_tools: bool) -> dict[str, Any]:
+def _compile_v5_context(policy: dict[str, Any], message: str, *, include_tools: bool, user_id: int | None) -> dict[str, Any]:
     """Compile bounded PULSESOC OPERATOR fragments; never serialize the pack."""
     text = str(message or "").lower()
     domains = _domains(message)
@@ -495,8 +507,8 @@ def _compile_v5_context(policy: dict[str, Any], message: str, *, include_tools: 
         "tool_names": tool_names,
         "search_intent": search_intent,
         "action_intent": action_intent,
-        "writes_enabled": _truthy(os.getenv(V5_ENABLED_ENV)) and _truthy(os.getenv(V5_ACTIONS_ENV)) and not _truthy(os.getenv(V4_KILL_SWITCH_ENV)),
-        "search_enabled": _truthy(os.getenv(V5_ENABLED_ENV)) and _truthy(os.getenv(V5_SEARCH_ENV)) and not _truthy(os.getenv(V5_SEARCH_KILL_SWITCH_ENV)),
+        "writes_enabled": v5_user_enabled(user_id) and _truthy(os.getenv(V5_ACTIONS_ENV)) and not _truthy(os.getenv(V4_KILL_SWITCH_ENV)),
+        "search_enabled": v5_user_enabled(user_id) and _truthy(os.getenv(V5_SEARCH_ENV)) and not _truthy(os.getenv(V5_SEARCH_KILL_SWITCH_ENV)),
         "requires_confirmation": any(PRODUCTION_TOOL_REGISTRY[name].get("confirmation") for name in tool_names),
         "compiled_chars": len(compiled),
     }

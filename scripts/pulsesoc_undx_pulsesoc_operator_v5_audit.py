@@ -22,17 +22,22 @@ def main() -> int:
     path = ROOT / "backend/undx/config/undx_training_v5_pulsesoc_operator.yaml"
     raw = path.read_bytes()
     policy = yaml.safe_load(raw)
-    old_version = os.environ.get(undx_policy.CONFIG_VERSION_ENV)
+    tracked_env = (undx_policy.CONFIG_VERSION_ENV, undx_policy.V5_ENABLED_ENV, undx_policy.V5_QA_USERS_ENV)
+    old_env = {name: os.environ.get(name) for name in tracked_env}
     os.environ[undx_policy.CONFIG_VERSION_ENV] = "5.0"
+    os.environ[undx_policy.V5_ENABLED_ENV] = "1"
+    os.environ[undx_policy.V5_QA_USERS_ENV] = "31"
     undx_policy._load_cached.cache_clear()
     try:
-        search_context = undx_policy.compile_context("Find crypto Reels from this week.")
-        action_context = undx_policy.compile_context("Turn on message notifications.")
+        search_context = undx_policy.compile_context("Find crypto Reels from this week.", user_id=31)
+        action_context = undx_policy.compile_context("Turn on message notifications.", user_id=31)
+        non_cohort_context = undx_policy.compile_context("Find crypto Reels from this week.", user_id=32)
     finally:
-        if old_version is None:
-            os.environ.pop(undx_policy.CONFIG_VERSION_ENV, None)
-        else:
-            os.environ[undx_policy.CONFIG_VERSION_ENV] = old_version
+        for name, value in old_env.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
         undx_policy._load_cached.cache_clear()
     cases = policy["evaluation"]["cases"]
     parsed_love = undx_operator.parse_search_request("Find PulseSOC posts about love.") or {}
@@ -71,6 +76,7 @@ def main() -> int:
             "backend/undx/config/undx_training_v4_nexus_core.yaml",
         )),
         "v5_active": search_context["schema_version"] == "5.0",
+        "non_cohort_falls_back_to_v4": non_cohort_context["schema_version"] == "4.0",
         "dynamic_context_bounded": search_context["compiled_chars"] < undx_policy.MAX_POLICY_CHARS and len(search_context["system_context"]) < len(raw),
         "canonical_identity": "canonical name is UNDX" in search_context["system_context"],
         "search_tool_selected": "pulsesoc.content.search" in search_context["tool_names"],
