@@ -161,4 +161,11 @@ export type RootStackParamList = {
   ActivityInboxWebInbox: { title?: string } | undefined;
   NotificationCenter: undefined;
   NotificationPreferences: undefined;
+  RegionTime: undefined;
+  /**
+   * Full-screen True-to-Publish preview. `token` keys into the in-memory
+   * preview handoff store (draft + live publish callback); params are kept
+   * serialization-safe (no functions) per navigation best practice.
+   */
+  ContentPreview: { token: string; title?: string };
 };

@@ -363,7 +363,11 @@ export function normalizeComment(item: PulseComment, fallbackPostId = 0): PulseC
 export function mediaDisplayUrl(media: PulseMedia) {
   const url = media.media_url || media.url || media.playback_url || media.hls_url || media.thumbnail_url || media.poster_url || "";
   if (!url) return "";
-  if (/^https?:\/\//i.test(url)) return url;
+  // Absolute URIs (http(s), plus local preview schemes: file:, content:, ph:,
+  // asset:, data:, blob:) are returned as-is. Only server-relative paths get the
+  // API base prefix. This lets pre-publish previews render local device media
+  // through the exact same renderers as published content.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
   if (url.startsWith("/")) return `${PULSE_API_BASE_URL}${url}`;
   return `${PULSE_API_BASE_URL}/${url}`;
 }

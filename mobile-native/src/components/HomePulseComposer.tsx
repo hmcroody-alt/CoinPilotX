@@ -8,6 +8,8 @@ import { composerMusicTrackFromPulseMusic, consumePulseMusicSelection } from "..
 import { CreateReelPayload, createReel, listReels, PulseReel } from "../api/reels";
 import { createStatus } from "../api/status";
 import { consumeCreateCameraCaptureResult, CreateComposerMode } from "../create/createComposerHandoff";
+import { ComposerDraftInput } from "../create/draftToContentModel";
+import { PreviewPublishResult, stashPreviewHandoff } from "../create/previewHandoff";
 import { LogiNexusPanel } from "./LogiNexus";
 import { ComposerMediaQueue } from "../media/ComposerMediaQueue";
 import { NativeMediaAsset, NativeMediaUploadResult, uploadResultMediaId } from "../media/nativeMediaUpload";
@@ -24,6 +26,7 @@ type Props = {
   onOpenCamera: (mode: "photo" | "video" | "reel", composerMode: CreateComposerMode) => void;
   onOpenMusic: (composerMode: CreateComposerMode) => void;
   onOpenRoute: (route: string) => void;
+  onOpenPreview?: (token: string) => void;
   identity?: GlobalNavigationIdentity;
   initiallyExpanded?: boolean;
   initialMode?: CreateComposerMode;
@@ -81,7 +84,7 @@ type FailedStatusPublish = {
 
 type FailedPublish = FailedPostPublish | FailedReelPublish | FailedStatusPublish;
 
-export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpenRoute, identity, initiallyExpanded = false, initialMode = "post", captureReturnNonce = "" }: Props) {
+export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpenRoute, onOpenPreview, identity, initiallyExpanded = false, initialMode = "post", captureReturnNonce = "" }: Props) {
   const [mode, setMode] = useState<ComposerMode>("post");
   const [body, setBody] = useState("");
   const [visibility, setVisibility] = useState<Visibility>("public");
@@ -203,36 +206,45 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
     return () => clearTimeout(timer);
   }, [body, hasDraft, lastFailedPublish, media.items, mode, musicTrack, topic, visibility]);
 
-  async function handlePublish() {
+  /**
+   * Pre-flight validation shared by the direct publish path and the preview
+   * path. Returns a user-facing error + status note when the draft is not
+   * publishable, or `null` when it is safe to proceed. Keeping this in one
+   * place guarantees the preview screen can never publish something the
+   * composer would have rejected.
+   */
+  function validatePublish(): { error: string; note: string } | null {
     const cleanBody = body.trim();
     if (!cleanBody && !media.items.length && !musicTrack) {
-      setError("Add text or media before publishing.");
-      setNote("Transmission validation blocked an empty signal.");
-      return;
+      return { error: "Add text or media before publishing.", note: "Transmission validation blocked an empty signal." };
     }
     if (media.uploading) {
-      setError("Wait for the current media upload or cancel it before publishing.");
-      setNote("Upload queue is active. PulseSoc will publish after media is ready.");
-      return;
+      return { error: "Wait for the current media upload or cancel it before publishing.", note: "Upload queue is active. PulseSoc will publish after media is ready." };
     }
     if (mode === "poll" && cleanBody && !cleanBody.endsWith("?")) {
-      setError("Polls and questions must end with a question mark.");
-      setNote("Finish the question before transmitting.");
-      return;
+      return { error: "Polls and questions must end with a question mark.", note: "Finish the question before transmitting." };
     }
     if (mode === "scam_report" && cleanBody.length < 24) {
-      setError("Add useful scam warning details before publishing.");
-      setNote("Include who, what, where, and why so the warning is actionable.");
-      return;
+      return { error: "Add useful scam warning details before publishing.", note: "Include who, what, where, and why so the warning is actionable." };
     }
     if (musicTrack && !media.items.length && mode !== "status") {
-      setError("Choose a photo or video before attaching approved music.");
-      return;
+      return { error: "Choose a photo or video before attaching approved music.", note: "Attach media before adding approved music." };
     }
     if (mode === "reel" && (media.items.length !== 1 || media.items[0]?.asset.mediaType !== "video")) {
-      setError("A Reel requires exactly one video. Remove other attachments or use Reel Camera.");
-      return;
+      return { error: "A Reel requires exactly one video. Remove other attachments or use Reel Camera.", note: "A Reel requires exactly one video." };
     }
+    return null;
+  }
+
+  /**
+   * Performs the actual upload + publish. Returns a structured result instead
+   * of only mutating local state so the preview screen can react (dismiss on
+   * success, stay open and preserve the draft on failure). On success the
+   * composer is reset via `completePublish`. This is the single publish path —
+   * both the direct button and the preview delegate here, so duplicate-safe
+   * behavior and "no false success" hold in exactly one place.
+   */
+  async function runPublish(): Promise<PreviewPublishResult> {
     setPublishing(true);
     setError("");
     setNote("Transmitting through the PulseSoc backend.");
@@ -258,8 +270,9 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
         setLastFailedPublish(failedReel);
         const reel = await createReel(reelPayload);
         if (!reel.reel_id || !reel.post_id) throw new Error("Reel was created without canonical identifiers. Refresh Reels before trying again.");
-        await completePublish(undefined, reel.processing_status && reel.processing_status !== "ready" ? "Reel transmitted and processing." : "Reel transmitted.");
-        return;
+        const message = reel.processing_status && reel.processing_status !== "ready" ? "Reel transmitted and processing." : "Reel transmitted.";
+        await completePublish(undefined, message);
+        return { ok: true, message };
       }
       if (mode === "status") {
         const statusPayload: Parameters<typeof createStatus>[0] = {
@@ -275,7 +288,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
         const status = await createStatus(statusPayload);
         if (!status.status_id) throw new Error("Status was not confirmed by the PulseSoc backend. Your draft is preserved.");
         await completePublish(undefined, "Status transmitted. Refreshing PulseSoc.");
-        return;
+        return { ok: true, message: "Status transmitted." };
       }
       const postType = hasVideo ? "video" : mediaIds.length ? "image" : mode === "poll" ? "poll" : mode === "scam_report" ? "scam_report" : "text";
       const payload = buildCreatePayload({
@@ -289,14 +302,61 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
       setLastFailedPublish({ kind: "post", payload, startedAt: new Date().toISOString() });
       const response = await createPost(payload);
       if (!response.post_id || !response.post) throw new Error("Publication response is incomplete. Check My Posts before retrying.");
-      await completePublish(response.post, response.post.moderation_status && response.post.moderation_status !== "approved" ? "Signal received and awaiting moderation." : "Signal transmitted. Refreshing Home.");
+      const message = response.post.moderation_status && response.post.moderation_status !== "approved" ? "Signal received and awaiting moderation." : "Signal transmitted. Refreshing Home.";
+      await completePublish(response.post, message);
+      return { ok: true, message };
     } catch (publishError) {
       const message = publishError instanceof Error ? publishError.message : "Publish failed.";
       setError(message);
       setNote("Transmission interrupted. Your draft and completed uploads are preserved.");
+      return { ok: false, message };
     } finally {
       setPublishing(false);
     }
+  }
+
+  async function handlePublish() {
+    const validation = validatePublish();
+    if (validation) {
+      setError(validation.error);
+      setNote(validation.note);
+      return;
+    }
+    await runPublish();
+  }
+
+  /**
+   * Primary composer action. Validates, then opens the full-screen
+   * True-to-Publish preview rendered from the SAME canonical model the feed
+   * uses. Publishing happens from the preview via `runPublish` so the user
+   * always sees an accurate preview before anything is transmitted. Falls back
+   * to a direct publish if no preview handler is wired (e.g. legacy embeds).
+   */
+  async function openPreview() {
+    const validation = validatePublish();
+    if (validation) {
+      setError(validation.error);
+      setNote(validation.note);
+      return;
+    }
+    if (!onOpenPreview) {
+      await handlePublish();
+      return;
+    }
+    const draft: ComposerDraftInput = {
+      mode,
+      body,
+      visibility,
+      topic,
+      musicTrack,
+      media: media.items.map((item) => ({ asset: item.asset, result: item.result })),
+      identity
+    };
+    const token = stashPreviewHandoff({ draft, publish: runPublish });
+    await persistDraftNow();
+    setError("");
+    setNote("Opening preview. Publish from the preview when it looks right.");
+    onOpenPreview(token);
   }
 
   async function retryLastPublish() {
@@ -624,13 +684,14 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
         <Pressable
           testID="home-composer-publish"
           accessibilityRole="button"
-          accessibilityLabel="Publish Signal"
+          accessibilityLabel="Preview before publishing"
+          accessibilityHint="Opens a full-screen preview showing exactly how this will publish"
           accessibilityState={{ disabled: publishing || !hasPublishPayload }}
           style={[styles.publishButton, (!hasPublishPayload || publishing) && styles.publishButtonDisabled]}
           disabled={publishing || !hasPublishPayload}
-          onPress={handlePublish}
+          onPress={() => openPreview().catch(() => undefined)}
         >
-          <Text style={styles.publishText}>{publishing ? "Transmitting…" : "Transmit"}</Text>
+          <Text style={styles.publishText}>{publishing ? "Transmitting…" : "Preview"}</Text>
         </Pressable>
       </View>
       <ComposerMediaQueue items={media.items} onCancel={media.cancel} onRetry={(id) => media.retry(id).catch(() => undefined)} onRemove={media.remove} onMove={media.move} />

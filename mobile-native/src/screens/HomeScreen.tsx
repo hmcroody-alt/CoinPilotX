@@ -589,6 +589,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
               loadStatuses().catch(() => undefined);
             }}
             onOpenMusic={() => navigation.navigate("Music", { title: "PulseSoc Music" })}
+            onOpenPreview={(token) => navigation.navigate("ContentPreview", { token })}
           />
         }
         ListEmptyComponent={
@@ -698,7 +699,8 @@ function HomeHeader({
   onOpenStatus,
   onOpenCamera,
   onCreated,
-  onOpenMusic
+  onOpenMusic,
+  onOpenPreview
 }: {
   feedTabs: FeedTab[];
   selectedFeed: string;
@@ -731,6 +733,7 @@ function HomeHeader({
   onOpenCamera: (mode: "photo" | "video" | "reel", composerMode: "post" | "status" | "reel") => void;
   onCreated: (post?: PulsePost) => void;
   onOpenMusic: (composerMode: "post" | "status" | "reel") => void;
+  onOpenPreview: (token: string) => void;
 }) {
   const { width } = useWindowDimensions();
   const compactHero = width < 360;
@@ -760,6 +763,7 @@ function HomeHeader({
             onOpenCamera={onOpenCamera}
             onOpenMusic={onOpenMusic}
             onOpenRoute={onOpenRoute}
+            onOpenPreview={onOpenPreview}
           />
           <View style={styles.feedTabsWrap}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.feedTabs}>

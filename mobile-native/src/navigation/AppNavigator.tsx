@@ -16,6 +16,7 @@ import { BuyerOrdersScreen } from "../screens/BuyerOrdersScreen";
 import { CameraStudioScreen } from "../screens/CameraStudioScreen";
 import { CallScreen } from "../screens/CallScreen";
 import { ContentPlannerScreen } from "../screens/ContentPlannerScreen";
+import { ContentPreviewScreen } from "../screens/ContentPreviewScreen";
 import { CoursesLearningScreen } from "../screens/CoursesLearningScreen";
 import { CreatorStudioScreen } from "../screens/CreatorStudioScreen";
 import { DashboardLegacyModuleScreen } from "../screens/DashboardLegacyModuleScreen";
@@ -35,6 +36,7 @@ import { MusicScreen } from "../screens/MusicScreen";
 import { NewChatScreen } from "../screens/NewChatScreen";
 import { NotificationCenterScreen } from "../screens/NotificationCenterScreen";
 import { NotificationPreferencesScreen } from "../screens/NotificationPreferencesScreen";
+import { RegionTimeScreen } from "../screens/RegionTimeScreen";
 import { PulseQueueScreen } from "../screens/PulseQueueScreen";
 import { PostDetailScreen } from "../screens/PostDetailScreen";
 import { PremiumScreen } from "../screens/PremiumScreen";
@@ -229,6 +231,7 @@ export function AppNavigator() {
       <Stack.Screen name="DashboardLegacyModule" component={DashboardLegacyModuleScreen} options={{ title: "Dashboard Module" }} />
       <Stack.Screen name="DashboardModuleDetail" component={DashboardModuleDetailScreen} options={({ route }) => ({ title: route.params?.title || "Dashboard Module" })} />
       <Stack.Screen name="CameraStudio" component={CameraStudioScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="ContentPreview" component={ContentPreviewScreen} options={{ headerShown: false, presentation: "fullScreenModal" }} />
       <Stack.Screen name="Call" component={CallScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} />
       <Stack.Screen name="NewChat" component={NewChatScreen} options={{ title: "New Chat" }} />
@@ -303,6 +306,7 @@ export function AppNavigator() {
       <Stack.Screen name="ActivityInboxWebInbox" component={ActivityInboxScreen} options={{ title: "Activity Inbox" }} />
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} options={{ title: "Notifications" }} />
       <Stack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} options={{ title: "Notification Preferences" }} />
+      <Stack.Screen name="RegionTime" component={RegionTimeScreen} options={{ title: "Language, Region & Time" }} />
     </Stack.Navigator>
       <MasterNavigationDrawer visible={drawerOpen} identity={identity} onClose={() => setDrawerOpen(false)} onOpenRoute={openDrawerRoute} />
     </>
