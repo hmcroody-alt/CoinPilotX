@@ -16,6 +16,9 @@ import { sendConversationMessage, uploadMessengerMedia } from "../api/messenger"
 import { uploadProfileAvatar, uploadProfileCover } from "../api/profile";
 import { createStatus, StatusVisibility } from "../api/status";
 import { createComposerModeFromCameraTarget, saveCreateCameraCaptureResult } from "../create/createComposerHandoff";
+import { startLive } from "../api/live";
+import { PreLiveConfigurationSheet } from "../live/PreLiveConfigurationSheet";
+import { LiveStudioDraft, saveLiveStudioDraft } from "../live/liveStudioReadiness";
 import { MediaUploadPreview } from "../media/MediaUploadPreview";
 import {
   cameraCompressionPolicy,
@@ -81,6 +84,9 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   const [privacy, setPrivacy] = useState<StatusVisibility>("public");
   const [selectedEffect, setSelectedEffect] = useState("natural");
   const [recording, setRecording] = useState(false);
+  const [showPreLive, setShowPreLive] = useState(false);
+  const [goingLive, setGoingLive] = useState(false);
+  const [liveError, setLiveError] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [publishStage, setPublishStage] = useState<"idle" | "validating" | "uploading" | "processing" | "publishing" | "published" | "failed">("idle");
   const [message, setMessage] = useState("");
@@ -166,7 +172,8 @@ export function CameraStudioScreen({ route, navigation }: Props) {
 
   async function capture() {
     if (captureMode === "live") {
-      openLiveStudio();
+      const ready = await ensureLiveReady();
+      if (ready) setShowPreLive(true);
       return;
     }
     if (nativeUnsupportedDestinations.has(destination.key)) {
@@ -221,12 +228,25 @@ export function CameraStudioScreen({ route, navigation }: Props) {
 
   async function chooseFromGallery() {
     setError("");
-    if (captureMode === "live") {
-      openLiveStudio();
-      return;
-    }
     const asset = captureMode === "video" ? await mediaUpload.chooseVideo() : await mediaUpload.chooseImage();
     if (asset) await handleCapturedAsset(asset);
+  }
+
+  async function ensureLiveReady() {
+    setError("");
+    setLiveError("");
+    if (!cameraPermission?.granted) {
+      const next = await requestCameraPermission();
+      if (!next.granted) {
+        setError("Camera permission is required to go live.");
+        return false;
+      }
+    }
+    if (!microphonePermission?.granted) {
+      const next = await requestMicrophonePermission();
+      setMicEnabled(next.granted);
+    }
+    return true;
   }
 
   async function handleCapturedAsset(asset: NativeMediaAsset) {
@@ -251,10 +271,24 @@ export function CameraStudioScreen({ route, navigation }: Props) {
     });
   }
 
-  function openLiveStudio() {
-    setError("");
-    setMessage("Opening the native Live Studio.");
-    navigation.navigate("LiveStudio", { title: "Live Studio" });
+  async function handleGoLive(draft: LiveStudioDraft) {
+    setGoingLive(true);
+    setLiveError("");
+    try {
+      const saved = await saveLiveStudioDraft(draft);
+      const result = await startLive(saved);
+      setShowPreLive(false);
+      navigation.navigate("NativeLiveHost", {
+        liveId: result.liveId,
+        room: result.room,
+        tokenUrl: result.tokenUrl,
+        title: saved.title.trim() || "PulseSoc Live"
+      });
+    } catch (err) {
+      setLiveError(err instanceof Error && err.message ? err.message : "PulseSoc could not start your broadcast.");
+    } finally {
+      setGoingLive(false);
+    }
   }
 
   async function publish() {
@@ -399,15 +433,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   return (
     <View style={styles.root}>
       <View style={styles.stage}>
-        {captureMode === "live" ? (
-          <View style={styles.webFallback}>
-            <Text style={styles.webTitle}>Live uses the production Studio</Text>
-            <Text style={styles.webText}>Browser Live, LiveKit, Mux, co-hosting, moderation, and stream health remain on the existing verified Studio flow. Native Camera will not fake a broadcast.</Text>
-            <Pressable style={styles.primaryButton} onPress={openLiveStudio}>
-              <Text style={styles.primaryText}>Open Live Studio</Text>
-            </Pressable>
-          </View>
-        ) : nativeCameraUnavailable ? (
+        {nativeCameraUnavailable ? (
           <View style={styles.webFallback}>
             <Text style={styles.webTitle}>Camera preview requires a device build</Text>
             <Text style={styles.webText}>Use gallery fallback in QA browser. Real camera, microphone, compression, and recording remain device-unverified.</Text>
@@ -417,8 +443,8 @@ export function CameraStudioScreen({ route, navigation }: Props) {
             ref={cameraRef}
             style={styles.camera}
             facing={cameraFacing}
-            mode={captureMode === "video" ? "video" : "picture"}
-            mute={captureMode !== "video" || !micEnabled}
+            mode={captureMode === "photo" ? "picture" : "video"}
+            mute={captureMode === "photo" || !micEnabled}
             videoQuality={policy.videoQuality}
             mirror={cameraFacing === "front"}
           />
@@ -452,16 +478,25 @@ export function CameraStudioScreen({ route, navigation }: Props) {
           </Pressable>
         </View>
 
+        {composerReturnMode ? null : (
+          <View style={styles.contextCard} pointerEvents="none">
+            <Text style={styles.contextText}>{modeHint(captureMode)}</Text>
+          </View>
+        )}
+
         <View style={styles.captureDock}>
-          <Pressable style={styles.dockButton} onPress={chooseFromGallery}>
-            <Text style={styles.dockText}>{captureMode === "live" ? "Studio" : "Gallery"}</Text>
+          <Pressable
+            style={styles.dockButton}
+            onPress={captureMode === "live" ? () => setShowPreLive(true) : chooseFromGallery}
+          >
+            <Text style={styles.dockText}>{captureMode === "live" ? "Live tools" : "Gallery"}</Text>
           </Pressable>
           <Pressable style={[styles.captureButton, recording && styles.recording]} disabled={publishing} onPress={capture}>
             <Text style={styles.captureText}>{recording ? "Stop" : captureMode === "live" ? "Live" : captureMode === "video" ? "Record" : "Snap"}</Text>
           </Pressable>
           <Pressable
-            style={[styles.dockButton, captureMode !== "video" && styles.disabled]}
-            disabled={captureMode !== "video"}
+            style={[styles.dockButton, captureMode === "photo" && styles.disabled]}
+            disabled={captureMode === "photo"}
             onPress={async () => {
               if (!microphonePermission?.granted) {
                 const next = await requestMicrophonePermission();
@@ -561,8 +596,22 @@ export function CameraStudioScreen({ route, navigation }: Props) {
         <Text style={styles.deviceNote}>Camera, microphone, recording, compression, and large upload behavior require real-device QA before release claims.</Text>
       </ScrollView>
       )}
+
+      <PreLiveConfigurationSheet
+        visible={showPreLive}
+        busy={goingLive}
+        error={liveError}
+        onClose={() => setShowPreLive(false)}
+        onGoLive={handleGoLive}
+      />
     </View>
   );
+}
+
+function modeHint(mode: NativeCaptureMode): string {
+  if (mode === "video") return "Tap Record to start and stop. Review before you post.";
+  if (mode === "live") return "Tap Live to set up and broadcast. Your camera stays on.";
+  return "Tap Snap to capture. Review before you post.";
 }
 
 async function findExistingPostByMediaId(mediaId: number): Promise<PulsePost | null> {
@@ -642,6 +691,25 @@ const styles = StyleSheet.create({
     color: colors.background,
     fontSize: 12,
     fontWeight: "900"
+  },
+  contextCard: {
+    alignItems: "center",
+    backgroundColor: "rgba(2, 7, 16, 0.72)",
+    borderColor: "rgba(255,255,255,0.14)",
+    borderRadius: 12,
+    borderWidth: 1,
+    bottom: 118,
+    left: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    position: "absolute",
+    right: 18
+  },
+  contextText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "center"
   },
   destination: {
     backgroundColor: colors.surface,

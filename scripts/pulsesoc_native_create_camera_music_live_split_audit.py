@@ -71,11 +71,17 @@ def main() -> int:
         'captureMode === "live"',
         "saveCreateCameraCaptureResult",
         "Publishing stays in the Create composer",
-        "Open Live Studio",
-        "Native Camera will not fake a broadcast",
+        "PreLiveConfigurationSheet",
+        "startLive(saved)",
+        'navigation.navigate("NativeLiveHost"',
         "{composerReturnMode ? null : (",
     ]:
         require(checks, token in camera, f"Camera contains {token}")
+    require(
+        checks,
+        "Open Live Studio" not in camera and "Native Camera will not fake a broadcast" not in camera,
+        "Camera Live mode no longer advertises the web Studio placeholder",
+    )
     require(checks, "const composerReturnMode = Boolean(route.params?.returnToComposer)" in camera, "Camera return mode is explicit, not accidental")
 
     require(checks, "selectPulseMusicForSurface(track, composerSurface)" in music, "Music selection uses existing native music API")
