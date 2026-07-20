@@ -133,7 +133,7 @@ export type ConversationResponse = {
 };
 
 export type UndxResponseComponent = {
-  component: "confirmation_card" | "progress_card" | "draft_preview" | "settings_summary" | "conflict_resolution_card" | "verified_success_card" | "honest_failure_card";
+  component: "confirmation_card" | "progress_card" | "draft_preview" | "settings_summary" | "conflict_resolution_card" | "verified_success_card" | "honest_failure_card" | "search_result_card";
   action_name?: string;
   target?: string;
   current_value?: string;
@@ -144,6 +144,15 @@ export type UndxResponseComponent = {
   expires_at?: string;
   status?: string;
   value?: string;
+  search_session_id?: string;
+  canonical_content_id?: number;
+  content_type?: "post" | "reel" | "video";
+  creator_id?: number;
+  preview_text?: string;
+  thumbnail_or_media_reference?: string;
+  created_at?: string;
+  deep_link?: string;
+  relevance_reason?: string;
 };
 
 export type ConversationControlSettings = Record<string, Record<string, boolean | string | number>>;

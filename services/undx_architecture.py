@@ -113,6 +113,12 @@ def ensure_schema(cur) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
             conversation_id INTEGER NOT NULL, context_json TEXT, updated_at TEXT,
             UNIQUE(user_id, conversation_id))""",
+        """CREATE TABLE IF NOT EXISTS pulse_ai_search_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, search_session_id TEXT UNIQUE NOT NULL,
+            user_id INTEGER NOT NULL, conversation_id INTEGER NOT NULL,
+            original_query TEXT NOT NULL, normalized_query TEXT NOT NULL,
+            filters_json TEXT NOT NULL, result_ids_json TEXT NOT NULL,
+            created_at TEXT NOT NULL, expires_at TEXT NOT NULL, updated_at TEXT NOT NULL)""",
     )
     for statement in statements:
         cur.execute(statement)
@@ -120,6 +126,7 @@ def ensure_schema(cur) -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_ai_nodes_mission ON pulse_ai_task_nodes(mission_id, id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_ai_memory_provenance_user ON pulse_ai_memory_provenance(user_id, memory_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_ai_confirmations_user ON pulse_ai_confirmations(user_id, status, expires_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_ai_search_sessions_user ON pulse_ai_search_sessions(user_id, conversation_id, expires_at)")
     seed_registries(cur)
 
 

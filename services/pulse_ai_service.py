@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search, undx_architecture, undx_policy
+from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search, undx_architecture, undx_operator, undx_policy
 
 
 LOGGER = logging.getLogger(__name__)
@@ -728,9 +728,11 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
                 (int(user_id), int(conversation["id"]), json.dumps(ui_context), _now()),
             )
         pending_action = None
-        if compiled_policy.get("schema_version") == "4.0":
+        operator_components = []
+        if compiled_policy.get("schema_version") in {"4.0", "5.0"}:
             action = undx_architecture.notification_action_from_text(body)
-            if action:
+            if action and (compiled_policy.get("schema_version") == "4.0" or compiled_policy.get("writes_enabled")):
+                action["action_version"] = compiled_policy.get("schema_version") or "4.0"
                 confirmation = undx_architecture.create_confirmation(cur, int(user_id), action)
                 pending_action = {
                     "component": "confirmation_card",
@@ -743,6 +745,22 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
                     "confirmation_token": confirmation["confirmation_token"],
                     "expires_at": confirmation["expires_at"],
                 }
+        if compiled_policy.get("schema_version") == "5.0" and compiled_policy.get("search_intent") and compiled_policy.get("search_enabled"):
+            search_filters = undx_operator.parse_search_request(body)
+            if search_filters:
+                operator_search = undx_operator.search_visible_content(cur, int(user_id), body, search_filters)
+                search_session_id = undx_operator.persist_search_session(
+                    cur, int(user_id), int(conversation["id"]), body, search_filters, operator_search.get("results") or []
+                )
+                operator_components = undx_operator.result_components(operator_search, search_session_id)
+                grounded_results = [{key: item.get(key) for key in ("canonical_content_id", "content_type", "preview_text", "deep_link", "relevance_reason")} for item in operator_search.get("results") or []]
+                knowledge.insert(0, {
+                    "id": 0,
+                    "title": "Authorized PulseSOC discovery results",
+                    "category": "pulsesoc_search",
+                    "body": json.dumps({"filters": search_filters, "results": grounded_results}, separators=(",", ":")),
+                })
+        response_components = ([pending_action] if pending_action else []) + operator_components
         architecture_plan = undx_architecture.build_plan(
             int(user_id),
             body,
@@ -810,7 +828,7 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
                         "writes_enabled": compiled_policy.get("writes_enabled", False),
                     },
                     "ui_context": ui_context,
-                    "response_components": [pending_action] if pending_action else [],
+                    "response_components": response_components,
                     "architecture": {
                         "mission_id": architecture_plan["mission_id"],
                         "risk_level": architecture_plan["risk_level"],
@@ -838,7 +856,7 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
                 "provider": result.get("provider") or "",
                 "latency_ms": int(result.get("latency_ms") or 0),
                 "correlation_id": correlation_id,
-                "response_components": [pending_action] if pending_action else [],
+                "response_components": response_components,
                 **refreshed,
             }
         safe_message = _enforce_undx_reply_identity(result.get("message") or UNDX_UNAVAILABLE_MESSAGE)

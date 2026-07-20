@@ -18,6 +18,7 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -932,10 +933,15 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         <View accessibilityLabel="UNDX action cards" style={styles.undxActionRail}>
           {undxComponents.map((component, index) => (
             <View key={`${component.component}-${component.confirmation_id || index}`} style={styles.undxActionCard}>
-              <Text style={styles.undxActionKicker}>{component.component === "confirmation_card" ? "CONFIRM ACTION" : "VERIFIED RESULT"}</Text>
-              <Text style={styles.undxActionTitle}>{component.action_name || "UNDX operation"}</Text>
-              <Text style={styles.undxActionBody}>{component.target || "PulseSOC"}: {component.current_value ? `${component.current_value} → ` : ""}{component.proposed_value || component.value || component.status || "pending"}</Text>
+              <Text style={styles.undxActionKicker}>{component.component === "confirmation_card" ? "CONFIRM ACTION" : component.component === "search_result_card" ? `${(component.content_type || "content").toUpperCase()} MATCH` : "VERIFIED RESULT"}</Text>
+              <Text style={styles.undxActionTitle}>{component.component === "search_result_card" ? component.preview_text || "PulseSOC result" : component.action_name || "UNDX operation"}</Text>
+              <Text style={styles.undxActionBody}>{component.component === "search_result_card" ? component.relevance_reason || `Canonical ID ${component.canonical_content_id}` : <>{component.target || "PulseSOC"}: {component.current_value ? `${component.current_value} → ` : ""}{component.proposed_value || component.value || component.status || "pending"}</>}</Text>
               {component.risk_summary ? <Text style={styles.undxActionRisk}>{component.risk_summary}</Text> : null}
+              {component.component === "search_result_card" && component.deep_link ? (
+                <Pressable accessibilityRole="link" accessibilityLabel={`Open ${component.content_type || "PulseSOC"} result`} style={styles.undxActionConfirm} onPress={() => Linking.openURL(absoluteMediaUrl(component.deep_link)).catch(() => setStatusMessage("This result could not be opened."))}>
+                  <Text style={styles.undxActionConfirmText}>Open</Text>
+                </Pressable>
+              ) : null}
               {component.component === "confirmation_card" && component.confirmation_token ? (
                 <View style={styles.undxActionButtons}>
                   <Pressable accessibilityRole="button" accessibilityLabel="Cancel UNDX action" disabled={undxActionBusy} style={styles.undxActionCancel} onPress={() => setUndxComponents([])}>
