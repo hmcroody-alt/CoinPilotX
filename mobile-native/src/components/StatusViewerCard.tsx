@@ -2,22 +2,25 @@ import { ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { PulseStatus, pulseStatusUrl, statusMediaKind, statusMediaUrl, statusMusicLabel, statusPosterUrl } from "../api/status";
+import { DEFAULT_STATUS_REACTION, PulseStatus, pulseStatusUrl, StatusReactionType, statusMediaKind, statusMediaUrl, statusMusicLabel, statusPosterUrl } from "../api/status";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { LikeBurst, LikeBurstHandle } from "../media/MediaGestureFeedback";
+import { StatusActionRail } from "./StatusActionRail";
 
 type Props = {
   status: PulseStatus;
   active: boolean;
   muted: boolean;
   busy?: boolean;
+  reactionPending?: boolean;
+  reactionError?: string;
   progress?: number;
   onPrevious: () => void;
   onNext: () => void;
   onToggleMuted: () => void;
-  onReact: (status: PulseStatus, reactionType?: string) => void;
+  onReact: (status: PulseStatus, reactionType?: StatusReactionType) => void;
   onReply: (status: PulseStatus) => void;
   onShare: (status: PulseStatus) => void;
   onMore: (status: PulseStatus) => void;
@@ -30,6 +33,8 @@ export function StatusViewerCard({
   active,
   muted,
   busy,
+  reactionPending,
+  reactionError,
   progress = 0,
   onPrevious,
   onNext,
@@ -111,7 +116,7 @@ export function StatusViewerCard({
       const x = event?.nativeEvent?.locationX ?? (side === "left" ? 90 : 260);
       const y = event?.nativeEvent?.locationY ?? 320;
       likeBurstRef.current?.trigger(x, y);
-      onReact(status, "fire");
+      onReact(status, DEFAULT_STATUS_REACTION);
       return;
     }
     nav();
@@ -185,11 +190,18 @@ export function StatusViewerCard({
         <Pressable accessibilityRole="button" accessibilityLabel="Status options" style={styles.moreButton} onPress={() => onMore(status)}><Text style={styles.moreText}>•••</Text></Pressable>
       </View>
 
-      <View style={styles.actions}>
-        <Action label="React" value={status.reaction_count || 0} disabled={busy} onPress={() => onReact(status, "fire")} />
-        <Action label="Reply" value={status.reply_count || 0} disabled={busy} onPress={() => onReply(status)} />
-        <Action label="Share" value={status.share_count || 0} disabled={busy} onPress={() => onShare(status)} />
-      </View>
+      <StatusActionRail
+        reactionCount={status.reaction_count || 0}
+        selectedReaction={status.viewer_reaction}
+        reactionPending={reactionPending}
+        shareBusy={busy}
+        onReact={(reactionType) => onReact(status, reactionType)}
+        onReply={() => onReply(status)}
+        onShare={() => onShare(status)}
+      />
+      {reactionError ? (
+        <Text accessibilityLiveRegion="polite" style={styles.reactionError}>{reactionError}</Text>
+      ) : null}
 
       <View style={styles.caption}>
         {status.body && kind !== "text" ? <Text accessibilityLabel={`Status caption, ${status.body}`} style={styles.captionText} numberOfLines={4}>{status.body}</Text> : null}
@@ -200,44 +212,7 @@ export function StatusViewerCard({
   );
 }
 
-function Action({ label, value, disabled, onPress }: { label: string; value?: number; disabled?: boolean; onPress: () => void }) {
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${label} to Status${value ? `, ${value}` : ""}`} style={[styles.action, disabled ? styles.disabled : undefined]} disabled={disabled} onPress={onPress}>
-      <Text style={styles.actionText}>{label}</Text>
-      {value ? <Text style={styles.actionValue}>{value}</Text> : null}
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
-  action: {
-    alignItems: "center",
-    backgroundColor: "rgba(8, 15, 28, 0.62)",
-    borderColor: "rgba(255,255,255,0.16)",
-    borderRadius: 16,
-    borderWidth: 1,
-    minHeight: 50,
-    justifyContent: "center",
-    paddingHorizontal: 8,
-    width: 66
-  },
-  actionText: {
-    color: colors.text,
-    fontSize: 11,
-    fontWeight: "900"
-  },
-  actionValue: {
-    color: colors.muted,
-    fontSize: 10,
-    marginTop: 2
-  },
-  actions: {
-    gap: 9,
-    position: "absolute",
-    right: 10,
-    top: "38%",
-    zIndex: 7
-  },
   author: {
     alignItems: "center",
     flex: 1,
@@ -293,9 +268,6 @@ const styles = StyleSheet.create({
     flex: 1,
     overflow: "hidden"
   },
-  disabled: {
-    opacity: 0.45
-  },
   header: {
     alignItems: "center",
     flexDirection: "row",
@@ -341,6 +313,17 @@ const styles = StyleSheet.create({
     right: 10,
     top: 8,
     zIndex: 8
+  },
+  reactionError: {
+    color: colors.danger,
+    fontSize: 11,
+    fontWeight: "800",
+    maxWidth: 150,
+    position: "absolute",
+    right: 10,
+    textAlign: "right",
+    top: "58%",
+    zIndex: 7
   },
   rightTap: {
     bottom: 0,

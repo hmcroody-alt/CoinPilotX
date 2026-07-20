@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PULSE_API_BASE_URL, PULSESOC_QA_STATUS_FIXTURES } from "./config";
 import { mediaDisplayUrl, mediaKind, PulseAuthor, PulseMedia } from "./feed";
-import { pulseApi } from "./pulseApi";
+import { pulseApi, PulseApiError } from "./pulseApi";
 
 const STATUS_CACHE_PREFIX = "pulsesoc.native.status.";
 const statusCacheKey = (lane: string) => `${STATUS_CACHE_PREFIX}${lane || "for_you"}`;
@@ -25,6 +25,32 @@ export type PulseStatusMusic = {
 
 export type StatusVisibility = "public" | "followers" | "private";
 export type StatusType = "text" | "photo" | "video" | "music" | "live" | "ai";
+
+/**
+ * Status reaction vocabulary for the native icon action rail.
+ *
+ * The production route `/api/pulse/status/<id>/react` accepts any freeform
+ * string up to 40 chars (no server-side enum) and always REPLACES the
+ * caller's prior reaction row rather than supporting removal. This fixed
+ * list is the client's own curated, presentable vocabulary — every value
+ * in it is a legal, acceptable `reaction_type` for that route, so nothing
+ * here is "unsupported" by the backend. Do not add a value the backend
+ * would reject, and do not add a "none"/removal value: removal is not a
+ * verified backend contract (see reports/pulsesoc_native_status_futuristic_icon_actions_2026-07-19.md).
+ */
+export type StatusReactionType = "love" | "fire" | "clap" | "laugh" | "wow" | "hundred" | "pulse";
+
+export const DEFAULT_STATUS_REACTION: StatusReactionType = "love";
+
+export const STATUS_REACTIONS: Array<{ type: StatusReactionType; label: string; icon: string; iconFilled: string; color: string }> = [
+  { type: "love", label: "Love", icon: "heart-outline", iconFilled: "heart", color: "#ff5fa8" },
+  { type: "fire", label: "Fire", icon: "flame-outline", iconFilled: "flame", color: "#ff8a3d" },
+  { type: "clap", label: "Applause", icon: "thumbs-up-outline", iconFilled: "thumbs-up", color: "#61eaf6" },
+  { type: "laugh", label: "Laugh", icon: "happy-outline", iconFilled: "happy", color: "#ffd166" },
+  { type: "wow", label: "Mind blown", icon: "flash-outline", iconFilled: "flash", color: "#b98bff" },
+  { type: "hundred", label: "Hundred", icon: "ribbon-outline", iconFilled: "ribbon", color: "#36e58f" },
+  { type: "pulse", label: "Pulse", icon: "pulse-outline", iconFilled: "pulse", color: "#61eaf6" }
+];
 
 export type PulseStatus = {
   id: number;
@@ -55,6 +81,14 @@ export type PulseStatus = {
   reaction_count?: number;
   reply_count?: number;
   share_count?: number;
+  /**
+   * Client-local only. The production rail/list payload never returns a
+   * per-viewer reaction (only an aggregate `reaction_count` — confirmed by
+   * backend audit, see report "Known limitations"), so this is set purely
+   * from local optimistic/confirmed state after a reaction is sent in the
+   * current session, and is not persisted or trustworthy across app restarts.
+   */
+  viewer_reaction?: StatusReactionType | string;
   author_live?: boolean;
   story_count?: number;
   unseen_count?: number;
@@ -192,11 +226,26 @@ export async function trackStatusView(statusId: number, params: { completed?: bo
   });
 }
 
-export async function reactToStatus(statusId: number, reactionType = "fire") {
+export async function reactToStatus(statusId: number, reactionType: string = DEFAULT_STATUS_REACTION) {
   return pulseApi<{ ok?: boolean; status_id?: number; reaction_type?: string; reaction_count?: number }>(`/api/pulse/status/${statusId}/react`, {
     method: "POST",
     body: JSON.stringify({ reaction_type: reactionType })
   });
+}
+
+/** Concise, user-facing copy for a failed Status reaction, mirroring api/deleteErrors.ts's status-code mapping. */
+export function describeStatusReactionError(err: unknown): string {
+  if (err instanceof PulseApiError) {
+    if (err.status === 401) return "Your session expired. Sign in again to react.";
+    if (err.status === 404) return "This Status is no longer available.";
+    if (err.status === 429) return "Too many attempts. Wait a moment and try again.";
+    if (err.status >= 500) return "Reaction could not be sent right now. Try again.";
+    return err.message || "Reaction could not be sent.";
+  }
+  if (err instanceof TypeError || (err instanceof Error && /network/i.test(err.message))) {
+    return "You're offline. Reconnect to react.";
+  }
+  return "Reaction could not be sent.";
 }
 
 export async function replyToStatus(statusId: number, body: string) {

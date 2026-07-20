@@ -15,7 +15,9 @@ import {
   View
 } from "react-native";
 import {
+  DEFAULT_STATUS_REACTION,
   deleteStatus,
+  describeStatusReactionError,
   listStatuses,
   loadCachedStatuses,
   PulseStatus,
@@ -24,6 +26,7 @@ import {
   replyToStatus,
   reconcileStatusItems,
   shareStatus,
+  StatusReactionType,
   statusMediaKind,
   statusMediaUrl,
   statusMusicLabel,
@@ -65,7 +68,16 @@ export function StatusScreen({ route, navigation }: Props) {
   const [replyBody, setReplyBody] = useState("");
   const [postingReply, setPostingReply] = useState(false);
   const [manageStatus, setManageStatus] = useState<PulseStatus | null>(null);
+  const [reactingIds, setReactingIds] = useState<Set<number>>(new Set());
+  const [reactionError, setReactionError] = useState("");
+  const reactionSeqRef = useRef(new Map<number, number>());
   const viewed = useRef(new Set<number>());
+
+  useEffect(() => {
+    if (!reactionError) return;
+    const timer = setTimeout(() => setReactionError(""), 3200);
+    return () => clearTimeout(timer);
+  }, [reactionError]);
 
   async function load(mode: "initial" | "refresh" = "initial") {
     setError("");
@@ -127,16 +139,48 @@ export function StatusScreen({ route, navigation }: Props) {
     }
   }
 
-  async function handleReact(status: PulseStatus, reactionType = "fire") {
-    setBusyId(status.id);
-    updateStatus(status.id, { reaction_count: Number(status.reaction_count || 0) + 1 });
+  /**
+   * Optimistic, sequence-guarded reaction mutation. The production route
+   * (`POST /api/pulse/status/<id>/react`) always REPLACES the caller's prior
+   * reaction row and never supports removal, so this only ever sets a new
+   * reaction — it never advertises or performs a "remove reaction" action.
+   *
+   * `reactionSeqRef` guards against rapid repeated taps / duplicate or
+   * stale responses: each call bumps a per-status sequence number, and any
+   * response (success or failure) that isn't for the latest sequence is
+   * discarded so it can never stomp a newer optimistic update or roll back
+   * to a stale count ("count drift").
+   */
+  async function handleReact(status: PulseStatus, reactionType: StatusReactionType = DEFAULT_STATUS_REACTION) {
+    const statusId = status.id;
+    const previousReaction = status.viewer_reaction;
+    const previousCount = Number(status.reaction_count || 0);
+    if (previousReaction === reactionType) return;
+
+    const seq = (reactionSeqRef.current.get(statusId) || 0) + 1;
+    reactionSeqRef.current.set(statusId, seq);
+    setReactionError("");
+    setReactingIds((current) => new Set(current).add(statusId));
+
+    const optimisticCount = previousReaction ? previousCount : previousCount + 1;
+    updateStatus(statusId, { viewer_reaction: reactionType, reaction_count: optimisticCount });
+
     try {
-      const result = await reactToStatus(status.id, reactionType);
-      updateStatus(status.id, { reaction_count: Number(result.reaction_count || status.reaction_count || 0) });
-    } catch {
-      updateStatus(status.id, { reaction_count: status.reaction_count || 0 });
+      const result = await reactToStatus(statusId, reactionType);
+      if (reactionSeqRef.current.get(statusId) !== seq) return;
+      updateStatus(statusId, { viewer_reaction: reactionType, reaction_count: Number(result.reaction_count ?? optimisticCount) });
+    } catch (err) {
+      if (reactionSeqRef.current.get(statusId) !== seq) return;
+      updateStatus(statusId, { viewer_reaction: previousReaction, reaction_count: previousCount });
+      setReactionError(describeStatusReactionError(err));
     } finally {
-      setBusyId(null);
+      if (reactionSeqRef.current.get(statusId) === seq) {
+        setReactingIds((current) => {
+          const next = new Set(current);
+          next.delete(statusId);
+          return next;
+        });
+      }
     }
   }
 
@@ -234,6 +278,8 @@ export function StatusScreen({ route, navigation }: Props) {
             active
             muted={muted}
             busy={busyId === activeStatus.id}
+            reactionPending={reactingIds.has(activeStatus.id)}
+            reactionError={reactionError}
             progress={(viewerIndex === null ? 0 : viewerIndex + 1) / Math.max(1, items.length)}
             onPrevious={() => setViewerIndex((current) => Math.max(0, Number(current || 0) - 1))}
             onNext={() => {
@@ -400,6 +446,7 @@ function ReplyModal({ visible, body, posting, onChangeBody, onSubmit, onClose }:
             placeholder="Write a reply"
             placeholderTextColor={colors.muted}
             multiline
+            autoFocus
           />
           <View style={styles.replyActions}>
             <Pressable style={styles.secondaryButton} onPress={onClose}><Text style={styles.secondaryText}>Cancel</Text></Pressable>
