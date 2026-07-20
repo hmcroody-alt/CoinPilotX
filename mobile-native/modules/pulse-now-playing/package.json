@@ -1,0 +1,11 @@
+{
+  "name": "pulse-now-playing",
+  "version": "1.0.0",
+  "description": "Local Expo module exposing MPNowPlayingInfoCenter and MPRemoteCommandCenter lock-screen controls to PulseSoc Native.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "license": "UNLICENSED",
+  "private": true,
+  "author": "PulseSoc",
+  "homepage": "https://pulsesoc.com"
+}

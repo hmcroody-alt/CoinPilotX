@@ -31,6 +31,7 @@ export type RootStackParamList = {
   DashboardComposeAlias: undefined;
   DashboardMusicAlias: undefined;
   Music: { trackId?: string; track?: string; artistId?: number; artist?: number; openUpload?: boolean; title?: string; surface?: "post" | "status" | "reel" } | undefined;
+  PulseQueue: { title?: string } | undefined;
   DashboardLegacyModule: { legacyGroup?: string; legacyModule?: string; legacySubmodule?: string; title?: string } | undefined;
   DashboardModuleDetail: { groupKey: string; moduleKey: string; title?: string };
   CameraStudio: {

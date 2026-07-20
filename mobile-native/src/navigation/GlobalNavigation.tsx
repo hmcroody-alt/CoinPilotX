@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { Animated, Image, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LogiNexusBadge, LogiNexusSignalIndicator } from "../components/LogiNexus";
+import { getPulseRadioState, playNextTrack, PulseRadioState, subscribePulseRadio, togglePulseRadio } from "../core/pulseRadio";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { useBottomNavVisibility } from "./BottomNavVisibility";
@@ -187,6 +188,7 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
       style={[styles.bottomShell, { paddingBottom: Math.max(insets.bottom, 10), opacity, transform: [{ translateY }] }]}
       testID="global-bottom-navigation"
     >
+      <PulseMiniPlayerBar navigation={navigation} />
       <View pointerEvents="auto" style={styles.bottomPanel}>
         {PRIMARY_TABS.map((item) => {
           const route = state.routes.find((candidate) => candidate.name === item.routeName);
@@ -247,6 +249,73 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
         })}
       </View>
     </Animated.View>
+  );
+}
+
+// Persistent "continue listening across pages" strip: shown above the tab
+// bar on every primary tab screen whenever Pulse Radio has a loaded track,
+// regardless of which page the user is on. Tapping it opens the queue
+// screen; the play/pause and next controls work in place without navigating.
+function PulseMiniPlayerBar({ navigation }: { navigation: BottomTabBarProps["navigation"] }) {
+  const [radio, setRadio] = useState<PulseRadioState>(getPulseRadioState());
+  useEffect(() => subscribePulseRadio(setRadio), []);
+
+  if (!radio.track) return null;
+
+  const playing = radio.status === "playing";
+  const busy = radio.status === "connecting" || radio.status === "buffering";
+  const progress = radio.durationMillis > 0 ? Math.min(1, Math.max(0, radio.positionMillis / radio.durationMillis)) : 0;
+  const hasNext = radio.queueIndex < radio.queue.length - 1 || radio.repeatMode !== "off";
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Now playing: ${radio.track.title} by ${radio.track.artist}. Open queue`}
+      testID="global-mini-player"
+      style={styles.miniPlayer}
+      onPress={() => (navigation as any).getParent()?.navigate("PulseQueue")}
+    >
+      <View style={styles.miniPlayerProgressTrack}>
+        <View style={[styles.miniPlayerProgressFill, { width: `${progress * 100}%` }]} />
+      </View>
+      <View style={styles.miniPlayerRow}>
+        <View style={styles.miniPlayerText}>
+          <Text style={styles.miniPlayerTitle} numberOfLines={1}>
+            {radio.track.title}
+          </Text>
+          <Text style={styles.miniPlayerArtist} numberOfLines={1}>
+            {radio.track.artist}
+          </Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={playing ? "Pause" : "Play"}
+          testID="global-mini-player-play-pause"
+          style={styles.miniPlayerButton}
+          onPress={(event) => {
+            event.stopPropagation();
+            Haptics.selectionAsync().catch(() => undefined);
+            togglePulseRadio().catch(() => undefined);
+          }}
+        >
+          <Ionicons name={playing ? "pause" : busy ? "hourglass-outline" : "play"} size={18} color={colors.background} />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Next track"
+          disabled={!hasNext}
+          testID="global-mini-player-next"
+          style={[styles.miniPlayerButton, styles.miniPlayerButtonSecondary, !hasNext && styles.disabled]}
+          onPress={(event) => {
+            event.stopPropagation();
+            Haptics.selectionAsync().catch(() => undefined);
+            playNextTrack().catch(() => undefined);
+          }}
+        >
+          <Ionicons name="play-skip-forward" size={16} color={colors.text} />
+        </Pressable>
+      </View>
+    </Pressable>
   );
 }
 
@@ -570,6 +639,55 @@ const styles = StyleSheet.create({
   },
   iconTextHome: {
     fontSize: 25
+  },
+  miniPlayer: {
+    backgroundColor: "rgba(8, 16, 29, 0.94)",
+    borderColor: "rgba(121, 210, 255, 0.24)",
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 8,
+    overflow: "hidden"
+  },
+  miniPlayerProgressTrack: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    height: 2,
+    width: "100%"
+  },
+  miniPlayerProgressFill: {
+    backgroundColor: colors.accent,
+    height: 2
+  },
+  miniPlayerRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10
+  },
+  miniPlayerText: {
+    flex: 1,
+    minWidth: 0
+  },
+  miniPlayerTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700"
+  },
+  miniPlayerArtist: {
+    color: colors.muted,
+    fontSize: 11,
+    marginTop: 1
+  },
+  miniPlayerButton: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderRadius: 17,
+    height: 34,
+    justifyContent: "center",
+    width: 34
+  },
+  miniPlayerButtonSecondary: {
+    backgroundColor: "rgba(255,255,255,0.08)"
   },
   pressed: {
     opacity: 0.72,
