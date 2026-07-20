@@ -31,6 +31,7 @@ import {
   submitCallQuality
 } from "../api/calls";
 import { useNativeCallRoom } from "../calls/useNativeCallRoom";
+import { callHaptic, playCallCue, startCallTone, stopCallTone } from "../calls/callSignalMedia";
 import { stopVoiceMessagePlayback } from "../core/voiceMessagePlayback";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -64,6 +65,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const joinRequested = useRef(false);
   const qualitySubmitted = useRef(false);
   const connectedAtMs = useRef(0);
+  const everConnected = useRef(false);
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const room = useNativeCallRoom();
   const insets = useSafeAreaInsets();
@@ -131,6 +133,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
     if (!params.conversationId) return;
     setActionBusy("start");
     setError("");
+    callHaptic("place");
     try {
       const next = await startConversationCall(params.conversationId, requestedType);
       setCall(next);
@@ -184,6 +187,34 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
     return () => clearInterval(timer);
   }, [connected]);
 
+  // Ringback: outgoing caller only, strictly gated on backend signaling "ringing",
+  // and never once the media room is connected or the call is terminal.
+  const ringbackActive = !incoming && !connected && !terminal && String(call?.status || "") === "ringing";
+  useEffect(() => {
+    if (ringbackActive) {
+      startCallTone("ringback").catch(() => undefined);
+      return () => { stopCallTone().catch(() => undefined); };
+    }
+    return undefined;
+  }, [ringbackActive]);
+
+  // Connect cue on the connected transition; disconnect cue when a connected call ends.
+  useEffect(() => {
+    if (connected && !everConnected.current) {
+      everConnected.current = true;
+      stopCallTone().catch(() => undefined);
+      playCallCue("connect").catch(() => undefined);
+    }
+  }, [connected]);
+
+  useEffect(() => {
+    if (terminal && everConnected.current) {
+      playCallCue("disconnect").catch(() => undefined);
+    }
+  }, [terminal]);
+
+  useEffect(() => () => { stopCallTone().catch(() => undefined); }, []);
+
   useEffect(() => {
     if (!callId) return undefined;
     const timer = setInterval(() => {
@@ -223,6 +254,8 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
     if (!callId) return;
     setActionBusy("accept");
     setError("");
+    callHaptic("answer");
+    await stopCallTone();
     try {
       const next = await acceptCall(callId);
       setCall(next);
@@ -237,6 +270,8 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const decline = useCallback(async () => {
     if (!callId) return navigation.goBack();
     setActionBusy("decline");
+    callHaptic("decline");
+    await stopCallTone();
     try {
       await declineCall(callId);
       await room.disconnect("declined");
@@ -250,6 +285,8 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
 
   const hangup = useCallback(async () => {
     setActionBusy("end");
+    callHaptic("end");
+    await stopCallTone();
     try {
       await reportQuality("native_hangup");
       if (callId) await endCall(callId);

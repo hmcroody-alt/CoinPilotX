@@ -12,6 +12,7 @@ import {
   View
 } from "react-native";
 import { acceptCall, declineCall, getActiveCalls, markRingSeen, PulseCall, PulseCallParticipant } from "../api/calls";
+import { callHaptic, startCallTone, stopCallTone } from "./callSignalMedia";
 import { navigationRef } from "../navigation/notificationRouting";
 import { colors } from "../theme/colors";
 import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
@@ -67,6 +68,8 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
     if (!incomingCall?.call_id) return;
     setBusyAction("accept");
     setError("");
+    callHaptic("answer");
+    await stopCallTone();
     try {
       const call = await acceptCall(incomingCall.call_id);
       const acceptedCaller = callerParticipant(call);
@@ -91,6 +94,8 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
     if (!incomingCall?.call_id) return;
     setBusyAction("decline");
     setError("");
+    callHaptic("decline");
+    await stopCallTone();
     try {
       await declineCall(incomingCall.call_id);
       setIncomingCall(null);
@@ -104,9 +109,15 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
 
   const ignore = useCallback(() => {
     if (!incomingCall?.call_id) return;
+    stopCallTone().catch(() => undefined);
     ignoredCalls.current.set(incomingCall.call_id, Date.now());
     setIncomingCall(null);
   }, [incomingCall]);
+
+  useEffect(() => {
+    if (incomingCall?.call_id) startCallTone("ringtone").catch(() => undefined);
+    return () => { stopCallTone().catch(() => undefined); };
+  }, [incomingCall?.call_id]);
 
   useEffect(() => {
     if (!signedIn) {

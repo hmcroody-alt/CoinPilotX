@@ -201,6 +201,20 @@ export async function markCallConnected(callId: string, payload: Record<string, 
   });
 }
 
+export async function registerVoipPushToken(token: string, payload: Record<string, unknown> = {}) {
+  return pulseApi<{ ok?: boolean; message?: string }>("/api/calls/voip-token", {
+    method: "POST",
+    body: JSON.stringify({ token, platform: "ios", provider: "apns_voip", ...payload, source: "native" })
+  });
+}
+
+export async function unregisterVoipPushToken(token: string) {
+  return pulseApi<{ ok?: boolean; message?: string }>("/api/calls/voip-token/revoke", {
+    method: "POST",
+    body: JSON.stringify({ token, platform: "ios", source: "native" })
+  });
+}
+
 export async function submitCallQuality(callId: string, payload: Record<string, unknown>) {
   return pulseApi<{ ok?: boolean; report_id?: number; message?: string }>(`/api/calls/${encodeURIComponent(callId)}/quality`, {
     method: "POST",
