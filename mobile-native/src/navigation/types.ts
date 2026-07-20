@@ -79,6 +79,7 @@ export type RootStackParamList = {
   Saved: undefined;
   GroupDetail: { groupSlug: string; title?: string };
   LiveDetail: { liveId: number; title?: string };
+  LiveStudio: { title?: string } | undefined;
   Events: { eventId?: number; mode?: "events" | "schedule" | "create"; title?: string } | undefined;
   EventDetail: { eventId: number; title?: string };
   LiveScheduleGateway: { title?: string } | undefined;

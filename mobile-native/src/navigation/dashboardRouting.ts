@@ -61,7 +61,7 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
     return;
   }
   if (path.startsWith("/pulse/live/studio") || path.startsWith("/dashboard/creator/live-studio")) {
-    openDashboardWebFallback(normalized);
+    navigation.navigate("LiveStudio", { title: "Live Studio" });
     return;
   }
   if (
@@ -382,6 +382,7 @@ function isKnownNativeDashboardPath(path: string) {
     "/pulse/reels",
     "/pulse/status",
     "/pulse/live",
+    "/pulse/live/studio",
     "/pulse/music",
     "/pulse/marketplace",
     "/pulse/seller-store",
@@ -426,7 +427,6 @@ function isKnownNativeDashboardPath(path: string) {
 
 function isKnownSafeFallbackPath(path: string) {
   return [
-    "/pulse/live/studio",
     "/pulse/videos",
     "/dashboard/home"
   ].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
