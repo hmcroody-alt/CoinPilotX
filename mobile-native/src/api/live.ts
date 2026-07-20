@@ -3,6 +3,18 @@ import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
 import { PulseAuthor } from "./feed";
 import { pulseApi } from "./pulseApi";
+import {
+  buildLiveStartPayload,
+  normalizeGuestRequests,
+  normalizeLiveKitCredentials,
+  normalizeLiveStartResult,
+  type LiveGuestRequest,
+  type LiveKitCredentials,
+  type LiveStartResult
+} from "../live/liveSession";
+import type { LiveStudioDraft } from "../live/liveStudioReadiness";
+
+export type LiveKitRole = "host" | "guest" | "viewer";
 
 const LIVE_CACHE_KEY = "pulsesoc.native.live.discovery";
 const liveStateCacheKey = (liveId: number) => `pulsesoc.native.live.state.${liveId}`;
@@ -178,9 +190,105 @@ export async function cacheLiveDiscovery(data: LiveNowResponse) {
   });
 }
 
-export async function openLiveWebFallback(liveId?: number, mode: "viewer" | "studio" | "host" = "viewer") {
-  const url = mode === "viewer" && liveId ? liveWebUrl(liveId) : `${PULSE_API_BASE_URL}/pulse/live/studio?context_type=native`;
-  await Linking.openURL(url);
+/**
+ * Start a native broadcast. Maps the Live Studio draft into the backend
+ * `/api/pulse/live/start` contract and returns the normalized go-live result
+ * (live id, LiveKit room, token url, feed post). Throws a real PulseApiError on
+ * failure — callers must surface the honest message, never a fake success.
+ */
+export async function startLive(draft: LiveStudioDraft): Promise<LiveStartResult> {
+  const payload = buildLiveStartPayload(draft);
+  const data = await pulseApi<Record<string, unknown>>("/api/pulse/live/start", {
+    method: "POST",
+    body: JSON.stringify({ ...payload, destinations: ["pulse"] })
+  });
+  const result = normalizeLiveStartResult(data);
+  if (!result) {
+    throw new Error(typeof data.message === "string" ? data.message : "PulseSoc could not start the broadcast.");
+  }
+  return result;
+}
+
+/**
+ * Mint a LiveKit access token for a live room. `role: "host"` requests publish
+ * permission (host only), `"guest"` requests a co-host publish token, `"viewer"`
+ * a subscribe-only token. Returns null when the backend returns no usable
+ * token/url so the caller can surface an honest error instead of a blank preview.
+ */
+export async function getLiveKitToken(liveId: number, role: LiveKitRole = "viewer"): Promise<LiveKitCredentials | null> {
+  const data = await pulseApi<Record<string, unknown>>(`/api/pulse/live/${liveId}/livekit/token`, {
+    method: "POST",
+    body: JSON.stringify({ role })
+  });
+  return normalizeLiveKitCredentials(data);
+}
+
+export type EndLiveResult = {
+  recordingStatus: string;
+  replayUrl: string;
+  replayAvailable: boolean;
+};
+
+/** End a broadcast (host only). Optionally attach a replay url. */
+export async function endLive(liveId: number, opts: { replayUrl?: string } = {}): Promise<EndLiveResult> {
+  const body: Record<string, unknown> = { source: "native" };
+  if (opts.replayUrl) body.replay_url = opts.replayUrl;
+  const data = await pulseApi<Record<string, unknown>>(`/api/pulse/live/${liveId}/end`, {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+  return {
+    recordingStatus: String(data.recording_status || ""),
+    replayUrl: String(data.replay_url || ""),
+    replayAvailable: Boolean(data.replay_available)
+  };
+}
+
+/** List pending guest/co-host join requests for a live (host only). */
+export async function listJoinRequests(liveId: number): Promise<LiveGuestRequest[]> {
+  const data = await pulseApi<{ requests?: unknown }>(`/api/pulse/live/${liveId}/join-requests`);
+  return normalizeGuestRequests(data.requests);
+}
+
+/** Accept or deny a pending guest/co-host join request (host only). */
+export async function respondToJoinRequest(liveId: number, requestId: number, action: "accept" | "deny") {
+  return pulseApi<{ ok?: boolean; status?: string; message?: string }>(
+    `/api/pulse/live/${liveId}/join-requests/${requestId}/${action}`,
+    { method: "POST", body: JSON.stringify({ source: "native" }) }
+  );
+}
+
+/** Ask the host to join a live as a co-host publisher. */
+export async function requestToJoinLive(
+  liveId: number,
+  readiness: { cameraReady?: boolean; micReady?: boolean; networkQuality?: string } = {}
+) {
+  return pulseApi<{ ok?: boolean; request_id?: number; status?: string; message?: string }>(
+    `/api/pulse/live/${liveId}/join-request`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        requested_role: "cohost",
+        camera_ready: Boolean(readiness.cameraReady),
+        mic_ready: Boolean(readiness.micReady),
+        network_quality: String(readiness.networkQuality || "good")
+      })
+    }
+  );
+}
+
+/** Cancel your own pending co-host join request. */
+export async function cancelJoinRequest(liveId: number, requestId: number) {
+  return pulseApi<{ ok?: boolean; status?: string; message?: string }>(
+    `/api/pulse/live/${liveId}/join-requests/${requestId}/cancel`,
+    { method: "POST", body: JSON.stringify({ source: "native" }) }
+  );
+}
+
+/** Open the native web viewer for a live. Studio/host broadcasting is fully native — no web handoff. */
+export async function openLiveWebFallback(liveId?: number) {
+  if (!liveId) return;
+  await Linking.openURL(liveWebUrl(liveId));
 }
 
 export function liveWebUrl(liveId?: number) {

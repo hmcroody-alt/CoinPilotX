@@ -60,7 +60,7 @@ export const masterNavigationSections: MasterNavigationSection[] = [
       { label: "Status", route: "/pulse/status", status: "native", description: "Status viewer and rail." },
       { label: "Add Status", route: "/pulse/status/create", status: "native", description: "Status creator entry." },
       { label: "Live Viewer", route: "/pulse/live", status: "native", description: "Native Live discovery and viewer foundation." },
-      { label: "Live Studio", route: "/pulse/live/studio", status: "native", description: "Native pre-flight (device/camera/network readiness + setup) that hands off to the production web studio to broadcast." },
+      { label: "Live Studio", route: "/pulse/live/studio", status: "native", description: "Native pre-flight (device/camera/network readiness + setup) that starts a native LiveKit broadcast in-app." },
       { label: "Pulse Radio", route: "/pulse/music#pulse-radio", status: "native", description: "Native PulseSoc Music, upload portal, and approved radio pool." }
     ]
   },

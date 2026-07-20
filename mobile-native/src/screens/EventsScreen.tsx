@@ -158,8 +158,8 @@ export function EventsScreen({ route, navigation }: Props) {
             <Pressable style={styles.secondaryButton} onPress={() => openEventsWebFallback("schedule").catch(() => undefined)}>
               <Text style={styles.secondaryButtonText}>Schedule Web</Text>
             </Pressable>
-            <Pressable style={styles.secondaryButton} onPress={() => openEventsWebFallback("studio").catch(() => undefined)}>
-              <Text style={styles.secondaryButtonText}>Studio Web</Text>
+            <Pressable style={styles.secondaryButton} onPress={() => navigation?.navigate("LiveStudio", { title: "Live Studio" })}>
+              <Text style={styles.secondaryButtonText}>Go Live</Text>
             </Pressable>
           </View>
           <View style={styles.notice}>
@@ -215,7 +215,7 @@ export function EventsScreen({ route, navigation }: Props) {
         <View style={styles.footer}>
           <Text style={styles.sectionTitle}>Fallbacks</Text>
           <GatewayRow title="Create Live Event" body="Uses the current Live Studio and backend eligibility rules." onPress={() => openEventsWebFallback("create").catch(() => undefined)} />
-          <GatewayRow title="Live Studio" body="Hosting, co-hosting, and stream setup stay on the existing web flow." onPress={() => openEventsWebFallback("studio").catch(() => undefined)} />
+          <GatewayRow title="Live Studio" body="Set up your device, camera, and network, then broadcast natively in-app." onPress={() => navigation?.navigate("LiveStudio", { title: "Live Studio" })} />
         </View>
       }
     />

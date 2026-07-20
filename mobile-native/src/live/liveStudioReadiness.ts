@@ -203,17 +203,3 @@ export function readinessSummary(level: ReadinessLevel): { label: string; detail
   }
   return { label: "Ready", detail: "Your studio is ready to broadcast." };
 }
-
-export function liveStudioHandoffUrl(apiBase: string, draft: LiveStudioDraft): string {
-  const base = String(apiBase || "").replace(/\/+$/, "");
-  const params = new URLSearchParams({
-    context_type: "native",
-    live_type: draft.liveType,
-    audience: draft.audience,
-    comments: draft.allowComments ? "1" : "0",
-    record: draft.recordReplay ? "1" : "0"
-  });
-  if (draft.title.trim()) params.set("title", draft.title.trim().slice(0, 120));
-  if (draft.description.trim()) params.set("description", draft.description.trim().slice(0, 200));
-  return `${base}/pulse/live/studio?${params.toString()}`;
-}

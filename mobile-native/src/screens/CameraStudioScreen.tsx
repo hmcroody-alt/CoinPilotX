@@ -106,7 +106,6 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   const nativeCameraUnavailable = Platform.OS === "web";
   const composerReturnMode = Boolean(route.params?.returnToComposer);
   const composerMode = route.params?.composerMode || createComposerModeFromCameraTarget(destination.key, destination.mode);
-  const liveStudioUrl = `${PULSE_API_BASE_URL}/pulse/live/studio?context_type=native_camera`;
 
   useEffect(() => {
     getCameraConfig({ target: destination.target, mode: destination.mode })
@@ -253,8 +252,9 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   }
 
   function openLiveStudio() {
-    setMessage("Native Live host publishing is not promoted from Camera yet. Opening the existing production Live Studio.");
-    Linking.openURL(liveStudioUrl).catch(() => setError("Production Live Studio could not open."));
+    setError("");
+    setMessage("Opening the native Live Studio.");
+    navigation.navigate("LiveStudio", { title: "Live Studio" });
   }
 
   async function publish() {

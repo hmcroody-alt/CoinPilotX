@@ -28,6 +28,7 @@ import { IntelligenceCenterScreen } from "../screens/IntelligenceCenterScreen";
 import { EventsScreen } from "../screens/EventsScreen";
 import { LiveScreen } from "../screens/LiveScreen";
 import { LiveStudioScreen } from "../screens/LiveStudioScreen";
+import { LiveHostSessionScreen } from "../screens/LiveHostSessionScreen";
 import { MarketplaceScreen } from "../screens/MarketplaceScreen";
 import { MessengerScreen } from "../screens/MessengerScreen";
 import { MusicScreen } from "../screens/MusicScreen";
@@ -248,6 +249,7 @@ export function AppNavigator() {
       <Stack.Screen name="GroupDetail" component={GroupsScreen} options={({ route }) => ({ title: route.params?.title || "Community" })} />
       <Stack.Screen name="LiveDetail" component={LiveScreen} options={({ route }) => ({ title: route.params?.title || "Live" })} />
       <Stack.Screen name="LiveStudio" component={LiveStudioScreen} options={({ route }) => ({ title: route.params?.title || "Live Studio" })} />
+      <Stack.Screen name="NativeLiveHost" component={LiveHostSessionScreen} options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="Events" component={EventsScreen} options={({ route }) => ({ title: route.params?.title || "Events" })} />
       <Stack.Screen name="EventDetail" component={EventsScreen} options={({ route }) => ({ title: route.params?.title || "Event" })} />
       <Stack.Screen name="LiveScheduleGateway" component={EventsScreen} options={{ title: "Schedule Live" }} />

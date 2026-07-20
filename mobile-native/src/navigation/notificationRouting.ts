@@ -173,9 +173,8 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
   }
 
   if (normalized.startsWith("/pulse/live/studio") && navigationRef.isReady()) {
-    const webTarget = `${PULSE_API_BASE_URL}${normalized}`;
-    await Linking.openURL(webTarget).catch(() => undefined);
-    return { handled: false, target: normalized, reason: "live_studio_web_fallback" };
+    navigationRef.navigate("LiveStudio", { title: "Live Studio" });
+    return { handled: true, target: normalized };
   }
 
   if (normalized.startsWith("/pulse/live") && navigationRef.isReady()) {

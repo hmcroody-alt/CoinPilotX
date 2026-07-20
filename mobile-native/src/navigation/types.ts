@@ -80,6 +80,7 @@ export type RootStackParamList = {
   GroupDetail: { groupSlug: string; title?: string };
   LiveDetail: { liveId: number; title?: string };
   LiveStudio: { title?: string } | undefined;
+  NativeLiveHost: { liveId: number; room?: string; tokenUrl?: string; title?: string };
   Events: { eventId?: number; mode?: "events" | "schedule" | "create"; title?: string } | undefined;
   EventDetail: { eventId: number; title?: string };
   LiveScheduleGateway: { title?: string } | undefined;

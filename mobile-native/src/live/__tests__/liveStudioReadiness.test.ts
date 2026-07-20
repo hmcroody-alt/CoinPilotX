@@ -5,7 +5,6 @@ jest.mock("@react-native-async-storage/async-storage", () =>
 import {
   computeOverallReadiness,
   emptyLiveStudioDraft,
-  liveStudioHandoffUrl,
   mapBatteryToReadiness,
   mapDeviceToReadiness,
   mapLatencyToNetwork,
@@ -127,33 +126,5 @@ describe("normalizeLiveStudioDraft", () => {
     expect(draft.audience).toBe("subscribers");
     expect(draft.allowComments).toBe(false);
     expect(draft.recordReplay).toBe(false);
-  });
-});
-
-describe("liveStudioHandoffUrl", () => {
-  it("carries native context and draft settings into the studio URL", () => {
-    const draft = {
-      ...emptyLiveStudioDraft(),
-      title: "Launch night",
-      description: "Q&A with the team",
-      liveType: "panel" as const,
-      audience: "followers" as const,
-      allowComments: false,
-      recordReplay: true
-    };
-    const url = liveStudioHandoffUrl("https://api.example.com/", draft);
-    expect(url).toContain("https://api.example.com/pulse/live/studio?");
-    expect(url).toContain("context_type=native");
-    expect(url).toContain("live_type=panel");
-    expect(url).toContain("audience=followers");
-    expect(url).toContain("comments=0");
-    expect(url).toContain("record=1");
-    expect(url).toContain("title=Launch+night");
-  });
-
-  it("omits empty title and description", () => {
-    const url = liveStudioHandoffUrl("https://api.example.com", emptyLiveStudioDraft());
-    expect(url).not.toContain("title=");
-    expect(url).not.toContain("description=");
   });
 });

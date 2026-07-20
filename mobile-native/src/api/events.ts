@@ -81,13 +81,11 @@ export function eventItemsFromLive(items: PulseLiveItem[]): PulseScheduledEvent[
     });
 }
 
-export async function openEventsWebFallback(mode: "events" | "schedule" | "create" | "studio" = "events") {
+export async function openEventsWebFallback(mode: "events" | "schedule" | "create" = "events") {
   const path = mode === "schedule"
     ? "/pulse/live/schedule"
     : mode === "create"
       ? "/pulse/live/events/create"
-      : mode === "studio"
-        ? "/pulse/live/studio?context_type=event"
-        : "/pulse/events";
+      : "/pulse/events";
   await Linking.openURL(`${PULSE_API_BASE_URL}${path}`);
 }

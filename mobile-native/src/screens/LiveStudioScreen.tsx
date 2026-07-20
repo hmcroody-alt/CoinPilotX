@@ -1,11 +1,15 @@
 import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions } from "expo-camera";
 import * as Battery from "expo-battery";
 import * as Device from "expo-device";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PULSE_API_BASE_URL } from "../api/config";
+import { startLive } from "../api/live";
 import { LogiNexusBadge, LogiNexusButton, LogiNexusPanel, LogiNexusSignalIndicator } from "../components/LogiNexus";
+import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { logiNexus, LogiNexusTone } from "../theme/logiNexus";
 import {
@@ -14,7 +18,6 @@ import {
   emptyLiveStudioDraft,
   LIVE_TYPE_OPTIONS,
   LiveStudioDraft,
-  liveStudioHandoffUrl,
   loadLiveStudioDraft,
   mapBatteryToReadiness,
   mapDeviceToReadiness,
@@ -48,6 +51,7 @@ async function probeNetworkLatency(): Promise<number | null> {
 
 export function LiveStudioScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [microphonePermission, requestMicrophonePermission] = useMicrophonePermissions();
   const [cameraFacing, setCameraFacing] = useState<CameraType>("front");
@@ -145,11 +149,16 @@ export function LiveStudioScreen() {
     setHandingOff(true);
     try {
       const saved = await saveLiveStudioDraft(draft);
-      const url = liveStudioHandoffUrl(PULSE_API_BASE_URL, saved);
-      await Linking.openURL(url);
-      setMessage("Opening the production Live Studio to start broadcasting.");
-    } catch {
-      setError("Could not open the production Live Studio.");
+      const result = await startLive(saved);
+      setMessage("Broadcast created. Connecting your camera…");
+      navigation.navigate("NativeLiveHost", {
+        liveId: result.liveId,
+        room: result.room,
+        tokenUrl: result.tokenUrl,
+        title: saved.title.trim() || "PulseSoc Live"
+      });
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : "PulseSoc could not start your broadcast.");
     } finally {
       setHandingOff(false);
     }
@@ -340,7 +349,7 @@ export function LiveStudioScreen() {
       {error ? <Text style={styles.error}>{error}</Text> : message ? <Text style={styles.message}>{message}</Text> : null}
 
       <LogiNexusButton
-        label={handingOff ? "Opening Live Studio…" : "Go Live"}
+        label={handingOff ? "Going live…" : "Go Live"}
         onPress={goLive}
         tone="danger"
         disabled={overall === "blocked" || handingOff}
@@ -350,11 +359,11 @@ export function LiveStudioScreen() {
       {handingOff ? <ActivityIndicator style={styles.spinner} color={colors.accent} /> : null}
 
       <LogiNexusPanel tone="intelligence" style={styles.notePanel}>
-        <Text style={styles.noteTitle}>How broadcasting works today</Text>
+        <Text style={styles.noteTitle}>How broadcasting works</Text>
         <Text style={styles.noteBody}>
-          This native pre-flight checks your device and captures your setup. Multi-guest broadcasting, scenes, live
-          moderation, and analytics run in the production Live Studio, which opens when you go live. Those host systems
-          are not yet available as native endpoints.
+          This native pre-flight checks your device and captures your setup. Tapping Go Live starts a real native
+          broadcast on this device — your camera and microphone publish through PulseSoc's LiveKit rooms, and you can
+          accept guest requests from the host screen. No web Studio and no browser handoff.
         </Text>
       </LogiNexusPanel>
     </ScrollView>

@@ -274,7 +274,7 @@ export function LiveScreen({ route, navigation }: Props) {
               <View style={styles.liveDot} />
               <Text style={styles.liveBadgeText}>{String(state?.status || active.status || "live").toUpperCase()}</Text>
             </View>
-            <Pressable style={styles.closeButton} onPress={() => openLiveWebFallback(activeLiveId, "viewer").catch(() => undefined)}>
+            <Pressable style={styles.closeButton} onPress={() => openLiveWebFallback(activeLiveId).catch(() => undefined)}>
               <Text style={styles.closeText}>Web</Text>
             </Pressable>
           </View>
@@ -302,7 +302,7 @@ export function LiveScreen({ route, navigation }: Props) {
                 <Text style={styles.unsupportedText}>
                   This Live is using {state?.playback?.preferred_transport || "a transport"} that is not verified for native playback yet.
                 </Text>
-                <Pressable style={styles.primaryButton} onPress={() => openLiveWebFallback(activeLiveId, "viewer").catch(() => undefined)}>
+                <Pressable style={styles.primaryButton} onPress={() => openLiveWebFallback(activeLiveId).catch(() => undefined)}>
                   <Text style={styles.primaryButtonText}>Open Live Web Viewer</Text>
                 </Pressable>
               </View>
@@ -379,8 +379,8 @@ export function LiveScreen({ route, navigation }: Props) {
             <Pressable style={styles.primaryButton} onPress={() => load("refresh").catch(() => undefined)}>
               <Text style={styles.primaryButtonText}>Refresh</Text>
             </Pressable>
-            <Pressable style={styles.secondaryButton} onPress={() => openLiveWebFallback(undefined, "studio").catch(() => undefined)}>
-              <Text style={styles.secondaryButtonText}>Go Live Web</Text>
+            <Pressable style={styles.secondaryButton} onPress={() => navigation?.navigate("LiveStudio")}>
+              <Text style={styles.secondaryButtonText}>Go Live</Text>
             </Pressable>
           </View>
           {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -391,7 +391,7 @@ export function LiveScreen({ route, navigation }: Props) {
       ListEmptyComponent={
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No one is live right now</Text>
-          <Text style={styles.emptyText}>Native discovery uses the existing PulseSoc Live backend. Start hosting still opens the current web Studio.</Text>
+          <Text style={styles.emptyText}>Native discovery uses the existing PulseSoc Live backend. Tap Go Live to start a native broadcast.</Text>
         </View>
       }
       ListFooterComponent={
