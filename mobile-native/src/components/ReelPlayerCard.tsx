@@ -4,6 +4,8 @@ import { ActivityIndicator, Image, Pressable, Share, StyleSheet, Text, View } fr
 import { PulseReel, reelIsPlayable, reelPosterUrl, reelVideoUrl, reelWebUrl } from "../api/reels";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { refreshCanonicalMediaAccess } from "../media/mediaAccess";
+import { LikeBurst, LikeBurstHandle, MuteGlyphPulse, MuteGlyphPulseHandle } from "../media/MediaGestureFeedback";
+import { useTapMuteLike } from "../media/useTapMuteLike";
 import { colors } from "../theme/colors";
 
 type ReelPlayerCardProps = {
@@ -57,15 +59,14 @@ export function ReelPlayerCard({
 }: ReelPlayerCardProps) {
   const videoRef = useRef<Video>(null);
   const attachedSoundRef = useRef<Audio.Sound | null>(null);
-  const lastTap = useRef(0);
-  const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const likeBurstRef = useRef<LikeBurstHandle>(null);
+  const muteGlyphRef = useRef<MuteGlyphPulseHandle>(null);
   const refreshAttempted = useRef(false);
   const watchStartedAt = useRef(0);
   const [buffering, setBuffering] = useState(false);
   const [progress, setProgress] = useState(0);
   const [failed, setFailed] = useState(false);
   const [ownsPlayback, setOwnsPlayback] = useState(false);
-  const [userPaused, setUserPaused] = useState(false);
   const [refreshingUrl, setRefreshingUrl] = useState(false);
   const [source, setSource] = useState(() => reelVideoUrl(reel));
   const initialSource = useMemo(() => reelVideoUrl(reel), [reel]);
@@ -126,52 +127,35 @@ export function ReelPlayerCard({
       if (!attachedSoundRef.current) {
         const created = await Audio.Sound.createAsync(
           { uri: attachedAudio },
-          { isLooping: true, positionMillis: Math.max(0, Number(reel.audio?.audio_start_time || 0) * 1000), shouldPlay: ownsPlayback && !muted && !userPaused, volume: Math.max(0, Math.min(1, Number(reel.audio?.audio_volume ?? 1))) }
+          { isLooping: true, positionMillis: Math.max(0, Number(reel.audio?.audio_start_time || 0) * 1000), shouldPlay: ownsPlayback && !muted, volume: Math.max(0, Math.min(1, Number(reel.audio?.audio_volume ?? 1))) }
         );
         if (cancelled) return created.sound.unloadAsync();
         attachedSoundRef.current = created.sound;
       } else {
-        await attachedSoundRef.current.setStatusAsync({ shouldPlay: ownsPlayback && !muted && !userPaused, isMuted: muted });
+        await attachedSoundRef.current.setStatusAsync({ shouldPlay: ownsPlayback && !muted, isMuted: muted });
       }
     }
     syncAttachedAudio().catch(() => undefined);
     return () => { cancelled = true; };
-  }, [active, attachedAudio, muted, ownsPlayback, reel.audio?.audio_start_time, reel.audio?.audio_volume, userPaused]);
+  }, [active, attachedAudio, muted, ownsPlayback, reel.audio?.audio_start_time, reel.audio?.audio_volume]);
 
   useEffect(() => () => {
     attachedSoundRef.current?.unloadAsync().catch(() => undefined);
     attachedSoundRef.current = null;
   }, [attachedAudio]);
 
-  useEffect(() => () => {
-    if (singleTapTimer.current) clearTimeout(singleTapTimer.current);
-  }, []);
-
   useEffect(() => {
     if (!active || !ownsPlayback) return;
-    if (userPaused) {
-      videoRef.current?.pauseAsync().catch(() => undefined);
-      attachedSoundRef.current?.pauseAsync().catch(() => undefined);
-    } else {
-      videoRef.current?.playAsync().catch(() => undefined);
-      attachedSoundRef.current?.setStatusAsync({ shouldPlay: !muted, isMuted: muted }).catch(() => undefined);
-    }
-  }, [active, muted, ownsPlayback, userPaused]);
+    videoRef.current?.playAsync().catch(() => undefined);
+    attachedSoundRef.current?.setStatusAsync({ shouldPlay: !muted, isMuted: muted }).catch(() => undefined);
+  }, [active, muted, ownsPlayback]);
 
-  function handleTap() {
-    const now = Date.now();
-    if (now - lastTap.current < 280) {
-      if (singleTapTimer.current) clearTimeout(singleTapTimer.current);
-      singleTapTimer.current = null;
-      onReact(reel, "like");
-    } else {
-      singleTapTimer.current = setTimeout(() => {
-        setUserPaused((current) => !current);
-        singleTapTimer.current = null;
-      }, 280);
-    }
-    lastTap.current = now;
-  }
+  const { onPress: handleTap } = useTapMuteLike({
+    onToggleMuted,
+    onLike: () => onReact(reel, "like"),
+    onSingleTapFeedback: () => muteGlyphRef.current?.trigger(!muted),
+    onLikeFeedback: (x, y) => likeBurstRef.current?.trigger(x, y)
+  });
 
   async function recoverPlaybackUrl() {
     if (!media || refreshingUrl || refreshAttempted.current) {
@@ -226,10 +210,11 @@ export function ReelPlayerCard({
           recoverPlaybackUrl().catch(() => undefined);
         }} onShare={() => Share.share({ message: reelWebUrl(reel.id) }).catch(() => undefined)} />
       )}
-      {contentState === "playable" ? <Pressable accessibilityRole="button" accessibilityLabel={userPaused ? "Play Reel" : "Pause Reel"} style={styles.tapLayer} onPress={handleTap} onLongPress={() => onOpenReactions(reel)} /> : null}
+      {contentState === "playable" ? <Pressable accessibilityRole="button" accessibilityLabel={muted ? "Reel muted. Tap to unmute, double tap to like." : "Reel sound on. Tap to mute, double tap to like."} style={styles.tapLayer} onPress={handleTap} onLongPress={() => onOpenReactions(reel)} /> : null}
       <View style={styles.scrim} pointerEvents="none" />
       {buffering || refreshingUrl ? <View style={styles.buffering}><View style={styles.bufferingCore}><ActivityIndicator color="#36f0cf" /><Text style={styles.bufferingText}>{refreshingUrl ? "Refreshing Reel" : "Tuning signal"}</Text></View></View> : null}
-      {userPaused && contentState === "playable" && !buffering ? <View pointerEvents="none" style={styles.pausedGlyph}><Text style={styles.pausedGlyphText}>▶</Text></View> : null}
+      <LikeBurst ref={likeBurstRef} />
+      <MuteGlyphPulse ref={muteGlyphRef} />
 
       <View style={styles.top}>
         <Pressable style={styles.author} onPress={() => onAuthorPress(reel)}>
@@ -484,8 +469,6 @@ const styles = StyleSheet.create({
   musicLabel: { color: "rgba(244,247,251,0.86)", flexShrink: 1, fontSize: 9, fontWeight: "700" },
   muteButton: { alignItems: "center", backgroundColor: "rgba(2,10,20,0.72)", borderColor: "rgba(98,235,226,0.24)", borderRadius: 15, borderWidth: 1, height: 30, justifyContent: "center", width: 34 },
   muteButtonText: { color: "#68f3de", fontSize: 10, fontWeight: "900" },
-  pausedGlyph: { alignItems: "center", backgroundColor: "rgba(1,8,16,0.66)", borderColor: "rgba(67,239,212,0.48)", borderRadius: 32, borderWidth: 1, height: 64, justifyContent: "center", left: "50%", marginLeft: -32, marginTop: -32, position: "absolute", top: "50%", width: 64, zIndex: 6 },
-  pausedGlyphText: { color: "#51efd5", fontSize: 25, marginLeft: 3 },
   poster: {
     ...StyleSheet.absoluteFillObject,
     opacity: 0.64

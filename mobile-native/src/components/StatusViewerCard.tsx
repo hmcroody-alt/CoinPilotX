@@ -6,6 +6,7 @@ import { PulseStatus, pulseStatusUrl, statusMediaKind, statusMediaUrl, statusMus
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
+import { LikeBurst, LikeBurstHandle } from "../media/MediaGestureFeedback";
 
 type Props = {
   status: PulseStatus;
@@ -43,6 +44,8 @@ export function StatusViewerCard({
   const insets = useSafeAreaInsets();
   const videoRef = useRef<Video>(null);
   const startedAt = useRef(0);
+  const likeBurstRef = useRef<LikeBurstHandle>(null);
+  const lastZoneTap = useRef<{ time: number; side: "left" | "right" }>({ time: 0, side: "left" });
   const [buffering, setBuffering] = useState(false);
   const [failed, setFailed] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -90,6 +93,26 @@ export function StatusViewerCard({
     startedAt.current = Date.now();
   }
 
+  /**
+   * Double tap to like, layered on top of the existing prev/next nav zones.
+   * Nav stays instant (undelayed) so story flick-through never feels
+   * laggy — only a second same-side tap inside the double-tap window is
+   * reinterpreted as a like instead of a repeat navigation.
+   */
+  function handleZoneTap(side: "left" | "right", nav: () => void, event?: { nativeEvent?: { locationX?: number; locationY?: number } }) {
+    const now = Date.now();
+    const isDoubleTap = side === lastZoneTap.current.side && now - lastZoneTap.current.time < 280;
+    lastZoneTap.current = { time: isDoubleTap ? 0 : now, side };
+    if (isDoubleTap) {
+      const x = event?.nativeEvent?.locationX ?? (side === "left" ? 90 : 260);
+      const y = event?.nativeEvent?.locationY ?? 320;
+      likeBurstRef.current?.trigger(x, y);
+      onReact(status, "fire");
+      return;
+    }
+    nav();
+  }
+
   return (
     <View style={styles.card}>
       <View style={[styles.progressTrack, { top: insets.top + 4 }]}>
@@ -134,10 +157,11 @@ export function StatusViewerCard({
         </View>
       )}
 
-      <Pressable accessibilityRole="button" accessibilityLabel="Previous Status" style={styles.leftTap} onPress={onPrevious} onPressIn={() => setPaused(true)} onPressOut={() => setPaused(false)} />
-      <Pressable accessibilityRole="button" accessibilityLabel="Next Status" style={styles.rightTap} onPress={onNext} onPressIn={() => setPaused(true)} onPressOut={() => setPaused(false)} />
+      <Pressable accessibilityRole="button" accessibilityLabel="Previous Status. Double tap to like." style={styles.leftTap} onPress={(event) => handleZoneTap("left", onPrevious, event)} onPressIn={() => setPaused(true)} onPressOut={() => setPaused(false)} />
+      <Pressable accessibilityRole="button" accessibilityLabel="Next Status. Double tap to like." style={styles.rightTap} onPress={(event) => handleZoneTap("right", onNext, event)} onPressIn={() => setPaused(true)} onPressOut={() => setPaused(false)} />
       <Pressable accessibilityRole="button" accessibilityLabel={muted ? "Unmute Status" : "Mute Status"} style={styles.soundTap} onPress={onToggleMuted} />
       <View style={styles.scrim} />
+      <LikeBurst ref={likeBurstRef} />
 
       {buffering ? (
         <View style={styles.buffering}>

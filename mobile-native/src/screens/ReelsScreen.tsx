@@ -82,7 +82,7 @@ export function ReelsScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [muted, setMuted] = useState(true);
+  const [muted, setMuted] = useState(false);
   const [connectionState, setConnectionState] = useState<ConnectionState>("loading");
   const [retryCount, setRetryCount] = useState(0);
   const [cachedAt, setCachedAt] = useState(0);

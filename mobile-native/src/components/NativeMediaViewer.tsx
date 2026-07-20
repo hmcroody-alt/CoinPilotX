@@ -1,11 +1,12 @@
 import { ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Image, Modal, Pressable, Share, StyleSheet, Text, View } from "react-native";
-import { PanGestureHandler, PinchGestureHandler, State } from "react-native-gesture-handler";
+import { PanGestureHandler, PinchGestureHandler, State, TapGestureHandler } from "react-native-gesture-handler";
 import { mediaDisplayUrl, mediaKind, PulseAuthor, PulseMedia } from "../api/feed";
 import { pollNativeMediaProcessing } from "../media/nativeMediaUpload";
 import { colors } from "../theme/colors";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
+import { LikeBurst, LikeBurstHandle } from "../media/MediaGestureFeedback";
 
 export type NativeMediaViewerItem = {
   id?: number;
@@ -30,6 +31,14 @@ type Props = {
   onSave?: (item: NativeMediaViewerItem) => void;
   onShare?: (item: NativeMediaViewerItem) => void;
   onAuthorPress?: (item: NativeMediaViewerItem) => void;
+  /**
+   * Opt-in double-tap-to-like for image media (photo statuses, mixed-media
+   * posts). Only rendered when a handler is passed, so callers that don't
+   * need it (Marketplace, Messenger) are completely unaffected. Scoped to
+   * images: video items keep their native scrubber controls untouched, so a
+   * gesture layer here never eats the taps that open/close native chrome.
+   */
+  onLike?: (item: NativeMediaViewerItem) => void;
 };
 
 export const nativeMediaViewerIntegrationTargets = [
@@ -42,7 +51,7 @@ export const nativeMediaViewerIntegrationTargets = [
   "Creator Studio"
 ];
 
-export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "Media", onClose, onSave, onShare, onAuthorPress }: Props) {
+export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "Media", onClose, onSave, onShare, onAuthorPress, onLike }: Props) {
   const [index, setIndex] = useState(initialIndex);
   const [failed, setFailed] = useState(false);
   const [buffering, setBuffering] = useState(false);
@@ -51,6 +60,10 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
   const videoRef = useRef<Video>(null);
   const scale = useRef(new Animated.Value(1)).current;
   const translateY = useRef(new Animated.Value(0)).current;
+  const likeBurstRef = useRef<LikeBurstHandle>(null);
+  const panRef = useRef<PanGestureHandler>(null);
+  const pinchRef = useRef<PinchGestureHandler>(null);
+  const doubleTapRef = useRef<TapGestureHandler>(null);
   const item = items[index] || items[0];
   const author = item?.author || {};
   const kind = item?.kind || (item?.media ? mediaKind(item.media) : "file");
@@ -104,6 +117,12 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
 
   if (!item) return null;
 
+  function handleImageDoubleTap(event: { nativeEvent: { state: number; x: number; y: number } }) {
+    if (event.nativeEvent.state !== State.ACTIVE || !onLike) return;
+    onLike(item);
+    likeBurstRef.current?.trigger(event.nativeEvent.x, event.nativeEvent.y);
+  }
+
   async function shareItem() {
     if (onShare) {
       onShare(item);
@@ -132,6 +151,7 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
     <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
       <View style={styles.root} testID="native-media-viewer" accessibilityLabel="Native media viewer">
         <PanGestureHandler
+          ref={panRef}
           onGestureEvent={panEvent}
           onHandlerStateChange={(event) => {
             if (event.nativeEvent.state === State.END) {
@@ -145,6 +165,8 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
               <ProcessingState checking={checking} message={processingMessage || item.processingStatus || "PulseSoc is processing this media."} onRetry={checkProcessing} />
             ) : kind === "image" && item.url ? (
               <PinchGestureHandler
+                ref={pinchRef}
+                simultaneousHandlers={onLike ? [doubleTapRef] : undefined}
                 onGestureEvent={pinchEvent}
                 onHandlerStateChange={(event) => {
                   if (event.nativeEvent.state === State.END) {
@@ -152,7 +174,15 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
                   }
                 }}
               >
-                <Animated.Image source={{ uri: item.url }} style={[styles.image, { transform: [{ scale }] }]} resizeMode="contain" onError={() => setFailed(true)} />
+                <Animated.View style={styles.imageWrap}>
+                  {onLike ? (
+                    <TapGestureHandler ref={doubleTapRef} numberOfTaps={2} simultaneousHandlers={[pinchRef]} onHandlerStateChange={handleImageDoubleTap}>
+                      <Animated.Image source={{ uri: item.url }} style={[styles.image, { transform: [{ scale }] }]} resizeMode="contain" onError={() => setFailed(true)} />
+                    </TapGestureHandler>
+                  ) : (
+                    <Animated.Image source={{ uri: item.url }} style={[styles.image, { transform: [{ scale }] }]} resizeMode="contain" onError={() => setFailed(true)} />
+                  )}
+                </Animated.View>
               </PinchGestureHandler>
             ) : kind === "video" && item.url && !failed ? (
               <Video
@@ -180,6 +210,8 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
             )}
           </Animated.View>
         </PanGestureHandler>
+
+        {onLike && kind === "image" ? <LikeBurst ref={likeBurstRef} /> : null}
 
         {buffering ? (
           <View style={styles.buffering}>
@@ -368,6 +400,9 @@ const styles = StyleSheet.create({
   image: {
     height: "100%",
     width: "100%"
+  },
+  imageWrap: {
+    flex: 1
   },
   root: {
     backgroundColor: "#02050b",

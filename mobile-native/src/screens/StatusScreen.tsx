@@ -58,7 +58,7 @@ export function StatusScreen({ route, navigation }: Props) {
   const [offline, setOffline] = useState(false);
   const [error, setError] = useState("");
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
-  const [muted, setMuted] = useState(true);
+  const [muted, setMuted] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [replyStatus, setReplyStatus] = useState<PulseStatus | null>(null);
