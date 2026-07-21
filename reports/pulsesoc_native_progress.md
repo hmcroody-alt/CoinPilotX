@@ -2,6 +2,31 @@
 
 Date: 2026-07-18
 
+## Latest Mission Status: Native Release Readiness - Apple Ownership Deferred
+
+- Date: 2026-07-20.
+- Branch: `release/undx-nexus-core-v4`.
+- Scope: technical production-release preparation only; Apple organization ownership, D-U-N-S, Bundle ID migration, App Store Connect ownership, distribution certificates, provisioning, production APNs credentials, upload, App Review, and release publishing were explicitly deferred and not attempted.
+- Result: **NO-GO** for replacing the production WebView app today.
+- TypeScript passed.
+- Expo Doctor passed 17/17.
+- Full native Jest passed: 35 suites, 345 tests.
+- Global navigation, notification route parity, persistent radio/Home reselect, current Live WebRTC guest/audio repair, calls, music upload/library, UNDX chat conversation, and native mission standard audits passed.
+- Strict native-only WebView replacement audit failed: 102 native routes discovered, 14/26 critical surface groups with static native coverage, 57 hard web-exit/fallback blockers.
+- Native-only blocker groups include Authentication, Search/Discover, Conversation, Live, Camera Studio, Seller/Store, Creator Studio, Courses/Learning, Events, Dashboard, Intelligence/UNDX, and Account/Settings.
+- Simulator launch passed on the booted `PulseSoc iPhone 16 Pro`, but the captured Home state shows bottom navigation overlapping the composer; this is a release visual blocker.
+- Physical iPhone `P3r7or` was updated with the guarded side-by-side `PulseSoc Native Dev` build using `com.pulsesoc.nativeapp.dev`; production bundle `com.pulsesoc.app` was not targeted.
+- Release report: `reports/pulsesoc_native_release_readiness_2026-07-20.md`.
+- Simulator evidence: `reports/screenshots/native-release-readiness-2026-07-20/simulator-current-state.png`.
+
+Next highest-value mission:
+
+- Native Web Redirect Elimination Phase 1 plus current Home bottom-dock/composer overlap repair.
+
+Reason:
+
+- The hard requirement is no web redirected links and a visually stable native Home. Until these are fixed, the native app cannot honestly replace the WebView client.
+
 ## Latest Mission Status: Native WebView Replacement Readiness Audit
 
 - Date: 2026-07-19.
