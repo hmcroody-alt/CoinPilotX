@@ -5624,3 +5624,13 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Xcode iPhone Simulator launch evidence was captured on the booted PulseSoc iPhone 16 Pro. Home visual reselect proof remains code-path/audit verified in this run because the deep-link attempt opened a web surface.
 - Physical devices were detected by Xcode but all were offline, so lock-screen/background/Bluetooth/call-interruption hardware proof remains physical-device-only release QA.
 - Report: `reports/pulsesoc_native_persistent_radio_home_reselect_2026-07-19.md`.
+
+## Native Live WebRTC Guest Playback and Host Audio Repair — 2026-07-20
+
+- Repaired the native Live Detail transport decision so WebRTC/LiveKit lives no longer fall into the generic `Playback fallback required` state when the backend exposes a native `webrtc_room_id`, `supports_webrtc`, or `livekit.room`.
+- Reused the existing `/api/pulse/live/<id>/livekit/token` production route with role `viewer` for native guest playback; HLS via Expo video remains the fallback when a real playback URL exists.
+- Extended the shared `useLiveBroadcastRoom` hook to track local audio publications, remote audio/video counts, and native remote-audio enable/disable for viewer sound control.
+- Added a host safety gate: native Live publishing now fails with `LIVE_LOCAL_AUDIO_NOT_PUBLISHED` if the microphone was enabled but no local audio publication is visible, preventing a silent “successful” broadcast.
+- Added focused Jest coverage and a scoped static audit for the WebRTC viewer and host-audio repair.
+- Physical two-client validation remains required before release confidence can be raised: host on physical iPhone, second client as guest/viewer, audible microphone, mute/unmute, speaker/Bluetooth, and background behavior.
+- Report: `reports/pulsesoc_native_live_webrtc_guest_audio_repair_2026-07-20.md`.

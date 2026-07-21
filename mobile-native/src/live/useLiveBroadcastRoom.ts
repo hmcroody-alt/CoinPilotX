@@ -16,7 +16,9 @@ export type LiveParticipant = {
   isLocal: boolean;
   isHost: boolean;
   videoTrack: any | null;
+  audioTrack: any | null;
   hasVideo: boolean;
+  hasAudio: boolean;
   audioMuted: boolean;
   speaking: boolean;
 };
@@ -33,10 +35,15 @@ type LiveBroadcastState = {
   audioEnabled: boolean;
   videoEnabled: boolean;
   speakerEnabled: boolean;
+  remoteAudioEnabled: boolean;
   localVideoTrack: any | null;
+  localAudioTrackCount: number;
+  remoteAudioTrackCount: number;
+  remoteVideoTrackCount: number;
   participants: LiveParticipant[];
   reconnectCount: number;
   disconnectReason: string;
+  diagnosticCode: string;
 };
 
 const initialState: LiveBroadcastState = {
@@ -51,10 +58,15 @@ const initialState: LiveBroadcastState = {
   audioEnabled: false,
   videoEnabled: false,
   speakerEnabled: true,
+  remoteAudioEnabled: true,
   localVideoTrack: null,
+  localAudioTrackCount: 0,
+  remoteAudioTrackCount: 0,
+  remoteVideoTrackCount: 0,
   participants: [],
   reconnectCount: 0,
-  disconnectReason: ""
+  disconnectReason: "",
+  diagnosticCode: ""
 };
 
 let globalsRegistered = false;
@@ -68,8 +80,24 @@ function firstVideoTrack(participant: any): any | null {
   return publications.find((publication) => publication?.track && publication?.isSubscribed !== false)?.track || null;
 }
 
+function audioPublications(participant: any): any[] {
+  return Array.from(participant?.audioTrackPublications?.values?.() || []) as any[];
+}
+
+function videoPublications(participant: any): any[] {
+  return Array.from(participant?.videoTrackPublications?.values?.() || []) as any[];
+}
+
+function firstAudioTrack(participant: any): any | null {
+  return audioPublications(participant).find((publication) => publication?.track && publication?.isSubscribed !== false)?.track || null;
+}
+
+function publicationHasTrack(publication: any): boolean {
+  return Boolean(publication?.track && publication?.isSubscribed !== false);
+}
+
 function isAudioMuted(participant: any): boolean {
-  const publications = Array.from(participant?.audioTrackPublications?.values?.() || []) as any[];
+  const publications = audioPublications(participant);
   if (!publications.length) return true;
   return publications.every((publication) => publication?.isMuted !== false);
 }
@@ -98,6 +126,10 @@ export function useLiveBroadcastRoom() {
     const speaking = activeSpeakersRef.current;
     const local = room.localParticipant;
     const localVideoTrack = firstVideoTrack(local);
+    const localAudioTrack = firstAudioTrack(local);
+    const localAudioTrackCount = audioPublications(local).filter(publicationHasTrack).length;
+    let remoteAudioTrackCount = 0;
+    let remoteVideoTrackCount = 0;
     const participants: LiveParticipant[] = [];
     if (local) {
       participants.push({
@@ -106,13 +138,18 @@ export function useLiveBroadcastRoom() {
         isLocal: true,
         isHost: readRole(local) === "host" || Boolean(local.permissions?.canPublish),
         videoTrack: localVideoTrack,
+        audioTrack: localAudioTrack,
         hasVideo: Boolean(localVideoTrack),
-        audioMuted: local.isMicrophoneEnabled === false,
+        hasAudio: Boolean(localAudioTrack),
+        audioMuted: local.isMicrophoneEnabled === false || !localAudioTrackCount,
         speaking: speaking.has(String(local.identity || "local"))
       });
     }
     for (const remote of Array.from(room.remoteParticipants?.values?.() || []) as any[]) {
       const videoTrack = firstVideoTrack(remote);
+      const audioTrack = firstAudioTrack(remote);
+      remoteAudioTrackCount += audioPublications(remote).filter(publicationHasTrack).length;
+      remoteVideoTrackCount += videoPublications(remote).filter(publicationHasTrack).length;
       const role = readRole(remote);
       participants.push({
         identity: String(remote.identity || ""),
@@ -120,12 +157,21 @@ export function useLiveBroadcastRoom() {
         isLocal: false,
         isHost: role === "host",
         videoTrack,
+        audioTrack,
         hasVideo: Boolean(videoTrack),
+        hasAudio: Boolean(audioTrack),
         audioMuted: isAudioMuted(remote),
         speaking: speaking.has(String(remote.identity || ""))
       });
     }
-    setState((current) => ({ ...current, localVideoTrack, participants }));
+    setState((current) => ({
+      ...current,
+      localVideoTrack,
+      localAudioTrackCount,
+      remoteAudioTrackCount,
+      remoteVideoTrackCount,
+      participants
+    }));
   }, []);
 
   const disconnect = useCallback(async (reason = "local_disconnect") => {
@@ -143,8 +189,12 @@ export function useLiveBroadcastRoom() {
       reconnecting: false,
       connectionState: "disconnected",
       localVideoTrack: null,
+      localAudioTrackCount: 0,
+      remoteAudioTrackCount: 0,
+      remoteVideoTrackCount: 0,
       participants: [],
-      disconnectReason: reason
+      disconnectReason: reason,
+      diagnosticCode: reason
     }));
   }, []);
 
@@ -258,9 +308,29 @@ export function useLiveBroadcastRoom() {
         if (publish) {
           await room.localParticipant.setMicrophoneEnabled(true);
           await room.localParticipant.setCameraEnabled(true);
+          await new Promise((resolve) => setTimeout(resolve, 150));
         }
         await livekitNative.AudioSession.selectAudioOutput(Platform.OS === "ios" ? "force_speaker" : "speaker").catch(() => undefined);
         refresh();
+        const publishedAudioCount = audioPublications(room.localParticipant).filter(publicationHasTrack).length;
+        if (publish && publishedAudioCount <= 0) {
+          const message = "Microphone connected, but PulseSoc could not verify a published audio track.";
+          await room.disconnect?.().catch(() => undefined);
+          await livekitNative.AudioSession.stopAudioSession?.().catch(() => undefined);
+          roomRef.current = null;
+          setState((current) => ({
+            ...current,
+            connecting: false,
+            connected: false,
+            reconnecting: false,
+            connectionState: "failed",
+            error: message,
+            diagnosticCode: "LIVE_LOCAL_AUDIO_NOT_PUBLISHED",
+            audioEnabled: false,
+            localAudioTrackCount: 0
+          }));
+          return false;
+        }
         setState((current) => ({
           ...current,
           connecting: false,
@@ -271,13 +341,23 @@ export function useLiveBroadcastRoom() {
           audioEnabled: publish,
           videoEnabled: publish,
           speakerEnabled: true,
-          error: ""
+          remoteAudioEnabled: true,
+          localAudioTrackCount: publishedAudioCount,
+          error: "",
+          diagnosticCode: ""
         }));
+        console.info("PulseSoc Live media connected", {
+          role: credentials.role || (publish ? "host" : "viewer"),
+          room: credentials.room || "unknown",
+          canPublish: credentials.canPublish,
+          publish,
+          localAudioTrackCount: publishedAudioCount
+        });
         return true;
       } catch (error) {
         const message = readableError(error, "Native LiveKit broadcast connection failed.");
         await disconnect("connect_failed").catch(() => undefined);
-        setState((current) => ({ ...current, connectionState: "failed", error: message, disconnectReason: "connect_failed" }));
+        setState((current) => ({ ...current, connectionState: "failed", error: message, disconnectReason: "connect_failed", diagnosticCode: "LIVEKIT_CONNECT_FAILED" }));
         return false;
       }
     },
@@ -306,6 +386,22 @@ export function useLiveBroadcastRoom() {
     const output = Platform.OS === "ios" ? (enabled ? "force_speaker" : "default") : enabled ? "speaker" : "earpiece";
     await audioSession.selectAudioOutput(output);
     setState((current) => ({ ...current, speakerEnabled: enabled, error: "" }));
+  }, []);
+
+  const setRemoteAudioEnabled = useCallback(async (enabled: boolean) => {
+    const room = roomRef.current;
+    if (!room) throw new Error("Broadcast media is not connected.");
+    const tasks: Promise<unknown>[] = [];
+    for (const remote of Array.from(room.remoteParticipants?.values?.() || []) as any[]) {
+      for (const publication of audioPublications(remote)) {
+        const track = publication?.track;
+        if (!track) continue;
+        if (typeof track.setEnabled === "function") tasks.push(track.setEnabled(enabled));
+        else if (track.mediaStreamTrack) track.mediaStreamTrack.enabled = enabled;
+      }
+    }
+    await Promise.all(tasks).catch(() => undefined);
+    setState((current) => ({ ...current, remoteAudioEnabled: enabled, error: "" }));
   }, []);
 
   const showAudioRoutePicker = useCallback(async () => {
@@ -339,6 +435,7 @@ export function useLiveBroadcastRoom() {
     setMicrophoneEnabled,
     setCameraEnabled,
     setSpeakerEnabled,
+    setRemoteAudioEnabled,
     showAudioRoutePicker,
     switchCamera
   };

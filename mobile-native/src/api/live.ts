@@ -395,6 +395,16 @@ export function liveSupportsNativePlayback(item: PulseLiveItem | PulseLiveState 
   return Boolean(livePlaybackUrl(item) && (playback.supports_hls || playback.preferred_transport === "hls" || playback.playback_url || playback.hls_url));
 }
 
+export function liveSupportsNativeWebRtc(item: PulseLiveItem | PulseLiveState | null | undefined) {
+  const playback = item?.playback || {};
+  return Boolean(
+    playback.supports_webrtc ||
+      playback.webrtc_room_id ||
+      playback.preferred_transport === "webrtc" ||
+      ("livekit" in (item || {}) && Boolean((item as PulseLiveState).livekit?.room))
+  );
+}
+
 export function isScheduledLive(item: PulseLiveItem) {
   const status = String(item.status || item.publish_state || "").toLowerCase();
   return status === "scheduled" || Boolean(item.scheduled_at);
