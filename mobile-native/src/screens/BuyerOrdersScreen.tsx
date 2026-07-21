@@ -48,6 +48,8 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
+  useScreenPerf("BuyerOrders");
+
   const selected = useMemo(() => detail || orders.find((order) => order.id === orderId) || null, [detail, orderId, orders]);
 
   async function load(nextOrderId = orderId, nextSource = source, refresh = false) {
