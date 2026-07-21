@@ -16,11 +16,19 @@ import { isQaSimulatorAuthEnabled, tryHandleQaSimulatorAuthUrl } from "./src/ses
 import { colors } from "./src/theme/colors";
 import { registerPushDevice, syncPushDeviceRegistration } from "./src/api/push";
 import { registerSessionInvalidationHandler } from "./src/api/pulseApi";
-import { perfNow, recordDuration, setPerfContext, startSpan } from "./src/core/perfTrace";
+import { configurePerfTracing, perfNow, recordDuration, setPerfContext, startSpan } from "./src/core/perfTrace";
+import { PerfOverlay } from "./src/components/PerfOverlay";
 
 // Captured at module evaluation so app.interactive reflects time-to-first-interactive-frame.
 const APP_MODULE_START = perfNow();
 setPerfContext({ osVersion: String(Platform.Version) });
+
+// Perf tracing is on automatically in dev; the QA flag turns it on (plus the
+// on-device overlay) for Release/QA device builds so real baselines can be captured.
+const PERF_OVERLAY_ENABLED =
+  (typeof __DEV__ !== "undefined" && __DEV__) ||
+  ["1", "true", "on"].includes(String(process.env.EXPO_PUBLIC_PULSESOC_PERF_OVERLAY || "").trim().toLowerCase());
+if (PERF_OVERLAY_ENABLED) configurePerfTracing({ enabled: true });
 
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>({ status: "loading", user: null });
@@ -196,6 +204,7 @@ export default function App() {
               {authState.status === "signedIn" ? <AppNavigator /> : <AuthNavigator />}
             </NavigationContainer>
             <IncomingCallLayer signedIn={authState.status === "signedIn"} currentUserId={authState.user?.user_id} />
+            {PERF_OVERLAY_ENABLED ? <PerfOverlay /> : null}
           </AuthContext.Provider>
         </TimeZoneProvider>
       </SafeAreaProvider>
