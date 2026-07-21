@@ -27,6 +27,29 @@ Reason:
 
 - The hard requirement is no web redirected links and a visually stable native Home. Until these are fixed, the native app cannot honestly replace the WebView client.
 
+## Latest Mission Status: Native Blocker Inventory and Replacement Dependency Map
+
+- Date: 2026-07-20.
+- Branch: `release/undx-nexus-core-v4`.
+- Scope: forensic blocker inventory only; no broad native rewrites were attempted.
+- Reproduced the original strict native-only replacement audit count: 57 raw hard web-exit/fallback matches.
+- Reconciled the count into 54 active source call-site findings plus 3 test-only false positives/stale fallback expectations.
+- Created an authoritative register with 67 total blocker records: 57 original audit records plus 10 additional non-web release blockers from release evidence and broader source search.
+- Active native replacement blocker records: 64 after excluding test-only findings.
+- Top root causes: shared dashboard fallback routing, notification/deep-link fallback policy, legal document fallback entries, commerce/payment provider web URLs, Live/provider fallback states, creator/learning shell gaps, account/security route handoffs, and current Home bottom-dock/composer overlap.
+- Reports:
+  - `reports/pulsesoc_native_blocker_inventory_2026-07-20.md`
+  - `reports/pulsesoc_native_blocker_inventory_2026-07-20.json`
+  - `reports/pulsesoc_native_route_action_matrix_2026-07-20.csv`
+
+Recommended first implementation wave:
+
+- Wave 0 release-gate correctness plus Wave 1 P0 fixes: update stale audits to consume the blocker inventory, repair the Home bottom-dock/composer overlap, and review/stabilize dirty authentication/session work before eliminating broad web exits.
+
+Reason:
+
+- The team needs a stable, source-backed blocker baseline before implementation starts; otherwise the same web exits, stale audits, and partial native journeys will continue to move between reports without converging toward release readiness.
+
 ## Latest Mission Status: Native WebView Replacement Readiness Audit
 
 - Date: 2026-07-19.
