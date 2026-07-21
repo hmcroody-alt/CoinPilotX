@@ -109,14 +109,14 @@ The main web service remained online. Production route checks passed:
 
 ```text
 https://coinpilotx.app/pulse
-Title: Global Pulse Feed | CoinPilotXAI
+Title: Global Pulse Feed | CoinPlotXAI
 Error state: none detected
 Feed signal: present
 ```
 
 ```text
 https://coinpilotx.app/pulse/status
-Title: Pulse Status | CoinPilotXAI Pulse
+Title: Pulse Status | CoinPlotXAI Pulse
 Error state: none detected
 Status creation UI: present
 ```

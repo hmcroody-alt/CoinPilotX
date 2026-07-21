@@ -59,7 +59,8 @@ def main():
     require("pulse_notification_deliveries" in NOTIFICATION_SERVICE and "_log_pulse_delivery" in NOTIFICATION_SERVICE, "Pulse delivery logging missing", failures)
     require("BREVO_EMAIL_ENABLED" in EMAIL_SERVICE and "BREVO_EMAIL_ENABLED" in ENV_EXAMPLE, "Brevo email enable flag missing", failures)
     require("BREVO_SMS_API_KEY" in SMS_SERVICE and "BREVO_SMS_ENABLED" in SMS_SERVICE and "BREVO_SMS_SENDER" in SMS_SERVICE, "Brevo SMS configuration missing", failures)
-    require("Pulse verification code" in SMS_SERVICE and "Pulse SMS test" in SMS_SERVICE, "SMS copy is not Pulse-branded", failures)
+    require("SMS_SENDER_NAME" in SMS_SERVICE and "PulseSoc verification code" in SMS_SERVICE and "PulseSoc SMS test" in SMS_SERVICE, "SMS copy is not PulseSoc-branded", failures)
+    require("replyTo" in EMAIL_SERVICE and "BREVO_REPLY_TO" in EMAIL_SERVICE, "Brevo reply-to identity missing", failures)
     require("brevo_sms" in HEALTH_ENGINE, "notification health does not report Brevo SMS", failures)
     require("/admin/notifications" in BOT and "/admin/notification-delivery" in BOT, "admin notification visibility missing", failures)
     if failures:

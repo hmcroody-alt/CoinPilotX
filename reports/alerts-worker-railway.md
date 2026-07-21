@@ -1,4 +1,4 @@
-# CoinPilotXAI Alerts Worker Deployment Note
+# CoinPlotXAI Alerts Worker Deployment Note
 
 The Alerts Command Center now stores real alert rules and can evaluate them through the admin manual check endpoint. For automatic production monitoring, Railway should run a second service:
 

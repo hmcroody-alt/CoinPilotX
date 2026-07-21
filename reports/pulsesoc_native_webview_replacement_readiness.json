@@ -1,0 +1,1061 @@
+{
+  "audit": "pulsesoc_native_webview_replacement",
+  "blocker_counts_by_kind": {
+    "Linking.openURL": 31,
+    "fallback_status": 3,
+    "safe_web_fallback": 4,
+    "webPath": 15,
+    "web_fallback_copy": 25,
+    "webview_copy": 2
+  },
+  "critical_surface_count": 26,
+  "critical_surfaces_blocked_or_incomplete": 13,
+  "critical_surfaces_with_static_native_coverage": 13,
+  "hard_blocker_count": 63,
+  "hard_blockers": [
+    {
+      "file": "mobile-native/src/navigation/dashboardRouting.ts",
+      "kind": "safe_web_fallback",
+      "line": 13,
+      "text": "export type DashboardActionRouteKind = \"native_route\" | \"native_shell_route\" | \"safe_web_fallback\" | \"missing_invalid_route\";"
+    },
+    {
+      "file": "mobile-native/src/navigation/dashboardRouting.ts",
+      "kind": "safe_web_fallback",
+      "line": 228,
+      "text": "kind: \"safe_web_fallback\","
+    },
+    {
+      "file": "mobile-native/src/navigation/dashboardRouting.ts",
+      "kind": "web_fallback_copy",
+      "line": 229,
+      "text": "label: \"Safe fallback\","
+    },
+    {
+      "file": "mobile-native/src/navigation/dashboardRouting.ts",
+      "kind": "safe_web_fallback",
+      "line": 244,
+      "text": "kind: \"safe_web_fallback\","
+    },
+    {
+      "file": "mobile-native/src/navigation/dashboardRouting.ts",
+      "kind": "web_fallback_copy",
+      "line": 245,
+      "text": "label: \"Safe fallback\","
+    },
+    {
+      "file": "mobile-native/src/navigation/dashboardRouting.ts",
+      "kind": "web_fallback_copy",
+      "line": 253,
+      "text": "detail: \"No native, shell, or safe fallback destination is registered for this action.\","
+    },
+    {
+      "file": "mobile-native/src/navigation/dashboardRouting.ts",
+      "kind": "Linking.openURL",
+      "line": 263,
+      "text": "Linking.openURL(dashboardWebUrl(route)).catch(() => undefined);"
+    },
+    {
+      "file": "mobile-native/src/navigation/masterNavigation.ts",
+      "kind": "fallback_status",
+      "line": 63,
+      "text": "{ label: \"Live Studio\", route: \"/pulse/live/studio\", status: \"fallback\", description: \"Hosting remains on safe web fallback.\" },"
+    },
+    {
+      "file": "mobile-native/src/navigation/masterNavigation.ts",
+      "kind": "web_fallback_copy",
+      "line": 63,
+      "text": "{ label: \"Live Studio\", route: \"/pulse/live/studio\", status: \"fallback\", description: \"Hosting remains on safe web fallback.\" },"
+    },
+    {
+      "file": "mobile-native/src/navigation/masterNavigation.ts",
+      "kind": "fallback_status",
+      "line": 110,
+      "text": "{ label: \"Terms\", route: \"/terms\", status: \"fallback\", description: \"Legal document provider boundary.\" },"
+    },
+    {
+      "file": "mobile-native/src/navigation/masterNavigation.ts",
+      "kind": "fallback_status",
+      "line": 111,
+      "text": "{ label: \"Privacy Policy\", route: \"/privacy\", status: \"fallback\", description: \"Legal document provider boundary.\" },"
+    },
+    {
+      "file": "mobile-native/src/navigation/notificationRouting.ts",
+      "kind": "Linking.openURL",
+      "line": 127,
+      "text": "await Linking.openURL(webTarget).catch(() => undefined);"
+    },
+    {
+      "file": "mobile-native/src/navigation/notificationRouting.ts",
+      "kind": "Linking.openURL",
+      "line": 360,
+      "text": "await Linking.openURL(webTarget);"
+    },
+    {
+      "file": "mobile-native/src/screens/EventsScreen.tsx",
+      "kind": "web_fallback_copy",
+      "line": 188,
+      "text": "<Text style={styles.gatewayText}>Native discovery uses existing Live scheduled data. Creation and payments stay on safe fallback.</Text>"
+    },
+    {
+      "file": "mobile-native/src/screens/UserDashboardScreen.tsx",
+      "kind": "safe_web_fallback",
+      "line": 57,
+      "text": "const fallbackCount = useMemo(() => moduleGroups.reduce((total, group) => total + group.modules.filter((module) => classifyDashboardActionRoute(module.route).kind === \"safe_web_fallback\").length, 0), [moduleGroups]);"
+    },
+    {
+      "file": "mobile-native/src/screens/UserDashboardScreen.tsx",
+      "kind": "web_fallback_copy",
+      "line": 105,
+      "text": "<Text style={styles.warningTitle}>Some modules are using safe fallback data</Text>"
+    },
+    {
+      "file": "mobile-native/src/screens/UserDashboardScreen.tsx",
+      "kind": "web_fallback_copy",
+      "line": 136,
+      "text": "<Section title=\"Production Dashboard Map\" subtitle=\"Current PulseSoc dashboard module groups represented natively with safe fallback routing where advanced modules are still web-owned.\">"
+    },
+    {
+      "file": "mobile-native/src/screens/UserDashboardScreen.tsx",
+      "kind": "web_fallback_copy",
+      "line": 154,
+      "text": "<Section title=\"Dashboard Quick Actions\" subtitle=\"Production quick-action routes are wired to native destinations or safe web fallbacks.\">"
+    },
+    {
+      "file": "mobile-native/src/screens/LiveScreen.tsx",
+      "kind": "web_fallback_copy",
+      "line": 296,
+      "text": "setError(\"Native playback could not start. Use web fallback for this Live.\");"
+    },
+    {
+      "file": "mobile-native/src/screens/CoursesLearningScreen.tsx",
+      "kind": "web_fallback_copy",
+      "line": 248,
+      "text": "<Text style={styles.subtitle}>This native gateway preserves the existing PulseSoc teacher, course, payment, and review rules. Advanced operations stay on safe fallback.</Text>"
+    },
+    {
+      "file": "mobile-native/src/screens/CoursesLearningScreen.tsx",
+      "kind": "web_fallback_copy",
+      "line": 275,
+      "text": "<Text style={styles.subtitle}>{offline ? \"Showing saved lessons\" : \"Native lesson discovery powered by the existing PulseSoc education backend, with course payments and teacher tools kept on safe fallback.\"}</Text>"
+    },
+    {
+      "file": "mobile-native/src/screens/SellerListingComposerScreen.tsx",
+      "kind": "Linking.openURL",
+      "line": 118,
+      "text": "<Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl(\"create\")).catch(() => undefined)}>"
+    },
+    {
+      "file": "mobile-native/src/screens/MarketplaceScreen.tsx",
+      "kind": "Linking.openURL",
+      "line": 117,
+      "text": "await Linking.openURL(marketplaceWebUrl(listing.id)).catch(() => undefined);"
+    },
+    {
+      "file": "mobile-native/src/screens/MarketplaceScreen.tsx",
+      "kind": "Linking.openURL",
+      "line": 126,
+      "text": "await Linking.openURL(result.next_url.startsWith(\"http\") ? result.next_url : `${PULSE_API_BASE_URL}${result.next_url}`).catch(() => undefined);"
+    },
+    {
+      "file": "mobile-native/src/screens/MarketplaceScreen.tsx",
+      "kind": "Linking.openURL",
+      "line": 296,
+      "text": "<Pressable style={styles.webButton} onPress={() => Linking.openURL(marketplaceWebUrl(listing.id)).catch(() => undefined)}>"
+    },
+    {
+      "file": "mobile-native/src/screens/ProfileScreen.tsx",
+      "kind": "Linking.openURL",
+      "line": 134,
+      "text": "<Pressable style={styles.webButton} onPress={() => Linking.openURL(profileWebUrl(profileTarget)).catch(() => undefined)}>"
+    },
+    {
+      "file": "mobile-native/src/screens/ProfileScreen.tsx",
+      "kind": "web_fallback_copy",
+      "line": 135,
+      "text": "<Text style={styles.webButtonText}>Open web fallback</Text>"
+    },
+    {
+      "file": "mobile-native/src/screens/ProfileScreen.tsx",
+      "kind": "Linking.openURL",
+      "line": 226,
+      "text": "<Pressable style={styles.webLink} onPress={() => Linking.openURL(profileWebUrl(owner ? undefined : profileTarget || profile)).catch(() => undefined)}>"
+    },
+    {
+      "file": "mobile-native/src/screens/SearchScreen.tsx",
+      "kind": "web_fallback_copy",
+      "line": 189,
+      "text": "? \"This tab will stay on the existing PulseSoc backend and web fallback until a native destination exists.\""
+    },
+    {
+      "file": "mobile-native/src/screens/SearchScreen.tsx",
+      "kind": "web_fallback_copy",
+      "line": 209,
+      "text": "<Text style={styles.eventsGatewayText}>Open scheduled broadcasts from the existing PulseSoc Live backend. Creation and ticketing stay on safe fallback.</Text>"
+    },
+    {
+      "file": "mobile-native/src/screens/SearchScreen.tsx",
+      "kind": "web_fallback_copy",
+      "line": 219,
+      "text": "<Text style={styles.eventsGatewayText}>Open native lesson discovery. Course creation, payments, teacher tools, and unsupported lesson media stay on safe fallback.</Text>"
+    },
+    {
+      "file": "mobile-native/src/screens/CameraStudioScreen.tsx",
+      "kind": "Linking.openURL",
+      "line": 357,
+      "text": "Linking.openURL(url).catch(() => setError(\"Advanced camera fallback could not open.\"));"
+    },
+    {
+      "file": "mobile-native/src/screens/ContentPlannerScreen.tsx",
+      "kind": "web_fallback_copy",
+      "line": 197,
+      "text": "<Text style={styles.muted}>Publish now, recurring schedules, bulk scheduling, smart rescheduling, and version history stay on safe fallback until backend contracts expose native authority.</Text>"
+    },
+    {
+      "file": "mobile-native/src/screens/AlertManagementScreen.tsx",
+      "kind": "web_fallback_copy",
+      "line": 385,
+      "text": "<Text style={styles.sectionTitle}>Safe fallback boundary</Text>"
+    },
+    {
+      "file": "mobile-native/src/screens/SellerStoreScreen.tsx",
+      "kind": "Linking.openURL",
+      "line": 230,
+      "text": "<Pressable style={styles.primaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl(\"dashboard\")).catch(() => undefined)}>"
+    },
+    {
+      "file": "mobile-native/src/screens/SellerStoreScreen.tsx",
+      "kind": "Linking.openURL",
+      "line": 262,
+      "text": "<Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl(\"apply\")).catch(() => undefined)}>"
+    },
+    {
+      "file": "mobile-native/src/screens/SellerStoreScreen.tsx",
+      "kind": "Linking.openURL",
+      "line": 339,
+      "text": "<Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl(\"create\")).catch(() => undefined)}>"
+    },
+    {
+      "file": "mobile-native/src/screens/SellerStoreScreen.tsx",
+      "kind": "web_fallback_copy",
+      "line": 366,
+      "text": "<Text style={styles.meta}>Updates are saved server-side and re-enter marketplace review when content changes. Checkout, payouts, fulfillment, disputes, and provider actions stay on safe fallback flows.</Text>"
+    },
+    {
+      "file": "mobile-native/src/screens/SellerStoreScreen.tsx",
+      "kind": "Linking.openURL",
+      "line": 408,
+      "text": "<Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl(\"payouts\")).catch(() => undefined)}>"
+    },
+    {
+      "file": "mobile-native/src/screens/DashboardModuleDetailScreen.tsx",
+      "kind": "web_fallback_copy",
+      "line": 125,
+      "text": "This shell completes native dashboard navigation parity for the module card. Advanced workflows remain on safe fallback until their native screens are built and verified."
+    },
+    {
+      "file": "mobile-native/src/api/account.ts",
+      "kind": "Linking.openURL",
+      "line": 205,
+      "text": "await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);"
+    },
+    {
+      "file": "mobile-native/src/api/premium.ts",
+      "kind": "Linking.openURL",
+      "line": 101,
+      "text": "await Linking.openURL(`${PULSE_API_BASE_URL}/pulse/premium`).catch(() => undefined);"
+    },
+    {
+      "file": "mobile-native/src/api/premium.ts",
+      "kind": "Linking.openURL",
+      "line": 203,
+      "text": "await Linking.openURL(target);"
+    },
+    {
+      "file": "mobile-native/src/api/accountHealth.ts",
+      "kind": "Linking.openURL",
+      "line": 113,
+      "text": "await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);"
+    },
+    {
+      "file": "mobile-native/src/api/calls.ts",
+      "kind": "Linking.openURL",
+      "line": 242,
+      "text": "await Linking.openURL(target);"
+    },
+    {
+      "file": "mobile-native/src/api/learning.ts",
+      "kind": "Linking.openURL",
+      "line": 106,
+      "text": "await Linking.openURL(target).catch(() => undefined);"
+    },
+    {
+      "file": "mobile-native/src/api/creator.ts",
+      "kind": "Linking.openURL",
+      "line": 128,
+      "text": "await Linking.openURL(target).catch(() => undefined);"
+    },
+    {
+      "file": "mobile-native/src/api/safety.ts",
+      "kind": "web_fallback_copy",
+      "line": 122,
+      "text": "status: \"web fallback required\","
+    },
+    {
+      "file": "mobile-native/src/api/safety.ts",
+      "kind": "web_fallback_copy",
+      "line": 134,
+      "text": "status: \"web fallback required\","
+    },
+    {
+      "file": "mobile-native/src/api/safety.ts",
+      "kind": "Linking.openURL",
+      "line": 142,
+      "text": "await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);"
+    },
+    {
+      "file": "mobile-native/src/api/marketplace.ts",
+      "kind": "Linking.openURL",
+      "line": 227,
+      "text": "if (result.onboarding_url) await Linking.openURL(result.onboarding_url).catch(() => undefined);"
+    },
+    {
+      "file": "mobile-native/src/api/marketplace.ts",
+      "kind": "Linking.openURL",
+      "line": 261,
+      "text": "if (result.checkout_url) await Linking.openURL(result.checkout_url);"
+    },
+    {
+      "file": "mobile-native/src/api/live.ts",
+      "kind": "Linking.openURL",
+      "line": 183,
+      "text": "await Linking.openURL(url);"
+    },
+    {
+      "file": "mobile-native/src/api/dashboardLiveState.ts",
+      "kind": "web_fallback_copy",
+      "line": 54,
+      "text": "signals: panel.signals.length ? panel.signals : [\"Live data source is represented by the server dashboard aggregation.\", \"Advanced module-specific actions remain on safe fallback when unsupported.\"]"
+    },
+    {
+      "file": "mobile-native/src/api/dashboardLiveState.ts",
+      "kind": "web_fallback_copy",
+      "line": 139,
+      "text": "metric(\"Module media surface\", moduleKey.replace(/_/g, \" \"), \"Upload, library, music, and radio-specific provider tools remain safe fallback where unsupported.\", \"fallback\")"
+    },
+    {
+      "file": "mobile-native/src/api/dashboardLiveState.ts",
+      "kind": "web_fallback_copy",
+      "line": 182,
+      "text": "metric(\"AI module\", moduleKey.replace(/_/g, \" \"), \"Advanced AI provider operations remain safe fallback until native contracts are dedicated.\", \"fallback\")"
+    },
+    {
+      "file": "mobile-native/src/api/dashboardLiveState.ts",
+      "kind": "web_fallback_copy",
+      "line": 248,
+      "text": "\"Provider-owned or advanced operations remain on safe fallback.\","
+    },
+    {
+      "file": "mobile-native/src/api/growth.ts",
+      "kind": "Linking.openURL",
+      "line": 75,
+      "text": "await Linking.openURL(target).catch(() => undefined);"
+    },
+    {
+      "file": "mobile-native/src/api/orders.ts",
+      "kind": "Linking.openURL",
+      "line": 120,
+      "text": "await Linking.openURL(absolute);"
+    },
+    {
+      "file": "mobile-native/src/api/intelligence.ts",
+      "kind": "Linking.openURL",
+      "line": 107,
+      "text": "await Linking.openURL(target).catch(() => undefined);"
+    },
+    {
+      "file": "mobile-native/src/api/events.ts",
+      "kind": "Linking.openURL",
+      "line": 92,
+      "text": "await Linking.openURL(`${PULSE_API_BASE_URL}${path}`);"
+    },
+    {
+      "file": "mobile-native/src/api/verification.ts",
+      "kind": "Linking.openURL",
+      "line": 171,
+      "text": "await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);"
+    },
+    {
+      "file": "mobile-native/src/api/support.ts",
+      "kind": "Linking.openURL",
+      "line": 114,
+      "text": "await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);"
+    }
+  ],
+  "native_route_count": 96,
+  "production_route_mentions": {
+    "/dashboard/": 396,
+    "/pulse/camera": 7,
+    "/pulse/creator": 15,
+    "/pulse/dashboard": 1,
+    "/pulse/groups": 2,
+    "/pulse/intelligence": 17,
+    "/pulse/live": 49,
+    "/pulse/marketplace": 2,
+    "/pulse/messages": 43,
+    "/pulse/music": 16,
+    "/pulse/notifications": 31,
+    "/pulse/premium": 25,
+    "/pulse/profile": 12,
+    "/pulse/reels": 15,
+    "/pulse/search": 4,
+    "/pulse/settings": 11,
+    "/pulse/status": 12,
+    "/pulse/videos": 6
+  },
+  "reason": "Native-only replacement requires zero WebView/openURL/safe-web-fallback paths and complete static coverage for critical surfaces.",
+  "release_readiness": "FAIL",
+  "surface_matrix": [
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "LoginScreen.tsx",
+        "SignupScreen.tsx",
+        "AccountRecoveryScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Login",
+        "Signup",
+        "AccountRecovery"
+      ],
+      "native_shell_or_web_exit_findings": [
+        {
+          "file": "mobile-native/src/screens/AccountRecoveryScreen.tsx",
+          "kind": "webview_copy",
+          "line": 46,
+          "text": "<Text style={styles.copy}>Use the same email connected to your current WebView account. Recovery never creates a new user or profile.</Text>"
+        }
+      ],
+      "status": "blocked_by_web_exit",
+      "surface": "Authentication"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "HomeScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Home"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Home feed"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "SearchScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Search"
+      ],
+      "native_shell_or_web_exit_findings": [
+        {
+          "file": "mobile-native/src/screens/SearchScreen.tsx",
+          "kind": "web_fallback_copy",
+          "line": 189,
+          "text": "? \"This tab will stay on the existing PulseSoc backend and web fallback until a native destination exists.\""
+        },
+        {
+          "file": "mobile-native/src/screens/SearchScreen.tsx",
+          "kind": "web_fallback_copy",
+          "line": 209,
+          "text": "<Text style={styles.eventsGatewayText}>Open scheduled broadcasts from the existing PulseSoc Live backend. Creation and ticketing stay on safe fallback.</Text>"
+        },
+        {
+          "file": "mobile-native/src/screens/SearchScreen.tsx",
+          "kind": "web_fallback_copy",
+          "line": 219,
+          "text": "<Text style={styles.eventsGatewayText}>Open native lesson discovery. Course creation, payments, teacher tools, and unsupported lesson media stay on safe fallback.</Text>"
+        }
+      ],
+      "status": "blocked_by_web_exit",
+      "surface": "Search / Discover"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "MessengerScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Messenger"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Messenger inbox"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "ChatScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Chat"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Conversation"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "CallScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Call"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Calls"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "GroupsScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Groups",
+        "GroupDetail"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Groups / Rooms"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "ReelsScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Reels",
+        "ReelDetail"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Reels"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "StatusScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Status",
+        "StatusDetail"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Status"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "LiveScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Live",
+        "LiveDetail"
+      ],
+      "native_shell_or_web_exit_findings": [
+        {
+          "file": "mobile-native/src/screens/LiveScreen.tsx",
+          "kind": "web_fallback_copy",
+          "line": 296,
+          "text": "setError(\"Native playback could not start. Use web fallback for this Live.\");"
+        }
+      ],
+      "status": "blocked_by_web_exit",
+      "surface": "Live"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "CameraStudioScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "CameraStudio"
+      ],
+      "native_shell_or_web_exit_findings": [
+        {
+          "file": "mobile-native/src/screens/CameraStudioScreen.tsx",
+          "kind": "webPath",
+          "line": 46,
+          "text": "webPath: string;"
+        },
+        {
+          "file": "mobile-native/src/screens/CameraStudioScreen.tsx",
+          "kind": "webPath",
+          "line": 50,
+          "text": "{ key: \"feed\", label: \"Feed\", target: \"feed\", mode: \"photo\", helper: \"Post to PulseSoc feed\", webPath: \"/pulse/camera/post\" },"
+        },
+        {
+          "file": "mobile-native/src/screens/CameraStudioScreen.tsx",
+          "kind": "webPath",
+          "line": 51,
+          "text": "{ key: \"status\", label: \"Status\", target: \"status\", mode: \"status\", helper: \"Publish a Status\", webPath: \"/pulse/camera/status\" },"
+        },
+        {
+          "file": "mobile-native/src/screens/CameraStudioScreen.tsx",
+          "kind": "webPath",
+          "line": 52,
+          "text": "{ key: \"reel\", label: \"Reel\", target: \"reel\", mode: \"reel\", helper: \"Create a Reel\", webPath: \"/pulse/camera/reel\" },"
+        },
+        {
+          "file": "mobile-native/src/screens/CameraStudioScreen.tsx",
+          "kind": "webPath",
+          "line": 53,
+          "text": "{ key: \"avatar\", label: \"Avatar\", target: \"avatar\", mode: \"photo\", helper: \"Update profile photo\", webPath: \"/pulse/camera/photo?target=avatar\" },"
+        },
+        {
+          "file": "mobile-native/src/screens/CameraStudioScreen.tsx",
+          "kind": "webPath",
+          "line": 54,
+          "text": "{ key: \"cover\", label: \"Cover\", target: \"cover\", mode: \"photo\", helper: \"Update profile cover\", webPath: \"/pulse/camera/photo?target=cover\" },"
+        },
+        {
+          "file": "mobile-native/src/screens/CameraStudioScreen.tsx",
+          "kind": "webPath",
+          "line": 55,
+          "text": "{ key: \"message\", label: \"Message\", target: \"message\", mode: \"photo\", helper: \"Send to Messenger\", webPath: \"/pulse/camera/photo?target=message\" },"
+        },
+        {
+          "file": "mobile-native/src/screens/CameraStudioScreen.tsx",
+          "kind": "webPath",
+          "line": 56,
+          "text": "{ key: \"creator\", label: \"Creator\", target: \"creator\", mode: \"photo\", helper: \"Creator tools fallback\", webPath: \"/pulse/camera\" },"
+        },
+        {
+          "file": "mobile-native/src/screens/CameraStudioScreen.tsx",
+          "kind": "webPath",
+          "line": 57,
+          "text": "{ key: \"marketplace\", label: \"Market\", target: \"marketplace\", mode: \"photo\", helper: \"Marketplace fallback\", webPath: \"/pulse/camera\" }"
+        },
+        {
+          "file": "mobile-native/src/screens/CameraStudioScreen.tsx",
+          "kind": "webPath",
+          "line": 356,
+          "text": "const url = `${PULSE_API_BASE_URL}${destination.webPath}`;"
+        },
+        {
+          "file": "mobile-native/src/screens/CameraStudioScreen.tsx",
+          "kind": "Linking.openURL",
+          "line": 357,
+          "text": "Linking.openURL(url).catch(() => setError(\"Advanced camera fallback could not open.\"));"
+        }
+      ],
+      "status": "blocked_by_web_exit",
+      "surface": "Camera Studio"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "MusicScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Music"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Music / Pulse Radio"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "ActivityInboxScreen.tsx",
+        "NotificationCenterScreen.tsx",
+        "NotificationPreferencesScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "ActivityInbox",
+        "NotificationCenter",
+        "NotificationPreferences"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Activity / Notifications"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "ProfileScreen.tsx",
+        "ProfileEditScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Profile",
+        "ProfileDetail",
+        "ProfileEdit"
+      ],
+      "native_shell_or_web_exit_findings": [
+        {
+          "file": "mobile-native/src/screens/ProfileScreen.tsx",
+          "kind": "Linking.openURL",
+          "line": 134,
+          "text": "<Pressable style={styles.webButton} onPress={() => Linking.openURL(profileWebUrl(profileTarget)).catch(() => undefined)}>"
+        },
+        {
+          "file": "mobile-native/src/screens/ProfileScreen.tsx",
+          "kind": "web_fallback_copy",
+          "line": 135,
+          "text": "<Text style={styles.webButtonText}>Open web fallback</Text>"
+        },
+        {
+          "file": "mobile-native/src/screens/ProfileScreen.tsx",
+          "kind": "Linking.openURL",
+          "line": 226,
+          "text": "<Pressable style={styles.webLink} onPress={() => Linking.openURL(profileWebUrl(owner ? undefined : profileTarget || profile)).catch(() => undefined)}>"
+        }
+      ],
+      "status": "blocked_by_web_exit",
+      "surface": "Profile"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "MarketplaceScreen.tsx",
+        "SellerListingComposerScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Marketplace",
+        "MarketplaceDetail",
+        "MarketplaceCreateGateway"
+      ],
+      "native_shell_or_web_exit_findings": [
+        {
+          "file": "mobile-native/src/screens/MarketplaceScreen.tsx",
+          "kind": "Linking.openURL",
+          "line": 117,
+          "text": "await Linking.openURL(marketplaceWebUrl(listing.id)).catch(() => undefined);"
+        },
+        {
+          "file": "mobile-native/src/screens/MarketplaceScreen.tsx",
+          "kind": "Linking.openURL",
+          "line": 126,
+          "text": "await Linking.openURL(result.next_url.startsWith(\"http\") ? result.next_url : `${PULSE_API_BASE_URL}${result.next_url}`).catch(() => undefined);"
+        },
+        {
+          "file": "mobile-native/src/screens/MarketplaceScreen.tsx",
+          "kind": "Linking.openURL",
+          "line": 296,
+          "text": "<Pressable style={styles.webButton} onPress={() => Linking.openURL(marketplaceWebUrl(listing.id)).catch(() => undefined)}>"
+        },
+        {
+          "file": "mobile-native/src/screens/SellerListingComposerScreen.tsx",
+          "kind": "Linking.openURL",
+          "line": 118,
+          "text": "<Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl(\"create\")).catch(() => undefined)}>"
+        }
+      ],
+      "status": "blocked_by_web_exit",
+      "surface": "Marketplace"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "SellerStoreScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "SellerStore",
+        "MerchantApply",
+        "MerchantDashboard",
+        "MerchantProfile"
+      ],
+      "native_shell_or_web_exit_findings": [
+        {
+          "file": "mobile-native/src/screens/SellerStoreScreen.tsx",
+          "kind": "Linking.openURL",
+          "line": 230,
+          "text": "<Pressable style={styles.primaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl(\"dashboard\")).catch(() => undefined)}>"
+        },
+        {
+          "file": "mobile-native/src/screens/SellerStoreScreen.tsx",
+          "kind": "Linking.openURL",
+          "line": 262,
+          "text": "<Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl(\"apply\")).catch(() => undefined)}>"
+        },
+        {
+          "file": "mobile-native/src/screens/SellerStoreScreen.tsx",
+          "kind": "Linking.openURL",
+          "line": 339,
+          "text": "<Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl(\"create\")).catch(() => undefined)}>"
+        },
+        {
+          "file": "mobile-native/src/screens/SellerStoreScreen.tsx",
+          "kind": "web_fallback_copy",
+          "line": 366,
+          "text": "<Text style={styles.meta}>Updates are saved server-side and re-enter marketplace review when content changes. Checkout, payouts, fulfillment, disputes, and provider actions stay on safe fallback flows.</Text>"
+        },
+        {
+          "file": "mobile-native/src/screens/SellerStoreScreen.tsx",
+          "kind": "Linking.openURL",
+          "line": 408,
+          "text": "<Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl(\"payouts\")).catch(() => undefined)}>"
+        }
+      ],
+      "status": "blocked_by_web_exit",
+      "surface": "Seller / Store"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "BuyerOrdersScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "BuyerOrders",
+        "BuyerOrderDetail",
+        "BuyerPurchases",
+        "BuyerOrdersDashboard"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Buyer Orders"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "PremiumScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Premium"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Premium / Billing"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "CreatorStudioScreen.tsx",
+        "ContentPlannerScreen.tsx",
+        "GrowthCenterScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "CreatorStudio",
+        "ContentPlanner",
+        "PostScheduler",
+        "DraftStudio",
+        "GrowthCenter"
+      ],
+      "native_shell_or_web_exit_findings": [
+        {
+          "file": "mobile-native/src/screens/ContentPlannerScreen.tsx",
+          "kind": "web_fallback_copy",
+          "line": 197,
+          "text": "<Text style={styles.muted}>Publish now, recurring schedules, bulk scheduling, smart rescheduling, and version history stay on safe fallback until backend contracts expose native authority.</Text>"
+        }
+      ],
+      "status": "blocked_by_web_exit",
+      "surface": "Creator Studio"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "CoursesLearningScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Courses",
+        "CourseDetail",
+        "LearningLessonDetail"
+      ],
+      "native_shell_or_web_exit_findings": [
+        {
+          "file": "mobile-native/src/screens/CoursesLearningScreen.tsx",
+          "kind": "web_fallback_copy",
+          "line": 248,
+          "text": "<Text style={styles.subtitle}>This native gateway preserves the existing PulseSoc teacher, course, payment, and review rules. Advanced operations stay on safe fallback.</Text>"
+        },
+        {
+          "file": "mobile-native/src/screens/CoursesLearningScreen.tsx",
+          "kind": "web_fallback_copy",
+          "line": 275,
+          "text": "<Text style={styles.subtitle}>{offline ? \"Showing saved lessons\" : \"Native lesson discovery powered by the existing PulseSoc education backend, with course payments and teacher tools kept on safe fallback.\"}</Text>"
+        }
+      ],
+      "status": "blocked_by_web_exit",
+      "surface": "Courses / Learning"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "EventsScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Events",
+        "EventDetail",
+        "LiveScheduleGateway",
+        "LiveEventCreateGateway"
+      ],
+      "native_shell_or_web_exit_findings": [
+        {
+          "file": "mobile-native/src/screens/EventsScreen.tsx",
+          "kind": "web_fallback_copy",
+          "line": 188,
+          "text": "<Text style={styles.gatewayText}>Native discovery uses existing Live scheduled data. Creation and payments stay on safe fallback.</Text>"
+        }
+      ],
+      "status": "blocked_by_web_exit",
+      "surface": "Events"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "UserDashboardScreen.tsx",
+        "DashboardModuleDetailScreen.tsx",
+        "DashboardLegacyModuleScreen.tsx",
+        "DashboardActionAliasScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "UserDashboard",
+        "DashboardModuleDetail",
+        "DashboardLegacyModule"
+      ],
+      "native_shell_or_web_exit_findings": [
+        {
+          "file": "mobile-native/src/screens/UserDashboardScreen.tsx",
+          "kind": "safe_web_fallback",
+          "line": 57,
+          "text": "const fallbackCount = useMemo(() => moduleGroups.reduce((total, group) => total + group.modules.filter((module) => classifyDashboardActionRoute(module.route).kind === \"safe_web_fallback\").length, 0), [moduleGroups]);"
+        },
+        {
+          "file": "mobile-native/src/screens/UserDashboardScreen.tsx",
+          "kind": "web_fallback_copy",
+          "line": 105,
+          "text": "<Text style={styles.warningTitle}>Some modules are using safe fallback data</Text>"
+        },
+        {
+          "file": "mobile-native/src/screens/UserDashboardScreen.tsx",
+          "kind": "web_fallback_copy",
+          "line": 136,
+          "text": "<Section title=\"Production Dashboard Map\" subtitle=\"Current PulseSoc dashboard module groups represented natively with safe fallback routing where advanced modules are still web-owned.\">"
+        },
+        {
+          "file": "mobile-native/src/screens/UserDashboardScreen.tsx",
+          "kind": "web_fallback_copy",
+          "line": 154,
+          "text": "<Section title=\"Dashboard Quick Actions\" subtitle=\"Production quick-action routes are wired to native destinations or safe web fallbacks.\">"
+        },
+        {
+          "file": "mobile-native/src/screens/DashboardModuleDetailScreen.tsx",
+          "kind": "web_fallback_copy",
+          "line": 125,
+          "text": "This shell completes native dashboard navigation parity for the module card. Advanced workflows remain on safe fallback until their native screens are built and verified."
+        }
+      ],
+      "status": "blocked_by_web_exit",
+      "surface": "Dashboard"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "PulseAiScreen.tsx",
+        "IntelligenceCenterScreen.tsx",
+        "AlertManagementScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "PulseAI",
+        "IntelligenceCenter",
+        "AlertManagement"
+      ],
+      "native_shell_or_web_exit_findings": [
+        {
+          "file": "mobile-native/src/screens/AlertManagementScreen.tsx",
+          "kind": "web_fallback_copy",
+          "line": 385,
+          "text": "<Text style={styles.sectionTitle}>Safe fallback boundary</Text>"
+        }
+      ],
+      "status": "blocked_by_web_exit",
+      "surface": "Intelligence / UNDX"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "AccountCenterScreen.tsx",
+        "SettingsScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "AccountCenter",
+        "Settings",
+        "AccountSettings",
+        "AccountSecurity",
+        "AccountPrivacy",
+        "AccountDevices"
+      ],
+      "native_shell_or_web_exit_findings": [
+        {
+          "file": "mobile-native/src/screens/SettingsScreen.tsx",
+          "kind": "webview_copy",
+          "line": 26,
+          "text": "Alert.alert(\"Sign out everywhere?\", \"This revokes your PulseSoc sessions on every device, including the WebView app.\", ["
+        }
+      ],
+      "status": "blocked_by_web_exit",
+      "surface": "Account / Settings"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "SafetyHubScreen.tsx",
+        "TrustSafetyScreen.tsx",
+        "AccountHealthAppealsScreen.tsx",
+        "VerificationCenterScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "SafetyHub",
+        "TrustSafety",
+        "AccountHealth",
+        "VerificationCenter"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Trust / Safety"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "SavedScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Saved"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Saved"
+    }
+  ]
+}

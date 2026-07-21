@@ -1,4 +1,4 @@
-"""CoinPilotXAI Pulse Feed background worker."""
+"""CoinPlotXAI Pulse Feed background worker."""
 
 from __future__ import annotations
 

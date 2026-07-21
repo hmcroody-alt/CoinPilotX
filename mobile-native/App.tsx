@@ -1,10 +1,11 @@
 import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Linking, Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import { IncomingCallLayer } from "./src/calls/IncomingCallLayer";
+import { TimeZoneProvider } from "./src/core/TimeZoneContext";
 import { AppNavigator } from "./src/navigation/AppNavigator";
 import { AuthNavigator } from "./src/navigation/AuthNavigator";
 import { linking } from "./src/navigation/linking";
@@ -15,6 +16,11 @@ import { isQaSimulatorAuthEnabled, tryHandleQaSimulatorAuthUrl } from "./src/ses
 import { colors } from "./src/theme/colors";
 import { registerPushDevice, syncPushDeviceRegistration } from "./src/api/push";
 import { registerSessionInvalidationHandler } from "./src/api/pulseApi";
+import { perfNow, recordDuration, setPerfContext, startSpan } from "./src/core/perfTrace";
+
+// Captured at module evaluation so app.interactive reflects time-to-first-interactive-frame.
+const APP_MODULE_START = perfNow();
+setPerfContext({ osVersion: String(Platform.Version) });
 
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>({ status: "loading", user: null });
@@ -29,8 +35,24 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    restoreSession().then(setAuthState).catch(() => setAuthState({ status: "signedOut", user: null }));
+    const span = startSpan("app.restoreSession");
+    restoreSession()
+      .then((state) => {
+        span.end({ status: state.status });
+        setAuthState(state);
+      })
+      .catch(() => {
+        span.end({ status: "error" });
+        setAuthState({ status: "signedOut", user: null });
+      });
   }, []);
+
+  const interactiveRecorded = useRef(false);
+  useEffect(() => {
+    if (authState.status === "loading" || interactiveRecorded.current) return;
+    interactiveRecorded.current = true;
+    recordDuration("app.interactive", perfNow() - APP_MODULE_START, { status: authState.status });
+  }, [authState.status]);
 
   const requestReauthentication = useCallback((redirectTarget = "") => {
     if (redirectTarget) setPendingQaRedirectTarget(redirectTarget.slice(0, 240));
@@ -167,13 +189,15 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-        <AuthContext.Provider value={auth}>
-          <NavigationContainer ref={navigationRef} theme={theme} linking={authState.status === "signedIn" ? linking : undefined}>
-            <StatusBar style="light" />
-            {authState.status === "signedIn" ? <AppNavigator /> : <AuthNavigator />}
-          </NavigationContainer>
-          <IncomingCallLayer signedIn={authState.status === "signedIn"} currentUserId={authState.user?.user_id} />
-        </AuthContext.Provider>
+        <TimeZoneProvider>
+          <AuthContext.Provider value={auth}>
+            <NavigationContainer ref={navigationRef} theme={theme} linking={authState.status === "signedIn" ? linking : undefined}>
+              <StatusBar style="light" />
+              {authState.status === "signedIn" ? <AppNavigator /> : <AuthNavigator />}
+            </NavigationContainer>
+            <IncomingCallLayer signedIn={authState.status === "signedIn"} currentUserId={authState.user?.user_id} />
+          </AuthContext.Provider>
+        </TimeZoneProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

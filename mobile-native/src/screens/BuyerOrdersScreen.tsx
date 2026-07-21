@@ -14,6 +14,7 @@ import {
 } from "../api/orders";
 import { Panel } from "../components/Panel";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { useScreenPerf } from "../core/useScreenPerf";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 

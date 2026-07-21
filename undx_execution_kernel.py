@@ -289,7 +289,7 @@ def pulse_labs_template() -> str:
     return """<section class="card pulse-labs-hero">
   <span class="pill">Pulse Labs</span>
   <h2>Pulse Labs</h2>
-  <p class="muted">A focused lab space for CoinPilotXAI experiments, navigation ideas, safety prototypes, and product intelligence before they graduate into the wider Pulse ecosystem.</p>
+  <p class="muted">A focused lab space for CoinPlotXAI experiments, navigation ideas, safety prototypes, and product intelligence before they graduate into the wider Pulse ecosystem.</p>
   <div class="grid">
     <article class="card">
       <h3>Navigation Experiments</h3>
@@ -307,7 +307,7 @@ def pulse_labs_template() -> str:
 </section>
 <section class="card">
   <h2>Lab Queue</h2>
-  <p class="muted">Pulse Labs starts as a navigation destination and will become the staging area for approved CoinPilotXAI product experiments.</p>
+  <p class="muted">Pulse Labs starts as a navigation destination and will become the staging area for approved CoinPlotXAI product experiments.</p>
   <div class="actions">
     <a class="button primary" href="/pulse/create">Create Pulse</a>
     <a class="button" href="/pulse/premium/undx">Open UNDX</a>

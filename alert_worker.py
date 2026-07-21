@@ -1,4 +1,4 @@
-"""Standalone CoinPilotXAI alert worker.
+"""Standalone CoinPlotXAI alert worker.
 
 Railway worker command:
     python alert_worker.py
@@ -36,7 +36,7 @@ def main():
     except Exception as exc:
         logging.exception("Alert worker database initialization failed: %s", exc)
         alert_engine.record_worker_heartbeat("alert_worker", 0, 0, 1, f"init_db failed: {exc}")
-    logging.info("CoinPilotXAI alert worker started interval=%s limit=%s", interval, limit)
+    logging.info("CoinPlotXAI alert worker started interval=%s limit=%s", interval, limit)
     signal.signal(signal.SIGTERM, _handle_stop)
     signal.signal(signal.SIGINT, _handle_stop)
     while RUNNING:
@@ -62,7 +62,7 @@ def main():
             if not RUNNING:
                 break
             time.sleep(1)
-    logging.info("CoinPilotXAI alert worker stopped.")
+    logging.info("CoinPlotXAI alert worker stopped.")
 
 
 if __name__ == "__main__":

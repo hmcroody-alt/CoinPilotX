@@ -15,6 +15,7 @@ import mimetypes
 import secrets
 import sqlite3
 import logging
+from logging.handlers import RotatingFileHandler
 import sys
 import requests
 import threading
@@ -410,7 +411,7 @@ OWNER_BOOTSTRAP_TEMP = {
 # LOGGING
 # =========================
 logging.basicConfig(
-    filename="coinpilotx.log",
+    handlers=[RotatingFileHandler("coinpilotx.log", maxBytes=50 * 1024 * 1024, backupCount=5)],
     level=logging.INFO,
     format="%(asctime)s - %(message)s"
 )
@@ -710,7 +711,7 @@ def seed_education_knowledge_bank(cur):
     for slug, category, title, difficulty, estimated, summary in lesson_seed:
         content = (
             f"{summary}\n\n"
-            "CoinPilotXAI teaches this topic with a safety-first lens: understand the tool, identify the risk, decide slowly, and never treat educational intelligence as a guaranteed result.\n\n"
+            "CoinPlotXAI teaches this topic with a safety-first lens: understand the tool, identify the risk, decide slowly, and never treat educational intelligence as a guaranteed result.\n\n"
             "Key terms: wallet, private key, approval, volatility, liquidity, signal confidence, source status, and risk control."
         )
         cur.execute(
@@ -729,7 +730,7 @@ def seed_education_knowledge_bank(cur):
                 content,
                 "Fake airdrop link; sudden guaranteed-profit dashboard; fake support account asking for recovery words.",
                 "Seed phrase request; urgency; shortened URL; pay-to-unlock claim; celebrity/exchange impersonation.",
-                "Pause; verify official sources; never share keys; use read-only explorers; ask CoinPilotXAI Tutor for education.",
+                "Pause; verify official sources; never share keys; use read-only explorers; ask CoinPlotXAI Tutor for education.",
                 "Rushing; trusting screenshots; oversizing; clicking without checking the domain; ignoring approvals.",
                 now,
                 now,
@@ -1192,7 +1193,7 @@ ADS_LANDING_PAGES = {
         "proof": ["Moderated live competition", "Call signs protect identity", "Virtual-dollar scoring only"],
     },
     "crypto-scam-scanner": {
-        "title": "Crypto Scam Scanner | CoinPilotXAI Scam Shield",
+        "title": "Crypto Scam Scanner | CoinPlotXAI Scam Shield",
         "headline_a": "Scan a suspicious crypto link before you click.",
         "headline_b": "Spot phishing, wallet drainers, and fake giveaways faster.",
         "description": "Use Scam Shield to check URLs, wallet prompts, token claims, and suspicious messages with plain-English safety explanations.",
@@ -1220,7 +1221,7 @@ ADS_LANDING_PAGES = {
         "proof": ["Virtual dollars only", "XP, ranks, and replays", "Built for mobile play"],
     },
     "crypto-training-simulator": {
-        "title": "Crypto Training Simulator | CoinPilotXAI",
+        "title": "Crypto Training Simulator | CoinPlotXAI",
         "headline_a": "Practice crypto decisions in a training environment.",
         "headline_b": "Build market discipline with simulated missions.",
         "description": "Train against realistic crypto scenarios, scam traps, volatility decisions, and risk psychology lessons before you face real-world pressure.",
@@ -1289,7 +1290,7 @@ def render_ads_landing_page(slug):
         ]
         if path != f"/{slug}"
     )
-    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(page['title'])}</title><meta name="description" content="{clean_html(page['description'])}"><meta name="robots" content="index,follow,max-image-preview:large"><link rel="canonical" href="{canonical}"><meta property="og:title" content="{clean_html(page['title'])}"><meta property="og:description" content="{clean_html(page['description'])}"><meta property="og:url" content="{canonical}"><meta property="og:image" content="https://pulsesoc.com/static/brand/pulsesoc-logo-20260606.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{clean_html(page['title'])}"><meta name="twitter:description" content="{clean_html(page['description'])}"><meta name="twitter:image" content="https://pulsesoc.com/static/brand/pulsesoc-logo-20260606.png"><link rel="icon" type="image/png" href="/static/brand/pulsesoc-logo-20260606.png"><link rel="apple-touch-icon" href="/static/brand/pulsesoc-apple-touch-icon-20260606.png"><link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#020817">{google_tag_script()}<script type="application/ld+json">{json.dumps(schema)}</script><style>:root{{--bg:#050b14;--text:#f6fbff;--muted:#a8b8c8;--line:rgba(255,255,255,.13);--accent:{page['accent']};--green:#36e58f;--cyan:#6edff6}}*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;overflow-x:hidden}}body{{background:radial-gradient(circle at 18% 0,color-mix(in srgb,var(--accent) 24%,transparent),transparent 24rem),radial-gradient(circle at 90% 8%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}.wrap{{width:min(100% - 28px,1120px);margin:auto;padding:22px 0 76px}}nav{{min-height:62px;display:flex;align-items:center;justify-content:space-between;gap:14px}}.brand{{display:inline-flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{min-height:calc(100dvh - 82px);display:grid;grid-template-columns:minmax(0,1.05fr) minmax(300px,.95fr);gap:22px;align-items:center}}.kicker{{color:var(--green);font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}h1{{font-size:clamp(42px,7.5vw,82px);line-height:.95;margin:10px 0 14px;letter-spacing:0}}p{{color:var(--muted);font-size:17px;line-height:1.58}}.actions{{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}}.button{{min-height:50px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;padding:12px 16px;text-decoration:none;font-weight:950;border:1px solid rgba(255,255,255,.16);color:var(--text);background:rgba(255,255,255,.065)}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0;box-shadow:0 0 28px color-mix(in srgb,var(--accent) 35%,transparent)}}.stage{{position:relative;border:1px solid color-mix(in srgb,var(--accent) 42%,rgba(255,255,255,.12));border-radius:18px;overflow:hidden;background:linear-gradient(150deg,rgba(255,255,255,.09),rgba(255,255,255,.035));box-shadow:0 26px 90px rgba(0,0,0,.34);padding:20px;min-height:360px}}.stage:before{{content:"";position:absolute;inset:-35%;background:conic-gradient(from 120deg,transparent,color-mix(in srgb,var(--accent) 25%,transparent),transparent 38%,rgba(54,229,143,.16),transparent 68%);animation:sweep 10s linear infinite;pointer-events:none}}.stage>*{{position:relative}}.logo{{width:84px;height:84px;border-radius:22px;filter:drop-shadow(0 0 26px color-mix(in srgb,var(--accent) 38%,transparent))}}.metric{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}}.metric div,.proof span{{border:1px solid var(--line);border-radius:12px;background:rgba(0,0,0,.18);padding:12px}}.proof{{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}}.trust{{border-top:1px solid var(--line);padding-top:18px;margin-top:18px;font-size:14px;color:var(--muted)}}.related{{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}}.related a{{color:#dff9ff;border:1px solid var(--line);border-radius:999px;padding:8px 11px;text-decoration:none;font-weight:850}}@keyframes sweep{{from{{transform:rotate(0deg)}}to{{transform:rotate(360deg)}}}}@media(max-width:820px){{.wrap{{width:min(100% - 24px,1120px);padding-bottom:44px}}.hero{{grid-template-columns:1fr;min-height:auto;padding-top:24px}}h1{{font-size:clamp(34px,10vw,54px)}}.button{{width:100%}}.stage{{min-height:280px;padding:16px}}.stage:before{{animation-duration:18s}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-logo-20260606.png" alt="PulseSoc logo" width="38" height="38">CoinPilotXAI</a><a class="button" href="/privacy">Privacy</a></nav><section class="hero"><article><div class="kicker">Controlled Google Ads landing page · Variant {variant.upper()}</div><h1>{clean_html(headline)}</h1><p>{clean_html(page['description'])}</p><div class="actions"><a class="button primary" href="{signup_url}" data-analytics="{clean_html(page['analytics'])}">{clean_html(cta)}</a><a class="button" href="{secondary_url}" data-analytics="landing_secondary_click">{clean_html(page['secondary'])}</a></div><div class="proof">{proof}</div><p class="trust">Educational platform only. Alpha Arena uses simulated trading and virtual dollars. Roast Battle virtual dollars are entertainment scoring only and have no real-money value. CoinPilotXAI never asks for seed phrases or private keys.</p><div class="related">{related}</div></article><aside class="stage" aria-label="CoinPilotXAI live preview"><img class="logo" src="/static/brand/pulsesoc-logo-20260606.png" alt="PulseSoc logo" width="84" height="84"><h2>Live command-center preview</h2><p>Fast mobile pages, clear CTAs, moderated social energy, and privacy-first behavioral analytics.</p><div class="metric"><div><strong>CTA</strong><br>{clean_html(cta)}</div><div><strong>Trust</strong><br>Safety-first copy</div><div><strong>Tracking</strong><br>GA4 + Ads ready</div><div><strong>Speed</strong><br>Deferred scripts</div></div></aside></section></main><script src="/static/analytics.js" defer></script></body></html>"""
+    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(page['title'])}</title><meta name="description" content="{clean_html(page['description'])}"><meta name="robots" content="index,follow,max-image-preview:large"><link rel="canonical" href="{canonical}"><meta property="og:title" content="{clean_html(page['title'])}"><meta property="og:description" content="{clean_html(page['description'])}"><meta property="og:url" content="{canonical}"><meta property="og:image" content="https://pulsesoc.com/static/brand/pulsesoc-logo-20260606.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{clean_html(page['title'])}"><meta name="twitter:description" content="{clean_html(page['description'])}"><meta name="twitter:image" content="https://pulsesoc.com/static/brand/pulsesoc-logo-20260606.png"><link rel="icon" type="image/png" href="/static/brand/pulsesoc-logo-20260606.png"><link rel="apple-touch-icon" href="/static/brand/pulsesoc-apple-touch-icon-20260606.png"><link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#020817">{google_tag_script()}<script type="application/ld+json">{json.dumps(schema)}</script><style>:root{{--bg:#050b14;--text:#f6fbff;--muted:#a8b8c8;--line:rgba(255,255,255,.13);--accent:{page['accent']};--green:#36e58f;--cyan:#6edff6}}*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;overflow-x:hidden}}body{{background:radial-gradient(circle at 18% 0,color-mix(in srgb,var(--accent) 24%,transparent),transparent 24rem),radial-gradient(circle at 90% 8%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}.wrap{{width:min(100% - 28px,1120px);margin:auto;padding:22px 0 76px}}nav{{min-height:62px;display:flex;align-items:center;justify-content:space-between;gap:14px}}.brand{{display:inline-flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{min-height:calc(100dvh - 82px);display:grid;grid-template-columns:minmax(0,1.05fr) minmax(300px,.95fr);gap:22px;align-items:center}}.kicker{{color:var(--green);font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}h1{{font-size:clamp(42px,7.5vw,82px);line-height:.95;margin:10px 0 14px;letter-spacing:0}}p{{color:var(--muted);font-size:17px;line-height:1.58}}.actions{{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}}.button{{min-height:50px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;padding:12px 16px;text-decoration:none;font-weight:950;border:1px solid rgba(255,255,255,.16);color:var(--text);background:rgba(255,255,255,.065)}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0;box-shadow:0 0 28px color-mix(in srgb,var(--accent) 35%,transparent)}}.stage{{position:relative;border:1px solid color-mix(in srgb,var(--accent) 42%,rgba(255,255,255,.12));border-radius:18px;overflow:hidden;background:linear-gradient(150deg,rgba(255,255,255,.09),rgba(255,255,255,.035));box-shadow:0 26px 90px rgba(0,0,0,.34);padding:20px;min-height:360px}}.stage:before{{content:"";position:absolute;inset:-35%;background:conic-gradient(from 120deg,transparent,color-mix(in srgb,var(--accent) 25%,transparent),transparent 38%,rgba(54,229,143,.16),transparent 68%);animation:sweep 10s linear infinite;pointer-events:none}}.stage>*{{position:relative}}.logo{{width:84px;height:84px;border-radius:22px;filter:drop-shadow(0 0 26px color-mix(in srgb,var(--accent) 38%,transparent))}}.metric{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}}.metric div,.proof span{{border:1px solid var(--line);border-radius:12px;background:rgba(0,0,0,.18);padding:12px}}.proof{{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}}.trust{{border-top:1px solid var(--line);padding-top:18px;margin-top:18px;font-size:14px;color:var(--muted)}}.related{{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}}.related a{{color:#dff9ff;border:1px solid var(--line);border-radius:999px;padding:8px 11px;text-decoration:none;font-weight:850}}@keyframes sweep{{from{{transform:rotate(0deg)}}to{{transform:rotate(360deg)}}}}@media(max-width:820px){{.wrap{{width:min(100% - 24px,1120px);padding-bottom:44px}}.hero{{grid-template-columns:1fr;min-height:auto;padding-top:24px}}h1{{font-size:clamp(34px,10vw,54px)}}.button{{width:100%}}.stage{{min-height:280px;padding:16px}}.stage:before{{animation-duration:18s}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-logo-20260606.png" alt="PulseSoc logo" width="38" height="38">CoinPlotXAI</a><a class="button" href="/privacy">Privacy</a></nav><section class="hero"><article><div class="kicker">Controlled Google Ads landing page · Variant {variant.upper()}</div><h1>{clean_html(headline)}</h1><p>{clean_html(page['description'])}</p><div class="actions"><a class="button primary" href="{signup_url}" data-analytics="{clean_html(page['analytics'])}">{clean_html(cta)}</a><a class="button" href="{secondary_url}" data-analytics="landing_secondary_click">{clean_html(page['secondary'])}</a></div><div class="proof">{proof}</div><p class="trust">Educational platform only. Alpha Arena uses simulated trading and virtual dollars. Roast Battle virtual dollars are entertainment scoring only and have no real-money value. CoinPlotXAI never asks for seed phrases or private keys.</p><div class="related">{related}</div></article><aside class="stage" aria-label="CoinPlotXAI live preview"><img class="logo" src="/static/brand/pulsesoc-logo-20260606.png" alt="PulseSoc logo" width="84" height="84"><h2>Live command-center preview</h2><p>Fast mobile pages, clear CTAs, moderated social energy, and privacy-first behavioral analytics.</p><div class="metric"><div><strong>CTA</strong><br>{clean_html(cta)}</div><div><strong>Trust</strong><br>Safety-first copy</div><div><strong>Tracking</strong><br>GA4 + Ads ready</div><div><strong>Speed</strong><br>Deferred scripts</div></div></aside></section></main><script src="/static/analytics.js" defer></script></body></html>"""
     response = Response(html)
     response.headers["Cache-Control"] = "public, max-age=300"
     return response
@@ -1355,7 +1356,7 @@ def support_page():
         conn.close()
         send_channel_email(
             "support@pulsesoc.com",
-            f"CoinPilotXAI Support Ticket: {subject}",
+            f"PulseSoc Support Ticket: {subject}",
             f"<p><strong>From:</strong> {clean_html(name)} &lt;{clean_html(email)}&gt;</p><p><strong>Issue:</strong> {clean_html(issue_type)}</p><p>{clean_html(message)}</p>",
             f"From: {name} <{email}>\nIssue: {issue_type}\n\n{message}",
             user_id=account_user_id() or 0,
@@ -1415,7 +1416,7 @@ def api_support_ticket():
     conn.close()
     send_channel_email(
         "support@pulsesoc.com",
-        f"CoinPilotXAI Support Ticket: {subject}",
+        f"PulseSoc Support Ticket: {subject}",
         f"<p><strong>From:</strong> {clean_html(name)} &lt;{clean_html(email)}&gt;</p><p><strong>Issue:</strong> {clean_html(issue_type)}</p><p>{clean_html(message)}</p>",
         f"From: {name} <{email}>\nIssue: {issue_type}\n\n{message}",
         user_id=(user or {}).get("user_id") or 0,
@@ -1431,9 +1432,9 @@ def security_page():
     return simple_public_page(
         "security",
         "Security Reporting | CoinPlotXAI Inc.",
-        "CoinPilotXAI Security Reporting",
-        "Report scams, suspicious wallets, phishing, abusive users, or account compromise to CoinPlotXAI Inc.",
-        "Security reports are routed to security@pulsesoc.com. CoinPilotXAI never asks for seed phrases, private keys, recovery phrases, wallet passwords, or exchange passwords.",
+        "PulseSoc Security Reporting",
+        "Report scams, suspicious wallets, phishing, abusive users, or account compromise to PulseSoc.",
+        "Security reports are routed to support@pulsesoc.com. PulseSoc never asks for seed phrases, private keys, recovery phrases, wallet passwords, or exchange passwords.",
         ["Scam reporting", "Suspicious wallet reporting", "Phishing reporting", "Account compromise help"],
         [{"title": "Report a security concern", "body": "Use the security reporting API or support form to report suspicious behavior. Include public wallet addresses or URLs only, never private credentials."}],
         ["/safety", "/scam-guide", "/wallet-security", "/support"],
@@ -1466,7 +1467,7 @@ def api_security_report():
     conn.close()
     send_channel_email(
         "security@pulsesoc.com",
-        f"CoinPilotXAI Security Report: {report_type}",
+        f"PulseSoc Security Report: {report_type}",
         f"<p><strong>Email:</strong> {clean_html(email)}</p><p><strong>Target:</strong> {clean_html(target)}</p><p>{clean_html(description)}</p>",
         f"Email: {email}\nTarget: {target}\n\n{description}",
         user_id=(user or {}).get("user_id") or 0,
@@ -1482,9 +1483,9 @@ def scam_shield_page():
     return redirect("/scam-shield/scan")
     return simple_public_page(
         "scam-shield",
-        "Scam Shield Crypto Threat Scanner | CoinPilotXAI",
+        "Scam Shield Crypto Threat Scanner | CoinPlotXAI",
         "Scam Shield Crypto Threat Scanner",
-        "Scan suspicious crypto messages, wallet prompts, token claims, URLs, and fake support messages with CoinPilotXAI Scam Shield.",
+        "Scan suspicious crypto messages, wallet prompts, token claims, URLs, and fake support messages with CoinPlotXAI Scam Shield.",
         "Scam Shield uses layered AI and rule-based threat detection to identify many common crypto scam patterns while reminding users to verify independently.",
         ["Seed phrase requests", "Fake airdrops", "Wallet drainer prompts", "Phishing domains", "Fake support", "Guaranteed return scams"],
         [
@@ -1522,7 +1523,7 @@ def scam_shield_scan_page():
         f"<div class='history-item'><strong>{clean_html(row.get('risk_level') or 'Low')} · {int(row.get('risk_score') or 0)}/100</strong><span>{clean_html(row.get('scan_type') or 'auto')} · {clean_html(row.get('created_at') or '')}</span><p>{clean_html(row.get('summary') or '')}</p></div>"
         for row in recent_rows
     ) or "<p class='muted'>Recent scans will appear here after you run the scanner.</p>"
-    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Suspicious Crypto Link Scanner | CoinPilotXAI</title><meta name="description" content="Paste a suspicious crypto link, wallet address, token contract, DM, email, or message. CoinPilotXAI will inspect it for scam risk."><meta name="robots" content="noindex,nofollow"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-logo-20260606.png"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(54,229,143,.18),transparent 28rem),radial-gradient(circle at 90% 6%,rgba(110,223,246,.14),transparent 24rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:24px 0 calc(84px + env(safe-area-inset-bottom))}}a{{color:var(--cyan)}}.hero{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:16px;align-items:start}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}}h1{{font-size:clamp(34px,7vw,64px);line-height:.98;margin:12px 0}}p,.muted{{color:var(--muted)}}textarea,select{{width:100%;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}textarea{{min-height:190px;resize:vertical}}select{{min-height:46px}}.actions{{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}}button,.button{{min-height:48px;border:1px solid var(--line);border-radius:10px;padding:11px 15px;font-weight:950;cursor:pointer;background:rgba(255,255,255,.06);color:var(--text);text-decoration:none;display:inline-flex;align-items:center;justify-content:center}}button.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0}}button:disabled{{opacity:.5;cursor:not-allowed}}.result{{display:none;margin-top:16px}}.result.show{{display:block}}.score{{font-size:clamp(38px,8vw,72px);font-weight:950}}.badge{{display:inline-flex;border-radius:999px;padding:7px 11px;border:1px solid var(--line);font-weight:950}}.badge.Low{{border-color:rgba(54,229,143,.4);color:#c8ffe2}}.badge.Medium{{border-color:rgba(255,209,102,.45);color:#ffe6a6}}.badge.High,.badge.Critical{{border-color:rgba(255,107,122,.5);color:#ffd6dc}}.warning{{border:1px solid rgba(255,107,122,.38);background:rgba(255,107,122,.1);border-radius:12px;padding:12px;color:#ffd6dc}}ul{{padding-left:20px}}li{{margin:7px 0}}.history{{display:grid;gap:10px}}.history-item{{border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.04);padding:12px}}.history-item span{{display:block;color:var(--muted);font-size:13px}}.toast{{min-height:22px;color:#ffe6a6;margin-top:8px}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.actions{{display:grid;grid-template-columns:1fr}}.card{{padding:14px}}textarea{{min-height:170px}}}}</style></head><body><main class="wrap"><a href="/dashboard">Back to Dashboard</a><section class="hero"><article class="card"><div class="muted">Scam Shield</div><h1>Suspicious Crypto Link Scanner</h1><p>Paste a suspicious crypto link, wallet address, token contract, DM, email, or message. CoinPilotXAI will inspect it for scam risk.</p><form id="scanForm"><label>Scan type<select name="scan_type"><option value="auto">Auto Detect</option><option value="crypto_link">Crypto Link</option><option value="wallet_address">Wallet Address</option><option value="token_contract">Token Contract</option><option value="telegram_dm">Telegram/DM Message</option><option value="email_text">Email/Text</option><option value="website_url">Website URL</option></select></label><label>Paste suspicious content<textarea name="input" placeholder="Paste suspicious link, message, wallet address, token contract, or email text..."></textarea></label><div class="actions"><button class="primary" id="scanBtn" type="submit" disabled>Scan Now</button><button type="button" id="clearBtn">Clear</button><button type="button" id="copyBtn" disabled>Copy Report</button></div><div class="toast" id="scanMsg"></div></form><section class="result card" id="resultPanel" aria-live="polite"></section></article><aside class="card"><h2>Recent Scan History</h2><p class="muted">History never exposes your full pasted content here. Only risk summaries and timestamps are shown.</p><div class="history" id="historyPanel">{recent_html}</div></aside></section></main><script>const form=document.getElementById('scanForm'),input=form.elements.input,btn=document.getElementById('scanBtn'),msg=document.getElementById('scanMsg'),panel=document.getElementById('resultPanel'),copyBtn=document.getElementById('copyBtn'),historyPanel=document.getElementById('historyPanel');let lastReport='';function esc(s){{return String(s||'').replace(/[&<>"']/g,m=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[m]))}}function setReady(){{btn.disabled=!input.value.trim();}}input.addEventListener('input',setReady);document.getElementById('clearBtn').addEventListener('click',()=>{{input.value='';panel.classList.remove('show');panel.innerHTML='';msg.textContent='';copyBtn.disabled=true;lastReport='';setReady();}});copyBtn.addEventListener('click',async()=>{{if(!lastReport)return;try{{await navigator.clipboard.writeText(lastReport);msg.textContent='Report copied.'}}catch(e){{msg.textContent='Copy failed. Select the report text manually.'}}}});function render(data){{const flags=(data.red_flags||[]).map(x=>`<li>${{esc(x)}}</li>`).join('')||'<li>No obvious high-risk pattern detected. Still verify independently.</li>';const actions=(data.safe_actions||[]).map(x=>`<li>${{esc(x)}}</li>`).join('');const warn=['High','Critical'].includes(data.risk_level)?'<p class="warning">Do not connect your wallet, sign approvals, share seed phrases, or send funds until independently verified.</p>':'';panel.innerHTML=`<h2>Scan Result</h2><span class="badge ${{esc(data.risk_level)}}">${{esc(data.risk_level)}} Risk</span><div class="score">${{Number(data.risk_score||0)}}/100</div>${{warn}}<p><strong>Summary:</strong> ${{esc(data.summary)}}</p><p><strong>Why it matters:</strong> ${{esc(data.why_it_matters)}}</p><h3>Red flags</h3><ul>${{flags}}</ul><h3>Safe next steps</h3><ul>${{actions}}</ul><p class="muted">Confidence: ${{Number(data.confidence||0).toFixed(2)}} · Source: ${{esc(data.source||data.source_status||'Local rules + AI review')}} · ${{new Date().toLocaleString()}}</p>`;panel.classList.add('show');lastReport=panel.innerText;copyBtn.disabled=false;historyPanel.insertAdjacentHTML('afterbegin',`<div class="history-item"><strong>${{esc(data.risk_level)}} · ${{Number(data.risk_score||0)}}/100</strong><span>${{esc(data.scan_type||'auto')}} · just now</span><p>${{esc(data.summary)}}</p></div>`);}}form.addEventListener('submit',async e=>{{e.preventDefault();const text=input.value.trim();if(!text){{msg.textContent='Paste a suspicious crypto link, wallet address, token contract, or message to scan.';return;}}btn.disabled=true;btn.textContent='Scanning...';msg.textContent='Inspecting scam patterns...';try{{const r=await fetch('/api/scam-shield/scan',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{input:text,scan_type:form.elements.scan_type.value}})}});const data=await r.json();if(!r.ok||!data.ok)throw new Error(data.message||'Scan failed.');render(data);msg.textContent='Scan complete.';if(window.coinPilotXTrack)window.coinPilotXTrack('scam_shield_scan',{{risk_level:data.risk_level,scan_type:data.scan_type}})}}catch(err){{msg.textContent=err.message||'Could not scan right now.'}}finally{{btn.textContent='Scan Now';setReady();}}}});setReady();</script></body></html>"""
+    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Suspicious Crypto Link Scanner | CoinPlotXAI</title><meta name="description" content="Paste a suspicious crypto link, wallet address, token contract, DM, email, or message. CoinPlotXAI will inspect it for scam risk."><meta name="robots" content="noindex,nofollow"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-logo-20260606.png"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(54,229,143,.18),transparent 28rem),radial-gradient(circle at 90% 6%,rgba(110,223,246,.14),transparent 24rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:24px 0 calc(84px + env(safe-area-inset-bottom))}}a{{color:var(--cyan)}}.hero{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:16px;align-items:start}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}}h1{{font-size:clamp(34px,7vw,64px);line-height:.98;margin:12px 0}}p,.muted{{color:var(--muted)}}textarea,select{{width:100%;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}textarea{{min-height:190px;resize:vertical}}select{{min-height:46px}}.actions{{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}}button,.button{{min-height:48px;border:1px solid var(--line);border-radius:10px;padding:11px 15px;font-weight:950;cursor:pointer;background:rgba(255,255,255,.06);color:var(--text);text-decoration:none;display:inline-flex;align-items:center;justify-content:center}}button.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0}}button:disabled{{opacity:.5;cursor:not-allowed}}.result{{display:none;margin-top:16px}}.result.show{{display:block}}.score{{font-size:clamp(38px,8vw,72px);font-weight:950}}.badge{{display:inline-flex;border-radius:999px;padding:7px 11px;border:1px solid var(--line);font-weight:950}}.badge.Low{{border-color:rgba(54,229,143,.4);color:#c8ffe2}}.badge.Medium{{border-color:rgba(255,209,102,.45);color:#ffe6a6}}.badge.High,.badge.Critical{{border-color:rgba(255,107,122,.5);color:#ffd6dc}}.warning{{border:1px solid rgba(255,107,122,.38);background:rgba(255,107,122,.1);border-radius:12px;padding:12px;color:#ffd6dc}}ul{{padding-left:20px}}li{{margin:7px 0}}.history{{display:grid;gap:10px}}.history-item{{border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.04);padding:12px}}.history-item span{{display:block;color:var(--muted);font-size:13px}}.toast{{min-height:22px;color:#ffe6a6;margin-top:8px}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.actions{{display:grid;grid-template-columns:1fr}}.card{{padding:14px}}textarea{{min-height:170px}}}}</style></head><body><main class="wrap"><a href="/dashboard">Back to Dashboard</a><section class="hero"><article class="card"><div class="muted">Scam Shield</div><h1>Suspicious Crypto Link Scanner</h1><p>Paste a suspicious crypto link, wallet address, token contract, DM, email, or message. CoinPlotXAI will inspect it for scam risk.</p><form id="scanForm"><label>Scan type<select name="scan_type"><option value="auto">Auto Detect</option><option value="crypto_link">Crypto Link</option><option value="wallet_address">Wallet Address</option><option value="token_contract">Token Contract</option><option value="telegram_dm">Telegram/DM Message</option><option value="email_text">Email/Text</option><option value="website_url">Website URL</option></select></label><label>Paste suspicious content<textarea name="input" placeholder="Paste suspicious link, message, wallet address, token contract, or email text..."></textarea></label><div class="actions"><button class="primary" id="scanBtn" type="submit" disabled>Scan Now</button><button type="button" id="clearBtn">Clear</button><button type="button" id="copyBtn" disabled>Copy Report</button></div><div class="toast" id="scanMsg"></div></form><section class="result card" id="resultPanel" aria-live="polite"></section></article><aside class="card"><h2>Recent Scan History</h2><p class="muted">History never exposes your full pasted content here. Only risk summaries and timestamps are shown.</p><div class="history" id="historyPanel">{recent_html}</div></aside></section></main><script>const form=document.getElementById('scanForm'),input=form.elements.input,btn=document.getElementById('scanBtn'),msg=document.getElementById('scanMsg'),panel=document.getElementById('resultPanel'),copyBtn=document.getElementById('copyBtn'),historyPanel=document.getElementById('historyPanel');let lastReport='';function esc(s){{return String(s||'').replace(/[&<>"']/g,m=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[m]))}}function setReady(){{btn.disabled=!input.value.trim();}}input.addEventListener('input',setReady);document.getElementById('clearBtn').addEventListener('click',()=>{{input.value='';panel.classList.remove('show');panel.innerHTML='';msg.textContent='';copyBtn.disabled=true;lastReport='';setReady();}});copyBtn.addEventListener('click',async()=>{{if(!lastReport)return;try{{await navigator.clipboard.writeText(lastReport);msg.textContent='Report copied.'}}catch(e){{msg.textContent='Copy failed. Select the report text manually.'}}}});function render(data){{const flags=(data.red_flags||[]).map(x=>`<li>${{esc(x)}}</li>`).join('')||'<li>No obvious high-risk pattern detected. Still verify independently.</li>';const actions=(data.safe_actions||[]).map(x=>`<li>${{esc(x)}}</li>`).join('');const warn=['High','Critical'].includes(data.risk_level)?'<p class="warning">Do not connect your wallet, sign approvals, share seed phrases, or send funds until independently verified.</p>':'';panel.innerHTML=`<h2>Scan Result</h2><span class="badge ${{esc(data.risk_level)}}">${{esc(data.risk_level)}} Risk</span><div class="score">${{Number(data.risk_score||0)}}/100</div>${{warn}}<p><strong>Summary:</strong> ${{esc(data.summary)}}</p><p><strong>Why it matters:</strong> ${{esc(data.why_it_matters)}}</p><h3>Red flags</h3><ul>${{flags}}</ul><h3>Safe next steps</h3><ul>${{actions}}</ul><p class="muted">Confidence: ${{Number(data.confidence||0).toFixed(2)}} · Source: ${{esc(data.source||data.source_status||'Local rules + AI review')}} · ${{new Date().toLocaleString()}}</p>`;panel.classList.add('show');lastReport=panel.innerText;copyBtn.disabled=false;historyPanel.insertAdjacentHTML('afterbegin',`<div class="history-item"><strong>${{esc(data.risk_level)}} · ${{Number(data.risk_score||0)}}/100</strong><span>${{esc(data.scan_type||'auto')}} · just now</span><p>${{esc(data.summary)}}</p></div>`);}}form.addEventListener('submit',async e=>{{e.preventDefault();const text=input.value.trim();if(!text){{msg.textContent='Paste a suspicious crypto link, wallet address, token contract, or message to scan.';return;}}btn.disabled=true;btn.textContent='Scanning...';msg.textContent='Inspecting scam patterns...';try{{const r=await fetch('/api/scam-shield/scan',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{input:text,scan_type:form.elements.scan_type.value}})}});const data=await r.json();if(!r.ok||!data.ok)throw new Error(data.message||'Scan failed.');render(data);msg.textContent='Scan complete.';if(window.coinPilotXTrack)window.coinPilotXTrack('scam_shield_scan',{{risk_level:data.risk_level,scan_type:data.scan_type}})}}catch(err){{msg.textContent=err.message||'Could not scan right now.'}}finally{{btn.textContent='Scan Now';setReady();}}}});setReady();</script></body></html>"""
     response = Response(html)
     response.headers["Cache-Control"] = "private, no-store, max-age=0" if user else "public, max-age=120"
     return response
@@ -1544,17 +1545,17 @@ def legal_money_page(title, body):
 
 @webhook_app.route("/legal/payments", methods=["GET"])
 def legal_payments_page():
-    return legal_money_page("Payments", "<p>CoinPilotXAI is not a bank. Payments, card handling, seller onboarding, and payouts are processed by third-party payment providers such as Stripe. CoinPilotXAI never stores card numbers or raw bank account details.</p><p>Seller balances are tracked through an internal ledger for auditability, while actual funds movement depends on provider confirmation, risk review, refunds, disputes, and platform rules.</p>")
+    return legal_money_page("Payments", "<p>CoinPlotXAI is not a bank. Payments, card handling, seller onboarding, and payouts are processed by third-party payment providers such as Stripe. CoinPlotXAI never stores card numbers or raw bank account details.</p><p>Seller balances are tracked through an internal ledger for auditability, while actual funds movement depends on provider confirmation, risk review, refunds, disputes, and platform rules.</p>")
 
 
 @webhook_app.route("/legal/refunds", methods=["GET"])
 def legal_refunds_page():
-    return legal_money_page("Refunds", "<p>Digital products, courses, live classes, marketplace items, and Premium access may have different refund windows and eligibility rules. Refunds can be limited by usage, delivery, abuse prevention, provider rules, and applicable law.</p><p>Refunds and disputes are traceable in CoinPilotXAI records and provider records. Educational and creator content never guarantees profits or outcomes.</p>")
+    return legal_money_page("Refunds", "<p>Digital products, courses, live classes, marketplace items, and Premium access may have different refund windows and eligibility rules. Refunds can be limited by usage, delivery, abuse prevention, provider rules, and applicable law.</p><p>Refunds and disputes are traceable in CoinPlotXAI records and provider records. Educational and creator content never guarantees profits or outcomes.</p>")
 
 
 @webhook_app.route("/legal/seller-terms", methods=["GET"])
 def legal_seller_terms_page():
-    return legal_money_page("Seller Terms", "<p>Sellers are responsible for taxes, truthful listings, safe fulfillment, accurate education claims, and compliance with marketplace and teacher rules. Scam promotion, guaranteed-profit claims, misleading financial advice, and unsafe content are prohibited.</p><p>Payouts require approval, provider onboarding, and ongoing trust review. CoinPilotXAI may hold, reverse, suspend, or review funds when fraud, disputes, safety risks, or policy violations are detected.</p>")
+    return legal_money_page("Seller Terms", "<p>Sellers are responsible for taxes, truthful listings, safe fulfillment, accurate education claims, and compliance with marketplace and teacher rules. Scam promotion, guaranteed-profit claims, misleading financial advice, and unsafe content are prohibited.</p><p>Payouts require approval, provider onboarding, and ongoing trust review. CoinPlotXAI may hold, reverse, suspend, or review funds when fraud, disputes, safety risks, or policy violations are detected.</p>")
 
 
 @webhook_app.route("/about", methods=["GET"])
@@ -1565,19 +1566,19 @@ def about_page():
         "name": "CoinPlotXAI Inc.",
         "url": "https://pulsesoc.com/about",
         "sameAs": ["https://pulsesoc.com/arena-preview"],
-        "description": "CoinPilotXAI is an educational AI crypto intelligence, scam protection, market awareness, and simulation training platform.",
+        "description": "CoinPlotXAI is an educational AI crypto intelligence, scam protection, market awareness, and simulation training platform.",
     }
     sections = [
-        ("Mission", "CoinPilotXAI helps people train discipline, understand risk, practice decision-making, improve market awareness, and protect themselves from crypto scams in a simulation-first environment."),
+        ("Mission", "CoinPlotXAI helps people train discipline, understand risk, practice decision-making, improve market awareness, and protect themselves from crypto scams in a simulation-first environment."),
         ("AI + Human Psychology", "The platform combines live/cached market context, AI tactical summaries, psychology checks, and risk education so users can slow down, recognize pressure, and make clearer educational decisions."),
-        ("Arena Training Ecosystem", "CoinPilotXAI Arena is a Pro training world with virtual portfolio battles, live rooms, AI commentary, Scam Hunter drills, boss challenges, leaderboards, and cinematic match rooms. It uses virtual dollars only and rewards discipline, scam defense, and learning."),
-        ("Scam Protection", "Scam Shield teaches users to recognize phishing, fake support, wallet drainers, impersonation, malicious approvals, urgency manipulation, and suspicious links. CoinPilotXAI never asks for seed phrases or private keys."),
+        ("Arena Training Ecosystem", "CoinPlotXAI Arena is a Pro training world with virtual portfolio battles, live rooms, AI commentary, Scam Hunter drills, boss challenges, leaderboards, and cinematic match rooms. It uses virtual dollars only and rewards discipline, scam defense, and learning."),
+        ("Scam Protection", "Scam Shield teaches users to recognize phishing, fake support, wallet drainers, impersonation, malicious approvals, urgency manipulation, and suspicious links. CoinPlotXAI never asks for seed phrases or private keys."),
         ("Privacy + Security", "Arena uses public player identities instead of exposing email addresses, payment details, real names, or internal account IDs. Security logging, admin audit trails, rate-aware APIs, and browser protections help keep the platform accountable."),
-        ("Continuous Innovation", "CoinPilotXAI is evolving into a realtime intelligence operating system: live market context, social Arena presence, push-ready alerts, education paths, and AI coaching continue to improve without promising profits."),
+        ("Continuous Innovation", "CoinPlotXAI is evolving into a realtime intelligence operating system: live market context, social Arena presence, push-ready alerts, education paths, and AI coaching continue to improve without promising profits."),
         ("Educational Disclaimer", "CoinPlotXAI Inc. provides educational AI intelligence and simulations only. It is not financial, investment, legal, betting, or tax advice. No real-money trading execution occurs inside Arena."),
     ]
     cards = "".join(f"<article class='card'><h2>{clean_html(title)}</h2><p>{clean_html(text)}</p></article>" for title, text in sections)
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>About CoinPilotXAI | AI Crypto Intelligence, Scam Protection and Arena Training</title><meta name="description" content="CoinPilotXAI is an educational AI crypto intelligence platform with Scam Shield, live market context, Pro Arena simulations, virtual portfolio battles, psychology training, and privacy-safe social learning."><link rel="canonical" href="https://pulsesoc.com/about"><meta property="og:title" content="About CoinPilotXAI"><meta property="og:description" content="AI crypto intelligence, Scam Shield, risk psychology education, and Pro Arena virtual-dollar training."><meta property="og:url" content="https://pulsesoc.com/about"><meta property="og:image" content="https://pulsesoc.com/static/og/coinpilotxai-og.png"><meta name="twitter:card" content="summary_large_image"><script type="application/ld+json">{json.dumps(schema)}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 30px,1120px);margin:auto;padding:28px 0 90px}}a{{color:#6edff6}}.hero{{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin:30px 0}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.28);padding:20px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}h1{{font-size:clamp(42px,7vw,78px);line-height:.96;margin:0 0 14px}}p{{color:#9fb5c0}}.kicker{{color:#36e58f;font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}.button{{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:10px;border:1px solid rgba(110,223,246,.24);padding:10px 14px;font-weight:900;text-decoration:none;color:#f2fbff}}.primary{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><section class="hero"><article class="card"><div class="kicker">About CoinPilotXAI</div><h1>A safer AI command center for crypto learning, risk awareness, and simulation.</h1><p>CoinPilotXAI is built for people who want sharper market awareness without hype, gambling language, or fake profit promises.</p><div class="actions"><a class="button primary" href="/signup">Start Free</a><a class="button" href="/arena-preview">Preview Arena</a><a class="button" href="/scam-shield/scan">Open Scam Shield</a></div></article><article class="card"><h2>What We Optimize For</h2><p>Clarity, emotional control, scam defense, privacy-safe social learning, and educational practice before real-world risk.</p></article></section><section class="grid">{cards}</section></main></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>About CoinPlotXAI | AI Crypto Intelligence, Scam Protection and Arena Training</title><meta name="description" content="CoinPlotXAI is an educational AI crypto intelligence platform with Scam Shield, live market context, Pro Arena simulations, virtual portfolio battles, psychology training, and privacy-safe social learning."><link rel="canonical" href="https://pulsesoc.com/about"><meta property="og:title" content="About CoinPlotXAI"><meta property="og:description" content="AI crypto intelligence, Scam Shield, risk psychology education, and Pro Arena virtual-dollar training."><meta property="og:url" content="https://pulsesoc.com/about"><meta property="og:image" content="https://pulsesoc.com/static/og/coinpilotxai-og.png"><meta name="twitter:card" content="summary_large_image"><script type="application/ld+json">{json.dumps(schema)}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 30px,1120px);margin:auto;padding:28px 0 90px}}a{{color:#6edff6}}.hero{{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin:30px 0}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.28);padding:20px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}h1{{font-size:clamp(42px,7vw,78px);line-height:.96;margin:0 0 14px}}p{{color:#9fb5c0}}.kicker{{color:#36e58f;font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}.button{{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:10px;border:1px solid rgba(110,223,246,.24);padding:10px 14px;font-weight:900;text-decoration:none;color:#f2fbff}}.primary{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><section class="hero"><article class="card"><div class="kicker">About CoinPlotXAI</div><h1>A safer AI command center for crypto learning, risk awareness, and simulation.</h1><p>CoinPlotXAI is built for people who want sharper market awareness without hype, gambling language, or fake profit promises.</p><div class="actions"><a class="button primary" href="/signup">Start Free</a><a class="button" href="/arena-preview">Preview Arena</a><a class="button" href="/scam-shield/scan">Open Scam Shield</a></div></article><article class="card"><h2>What We Optimize For</h2><p>Clarity, emotional control, scam defense, privacy-safe social learning, and educational practice before real-world risk.</p></article></section><section class="grid">{cards}</section></main></body></html>""")
 
 
 @webhook_app.route("/search", methods=["GET"])
@@ -1607,7 +1608,7 @@ def simple_public_page(slug, title, h1, intro, answer, points, sections=None, re
         "canonical": canonical,
         "image": "https://pulsesoc.com/static/og/coinpilotxai-og.png",
         "og_type": "website",
-        "eyebrow": "CoinPilotXAI Intelligence",
+        "eyebrow": "CoinPlotXAI Intelligence",
         "h1": h1,
         "intro": intro,
         "answer": answer,
@@ -1615,7 +1616,7 @@ def simple_public_page(slug, title, h1, intro, answer, points, sections=None, re
         "sections": sections or [],
         "faqs": [
             {"question": "Is this financial advice?", "answer": "No. CoinPlotXAI Inc. provides educational AI intelligence only, not financial, betting, investment, or legal advice."},
-            {"question": "Does CoinPilotXAI need my seed phrase?", "answer": "No. CoinPilotXAI never asks for seed phrases, private keys, recovery phrases, wallet passwords, or exchange passwords."},
+            {"question": "Does CoinPlotXAI need my seed phrase?", "answer": "No. CoinPlotXAI never asks for seed phrases, private keys, recovery phrases, wallet passwords, or exchange passwords."},
         ],
         "related": related or ["/platform", "/scam-guide", "/live-market", "/pricing"],
         "keywords": ["AI crypto intelligence platform", "crypto alerts", "wallet intelligence", "scam detection"],
@@ -1638,7 +1639,7 @@ def education_shell(title, h1, intro, body):
     main{{padding:42px 0 70px}} .hero{{padding:32px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.035));box-shadow:0 28px 90px rgba(0,0,0,.28)}} h1{{font-size:clamp(38px,7vw,68px);line-height:1;margin:8px 0}} h2{{font-size:clamp(24px,4vw,34px)}} .muted,p{{color:var(--muted)}} .edu-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:18px 0}} .edu-card,.edu-panel{{border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.045);padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.22)}} .edu-card{{transition:transform .18s ease,box-shadow .18s ease}} .edu-card:hover{{transform:translateY(-3px);box-shadow:0 0 32px rgba(110,223,246,.18)}} .edu-card span,.edu-card strong{{display:block;font-size:18px;color:var(--cyan);font-weight:950}} small{{color:var(--gold)}} .edu-actions{{display:flex;gap:10px;flex-wrap:wrap}} .concepts{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}} .concept{{border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px;background:rgba(0,0,0,.16)}} .radar{{height:130px;border-radius:999px;background:radial-gradient(circle,rgba(54,229,143,.28),transparent 28%,rgba(110,223,246,.18),transparent 58%);animation:pulseRadar 4s ease-in-out infinite}} @keyframes pulseRadar{{50%{{filter:brightness(1.35);transform:scale(1.02)}}}} @media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}} @media(max-width:720px){{.hero{{padding:22px}}.edu-actions a{{width:100%}}}}
 		    </style>
 </head><body>
-  <header><div class="wrap"><nav><a href="/" data-edu-nav="show_edu_nav_home">CoinPilotXAI</a><div class="edu-actions"><a href="/dashboard" data-edu-nav="show_edu_nav_dashboard">Dashboard</a><a href="/education" data-edu-nav="show_edu_nav_education">Education</a><a href="/scam-shield" data-edu-nav="show_edu_nav_scam_shield">Scam Shield</a><div class="edu-customize"><button class="edu-customize-button" type="button" data-edu-customize>Customize</button><div class="edu-customize-panel" data-edu-customize-panel hidden><strong>Customize Education Navigation</strong><label class="edu-toggle">Show CoinPilotXAI <input type="checkbox" data-edu-pref="show_edu_nav_home" checked></label><label class="edu-toggle">Show Dashboard <input type="checkbox" data-edu-pref="show_edu_nav_dashboard" checked></label><label class="edu-toggle">Show Education <input type="checkbox" data-edu-pref="show_edu_nav_education" checked></label><label class="edu-toggle">Show Scam Shield <input type="checkbox" data-edu-pref="show_edu_nav_scam_shield" checked></label><button class="edu-cta" type="button" data-edu-reset>Reset defaults</button></div></div></div></nav></div></header>
+  <header><div class="wrap"><nav><a href="/" data-edu-nav="show_edu_nav_home">CoinPlotXAI</a><div class="edu-actions"><a href="/dashboard" data-edu-nav="show_edu_nav_dashboard">Dashboard</a><a href="/education" data-edu-nav="show_edu_nav_education">Education</a><a href="/scam-shield" data-edu-nav="show_edu_nav_scam_shield">Scam Shield</a><div class="edu-customize"><button class="edu-customize-button" type="button" data-edu-customize>Customize</button><div class="edu-customize-panel" data-edu-customize-panel hidden><strong>Customize Education Navigation</strong><label class="edu-toggle">Show CoinPlotXAI <input type="checkbox" data-edu-pref="show_edu_nav_home" checked></label><label class="edu-toggle">Show Dashboard <input type="checkbox" data-edu-pref="show_edu_nav_dashboard" checked></label><label class="edu-toggle">Show Education <input type="checkbox" data-edu-pref="show_edu_nav_education" checked></label><label class="edu-toggle">Show Scam Shield <input type="checkbox" data-edu-pref="show_edu_nav_scam_shield" checked></label><button class="edu-cta" type="button" data-edu-reset>Reset defaults</button></div></div></div></nav></div></header>
   <main class="wrap"><section class="hero"><div class="radar" aria-hidden="true"></div><h1>{clean_html(h1)}</h1><p>{clean_html(intro)}</p></section>{body}<p class="muted">Educational market intelligence only. Not financial, investment, legal, betting, or tax advice. Never share seed phrases or private keys.</p></main>
   <script>
     (function () {{
@@ -1691,7 +1692,7 @@ def education_feature_page(h1, intro, sections, lesson_slug, cta=""):
       </div>
     """
     tutor = f"""
-      <div class='edu-panel'><h2>Ask CoinPilotXAI Tutor</h2>
+      <div class='edu-panel'><h2>Ask CoinPlotXAI Tutor</h2>
         <form data-tutor-form><input name='question' placeholder='Ask about this lesson...' style='width:100%;min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:var(--text);padding:10px'><button class='edu-cta' type='submit'>Ask Tutor</button></form>
         <p class='muted' data-tutor-response>Answers use this lesson first and stay safety-focused.</p>
       </div>
@@ -1704,7 +1705,7 @@ def education_feature_page(h1, intro, sections, lesson_slug, cta=""):
         }});
       </script>
     """
-    return education_shell(f"{h1} | CoinPilotXAI Education", h1, intro, f"<section class='edu-panel'><div class='concepts'>{concepts}</div>{cta}</section>{quiz}{tutor}<section class='edu-panel'><a class='edu-cta' href='/education/lesson/{clean_html(lesson_slug)}'>Open Full Lesson</a></section>")
+    return education_shell(f"{h1} | CoinPlotXAI Education", h1, intro, f"<section class='edu-panel'><div class='concepts'>{concepts}</div>{cta}</section>{quiz}{tutor}<section class='edu-panel'><a class='edu-cta' href='/education/lesson/{clean_html(lesson_slug)}'>Open Full Lesson</a></section>")
 
 
 @webhook_app.route("/education", methods=["GET"])
@@ -1732,7 +1733,7 @@ def education_hub_page():
         for l in lessons
     )
     return education_shell(
-        "Crypto Education Hub | CoinPilotXAI",
+        "Crypto Education Hub | CoinPlotXAI",
         "Crypto Education Hub",
         "Build safer crypto habits with structured lessons, quizzes, progress tracking, Scam Shield training, wallet safety, market psychology, and AI tutor support.",
         f"""
@@ -1848,7 +1849,7 @@ def education_category_page(category_slug):
     conn.close()
     cards = "".join(f"<a class='edu-card' href='/education/lesson/{clean_html(l['slug'])}'><strong>{clean_html(l['title'])}</strong><small>{clean_html(l['difficulty'])} · {clean_html(l['estimated_time'])}</small><p>{clean_html(l['summary'])}</p></a>" for l in lessons)
     return education_shell(
-        f"{category['title']} Lessons | CoinPilotXAI",
+        f"{category['title']} Lessons | CoinPlotXAI",
         category["title"],
         category.get("summary") or "Structured crypto education with safety-first lessons.",
         f"<section class='edu-grid'>{cards}</section><section class='edu-panel'><a class='edu-cta' href='/education'>Back to Education Hub</a></section>",
@@ -1882,7 +1883,7 @@ def education_lesson_page(lesson_slug):
     <section class='edu-panel'><p><strong>{clean_html(lesson.get('difficulty'))}</strong> · {clean_html(lesson.get('estimated_time'))}</p><p>{clean_html(lesson.get('content'))}</p></section>
     <section class='edu-panel'><h2>Knowledge Map</h2><div class='concepts'>{sections}</div></section>
     <section class='edu-panel'><h2>Quiz</h2><div class='concepts'>{quiz}</div><button class='edu-cta' data-complete-lesson>Mark Complete</button><p class='muted' data-progress-message></p></section>
-    <section class='edu-panel'><h2>Ask CoinPilotXAI Tutor</h2><form data-tutor-form><input name='question' placeholder='Ask about this lesson...' style='width:100%;min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:var(--text);padding:10px'><button class='edu-cta' type='submit'>Ask Tutor</button></form><p class='muted' data-tutor-response></p></section>
+    <section class='edu-panel'><h2>Ask CoinPlotXAI Tutor</h2><form data-tutor-form><input name='question' placeholder='Ask about this lesson...' style='width:100%;min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:var(--text);padding:10px'><button class='edu-cta' type='submit'>Ask Tutor</button></form><p class='muted' data-tutor-response></p></section>
     <script>
       document.querySelector('[data-complete-lesson]').addEventListener('click', async () => {{
         const res = await fetch('/api/education/progress', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{lesson_slug:'{lesson_slug}',path:'{clean_html(lesson.get('category_slug'))}',status:'completed',score:100}})}}).then(r=>r.json()).catch(()=>({{ok:false,message:'Login required to save progress.'}}));
@@ -1896,7 +1897,7 @@ def education_lesson_page(lesson_slug):
       }});
     </script>
     """
-    return education_shell(f"{lesson['title']} | CoinPilotXAI Education", lesson["title"], lesson.get("summary") or "", body)
+    return education_shell(f"{lesson['title']} | CoinPlotXAI Education", lesson["title"], lesson.get("summary") or "", body)
 
 
 @webhook_app.route("/api/education/categories", methods=["GET"])
@@ -1941,7 +1942,7 @@ def api_education_tutor():
         response = "I can explain why those secrets must never be shared, but I cannot request, store, or handle seed phrases, private keys, recovery phrases, or wallet passwords."
     else:
         response = (
-            f"CoinPilotXAI Tutor: Based on {lesson.get('title') or 'this lesson'}, the safe way to think about it is: "
+            f"CoinPlotXAI Tutor: Based on {lesson.get('title') or 'this lesson'}, the safe way to think about it is: "
             f"{lesson.get('summary') or 'verify sources, slow down, and keep risk controlled.'} "
             "Use official sources, avoid urgent wallet prompts, and treat all market intelligence as educational context rather than a guarantee."
         )
@@ -2079,7 +2080,7 @@ def reset_pwa_page():
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
-      <title>Reset CoinPilotXAI App Cache</title>
+      <title>Reset CoinPlotXAI App Cache</title>
       <style>
         body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,Arial,sans-serif}
         main{width:min(100%,560px);padding:28px;border:1px solid rgba(0,229,255,.22);border-radius:14px;background:#0d1627;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.35)}
@@ -2088,22 +2089,22 @@ def reset_pwa_page():
     </head>
     <body>
       <main>
-        <h1>Resetting CoinPilotXAI app cache</h1>
+        <h1>Resetting CoinPlotXAI app cache</h1>
         <p>Clearing old offline cache, service workers, and local app flags. You will be returned to PulseSoc Home automatically.</p>
       </main>
       <script>
         (async function () {
           try {
-            console.log("[CoinPilotXAI PWA] reset started");
+            console.log("[CoinPlotXAI PWA] reset started");
             if ("serviceWorker" in navigator) {
               var regs = await navigator.serviceWorker.getRegistrations();
               await Promise.all(regs.map(function (reg) { return reg.unregister(); }));
-              console.log("[CoinPilotXAI PWA] service workers unregistered", regs.length);
+              console.log("[CoinPlotXAI PWA] service workers unregistered", regs.length);
             }
             if ("caches" in window) {
               var keys = await caches.keys();
               await Promise.all(keys.map(function (key) { return caches.delete(key); }));
-              console.log("[CoinPilotXAI PWA] caches deleted", keys);
+              console.log("[CoinPlotXAI PWA] caches deleted", keys);
             }
             if ("indexedDB" in window && indexedDB.databases) {
               var databases = await indexedDB.databases();
@@ -2113,7 +2114,7 @@ def reset_pwa_page():
                   req.onsuccess = req.onerror = req.onblocked = function () { resolve(); };
                 }) : Promise.resolve();
               }));
-              console.log("[CoinPilotXAI PWA] indexedDB cleared");
+              console.log("[CoinPlotXAI PWA] indexedDB cleared");
             }
             try { localStorage.clear(); } catch (err) {}
             try { sessionStorage.clear(); } catch (err) {}
@@ -4023,7 +4024,7 @@ def restricted_owner_message_response():
     return pulse_social_shell(
         "Restricted Area",
         "This area is restricted to the owner.",
-        "<section class='card'><h2>This area is restricted to the owner.</h2><p class='muted'>Return to PulseSoc or contact the CoinPilotXAI owner if you believe you should have access.</p><div class='actions'><a class='button primary' href='/pulse/premium'>Back to PulseSoc Premium</a><a class='button' href='/pulse'>PulseSoc Home</a></div></section>",
+        "<section class='card'><h2>This area is restricted to the owner.</h2><p class='muted'>Return to PulseSoc or contact the CoinPlotXAI owner if you believe you should have access.</p><div class='actions'><a class='button primary' href='/pulse/premium'>Back to PulseSoc Premium</a><a class='button' href='/pulse'>PulseSoc Home</a></div></section>",
         "",
         "",
     ), 403
@@ -5500,6 +5501,7 @@ def login_page():
                 ), int(challenge_gate.get("status") or 403)
             register_failed_login(email, user.get("user_id") if user else 0, "invalid_password")
             return render_account_page("login", "Login", error="Email or password is incorrect.")
+        session.permanent = True
         session["account_user_id"] = user["user_id"]
         session["pulse_welcome_reason"] = "welcome_back" if user.get("last_login_at") else "first_login"
         log_auth_event("login_success", email, user["user_id"], status="success", details={"db_engine": db_service.ENGINE_NAME})
@@ -5682,6 +5684,7 @@ def api_mobile_auth_login():
             return api_error(challenge_gate.get("message") or "Security challenge required.", int(challenge_gate.get("status") or 403), **payload)
         register_failed_login(email, user.get("user_id") if user else 0, "mobile_invalid_password")
         return api_error("Email or password is incorrect.", 401)
+    session.permanent = True
     session["account_user_id"] = user["user_id"]
     session["pulse_welcome_reason"] = "welcome_back" if user.get("last_login_at") else "first_login"
     conn = db()
@@ -6342,7 +6345,6 @@ def api_dashboard_content_planner_item():
     finally:
         conn.close()
     return jsonify(result), (200 if result.get("ok") else 400)
-    return jsonify({"ok": True, "account": state})
 
 
 @webhook_app.route("/api/dashboard/network/state", methods=["GET"])
@@ -9908,8 +9910,8 @@ def private_chat_thread_page(thread_id):
             status=404,
         )
     other = payload.get("other") or {}
-    other_name = clean_html(other.get("display_name") or "CoinPilotXAI user")
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Chat with {other_name} | CoinPilotXAI</title><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#071527);color:var(--text);font-family:Inter,system-ui,sans-serif;overflow:hidden}}a{{color:inherit}}.shell{{height:100dvh;display:grid;grid-template-rows:auto 1fr auto;width:min(100%,980px);margin:auto;border-inline:1px solid rgba(110,223,246,.12)}}header{{padding:calc(14px + env(safe-area-inset-top)) 16px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.92);backdrop-filter:blur(18px);display:flex;justify-content:space-between;gap:12px;align-items:center}}.button,button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);font-weight:900;padding:10px 14px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.meta{{color:var(--muted);font-size:13px}}.thread{{min-height:0;overflow:auto;padding:16px;display:grid;gap:9px;background:radial-gradient(circle at 80% 10%,rgba(54,229,143,.08),transparent 22rem)}}.bubble{{max-width:min(78%,620px);padding:11px 13px;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.07);box-shadow:0 12px 36px rgba(0,0,0,.16)}}.bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}}.bubble small{{display:block;margin-top:5px;opacity:.72}}.composer{{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.96)}}textarea{{resize:none;min-height:48px;max-height:120px;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}.toast{{position:fixed;left:50%;bottom:calc(82px + env(safe-area-inset-bottom));transform:translateX(-50%);padding:10px 13px;border:1px solid var(--line);border-radius:12px;background:#071321;box-shadow:0 18px 50px rgba(0,0,0,.4);display:none}}.toast.show{{display:block}}@media(max-width:720px){{.shell{{border:0}}.composer{{grid-template-columns:1fr}}.button,button{{width:100%}}.bubble{{max-width:88%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important;scroll-behavior:auto!important}}}}</style></head><body><main class="shell" data-thread-id="{int(thread_id)}"><header><div><strong>{other_name}</strong><div class="meta">{clean_html(other.get("rank") or "PulseSoc contact")} · private thread</div></div><a class="button" href="/dashboard">Dashboard</a></header><section class="thread" data-chat-thread></section><form class="composer" data-chat-form><textarea name="message" placeholder="Write a reply..." autocomplete="off"></textarea><button class="button primary" type="submit">Send</button></form></main><div class="toast" data-toast></div><script>const threadId={int(thread_id)};let lastMessageId=0;let loading=false;const box=document.querySelector('[data-chat-thread]');const form=document.querySelector('[data-chat-form]');const input=form.elements.message;const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));function toast(message){{const t=document.querySelector('[data-toast]');t.textContent=message;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600)}}function bubble(m,temp=false){{return `<div class="bubble ${{m.is_mine?'me':'them'}}" data-message-id="${{m.message_id||m.id||''}}"><span>${{esc(m.body)}}</span><small>${{temp?'sending...':esc(m.delivery_status||'delivered')}}</small></div>`}}function append(items){{const seen=new Set([...box.querySelectorAll('[data-message-id]')].map(n=>n.dataset.messageId));(items||[]).forEach(m=>{{const id=String(m.message_id||m.id||'');if(id&&seen.has(id))return;box.insertAdjacentHTML('beforeend',bubble(m));lastMessageId=Math.max(lastMessageId,Number(m.message_id||m.id||0));}});box.scrollTop=box.scrollHeight;}}function render(items){{box.innerHTML=(items||[]).map(m=>bubble(m)).join('')||'<p class="meta">No messages yet.</p>';lastMessageId=Math.max(0,...(items||[]).map(m=>Number(m.message_id||m.id||0)));box.scrollTop=box.scrollHeight;}}async function load(initial=false){{if(loading||document.hidden)return;loading=true;try{{const url=initial?`/api/chat/thread/${{threadId}}`:`/api/chat/thread/${{threadId}}/new?after_id=${{lastMessageId}}`;const d=await fetch(url,{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());if(d.ok)initial?render(d.messages):append(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));}}catch(e){{}}finally{{loading=false;}}}}form.addEventListener('submit',async e=>{{e.preventDefault();const body=input.value.trim();if(!body)return;input.value='';const button=form.querySelector('button');button.disabled=true;const tempId='temp-'+Date.now();box.insertAdjacentHTML('beforeend',`<div class="bubble me" data-message-id="${{tempId}}"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;try{{const d=await fetch(`/api/chat/thread/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{message:body}})}}).then(r=>r.json());const temp=box.querySelector(`[data-message-id="${{tempId}}"]`);if(d.ok&&d.message){{if(temp)temp.outerHTML=bubble(d.message);lastMessageId=Math.max(lastMessageId,Number(d.message.message_id||d.message.id||0));if(navigator.vibrate)navigator.vibrate(20);}}else{{if(temp)temp.querySelector('small').textContent='failed';input.value=body;toast(d.message||'Could not send this message.');}}}}catch(err){{input.value=body;toast('Could not send this message.')}}finally{{button.disabled=false;input.focus();}}}});input.addEventListener('keydown',e=>{{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});load(true);setInterval(()=>load(false),1500);document.addEventListener('visibilitychange',()=>{{if(!document.hidden)load(false)}});input.focus();</script></body></html>""")
+    other_name = clean_html(other.get("display_name") or "CoinPlotXAI user")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Chat with {other_name} | CoinPlotXAI</title><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#071527);color:var(--text);font-family:Inter,system-ui,sans-serif;overflow:hidden}}a{{color:inherit}}.shell{{height:100dvh;display:grid;grid-template-rows:auto 1fr auto;width:min(100%,980px);margin:auto;border-inline:1px solid rgba(110,223,246,.12)}}header{{padding:calc(14px + env(safe-area-inset-top)) 16px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.92);backdrop-filter:blur(18px);display:flex;justify-content:space-between;gap:12px;align-items:center}}.button,button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);font-weight:900;padding:10px 14px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.meta{{color:var(--muted);font-size:13px}}.thread{{min-height:0;overflow:auto;padding:16px;display:grid;gap:9px;background:radial-gradient(circle at 80% 10%,rgba(54,229,143,.08),transparent 22rem)}}.bubble{{max-width:min(78%,620px);padding:11px 13px;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.07);box-shadow:0 12px 36px rgba(0,0,0,.16)}}.bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}}.bubble small{{display:block;margin-top:5px;opacity:.72}}.composer{{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.96)}}textarea{{resize:none;min-height:48px;max-height:120px;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}.toast{{position:fixed;left:50%;bottom:calc(82px + env(safe-area-inset-bottom));transform:translateX(-50%);padding:10px 13px;border:1px solid var(--line);border-radius:12px;background:#071321;box-shadow:0 18px 50px rgba(0,0,0,.4);display:none}}.toast.show{{display:block}}@media(max-width:720px){{.shell{{border:0}}.composer{{grid-template-columns:1fr}}.button,button{{width:100%}}.bubble{{max-width:88%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important;scroll-behavior:auto!important}}}}</style></head><body><main class="shell" data-thread-id="{int(thread_id)}"><header><div><strong>{other_name}</strong><div class="meta">{clean_html(other.get("rank") or "PulseSoc contact")} · private thread</div></div><a class="button" href="/dashboard">Dashboard</a></header><section class="thread" data-chat-thread></section><form class="composer" data-chat-form><textarea name="message" placeholder="Write a reply..." autocomplete="off"></textarea><button class="button primary" type="submit">Send</button></form></main><div class="toast" data-toast></div><script>const threadId={int(thread_id)};let lastMessageId=0;let loading=false;const box=document.querySelector('[data-chat-thread]');const form=document.querySelector('[data-chat-form]');const input=form.elements.message;const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));function toast(message){{const t=document.querySelector('[data-toast]');t.textContent=message;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600)}}function bubble(m,temp=false){{return `<div class="bubble ${{m.is_mine?'me':'them'}}" data-message-id="${{m.message_id||m.id||''}}"><span>${{esc(m.body)}}</span><small>${{temp?'sending...':esc(m.delivery_status||'delivered')}}</small></div>`}}function append(items){{const seen=new Set([...box.querySelectorAll('[data-message-id]')].map(n=>n.dataset.messageId));(items||[]).forEach(m=>{{const id=String(m.message_id||m.id||'');if(id&&seen.has(id))return;box.insertAdjacentHTML('beforeend',bubble(m));lastMessageId=Math.max(lastMessageId,Number(m.message_id||m.id||0));}});box.scrollTop=box.scrollHeight;}}function render(items){{box.innerHTML=(items||[]).map(m=>bubble(m)).join('')||'<p class="meta">No messages yet.</p>';lastMessageId=Math.max(0,...(items||[]).map(m=>Number(m.message_id||m.id||0)));box.scrollTop=box.scrollHeight;}}async function load(initial=false){{if(loading||document.hidden)return;loading=true;try{{const url=initial?`/api/chat/thread/${{threadId}}`:`/api/chat/thread/${{threadId}}/new?after_id=${{lastMessageId}}`;const d=await fetch(url,{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());if(d.ok)initial?render(d.messages):append(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));}}catch(e){{}}finally{{loading=false;}}}}form.addEventListener('submit',async e=>{{e.preventDefault();const body=input.value.trim();if(!body)return;input.value='';const button=form.querySelector('button');button.disabled=true;const tempId='temp-'+Date.now();box.insertAdjacentHTML('beforeend',`<div class="bubble me" data-message-id="${{tempId}}"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;try{{const d=await fetch(`/api/chat/thread/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{message:body}})}}).then(r=>r.json());const temp=box.querySelector(`[data-message-id="${{tempId}}"]`);if(d.ok&&d.message){{if(temp)temp.outerHTML=bubble(d.message);lastMessageId=Math.max(lastMessageId,Number(d.message.message_id||d.message.id||0));if(navigator.vibrate)navigator.vibrate(20);}}else{{if(temp)temp.querySelector('small').textContent='failed';input.value=body;toast(d.message||'Could not send this message.');}}}}catch(err){{input.value=body;toast('Could not send this message.')}}finally{{button.disabled=false;input.focus();}}}});input.addEventListener('keydown',e=>{{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});load(true);setInterval(()=>load(false),1500);document.addEventListener('visibilitychange',()=>{{if(!document.hidden)load(false)}});input.focus();</script></body></html>""")
 
 
 @webhook_app.route("/chat/fan-messages", methods=["GET"])
@@ -9975,7 +9977,7 @@ def messages_page():
       <div class='grid'>
         <section class='profile-card'>
           <h2>Private Messages</h2>
-          <p>Start secure one-to-one conversations with another CoinPilotXAI user by email. Telegram is not required.</p>
+          <p>Start secure one-to-one conversations with another CoinPlotXAI user by email. Telegram is not required.</p>
           <form id='message-start-form'>
             <label>User email or username</label>
             <input name='query' placeholder='user@example.com' required>
@@ -10216,7 +10218,7 @@ def create_founder_checkout_session(user):
         "plan": "founder_premium",
         "plan_key": "founder_premium",
         "product": "PulseSoc",
-        "company": "CoinPilotXAI Inc.",
+        "company": "CoinPlotXAI Inc.",
         "environment": stripe_environment_label(),
         "price_id": STRIPE_FOUNDER_PRICE_ID,
         "product_id": STRIPE_FOUNDER_PRODUCT_ID or STRIPE_PRODUCT_ID,
@@ -10530,7 +10532,7 @@ def create_stripe_checkout_session(user):
         "plan": "pro",
         "plan_key": "pulse_premium",
         "product": "PulseSoc",
-        "company": "CoinPilotXAI Inc.",
+        "company": "CoinPlotXAI Inc.",
         "environment": stripe_environment_label(),
         "price_id": STRIPE_PRICE_ID,
         "product_id": STRIPE_PRODUCT_ID,
@@ -11204,7 +11206,7 @@ def friendly_internal_error(error):
         }), 500
     body = (
         "<!doctype html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>CoinPilotXAI | System Notice</title>"
+        "<title>CoinPlotXAI | System Notice</title>"
         "<style>body{margin:0;font-family:system-ui;background:#050b14;color:#f2fbff;display:grid;min-height:100vh;place-items:center;padding:24px}"
         ".card{max-width:680px;border:1px solid rgba(110,223,246,.22);border-radius:16px;background:#0d1627;padding:28px;box-shadow:0 24px 80px rgba(0,0,0,.32)}"
         "a{color:#36e58f}.trace{color:#9fb5c0;font-size:13px}</style></head><body><main class='card'>"
@@ -12033,15 +12035,16 @@ def admin_test_email():
         return jsonify({"ok": False, "error": "valid email required"}), 400
     logging.info("Admin test email requested for domain=%s brevo_key_loaded=%s", email.split("@")[-1], bool(os.getenv("BREVO_API_KEY")))
     text = (
-        "This is a CoinPlotXAI Inc. Brevo transactional email test.\n\n"
+        "This is a PulseSoc Brevo transactional email test.\n\n"
         "If you received this, server-side email delivery is connected.\n\n"
+        "PulseSoc is built by CoinPlotXAI Inc. Support: support@pulsesoc.com.\n\n"
         "CoinPlotXAI Inc. never asks for seed phrases, private keys, or wallet passwords."
     )
-    html = branded_email_html("CoinPlotXAI Inc. Email Test", """
-      <p>This is a Brevo transactional email test from CoinPlotXAI Inc.</p>
+    html = branded_email_html("PulseSoc Email Test", """
+      <p>This is a Brevo transactional email test from PulseSoc.</p>
       <p>If you received this, server-side email delivery is connected.</p>
     """)
-    sent = send_platform_email(email, "CoinPlotXAI Inc. Brevo test email", text, html, 0)
+    sent = send_platform_email(email, "PulseSoc Brevo test email", text, html, 0)
     return jsonify({
         "ok": bool(sent),
         "provider": (os.getenv("EMAIL_PROVIDER") or ("brevo" if os.getenv("BREVO_API_KEY") else "unconfigured")),
@@ -12053,12 +12056,14 @@ def admin_test_email():
 
 def send_brevo_debug_email(to_email):
     from_email, from_name = email_sender_identity()
+    reply_to = email_service_service.reply_to_config()
     brevo_key = (os.getenv("BREVO_API_KEY") or "").strip()
     payload = {
         "sender": {"email": from_email, "name": from_name},
         "to": [{"email": to_email}],
-        "subject": "CoinPlotXAI Inc. Brevo debug email",
-        "textContent": "Brevo debug email from CoinPlotXAI Inc. If this arrives, API delivery is working.",
+        "replyTo": {"email": reply_to["email"], "name": reply_to["name"]},
+        "subject": "PulseSoc Brevo debug email",
+        "textContent": "Brevo debug email from PulseSoc. If this arrives, API delivery is working. Support: support@pulsesoc.com.",
         "htmlContent": branded_email_html("Brevo Debug Email", "<p>If this arrives, API delivery is working.</p>"),
     }
     logging.info("Debug Brevo email requested: to_domain=%s sender=%s brevo_key_loaded=%s", to_email.split("@")[-1], from_email, bool(brevo_key))
@@ -13883,7 +13888,7 @@ def admin_test_smtp_route():
     port_raw = (os.getenv("SMTP_PORT") or "587").strip()
     user = (os.getenv("SMTP_USER") or "").strip()
     password = os.getenv("SMTP_PASSWORD") or ""
-    sender = (os.getenv("MAIL_FROM_ADDRESS") or user or "noreply@pulsesoc.com").strip()
+    sender = (os.getenv("MAIL_FROM_ADDRESS") or os.getenv("BREVO_SENDER_EMAIL") or os.getenv("SUPPORT_EMAIL") or user or "support@pulsesoc.com").strip()
     recipient = (os.getenv("SMTP_TEST_RECIPIENT") or os.getenv("ADMIN_TEST_EMAIL") or os.getenv("SUPPORT_EMAIL") or "support@pulsesoc.com").strip()
     logging.info("SMTP_TEST_ATTEMPT admin_id=%s host=%s port=%s user_present=%s recipient=%s", admin.get("id"), host, port_raw, bool(user), mask_email(recipient))
     if not host or not port_raw:
@@ -13924,10 +13929,10 @@ def admin_test_smtp_route():
         return jsonify({"ok": False, "error_stage": "login", "error": f"SMTP login failed: {exc}"}), 500
     try:
         msg = EmailMessage()
-        msg["Subject"] = "CoinPilotXAI SMTP test"
+        msg["Subject"] = "CoinPlotXAI SMTP test"
         msg["From"] = sender
         msg["To"] = recipient
-        msg.set_content("CoinPilotXAI SMTP diagnostics succeeded. This confirms SMTP connection, login, and delivery path.")
+        msg.set_content("CoinPlotXAI SMTP diagnostics succeeded. This confirms SMTP connection, login, and delivery path.")
         smtp.send_message(msg)
         smtp.quit()
         logging.info("SMTP_TEST_SUCCESS admin_id=%s host=%s port=%s recipient=%s", admin.get("id"), host, port, mask_email(recipient))
@@ -14526,10 +14531,11 @@ def admin_emails_page():
         <div class="email-admin-card"><strong>API key source</strong><span>{clean_html(brevo_diag.get('api_key_source') or 'n/a')}</span></div>
         <div class="email-admin-card"><strong>Sender source</strong><span>{clean_html(brevo_diag.get('sender_email_source') or 'n/a')}</span></div>
         <div class="email-admin-card"><strong>Sender domain</strong><span>{clean_html(brevo_diag.get('sender_domain') or 'n/a')}</span></div>
+        <div class="email-admin-card"><strong>Reply-to configured</strong><span>{'Yes' if brevo_diag.get('reply_to_email_masked') else 'No'}</span></div>
       </div>
-      <p class="muted">Sender: {clean_html(brevo_diag.get('sender_email_masked') or 'not available')} · Public links use: {clean_html(brevo_diag.get('public_base_url') or '')}</p>
+      <p class="muted">Sender: {clean_html(brevo_diag.get('sender_email_masked') or 'not available')} · Reply-to: {clean_html(brevo_diag.get('reply_to_email_masked') or 'not available')} · Public links use: {clean_html(brevo_diag.get('public_base_url') or '')}</p>
       <p><a class="button" href="/api/admin/email/outbound-ip">Check Railway Outbound IP</a></p>
-      {'<p class="muted">PulseSoc is using its built-in noreply sender fallback. If Brevo rejects this sender, set BREVO_SENDER_EMAIL or DEFAULT_FROM_EMAIL in Railway to a verified Brevo sender.</p>' if brevo_diag.get('using_default_sender') else ''}
+      {'<p class="muted">PulseSoc is using its built-in support sender fallback. Set BREVO_SENDER_EMAIL, BREVO_REPLY_TO, and DEFAULT_FROM_EMAIL in Railway to support@pulsesoc.com after the sender is verified in Brevo.</p>' if brevo_diag.get('using_default_sender') else ''}
     </div>
     <div class="card">
       <h2>Email QA Tools</h2>
@@ -14630,6 +14636,10 @@ def api_admin_email_diagnostics():
         "BREVO_SENDER_EMAIL": bool(os.getenv("BREVO_SENDER_EMAIL")),
         "BREVO_SENDER_NAME": bool(os.getenv("BREVO_SENDER_NAME")),
         "SUPPORT_EMAIL": bool(os.getenv("SUPPORT_EMAIL")),
+        "PUBLIC_SUPPORT_EMAIL": bool(os.getenv("PUBLIC_SUPPORT_EMAIL")),
+        "BREVO_REPLY_TO": bool(os.getenv("BREVO_REPLY_TO")),
+        "COMPANY_NAME": bool(os.getenv("COMPANY_NAME")),
+        "PRODUCT_NAME": bool(os.getenv("PRODUCT_NAME")),
         "SECURITY_EMAIL": bool(os.getenv("SECURITY_EMAIL")),
         "PUBLIC_BASE_URL": bool(os.getenv("PUBLIC_BASE_URL")),
         "APP_BASE_URL": bool(os.getenv("APP_BASE_URL")),
@@ -14644,6 +14654,8 @@ def api_admin_email_diagnostics():
         "missing_fields": diag.get("missing_fields") or [],
         "sender_email_masked": diag.get("sender_email_masked"),
         "sender_name": diag.get("sender_name"),
+        "reply_to_email_masked": diag.get("reply_to_email_masked"),
+        "reply_to_email_source": diag.get("reply_to_email_source"),
         "sender_email_source": diag.get("sender_email_source"),
         "sender_name_source": diag.get("sender_name_source"),
         "sender_domain": diag.get("sender_domain"),
@@ -15129,7 +15141,7 @@ def admin_unmatched_payments_page():
     rows_data = [dict(row) for row in cur.fetchall()]
     conn.close()
     rows = "".join(f"<tr><td>{clean_html(str(r.get('stripe_event_id') or ''))}</td><td>{clean_html(str(r.get('customer_email') or ''))}</td><td>{clean_html(str(r.get('amount') or ''))}</td><td>{clean_html(str(r.get('reason') or ''))}</td><td>{clean_html(str(r.get('created_at') or ''))}</td></tr>" for r in rows_data)
-    body = f"<h1>Unmatched Payments</h1><p class='muted'>Payments Stripe confirmed but CoinPilotXAI could not safely match to a website account.</p><div class='card'><table><tr><th>Event</th><th>Email</th><th>Amount</th><th>Reason</th><th>Date</th></tr>{rows}</table></div>"
+    body = f"<h1>Unmatched Payments</h1><p class='muted'>Payments Stripe confirmed but CoinPlotXAI could not safely match to a website account.</p><div class='card'><table><tr><th>Event</th><th>Email</th><th>Amount</th><th>Reason</th><th>Date</th></tr>{rows}</table></div>"
     return admin_page_html("Unmatched Payments", body, admin)
 
 
@@ -17471,7 +17483,7 @@ def api_admin_telegram_send_test():
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
             json={
                 "chat_id": user.get("telegram_chat_id"),
-                "text": "CoinPilotXAI Telegram health check: your bot connection is working.",
+                "text": "CoinPlotXAI Telegram health check: your bot connection is working.",
                 "disable_web_page_preview": True,
             },
             timeout=10,
@@ -18068,7 +18080,7 @@ def admin_support_page():
         if reply_message:
             send_channel_email(
                 request.form.get("ticket_email") or "support@pulsesoc.com",
-                "CoinPilotXAI Support Reply",
+                "CoinPlotXAI Support Reply",
                 f"<p>{clean_html(reply_message)}</p>",
                 reply_message,
                 user_id=0,
@@ -18291,7 +18303,7 @@ def admin_analytics_export(kind):
     writer.writerow(headers)
     writer.writerows(cur.fetchall())
     conn.close()
-    return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename=coinpilotxai-{kind}.csv"})
+    return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename=coinplotxai-{kind}.csv"})
 
 
 @webhook_app.route("/admin/brevo/resync", methods=["POST"])
@@ -18621,9 +18633,9 @@ def public_learn_page(slug):
         "roast-battle-rules": ["Call signs", "Clean intensity", "Virtual-dollar scoring", "Crowd heat"],
         "arena-ranking-system": ["XP", "Ranks", "Badges", "Streaks"],
     }.get(safe_slug, ["Safety", "Education", "Practice", "Review"])
-    cards = "".join(f"<article class='card'><h2>{clean_html(topic)}</h2><p>CoinPilotXAI teaches this through guided examples, live context, and clear next actions. Keep learning educational, simulated, and risk-aware.</p></article>" for topic in topics)
+    cards = "".join(f"<article class='card'><h2>{clean_html(topic)}</h2><p>CoinPlotXAI teaches this through guided examples, live context, and clear next actions. Keep learning educational, simulated, and risk-aware.</p></article>" for topic in topics)
     schema_json = json.dumps(seo_engine.json_ld(path))
-    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(meta['title'])}</title><meta name="description" content="{clean_html(meta['description'])}"><link rel="canonical" href="{clean_html(meta['canonical'])}"><meta property="og:title" content="{clean_html(title)} | CoinPilotXAI"><meta property="og:description" content="{clean_html(meta['description'])}"><meta property="og:image" content="{clean_html(meta['og_image'])}"><meta property="og:url" content="{clean_html(meta['canonical'])}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{clean_html(title)} | CoinPilotXAI"><meta name="twitter:description" content="{clean_html(meta['description'])}"><meta name="twitter:image" content="{clean_html(meta['og_image'])}"><script type="application/ld+json">{schema_json}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:34px 0 90px}}.hero{{padding:22px 0}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:14px;background:rgba(255,255,255,.055);padding:16px}}a,.button{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6);padding:10px 13px;border-radius:8px;text-decoration:none;font-weight:900;display:inline-flex}}p{{color:#9fb5c0;line-height:1.6}}</style></head><body><main class="wrap"><section class="hero"><a href="/">CoinPilotXAI</a><h1>{clean_html(title)}</h1><p>{clean_html(meta['description'])}</p><a class="button" href="/arena/play">Start Training</a></section><section class="grid">{cards}</section></main></body></html>"""
+    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(meta['title'])}</title><meta name="description" content="{clean_html(meta['description'])}"><link rel="canonical" href="{clean_html(meta['canonical'])}"><meta property="og:title" content="{clean_html(title)} | CoinPlotXAI"><meta property="og:description" content="{clean_html(meta['description'])}"><meta property="og:image" content="{clean_html(meta['og_image'])}"><meta property="og:url" content="{clean_html(meta['canonical'])}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{clean_html(title)} | CoinPlotXAI"><meta name="twitter:description" content="{clean_html(meta['description'])}"><meta name="twitter:image" content="{clean_html(meta['og_image'])}"><script type="application/ld+json">{schema_json}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:34px 0 90px}}.hero{{padding:22px 0}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:14px;background:rgba(255,255,255,.055);padding:16px}}a,.button{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6);padding:10px 13px;border-radius:8px;text-decoration:none;font-weight:900;display:inline-flex}}p{{color:#9fb5c0;line-height:1.6}}</style></head><body><main class="wrap"><section class="hero"><a href="/">CoinPlotXAI</a><h1>{clean_html(title)}</h1><p>{clean_html(meta['description'])}</p><a class="button" href="/arena/play">Start Training</a></section><section class="grid">{cards}</section></main></body></html>"""
     return Response(html)
 
 
@@ -18762,7 +18774,7 @@ def save_command_result(user_id, command_history_id, title="", summary="", sourc
         (
             user_id,
             int(command_history_id or 0),
-            clean_html(title or "Saved CoinPilotXAI result")[:180],
+            clean_html(title or "Saved CoinPlotXAI result")[:180],
             clean_html(summary or "")[:3000],
             clean_html(source or "web")[:80],
             json.dumps(metadata or {}),
@@ -18867,7 +18879,7 @@ def arena_access_preview_response(user=None):
     <section class="hero">
       <article class="card wide">
         <div class="kicker">Arena Access</div>
-        <h1>CoinPilotXAI Arena is part of the free core ecosystem.</h1>
+        <h1>CoinPlotXAI Arena is part of the free core ecosystem.</h1>
         <p>Live virtual-dollar battles, Arena chat, AI commentary, live rooms, Scam Hunter, boss training, cinematic match rooms, and immersive risk psychology training are available after login.</p>
         <div class="actions"><a class="button primary" href="/login?next={next_url}">Log In</a><a class="button" href="/arena-preview">View Arena Preview</a><a class="button" href="/dashboard">Dashboard</a></div>
       </article>
@@ -18969,7 +18981,7 @@ def api_command_save():
     saved_id = save_command_result(
         user["user_id"],
         payload.get("history_id") or 0,
-        title=payload.get("title") or payload.get("command_name") or "Saved CoinPilotXAI result",
+        title=payload.get("title") or payload.get("command_name") or "Saved CoinPlotXAI result",
         summary=payload.get("summary") or payload.get("output_summary") or "",
         source=payload.get("source") or "web",
         metadata=payload.get("metadata") or {},
@@ -19002,9 +19014,9 @@ def api_ai_chat():
         result = {
             "ok": routed.get("ok", True),
             "action_key": "ai_chat",
-            "title": "CoinPilotXAI",
+            "title": "CoinPlotXAI",
             "summary": routed.get("response", ""),
-            "source": routed.get("source", "coinpilotxai"),
+            "source": routed.get("source", "coinplotxai"),
             "confidence": routed.get("confidence", "Medium"),
             "latency_ms": routed.get("latency_ms"),
             "disclaimer": "Educational information only. Not financial, betting, investment, or legal advice.",
@@ -19029,7 +19041,7 @@ def api_ai_chat():
     formatted["conversation_id"] = conversation_id
     formatted["response"] = ai_text
     formatted["saved"] = bool(history_id)
-    formatted.setdefault("source", "coinpilotxai")
+    formatted.setdefault("source", "coinplotxai")
     response = jsonify(formatted)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
@@ -19095,10 +19107,10 @@ def api_pulse_assistant_chat():
 
 
 UNDX_SYSTEM_PROMPT = (
-    "You are UNDX Core, the premium intelligence layer inside CoinPilotXAI. "
-    "Your job is to help build, expand, secure, and evolve CoinPilotXAI phase by phase. "
+    "You are UNDX Core, the premium intelligence layer inside CoinPlotXAI. "
+    "Your job is to help build, expand, secure, and evolve CoinPlotXAI phase by phase. "
     "Respond like a strategic AI builder. When the user gives a mission, classify it, explain the objective, "
-    "suggest modules, identify risks, recommend next actions, and keep responses focused on building CoinPilotXAI."
+    "suggest modules, identify risks, recommend next actions, and keep responses focused on building CoinPlotXAI."
 )
 
 
@@ -19557,7 +19569,7 @@ def sports_edge_landing_page():
         "Alerts and Notifications", "Training/Education Mode",
     ]
     feature_cards = "".join(f"<article class='card mini'><h3>{clean_html(item)}</h3><p>Educational intelligence with risk context, source status, and no guaranteed-outcome claims.</p></article>" for item in features)
-    body = f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Sports Edge AI Intelligence | CoinPilotXAI</title><meta name='description' content='Use CoinPilotXAI Sports Edge to track sports data, AI signals, risk psychology, and crypto market intelligence in one web and mobile command center.'><link rel='canonical' href='https://pulsesoc.com/sports-edge'><meta property='og:title' content='Sports Edge AI Intelligence | CoinPilotXAI'><meta property='og:description' content='Track sports data, AI signals, discipline coaching, and risk intelligence.'><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 32px,1180px);margin:auto}}header{{position:sticky;top:0;background:rgba(5,11,20,.9);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.18)}}nav{{min-height:68px;display:flex;justify-content:space-between;align-items:center;gap:12px}}a{{color:inherit;text-decoration:none}}.hero{{padding:72px 0 32px;display:grid;grid-template-columns:1.15fr .85fr;gap:20px;align-items:center}}h1{{font-size:clamp(40px,7vw,76px);line-height:.96;margin:0 0 16px}}p{{color:#9fb5c0}}.button{{display:inline-flex;min-height:46px;align-items:center;justify-content:center;border-radius:10px;padding:12px 16px;background:rgba(255,255,255,.06);border:1px solid rgba(110,223,246,.24);font-weight:900}}.primary{{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b}}.gold{{background:linear-gradient(135deg,#ffd166,#b6ff4f);color:#1c1303}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.card{{border:1px solid rgba(110,223,246,.2);border-radius:18px;background:rgba(255,255,255,.05);padding:20px;box-shadow:0 24px 80px rgba(0,0,0,.24)}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:18px 0 50px}}.mini:hover{{box-shadow:0 0 34px rgba(110,223,246,.18)}}.status{{color:#36e58f;font-weight:900}}@media(max-width:820px){{.hero{{grid-template-columns:1fr;padding-top:36px}}.actions .button{{width:100%}}}}</style></head><body><header><div class='wrap'><nav><a href='/'>CoinPilotXAI</a><a href='/dashboard'>Dashboard</a></nav></div></header><main class='wrap'><section class='hero'><div><p class='status'>Sports Edge Intelligence</p><h1>Sports Edge Intelligence Meets Crypto Market Discipline</h1><p>Track live sports data, market psychology, odds movement, AI insights, and risk signals from one CoinPilotXAI command center.</p><div class='actions'><a class='button primary' href='/app#sports-edge'>Open Sports Edge</a><a class='button gold' href='/sports-edge/trade' target='_blank' rel='noopener sponsored' data-analytics='gemini_trade_redirect_clicked'>Sign In to Trade</a></div><p><small>External trading platform. CoinPilotXAI may use affiliate links. Trading involves risk.</small></p></div><aside class='card'><h2>Live Status</h2><p>{clean_html(source_note)}</p><p>Educational intelligence only. Not financial advice. Not betting advice. No guaranteed outcomes. Follow local laws.</p></aside></section><section class='grid'>{feature_cards}</section></main></body></html>"""
+    body = f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Sports Edge AI Intelligence | CoinPlotXAI</title><meta name='description' content='Use CoinPlotXAI Sports Edge to track sports data, AI signals, risk psychology, and crypto market intelligence in one web and mobile command center.'><link rel='canonical' href='https://pulsesoc.com/sports-edge'><meta property='og:title' content='Sports Edge AI Intelligence | CoinPlotXAI'><meta property='og:description' content='Track sports data, AI signals, discipline coaching, and risk intelligence.'><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 32px,1180px);margin:auto}}header{{position:sticky;top:0;background:rgba(5,11,20,.9);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.18)}}nav{{min-height:68px;display:flex;justify-content:space-between;align-items:center;gap:12px}}a{{color:inherit;text-decoration:none}}.hero{{padding:72px 0 32px;display:grid;grid-template-columns:1.15fr .85fr;gap:20px;align-items:center}}h1{{font-size:clamp(40px,7vw,76px);line-height:.96;margin:0 0 16px}}p{{color:#9fb5c0}}.button{{display:inline-flex;min-height:46px;align-items:center;justify-content:center;border-radius:10px;padding:12px 16px;background:rgba(255,255,255,.06);border:1px solid rgba(110,223,246,.24);font-weight:900}}.primary{{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b}}.gold{{background:linear-gradient(135deg,#ffd166,#b6ff4f);color:#1c1303}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.card{{border:1px solid rgba(110,223,246,.2);border-radius:18px;background:rgba(255,255,255,.05);padding:20px;box-shadow:0 24px 80px rgba(0,0,0,.24)}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:18px 0 50px}}.mini:hover{{box-shadow:0 0 34px rgba(110,223,246,.18)}}.status{{color:#36e58f;font-weight:900}}@media(max-width:820px){{.hero{{grid-template-columns:1fr;padding-top:36px}}.actions .button{{width:100%}}}}</style></head><body><header><div class='wrap'><nav><a href='/'>CoinPlotXAI</a><a href='/dashboard'>Dashboard</a></nav></div></header><main class='wrap'><section class='hero'><div><p class='status'>Sports Edge Intelligence</p><h1>Sports Edge Intelligence Meets Crypto Market Discipline</h1><p>Track live sports data, market psychology, odds movement, AI insights, and risk signals from one CoinPlotXAI command center.</p><div class='actions'><a class='button primary' href='/app#sports-edge'>Open Sports Edge</a><a class='button gold' href='/sports-edge/trade' target='_blank' rel='noopener sponsored' data-analytics='gemini_trade_redirect_clicked'>Sign In to Trade</a></div><p><small>External trading platform. CoinPlotXAI may use affiliate links. Trading involves risk.</small></p></div><aside class='card'><h2>Live Status</h2><p>{clean_html(source_note)}</p><p>Educational intelligence only. Not financial advice. Not betting advice. No guaranteed outcomes. Follow local laws.</p></aside></section><section class='grid'>{feature_cards}</section></main></body></html>"""
     log_product_event(account_user_id(), "sports_edge_opened", {})
     return Response(body)
 
@@ -19626,7 +19638,7 @@ def tactical_insight_payload(symbol):
         )
     else:
         insight = (
-            f"{symbol} live pricing is reconnecting, so CoinPilotXAI is using cached market intelligence. "
+            f"{symbol} live pricing is reconnecting, so CoinPlotXAI is using cached market intelligence. "
             "The safest posture is observation until price, volume, and news context refresh."
         )
     confidence = 84 if price and news.get("items") else 68 if price else 56
@@ -19701,18 +19713,18 @@ def api_quote_signals(symbol):
     asset = market_data_service.get_symbol(clean_html(symbol).upper()[:12]) or {}
     change = float(asset.get("change_24h") or 0)
     signal = "Caution" if change < -3 else "Momentum watch" if change > 3 else "Neutral watch"
-    return jsonify({"ok": True, "symbol": symbol.upper(), "signal": signal, "explanation": "Educational market intelligence only. Not financial advice.", "source": "CoinPilotXAI rules"})
+    return jsonify({"ok": True, "symbol": symbol.upper(), "signal": signal, "explanation": "Educational market intelligence only. Not financial advice.", "source": "CoinPlotXAI rules"})
 
 
 @webhook_app.route("/quote", methods=["GET"])
 def quote_center_page():
-    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Live Quote Market Center | CoinPilotXAI</title><meta name='description' content='Live crypto quote board with AI market intelligence, source status, and educational risk notes.'><link rel='canonical' href='https://pulsesoc.com/quote'><meta property='og:title' content='Live Quote Market Center | CoinPilotXAI'><meta property='og:description' content='Track live crypto quotes, AI market context, and educational risk intelligence.'><style>:root{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}*{box-sizing:border-box}html,body{min-height:100%;overflow-x:hidden;overflow-y:auto}body{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}.psych-market-bg,.intelligence-glow-bg{position:relative;isolation:isolate;overflow-x:hidden;background:radial-gradient(circle at 14% 4%,rgba(110,223,246,.2),transparent 28rem),radial-gradient(circle at 86% 18%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421)}.soft-data-grid:before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(110,223,246,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.055) 1px,transparent 1px);background-size:52px 52px;mask-image:radial-gradient(circle at 50% 15%,black,transparent 72%);pointer-events:none;z-index:-2}.intelligence-glow-bg:after{content:'';position:absolute;inset:auto -15% -28% -15%;height:260px;background:linear-gradient(90deg,transparent,rgba(110,223,246,.17),rgba(255,209,102,.1),transparent);filter:blur(24px);animation:intelligenceDrift 16s ease-in-out infinite alternate;z-index:-1}.wrap{width:min(100% - 28px,1180px);margin:auto;padding:38px 0 96px}.hero{padding:24px 0 20px}.kicker{color:var(--green);font-weight:950;letter-spacing:.08em;text-transform:uppercase;font-size:12px}h1{font-size:clamp(38px,7vw,72px);line-height:.98;margin:10px 0 14px}p{color:var(--muted)}.trust-gradient-panel,.card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.82);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px}.quote-cta-glow{box-shadow:0 0 0 1px rgba(110,223,246,.22),0 0 30px rgba(110,223,246,.18)}.filters{display:flex;gap:8px;overflow-x:auto;padding:10px 0 16px;position:sticky;top:0;background:rgba(5,11,20,.9);backdrop-filter:blur(14px);z-index:5}.filter{white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);color:#dff7ff;padding:9px 12px;font-weight:850;cursor:pointer}.filter.active{box-shadow:0 0 24px rgba(110,223,246,.34);color:#fff}.search{width:100%;min-height:46px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.06);color:#fff;padding:12px;margin:8px 0 12px}.meta{color:var(--muted);font-size:13px;margin:8px 0 12px}.row{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;padding:14px 12px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer;border-radius:12px;transition:background .2s ease,transform .2s ease,box-shadow .2s ease}.row:hover{background:rgba(110,223,246,.08);transform:translateY(-1px);box-shadow:0 0 26px rgba(110,223,246,.12)}.green{color:var(--green)}.red{color:#ff6b7a}.actions{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 20px}.button{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:10px;border:1px solid var(--line);padding:10px 14px;color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));font-weight:900;text-decoration:none}@keyframes intelligenceDrift{from{transform:translateX(-4%) scale(1);opacity:.55}to{transform:translateX(4%) scale(1.06);opacity:.85}}@media(max-width:760px){.row{grid-template-columns:1fr 1fr}.actions .button{width:100%}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}</style></head><body class='psych-market-bg intelligence-glow-bg soft-data-grid'><main class='wrap'><section class='hero'><div class='kicker'>Live Quote Market Center</div><h1>Real-time crypto intelligence with calm market context.</h1><p>Track live assets, top movers, volume leaders, source status, and market filters. Educational market intelligence only. Not financial advice.</p><div class='actions'><a class='button quote-cta-glow' href='/signup?next=/watch'>Create Free Account</a><a class='button quote-cta-glow' href='/simulator'>Start Trading Simulator</a></div></section><section class='card trust-gradient-panel'><input class='search' id='search' placeholder='Search BTC, ETH, SUI, OP, TON...'><div class='filters'><button class='filter active' data-filter='top_volume'>Top Volume</button><button class='filter' data-filter='top_market_cap'>Top Market Cap</button><button class='filter' data-filter='gainers'>Gainers</button><button class='filter' data-filter='losers'>Losers</button><button class='filter' data-filter='stablecoins'>Stablecoins</button><button class='filter' data-filter='layer1'>Layer 1</button><button class='filter' data-filter='layer2'>Layer 2</button><button class='filter' data-filter='ai'>AI Coins</button><button class='filter' data-filter='meme'>Meme Coins</button></div><div class='meta' id='meta'>Loading live market board...</div><div id='rows'><div class='meta'>Loading...</div></div></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{style:'currency',currency:'USD'});const pct=n=>(Number(n||0)>=0?'+':'')+Number(n||0).toFixed(2)+'%';let markets=[];let filter='top_volume';function categoryOk(m){const s=(m.symbol||'').toUpperCase(), name=(m.name||'').toLowerCase();if(filter==='stablecoins')return ['USDT','USDC','DAI'].includes(s)||name.includes('stable');if(filter==='layer1')return ['BTC','ETH','SOL','SUI','TON','ADA','AVAX','NEAR','ATOM','DOT'].includes(s);if(filter==='layer2')return ['OP','ARB','MATIC','POL','STRK','BASE'].includes(s)||name.includes('optimism')||name.includes('arbitrum');if(filter==='ai')return ['FET','TAO','RNDR','RENDER','AI'].includes(s)||name.includes('ai')||name.includes('artificial');if(filter==='meme')return ['DOGE','SHIB','PEPE','BONK','WIF'].includes(s)||name.includes('doge')||name.includes('meme');return true}function sorted(list){if(filter==='gainers')return list.sort((a,b)=>(b.change_24h??-999)-(a.change_24h??-999));if(filter==='losers')return list.sort((a,b)=>(a.change_24h??999)-(b.change_24h??999));if(filter==='top_market_cap')return list.sort((a,b)=>(b.market_cap||0)-(a.market_cap||0));return list.sort((a,b)=>(b.volume_24h||0)-(a.volume_24h||0))}function render(){const q=document.getElementById('search').value.trim().toLowerCase();const data=sorted(markets.filter(categoryOk).filter(m=>!q||(m.symbol||'').toLowerCase().includes(q)||(m.name||'').toLowerCase().includes(q))).slice(0,60);document.querySelectorAll('[data-filter]').forEach(b=>b.classList.toggle('active',b.dataset.filter===filter));document.getElementById('rows').innerHTML=data.map((m,i)=>`<div class='row' onclick=\"location.href='/quote/crypto/${m.symbol}'\"><strong>${i+1}. ${m.name} (${m.symbol})</strong><span>${money(m.price)}</span><span class='${Number(m.change_24h||0)>=0?'green':'red'}'>${pct(m.change_24h)}</span><span>${Number(m.volume_24h||0).toLocaleString()}</span></div>`).join('')||'<div class=meta>Live source is reconnecting right now. Here is what I can safely show when cached data returns.</div>'}async function load(){try{const d=await fetch('/api/quote/crypto',{cache:'no-store'}).then(r=>r.json());markets=d.markets||[];document.getElementById('meta').textContent=`Source: ${d.source||'unavailable'} · Updated: ${d.updated_at||'reconnecting'}${d.warning?' · '+d.warning:''}`;render()}catch(e){document.getElementById('meta').textContent='Live source is reconnecting right now. Here is what I can safely tell you… market data is temporarily unavailable.'}}document.addEventListener('click',e=>{const b=e.target.closest('[data-filter]');if(!b)return;filter=b.dataset.filter;render()});document.getElementById('search').addEventListener('input',render);load();setInterval(load,30000)</script></body></html>""")
+    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Live Quote Market Center | CoinPlotXAI</title><meta name='description' content='Live crypto quote board with AI market intelligence, source status, and educational risk notes.'><link rel='canonical' href='https://pulsesoc.com/quote'><meta property='og:title' content='Live Quote Market Center | CoinPlotXAI'><meta property='og:description' content='Track live crypto quotes, AI market context, and educational risk intelligence.'><style>:root{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}*{box-sizing:border-box}html,body{min-height:100%;overflow-x:hidden;overflow-y:auto}body{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}.psych-market-bg,.intelligence-glow-bg{position:relative;isolation:isolate;overflow-x:hidden;background:radial-gradient(circle at 14% 4%,rgba(110,223,246,.2),transparent 28rem),radial-gradient(circle at 86% 18%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421)}.soft-data-grid:before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(110,223,246,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.055) 1px,transparent 1px);background-size:52px 52px;mask-image:radial-gradient(circle at 50% 15%,black,transparent 72%);pointer-events:none;z-index:-2}.intelligence-glow-bg:after{content:'';position:absolute;inset:auto -15% -28% -15%;height:260px;background:linear-gradient(90deg,transparent,rgba(110,223,246,.17),rgba(255,209,102,.1),transparent);filter:blur(24px);animation:intelligenceDrift 16s ease-in-out infinite alternate;z-index:-1}.wrap{width:min(100% - 28px,1180px);margin:auto;padding:38px 0 96px}.hero{padding:24px 0 20px}.kicker{color:var(--green);font-weight:950;letter-spacing:.08em;text-transform:uppercase;font-size:12px}h1{font-size:clamp(38px,7vw,72px);line-height:.98;margin:10px 0 14px}p{color:var(--muted)}.trust-gradient-panel,.card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.82);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px}.quote-cta-glow{box-shadow:0 0 0 1px rgba(110,223,246,.22),0 0 30px rgba(110,223,246,.18)}.filters{display:flex;gap:8px;overflow-x:auto;padding:10px 0 16px;position:sticky;top:0;background:rgba(5,11,20,.9);backdrop-filter:blur(14px);z-index:5}.filter{white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);color:#dff7ff;padding:9px 12px;font-weight:850;cursor:pointer}.filter.active{box-shadow:0 0 24px rgba(110,223,246,.34);color:#fff}.search{width:100%;min-height:46px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.06);color:#fff;padding:12px;margin:8px 0 12px}.meta{color:var(--muted);font-size:13px;margin:8px 0 12px}.row{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;padding:14px 12px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer;border-radius:12px;transition:background .2s ease,transform .2s ease,box-shadow .2s ease}.row:hover{background:rgba(110,223,246,.08);transform:translateY(-1px);box-shadow:0 0 26px rgba(110,223,246,.12)}.green{color:var(--green)}.red{color:#ff6b7a}.actions{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 20px}.button{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:10px;border:1px solid var(--line);padding:10px 14px;color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));font-weight:900;text-decoration:none}@keyframes intelligenceDrift{from{transform:translateX(-4%) scale(1);opacity:.55}to{transform:translateX(4%) scale(1.06);opacity:.85}}@media(max-width:760px){.row{grid-template-columns:1fr 1fr}.actions .button{width:100%}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}</style></head><body class='psych-market-bg intelligence-glow-bg soft-data-grid'><main class='wrap'><section class='hero'><div class='kicker'>Live Quote Market Center</div><h1>Real-time crypto intelligence with calm market context.</h1><p>Track live assets, top movers, volume leaders, source status, and market filters. Educational market intelligence only. Not financial advice.</p><div class='actions'><a class='button quote-cta-glow' href='/signup?next=/watch'>Create Free Account</a><a class='button quote-cta-glow' href='/simulator'>Start Trading Simulator</a></div></section><section class='card trust-gradient-panel'><input class='search' id='search' placeholder='Search BTC, ETH, SUI, OP, TON...'><div class='filters'><button class='filter active' data-filter='top_volume'>Top Volume</button><button class='filter' data-filter='top_market_cap'>Top Market Cap</button><button class='filter' data-filter='gainers'>Gainers</button><button class='filter' data-filter='losers'>Losers</button><button class='filter' data-filter='stablecoins'>Stablecoins</button><button class='filter' data-filter='layer1'>Layer 1</button><button class='filter' data-filter='layer2'>Layer 2</button><button class='filter' data-filter='ai'>AI Coins</button><button class='filter' data-filter='meme'>Meme Coins</button></div><div class='meta' id='meta'>Loading live market board...</div><div id='rows'><div class='meta'>Loading...</div></div></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{style:'currency',currency:'USD'});const pct=n=>(Number(n||0)>=0?'+':'')+Number(n||0).toFixed(2)+'%';let markets=[];let filter='top_volume';function categoryOk(m){const s=(m.symbol||'').toUpperCase(), name=(m.name||'').toLowerCase();if(filter==='stablecoins')return ['USDT','USDC','DAI'].includes(s)||name.includes('stable');if(filter==='layer1')return ['BTC','ETH','SOL','SUI','TON','ADA','AVAX','NEAR','ATOM','DOT'].includes(s);if(filter==='layer2')return ['OP','ARB','MATIC','POL','STRK','BASE'].includes(s)||name.includes('optimism')||name.includes('arbitrum');if(filter==='ai')return ['FET','TAO','RNDR','RENDER','AI'].includes(s)||name.includes('ai')||name.includes('artificial');if(filter==='meme')return ['DOGE','SHIB','PEPE','BONK','WIF'].includes(s)||name.includes('doge')||name.includes('meme');return true}function sorted(list){if(filter==='gainers')return list.sort((a,b)=>(b.change_24h??-999)-(a.change_24h??-999));if(filter==='losers')return list.sort((a,b)=>(a.change_24h??999)-(b.change_24h??999));if(filter==='top_market_cap')return list.sort((a,b)=>(b.market_cap||0)-(a.market_cap||0));return list.sort((a,b)=>(b.volume_24h||0)-(a.volume_24h||0))}function render(){const q=document.getElementById('search').value.trim().toLowerCase();const data=sorted(markets.filter(categoryOk).filter(m=>!q||(m.symbol||'').toLowerCase().includes(q)||(m.name||'').toLowerCase().includes(q))).slice(0,60);document.querySelectorAll('[data-filter]').forEach(b=>b.classList.toggle('active',b.dataset.filter===filter));document.getElementById('rows').innerHTML=data.map((m,i)=>`<div class='row' onclick=\"location.href='/quote/crypto/${m.symbol}'\"><strong>${i+1}. ${m.name} (${m.symbol})</strong><span>${money(m.price)}</span><span class='${Number(m.change_24h||0)>=0?'green':'red'}'>${pct(m.change_24h)}</span><span>${Number(m.volume_24h||0).toLocaleString()}</span></div>`).join('')||'<div class=meta>Live source is reconnecting right now. Here is what I can safely show when cached data returns.</div>'}async function load(){try{const d=await fetch('/api/quote/crypto',{cache:'no-store'}).then(r=>r.json());markets=d.markets||[];document.getElementById('meta').textContent=`Source: ${d.source||'unavailable'} · Updated: ${d.updated_at||'reconnecting'}${d.warning?' · '+d.warning:''}`;render()}catch(e){document.getElementById('meta').textContent='Live source is reconnecting right now. Here is what I can safely tell you… market data is temporarily unavailable.'}}document.addEventListener('click',e=>{const b=e.target.closest('[data-filter]');if(!b)return;filter=b.dataset.filter;render()});document.getElementById('search').addEventListener('input',render);load();setInterval(load,30000)</script></body></html>""")
 
 
 @webhook_app.route("/quote/crypto/<symbol>", methods=["GET"])
 def quote_symbol_page(symbol):
     symbol = clean_html(symbol).upper()[:12]
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{symbol} Live Price, Market Data, AI Crypto Intelligence | CoinPilotXAI</title><meta name='description' content='{symbol} live price, market data, educational AI explanation, watchlist actions, and risk notes from CoinPilotXAI.'><link rel='canonical' href='https://pulsesoc.com/quote/crypto/{symbol}'><meta property='og:title' content='{symbol} Live Price | CoinPilotXAI'><meta property='og:description' content='Live quote intelligence, AI context, and educational risk notes for {symbol}.'><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.psych-market-bg,.intelligence-glow-bg{{position:relative;isolation:isolate;overflow-x:hidden;background:radial-gradient(circle at 14% 4%,rgba(110,223,246,.2),transparent 28rem),radial-gradient(circle at 86% 18%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421)}}.soft-data-grid:before{{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(110,223,246,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.055) 1px,transparent 1px);background-size:52px 52px;mask-image:radial-gradient(circle at 50% 15%,black,transparent 72%);pointer-events:none;z-index:-2}}.wrap{{width:min(100% - 28px,1050px);margin:auto;padding:30px 0 90px}}a{{color:inherit}}.trust-gradient-panel,.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.82);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px;margin:14px 0}}.metric{{font-size:clamp(40px,8vw,68px);font-weight:950}}p{{color:var(--muted)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;padding:10px 14px;text-decoration:none;cursor:pointer;box-shadow:0 0 30px rgba(110,223,246,.16)}}.tactical-card{{position:relative;overflow:hidden;background:radial-gradient(circle at 14% 0,rgba(110,223,246,.18),transparent 22rem),linear-gradient(135deg,rgba(14,28,48,.96),rgba(7,14,26,.92))}}.tactical-card:before{{content:'';position:absolute;inset:-1px;background:linear-gradient(120deg,transparent,rgba(110,223,246,.16),rgba(54,229,143,.08),transparent);animation:tacticalGlow 7s ease-in-out infinite;pointer-events:none}}.tactical-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;position:relative}}.live-dot,.confidence{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;padding:6px 9px;color:#c8ffe2;font-size:12px;font-weight:900;background:rgba(255,255,255,.055)}}.live-dot:before{{content:'';width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8)}}.tactical-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;position:relative}}.tactical-pill{{border:1px solid rgba(255,255,255,.08);border-radius:13px;background:rgba(255,255,255,.045);padding:12px}}.tactical-pill strong{{display:block;color:#fff;margin-top:2px}}.tactical-insight{{font-size:15px;line-height:1.55;margin:12px 0;position:relative}}canvas{{width:100%;height:260px;background:rgba(0,0,0,.18);border-radius:14px}}@keyframes tacticalGlow{{0%,100%{{opacity:.28;transform:translateX(-8%)}}50%{{opacity:.68;transform:translateX(8%)}}}}@media(max-width:720px){{.actions .button{{width:100%}}.tactical-head{{align-items:flex-start;flex-direction:column}}.tactical-grid{{grid-template-columns:1fr}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body class='psych-market-bg intelligence-glow-bg soft-data-grid'><main class='wrap'><a href='/quote'>← Quote Center</a><section class='card trust-gradient-panel'><h1>{symbol} Live Quote</h1><div class='metric' id='price'>Loading...</div><p id='meta'></p><div class='actions'><button class='button' id='watch'>Add to Watchlist</button><a class='button' href='/alerts'>Create Alert</a><a class='button' href='/simulator?asset={symbol}'>Simulate Trade</a><a class='button' href='/chat?asset={symbol}'>Ask AI</a><a class='button' href='/education'>Open Education</a></div></section><section class='card tactical-card' aria-live='polite'><div class='tactical-head'><div><p class='live-dot'>Live intelligence</p><h2>AI Tactical Insight</h2></div><span class='confidence' id='confidence'>Confidence --</span></div><div class='tactical-grid'><div class='tactical-pill'>Market Mood<strong id='mood'>Loading tactical context...</strong></div><div class='tactical-pill'>Tactical Bias<strong id='bias'>Neutral</strong></div><div class='tactical-pill'>Key Levels<strong id='levels'>Support -- · Resistance --</strong></div><div class='tactical-pill'>AI Next Decision<strong id='decision'>Watch for confirmation</strong></div></div><p class='tactical-insight' id='tacticalInsight'>CoinPilotXAI is loading live quote context, Fear & Greed, cached news, and volatility. If live sources reconnect slowly, cached tactical intelligence will appear here.</p><p id='tacticalMeta'></p></section><section class='card'><canvas id='chart'></canvas></section><section class='card'><h2>AI Market Explanation</h2><p id='explain'>Educational market intelligence only. Not financial advice.</p></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{{style:'currency',currency:'USD'}});const compact=n=>Number(n||0).toLocaleString(undefined,{{maximumFractionDigits:0}});async function loadTactical(){{try{{const t=await fetch('/api/quote/crypto/{symbol}/tactical-insight',{{cache:'no-store'}}).then(r=>r.json());document.getElementById('mood').textContent=t.market_mood||'Cached tactical context';document.getElementById('bias').textContent=t.tactical_bias||'Neutral';const levels=t.key_levels||{{}};document.getElementById('levels').textContent='Support '+(levels.support?compact(levels.support):'--')+' · Resistance '+(levels.resistance?compact(levels.resistance):'--');document.getElementById('decision').textContent=t.next_decision||'Wait for confirmation before aggressive positioning';document.getElementById('tacticalInsight').textContent=t.ai_insight||'Cached tactical intelligence is active while live sources reconnect.';document.getElementById('confidence').textContent='Confidence '+(t.confidence||60)+'%';document.getElementById('tacticalMeta').textContent=`Fear & Greed: ${{(t.fear_greed||{{}}).classification||'reconnecting'}} · Volatility score: ${{t.volatility_score||0}} · News: ${{t.news_source||'cached intelligence'}}`;}}catch(e){{document.getElementById('tacticalInsight').textContent='Cached tactical intelligence is active while live sources reconnect. Avoid emotional entries and wait for confirmation.';}}}}async function load(){{try{{const d=await fetch('/api/quote/crypto/{symbol}',{{cache:'no-store'}}).then(r=>r.json());const a=d.asset||{{}};document.getElementById('price').textContent=money(a.price);document.getElementById('meta').textContent=`24h: ${{Number(a.change_24h||0).toFixed(2)}}% · Volume: ${{Number(a.volume_24h||0).toLocaleString()}} · Source: ${{d.source||'unavailable'}} · Last updated: ${{d.last_updated||'now'}}`;document.getElementById('explain').textContent=`${symbol} is being shown with source labels and risk context. Use the watchlist, alert, simulator, and AI tools for education, not guaranteed outcomes.`;const c=document.getElementById('chart'),ctx=c.getContext('2d');c.width=c.clientWidth*2;c.height=260*2;const chart=await fetch('/api/quote/crypto/{symbol}/chart').then(r=>r.json());ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#6edff6';ctx.lineWidth=4;ctx.beginPath();(chart.points||[]).forEach((p,i)=>{{const x=i/(chart.points.length-1||1)*c.width;const y=c.height-(p.price/(a.price*1.04||1))*c.height*.9;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y)}});ctx.stroke()}}catch(e){{document.getElementById('meta').textContent='Live quote source temporarily reconnecting.'}}}}document.getElementById('watch').onclick=async()=>{{await fetch('/api/watch',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{watch_type:'coin',value:'{symbol}',channels:['in_app']}})}});document.getElementById('watch').textContent='Saved'}};load();loadTactical();setInterval(()=>{{load();loadTactical()}},30000)</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{symbol} Live Price, Market Data, AI Crypto Intelligence | CoinPlotXAI</title><meta name='description' content='{symbol} live price, market data, educational AI explanation, watchlist actions, and risk notes from CoinPlotXAI.'><link rel='canonical' href='https://pulsesoc.com/quote/crypto/{symbol}'><meta property='og:title' content='{symbol} Live Price | CoinPlotXAI'><meta property='og:description' content='Live quote intelligence, AI context, and educational risk notes for {symbol}.'><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.psych-market-bg,.intelligence-glow-bg{{position:relative;isolation:isolate;overflow-x:hidden;background:radial-gradient(circle at 14% 4%,rgba(110,223,246,.2),transparent 28rem),radial-gradient(circle at 86% 18%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421)}}.soft-data-grid:before{{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(110,223,246,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.055) 1px,transparent 1px);background-size:52px 52px;mask-image:radial-gradient(circle at 50% 15%,black,transparent 72%);pointer-events:none;z-index:-2}}.wrap{{width:min(100% - 28px,1050px);margin:auto;padding:30px 0 90px}}a{{color:inherit}}.trust-gradient-panel,.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.82);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px;margin:14px 0}}.metric{{font-size:clamp(40px,8vw,68px);font-weight:950}}p{{color:var(--muted)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;padding:10px 14px;text-decoration:none;cursor:pointer;box-shadow:0 0 30px rgba(110,223,246,.16)}}.tactical-card{{position:relative;overflow:hidden;background:radial-gradient(circle at 14% 0,rgba(110,223,246,.18),transparent 22rem),linear-gradient(135deg,rgba(14,28,48,.96),rgba(7,14,26,.92))}}.tactical-card:before{{content:'';position:absolute;inset:-1px;background:linear-gradient(120deg,transparent,rgba(110,223,246,.16),rgba(54,229,143,.08),transparent);animation:tacticalGlow 7s ease-in-out infinite;pointer-events:none}}.tactical-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;position:relative}}.live-dot,.confidence{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;padding:6px 9px;color:#c8ffe2;font-size:12px;font-weight:900;background:rgba(255,255,255,.055)}}.live-dot:before{{content:'';width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8)}}.tactical-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;position:relative}}.tactical-pill{{border:1px solid rgba(255,255,255,.08);border-radius:13px;background:rgba(255,255,255,.045);padding:12px}}.tactical-pill strong{{display:block;color:#fff;margin-top:2px}}.tactical-insight{{font-size:15px;line-height:1.55;margin:12px 0;position:relative}}canvas{{width:100%;height:260px;background:rgba(0,0,0,.18);border-radius:14px}}@keyframes tacticalGlow{{0%,100%{{opacity:.28;transform:translateX(-8%)}}50%{{opacity:.68;transform:translateX(8%)}}}}@media(max-width:720px){{.actions .button{{width:100%}}.tactical-head{{align-items:flex-start;flex-direction:column}}.tactical-grid{{grid-template-columns:1fr}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body class='psych-market-bg intelligence-glow-bg soft-data-grid'><main class='wrap'><a href='/quote'>← Quote Center</a><section class='card trust-gradient-panel'><h1>{symbol} Live Quote</h1><div class='metric' id='price'>Loading...</div><p id='meta'></p><div class='actions'><button class='button' id='watch'>Add to Watchlist</button><a class='button' href='/alerts'>Create Alert</a><a class='button' href='/simulator?asset={symbol}'>Simulate Trade</a><a class='button' href='/chat?asset={symbol}'>Ask AI</a><a class='button' href='/education'>Open Education</a></div></section><section class='card tactical-card' aria-live='polite'><div class='tactical-head'><div><p class='live-dot'>Live intelligence</p><h2>AI Tactical Insight</h2></div><span class='confidence' id='confidence'>Confidence --</span></div><div class='tactical-grid'><div class='tactical-pill'>Market Mood<strong id='mood'>Loading tactical context...</strong></div><div class='tactical-pill'>Tactical Bias<strong id='bias'>Neutral</strong></div><div class='tactical-pill'>Key Levels<strong id='levels'>Support -- · Resistance --</strong></div><div class='tactical-pill'>AI Next Decision<strong id='decision'>Watch for confirmation</strong></div></div><p class='tactical-insight' id='tacticalInsight'>CoinPlotXAI is loading live quote context, Fear & Greed, cached news, and volatility. If live sources reconnect slowly, cached tactical intelligence will appear here.</p><p id='tacticalMeta'></p></section><section class='card'><canvas id='chart'></canvas></section><section class='card'><h2>AI Market Explanation</h2><p id='explain'>Educational market intelligence only. Not financial advice.</p></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{{style:'currency',currency:'USD'}});const compact=n=>Number(n||0).toLocaleString(undefined,{{maximumFractionDigits:0}});async function loadTactical(){{try{{const t=await fetch('/api/quote/crypto/{symbol}/tactical-insight',{{cache:'no-store'}}).then(r=>r.json());document.getElementById('mood').textContent=t.market_mood||'Cached tactical context';document.getElementById('bias').textContent=t.tactical_bias||'Neutral';const levels=t.key_levels||{{}};document.getElementById('levels').textContent='Support '+(levels.support?compact(levels.support):'--')+' · Resistance '+(levels.resistance?compact(levels.resistance):'--');document.getElementById('decision').textContent=t.next_decision||'Wait for confirmation before aggressive positioning';document.getElementById('tacticalInsight').textContent=t.ai_insight||'Cached tactical intelligence is active while live sources reconnect.';document.getElementById('confidence').textContent='Confidence '+(t.confidence||60)+'%';document.getElementById('tacticalMeta').textContent=`Fear & Greed: ${{(t.fear_greed||{{}}).classification||'reconnecting'}} · Volatility score: ${{t.volatility_score||0}} · News: ${{t.news_source||'cached intelligence'}}`;}}catch(e){{document.getElementById('tacticalInsight').textContent='Cached tactical intelligence is active while live sources reconnect. Avoid emotional entries and wait for confirmation.';}}}}async function load(){{try{{const d=await fetch('/api/quote/crypto/{symbol}',{{cache:'no-store'}}).then(r=>r.json());const a=d.asset||{{}};document.getElementById('price').textContent=money(a.price);document.getElementById('meta').textContent=`24h: ${{Number(a.change_24h||0).toFixed(2)}}% · Volume: ${{Number(a.volume_24h||0).toLocaleString()}} · Source: ${{d.source||'unavailable'}} · Last updated: ${{d.last_updated||'now'}}`;document.getElementById('explain').textContent=`${symbol} is being shown with source labels and risk context. Use the watchlist, alert, simulator, and AI tools for education, not guaranteed outcomes.`;const c=document.getElementById('chart'),ctx=c.getContext('2d');c.width=c.clientWidth*2;c.height=260*2;const chart=await fetch('/api/quote/crypto/{symbol}/chart').then(r=>r.json());ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#6edff6';ctx.lineWidth=4;ctx.beginPath();(chart.points||[]).forEach((p,i)=>{{const x=i/(chart.points.length-1||1)*c.width;const y=c.height-(p.price/(a.price*1.04||1))*c.height*.9;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y)}});ctx.stroke()}}catch(e){{document.getElementById('meta').textContent='Live quote source temporarily reconnecting.'}}}}document.getElementById('watch').onclick=async()=>{{await fetch('/api/watch',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{watch_type:'coin',value:'{symbol}',channels:['in_app']}})}});document.getElementById('watch').textContent='Saved'}};load();loadTactical();setInterval(()=>{{load();loadTactical()}},30000)</script></body></html>""")
 
 
 def prediction_samples():
@@ -19730,7 +19742,7 @@ def api_predictions():
         markets = [market for market in markets if str(market.get("category", "")).lower() == category]
     if status:
         markets = [market for market in markets if str(market.get("status", "")).lower() == status]
-    return jsonify({"ok": True, "provider": provider, "source_status": "educational sample fallback" if status_payload.get("fallback") else "live", "provider_status": status_payload, "markets": markets, "disclaimer": "Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPilotXAI does not guarantee outcomes."})
+    return jsonify({"ok": True, "provider": provider, "source_status": "educational sample fallback" if status_payload.get("fallback") else "live", "provider_status": status_payload, "markets": markets, "disclaimer": "Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPlotXAI does not guarantee outcomes."})
 
 
 @webhook_app.route("/api/predictions/<market_id>", methods=["GET"])
@@ -19744,7 +19756,7 @@ def predictions_page():
     user = require_account()
     if not user:
         return redirect(url_for("signup_page", next="/predictions"))
-    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Predictions Intelligence | CoinPilotXAI</title><style>body{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}.wrap{width:min(100% - 28px,1120px);margin:auto;padding:34px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}.card{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px}.button{min-height:42px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}</style></head><body><main class='wrap'><h1>Live Predictions Intelligence</h1><p>Track event probabilities, crypto scenarios, sports outcomes, economic events, and market sentiment from one AI intelligence dashboard.</p><div id='cards' class='grid'></div></main><script>async function load(){const d=await fetch('/api/predictions',{cache:'no-store'}).then(r=>r.json());document.getElementById('cards').innerHTML=(d.markets||[]).map(m=>`<article class='card'><small>${m.category} · ${m.source}</small><h2>${m.title}</h2><p>Probability: <strong>${m.probability}%</strong></p><p>Volume: ${Number(m.volume||0).toLocaleString()} · Risk: ${m.risk_level}</p><button class='button' data-watch='${m.id}'>Track in Dashboard</button> <a class='button' href='/predictions/${m.id}'>View Details</a></article>`).join('')}document.addEventListener('click',async e=>{if(e.target.dataset.watch){await fetch('/api/predictions/watch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({market_id:e.target.dataset.watch})});e.target.textContent='Tracked'}});load()</script></body></html>""")
+    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Predictions Intelligence | CoinPlotXAI</title><style>body{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}.wrap{width:min(100% - 28px,1120px);margin:auto;padding:34px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}.card{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px}.button{min-height:42px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}</style></head><body><main class='wrap'><h1>Live Predictions Intelligence</h1><p>Track event probabilities, crypto scenarios, sports outcomes, economic events, and market sentiment from one AI intelligence dashboard.</p><div id='cards' class='grid'></div></main><script>async function load(){const d=await fetch('/api/predictions',{cache:'no-store'}).then(r=>r.json());document.getElementById('cards').innerHTML=(d.markets||[]).map(m=>`<article class='card'><small>${m.category} · ${m.source}</small><h2>${m.title}</h2><p>Probability: <strong>${m.probability}%</strong></p><p>Volume: ${Number(m.volume||0).toLocaleString()} · Risk: ${m.risk_level}</p><button class='button' data-watch='${m.id}'>Track in Dashboard</button> <a class='button' href='/predictions/${m.id}'>View Details</a></article>`).join('')}document.addEventListener('click',async e=>{if(e.target.dataset.watch){await fetch('/api/predictions/watch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({market_id:e.target.dataset.watch})});e.target.textContent='Tracked'}});load()</script></body></html>""")
 
 
 @webhook_app.route("/predictions/crypto", methods=["GET"])
@@ -19754,12 +19766,12 @@ def predictions_crypto_page():
     external_url = clean_html(os.getenv("EXTERNAL_TRADE_URL") or os.getenv("PREDICTIONS_EXTERNAL_TRADE_URL") or get_gemini_trade_url())
     return Response(f"""<!doctype html>
 <html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>Live Crypto Predictions Intelligence | CoinPilotXAI</title>
-<meta name='description' content='Track active crypto prediction scenarios, market probabilities, AI explanations, and risk intelligence with CoinPilotXAI.'>
+<title>Live Crypto Predictions Intelligence | CoinPlotXAI</title>
+<meta name='description' content='Track active crypto prediction scenarios, market probabilities, AI explanations, and risk intelligence with CoinPlotXAI.'>
 <link rel='canonical' href='https://pulsesoc.com/predictions/crypto'>
 <style>
 :root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 26rem),radial-gradient(circle at 88% 16%,rgba(54,229,143,.11),transparent 23rem),#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}body:before{{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(110,223,246,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.045) 1px,transparent 1px);background-size:54px 54px;mask-image:radial-gradient(circle at 50% 10%,black,transparent 72%);pointer-events:none}}.wrap{{position:relative;width:min(100% - 28px,1180px);margin:auto;padding:34px 0 90px}}a{{color:inherit;text-decoration:none}}.kicker{{color:var(--green);font-weight:950;letter-spacing:.08em;text-transform:uppercase;font-size:12px}}h1{{font-size:clamp(38px,7vw,72px);line-height:.98;margin:10px 0 14px}}p{{color:var(--muted)}}.filters{{display:flex;gap:8px;overflow:auto;padding:10px 0 18px;position:sticky;top:0;background:rgba(5,11,20,.86);backdrop-filter:blur(12px);z-index:2}}.pill{{white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);color:#dff7ff;padding:9px 12px;font-weight:850;cursor:pointer}}.pill.active{{box-shadow:0 0 24px rgba(110,223,246,.34);color:#fff}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.84);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px}}.status{{display:inline-flex;gap:8px;align-items:center;color:var(--green);font-weight:900}}.status:before{{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 16px var(--green)}}.prob{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:12px 0}}.prob span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold))}}.actions{{display:flex;gap:8px;flex-wrap:wrap}}.button{{min-height:42px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}}.button.secondary{{background:rgba(255,255,255,.055);color:#f2fbff}}.disclaimer{{margin-top:22px;border:1px solid rgba(255,209,102,.22);border-radius:14px;background:rgba(255,209,102,.06);padding:14px;color:#ffe7a6}}@media(max-width:720px){{.actions .button,.actions a{{width:100%;text-align:center}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}
-</style></head><body><main class='wrap'><section><div class='kicker'>Crypto Predictions Intelligence</div><h1>Active crypto prediction scenarios with AI risk context.</h1><p>Track probabilities, close dates, liquidity context, and market psychology. Actions save inside your PulseSoc account.</p><div class='filters'><button class='pill active' data-filter='active'>Active</button><button class='pill' data-filter='trending'>Trending</button><button class='pill' data-filter='closing'>Closing Soon</button><button class='pill' data-filter='btc'>Bitcoin</button><button class='pill' data-filter='eth'>Ethereum</button><button class='pill' data-filter='alt'>Altcoins</button><button class='pill' data-filter='macro'>Macro Crypto</button><button class='pill' data-filter='volume'>High Volume</button></div></section><section id='cards' class='grid' aria-live='polite'></section><p class='disclaimer'>Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPilotXAI does not guarantee outcomes.</p></main>
+</style></head><body><main class='wrap'><section><div class='kicker'>Crypto Predictions Intelligence</div><h1>Active crypto prediction scenarios with AI risk context.</h1><p>Track probabilities, close dates, liquidity context, and market psychology. Actions save inside your PulseSoc account.</p><div class='filters'><button class='pill active' data-filter='active'>Active</button><button class='pill' data-filter='trending'>Trending</button><button class='pill' data-filter='closing'>Closing Soon</button><button class='pill' data-filter='btc'>Bitcoin</button><button class='pill' data-filter='eth'>Ethereum</button><button class='pill' data-filter='alt'>Altcoins</button><button class='pill' data-filter='macro'>Macro Crypto</button><button class='pill' data-filter='volume'>High Volume</button></div></section><section id='cards' class='grid' aria-live='polite'></section><p class='disclaimer'>Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPlotXAI does not guarantee outcomes.</p></main>
 <script>
 const actionUrl='{action_url}';
 const externalUrl='{external_url}';
@@ -19773,7 +19785,7 @@ async function load(){{const d=await fetch('/api/predictions?category=crypto&sta
 document.addEventListener('click',async e=>{{const filter=e.target.closest('[data-filter]');if(filter){{currentFilter=filter.dataset.filter;render();return}}const btn=e.target.closest('button[data-action]');if(!btn)return;if(actionUrl.startsWith('/signup')){{location.href=actionUrl;return}}if(btn.dataset.action==='ai'){{location.href='/chat?context=prediction&symbol='+encodeURIComponent(btn.dataset.symbol||'CRYPTO')+'&id='+encodeURIComponent(btn.dataset.id);return}}if(btn.dataset.action==='simulate'){{location.href='/simulator?prediction='+encodeURIComponent(btn.dataset.id);return}}const endpoint=btn.dataset.action==='alert'?'/api/predictions/alert':'/api/predictions/watch';await fetch(endpoint,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{market_id:btn.dataset.id}})}});btn.textContent=btn.dataset.action==='watch'?'Watching ✓':'Prediction alert activated'}});
 load();
 </script></body></html>""")
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Live Crypto Predictions Intelligence | CoinPilotXAI</title><meta name='description' content='Track active crypto prediction scenarios, market probabilities, AI explanations, and risk intelligence with CoinPilotXAI.'><link rel='canonical' href='https://pulsesoc.com/predictions/crypto'><meta property='og:title' content='Live Crypto Predictions Intelligence | CoinPilotXAI'><meta property='og:description' content='Crypto prediction scenarios with AI explanations, probability context, and educational risk intelligence.'><script type='application/ld+json'>{{"@context":"https://schema.org","@type":"WebPage","name":"Live Crypto Predictions Intelligence","description":"Educational crypto prediction scenarios, probability tracking, and AI risk intelligence from CoinPilotXAI."}}</script><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 26rem),radial-gradient(circle at 88% 16%,rgba(54,229,143,.11),transparent 23rem),#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}body:before{{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(110,223,246,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.045) 1px,transparent 1px);background-size:54px 54px;mask-image:radial-gradient(circle at 50% 10%,black,transparent 72%);pointer-events:none}}.wrap{{position:relative;width:min(100% - 28px,1180px);margin:auto;padding:34px 0 90px}}a{{color:inherit;text-decoration:none}}.hero{{padding:34px 0 20px}}.kicker{{color:var(--green);font-weight:950;letter-spacing:.08em;text-transform:uppercase;font-size:12px}}h1{{font-size:clamp(38px,7vw,72px);line-height:.98;margin:10px 0 14px}}p{{color:var(--muted)}}.filters{{display:flex;gap:8px;overflow:auto;padding:10px 0 18px}}.pill{{white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);color:#dff7ff;padding:9px 12px;font-weight:850}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.84);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px}}.status{{display:inline-flex;gap:8px;align-items:center;color:var(--green);font-weight:900}}.status:before{{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 16px var(--green)}}.prob{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:12px 0}}.prob span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold))}}.actions{{display:flex;gap:8px;flex-wrap:wrap}}.button{{min-height:42px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}}.button.secondary{{background:rgba(255,255,255,.055);color:#f2fbff}}.disclaimer{{margin-top:22px;border:1px solid rgba(255,209,102,.22);border-radius:14px;background:rgba(255,209,102,.06);padding:14px;color:#ffe7a6}}@media(max-width:720px){{.actions .button{{width:100%}}.tactical-head{{align-items:flex-start;flex-direction:column}}.tactical-grid{{grid-template-columns:1fr}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class='wrap'><section class='hero'><div class='kicker'>Crypto Predictions Intelligence</div><h1>Active crypto prediction scenarios with AI risk context.</h1><p>Track scenario probabilities, close dates, liquidity context, and market psychology without guaranteed-outcome claims. Live provider data appears when legally configured; sample scenarios are clearly labeled.</p><div class='filters'><span class='pill'>Active</span><span class='pill'>Trending</span><span class='pill'>Closing Soon</span><span class='pill'>Bitcoin</span><span class='pill'>Ethereum</span><span class='pill'>Altcoins</span><span class='pill'>Macro Crypto</span><span class='pill'>High Volume</span></div></section><section id='cards' class='grid' aria-live='polite'></section><p class='disclaimer'>Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPilotXAI does not guarantee outcomes.</p></main><script>const actionUrl='{action_url}';const externalUrl='{clean_html(os.getenv("PREDICTIONS_EXTERNAL_TRADE_URL") or get_gemini_trade_url())}';function card(m){{const p=Number(m.probability||m.yes_probability||0);return `<article class='card'><span class='status'>${{m.status||'active'}} · ${{m.source||'source pending'}}</span><h2>${{m.title}}</h2><p>${{m.category}} · Risk: ${{m.risk_level||'Unknown'}}</p><div class='prob'><span style='width:${{Math.max(0,Math.min(100,p))}}%'></span></div><p><strong>${{p}}%</strong> Yes probability · Volume ${{Number(m.volume||0).toLocaleString()}} · Liquidity ${{Number(m.liquidity||0).toLocaleString()}}</p><p>Closes: ${{(m.close_time||'').slice(0,10)}} · Resolves: ${{(m.resolve_time||'').slice(0,10)}}</p><div class='actions'><button class='button' data-action='watch' data-id='${{m.id}}'>Watch Prediction</button><button class='button secondary' data-action='alert' data-id='${{m.id}}'>Create Alert</button><button class='button secondary' data-action='ai' data-id='${{m.id}}'>Ask AI</button><button class='button secondary' data-action='simulate' data-id='${{m.id}}'>Simulate Outcome</button><a class='button secondary' href='${{externalUrl}}' target='_blank' rel='noopener sponsored'>Open External Trade</a></div></article>`}}async function load(){{const d=await fetch('/api/predictions?category=crypto&status=active',{{cache:'no-store'}}).then(r=>r.json());document.getElementById('cards').innerHTML=(d.markets||[]).map(card).join('')||'<article class=card>Predictions source reconnecting. No live crypto scenarios are available right now.</article>'}}document.addEventListener('click',async e=>{{const btn=e.target.closest('button[data-action]');if(!btn)return;if(actionUrl.startsWith('/signup')){{location.href=actionUrl;return}}const endpoint=btn.dataset.action==='alert'?'/api/predictions/alert':btn.dataset.action==='simulate'?'/api/predictions/simulate':'/api/predictions/watch';await fetch(endpoint,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{market_id:btn.dataset.id}})}});btn.textContent='Saved'}});load()</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Live Crypto Predictions Intelligence | CoinPlotXAI</title><meta name='description' content='Track active crypto prediction scenarios, market probabilities, AI explanations, and risk intelligence with CoinPlotXAI.'><link rel='canonical' href='https://pulsesoc.com/predictions/crypto'><meta property='og:title' content='Live Crypto Predictions Intelligence | CoinPlotXAI'><meta property='og:description' content='Crypto prediction scenarios with AI explanations, probability context, and educational risk intelligence.'><script type='application/ld+json'>{{"@context":"https://schema.org","@type":"WebPage","name":"Live Crypto Predictions Intelligence","description":"Educational crypto prediction scenarios, probability tracking, and AI risk intelligence from CoinPlotXAI."}}</script><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 26rem),radial-gradient(circle at 88% 16%,rgba(54,229,143,.11),transparent 23rem),#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}body:before{{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(110,223,246,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.045) 1px,transparent 1px);background-size:54px 54px;mask-image:radial-gradient(circle at 50% 10%,black,transparent 72%);pointer-events:none}}.wrap{{position:relative;width:min(100% - 28px,1180px);margin:auto;padding:34px 0 90px}}a{{color:inherit;text-decoration:none}}.hero{{padding:34px 0 20px}}.kicker{{color:var(--green);font-weight:950;letter-spacing:.08em;text-transform:uppercase;font-size:12px}}h1{{font-size:clamp(38px,7vw,72px);line-height:.98;margin:10px 0 14px}}p{{color:var(--muted)}}.filters{{display:flex;gap:8px;overflow:auto;padding:10px 0 18px}}.pill{{white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);color:#dff7ff;padding:9px 12px;font-weight:850}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.84);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px}}.status{{display:inline-flex;gap:8px;align-items:center;color:var(--green);font-weight:900}}.status:before{{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 16px var(--green)}}.prob{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:12px 0}}.prob span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold))}}.actions{{display:flex;gap:8px;flex-wrap:wrap}}.button{{min-height:42px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}}.button.secondary{{background:rgba(255,255,255,.055);color:#f2fbff}}.disclaimer{{margin-top:22px;border:1px solid rgba(255,209,102,.22);border-radius:14px;background:rgba(255,209,102,.06);padding:14px;color:#ffe7a6}}@media(max-width:720px){{.actions .button{{width:100%}}.tactical-head{{align-items:flex-start;flex-direction:column}}.tactical-grid{{grid-template-columns:1fr}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class='wrap'><section class='hero'><div class='kicker'>Crypto Predictions Intelligence</div><h1>Active crypto prediction scenarios with AI risk context.</h1><p>Track scenario probabilities, close dates, liquidity context, and market psychology without guaranteed-outcome claims. Live provider data appears when legally configured; sample scenarios are clearly labeled.</p><div class='filters'><span class='pill'>Active</span><span class='pill'>Trending</span><span class='pill'>Closing Soon</span><span class='pill'>Bitcoin</span><span class='pill'>Ethereum</span><span class='pill'>Altcoins</span><span class='pill'>Macro Crypto</span><span class='pill'>High Volume</span></div></section><section id='cards' class='grid' aria-live='polite'></section><p class='disclaimer'>Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPlotXAI does not guarantee outcomes.</p></main><script>const actionUrl='{action_url}';const externalUrl='{clean_html(os.getenv("PREDICTIONS_EXTERNAL_TRADE_URL") or get_gemini_trade_url())}';function card(m){{const p=Number(m.probability||m.yes_probability||0);return `<article class='card'><span class='status'>${{m.status||'active'}} · ${{m.source||'source pending'}}</span><h2>${{m.title}}</h2><p>${{m.category}} · Risk: ${{m.risk_level||'Unknown'}}</p><div class='prob'><span style='width:${{Math.max(0,Math.min(100,p))}}%'></span></div><p><strong>${{p}}%</strong> Yes probability · Volume ${{Number(m.volume||0).toLocaleString()}} · Liquidity ${{Number(m.liquidity||0).toLocaleString()}}</p><p>Closes: ${{(m.close_time||'').slice(0,10)}} · Resolves: ${{(m.resolve_time||'').slice(0,10)}}</p><div class='actions'><button class='button' data-action='watch' data-id='${{m.id}}'>Watch Prediction</button><button class='button secondary' data-action='alert' data-id='${{m.id}}'>Create Alert</button><button class='button secondary' data-action='ai' data-id='${{m.id}}'>Ask AI</button><button class='button secondary' data-action='simulate' data-id='${{m.id}}'>Simulate Outcome</button><a class='button secondary' href='${{externalUrl}}' target='_blank' rel='noopener sponsored'>Open External Trade</a></div></article>`}}async function load(){{const d=await fetch('/api/predictions?category=crypto&status=active',{{cache:'no-store'}}).then(r=>r.json());document.getElementById('cards').innerHTML=(d.markets||[]).map(card).join('')||'<article class=card>Predictions source reconnecting. No live crypto scenarios are available right now.</article>'}}document.addEventListener('click',async e=>{{const btn=e.target.closest('button[data-action]');if(!btn)return;if(actionUrl.startsWith('/signup')){{location.href=actionUrl;return}}const endpoint=btn.dataset.action==='alert'?'/api/predictions/alert':btn.dataset.action==='simulate'?'/api/predictions/simulate':'/api/predictions/watch';await fetch(endpoint,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{market_id:btn.dataset.id}})}});btn.textContent='Saved'}});load()</script></body></html>""")
 
 
 @webhook_app.route("/predictions/<market_id>", methods=["GET"])
@@ -19786,10 +19798,10 @@ def prediction_detail_page(market_id):
         return Response("Prediction market not found", status=404)
     return simple_public_page(
         f"predictions/{market_id}",
-        f"{market['title']} | CoinPilotXAI Predictions Intelligence",
+        f"{market['title']} | CoinPlotXAI Predictions Intelligence",
         market["title"],
         "Educational prediction intelligence for scenario planning, probability awareness, and risk discipline.",
-        f"Current educational probability: {market['probability']}%. Source: {market['source']}. CoinPilotXAI does not guarantee outcomes.",
+        f"Current educational probability: {market['probability']}%. Source: {market['source']}. CoinPlotXAI does not guarantee outcomes.",
         ["Key drivers", "Uncertainty", "Risk controls", "Alert setup"],
         [{"title": "AI explanation", "body": "Ask AI to explain the drivers, uncertainty, and risk level before taking any external action."}],
         ["/predictions", "/education", "/sports-edge", "/quote"],
@@ -19808,7 +19820,7 @@ def api_prediction_watch():
     cur.execute("INSERT OR IGNORE INTO prediction_watches (user_id, market_id, threshold, created_at) VALUES (?, ?, ?, ?)", (user["user_id"], market_id, payload.get("threshold") or 50, datetime.now().isoformat()))
     conn.commit()
     conn.close()
-    notification_service.send_user_alert(user["user_id"], "market_alerts", "Prediction watch saved", f"CoinPilotXAI is watching {market_id}.", {"market_id": market_id}, channels=["in_app"])
+    notification_service.send_user_alert(user["user_id"], "market_alerts", "Prediction watch saved", f"CoinPlotXAI is watching {market_id}.", {"market_id": market_id}, channels=["in_app"])
     return jsonify({"ok": True, "market_id": market_id})
 
 
@@ -20188,7 +20200,7 @@ def day_signal_page():
             return f"<label data-question='{key}'>{label}<select name='{key}' required>{options}</select>{error}</label>"
         return f"<label data-question='{key}'>{label}<input name='{key}' placeholder='{clean_html(item.get('placeholder', 'short answer'))}' required>{error}</label>"
     fields = "".join(render_day_signal_field(item) for item in questions)
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Day Signal | CoinPilotXAI</title><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:calc(24px + env(safe-area-inset-top)) 0 90px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}}label{{display:block;margin:12px 0;color:var(--muted);font-weight:850;scroll-margin-top:24px}}input,select{{width:100%;min-height:46px;border:1px solid var(--line);border-radius:10px;background:#081323;color:#fff;padding:10px;margin-top:6px}}label.is-missing input,label.is-missing select{{border-color:#ff6b7a;box-shadow:0 0 0 3px rgba(255,107,122,.16)}}.field-error{{display:block;min-height:18px;color:#ffb7bf;margin-top:5px}}button,.button{{min-height:44px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 14px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex}}pre{{white-space:pre-wrap;color:#dff7ff}}</style></head><body><main class='wrap'><a class='button' href='/dashboard'>Dashboard</a><section class='card'><h1>{'Pro Psychological Day Signal' if pro else 'Basic Day Signal'}</h1><p>Educational readiness check only. Not financial, trading, betting, or investment advice.</p><form id='form' novalidate>{fields}<button>Generate Day Signal</button></form><pre id='result'></pre></section></main><script>const form=document.getElementById('form');function clearErrors(){{document.querySelectorAll('.is-missing').forEach(n=>n.classList.remove('is-missing'));document.querySelectorAll('[data-error-for]').forEach(n=>n.textContent='')}}function markMissing(name,message){{const q=document.querySelector(`[data-question="${{name}}"]`);if(!q)return false;q.classList.add('is-missing');const err=q.querySelector('[data-error-for]');if(err)err.textContent=message||'Please answer this question.';q.scrollIntoView({{behavior:'smooth',block:'center'}});return true}}form.addEventListener('submit',async e=>{{e.preventDefault();clearErrors();const answers=Object.fromEntries(new FormData(e.target).entries());for(const element of form.querySelectorAll('[required]')){{if(!String(element.value||'').trim()){{markMissing(element.name,'Please answer this question.');return;}}}}document.getElementById('result').textContent='CoinPilotXAI is thinking...';const r=await fetch('/api/day-signal',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{answers}})}});const d=await r.json();if(!r.ok||d.ok===false){{const text=d.response||d.message||'Day Signal unavailable right now.';document.getElementById('result').textContent=text;const match=text.match(/Please answer: (.+)$/);if(match){{const label=[...document.querySelectorAll('[data-question]')].find(node=>node.firstChild&&node.firstChild.textContent.trim()===match[1]);if(label)markMissing(label.dataset.question,'Required for Day Signal.')}}return}}document.getElementById('result').textContent=d.response||d.message||'Day Signal unavailable right now.'}})</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Day Signal | CoinPlotXAI</title><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:calc(24px + env(safe-area-inset-top)) 0 90px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}}label{{display:block;margin:12px 0;color:var(--muted);font-weight:850;scroll-margin-top:24px}}input,select{{width:100%;min-height:46px;border:1px solid var(--line);border-radius:10px;background:#081323;color:#fff;padding:10px;margin-top:6px}}label.is-missing input,label.is-missing select{{border-color:#ff6b7a;box-shadow:0 0 0 3px rgba(255,107,122,.16)}}.field-error{{display:block;min-height:18px;color:#ffb7bf;margin-top:5px}}button,.button{{min-height:44px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 14px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex}}pre{{white-space:pre-wrap;color:#dff7ff}}</style></head><body><main class='wrap'><a class='button' href='/dashboard'>Dashboard</a><section class='card'><h1>{'Pro Psychological Day Signal' if pro else 'Basic Day Signal'}</h1><p>Educational readiness check only. Not financial, trading, betting, or investment advice.</p><form id='form' novalidate>{fields}<button>Generate Day Signal</button></form><pre id='result'></pre></section></main><script>const form=document.getElementById('form');function clearErrors(){{document.querySelectorAll('.is-missing').forEach(n=>n.classList.remove('is-missing'));document.querySelectorAll('[data-error-for]').forEach(n=>n.textContent='')}}function markMissing(name,message){{const q=document.querySelector(`[data-question="${{name}}"]`);if(!q)return false;q.classList.add('is-missing');const err=q.querySelector('[data-error-for]');if(err)err.textContent=message||'Please answer this question.';q.scrollIntoView({{behavior:'smooth',block:'center'}});return true}}form.addEventListener('submit',async e=>{{e.preventDefault();clearErrors();const answers=Object.fromEntries(new FormData(e.target).entries());for(const element of form.querySelectorAll('[required]')){{if(!String(element.value||'').trim()){{markMissing(element.name,'Please answer this question.');return;}}}}document.getElementById('result').textContent='CoinPlotXAI is thinking...';const r=await fetch('/api/day-signal',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{answers}})}});const d=await r.json();if(!r.ok||d.ok===false){{const text=d.response||d.message||'Day Signal unavailable right now.';document.getElementById('result').textContent=text;const match=text.match(/Please answer: (.+)$/);if(match){{const label=[...document.querySelectorAll('[data-question]')].find(node=>node.firstChild&&node.firstChild.textContent.trim()===match[1]);if(label)markMissing(label.dataset.question,'Required for Day Signal.')}}return}}document.getElementById('result').textContent=d.response||d.message||'Day Signal unavailable right now.'}})</script></body></html>""")
 
 
 def api_account_user():
@@ -20871,9 +20883,9 @@ def dashboard_brief_payload(user_id):
         "market_pulse": f"BTC {btc.get('price', 'unavailable')} · ETH {eth.get('price', 'unavailable')}",
         "risk_alerts": "Review position size, avoid urgency, and verify links before signing wallet approvals.",
         "top_watch": [item.get("symbol") for item in markets[:5] if item.get("symbol")],
-        "scam_warning": "Never enter a seed phrase, private key, wallet password, exchange password, or recovery phrase into any CoinPilotXAI tool.",
+        "scam_warning": "Never enter a seed phrase, private key, wallet password, exchange password, or recovery phrase into any CoinPlotXAI tool.",
         "ai_insight": "Based on available public market data, start with risk control and alerts before making any high-conviction move.",
-        "source": market.get("source") or "CoinPilotXAI market service",
+        "source": market.get("source") or "CoinPlotXAI market service",
         "updated_at": datetime.now().isoformat(),
     }
 
@@ -21038,7 +21050,7 @@ def api_watch_items():
             user["user_id"],
             "market_alerts",
             f"Watch created for {target_value or watch_type}",
-            f"CoinPilotXAI will watch {target_value or watch_type} and deliver alerts through your enabled channels.",
+            f"CoinPlotXAI will watch {target_value or watch_type} and deliver alerts through your enabled channels.",
             {"watch_rule_id": watch_rule_id, "watch_type": watch_type},
             channels=["in_app"],
         )
@@ -21055,7 +21067,7 @@ def watch_page():
     user = require_account()
     if not user:
         return redirect(url_for("signup_page", next="/watch"))
-    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Watch Command Center | CoinPilotXAI</title><style>body{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}.wrap{width:min(100% - 28px,1100px);margin:auto;padding:28px 0 90px}.card{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px;margin:14px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.row{display:grid;grid-template-columns:1fr auto;gap:10px;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px}.button,input,select{min-height:44px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:#081323;color:#f2fbff;padding:10px}.button{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}</style></head><body><main class='wrap'><h1>Live Watch Command Center</h1><p>Watch coins, wallets, exchanges, scam keywords, whale movements, news topics, sports edges, and portfolio assets. Alerts use your in-app, email, SMS, push, and optional companion preferences.</p><section class='card'><form id='watchForm' class='grid'><select name='watch_type'><option value='coin'>Coin/token</option><option value='wallet'>Wallet</option><option value='exchange'>Exchange</option><option value='scam_keyword'>Scam keyword</option><option value='whale'>Whale movement</option><option value='news_topic'>News topic</option><option value='sports_edge'>Sports edge</option><option value='portfolio_asset'>Portfolio asset</option></select><input name='value' placeholder='BTC, wallet, topic, keyword...' required><button class='button'>Watch This</button></form><p id='msg'></p></section><section class='card'><h2>My Active Watches</h2><div id='rules'>Loading...</div></section></main><script>async function load(){const d=await fetch('/api/watch',{cache:'no-store',credentials:'same-origin'}).then(r=>r.json());document.getElementById('rules').innerHTML=(d.watch_rules||[]).map(r=>`<div class='row'><span><strong>${r.target_value}</strong><br>${r.watch_type} · ${r.status}</span><span><button data-test='${r.id}'>Test Alert</button> <button data-pause='${r.id}'>Pause</button> <button data-delete='${r.id}'>Delete</button></span></div>`).join('')||'No watches yet.'}document.getElementById('watchForm').addEventListener('submit',async e=>{e.preventDefault();const p=Object.fromEntries(new FormData(e.target).entries());const d=await fetch('/api/watch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}).then(r=>r.json());document.getElementById('msg').textContent=d.ok?'Watch created.':'Could not save watch.';e.target.reset();load()});document.addEventListener('click',async e=>{const b=e.target;if(b.dataset.test)await fetch('/api/watch/'+b.dataset.test+'/test-alert',{method:'POST'});if(b.dataset.pause)await fetch('/api/watch/'+b.dataset.pause+'/pause',{method:'POST'});if(b.dataset.delete)await fetch('/api/watch/'+b.dataset.delete+'/delete',{method:'POST'});load()});load()</script></body></html>""")
+    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Watch Command Center | CoinPlotXAI</title><style>body{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}.wrap{width:min(100% - 28px,1100px);margin:auto;padding:28px 0 90px}.card{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px;margin:14px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.row{display:grid;grid-template-columns:1fr auto;gap:10px;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px}.button,input,select{min-height:44px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:#081323;color:#f2fbff;padding:10px}.button{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}</style></head><body><main class='wrap'><h1>Live Watch Command Center</h1><p>Watch coins, wallets, exchanges, scam keywords, whale movements, news topics, sports edges, and portfolio assets. Alerts use your in-app, email, SMS, push, and optional companion preferences.</p><section class='card'><form id='watchForm' class='grid'><select name='watch_type'><option value='coin'>Coin/token</option><option value='wallet'>Wallet</option><option value='exchange'>Exchange</option><option value='scam_keyword'>Scam keyword</option><option value='whale'>Whale movement</option><option value='news_topic'>News topic</option><option value='sports_edge'>Sports edge</option><option value='portfolio_asset'>Portfolio asset</option></select><input name='value' placeholder='BTC, wallet, topic, keyword...' required><button class='button'>Watch This</button></form><p id='msg'></p></section><section class='card'><h2>My Active Watches</h2><div id='rules'>Loading...</div></section></main><script>async function load(){const d=await fetch('/api/watch',{cache:'no-store',credentials:'same-origin'}).then(r=>r.json());document.getElementById('rules').innerHTML=(d.watch_rules||[]).map(r=>`<div class='row'><span><strong>${r.target_value}</strong><br>${r.watch_type} · ${r.status}</span><span><button data-test='${r.id}'>Test Alert</button> <button data-pause='${r.id}'>Pause</button> <button data-delete='${r.id}'>Delete</button></span></div>`).join('')||'No watches yet.'}document.getElementById('watchForm').addEventListener('submit',async e=>{e.preventDefault();const p=Object.fromEntries(new FormData(e.target).entries());const d=await fetch('/api/watch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}).then(r=>r.json());document.getElementById('msg').textContent=d.ok?'Watch created.':'Could not save watch.';e.target.reset();load()});document.addEventListener('click',async e=>{const b=e.target;if(b.dataset.test)await fetch('/api/watch/'+b.dataset.test+'/test-alert',{method:'POST'});if(b.dataset.pause)await fetch('/api/watch/'+b.dataset.pause+'/pause',{method:'POST'});if(b.dataset.delete)await fetch('/api/watch/'+b.dataset.delete+'/delete',{method:'POST'});load()});load()</script></body></html>""")
 
 
 def update_watch_rule_status(rule_id, user_id, status):
@@ -21105,7 +21117,7 @@ def api_watch_test_alert(rule_id):
     conn.close()
     if not rule:
         return jsonify({"ok": False, "message": "Watch rule not found."}), 404
-    result = notification_service.send_user_alert(user["user_id"], "market_alerts", f"Test alert: {rule.get('target_value')}", "This is a CoinPilotXAI watch test alert.", {"watch_rule_id": rule_id}, channels=(rule.get("channels") or "in_app").split(","))
+    result = notification_service.send_user_alert(user["user_id"], "market_alerts", f"Test alert: {rule.get('target_value')}", "This is a CoinPlotXAI watch test alert.", {"watch_rule_id": rule_id}, channels=(rule.get("channels") or "in_app").split(","))
     return jsonify({"ok": True, "delivery": result})
 
 
@@ -21556,7 +21568,7 @@ def arena_profile_payload(user_id):
         "profile": profile,
         "badges": badges,
         "pending_challenges": int((pending or {}).get("c") if hasattr(pending, "get") else pending["c"] if pending else 0),
-        "disclaimer": "CoinPilotXAI Arena is an educational simulation. No real money is traded. Not financial advice.",
+        "disclaimer": "CoinPlotXAI Arena is an educational simulation. No real money is traded. Not financial advice.",
     }
 
 
@@ -21756,7 +21768,7 @@ def arena_leaderboard_payload(limit=20, country=None, sort_key="arena_iq"):
         item["leaderboard_rank"] = index
         players.append(item)
     conn.close()
-    return {"ok": True, "players": players, "source": "CoinPilotXAI Arena database", "updated_at": datetime.now().isoformat()}
+    return {"ok": True, "players": players, "source": "CoinPlotXAI Arena database", "updated_at": datetime.now().isoformat()}
 
 
 def arena_player_style_summary(profile):
@@ -22700,7 +22712,7 @@ def arena_page_shell(title, body, user=None, public=False, meta_tags=""):
     setInterval(loadArenaInboxPulse,15000);
     </script>""" if user else ""
     logo_url = url_for("static", filename="brand/pulsesoc-logo-20260606.png")
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | PulseSoc</title><meta name="description" content="CoinPilotXAI Arena is an educational AI crypto intelligence game with virtual dollars, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}">{meta_tags}<style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px;animation:gridDrift 24s linear infinite}}body.arena-drawer-open{{overflow:hidden}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none;display:inline-flex;align-items:center;gap:10px}}.brand img{{width:34px;height:34px;border-radius:10px;object-fit:contain;box-shadow:0 0 22px rgba(110,223,246,.22)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.arena-mobile-drawer-toggle,.arena-mobile-drawer,.arena-mobile-drawer-backdrop{{display:none}}.arena-bg,.arena-effects,.arena-particles,.arena-glow,.emoji-storm-layer,.emoji-storm,.cinematic-layer:not(.active),.victory-layer:not(.active),.arena-intro{{pointer-events:none!important}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}}.button:hover,button:hover{{transform:translateY(-2px);box-shadow:0 0 28px rgba(110,223,246,.22);border-color:rgba(110,223,246,.48)}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}}.card:hover{{transform:translateY(-2px);box-shadow:0 30px 90px rgba(0,0,0,.34),0 0 38px rgba(110,223,246,.14)}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04);animation:arenaCardIn .42s ease both}}.presence-ribbon{{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}}.presence-pill{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;background:rgba(255,255,255,.045);padding:7px 10px;color:#dff7ff;font-size:13px}}.presence-pill i{{width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8);animation:presencePulse 2.4s ease-in-out infinite}}.arena-intro{{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:radial-gradient(circle,rgba(110,223,246,.16),rgba(5,11,20,.94));animation:introFade 2.2s ease forwards;pointer-events:none}}.arena-intro-card{{border:1px solid rgba(110,223,246,.35);border-radius:24px;padding:24px;background:rgba(8,19,35,.86);box-shadow:0 0 60px rgba(110,223,246,.24);text-align:center;animation:vsPulse 1.4s ease-in-out infinite alternate}}.victory-overlay{{position:fixed;inset:0;z-index:120;display:grid;place-items:center;background:radial-gradient(circle at 50% 35%,rgba(54,229,143,.28),transparent 20rem),rgba(2,7,14,.74);backdrop-filter:blur(8px);animation:victoryFlash 1.6s ease both}}.victory-card{{width:min(92vw,620px);border:1px solid rgba(110,223,246,.42);border-radius:24px;background:linear-gradient(180deg,rgba(17,29,50,.96),rgba(5,11,20,.94));box-shadow:0 0 80px rgba(54,229,143,.26),0 30px 120px rgba(0,0,0,.55);padding:24px;text-align:center;transform:translateZ(0)}}.victory-title{{font-size:clamp(44px,10vw,96px);line-height:.9;margin:0;background:linear-gradient(135deg,var(--green),var(--cyan),var(--gold));-webkit-background-clip:text;color:transparent}}.emoji-storm{{position:fixed;inset:0;z-index:121;pointer-events:none;overflow:hidden}}.emoji-storm span{{position:absolute;top:-32px;font-size:clamp(24px,5vw,46px);animation:emojiRain 2.8s linear forwards;will-change:transform,opacity}}.crowd-meter{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.crowd-meter span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold));animation:hypeFlow 4s linear infinite}}.live-arena-card{{border-color:rgba(54,229,143,.34);background:radial-gradient(circle at 15% 10%,rgba(54,229,143,.18),transparent 16rem),radial-gradient(circle at 80% 0,rgba(110,223,246,.18),transparent 18rem),linear-gradient(160deg,rgba(10,28,48,.94),rgba(5,11,20,.92));box-shadow:0 30px 100px rgba(0,0,0,.36),0 0 44px rgba(54,229,143,.12)}}.live-arena-card:before{{content:"";position:absolute;inset:-40%;background:conic-gradient(from 180deg,transparent,rgba(54,229,143,.12),transparent 36%,rgba(110,223,246,.14),transparent 68%);animation:hypeFlow 6s linear infinite;pointer-events:none}}.live-arena-card>*{{position:relative;z-index:1}}.live-arena-cta{{font-size:16px;letter-spacing:.04em;box-shadow:0 0 28px rgba(54,229,143,.28)}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}.share-modal{{position:fixed;inset:auto 16px 16px auto;z-index:70;max-width:360px;border:1px solid var(--line);border-radius:18px;background:rgba(8,19,35,.97);box-shadow:0 24px 80px rgba(0,0,0,.5);padding:16px}}.online-dot{{display:inline-flex;gap:8px;align-items:center}}.online-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.75)}}.chat-thread{{display:grid;gap:9px;max-height:56vh;overflow:auto}}.chat-bubble{{max-width:82%;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08)}}.chat-bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,var(--cyan),#77a7ff)}}@keyframes gridDrift{{from{{background-position:0 0}}to{{background-position:42px 42px}}}}@keyframes arenaCardIn{{from{{opacity:0;transform:translateY(10px)}}to{{opacity:1;transform:none}}}}@keyframes presencePulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.35);opacity:1}}}}@keyframes introFade{{0%,70%{{opacity:1}}100%{{opacity:0;visibility:hidden}}}}@keyframes vsPulse{{from{{transform:scale(.985);box-shadow:0 0 34px rgba(110,223,246,.16)}}to{{transform:scale(1);box-shadow:0 0 72px rgba(54,229,143,.18)}}}}@keyframes hypeFlow{{from{{filter:hue-rotate(0deg)}}to{{filter:hue-rotate(30deg)}}}}@keyframes victoryFlash{{0%{{opacity:0;transform:scale(1.04)}}18%{{opacity:1}}100%{{opacity:1;transform:scale(1)}}}}@keyframes emojiRain{{0%{{transform:translate3d(0,-20px,0) rotate(0deg);opacity:0}}12%{{opacity:1}}100%{{transform:translate3d(var(--drift,0),105vh,0) rotate(420deg);opacity:0}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}.share-modal{{left:12px;right:12px;bottom:12px;max-width:none}}}}@media(max-width:768px){{header nav>.actions{{display:none}}header{{position:relative}}.wrap{{padding:12px 0 calc(84px + env(safe-area-inset-bottom))}}h1{{font-size:clamp(28px,9vw,42px)}}h2{{font-size:clamp(20px,6vw,26px)}}.hero{{gap:12px;margin-top:12px}}.grid{{gap:12px;margin-top:12px}}.card{{border-radius:14px;padding:14px;box-shadow:0 14px 36px rgba(0,0,0,.26)}}.card:after,.live-arena-card:before{{display:none}}.arena-intro{{display:none}}.player-card{{padding:10px}}.arena-mobile-drawer-toggle{{display:inline-flex;position:fixed;left:max(8px,env(safe-area-inset-left));top:calc(74px + env(safe-area-inset-top));z-index:74;width:auto;min-height:38px;padding:8px 10px;border-radius:0 12px 12px 0;background:rgba(6,18,31,.92);backdrop-filter:blur(14px);box-shadow:0 0 22px rgba(110,223,246,.18);font-size:13px}}.arena-mobile-drawer-backdrop{{display:none;position:fixed;inset:0;z-index:72;background:rgba(0,0,0,.38);pointer-events:none}}.arena-mobile-drawer-backdrop:not([hidden]){{display:block;pointer-events:auto}}.arena-mobile-drawer{{display:block;position:fixed;top:0;left:0;bottom:0;width:min(82vw,340px);z-index:73;transform:translateX(-104%);transition:transform .22s ease;background:linear-gradient(180deg,rgba(7,19,34,.98),rgba(4,9,18,.98));border-right:1px solid rgba(110,223,246,.24);box-shadow:24px 0 70px rgba(0,0,0,.46);padding:calc(16px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));overflow:auto;pointer-events:none}}.arena-mobile-drawer.open{{transform:translateX(0);pointer-events:auto}}.drawer-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}}.drawer-head button{{width:40px;min-height:40px;padding:0;font-size:22px}}.drawer-actions{{display:grid;gap:10px}}.drawer-actions .card{{position:static!important;max-width:none!important}}.drawer-actions label.option{{justify-content:space-between}}.victory-card{{padding:18px}}.emoji-storm span{{font-size:26px}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}.victory-overlay,.emoji-storm span{{animation:none!important}}}}</style></head><body>{drawer_html}<header><div class="wrap"><nav><a class="brand" href="/arena"><img src="{logo_url}" alt="PulseSoc logo" width="34" height="34" loading="lazy" onerror="this.style.display='none'"><span>Alpha Arena</span></a><div class="actions">{nav_html}{customize}</div></nav></div></header><main class="wrap">{'<div class="presence-ribbon" data-arena-presence-panel><span class="presence-pill"><i></i>Connecting Arena presence</span></div>' if user else ''}{body}<p class="notice">{arena_victory_engine.EDUCATIONAL_DISCLAIMER}</p></main>{script}</body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | PulseSoc</title><meta name="description" content="CoinPlotXAI Arena is an educational AI crypto intelligence game with virtual dollars, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}">{meta_tags}<style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px;animation:gridDrift 24s linear infinite}}body.arena-drawer-open{{overflow:hidden}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none;display:inline-flex;align-items:center;gap:10px}}.brand img{{width:34px;height:34px;border-radius:10px;object-fit:contain;box-shadow:0 0 22px rgba(110,223,246,.22)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.arena-mobile-drawer-toggle,.arena-mobile-drawer,.arena-mobile-drawer-backdrop{{display:none}}.arena-bg,.arena-effects,.arena-particles,.arena-glow,.emoji-storm-layer,.emoji-storm,.cinematic-layer:not(.active),.victory-layer:not(.active),.arena-intro{{pointer-events:none!important}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}}.button:hover,button:hover{{transform:translateY(-2px);box-shadow:0 0 28px rgba(110,223,246,.22);border-color:rgba(110,223,246,.48)}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}}.card:hover{{transform:translateY(-2px);box-shadow:0 30px 90px rgba(0,0,0,.34),0 0 38px rgba(110,223,246,.14)}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04);animation:arenaCardIn .42s ease both}}.presence-ribbon{{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}}.presence-pill{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;background:rgba(255,255,255,.045);padding:7px 10px;color:#dff7ff;font-size:13px}}.presence-pill i{{width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8);animation:presencePulse 2.4s ease-in-out infinite}}.arena-intro{{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:radial-gradient(circle,rgba(110,223,246,.16),rgba(5,11,20,.94));animation:introFade 2.2s ease forwards;pointer-events:none}}.arena-intro-card{{border:1px solid rgba(110,223,246,.35);border-radius:24px;padding:24px;background:rgba(8,19,35,.86);box-shadow:0 0 60px rgba(110,223,246,.24);text-align:center;animation:vsPulse 1.4s ease-in-out infinite alternate}}.victory-overlay{{position:fixed;inset:0;z-index:120;display:grid;place-items:center;background:radial-gradient(circle at 50% 35%,rgba(54,229,143,.28),transparent 20rem),rgba(2,7,14,.74);backdrop-filter:blur(8px);animation:victoryFlash 1.6s ease both}}.victory-card{{width:min(92vw,620px);border:1px solid rgba(110,223,246,.42);border-radius:24px;background:linear-gradient(180deg,rgba(17,29,50,.96),rgba(5,11,20,.94));box-shadow:0 0 80px rgba(54,229,143,.26),0 30px 120px rgba(0,0,0,.55);padding:24px;text-align:center;transform:translateZ(0)}}.victory-title{{font-size:clamp(44px,10vw,96px);line-height:.9;margin:0;background:linear-gradient(135deg,var(--green),var(--cyan),var(--gold));-webkit-background-clip:text;color:transparent}}.emoji-storm{{position:fixed;inset:0;z-index:121;pointer-events:none;overflow:hidden}}.emoji-storm span{{position:absolute;top:-32px;font-size:clamp(24px,5vw,46px);animation:emojiRain 2.8s linear forwards;will-change:transform,opacity}}.crowd-meter{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.crowd-meter span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold));animation:hypeFlow 4s linear infinite}}.live-arena-card{{border-color:rgba(54,229,143,.34);background:radial-gradient(circle at 15% 10%,rgba(54,229,143,.18),transparent 16rem),radial-gradient(circle at 80% 0,rgba(110,223,246,.18),transparent 18rem),linear-gradient(160deg,rgba(10,28,48,.94),rgba(5,11,20,.92));box-shadow:0 30px 100px rgba(0,0,0,.36),0 0 44px rgba(54,229,143,.12)}}.live-arena-card:before{{content:"";position:absolute;inset:-40%;background:conic-gradient(from 180deg,transparent,rgba(54,229,143,.12),transparent 36%,rgba(110,223,246,.14),transparent 68%);animation:hypeFlow 6s linear infinite;pointer-events:none}}.live-arena-card>*{{position:relative;z-index:1}}.live-arena-cta{{font-size:16px;letter-spacing:.04em;box-shadow:0 0 28px rgba(54,229,143,.28)}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}.share-modal{{position:fixed;inset:auto 16px 16px auto;z-index:70;max-width:360px;border:1px solid var(--line);border-radius:18px;background:rgba(8,19,35,.97);box-shadow:0 24px 80px rgba(0,0,0,.5);padding:16px}}.online-dot{{display:inline-flex;gap:8px;align-items:center}}.online-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.75)}}.chat-thread{{display:grid;gap:9px;max-height:56vh;overflow:auto}}.chat-bubble{{max-width:82%;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08)}}.chat-bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,var(--cyan),#77a7ff)}}@keyframes gridDrift{{from{{background-position:0 0}}to{{background-position:42px 42px}}}}@keyframes arenaCardIn{{from{{opacity:0;transform:translateY(10px)}}to{{opacity:1;transform:none}}}}@keyframes presencePulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.35);opacity:1}}}}@keyframes introFade{{0%,70%{{opacity:1}}100%{{opacity:0;visibility:hidden}}}}@keyframes vsPulse{{from{{transform:scale(.985);box-shadow:0 0 34px rgba(110,223,246,.16)}}to{{transform:scale(1);box-shadow:0 0 72px rgba(54,229,143,.18)}}}}@keyframes hypeFlow{{from{{filter:hue-rotate(0deg)}}to{{filter:hue-rotate(30deg)}}}}@keyframes victoryFlash{{0%{{opacity:0;transform:scale(1.04)}}18%{{opacity:1}}100%{{opacity:1;transform:scale(1)}}}}@keyframes emojiRain{{0%{{transform:translate3d(0,-20px,0) rotate(0deg);opacity:0}}12%{{opacity:1}}100%{{transform:translate3d(var(--drift,0),105vh,0) rotate(420deg);opacity:0}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}.share-modal{{left:12px;right:12px;bottom:12px;max-width:none}}}}@media(max-width:768px){{header nav>.actions{{display:none}}header{{position:relative}}.wrap{{padding:12px 0 calc(84px + env(safe-area-inset-bottom))}}h1{{font-size:clamp(28px,9vw,42px)}}h2{{font-size:clamp(20px,6vw,26px)}}.hero{{gap:12px;margin-top:12px}}.grid{{gap:12px;margin-top:12px}}.card{{border-radius:14px;padding:14px;box-shadow:0 14px 36px rgba(0,0,0,.26)}}.card:after,.live-arena-card:before{{display:none}}.arena-intro{{display:none}}.player-card{{padding:10px}}.arena-mobile-drawer-toggle{{display:inline-flex;position:fixed;left:max(8px,env(safe-area-inset-left));top:calc(74px + env(safe-area-inset-top));z-index:74;width:auto;min-height:38px;padding:8px 10px;border-radius:0 12px 12px 0;background:rgba(6,18,31,.92);backdrop-filter:blur(14px);box-shadow:0 0 22px rgba(110,223,246,.18);font-size:13px}}.arena-mobile-drawer-backdrop{{display:none;position:fixed;inset:0;z-index:72;background:rgba(0,0,0,.38);pointer-events:none}}.arena-mobile-drawer-backdrop:not([hidden]){{display:block;pointer-events:auto}}.arena-mobile-drawer{{display:block;position:fixed;top:0;left:0;bottom:0;width:min(82vw,340px);z-index:73;transform:translateX(-104%);transition:transform .22s ease;background:linear-gradient(180deg,rgba(7,19,34,.98),rgba(4,9,18,.98));border-right:1px solid rgba(110,223,246,.24);box-shadow:24px 0 70px rgba(0,0,0,.46);padding:calc(16px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));overflow:auto;pointer-events:none}}.arena-mobile-drawer.open{{transform:translateX(0);pointer-events:auto}}.drawer-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}}.drawer-head button{{width:40px;min-height:40px;padding:0;font-size:22px}}.drawer-actions{{display:grid;gap:10px}}.drawer-actions .card{{position:static!important;max-width:none!important}}.drawer-actions label.option{{justify-content:space-between}}.victory-card{{padding:18px}}.emoji-storm span{{font-size:26px}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}.victory-overlay,.emoji-storm span{{animation:none!important}}}}</style></head><body>{drawer_html}<header><div class="wrap"><nav><a class="brand" href="/arena"><img src="{logo_url}" alt="PulseSoc logo" width="34" height="34" loading="lazy" onerror="this.style.display='none'"><span>Alpha Arena</span></a><div class="actions">{nav_html}{customize}</div></nav></div></header><main class="wrap">{'<div class="presence-ribbon" data-arena-presence-panel><span class="presence-pill"><i></i>Connecting Arena presence</span></div>' if user else ''}{body}<p class="notice">{arena_victory_engine.EDUCATIONAL_DISCLAIMER}</p></main>{script}</body></html>""")
 
 
 def arena_simple_page(title, heading, intro, cards=None, script=""):
@@ -22974,7 +22986,7 @@ def arena_preview_page():
       <article class="card wide">
         <div class="kicker">AI Crypto Intelligence Game</div>
         <h1>Train your crypto intelligence. Battle friends. Survive markets. Defeat scams.</h1>
-        <p>CoinPilotXAI Arena turns education, virtual-dollar market decisions, scam defense, discipline scoring, and friendly competition into a daily skill system.</p>
+        <p>CoinPlotXAI Arena turns education, virtual-dollar market decisions, scam defense, discipline scoring, and friendly competition into a daily skill system.</p>
         <div class="actions"><a class="button primary" href="/signup?next=/arena">Create Free Account</a><a class="button" href="/education">Explore Education</a></div>
       </article>
       <article class="card"><div class="kicker">No Gambling</div><h2>Virtual Dollars Only</h2><p>Scores reward discipline, scam defense, research, consistency, and risk control. Profit alone does not win.</p></article>
@@ -22985,7 +22997,7 @@ def arena_preview_page():
       <article class="card"><h3>Social Competition</h3><p>Follow rising players, challenge friends, and climb skill-based leaderboards.</p></article>
     </section>
     """
-    return arena_page_shell("CoinPilotXAI Arena - AI Crypto Intelligence Game", body, public=True)
+    return arena_page_shell("CoinPlotXAI Arena - AI Crypto Intelligence Game", body, public=True)
 
 
 @webhook_app.route("/arena", methods=["GET"])
@@ -23020,7 +23032,7 @@ def arena_home_page():
     body = f"""
     <section class="hero">
       <article class="card wide">
-        <div class="kicker">CoinPilotXAI Arena</div>
+        <div class="kicker">CoinPlotXAI Arena</div>
         <h1>Train. Compete. Improve.</h1>
         <p>Build crypto intelligence with virtual-dollar missions, scam defense, discipline scoring, and friendly global competition.</p>
         <div class="actions"><a class="button primary" href="/arena/daily">Start Daily Mission</a><a class="button" href="/arena/scam-hunter">Scam Hunter</a><a class="button gold" href="/arena/leaderboard">View Leaderboard</a></div>
@@ -23196,7 +23208,7 @@ def arena_player_page(public_player_id):
         if user else
         f"""<a class="button primary" href="/signup?next={clean_html(request.path)}">Create Free Account</a><button class="arena-share-btn" data-share-url="{share_url}" data-public-player-id="{clean_html(public_profile.get('public_player_id'))}">Share</button>"""
     )
-    og_title = f"{clean_html(display)} | CoinPilotXAI Arena Player"
+    og_title = f"{clean_html(display)} | CoinPlotXAI Arena Player"
     og_desc = clean_html(arena_player_style_summary(profile))
     og_image = f"https://pulsesoc.com/api/arena/share/profile/{clean_html(public_profile.get('public_player_id'))}?format=svg"
     meta_tags = f"""<link rel="canonical" href="{share_url}"><meta property="og:title" content="{og_title}"><meta property="og:description" content="{og_desc}"><meta property="og:image" content="{og_image}"><meta property="og:url" content="{share_url}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{og_title}"><meta name="twitter:description" content="{og_desc}"><meta name="twitter:image" content="{og_image}">"""
@@ -23207,14 +23219,14 @@ def arena_player_page(public_player_id):
     <script>
     async function trackShare(playerId,platform){{try{{await fetch('/api/arena/share/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{shared_player_id:playerId,share_type:'player_profile',platform:platform,title:'Arena player profile shared'}})}});}}catch(e){{}}}}
     async function copyShare(url){{await navigator.clipboard.writeText(url);const t=document.querySelector('[data-share-toast]');if(t)t.textContent='Player profile link copied.';}}
-    function openShareModal(url){{const modal=document.querySelector('[data-share-modal]');const text=encodeURIComponent('Check out this Arena player profile on CoinPilotXAI.');const encoded=encodeURIComponent(url);modal.querySelector('[data-share-x]').href='https://twitter.com/intent/tweet?text='+text+'&url='+encoded;modal.querySelector('[data-share-facebook]').href='https://www.facebook.com/sharer/sharer.php?u='+encoded;modal.querySelector('[data-share-whatsapp]').href='https://wa.me/?text='+text+'%20'+encoded;modal.querySelector('[data-share-telegram]').href='https://t.me/share/url?url='+encoded+'&text='+text;modal.hidden=false;}}
+    function openShareModal(url){{const modal=document.querySelector('[data-share-modal]');const text=encodeURIComponent('Check out this Arena player profile on CoinPlotXAI.');const encoded=encodeURIComponent(url);modal.querySelector('[data-share-x]').href='https://twitter.com/intent/tweet?text='+text+'&url='+encoded;modal.querySelector('[data-share-facebook]').href='https://www.facebook.com/sharer/sharer.php?u='+encoded;modal.querySelector('[data-share-whatsapp]').href='https://wa.me/?text='+text+'%20'+encoded;modal.querySelector('[data-share-telegram]').href='https://t.me/share/url?url='+encoded+'&text='+text;modal.hidden=false;}}
     document.addEventListener('click',async e=>{{const c=e.target.closest('[data-challenge]');const f=e.target.closest('[data-follow]');const m=e.target.closest('[data-message]');const r=e.target.closest('[data-report]');const b=e.target.closest('[data-block]');const s=e.target.closest('.arena-share-btn');
       if(c){{const challenge_type=prompt('Choose challenge type: quick_battle, btc_duel, eth_duel, scam_hunter_duel, survival_mode, fake_portfolio_battle, prediction_war, ai_boss_race','btc_duel')||'btc_duel';const message=prompt('Optional challenge note','Ready for an Arena challenge?')||'';const res=await fetch('/api/arena/challenge',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:c.dataset.challenge,challenge_type:challenge_type,message:message}})}});alert((await res.json()).message||'Challenge sent.');}}
       if(f){{const res=await fetch('/api/arena/follow',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:f.dataset.follow}})}});alert((await res.json()).message||'Followed.');}}
       if(m){{const text=prompt('Message this Arena player');if(text){{const res=await fetch('/api/players/' + encodeURIComponent(m.dataset.message) + '/message',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message:text,source_context:'profile'}})}});const d=await res.json();if(d.next_url)location.href=d.next_url;else alert(d.message||'Message request sent.');}}}}
       if(r){{const res=await fetch('/api/arena/report-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:r.dataset.report,report_type:'profile',details:'Reported from profile'}})}});alert((await res.json()).message||'Report sent.');}}
       if(b){{const res=await fetch('/api/arena/block-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:b.dataset.block,reason:'Blocked from profile'}})}});alert((await res.json()).message||'Player blocked.');}}
-      if(s){{const url=s.dataset.shareUrl;await trackShare(s.dataset.publicPlayerId,'native_or_copy');if(navigator.share){{try{{await navigator.share({{title:'CoinPilotXAI Arena Player',text:'Check out this Arena player profile on CoinPilotXAI.',url:url}});return;}}catch(err){{if(err&&err.name==='AbortError')return;}}}}try{{await copyShare(url);}}catch(err){{openShareModal(url);}}}}
+      if(s){{const url=s.dataset.shareUrl;await trackShare(s.dataset.publicPlayerId,'native_or_copy');if(navigator.share){{try{{await navigator.share({{title:'CoinPlotXAI Arena Player',text:'Check out this Arena player profile on CoinPlotXAI.',url:url}});return;}}catch(err){{if(err&&err.name==='AbortError')return;}}}}try{{await copyShare(url);}}catch(err){{openShareModal(url);}}}}
       if(e.target.closest('[data-copy-share]')){{const btn=document.querySelector('.arena-share-btn');await copyShare(btn.dataset.shareUrl);await trackShare(btn.dataset.publicPlayerId,'copy_link');}}
       if(e.target.closest('[data-close-share]'))document.querySelector('[data-share-modal]').hidden=true;
     }});
@@ -23624,7 +23636,7 @@ def pulse_roast_battle_shell_response(response):
     html = re.sub(r"<header><div class=\"wrap\"><nav>.*?</nav></div></header>", pulse_header, html, count=1, flags=re.S)
     html = html.replace("</head>", pulse_style + "</head>", 1)
     html = html.replace("</body>", pulse_bottom_nav + "</body>", 1)
-    html = html.replace("CoinPilotXAI Arena is an educational AI crypto intelligence game with virtual dollars, daily missions, scam defense, and skill-based leaderboards.", "PulseSoc Roast Battle is a moderated creator entertainment experience with live voting, reactions, replays, and shareable highlights.")
+    html = html.replace("CoinPlotXAI Arena is an educational AI crypto intelligence game with virtual dollars, daily missions, scam defense, and skill-based leaderboards.", "PulseSoc Roast Battle is a moderated creator entertainment experience with live voting, reactions, replays, and shareable highlights.")
     html = html.replace("Connecting Arena presence", "Connecting PulseSoc Roast Battle")
     return Response(html, status=response.status_code, content_type="text/html; charset=utf-8")
 
@@ -25162,7 +25174,7 @@ def api_arena_ai_commentary():
     commentary = arena_player_style_summary(profile)
     if int(profile.get("discipline_score") or 0) >= 70:
         commentary = f"{account_display_name(user)} maintained strong discipline through the simulated market stress."
-    return jsonify({"ok": True, "commentary": commentary, "source": "CoinPilotXAI Arena AI commentator"})
+    return jsonify({"ok": True, "commentary": commentary, "source": "CoinPlotXAI Arena AI commentator"})
 
 
 @webhook_app.route("/api/arena/team/create", methods=["POST"])
@@ -26298,7 +26310,7 @@ def api_arena_share_generate():
         profile = public_arena_player(dict(row_lookup)) if row_lookup else None
     if not profile:
         profile = public_arena_player(get_or_create_arena_profile(user["user_id"]) or {})
-    achievement = {"title": clean_html(payload.get("title") or "Arena Progress")[:120], "subtitle": clean_html(payload.get("subtitle") or "Training crypto intelligence with CoinPilotXAI Arena")[:180]}
+    achievement = {"title": clean_html(payload.get("title") or "Arena Progress")[:120], "subtitle": clean_html(payload.get("subtitle") or "Training crypto intelligence with CoinPlotXAI Arena")[:180]}
     card = arena_share_service.share_card(profile=profile, achievement=achievement)
     conn = db()
     cur = conn.cursor()
@@ -26462,7 +26474,7 @@ def simulator_page():
     if not user:
         return redirect(url_for("signup_page", next="/simulator"))
     asset = clean_html(request.args.get("asset") or "BTC").upper()[:12]
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Trading Simulator | CoinPilotXAI</title><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:28px 0 96px}}.grid{{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px;box-shadow:0 22px 70px rgba(0,0,0,.24)}}.button,input,select{{min-height:44px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:#081323;color:#f2fbff;padding:10px}}.button{{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:900;cursor:pointer}}.row{{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:10px;border-bottom:1px solid rgba(255,255,255,.08)}}.muted{{color:#9fb5c0}}@media(max-width:820px){{.grid{{grid-template-columns:1fr}}}}</style></head><body><main class='wrap'><h1>CoinPilotXAI Trading Simulator</h1><p class='muted'>Training simulator only. No real trades. Not financial advice.</p><section class='grid'><article class='card'><h2>Paper Wallet</h2><div id='summary'>Loading...</div><h2>Positions</h2><div id='positions'></div><h2>Trade History</h2><div id='history'></div></article><aside class='card'><h2>Simulated Order Ticket</h2><form id='order'><select name='side'><option value='buy'>Market Buy</option><option value='sell'>Market Sell</option></select><input name='symbol' value='{asset}' placeholder='BTC'><input name='quantity' type='number' step='any' min='0' placeholder='Simulated quantity'><button class='button'>Preview and Place Simulated Trade</button></form><p id='msg' class='muted'></p><h2>AI Hitchhiker Coach</h2><p id='coach' class='muted'>The coach will warn about overexposure, FOMO, revenge trading, and sizing risk.</p></aside></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{{style:'currency',currency:'USD'}});async function load(){{const d=await fetch('/api/simulator',{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());document.getElementById('summary').innerHTML=`<div class='row'><strong>Cash</strong><span>${{money(d.cash_balance)}}</span></div><div class='row'><strong>Equity</strong><span>${{money(d.equity)}}</span></div><div class='row'><strong>Risk Score</strong><span>${{d.risk_score}}/100</span></div>`;document.getElementById('positions').innerHTML=(d.positions||[]).map(p=>`<div class='row'><strong>${{p.symbol}}</strong><span>${{p.quantity}}</span><span>${{money(p.value)}}</span></div>`).join('')||'<p class=muted>No simulated positions yet.</p>';document.getElementById('history').innerHTML=(d.trades||[]).slice(0,20).map(t=>`<div class='row'><strong>${{t.side}} ${{t.symbol}}</strong><span>${{t.quantity}}</span><span>${{money(t.notional)}}</span></div>`).join('')||'<p class=muted>No simulated trades yet.</p>';document.getElementById('coach').textContent=d.ai_coaching}}document.getElementById('order').addEventListener('submit',async e=>{{e.preventDefault();const p=Object.fromEntries(new FormData(e.target).entries());const d=await fetch('/api/simulator/order',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(p)}}).then(r=>r.json());document.getElementById('msg').textContent=d.ok?'Simulated trade saved.':'Simulator says: '+(d.message||'Trade failed.');load()}});load()</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Trading Simulator | CoinPlotXAI</title><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:28px 0 96px}}.grid{{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px;box-shadow:0 22px 70px rgba(0,0,0,.24)}}.button,input,select{{min-height:44px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:#081323;color:#f2fbff;padding:10px}}.button{{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:900;cursor:pointer}}.row{{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:10px;border-bottom:1px solid rgba(255,255,255,.08)}}.muted{{color:#9fb5c0}}@media(max-width:820px){{.grid{{grid-template-columns:1fr}}}}</style></head><body><main class='wrap'><h1>CoinPlotXAI Trading Simulator</h1><p class='muted'>Training simulator only. No real trades. Not financial advice.</p><section class='grid'><article class='card'><h2>Paper Wallet</h2><div id='summary'>Loading...</div><h2>Positions</h2><div id='positions'></div><h2>Trade History</h2><div id='history'></div></article><aside class='card'><h2>Simulated Order Ticket</h2><form id='order'><select name='side'><option value='buy'>Market Buy</option><option value='sell'>Market Sell</option></select><input name='symbol' value='{asset}' placeholder='BTC'><input name='quantity' type='number' step='any' min='0' placeholder='Simulated quantity'><button class='button'>Preview and Place Simulated Trade</button></form><p id='msg' class='muted'></p><h2>AI Hitchhiker Coach</h2><p id='coach' class='muted'>The coach will warn about overexposure, FOMO, revenge trading, and sizing risk.</p></aside></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{{style:'currency',currency:'USD'}});async function load(){{const d=await fetch('/api/simulator',{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());document.getElementById('summary').innerHTML=`<div class='row'><strong>Cash</strong><span>${{money(d.cash_balance)}}</span></div><div class='row'><strong>Equity</strong><span>${{money(d.equity)}}</span></div><div class='row'><strong>Risk Score</strong><span>${{d.risk_score}}/100</span></div>`;document.getElementById('positions').innerHTML=(d.positions||[]).map(p=>`<div class='row'><strong>${{p.symbol}}</strong><span>${{p.quantity}}</span><span>${{money(p.value)}}</span></div>`).join('')||'<p class=muted>No simulated positions yet.</p>';document.getElementById('history').innerHTML=(d.trades||[]).slice(0,20).map(t=>`<div class='row'><strong>${{t.side}} ${{t.symbol}}</strong><span>${{t.quantity}}</span><span>${{money(t.notional)}}</span></div>`).join('')||'<p class=muted>No simulated trades yet.</p>';document.getElementById('coach').textContent=d.ai_coaching}}document.getElementById('order').addEventListener('submit',async e=>{{e.preventDefault();const p=Object.fromEntries(new FormData(e.target).entries());const d=await fetch('/api/simulator/order',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(p)}}).then(r=>r.json());document.getElementById('msg').textContent=d.ok?'Simulated trade saved.':'Simulator says: '+(d.message||'Trade failed.');load()}});load()</script></body></html>""")
 
 
 @webhook_app.route("/api/simulator/order", methods=["POST"])
@@ -26782,7 +26794,7 @@ def alerts_api():
             notification_service.queue_notification(
                 user["user_id"],
                 f"Alert activated for {clean_html(payload.get('symbol', '')).upper()}",
-                "CoinPilotXAI is now monitoring this rule and will trigger through the selected channels when conditions are met.",
+                "CoinPlotXAI is now monitoring this rule and will trigger through the selected channels when conditions are met.",
                 "market_alerts",
                 {"alert_id": result.get("alert_id"), "url": "/alerts"},
             )
@@ -27057,8 +27069,7 @@ def alerts_page():
     user = require_account()
     if not user:
         return redirect(url_for("login_page", next="/alerts"))
-    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Alerts Command Center | CoinPilotXAI</title><style>:root{color-scheme:dark;--bg:#050b14;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--panel:rgba(13,22,39,.88)}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}.wrap{width:min(100% - 28px,1120px);margin:auto;padding:28px 0 92px}a{color:var(--cyan)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.92),var(--panel));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}.button,input,select{min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:#f2fbff;padding:10px;font:inherit}.button{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;cursor:pointer}.button.secondary{background:rgba(255,255,255,.06);color:#f2fbff}.button.warn{background:rgba(255,107,122,.15);color:#ffd7dc}.button:disabled,.channel-grid label.disabled{opacity:.55;cursor:not-allowed}.row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;margin:10px 0;background:rgba(255,255,255,.04)}.actions{display:flex;gap:8px;flex-wrap:wrap}.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08);font-size:12px}.pill.ready{border-color:rgba(54,229,143,.38);background:rgba(54,229,143,.12)}.pill.needs,.pill.permission{border-color:rgba(255,209,102,.42);background:rgba(255,209,102,.12);color:#ffe6a6}.pill.failed{border-color:rgba(255,107,122,.42);background:rgba(255,107,122,.12);color:#ffd7dc}.pill.disabled{opacity:.62}.status-active{color:#c8ffe2}.status-paused{color:#ffd166}.status-deleted{color:#ffadb5}.muted{color:var(--muted)}.channel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0}.channel-grid label{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;color:var(--muted)}.setup-grid{display:grid;gap:8px;margin:10px 0}.setup-card{border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px;background:rgba(255,255,255,.04)}.setup-card strong{display:flex;justify-content:space-between;gap:8px}.setup-card p{margin:6px 0;color:var(--muted)}.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:20;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;color:#f2fbff;padding:12px 14px;box-shadow:0 18px 60px rgba(0,0,0,.4);display:none}.toast.show{display:block}.warnbox{border:1px solid rgba(255,209,102,.32);background:rgba(255,209,102,.08);border-radius:12px;padding:10px;margin:10px 0;color:#ffe6a6}.events{display:grid;gap:8px}.event{border-left:3px solid var(--cyan);padding:10px;background:rgba(255,255,255,.04);border-radius:10px}.event.error{border-left-color:var(--red)}.event.skipped{border-left-color:var(--gold)}@media(max-width:800px){.grid{grid-template-columns:1fr}.button{width:100%}.row{grid-template-columns:1fr}.actions{display:grid;grid-template-columns:1fr 1fr}.channel-grid{grid-template-columns:1fr}}</style></head><body><main class='wrap'><a href='/dashboard'>Back to Dashboard</a><h1>Alerts Command Center</h1><p class='muted'>Live market alerts with in-app, email, PWA push, SMS, and Telegram delivery logging. Coin price alerts are monitored by the production worker; news, prediction, scam keyword, and Arena alerts are safely scaffolded for expansion.</p><section class='grid'><article class='card'><h2>Create Alert</h2><form id='alertForm'><select name='alert_type'><option value='coin_price'>Coin price</option><option value='volatility'>24h volatility</option><option value='move_24h'>24h move</option><option value='news'>News keyword</option><option value='scam_keyword'>Scam keyword</option><option value='prediction'>Prediction probability</option><option value='arena'>Arena activity</option></select><input name='symbol' placeholder='BTC, ETH, SOL, ETF, scam keyword...' required><select name='condition'><option value='above'>Above</option><option value='below'>Below</option><option value='moves_up_percent'>Moves up %</option><option value='moves_down_percent'>Moves down %</option><option value='volatility_above'>Volatility above %</option></select><input name='threshold' type='number' step='any' placeholder='Threshold value' required><div class='channel-grid'><label><input type='checkbox' name='channels' value='in_app' checked> In-app <span data-channel-label='in_app'></span></label><label><input type='checkbox' name='channels' value='email'> Email <span data-channel-label='email'></span></label><label><input type='checkbox' name='channels' value='push'> PWA push <span data-channel-label='push'></span></label><label><input type='checkbox' name='channels' value='sms'> SMS/Text <span data-channel-label='sms'></span></label><label><input type='checkbox' name='channels' value='telegram'> Telegram Companion <span data-channel-label='telegram'></span></label></div><button class='button' id='activateBtn'>Activate Alert</button><p id='msg' class='muted'></p></form></article><article class='card'><h2>Delivery Readiness</h2><p class='muted'>Every trigger creates delivery logs. Missing provider settings are logged as not configured instead of crashing or silently failing.</p><div id='workerStatus' class='warnbox'>Checking worker heartbeat...</div><div id='channelReadiness' class='setup-grid'>Checking channels...</div><a class='button secondary' href='/notifications'>Notification Center</a></article></section><section class='card'><h2>Active Alerts</h2><div id='alerts'>Loading...</div></section><section class='card'><h2>Recent Alert Events</h2><div id='events' class='events'>Loading...</div></section></main><div id='toast' class='toast'></div><script>const $=s=>document.querySelector(s);const CHANNELS=['in_app','email','push','sms','telegram'];let READINESS={};function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3800)}function channels(c,delivery={}){return CHANNELS.map(ch=>{const enabled=!!(c||{})[ch];const last=(delivery||{})[ch]||{};let cls='disabled',label='Disabled';if(enabled){if(last.status==='failed'){cls='failed';label='Failed'}else if(last.status==='not_configured'||last.status==='permission_denied'){cls='needs';label='Needs setup'}else{const r=READINESS[ch]||{};cls=r.ready?'ready':'needs';label=r.ready?'Ready':'Needs setup'}}return `<span class="pill ${cls}">${ch.replace('_',' ')} · ${label}</span>`}).join(' ')}async function api(url,opts={}){const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Push-Permission':('Notification'in window?Notification.permission:'unsupported'),...(opts.headers||{})},...opts});let d={};try{d=await r.json()}catch(e){}if(!r.ok&&!d.message)d.message='Request failed.';return d}function renderReadiness(){const node=$('#channelReadiness');node.innerHTML=CHANNELS.map(ch=>{const r=READINESS[ch]||{};const cls=r.ready?'ready':(r.status==='permission_denied'?'permission':'needs');const action=ch==='push'&&!r.ready?`<a class="button secondary" href="/notifications">Enable Push</a>`:ch==='sms'&&!r.ready?`<a class="button secondary" href="/account/settings">Add Phone for SMS</a>`:ch==='telegram'&&!r.ready?`<a class="button secondary" href="/account/settings">Connect Telegram</a>`:'';return `<div class="setup-card"><strong>${ch.replace('_',' ')} <span class="pill ${cls}">${r.label||'Needs setup'}</span></strong><p>${r.message||''}</p>${action}</div>`}).join('');CHANNELS.forEach(ch=>{const input=document.querySelector(`input[name="channels"][value="${ch}"]`);const label=input&&input.closest('label');const r=READINESS[ch]||{};if(input&&ch!=='in_app'&&ch!=='email'){input.disabled=!r.ready;if(!r.ready)input.checked=false}if(label)label.classList.toggle('disabled',!!input.disabled);const badge=document.querySelector(`[data-channel-label="${ch}"]`);if(badge)badge.innerHTML=` <span class="pill ${r.ready?'ready':'needs'}">${r.label||''}</span>`})}function alertRow(a){const status=a.status||'active';const action=status==='active'?`<button class="button secondary" data-action="pause" data-id="${a.id}">Pause</button>`:`<button class="button secondary" data-action="resume" data-id="${a.id}">Resume</button>`;return `<div class="row"><div><strong>${a.symbol||a.target||'Alert'}</strong> <span class="pill status-${status}">${status}</span><p class="muted">${(a.alert_type||'coin_price').replace('_',' ')} ${(a.condition||'above').replaceAll('_',' ')} ${a.threshold_value??a.target_value??''}</p><p>${channels(a.channels,a.delivery_statuses||{})}</p><p class="muted">Last checked: ${a.last_checked_at||'not yet'} · Last triggered: ${a.last_triggered_at||'not yet'} · Triggers: ${a.trigger_count||0}</p></div><div class="actions">${action}<button class="button secondary" data-action="test" data-id="${a.id}">Test Alert</button><button class="button warn" data-action="delete" data-id="${a.id}">Delete</button></div></div>`}function eventRow(e){return `<div class="event ${e.status||''}"><strong>${e.symbol||'Alert'} ${e.status||''}</strong><p>${e.message||e.body||''}</p><p class="muted">Observed: ${e.observed_value??'n/a'} · ${e.created_at||''}</p></div>`}async function load(){const d=await api('/api/alerts?push_permission='+encodeURIComponent('Notification'in window?Notification.permission:'unsupported'));READINESS=d.channel_readiness||{};renderReadiness();$('#alerts').innerHTML=(d.alerts||[]).map(alertRow).join('')||'<p class=muted>No alerts yet.</p>';$('#events').innerHTML=(d.events||[]).map(eventRow).join('')||'<p class=muted>No alert events yet.</p>';const w=d.worker||{};$('#workerStatus').textContent=w.stale?'Alert worker has not checked rules recently. Ask an admin to start python alert_worker.py on Railway.':'Alert worker heartbeat is healthy.'}$('#alertForm').addEventListener('submit',async e=>{e.preventDefault();const btn=$('#activateBtn');btn.disabled=true;btn.textContent='Activating...';const fd=new FormData(e.target);const payload={alert_type:fd.get('alert_type'),symbol:fd.get('symbol'),condition:fd.get('condition'),threshold:Number(fd.get('threshold')),push_permission:('Notification'in window?Notification.permission:'unsupported'),channels:{in_app:false,email:false,push:false,sms:false,telegram:false}};fd.getAll('channels').forEach(c=>payload.channels[c]=true);const d=await api('/api/alerts',{method:'POST',body:JSON.stringify(payload)});btn.disabled=false;btn.textContent='Activate Alert';if(d.ok){$('#msg').textContent='Alert activated.';if((d.warnings||[]).length)toast(d.warnings.join(' '));else toast('Alert activated.');e.target.reset();e.target.querySelector('[value=in_app]').checked=true;load()}else{$('#msg').textContent=d.message||'Alert could not be created.';toast($('#msg').textContent);if(d.channel_readiness){READINESS=d.channel_readiness;renderReadiness()}}});document.addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;b.disabled=true;const action=b.dataset.action;const id=b.dataset.id;const method=action==='delete'?'delete':action;const d=await api(`/api/alerts/${id}/${method}`,{method:'POST',body:'{}'});if(d.ok){toast(d.message||'Alert updated.');load()}else{toast(d.message||'Could not update alert.');b.disabled=false}});load();setInterval(load,10000)</script></body></html>""")
-
+    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Alerts Command Center | CoinPlotXAI</title><style>:root{color-scheme:dark;--bg:#050b14;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--panel:rgba(13,22,39,.88)}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}.wrap{width:min(100% - 28px,1120px);margin:auto;padding:28px 0 92px}a{color:var(--cyan)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.92),var(--panel));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}.button,input,select{min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:#f2fbff;padding:10px;font:inherit}.button{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;cursor:pointer}.button.secondary{background:rgba(255,255,255,.06);color:#f2fbff}.button.warn{background:rgba(255,107,122,.15);color:#ffd7dc}.button:disabled,.channel-grid label.disabled{opacity:.55;cursor:not-allowed}.row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;margin:10px 0;background:rgba(255,255,255,.04)}.actions{display:flex;gap:8px;flex-wrap:wrap}.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08);font-size:12px}.pill.ready{border-color:rgba(54,229,143,.38);background:rgba(54,229,143,.12)}.pill.needs,.pill.permission{border-color:rgba(255,209,102,.42);background:rgba(255,209,102,.12);color:#ffe6a6}.pill.failed{border-color:rgba(255,107,122,.42);background:rgba(255,107,122,.12);color:#ffd7dc}.pill.disabled{opacity:.62}.status-active{color:#c8ffe2}.status-paused{color:#ffd166}.status-deleted{color:#ffadb5}.muted{color:var(--muted)}.channel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0}.channel-grid label{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;color:var(--muted)}.setup-grid{display:grid;gap:8px;margin:10px 0}.setup-card{border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px;background:rgba(255,255,255,.04)}.setup-card strong{display:flex;justify-content:space-between;gap:8px}.setup-card p{margin:6px 0;color:var(--muted)}.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:20;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;color:#f2fbff;padding:12px 14px;box-shadow:0 18px 60px rgba(0,0,0,.4);display:none}.toast.show{display:block}.warnbox{border:1px solid rgba(255,209,102,.32);background:rgba(255,209,102,.08);border-radius:12px;padding:10px;margin:10px 0;color:#ffe6a6}.events{display:grid;gap:8px}.event{border-left:3px solid var(--cyan);padding:10px;background:rgba(255,255,255,.04);border-radius:10px}.event.error{border-left-color:var(--red)}.event.skipped{border-left-color:var(--gold)}@media(max-width:800px){.grid{grid-template-columns:1fr}.button{width:100%}.row{grid-template-columns:1fr}.actions{display:grid;grid-template-columns:1fr 1fr}.channel-grid{grid-template-columns:1fr}}</style></head><body><main class='wrap'><a href='/dashboard'>Back to Dashboard</a><h1>Alerts Command Center</h1><p class='muted'>Live market alerts with in-app, email, PWA push, SMS, and Telegram delivery logging. Coin price alerts are monitored by the production worker; news, prediction, scam keyword, and Arena alerts are safely scaffolded for expansion.</p><section class='grid'><article class='card'><h2>Create Alert</h2><form id='alertForm'><select name='alert_type'><option value='coin_price'>Coin price</option><option value='volatility'>24h volatility</option><option value='move_24h'>24h move</option><option value='news'>News keyword</option><option value='scam_keyword'>Scam keyword</option><option value='prediction'>Prediction probability</option><option value='arena'>Arena activity</option></select><input name='symbol' placeholder='BTC, ETH, SOL, ETF, scam keyword...' required><select name='condition'><option value='above'>Above</option><option value='below'>Below</option><option value='moves_up_percent'>Moves up %</option><option value='moves_down_percent'>Moves down %</option><option value='volatility_above'>Volatility above %</option></select><input name='threshold' type='number' step='any' placeholder='Threshold value' required><div class='channel-grid'><label><input type='checkbox' name='channels' value='in_app' checked> In-app <span data-channel-label='in_app'></span></label><label><input type='checkbox' name='channels' value='email'> Email <span data-channel-label='email'></span></label><label><input type='checkbox' name='channels' value='push'> PWA push <span data-channel-label='push'></span></label><label><input type='checkbox' name='channels' value='sms'> SMS/Text <span data-channel-label='sms'></span></label><label><input type='checkbox' name='channels' value='telegram'> Telegram Companion <span data-channel-label='telegram'></span></label></div><button class='button' id='activateBtn'>Activate Alert</button><p id='msg' class='muted'></p></form></article><article class='card'><h2>Delivery Readiness</h2><p class='muted'>Every trigger creates delivery logs. Missing provider settings are logged as not configured instead of crashing or silently failing.</p><div id='workerStatus' class='warnbox'>Checking worker heartbeat...</div><div id='channelReadiness' class='setup-grid'>Checking channels...</div><a class='button secondary' href='/notifications'>Notification Center</a></article></section><section class='card'><h2>Active Alerts</h2><div id='alerts'>Loading...</div></section><section class='card'><h2>Recent Alert Events</h2><div id='events' class='events'>Loading...</div></section></main><div id='toast' class='toast'></div><script>const $=s=>document.querySelector(s);const CHANNELS=['in_app','email','push','sms','telegram'];let READINESS={};function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3800)}function channels(c,delivery={}){return CHANNELS.map(ch=>{const enabled=!!(c||{})[ch];const last=(delivery||{})[ch]||{};let cls='disabled',label='Disabled';if(enabled){if(last.status==='failed'){cls='failed';label='Failed'}else if(last.status==='not_configured'||last.status==='permission_denied'){cls='needs';label='Needs setup'}else{const r=READINESS[ch]||{};cls=r.ready?'ready':'needs';label=r.ready?'Ready':'Needs setup'}}return `<span class="pill ${cls}">${ch.replace('_',' ')} · ${label}</span>`}).join(' ')}async function api(url,opts={}){const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Push-Permission':('Notification'in window?Notification.permission:'unsupported'),...(opts.headers||{})},...opts});let d={};try{d=await r.json()}catch(e){}if(!r.ok&&!d.message)d.message='Request failed.';return d}function renderReadiness(){const node=$('#channelReadiness');node.innerHTML=CHANNELS.map(ch=>{const r=READINESS[ch]||{};const cls=r.ready?'ready':(r.status==='permission_denied'?'permission':'needs');const action=ch==='push'&&!r.ready?`<a class="button secondary" href="/notifications">Enable Push</a>`:ch==='sms'&&!r.ready?`<a class="button secondary" href="/account/settings">Add Phone for SMS</a>`:ch==='telegram'&&!r.ready?`<a class="button secondary" href="/account/settings">Connect Telegram</a>`:'';return `<div class="setup-card"><strong>${ch.replace('_',' ')} <span class="pill ${cls}">${r.label||'Needs setup'}</span></strong><p>${r.message||''}</p>${action}</div>`}).join('');CHANNELS.forEach(ch=>{const input=document.querySelector(`input[name="channels"][value="${ch}"]`);const label=input&&input.closest('label');const r=READINESS[ch]||{};if(input&&ch!=='in_app'&&ch!=='email'){input.disabled=!r.ready;if(!r.ready)input.checked=false}if(label)label.classList.toggle('disabled',!!input.disabled);const badge=document.querySelector(`[data-channel-label="${ch}"]`);if(badge)badge.innerHTML=` <span class="pill ${r.ready?'ready':'needs'}">${r.label||''}</span>`})}function alertRow(a){const status=a.status||'active';const action=status==='active'?`<button class="button secondary" data-action="pause" data-id="${a.id}">Pause</button>`:`<button class="button secondary" data-action="resume" data-id="${a.id}">Resume</button>`;return `<div class="row"><div><strong>${a.symbol||a.target||'Alert'}</strong> <span class="pill status-${status}">${status}</span><p class="muted">${(a.alert_type||'coin_price').replace('_',' ')} ${(a.condition||'above').replaceAll('_',' ')} ${a.threshold_value??a.target_value??''}</p><p>${channels(a.channels,a.delivery_statuses||{})}</p><p class="muted">Last checked: ${a.last_checked_at||'not yet'} · Last triggered: ${a.last_triggered_at||'not yet'} · Triggers: ${a.trigger_count||0}</p></div><div class="actions">${action}<button class="button secondary" data-action="test" data-id="${a.id}">Test Alert</button><button class="button warn" data-action="delete" data-id="${a.id}">Delete</button></div></div>`}function eventRow(e){return `<div class="event ${e.status||''}"><strong>${e.symbol||'Alert'} ${e.status||''}</strong><p>${e.message||e.body||''}</p><p class="muted">Observed: ${e.observed_value??'n/a'} · ${e.created_at||''}</p></div>`}async function load(){const d=await api('/api/alerts?push_permission='+encodeURIComponent('Notification'in window?Notification.permission:'unsupported'));READINESS=d.channel_readiness||{};renderReadiness();$('#alerts').innerHTML=(d.alerts||[]).map(alertRow).join('')||'<p class=muted>No alerts yet.</p>';$('#events').innerHTML=(d.events||[]).map(eventRow).join('')||'<p class=muted>No alert events yet.</p>';const w=d.worker||{};$('#workerStatus').textContent=w.stale?'Alert worker has not checked rules recently. Ask an admin to start python alert_worker.py on Railway.':'Alert worker heartbeat is healthy.'}$('#alertForm').addEventListener('submit',async e=>{e.preventDefault();const btn=$('#activateBtn');btn.disabled=true;btn.textContent='Activating...';const fd=new FormData(e.target);const payload={alert_type:fd.get('alert_type'),symbol:fd.get('symbol'),condition:fd.get('condition'),threshold:Number(fd.get('threshold')),push_permission:('Notification'in window?Notification.permission:'unsupported'),channels:{in_app:false,email:false,push:false,sms:false,telegram:false}};fd.getAll('channels').forEach(c=>payload.channels[c]=true);const d=await api('/api/alerts',{method:'POST',body:JSON.stringify(payload)});btn.disabled=false;btn.textContent='Activate Alert';if(d.ok){$('#msg').textContent='Alert activated.';if((d.warnings||[]).length)toast(d.warnings.join(' '));else toast('Alert activated.');e.target.reset();e.target.querySelector('[value=in_app]').checked=true;load()}else{$('#msg').textContent=d.message||'Alert could not be created.';toast($('#msg').textContent);if(d.channel_readiness){READINESS=d.channel_readiness;renderReadiness()}}});document.addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;b.disabled=true;const action=b.dataset.action;const id=b.dataset.id;const method=action==='delete'?'delete':action;const d=await api(`/api/alerts/${id}/${method}`,{method:'POST',body:'{}'});if(d.ok){toast(d.message||'Alert updated.');load()}else{toast(d.message||'Could not update alert.');b.disabled=false}});load();setInterval(load,10000)</script></body></html>""")
 
 @webhook_app.route("/api/notifications", methods=["GET"])
 def api_notifications():
@@ -27125,22 +27136,6 @@ def api_notifications_test():
     return response
 
 
-@webhook_app.route("/api/notifications/test-push", methods=["POST"])
-def api_notifications_test_push():
-    init_db()
-    user = api_account_user()
-    if not user:
-        response = jsonify({"ok": False, "message": "Login required."})
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        return response, 401
-    payload = request.get_json(silent=True) or {}
-    result = alert_engine_service.test_delivery_channel(user["user_id"], "push", {"permission": payload.get("permission")})
-    log_product_event(user["user_id"], "test_push_notification_sent", {"result": result})
-    response = jsonify(result)
-    response.headers["Cache-Control"] = "no-store, max-age=0"
-    return response
-
-
 @webhook_app.route("/api/admin/notifications/test-event", methods=["POST"])
 def api_admin_notifications_test_event():
     admin, denied = require_admin_api("system.view")
@@ -27190,12 +27185,28 @@ def api_admin_notifications_process_delivery():
         admin.get("id"),
         "notification_delivery_jobs_processed",
         "notification",
-        "delivery_jobs",
-        {"ok": result.get("ok"), "processed": result.get("processed"), "counts": result.get("counts")},
+        "phase2_delivery",
+        {"processed": result.get("processed"), "counts": result.get("counts")},
     )
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
-    return response, (200 if result.get("ok") else 400)
+    return response
+
+
+@webhook_app.route("/api/notifications/test-push", methods=["POST"])
+def api_notifications_test_push():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    payload = request.get_json(silent=True) or {}
+    result = alert_engine_service.test_delivery_channel(user["user_id"], "push", {"permission": payload.get("permission")})
+    log_product_event(user["user_id"], "test_push_notification_sent", {"result": result})
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 
 @webhook_app.route("/api/notification-preferences", methods=["GET", "POST"])
@@ -28248,8 +28259,8 @@ def admin_test_notification_page():
         result = notification_service.send_user_alert(
             user_id,
             "product_updates",
-            "CoinPilotXAI admin test alert",
-            "This is a test notification from the CoinPilotXAI admin center.",
+            "CoinPlotXAI admin test alert",
+            "This is a test notification from the CoinPlotXAI admin center.",
             {"admin_id": admin.get("id"), "url": "/notifications"},
             channels=payload.getlist("channels") if hasattr(payload, "getlist") else payload.get("channels", ["in_app", "email", "sms", "push"]),
         )
@@ -29212,7 +29223,7 @@ def pulse_live_now_homepage_html(user_id=0):
     card_html = "".join(
         f"<article class='pulse-live-now-card {'' if int(card.get('id') or 0) else 'is-empty'}' data-live-now-card data-live-id='{int(card.get('id') or 0)}'>"
         f"<div class='pulse-live-preview'><span class='live-dot'>LIVE</span><strong>{clean_html(card.get('ai_rating') or 'Ready')}</strong></div>"
-        f"<div><h3>{clean_html('No creators live yet. Start the first broadcast.' if not int(card.get('id') or 0) else card.get('title') or 'PulseSoc Live')}</h3><p>{clean_html(card.get('creator_name') or 'CoinPilotXAI')} · {clean_html(card.get('category') or 'Community')}</p>"
+        f"<div><h3>{clean_html('No creators live yet. Start the first broadcast.' if not int(card.get('id') or 0) else card.get('title') or 'PulseSoc Live')}</h3><p>{clean_html(card.get('creator_name') or 'CoinPlotXAI')} · {clean_html(card.get('category') or 'Community')}</p>"
         f"<p><span>{int(card.get('viewer_count') or 0)} viewers</span><span>{clean_html(card.get('momentum') or 'warming')}</span><span>AI {clean_html(card.get('ai_rating') or 'Ready')}</span></p></div>"
         f"<a class='button primary' href='{pulse_live_watch_url(int(card.get('id') or 0)) if int(card.get('id') or 0) else '/pulse/live/studio?context_type=home'}' data-open-live-in-reels='{int(card.get('id') or 0)}'>{'Join Live in Reels' if int(card.get('id') or 0) else 'Start Live'}</a>"
         "</article>"
@@ -29320,7 +29331,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>__TITLE__ | CoinPilotXAI</title>
+<title>__TITLE__ | CoinPlotXAI</title>
 <link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-logo-20260606.png">
 <link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=feed-post-v3-media-overlay-20260629a">
 <link rel="stylesheet" href="/static/css/pulse_status_system.css?v=status-v4-20260703b">
@@ -30056,7 +30067,7 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js" defer></script>', "")
         rendered_html = rendered_html.replace(
             "</body>",
-            '<script src="/static/js/pulse_home_core.js?v=live-reels-only-20260702a" defer></script></body>',
+            '<script src="/static/js/pulse_home_core.js?v=bottom-dock-scroll-20260719a" defer></script></body>',
             1,
         )
     if boot_profile == "shell_only":
@@ -36820,7 +36831,7 @@ def pulse_friends_page():
       } catch(err) { toast(err.message); }
     });
     """
-    return pulse_social_shell("Friends and Following", "Build your trusted CoinPilotXAI circle, follow creators, accept requests, and message without exposing private identity data.", main, "", script)
+    return pulse_social_shell("Friends and Following", "Build your trusted CoinPlotXAI circle, follow creators, accept requests, and message without exposing private identity data.", main, "", script)
 
 
 @webhook_app.route("/pulse/invite", methods=["GET"])
@@ -37041,7 +37052,7 @@ def pulse_live_page():
       }
     });
     """
-    return pulse_social_shell("PulseSoc Live Eligibility", "Unlock Live by growing a real, trusted CoinPilotXAI audience.", main, "", script)
+    return pulse_social_shell("PulseSoc Live Eligibility", "Unlock Live by growing a real, trusted CoinPlotXAI audience.", main, "", script)
 
 
 @webhook_app.route("/pulse/live/studio/<int:stream_id>", methods=["GET"])
@@ -41366,7 +41377,7 @@ def pulse_space_detail_page(slug):
     init_db()
     space = next((item for item in PULSE_SPACES if item["slug"] == slug), None)
     if not space:
-        return pulse_section_shell("PulseSoc Space", "This space is being prepared.", [{"title": "Explore Spaces", "description": "Find active CoinPilotXAI communities.", "href": "/pulse/spaces", "cta": "Browse Spaces"}])
+        return pulse_section_shell("PulseSoc Space", "This space is being prepared.", [{"title": "Explore Spaces", "description": "Find active CoinPlotXAI communities.", "href": "/pulse/spaces", "cta": "Browse Spaces"}])
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT title, body, post_type, topic, quality_score, energy_score, created_at FROM pulse_ai_posts WHERE space_slug=? AND status IN ('published','queued','pending_approval') ORDER BY id DESC LIMIT 3", (slug,))
     ai_posts = [dict(row) for row in cur.fetchall()]
@@ -41629,7 +41640,7 @@ def pulse_camera_studio_page():
     <canvas id='cameraCanvas' hidden></canvas>
     """
     script = f"""
-    let stream=null,facing='user',capturedBlob=null,activeFilter='',recording=false,startedAt=0,timerId=null;const video=document.getElementById('cameraPreview'),status=document.getElementById('cameraStatus'),canvas=document.getElementById('cameraCanvas'),tip=document.getElementById('permissionTip'),overlay=document.getElementById('processingOverlay'),denied=document.getElementById('deniedModal'),capture=document.getElementById('captureBtn'),timer=document.getElementById('recordTimer'),stage=document.querySelector('.camera-stage');function setStatus(m){{status.textContent=m||''}}function applyFilter(css){{const intensity=Number(document.getElementById('filterIntensity').value||74)/100;document.documentElement.style.setProperty('--camera-filter',css?css+` opacity(${{0.72+intensity*.28}})`:'brightness(1.04) contrast(1.06) saturate(1.08)')}}async function startCamera(){{try{{denied.classList.remove('is-on');if(stream)stream.getTracks().forEach(t=>t.stop());stream=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:facing,width:{{ideal:1080}},height:{{ideal:1920}},frameRate:{{ideal:30,max:60}}}},audio:{camera_audio_constraint}}});video.srcObject=stream;stage.classList.toggle('is-front',facing==='user');tip.classList.add('is-hidden');setStatus('')}}catch(e){{denied.classList.add('is-on');setStatus('Camera permission blocked. Upload is ready.')}}}}document.getElementById('switchCamera').onclick=()=>{{facing=facing==='user'?'environment':'user';startCamera();}};document.getElementById('micToggle').onclick=()=>{{stream?.getAudioTracks().forEach(t=>t.enabled=!t.enabled);setStatus('Microphone toggled')}};document.getElementById('flashToggle').onclick=async()=>{{const track=stream?.getVideoTracks()[0];try{{await track?.applyConstraints({{advanced:[{{torch:true}}]}});setStatus('Light adjusted')}}catch(e){{setStatus('Flash is not available on this device')}}}};document.getElementById('galleryBtn').onclick=()=>document.getElementById('fallbackUpload').click();document.getElementById('modalUpload').onclick=()=>document.getElementById('fallbackUpload').click();document.getElementById('retryCamera').onclick=startCamera;document.getElementById('filterIntensity').oninput=()=>{{const active=document.querySelector('.filter-chip.is-active');applyFilter(active?.dataset.css||'')}};document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{{if(b.disabled){{setStatus('Premium filter locked.');return}}document.querySelectorAll('.filter-chip').forEach(x=>x.classList.remove('is-active'));b.classList.add('is-active');activeFilter=b.dataset.filter;applyFilter(b.dataset.css||'');}});capture.onclick=async()=>{{if(!stream){{await startCamera();return}}if('{mode}'!=='photo'){{recording=!recording;capture.classList.toggle('is-recording',recording);timer.classList.toggle('is-on',recording);if(recording){{startedAt=Date.now();timerId=setInterval(()=>{{const s=Math.floor((Date.now()-startedAt)/1000);timer.textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}},250);setStatus('Recording visual state. Capture still stores a cover frame in this web build.')}}else{{clearInterval(timerId);setStatus('Recording stopped. Continue to upload the captured frame or gallery video.')}}}}canvas.width=video.videoWidth||1080;canvas.height=video.videoHeight||1920;const ctx=canvas.getContext('2d');ctx.filter=getComputedStyle(document.documentElement).getPropertyValue('--camera-filter')||'none';if(facing==='user'){{ctx.translate(canvas.width,0);ctx.scale(-1,1)}}ctx.drawImage(video,0,0,canvas.width,canvas.height);capturedBlob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',.94));if('{mode}'==='photo')setStatus('Captured. Apply another filter or continue.');}};document.getElementById('uploadCapture').onclick=async()=>{{try{{overlay.classList.add('is-on');const fd=new FormData();const fallback=document.getElementById('fallbackUpload').files[0];if(fallback)fd.append('file',fallback);else if(capturedBlob)fd.append('file',capturedBlob,'coinpilot-camera.jpg');else throw new Error('Capture or choose media first.');fd.append('context_type','pulse_camera');fd.append('target','{target}');fd.append('mode','{mode}');fd.append('group','{group}');fd.append('filter_name',activeFilter);const r=await fetch('/api/pulse/media/upload',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Upload failed.');if('{target}'==='status'){{const pd=await fetch('/api/pulse/status',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{status_type:d.media.media_type==='video'?'video':'image',body:'Captured with PulseSoc Camera',media_ids:[d.media.id],visibility:'public',duration_hours:24}})}}).then(async pr=>{{const out=await pr.json();if(!pr.ok||out.ok===false)throw new Error(out.message||'Status publish failed.');return out}});location.href='/pulse/status';return}}if('{target}'==='reel'){{const rd=await fetch('/api/pulse/reels/create',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{title:'Camera Reel',caption:'Created with CoinPilotXAI Reels Camera',category:'Community',visibility:'public',post_type:d.media.media_type||'image',media_ids:[d.media.id]}})}}).then(async pr=>{{const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Reel create failed.');return pd}});location.href=rd.next_url||'/pulse/reels';return}}if('{target}'==='avatar'||'{target}'==='cover'){{const endpoint='{target}'==='avatar'?'/api/pulse/profile/avatar':'/api/pulse/profile/cover';const pr=await fetch(endpoint,{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{media_url:d.media.media_url,thumbnail_url:d.media.thumbnail_url||d.media.media_url,filter_name:activeFilter}})}});const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Profile media update failed.');location.href='/pulse/profile/edit';return}}if('{target}'==='message'&&{conversation_id}>0){{await fetch('/api/pulse/messages/send',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{conversation_id:{conversation_id},message_type:d.media.media_type==='gif'?'gif':d.media.media_type==='video'?'video':'image',media_url:d.media.media_url,thumbnail_url:d.media.thumbnail_url||d.media.media_url,body:''}})}}).then(async pr=>{{const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Message send failed.')}});location.href='/pulse/messages/{conversation_id}';return}}if('{target}'==='group'&&'{group}'){{const postFd=new FormData();postFd.append('body','');postFd.append('media_url',d.media.media_url);postFd.append('thumbnail_url',d.media.thumbnail_url||d.media.media_url);postFd.append('media_type',d.media.media_type);postFd.append('filter_name',activeFilter);const pr=await fetch('/api/pulse/groups/{group}/posts',{{method:'POST',credentials:'same-origin',body:postFd}});const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Group post failed.');location.href='/pulse/groups/{group}';return}}const post=await fetch('/api/pulse/posts/create-from-camera',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{media_id:d.media.id,media_url:d.media.media_url,title:'PulseSoc Camera',body:document.getElementById('cameraStatus').textContent||'Created with PulseSoc Camera',post_type:d.media.media_type||'image'}})}}).then(async pr=>{{const out=await pr.json();if(!pr.ok||out.ok===false)throw new Error(out.message||'Camera post failed.');return out}});location.href=post.next_url||'/pulse';}}catch(e){{overlay.classList.remove('is-on');setStatus(e.message)}}}};window.addEventListener('pagehide',()=>stream?.getTracks().forEach(t=>t.stop()));startCamera();
+    let stream=null,facing='user',capturedBlob=null,activeFilter='',recording=false,startedAt=0,timerId=null;const video=document.getElementById('cameraPreview'),status=document.getElementById('cameraStatus'),canvas=document.getElementById('cameraCanvas'),tip=document.getElementById('permissionTip'),overlay=document.getElementById('processingOverlay'),denied=document.getElementById('deniedModal'),capture=document.getElementById('captureBtn'),timer=document.getElementById('recordTimer'),stage=document.querySelector('.camera-stage');function setStatus(m){{status.textContent=m||''}}function applyFilter(css){{const intensity=Number(document.getElementById('filterIntensity').value||74)/100;document.documentElement.style.setProperty('--camera-filter',css?css+` opacity(${{0.72+intensity*.28}})`:'brightness(1.04) contrast(1.06) saturate(1.08)')}}async function startCamera(){{try{{denied.classList.remove('is-on');if(stream)stream.getTracks().forEach(t=>t.stop());stream=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:facing,width:{{ideal:1080}},height:{{ideal:1920}},frameRate:{{ideal:30,max:60}}}},audio:{camera_audio_constraint}}});video.srcObject=stream;stage.classList.toggle('is-front',facing==='user');tip.classList.add('is-hidden');setStatus('')}}catch(e){{denied.classList.add('is-on');setStatus('Camera permission blocked. Upload is ready.')}}}}document.getElementById('switchCamera').onclick=()=>{{facing=facing==='user'?'environment':'user';startCamera();}};document.getElementById('micToggle').onclick=()=>{{stream?.getAudioTracks().forEach(t=>t.enabled=!t.enabled);setStatus('Microphone toggled')}};document.getElementById('flashToggle').onclick=async()=>{{const track=stream?.getVideoTracks()[0];try{{await track?.applyConstraints({{advanced:[{{torch:true}}]}});setStatus('Light adjusted')}}catch(e){{setStatus('Flash is not available on this device')}}}};document.getElementById('galleryBtn').onclick=()=>document.getElementById('fallbackUpload').click();document.getElementById('modalUpload').onclick=()=>document.getElementById('fallbackUpload').click();document.getElementById('retryCamera').onclick=startCamera;document.getElementById('filterIntensity').oninput=()=>{{const active=document.querySelector('.filter-chip.is-active');applyFilter(active?.dataset.css||'')}};document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{{if(b.disabled){{setStatus('Premium filter locked.');return}}document.querySelectorAll('.filter-chip').forEach(x=>x.classList.remove('is-active'));b.classList.add('is-active');activeFilter=b.dataset.filter;applyFilter(b.dataset.css||'');}});capture.onclick=async()=>{{if(!stream){{await startCamera();return}}if('{mode}'!=='photo'){{recording=!recording;capture.classList.toggle('is-recording',recording);timer.classList.toggle('is-on',recording);if(recording){{startedAt=Date.now();timerId=setInterval(()=>{{const s=Math.floor((Date.now()-startedAt)/1000);timer.textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}},250);setStatus('Recording visual state. Capture still stores a cover frame in this web build.')}}else{{clearInterval(timerId);setStatus('Recording stopped. Continue to upload the captured frame or gallery video.')}}}}canvas.width=video.videoWidth||1080;canvas.height=video.videoHeight||1920;const ctx=canvas.getContext('2d');ctx.filter=getComputedStyle(document.documentElement).getPropertyValue('--camera-filter')||'none';if(facing==='user'){{ctx.translate(canvas.width,0);ctx.scale(-1,1)}}ctx.drawImage(video,0,0,canvas.width,canvas.height);capturedBlob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',.94));if('{mode}'==='photo')setStatus('Captured. Apply another filter or continue.');}};document.getElementById('uploadCapture').onclick=async()=>{{try{{overlay.classList.add('is-on');const fd=new FormData();const fallback=document.getElementById('fallbackUpload').files[0];if(fallback)fd.append('file',fallback);else if(capturedBlob)fd.append('file',capturedBlob,'coinpilot-camera.jpg');else throw new Error('Capture or choose media first.');fd.append('context_type','pulse_camera');fd.append('target','{target}');fd.append('mode','{mode}');fd.append('group','{group}');fd.append('filter_name',activeFilter);const r=await fetch('/api/pulse/media/upload',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Upload failed.');if('{target}'==='status'){{const pd=await fetch('/api/pulse/status',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{status_type:d.media.media_type==='video'?'video':'image',body:'Captured with PulseSoc Camera',media_ids:[d.media.id],visibility:'public',duration_hours:24}})}}).then(async pr=>{{const out=await pr.json();if(!pr.ok||out.ok===false)throw new Error(out.message||'Status publish failed.');return out}});location.href='/pulse/status';return}}if('{target}'==='reel'){{const rd=await fetch('/api/pulse/reels/create',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{title:'Camera Reel',caption:'Created with CoinPlotXAI Reels Camera',category:'Community',visibility:'public',post_type:d.media.media_type||'image',media_ids:[d.media.id]}})}}).then(async pr=>{{const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Reel create failed.');return pd}});location.href=rd.next_url||'/pulse/reels';return}}if('{target}'==='avatar'||'{target}'==='cover'){{const endpoint='{target}'==='avatar'?'/api/pulse/profile/avatar':'/api/pulse/profile/cover';const pr=await fetch(endpoint,{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{media_url:d.media.media_url,thumbnail_url:d.media.thumbnail_url||d.media.media_url,filter_name:activeFilter}})}});const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Profile media update failed.');location.href='/pulse/profile/edit';return}}if('{target}'==='message'&&{conversation_id}>0){{await fetch('/api/pulse/messages/send',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{conversation_id:{conversation_id},message_type:d.media.media_type==='gif'?'gif':d.media.media_type==='video'?'video':'image',media_url:d.media.media_url,thumbnail_url:d.media.thumbnail_url||d.media.media_url,body:''}})}}).then(async pr=>{{const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Message send failed.')}});location.href='/pulse/messages/{conversation_id}';return}}if('{target}'==='group'&&'{group}'){{const postFd=new FormData();postFd.append('body','');postFd.append('media_url',d.media.media_url);postFd.append('thumbnail_url',d.media.thumbnail_url||d.media.media_url);postFd.append('media_type',d.media.media_type);postFd.append('filter_name',activeFilter);const pr=await fetch('/api/pulse/groups/{group}/posts',{{method:'POST',credentials:'same-origin',body:postFd}});const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Group post failed.');location.href='/pulse/groups/{group}';return}}const post=await fetch('/api/pulse/posts/create-from-camera',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{media_id:d.media.id,media_url:d.media.media_url,title:'PulseSoc Camera',body:document.getElementById('cameraStatus').textContent||'Created with PulseSoc Camera',post_type:d.media.media_type||'image'}})}}).then(async pr=>{{const out=await pr.json();if(!pr.ok||out.ok===false)throw new Error(out.message||'Camera post failed.');return out}});location.href=post.next_url||'/pulse';}}catch(e){{overlay.classList.remove('is-on');setStatus(e.message)}}}};window.addEventListener('pagehide',()=>stream?.getTracks().forEach(t=>t.stop()));startCamera();
     """
     return pulse_social_shell("Camera Creator Studio", "Capture photos and videos, apply premium filters, and publish safely across PulseSoc.", main, "", script)
 
@@ -42533,7 +42544,7 @@ def pulse_merchant_apply_page():
             risk += 30
         has_required_docs = any(d["document_type"] == "id_front" for d in documents) and any(d["document_type"] == "id_back" for d in documents) and any(d["document_type"] == "selfie" for d in documents)
         status = "pending_review" if completeness >= 70 and has_required_docs and acknowledgement_ok else "draft"
-        conn = db(); cur = conn.cursor()
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
         if not message:
             cur.execute(
                 """
@@ -42639,7 +42650,7 @@ def seller_payouts_page(seller_type):
     payout_rows = "".join(f"<tr><td>{p.get('id')}</td><td>{(int(p.get('amount_cents') or 0)/100):.2f} {clean_html(p.get('currency') or 'USD')}</td><td>{clean_html(p.get('status') or '')}</td><td>{clean_html(p.get('provider_payout_id') or '')}</td></tr>" for p in payouts)
     main = f"""
     <section class='grid'><div class='card'><h2>Platform Fee</h2><p class='metric'>{fee_bps/100:.0f}%</p></div><div class='card'><h2>Onboarding</h2><p class='metric'>{clean_html(account.get('onboarding_status') or 'not started')}</p></div><div class='card'><h2>Payouts</h2><p class='metric'>{'Enabled' if account.get('payouts_enabled') else 'Setup'}</p></div></section>
-    <section class='card'><h2>Stripe Connect Payouts</h2><p class='muted'>CoinPilotXAI collects payment, deducts the platform fee, and sends the net amount to your connected Stripe account. Card numbers are never stored by CoinPilotXAI.</p><button class='primary' id='connectPayouts'>Connect Stripe Account</button><p id='payoutStatus' class='muted'></p></section>
+    <section class='card'><h2>Stripe Connect Payouts</h2><p class='muted'>CoinPlotXAI collects payment, deducts the platform fee, and sends the net amount to your connected Stripe account. Card numbers are never stored by CoinPlotXAI.</p><button class='primary' id='connectPayouts'>Connect Stripe Account</button><p id='payoutStatus' class='muted'></p></section>
     <section class='card'><h2>Transactions</h2><table class='table'><tr><th>ID</th><th>Item</th><th>Gross</th><th>Fee</th><th>Net</th><th>Status</th></tr>{tx_rows or '<tr><td colspan=6>No transactions yet.</td></tr>'}</table></section>
     <section class='card'><h2>Payout History</h2><table class='table'><tr><th>ID</th><th>Amount</th><th>Status</th><th>Provider</th></tr>{payout_rows or '<tr><td colspan=4>No payouts yet.</td></tr>'}</table></section>
     """
@@ -43702,7 +43713,7 @@ def pulse_premium_undx_page():
               <p>Generate conceptual manifests only. No actual file access.</p>
               <form class='undx-project-form' id='undxWorkspaceManifestForm'>
                 <div class='undx-project-fields'>
-                  <label class='undx-project-field'><span>Workspace Name</span><input id='undxManifestWorkspaceName' type='text' autocomplete='off' placeholder='CoinPilotXAI Workspace'></label>
+                  <label class='undx-project-field'><span>Workspace Name</span><input id='undxManifestWorkspaceName' type='text' autocomplete='off' placeholder='CoinPlotXAI Workspace'></label>
                   <label class='undx-project-field'><span>Workspace Type</span><select id='undxManifestWorkspaceType'><option>Development</option><option>Research</option><option>Design</option><option>Business</option><option>Operations</option><option>Training</option></select></label>
                   <label class='undx-project-field'><span>Technology Stack</span><input id='undxManifestTechnologyStack' type='text' autocomplete='off' placeholder='Python, Flask, JavaScript, OpenAI'></label>
                   <label class='undx-project-field'><span>Repository Count</span><input id='undxManifestRepositoryCount' type='number' min='0' max='99' value='1'></label>
@@ -44354,7 +44365,7 @@ def pulse_premium_undx_page():
       <section class='undx-core-hero' id='undx-command-overview'>
         <span class='undx-core-label'>Premium Intelligence Layer</span>
         <h1>Enter the Unknown Destination</h1>
-        <p>UNDX is the intelligence engine behind future CoinPilotXAI expansion, built to coordinate premium analysis, secure growth, autonomous building, and the next unknown layer of product evolution.</p>
+        <p>UNDX is the intelligence engine behind future CoinPlotXAI expansion, built to coordinate premium analysis, secure growth, autonomous building, and the next unknown layer of product evolution.</p>
         <div class='undx-core-actions'>
           <a class='button primary' href='#undx-system-status'>Initialize UNDX Core</a>
           <a class='button' href='#undx-core-modules'>View Core Modules</a>
@@ -44366,7 +44377,7 @@ def pulse_premium_undx_page():
             <span class='undx-core-label'>Phase 3 Active Module</span>
             <h2>Builder Intelligence Console</h2>
           </div>
-          <p>Describe what you want CoinPilotXAI to build next, and UNDX will prepare the mission blueprint.</p>
+          <p>Describe what you want CoinPlotXAI to build next, and UNDX will prepare the mission blueprint.</p>
         </div>
         <div class='undx-console-layout'>
           <div class='undx-console-form'>
@@ -44389,7 +44400,7 @@ def pulse_premium_undx_page():
             <span class='undx-core-label'>Phase 7 Conversational Core</span>
             <h2>UNDX Chat Interface</h2>
           </div>
-          <p>Chat with UNDX and issue real mission directives powered by CoinPilotXAI intelligence.</p>
+          <p>Chat with UNDX and issue real mission directives powered by CoinPlotXAI intelligence.</p>
         </div>
         <div class='undx-chat-layout' data-undx-chat-endpoint='/api/undx/chat'>
           <div class='undx-chat-panel'>
@@ -44446,7 +44457,7 @@ def pulse_premium_undx_page():
             <span class='undx-core-label'>Council Mode: Multi-Agent</span>
             <h2>UNDX Agent Council</h2>
           </div>
-          <p>Eight routed intelligence agents evaluate each mission through the UNDX Intelligence Router before CoinPilotXAI enters the next build phase.</p>
+          <p>Eight routed intelligence agents evaluate each mission through the UNDX Intelligence Router before CoinPlotXAI enters the next build phase.</p>
         </div>
         <div class='undx-agent-toolbar'>
           <div class='undx-memory-status' aria-label='UNDX agent council status'>
@@ -44682,7 +44693,7 @@ def pulse_premium_undx_page():
             <section class='undx-simulation-card' aria-label='Repository Profile Engine'>
               <span class='undx-core-label'>Repository Profile Engine</span>
               <h3>Repository Profile</h3>
-              <label>Repository Name<input id='undxFoundationRepoName' type='text' autocomplete='off' placeholder='CoinPilotXAI main repository'></label>
+              <label>Repository Name<input id='undxFoundationRepoName' type='text' autocomplete='off' placeholder='CoinPlotXAI main repository'></label>
               <label>Architecture Notes<textarea id='undxFoundationArchitectureNotes' rows='3' placeholder='Describe known modules, services, routes, APIs, database layers, or connected repository context.'></textarea></label>
               <div class='undx-project-actions'>
                 <button class='button primary' type='button' id='undxCreateRepositoryProfile'>Create Repository Profile</button>
@@ -45962,7 +45973,7 @@ def pulse_premium_undx_page():
               <div class='undx-project-fields'>
                 <label class='undx-project-field'>
                   <span>Repository / Folder Name</span>
-                  <input id='undxRepoName' type='text' autocomplete='off' placeholder='CoinPilotXAI main app'>
+                  <input id='undxRepoName' type='text' autocomplete='off' placeholder='CoinPlotXAI main app'>
                 </label>
                 <label class='undx-project-field'>
                   <span>Repository Type</span>
@@ -46269,7 +46280,7 @@ def pulse_premium_undx_page():
               <span class='undx-core-label'>Future Read-Only Preview</span>
               <h3>Future Read-Only Preview</h3>
               <div class='undx-blueprint-grid'>
-                <section class='undx-blueprint-block'><strong>Repository</strong><p>CoinPilotXAI</p></section>
+                <section class='undx-blueprint-block'><strong>Repository</strong><p>CoinPlotXAI</p></section>
                 <section class='undx-blueprint-block'><strong>File Preview</strong><ol><li>bot.py</li><li>static/js/main.js</li><li>templates/pulse.html</li></ol></section>
                 <section class='undx-blueprint-block'><strong>Status</strong><p>Preview Only</p></section>
               </div>
@@ -46375,7 +46386,7 @@ def pulse_premium_undx_page():
                 <div class='undx-project-fields'>
                   <label class='undx-project-field'>
                     <span>Repository Name</span>
-                    <input id='undxPreviewRepositoryName' type='text' autocomplete='off' placeholder='CoinPilotXAI'>
+                    <input id='undxPreviewRepositoryName' type='text' autocomplete='off' placeholder='CoinPlotXAI'>
                   </label>
                   <label class='undx-project-field'>
                     <span>Repository Type</span>
@@ -48358,8 +48369,8 @@ def pulse_premium_undx_page():
               <span class='undx-core-label'>Connection Center</span>
               <h3>Repository Connection Center</h3>
               <p>Connection Status · Repository Name · Connection Type · Repository Visibility · Trust Level · Read-Only Status</p>
-              <label>Repository Name<input id='undxConnectorRepositoryName' value='CoinPilotXAI' placeholder='Example: CoinPilotXAI'></label>
-              <label>Repository Description<textarea id='undxConnectorRepositoryDescription' rows='3' placeholder='Approved repository metadata only. No secrets or file contents.'>CoinPilotXAI premium PulseSoc and UNDX command-center application.</textarea></label>
+              <label>Repository Name<input id='undxConnectorRepositoryName' value='CoinPlotXAI' placeholder='Example: CoinPlotXAI'></label>
+              <label>Repository Description<textarea id='undxConnectorRepositoryDescription' rows='3' placeholder='Approved repository metadata only. No secrets or file contents.'>CoinPlotXAI premium PulseSoc and UNDX command-center application.</textarea></label>
               <label>Connection Type<select id='undxConnectorConnectionType'>
                 <option>Workspace Repository</option><option>GitHub Repository</option><option>Local Repository</option><option>Future GitLab</option><option>Future Bitbucket</option>
               </select></label>
@@ -49969,13 +49980,13 @@ sqlite</textarea></label>
             <span class='undx-core-label'>Core Modules Grid</span>
             <h2>Core Modules</h2>
           </div>
-          <p>Premium systems queued for phased activation inside the hidden CoinPilotXAI intelligence layer.</p>
+          <p>Premium systems queued for phased activation inside the hidden CoinPlotXAI intelligence layer.</p>
         </div>
         <div class='undx-core-grid'>
           <article class='undx-core-card'><span class='undx-module-label'>Initializing</span><div><h3>Builder Intelligence</h3><p>Plans app structures, product flows, launch paths, and future software-building missions.</p></div></article>
           <article class='undx-core-card'><span class='undx-module-label'>Locked</span><div><h3>Security Expansion</h3><p>Prepares scam defense, hardening reviews, trust layers, and premium security intelligence.</p></div></article>
           <article class='undx-core-card'><span class='undx-module-label'>Coming Soon</span><div><h3>Crypto Research Engine</h3><p>Turns market, wallet, token, and education signals into safer research workflows.</p></div></article>
-          <article class='undx-core-card'><span class='undx-module-label'>Coming Soon</span><div><h3>Autonomous Debugging</h3><p>Designed to inspect failures, explain risk, and guide repairs across CoinPilotXAI systems.</p></div></article>
+          <article class='undx-core-card'><span class='undx-module-label'>Coming Soon</span><div><h3>Autonomous Debugging</h3><p>Designed to inspect failures, explain risk, and guide repairs across CoinPlotXAI systems.</p></div></article>
           <article class='undx-core-card'><span class='undx-module-label'>Coming Soon</span><div><h3>Product Growth Intelligence</h3><p>Reads adoption signals, creator momentum, conversion paths, and expansion opportunities.</p></div></article>
           <article class='undx-core-card'><span class='undx-module-label'>Locked</span><div><h3>Mission Control Automation</h3><p>Coordinates future jobs, audits, release readiness, and command-center operations.</p></div></article>
         </div>
@@ -49984,7 +49995,7 @@ sqlite</textarea></label>
         <article class='undx-section-panel undx-mission-panel'>
           <span class='undx-core-label'>UNDX Mission Panel</span>
           <h2>Mission Layer</h2>
-          <p>UNDX is being built as the internal intelligence system that will help expand CoinPilotXAI phase by phase — from crypto intelligence to security, automation, software building, and autonomous research.</p>
+          <p>UNDX is being built as the internal intelligence system that will help expand CoinPlotXAI phase by phase — from crypto intelligence to security, automation, software building, and autonomous research.</p>
         </article>
         <article class='undx-section-panel' id='undx-system-status'>
           <span class='undx-core-label'>System Status Panel</span>
@@ -52878,7 +52889,7 @@ sqlite</textarea></label>
       const plannedFiles = undxNormalizeExecutionList(manifest.plannedFiles, undxDefaultPreviewFiles(), 40, 180);
       return {
         manifestId: String(manifest.manifestId || `MANIFEST-UNDX-${Date.now()}`).slice(0,44),
-        repositoryName: String(manifest.repositoryName || 'CoinPilotXAI').slice(0,140),
+        repositoryName: String(manifest.repositoryName || 'CoinPlotXAI').slice(0,140),
         repositoryType: String(manifest.repositoryType || 'Other').slice(0,100),
         plannedFiles,
         notes: String(manifest.notes || '').slice(0,1200),
@@ -53079,7 +53090,7 @@ sqlite</textarea></label>
     }
     function undxRepositoryContextDefaults(){
       return {
-        applicationName: 'CoinPilotXAI',
+        applicationName: 'CoinPlotXAI',
         framework: 'Flask/Python',
         mainEntryFile: 'bot.py',
         databaseType: 'SQLite application database',
@@ -53098,7 +53109,7 @@ sqlite</textarea></label>
     function undxNormalizeRepositoryContext(context){
       const source = context && typeof context === 'object' ? context : undxRepositoryContextDefaults();
       return {
-        applicationName: String(source.applicationName || 'CoinPilotXAI').slice(0,120),
+        applicationName: String(source.applicationName || 'CoinPlotXAI').slice(0,120),
         framework: String(source.framework || 'Flask/Python').slice(0,120),
         mainEntryFile: String(source.mainEntryFile || 'bot.py').slice(0,120),
         databaseType: String(source.databaseType || 'SQLite application database').slice(0,160),
@@ -53191,7 +53202,7 @@ sqlite</textarea></label>
         `- Known Services: ${profile.knownServices.join(', ')}`,
         '',
         'Context-Aware Build Guidance:',
-        '- Reference the CoinPilotXAI Flask application shell instead of generic app files.',
+        '- Reference the CoinPlotXAI Flask application shell instead of generic app files.',
         '- Keep UNDX work isolated to /pulse/premium and /pulse/premium/undx unless the user approves broader changes.',
         '- Treat bot.py as the known route surface, undx_router.py as the intelligence-router surface, and undx_worker.py as the worker context.',
         '- Preserve server-side secret handling for OpenAI and routed providers.',
@@ -54611,7 +54622,7 @@ sqlite</textarea></label>
         planId: undxNextStrategicPlanId(plans),
         selectedInputs,
         executiveSummary: `UNDX reviewed ${selectedInputs.length} intelligence input groups and recommends focusing the next build phase on ${highestProject} while strengthening ${missionName}.`,
-        strategicObjective: 'Determine what should happen next across CoinPilotXAI by prioritizing high-value, lower-risk, approval-aware UNDX initiatives.',
+        strategicObjective: 'Determine what should happen next across CoinPlotXAI by prioritizing high-value, lower-risk, approval-aware UNDX initiatives.',
         recommendedPriorities: ['Advance the highest-value active project', 'Increase Knowledge Graph coverage', 'Convert workspace summaries into execution candidates', 'Review approval gates before future file or command access'],
         recommendedBuildOrder: buildOrder,
         keyRisks: ['Strategic plans remain conceptual until future approved execution phases', 'Missing repository previews reduce implementation confidence', 'High-risk security or payment areas require explicit approval gates'],
@@ -56253,7 +56264,7 @@ sqlite</textarea></label>
         recommendedLanguage: String(record.recommendedLanguage || 'Python').slice(0,80),
         recommendedFramework: String(record.recommendedFramework || 'Flask').slice(0,100),
         recommendedToolchain: String(record.recommendedToolchain || 'pytest · ruff').slice(0,240),
-        reason: String(record.reason || record.reasoning || 'Recommended for CoinPilotXAI planning.').slice(0,1000),
+        reason: String(record.reason || record.reasoning || 'Recommended for CoinPlotXAI planning.').slice(0,1000),
         tradeoffs: String(record.tradeoffs || 'Balance speed, safety, team familiarity, and maintainability.').slice(0,1000),
         riskNotes: String(record.riskNotes || 'Audit dependencies and protect secrets.').slice(0,1000),
         createdAt: record.createdAt || new Date().toISOString()
@@ -56407,7 +56418,7 @@ sqlite</textarea></label>
         if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
         const agents = data.agents || [];
         if(undxLanguageReviewOutput) undxLanguageReviewOutput.replaceChildren(
-          undxBlock('Architecture Fit Review', agents.find(agent => agent.key === 'architect')?.recommendation || 'Architecture Fit Review: keep stack consistent with CoinPilotXAI boundaries.'),
+          undxBlock('Architecture Fit Review', agents.find(agent => agent.key === 'architect')?.recommendation || 'Architecture Fit Review: keep stack consistent with CoinPlotXAI boundaries.'),
           undxBlock('Research Review', agents.find(agent => agent.key === 'research')?.recommendation || 'Research Review: validate ecosystem and migration pressure.'),
           undxBlock('Implementation Review', agents.find(agent => agent.key === 'builder')?.recommendation || 'Implementation Review: convert recommendations into planning tasks only.'),
           undxBlock('Optimization Review', agents.find(agent => agent.key === 'optimization')?.recommendation || 'Optimization Review: optimize for maintainability before speed.'),
@@ -56521,7 +56532,7 @@ sqlite</textarea></label>
       const releaseConfidenceScore = Math.max(35, Math.min(96, 62 + sourceStrength * 5 - riskScore * .15));
       return undxNormalizeTestStrategy({
         strategyId: undxNextTestStrategyId(undxLoadTestStrategies()),
-        objective: project.objective || task.projectObjective || proposal.businessObjective || 'Validate CoinPilotXAI and UNDX changes before any future execution-capable phase.',
+        objective: project.objective || task.projectObjective || proposal.businessObjective || 'Validate CoinPlotXAI and UNDX changes before any future execution-capable phase.',
         recommendedTestTypes: ['Unit Testing','Integration Testing','End-to-End Testing','Regression Testing','Security Testing','Performance Testing','Accessibility Testing','User Acceptance Testing'],
         coveragePlan: {
           Frontend:'Validate responsive UNDX panels, state updates, empty states, and localStorage persistence.',
@@ -56553,7 +56564,7 @@ sqlite</textarea></label>
         referenced: {
           sources,
           projectId: project.projectId || '',
-          projectName: project.name || 'CoinPilotXAI',
+          projectName: project.name || 'CoinPlotXAI',
           taskPackage: task.packageId || '',
           changeProposal: proposal.proposalId || '',
           structureModel: structure.modelId || '',
@@ -56675,7 +56686,7 @@ sqlite</textarea></label>
         riskNotes: strategy.bugPredictions,
         readinessAssessment:'Build Candidate',
         complexityScore: Math.max(30, Math.min(90, strategy.riskScore)),
-        referenced:{project: strategy.referenced?.projectName || 'CoinPilotXAI', technologies:['Testing Intelligence'], testStrategy: strategy.strategyId},
+        referenced:{project: strategy.referenced?.projectName || 'CoinPlotXAI', technologies:['Testing Intelligence'], testStrategy: strategy.strategyId},
         createdAt:new Date().toISOString()
       });
       undxSaveTaskPackages([pkg, ...packages]);
@@ -56939,7 +56950,7 @@ sqlite</textarea></label>
       if(sources.includes('strategicPlan') && plan) return `Strategic Plan ${plan.planId}: ${plan.objective}`;
       const model = undxLoadStructureModels()[0];
       if(sources.includes('structureModel') && model) return `Repository Structure Model ${model.modelId}: ${model.repositoryName}`;
-      return (undxMissionInput?.value || '').trim() || 'Coordinate the next CoinPilotXAI build phase through multi-agent engineering review.';
+      return (undxMissionInput?.value || '').trim() || 'Coordinate the next CoinPlotXAI build phase through multi-agent engineering review.';
     }
     function undxBuildAgentMemory(){
       const sources = undxSelectedAgentSources();
@@ -57930,7 +57941,7 @@ sqlite</textarea></label>
       const trustLevel = ['Unknown','Observed','Verified','Approved','Trusted'].includes(connection?.trustLevel) ? connection.trustLevel : 'Observed';
       return {
         connectionId:String(connection?.connectionId || `REPOCON-UNDX-${Date.now()}`).slice(0,44),
-        repositoryName:String(connection?.repositoryName || 'CoinPilotXAI').slice(0,140),
+        repositoryName:String(connection?.repositoryName || 'CoinPlotXAI').slice(0,140),
         repositoryDescription:String(connection?.repositoryDescription || 'Approved repository metadata only.').slice(0,700),
         connectionType:String(connection?.connectionType || 'Workspace Repository').slice(0,80),
         repositoryVisibility:String(connection?.repositoryVisibility || 'Private').slice(0,80),
@@ -57981,7 +57992,7 @@ sqlite</textarea></label>
       const connections = undxLoadRepositoryConnections();
       return undxNormalizeRepositoryConnection({
         connectionId:undxRepoIqNextId(connections, 'REPOCON-UNDX', 'connectionId'),
-        repositoryName:(undxConnectorRepositoryName?.value || 'CoinPilotXAI').trim(),
+        repositoryName:(undxConnectorRepositoryName?.value || 'CoinPlotXAI').trim(),
         repositoryDescription:(undxConnectorRepositoryDescription?.value || '').trim(),
         connectionType:undxConnectorConnectionType?.value || 'Workspace Repository',
         repositoryVisibility:undxConnectorVisibility?.value || 'Private',
@@ -58170,7 +58181,7 @@ sqlite</textarea></label>
     function undxRepositoryIndexSource(){
       const report = undxLoadRepositoryConnectorReports()[0] || null;
       const connection = report?.connection || undxLoadRepositoryConnections()[0] || null;
-      return {report, connection: connection ? undxNormalizeRepositoryConnection(connection) : undxNormalizeRepositoryConnection({repositoryName:'CoinPilotXAI'})};
+      return {report, connection: connection ? undxNormalizeRepositoryConnection(connection) : undxNormalizeRepositoryConnection({repositoryName:'CoinPlotXAI'})};
     }
     function undxIndexRoutes(connection){return ['/pulse','/pulse/premium','/pulse/premium/undx','/api/undx/chat','/api/undx/agent-council'].filter(Boolean);}
     function undxIndexServices(connection){return ['UNDX Intelligence Router','Premium Access Service','Mission Memory Service','Project Registry','Repository Connector','Agent Council Router'];}
@@ -58284,7 +58295,7 @@ sqlite</textarea></label>
       const sourceType = undxSandboxSourceType?.value || 'Repository Index Report';
       const project = undxCurrentProject() || {};
       const source = sourceType === 'Task Package' ? undxLoadTaskPackages()[0] : sourceType === 'Change Proposal' ? undxLoadChangeProposals()[0] : sourceType === 'Repository Report' ? undxLoadRepositoryIntelligenceRecords()[0] : sourceType === 'Strategic Plan' ? undxLoadStrategicPlans()[0] : sourceType === 'Project' ? project : sourceType === 'Context-Aware Coding Report' ? undxLoadContextAwareCodingReports()[0] : undxLoadRepositoryIndexReports()[0];
-      return {sourceType, source:source || {}, projectName:project.name || project.projectId || 'CoinPilotXAI'};
+      return {sourceType, source:source || {}, projectName:project.name || project.projectId || 'CoinPlotXAI'};
     }
     function undxSandboxSteps(objective){
       return ['Define simulated scope','Map dependencies and impacted systems','Plan implementation sequence','Plan validation and review gates','Prepare rollback and approval checkpoint'].map((purpose,index)=>({step:`Step ${index+1}`, purpose, dependencies:['Repository Index','Approval Protocol','Testing Intelligence'].slice(0,(index%3)+1), expectedOutcome:`${purpose} completed in simulation only.`, validationMethod:index < 3 ? 'Review generated plan against read-only intelligence.' : 'Confirm execution remains disabled.'}));
@@ -58310,7 +58321,7 @@ sqlite</textarea></label>
       return {architectureRisk:54, dependencyRisk:58, securityRisk:security, testingRisk:62, regressionRisk:56, deploymentRisk:deployment, complexityRisk:text.length > 180 ? 72 : 48};
     }
     function undxNormalizeTaskImpact(impact){
-      return {impactId:String(impact?.impactId || `TASKIMP-UNDX-${Date.now()}`).slice(0,44), modules:undxNormalizeExecutionList(impact?.modules, ['UNDX','Premium','Repository Intelligence','Task Engine'], 12, 120), routes:undxNormalizeExecutionList(impact?.routes, ['/pulse/premium/undx','/api/undx/chat','/api/undx/agent-council'], 12, 160), services:undxNormalizeExecutionList(impact?.services, ['UNDX Intelligence Router','Project Registry','Mission Memory'], 12, 180), components:undxNormalizeExecutionList(impact?.components, ['Command View','Sandbox Dashboard','Report Registry'], 12, 180), dependencies:undxNormalizeExecutionList(impact?.dependencies, ['OpenAI fallback','Premium foundation','LocalStorage registry'], 12, 160), tests:undxNormalizeExecutionList(impact?.tests, ['py_compile','JS parse','UNDX audit','Browser desktop/mobile check'], 12, 180), users:undxNormalizeExecutionList(impact?.users, ['Premium UNDX users','CoinPilotXAI builder workflow'], 8, 180), createdAt:impact?.createdAt || new Date().toISOString()};
+      return {impactId:String(impact?.impactId || `TASKIMP-UNDX-${Date.now()}`).slice(0,44), modules:undxNormalizeExecutionList(impact?.modules, ['UNDX','Premium','Repository Intelligence','Task Engine'], 12, 120), routes:undxNormalizeExecutionList(impact?.routes, ['/pulse/premium/undx','/api/undx/chat','/api/undx/agent-council'], 12, 160), services:undxNormalizeExecutionList(impact?.services, ['UNDX Intelligence Router','Project Registry','Mission Memory'], 12, 180), components:undxNormalizeExecutionList(impact?.components, ['Command View','Sandbox Dashboard','Report Registry'], 12, 180), dependencies:undxNormalizeExecutionList(impact?.dependencies, ['OpenAI fallback','Premium foundation','LocalStorage registry'], 12, 160), tests:undxNormalizeExecutionList(impact?.tests, ['py_compile','JS parse','UNDX audit','Browser desktop/mobile check'], 12, 180), users:undxNormalizeExecutionList(impact?.users, ['Premium UNDX users','CoinPlotXAI builder workflow'], 8, 180), createdAt:impact?.createdAt || new Date().toISOString()};
     }
     const undxLoadTaskImpacts = () => undxRepoIqLoad(undxTaskImpactsKey, undxNormalizeTaskImpact);
     function undxNormalizeSandboxReport(report){
@@ -58347,7 +58358,7 @@ sqlite</textarea></label>
     async function undxRunSandboxReviewFlow(){const report=undxLoadSandboxReports()[0] || undxGenerateSandboxReportFlow(); if(undxSandboxMessage) undxSandboxMessage.textContent='Routing sandbox review through UNDX Intelligence Router...'; try{const response=await fetch(undxCouncilEndpoint,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({mission:undxSandboxReportText(report)})}); const data=await response.json().catch(()=>({})); if(!response.ok || data.ok===false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.'); const agents=data.agents || []; if(undxSandboxReviewOutput) undxSandboxReviewOutput.replaceChildren(undxBlock('Architecture Review',agents.find(a=>a.key==='architect')?.recommendation || 'Simulation architecture is scoped.'),undxBlock('Implementation Review',agents.find(a=>a.key==='builder')?.recommendation || 'No implementation occurs in Phase 38.'),undxBlock('Testing Review',agents.find(a=>a.key==='testing')?.recommendation || 'Validation plan ready.'),undxBlock('Security Review',agents.find(a=>a.key==='security')?.recommendation || 'Execution locks remain active.'),undxBlock('Documentation Review',agents.find(a=>a.key==='documentation')?.recommendation || 'Record sandbox outcomes.'),undxBlock('Combined Recommendation','Needs More Validation before any future controlled execution.')); if(undxSandboxBoardOutput) undxSandboxBoardOutput.replaceChildren(undxBlock('Execution Recommendation','Needs More Validation'),undxBlock('Approve for Future Execution','Not yet. Simulation only.'),undxBlock('Needs More Testing','Yes'),undxBlock('Needs More Review','Yes'),undxBlock('Not Recommended','Real execution is not recommended in Phase 38.')); undxSandboxLog('Review Generated'); if(undxSandboxMessage) undxSandboxMessage.textContent='Multi-agent sandbox review complete.';}catch(error){if(undxSandboxReviewOutput) undxSandboxReviewOutput.replaceChildren(undxBlock('Architecture Review','OpenAI fallback: keep sandbox planning-only.'),undxBlock('Implementation Review','OpenAI fallback: no code execution.'),undxBlock('Testing Review','OpenAI fallback: run audits before handoff.'),undxBlock('Security Review','OpenAI fallback: execution/file/Git/deployment locks remain enabled.'),undxBlock('Documentation Review','OpenAI fallback: preserve report.'),undxBlock('Combined Recommendation','Fallback → OpenAI. Sandbox remains simulation-only.')); if(undxSandboxMessage) undxSandboxMessage.textContent=`${error.message || 'Router unavailable.'} OpenAI fallback active.`;}}
     function undxRenderSandboxInitial(){const sim=undxLoadExecutionSimulations()[0] || undxNormalizeExecutionSimulation({}); const val=undxLoadValidationSimulations()[0] || undxNormalizeValidationSimulation({}); const roll=undxLoadRollbackSimulations()[0] || undxNormalizeRollbackSimulation({}); const impact=undxLoadTaskImpacts()[0] || undxNormalizeTaskImpact({}); const report=undxLoadSandboxReports()[0] || null; undxRenderExecutionSimulation(sim); undxRenderValidationSimulation(val); undxRenderRollbackSimulation(roll); undxRenderSandboxRisk(report?.risk || undxSandboxRiskProfile(sim.taskObjective)); undxRenderSandboxReadiness(report); undxRenderTaskImpact(impact); undxRenderFailureScenarios(); undxRenderSandboxReportRegistry(); undxRenderSandboxActivityLog();}
     function undxCodeObjectiveText(){return String((undxCodeObjective?.value || '').trim() || 'Generate a controlled implementation proposal for the next UNDX build phase.').slice(0,800);}
-    function undxCodeSourceSummary(){const sourceType=undxCodeSourceType?.value || 'Sandbox Report'; const project=undxCurrentProject() || {}; const source=sourceType==='Repository Index Report'?undxLoadRepositoryIndexReports()[0]:sourceType==='Repository Intelligence Report'?undxLoadRepositoryIntelligenceRecords()[0]:sourceType==='Context-Aware Coding Report'?undxLoadContextAwareCodingReports()[0]:sourceType==='Task Package'?undxLoadTaskPackages()[0]:sourceType==='Change Proposal'?undxLoadChangeProposals()[0]:sourceType==='Strategic Plan'?undxLoadStrategicPlans()[0]:sourceType==='Project'?project:undxLoadSandboxReports()[0]; return {sourceType, source:source || {}, projectName:project.name || project.projectId || 'CoinPilotXAI'};}
+    function undxCodeSourceSummary(){const sourceType=undxCodeSourceType?.value || 'Sandbox Report'; const project=undxCurrentProject() || {}; const source=sourceType==='Repository Index Report'?undxLoadRepositoryIndexReports()[0]:sourceType==='Repository Intelligence Report'?undxLoadRepositoryIntelligenceRecords()[0]:sourceType==='Context-Aware Coding Report'?undxLoadContextAwareCodingReports()[0]:sourceType==='Task Package'?undxLoadTaskPackages()[0]:sourceType==='Change Proposal'?undxLoadChangeProposals()[0]:sourceType==='Strategic Plan'?undxLoadStrategicPlans()[0]:sourceType==='Project'?project:undxLoadSandboxReports()[0]; return {sourceType, source:source || {}, projectName:project.name || project.projectId || 'CoinPlotXAI'};}
     function undxCodeQualityProfile(objective){const text=String(objective || '').toLowerCase(); const base=text.length>220?76:84; const security=/auth|security|wallet|payment|secret|admin/.test(text)?82:88; const testing=/test|validation|audit|coverage/.test(text)?90:78; const complexity=/migration|multi|router|repository|agent/.test(text)?72:84; const overall=Math.round((base+86+complexity+security+testing)/5); return {maintainabilityScore:base, readabilityScore:86, complexityScore:complexity, securityScore:security, testingScore:testing, overallQualityScore:overall};}
     function undxCodeRiskScore(objective){const text=String(objective || '').toLowerCase(); let score=38; if(/auth|security|wallet|payment|secret|admin/.test(text)) score+=18; if(/migration|database|route|repository|deployment/.test(text)) score+=14; if(text.length>240) score+=8; return Math.max(0,Math.min(100,score));}
     function undxNormalizeCodeArtifact(artifact){const objective=String(artifact?.objective || undxCodeObjectiveText()).slice(0,800); const quality=artifact?.quality || undxCodeQualityProfile(objective); const riskScore=Math.max(0,Math.min(100,Number(artifact?.riskScore || undxCodeRiskScore(objective)))); return {artifactId:String(artifact?.artifactId || `CODE-UNDX-${Date.now()}`).slice(0,44), artifactType:String(artifact?.artifactType || 'implementation').slice(0,80), sourceType:String(artifact?.sourceType || undxCodeSourceSummary().sourceType).slice(0,120), objective, proposedFileLocations:undxNormalizeExecutionList(artifact?.proposedFileLocations, ['bot.py: UNDX premium route section','scripts/undx_homepage_audit.py: UNDX audit coverage','templates or static assets only if future phase approves extraction'], 10, 180), proposedClasses:undxNormalizeExecutionList(artifact?.proposedClasses, ['UNDXControlledCodeGenerationEngine','CodeArtifactRegistry'], 10, 160), proposedFunctions:undxNormalizeExecutionList(artifact?.proposedFunctions, ['normalize_code_artifact','generate_patch_proposal','render_code_quality','attach_artifact_to_project'], 12, 180), proposedComponents:undxNormalizeExecutionList(artifact?.proposedComponents, ['Code Generation Center','Code Artifact Registry','Code Quality Engine','Approval Package'], 12, 180), proposedApis:undxNormalizeExecutionList(artifact?.proposedApis, ['/api/undx/agent-council for review only','future /api/undx/code-review approval endpoint'], 8, 180), proposedRoutes:undxNormalizeExecutionList(artifact?.proposedRoutes, ['/pulse/premium/undx'], 8, 180), purpose:String(artifact?.purpose || 'Prepare implementation-ready proposal artifacts without repository modification.').slice(0,500), dependencies:undxNormalizeExecutionList(artifact?.dependencies, ['Repository Index Report','Context-Aware Coding Report','Sandbox Report','Approval Protocol'], 10, 160), affectedSystems:undxNormalizeExecutionList(artifact?.affectedSystems, ['UNDX Command Center','Project Workspace','Mission Memory','Audit Suite'], 10, 160), riskSummary:String(artifact?.riskSummary || `Proposal-only artifact. Risk Score: ${riskScore}/100. Repository writes remain disabled.`).slice(0,500), sandboxReadiness:String(artifact?.sandboxReadiness || 'Ready for simulation review').slice(0,120), validationPlan:undxNormalizeExecutionList(artifact?.validationPlan, ['Python compile','JavaScript parse','UNDX audit','PulseSoc feed isolation audit','Desktop/mobile browser checks'], 10, 180), rollbackPlan:undxNormalizeExecutionList(artifact?.rollbackPlan, ['Discard generated proposal','Keep registry snapshot','Regenerate narrower artifact','Require approval before future edits'], 10, 180), quality, riskScore, createdAt:artifact?.createdAt || new Date().toISOString(), status:'Proposal Only'};}
@@ -58384,7 +58395,7 @@ sqlite</textarea></label>
     function undxRenderCodeGenerationInitial(){const artifact=undxLoadCodeArtifacts()[0] || null; undxRenderCodeArtifact(artifact); undxRenderPatchProposal(undxLoadPatchProposals()[0] || undxNormalizePatchProposal({})); undxRenderGeneratedTests(undxLoadGeneratedTests()[0] || undxNormalizeGeneratedTests({})); undxRenderDocumentationArtifact(undxLoadDocumentationArtifacts()[0] || undxNormalizeDocumentationArtifact({})); undxRenderMigrationArtifact(undxLoadMigrationArtifacts()[0] || undxNormalizeMigrationArtifact({})); undxRenderCodeIntegrations(artifact || undxNormalizeCodeArtifact({})); undxRenderControlledCodeRegistry();}
     const undxRepoActionStatuses = ['Draft','Submitted','Under Review','Approved','Rejected','Revoked','Expired','Archived'];
     function undxRepoActionObjectiveText(){return String((undxRepoActionObjective?.value || '').trim() || 'Review a controlled repository action proposal for the next UNDX build phase.').slice(0,900);}
-    function undxRepoActionSourceSummary(){const sourceType=undxRepoActionSourceType?.value || 'Code Generation Report'; const project=undxCurrentProject() || {}; const source=sourceType==='Code Artifact'?undxLoadCodeArtifacts()[0]:sourceType==='Patch Proposal'?undxLoadPatchProposals()[0]:sourceType==='Generated Test'?undxLoadGeneratedTests()[0]:sourceType==='Documentation Artifact'?undxLoadDocumentationArtifacts()[0]:sourceType==='Migration Artifact'?undxLoadMigrationArtifacts()[0]:sourceType==='Sandbox Report'?undxLoadSandboxReports()[0]:sourceType==='Change Proposal'?undxLoadChangeProposals()[0]:sourceType==='Repository Index Report'?undxLoadRepositoryIndexReports()[0]:sourceType==='Project'?project:undxLoadCodeGenerationReports()[0]; return {sourceType, source:source || {}, projectName:project.name || project.projectId || 'CoinPilotXAI'};}
+    function undxRepoActionSourceSummary(){const sourceType=undxRepoActionSourceType?.value || 'Code Generation Report'; const project=undxCurrentProject() || {}; const source=sourceType==='Code Artifact'?undxLoadCodeArtifacts()[0]:sourceType==='Patch Proposal'?undxLoadPatchProposals()[0]:sourceType==='Generated Test'?undxLoadGeneratedTests()[0]:sourceType==='Documentation Artifact'?undxLoadDocumentationArtifacts()[0]:sourceType==='Migration Artifact'?undxLoadMigrationArtifacts()[0]:sourceType==='Sandbox Report'?undxLoadSandboxReports()[0]:sourceType==='Change Proposal'?undxLoadChangeProposals()[0]:sourceType==='Repository Index Report'?undxLoadRepositoryIndexReports()[0]:sourceType==='Project'?project:undxLoadCodeGenerationReports()[0]; return {sourceType, source:source || {}, projectName:project.name || project.projectId || 'CoinPlotXAI'};}
     function undxRepoGovernanceScores(objective, type){
       const text=String(`${objective || ''} ${type || ''}`).toLowerCase();
       const risk=undxCodeRiskScore(text);
@@ -58536,7 +58547,7 @@ sqlite</textarea></label>
         title: String(record.title || 'UNDX Memory Record').slice(0,160),
         type: String(record.type || 'Engineering Decisions').slice(0,120),
         description: String(record.description || '').slice(0,1200),
-        relatedProject: String(record.relatedProject || 'CoinPilotXAI').slice(0,160),
+        relatedProject: String(record.relatedProject || 'CoinPlotXAI').slice(0,160),
         relatedMission: String(record.relatedMission || 'UNDX Command Center').slice(0,160),
         relatedStrategicPlan: String(record.relatedStrategicPlan || 'Phase Evolution').slice(0,160),
         relationshipCount: Math.max(0, Math.min(999, Number(record.relationshipCount || 0))),
@@ -58587,7 +58598,7 @@ sqlite</textarea></label>
         title: base[0],
         type: base[1],
         description: `${base[2]} This memory record was generated from UNDX local intelligence registries only and preserves engineering continuity across phases.`,
-        relatedProject: project.name || project.projectId || 'CoinPilotXAI',
+        relatedProject: project.name || project.projectId || 'CoinPlotXAI',
         relatedMission: mission.name || mission.type || 'UNDX Command Center',
         relatedStrategicPlan: plan.planId || 'Phase 24 Workspace Memory Graph Expansion',
         relationshipCount,
@@ -58610,7 +58621,7 @@ sqlite</textarea></label>
         connectedDecisions: connected,
         orphanedDecisions: Math.max(0, all.length - connected),
         mostReferencedDecision: all.slice().sort((a,b) => b.relationshipCount - a.relationshipCount)[0]?.title || 'UNDX uses OpenAI Router',
-        mostReferencedProject: sources.projects[0]?.name || all[0]?.relatedProject || 'CoinPilotXAI',
+        mostReferencedProject: sources.projects[0]?.name || all[0]?.relatedProject || 'CoinPlotXAI',
         mostReferencedTechnology: mostTechnology,
         mostReferencedFramework: framework,
         mostConnectedDecision: all.slice().sort((a,b) => b.relationshipCount - a.relationshipCount)[0]?.title || 'Universal Code Intelligence Added',
@@ -58937,7 +58948,7 @@ sqlite</textarea></label>
       const memory = sources.memory || {};
       const code = sources.code || {};
       const simulation = sources.simulation || {};
-      const objective = project.objective || simulation.simulatedObjective || memory.description || code.syntaxStyle || 'Prepare the next CoinPilotXAI implementation package from UNDX intelligence.';
+      const objective = project.objective || simulation.simulatedObjective || memory.description || code.syntaxStyle || 'Prepare the next CoinPlotXAI implementation package from UNDX intelligence.';
       const complexityScore = Math.max(24, Math.min(96, 34 + selectedInputs.length * 4 + sourceStrength * 5 + (simulation.forecast?.complexityProbability || 0) / 5));
       const readinessAssessment = undxTaskReadiness(complexityScore, sourceStrength);
       const technologies = [...new Set([...(memory.technologies || []), code.languageName, 'Python', 'Flask', 'OpenAI'].filter(Boolean))].slice(0,8);
@@ -58982,7 +58993,7 @@ sqlite</textarea></label>
           technologies,
           plans: undxLoadStrategicPlans().slice(0,3).map(item => item.planId),
           simulations: undxLoadBuildSimulations().slice(0,3).map(item => item.simulationId),
-          project: project.name || project.projectId || 'CoinPilotXAI'
+          project: project.name || project.projectId || 'CoinPlotXAI'
         },
         createdAt: new Date().toISOString()
       });
@@ -59538,7 +59549,7 @@ sqlite</textarea></label>
     }
     function undxBuildWorkspaceManifest(){
       const manifests = undxLoadWorkspaceManifests();
-      const workspaceName = (undxManifestWorkspaceName?.value || 'CoinPilotXAI Workspace').trim().slice(0,140);
+      const workspaceName = (undxManifestWorkspaceName?.value || 'CoinPlotXAI Workspace').trim().slice(0,140);
       const workspaceType = undxManifestWorkspaceType?.value || 'Development';
       const technologyStack = (undxManifestTechnologyStack?.value || 'Python, Flask, JavaScript, OpenAI').split(/[,\\n]/).map(item => item.trim()).filter(Boolean);
       const folderCategories = (undxManifestFolderCategories?.value || 'app, scripts, templates, static, audits, docs').split(/[,\\n]/).map(item => item.trim()).filter(Boolean);
@@ -59740,7 +59751,7 @@ sqlite</textarea></label>
     function undxNormalizeStructureModel(model){
       return {
         modelId: String(model.modelId || `STRUCT-UNDX-${Date.now()}`).slice(0,44),
-        repositoryName: String(model.repositoryName || 'CoinPilotXAI Repository').slice(0,140),
+        repositoryName: String(model.repositoryName || 'CoinPlotXAI Repository').slice(0,140),
         repositoryType: String(model.repositoryType || 'Flask/Python application').slice(0,120),
         conceptualFolderMap: undxNormalizeExecutionList(model.conceptualFolderMap, undxStructureFolderGroups(), 12, 120),
         entryPoints: undxNormalizeExecutionList(model.entryPoints, ['bot.py', 'app.py', 'main.py', 'server.js', 'index.ts', 'package.json', 'requirements.txt'], 12, 120),
@@ -59810,7 +59821,7 @@ sqlite</textarea></label>
         selected.includes('projectWorkspace') && project,
         notes
       ].filter(Boolean).length;
-      const repositoryName = plans[0]?.name || workspaceManifests[0]?.workspaceName || previewManifests[0]?.repositoryName || profiles[0]?.name || context.applicationName || 'CoinPilotXAI Repository';
+      const repositoryName = plans[0]?.name || workspaceManifests[0]?.workspaceName || previewManifests[0]?.repositoryName || profiles[0]?.name || context.applicationName || 'CoinPlotXAI Repository';
       const repositoryType = plans[0]?.type || workspaceManifests[0]?.projectType || previewManifests[0]?.repositoryType || profiles[0]?.repositoryType || context.framework || 'Flask/Python application';
       const entryPoints = [...new Set([context.mainEntryFile, ...(context.filesKnown || []), 'bot.py', 'app.py', 'main.py', 'server.js', 'index.ts', 'package.json', 'requirements.txt'].filter(Boolean))].slice(0,10);
       const knownModules = (context.premiumModules || []).length + (context.knownServices || []).length + profiles.length + workspaceManifests.length;
@@ -60113,8 +60124,8 @@ sqlite</textarea></label>
       const readinessAssessment = readinessScore >= 76 ? 'Approval Ready' : readinessScore >= 56 ? 'Review Ready' : 'Planning Ready';
       return undxNormalizeChangeProposal({
         proposalId: undxNextChangeProposalId(undxLoadChangeProposals()),
-        executiveSummary: `UNDX prepared a controlled editing proposal for ${project.name || structureModels[0]?.repositoryName || 'CoinPilotXAI'} using ${sourceStrength} read-only intelligence source groups.`,
-        businessObjective: project.objective || strategicPlans[0]?.executiveSummary || 'Improve CoinPilotXAI safely while preserving premium boundaries and approval controls.',
+        executiveSummary: `UNDX prepared a controlled editing proposal for ${project.name || structureModels[0]?.repositoryName || 'CoinPlotXAI'} using ${sourceStrength} read-only intelligence source groups.`,
+        businessObjective: project.objective || strategicPlans[0]?.executiveSummary || 'Improve CoinPlotXAI safely while preserving premium boundaries and approval controls.',
         engineeringObjective: 'Convert UNDX planning intelligence into an engineering-grade change proposal without editing files, running commands, or accessing repositories.',
         proposedChanges: ['Define the proposed implementation scope', 'Map potential impact areas and dependencies', 'Prepare validation and rollback plans', 'Route approvals before future execution', 'Keep all changes proposed-only until human approval'],
         potentialImpactAreas: {
@@ -60147,7 +60158,7 @@ sqlite</textarea></label>
           deployment:'Deployment Approval: Proposed'
         },
         readinessAssessment,
-        changeTree: {initiative:'CoinPilotXAI Evolution', feature:'Controlled Editing Proposal Engine', changeGroup:'Approval-Gated Engineering Plan', proposedChange:'Generate proposed changes without modifying files'},
+        changeTree: {initiative:'CoinPlotXAI Evolution', feature:'Controlled Editing Proposal Engine', changeGroup:'Approval-Gated Engineering Plan', proposedChange:'Generate proposed changes without modifying files'},
         approvalPackage: {
           approvalSummary:'Proposal is ready for human review only.',
           riskSummary:`Risk Score: ${Math.round(riskScore)}/100`,
@@ -60156,7 +60167,7 @@ sqlite</textarea></label>
         },
         riskScores: {complexityScore: Math.round(complexityScore), riskScore: Math.round(riskScore), impactScore: Math.round(impactScore), readinessScore: Math.round(readinessScore)},
         referenced: {
-          project: project.name || 'CoinPilotXAI',
+          project: project.name || 'CoinPlotXAI',
           structureModels: structureModels.slice(0,3).map(item => item.modelId),
           entryPoints: structureModels[0]?.entryPoints || ['bot.py'],
           protectedAreas: structureModels[0]?.protectedAreas || ['.env', 'secrets', 'tokens'],
@@ -60376,9 +60387,9 @@ sqlite</textarea></label>
       const scores = request.scores || {};
       return {
         requestId: String(request.requestId || `EXEC-UNDX-${Date.now()}`).slice(0,48),
-        businessObjective: String(request.businessObjective || 'Preserve CoinPilotXAI value through controlled future execution.').slice(0,1000),
+        businessObjective: String(request.businessObjective || 'Preserve CoinPlotXAI value through controlled future execution.').slice(0,1000),
         engineeringObjective: String(request.engineeringObjective || 'Evaluate execution eligibility without executing code or touching repositories.').slice(0,1000),
-        referencedProject: String(request.referencedProject || 'CoinPilotXAI').slice(0,160),
+        referencedProject: String(request.referencedProject || 'CoinPlotXAI').slice(0,160),
         referencedProposal: String(request.referencedProposal || 'None').slice(0,80),
         riskSummary: String(request.riskSummary || 'Risk requires human review before future execution.').slice(0,1000),
         validationSummary: String(request.validationSummary || 'Validation requires audits, browser checks, and manual QA.').slice(0,1000),
@@ -60445,9 +60456,9 @@ sqlite</textarea></label>
       const scores = {riskScore, readinessScore, confidenceScore, approvalScore};
       return undxNormalizeExecutionRequest({
         requestId: undxNextExecutionRequestId(undxLoadExecutionRequests()),
-        businessObjective: project.objective || proposal?.businessObjective || strategicPlans[0]?.executiveSummary || 'Move CoinPilotXAI toward future execution readiness with human control.',
+        businessObjective: project.objective || proposal?.businessObjective || strategicPlans[0]?.executiveSummary || 'Move CoinPlotXAI toward future execution readiness with human control.',
         engineeringObjective: proposal?.engineeringObjective || 'Convert approved planning intelligence into an execution eligibility request without modifying files, repositories, Git, commands, or deployments.',
-        referencedProject: project.name || proposal?.referenced?.project || 'CoinPilotXAI',
+        referencedProject: project.name || proposal?.referenced?.project || 'CoinPlotXAI',
         referencedProposal: proposal?.proposalId || 'None',
         riskSummary: `Risk Summary: ${riskScore}/100. Human approval is required before any future execution-capable system may act.`,
         validationSummary: 'Validation Summary: Python compile, UNDX audit, premium foundation audit, site functional audit, performance audit, PulseSoc feed layout audit, JS parse check, and browser route check required.',
@@ -62838,7 +62849,7 @@ sqlite</textarea></label>
       return undxCurrentProject() || undxLoadProjects()[0] || null;
     }
     function undxRepositoryFoundationSignals(project, notes = ''){
-      const source = `${project?.name || ''} ${project?.objective || ''} ${notes} CoinPilotXAI Flask Python JavaScript HTML CSS SQL OpenAI Premium PulseSoc UNDX`.toLowerCase();
+      const source = `${project?.name || ''} ${project?.objective || ''} ${notes} CoinPlotXAI Flask Python JavaScript HTML CSS SQL OpenAI Premium PulseSoc UNDX`.toLowerCase();
       const has = token => source.includes(token.toLowerCase());
       return {
         languages:['Python','JavaScript','SQL','HTML','CSS'].concat(has('typescript') ? ['TypeScript'] : []),
@@ -62874,7 +62885,7 @@ sqlite</textarea></label>
       const riskNotes = Array.isArray(profile?.riskNotes) ? profile.riskNotes.slice(0,12) : ['Secrets must remain hidden.', 'Repository writes remain disabled.', 'Future file access requires approval gates.'];
       const normalized = {
         profileId:String(profile?.profileId || '').slice(0,44),
-        repositoryName:String(profile?.repositoryName || undxFoundationRepoName?.value || 'CoinPilotXAI Repository').slice(0,160),
+        repositoryName:String(profile?.repositoryName || undxFoundationRepoName?.value || 'CoinPlotXAI Repository').slice(0,160),
         projectId:String(profile?.projectId || project?.projectId || '').slice(0,44),
         projectName:String(profile?.projectName || project?.name || 'No project linked').slice(0,160),
         technologyStack:Array.isArray(profile?.technologyStack) ? profile.technologyStack.slice(0,16) : signals.technologyStack,
@@ -62956,10 +62967,10 @@ sqlite</textarea></label>
       const profiles = undxLoadRepositoryProfiles();
       const profile = undxNormalizeRepositoryFoundationProfile({
         profileId:undxNextRepositoryProfileId(profiles),
-        repositoryName:(undxFoundationRepoName?.value || `${project?.name || 'CoinPilotXAI'} Repository`).trim(),
+        repositoryName:(undxFoundationRepoName?.value || `${project?.name || 'CoinPlotXAI'} Repository`).trim(),
         projectId:project?.projectId || '',
         projectName:project?.name || 'No project linked',
-        architectureNotes:(undxFoundationArchitectureNotes?.value || `Repository intelligence profile for ${project?.name || 'CoinPilotXAI'} using read-only planning metadata.`).trim(),
+        architectureNotes:(undxFoundationArchitectureNotes?.value || `Repository intelligence profile for ${project?.name || 'CoinPlotXAI'} using read-only planning metadata.`).trim(),
         createdAt:new Date().toISOString(),
         updatedAt:new Date().toISOString()
       });
@@ -62995,7 +63006,7 @@ sqlite</textarea></label>
         dataSystems:[profile.databaseLayer,'localStorage planning registries'],
         integrations:['OpenAI bridge','UNDX Intelligence Router','Railway environment configuration'],
         services:profile.services,
-        summary:`Architecture Summary: ${profile.repositoryName} is a Flask-centered CoinPilotXAI system with premium UNDX modules, API routes, local planning registries, and read-only repository intelligence boundaries.`,
+        summary:`Architecture Summary: ${profile.repositoryName} is a Flask-centered CoinPlotXAI system with premium UNDX modules, API routes, local planning registries, and read-only repository intelligence boundaries.`,
         createdAt:new Date().toISOString()
       };
       const knowledgeGraph = ['Repository','Modules','Services','Routes','Dependencies'].map((label, index, arr) => ({label, next:arr[index + 1] || 'Read-only analysis complete'}));
@@ -63144,7 +63155,7 @@ sqlite</textarea></label>
     function undxCodebaseSource(){
       const project = undxCurrentProject() || undxLoadProjects()[0] || null;
       const profile = project?.linkedRepositoryProfiles?.[0] || undxLoadRepositoryProfiles()[0] || null;
-      return {project, profile, repositoryName:profile?.repositoryName || project?.name || 'CoinPilotXAI Repository'};
+      return {project, profile, repositoryName:profile?.repositoryName || project?.name || 'CoinPlotXAI Repository'};
     }
     function undxCodebaseGroups(){
       return {
@@ -63353,7 +63364,7 @@ sqlite</textarea></label>
         projectName:project?.name || profile?.projectName || 'No project linked',
         profileId:profile?.profileId || '',
         mapId:map.mapId,
-        codebaseSummary:`${repositoryName} is mapped as a CoinPilotXAI Flask-centered application with premium UNDX command views, API services, local planning registries, repository intelligence, and audit-driven validation.`,
+        codebaseSummary:`${repositoryName} is mapped as a CoinPlotXAI Flask-centered application with premium UNDX command views, API services, local planning registries, repository intelligence, and audit-driven validation.`,
         fileIntelligenceSummary:`${fileIq.files.length} conceptual file records mapped with module ownership, route relationships, service relationships, tests, risk, and change sensitivity.`,
         functionIntelligenceSummary:`${funcIq.functions.length} conceptual function/class records prepared for future review.`,
         routeCodeMap:routeMap.routes.map(item => `${item.route} → ${item.controllers.join(', ')} → ${item.services.join(', ')}`),
@@ -63585,7 +63596,7 @@ sqlite</textarea></label>
       const sandboxReport = project?.linkedSandboxReports?.[0] || undxLoadSandboxReports?.()[0] || null;
       const codeReport = undxLoadCodeGenerationReports?.()[0] || null;
       const approvalRequest = project?.linkedRepositoryActionRequests?.[0] || undxLoadRepoActionRequests?.()[0] || null;
-      const mission = undxMissionInput?.value?.trim() || project?.objective || 'Prepare the next CoinPilotXAI engineering task.';
+      const mission = undxMissionInput?.value?.trim() || project?.objective || 'Prepare the next CoinPlotXAI engineering task.';
       const source = sourceType === 'Codebase Understanding Report' ? codebaseReport : sourceType === 'Repository Profile' ? repositoryProfile : sourceType === 'Repository Index Report' ? repositoryIndex : sourceType === 'Context-Aware Coding Report' ? codingReport : sourceType === 'Sandbox Report' ? sandboxReport : sourceType === 'Code Generation Report' ? codeReport : sourceType === 'Approval Request' ? approvalRequest : sourceType === 'Mission' ? {objective:mission} : project;
       return {sourceType, project, source:source || {}, codebaseReport, repositoryProfile, mission};
     }
@@ -63624,7 +63635,7 @@ sqlite</textarea></label>
       const {project, codebaseReport, mission} = undxTaskIqSource();
       const objective = codebaseReport?.recommendedNextAction || project?.objective || mission;
       return [
-        {type:'security', title:'Map security-sensitive wallet risk workflow', objective:`Protect ${project?.name || 'CoinPilotXAI'} by mapping wallet risk, scam, authentication, and approval boundaries before any future build.`},
+        {type:'security', title:'Map security-sensitive wallet risk workflow', objective:`Protect ${project?.name || 'CoinPlotXAI'} by mapping wallet risk, scam, authentication, and approval boundaries before any future build.`},
         {type:'feature', title:'Prepare repository-aware builder directive', objective:`Convert codebase understanding into a task package that references ${codebaseReport?.reportId || 'the active codebase report'} and preserves UNDX read-only gates.`},
         {type:'testing', title:'Define validation coverage for task lifecycle', objective:'Create unit, integration, browser, security, performance, and regression validation needs for the selected engineering scope.'},
         {type:'documentation', title:'Capture approval-ready engineering context', objective:`Document objective, impact, risk, dependencies, rollback, and approval recommendation for: ${objective}`},
@@ -63754,7 +63765,7 @@ sqlite</textarea></label>
         taskId:task.taskId,
         taskSummary:task.title,
         objective:task.objective,
-        businessImpact:'Improves CoinPilotXAI delivery clarity and turns repository understanding into approval-ready work.',
+        businessImpact:'Improves CoinPlotXAI delivery clarity and turns repository understanding into approval-ready work.',
         technicalImpact:'Maps task scope to modules, services, routes, tests, dependencies, validation, and rollback.',
         riskSummary:`Overall risk ${task.riskScore}/100. Execution remains disabled.`,
         dependencySummary:'Depends on codebase understanding, project registry, validation plan, and approval protocol.',
@@ -65865,7 +65876,7 @@ sqlite</textarea></label>
       }
       return project;
     }
-    const undxInitialChatText = 'UNDX Core online. OpenAI intelligence bridge active. What mission should CoinPilotXAI evolve next?';
+    const undxInitialChatText = 'UNDX Core online. OpenAI intelligence bridge active. What mission should CoinPlotXAI evolve next?';
     function undxChatMessage(role, text, extra = {}){
       return {
         id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
@@ -66338,7 +66349,7 @@ sqlite</textarea></label>
       const steps = [
         'Define the user problem and premium success signal.',
         'Map the data, route, UI, and audit surfaces required.',
-        'Build the first safe prototype inside the CoinPilotXAI pattern.',
+        'Build the first safe prototype inside the CoinPlotXAI pattern.',
         'Run focused audits, then prepare the next phase upgrade.'
       ];
       const blueprint = {
@@ -66935,7 +66946,7 @@ sqlite</textarea></label>
     undxRenderPerformanceDiagnostics();
     undxInitCommandCenterViews();
     """
-    response = pulse_social_shell("UNDX Core", "Unknown Destination X — the premium intelligence layer designed to help CoinPilotXAI build, analyze, secure, and evolve.", main, "", script)
+    response = pulse_social_shell("UNDX Core", "Unknown Destination X — the premium intelligence layer designed to help CoinPlotXAI build, analyze, secure, and evolve.", main, "", script)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
@@ -67080,32 +67091,43 @@ def pulse_premium_profile_theme_api():
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    if ios_native_app_request():
-        return ios_paid_digital_unavailable_response(api=True)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     if request.method == "GET":
         cur.execute("SELECT * FROM pulse_profile_themes WHERE user_id=? AND active=1 ORDER BY updated_at DESC LIMIT 1", (int(user.get("user_id") or 0),))
         theme = cur.fetchone()
         conn.close()
-        return jsonify({"ok": True, "theme": dict(theme) if theme else {"theme_key": "midnight_elite", "accent_color": "#ffd166"}})
+        return jsonify({"ok": True, "theme": dict(theme) if theme else {"theme_key": "deep_space", "accent_color": "#32e6b3", "layout_key": "classic", "motion_level": "balanced"}})
     if not premium_visibility_engine.is_premium_user(user):
         conn.close()
         return api_error("Premium profile themes require PulseSoc Premium.", 403)
     data = request.get_json(silent=True) or request.form.to_dict()
-    theme_key = str(data.get("theme_key") or "midnight_elite")[:80]
-    accent = str(data.get("accent_color") or "#ffd166")[:32]
+    allowed_themes = {"deep_space", "neon_galaxy", "cyber_city", "solar_pulse", "aurora", "quantum", "crystal", "dark_matter", "nova", "minimal_black"}
+    allowed_layouts = {"classic", "creator", "professional", "minimal", "artist", "music", "gaming", "developer", "business", "streamer"}
+    allowed_motion = {"subtle", "balanced", "reduced"}
+    theme_key = str(data.get("theme_key") or "deep_space")[:80]
+    layout_key = str(data.get("layout_key") or "classic")[:80]
+    motion_level = str(data.get("motion_level") or "balanced")[:32]
+    accent = str(data.get("accent_color") or "#32e6b3")[:32]
+    modules = data.get("modules") if isinstance(data.get("modules"), list) else []
+    modules = [str(item)[:40] for item in modules[:12] if str(item).strip()]
+    if theme_key not in allowed_themes or layout_key not in allowed_layouts or motion_level not in allowed_motion:
+        conn.close()
+        return api_error("Choose a supported Profile theme, layout, and motion level.", 400)
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", accent):
+        conn.close()
+        return api_error("Choose a valid Profile accent color.", 400)
     now = datetime.utcnow().isoformat(timespec="seconds")
     cur.execute("UPDATE pulse_profile_themes SET active=0 WHERE user_id=?", (int(user.get("user_id") or 0),))
     cur.execute(
         """
-        INSERT INTO pulse_profile_themes (user_id, theme_key, accent_color, background_style, active, created_at, updated_at)
-        VALUES (?, ?, ?, 'premium_gradient', 1, ?, ?)
-        ON CONFLICT(user_id, theme_key) DO UPDATE SET active=1, accent_color=excluded.accent_color, updated_at=excluded.updated_at
+        INSERT INTO pulse_profile_themes (user_id, theme_key, accent_color, background_style, layout_key, modules_json, motion_level, active, created_at, updated_at)
+        VALUES (?, ?, ?, 'living_identity', ?, ?, ?, 1, ?, ?)
+        ON CONFLICT(user_id, theme_key) DO UPDATE SET active=1, accent_color=excluded.accent_color, background_style=excluded.background_style, layout_key=excluded.layout_key, modules_json=excluded.modules_json, motion_level=excluded.motion_level, updated_at=excluded.updated_at
         """,
-        (int(user.get("user_id") or 0), theme_key, accent, now, now),
+        (int(user.get("user_id") or 0), theme_key, accent, layout_key, json.dumps(modules), motion_level, now, now),
     )
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "message": "Profile theme updated.", "theme_key": theme_key})
+    return jsonify({"ok": True, "message": "Profile identity style updated.", "theme_key": theme_key, "layout_key": layout_key, "motion_level": motion_level, "modules": modules})
 
 
 def creator_ai_payload(kind, text, topic=""):
@@ -71587,7 +71609,7 @@ def api_pulse_reels_sounds():
             "id": int(item.get("id") or 0),
             "track_id": int(item.get("id") or 0),
             "title": item.get("title") or "PulseSoc sound",
-            "artist": item.get("artist") or "CoinPilotXAI",
+            "artist": item.get("artist") or "CoinPlotXAI",
             "audio_url": item.get("audio_url") or "",
             "duration": float(item.get("duration_seconds") or 0),
             "waveform": item.get("waveform_json") or "",
@@ -75756,7 +75778,7 @@ def _creator_checkout_for_item(buyer, item_type, item_id, plan_key=""):
     seller_user_id = 0
     seller_type = "merchant"
     checkout_item_type = item_type
-    title = "CoinPilotXAI purchase"
+    title = "CoinPlotXAI purchase"
     amount_cents = 0
     currency = "USD"
     if item_type == "product":
@@ -78340,7 +78362,7 @@ def admin_pulse_post_debug_page():
 
 
 def trust_public_page(title, headline, body_html, cta="/signup"):
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | PulseSoc</title><meta name="description" content="{clean_html(headline)}"><meta name="robots" content="index,follow"><link rel="canonical" href="https://pulsesoc.com{clean_html(request.path)}"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-logo-20260606.png"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 15% 0,rgba(110,223,246,.18),transparent 26rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:22px 0 80px}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px}}a{{color:inherit}}.brand{{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{padding:42px 0 18px}}h1{{font-size:clamp(38px,7vw,74px);line-height:.95;margin:8px 0}}p{{color:var(--muted);line-height:1.6}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.84));padding:16px}}.button{{min-height:46px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;text-decoration:none;font-weight:950;padding:12px 15px;display:inline-flex;align-items:center;justify-content:center}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}li{{margin:8px 0;color:var(--muted)}}@media(max-width:850px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-logo-20260606.png" alt="">CoinPilotXAI</a><a class="button" href="{clean_html(cta)}">Get Started</a></nav><section class="hero"><span class="badge">Trust-first platform</span><h1>{clean_html(headline)}</h1></section>{body_html}</main></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | PulseSoc</title><meta name="description" content="{clean_html(headline)}"><meta name="robots" content="index,follow"><link rel="canonical" href="https://pulsesoc.com{clean_html(request.path)}"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-logo-20260606.png"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 15% 0,rgba(110,223,246,.18),transparent 26rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:22px 0 80px}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px}}a{{color:inherit}}.brand{{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{padding:42px 0 18px}}h1{{font-size:clamp(38px,7vw,74px);line-height:.95;margin:8px 0}}p{{color:var(--muted);line-height:1.6}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.84));padding:16px}}.button{{min-height:46px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;text-decoration:none;font-weight:950;padding:12px 15px;display:inline-flex;align-items:center;justify-content:center}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}li{{margin:8px 0;color:var(--muted)}}@media(max-width:850px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-logo-20260606.png" alt="">CoinPlotXAI</a><a class="button" href="{clean_html(cta)}">Get Started</a></nav><section class="hero"><span class="badge">Trust-first platform</span><h1>{clean_html(headline)}</h1></section>{body_html}</main></body></html>""")
 
 
 @webhook_app.route("/privacy-center", methods=["GET", "POST"])
@@ -78390,15 +78412,15 @@ def privacy_center_page():
 def trust_center_page():
     body = """
     <section class="grid">
-      <article class="card"><h2>Data Use</h2><p>CoinPilotXAI uses product signals to improve safety, speed, and community quality. Private identity data is never sold.</p></article>
+      <article class="card"><h2>Data Use</h2><p>CoinPlotXAI uses product signals to improve safety, speed, and community quality. Private identity data is never sold.</p></article>
       <article class="card"><h2>Ads</h2><p>Sponsored placements are labeled, reviewed, contextual-first, and blocked when they include scam-token or guaranteed-profit language.</p></article>
       <article class="card"><h2>Moderation</h2><p>PulseSoc, Roast Battle, media uploads, and comments include report paths, safety filters, and admin review queues.</p></article>
       <article class="card"><h2>Security</h2><p>Scam Shield, upload validation, admin permissions, rate limits, and worker health checks are monitored from admin control rooms.</p></article>
-      <article class="card"><h2>Education</h2><p>CoinPilotXAI is educational only. It is not financial, investment, betting, legal, or professional advice.</p></article>
+      <article class="card"><h2>Education</h2><p>CoinPlotXAI is educational only. It is not financial, investment, betting, legal, or professional advice.</p></article>
       <article class="card"><h2>Creators</h2><p>Creator content is community-generated and educational. Monetization foundations are staged until compliance is ready.</p></article>
     </section>
     """
-    return trust_public_page("Trust Center", "How CoinPilotXAI keeps growth aligned with trust.", body, "/privacy-center")
+    return trust_public_page("Trust Center", "How CoinPlotXAI keeps growth aligned with trust.", body, "/privacy-center")
 
 
 @webhook_app.route("/community-rules", methods=["GET"])
@@ -78465,9 +78487,9 @@ def pro_page():
         ("Future Creator Economy", ["creator prestige upgrades", "teacher and merchant enhancements", "optional discovery boosts", "future monetization tools after trust review"]),
     ]
     cards = "".join(f"<article class='card'><h2>{clean_html(name)}</h2><ul>{''.join(f'<li>{clean_html(item)}</li>' for item in items)}</ul><a class='button primary' href='/pulse/premium'>Explore PulseSoc Premium</a></article>" for name, items in packages)
-    trust = "<article class='card'><h2>Growth-First Access</h2><p>The core CoinPilotXAI ecosystem is free for authenticated users. Premium is aspirational: identity, prestige, creator enhancement, cosmetics, and deeper creator intelligence.</p></article>"
+    trust = "<article class='card'><h2>Growth-First Access</h2><p>The core CoinPlotXAI ecosystem is free for authenticated users. Premium is aspirational: identity, prestige, creator enhancement, cosmetics, and deeper creator intelligence.</p></article>"
     body = f"<section class='grid'>{cards}{trust}</section>"
-    return trust_public_page("CoinPilotXAI Premium", "Free core ecosystem with PulseSoc Premium prestige and creator enhancements.", body, "/pulse/premium")
+    return trust_public_page("CoinPlotXAI Premium", "Free core ecosystem with PulseSoc Premium prestige and creator enhancements.", body, "/pulse/premium")
 
 
 def pulse_admin_user_row(cur, user_id):
@@ -79059,7 +79081,7 @@ def admin_payments_page():
     wallet_rows = "".join(f"<tr><td>{w.get('id')}</td><td>{int(w.get('user_id') or 0)}</td><td>{clean_html(w.get('wallet_type') or '')}</td><td>${int(w.get('pending_balance_cents') or 0)/100:.2f}</td><td>${int(w.get('available_balance_cents') or 0)/100:.2f}</td><td>${int(w.get('lifetime_fees_cents') or 0)/100:.2f}</td><td>{clean_html(w.get('status') or '')}</td></tr>" for w in (creator_summary.get("wallets") or []))
     body = f"""
     <h1>Payments Command Center</h1><p class='muted'>Stripe Connect-style marketplace payments backed by internal wallets, append-only ledger entries, webhook idempotency, entitlements, and audit logs.</p>
-    <section class='card'><h2>Treasury Modules</h2><p class='muted'>Platform fee revenue now flows into the CoinPilotXAI treasury ledger and settlement system.</p><div class='actions'><a class='button primary' href='/admin/treasury'>Treasury</a><a class='button' href='/admin/platform-revenue'>Platform Revenue</a><a class='button' href='/admin/creator-payouts'>Creator Payouts</a><a class='button' href='/admin/fee-ledger'>Fee Ledger</a><a class='button' href='/admin/escrow'>Escrow</a><a class='button' href='/admin/settlements'>Settlement Engine</a><a class='button' href='/admin/stripe-connect'>Stripe Connect</a><a class='button' href='/admin/tax-center'>Tax Center</a><a class='button' href='/admin/revenue-analytics'>Revenue Analytics</a><a class='button' href='/admin/financial-audit'>Financial Audit</a><a class='button' href='/admin/refunds'>Refund Center</a><a class='button' href='/admin/disputes'>Dispute Resolution</a></div></section>
+    <section class='card'><h2>Treasury Modules</h2><p class='muted'>Platform fee revenue now flows into the CoinPlotXAI treasury ledger and settlement system.</p><div class='actions'><a class='button primary' href='/admin/treasury'>Treasury</a><a class='button' href='/admin/platform-revenue'>Platform Revenue</a><a class='button' href='/admin/creator-payouts'>Creator Payouts</a><a class='button' href='/admin/fee-ledger'>Fee Ledger</a><a class='button' href='/admin/escrow'>Escrow</a><a class='button' href='/admin/settlements'>Settlement Engine</a><a class='button' href='/admin/stripe-connect'>Stripe Connect</a><a class='button' href='/admin/tax-center'>Tax Center</a><a class='button' href='/admin/revenue-analytics'>Revenue Analytics</a><a class='button' href='/admin/financial-audit'>Financial Audit</a><a class='button' href='/admin/refunds'>Refund Center</a><a class='button' href='/admin/disputes'>Dispute Resolution</a></div></section>
     <section class='card'><h2>Provider Status</h2><pre>{clean_html(json.dumps(provider, indent=2, default=str))}</pre></section>
     <section class='grid'>{core_cards}</section>
     <section class='card'><h2>Creator Economy Ledger Transactions</h2><table class='table'><tr><th>ID</th><th>Item</th><th>Buyer</th><th>Seller</th><th>Gross</th><th>Fee</th><th>Status</th><th>Trace</th></tr>{ledger_rows or '<tr><td colspan=8>No creator economy transactions yet.</td></tr>'}</table></section>
@@ -79197,7 +79219,7 @@ def admin_payments_command_center_page():
     </style>
     <section class='payments-hero'><span class='pill'>Financial Operating Hub · {clean_html(str(provider_status))}</span><h1>Payments Command Center</h1><p class='muted'>Monitor platform revenue, creator payouts, treasury health, subscriptions, and creator economy flow in realtime.</p><div class='pay-pulse'></div></section>
     <section class='pay-grid'>{kpi_html}</section>
-    <section class='card'><h2>Creator Economy Flow</h2><div class='treasury-flow'><div class='flow-step'><strong>Customer payment</strong><span>Stripe checkout confirms trusted payment.</span></div><div class='flow-step'><strong>Platform fee</strong><span>CoinPilotXAI fee is calculated from active rules.</span></div><div class='flow-step'><strong>Creator allocation</strong><span>Seller net moves to pending balance.</span></div><div class='flow-step'><strong>Treasury allocation</strong><span>Fee revenue posts to platform wallet and fee ledger.</span></div><div class='flow-step'><strong>Escrow</strong><span>Risk and fulfillment windows hold funds safely.</span></div><div class='flow-step'><strong>Settlement payout</strong><span>Eligible funds release to connected accounts.</span></div></div></section>
+    <section class='card'><h2>Creator Economy Flow</h2><div class='treasury-flow'><div class='flow-step'><strong>Customer payment</strong><span>Stripe checkout confirms trusted payment.</span></div><div class='flow-step'><strong>Platform fee</strong><span>CoinPlotXAI fee is calculated from active rules.</span></div><div class='flow-step'><strong>Creator allocation</strong><span>Seller net moves to pending balance.</span></div><div class='flow-step'><strong>Treasury allocation</strong><span>Fee revenue posts to platform wallet and fee ledger.</span></div><div class='flow-step'><strong>Escrow</strong><span>Risk and fulfillment windows hold funds safely.</span></div><div class='flow-step'><strong>Settlement payout</strong><span>Eligible funds release to connected accounts.</span></div></div></section>
     <section class='grid'><div class='card'><h2>Live Financial Stream</h2>{stream_html}</div><div class='card'><h2>AI Financial Intelligence</h2><section class='pay-grid'>{insight_html}</section></div></section>
     <section class='card'><h2>Quick Actions</h2><div class='actions'>{quick_html}</div></section>
     <section class='card table-wrap'><h2>Top Creator Balances</h2><table class='table'><tr><th>User</th><th>Seller</th><th>Gross</th><th>Fees</th><th>Available</th><th>Status</th></tr>{creator_rows or '<tr><td colspan=6>No creator balances yet.</td></tr>'}</table></section>
@@ -79258,7 +79280,7 @@ def admin_treasury_page():
     .treasury-card span{{display:block;color:#9fb2c3;font-weight:800;font-size:.86rem}}.treasury-card strong{{display:block;font-size:1.75rem;margin:7px 0;color:#ecfbff}}.treasury-card p{{color:#9fb2c3;margin:0}}
     .treasury-orbit{{height:8px;border-radius:999px;background:linear-gradient(90deg,#7af5d3,#69d7ff,#f5d76e);box-shadow:0 0 28px rgba(105,215,255,.45);margin-top:16px}}
     </style>
-    <section class='treasury-hero'><p class='pill'>Creator Economy Treasury</p><h1>CoinPilotXAI Treasury OS</h1><p class='muted'>Every platform fee, creator net amount, escrow hold, payout queue item, refund, dispute, and settlement batch now has a visible ledger home.</p><div class='treasury-orbit'></div></section>
+    <section class='treasury-hero'><p class='pill'>Creator Economy Treasury</p><h1>CoinPlotXAI Treasury OS</h1><p class='muted'>Every platform fee, creator net amount, escrow hold, payout queue item, refund, dispute, and settlement batch now has a visible ledger home.</p><div class='treasury-orbit'></div></section>
     <section class='treasury-grid'>{card_html}</section>
     <section class='card'><h2>Treasury Health</h2><pre>{clean_html(json.dumps({'stripe': provider, 'treasury_tables': 'active', 'settlement_engine': 'ledger_ready', 'payout_safety': 'queue_and_review'}, indent=2, default=str))}</pre></section>
     <section class='card table-wrap'><h2>Platform Wallets</h2><table class='table'><tr><th>Wallet</th><th>Currency</th><th>Available</th><th>Pending</th><th>Lifetime Revenue</th><th>Refunds</th><th>Status</th></tr>{wallet_rows or '<tr><td colspan=7>No platform wallets yet.</td></tr>'}</table></section>
@@ -79283,7 +79305,7 @@ def admin_sponsorships_page():
         action = request.form.get("action") or "create"
         sponsor_id = int(request.form.get("sponsor_id") or 0)
         now = datetime.utcnow().isoformat(timespec="seconds")
-        conn = db(); cur = conn.cursor()
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
         if action == "create":
             campaign = clean_html(request.form.get("campaign_name") or "")[:160]
             landing = clean_html(request.form.get("landing_page") or "")[:500]
@@ -84524,7 +84546,7 @@ def api_pulse_post_from_camera():
         return api_error("Login required.", 401)
     payload = request.get_json(silent=True) or {}
     media_url = clean_html(payload.get("media_url") or "")[:1000]
-    body = clean_html(payload.get("body") or "Created with CoinPilotXAI Camera Studio")[:3000]
+    body = clean_html(payload.get("body") or "Created with CoinPlotXAI Camera Studio")[:3000]
     if not media_url:
         return api_error("Upload media before creating a camera post.", 400)
     media_ids = [safe_int(payload.get("media_id"), 0)] if safe_int(payload.get("media_id"), 0) else []
@@ -86407,6 +86429,7 @@ def get_user_email(user_id):
 def brevo_config_diagnostics():
     status = email_service_service.provider_status()
     sender_email = status.get("sender_email") or ""
+    reply_to_email = status.get("reply_to_email") or ""
     return {
         "provider": "brevo",
         "ready": bool(status.get("ready")),
@@ -86418,12 +86441,16 @@ def brevo_config_diagnostics():
         "sender_name_configured": bool(status.get("sender_name_configured")),
         "default_from_email_configured": bool(status.get("default_from_email_configured")),
         "support_email_configured": bool(status.get("support_email_configured")),
+        "public_support_email_configured": bool(status.get("public_support_email_configured")),
         "security_email_configured": bool(status.get("security_email_configured")),
         "public_base_url_configured": bool(os.getenv("PUBLIC_BASE_URL") or os.getenv("PULSE_APP_URL") or os.getenv("APP_BASE_URL")),
         "missing_fields": list(status.get("missing_fields") or []),
         "sender_email": sender_email,
         "sender_email_masked": mask_email(sender_email) if sender_email else "",
         "sender_name": status.get("sender_name") or "",
+        "reply_to_email_masked": mask_email(reply_to_email) if reply_to_email else "",
+        "reply_to_name": status.get("reply_to_name") or "",
+        "reply_to_email_source": status.get("reply_to_email_source") or "",
         "sender_email_source": status.get("sender_email_source") or "",
         "sender_name_source": status.get("sender_name_source") or "",
         "sender_domain": status.get("sender_domain") or "",
@@ -86952,7 +86979,8 @@ def branded_email_html(title, body_html):
       <div style="max-width:620px;margin:0 auto;border:1px solid rgba(110,223,246,.22);border-radius:12px;background:#0d1627;padding:28px">
         <h1 style="margin:0 0 14px;color:#ffffff">{title}</h1>
         <div style="color:#c4d2e7;line-height:1.65;font-size:15px">{body_html}</div>
-        <p style="margin-top:24px;color:#9fb5c0;font-size:13px">CoinPlotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.</p>
+        <p style="margin-top:24px;color:#9fb5c0;font-size:13px">PulseSoc™ • Built by CoinPlotXAI Inc. Support: support@pulsesoc.com</p>
+        <p style="color:#9fb5c0;font-size:13px">CoinPlotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.</p>
         <p style="color:#ffd9a0;font-size:13px">Educational AI intelligence only. Not financial, betting, investment, or legal advice.</p>
       </div>
     </div>
@@ -87047,17 +87075,17 @@ def send_signup_welcome_emails(user):
 
 
 def send_update_signup_email(lead):
-    subject = "You’re on the CoinPlotXAI Inc. update list"
+    subject = "You’re on the PulseSoc update list"
     name = lead.get("full_name") or "there"
     text = (
         f"Hi {name},\n\n"
-        "Thanks for joining the CoinPlotXAI Inc. update list.\n\n"
+        "Thanks for joining the PulseSoc update list.\n\n"
         "You may receive product updates, launch news, safety alerts, feature releases, and promotional offers based on your consent choices.\n\n"
         "No account was created unless you registered separately at https://pulsesoc.com/signup.\n"
         "You can opt out anytime. For SMS, reply STOP where supported or contact support.\n\n"
         "Support: support@pulsesoc.com"
     )
-    html = branded_email_html("You’re on the CoinPlotXAI Inc. update list", f"""
+    html = branded_email_html("You’re on the PulseSoc update list", f"""
       <p>Hi {clean_html(name)},</p>
       <p>Thanks for joining updates. You may receive product updates, launch news, safety alerts, feature releases, and promotional offers based on your consent choices.</p>
       <p>No account was created unless you registered separately.</p>
@@ -87096,14 +87124,14 @@ def send_password_reset_email(user, reset_link):
 
 
 def send_password_changed_email(user):
-    subject = "Your CoinPilotX password was changed"
+    subject = "Your PulseSoc password was changed"
     text = (
         f"Hi {account_display_name(user)},\n\n"
         "Your PulseSoc account password was changed successfully.\n\n"
         "If you did not make this change, contact support immediately at support@pulsesoc.com.\n\n"
         "CoinPlotXAI Inc. never asks for seed phrases, private keys, or wallet passwords."
     )
-    html = branded_email_html("Your CoinPilotX password was changed", f"""
+    html = branded_email_html("Your PulseSoc password was changed", f"""
       <p>Hi {clean_html(account_display_name(user))},</p>
       <p>Your account password was changed successfully.</p>
       <p>If you did not make this change, contact <a href="mailto:support@pulsesoc.com" style="color:#6edff6">support@pulsesoc.com</a> immediately.</p>
@@ -87165,7 +87193,7 @@ def send_trial_lifecycle_email(user, event_type):
     days_left = days_until(user.get("trial_end_date") or user.get("pro_expires_at"))
     copy = {
         "day_7": (
-            "Make the most of CoinPilotXAI",
+            "Make the most of PulseSoc",
             "Your core platform access is free. Explore PulseSoc, AI utilities, watchlists, alerts, groups, spaces, marketplace access, and scam education.",
         ),
         "day_21": (
@@ -87178,7 +87206,7 @@ def send_trial_lifecycle_email(user, event_type):
         ),
         "trial_ended": (
             "Your legacy trial has ended",
-            "Your account remains on Free Core access. You can keep using CoinPilotXAI, and PulseSoc Premium is optional for prestige identity and creator enhancements.",
+            "Your account remains on Free Core access. You can keep using PulseSoc, and PulseSoc Premium is optional for prestige identity and creator enhancements.",
         ),
     }
     subject, message = copy.get(event_type, copy["day_7"])
@@ -87276,8 +87304,8 @@ def payment_email_copy(user, details, email_type):
     support = "https://pulsesoc.com/support"
     subject_map = {
         "pro_activated": "Your PulseSoc Premium Access Is Active",
-        "payment_successful": "CoinPilotXAI Payment Successful",
-        "receipt_invoice": "Your CoinPilotXAI Receipt and Billing Details",
+        "payment_successful": "PulseSoc Payment Successful",
+        "receipt_invoice": "Your PulseSoc Receipt and Billing Details",
         "payment_failed": "Action needed: PulseSoc Premium payment issue",
         "subscription_canceled": "PulseSoc Premium subscription update",
         "trial_ending": "Your PulseSoc Premium trial is ending soon",
@@ -87573,11 +87601,11 @@ def subscription_email_body(plan_name, timestamp, txid=None):
         f"Activated at: {timestamp}\n"
         f"{txid_line}"
         "Legal operator: CoinPlotXAI Inc.\n\n"
-        "Open your CoinPilotXAI dashboard:\n"
+        "Open your PulseSoc dashboard:\n"
         "https://pulsesoc.com/dashboard\n\n"
         "Optional Telegram companion:\n"
         "https://t.me/DocShieldX_bot\n\n"
-        "Safety reminder: CoinPilotX will never ask for your seed phrase, private key, or wallet password.\n\n"
+        "Safety reminder: PulseSoc will never ask for your seed phrase, private key, or wallet password.\n\n"
         "CoinPlotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice."
     )
 
@@ -87586,7 +87614,7 @@ def send_subscription_email(user_id, payment_type, txid=None, stripe_session_id=
     timestamp = timestamp or datetime.now().isoformat()
     email = get_user_email(user_id)
     if payment_type == "btc":
-        subject = "Your CoinPilotX BTC Payment Was Verified"
+        subject = "Your PulseSoc BTC Payment Was Verified"
         body = subscription_email_body("PulseSoc Premium - BTC", timestamp, txid=txid)
     else:
         subject = "Your PulseSoc Premium Subscription Is Active"
@@ -89576,7 +89604,7 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "before users trust them.\n\n"
         "CoinPilotX does not hold user funds, create exchange accounts, or guarantee profits. "
         "CoinPlotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.\n\n"
-        "Powered by CoinPlotXAI Inc.",
+        "Built by CoinPlotXAI Inc.",
         reply_markup=main_menu()
     )
 
@@ -90802,6 +90830,7 @@ def _init_db_impl():
         ("latest_payment_at", "TEXT"),
         ("risk_profile", "TEXT DEFAULT 'balanced'"),
         ("preferred_exchange_goal", "TEXT DEFAULT 'beginner'"),
+        ("preferred_language", "TEXT DEFAULT 'en'"),
         ("stripe_customer_id", "TEXT"),
         ("stripe_session_id", "TEXT"),
         ("last_payment_type", "TEXT"),
@@ -92282,9 +92311,9 @@ def _init_db_impl():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_saved_sounds_user ON pulse_saved_sounds(user_id, created_at)")
     now_seed = datetime.utcnow().isoformat(timespec="seconds")
     default_sounds = [
-        ("PulseSoc Neon Rise", "CoinPilotXAI", 84, 118, "trending", "energetic", "electronic", ["reels", "video", "neon"]),
+        ("PulseSoc Neon Rise", "CoinPlotXAI", 84, 118, "trending", "energetic", "electronic", ["reels", "video", "neon"]),
         ("Trust Signal", "PulseSoc Studio", 72, 96, "educational", "focused", "ambient", ["status", "education", "trust"]),
-        ("Creator Glow Loop", "CoinPilotXAI", 98, 124, "creator", "cinematic", "electronic", ["post", "creator", "motion"]),
+        ("Creator Glow Loop", "CoinPlotXAI", 98, 124, "creator", "cinematic", "electronic", ["post", "creator", "motion"]),
     ]
     for title, artist, trend, bpm, source, mood, genre, tags in default_sounds:
         cur.execute(
@@ -94024,12 +94053,20 @@ def _init_db_impl():
         theme_key TEXT DEFAULT 'midnight_elite',
         accent_color TEXT DEFAULT '#ffd166',
         background_style TEXT DEFAULT 'premium_gradient',
+        layout_key TEXT DEFAULT 'classic',
+        modules_json TEXT DEFAULT '[]',
+        motion_level TEXT DEFAULT 'balanced',
         active INTEGER DEFAULT 1,
         created_at TEXT,
         updated_at TEXT,
         UNIQUE(user_id, theme_key)
     )
     """)
+    add_columns_if_missing(cur, "pulse_profile_themes", [
+        ("layout_key", "TEXT DEFAULT 'classic'"),
+        ("modules_json", "TEXT DEFAULT '[]'"),
+        ("motion_level", "TEXT DEFAULT 'balanced'"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_identity_effects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101235,7 +101272,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.info("Telegram status alert count failed for user=%s error=%s", user.get("user_id"), exc)
     pro_status = "PulseSoc Premium Active" if has_pro_access(user) else "Free Core"
     await update.message.reply_text(
-        "CoinPilotXAI Status\n\n"
+        "CoinPlotXAI Status\n\n"
         "Account linked: Yes\n"
         f"Plan: {pro_status}\n"
         f"Active alerts: {active_alerts}\n\n"
@@ -102452,7 +102489,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "menu_ai_assistant":
         await query.message.reply_text(
-            append_plan_footer(user_id, "💬 AI Crypto Assistant\n\nAsk a question with /ask, or just send me a normal message.\n\nI can help with crypto, scams, blockchain, portfolio thinking, and safer financial literacy.\n\nPowered by CoinPlotXAI Inc."),
+            append_plan_footer(user_id, "💬 AI Crypto Assistant\n\nAsk a question with /ask, or just send me a normal message.\n\nI can help with crypto, scams, blockchain, portfolio thinking, and safer financial literacy.\n\nBuilt by CoinPlotXAI Inc."),
             reply_markup=main_menu()
         )
         return
@@ -102638,7 +102675,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "menu_talk":
         await query.message.reply_text(
-            append_plan_footer(user_id, "💬 AI Crypto Assistant\n\nAsk me a crypto question in plain English, or send a suspicious message and I’ll help you inspect it.\n\nPowered by CoinPlotXAI Inc."),
+            append_plan_footer(user_id, "💬 AI Crypto Assistant\n\nAsk me a crypto question in plain English, or send a suspicious message and I’ll help you inspect it.\n\nBuilt by CoinPlotXAI Inc."),
             reply_markup=main_menu()
         )
         return

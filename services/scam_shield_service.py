@@ -1,4 +1,4 @@
-"""Compatibility entrypoint for the CoinPilotXAI Scam Shield engine."""
+"""Compatibility entrypoint for the CoinPlotXAI Scam Shield engine."""
 
 from services.scam_shield import analyze_text
 

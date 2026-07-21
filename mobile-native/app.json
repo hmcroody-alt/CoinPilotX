@@ -44,7 +44,12 @@
     ],
     "extra": {
       "pulseApiBaseUrl": "https://pulsesoc.com",
-      "track": "parallel-native-foundation"
-    }
+      "track": "parallel-native-foundation",
+      "expoProjectId": "",
+      "eas": {
+        "projectId": "03be39d7-db88-43af-af5f-50c267d830f8"
+      }
+    },
+    "owner": "hmcroody"
   }
 }

@@ -6,7 +6,7 @@ Last updated: 2026-06-01
 
 UNDX stands for **Unknown Destination X**.
 
-Inside CoinPilotXAI, UNDX is the premium intelligence and engineering command layer. It is designed to help plan, analyze, organize, review, and eventually execute controlled software-building work around CoinPilotXAI.
+Inside CoinPlotXAI, UNDX is the premium intelligence and engineering command layer. It is designed to help plan, analyze, organize, review, and eventually execute controlled software-building work around CoinPlotXAI.
 
 UNDX is not the Pulse feed. It lives inside:
 
@@ -17,7 +17,7 @@ The Pulse feed is for social activity. UNDX is for premium command work.
 
 At a high level, UNDX is built to answer one question:
 
-> What should CoinPilotXAI build next, why should it be built, what systems does it affect, what risks exist, and what approval gates are needed before anything changes?
+> What should CoinPlotXAI build next, why should it be built, what systems does it affect, what risks exist, and what approval gates are needed before anything changes?
 
 UNDX began as a premium command center and has grown into a multi-module operating system for missions, projects, agents, repository intelligence, approval workflows, and controlled execution.
 
@@ -224,7 +224,7 @@ How to use it:
    Example:
 
    ```text
-   Build a Pulse Labs navigation page that explains experimental CoinPilotXAI tools.
+   Build a Pulse Labs navigation page that explains experimental CoinPlotXAI tools.
    ```
 
 3. Click:
@@ -313,7 +313,7 @@ Open:
 It starts with:
 
 ```text
-UNDX Core online. OpenAI intelligence bridge active. What mission should CoinPilotXAI evolve next?
+UNDX Core online. OpenAI intelligence bridge active. What mission should CoinPlotXAI evolve next?
 ```
 
 The chat sends directives to the backend route:
@@ -790,7 +790,7 @@ Open:
 /pulse/premium/undx#undx-codebase-understanding-layer
 ```
 
-This module maps CoinPilotXAI architecture concepts such as:
+This module maps CoinPlotXAI architecture concepts such as:
 
 - Routes.
 - Files.
@@ -1111,7 +1111,7 @@ UNDX should:
 Example:
 
 ```text
-Create a Pulse Labs navigation page for experimental CoinPilotXAI tools.
+Create a Pulse Labs navigation page for experimental CoinPlotXAI tools.
 ```
 
 ### Create a project from a mission
@@ -1191,7 +1191,7 @@ Recommended UNDX flow:
 2. Enter:
 
    ```text
-   Add a Pulse Labs navigation page to Pulse for experimental CoinPilotXAI tools.
+   Add a Pulse Labs navigation page to Pulse for experimental CoinPlotXAI tools.
    ```
 
 3. Generate Mission Blueprint.
@@ -1512,4 +1512,4 @@ That means:
 - Keep project context clean.
 - Never confuse planning success with production success.
 
-UNDX is not just a dashboard. It is the system that helps CoinPilotXAI think before it builds.
+UNDX is not just a dashboard. It is the system that helps CoinPlotXAI think before it builds.

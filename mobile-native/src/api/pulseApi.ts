@@ -10,6 +10,21 @@ import {
 } from "../session/sessionStore";
 import { shouldRejectTemporaryQaUser } from "../session/qaTemporaryAccount";
 import { Platform } from "react-native";
+import { startSpan } from "../core/perfTrace";
+
+/**
+ * Normalize a request path into a low-cardinality route label for perf aggregation:
+ * drop the query string and collapse numeric / long-hash id segments to ":id".
+ * Keeps traces free of per-user identifiers while grouping the same endpoint.
+ */
+function perfRouteLabel(path: string): string {
+  const withoutQuery = path.split("?")[0];
+  return withoutQuery
+    .split("/")
+    .map((segment) => (/^\d+$/.test(segment) || /^[0-9a-f]{16,}$/i.test(segment) ? ":id" : segment))
+    .join("/")
+    .slice(0, 120);
+}
 
 export class PulseApiError extends Error {
   status: number;
@@ -36,7 +51,16 @@ export function registerSessionInvalidationHandler(handler: ((event: SessionInva
 }
 
 export async function pulseApi<T>(path: string, options: RequestInit = {}): Promise<T> {
-  return pulseApiRequest<T>(path, options, true);
+  const method = String(options.method || "GET").toUpperCase();
+  const span = startSpan("api.request", { route: perfRouteLabel(path), method });
+  try {
+    const result = await pulseApiRequest<T>(path, options, true);
+    span.end({ ok: true });
+    return result;
+  } catch (error) {
+    span.end({ ok: false, status: error instanceof PulseApiError ? error.status : 0 });
+    throw error;
+  }
 }
 
 async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefresh: boolean): Promise<T> {

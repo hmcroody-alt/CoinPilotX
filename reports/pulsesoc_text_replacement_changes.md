@@ -4,8 +4,8 @@ Date: 2026-06-06
 
 ## Changed
 
-- Rebranded public UI labels from CoinPilotXAI/CoinPilotX to Pulse in account, dashboard, search, support, SEO, offline, PWA, and selected app surfaces.
-- Updated footer language to Pulse — Powered by CoinPilotXAI on affected public templates.
+- Rebranded public UI labels from CoinPlotXAI/CoinPilotX to Pulse in account, dashboard, search, support, SEO, offline, PWA, and selected app surfaces.
+- Updated footer language to PulseSoc™ • Built by CoinPlotXAI Inc. on affected public templates.
 - Updated public-domain URLs in SEO metadata, sitemap, robots, llms.txt, schema helpers, transactional emails, alert links, Telegram/account links, and payment-support copy to https://pulsesoc.com.
 - Updated default email sender names and addresses to PulseSoc identities in email defaults and .env.example.
 - Updated PWA manifest name/short name/description to Pulse.

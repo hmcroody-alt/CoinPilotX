@@ -12,6 +12,12 @@ coinpilotx.db
 *.sqlite3
 storage/messenger_uploads/
 
+# Runtime user-media upload target — must not be committed (privacy)
+static/uploads/
+# Large screen recordings / captures
+reports/screenshots/*ScreenRecording*
+*.mov
+
 __pycache__/
 *.py[cod]
 .Python

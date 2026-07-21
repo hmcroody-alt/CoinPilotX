@@ -1,4 +1,4 @@
-"""Operational health scoring for CoinPilotXAI nervous-system dashboards.
+"""Operational health scoring for CoinPlotXAI nervous-system dashboards.
 
 This module is intentionally dependency-light. It turns raw counters from the
 app/database into stable health states, warnings, and failsafe suggestions.

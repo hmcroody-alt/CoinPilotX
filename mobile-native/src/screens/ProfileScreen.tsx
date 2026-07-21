@@ -1,13 +1,13 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useEffect, useMemo, useState } from "react";
-import { FlatList, Pressable, RefreshControl, Share, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Animated, Pressable, RefreshControl, Share, StyleSheet, Text, View } from "react-native";
 import { deletePost, listFeed, PulsePost, pulsePostUrl, reactToPost, savePost } from "../api/feed";
 import { describeDeleteError } from "../api/deleteErrors";
 import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
 import { MessengerUserSearchResult, openDirectConversation } from "../api/messenger";
 import { NativeProfileTarget, profileNavigationParams, profileTargetFromAuthor, resolveProfileTarget } from "../api/profileTarget";
 import { PostCard } from "../components/PostCard";
-import { ProfileHeader } from "../components/ProfileHeader";
+import { ProfileHeader, ProfileModuleKey, ProfileStatKey } from "../components/ProfileHeader";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { invalidateNativeSync } from "../core/eventSync";
 import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
@@ -19,6 +19,11 @@ type TabKey = "posts" | "media" | "about";
 
 export function ProfileScreen({ route, navigation }: Props) {
   const bottomNavScroll = useBottomNavScrollVisibility();
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const onScroll = useMemo(
+    () => Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true, listener: bottomNavScroll.onScroll }),
+    [bottomNavScroll.onScroll, scrollY]
+  );
   const profileTarget = useMemo<NativeProfileTarget | null>(() => resolveProfileTarget(route?.params || null), [
     route?.params?.profileKey,
     route?.params?.userId,
@@ -115,6 +120,67 @@ export function ProfileScreen({ route, navigation }: Props) {
     }
   }
 
+  async function startCall(callType: "audio" | "video") {
+    if (!profile || owner) return;
+    setActionMessage(callType === "video" ? "Starting secure video call…" : "Starting secure call…");
+    try {
+      const target: MessengerUserSearchResult = {
+        id: profile.user_id,
+        user_id: profile.user_id,
+        display_name: profile.display_name,
+        public_player_id: profile.public_player_id || profile.username || profileTarget?.publicPlayerId || profileKey,
+        avatar_url: profile.avatar_url || "",
+        premium: Boolean(profile.premium_status),
+        premium_mark: profile.verified_badge ? "verified" : ""
+      };
+      const result = await openDirectConversation(target);
+      navigation?.navigate("Call", { conversationId: result.conversation_id, callType, direction: "outgoing", title: profile.display_name });
+    } catch (callError) {
+      setActionMessage(callError instanceof Error ? callError.message : "Call could not start.");
+    }
+  }
+
+  function handleStat(key: ProfileStatKey) {
+    if (key === "posts") return setTab("posts");
+    if (key === "media") return setTab("media");
+    setActionMessage(key === "followers" ? `${profile?.follower_count || 0} followers.` : `${profile?.following_count || 0} following.`);
+  }
+
+  function handleModule(key: ProfileModuleKey) {
+    switch (key) {
+      case "identity":
+        return owner ? navigation?.navigate("ProfileEdit") : setTab("about");
+      case "media":
+        return setTab("media");
+      case "music":
+        return navigation?.navigate("Music", { title: "Music" });
+      case "trust":
+        return navigation?.navigate("TrustCenter", { title: "Trust Center" });
+      case "safety":
+        return navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" });
+      case "pulse_dna":
+        return navigation?.navigate("IntelligenceCenter", { title: "Pulse DNA" });
+      case "achievements":
+        return navigation?.navigate("GrowthCenter", { contentType: "profile", title: "Achievements" });
+      case "activity":
+        return navigation?.navigate("ActivityInbox", { title: "Activity" });
+      case "collections":
+        return navigation?.navigate("Saved");
+      case "communities":
+        return navigation?.navigate("Tabs", { screen: "Groups" });
+      case "marketplace":
+        return navigation?.navigate("Tabs", { screen: "Marketplace" });
+      case "events":
+        return navigation?.navigate("Events", { mode: "events", title: "Events" });
+      case "business":
+        return navigation?.navigate("SellerStore", { mode: "overview", title: "Business" });
+      case "memories":
+        return navigation?.navigate("Tabs", { screen: "Status" });
+      default:
+        return undefined;
+    }
+  }
+
   function updateProfilePost(id: number, patch: Partial<PulsePost>) {
     setPosts((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   }
@@ -199,59 +265,68 @@ export function ProfileScreen({ route, navigation }: Props) {
   }
 
   return (
-    <FlatList
+    <Animated.FlatList
       style={styles.list}
       contentContainerStyle={styles.content}
       data={tab === "about" ? [] : visiblePosts}
       keyExtractor={(item) => String(item.id)}
       refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
       ListHeaderComponent={
-        <View style={styles.header}>
-          {offline ? <Text style={styles.offline}>Showing saved profile</Text> : null}
-          {errorState ? <Text style={styles.error}>{errorState.body}</Text> : null}
-          {actionMessage ? <Text accessibilityLiveRegion="polite" style={styles.actionMessage}>{actionMessage}</Text> : null}
+        <View>
           <ProfileHeader
             profile={profile}
             publicKey={profileKey}
             owner={owner}
             followBusy={followBusy}
+            scrollY={scrollY}
             onEdit={() => navigation?.navigate("ProfileEdit")}
             onCustomize={() => navigation?.navigate("ProfileEdit")}
             onGrowth={() => navigation?.navigate("GrowthCenter", { contentType: "profile", title: "Grow Profile" })}
             onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })}
             onMessage={() => messageProfile().catch(() => undefined)}
             onFollow={() => followProfile().catch(() => undefined)}
+            onCall={() => startCall("audio").catch(() => undefined)}
+            onVideoCall={() => startCall("video").catch(() => undefined)}
             onRefresh={() => load("refresh").catch(() => undefined)}
+            onStatPress={handleStat}
+            onModulePress={handleModule}
           />
-          <View style={styles.tabs}>
-            <TabButton label="Posts" value="posts" active={tab} onPress={setTab} />
-            <TabButton label="Media" value="media" active={tab} onPress={setTab} />
-            <TabButton label="About" value="about" active={tab} onPress={setTab} />
+          <View style={styles.section}>
+            {offline ? <Text style={styles.offline}>Showing saved profile</Text> : null}
+            {errorState ? <Text style={styles.error}>{errorState.body}</Text> : null}
+            {actionMessage ? <Text accessibilityLiveRegion="polite" style={styles.actionMessage}>{actionMessage}</Text> : null}
+            <View style={styles.tabs}>
+              <TabButton label="Posts" value="posts" active={tab} onPress={setTab} />
+              <TabButton label="Media" value="media" active={tab} onPress={setTab} />
+              <TabButton label="About" value="about" active={tab} onPress={setTab} />
+            </View>
+            {tab === "about" ? <AboutPanel profile={profile} owner={owner} onVerification={() => navigation?.navigate("VerificationCenter", { title: "Verification Center" })} onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })} onSellerStore={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })} /> : null}
           </View>
-          {tab === "about" ? <AboutPanel profile={profile} owner={owner} onVerification={() => navigation?.navigate("VerificationCenter", { title: "Verification Center" })} onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })} onSellerStore={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })} /> : null}
         </View>
       }
       ListEmptyComponent={tab === "about" ? null : <Text style={styles.empty}>{tab === "media" ? "No media posts loaded." : "No profile posts loaded."}</Text>}
       renderItem={({ item }) => (
-        <PostCard
-          post={item}
-          busy={busyPostId === item.id}
-          onOpen={(post) => navigation?.navigate("PostDetail", { postId: post.id, title: "Post" })}
-          onReact={handleReact}
-          onSave={handleSave}
-          onComment={(post) => navigation?.navigate("PostDetail", { postId: post.id, title: "Comments" })}
-          onShare={(post) => Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined)}
-          onDelete={owner ? handleDeletePost : undefined}
-          onAuthorPress={(post) => {
-            const target = profileTargetFromAuthor(post.author as Record<string, unknown> | undefined, post as unknown as Record<string, unknown>);
-            const params = profileNavigationParams(target, post.author?.display_name || "Profile");
-            if (params) navigation?.navigate("ProfileDetail", params);
-          }}
-        />
+        <View style={styles.postWrap}>
+          <PostCard
+            post={item}
+            busy={busyPostId === item.id}
+            onOpen={(post) => navigation?.navigate("PostDetail", { postId: post.id, title: "Post" })}
+            onReact={handleReact}
+            onSave={handleSave}
+            onComment={(post) => navigation?.navigate("PostDetail", { postId: post.id, title: "Comments" })}
+            onShare={(post) => Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined)}
+            onDelete={owner ? handleDeletePost : undefined}
+            onAuthorPress={(post) => {
+              const target = profileTargetFromAuthor(post.author as Record<string, unknown> | undefined, post as unknown as Record<string, unknown>);
+              const params = profileNavigationParams(target, post.author?.display_name || "Profile");
+              if (params) navigation?.navigate("ProfileDetail", params);
+            }}
+          />
+        </View>
       )}
-      onScroll={bottomNavScroll.onScroll}
+      onScroll={onScroll}
       onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
-      scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
+      scrollEventThrottle={16}
     />
   );
 }
@@ -339,8 +414,14 @@ const styles = StyleSheet.create({
     textAlign: "center"
   },
   content: {
-    padding: 16,
     paddingBottom: 32
+  },
+  section: {
+    paddingHorizontal: 16,
+    paddingTop: 4
+  },
+  postWrap: {
+    paddingHorizontal: 16
   },
   empty: {
     color: colors.muted,

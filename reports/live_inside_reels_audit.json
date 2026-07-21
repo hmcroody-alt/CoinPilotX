@@ -1,0 +1,32 @@
+{
+  "dynamic": {
+    "api_live_count": 1,
+    "helper_live_count": 6,
+    "join_viewer_count": 1,
+    "payload_live_count": 1,
+    "reaction_id": 64
+  },
+  "generated_at": "2026-07-13T08:30:22",
+  "live_id": 771,
+  "ok": true,
+  "post_id": 1160,
+  "static": {
+    "active_live_query_uses_live_sessions": true,
+    "backend_adapter_exists": true,
+    "backend_merger_exists": true,
+    "chat_preview_present": true,
+    "live_autoplay_media": true,
+    "live_card_identity": true,
+    "live_join_wired": true,
+    "live_react_wired": true,
+    "live_renderer_exists": true,
+    "live_share_wired": true,
+    "media_renderer_skips_live_remix": true,
+    "no_public_loginexus_label": true,
+    "normalizer_skips_live_cards": true,
+    "playable_live_required": true,
+    "regular_reel_view_bypassed_for_live": true,
+    "viewer_count_present": true
+  },
+  "user_id": 10711395806
+}

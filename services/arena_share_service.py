@@ -10,12 +10,12 @@ def share_text(kind, profile=None, achievement=None):
     achievement = achievement or {}
     name = profile.get("display_name") or profile.get("public_player_id") or "an Arena pilot"
     if kind == "rank":
-        return f"{name} just reached {profile.get('rank', 'a new rank')} in CoinPilotXAI Arena."
+        return f"{name} just reached {profile.get('rank', 'a new rank')} in CoinPlotXAI Arena."
     if kind == "boss":
         return f"{name} defeated {achievement.get('boss', 'an AI training boss')} with disciplined decision-making."
     if kind == "scam":
-        return f"{name} improved Scam Defense skill in CoinPilotXAI Arena."
-    return f"{name} is building crypto intelligence in CoinPilotXAI Arena."
+        return f"{name} improved Scam Defense skill in CoinPlotXAI Arena."
+    return f"{name} is building crypto intelligence in CoinPlotXAI Arena."
 
 
 def share_urls(url, text):
@@ -61,7 +61,7 @@ def share_card(profile=None, achievement=None, base_url="https://pulsesoc.com"):
 </svg>"""
     return {
         "ok": True,
-        "title": "CoinPilotXAI Arena Achievement",
+        "title": "CoinPlotXAI Arena Achievement",
         "description": text,
         "url": url,
         "image_url": f"{base_url.rstrip('/')}/api/arena/share/profile/{public_id}?format=svg",

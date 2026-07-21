@@ -28,7 +28,7 @@ def static_checks() -> None:
         'stripe.Webhook.construct_event',
         'stripe_event_processed(event_id)',
         'notify_payment_status',
-        'CoinPilotXAI Inc.',
+        'CoinPlotXAI Inc.',
         'stripe_environment_label()',
         '"price_id": STRIPE_FOUNDER_PRICE_ID',
         '"product_id": STRIPE_FOUNDER_PRODUCT_ID or STRIPE_PRODUCT_ID',

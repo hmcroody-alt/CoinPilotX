@@ -1,4 +1,4 @@
-"""Universal intelligence fabric for CoinPilotXAI.
+"""Universal intelligence fabric for CoinPlotXAI.
 
 This is the shared reasoning layer that correlates signals from trust,
 moderation, creator, economy, discovery, realtime, and infrastructure systems.

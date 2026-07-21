@@ -299,4 +299,4 @@ def format_response_for_web(result):
 
 def format_response_for_telegram(result):
     result = result or {}
-    return f"{result.get('title', 'CoinPilotXAI')}\n\n{result.get('summary', '')}\n\nSource: {result.get('source', 'PulseSoc platform')}\n{result.get('disclaimer', DISCLAIMER)}"
+    return f"{result.get('title', 'CoinPlotXAI')}\n\n{result.get('summary', '')}\n\nSource: {result.get('source', 'PulseSoc platform')}\n{result.get('disclaimer', DISCLAIMER)}"

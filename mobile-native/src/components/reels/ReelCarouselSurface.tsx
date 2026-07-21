@@ -12,7 +12,7 @@ import { colors } from "../../theme/colors";
  * pauses the clips you left behind. Dots mark position without stealing the
  * action rail.
  */
-export function ReelCarouselSurface({ reel, active, muted }: { reel: PulseReel; active: boolean; muted: boolean }) {
+export function ReelCarouselSurface({ reel, active, muted, muteOriginal = false }: { reel: PulseReel; active: boolean; muted: boolean; muteOriginal?: boolean }) {
   const slides = useMemo(() => reelMediaSlides(reel), [reel]);
   const [index, setIndex] = useState(0);
   const [width, setWidth] = useState(0);
@@ -24,9 +24,9 @@ export function ReelCarouselSurface({ reel, active, muted }: { reel: PulseReel; 
 
   const renderItem = useCallback(
     ({ item, index: slideIndex }: { item: ReelMediaSlide; index: number }) => (
-      <CarouselSlide slide={item} width={width} active={active && slideIndex === index} muted={muted} />
+      <CarouselSlide slide={item} width={width} active={active && slideIndex === index} muted={muted || muteOriginal} />
     ),
-    [active, index, muted, width]
+    [active, index, muteOriginal, muted, width]
   );
 
   if (!slides.length) return null;
@@ -41,7 +41,7 @@ export function ReelCarouselSurface({ reel, active, muted }: { reel: PulseReel; 
           showsHorizontalScrollIndicator={false}
           keyExtractor={(slide) => slide.key}
           renderItem={renderItem}
-          extraData={`${active}:${index}:${muted}:${width}`}
+          extraData={`${active}:${index}:${muted}:${muteOriginal}:${width}`}
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
           getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}

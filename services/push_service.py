@@ -1,4 +1,4 @@
-"""Production-ready optional Web Push delivery for CoinPilotXAI.
+"""Production-ready optional Web Push delivery for CoinPlotXAI.
 
 This module works when pywebpush + VAPID env vars are configured, and returns
 honest not_configured/skipped statuses when they are not.
@@ -546,7 +546,7 @@ def _payload(title, body, data=None, push_type="general"):
     return {
         "title": title[:120],
         "body": body[:240],
-        "tag": f"pulsesoc-message-{conversation_id}" if conversation_id and push_type in {"private_message", "chat_message", "message", "voice_message"} else f"coinpilotxai-{push_type}",
+        "tag": f"pulsesoc-message-{conversation_id}" if conversation_id and push_type in {"private_message", "chat_message", "message", "voice_message"} else f"coinplotxai-{push_type}",
         "renotify": push_type in {"arena_invite", "scam_warning", "private_message", "chat_message", "message", "market_alert"},
         "vibrate": [200, 100, 200],
         "data": payload_data,
@@ -780,7 +780,9 @@ def process_push_delivery_jobs(limit=50):
         return {"ok": True, "processed": 0, "sent": 0, "retry": 0, "dead_letter": 0, "failed": 0}
     processed = sent = retry = dead_letter = failed = 0
     for row in rows:
-        local_id, job_id, notification_id, user_id, push_type, title, body, payload_json, attempts, max_attempts, trace_id = row
+        local_id, job_id, notification_id, user_id, push_type, title, body, payload_json, attempts, max_attempts, trace_id = (
+            row[index] for index in range(11)
+        )
         attempts = int(attempts or 0) + 1
         max_attempts = int(max_attempts or 5)
         cur.execute("UPDATE push_delivery_jobs SET status='processing', attempts=?, updated_at=? WHERE id=?", (attempts, _now(), int(local_id)))
@@ -941,7 +943,9 @@ def process_expo_receipts(limit=100):
     invalidated = 0
     now = _now()
     for row in rows:
-        local_id, ticket_id, notification_id, user_id, subscription_id, trace_id = row
+        local_id, ticket_id, notification_id, user_id, subscription_id, trace_id = (
+            row[index] for index in range(6)
+        )
         receipt = receipts.get(str(ticket_id))
         if not isinstance(receipt, dict):
             cur.execute("UPDATE expo_push_tickets SET attempts=COALESCE(attempts,0)+1, checked_at=? WHERE id=?", (now, local_id))

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Performance audit for CoinPilotXAI/Pulse.
+"""Performance audit for CoinPlotXAI/Pulse.
 
 Measures representative routes, response sizes, DB query counts exposed by the
 request middleware, static payload sizes, polling intervals, and index coverage.

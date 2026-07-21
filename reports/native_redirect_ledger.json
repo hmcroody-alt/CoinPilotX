@@ -1,0 +1,72 @@
+{
+  "generatedAt": "2026-07-20",
+  "app": "PulseSOC Native (mobile-native)",
+  "method": "Static ripgrep reconnaissance of mobile-native/src for Linking.openURL, WebView, openBrowserAsync, openAuthSessionAsync, hardcoded hosts. Runtime audit NOT yet performed (requires a running build).",
+  "summary": {
+    "realWebViews": 0,
+    "webViewStringMatches": 3,
+    "webViewStringMatchesNote": "All 3 hits are comments or user-facing copy, not <WebView> components. App is WebView-free.",
+    "linkingOpenUrlSites": 24,
+    "genuineExternalOrShareKeep": 9,
+    "internalWebRedirectMigrationCandidates": 15,
+    "migratedCount": 2,
+    "remainingMigrationCandidates": 13,
+    "migrated": ["navigation/notificationRouting.ts (Priority 0)", "api/verification.ts (Priority 0)"],
+    "baseCommit": "e9533eaa",
+    "testStatus": "tsc --noEmit exit 0; jest 21 suites / 229 tests pass",
+    "deviceQaStatus": "PARTIAL — physical iPhone P3r7or (iPhone 16 Pro, UDID 00008140-000E2D9A2EE8801C, iOS 18.7.3) came online (available/paired/tunnel connected). Built a fresh Debug build with the CURRENT source EMBEDDED (JS bundled at build time; 'Skipping dev server'), installed to P3r7or, and launched it cleanly (no crash from the migration). Automated verification: tsc exit 0; jest 229/229. STILL PENDING (human gate): the notification-TAP routing path (routeNotificationTarget) is fired only by addNotificationResponseReceivedListener on a real APNs push tap, which cannot be auto-triggered — needs a human to tap pushes across foreground/background/terminated states to confirm (a) mapped->native screen, (b) unmapped->native Activity Inbox no browser, (c) /terms,/privacy->intentional web exception, (d) external host rejected."
+  },
+  "categories": {
+    "A_keep": "Legitimate external destination, share sheet, or permitted payment exception. No migration needed (some need an explicit 'opens external' notice).",
+    "B_webFallback": "Named *WebFallback. Internal PulseSOC web page opened as an escape hatch from an otherwise-native screen. Migration candidate.",
+    "C_internalWebRedirect": "Button/action that opens the PulseSOC web version of a screen that is (or should be) native. Migration candidate.",
+    "INVESTIGATE": "Needs runtime confirmation of destination before classifying."
+  },
+  "entries": [
+    { "file": "api/marketplace.ts", "line": 227, "action": "connectMarketplacePayout -> onboarding_url", "destination": "Stripe Connect onboarding URL", "category": "A_keep", "reason": "External payment/provider onboarding — permitted web exception", "todo": "Surface an explicit 'opens external browser' notice before navigating" },
+    { "file": "api/marketplace.ts", "line": 261, "action": "openMarketplaceCheckout -> checkout_url", "destination": "Stripe checkout URL", "category": "A_keep", "reason": "External payment authorization — permitted web exception", "todo": "Explicit external notice" },
+    { "file": "api/premium.ts", "line": 203, "action": "openPremiumUrl(result.url||fallback_url)", "destination": "Premium checkout (Stripe) or /pulse/premium", "category": "A_keep", "reason": "External payment when http Stripe URL; permitted", "todo": "Confirm URL is always external Stripe; if internal, reclassify to B" },
+    { "file": "components/SponsoredAdCard.tsx", "line": 33, "action": "ad click-through", "destination": "Advertiser landing page (http). Internal '/' paths already route native via openNativeRoute", "category": "A_keep", "reason": "External advertiser destination is correct; internal already native" },
+    { "file": "screens/EventsScreen.tsx", "line": 111, "action": "Share.share event link", "destination": "https://pulsesoc.com/<path>", "category": "A_keep", "reason": "Share sheet with public universal link — correct" },
+    { "file": "screens/ReelsScreen.tsx", "line": 298, "action": "Share.share reel/live link", "destination": "reel.live.live_url || liveWebUrl", "category": "A_keep", "reason": "Share sheet — correct" },
+    { "file": "screens/LiveScreen.tsx", "line": 335, "action": "Share.share live link", "destination": "liveWebUrl(activeLiveId)", "category": "A_keep", "reason": "Share sheet — correct" },
+    { "file": "screens/LiveHostSessionScreen.tsx", "line": 388, "action": "liveWebUrl(liveId)", "destination": "liveWebUrl", "category": "INVESTIGATE", "reason": "Confirm whether share vs redirect" },
+    { "file": "screens/ChatScreen.tsx", "line": 982, "action": "open UNDX result deep_link", "destination": "absoluteMediaUrl(component.deep_link)", "category": "INVESTIGATE", "reason": "If internal PulseSOC deep link, route natively; if external media, keep" },
+
+    { "file": "api/support.ts", "line": 114, "action": "openSupportWebFallback('/pulse/help')", "destination": "PULSE_API_BASE_URL/pulse/help", "category": "B_webFallback", "priority": 1, "nativeScreen": "SafetyHubScreen / support" },
+    { "file": "api/verification.ts", "line": 171, "action": "verification web fallback", "destination": "PULSE_API_BASE_URL/<safePath>", "category": "B_webFallback", "priority": 0, "nativeScreen": "VerificationCenterScreen", "status": "migrated", "migratedAt": "2026-07-20", "migration": "Removed openVerificationWebFallback() and its sole caller (the 'Open protected web verification' ActionButton). VerificationCenterScreen already delivers the full native workflow (startVerificationRequest, pickAndUploadVerificationDocument for government_id/business_document/selfie, submitVerificationAppeal, offline cache, checklist, badge preview). Also removed now-unused Linking + PULSE_API_BASE_URL imports.", "verified": "tsc --noEmit exit 0; jest 229/229 pass. Device QA pending." },
+    { "file": "api/safety.ts", "line": 142, "action": "safety web fallback", "destination": "PULSE_API_BASE_URL/<safePath>", "category": "B_webFallback", "priority": 0, "nativeScreen": "SafetyHubScreen / TrustSafetyScreen" },
+    { "file": "api/accountHealth.ts", "line": 113, "action": "account health web fallback", "destination": "PULSE_API_BASE_URL/<safePath>", "category": "B_webFallback", "priority": 0, "nativeScreen": "AccountHealthAppealsScreen" },
+    { "file": "api/account.ts", "line": 205, "action": "account web fallback", "destination": "PULSE_API_BASE_URL/<safePath>", "category": "B_webFallback", "priority": 0, "nativeScreen": "AccountCenterScreen" },
+    { "file": "api/calls.ts", "line": 242, "action": "openCallWebFallback", "destination": "PULSE_API_BASE_URL/pulse/messages?call_id=", "category": "B_webFallback", "priority": 0, "nativeScreen": "CallScreen / MessengerScreen" },
+    { "file": "api/premium.ts", "line": 101, "action": "openPremiumHub('/pulse/premium')", "destination": "PULSE_API_BASE_URL/pulse/premium", "category": "B_webFallback", "priority": 1, "nativeScreen": "PremiumScreen" },
+    { "file": "navigation/dashboardRouting.ts", "line": 277, "action": "openDashboardWebFallback", "destination": "dashboardWebUrl(route)", "category": "B_webFallback", "priority": 1, "nativeScreen": "UserDashboardScreen / DashboardModuleDetailScreen" },
+    { "file": "navigation/notificationRouting.ts", "line": 409, "action": "notification web fallback", "destination": "webTarget", "category": "B_webFallback", "priority": 0, "nativeScreen": "notification deep-link routing", "status": "migrated", "migratedAt": "2026-07-20", "migration": "Replaced 'open the PulseSOC web page' fallback with native-first resolution: unmapped internal targets now route to the native Activity Inbox (/pulse/notifications) instead of Linking.openURL. Legal docs (/terms,/privacy,/legal,/cookies,/licenses,/copyright) retained as intentional web exceptions; lookalike paths (e.g. /terms-of-endearment) are NOT misclassified. Non-pulsesoc hosts, /api,/static,/admin, and javascript:/data:/file: normalize to missing_target before any fallback. Added structured, privacy-safe telemetry (NotificationRouteReport + setNotificationRouteReporter) that records every native_fallback with a normalized targetFamily and no query/fragment contents, so repeated fallbacks surface missing native route families.", "verified": "tsc --noEmit exit 0; 9 dedicated notificationRouting tests + full suite 229/229 pass. Device QA pending." },
+    { "file": "screens/CameraStudioScreen.tsx", "line": 430, "action": "openWebFallback (advanced camera)", "destination": "PULSE_API_BASE_URL/<destination.webPath>", "category": "B_webFallback", "priority": 2, "nativeScreen": "CameraStudioScreen" },
+
+    { "file": "api/events.ts", "line": 90, "action": "open web events path", "destination": "PULSE_API_BASE_URL/<path>", "category": "C_internalWebRedirect", "priority": 1, "nativeScreen": "EventsScreen" },
+    { "file": "api/creator.ts", "line": 128, "action": "open web creator target", "destination": "PULSE_API_BASE_URL/<path>", "category": "C_internalWebRedirect", "priority": 1, "nativeScreen": "CreatorStudioScreen" },
+    { "file": "api/intelligence.ts", "line": 107, "action": "open web intelligence target", "destination": "PULSE_API_BASE_URL/<path>", "category": "C_internalWebRedirect", "priority": 2, "nativeScreen": "IntelligenceCenterScreen" },
+    { "file": "api/learning.ts", "line": 106, "action": "open web learning target", "destination": "PULSE_API_BASE_URL/<path>", "category": "C_internalWebRedirect", "priority": 2, "nativeScreen": "CoursesLearningScreen" },
+    { "file": "api/growth.ts", "line": 75, "action": "open web growth target", "destination": "PULSE_API_BASE_URL/<path>", "category": "C_internalWebRedirect", "priority": 2, "nativeScreen": "GrowthCenterScreen" },
+    { "file": "api/orders.ts", "line": 120, "action": "open order on web", "destination": "buyerOrderWebUrl", "category": "C_internalWebRedirect", "priority": 1, "nativeScreen": "BuyerOrdersScreen" },
+    { "file": "api/live.ts", "line": 315, "action": "open live on web", "destination": "liveWebUrl(liveId)", "category": "C_internalWebRedirect", "priority": 1, "nativeScreen": "LiveScreen" },
+    { "file": "screens/SellerListingComposerScreen.tsx", "line": 118, "action": "open seller create on web", "destination": "sellerStoreWebUrl('create')", "category": "C_internalWebRedirect", "priority": 1, "nativeScreen": "SellerListingComposerScreen" },
+    { "file": "screens/SellerStoreScreen.tsx", "line": 230, "action": "open seller dashboard on web", "destination": "sellerStoreWebUrl('dashboard')", "category": "C_internalWebRedirect", "priority": 1, "nativeScreen": "SellerStoreScreen" },
+    { "file": "screens/SellerStoreScreen.tsx", "line": 262, "action": "open seller apply on web", "destination": "sellerStoreWebUrl('apply')", "category": "C_internalWebRedirect", "priority": 1, "nativeScreen": "SellerStoreScreen" },
+    { "file": "screens/SellerStoreScreen.tsx", "line": 339, "action": "open seller create on web", "destination": "sellerStoreWebUrl('create')", "category": "C_internalWebRedirect", "priority": 1, "nativeScreen": "SellerListingComposerScreen" },
+    { "file": "screens/SellerStoreScreen.tsx", "line": 408, "action": "open seller payouts on web", "destination": "sellerStoreWebUrl('payouts')", "category": "C_internalWebRedirect", "priority": 1, "nativeScreen": "payouts (may be Stripe-backed — verify)" },
+    { "file": "screens/MarketplaceScreen.tsx", "line": 117, "action": "open listing on web", "destination": "marketplaceWebUrl(listing.id)", "category": "C_internalWebRedirect", "priority": 1, "nativeScreen": "MarketplaceScreen listing detail" },
+    { "file": "screens/MarketplaceScreen.tsx", "line": 126, "action": "open next_url", "destination": "result.next_url", "category": "INVESTIGATE", "priority": 1, "reason": "next_url may be Stripe checkout (external) or internal" },
+    { "file": "screens/MarketplaceScreen.tsx", "line": 296, "action": "open listing on web (button)", "destination": "marketplaceWebUrl(listing.id)", "category": "C_internalWebRedirect", "priority": 1, "nativeScreen": "MarketplaceScreen listing detail" },
+    { "file": "screens/ProfileScreen.tsx", "line": 159, "action": "open profile on web", "destination": "profileWebUrl(profileTarget)", "category": "C_internalWebRedirect", "priority": 1, "nativeScreen": "ProfileScreen" },
+    { "file": "screens/ProfileScreen.tsx", "line": 253, "action": "open profile on web (link)", "destination": "profileWebUrl(...)", "category": "C_internalWebRedirect", "priority": 1, "nativeScreen": "ProfileScreen" }
+  ],
+  "nextSteps": [
+    "DEVICE QA GATE (blocks PASS): install this tree on P3r7or, then verify (a) a mapped notification opens the native screen, (b) an unmapped internal target lands on the native Activity Inbox with no browser, (c) /terms and /privacy open the intentional web exception, (d) an external host is rejected — across foreground/background/terminated launch states.",
+    "Continue Priority 0 slice: safety (SafetyHubScreen 232/333), accountHealth (AccountHealthAppealsScreen 154), account (AccountCenterScreen 238/253/263/268), calls (CallScreen 308) web fallbacks — session-sensitive, same migration pattern as verification.",
+    "Confirm INVESTIGATE entries (ChatScreen deep_link, MarketplaceScreen next_url, seller payouts, premium URL) are external vs internal.",
+    "For each C entry, verify the native screen already renders the same data the web page shows before deleting the web button.",
+    "Wire setNotificationRouteReporter to a real sink once analytics infra exists, so native_fallback targetFamily counts drive the remaining-route backlog."
+  ]
+}

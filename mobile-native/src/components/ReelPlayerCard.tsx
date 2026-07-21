@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import { PulseReel, reelIsPlayable, reelPosterUrl, reelVideoUrl, reelWebUrl } from "../api/reels";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
+import { resolveReelAudioPolicy } from "../core/attachedMusicAudioPolicy";
 import { refreshCanonicalMediaAccess } from "../media/mediaAccess";
 import { LikeBurst, LikeBurstHandle, MuteGlyphPulse, MuteGlyphPulseHandle } from "../media/MediaGestureFeedback";
 import { useTapMuteLike } from "../media/useTapMuteLike";
@@ -79,7 +80,8 @@ export function ReelPlayerCard({
   const kind = useMemo(() => classifyReelMedia(reel), [reel]);
   const isVideoKind = kind === "video" || kind === "replay";
   const isLive = kind === "livestream";
-  const attachedAudio = reel.audio?.attached_audio_url || reel.audio?.audio_url || "";
+  const musicPolicy = useMemo(() => resolveReelAudioPolicy(reel.audio), [reel.audio]);
+  const drivesPlayback = isVideoKind || (kind === "carousel" && musicPolicy.hasAttachedMusic);
   const playbackOwnerId = `reel:${reel.id}`;
   const media = reel.media?.[0];
   const contentState = reelContentState(reel, offline, failed);
@@ -92,7 +94,7 @@ export function ReelPlayerCard({
   }, [initialSource, reel.id]);
 
   useEffect(() => {
-    if (!isVideoKind) {
+    if (!drivesPlayback) {
       if (active) {
         watchStartedAt.current = Date.now();
       } else if (watchStartedAt.current) {
@@ -133,12 +135,12 @@ export function ReelPlayerCard({
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
     }
     return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
-  }, [active, muted, onViewable, playbackOwnerId, reel, isVideoKind]);
+  }, [active, muted, onViewable, playbackOwnerId, reel, drivesPlayback]);
 
   useEffect(() => {
     let cancelled = false;
     async function syncAttachedAudio() {
-      if (!isVideoKind || !active || !ownsPlayback || !attachedAudio) {
+      if (!drivesPlayback || !active || !ownsPlayback || !musicPolicy.hasAttachedMusic) {
         const existing = attachedSoundRef.current;
         attachedSoundRef.current = null;
         if (existing) await existing.unloadAsync().catch(() => undefined);
@@ -146,8 +148,8 @@ export function ReelPlayerCard({
       }
       if (!attachedSoundRef.current) {
         const created = await Audio.Sound.createAsync(
-          { uri: attachedAudio },
-          { isLooping: true, positionMillis: Math.max(0, Number(reel.audio?.audio_start_time || 0) * 1000), shouldPlay: ownsPlayback && !muted, volume: Math.max(0, Math.min(1, Number(reel.audio?.audio_volume ?? 1))) }
+          { uri: musicPolicy.musicUrl! },
+          { isLooping: musicPolicy.isLooping, positionMillis: musicPolicy.musicStartMs, shouldPlay: ownsPlayback && !muted, volume: musicPolicy.musicVolume }
         );
         if (cancelled) return created.sound.unloadAsync();
         attachedSoundRef.current = created.sound;
@@ -157,18 +159,18 @@ export function ReelPlayerCard({
     }
     syncAttachedAudio().catch(() => undefined);
     return () => { cancelled = true; };
-  }, [active, attachedAudio, muted, ownsPlayback, reel.audio?.audio_start_time, reel.audio?.audio_volume, isVideoKind]);
+  }, [active, musicPolicy, muted, ownsPlayback, drivesPlayback]);
 
   useEffect(() => () => {
     attachedSoundRef.current?.unloadAsync().catch(() => undefined);
     attachedSoundRef.current = null;
-  }, [attachedAudio]);
+  }, [musicPolicy.musicUrl]);
 
   useEffect(() => {
-    if (!isVideoKind || !active || !ownsPlayback) return;
+    if (!drivesPlayback || !active || !ownsPlayback) return;
     videoRef.current?.playAsync().catch(() => undefined);
     attachedSoundRef.current?.setStatusAsync({ shouldPlay: !muted, isMuted: muted }).catch(() => undefined);
-  }, [active, muted, ownsPlayback, isVideoKind]);
+  }, [active, muted, ownsPlayback, drivesPlayback]);
 
   const { onPress: handleTap } = useTapMuteLike({
     onToggleMuted,
@@ -203,7 +205,7 @@ export function ReelPlayerCard({
       {kind === "photo" ? (
         <ReelPhotoSurface reel={reel} />
       ) : kind === "carousel" ? (
-        <ReelCarouselSurface reel={reel} active={active} muted={muted} />
+        <ReelCarouselSurface reel={reel} active={active} muted={muted} muteOriginal={musicPolicy.muteOriginalAudio} />
       ) : kind === "livestream" ? (
         <ReelLiveViewerSurface reel={reel} active={active} muted={muted} poster={poster} />
       ) : contentState === "playable" && source ? (
@@ -214,7 +216,7 @@ export function ReelPlayerCard({
           resizeMode={ResizeMode.COVER}
           shouldPlay={false}
           isLooping
-          isMuted={muted || Boolean(attachedAudio && reel.audio?.original_audio_muted !== false)}
+          isMuted={muted || musicPolicy.muteOriginalAudio}
           progressUpdateIntervalMillis={250}
           usePoster={Boolean(poster)}
           posterSource={poster ? { uri: poster } : undefined}

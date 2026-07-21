@@ -1,4 +1,4 @@
-import { ResizeMode, Video } from "expo-av";
+import { Audio, ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -6,6 +6,7 @@ import { DEFAULT_STATUS_REACTION, PulseStatus, pulseStatusUrl, StatusReactionTyp
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
+import { resolveStatusMusicPolicy } from "../core/attachedMusicAudioPolicy";
 import { LikeBurst, LikeBurstHandle } from "../media/MediaGestureFeedback";
 import { StatusActionRail } from "./StatusActionRail";
 
@@ -48,6 +49,7 @@ export function StatusViewerCard({
 }: Props) {
   const insets = useSafeAreaInsets();
   const videoRef = useRef<Video>(null);
+  const attachedSoundRef = useRef<Audio.Sound | null>(null);
   const startedAt = useRef(0);
   const likeBurstRef = useRef<LikeBurstHandle>(null);
   const lastZoneTap = useRef<{ time: number; side: "left" | "right" }>({ time: 0, side: "left" });
@@ -59,17 +61,25 @@ export function StatusViewerCard({
   const kind = statusMediaKind(status);
   const author = status.author || {};
   const music = statusMusicLabel(status);
+  const musicPolicy = useMemo(() => resolveStatusMusicPolicy(status.music), [status.music]);
   const playbackOwnerId = `status:${status.id}`;
+  const drivesPlayback = kind === "video" || musicPolicy.hasAttachedMusic;
 
   useEffect(() => {
-    if (active && kind === "video" && !muted) {
+    if (active && drivesPlayback && !muted) {
       startedAt.current = Date.now();
       claimMediaPlayback({
         id: playbackOwnerId,
         kind: "status",
-        pause: () => videoRef.current?.pauseAsync().then(() => undefined),
-        stop: () => videoRef.current?.stopAsync().then(() => undefined)
-      }).then((granted) => granted ? videoRef.current?.playAsync() : undefined).catch(() => undefined);
+        pause: () => Promise.all([
+          videoRef.current?.pauseAsync().catch(() => undefined),
+          attachedSoundRef.current?.pauseAsync().catch(() => undefined)
+        ]).then(() => undefined),
+        stop: () => Promise.all([
+          videoRef.current?.stopAsync().catch(() => undefined),
+          attachedSoundRef.current?.stopAsync().catch(() => undefined)
+        ]).then(() => undefined)
+      }).then((granted) => granted && kind === "video" ? videoRef.current?.playAsync() : undefined).catch(() => undefined);
     } else if (active) {
       startedAt.current = Date.now();
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
@@ -83,7 +93,37 @@ export function StatusViewerCard({
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
     }
     return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
-  }, [active, kind, muted, onViewed, playbackOwnerId, status]);
+  }, [active, drivesPlayback, kind, muted, onViewed, playbackOwnerId, status]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const shouldPlayMusic = active && !paused && !muted;
+    async function syncAttachedMusic() {
+      if (!active || !musicPolicy.hasAttachedMusic) {
+        const existing = attachedSoundRef.current;
+        attachedSoundRef.current = null;
+        if (existing) await existing.unloadAsync().catch(() => undefined);
+        return;
+      }
+      if (!attachedSoundRef.current) {
+        const created = await Audio.Sound.createAsync(
+          { uri: musicPolicy.musicUrl! },
+          { isLooping: musicPolicy.isLooping, positionMillis: musicPolicy.musicStartMs, shouldPlay: shouldPlayMusic, volume: musicPolicy.musicVolume }
+        );
+        if (cancelled) return created.sound.unloadAsync();
+        attachedSoundRef.current = created.sound;
+      } else {
+        await attachedSoundRef.current.setStatusAsync({ shouldPlay: shouldPlayMusic });
+      }
+    }
+    syncAttachedMusic().catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [active, muted, paused, musicPolicy]);
+
+  useEffect(() => () => {
+    attachedSoundRef.current?.unloadAsync().catch(() => undefined);
+    attachedSoundRef.current = null;
+  }, [musicPolicy.musicUrl]);
 
   useEffect(() => {
     if (!active || paused || kind === "video") return;
@@ -136,7 +176,7 @@ export function StatusViewerCard({
           resizeMode={ResizeMode.COVER}
           shouldPlay={false}
           isLooping={false}
-          isMuted={muted}
+          isMuted={muted || musicPolicy.muteOriginalAudio}
           usePoster={Boolean(posterUrl)}
           posterSource={posterUrl ? { uri: posterUrl } : undefined}
           onPlaybackStatusUpdate={(playbackStatus) => {
