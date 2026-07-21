@@ -239,3 +239,127 @@ If release work resumes:
 ## Final Git Status
 
 This report was created as the only intended release-gate artifact. Existing dirty work outside this report was preserved.
+
+---
+
+## Continuation Verification - 2026-07-20 20:50 PDT
+
+Final result: **NO-GO remains active**
+
+This continuation followed the ownership-first instruction: **do not change the Native production Bundle ID until Apple ownership of `com.pulsesoc.app` is authenticated**.
+
+No Bundle ID was changed. No archive was created. No app was uploaded. No Apple credentials, certificates, provisioning profiles, private keys, screenshots, IPA files, or archives were committed.
+
+### Required Repository Snapshot
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Repository | VERIFIED | `/Users/hmcherie/Desktop/CoinPilotX` |
+| Branch | VERIFIED | `release/undx-nexus-core-v4` |
+| HEAD | VERIFIED | `a07886c2ec79754bafe6de30dfd3cf02d9fea97d` |
+| Remote | VERIFIED | `origin git@github.com:hmcroody-alt/CoinPilotX.git` |
+| Prior release-audit commit | VERIFIED | `9998c81d5536428893fdfab65a15e47e06f91559` |
+| Working tree | VERIFIED | Dirty before this continuation; unrelated Native auth/login changes were preserved. |
+
+### Authenticated Apple and App Store Connect Access
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| App Store Connect API key | NOT OBSERVED | No `AuthKey_*.p8` file was found in `~/.appstoreconnect/private_keys`, `~/.private_keys`, or `~/private_keys`. |
+| `altool --list-providers` | FAILED | Apple returned: JWT or username/app-password authentication is required. |
+| Apple membership type | NOT OBSERVED | No authenticated Apple Developer membership view/API was available. |
+| Legal organization name | NOT OBSERVED | `COINPLOTXAI INC.` was not verified from authenticated Apple records. |
+| D-U-N-S `134170024` | NOT OBSERVED | Not verified from authenticated Apple records. |
+| Apple Team ownership | NOT OBSERVED | Local project uses Team ID `87ZC69AGSR`, but Apple organization ownership was not authenticated. |
+| Authenticated Apple role | NOT OBSERVED | No App Store Connect role evidence was available. |
+| Agreements status | NOT OBSERVED | Requires authenticated App Store Connect access. |
+
+Immediate stop condition remains triggered because organization, D-U-N-S, Team ownership, and app ownership are not authoritatively confirmed.
+
+### Existing App Store Listing - Public Evidence Only
+
+Public Apple lookup:
+
+`https://itunes.apple.com/lookup?id=6777591572&country=us`
+
+| Field | Result | Evidence |
+| --- | --- | --- |
+| App name | VERIFIED | `PulseSoc` |
+| App Store Connect public app ID | VERIFIED | `6777591572` |
+| Public Bundle ID | VERIFIED | `com.pulsesoc.app` |
+| Public seller | VERIFIED | `ROODY CHERIE` |
+| Public artist/developer | VERIFIED | `ROODY CHERIE` |
+| Public version | VERIFIED | `1.0` |
+| Category | VERIFIED | `Social Networking` |
+
+This public lookup confirms the existing app record and Bundle ID, but it does **not** prove Apple membership type, organization conversion state, D-U-N-S association, Team ownership, or App Store Connect permissions.
+
+### Current Native Identity and Signing State
+
+| Source | Result | Evidence |
+| --- | --- | --- |
+| `mobile-native/app.json` production iOS identity | FAILED | `ios.bundleIdentifier = com.pulsesoc.nativeapp` |
+| `mobile-native/app.json` Android package | FAILED for future store parity | `android.package = com.pulsesoc.nativeapp` |
+| Xcode Debug Bundle ID | VERIFIED development-only | `com.pulsesoc.nativeapp.dev` |
+| Xcode Release Bundle ID | FAILED | `com.pulsesoc.nativeapp` |
+| Existing App Store Bundle ID | VERIFIED | `com.pulsesoc.app` |
+| Entitlements file | FAILED for App Store release | `aps-environment = development` |
+| Local code signing identities | FAILED for App Store release | Only `Apple Development: ROODY CHERIE (HB5FV6P922)` identities were observed. |
+| Apple Distribution certificate | NOT OBSERVED | No Apple Distribution identity was present in local code-signing identities. |
+| App Store provisioning profile | NOT OBSERVED | No local `.mobileprovision` App Store profile was found under `mobile-native`. |
+
+The Native development app was successfully built, installed, and launched on physical iPhone `P3r7or` as `com.pulsesoc.nativeapp.dev`, but that is not an App Store production update and does not replace `com.pulsesoc.app`.
+
+### EAS State
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| EAS account | VERIFIED | `hmcroody` / `hmcroody@gmail.com` |
+| EAS project | VERIFIED | `@hmcroody/pulsesoc-native` |
+| EAS iOS build list | VERIFIED empty | `eas build:list --platform ios --limit 5` returned no builds. |
+| EAS Apple credentials | NOT OBSERVED | The credentials command is interactive; no non-interactive Apple credential evidence was available. |
+
+### Ownership-Remediation Path
+
+| Path | Result | Evidence |
+| --- | --- | --- |
+| Path A - existing app already owned by `COINPLOTXAI INC.` | NOT OBSERVED | Requires authenticated App Store Connect/Apple Developer verification. |
+| Path B - membership conversion pending/incomplete | NOT OBSERVED | Requires authenticated Apple Developer verification. |
+| Path C - existing app belongs to separate Individual account | NOT OBSERVED | Public seller is `ROODY CHERIE`, but public seller name alone is insufficient. |
+
+No transfer, conversion, Bundle ID mutation, or signing repair was initiated because ownership is unresolved.
+
+### Continuity and Capability Gates
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Upgrade-over-existing-app | NOT OBSERVED | Cannot be tested until Native production identity is `com.pulsesoc.app` and production signing is valid. |
+| Clean install release build | NOT OBSERVED | No App Store-signed production build was created. |
+| Push production APNs | FAILED / NOT OBSERVED | Local entitlements are `aps-environment=development`; production APNs credential not verified. |
+| Sign in with Apple continuity | NOT OBSERVED | Existing App ID/Service ID/Team ownership requires Apple portal verification. |
+| IAP/subscriptions | NOT OBSERVED | Requires authenticated App Store Connect inspection. |
+| Associated Domains / Universal Links | NOT OBSERVED | Requires production capability comparison against existing App ID. |
+| Keychain access group continuity | NOT OBSERVED | Current Native secure-store keychain services still reference `com.pulsesoc.nativeapp` for non-dev code paths. |
+
+### Final Continuation Decision
+
+Final result: **NO-GO**
+
+Do not upload the current Native build.
+
+Remaining hard blockers:
+
+1. Apple Organization membership is not authenticated.
+2. `COINPLOTXAI INC.` ownership is not authenticated.
+3. D-U-N-S `134170024` is not authenticated.
+4. Team ID `87ZC69AGSR` is not proven to belong to the expected organization.
+5. Existing app ownership for Apple ID `6777591572` is not authenticated.
+6. Native Release Bundle ID remains `com.pulsesoc.nativeapp`, not `com.pulsesoc.app`.
+7. Apple Distribution signing is not available locally.
+8. App Store provisioning is not available locally.
+9. Production APNs entitlement is not configured.
+10. Upgrade-over-existing-app has not been validated.
+
+Next exact action:
+
+Authenticate into Apple Developer and App Store Connect and verify membership type, legal organization, D-U-N-S, Team ID, current user role, agreements, and ownership of app `6777591572`. Only after that verification should the Native production identity be changed to `com.pulsesoc.app`.
