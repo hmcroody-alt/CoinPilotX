@@ -48,7 +48,7 @@ export type NativeProfileTarget = {
   title?: string;
   source?: string;
   cacheKey: string;
-  webPath: string;
+  nativePath: string;
 };
 
 export function resolveProfileTarget(input: ProfileTargetInput): NativeProfileTarget | null {
@@ -167,7 +167,7 @@ export function profileWebUrlForTarget(input?: ProfileTargetInput | NativeProfil
   return `${PULSE_API_BASE_URL}${profileWebPath(input)}`;
 }
 
-function buildProfileTarget(input: Omit<NativeProfileTarget, "cacheKey" | "webPath">): NativeProfileTarget {
+function buildProfileTarget(input: Omit<NativeProfileTarget, "cacheKey" | "nativePath">): NativeProfileTarget {
   const target = {
     ...input,
     profileKey: sanitizeProfileKey(input.profileKey) || "",
@@ -175,8 +175,8 @@ function buildProfileTarget(input: Omit<NativeProfileTarget, "cacheKey" | "webPa
     username: sanitizeProfileKey(input.username || "")
   };
   const cacheKey = target.userId ? `user:${target.userId}` : target.publicPlayerId ? `public:${target.publicPlayerId.toLowerCase()}` : target.username ? `username:${target.username.toLowerCase()}` : `public:${target.profileKey.toLowerCase()}`;
-  const webPath = profileWebPath({ ...target, cacheKey, webPath: "" });
-  return { ...target, cacheKey, webPath };
+  const nativePath = profileWebPath({ ...target, cacheKey, nativePath: "" });
+  return { ...target, cacheKey, nativePath };
 }
 
 function profileKeyFromUrl(raw: string): string {
@@ -244,5 +244,5 @@ function nestedValue(obj: Record<string, unknown> | undefined, key: string) {
 }
 
 function isNativeProfileTarget(input: ProfileTargetInput | NativeProfileTarget): input is NativeProfileTarget {
-  return Boolean(input && typeof input === "object" && "cacheKey" in input && "webPath" in input);
+  return Boolean(input && typeof input === "object" && "cacheKey" in input && "nativePath" in input);
 }

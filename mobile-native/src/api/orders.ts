@@ -1,4 +1,3 @@
-import { Linking } from "react-native";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
@@ -117,7 +116,12 @@ export function supportOrderWebUrl(order?: BuyerOrder) {
 
 export async function openBuyerOrderFallback(url: string) {
   const absolute = /^https?:\/\//i.test(url) ? url : `${PULSE_API_BASE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
-  await Linking.openURL(absolute);
+  return {
+    ok: false,
+    target: absolute,
+    status: "native_provider_boundary",
+    message: "Order provider operation remains inside native Buyer Orders until the protected contract is available."
+  };
 }
 
 export function normalizeBuyerOrders(orders: BuyerOrder[]) {

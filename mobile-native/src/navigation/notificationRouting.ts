@@ -1,7 +1,5 @@
-import { Linking } from "react-native";
 import * as Notifications from "expo-notifications";
 import { createNavigationContainerRef } from "@react-navigation/native";
-import { PULSE_API_BASE_URL } from "../api/config";
 import { profileNavigationParams, profileTargetFromUrl } from "../api/profileTarget";
 import { dashboardModuleParamsForRoute } from "./dashboardRouting";
 import { RootStackParamList } from "./types";
@@ -461,17 +459,12 @@ async function resolveNotificationTarget(target: string): Promise<NotificationRo
     return { handled: true, target: normalized };
   }
 
-  // Public legal documents are the only intentional web exception here — they have no
-  // native surface yet. Every other path that reaches this point is an internal PulseSoc
-  // route with no native destination; route it natively to the Activity Inbox rather than
-  // dropping the user (who tapped a notification, saved item, or search result) into a browser.
+  // Public legal documents and unresolved internal targets remain inside native
+  // Settings/Activity surfaces during App Review. Do not drop notification taps
+  // into the browser.
   if (isIntentionalWebExceptionTarget(normalized)) {
-    const webTarget = `${PULSE_API_BASE_URL}${normalized}`;
-    const supported = await Linking.canOpenURL(webTarget).catch(() => false);
-    if (supported) {
-      await Linking.openURL(webTarget);
-      return { handled: true, target: normalized, reason: "intentional_web_exception" };
-    }
+    if (navigationRef.isReady()) navigationRef.navigate("Tabs", { screen: "Settings" });
+    return { handled: true, target: normalized, reason: "native_legal_boundary" };
   }
 
   navigateToNotifications();

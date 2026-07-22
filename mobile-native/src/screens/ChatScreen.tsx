@@ -19,7 +19,6 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
-  Linking,
   Modal,
   Platform,
   Pressable,
@@ -73,6 +72,7 @@ import {
   VoicePlaybackSnapshot
 } from "../core/voiceMessagePlayback";
 import { RootStackParamList } from "../navigation/types";
+import { openNativeRoute } from "../navigation/nativeRouteActions";
 import {
   messageAccessibilityLabel,
   messageActionRules,
@@ -258,6 +258,19 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const qaChatState = PULSESOC_QA_MESSENGER_FIXTURES ? String(process.env.EXPO_PUBLIC_PULSESOC_QA_CHAT_STATE || "") : "";
   const draftKey = `pulsesoc.native.messenger.draft.${conversationId}`;
+
+  const openUndxResult = useCallback((deepLink?: string) => {
+    const nativePath = nativePathFromDeepLink(deepLink);
+    if (!nativePath) {
+      setStatusMessage("This result is not available as a native route yet.");
+      return;
+    }
+    try {
+      openNativeRoute(navigation, nativePath);
+    } catch {
+      setStatusMessage("This result could not be opened in native PulseSoc.");
+    }
+  }, [navigation]);
 
   useEffect(() => () => {
     stopVoiceMessagePlayback("conversation_closed").catch(() => undefined);
@@ -979,7 +992,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
               <Text style={styles.undxActionBody}>{component.component === "search_result_card" ? component.relevance_reason || `Canonical ID ${component.canonical_content_id}` : <>{component.target || "PulseSOC"}: {component.current_value ? `${component.current_value} → ` : ""}{component.proposed_value || component.value || component.status || "pending"}</>}</Text>
               {component.risk_summary ? <Text style={styles.undxActionRisk}>{component.risk_summary}</Text> : null}
               {component.component === "search_result_card" && component.deep_link ? (
-                <Pressable accessibilityRole="link" accessibilityLabel={`Open ${component.content_type || "PulseSOC"} result`} style={styles.undxActionConfirm} onPress={() => Linking.openURL(absoluteMediaUrl(component.deep_link)).catch(() => setStatusMessage("This result could not be opened."))}>
+                <Pressable accessibilityRole="link" accessibilityLabel={`Open ${component.content_type || "PulseSOC"} result`} style={styles.undxActionConfirm} onPress={() => openUndxResult(component.deep_link)}>
                   <Text style={styles.undxActionConfirmText}>Open</Text>
                 </Pressable>
               ) : null}
@@ -1460,6 +1473,18 @@ function absoluteMediaUrl(value?: string) {
   if (/^https?:\/\//i.test(value)) return value;
   if (value.startsWith("/")) return `${PULSE_API_BASE_URL}${value}`;
   return value;
+}
+
+function nativePathFromDeepLink(value?: string) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    if (/^https?:\/\//i.test(raw)) return new URL(raw).pathname + new URL(raw).search;
+  } catch {
+    return "";
+  }
+  if (raw.startsWith("pulsesoc://")) return raw.replace(/^pulsesoc:\/\/[^/]*(\/?)/i, "/");
+  return raw.startsWith("/") ? raw : "";
 }
 
 const styles = StyleSheet.create({

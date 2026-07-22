@@ -1,5 +1,5 @@
 import { profileNavigationParams, profileTargetFromUrl } from "../api/profileTarget";
-import { openDashboardRoute, openDashboardWebFallback } from "./dashboardRouting";
+import { openDashboardRoute } from "./dashboardRouting";
 
 export type NativeRouteNavigation = {
   navigate: (...args: any[]) => void;
@@ -48,7 +48,7 @@ export function openNativeRoute(navigation: NativeRouteNavigation, routePath: st
   else if (routePath === "/pulse/intelligence") navigation.navigate("IntelligenceCenter", { title: "Intelligence" });
   else if (routePath === "/pulse/alerts") navigation.navigate("AlertManagement", { title: "Alerts" });
   else if (routePath === "/pulse/courses") navigation.navigate("Courses", { title: "Courses" });
-  else if (routePath === "/terms" || routePath === "/privacy") openDashboardWebFallback(routePath);
+  else if (routePath === "/terms" || routePath === "/privacy") navigation.navigate("Tabs", { screen: "Settings" });
   else openDashboardRoute(navigation, routePath);
 }
 

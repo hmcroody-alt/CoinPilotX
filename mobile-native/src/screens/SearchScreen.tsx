@@ -186,7 +186,7 @@ export function SearchScreen({ route, navigation }: Props) {
                 <Text style={styles.emptyTitle}>{unsupportedTab ? "Discovery tab is not native yet" : "No PulseSoc results found"}</Text>
                 <Text style={styles.emptyText}>
                   {unsupportedTab
-                    ? "This tab will stay on the existing PulseSoc backend and web fallback until a native destination exists."
+                    ? "This tab will stay on the existing PulseSoc backend with a native provider boundary until a destination exists."
                     : "Try another creator, topic, video, listing, room, reel, or signal."}
                 </Text>
               </View>
@@ -206,7 +206,7 @@ function EventsGatewayShortcut({ onPress }: { onPress: () => void }) {
     <Pressable style={styles.eventsGateway} onPress={onPress}>
       <Text style={styles.eventsGatewayKicker}>Native gateway</Text>
       <Text style={styles.eventsGatewayTitle}>Events and scheduled Live</Text>
-      <Text style={styles.eventsGatewayText}>Open scheduled broadcasts from the existing PulseSoc Live backend. Creation and ticketing stay on safe fallback.</Text>
+      <Text style={styles.eventsGatewayText}>Open scheduled broadcasts from the existing PulseSoc Live backend. Creation and ticketing stay inside provider-owned boundaries.</Text>
     </Pressable>
   );
 }
@@ -216,7 +216,7 @@ function LearningGatewayShortcut({ onPress }: { onPress: () => void }) {
     <Pressable style={styles.eventsGateway} onPress={onPress}>
       <Text style={styles.eventsGatewayKicker}>Native gateway</Text>
       <Text style={styles.eventsGatewayTitle}>Courses and learning</Text>
-      <Text style={styles.eventsGatewayText}>Open native lesson discovery. Course creation, payments, teacher tools, and unsupported lesson media stay on safe fallback.</Text>
+      <Text style={styles.eventsGatewayText}>Open native lesson discovery. Course creation, payments, teacher tools, and unsupported lesson media stay inside provider-owned boundaries.</Text>
     </Pressable>
   );
 }

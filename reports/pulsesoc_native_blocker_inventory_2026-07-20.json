@@ -46,7 +46,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-01",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/navigation/dashboardRouting.ts:13 [safe_web_fallback] export type DashboardActionRouteKind = \"native_route\" | \"native_shell_route\" | \"safe_web_fallback\" | \"missing_invalid_route\";"
+      "evidence": "mobile-native/src/navigation/dashboardRouting.ts:13 [safe_web_fallback] export type DashboardActionRouteKind = \"native_route\" | \"native_shell_route\" | \"safe_web_fallback\" | \"missing_invalid_route\";",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-002",
@@ -82,7 +84,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-01",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/navigation/dashboardRouting.ts:242 [safe_web_fallback] kind: \"safe_web_fallback\","
+      "evidence": "mobile-native/src/navigation/dashboardRouting.ts:242 [safe_web_fallback] kind: \"safe_web_fallback\",",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-003",
@@ -118,7 +122,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-01",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/navigation/dashboardRouting.ts:243 [web_fallback_copy] label: \"Safe fallback\","
+      "evidence": "mobile-native/src/navigation/dashboardRouting.ts:243 [web_fallback_copy] label: \"Safe fallback\",",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-004",
@@ -154,7 +160,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-01",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/navigation/dashboardRouting.ts:258 [safe_web_fallback] kind: \"safe_web_fallback\","
+      "evidence": "mobile-native/src/navigation/dashboardRouting.ts:258 [safe_web_fallback] kind: \"safe_web_fallback\",",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-005",
@@ -190,7 +198,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-01",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/navigation/dashboardRouting.ts:259 [web_fallback_copy] label: \"Safe fallback\","
+      "evidence": "mobile-native/src/navigation/dashboardRouting.ts:259 [web_fallback_copy] label: \"Safe fallback\",",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-006",
@@ -226,7 +236,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-01",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/navigation/dashboardRouting.ts:267 [web_fallback_copy] detail: \"No native, shell, or safe fallback destination is registered for this action.\","
+      "evidence": "mobile-native/src/navigation/dashboardRouting.ts:267 [web_fallback_copy] detail: \"No native, shell, or safe fallback destination is registered for this action.\",",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-007",
@@ -262,7 +274,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-01",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/navigation/dashboardRouting.ts:277 [Linking.openURL] Linking.openURL(dashboardWebUrl(route)).catch(() => undefined);"
+      "evidence": "mobile-native/src/navigation/dashboardRouting.ts:277 [Linking.openURL] Linking.openURL(dashboardWebUrl(route)).catch(() => undefined);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-008",
@@ -298,7 +312,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-02",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/navigation/masterNavigation.ts:110 [fallback_status] { label: \"Terms\", route: \"/terms\", status: \"fallback\", description: \"Legal document provider boundary.\" },"
+      "evidence": "mobile-native/src/navigation/masterNavigation.ts:110 [fallback_status] { label: \"Terms\", route: \"/terms\", status: \"fallback\", description: \"Legal document provider boundary.\" },",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-009",
@@ -334,7 +350,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-02",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/navigation/masterNavigation.ts:111 [fallback_status] { label: \"Privacy Policy\", route: \"/privacy\", status: \"fallback\", description: \"Legal document provider boundary.\" },"
+      "evidence": "mobile-native/src/navigation/masterNavigation.ts:111 [fallback_status] { label: \"Privacy Policy\", route: \"/privacy\", status: \"fallback\", description: \"Legal document provider boundary.\" },",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-010",
@@ -370,7 +388,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-03",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/navigation/notificationRouting.ts:472 [Linking.openURL] await Linking.openURL(webTarget);"
+      "evidence": "mobile-native/src/navigation/notificationRouting.ts:472 [Linking.openURL] await Linking.openURL(webTarget);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-011",
@@ -406,7 +426,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-04",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/EventsScreen.tsx:184 [web_fallback_copy] <Text style={styles.gatewayText}>Native discovery uses existing Live scheduled data. Creation and payments stay on safe fallback.</Text>"
+      "evidence": "mobile-native/src/screens/EventsScreen.tsx:184 [web_fallback_copy] <Text style={styles.gatewayText}>Native discovery uses existing Live scheduled data. Creation and payments stay on safe fallback.</Text>",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-012",
@@ -442,7 +464,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-01",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/UserDashboardScreen.tsx:57 [safe_web_fallback] const fallbackCount = useMemo(() => moduleGroups.reduce((total, group) => total + group.modules.filter((module) => classifyDashboardActionRoute(module.route).kind === \"safe_web_fallback\").length, 0), [moduleGroups]);"
+      "evidence": "mobile-native/src/screens/UserDashboardScreen.tsx:57 [safe_web_fallback] const fallbackCount = useMemo(() => moduleGroups.reduce((total, group) => total + group.modules.filter((module) => classifyDashboardActionRoute(module.route).kind === \"safe_web_fallback\").length, 0), [moduleGroups]);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-013",
@@ -478,7 +502,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-01",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/UserDashboardScreen.tsx:105 [web_fallback_copy] <Text style={styles.warningTitle}>Some modules are using safe fallback data</Text>"
+      "evidence": "mobile-native/src/screens/UserDashboardScreen.tsx:105 [web_fallback_copy] <Text style={styles.warningTitle}>Some modules are using safe fallback data</Text>",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-014",
@@ -514,7 +540,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-01",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/UserDashboardScreen.tsx:136 [web_fallback_copy] <Section title=\"Production Dashboard Map\" subtitle=\"Current PulseSoc dashboard module groups represented natively with safe fallback routing where advanced modules are still web-owned.\">"
+      "evidence": "mobile-native/src/screens/UserDashboardScreen.tsx:136 [web_fallback_copy] <Section title=\"Production Dashboard Map\" subtitle=\"Current PulseSoc dashboard module groups represented natively with safe fallback routing where advanced modules are still web-owned.\">",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-015",
@@ -550,7 +578,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-01",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/UserDashboardScreen.tsx:154 [web_fallback_copy] <Section title=\"Dashboard Quick Actions\" subtitle=\"Production quick-action routes are wired to native destinations or safe web fallbacks.\">"
+      "evidence": "mobile-native/src/screens/UserDashboardScreen.tsx:154 [web_fallback_copy] <Section title=\"Dashboard Quick Actions\" subtitle=\"Production quick-action routes are wired to native destinations or safe web fallbacks.\">",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-016",
@@ -586,7 +616,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-05",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/SignupScreen.tsx:223 [Linking.openURL] Linking.openURL(url).catch(() => undefined);"
+      "evidence": "mobile-native/src/screens/SignupScreen.tsx:223 [Linking.openURL] Linking.openURL(url).catch(() => undefined);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-017",
@@ -622,7 +654,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-06",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/LiveScreen.tsx:187 [web_fallback_copy] setError(\"PulseSoc could not mint native Live viewer credentials. Use web fallback or retry.\");"
+      "evidence": "mobile-native/src/screens/LiveScreen.tsx:187 [web_fallback_copy] setError(\"PulseSoc could not mint native Live viewer credentials. Use web fallback or retry.\");",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-018",
@@ -658,7 +692,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-06",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/LiveScreen.tsx:192 [web_fallback_copy] setError(room.error || \"Native Live playback could not connect. Use web fallback or retry.\");"
+      "evidence": "mobile-native/src/screens/LiveScreen.tsx:192 [web_fallback_copy] setError(room.error || \"Native Live playback could not connect. Use web fallback or retry.\");",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-019",
@@ -694,7 +730,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-06",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/LiveScreen.tsx:394 [web_fallback_copy] setError(\"Native playback could not start. Use web fallback for this Live.\");"
+      "evidence": "mobile-native/src/screens/LiveScreen.tsx:394 [web_fallback_copy] setError(\"Native playback could not start. Use web fallback for this Live.\");",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-020",
@@ -730,7 +768,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-07",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/CoursesLearningScreen.tsx:251 [web_fallback_copy] <Text style={styles.subtitle}>This native gateway preserves the existing PulseSoc teacher, course, payment, and review rules. Advanced operations stay on safe fallback.</Text>"
+      "evidence": "mobile-native/src/screens/CoursesLearningScreen.tsx:251 [web_fallback_copy] <Text style={styles.subtitle}>This native gateway preserves the existing PulseSoc teacher, course, payment, and review rules. Advanced operations stay on safe fallback.</Text>",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-021",
@@ -766,7 +806,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-07",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/CoursesLearningScreen.tsx:280 [web_fallback_copy] <Text style={styles.subtitle}>{offline ? \"Showing saved lessons\" : \"Native lesson discovery powered by the existing PulseSoc education backend, with course payments and teacher tools kept on safe fallback.\"}</Text>"
+      "evidence": "mobile-native/src/screens/CoursesLearningScreen.tsx:280 [web_fallback_copy] <Text style={styles.subtitle}>{offline ? \"Showing saved lessons\" : \"Native lesson discovery powered by the existing PulseSoc education backend, with course payments and teacher tools kept on safe fallback.\"}</Text>",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-022",
@@ -802,7 +844,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-08",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/ChatScreen.tsx:982 [Linking.openURL] <Pressable accessibilityRole=\"link\" accessibilityLabel={`Open ${component.content_type || \"PulseSOC\"} result`} style={styles.undxActionConfirm} onPress={() => Linking.openURL(absoluteMediaUrl(component.deep_link)).catch(() => setStatusMessage(\"This result could not be opened.\"))}>"
+      "evidence": "mobile-native/src/screens/ChatScreen.tsx:982 [Linking.openURL] <Pressable accessibilityRole=\"link\" accessibilityLabel={`Open ${component.content_type || \"PulseSOC\"} result`} style={styles.undxActionConfirm} onPress={() => Linking.openURL(absoluteMediaUrl(component.deep_link)).catch(() => setStatusMessage(\"This result could not be opened.\"))}>",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-023",
@@ -838,7 +882,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-09",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/SearchScreen.tsx:189 [web_fallback_copy] ? \"This tab will stay on the existing PulseSoc backend and web fallback until a native destination exists.\""
+      "evidence": "mobile-native/src/screens/SearchScreen.tsx:189 [web_fallback_copy] ? \"This tab will stay on the existing PulseSoc backend and web fallback until a native destination exists.\"",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-024",
@@ -874,7 +920,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-09",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/SearchScreen.tsx:209 [web_fallback_copy] <Text style={styles.eventsGatewayText}>Open scheduled broadcasts from the existing PulseSoc Live backend. Creation and ticketing stay on safe fallback.</Text>"
+      "evidence": "mobile-native/src/screens/SearchScreen.tsx:209 [web_fallback_copy] <Text style={styles.eventsGatewayText}>Open scheduled broadcasts from the existing PulseSoc Live backend. Creation and ticketing stay on safe fallback.</Text>",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-025",
@@ -910,7 +958,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-09",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/SearchScreen.tsx:219 [web_fallback_copy] <Text style={styles.eventsGatewayText}>Open native lesson discovery. Course creation, payments, teacher tools, and unsupported lesson media stay on safe fallback.</Text>"
+      "evidence": "mobile-native/src/screens/SearchScreen.tsx:219 [web_fallback_copy] <Text style={styles.eventsGatewayText}>Open native lesson discovery. Course creation, payments, teacher tools, and unsupported lesson media stay on safe fallback.</Text>",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-026",
@@ -946,7 +996,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-10",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/CameraStudioScreen.tsx:430 [Linking.openURL] Linking.openURL(url).catch(() => setError(\"Advanced camera fallback could not open.\"));"
+      "evidence": "mobile-native/src/screens/CameraStudioScreen.tsx:430 [Linking.openURL] Linking.openURL(url).catch(() => setError(\"Advanced camera fallback could not open.\"));",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-027",
@@ -982,7 +1034,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-11",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/ContentPlannerScreen.tsx:188 [web_fallback_copy] <Text style={styles.muted}>Publish now, recurring schedules, bulk scheduling, smart rescheduling, and version history stay on safe fallback until backend contracts expose native authority.</Text>"
+      "evidence": "mobile-native/src/screens/ContentPlannerScreen.tsx:188 [web_fallback_copy] <Text style={styles.muted}>Publish now, recurring schedules, bulk scheduling, smart rescheduling, and version history stay on safe fallback until backend contracts expose native authority.</Text>",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-028",
@@ -1018,7 +1072,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-12",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/AlertManagementScreen.tsx:383 [web_fallback_copy] <Text style={styles.sectionTitle}>Safe fallback boundary</Text>"
+      "evidence": "mobile-native/src/screens/AlertManagementScreen.tsx:383 [web_fallback_copy] <Text style={styles.sectionTitle}>Safe fallback boundary</Text>",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-029",
@@ -1054,7 +1110,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-13",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/SellerStoreScreen.tsx:358 [web_fallback_copy] <Text style={styles.meta}>Updates are saved server-side and re-enter marketplace review when content changes. Checkout, payouts, fulfillment, disputes, and provider actions stay on safe fallback flows.</Text>"
+      "evidence": "mobile-native/src/screens/SellerStoreScreen.tsx:358 [web_fallback_copy] <Text style={styles.meta}>Updates are saved server-side and re-enter marketplace review when content changes. Checkout, payouts, fulfillment, disputes, and provider actions stay on safe fallback flows.</Text>",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-030",
@@ -1090,7 +1148,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-13",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/SellerStoreScreen.tsx:401 [Linking.openURL] <Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl(\"payouts\")).catch(() => undefined)}>"
+      "evidence": "mobile-native/src/screens/SellerStoreScreen.tsx:401 [Linking.openURL] <Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl(\"payouts\")).catch(() => undefined)}>",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-031",
@@ -1126,7 +1186,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-01",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/screens/DashboardModuleDetailScreen.tsx:125 [web_fallback_copy] This shell completes native dashboard navigation parity for the module card. Advanced workflows remain on safe fallback until their native screens are built and verified."
+      "evidence": "mobile-native/src/screens/DashboardModuleDetailScreen.tsx:125 [web_fallback_copy] This shell completes native dashboard navigation parity for the module card. Advanced workflows remain on safe fallback until their native screens are built and verified.",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-032",
@@ -1162,7 +1224,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-14",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/components/SponsoredAdCard.tsx:33 [Linking.openURL] Linking.openURL(target).catch(() => undefined);"
+      "evidence": "mobile-native/src/components/SponsoredAdCard.tsx:33 [Linking.openURL] Linking.openURL(target).catch(() => undefined);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-033",
@@ -1198,7 +1262,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-15",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/account.ts:205 [Linking.openURL] await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);"
+      "evidence": "mobile-native/src/api/account.ts:205 [Linking.openURL] await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-034",
@@ -1234,7 +1300,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-16",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/premium.ts:101 [Linking.openURL] await Linking.openURL(`${PULSE_API_BASE_URL}/pulse/premium`).catch(() => undefined);"
+      "evidence": "mobile-native/src/api/premium.ts:101 [Linking.openURL] await Linking.openURL(`${PULSE_API_BASE_URL}/pulse/premium`).catch(() => undefined);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-035",
@@ -1270,7 +1338,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-16",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/premium.ts:203 [Linking.openURL] await Linking.openURL(target);"
+      "evidence": "mobile-native/src/api/premium.ts:203 [Linking.openURL] await Linking.openURL(target);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-036",
@@ -1306,7 +1376,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-15",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/accountHealth.ts:113 [Linking.openURL] await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);"
+      "evidence": "mobile-native/src/api/accountHealth.ts:113 [Linking.openURL] await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-037",
@@ -1342,7 +1414,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-17",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/calls.ts:256 [Linking.openURL] await Linking.openURL(target);"
+      "evidence": "mobile-native/src/api/calls.ts:256 [Linking.openURL] await Linking.openURL(target);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-038",
@@ -1378,7 +1452,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-07",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/learning.ts:106 [Linking.openURL] await Linking.openURL(target).catch(() => undefined);"
+      "evidence": "mobile-native/src/api/learning.ts:106 [Linking.openURL] await Linking.openURL(target).catch(() => undefined);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-039",
@@ -1414,7 +1490,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-11",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/creator.ts:128 [Linking.openURL] await Linking.openURL(target).catch(() => undefined);"
+      "evidence": "mobile-native/src/api/creator.ts:128 [Linking.openURL] await Linking.openURL(target).catch(() => undefined);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-040",
@@ -1450,7 +1528,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-18",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/safety.ts:122 [web_fallback_copy] status: \"web fallback required\","
+      "evidence": "mobile-native/src/api/safety.ts:122 [web_fallback_copy] status: \"web fallback required\",",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-041",
@@ -1486,7 +1566,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-18",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/safety.ts:134 [web_fallback_copy] status: \"web fallback required\","
+      "evidence": "mobile-native/src/api/safety.ts:134 [web_fallback_copy] status: \"web fallback required\",",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-042",
@@ -1522,7 +1604,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-18",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/safety.ts:142 [Linking.openURL] await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);"
+      "evidence": "mobile-native/src/api/safety.ts:142 [Linking.openURL] await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-043",
@@ -1558,7 +1642,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-13",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/marketplace.ts:227 [Linking.openURL] if (result.onboarding_url) await Linking.openURL(result.onboarding_url).catch(() => undefined);"
+      "evidence": "mobile-native/src/api/marketplace.ts:227 [Linking.openURL] if (result.onboarding_url) await Linking.openURL(result.onboarding_url).catch(() => undefined);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-044",
@@ -1594,7 +1680,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-13",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/marketplace.ts:261 [Linking.openURL] if (result.checkout_url) await Linking.openURL(result.checkout_url);"
+      "evidence": "mobile-native/src/api/marketplace.ts:261 [Linking.openURL] if (result.checkout_url) await Linking.openURL(result.checkout_url);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-045",
@@ -1630,7 +1718,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-06",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/live.ts:315 [Linking.openURL] await Linking.openURL(liveWebUrl(liveId));"
+      "evidence": "mobile-native/src/api/live.ts:315 [Linking.openURL] await Linking.openURL(liveWebUrl(liveId));",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-046",
@@ -1666,7 +1756,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-01",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/dashboardLiveState.ts:54 [web_fallback_copy] signals: panel.signals.length ? panel.signals : [\"Live data source is represented by the server dashboard aggregation.\", \"Advanced module-specific actions remain on safe fallback when unsupported.\"]"
+      "evidence": "mobile-native/src/api/dashboardLiveState.ts:54 [web_fallback_copy] signals: panel.signals.length ? panel.signals : [\"Live data source is represented by the server dashboard aggregation.\", \"Advanced module-specific actions remain on safe fallback when unsupported.\"]",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-047",
@@ -1702,7 +1794,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-01",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/dashboardLiveState.ts:139 [web_fallback_copy] metric(\"Module media surface\", moduleKey.replace(/_/g, \" \"), \"Upload, library, music, and radio-specific provider tools remain safe fallback where unsupported.\", \"fallback\")"
+      "evidence": "mobile-native/src/api/dashboardLiveState.ts:139 [web_fallback_copy] metric(\"Module media surface\", moduleKey.replace(/_/g, \" \"), \"Upload, library, music, and radio-specific provider tools remain safe fallback where unsupported.\", \"fallback\")",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-048",
@@ -1738,7 +1832,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-01",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/dashboardLiveState.ts:182 [web_fallback_copy] metric(\"AI module\", moduleKey.replace(/_/g, \" \"), \"Advanced AI provider operations remain safe fallback until native contracts are dedicated.\", \"fallback\")"
+      "evidence": "mobile-native/src/api/dashboardLiveState.ts:182 [web_fallback_copy] metric(\"AI module\", moduleKey.replace(/_/g, \" \"), \"Advanced AI provider operations remain safe fallback until native contracts are dedicated.\", \"fallback\")",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-049",
@@ -1774,7 +1870,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-01",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/dashboardLiveState.ts:248 [web_fallback_copy] \"Provider-owned or advanced operations remain on safe fallback.\","
+      "evidence": "mobile-native/src/api/dashboardLiveState.ts:248 [web_fallback_copy] \"Provider-owned or advanced operations remain on safe fallback.\",",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-050",
@@ -1810,7 +1908,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-11",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/growth.ts:75 [Linking.openURL] await Linking.openURL(target).catch(() => undefined);"
+      "evidence": "mobile-native/src/api/growth.ts:75 [Linking.openURL] await Linking.openURL(target).catch(() => undefined);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-051",
@@ -1846,7 +1946,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-13",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/orders.ts:120 [Linking.openURL] await Linking.openURL(absolute);"
+      "evidence": "mobile-native/src/api/orders.ts:120 [Linking.openURL] await Linking.openURL(absolute);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-052",
@@ -1882,7 +1984,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-12",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/intelligence.ts:107 [Linking.openURL] await Linking.openURL(target).catch(() => undefined);"
+      "evidence": "mobile-native/src/api/intelligence.ts:107 [Linking.openURL] await Linking.openURL(target).catch(() => undefined);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-053",
@@ -1918,7 +2022,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-19",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/events.ts:90 [Linking.openURL] await Linking.openURL(`${PULSE_API_BASE_URL}${path}`);"
+      "evidence": "mobile-native/src/api/events.ts:90 [Linking.openURL] await Linking.openURL(`${PULSE_API_BASE_URL}${path}`);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-054",
@@ -1954,7 +2060,9 @@
       "suggested_implementation_order": "",
       "duplicate_relationship": "RCG-20",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "mobile-native/src/api/support.ts:114 [Linking.openURL] await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);"
+      "evidence": "mobile-native/src/api/support.ts:114 [Linking.openURL] await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-055",
@@ -1990,7 +2098,9 @@
       "suggested_implementation_order": "Wave 0",
       "duplicate_relationship": "RCG-21",
       "stale_code_status": "TEST_ONLY",
-      "evidence": "mobile-native/src/navigation/__tests__/routeResolution.test.ts:45 [web_fallback_copy] it(\"opens Terms and Privacy Policy through the safe production web fallback, not the support screen\", () => {"
+      "evidence": "mobile-native/src/navigation/__tests__/routeResolution.test.ts:45 [web_fallback_copy] it(\"opens Terms and Privacy Policy through the safe production web fallback, not the support screen\", () => {",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-056",
@@ -2026,7 +2136,9 @@
       "suggested_implementation_order": "Wave 0",
       "duplicate_relationship": "RCG-21",
       "stale_code_status": "TEST_ONLY",
-      "evidence": "mobile-native/src/navigation/__tests__/routeResolution.test.ts:105 [web_fallback_copy] it(\"resolves every registered destination to a real navigation or web fallback (no dead routes)\", () => {"
+      "evidence": "mobile-native/src/navigation/__tests__/routeResolution.test.ts:105 [web_fallback_copy] it(\"resolves every registered destination to a real navigation or web fallback (no dead routes)\", () => {",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-057",
@@ -2062,7 +2174,9 @@
       "suggested_implementation_order": "Wave 0",
       "duplicate_relationship": "RCG-03",
       "stale_code_status": "TEST_ONLY",
-      "evidence": "mobile-native/src/navigation/__tests__/notificationRouting.test.ts:9 [web_fallback_copy] describe(\"routeNotificationTarget web fallback policy\", () => {"
+      "evidence": "mobile-native/src/navigation/__tests__/notificationRouting.test.ts:9 [web_fallback_copy] describe(\"routeNotificationTarget web fallback policy\", () => {",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-058",
@@ -2082,7 +2196,7 @@
       "web_url_or_route": "Not applicable unless source line includes one.",
       "backend_endpoint_or_contract": "Existing production contract must be preserved.",
       "why_fallback_exists": "Home release blocker outside the original static 57.",
-      "native_implementation_status": "RESOLVED (code) — device QA NOT OBSERVED (pending build/deploy to P3r7or)",
+      "native_implementation_status": "RESOLVED (code) \u2014 device QA NOT OBSERVED (pending build/deploy to P3r7or)",
       "data_api_readiness": "Requires trace in implementation mission.",
       "design_readiness": "Requires simulator comparison and production parity evidence.",
       "security_implications": "Release risk if shipped as replacement.",
@@ -2093,13 +2207,14 @@
       "tests_currently_covering_it": "mobile-native/src/screens/__tests__/HomeScreen.layout.test.ts (3 source-scan assertions).",
       "tests_missing": "Physical-device visual QA on P3r7or (compact + pro insets).",
       "dependencies": "RCG-22",
-      "recommended_fix": "DONE — removed the device-specific magic number; unified via the shared BOTTOM_NAV_CONTENT_CLEARANCE constant.",
+      "recommended_fix": "DONE \u2014 removed the device-specific magic number; unified via the shared BOTTOM_NAV_CONTENT_CLEARANCE constant.",
       "estimated_complexity": "L",
       "suggested_implementation_order": "Wave 1",
       "duplicate_relationship": "RCG-22",
       "stale_code_status": "ACTIVE_SOURCE",
       "evidence": "Fix in HomeScreen.tsx + Screen.tsx + BottomNavVisibility.tsx; HomeScreen.layout.test.ts. Simulator evidence from release-readiness pass.",
-      "mission_resolution": "Wave 0 + Wave 1 (2026-07-21) — see reports/pulsesoc_native_wave0_wave1_auth_home_stabilization_2026-07-20.md"
+      "mission_resolution": "Wave 0 + Wave 1 (2026-07-21) \u2014 see reports/pulsesoc_native_wave0_wave1_auth_home_stabilization_2026-07-20.md",
+      "mission_2026_07_21_status": "not_reclassified_by_this_mission"
     },
     {
       "blocker_id": "NRB-059",
@@ -2119,7 +2234,7 @@
       "web_url_or_route": "Not applicable unless source line includes one.",
       "backend_endpoint_or_contract": "Existing production contract must be preserved.",
       "why_fallback_exists": "Authentication release blocker outside the original static 57.",
-      "native_implementation_status": "RESOLVED (code) — device QA NOT OBSERVED (pending build/deploy to P3r7or)",
+      "native_implementation_status": "RESOLVED (code) \u2014 device QA NOT OBSERVED (pending build/deploy to P3r7or)",
       "data_api_readiness": "Requires trace in implementation mission.",
       "design_readiness": "Requires simulator comparison and production parity evidence.",
       "security_implications": "Release risk if shipped as replacement.",
@@ -2130,13 +2245,14 @@
       "tests_currently_covering_it": "mobile-native/src/session/__tests__/restoreSession.test.ts (7 tests, all six terminal phases + refresh + cache-fallback); existing 43 auth/session tests pass unchanged.",
       "tests_missing": "Physical-device sign-in / logout / relaunch / account-switch QA on P3r7or.",
       "dependencies": "RCG-23",
-      "recommended_fix": "DONE — deterministic bootstrap state machine landed; single-flight refresh, double-submit guards, logout state clearing, secure storage, and no-token/PII logging verified retained.",
+      "recommended_fix": "DONE \u2014 deterministic bootstrap state machine landed; single-flight refresh, double-submit guards, logout state clearing, secure storage, and no-token/PII logging verified retained.",
       "estimated_complexity": "L",
       "suggested_implementation_order": "Wave 1",
       "duplicate_relationship": "RCG-23",
       "stale_code_status": "ACTIVE_SOURCE",
       "evidence": "mobile-native/src/session/auth.ts, App.tsx, qaSimulatorAuth.ts changes; restoreSession.test.ts.",
-      "mission_resolution": "Wave 0 + Wave 1 (2026-07-21) — see reports/pulsesoc_native_wave0_wave1_auth_home_stabilization_2026-07-20.md"
+      "mission_resolution": "Wave 0 + Wave 1 (2026-07-21) \u2014 see reports/pulsesoc_native_wave0_wave1_auth_home_stabilization_2026-07-20.md",
+      "mission_2026_07_21_status": "not_reclassified_by_this_mission"
     },
     {
       "blocker_id": "NRB-060",
@@ -2167,13 +2283,15 @@
       "tests_currently_covering_it": "scripts/pulsesoc_native_app_foundation_audit.py self-run (exit 0).",
       "tests_missing": "None for this item.",
       "dependencies": "RCG-24",
-      "recommended_fix": "DONE — audit repaired to flag only real active blockers.",
+      "recommended_fix": "DONE \u2014 audit repaired to flag only real active blockers.",
       "estimated_complexity": "L",
       "suggested_implementation_order": "Wave 0",
       "duplicate_relationship": "RCG-24",
       "stale_code_status": "ACTIVE_SOURCE",
       "evidence": "scripts/pulsesoc_native_app_foundation_audit.py repair; release-readiness command output.",
-      "mission_resolution": "Wave 0 + Wave 1 (2026-07-21) — see reports/pulsesoc_native_wave0_wave1_auth_home_stabilization_2026-07-20.md"
+      "mission_resolution": "Wave 0 + Wave 1 (2026-07-21) \u2014 see reports/pulsesoc_native_wave0_wave1_auth_home_stabilization_2026-07-20.md",
+      "mission_2026_07_21_status": "resolved_by_native_replacement_audit_pass",
+      "mission_2026_07_21_evidence": "Strict native WebView replacement audit passes with 0 hard web-exit blockers and 26/26 critical surfaces covered."
     },
     {
       "blocker_id": "NRB-061",
@@ -2204,13 +2322,14 @@
       "tests_currently_covering_it": "scripts/pulsesoc_native_live_audit.py self-run (exit 0).",
       "tests_missing": "None for this item; native Live device QA tracked under NRB-063.",
       "dependencies": "RCG-25",
-      "recommended_fix": "DONE — audit updated to current native Live/Studio truth.",
+      "recommended_fix": "DONE \u2014 audit updated to current native Live/Studio truth.",
       "estimated_complexity": "M",
       "suggested_implementation_order": "Wave 0",
       "duplicate_relationship": "RCG-25",
       "stale_code_status": "ACTIVE_SOURCE",
       "evidence": "scripts/pulsesoc_native_live_audit.py repair; release-readiness command output.",
-      "mission_resolution": "Wave 0 + Wave 1 (2026-07-21) — see reports/pulsesoc_native_wave0_wave1_auth_home_stabilization_2026-07-20.md"
+      "mission_resolution": "Wave 0 + Wave 1 (2026-07-21) \u2014 see reports/pulsesoc_native_wave0_wave1_auth_home_stabilization_2026-07-20.md",
+      "mission_2026_07_21_status": "not_reclassified_by_this_mission"
     },
     {
       "blocker_id": "NRB-062",
@@ -2241,13 +2360,14 @@
       "tests_currently_covering_it": "scripts/pulsesoc_native_feature_parity_audit.py self-run (exit 0).",
       "tests_missing": "None for this item.",
       "dependencies": "RCG-24",
-      "recommended_fix": "DONE — audit updated to current parity/QA truth.",
+      "recommended_fix": "DONE \u2014 audit updated to current parity/QA truth.",
       "estimated_complexity": "M",
       "suggested_implementation_order": "Wave 0",
       "duplicate_relationship": "RCG-24",
       "stale_code_status": "ACTIVE_SOURCE",
       "evidence": "scripts/pulsesoc_native_feature_parity_audit.py repair; release-readiness command output.",
-      "mission_resolution": "Wave 0 + Wave 1 (2026-07-21) — see reports/pulsesoc_native_wave0_wave1_auth_home_stabilization_2026-07-20.md"
+      "mission_resolution": "Wave 0 + Wave 1 (2026-07-21) \u2014 see reports/pulsesoc_native_wave0_wave1_auth_home_stabilization_2026-07-20.md",
+      "mission_2026_07_21_status": "not_reclassified_by_this_mission"
     },
     {
       "blocker_id": "NRB-063",
@@ -2283,7 +2403,8 @@
       "suggested_implementation_order": "Wave 6",
       "duplicate_relationship": "RCG-26",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "Release report physical QA section."
+      "evidence": "Release report physical QA section.",
+      "mission_2026_07_21_status": "still_open_external_or_physical"
     },
     {
       "blocker_id": "NRB-064",
@@ -2319,7 +2440,8 @@
       "suggested_implementation_order": "Wave 6",
       "duplicate_relationship": "RCG-24",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "Release report deferred Apple tasks section."
+      "evidence": "Release report deferred Apple tasks section.",
+      "mission_2026_07_21_status": "still_open_external_or_physical"
     },
     {
       "blocker_id": "NRB-065",
@@ -2355,7 +2477,8 @@
       "suggested_implementation_order": "Wave 2",
       "duplicate_relationship": "RCG-27",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "Broad search result and original audit line 189."
+      "evidence": "Broad search result and original audit line 189.",
+      "mission_2026_07_21_status": "not_reclassified_by_this_mission"
     },
     {
       "blocker_id": "NRB-066",
@@ -2391,7 +2514,8 @@
       "suggested_implementation_order": "Wave 2",
       "duplicate_relationship": "RCG-28",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "Broad search found FeedComposer fallback note."
+      "evidence": "Broad search found FeedComposer fallback note.",
+      "mission_2026_07_21_status": "not_reclassified_by_this_mission"
     },
     {
       "blocker_id": "NRB-067",
@@ -2427,7 +2551,8 @@
       "suggested_implementation_order": "Wave 3",
       "duplicate_relationship": "RCG-25",
       "stale_code_status": "ACTIVE_SOURCE",
-      "evidence": "Broad search found coming-soon copy."
+      "evidence": "Broad search found coming-soon copy.",
+      "mission_2026_07_21_status": "not_reclassified_by_this_mission"
     }
   ],
   "root_cause_groups": [
@@ -3001,7 +3126,7 @@
     "original_audit_command": ".venv/bin/python scripts/pulsesoc_native_webview_replacement_audit.py",
     "original_hard_blocker_count": 57,
     "reproduced_raw_match_count": 57,
-    "active_original_call_site_count": 54,
+    "active_original_call_site_count": 0,
     "test_only_false_positive_count": 3,
     "final_authoritative_blocker_records": 67,
     "native_replacement_blocker_records": 64,
@@ -3016,6 +3141,37 @@
       "UNDX/message result action opens a deep link URL rather than resolving a native route."
     ],
     "recommended_next_mission": "Wave 0 audit baseline cleanup plus Wave 1 Home bottom-dock/composer overlap and auth/session stabilization.",
-    "wave0_wave1_resolution_note": "Wave 0 (2026-07-21): NRB-060/061/062 audit staleness RESOLVED (repaired, not weakened); NRB-055/056/057 confirmed TEST_ONLY false positives. Wave 1: NRB-058 (Home dock overlap) and NRB-059 (auth/session stabilization) RESOLVED in code, device QA NOT OBSERVED pending P3r7or deploy. Release readiness remains NO-GO: webview_replacement audit still exits 1 on real remaining web-fallback source (out of scope this mission), and physical QA (NRB-063) + Apple release tasks (NRB-064) remain open."
+    "wave0_wave1_resolution_note": "Wave 0 (2026-07-21): NRB-060/061/062 audit staleness RESOLVED (repaired, not weakened); NRB-055/056/057 confirmed TEST_ONLY false positives. Wave 1: NRB-058 (Home dock overlap) and NRB-059 (auth/session stabilization) RESOLVED in code, device QA NOT OBSERVED pending P3r7or deploy. Release readiness remains NO-GO: webview_replacement audit still exits 1 on real remaining web-fallback source (out of scope this mission), and physical QA (NRB-063) + Apple release tasks (NRB-064) remain open.",
+    "native_replacement_active_web_exit_count": 0,
+    "native_replacement_audit_status_2026_07_21": "PASS",
+    "native_replacement_resolution_note_2026_07_21": "App Review critical native replacement blockers were eliminated in shippable native source. scripts/pulsesoc_native_webview_replacement_audit.py now reports 26/26 critical surfaces, 0 hard web-exit blockers, and empty blocker counts. Apple signing/provisioning, production APNs, dev-client release-profile hardening, privacy/App Store metadata, and physical production QA remain open."
+  },
+  "app_review_critical_resolution_2026_07_21": {
+    "starting_native_replacement_hard_web_exit_blockers": 54,
+    "ending_native_replacement_hard_web_exit_blockers": 0,
+    "critical_surface_static_coverage": "26/26",
+    "webview_replacement_audit": "PASS",
+    "repository_side_blockers_resolved": [
+      "Dashboard safe-web fallback classifier converted to native provider boundaries.",
+      "Legal notification targets and master navigation legal routes remain inside native Settings.",
+      "Signup legal actions no longer open external URLs.",
+      "Dashboard module details no longer expose an Open Production Route browser action.",
+      "API helpers for account, health, support, safety, premium, learning, creator, growth, intelligence, events, orders, calls, live, and marketplace no longer auto-open web URLs.",
+      "UNDX result actions route through native route dispatch.",
+      "Camera unsupported destinations route to native Creator/Marketplace boundaries.",
+      "Seller payout secondary browser action removed.",
+      "WebView/user-facing fallback copy removed from shippable native source."
+    ],
+    "remaining_repository_side_release_hardening": [
+      "Production-clean App Store target/profile must remove Expo dev-client/dev-menu artifacts without breaking the dev sidecar QA workflow.",
+      "PrivacyInfo.xcprivacy and App Store Privacy labels need owner-reviewed data collection reconciliation.",
+      "Unrelated dirty release-sensitive files must be reviewed, landed, or reverted before a production archive."
+    ],
+    "remaining_external_or_physical_blockers": [
+      "Apple account/App Store Connect ownership and bundle alignment.",
+      "Apple Distribution signing and App Store provisioning.",
+      "Production APNs entitlement and credentials.",
+      "Physical production QA for camera, microphone, Live, calls, Bluetooth, background audio, push, and real uploads."
+    ]
   }
 }

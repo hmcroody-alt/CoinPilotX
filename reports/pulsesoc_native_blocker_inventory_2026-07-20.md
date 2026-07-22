@@ -1980,3 +1980,36 @@ New release blocker cluster:
 - `ASR-012`: App Store Connect listing, metadata, build train, and IAP state require owner verification.
 
 These blockers are additive to the native replacement blocker inventory and prevent App Store upload/replacement today.
+
+## App Review Critical Cleanup Addendum - 2026-07-21
+
+The strict native replacement blocker cluster is now resolved in repository code.
+
+- Starting hard web-exit blockers: `54`
+- Ending hard web-exit blockers: `0`
+- Critical surfaces with static native coverage: `26/26`
+- `scripts/pulsesoc_native_webview_replacement_audit.py`: `PASS`
+- Test-only findings: `0`
+- Blocker counts: `{}`
+
+Resolved root-cause groups:
+
+- Dashboard fallback route classifier and browser handoff paths.
+- Legal document notification/browser exits.
+- Signup legal browser exits.
+- Dashboard module detail browser action.
+- UNDX result browser opens.
+- Camera unsupported-destination browser exits.
+- Seller payout browser action.
+- Provider API helpers that auto-opened account, safety, support, premium, learning, creator, growth, intelligence, event, order, call, Live, marketplace checkout, or payout URLs.
+- Shippable native copy containing WebView or safe-web fallback language.
+
+Remaining blocker groups are no longer native web-exit blockers:
+
+- Apple account/App Store Connect ownership.
+- Bundle alignment with the existing App Store app.
+- Apple Distribution signing and App Store provisioning.
+- Production APNs.
+- Production-clean release packaging without dev-client/dev-menu artifacts.
+- Privacy/App Store metadata reconciliation.
+- Physical production QA.

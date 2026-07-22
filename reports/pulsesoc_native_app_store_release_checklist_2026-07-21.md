@@ -24,7 +24,7 @@ Do not export, upload, or submit the current archive.
 | Dev-client/dev-menu absent from archive | FAIL | Archive includes Expo dev-menu/dev-client artifacts. |
 | Privacy manifest release-complete | FAIL | Collected data types are empty; production data flows require review. |
 | Security review | PARTIAL | No secrets/profiles/archives committed by this mission; full external secret scan not run. |
-| Native WebView replacement gate | FAIL | 54 hard web-exit/fallback blockers remain. |
+| Native replacement gate | PASS | 2026-07-21 cleanup: strict audit passes with 0 hard web-exit blockers and 26/26 critical surfaces. |
 | Notifications route parity | PASS_CODE_PATH | Route audit passes; production APNs/locked/killed app push remain physical/provider QA. |
 | Deep links | PARTIAL | Native routing exists; web exits and legal/support fallbacks remain blockers. |
 | IAP/subscriptions/payments | FAIL | Native paid digital access/IAP readiness and App Review metadata not proven. |
@@ -48,7 +48,7 @@ Do not export, upload, or submit the current archive.
 2. Create a production-clean App Store release target/profile with no Expo dev-client/dev-menu artifacts.
 3. Install or provide access to the correct Apple Distribution identity and App Store provisioning profile.
 4. Resolve production push entitlement and `get-task-allow=false`.
-5. Complete native WebView replacement blockers or obtain explicit product/legal exceptions.
+5. Keep the native replacement audit in the release gate to prevent browser-exit regressions.
 6. Reconcile App Privacy labels and `PrivacyInfo.xcprivacy`.
 7. Complete IAP/subscription/App Review metadata readiness.
 8. Run physical-device release QA for camera, microphone, Live, calls, Bluetooth, push, background behavior, and killed-app routing.

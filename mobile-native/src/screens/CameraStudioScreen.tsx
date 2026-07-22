@@ -1,6 +1,6 @@
 import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions } from "expo-camera";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   CameraMode,
   CameraTarget,
@@ -11,7 +11,6 @@ import {
 } from "../api/camera";
 import { createPost, listFeed, PulsePost } from "../api/feed";
 import { createReel, listReels, PulseReel } from "../api/reels";
-import { PULSE_API_BASE_URL } from "../api/config";
 import { sendConversationMessage, uploadMessengerMedia } from "../api/messenger";
 import { uploadProfileAvatar, uploadProfileCover } from "../api/profile";
 import { createStatus, StatusVisibility } from "../api/status";
@@ -48,18 +47,18 @@ type DestinationOption = {
   target: CameraTarget;
   mode: CameraMode;
   helper: string;
-  webPath: string;
+  providerRoute: string;
 };
 
 const destinations: DestinationOption[] = [
-  { key: "feed", label: "Feed", target: "feed", mode: "photo", helper: "Post to PulseSoc feed", webPath: "/pulse/camera/post" },
-  { key: "status", label: "Status", target: "status", mode: "status", helper: "Publish a Status", webPath: "/pulse/camera/status" },
-  { key: "reel", label: "Reel", target: "reel", mode: "reel", helper: "Create a Reel", webPath: "/pulse/camera/reel" },
-  { key: "avatar", label: "Avatar", target: "avatar", mode: "photo", helper: "Update profile photo", webPath: "/pulse/camera/photo?target=avatar" },
-  { key: "cover", label: "Cover", target: "cover", mode: "photo", helper: "Update profile cover", webPath: "/pulse/camera/photo?target=cover" },
-  { key: "message", label: "Message", target: "message", mode: "photo", helper: "Send to Messenger", webPath: "/pulse/camera/photo?target=message" },
-  { key: "creator", label: "Creator", target: "creator", mode: "photo", helper: "Creator tools fallback", webPath: "/pulse/camera" },
-  { key: "marketplace", label: "Market", target: "marketplace", mode: "photo", helper: "Marketplace fallback", webPath: "/pulse/camera" }
+  { key: "feed", label: "Feed", target: "feed", mode: "photo", helper: "Post to PulseSoc feed", providerRoute: "/pulse/camera/post" },
+  { key: "status", label: "Status", target: "status", mode: "status", helper: "Publish a Status", providerRoute: "/pulse/camera/status" },
+  { key: "reel", label: "Reel", target: "reel", mode: "reel", helper: "Create a Reel", providerRoute: "/pulse/camera/reel" },
+  { key: "avatar", label: "Avatar", target: "avatar", mode: "photo", helper: "Update profile photo", providerRoute: "/pulse/camera/photo?target=avatar" },
+  { key: "cover", label: "Cover", target: "cover", mode: "photo", helper: "Update profile cover", providerRoute: "/pulse/camera/photo?target=cover" },
+  { key: "message", label: "Message", target: "message", mode: "photo", helper: "Send to Messenger", providerRoute: "/pulse/camera/photo?target=message" },
+  { key: "creator", label: "Creator", target: "creator", mode: "photo", helper: "Creator tools", providerRoute: "/pulse/camera" },
+  { key: "marketplace", label: "Market", target: "marketplace", mode: "photo", helper: "Marketplace tools", providerRoute: "/pulse/camera" }
 ];
 
 const visibilityOptions: Array<{ label: string; value: StatusVisibility }> = [
@@ -159,7 +158,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
     if (!cameraPermission?.granted) {
       const next = await requestCameraPermission();
       if (!next.granted) {
-        setError("Camera permission is required. Gallery fallback is still available.");
+        setError("Camera permission is required. Gallery upload is still available.");
         return false;
       }
     }
@@ -177,7 +176,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
       return;
     }
     if (nativeUnsupportedDestinations.has(destination.key)) {
-      openWebFallback();
+      openProviderBoundary();
       return;
     }
     const ready = await ensureCameraReady();
@@ -297,7 +296,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
       return;
     }
     if (nativeUnsupportedDestinations.has(destination.key)) {
-      openWebFallback();
+      openProviderBoundary();
       return;
     }
     setPublishing(true);
@@ -425,9 +424,16 @@ export function CameraStudioScreen({ route, navigation }: Props) {
     else if (destination.key === "avatar" || destination.key === "cover") navigation.navigate("ProfileEdit");
   }
 
-  function openWebFallback() {
-    const url = `${PULSE_API_BASE_URL}${destination.webPath}`;
-    Linking.openURL(url).catch(() => setError("Advanced camera fallback could not open."));
+  function openProviderBoundary() {
+    if (destination.key === "creator") {
+      navigation.navigate("CreatorStudio");
+      return;
+    }
+    if (destination.key === "marketplace") {
+      navigation.navigate("MarketplaceCreateGateway", { title: "Create Listing" });
+      return;
+    }
+    setError("This camera destination is held inside a native provider boundary until its contract is available.");
   }
 
   return (

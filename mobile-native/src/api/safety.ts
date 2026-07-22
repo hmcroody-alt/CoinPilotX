@@ -1,6 +1,4 @@
-import { Linking } from "react-native";
 import { readJsonCache, writeJsonCache } from "../core/cache";
-import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
 import { blockPulseUser, listSupportTickets, reportPulseTarget, SupportTicket } from "./support";
 
@@ -119,7 +117,7 @@ export async function recordMuteHandoff(input: { target: string; duration: strin
     targetType: "user",
     targetLabel: input.target,
     reason: `${input.duration}: ${input.reason}`,
-    status: "web fallback required",
+    status: "native provider boundary",
     message: "Native user mute is not exposed as a server-authoritative API yet.",
     serverAuthoritative: false
   });
@@ -131,7 +129,7 @@ export async function recordUnblockHandoff(input: { target: string; reason: stri
     targetType: "user",
     targetLabel: input.target,
     reason: input.reason || "User requested unblock controls.",
-    status: "web fallback required",
+    status: "native provider boundary",
     message: "Unblock requires protected PulseSoc network safety controls until a user-safe API is exposed.",
     serverAuthoritative: false
   });
@@ -139,7 +137,12 @@ export async function recordUnblockHandoff(input: { target: string; reason: stri
 
 export async function openSafetyWebFallback(path = "/dashboard/network/network-security") {
   const safePath = path.startsWith("/") && !path.startsWith("//") ? path : "/dashboard/network/network-security";
-  await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);
+  return {
+    ok: false,
+    path: safePath,
+    status: "native_provider_boundary",
+    message: "Safety controls remain inside the native Safety Hub until this protected mutation is available."
+  };
 }
 
 async function loadSafetyActions() {

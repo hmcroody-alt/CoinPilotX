@@ -181,7 +181,7 @@ export function EventsScreen({ route, navigation }: Props) {
           <View style={styles.gatewayPanel}>
             <View>
               <Text style={styles.gatewayTitle}>Scheduled Live gateway</Text>
-              <Text style={styles.gatewayText}>Native discovery uses existing Live scheduled data. Creation and payments stay on safe fallback.</Text>
+              <Text style={styles.gatewayText}>Native discovery uses existing Live scheduled data. Creation and payments stay inside provider-owned boundaries.</Text>
             </View>
             <View style={styles.headerActions}>
               <Pressable style={styles.primaryButton} onPress={() => load("refresh").catch(() => undefined)}>

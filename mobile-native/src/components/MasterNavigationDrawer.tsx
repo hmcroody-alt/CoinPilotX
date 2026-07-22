@@ -157,7 +157,7 @@ function DrawerIdentity({ identity }: { identity: GlobalNavigationIdentity }) {
 }
 
 function statusStyle(status: MasterNavigationAction["status"]) {
-  if (status === "fallback") return styles.drawerStatusFallback;
+  if (status === "provider") return styles.drawerStatusFallback;
   if (status === "gated") return styles.drawerStatusGated;
   if (status === "shell") return styles.drawerStatusShell;
   return styles.drawerStatusNative;

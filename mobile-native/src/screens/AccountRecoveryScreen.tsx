@@ -43,7 +43,7 @@ export function AccountRecoveryScreen({ navigation }: Props) {
     <View style={styles.root}>
       <Text style={styles.eyebrow}>EXISTING PULSESOC ACCOUNT</Text>
       <Text style={styles.title}>Recover access</Text>
-      <Text style={styles.copy}>Use the same email connected to your current WebView account. Recovery never creates a new user or profile.</Text>
+      <Text style={styles.copy}>Use the same email connected to your current PulseSoc account. Recovery never creates a new user or profile.</Text>
       <TextInput
         accessibilityLabel="Existing account email"
         autoCapitalize="none"

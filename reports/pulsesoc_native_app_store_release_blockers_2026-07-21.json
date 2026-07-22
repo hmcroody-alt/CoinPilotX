@@ -79,10 +79,10 @@
       "id": "ASR-006",
       "severity": "P0",
       "category": "native_replacement",
-      "status": "repository_side",
+      "status": "resolved_repository_side_2026_07_21",
       "title": "Strict native WebView replacement audit still fails",
-      "evidence": "scripts/pulsesoc_native_webview_replacement_audit.py exits 1 with 54 hard web-exit/fallback blockers.",
-      "required_resolution": "Replace or gate remaining web exits with native routes/surfaces before App Store replacement."
+      "evidence": "scripts/pulsesoc_native_webview_replacement_audit.py now exits 0 with 0 hard web-exit/fallback blockers and 26/26 critical surfaces.",
+      "required_resolution": "None for native replacement web exits; keep audit in the release gate to prevent regressions."
     },
     {
       "id": "ASR-007",
@@ -144,7 +144,7 @@
     "typecheck": "PASS",
     "jest": "PASS",
     "expo_doctor": "PASS",
-    "webview_replacement_audit": "FAIL",
+    "webview_replacement_audit": "PASS",
     "other_release_audits": "PASS",
     "xcode_archive": "PASS_NOT_DISTRIBUTABLE",
     "simulator_launch": "PASS",
@@ -155,5 +155,15 @@
     "archive_log": "/tmp/pulsesoc-native-release-attempt-2026-07-21/archive.log",
     "physical_install_log": "/tmp/pulsesoc-native-release-attempt-2026-07-21/physical-install.log",
     "simulator_screenshot": "/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-app-store-release-attempt-2026-07-21/simulator-launch.png"
+  },
+  "native_replacement_update_2026_07_21": {
+    "status": "RESOLVED_REPOSITORY_SIDE",
+    "evidence": "scripts/pulsesoc_native_webview_replacement_audit.py passes with 0 hard web-exit blockers and 26/26 critical surfaces covered.",
+    "remaining_no_go_reasons": [
+      "bundle/signing/provisioning/APNs/App Store Connect",
+      "dev-client production-clean target hardening",
+      "privacy metadata reconciliation",
+      "physical production QA"
+    ]
   }
 }

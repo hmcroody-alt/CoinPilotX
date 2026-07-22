@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   applyMarketplaceSeller,
   connectMarketplacePayout,
@@ -355,7 +355,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
                 <Text style={styles.dangerText}>{busy === `delete:${editingListing.id}` ? "Removing..." : "Remove"}</Text>
               </Pressable>
             </View>
-            <Text style={styles.meta}>Updates are saved server-side and re-enter marketplace review when content changes. Checkout, payouts, fulfillment, disputes, and provider actions stay on safe fallback flows.</Text>
+            <Text style={styles.meta}>Updates are saved server-side and re-enter marketplace review when content changes. Checkout, payouts, fulfillment, disputes, and provider actions stay inside native provider boundaries.</Text>
           </View>
         ) : null}
       </Panel>
@@ -397,9 +397,6 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           <View style={styles.actionRow}>
             <Pressable style={styles.primaryButton} disabled={busy === "payout"} onPress={startPayoutConnect}>
               <Text style={styles.primaryText}>{busy === "payout" ? "Checking..." : "Connect Payouts"}</Text>
-            </Pressable>
-            <Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl("payouts")).catch(() => undefined)}>
-              <Text style={styles.secondaryText}>Payout Web</Text>
             </Pressable>
           </View>
         ) : (

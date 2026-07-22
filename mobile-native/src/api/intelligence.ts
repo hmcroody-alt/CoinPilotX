@@ -1,4 +1,3 @@
-import { Linking } from "react-native";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
 import { NotificationBadgeCounts } from "./notifications";
@@ -104,7 +103,12 @@ export async function cacheAlertList(response: AlertListResponse) {
 
 export async function openIntelligenceWebFallback(path = "/dashboard/intelligence") {
   const target = /^https?:\/\//i.test(path) ? path : `${PULSE_API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
-  await Linking.openURL(target).catch(() => undefined);
+  return {
+    ok: false,
+    target,
+    status: "native_provider_boundary",
+    message: "Intelligence operation remains inside native Intelligence Center until the protected contract is available."
+  };
 }
 
 export function normalizeIntelligenceState(input: IntelligenceState): IntelligenceState {

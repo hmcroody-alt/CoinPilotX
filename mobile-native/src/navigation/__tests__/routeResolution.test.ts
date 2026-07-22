@@ -1,4 +1,3 @@
-import { Linking } from "react-native";
 import { flattenMasterNavigation } from "../masterNavigation";
 import { openNativeRoute } from "../nativeRouteActions";
 
@@ -15,16 +14,6 @@ function makeNavigation() {
 }
 
 describe("PulseSoc navigation route resolution", () => {
-  let openURL: jest.SpyInstance;
-
-  beforeEach(() => {
-    openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(true as never);
-  });
-
-  afterEach(() => {
-    openURL.mockRestore();
-  });
-
   it("routes Activity, Notifications, and Notification Preferences to distinct destinations", () => {
     const activity = makeNavigation();
     openNativeRoute(activity.navigation, "/pulse/activity");
@@ -42,16 +31,14 @@ describe("PulseSoc navigation route resolution", () => {
     expect(new Set(screens).size).toBe(3);
   });
 
-  it("opens Terms and Privacy Policy through the safe production web fallback, not the support screen", () => {
+  it("keeps Terms and Privacy Policy inside native Settings, not a browser", () => {
     const terms = makeNavigation();
     openNativeRoute(terms.navigation, "/terms");
-    expect(terms.calls).toHaveLength(0);
-    expect(openURL).toHaveBeenCalledWith(expect.stringContaining("/terms"));
+    expect(terms.calls).toEqual([{ screen: "Tabs", params: { screen: "Settings" } }]);
 
     const privacy = makeNavigation();
     openNativeRoute(privacy.navigation, "/privacy");
-    expect(privacy.calls).toHaveLength(0);
-    expect(openURL).toHaveBeenCalledWith(expect.stringContaining("/privacy"));
+    expect(privacy.calls).toEqual([{ screen: "Tabs", params: { screen: "Settings" } }]);
   });
 
   it.each([
@@ -102,12 +89,11 @@ describe("PulseSoc navigation route resolution", () => {
     expect(calls[0].params?.target).toBe("feed");
   });
 
-  it("resolves every registered destination to a real navigation or web fallback (no dead routes)", () => {
+  it("resolves every registered destination to a real native navigation target", () => {
     for (const action of flattenMasterNavigation()) {
-      openURL.mockClear();
       const { navigation, calls } = makeNavigation();
       openNativeRoute(navigation, action.route);
-      const handled = calls.length > 0 || openURL.mock.calls.length > 0;
+      const handled = calls.length > 0;
       expect({ route: action.route, handled }).toEqual({ route: action.route, handled: true });
     }
   });

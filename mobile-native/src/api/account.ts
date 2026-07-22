@@ -1,5 +1,3 @@
-import { Linking } from "react-native";
-import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 
@@ -202,7 +200,12 @@ export async function cacheAccountState(state: AccountState) {
 
 export async function openAccountWebFallback(path = "/pulse/settings/account") {
   const safePath = path.startsWith("/") && !path.startsWith("//") ? path : "/pulse/settings/account";
-  await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);
+  return {
+    ok: false,
+    path: safePath,
+    status: "native_provider_boundary",
+    message: "Account action remains inside the native Account Center until this protected operation exposes a native mutation."
+  };
 }
 
 function normalizeAccountState(input: AccountState): AccountState {

@@ -4,9 +4,9 @@ import { useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  Alert,
   Keyboard,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -17,7 +17,6 @@ import {
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { PULSE_API_BASE_URL } from "../api/config";
 import { registerAccount, useAuth, AuthState } from "../session/auth";
 import { PulseApiError } from "../api/pulseApi";
 import {
@@ -55,8 +54,8 @@ type Step = "identity" | "credentials" | "verify" | "completion";
 const PROGRESS_STEPS = ["Identity", "Secure", "Verify"];
 const STEP_INDEX: Record<Step, number> = { identity: 0, credentials: 1, verify: 2, completion: 2 };
 
-const TERMS_URL = `${PULSE_API_BASE_URL}/terms`;
-const PRIVACY_URL = `${PULSE_API_BASE_URL}/privacy`;
+const TERMS_ROUTE = "/terms";
+const PRIVACY_ROUTE = "/privacy";
 
 export function SignupScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
@@ -217,10 +216,11 @@ export function SignupScreen() {
     enterApp();
   }, [signedInState, enterApp, setAuthState]);
 
-  const openLegal = useCallback((url: string) => {
-    // Opens in the system browser; the RN screen stays mounted so all entered
-    // registration state is preserved when the user returns.
-    Linking.openURL(url).catch(() => undefined);
+  const openLegal = useCallback((routeName: string) => {
+    Alert.alert(
+      routeName === TERMS_ROUTE ? "Terms of Service" : "Privacy Policy",
+      "PulseSoc keeps legal documents inside the native Settings and account surfaces after sign-in. Continue only if you agree to the current PulseSoc terms and privacy policy."
+    );
   }, []);
 
   const biometricLabel = biometric?.kind === "faceId" ? "Face ID" : biometric?.kind === "touchId" ? "Touch ID" : "biometric unlock";
@@ -340,9 +340,9 @@ export function SignupScreen() {
                   >
                     <Text style={styles.consentText} maxFontSizeMultiplier={1.6}>
                       I'm 16+ and agree to the{" "}
-                      <Text style={styles.consentLink} onPress={() => openLegal(TERMS_URL)}>Terms of Service</Text>
+                      <Text style={styles.consentLink} onPress={() => openLegal(TERMS_ROUTE)}>Terms of Service</Text>
                       {" "}and{" "}
-                      <Text style={styles.consentLink} onPress={() => openLegal(PRIVACY_URL)}>Privacy Policy</Text>.
+                      <Text style={styles.consentLink} onPress={() => openLegal(PRIVACY_ROUTE)}>Privacy Policy</Text>.
                     </Text>
                   </CheckRow>
 

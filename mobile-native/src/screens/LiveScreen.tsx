@@ -184,12 +184,12 @@ export function LiveScreen({ route, navigation }: Props) {
       if (room.connected || room.connecting) return;
       const credentials = await getLiveKitToken(liveId, "viewer");
       if (!credentials) {
-        setError("PulseSoc could not mint native Live viewer credentials. Use web fallback or retry.");
+        setError("PulseSoc could not mint native Live viewer credentials. Retry or wait for the provider room to become available.");
         return;
       }
       const ok = await connectLiveRoom(credentials, { publish: false });
       if (!ok) {
-        setError(room.error || "Native Live playback could not connect. Use web fallback or retry.");
+        setError(room.error || "Native Live playback could not connect. Retry or wait for the provider room to become available.");
       }
     },
     [connectLiveRoom, room.connected, room.connecting, room.error, selected, state]
@@ -391,7 +391,7 @@ export function LiveScreen({ route, navigation }: Props) {
                 posterSource={posterUrl ? { uri: posterUrl } : undefined}
                 onError={() => {
                   setPlaybackFailed(true);
-                  setError("Native playback could not start. Use web fallback for this Live.");
+                  setError("Native playback could not start for this Live.");
                 }}
               />
             ) : canUseWebRtc ? (

@@ -4,7 +4,6 @@ import { PULSE_API_BASE_URL } from "./config";
 import { listSupportTickets, SupportTicket } from "./support";
 import { pulseApi } from "./pulseApi";
 import { VerificationStatus, submitVerificationAppeal } from "./verification";
-import { Linking } from "react-native";
 
 const ACCOUNT_HEALTH_CACHE_KEY = "pulsesoc.native.account.health.state";
 
@@ -110,7 +109,12 @@ export async function submitAccountHealthVerificationAppeal(requestId: number, a
 
 export async function openAccountHealthWebFallback(path = "/dashboard/account/health") {
   const safePath = path.startsWith("/") && !path.startsWith("//") ? path : "/dashboard/account/health";
-  await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);
+  return {
+    ok: false,
+    path: safePath,
+    status: "native_provider_boundary",
+    message: "Account health details remain in the native review boundary until the protected operation is available."
+  };
 }
 
 function normalizeAccountHealthState(account: Record<string, unknown>, tickets: SupportTicket[], securityEvents: SecurityEvent[]): AccountHealthState {

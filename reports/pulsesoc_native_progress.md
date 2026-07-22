@@ -5720,3 +5720,15 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
   - `reports/pulsesoc_native_app_store_release_attempt_2026-07-21.md`
   - `reports/pulsesoc_native_app_store_release_blockers_2026-07-21.json`
   - `reports/pulsesoc_native_app_store_release_checklist_2026-07-21.md`
+
+## App Review Critical Native Replacement Cleanup — 2026-07-21
+
+- Branch: `release/undx-nexus-core-v4`.
+- Strict native WebView replacement audit improved from **FAIL / 54 hard blockers / 14 of 26 critical surfaces** to **PASS / 0 hard blockers / 26 of 26 critical surfaces**.
+- Removed native-to-browser handoffs from dashboard routing, notification legal targets, signup legal taps, UNDX result opens, camera unsupported destinations, seller payouts, sponsored ad card URL opens, and provider APIs for account/support/safety/premium/learning/creator/growth/intelligence/events/orders/calls/Live/marketplace.
+- Converted product copy from browser/fallback language to native provider-boundary language where backend/provider authority remains unavailable.
+- Updated route/notification tests to assert native-only routing; Jest now passes `38` suites / `369` tests.
+- Validation passed: typecheck, Jest, Expo Doctor, strict native replacement audit, foundation, feature parity, Live, mission standard, global navigation, notification route parity, persistent radio/Home reselect, Live WebRTC repair, calls, music upload, UNDX conversation, and App Review/store audits.
+- Physical iPhone 16 Pro `P3r7or` was updated with the guarded dev sidecar `com.pulsesoc.nativeapp.dev`, installed, and launched. This is build/install/launch evidence only; hardware feature QA remains not observed.
+- Release remains **NO-GO** because Apple-side bundle/signing/provisioning/APNs, production-clean release packaging, privacy metadata, and physical production QA are still open.
+- Report: `reports/pulsesoc_native_app_review_readiness_2026-07-21.md`.

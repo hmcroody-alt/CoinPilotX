@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Image, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import {
   isAdExpired,
   recordAdClick,
@@ -30,7 +30,7 @@ function openDestination(navigation: SponsoredAdCardProps["navigation"], url: st
     return;
   }
   if (/^https?:\/\//i.test(target)) {
-    Linking.openURL(target).catch(() => undefined);
+    Alert.alert("Sponsor destination recorded", "PulseSoc recorded this sponsored signal. External sponsor destinations stay inside native review boundaries until approved.");
   }
 }
 

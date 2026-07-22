@@ -262,3 +262,29 @@ Release reports:
 - `reports/pulsesoc_native_app_store_release_attempt_2026-07-21.md`
 - `reports/pulsesoc_native_app_store_release_blockers_2026-07-21.json`
 - `reports/pulsesoc_native_app_store_release_checklist_2026-07-21.md`
+
+## App Review Critical Cleanup Update - 2026-07-21
+
+Release decision remains **NO-GO**, but the repository-side native replacement web-exit blocker is resolved.
+
+Updated evidence:
+
+- `scripts/pulsesoc_native_webview_replacement_audit.py` now passes.
+- Critical static native coverage is `26/26`.
+- Hard web-exit blockers are `0`.
+- Blocker counts are `{}`.
+- Jest passes `38` suites / `369` tests after route tests were updated to assert native-only handling.
+- Physical iPhone 16 Pro dev sidecar build/install/launch passed for `com.pulsesoc.nativeapp.dev`.
+
+Remaining release blockers:
+
+- Existing App Store bundle alignment and App Store Connect ownership verification.
+- Apple Distribution signing and App Store provisioning.
+- Production APNs entitlement/credentials.
+- Production-clean App Store target/profile without dev-client/dev-menu artifacts.
+- Privacy manifest and App Store Privacy metadata reconciliation.
+- Physical production QA for push, camera, microphone, Live, calls, Bluetooth, background behavior, and uploads.
+
+Report:
+
+- `reports/pulsesoc_native_app_review_readiness_2026-07-21.md`

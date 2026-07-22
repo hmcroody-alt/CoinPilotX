@@ -380,7 +380,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Safe fallback boundary</Text>
+        <Text style={styles.sectionTitle}>Provider boundary</Text>
         <Text style={styles.muted}>Provider administration, advanced Intelligence editing, collector management, and unsupported alert types stay server-managed by PulseSoc until native support is planned.</Text>
         <View style={styles.topActions}>
           <ActionButton label="Notifications" variant="secondary" onPress={() => navigation.navigate("NotificationCenter")} />

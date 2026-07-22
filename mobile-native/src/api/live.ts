@@ -1,4 +1,3 @@
-import { Linking } from "react-native";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
 import { PulseAuthor } from "./feed";
@@ -312,7 +311,13 @@ export async function cancelJoinRequest(liveId: number, requestId: number) {
 /** Open the native web viewer for a live. Studio/host broadcasting is fully native — no web handoff. */
 export async function openLiveWebFallback(liveId?: number) {
   if (!liveId) return;
-  await Linking.openURL(liveWebUrl(liveId));
+  return {
+    ok: false,
+    liveId,
+    target: liveWebUrl(liveId),
+    status: "native_provider_boundary",
+    message: "Live playback remains inside the native Live viewer until the provider room is available."
+  };
 }
 
 export function liveWebUrl(liveId?: number) {

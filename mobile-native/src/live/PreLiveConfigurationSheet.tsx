@@ -23,7 +23,7 @@ type Props = {
  * creator confirms only the essentials before broadcasting — the camera stays
  * visible behind it. Advanced options live behind an expander so a simple live
  * is a couple of taps. Confirming hands the draft to the parent, which starts
- * the native broadcast and enters the native host surface. No web, no WebView.
+ * the native broadcast and enters the native host surface.
  */
 export function PreLiveConfigurationSheet({ visible, busy, error, onClose, onGoLive }: Props) {
   const insets = useSafeAreaInsets();

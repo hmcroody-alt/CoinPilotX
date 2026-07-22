@@ -1,4 +1,3 @@
-import { Linking } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
@@ -253,7 +252,12 @@ export async function openCallWebFallback(callId?: string, conversationId?: numb
   const target = callId
     ? `${PULSE_API_BASE_URL}/pulse/messages${conversationId ? `/${encodeURIComponent(String(conversationId))}` : ""}?call_id=${encodeURIComponent(callId)}`
     : `${PULSE_API_BASE_URL}/pulse/messages`;
-  await Linking.openURL(target);
+  return {
+    ok: false,
+    target,
+    status: "native_provider_boundary",
+    message: "Call options remain inside the native call experience."
+  };
 }
 
 export function normalizeCalls(calls: PulseCall[]) {

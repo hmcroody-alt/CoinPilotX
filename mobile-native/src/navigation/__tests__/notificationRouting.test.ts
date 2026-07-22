@@ -1,4 +1,3 @@
-import { Linking } from "react-native";
 import {
   notificationTargetFamily,
   routeNotificationTarget,
@@ -6,25 +5,17 @@ import {
   type NotificationRouteReport
 } from "../notificationRouting";
 
-describe("routeNotificationTarget web fallback policy", () => {
-  let openURL: jest.SpyInstance;
-  let canOpenURL: jest.SpyInstance;
-
+describe("routeNotificationTarget native-only policy", () => {
   beforeEach(() => {
-    openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(true as never);
-    canOpenURL = jest.spyOn(Linking, "canOpenURL").mockResolvedValue(true as never);
     setNotificationRouteReporter(() => undefined);
   });
 
   afterEach(() => {
-    openURL.mockRestore();
-    canOpenURL.mockRestore();
     setNotificationRouteReporter(null);
   });
 
   it("keeps an unmapped internal path native instead of opening the browser", async () => {
     const result = await routeNotificationTarget("/pulse/unmapped-analytics-page");
-    expect(openURL).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       handled: true,
       target: "/pulse/notifications",
@@ -35,38 +26,32 @@ describe("routeNotificationTarget web fallback policy", () => {
 
   it("strips query and fragment from the retained fallback diagnostics", async () => {
     const result = await routeNotificationTarget("/pulse/unmapped-page?token=secret#frag");
-    expect(openURL).not.toHaveBeenCalled();
     expect(result.fallbackFrom).toBe("/pulse/unmapped-page");
   });
 
-  it("still opens public legal documents through the intentional web exception", async () => {
+  it("keeps public legal documents inside native Settings boundaries", async () => {
     const result = await routeNotificationTarget("/terms");
-    expect(openURL).toHaveBeenCalledWith(expect.stringContaining("/terms"));
     expect(result).toMatchObject({
       handled: true,
       target: "/terms",
-      reason: "intentional_web_exception"
+      reason: "native_legal_boundary"
     });
   });
 
   it("does not misclassify a lookalike path as a legal exception", async () => {
     const result = await routeNotificationTarget("/terms-of-endearment");
-    expect(openURL).not.toHaveBeenCalled();
     expect(result.reason).toBe("native_fallback");
   });
 
   it("rejects non-PulseSoc external hosts before any fallback", async () => {
     const result = await routeNotificationTarget("https://evil.example.com/phish");
-    expect(openURL).not.toHaveBeenCalled();
     expect(result.target).toBe("/pulse/notifications");
     expect(result.reason).toBe("missing_target");
   });
 
   it("recovers safely from empty and malformed targets", async () => {
     for (const bad of ["", "   ", "javascript:alert(1)", "/api/private", "//evil", "not a url"]) {
-      openURL.mockClear();
       const result = await routeNotificationTarget(bad);
-      expect(openURL).not.toHaveBeenCalled();
       expect(result.handled).toBe(true);
       expect(result.target).toBe("/pulse/notifications");
     }
@@ -75,7 +60,6 @@ describe("routeNotificationTarget web fallback policy", () => {
   it("stays stable across repeated taps of the same unmapped target", async () => {
     const first = await routeNotificationTarget("/pulse/unmapped-page");
     const second = await routeNotificationTarget("/pulse/unmapped-page");
-    expect(openURL).not.toHaveBeenCalled();
     expect(first).toMatchObject(second);
   });
 

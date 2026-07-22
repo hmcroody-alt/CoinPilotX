@@ -1,4 +1,4 @@
-export type MasterNavigationActionStatus = "native" | "shell" | "fallback" | "gated";
+export type MasterNavigationActionStatus = "native" | "shell" | "provider" | "gated";
 
 export type MasterNavigationAction = {
   label: string;
@@ -107,8 +107,8 @@ export const masterNavigationSections: MasterNavigationSection[] = [
     actions: [
       { label: "Notifications", route: "/pulse/notifications", status: "native", description: "Notification and activity categories." },
       { label: "Notification Preferences", route: "/dashboard/network/notifications", status: "shell", description: "Notification settings shell." },
-      { label: "Terms", route: "/terms", status: "fallback", description: "Legal document provider boundary." },
-      { label: "Privacy Policy", route: "/privacy", status: "fallback", description: "Legal document provider boundary." },
+      { label: "Terms", route: "/terms", status: "provider", description: "Legal document provider boundary." },
+      { label: "Privacy Policy", route: "/privacy", status: "provider", description: "Legal document provider boundary." },
       { label: "System Status", route: "/dashboard/system/feed", status: "shell", description: "Native dashboard module shell." }
     ]
   }

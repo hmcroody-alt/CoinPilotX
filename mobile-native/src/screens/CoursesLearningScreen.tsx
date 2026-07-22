@@ -248,7 +248,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
         <View style={styles.hero}>
           <Text style={styles.kicker}>Learning Gateway</Text>
           <Text style={styles.title}>{gatewayTitle(gatewayMode)}</Text>
-          <Text style={styles.subtitle}>This native gateway preserves the existing PulseSoc teacher, course, payment, and review rules. Advanced operations stay on safe fallback.</Text>
+          <Text style={styles.subtitle}>This native gateway preserves the existing PulseSoc teacher, course, payment, and review rules. Advanced operations stay inside provider-owned boundaries.</Text>
         </View>
         <Panel>
           <Text style={styles.sectionTitle}>Backend authority preserved</Text>
@@ -277,7 +277,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
           <View style={styles.hero}>
             <Text style={styles.kicker}>Courses + Learning</Text>
             <Text style={styles.title}>Learning Gateway</Text>
-            <Text style={styles.subtitle}>{offline ? "Showing saved lessons" : "Native lesson discovery powered by the existing PulseSoc education backend, with course payments and teacher tools kept on safe fallback."}</Text>
+            <Text style={styles.subtitle}>{offline ? "Showing saved lessons" : "Native lesson discovery powered by the existing PulseSoc education backend, with course payments and teacher tools kept inside provider-owned boundaries."}</Text>
           </View>
           {error ? <Text style={styles.error}>{error}</Text> : null}
           {offline ? <Text style={styles.offline}>Showing saved learning data</Text> : null}

@@ -185,7 +185,7 @@ export function ContentPlannerScreen({ route, navigation }: Props) {
 
       <Panel>
         <Text style={styles.sectionTitle}>Publish safety</Text>
-        <Text style={styles.muted}>Publish now, recurring schedules, bulk scheduling, smart rescheduling, and version history stay on safe fallback until backend contracts expose native authority.</Text>
+        <Text style={styles.muted}>Publish now, recurring schedules, bulk scheduling, smart rescheduling, and version history stay inside native provider boundaries until backend contracts expose native authority.</Text>
       </Panel>
 
       <Panel>

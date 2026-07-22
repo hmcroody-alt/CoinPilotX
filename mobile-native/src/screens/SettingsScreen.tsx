@@ -90,7 +90,7 @@ export function SettingsScreen() {
   }
 
   function logoutEverywhere() {
-    Alert.alert("Sign out everywhere?", "This revokes your PulseSoc sessions on every device, including the WebView app.", [
+    Alert.alert("Sign out everywhere?", "This revokes your PulseSoc sessions on every device.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Sign out everywhere",
