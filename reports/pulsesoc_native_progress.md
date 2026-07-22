@@ -5682,3 +5682,24 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Added focused Jest coverage and a scoped static audit for the WebRTC viewer and host-audio repair.
 - Physical two-client validation remains required before release confidence can be raised: host on physical iPhone, second client as guest/viewer, audible microphone, mute/unmute, speaker/Bluetooth, and background behavior.
 - Report: `reports/pulsesoc_native_live_webrtc_guest_audio_repair_2026-07-20.md`.
+
+## Wave 0 Release-Gate Cleanup + Wave 1 Auth/Session + Home Layout Stabilization — 2026-07-21
+
+- Branch: `release/undx-nexus-core-v4`.
+- Scope: Wave 0 repaired stale/misleading release-gate audits so they fail only on real active blockers; Wave 1 stabilized P0 authentication/session behavior and fixed the Home composer/bottom-dock overlap structurally (NRB-058). WebView-exit replacement was explicitly out of scope; no Apple ownership/signing/App Store tasks touched.
+- Wave 0 (STALE_AUDIT repairs; audits repaired, never weakened):
+  - Foundation audit (`scripts/pulsesoc_native_app_foundation_audit.py`) now regex-detects real `react-native-webview` imports / rendered `<WebView>` and excludes comments, docs, user-facing copy, and `__tests__`/`__mocks__` fixtures — no more false positives on inert "WebView" substrings. Also realigned messenger assertions to the Communications v2 prefix. Exits 0. (NRB-060)
+  - Live audit (`scripts/pulsesoc_native_live_audit.py`) now validates the native LiveStudio go-live flow and asserts the native host path mints LiveKit tokens through the existing backend token/join-request endpoints (no browser publish handoff), instead of expecting obsolete "Go Live Web" copy. Exits 0. (NRB-061)
+  - Feature-parity audit (`scripts/pulsesoc_native_feature_parity_audit.py`) verifies the completed Device QA Setup follow-up and treats the intentionally-installed Expo web QA deps (react-native-web, SDK 54) as an available surface, rather than asserting obsolete "next action"/missing-dep wording. Exits 0. (NRB-062)
+  - NRB-055/056/057 confirmed TEST_ONLY false positives (stale test descriptions only; assertions unchanged).
+- Wave 1 authentication/session (NRB-059):
+  - Introduced a deterministic 6-phase session bootstrap machine in `mobile-native/src/session/auth.ts`: `BOOTSTRAPPING / AUTHENTICATED / UNAUTHENTICATED / SESSION_EXPIRED / RECOVERABLE_ERROR / FATAL_ERROR`, with a derived back-compat `status` projection (single `stateFor` constructor keeps phase/status from ever desyncing).
+  - Transient network failures now resolve to RECOVERABLE_ERROR (retryable) or a cached session instead of silently bouncing the user to login; expired credentials are distinguished from a clean first launch.
+  - `App.tsx` gates render on `phase` (spinner while BOOTSTRAPPING; error panel with a "Try again" retry for RECOVERABLE_ERROR/FATAL_ERROR); `qaSimulatorAuth.ts` updated to the phase constructors.
+  - Verified pre-existing Wave 1 guarantees retained: single-flight token refresh (module-level in-flight promise), login/signup double-submit guards, logout clears user-scoped state, secure storage (expo-secure-store), and no token/PII logging.
+- Wave 1 Home layout (NRB-058):
+  - Removed HomeScreen's device-specific `paddingBottom: 172`; the feed now reserves `Math.max(insets.bottom, 12) + BOTTOM_NAV_CONTENT_CLEARANCE`, sharing the single dock-clearance constant with `Screen.tsx`/`BottomNavVisibility.tsx`, so the composer/last row clears the floating dock on every safe-area inset.
+- Tests: new `restoreSession.test.ts` (7 tests over all six terminal phases + refresh + cache-fallback) and `HomeScreen.layout.test.ts` (3 source-scan assertions). Existing 43 auth/session tests pass unchanged against the derived `status`.
+- Verification: TypeScript clean; Jest 37 suites / 355 tests pass; Expo Doctor 18/18; `git diff --check` clean; foundation/live/feature-parity audits exit 0.
+- Release readiness remains **NO-GO**: `scripts/pulsesoc_native_webview_replacement_audit.py` still exits 1 on real remaining web-fallback source (e.g. `SearchScreen.tsx` events/lessons gateway copy) — that WebView-exit work is out of scope here. Physical QA (NRB-063) and Apple release tasks (NRB-064) remain open. Device QA for NRB-058/059 on `P3r7or` is pending build/deploy.
+- Mission report: `reports/pulsesoc_native_wave0_wave1_auth_home_stabilization_2026-07-20.md`.

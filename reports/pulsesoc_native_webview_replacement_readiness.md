@@ -222,3 +222,9 @@ True blockers:
 - Notification routing can still open web targets.
 - Commerce/seller/profile/search/camera/live/course/event flows still contain web exits or fallback states.
 - Physical-device release checks remain incomplete for camera, microphone, real calls, push, background behavior, Bluetooth/audio routing, and provider/payment flows.
+
+## Wave 0 + Wave 1 Update — 2026-07-21
+
+- Verdict unchanged: **NO-GO**. WebView-exit replacement was explicitly out of scope for the 2026-07-21 Wave 0/Wave 1 mission (release-gate cleanup + auth/session + Home layout), so remaining web-fallback source was not modified.
+- Latest audit re-run (`scripts/pulsesoc_native_webview_replacement_audit.py`) still exits 1 with `release_readiness: FAIL` and `hard_blocker_count: 54` (see the machine-readable JSON); example still-active source: `mobile-native/src/screens/SearchScreen.tsx` events/lessons gateway fallback copy.
+- What did change this mission (does not affect this verdict): the foundation/live/feature-parity release-gate audits were repaired to fail only on real active blockers (not weakened), and P0 auth/session (NRB-059) plus the Home bottom-dock overlap (NRB-058) were stabilized in code. Details: `reports/pulsesoc_native_wave0_wave1_auth_home_stabilization_2026-07-20.md`.

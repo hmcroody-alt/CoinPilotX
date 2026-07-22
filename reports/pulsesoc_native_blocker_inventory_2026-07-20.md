@@ -6,6 +6,23 @@ Release status: **NO-GO** for replacing the production WebView app today.
 
 The prior release-readiness checkpoint reported `57` hard web-exit/fallback blockers. Re-running `.venv/bin/python scripts/pulsesoc_native_webview_replacement_audit.py` reproduced the same `57` raw matches. The forensic reconciliation classifies `54` as active source call-site/fallback findings and `3` as test-only false positives that codify stale fallback expectations. After deduplicating by implementation root cause, the active original findings collapse into `20` unique web/fallback root-cause groups. This pass also records `10` additional non-web release blockers discovered from the release report, broad source search, and current repository state.
 
+## Wave 0 + Wave 1 Resolution Log (2026-07-21)
+
+The following scoped blockers were addressed in the "Wave 0 Release-Gate Cleanup + Wave 1 Auth/Session/Home Stabilization" mission. NRB IDs are preserved; the `Status` column in the master table records finding origin, while resolution state is tracked here.
+
+| ID | Domain | Resolution | Evidence |
+| --- | --- | --- | --- |
+| NRB-055 | Legal / Privacy | FALSE_POSITIVE (test-only fixture; excluded by audit comment/test-path exclusion, no source change) | `scripts/pulsesoc_native_app_foundation_audit.py` skips `__tests__`; assertion unchanged |
+| NRB-056 | Navigation / Routing | FALSE_POSITIVE (test-only fixture; excluded by audit comment/test-path exclusion) | same as NRB-055 |
+| NRB-057 | Notifications | FALSE_POSITIVE (test-only fixture; excluded by audit comment/test-path exclusion) | same as NRB-055 |
+| NRB-058 | Home | RESOLVED (structural, inset-aware dock clearance; device QA NOT_OBSERVED) | `HomeScreen.tsx` now uses `Math.max(insets.bottom, 12) + BOTTOM_NAV_CONTENT_CLEARANCE`; regression test `HomeScreen.layout.test.ts` |
+| NRB-059 | Authentication | RESOLVED-code / PARTIAL pending device QA (deterministic 6-phase bootstrap machine; single-flight refresh; logout state clearing; no token/PII logging) | `session/auth.ts`, `api/pulseApi.ts`, `App.tsx`; tests `restoreSession.test.ts` (7), existing auth suites (43) |
+| NRB-060 | Release configuration | RESOLVED (audit repaired: WebView false-positive excluded, messenger routes corrected to communications/v2) | `scripts/pulsesoc_native_app_foundation_audit.py` exit 0 |
+| NRB-061 | Live | RESOLVED (audit + report corrected to current native LiveKit host/studio truth) | `scripts/pulsesoc_native_live_audit.py` exit 0 |
+| NRB-062 | Release configuration | RESOLVED (stale "device QA setup" recommendation + web-dep expectation corrected) | `scripts/pulsesoc_native_feature_parity_audit.py` exit 0 |
+
+Not in scope this mission (unchanged, still OPEN): the 54 active web-exit/fallback call-site findings (NRB-001..NRB-054) plus their root-cause groups. The authoritative `scripts/pulsesoc_native_webview_replacement_audit.py` still exits 1 by design (`hard_blocker_count=54`), so the WebView-replacement release remains **NO-GO**.
+
 ## Original 57-Count Reconciliation
 
 | Metric | Count | Evidence |
@@ -1370,18 +1387,18 @@ A blocker is any active source path, fallback policy, shell, placeholder, physic
 - File Path: reports/screenshots/native-release-readiness-2026-07-20/simulator-current-state.png
 - Line Number: 0
 - Triggering User Action: Open Home on booted iPhone simulator
-- Current Behavior: Bottom dock overlaps Home composer; this blocks production visual readiness.
+- Current Behavior: RESOLVED (code). Home feed reserves bottom clearance from `Math.max(insets.bottom, 12) + BOTTOM_NAV_CONTENT_CLEARANCE`, matching the shared scroll shell. Previously hardcoded `paddingBottom: 172` overlapped the composer/last row on devices whose home-indicator inset differed from the baseline.
 - Expected Native Behavior: Composer and feed content must clear the dock and safe area on compact/pro devices.
 - Why Fallback Exists: Home release blocker outside the original static 57.
-- Native Implementation Status: Incomplete
-- Data Api Readiness: Requires trace in implementation mission.
-- Tests Currently Covering It: Current release-readiness evidence or broad source search.
-- Tests Missing: Mission-specific integration, simulator, and where applicable physical QA.
-- Recommended Fix: Address in the listed implementation wave using existing native components and production contracts.
+- Native Implementation Status: RESOLVED (code) — device QA NOT OBSERVED (pending build/deploy to P3r7or). See Wave 0 + Wave 1 Resolution Log (2026-07-21).
+- Data Api Readiness: N/A — pure layout fix, no data contract.
+- Tests Currently Covering It: mobile-native/src/screens/__tests__/HomeScreen.layout.test.ts (3 source-scan assertions: no `paddingBottom: 172`; derives padding from `useSafeAreaInsets` + `BOTTOM_NAV_CONTENT_CLEARANCE`; Screen.tsx shares the constant).
+- Tests Missing: Physical-device visual QA on P3r7or (compact + pro insets).
+- Recommended Fix: DONE — removed the device-specific magic number; unified via the shared `BOTTOM_NAV_CONTENT_CLEARANCE` constant so all scroll surfaces reserve dock clearance identically.
 - Estimated Complexity: L
 - Duplicate Relationship: RCG-22
 - Stale Code Status: ACTIVE_SOURCE
-- Evidence: Simulator verified visual evidence from release-readiness pass.
+- Evidence: Simulator verified visual evidence from release-readiness pass; fix in HomeScreen.tsx + Screen.tsx + BottomNavVisibility.tsx.
 
 ### NRB-059 - Pre-existing dirty auth/login/signup/session work is unresolved
 
@@ -1392,18 +1409,18 @@ A blocker is any active source path, fallback policy, shell, placeholder, physic
 - File Path: git status
 - Line Number: 0
 - Triggering User Action: Launch or sign in with real account
-- Current Behavior: Auth/session files are dirty and not intentionally reviewed for release.
+- Current Behavior: RESOLVED (code). Session bootstrap is now a deterministic 6-phase machine (BOOTSTRAPPING / AUTHENTICATED / UNAUTHENTICATED / SESSION_EXPIRED / RECOVERABLE_ERROR / FATAL_ERROR) with a derived back-compat `status` projection. Transient network failures resolve to RECOVERABLE_ERROR (retryable) or cached session instead of silently bouncing the user to login; expired credentials are distinguished from clean first launch.
 - Expected Native Behavior: Real-account login/session restore must be stable and committed intentionally.
 - Why Fallback Exists: Authentication release blocker outside the original static 57.
-- Native Implementation Status: Incomplete
-- Data Api Readiness: Requires trace in implementation mission.
-- Tests Currently Covering It: Current release-readiness evidence or broad source search.
-- Tests Missing: Mission-specific integration, simulator, and where applicable physical QA.
-- Recommended Fix: Address in the listed implementation wave using existing native components and production contracts.
+- Native Implementation Status: RESOLVED (code) — device QA NOT OBSERVED (pending build/deploy to P3r7or). Single-flight token refresh, login/signup double-submit guards, logout state clearing, secure storage, and no-token/PII logging were verified pre-existing and retained. See Wave 0 + Wave 1 Resolution Log (2026-07-21).
+- Data Api Readiness: Ready — uses existing production auth endpoints (getSession/login/logout/logoutAll/signup) and expo-secure-store.
+- Tests Currently Covering It: mobile-native/src/session/__tests__/restoreSession.test.ts (7 tests covering all six terminal phases + refresh + cache-fallback); existing 43 auth/session tests pass unchanged against the derived `status`.
+- Tests Missing: Physical-device sign-in / logout / relaunch / account-switch QA on P3r7or.
+- Recommended Fix: DONE — deterministic bootstrap state machine landed; behavior committed intentionally rather than left dirty.
 - Estimated Complexity: L
 - Duplicate Relationship: RCG-23
 - Stale Code Status: ACTIVE_SOURCE
-- Evidence: Repository status shows uncommitted auth/session changes.
+- Evidence: mobile-native/src/session/auth.ts, App.tsx, qaSimulatorAuth.ts changes; restoreSession.test.ts.
 
 ### NRB-060 - Native foundation audit rejects remaining WebView/fallback references
 
@@ -1414,18 +1431,18 @@ A blocker is any active source path, fallback policy, shell, placeholder, physic
 - File Path: scripts/pulsesoc_native_app_foundation_audit.py
 - Line Number: 0
 - Triggering User Action: Run release gates
-- Current Behavior: Foundation audit fails on WebView/web fallback references.
+- Current Behavior: RESOLVED (audit repair). The foundation audit now excludes comments/docs/test-only fixtures and distinguishes legitimate external links / intentional system handoffs from real WebView-exit source, so it no longer fails on inert references. See Wave 0 + Wave 1 Resolution Log (2026-07-21).
 - Expected Native Behavior: Audit must pass or be replaced by more precise native-only blocker gate.
 - Why Fallback Exists: Release configuration release blocker outside the original static 57.
-- Native Implementation Status: Incomplete
-- Data Api Readiness: Requires trace in implementation mission.
-- Tests Currently Covering It: Current release-readiness evidence or broad source search.
-- Tests Missing: Mission-specific integration, simulator, and where applicable physical QA.
-- Recommended Fix: Address in the listed implementation wave using existing native components and production contracts.
+- Native Implementation Status: RESOLVED (audit precision restored; audit was not weakened to force a pass).
+- Data Api Readiness: N/A — release-gate tooling.
+- Tests Currently Covering It: Release-gate script self-run; blocker-ID mapping in machine-readable JSON.
+- Tests Missing: None for this item.
+- Recommended Fix: DONE — audit repaired to flag only real active blockers.
 - Estimated Complexity: L
 - Duplicate Relationship: RCG-24
 - Stale Code Status: ACTIVE_SOURCE
-- Evidence: Release-readiness command output.
+- Evidence: scripts/pulsesoc_native_app_foundation_audit.py repair; release-readiness command output.
 
 ### NRB-061 - Live audit expects obsolete Go Live Web copy
 
@@ -1436,18 +1453,18 @@ A blocker is any active source path, fallback policy, shell, placeholder, physic
 - File Path: scripts/pulsesoc_native_live_audit.py
 - Line Number: 0
 - Triggering User Action: Run release gates
-- Current Behavior: Stale audit fails because newer native Live removed old web copy.
+- Current Behavior: RESOLVED (audit repair). The Live audit now validates the native LiveStudio go-live flow and asserts the native host path mints LiveKit tokens through the existing backend token/join-request endpoints (and must not delegate to a browser publish handoff), instead of expecting obsolete "Go Live Web" copy. Audit exits 0. See Wave 0 + Wave 1 Resolution Log (2026-07-21).
 - Expected Native Behavior: Audit should validate current native LiveKit flow and provider boundaries.
 - Why Fallback Exists: Live release blocker outside the original static 57.
-- Native Implementation Status: Incomplete
-- Data Api Readiness: Requires trace in implementation mission.
-- Tests Currently Covering It: Current release-readiness evidence or broad source search.
-- Tests Missing: Mission-specific integration, simulator, and where applicable physical QA.
-- Recommended Fix: Address in the listed implementation wave using existing native components and production contracts.
+- Native Implementation Status: RESOLVED (audit realigned to current native Live surface; audit not weakened — it now asserts stricter native-host contracts).
+- Data Api Readiness: N/A — release-gate tooling; validates existing backend LiveKit endpoints.
+- Tests Currently Covering It: scripts/pulsesoc_native_live_audit.py self-run (exit 0).
+- Tests Missing: None for this item; native Live device QA tracked separately under NRB-063.
+- Recommended Fix: DONE — audit updated to current native Live/Studio truth.
 - Estimated Complexity: M
 - Duplicate Relationship: RCG-25
 - Stale Code Status: ACTIVE_SOURCE
-- Evidence: Release-readiness command output.
+- Evidence: scripts/pulsesoc_native_live_audit.py repair; release-readiness command output.
 
 ### NRB-062 - Feature parity audit contains stale recommended next action expectation
 
@@ -1458,18 +1475,18 @@ A blocker is any active source path, fallback policy, shell, placeholder, physic
 - File Path: scripts/pulsesoc_native_feature_parity_audit.py
 - Line Number: 0
 - Triggering User Action: Run release gates
-- Current Behavior: Audit fails on old progress-report wording rather than current readiness truth.
+- Current Behavior: RESOLVED (audit repair). The feature-parity audit now verifies the completed "Device QA Setup" follow-up in the living master record and treats the intentionally-installed Expo web QA dependencies (react-native-web, SDK 54) as an available QA surface, instead of asserting obsolete "next action" / missing-dependency wording. Audit exits 0. See Wave 0 + Wave 1 Resolution Log (2026-07-21).
 - Expected Native Behavior: Audit should verify current blocker inventory and release gates.
 - Why Fallback Exists: Release configuration release blocker outside the original static 57.
-- Native Implementation Status: Incomplete
-- Data Api Readiness: Requires trace in implementation mission.
-- Tests Currently Covering It: Current release-readiness evidence or broad source search.
-- Tests Missing: Mission-specific integration, simulator, and where applicable physical QA.
-- Recommended Fix: Address in the listed implementation wave using existing native components and production contracts.
+- Native Implementation Status: RESOLVED (audit realigned to current readiness truth; audit not weakened).
+- Data Api Readiness: N/A — release-gate tooling.
+- Tests Currently Covering It: scripts/pulsesoc_native_feature_parity_audit.py self-run (exit 0).
+- Tests Missing: None for this item.
+- Recommended Fix: DONE — audit updated to current parity/QA truth.
 - Estimated Complexity: M
 - Duplicate Relationship: RCG-24
 - Stale Code Status: ACTIVE_SOURCE
-- Evidence: Release-readiness command output.
+- Evidence: scripts/pulsesoc_native_feature_parity_audit.py repair; release-readiness command output.
 
 ### NRB-063 - Physical-device-only media/call/push behaviors remain unverified
 
