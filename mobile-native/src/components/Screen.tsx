@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { ActivityIndicator, ScrollView, StyleProp, StyleSheet, Text, View, ViewStyle, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
+import { BOTTOM_NAV_CONTENT_CLEARANCE, useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
 import { colors } from "../theme/colors";
 import { logiNexus, LogiNexusTone, toneColor } from "../theme/logiNexus";
 
@@ -47,7 +47,7 @@ export function LogiNexusScrollContainer({
   bottomDock?: boolean;
 }) {
   const insets = useSafeAreaInsets();
-  const bottomPadding = bottomDock ? Math.max(insets.bottom, 12) + 92 : Math.max(insets.bottom, 12) + 24;
+  const bottomPadding = bottomDock ? Math.max(insets.bottom, 12) + BOTTOM_NAV_CONTENT_CLEARANCE : Math.max(insets.bottom, 12) + 24;
   const bottomNavScroll = useBottomNavScrollVisibility({ enabled: bottomDock });
   return (
     <ScrollView

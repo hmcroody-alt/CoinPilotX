@@ -18,6 +18,15 @@ type ScrollVisibilityOptions = {
   minimumScrollableDistance?: number;
 };
 
+/**
+ * Vertical space a scrollable surface reserves so its last content clears the
+ * floating bottom navigation dock. The dock draws its own safe-area padding, so
+ * callers add this to `Math.max(insets.bottom, 12)` instead of hardcoding a
+ * device-specific total (which was the root cause of the Home composer/dock
+ * overlap: a fixed 172pt that ignored per-device safe-area insets).
+ */
+export const BOTTOM_NAV_CONTENT_CLEARANCE = 92;
+
 const BottomNavVisibilityContext = createContext<BottomNavVisibilityContextValue | null>(null);
 
 export function BottomNavVisibilityProvider({ children }: { children: ReactNode }) {
