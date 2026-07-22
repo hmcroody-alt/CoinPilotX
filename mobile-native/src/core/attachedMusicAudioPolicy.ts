@@ -1,3 +1,4 @@
+import { PULSE_API_BASE_URL } from "../api/config";
 import type { PulseReelAudio } from "../api/reels";
 import type { PulseStatusMusic } from "../api/status";
 import type { PulsePost, PulsePostMusic } from "../api/feed";
@@ -40,6 +41,23 @@ export type AttachedMusicPolicy = {
   isLooping: boolean;
 };
 
+/**
+ * Absolutize a music URL the same way `mediaDisplayUrl` treats media: absolute
+ * URIs (http(s):, file:, etc.) pass through untouched, while server-relative
+ * paths get the API base prefix. This is critical on-device — `Audio.Sound`
+ * cannot load a relative URI like `/static/audit/track.wav`, so a published
+ * post's attached track (which the backend serializes as a relative path) would
+ * silently fail to play, leaving only the muted original audio. The composer
+ * preview already absolutizes its URL, which is why preview sounded right while
+ * the published video did not.
+ */
+function absolutizeMusicUrl(url: string): string {
+  if (!url) return "";
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
+  if (url.startsWith("/")) return `${PULSE_API_BASE_URL}${url}`;
+  return `${PULSE_API_BASE_URL}/${url}`;
+}
+
 function clampVolume(value: unknown): number {
   if (value === null || value === undefined || value === "") return DEFAULT_MUSIC_VOLUME;
   const numeric = Number(value);
@@ -54,7 +72,7 @@ function clampVolume(value: unknown): number {
  * has failed (see failure handling at the call sites).
  */
 export function resolveAttachedMusicPolicy(source?: AttachedMusicSource | null): AttachedMusicPolicy {
-  const musicUrl = String(source?.musicUrl || "").trim();
+  const musicUrl = absolutizeMusicUrl(String(source?.musicUrl || "").trim());
   if (!musicUrl) {
     return {
       mode: ORIGINAL_AUDIO,

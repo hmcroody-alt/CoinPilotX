@@ -7,6 +7,7 @@ import { mediaDisplayUrl, mediaKind, PulseMedia, PulsePost, pulsePostUrl } from 
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "./NativeMediaViewer";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { AttachedMusicPolicy, resolvePostAudioPolicy } from "../core/attachedMusicAudioPolicy";
+import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { canonicalMediaPlaybackUrl, refreshCanonicalMediaAccess } from "../media/mediaAccess";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
@@ -794,6 +795,10 @@ function FeedInlineVideo({
         return;
       }
       if (!attachedSoundRef.current) {
+        // Match the Reels player: put the iOS audio session into playback mode so
+        // the attached track is audible even when the ringer switch is silent and
+        // even if the viewer opened the feed without visiting Reels/Music first.
+        await configureReelsAudioSession().catch(() => undefined);
         const created = await Audio.Sound.createAsync(
           { uri: musicPolicy!.musicUrl! },
           {

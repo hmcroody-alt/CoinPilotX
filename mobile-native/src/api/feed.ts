@@ -229,7 +229,14 @@ export async function createPost(payload: CreatePostPayload) {
       visibility: payload.visibility || "public",
       media_ids: payload.media_ids || [],
       tags: payload.tags || [],
-      music_track_id: payload.music_track_id || ""
+      music_track_id: payload.music_track_id || "",
+      // Defense-in-depth music metadata, mirrored from createReel/createStatus so
+      // the attached track survives even when server-side attachment is bypassed.
+      attached_audio_url: payload.attached_audio_url || "",
+      original_audio_muted:
+        payload.original_audio_muted ?? Boolean(payload.music_track_id),
+      audio_start_time: payload.audio_start_time ?? 0,
+      audio_volume: payload.audio_volume ?? 1
     })
   });
   const post = data.post ? normalizePost(data.post) : undefined;

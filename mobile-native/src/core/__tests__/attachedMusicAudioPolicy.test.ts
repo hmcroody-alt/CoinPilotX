@@ -1,3 +1,4 @@
+import { PULSE_API_BASE_URL } from "../../api/config";
 import {
   ATTACHED_MUSIC_EXCLUSIVE,
   ORIGINAL_AUDIO,
@@ -94,6 +95,30 @@ describe("status adapter", () => {
     const policy = resolveStatusMusicPolicy({ title: "Orbit Signal", artist: "PulseSoc Audio" });
     expect(policy.hasAttachedMusic).toBe(false);
     expect(policy.muteOriginalAudio).toBe(false);
+  });
+});
+
+describe("music url absolutization", () => {
+  it("prefixes a server-relative track path with the API base so Audio.Sound can load it", () => {
+    const policy = resolveAttachedMusicPolicy({ musicUrl: "/static/audit/attached-pulsesoc-music.wav" });
+    expect(policy.hasAttachedMusic).toBe(true);
+    expect(policy.musicUrl).toBe(`${PULSE_API_BASE_URL}/static/audit/attached-pulsesoc-music.wav`);
+  });
+
+  it("leaves an already-absolute http url untouched", () => {
+    const policy = resolveAttachedMusicPolicy({ musicUrl: "https://cdn/track.m3u8" });
+    expect(policy.musicUrl).toBe("https://cdn/track.m3u8");
+  });
+
+  it("absolutizes a bare relative path that does not start with a slash", () => {
+    const policy = resolveAttachedMusicPolicy({ musicUrl: "media/track.wav" });
+    expect(policy.musicUrl).toBe(`${PULSE_API_BASE_URL}/media/track.wav`);
+  });
+
+  it("absolutizes the relative attached_audio_url a published video post carries", () => {
+    const policy = resolvePostAudioPolicy({ music: { attached_audio_url: "/static/audit/attached-pulsesoc-music.wav" } });
+    expect(policy.muteOriginalAudio).toBe(true);
+    expect(policy.musicUrl).toBe(`${PULSE_API_BASE_URL}/static/audit/attached-pulsesoc-music.wav`);
   });
 });
 
