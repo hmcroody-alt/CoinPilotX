@@ -36,7 +36,8 @@ def main() -> int:
         "refreshLiveState(selected.id, \"manual\")",
         "listLiveChat(selected.id).then(setMessages)",
         "Open Live Web Viewer",
-        "Go Live Web",
+        "Go Live",
+        "navigation?.navigate(\"LiveStudio\")",
     ):
         require(token in screen, f"LiveScreen missing QA hardening token: {token}")
 
@@ -50,19 +51,25 @@ def main() -> int:
         require(token in api, f"Live API wrapper must reuse existing backend route: {token}")
 
     for token in (
-        "live_studio_web_fallback",
+        "navigationRef.navigate(\"LiveStudio\"",
         "LiveDetail",
         "extractNumericQueryValue(normalized, \"live\")",
     ):
         require(token in routing, f"Live notification/deep-link routing missing: {token}")
 
     for forbidden in (
-        "livekit/token",
         "browser-publish",
-        "cohost/request",
-        "/api/pulse/live/start",
     ):
-        require(forbidden not in api, f"Native Live viewer QA must not add host/call flow: {forbidden}")
+        require(forbidden not in api, f"Native Live must not delegate host/call flow to browser handoff: {forbidden}")
+
+    for token in (
+        "/api/pulse/live/start",
+        "/api/pulse/live/${liveId}/livekit/token",
+        "/api/pulse/live/${liveId}/join-request",
+        "/api/pulse/live/${liveId}/join-status",
+        "/api/pulse/live/${liveId}/guests/${guestId}/publish-complete",
+    ):
+        require(token in api, f"Native Live host/guest flow must reuse existing backend route: {token}")
 
     for phrase in (
         "Real-device/simulator QA was not completed",
@@ -79,9 +86,9 @@ def main() -> int:
         "Live Viewer Device QA + Hardening",
         "reports/pulsesoc_native_live_device_qa.md",
         "scripts/pulsesoc_native_live_device_qa_audit.py",
-        "Native Premium + Entitlements Foundation",
-        "Risk: Medium.",
-        "Safest Implementation Plan",
+        "Native Live Audio and Guest Join Repair",
+        "reports/pulsesoc_live_audio_guest_join_repair_2026-07-21.md",
+        "Physical end-to-end proof remains **NOT OBSERVED**",
     ):
         require(phrase in progress, f"Master native progress missing Live QA checkpoint or next recommendation: {phrase}")
 

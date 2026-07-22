@@ -4,7 +4,9 @@ import { PulseAuthor } from "./feed";
 import { pulseApi } from "./pulseApi";
 import {
   buildLiveStartPayload,
+  normalizeGuestRequest,
   normalizeGuestRequests,
+  normalizeLiveGuest,
   normalizeLiveGuests,
   normalizeLiveKitCredentials,
   normalizeLiveStartResult,
@@ -15,7 +17,7 @@ import {
 } from "../live/liveSession";
 import type { LiveStudioDraft } from "../live/liveStudioReadiness";
 
-export type LiveKitRole = "host" | "guest" | "viewer";
+export type LiveKitRole = "host" | "guest" | "cohost" | "viewer";
 
 const LIVE_CACHE_KEY = "pulsesoc.native.live.discovery";
 const liveStateCacheKey = (liveId: number) => `pulsesoc.native.live.state.${liveId}`;
@@ -85,6 +87,11 @@ export type PulseLiveState = {
   viewer_role?: string;
   accepting_guests?: boolean;
   cohost_enabled?: boolean;
+  viewer_join_request?: LiveGuestRequest | null;
+  guest?: LiveGuest | null;
+  guests?: LiveGuest[];
+  join_request_count?: number;
+  guest_count?: number;
   messages?: PulseLiveChatMessage[];
   playback?: LivePlayback;
   discovery?: PulseLiveItem;
@@ -224,6 +231,33 @@ export async function getLiveKitToken(liveId: number, role: LiveKitRole = "viewe
   return normalizeLiveKitCredentials(data);
 }
 
+export async function getLiveJoinStatus(liveId: number): Promise<{
+  ok?: boolean;
+  status: string;
+  step: string;
+  request: LiveGuestRequest | null;
+  guest: LiveGuest | null;
+  canPublish: boolean;
+  livekitConfigured: boolean;
+  tokenUrl: string;
+  message: string;
+  errorCode: string;
+}> {
+  const data = await pulseApi<Record<string, unknown>>(`/api/pulse/live/${liveId}/join-status`);
+  return {
+    ok: Boolean(data.ok),
+    status: String(data.status || "none"),
+    step: String(data.step || "idle"),
+    request: normalizeGuestRequest(data.request as Record<string, unknown> | null | undefined),
+    guest: normalizeLiveGuest(data.guest as Record<string, unknown> | null | undefined),
+    canPublish: Boolean(data.can_publish),
+    livekitConfigured: Boolean(data.livekit_configured),
+    tokenUrl: String(data.token_url || ""),
+    message: String(data.message || ""),
+    errorCode: String(data.error_code || "")
+  };
+}
+
 export type EndLiveResult = {
   recordingStatus: string;
   replayUrl: string;
@@ -308,6 +342,39 @@ export async function cancelJoinRequest(liveId: number, requestId: number) {
   );
 }
 
+export async function confirmGuestPublishComplete(
+  liveId: number,
+  guestId: number,
+  payload: {
+    traceId?: string;
+    participantIdentity?: string;
+    videoPublicationSid?: string;
+    audioPublicationSid?: string;
+  } = {}
+) {
+  const data = await pulseApi<Record<string, unknown>>(`/api/pulse/live/${liveId}/guests/${guestId}/publish-complete`, {
+    method: "POST",
+    body: JSON.stringify({
+      trace_id: payload.traceId || "",
+      participant_identity: payload.participantIdentity || "",
+      room_connected: true,
+      video_publication_sid: payload.videoPublicationSid || "",
+      audio_publication_sid: payload.audioPublicationSid || ""
+    })
+  });
+  return {
+    ok: Boolean(data.ok),
+    status: String(data.status || ""),
+    state: String(data.state || ""),
+    step: String(data.step || ""),
+    traceId: String(data.trace_id || payload.traceId || ""),
+    retryAfterMs: Number(data.retry_after_ms || 800),
+    missingEvent: String(data.missing_event || ""),
+    message: String(data.message || ""),
+    guest: normalizeLiveGuest(data.guest as Record<string, unknown> | null | undefined)
+  };
+}
+
 /** Open the native web viewer for a live. Studio/host broadcasting is fully native — no web handoff. */
 export async function openLiveWebFallback(liveId?: number) {
   if (!liveId) return;
@@ -362,6 +429,11 @@ export function normalizeLiveState(data: PulseLiveState, liveId: number): PulseL
     publish_state: String(data.publish_state || discovery?.publish_state || playback.state_machine || "live"),
     viewer_count: Number(data.viewer_count || discovery?.viewer_count || 0),
     viewer_role: String(data.viewer_role || "viewer"),
+    viewer_join_request: normalizeGuestRequest(data.viewer_join_request as Record<string, unknown> | null | undefined),
+    guest: normalizeLiveGuest(data.guest as Record<string, unknown> | null | undefined),
+    guests: normalizeLiveGuests(data.guests),
+    join_request_count: Number(data.join_request_count || 0),
+    guest_count: Number(data.guest_count || 0),
     messages: normalizeLiveChat(data.messages || []),
     playback,
     discovery

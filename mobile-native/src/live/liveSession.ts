@@ -37,7 +37,15 @@ export type LiveKitCredentials = {
   room: string;
   identity: string;
   canPublish: boolean;
+  canSubscribe: boolean;
+  canPublishData: boolean;
+  canUpdateOwnMetadata: boolean;
+  roomJoin: boolean;
   role: string;
+  guestId: number;
+  requestId: number;
+  participantName: string;
+  traceId: string;
   expiresAt: string;
 };
 
@@ -56,6 +64,7 @@ export type LiveGuestRequest = {
 export type LiveGuest = {
   guestId: number;
   userId: number;
+  requestId: number;
   displayName: string;
   avatarUrl: string;
   role: string;
@@ -150,7 +159,15 @@ export function normalizeLiveKitCredentials(raw: Record<string, unknown> | null 
     room: toStr(data.room),
     identity: toStr(data.identity),
     canPublish: toBool(data.can_publish),
+    canSubscribe: toBool(data.can_subscribe ?? true),
+    canPublishData: toBool(data.can_publish_data ?? true),
+    canUpdateOwnMetadata: toBool(data.can_update_own_metadata),
+    roomJoin: toBool(data.room_join ?? true),
     role: toStr(data.role, "viewer"),
+    guestId: toNum(data.guest_id),
+    requestId: toNum(data.request_id),
+    participantName: toStr(data.participant_name),
+    traceId: toStr(data.trace_id),
     expiresAt: toStr(data.expires_at)
   };
 }
@@ -198,6 +215,7 @@ export function normalizeLiveGuest(raw: Record<string, unknown> | null | undefin
   return {
     guestId,
     userId,
+    requestId: toNum(data.request_id),
     displayName: toStr(data.display_name ?? data.username, "Guest"),
     avatarUrl: toStr(data.avatar_url),
     role,

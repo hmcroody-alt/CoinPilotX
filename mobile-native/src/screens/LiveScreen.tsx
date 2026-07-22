@@ -4,6 +4,7 @@ import { ComponentType, useCallback, useEffect, useMemo, useRef, useState } from
 import {
   ActivityIndicator,
   AppState,
+  Alert,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -33,7 +34,11 @@ import {
   PulseLiveChatMessage,
   PulseLiveItem,
   PulseLiveState,
+  cancelJoinRequest,
+  confirmGuestPublishComplete,
+  getLiveJoinStatus,
   reactToLive,
+  requestToJoinLive,
   sendLiveChat
 } from "../api/live";
 import { useLiveBroadcastRoom } from "../live/useLiveBroadcastRoom";
@@ -66,11 +71,16 @@ export function LiveScreen({ route, navigation }: Props) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [joined, setJoined] = useState(false);
+  const [joinRequestId, setJoinRequestId] = useState(0);
+  const [guestStatus, setGuestStatus] = useState("");
+  const [guestError, setGuestError] = useState("");
+  const [guestPublishing, setGuestPublishing] = useState(false);
   const [muted, setMuted] = useState(true);
   const [playbackFailed, setPlaybackFailed] = useState(false);
   const [VideoViewComponent, setVideoViewComponent] = useState<ComponentType<NativeVideoViewProps> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoRef = useRef<Video>(null);
+  const guestPublishKeyRef = useRef("");
   const room = useLiveBroadcastRoom();
   const connectLiveRoom = room.connect;
   const disconnectLiveRoom = room.disconnect;
@@ -150,6 +160,9 @@ export function LiveScreen({ route, navigation }: Props) {
       setState(next);
       setMessages(next.messages || []);
       if (next.discovery) setSelected(next.discovery);
+      setJoinRequestId(next.viewer_join_request?.requestId || next.guest?.requestId || 0);
+      setGuestStatus(next.guest ? next.guest.status || "accepted" : next.viewer_join_request?.status || "");
+      if (next.guest) setGuestError("");
     } catch (stateError) {
       const cached = await loadCachedLiveState(liveId);
       if (cached) {
@@ -320,6 +333,163 @@ export function LiveScreen({ route, navigation }: Props) {
     : muted
       ? "Muted"
       : "Sound on";
+  const currentGuest = state?.guest || null;
+  const currentJoinRequest = state?.viewer_join_request || null;
+  const canRequestGuest = Boolean(activeLiveId && state?.accepting_guests && joined && !currentGuest && !currentJoinRequest);
+  const canCancelGuestRequest = Boolean(activeLiveId && joinRequestId && !currentGuest && ["pending", "requested"].includes(guestStatus));
+  const guestIsLive = Boolean(currentGuest && room.connected && room.canPublish && room.localAudioTrackCount > 0);
+  const guestActionLabel = guestPublishing
+    ? "Joining…"
+    : guestIsLive
+      ? "Guest Live"
+      : currentGuest
+        ? "Join Guest"
+        : canCancelGuestRequest
+          ? "Cancel Guest"
+          : currentJoinRequest
+            ? "Waiting Host"
+            : "Request Guest";
+
+  const refreshGuestStatus = useCallback(async (liveId: number) => {
+    const status = await getLiveJoinStatus(liveId);
+    setJoinRequestId(status.request?.requestId || status.guest?.requestId || 0);
+    setGuestStatus(status.guest ? status.guest.status || "accepted" : status.status);
+    setGuestError(status.errorCode ? status.message : "");
+    setState((current) =>
+      current
+        ? {
+            ...current,
+            viewer_role: status.guest ? "guest" : current.viewer_role,
+            viewer_join_request: status.request,
+            guest: status.guest
+          }
+        : current
+    );
+    return status;
+  }, []);
+
+  const requestGuestSeat = useCallback(async () => {
+    if (!activeLiveId || guestPublishing || busy === "guest") return;
+    setBusy("guest");
+    setGuestError("");
+    try {
+      const result = await requestToJoinLive(activeLiveId, {
+        cameraReady: Platform.OS !== "web",
+        micReady: Platform.OS !== "web",
+        networkQuality: room.connectionQuality || "good"
+      });
+      setJoinRequestId(Number(result.request_id || 0));
+      setGuestStatus(String(result.status || "pending"));
+      await refreshLiveState(activeLiveId, "manual");
+      await refreshGuestStatus(activeLiveId).catch(() => undefined);
+    } catch (requestError) {
+      setGuestError(requestError instanceof Error ? requestError.message : "Co-host request failed.");
+    } finally {
+      setBusy("");
+    }
+  }, [activeLiveId, busy, guestPublishing, refreshGuestStatus, room.connectionQuality]);
+
+  const cancelGuestSeatRequest = useCallback(async () => {
+    if (!activeLiveId || !joinRequestId || busy === "guest") return;
+    setBusy("guest");
+    setGuestError("");
+    try {
+      await cancelJoinRequest(activeLiveId, joinRequestId);
+      setJoinRequestId(0);
+      setGuestStatus("cancelled");
+      await refreshLiveState(activeLiveId, "manual");
+    } catch (cancelError) {
+      setGuestError(cancelError instanceof Error ? cancelError.message : "Could not cancel the co-host request.");
+    } finally {
+      setBusy("");
+    }
+  }, [activeLiveId, busy, joinRequestId]);
+
+  const confirmGuestPublish = useCallback(
+    async (liveId: number, credentialsTraceId = "") => {
+      const guestId = state?.guest?.guestId || currentGuest?.guestId || 0;
+      if (!guestId) throw new Error("PulseSoc approved this co-host slot, but no guest id was returned.");
+      const deadline = Date.now() + 15000;
+      let lastMessage = "";
+      while (Date.now() < deadline) {
+        const result = await confirmGuestPublishComplete(liveId, guestId, {
+          traceId: credentialsTraceId,
+          participantIdentity: room.participants.find((participant) => participant.isLocal)?.identity || ""
+        });
+        lastMessage = result.message;
+        if (result.state === "live") {
+          setGuestStatus("live");
+          setState((current) => (current ? { ...current, guest: result.guest || current.guest, viewer_role: "guest" } : current));
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, Math.max(400, Math.min(result.retryAfterMs || 800, 1600))));
+      }
+      throw new Error(lastMessage || "LiveKit did not confirm guest audio/video before timeout.");
+    },
+    [currentGuest?.guestId, room.participants, state?.guest?.guestId]
+  );
+
+  const publishAsGuest = useCallback(async () => {
+    if (!activeLiveId || guestPublishing || guestIsLive) return;
+    const guestId = currentGuest?.guestId || state?.guest?.guestId || 0;
+    if (!guestId) {
+      await refreshGuestStatus(activeLiveId);
+      return;
+    }
+    setGuestPublishing(true);
+    setGuestError("");
+    try {
+      const credentials = await getLiveKitToken(activeLiveId, "cohost");
+      if (!credentials || !credentials.canPublish || credentials.guestId <= 0) {
+        throw new Error("PulseSoc has not returned a verified co-host publishing token yet.");
+      }
+      const ok = await connectLiveRoom(credentials, { publish: true });
+      if (!ok || room.error) {
+        throw new Error(room.error || "Co-host media could not connect.");
+      }
+      await confirmGuestPublish(activeLiveId, credentials.traceId);
+      await refreshLiveState(activeLiveId, "manual");
+    } catch (publishError) {
+      setGuestError(publishError instanceof Error ? publishError.message : "Co-host publish failed.");
+    } finally {
+      setGuestPublishing(false);
+    }
+  }, [
+    activeLiveId,
+    confirmGuestPublish,
+    connectLiveRoom,
+    currentGuest?.guestId,
+    guestIsLive,
+    guestPublishing,
+    refreshGuestStatus,
+    room.error,
+    state?.guest?.guestId
+  ]);
+
+  const handleGuestAction = useCallback(() => {
+    if (guestIsLive || guestPublishing) return;
+    if (currentGuest) {
+      publishAsGuest().catch(() => undefined);
+      return;
+    }
+    if (canCancelGuestRequest) {
+      Alert.alert("Cancel co-host request?", "The host will no longer see your request to join this Live.", [
+        { text: "Keep waiting", style: "cancel" },
+        { text: "Cancel request", style: "destructive", onPress: () => cancelGuestSeatRequest().catch(() => undefined) }
+      ]);
+      return;
+    }
+    if (canRequestGuest) requestGuestSeat().catch(() => undefined);
+  }, [canCancelGuestRequest, canRequestGuest, cancelGuestSeatRequest, currentGuest, guestIsLive, guestPublishing, publishAsGuest, requestGuestSeat]);
+
+  useEffect(() => {
+    if (!activeLiveId || !currentGuest || guestIsLive || guestPublishing) return;
+    const key = `${activeLiveId}:${currentGuest.guestId}:${currentGuest.status}`;
+    if (!["active", "accepted", "joining", "joined", "publishing"].includes(String(currentGuest.status || ""))) return;
+    if (guestPublishKeyRef.current === key) return;
+    guestPublishKeyRef.current = key;
+    publishAsGuest().catch(() => undefined);
+  }, [activeLiveId, currentGuest, guestIsLive, guestPublishing, publishAsGuest]);
 
   useEffect(() => {
     if (!activeLiveId || !canPlayHls || !playbackUrl) {
@@ -461,6 +631,39 @@ export function LiveScreen({ route, navigation }: Props) {
               <Text style={styles.actionText}>Share</Text>
             </Pressable>
           </View>
+
+          {state?.accepting_guests || currentJoinRequest || currentGuest ? (
+            <View style={styles.guestJoinPanel}>
+              <View style={styles.guestJoinHeader}>
+                <View style={[styles.liveDot, guestIsLive ? styles.greenDot : undefined]} />
+                <Text style={styles.guestJoinTitle}>
+                  {guestIsLive ? "Co-host live" : currentGuest ? "Host approved co-host" : currentJoinRequest ? "Co-host request pending" : "Join as guest"}
+                </Text>
+                <Text style={styles.guestJoinStatus}>{guestStatus || "ready"}</Text>
+              </View>
+              <Text style={styles.guestJoinText}>
+                {guestIsLive
+                  ? "Your camera and microphone are publishing through the same LiveKit room as the host."
+                  : currentGuest
+                    ? "Tap Join Guest to publish camera and microphone natively. PulseSoc confirms audio/video with the server before marking you live."
+                    : currentJoinRequest
+                      ? "Waiting for the host to accept. This screen will promote you into the Live automatically after approval."
+                      : "Request a server-authoritative co-host seat. Camera and microphone publish only after host approval."}
+              </Text>
+              {guestError ? <Text style={styles.guestJoinError}>{guestError}</Text> : null}
+              <Pressable
+                style={[
+                  styles.guestJoinButton,
+                  guestIsLive ? styles.guestJoinButtonLive : undefined,
+                  (!canRequestGuest && !canCancelGuestRequest && !currentGuest) || guestPublishing ? styles.disabledButton : undefined
+                ]}
+                disabled={guestIsLive || guestPublishing || (!canRequestGuest && !canCancelGuestRequest && !currentGuest)}
+                onPress={handleGuestAction}
+              >
+                <Text style={styles.guestJoinButtonText}>{guestActionLabel}</Text>
+              </Pressable>
+            </View>
+          ) : null}
 
           <FlatList
             data={messages}
@@ -758,6 +961,63 @@ const styles = StyleSheet.create({
   },
   greenDot: {
     backgroundColor: colors.accent
+  },
+  guestJoinButton: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: colors.accent,
+    borderRadius: 8,
+    marginTop: 10,
+    minHeight: 42,
+    justifyContent: "center",
+    paddingHorizontal: 16
+  },
+  guestJoinButtonLive: {
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.accent,
+    borderWidth: 1
+  },
+  guestJoinButtonText: {
+    color: colors.background,
+    fontWeight: "900"
+  },
+  guestJoinError: {
+    color: colors.danger,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 8
+  },
+  guestJoinHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8
+  },
+  guestJoinPanel: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginHorizontal: 14,
+    marginBottom: 8,
+    padding: 12
+  },
+  guestJoinStatus: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
+    marginLeft: "auto",
+    textTransform: "uppercase"
+  },
+  guestJoinText: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 7
+  },
+  guestJoinTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "900"
   },
   liveKitStatus: {
     alignItems: "center",

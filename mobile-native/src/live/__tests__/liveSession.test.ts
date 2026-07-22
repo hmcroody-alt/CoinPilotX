@@ -93,7 +93,15 @@ describe("normalizeLiveKitCredentials", () => {
       room: "pulse-live-1",
       identity: "pulse-user-7",
       can_publish: true,
+      can_subscribe: true,
+      can_publish_data: true,
+      can_update_own_metadata: true,
+      room_join: true,
       role: "host",
+      guest_id: 0,
+      request_id: 0,
+      participant_name: "Roody",
+      trace_id: "trace-1",
       expires_at: 1700000000
     });
     expect(creds).toEqual({
@@ -102,7 +110,15 @@ describe("normalizeLiveKitCredentials", () => {
       room: "pulse-live-1",
       identity: "pulse-user-7",
       canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+      canUpdateOwnMetadata: true,
+      roomJoin: true,
       role: "host",
+      guestId: 0,
+      requestId: 0,
+      participantName: "Roody",
+      traceId: "trace-1",
       expiresAt: "1700000000"
     });
   });
@@ -111,6 +127,39 @@ describe("normalizeLiveKitCredentials", () => {
     const creds = normalizeLiveKitCredentials({ token: "tok", url: "wss://x" });
     expect(creds?.role).toBe("viewer");
     expect(creds?.canPublish).toBe(false);
+  });
+
+  it("normalizes server-verified co-host publishing claims", () => {
+    const creds = normalizeLiveKitCredentials({
+      token: "cohost-token",
+      livekit_url: "wss://livekit.example",
+      room: "pulse-live-44",
+      identity: "pulse-live-guest-8",
+      role: "cohost",
+      can_publish: true,
+      can_subscribe: true,
+      can_publish_data: true,
+      can_update_own_metadata: true,
+      room_join: true,
+      guest_id: 91,
+      request_id: 77,
+      participant_name: "Nova",
+      trace_id: "cohost-trace",
+      expires_at: 1800000000
+    });
+
+    expect(creds).toMatchObject({
+      role: "cohost",
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+      canUpdateOwnMetadata: true,
+      roomJoin: true,
+      guestId: 91,
+      requestId: 77,
+      participantName: "Nova",
+      traceId: "cohost-trace"
+    });
   });
 
   it("returns null when the token or url is missing", () => {
@@ -184,6 +233,7 @@ describe("normalizeLiveGuest(s)", () => {
     expect(guest).toEqual({
       guestId: 12,
       userId: 88,
+      requestId: 0,
       displayName: "Nova",
       avatarUrl: "a.png",
       role: "cohost",

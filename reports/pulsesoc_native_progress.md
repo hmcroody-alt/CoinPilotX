@@ -5732,3 +5732,17 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Physical iPhone 16 Pro `P3r7or` was updated with the guarded dev sidecar `com.pulsesoc.nativeapp.dev`, installed, and launched. This is build/install/launch evidence only; hardware feature QA remains not observed.
 - Release remains **NO-GO** because Apple-side bundle/signing/provisioning/APNs, production-clean release packaging, privacy metadata, and physical production QA are still open.
 - Report: `reports/pulsesoc_native_app_review_readiness_2026-07-21.md`.
+
+## Native Live Audio and Guest Join Repair — 2026-07-21
+
+- Branch: `release/undx-nexus-core-v4`.
+- Repaired the repository-side native Live audio/co-host pipeline while preserving the production backend as the source of truth.
+- Host microphone publishing now explicitly configures the iOS LiveKit audio session as `playAndRecord` / `videoChat` with Bluetooth, AirPlay, and default-speaker routing before capture and publication.
+- The shared native LiveKit hook still verifies a local microphone publication and fails with `LIVE_LOCAL_AUDIO_NOT_PUBLISHED` rather than allowing a silent video-only broadcast.
+- Native Live viewer now supports the production co-host lifecycle: request guest seat, cancel pending request, read join status, obtain a server-verified `cohost` LiveKit token, publish camera/microphone, and confirm publication through `/api/pulse/live/<id>/guests/<guest_id>/publish-complete`.
+- Added typed co-host token metadata (`guestId`, `requestId`, `traceId`, publish/subscription claims) and normalized viewer `guest` / `viewer_join_request` state.
+- Added regression tests for co-host token claims, join-request, join-status, and publish-complete route wrappers.
+- Added `scripts/pulsesoc_live_audio_guest_join_repair_audit.py`; focused repair audit passes.
+- Automated validation so far: typecheck PASS; Jest PASS (`38` suites / `373` tests); focused Live audio/guest repair audit PASS.
+- Physical end-to-end proof remains **NOT OBSERVED** until tested with at least host iPhone + guest iPhone + viewer iPhone. A single build/install/launch can verify deployment only, not real participant audio.
+- Report: `reports/pulsesoc_live_audio_guest_join_repair_2026-07-21.md`.
