@@ -2,6 +2,27 @@
 
 Date: 2026-07-18
 
+## Latest Mission Status: Three-Device Live Production Acceptance Test
+
+- Date: 2026-07-21.
+- Branch: `release/undx-nexus-core-v4`.
+- Build under test: `9680a9f5f31f2528ab42aa0621f09971fc58bd36`.
+- Result: **NOT OBSERVED**.
+- Pre-flight branch and commit matched the required build.
+- Device discovery found only one available physical iPhone: `P3r7or` / iPhone 16 Pro (`F45E640F-6D02-514E-877C-B764E8D6818F`) on iOS 18.7.3.
+- The other known devices were unavailable, so the required Host + Guest + Viewer physical matrix could not be executed.
+- Installed app discovery confirmed `PulseSoc Native Dev` (`com.pulsesoc.nativeapp.dev`) remains installed on the available iPhone.
+- No code changes were made.
+- Report: `reports/pulsesoc_live_three_device_acceptance_2026-07-21.md`.
+
+Next highest-value mission:
+
+- Connect three physical iPhones with separate Host, Guest, and Viewer accounts and rerun the Live acceptance matrix.
+
+Reason:
+
+- The code-side Live repair is pushed, but Native Live cannot be called production-accepted until host audio, guest co-host publication, two-way audio, viewer playback, route changes, and end-Live cleanup are directly observed on real hardware.
+
 ## Latest Mission Status: Native Release Readiness - Apple Ownership Deferred
 
 - Date: 2026-07-20.
