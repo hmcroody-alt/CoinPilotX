@@ -77,19 +77,54 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="ignore") if path.exists() else ""
 
 
-def native_code_files() -> list[Path]:
+def is_test_path(path: Path) -> bool:
+    """Test fixtures are not shippable app surfaces. A `web fallback` string in a
+    test description or a mocked route is not a production web exit, so tests are
+    audited separately and never counted as active replacement blockers."""
+    if "__tests__" in path.parts or "__mocks__" in path.parts:
+        return True
+    name = path.name
+    return ".test." in name or ".spec." in name
+
+
+def native_code_files(include_tests: bool = False) -> list[Path]:
     return [
         path
         for path in NATIVE_SRC.rglob("*")
         if path.suffix in {".ts", ".tsx", ".js", ".jsx"}
         and "node_modules" not in path.parts
+        and (include_tests or not is_test_path(path))
     ]
 
 
-def scan_blockers() -> list[Finding]:
+# Strip `//` line comments (but not the `//` inside a URL scheme) so a commented
+# reference like `// no web, no WebView` never registers as a live web exit.
+_LINE_COMMENT = re.compile(r"(?<!:)//.*$")
+
+
+def _uncommented_lines(text: str):
+    """Yield (line_number, code_without_comments) skipping pure comment lines and
+    block-comment bodies, so the scanner reasons about executable code only."""
+    in_block = False
+    for index, raw in enumerate(text.splitlines(), start=1):
+        stripped = raw.strip()
+        if in_block:
+            if "*/" in stripped:
+                in_block = False
+            continue
+        if stripped.startswith("/*"):
+            if "*/" not in stripped:
+                in_block = True
+            continue
+        if stripped.startswith(("//", "*")):
+            continue
+        yield index, _LINE_COMMENT.sub("", raw)
+
+
+def scan_blockers(paths: list[Path]) -> list[Finding]:
     findings: list[Finding] = []
-    for path in native_code_files():
-        for index, line in enumerate(read(path).splitlines(), start=1):
+    for path in paths:
+        for index, line in _uncommented_lines(read(path)):
             for kind, pattern in BLOCKER_PATTERNS.items():
                 if pattern.search(line):
                     findings.append(Finding(rel(path), index, kind, line.strip()))
@@ -183,7 +218,10 @@ def surface_matrix(routes: set[str], blockers: list[Finding]) -> list[dict[str, 
 
 
 def main() -> int:
-    blockers = scan_blockers()
+    blockers = scan_blockers(native_code_files(include_tests=False))
+    test_findings = scan_blockers(
+        [path for path in native_code_files(include_tests=True) if is_test_path(path)]
+    )
     routes = route_names()
     matrix = surface_matrix(routes, blockers)
     by_kind: dict[str, int] = {}
@@ -203,11 +241,15 @@ def main() -> int:
         "critical_surfaces_blocked_or_incomplete": len(blocked_surfaces),
         "blocker_counts_by_kind": by_kind,
         "hard_blocker_count": len(hard_blockers),
+        # Test-only matches are reported for transparency but excluded from the
+        # active blocker count and from release readiness (see is_test_path).
+        "test_only_finding_count": len(test_findings),
+        "test_only_findings": [asdict(finding) for finding in test_findings],
         "production_route_mentions": production_route_mentions(),
         "surface_matrix": matrix,
         "hard_blockers": [asdict(finding) for finding in hard_blockers],
         "release_readiness": "FAIL" if hard_blockers or blocked_surfaces else "PASS",
-        "reason": "Native-only replacement requires zero WebView/openURL/safe-web-fallback paths and complete static coverage for critical surfaces.",
+        "reason": "Native-only replacement requires zero WebView/openURL/safe-web-fallback paths in shippable source (comments and test fixtures excluded) and complete static coverage for critical surfaces.",
     }
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     REPORT_PATH.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -216,6 +258,7 @@ def main() -> int:
     print(f"Native routes discovered: {payload['native_route_count']}")
     print(f"Critical surfaces: {native_static_complete}/{len(matrix)} static native coverage")
     print(f"Hard web-exit blockers: {len(hard_blockers)}")
+    print(f"Test-only findings (excluded from active count): {len(test_findings)}")
     print(f"Blocker counts: {json.dumps(by_kind, sort_keys=True)}")
     if hard_blockers:
         print("Top hard blockers:")

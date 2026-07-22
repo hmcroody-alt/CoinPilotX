@@ -5,13 +5,13 @@
     "fallback_status": 2,
     "safe_web_fallback": 4,
     "webPath": 15,
-    "web_fallback_copy": 28,
-    "webview_copy": 3
+    "web_fallback_copy": 25,
+    "webview_copy": 2
   },
   "critical_surface_count": 26,
   "critical_surfaces_blocked_or_incomplete": 12,
   "critical_surfaces_with_static_native_coverage": 14,
-  "hard_blocker_count": 57,
+  "hard_blocker_count": 54,
   "hard_blockers": [
     {
       "file": "mobile-native/src/navigation/dashboardRouting.ts",
@@ -336,24 +336,6 @@
       "kind": "Linking.openURL",
       "line": 114,
       "text": "await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);"
-    },
-    {
-      "file": "mobile-native/src/navigation/__tests__/routeResolution.test.ts",
-      "kind": "web_fallback_copy",
-      "line": 45,
-      "text": "it(\"opens Terms and Privacy Policy through the safe production web fallback, not the support screen\", () => {"
-    },
-    {
-      "file": "mobile-native/src/navigation/__tests__/routeResolution.test.ts",
-      "kind": "web_fallback_copy",
-      "line": 105,
-      "text": "it(\"resolves every registered destination to a real navigation or web fallback (no dead routes)\", () => {"
-    },
-    {
-      "file": "mobile-native/src/navigation/__tests__/notificationRouting.test.ts",
-      "kind": "web_fallback_copy",
-      "line": 9,
-      "text": "describe(\"routeNotificationTarget web fallback policy\", () => {"
     }
   ],
   "native_route_count": 102,
@@ -377,7 +359,7 @@
     "/pulse/status": 12,
     "/pulse/videos": 6
   },
-  "reason": "Native-only replacement requires zero WebView/openURL/safe-web-fallback paths and complete static coverage for critical surfaces.",
+  "reason": "Native-only replacement requires zero WebView/openURL/safe-web-fallback paths in shippable source (comments and test fixtures excluded) and complete static coverage for critical surfaces.",
   "release_readiness": "FAIL",
   "surface_matrix": [
     {
@@ -983,6 +965,27 @@
       "native_shell_or_web_exit_findings": [],
       "status": "native_static_coverage",
       "surface": "Saved"
+    }
+  ],
+  "test_only_finding_count": 3,
+  "test_only_findings": [
+    {
+      "file": "mobile-native/src/navigation/__tests__/routeResolution.test.ts",
+      "kind": "web_fallback_copy",
+      "line": 45,
+      "text": "it(\"opens Terms and Privacy Policy through the safe production web fallback, not the support screen\", () => {"
+    },
+    {
+      "file": "mobile-native/src/navigation/__tests__/routeResolution.test.ts",
+      "kind": "web_fallback_copy",
+      "line": 105,
+      "text": "it(\"resolves every registered destination to a real navigation or web fallback (no dead routes)\", () => {"
+    },
+    {
+      "file": "mobile-native/src/navigation/__tests__/notificationRouting.test.ts",
+      "kind": "web_fallback_copy",
+      "line": 9,
+      "text": "describe(\"routeNotificationTarget web fallback policy\", () => {"
     }
   ]
 }
