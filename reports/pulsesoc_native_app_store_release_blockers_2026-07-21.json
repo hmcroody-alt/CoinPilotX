@@ -1,0 +1,159 @@
+{
+  "date": "2026-07-21",
+  "release_decision": "NO_GO",
+  "upload_attempted": false,
+  "ipa_exported": false,
+  "archive_created": true,
+  "archive_uploadable": false,
+  "repository": "/Users/hmcherie/Desktop/CoinPilotX",
+  "branch": "release/undx-nexus-core-v4",
+  "head_at_attempt_start": "6608f934",
+  "app_store_reference": {
+    "source": "https://itunes.apple.com/lookup?id=6777591572",
+    "track_id": 6777591572,
+    "track_name": "PulseSoc",
+    "seller_name": "ROODY CHERIE",
+    "live_bundle_id": "com.pulsesoc.app",
+    "live_version": "1.0",
+    "minimum_ios_version": "15.1",
+    "current_version_release_date": "2026-07-01T07:00:00Z"
+  },
+  "native_release_configuration": {
+    "expo_slug": "pulsesoc-native",
+    "expo_version": "0.1.0",
+    "xcode_bundle_id": "com.pulsesoc.nativeapp",
+    "xcode_marketing_version": "1.0",
+    "xcode_build_number": "1",
+    "development_team": "87ZC69AGSR",
+    "signing_style": "Automatic",
+    "release_code_sign_identity": "Apple Development",
+    "entitlements_file": "mobile-native/ios/PulseSocNative/PulseSocNative.entitlements"
+  },
+  "blockers": [
+    {
+      "id": "ASR-001",
+      "severity": "P0",
+      "category": "app_store_identity",
+      "status": "external_owner_decision_required",
+      "title": "Native bundle id does not match the live App Store bundle id",
+      "evidence": "Live App Store bundle id is com.pulsesoc.app; native Release bundle id is com.pulsesoc.nativeapp.",
+      "required_resolution": "Confirm App Store Connect ownership and migration strategy, then align the native release target to the existing production app identity without creating a new listing."
+    },
+    {
+      "id": "ASR-002",
+      "severity": "P0",
+      "category": "signing",
+      "status": "external_required",
+      "title": "No Apple Distribution signing identity is installed locally",
+      "evidence": "security find-identity showed only Apple Development identities for ROODY CHERIE.",
+      "required_resolution": "Install or provide access to the correct Apple Distribution certificate for the production team."
+    },
+    {
+      "id": "ASR-003",
+      "severity": "P0",
+      "category": "entitlements",
+      "status": "external_required",
+      "title": "Archive uses development entitlements",
+      "evidence": "Archive entitlements include aps-environment=development and get-task-allow=true.",
+      "required_resolution": "Use an App Store provisioning profile with production push entitlement and get-task-allow=false."
+    },
+    {
+      "id": "ASR-004",
+      "severity": "P0",
+      "category": "provisioning",
+      "status": "external_required",
+      "title": "No App Store provisioning profile or export options are available",
+      "evidence": "No mobileprovision, ExportOptions.plist, or App Store Connect upload credentials were found in the release environment.",
+      "required_resolution": "Provide App Store provisioning, export options, and App Store Connect upload access."
+    },
+    {
+      "id": "ASR-005",
+      "severity": "P0",
+      "category": "build_configuration",
+      "status": "repository_side",
+      "title": "Release archive includes dev-client/dev-menu artifacts",
+      "evidence": "Archive log includes expo-dev-menu compilation and EX_DEV_MENU_ENABLED=1; expo-dev-client is present in the native dependency graph.",
+      "required_resolution": "Create a production-clean native release target/profile with dev-client/dev-menu excluded from the App Store archive."
+    },
+    {
+      "id": "ASR-006",
+      "severity": "P0",
+      "category": "native_replacement",
+      "status": "repository_side",
+      "title": "Strict native WebView replacement audit still fails",
+      "evidence": "scripts/pulsesoc_native_webview_replacement_audit.py exits 1 with 54 hard web-exit/fallback blockers.",
+      "required_resolution": "Replace or gate remaining web exits with native routes/surfaces before App Store replacement."
+    },
+    {
+      "id": "ASR-007",
+      "severity": "P0",
+      "category": "payments_iap",
+      "status": "external_and_repository_required",
+      "title": "Paid digital access and native IAP readiness are unresolved",
+      "evidence": "Public App Store description states paid digital access is not available in iOS build until IAP is implemented and approved; native replacement audit still contains commerce/provider fallback areas.",
+      "required_resolution": "Complete native IAP/subscription purchase flows or explicitly scope paid digital access out with approved App Review metadata."
+    },
+    {
+      "id": "ASR-008",
+      "severity": "P0",
+      "category": "privacy",
+      "status": "repository_and_owner_review_required",
+      "title": "Privacy manifest is not release-complete",
+      "evidence": "PrivacyInfo.xcprivacy declares an empty NSPrivacyCollectedDataTypes array while the app includes auth, messaging, uploads, notifications, and commerce-adjacent surfaces.",
+      "required_resolution": "Reconcile App Privacy labels and native privacy manifest against production data collection, tracking, and SDK usage."
+    },
+    {
+      "id": "ASR-009",
+      "severity": "P0",
+      "category": "physical_qa",
+      "status": "physical_device_required",
+      "title": "Physical-device release matrix is incomplete",
+      "evidence": "Only dev sidecar build/install/launch was verified on iPhone 16 Pro; push/camera/microphone/Live/calls/Bluetooth/background/killed-app behavior was not observed.",
+      "required_resolution": "Run and document the full physical-device release matrix on the production-signed build."
+    },
+    {
+      "id": "ASR-010",
+      "severity": "P1",
+      "category": "repository_hygiene",
+      "status": "repository_side",
+      "title": "Working tree contains unrelated dirty release-sensitive files",
+      "evidence": "app.json, Xcode project, assets, live audit/report, and security ledger changes were dirty before the release attempt.",
+      "required_resolution": "Review, land, or revert unrelated dirty work before preparing a production App Store archive."
+    },
+    {
+      "id": "ASR-011",
+      "severity": "P1",
+      "category": "versioning",
+      "status": "owner_decision_required",
+      "title": "Native version/build plan is not ready for App Store update",
+      "evidence": "Expo app version is 0.1.0 while Xcode marketing version is 1.0 build 1 and live App Store version is 1.0.",
+      "required_resolution": "Define the next App Store version/build number for the existing production listing."
+    },
+    {
+      "id": "ASR-012",
+      "severity": "P0",
+      "category": "app_store_connect",
+      "status": "external_required",
+      "title": "App Store Connect listing, metadata, build train, and IAP state were not accessible",
+      "evidence": "No App Store Connect API credentials or authenticated Apple tooling were available in the environment.",
+      "required_resolution": "Verify App Store Connect ownership, agreements, IAP products, privacy answers, screenshots, and build train before upload."
+    }
+  ],
+  "validation_summary": {
+    "npm_ci": "PASS",
+    "typecheck": "PASS",
+    "jest": "PASS",
+    "expo_doctor": "PASS",
+    "webview_replacement_audit": "FAIL",
+    "other_release_audits": "PASS",
+    "xcode_archive": "PASS_NOT_DISTRIBUTABLE",
+    "simulator_launch": "PASS",
+    "physical_sidecar_install_launch": "PASS"
+  },
+  "evidence": {
+    "archive_path": "/tmp/pulsesoc-native-release-attempt-2026-07-21/PulseSocNative.xcarchive",
+    "archive_log": "/tmp/pulsesoc-native-release-attempt-2026-07-21/archive.log",
+    "physical_install_log": "/tmp/pulsesoc-native-release-attempt-2026-07-21/physical-install.log",
+    "simulator_screenshot": "/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-app-store-release-attempt-2026-07-21/simulator-launch.png"
+  }
+}

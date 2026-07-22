@@ -1957,3 +1957,26 @@ Start with **Wave 0 + the highest-risk Wave 1 items**: update stale release gate
 ## Release Impact
 
 Native PulseSoc cannot replace the production WebView client until every active P0/P1 blocker here is eliminated or explicitly reclassified by product/legal/provider ownership with evidence. This mission did not fix blockers; it created the implementation map for eliminating them.
+
+## App Store Release Attempt Addendum - 2026-07-21
+
+The App Store release attempt introduced a separate release-blocker JSON:
+
+- `reports/pulsesoc_native_app_store_release_blockers_2026-07-21.json`
+
+New release blocker cluster:
+
+- `ASR-001`: Live App Store bundle id `com.pulsesoc.app` does not match native Release bundle id `com.pulsesoc.nativeapp`.
+- `ASR-002`: No Apple Distribution identity is installed.
+- `ASR-003`: Archive uses development entitlements (`aps-environment=development`, `get-task-allow=true`).
+- `ASR-004`: No App Store provisioning profile/export options/App Store Connect upload credentials available.
+- `ASR-005`: Production archive is not dev-client/dev-menu clean.
+- `ASR-006`: Strict WebView replacement gate still fails with 54 hard blockers.
+- `ASR-007`: IAP/subscription/payment readiness is unresolved.
+- `ASR-008`: Privacy manifest/App Privacy metadata are not release-complete.
+- `ASR-009`: Physical-device release matrix remains incomplete.
+- `ASR-010`: Pre-existing unrelated dirty release-sensitive work must be resolved.
+- `ASR-011`: App Store version/build plan is not finalized.
+- `ASR-012`: App Store Connect listing, metadata, build train, and IAP state require owner verification.
+
+These blockers are additive to the native replacement blocker inventory and prevent App Store upload/replacement today.

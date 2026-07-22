@@ -243,3 +243,22 @@ Can the current native app replace the production WebView app through a normal A
 **NO.**
 
 Reason: the app is technically buildable and the side-by-side device app was updated, but strict native-only routing fails, simulator visual QA exposed a Home overlap defect, and physical/provider/App Store release checks remain incomplete or explicitly deferred.
+
+## App Store Release Attempt Update - 2026-07-21
+
+Release decision remains **NO-GO**.
+
+Additional evidence from the 2026-07-21 release attempt:
+
+- Public Apple lookup confirms the live PulseSoc App Store app id `6777591572` uses bundle id `com.pulsesoc.app`.
+- The native Release archive currently builds bundle id `com.pulsesoc.nativeapp`.
+- A local Release archive succeeded, but it is signed with Apple Development, uses a development provisioning profile, includes `aps-environment=development`, includes `get-task-allow=true`, and contains Expo dev-menu/dev-client artifacts.
+- No IPA export or App Store upload was attempted because the archive is not App Store-distributable.
+- The strict native WebView replacement audit still fails with 54 hard web-exit/fallback blockers.
+- The physical iPhone 16 Pro dev sidecar bundle `com.pulsesoc.nativeapp.dev` was built, installed, and launched, but this does not prove production App Store signing or physical feature readiness.
+
+Release reports:
+
+- `reports/pulsesoc_native_app_store_release_attempt_2026-07-21.md`
+- `reports/pulsesoc_native_app_store_release_blockers_2026-07-21.json`
+- `reports/pulsesoc_native_app_store_release_checklist_2026-07-21.md`

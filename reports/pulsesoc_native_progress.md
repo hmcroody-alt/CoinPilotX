@@ -5703,3 +5703,20 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Verification: TypeScript clean; Jest 37 suites / 355 tests pass; Expo Doctor 18/18; `git diff --check` clean; foundation/live/feature-parity audits exit 0.
 - Release readiness remains **NO-GO**: `scripts/pulsesoc_native_webview_replacement_audit.py` still exits 1 on real remaining web-fallback source (e.g. `SearchScreen.tsx` events/lessons gateway copy) — that WebView-exit work is out of scope here. Physical QA (NRB-063) and Apple release tasks (NRB-064) remain open. Device QA for NRB-058/059 on `P3r7or` is pending build/deploy.
 - Mission report: `reports/pulsesoc_native_wave0_wave1_auth_home_stabilization_2026-07-20.md`.
+
+## App Store Release Attempt And Blocker Elimination — 2026-07-21
+
+- Branch: `release/undx-nexus-core-v4`.
+- Release decision: **NO-GO** for App Store upload and WebView replacement.
+- Existing App Store target was verified through Apple public lookup: PulseSoc app id `6777591572` is live as bundle `com.pulsesoc.app`, version `1.0`, seller `ROODY CHERIE`.
+- Native Release currently builds bundle `com.pulsesoc.nativeapp`; no ownership-safe bundle migration was performed because App Store Connect authority and bundle migration intent were not proven.
+- Local Release archive succeeded through `xcodebuild archive`, but the archive is not distributable: signed with Apple Development, uses development push entitlement, has `get-task-allow=true`, uses a team provisioning profile, and includes Expo dev-menu/dev-client artifacts.
+- IPA export and App Store upload were intentionally skipped because the archive is not App Store-signed and the native WebView replacement gate still fails.
+- Validation passed for `npm ci`, TypeScript, Jest (37 suites / 355 tests), Expo Doctor (17/17), and the current focused release/native audits except the strict WebView replacement audit.
+- Strict WebView replacement audit remains failing with 54 hard web-exit/fallback blockers; this remains the primary repository-side replacement blocker.
+- Xcode iPhone Simulator launch was verified on iPhone 17 Pro Max, with screenshot evidence under `reports/screenshots/native-app-store-release-attempt-2026-07-21/`.
+- Physical iPhone 16 Pro (`P3r7or`) was updated with the guarded dev sidecar bundle `com.pulsesoc.nativeapp.dev`, installed and launched successfully. This is not production App Store signing proof and does not cover hardware feature QA.
+- New release artifacts:
+  - `reports/pulsesoc_native_app_store_release_attempt_2026-07-21.md`
+  - `reports/pulsesoc_native_app_store_release_blockers_2026-07-21.json`
+  - `reports/pulsesoc_native_app_store_release_checklist_2026-07-21.md`
