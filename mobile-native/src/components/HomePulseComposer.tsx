@@ -264,6 +264,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
           visibility,
           media_ids: mediaIds,
           music_track_id: musicTrack?.id || "",
+          ...attachedMusicPublishFields(musicTrack),
           share_to_feed: false
         };
         const failedReel: FailedReelPublish = { kind: "reel", payload: reelPayload, startedAt: new Date().toISOString() };
@@ -282,6 +283,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
           duration_hours: 24,
           media_ids: mediaIds,
           music_track_id: musicTrack?.id || "",
+          ...attachedMusicPublishFields(musicTrack),
           ai_context: { source: "native_home_composer", topic }
         };
         setLastFailedPublish({ kind: "status", payload: statusPayload, startedAt: new Date().toISOString() });
@@ -297,7 +299,8 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
         visibility,
         media_ids: mediaIds,
         tags,
-        music_track_id: musicTrack?.id || ""
+        music_track_id: musicTrack?.id || "",
+        ...attachedMusicPublishFields(musicTrack)
       });
       setLastFailedPublish({ kind: "post", payload, startedAt: new Date().toISOString() });
       const response = await createPost(payload);
@@ -740,8 +743,28 @@ function buildCreatePayload(payload: {
   media_ids: number[];
   tags: string[];
   music_track_id: string;
+  attached_audio_url?: string;
+  original_audio_muted?: boolean;
+  audio_start_time?: number;
+  audio_volume?: number;
 }) {
   return payload;
+}
+
+/**
+ * Defense-in-depth music metadata carried on every create payload. The backend
+ * remains the source of truth for the attachment (via `music_track_id`), but
+ * sending the resolved track URL + exclusive-audio flags guarantees playback
+ * honors the selected music even if server-side enrichment is bypassed.
+ */
+function attachedMusicPublishFields(track?: ComposerMusicTrack | null) {
+  if (!track?.id) return {};
+  return {
+    attached_audio_url: track.previewUrl || "",
+    original_audio_muted: true,
+    audio_start_time: 0,
+    audio_volume: 1
+  };
 }
 
 function normalizeDraft(raw: HomeComposerDraft) {

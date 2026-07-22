@@ -47,6 +47,11 @@ export type CanonicalMediaRecord = {
   music_track_id?: string | number;
   original_audio_id?: string | number;
   attached_audio_url?: string;
+  original_audio_muted?: boolean;
+  audio_start_time?: number;
+  audio_volume?: number;
+  audio_title?: string;
+  audio_artist?: string;
   has_audio?: boolean;
   is_available?: boolean;
   alt?: string;

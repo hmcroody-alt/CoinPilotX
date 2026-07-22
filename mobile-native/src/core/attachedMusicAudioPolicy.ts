@@ -1,5 +1,7 @@
 import type { PulseReelAudio } from "../api/reels";
 import type { PulseStatusMusic } from "../api/status";
+import type { PulsePost, PulsePostMusic } from "../api/feed";
+import type { CanonicalMediaRecord } from "../media/mediaContract";
 
 /**
  * Single source of truth for the product rule "attached music takes exclusive
@@ -100,4 +102,42 @@ export function resolveReelAudioPolicy(audio?: PulseReelAudio | null): AttachedM
 
 export function resolveStatusMusicPolicy(music?: PulseStatusMusic | null): AttachedMusicPolicy {
   return resolveAttachedMusicPolicy(statusMusicToMusicSource(music));
+}
+
+function firstAttachedUrl(...values: Array<string | null | undefined>): string {
+  for (const value of values) {
+    const trimmed = String(value || "").trim();
+    if (trimmed) return trimmed;
+  }
+  return "";
+}
+
+/**
+ * Resolve a feed post's audio metadata into the surface-agnostic source, drawing
+ * from (in priority order): the post-level `music` object, top-level mirror
+ * fields, and finally the attached_audio_url stamped on the video media record.
+ * This is what makes a published video post honor its attached track instead of
+ * falling back to the original microphone audio.
+ */
+export function postMusicToMusicSource(
+  post?: Pick<PulsePost, "music" | "attached_audio_url" | "audio_start_time" | "audio_volume"> | null,
+  media?: CanonicalMediaRecord | null
+): AttachedMusicSource {
+  const music: PulsePostMusic | undefined = post?.music || undefined;
+  const musicUrl = firstAttachedUrl(
+    music?.attached_audio_url,
+    music?.audio_url,
+    post?.attached_audio_url,
+    media?.attached_audio_url
+  );
+  const startSeconds = music?.audio_start_time ?? post?.audio_start_time ?? media?.audio_start_time ?? 0;
+  const volume = music?.audio_volume ?? post?.audio_volume ?? media?.audio_volume;
+  return { musicUrl, startSeconds, volume, isLooping: true };
+}
+
+export function resolvePostAudioPolicy(
+  post?: Pick<PulsePost, "music" | "attached_audio_url" | "audio_start_time" | "audio_volume"> | null,
+  media?: CanonicalMediaRecord | null
+): AttachedMusicPolicy {
+  return resolveAttachedMusicPolicy(postMusicToMusicSource(post, media));
 }

@@ -1,7 +1,9 @@
 import {
   ATTACHED_MUSIC_EXCLUSIVE,
   ORIGINAL_AUDIO,
+  postMusicToMusicSource,
   resolveAttachedMusicPolicy,
+  resolvePostAudioPolicy,
   resolveReelAudioPolicy,
   resolveStatusMusicPolicy
 } from "../attachedMusicAudioPolicy";
@@ -92,5 +94,51 @@ describe("status adapter", () => {
     const policy = resolveStatusMusicPolicy({ title: "Orbit Signal", artist: "PulseSoc Audio" });
     expect(policy.hasAttachedMusic).toBe(false);
     expect(policy.muteOriginalAudio).toBe(false);
+  });
+});
+
+describe("post adapter", () => {
+  it("mutes the original video track when a post carries a post-level music object", () => {
+    const policy = resolvePostAudioPolicy({
+      music: { attached_audio_url: "https://cdn/post-track.m3u8", audio_volume: 0.4, audio_start_time: 2 }
+    });
+    expect(policy.mode).toBe(ATTACHED_MUSIC_EXCLUSIVE);
+    expect(policy.muteOriginalAudio).toBe(true);
+    expect(policy.musicUrl).toBe("https://cdn/post-track.m3u8");
+    expect(policy.musicVolume).toBe(0.4);
+    expect(policy.musicStartMs).toBe(2000);
+  });
+
+  it("reads the top-level mirror fields when there is no music object", () => {
+    const policy = resolvePostAudioPolicy({ attached_audio_url: "https://cdn/top.m3u8", audio_start_time: 1 });
+    expect(policy.muteOriginalAudio).toBe(true);
+    expect(policy.musicUrl).toBe("https://cdn/top.m3u8");
+    expect(policy.musicStartMs).toBe(1000);
+  });
+
+  it("falls back to the media record's attached_audio_url", () => {
+    const policy = resolvePostAudioPolicy(null, { attached_audio_url: "https://cdn/media.m3u8" });
+    expect(policy.musicUrl).toBe("https://cdn/media.m3u8");
+    expect(policy.muteOriginalAudio).toBe(true);
+  });
+
+  it("prefers the post-level music object over top-level and media fallbacks", () => {
+    const source = postMusicToMusicSource(
+      { music: { attached_audio_url: "https://cdn/win.m3u8" }, attached_audio_url: "https://cdn/lose.m3u8" },
+      { attached_audio_url: "https://cdn/also-lose.m3u8" }
+    );
+    expect(source.musicUrl).toBe("https://cdn/win.m3u8");
+  });
+
+  it("plays original video audio when the post has no attached music", () => {
+    const policy = resolvePostAudioPolicy({}, { url: "https://cdn/clip.mp4" });
+    expect(policy.mode).toBe(ORIGINAL_AUDIO);
+    expect(policy.muteOriginalAudio).toBe(false);
+    expect(policy.hasAttachedMusic).toBe(false);
+  });
+
+  it("handles a fully empty/nullish post", () => {
+    expect(resolvePostAudioPolicy(null, null).muteOriginalAudio).toBe(false);
+    expect(resolvePostAudioPolicy(undefined).mode).toBe(ORIGINAL_AUDIO);
   });
 });

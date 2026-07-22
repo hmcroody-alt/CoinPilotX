@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Animated, Image, Pressable, Share, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
-import { ResizeMode, Video } from "expo-av";
+import { Audio, ResizeMode, Video } from "expo-av";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
 import { mediaDisplayUrl, mediaKind, PulseMedia, PulsePost, pulsePostUrl } from "../api/feed";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "./NativeMediaViewer";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
+import { AttachedMusicPolicy, resolvePostAudioPolicy } from "../core/attachedMusicAudioPolicy";
 import { canonicalMediaPlaybackUrl, refreshCanonicalMediaAccess } from "../media/mediaAccess";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
@@ -618,6 +619,7 @@ function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost;
             aspect={aspect}
             active={active}
             motionEnabled={motionEnabled}
+            musicPolicy={resolvePostAudioPolicy(post, media)}
             onOpenViewer={() => setViewerIndex(0)}
           />
           <NativeMediaViewer
@@ -716,6 +718,7 @@ function FeedInlineVideo({
   aspect,
   active,
   motionEnabled,
+  musicPolicy,
   onOpenViewer
 }: {
   media: PulseMedia;
@@ -723,9 +726,11 @@ function FeedInlineVideo({
   aspect: number;
   active: boolean;
   motionEnabled: boolean;
+  musicPolicy?: AttachedMusicPolicy;
   onOpenViewer: () => void;
 }) {
   const videoRef = useRef<Video>(null);
+  const attachedSoundRef = useRef<Audio.Sound | null>(null);
   const refreshAttempted = useRef(false);
   const [muted, setMuted] = useState(true);
   const [buffering, setBuffering] = useState(false);
@@ -736,6 +741,11 @@ function FeedInlineVideo({
   const playbackOwnerId = `feed:${postId}:${media.id || 0}`;
   const canAutoplay = active && motionEnabled;
   const audibleAutoplay = canAutoplay && !muted;
+  // Attached music takes exclusive audio priority: the original video track is
+  // silenced whenever a track is attached, and the music follows the same
+  // audible state the viewer controls with the mute toggle.
+  const hasAttachedMusic = Boolean(musicPolicy?.hasAttachedMusic && musicPolicy.musicUrl);
+  const videoMuted = muted || Boolean(musicPolicy?.muteOriginalAudio);
 
   useEffect(() => {
     setSource(canonicalMediaPlaybackUrl(media));
@@ -748,8 +758,14 @@ function FeedInlineVideo({
       claimMediaPlayback({
         id: playbackOwnerId,
         kind: "feed",
-        pause: () => videoRef.current?.pauseAsync().then(() => undefined).catch(() => undefined),
-        stop: () => videoRef.current?.stopAsync().then(() => undefined).catch(() => undefined)
+        pause: () => Promise.all([
+          videoRef.current?.pauseAsync().catch(() => undefined),
+          attachedSoundRef.current?.pauseAsync().catch(() => undefined)
+        ]).then(() => undefined),
+        stop: () => Promise.all([
+          videoRef.current?.stopAsync().catch(() => undefined),
+          attachedSoundRef.current?.stopAsync().catch(() => undefined)
+        ]).then(() => undefined)
       })
         .then((granted) => (granted ? videoRef.current?.playAsync() : undefined))
         .catch(() => undefined);
@@ -764,6 +780,43 @@ function FeedInlineVideo({
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
     };
   }, [audibleAutoplay, canAutoplay, playbackOwnerId]);
+
+  // Drive the attached music track alongside the (muted) video, mirroring the
+  // Reels player so a video post published with music plays the music — not the
+  // original mic audio. The track is audible only when the viewer has unmuted.
+  useEffect(() => {
+    let cancelled = false;
+    async function syncAttachedAudio() {
+      if (!hasAttachedMusic || !audibleAutoplay) {
+        const existing = attachedSoundRef.current;
+        attachedSoundRef.current = null;
+        if (existing) await existing.unloadAsync().catch(() => undefined);
+        return;
+      }
+      if (!attachedSoundRef.current) {
+        const created = await Audio.Sound.createAsync(
+          { uri: musicPolicy!.musicUrl! },
+          {
+            isLooping: musicPolicy!.isLooping,
+            positionMillis: musicPolicy!.musicStartMs,
+            shouldPlay: true,
+            volume: musicPolicy!.musicVolume
+          }
+        );
+        if (cancelled) return created.sound.unloadAsync();
+        attachedSoundRef.current = created.sound;
+      } else {
+        await attachedSoundRef.current.setStatusAsync({ shouldPlay: true, isMuted: false });
+      }
+    }
+    syncAttachedAudio().catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [audibleAutoplay, hasAttachedMusic, musicPolicy]);
+
+  useEffect(() => () => {
+    attachedSoundRef.current?.unloadAsync().catch(() => undefined);
+    attachedSoundRef.current = null;
+  }, [musicPolicy?.musicUrl]);
 
   async function recover() {
     if (refreshAttempted.current) {
@@ -802,7 +855,7 @@ function FeedInlineVideo({
           style={StyleSheet.absoluteFillObject}
           resizeMode={ResizeMode.COVER}
           shouldPlay={false}
-          isMuted={muted}
+          isMuted={videoMuted}
           isLooping
           progressUpdateIntervalMillis={400}
           onPlaybackStatusUpdate={(status) => {

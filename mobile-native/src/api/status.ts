@@ -116,6 +116,11 @@ export type CreateStatusPayload = {
   media_ids?: number[];
   music_media_id?: number;
   music_track_id?: string | number;
+  // Defense-in-depth music metadata (additive; backend stays the source of truth).
+  attached_audio_url?: string;
+  original_audio_muted?: boolean;
+  audio_start_time?: number;
+  audio_volume?: number;
   effect_name?: string;
   sticker?: string;
   link_url?: string;

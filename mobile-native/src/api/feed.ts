@@ -23,6 +23,24 @@ export type PulseAuthor = {
 
 export type PulseMedia = CanonicalMediaRecord;
 
+/**
+ * Post-level attached-music descriptor. Mirrors the reel/status music shapes so
+ * a single audio policy (`resolvePostAudioPolicy`) can drive playback identically
+ * across every surface. The backend hydrates this on video posts that had a track
+ * attached at publish time (see feed-video hydration in bot.py).
+ */
+export type PulsePostMusic = {
+  id?: number;
+  track_id?: number | string;
+  title?: string;
+  artist?: string;
+  audio_url?: string;
+  attached_audio_url?: string;
+  audio_start_time?: number;
+  audio_volume?: number;
+  original_audio_muted?: boolean;
+};
+
 export type PulseComment = {
   id: number;
   comment_id: number;
@@ -69,6 +87,14 @@ export type PulsePost = {
   image_url?: string;
   thumbnail_url?: string;
   video_url?: string;
+  music?: PulsePostMusic;
+  music_track_id?: string | number;
+  attached_audio_url?: string;
+  original_audio_muted?: boolean;
+  audio_start_time?: number;
+  audio_volume?: number;
+  audio_title?: string;
+  audio_artist?: string;
   reaction_counts?: Record<string, number>;
   reactions?: Record<string, number>;
   viewer_reaction?: string;
@@ -113,6 +139,13 @@ export type CreatePostPayload = {
   media_ids?: number[];
   tags?: string[];
   music_track_id?: string;
+  // Defense-in-depth: carry the resolved music metadata on the create payload so
+  // playback works even when server-side attachment enrichment is bypassed. The
+  // backend remains the source of truth for `music_track_id`; these are additive.
+  attached_audio_url?: string;
+  original_audio_muted?: boolean;
+  audio_start_time?: number;
+  audio_volume?: number;
 };
 
 export type CreatePostResponse = {

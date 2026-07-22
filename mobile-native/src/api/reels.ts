@@ -97,6 +97,11 @@ export type CreateReelPayload = {
   visibility?: "public" | "followers" | "private";
   media_ids: number[];
   music_track_id?: string;
+  // Defense-in-depth music metadata (additive; backend stays the source of truth).
+  attached_audio_url?: string;
+  original_audio_muted?: boolean;
+  audio_start_time?: number;
+  audio_volume?: number;
   share_to_feed?: boolean;
 };
 
@@ -127,6 +132,10 @@ export async function createReel(payload: CreateReelPayload) {
       media_ids: payload.media_ids,
       music_track_id: payload.music_track_id || "",
       audio_track_id: payload.music_track_id || "",
+      attached_audio_url: payload.attached_audio_url || "",
+      original_audio_muted: payload.original_audio_muted ?? Boolean(payload.music_track_id),
+      audio_start_time: payload.audio_start_time ?? 0,
+      audio_volume: payload.audio_volume ?? 1,
       share_to_feed: Boolean(payload.share_to_feed)
     })
   });
