@@ -7,6 +7,10 @@ const COOKIE_KEY = "pulsesoc.native.session.cookie";
 const SESSION_ENVELOPE_KEY = "pulsesoc.native.session.envelope.v1";
 const CACHED_USER_KEY = "pulsesoc.native.session.user";
 export const BIOMETRIC_USER_KEY = "pulsesoc.native.session.biometric.userId";
+// A refresh token stashed here survives an ordinary "Sign out" so Face ID can
+// restore the session next time — but it is deliberately NOT the live envelope,
+// so cold-start auto-refresh cannot silently resume the session without Face ID.
+const BIOMETRIC_SESSION_KEY = "pulsesoc.native.session.biometric.envelope.v1";
 const KEYCHAIN_OPTIONS: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
   keychainService: __DEV__ ? "com.pulsesoc.nativeapp.dev.session" : "com.pulsesoc.nativeapp.session"
@@ -77,8 +81,53 @@ export async function setSessionEnvelope(envelope: NativeSessionEnvelope | null)
   await setSecureValue(SESSION_ENVELOPE_KEY, JSON.stringify(envelope));
 }
 
+export type BiometricSession = {
+  userId: number;
+  refreshToken: string;
+  refreshTokenExpiresAt: number;
+};
+
+export async function getBiometricSession(): Promise<BiometricSession | null> {
+  const raw = await getSecureValue(BIOMETRIC_SESSION_KEY);
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<BiometricSession>;
+    if (!value.refreshToken || Number(value.userId || 0) <= 0) return null;
+    return {
+      userId: Number(value.userId),
+      refreshToken: String(value.refreshToken),
+      refreshTokenExpiresAt: Number(value.refreshTokenExpiresAt || 0)
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function setBiometricSession(session: BiometricSession | null) {
+  if (!session) return deleteSecureValue(BIOMETRIC_SESSION_KEY);
+  await setSecureValue(BIOMETRIC_SESSION_KEY, JSON.stringify(session));
+}
+
+export async function getBiometricUserId(): Promise<number | null> {
+  const raw = await getSecureValue(BIOMETRIC_USER_KEY);
+  const userId = Number(raw || 0);
+  return userId > 0 ? userId : null;
+}
+
+// Drops the active session (cookie + live envelope) but preserves the biometric
+// enrollment key and the Face-ID-gated refresh token, so an ordinary sign-out
+// still lets the user return via Face ID.
+export async function clearActiveSessionKeepBiometric() {
+  await Promise.all([setSessionCookie(""), setSessionEnvelope(null)]);
+}
+
 export async function clearNativeSessionCredentials() {
-  await Promise.all([setSessionCookie(""), setSessionEnvelope(null), deleteSecureValue(BIOMETRIC_USER_KEY)]);
+  await Promise.all([
+    setSessionCookie(""),
+    setSessionEnvelope(null),
+    deleteSecureValue(BIOMETRIC_USER_KEY),
+    deleteSecureValue(BIOMETRIC_SESSION_KEY)
+  ]);
 }
 
 export async function getCachedSessionUser<T>() {

@@ -1,7 +1,7 @@
 import { Platform } from "react-native";
 import { PULSE_API_BASE_URL } from "../api/config";
 import { RootStackParamList } from "../navigation/types";
-import { AuthState, signIn } from "./auth";
+import { authenticatedState, AuthState, signIn, unauthenticatedState } from "./auth";
 import { setSessionCookie } from "./sessionStore";
 import { canUseTemporaryQaAccount, isLocalApiBaseUrl } from "./qaTemporaryAccount";
 
@@ -24,7 +24,7 @@ export function isQaSimulatorAutoLoginEnabled() {
 }
 
 export async function createQaSimulatorLocalSession(): Promise<AuthState> {
-  if (!isQaSimulatorAutoLoginEnabled()) return { status: "signedOut", user: null };
+  if (!isQaSimulatorAutoLoginEnabled()) return unauthenticatedState();
   return registerLocalQaAccount(PULSE_API_BASE_URL);
 }
 
@@ -69,8 +69,8 @@ async function signInWithQaApiBase(apiBase: string, identifier: string, password
   const cookie = response.headers.get("set-cookie");
   if (cookie) await setSessionCookie(cookie.split(";")[0] || cookie);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || !data?.authenticated || !data?.user) return { status: "signedOut", user: null };
-  return { status: "signedIn", user: data.user };
+  if (!response.ok || !data?.authenticated || !data?.user) return unauthenticatedState();
+  return authenticatedState(data.user);
 }
 
 async function registerLocalQaAccount(apiBase: string): Promise<AuthState> {
@@ -97,8 +97,8 @@ async function registerLocalQaAccount(apiBase: string): Promise<AuthState> {
   const cookie = response.headers.get("set-cookie");
   if (cookie) await setSessionCookie(cookie.split(";")[0] || cookie);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || !data?.authenticated || !data?.user) return { status: "signedOut", user: null };
-  return { status: "signedIn", user: data.user };
+  if (!response.ok || !data?.authenticated || !data?.user) return unauthenticatedState();
+  return authenticatedState(data.user);
 }
 
 function runtimeWebCredentials() {

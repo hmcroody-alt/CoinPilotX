@@ -69,7 +69,7 @@ const mockedIsBiometricEnabledForCurrentSession = isBiometricEnabledForCurrentSe
 const mockedGetCachedSessionUser = getCachedSessionUser as jest.Mock;
 
 function setDefaultBiometricState() {
-  mockedGetBiometricCapability.mockResolvedValue({ available: false, kind: "none", reason: "no_hardware" });
+  mockedGetBiometricCapability.mockResolvedValue({ available: false, hasHardware: false, kind: "none", reason: "no_hardware" });
   mockedIsBiometricEnabledForCurrentSession.mockResolvedValue(false);
   mockedGetCachedSessionUser.mockResolvedValue(null);
 }
@@ -152,7 +152,7 @@ describe("LoginScreen", () => {
   });
 
   it("shows the Face ID button when biometric login is available and enabled", async () => {
-    mockedGetBiometricCapability.mockResolvedValue({ available: true, kind: "faceId" });
+    mockedGetBiometricCapability.mockResolvedValue({ available: true, hasHardware: true, kind: "faceId" });
     mockedIsBiometricEnabledForCurrentSession.mockResolvedValue(true);
     const { findByTestId } = render(<LoginScreen />);
     expect(await findByTestId("biometric-login-button")).toBeTruthy();
@@ -166,7 +166,7 @@ describe("LoginScreen", () => {
   });
 
   it("signs in via biometrics and updates auth state on success", async () => {
-    mockedGetBiometricCapability.mockResolvedValue({ available: true, kind: "faceId" });
+    mockedGetBiometricCapability.mockResolvedValue({ available: true, hasHardware: true, kind: "faceId" });
     mockedIsBiometricEnabledForCurrentSession.mockResolvedValue(true);
     mockedAuthenticateWithBiometrics.mockResolvedValue({
       outcome: "success",
@@ -179,7 +179,7 @@ describe("LoginScreen", () => {
   });
 
   it("prompts for manual sign-in when biometric session validation fails", async () => {
-    mockedGetBiometricCapability.mockResolvedValue({ available: true, kind: "faceId" });
+    mockedGetBiometricCapability.mockResolvedValue({ available: true, hasHardware: true, kind: "faceId" });
     mockedIsBiometricEnabledForCurrentSession.mockResolvedValue(true);
     mockedAuthenticateWithBiometrics.mockResolvedValue({ outcome: "session_invalid" });
     const alertSpy = jest.spyOn(Alert, "alert");
@@ -191,7 +191,7 @@ describe("LoginScreen", () => {
   });
 
   it("automatically initiates Face ID once for a returning user with a cached account", async () => {
-    mockedGetBiometricCapability.mockResolvedValue({ available: true, kind: "faceId" });
+    mockedGetBiometricCapability.mockResolvedValue({ available: true, hasHardware: true, kind: "faceId" });
     mockedIsBiometricEnabledForCurrentSession.mockResolvedValue(true);
     mockedGetCachedSessionUser.mockResolvedValue({ user_id: 5, username: "alex", display_name: "Alex" });
     mockedAuthenticateWithBiometrics.mockResolvedValue({
@@ -204,7 +204,7 @@ describe("LoginScreen", () => {
   });
 
   it("does not auto-initiate Face ID when there is no cached account", async () => {
-    mockedGetBiometricCapability.mockResolvedValue({ available: true, kind: "faceId" });
+    mockedGetBiometricCapability.mockResolvedValue({ available: true, hasHardware: true, kind: "faceId" });
     mockedIsBiometricEnabledForCurrentSession.mockResolvedValue(true);
     mockedGetCachedSessionUser.mockResolvedValue(null);
     const { findByTestId } = render(<LoginScreen />);
@@ -217,7 +217,7 @@ describe("LoginScreen", () => {
   });
 
   it("does not re-prompt Face ID after the user cancels the automatic prompt", async () => {
-    mockedGetBiometricCapability.mockResolvedValue({ available: true, kind: "faceId" });
+    mockedGetBiometricCapability.mockResolvedValue({ available: true, hasHardware: true, kind: "faceId" });
     mockedIsBiometricEnabledForCurrentSession.mockResolvedValue(true);
     mockedGetCachedSessionUser.mockResolvedValue({ user_id: 5, username: "alex", display_name: "Alex" });
     mockedAuthenticateWithBiometrics.mockResolvedValue({ outcome: "cancelled" });

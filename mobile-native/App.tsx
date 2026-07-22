@@ -1,7 +1,7 @@
 import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, AppState, Linking, Platform, View } from "react-native";
+import { ActivityIndicator, AppState, Linking, Platform, Pressable, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import { IncomingCallLayer } from "./src/calls/IncomingCallLayer";
@@ -11,7 +11,7 @@ import { AuthNavigator } from "./src/navigation/AuthNavigator";
 import { linking } from "./src/navigation/linking";
 import { navigationRef, routeNotificationTarget, setupNotificationResponseRouting } from "./src/navigation/notificationRouting";
 import { RootStackParamList } from "./src/navigation/types";
-import { AuthContext, AuthState, restoreSession } from "./src/session/auth";
+import { AuthContext, AuthState, expiredState, fatalErrorState, restoreSession, stateFor } from "./src/session/auth";
 import { isQaSimulatorAuthEnabled, tryHandleQaSimulatorAuthUrl } from "./src/session/qaSimulatorAuth";
 import { colors } from "./src/theme/colors";
 import { registerPushDevice, syncPushDeviceRegistration } from "./src/api/push";
@@ -31,7 +31,7 @@ const PERF_OVERLAY_ENABLED =
 if (PERF_OVERLAY_ENABLED) configurePerfTracing({ enabled: true });
 
 export default function App() {
-  const [authState, setAuthState] = useState<AuthState>({ status: "loading", user: null });
+  const [authState, setAuthState] = useState<AuthState>(stateFor("BOOTSTRAPPING"));
   const [pendingQaCameraRoute, setPendingQaCameraRoute] = useState<RootStackParamList["CameraStudio"] | null>(null);
   const [pendingQaRedirectTarget, setPendingQaRedirectTarget] = useState("");
   const [pendingNotificationTarget, setPendingNotificationTarget] = useState("");
@@ -42,18 +42,25 @@ export default function App() {
     if (startRoute.startsWith("/") && !startRoute.startsWith("//")) setPendingQaRedirectTarget(startRoute.slice(0, 240));
   }, []);
 
-  useEffect(() => {
+  const bootstrapSession = useCallback(() => {
     const span = startSpan("app.restoreSession");
+    setAuthState(stateFor("BOOTSTRAPPING"));
     restoreSession()
       .then((state) => {
-        span.end({ status: state.status });
+        span.end({ status: state.phase });
         setAuthState(state);
       })
       .catch(() => {
+        // restoreSession resolves to a terminal phase itself; a throw here is
+        // unexpected, so surface it as FATAL_ERROR rather than a false sign-out.
         span.end({ status: "error" });
-        setAuthState({ status: "signedOut", user: null });
+        setAuthState(fatalErrorState());
       });
   }, []);
+
+  useEffect(() => {
+    bootstrapSession();
+  }, [bootstrapSession]);
 
   const interactiveRecorded = useRef(false);
   useEffect(() => {
@@ -64,7 +71,9 @@ export default function App() {
 
   const requestReauthentication = useCallback((redirectTarget = "") => {
     if (redirectTarget) setPendingQaRedirectTarget(redirectTarget.slice(0, 240));
-    setAuthState({ status: "signedOut", user: null });
+    // Reauth is always triggered by an invalidated/expired live session, so mark
+    // it SESSION_EXPIRED (distinct from a fresh, never-signed-in launch).
+    setAuthState(expiredState());
   }, []);
 
   useEffect(() => registerSessionInvalidationHandler(({ path }) => {
@@ -186,10 +195,33 @@ export default function App() {
     []
   );
 
-  if (authState.status === "loading") {
+  if (authState.phase === "BOOTSTRAPPING") {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
         <ActivityIndicator color={colors.accent} />
+      </View>
+    );
+  }
+
+  if (authState.phase === "RECOVERABLE_ERROR" || authState.phase === "FATAL_ERROR") {
+    const recoverable = authState.phase === "RECOVERABLE_ERROR";
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background, padding: 24 }}>
+        <Text style={{ color: colors.text, fontSize: 18, fontWeight: "700", textAlign: "center", marginBottom: 8 }}>
+          {recoverable ? "Can't reach PulseSoc" : "Something went wrong"}
+        </Text>
+        <Text style={{ color: colors.muted, fontSize: 14, textAlign: "center", marginBottom: 20 }}>
+          {recoverable
+            ? "We couldn't confirm your session. Check your connection and try again."
+            : "We couldn't start PulseSoc. Please try again."}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={bootstrapSession}
+          style={{ backgroundColor: colors.accent, borderRadius: 12, paddingHorizontal: 28, paddingVertical: 12 }}
+        >
+          <Text style={{ color: colors.background, fontWeight: "700" }}>Try again</Text>
+        </Pressable>
       </View>
     );
   }

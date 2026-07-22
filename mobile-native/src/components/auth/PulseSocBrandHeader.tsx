@@ -1,19 +1,33 @@
 import { useEffect, useRef } from "react";
-import { Animated, Easing, StyleSheet, Text, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Animated, Easing, Image, StyleSheet, Text, View } from "react-native";
 import { colors } from "../../theme/colors";
 import { logiNexus } from "../../theme/logiNexus";
 import { useLogiNexusReducedMotion } from "../../theme/logiNexusMotion";
 
+// Official PulseSoc brand lockup (real asset, symbol + wordmark), pre-processed to
+// a transparent background so it blends into the login environment with no image
+// boundary. Source: src/assets/brand/pulsesoc-mark.png.
+const PULSESOC_LOGO = require("../../assets/brand/pulsesoc-mark.png");
+const LOGO_ASPECT = 512 / 362;
+
 const RING_COUNT = 3;
-const RING_DURATION = 2400;
-const RING_STAGGER = 800;
+const RING_DURATION = 2600;
+const RING_STAGGER = 850;
+
+const LOGO_WIDTH = 244;
+const LOGO_HEIGHT = LOGO_WIDTH / LOGO_ASPECT;
+// The pulse symbol sits above the wordmark, so shift the ambient glow and signal
+// rings up from the lockup's center onto the symbol — the light then reads as
+// emanating from the mark rather than the text.
+const SYMBOL_OFFSET_Y = LOGO_HEIGHT * 0.4 - LOGO_HEIGHT / 2;
+const RING_SIZE = 148;
+const GLOW_SIZE = 96;
 
 /**
- * PulseSoc brand mark, drawn entirely in code so it renders transparent, stays
- * razor-sharp at every iPhone size, and blends into the login environment via
- * glow rather than sitting on an opaque tile. No baked-in website text or
- * slogan raster — only the recognizable pulse symbol and the PulseSoc wordmark.
+ * PulseSoc brand mark for the login screen. Renders the real transparent logo
+ * asset centered over a restrained breathing glow and slow pulse rings drawn in
+ * the logo's own colors, so the mark feels lit by the interface rather than
+ * pasted on top of it. The logo itself is never scaled, cropped, or blurred.
  */
 export function PulseSocBrandHeader() {
   const reducedMotion = useLogiNexusReducedMotion();
@@ -59,42 +73,46 @@ export function PulseSocBrandHeader() {
     return () => running.forEach((animation) => animation.stop());
   }, [reducedMotion, rings, breathe]);
 
-  const glyphScale = breathe.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
-  const glowOpacity = breathe.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.6] });
+  const glowOpacity = breathe.interpolate({ inputRange: [0, 1], outputRange: [0.28, 0.6] });
 
   return (
-    <View style={styles.root} accessible accessibilityRole="header" accessibilityLabel="PulseSoc. Native Access. Your network is ready.">
+    <View
+      style={styles.root}
+      accessible
+      accessibilityRole="header"
+      accessibilityLabel="PulseSoc logo. Native access. Your network is ready."
+    >
       <View style={styles.markWrap}>
-        {rings.map((value, index) => {
-          const scale = value.interpolate({ inputRange: [0, 1], outputRange: [0.75, 1.65] });
-          const opacity = value.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] });
-          return (
-            <Animated.View
-              key={index}
-              pointerEvents="none"
-              style={[
-                styles.ring,
-                {
-                  borderColor: index % 2 === 0 ? colors.accent : colors.accentStrong,
-                  opacity: reducedMotion ? 0 : opacity,
-                  transform: [{ scale: reducedMotion ? 1 : scale }]
-                }
-              ]}
-            />
-          );
-        })}
-        <Animated.View pointerEvents="none" style={[styles.glow, { opacity: reducedMotion ? 0.3 : glowOpacity }]} />
-        <View style={styles.coreDisc}>
-          <Animated.View style={{ transform: [{ scale: reducedMotion ? 1 : glyphScale }] }}>
-            <Ionicons name="pulse" size={54} color={colors.accent} style={styles.glyph} />
-          </Animated.View>
+        <View style={styles.decorLayer} pointerEvents="none">
+          {rings.map((value, index) => {
+            const scale = value.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1.7] });
+            const opacity = value.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0] });
+            return (
+              <Animated.View
+                key={index}
+                style={[
+                  styles.ring,
+                  {
+                    borderColor: index % 2 === 0 ? colors.accent : colors.accentStrong,
+                    opacity: reducedMotion ? 0 : opacity,
+                    transform: [{ translateY: SYMBOL_OFFSET_Y }, { scale: reducedMotion ? 1 : scale }]
+                  }
+                ]}
+              />
+            );
+          })}
+          <Animated.View style={[styles.glow, { opacity: reducedMotion ? 0.28 : glowOpacity }]} />
         </View>
+
+        <Image
+          source={PULSESOC_LOGO}
+          style={styles.logo}
+          resizeMode="contain"
+          fadeDuration={0}
+          accessible={false}
+        />
       </View>
 
-      <Text style={styles.wordmark} maxFontSizeMultiplier={1.4} allowFontScaling>
-        <Text style={styles.wordmarkPrimary}>Pulse</Text>
-        <Text style={styles.wordmarkAccent}>Soc</Text>
-      </Text>
       <Text style={styles.eyebrow} maxFontSizeMultiplier={1.8}>
         Native Access
       </Text>
@@ -105,8 +123,6 @@ export function PulseSocBrandHeader() {
   );
 }
 
-const MARK_SIZE = 148;
-
 const styles = StyleSheet.create({
   root: {
     alignItems: "center",
@@ -114,54 +130,38 @@ const styles = StyleSheet.create({
   },
   markWrap: {
     alignItems: "center",
-    height: MARK_SIZE,
+    height: LOGO_HEIGHT,
     justifyContent: "center",
     marginBottom: logiNexus.spacing.sm,
-    width: MARK_SIZE
+    width: LOGO_WIDTH
+  },
+  decorLayer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center"
   },
   ring: {
     borderRadius: logiNexus.radius.circular,
     borderWidth: 1.5,
-    height: MARK_SIZE,
+    height: RING_SIZE,
     position: "absolute",
-    width: MARK_SIZE
+    width: RING_SIZE
   },
   glow: {
     backgroundColor: colors.accent,
     borderRadius: logiNexus.radius.circular,
-    height: 96,
+    height: GLOW_SIZE,
     position: "absolute",
     shadowColor: colors.accent,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,
-    shadowRadius: 34,
-    width: 96
+    shadowRadius: 40,
+    transform: [{ translateY: SYMBOL_OFFSET_Y }],
+    width: GLOW_SIZE
   },
-  coreDisc: {
-    alignItems: "center",
-    borderColor: colors.accentStrong,
-    borderRadius: logiNexus.radius.circular,
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 92,
-    justifyContent: "center",
-    width: 92
-  },
-  glyph: {
-    shadowColor: colors.accent,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 12
-  },
-  wordmark: {
-    ...logiNexus.typography.display,
-    letterSpacing: 0.5,
-    textAlign: "center"
-  },
-  wordmarkPrimary: {
-    color: colors.text
-  },
-  wordmarkAccent: {
-    color: colors.accent
+  logo: {
+    height: LOGO_HEIGHT,
+    width: LOGO_WIDTH
   },
   eyebrow: {
     color: colors.accentStrong,

@@ -1,10 +1,6 @@
 import React from "react";
 import { render } from "@testing-library/react-native";
 
-jest.mock("@expo/vector-icons", () => ({
-  Ionicons: ({ name }: { name: string }) => name
-}));
-
 jest.mock("../../../theme/logiNexusMotion", () => ({
   useLogiNexusReducedMotion: () => true
 }));
@@ -12,24 +8,32 @@ jest.mock("../../../theme/logiNexusMotion", () => ({
 import { PulseSocBrandHeader } from "../PulseSocBrandHeader";
 
 describe("PulseSocBrandHeader", () => {
-  it("renders the two-tone PulseSoc wordmark", () => {
+  it("renders the real PulseSoc logo image asset (not a code-drawn substitute)", () => {
+    const { toJSON } = render(<PulseSocBrandHeader />);
+    const tree = JSON.stringify(toJSON());
+    expect(tree).toMatch(/"type":"Image"/);
+  });
+
+  it("does not hand-type the wordmark — the lockup lives inside the image", () => {
+    const { queryByText } = render(<PulseSocBrandHeader />);
+    expect(queryByText("Pulse")).toBeNull();
+    expect(queryByText("Soc")).toBeNull();
+  });
+
+  it("exposes an accessible PulseSoc brand label for screen readers", () => {
+    const { getByLabelText } = render(<PulseSocBrandHeader />);
+    expect(getByLabelText(/PulseSoc logo/i)).toBeTruthy();
+  });
+
+  it("shows the supporting eyebrow and tagline copy", () => {
     const { getByText } = render(<PulseSocBrandHeader />);
-    expect(getByText("Pulse")).toBeTruthy();
-    expect(getByText("Soc")).toBeTruthy();
+    expect(getByText("Native Access")).toBeTruthy();
+    expect(getByText("Your network is ready.")).toBeTruthy();
   });
 
   it("does not display any website URL or .com slogan raster", () => {
     const { queryByText, toJSON } = render(<PulseSocBrandHeader />);
     expect(queryByText(/\.com/i)).toBeNull();
     expect(JSON.stringify(toJSON())).not.toMatch(/pulsesoc\.com/i);
-  });
-
-  it("renders the code-drawn pulse glyph (no baked-in image asset)", () => {
-    const { toJSON } = render(<PulseSocBrandHeader />);
-    const tree = JSON.stringify(toJSON());
-    // Ionicons mock renders the icon name; the pulse glyph should be present.
-    expect(tree).toMatch(/pulse/i);
-    // No <Image> nodes should be part of the mark (fully code-drawn).
-    expect(tree).not.toMatch(/"type":"Image"/);
   });
 });

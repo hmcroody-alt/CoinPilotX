@@ -22,7 +22,7 @@ import { logiNexus } from "../theme/logiNexus";
 import { AuthStackParamList } from "../navigation/types";
 import { LoginBackground } from "../components/auth/LoginBackground";
 import { PulseSocBrandHeader } from "../components/auth/PulseSocBrandHeader";
-import { BiometricLoginButton, BiometricButtonState, BiometricUnavailableHint } from "../components/auth/BiometricLoginButton";
+import { BiometricLoginButton, BiometricButtonState } from "../components/auth/BiometricLoginButton";
 import { ManualLoginForm, ManualLoginFormHandle } from "../components/auth/ManualLoginForm";
 import { AccountActions } from "../components/auth/AccountActions";
 import { AuthStatusFooter } from "../components/auth/AuthStatusFooter";
@@ -162,6 +162,32 @@ export function LoginScreen() {
 
   const handleBiometricPress = useCallback(async () => {
     if (biometricState === "loading") return;
+
+    // Hardware exists but no face/finger is enrolled in iOS yet — guide to setup.
+    if (biometricCapability && !biometricCapability.available && biometricCapability.reason === "not_enrolled") {
+      const word = biometricCapability.kind === "touchId" ? "Touch ID" : "Face ID";
+      Alert.alert(
+        `Set up ${word}`,
+        `${word} isn't enrolled on this device yet. Open Settings › Face ID & Passcode to set it up, then come back to sign in.`,
+        [
+          { text: "Not now", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings().catch(() => undefined) }
+        ]
+      );
+      return;
+    }
+
+    // Enrolled in iOS, but this account hasn't turned on biometric sign-in yet.
+    if (!biometricEnabled) {
+      const word = biometricCapability?.kind === "touchId" ? "Touch ID" : "Face ID";
+      Alert.alert(
+        `Turn on ${word}`,
+        `Sign in with your password once, then tap Enable to unlock PulseSoc with ${word} next time.`,
+        [{ text: "OK", onPress: () => formRef.current?.focusIdentifier() }]
+      );
+      return;
+    }
+
     setBiometricState("loading");
     const result = await authenticateWithBiometrics();
     if (!result) {
@@ -189,9 +215,19 @@ export function LoginScreen() {
     }
     if (result.outcome === "not_available") return;
     Alert.alert("Biometric sign-in failed", "We couldn't verify you. Please try again or sign in manually.");
-  }, [biometricState, setAuthState]);
+  }, [biometricState, biometricCapability, biometricEnabled, setAuthState]);
 
-  const showBiometricButton = Boolean(biometricCapability?.available && biometricEnabled);
+  const kindWord = biometricCapability?.kind === "touchId" ? "Touch ID" : biometricCapability?.kind === "iris" ? "biometrics" : "Face ID";
+  // Show the affordance whenever the device physically supports biometrics; the
+  // label + tap behavior adapt to whether it still needs OS setup, PulseSoc
+  // enrollment, or is ready to unlock.
+  const showBiometricButton = Boolean(biometricCapability?.hasHardware);
+  const biometricButtonLabel =
+    biometricCapability && !biometricCapability.available && biometricCapability.reason === "not_enrolled"
+      ? `Set up ${kindWord}`
+      : !biometricEnabled
+        ? `Enable ${kindWord}`
+        : `Sign in with ${kindWord}`;
   const welcomeName = cachedUser?.display_name || cachedUser?.full_name || cachedUser?.username;
 
   // Auto-initiate Face ID exactly once per screen mount when a single valid
@@ -199,14 +235,14 @@ export function LoginScreen() {
   // user cancels or fails — they can still tap the visible button manually.
   useEffect(() => {
     if (autoPromptAttempted.current) return;
-    if (!showBiometricButton || !cachedUser) return;
+    if (!biometricEnabled || !biometricCapability?.available || !cachedUser) return;
     if (submitting || isQaSimulatorAutoLoginEnabled()) return;
     autoPromptAttempted.current = true;
     const timer = setTimeout(() => {
       handleBiometricPress().catch(() => undefined);
     }, 350);
     return () => clearTimeout(timer);
-  }, [showBiometricButton, cachedUser, submitting, handleBiometricPress]);
+  }, [biometricEnabled, biometricCapability, cachedUser, submitting, handleBiometricPress]);
 
   return (
     <View style={styles.root}>
@@ -229,15 +265,18 @@ export function LoginScreen() {
 
             {showBiometricButton ? (
               <>
-                <BiometricLoginButton kind={biometricCapability!.kind} state={biometricState} onPress={handleBiometricPress} />
+                <BiometricLoginButton
+                  kind={biometricCapability!.kind}
+                  state={biometricState}
+                  onPress={handleBiometricPress}
+                  label={biometricButtonLabel}
+                />
                 <View style={styles.divider}>
                   <View style={styles.dividerLine} />
                   <Text style={styles.dividerLabel}>or sign in manually</Text>
                   <View style={styles.dividerLine} />
                 </View>
               </>
-            ) : biometricCapability && !biometricCapability.available && biometricCapability.reason === "not_enrolled" ? (
-              <BiometricUnavailableHint message="Set up Face ID or Touch ID in Settings to unlock PulseSoc faster next time." />
             ) : null}
 
             <ManualLoginForm
@@ -267,7 +306,7 @@ export function LoginScreen() {
             />
           </LogiNexusPanel>
 
-          <AuthStatusFooter biometricProtected={showBiometricButton} />
+          <AuthStatusFooter biometricProtected={biometricEnabled} />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
