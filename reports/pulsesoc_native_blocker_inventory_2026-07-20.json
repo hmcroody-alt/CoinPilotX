@@ -3173,5 +3173,51 @@
       "Production APNs entitlement and credentials.",
       "Physical production QA for camera, microphone, Live, calls, Bluetooth, background audio, push, and real uploads."
     ]
+  },
+  "testflight_upload_update_2026_07_21": {
+    "decision": "BLOCKED",
+    "testflight_ready": false,
+    "upload_attempted": false,
+    "ipa_exported": false,
+    "archive_attempted_current_mission": false,
+    "reason": "Current native Release target is not App Store/TestFlight distributable and App Store Connect access is not authenticated.",
+    "starting_sha": "995810bd4e26024b4a902a637906549db88a7668",
+    "app_store_public_reference": {
+      "apple_id": 6777591572,
+      "name": "PulseSoc",
+      "live_bundle_id": "com.pulsesoc.app",
+      "live_version": "1.0",
+      "release_date": "2026-07-01T07:00:00Z"
+    },
+    "native_release_configuration": {
+      "bundle_id": "com.pulsesoc.nativeapp",
+      "expected_production_bundle_id": "com.pulsesoc.app",
+      "marketing_version": "1.0",
+      "build_number": "1",
+      "code_sign_identity": "Apple Development",
+      "development_team": "87ZC69AGSR",
+      "source_apns_entitlement": "development",
+      "eas_project": "@hmcroody/pulsesoc-native"
+    },
+    "blocking_actions_required": [
+      "Authenticate App Store Connect access for existing app 6777591572.",
+      "Confirm production bundle alignment under com.pulsesoc.app.",
+      "Install or provide Apple Distribution certificate for the correct team.",
+      "Create App Store provisioning profile with production APNs entitlements.",
+      "Select build number from authenticated App Store Connect build history.",
+      "Create production-clean release target without Expo dev-client/dev-menu artifacts.",
+      "Reconcile PrivacyInfo.xcprivacy and App Store privacy labels.",
+      "Run physical iPhone TestFlight smoke test after processed build is available."
+    ],
+    "validation_summary": {
+      "npm_ci": "PASS",
+      "typecheck": "PASS",
+      "jest": "PASS_38_suites_373_tests",
+      "expo_doctor": "PASS_17_of_17",
+      "webview_replacement_audit": "PASS_0_hard_blockers_26_of_26_critical_surfaces",
+      "release_audits": "PASS",
+      "testflight_install": "NOT_OBSERVED"
+    },
+    "report": "reports/pulsesoc_native_testflight_upload_2026-07-21.md"
   }
 }

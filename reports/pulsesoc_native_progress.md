@@ -2,6 +2,27 @@
 
 Date: 2026-07-18
 
+## Latest Mission Status: Production TestFlight Upload
+
+- Date: 2026-07-21.
+- Branch: `release/undx-nexus-core-v4`.
+- Starting SHA: `995810bd4e26024b4a902a637906549db88a7668`.
+- Result: **BLOCKED**. No IPA was exported, no TestFlight upload was attempted, and no public release was attempted.
+- Public App Store lookup confirms existing app `PulseSoc` / Apple ID `6777591572` / live bundle `com.pulsesoc.app` / version `1.0`.
+- Native Release target currently builds `com.pulsesoc.nativeapp`, uses `Apple Development` signing, and sources `aps-environment=development`.
+- `security find-identity -v -p codesigning` found only Apple Development identities; no Apple Distribution identity was installed.
+- No App Store Connect API key or upload credentials were found, and EAS is logged in as the personal `@hmcroody/pulsesoc-native` project rather than a verified production App Store provider.
+- Current repository validations passed: `npm ci`, typecheck, Jest (`38` suites / `373` tests), Expo Doctor (`17/17`), native WebView replacement audit (`0` hard blockers), and focused native release audits.
+- Report: `reports/pulsesoc_native_testflight_upload_2026-07-21.md`.
+
+Next highest-value mission:
+
+- Create a production-clean iOS release target/profile after App Store Connect provider and production bundle ownership are verified.
+
+Reason:
+
+- The native code is now passing the static replacement gate, but TestFlight requires the existing `com.pulsesoc.app` identity, Apple Distribution signing, App Store provisioning, production entitlements, valid build-number history, and App Store Connect upload credentials.
+
 ## Latest Mission Status: Three-Device Live Production Acceptance Test
 
 - Date: 2026-07-21.

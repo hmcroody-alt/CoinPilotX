@@ -1,5 +1,21 @@
 # PulseSoc Native Blocker Inventory - 2026-07-20
 
+## 2026-07-21 TestFlight Upload Delta
+
+The strict native WebView replacement gate is now repository-side resolved: `scripts/pulsesoc_native_webview_replacement_audit.py` reports `0` hard web-exit blockers and `26/26` critical surfaces.
+
+The active release blockers have shifted to App Store/TestFlight readiness:
+
+- App Store Connect access to existing app `6777591572` is not authenticated in the local environment.
+- Existing production bundle is `com.pulsesoc.app`; native Release target remains `com.pulsesoc.nativeapp`.
+- Only Apple Development signing identities are installed; no Apple Distribution identity is available.
+- Source entitlements still declare `aps-environment=development`.
+- Current production build-number history is unavailable without authenticated App Store Connect access.
+- Production-clean release target still needs dev-client/dev-menu removal.
+- Privacy/App Store metadata reconciliation and physical TestFlight smoke QA remain incomplete.
+
+Current evidence: `reports/pulsesoc_native_testflight_upload_2026-07-21.md`.
+
 ## Executive Summary
 
 Release status: **NO-GO** for replacing the production WebView app today.

@@ -1,5 +1,20 @@
 # PulseSoc Native Release Readiness - 2026-07-20
 
+## 2026-07-21 TestFlight Upload Update
+
+Current decision: **BLOCKED for TestFlight upload**.
+
+The repository-side native WebView replacement audit now passes with `0` hard web-exit blockers and `26/26` critical surfaces covered. The remaining blocker is the App Store/TestFlight packaging chain:
+
+- Existing public App Store record: `PulseSoc`, Apple ID `6777591572`, live bundle `com.pulsesoc.app`, live version `1.0`.
+- Current native Release target: `com.pulsesoc.nativeapp`, `Apple Development` signing, `aps-environment=development`.
+- Local signing identities: Apple Development only; no Apple Distribution identity installed.
+- App Store Connect access: not authenticated in this environment; provider, build history, Internal TestFlight groups, IAP state, and agreements were not verifiable.
+- EAS project currently resolves to `@hmcroody/pulsesoc-native`, not a verified production App Store provider.
+- No archive/export/upload was attempted from this current state because it would be invalid for TestFlight.
+
+Current report: `reports/pulsesoc_native_testflight_upload_2026-07-21.md`.
+
 ## Executive Summary
 
 Final result: **NO-GO for replacing the production WebView app today.**
