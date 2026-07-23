@@ -12,7 +12,7 @@ import { restoreSession, AuthState } from "./auth";
 
 const KEYCHAIN_OPTIONS: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
-  keychainService: __DEV__ ? "com.pulsesoc.nativeapp.dev.session" : "com.pulsesoc.nativeapp.session"
+  keychainService: __DEV__ ? "com.pulsesoc.nativeapp.dev.session" : "com.pulsesoc.app.session"
 };
 
 export type BiometricKind = "faceId" | "touchId" | "iris" | "none";

@@ -1,14 +1,16 @@
 {
   "expo": {
-    "name": "PulseSoc Native",
+    "name": "PulseSoc",
     "slug": "pulsesoc-native",
     "scheme": "pulsesoc",
-    "version": "0.1.0",
+    "version": "1.0",
     "newArchEnabled": false,
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
     "ios": {
-      "bundleIdentifier": "com.pulsesoc.nativeapp",
+      "bundleIdentifier": "com.pulsesoc.app",
+      "buildNumber": "1",
       "supportsTablet": false,
       "infoPlist": {
         "NSCameraUsageDescription": "PulseSoc uses the camera for native status, reels, profile media, and calls.",

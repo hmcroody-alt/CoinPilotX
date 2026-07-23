@@ -262,6 +262,9 @@ export function LoginScreen() {
             <Text style={styles.cardTitle} maxFontSizeMultiplier={1.5}>
               {welcomeName ? `Welcome back, ${welcomeName}` : "Welcome back"}
             </Text>
+            <Text style={styles.cardCopy} maxFontSizeMultiplier={1.5}>
+              Sign in with your existing PulseSoc account to keep your posts, messages, media, subscriptions, and settings together.
+            </Text>
 
             {showBiometricButton ? (
               <>
@@ -346,6 +349,13 @@ const styles = StyleSheet.create({
   cardTitle: {
     ...logiNexus.typography.title,
     color: colors.text,
+    textAlign: "center"
+  },
+  cardCopy: {
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: "600",
+    lineHeight: 20,
     textAlign: "center"
   },
   divider: {
