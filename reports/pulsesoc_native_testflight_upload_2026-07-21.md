@@ -258,3 +258,55 @@ Still not yet verified:
 - Internal TestFlight installation on physical iPhone: **NOT OBSERVED**.
 - TestFlight launch from the processed App Store Connect build: **NOT OBSERVED**.
 - Hardware-only checks remain physical-device release QA: real push, notification taps, camera, microphone, Bluetooth/speaker routing, lock-screen calls, background audio, killed-app incoming call, cellular transitions, and large real-world media uploads.
+
+## 2026-07-22 Update — Apple Train Rejection Repaired And Replacement Uploaded
+
+Apple rejected the first uploaded binary with:
+
+- `ITMS-90186: Invalid Pre-Release Train` — train version `1.0.0` was closed for new build submissions.
+- `ITMS-90062: This bundle is invalid` — `CFBundleShortVersionString [1.0]` must be higher than the previously approved version `[1.0.0]`.
+
+Repair:
+
+- Bumped Expo app version from `1.0` to `1.0.1`.
+- Bumped iOS build number from `1` to `2`.
+- Bumped native Xcode `MARKETING_VERSION` from `1.0` to `1.0.1`.
+- Bumped native Xcode `CURRENT_PROJECT_VERSION` from `1` to `2`.
+- Confirmed Release still resolves to bundle id `com.pulsesoc.app`, `Apple Distribution`, and `aps-environment=production`.
+
+Commit:
+
+- `a64989fe133dc60d4d16e80f7108c36a4ac9103f` — `Bump PulseSoc native iOS build for App Store train`
+
+Validation after repair:
+
+- `npm ci --prefix mobile-native --no-audit --no-fund --progress=false`: PASS.
+- `npm run --prefix mobile-native typecheck`: PASS after dependency install completed.
+- `python3 scripts/pulse_store_submission_readiness_audit.py`: PASS.
+- `python3 scripts/pulsesoc_native_webview_replacement_audit.py`: PASS.
+- `python3 scripts/pulsesoc_native_auth_continuity_audit.py`: PASS.
+- `git diff --check`: PASS.
+- `cd mobile-native && EXPO_DOCTOR_ENABLE_DIRECTORY_CHECK=0 npx expo-doctor --verbose`: `16/17`, with the known bare-native-project warning that app config native fields are not synced when `ios/` exists. EAS correctly used the native Xcode values for bundle id/version/signing.
+
+Replacement EAS build:
+
+- Build id: `56724153-4897-4447-9e8b-864b3f5cd137`
+- Status: `FINISHED`
+- App version/build: `1.0.1` / `2`
+- Git commit used by EAS: `a64989fe133dc60d4d16e80f7108c36a4ac9103f`
+- Artifact: `https://expo.dev/artifacts/eas/sL-VAqaCHPSxEHmgaSs6nY4cUkR9oS1K11cDSfgAlAM.ipa`
+- Build URL: `https://expo.dev/accounts/hmcroody/projects/pulsesoc-native/builds/56724153-4897-4447-9e8b-864b3f5cd137`
+
+Replacement EAS submit:
+
+- Submission id: `13cf0959-ccde-4ac6-bd1f-7c80788d83a4`
+- Submission URL: `https://expo.dev/accounts/hmcroody/projects/pulsesoc-native/submissions/13cf0959-ccde-4ac6-bd1f-7c80788d83a4`
+- App Store Connect API key used: `3J78N2VTH6`
+- Result: `Submitted your app to Apple App Store Connect`
+- TestFlight URL: `https://appstoreconnect.apple.com/apps/6777591572/testflight/ios`
+
+Current status:
+
+- Corrected binary `1.0.1 (2)` has been uploaded to App Store Connect.
+- Apple processing is pending/ongoing.
+- Physical iPhone `P3r7or` is visible to `devicectl` as paired and available, but TestFlight installation of the replacement build remains **NOT OBSERVED** until Apple finishes processing and exposes the build.

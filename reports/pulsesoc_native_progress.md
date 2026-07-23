@@ -5810,3 +5810,17 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Verification before upload: `npm ci`, TypeScript, Expo Doctor (`17/17`), Jest (`38` suites / `373` tests), strict native WebView replacement audit, foundation audit, feature parity audit, mission standard audit, store submission readiness audit, auth continuity audit, and `git diff --check` passed.
 - Physical-device release QA remains open after TestFlight processing: install via TestFlight, launch, login, push, notification tap routing, camera, microphone, LiveKit calls/live, Bluetooth/speaker routing, lock-screen/background behavior, and large real media uploads.
 - Report: `reports/pulsesoc_native_testflight_upload_2026-07-21.md`.
+
+## Production TestFlight Replacement Upload — 2026-07-22
+
+- Apple rejected the first uploaded `1.0 (1)` binary because the `1.0.0` pre-release train was closed and the submitted `CFBundleShortVersionString` was not higher than the previously approved `1.0.0`.
+- Corrected the native release train to `1.0.1 (2)` in both Expo config and native Xcode build settings.
+- Commit pushed: `a64989fe133dc60d4d16e80f7108c36a4ac9103f` (`Bump PulseSoc native iOS build for App Store train`).
+- Replacement EAS production build completed:
+  - Build id: `56724153-4897-4447-9e8b-864b3f5cd137`
+  - Version/build: `1.0.1` / `2`
+  - Artifact: `https://expo.dev/artifacts/eas/sL-VAqaCHPSxEHmgaSs6nY4cUkR9oS1K11cDSfgAlAM.ipa`
+- Replacement App Store Connect upload completed:
+  - Submission id: `13cf0959-ccde-4ac6-bd1f-7c80788d83a4`
+  - TestFlight URL: `https://appstoreconnect.apple.com/apps/6777591572/testflight/ios`
+- Physical iPhone `P3r7or` is wired and visible to `devicectl` as paired/available. TestFlight install remains pending until Apple processing exposes build `1.0.1 (2)`.
