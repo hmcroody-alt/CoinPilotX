@@ -14801,7 +14801,7 @@ def admin_transactions_page():
         "<h1>Transactions</h1>"
         "<p class='muted'>Payment records and subscriptions. Volume tiles aggregate the full ledger; the payments table is paginated.</p>"
         f"{tiles}"
-        "<h2>Payments</h2>"
+        "<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'><h2 style='margin-right:auto'>Payments</h2><a class='button' href='/admin/transactions/export.csv'>Export CSV</a></div>"
         f"{pager}"
         f"<div class='card'><table><tr><th>User</th><th>Amount</th><th>Type</th><th>Status</th><th>Date</th></tr>{rows}</table></div>"
         f"{pager}"
@@ -14810,6 +14810,31 @@ def admin_transactions_page():
         f"<div class='card'><table><tr><th>User</th><th>Plan</th><th>Status</th><th>Stripe Subscription</th><th>Date</th></tr>{sub_rows}</table></div>"
     )
     return admin_page_html("Transactions", body, admin)
+
+
+@webhook_app.route("/admin/transactions/export.csv", methods=["GET"])
+def admin_transactions_export_csv():
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cols = ["id", "user_id", "amount", "currency", "status", "payment_type",
+            "stripe_customer_id", "stripe_subscription_id", "invoice_id", "created_at"]
+    cur.execute(f"SELECT {', '.join(cols)} FROM payment_records ORDER BY created_at DESC")
+    data = cur.fetchall()
+    conn.close()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(cols)
+    writer.writerows(data)
+    try:
+        log_admin_audit(admin.get("id"), "admin_transactions_exported", "payment", "", {"count": len(data)})
+    except Exception:
+        pass
+    return Response(output.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=pulsesoc-transactions.csv"})
 
 
 def ensure_email_logs_reporting_schema(cur, conn):
@@ -15734,11 +15759,40 @@ def admin_audit_logs_page():
         "<h1>Audit Logs</h1>"
         "<p class='muted'>Owner, super admin, and security-only review of administrative actions. Denials are highlighted.</p>"
         f"{tiles}{search_form}"
+        f"<div style='margin:0 0 12px'><a class='button' href='/admin/audit-logs/export.csv{('?action=' + quote(action_q)) if action_q else ''}'>Export CSV</a></div>"
         f"{_ops_pager('/admin/audit-logs', page, per, trail_total, {'action': action_q, 'per': per})}"
         f"<div class='card'><h2 style='margin-top:0'>Audit Trail <span class='muted' style='font-size:.9rem'>({len(logs)} shown)</span></h2><table><tr><th>Admin</th><th>Action</th><th>Target</th><th>ID</th><th>Date</th></tr>{rows}</table></div>"
         f"<div class='card'><h2 style='margin-top:0'>Activity Stream</h2><table><tr><th>Admin ID</th><th>Action</th><th>Route</th><th>Target</th><th>Date</th></tr>{activity_rows or '<tr><td colspan=5 class=muted>No activity yet.</td></tr>'}</table></div>"
     )
     return admin_page_html("Audit Logs", body, admin)
+
+
+@webhook_app.route("/admin/audit-logs/export.csv", methods=["GET"])
+def admin_audit_logs_export_csv():
+    admin, denied = require_admin_page("audit.view")
+    if denied:
+        return denied
+    action_q = clean_html(request.args.get("action", "")).strip()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cols = ["id", "admin_email", "action", "target_type", "target_id", "ip_hash", "created_at"]
+    if action_q:
+        cur.execute(f"SELECT {', '.join(cols)} FROM admin_audit_logs WHERE action LIKE ? ORDER BY created_at DESC", (f"%{action_q}%",))
+    else:
+        cur.execute(f"SELECT {', '.join(cols)} FROM admin_audit_logs ORDER BY created_at DESC")
+    data = cur.fetchall()
+    conn.close()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(cols)
+    writer.writerows(data)
+    try:
+        log_admin_audit(admin.get("id"), "admin_audit_exported", "audit", "", {"count": len(data), "action": action_q})
+    except Exception:
+        pass
+    return Response(output.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=pulsesoc-audit-logs.csv"})
 
 
 @webhook_app.route("/admin/profile", methods=["GET", "POST"])
