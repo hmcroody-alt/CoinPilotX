@@ -10,13 +10,14 @@
     "icon": "./assets/icon.png",
     "ios": {
       "bundleIdentifier": "com.pulsesoc.app",
-      "buildNumber": "2",
+      "buildNumber": "3",
       "supportsTablet": false,
       "infoPlist": {
         "NSCameraUsageDescription": "PulseSoc uses the camera for native status, reels, profile media, and calls.",
         "NSMicrophoneUsageDescription": "PulseSoc uses the microphone for native voice/video calls and media capture.",
         "NSPhotoLibraryUsageDescription": "PulseSoc uses the photo library for profile, chat, status, and reels uploads.",
         "NSFaceIDUsageDescription": "PulseSoc uses Face ID to unlock your saved sign-in securely.",
+        "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": [
           "audio"
         ]

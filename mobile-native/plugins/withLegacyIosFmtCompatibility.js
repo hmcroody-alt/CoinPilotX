@@ -20,6 +20,16 @@ module.exports = function withLegacyIosFmtCompatibility(config) {
 
       target.build_configurations.each do |build_config|
         build_config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+        xcconfig_path = build_config.base_configuration_reference&.real_path
+        next unless xcconfig_path && File.exist?(xcconfig_path)
+
+        xcconfig = File.read(xcconfig_path)
+        xcconfig = if xcconfig.include?('CLANG_CXX_LANGUAGE_STANDARD =')
+          xcconfig.gsub(/CLANG_CXX_LANGUAGE_STANDARD = .*/, 'CLANG_CXX_LANGUAGE_STANDARD = c++17')
+        else
+          "#{xcconfig}\\nCLANG_CXX_LANGUAGE_STANDARD = c++17\\n"
+        end
+        File.write(xcconfig_path, xcconfig)
       end
     end
   end
