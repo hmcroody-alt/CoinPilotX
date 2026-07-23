@@ -11507,17 +11507,44 @@ def admin_users_page():
         rows = "<tr><td colspan='8' class='muted'>No users match this view.</td></tr>"
 
     pager = _ops_pager("/admin/users", page, per, total, {"filter": current_filter, "q": q, "per": per})
+    export_qs = "&".join(f"{k}={quote(str(v))}" for k, v in (("filter", current_filter), ("q", q)) if v)
+    export_btn = f"<a class='button' href='/admin/users/export.csv?{export_qs}' style='margin-left:auto'>Export CSV</a>"
     body = (
         "<h1>User Management Center</h1>"
         "<p class='muted'>Owner-grade user database, Pro status, payments, email logs, restrictions, and account controls.</p>"
         f"{tiles}{search_form}"
-        f"<div class='card' style='margin-bottom:14px'>{filter_links}</div>"
+        f"<div class='card' style='margin-bottom:14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center'>{filter_links}{export_btn}</div>"
         f"{pager}"
         "<div class='card'><table><tr><th>Name</th><th>Email</th><th>ID</th><th>Status</th><th>Plan</th><th>Pro Access</th><th>Revenue</th><th>Signup</th></tr>"
         f"{rows}</table></div>"
         f"{pager}"
     )
     return admin_page_html("User Management", body, admin)
+
+
+@webhook_app.route("/admin/users/export.csv", methods=["GET"])
+def admin_users_export_csv():
+    admin, denied = require_admin_page("users.view")
+    if denied:
+        return denied
+    data = admin_users_payload(scan_limit=50000)
+    rows = data.get("users", [])
+    cols = ["user_id", "name", "email", "account_status", "plan", "subscription_status",
+            "pro_access_type", "has_pro_access", "total_revenue", "payment_count",
+            "country", "telegram_linked", "created_at", "last_login"]
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(cols)
+    for u in rows:
+        writer.writerow([u.get(c, "") for c in cols])
+    try:
+        log_admin_audit(admin.get("id"), "admin_users_exported", "user", "",
+                        {"count": len(rows), "filter": data.get("filter")})
+    except Exception:
+        pass
+    fname = f"pulsesoc-users-{data.get('filter') or 'all'}.csv"
+    return Response(output.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename={fname}"})
 
 
 def admin_users_payload(scan_limit=500):
