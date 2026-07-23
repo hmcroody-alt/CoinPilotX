@@ -11438,22 +11438,78 @@ def admin_users_page():
     if denied:
         return denied
     data = admin_users_payload()
-    rows = "".join(
-        f"<tr><td><a href='/admin/users/{u.get('user_id')}'>{clean_html(u.get('name') or 'User')}</a></td>"
-        f"<td>{clean_html(u.get('email') or '')}</td><td>{u.get('user_id')}</td><td>{clean_html(u.get('account_status') or '')}</td>"
-        f"<td>{clean_html(u.get('plan') or '')}</td><td>{clean_html(u.get('subscription_status') or '')}</td>"
-        f"<td>{'Yes' if u.get('has_pro_access') else 'No'}</td><td>{clean_html(u.get('pro_access_type') or '')}</td>"
-        f"<td>{clean_html(str(u.get('total_revenue') or 0))}</td><td>{clean_html(u.get('created_at') or '')}</td></tr>"
-        for u in data.get("users", [])
+    users = data.get("users", [])
+    current_filter = clean_html(request.args.get("filter", "all")).strip().lower() or "all"
+    q = clean_html(request.args.get("q", "")).strip()
+
+    def _money(v):
+        try:
+            return "${:,.2f}".format(float(v or 0))
+        except Exception:
+            return clean_html(str(v or 0))
+
+    def _pill(status):
+        s = (status or "").lower()
+        if s in ("restricted", "suspended", "deleted"):
+            dot = "status-dot status-danger"
+        elif s in ("active", ""):
+            dot = "status-dot"
+        else:
+            dot = "status-dot status-warn"
+        return f"<span class='pill'><span class='{dot}'></span>{clean_html(status or 'active')}</span>"
+
+    shown = len(users)
+    pro_n = sum(1 for u in users if u.get("pro_access_type") == "paid")
+    trial_n = sum(1 for u in users if u.get("pro_access_type") == "trial")
+    flagged_n = sum(1 for u in users if (u.get("account_status") or "active").lower() in ("restricted", "suspended", "deleted"))
+
+    tiles = (
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi'><div class='muted'>Shown</div><div class='metric'>{shown:,}</div><div class='muted' style='font-size:.82rem'>matching current view</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Paid Pro</div><div class='metric'>{pro_n:,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Trial</div><div class='metric'>{trial_n:,}</div></div>"
+        f"<div class='card ops-kpi ops-stat-card{' attention' if flagged_n else ''}'><div class='muted'>Flagged</div><div class='metric'>{flagged_n:,}</div><div class='muted' style='font-size:.82rem'>restricted / suspended</div></div>"
+        "</div>"
     )
-    filter_links = " ".join(f"<a class='button secondary' href='/admin/users?filter={key}'>{label}</a>" for key, label in [
-        ("all", "All"), ("pro", "Pro"), ("trial", "Trials"), ("free", "Free"), ("restricted", "Restricted"), ("suspended", "Suspended"), ("deleted", "Deleted"), ("payment_issue", "Payment Issues")
-    ])
+
+    search_form = (
+        "<form method='get' action='/admin/users' class='card' style='display:flex;gap:10px;align-items:center;margin-bottom:14px'>"
+        f"<input type='hidden' name='filter' value='{current_filter}'/>"
+        f"<input type='text' name='q' value='{clean_html(q)}' placeholder='Search name, email, ID, phone, Stripe customer…' style='flex:1'/>"
+        "<button type='submit' style='max-width:150px'>Search</button>"
+        "</form>"
+    )
+
+    filter_links = " ".join(
+        f"<a class='button' style='{'border-color:var(--cyan);color:var(--text)' if key == current_filter else ''}' href='/admin/users?filter={key}'>{label}</a>"
+        for key, label in [
+            ("all", "All"), ("pro", "Pro"), ("trial", "Trials"), ("free", "Free"),
+            ("restricted", "Restricted"), ("suspended", "Suspended"), ("deleted", "Deleted"), ("payment_issue", "Payment Issues"),
+        ]
+    )
+
+    rows = "".join(
+        "<tr>"
+        f"<td><a href='/admin/users/{u.get('user_id')}'>{clean_html(u.get('name') or 'User')}</a></td>"
+        f"<td class='muted'>{clean_html(u.get('email') or '')}</td>"
+        f"<td class='muted'>{clean_html(str(u.get('user_id')))}</td>"
+        f"<td>{_pill(u.get('account_status'))}</td>"
+        f"<td class='muted'>{clean_html(u.get('plan') or '')}</td>"
+        f"<td>{('Pro' if u.get('has_pro_access') else '&mdash;')}{(' · ' + clean_html(u.get('pro_access_type'))) if u.get('pro_access_type') else ''}</td>"
+        f"<td>{_money(u.get('total_revenue'))}</td>"
+        f"<td class='muted'>{clean_html(u.get('created_at') or '')}</td>"
+        "</tr>"
+        for u in users
+    )
+    if not rows:
+        rows = "<tr><td colspan='8' class='muted'>No users match this view.</td></tr>"
+
     body = (
         "<h1>User Management Center</h1>"
         "<p class='muted'>Owner-grade user database, Pro status, payments, email logs, restrictions, and account controls.</p>"
-        f"<div class='card'>{filter_links}</div>"
-        "<div class='card'><table><tr><th>Name</th><th>Email</th><th>ID</th><th>Status</th><th>Plan</th><th>Subscription</th><th>Pro Access</th><th>Type</th><th>Revenue</th><th>Signup</th></tr>"
+        f"{tiles}{search_form}"
+        f"<div class='card' style='margin-bottom:14px'>{filter_links}</div>"
+        "<div class='card'><table><tr><th>Name</th><th>Email</th><th>ID</th><th>Status</th><th>Plan</th><th>Pro Access</th><th>Revenue</th><th>Signup</th></tr>"
         f"{rows}</table></div>"
     )
     return admin_page_html("User Management", body, admin)
