@@ -1,0 +1,21 @@
+node_modules/
+.expo/
+.venv/
+venv/
+*.log
+
+# Runtime and QA artifacts are not required for native app builds.
+reports/
+storage/
+static/uploads/
+
+# Native iOS source is required for production signing, but generated outputs are not.
+mobile-native/ios/Pods/
+mobile-native/ios/build/
+mobile-native/ios/build-*/
+mobile-native/ios/**/*.xcuserdata/
+mobile-native/ios/**/*.xcuserstate
+mobile-native/ios/**/DerivedData/
+mobile-native/ios/.xcode.env.local
+mobile-native/.expo/
+mobile-native/node_modules/
