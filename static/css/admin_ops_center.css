@@ -328,6 +328,20 @@ details.ops-actions[open] > summary::before { transform: rotate(90deg); }
 details.ops-actions .card { margin: 0; }
 
 /* ------------------------------------------------------------------ */
+/* RBAC console — roles, permissions, chips                           */
+/* ------------------------------------------------------------------ */
+.ops-rbac__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.ops-rbac__role { display: flex; flex-direction: column; gap: 8px; }
+.ops-rbac__rolehead { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ops-rbac__perms > summary { cursor: pointer; font-weight: 600; padding: 6px 0; list-style: none; }
+.ops-rbac__perms > summary::-webkit-details-marker { display: none; }
+.ops-rbac__perms > summary::before { content: "\25B8"; display: inline-block; margin-right: 6px; transition: transform .15s ease; }
+.ops-rbac__perms[open] > summary::before { transform: rotate(90deg); }
+.ops-rbac__domain { margin: 8px 0; }
+.ops-rbac__domname { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 4px; }
+.ops-chip { display: inline-block; padding: 2px 8px; margin: 2px 4px 2px 0; font-size: .78rem; border: 1px solid var(--line); border-radius: 999px; background: rgba(110,223,246,.06); color: var(--text); }
+
+/* ------------------------------------------------------------------ */
 /* Accessibility                                                      */
 /* ------------------------------------------------------------------ */
 :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; border-radius: 6px; }

@@ -13341,7 +13341,7 @@ def admin_page_html(title, body, admin=None):
         f"<title>{clean_html(title)} | CoinPlotXAI Admin</title>"
         "<link rel='stylesheet' href='/static/css/pulse_design_system.css'/>"
         "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css'/>"
-        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722d'/>"
+        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722e'/>"
         "</head><body>"
         "<a class='ops-skip' href='#ops-main'>Skip to content</a>"
         "<div class='ops-scrim-mobile' aria-hidden='true'></div>"
@@ -13377,7 +13377,7 @@ def admin_page_html(title, body, admin=None):
         "<script src='/static/js/time.js'></script>"
         "<script src='/static/js/pulseshell_bridge.js?v=pulseshell-20260630a' defer></script>"
         "<script src='/static/notifications.js?v=live-reels-only-20260702a' defer></script>"
-        "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722d' defer></script>"
+        "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722e' defer></script>"
         "<script>window.CoinPilotTime?.hydrate(document);</script>"
         "</body></html>"
     )
@@ -17731,8 +17731,66 @@ def admin_roles_page():
     cur = conn.cursor()
     cur.execute("SELECT name, description, status, created_at FROM roles ORDER BY name")
     roles = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT role_name, permission_key FROM role_permissions UNION SELECT role_name, permission_key FROM admin_role_permissions")
+    grants = {}
+    for row in cur.fetchall():
+        grants.setdefault((row["role_name"] or "").lower(), set()).add(row["permission_key"])
+    cur.execute("SELECT COALESCE(LOWER(role),'(none)') r, COUNT(*) c FROM admin_users GROUP BY LOWER(role)")
+    holders = {row["r"]: int(row["c"] or 0) for row in cur.fetchall()}
+    cur.execute("SELECT COUNT(*) c FROM permissions")
+    perm_total = int(dict(cur.fetchone() or {}).get("c") or 0)
     conn.close()
-    return admin_page_html("Roles", f"<h1>Roles</h1><div class='card'>{admin_rows_table(roles, [('name','Role'),('description','Description'),('status','Status'),('created_at','Created')])}</div>", admin)
+
+    total_grants = sum(len(v) for v in grants.values())
+    assigned = sum(v for k, v in holders.items() if k != "(none)")
+
+    def _pill(status):
+        s = (status or "active").lower()
+        dot = "status-dot" if s in ("active", "enabled", "") else "status-dot status-warn"
+        return f"<span class='pill'><span class='{dot}'></span>{clean_html(status or 'active')}</span>"
+
+    tiles = (
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi'><div class='muted'>Roles</div><div class='metric'>{len(roles):,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Permissions</div><div class='metric'>{perm_total:,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Grants</div><div class='metric'>{total_grants:,}</div><div class='muted' style='font-size:.82rem'>role &times; permission</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Admins Assigned</div><div class='metric'>{assigned:,}</div></div>"
+        "</div>"
+    )
+
+    def _role_card(r):
+        name = (r.get("name") or "").lower()
+        perms = sorted(grants.get(name, set()))
+        held = holders.get(name, 0)
+        by_domain = {}
+        for p in perms:
+            by_domain.setdefault(p.split(".")[0], []).append(p)
+        chips = ""
+        for dom in sorted(by_domain):
+            keys = by_domain[dom]
+            chips += (
+                f"<div class='ops-rbac__domain'><span class='ops-rbac__domname'>{clean_html(dom)}</span>"
+                + "".join(f"<span class='ops-chip'>{clean_html(k.split('.', 1)[1] if '.' in k else k)}</span>" for k in keys)
+                + "</div>"
+            )
+        if not perms:
+            chips = "<p class='muted'>No permissions granted.</p>"
+        return (
+            "<div class='card ops-rbac__role'>"
+            f"<div class='ops-rbac__rolehead'><div><strong>{clean_html(r.get('name'))}</strong> {_pill(r.get('status'))}</div>"
+            f"<div class='muted'>{len(perms)} perms &middot; {held} admin{'s' if held != 1 else ''}</div></div>"
+            f"<p class='muted'>{clean_html(r.get('description') or '')}</p>"
+            f"<details class='ops-rbac__perms'><summary>{len(perms)} permission{'s' if len(perms) != 1 else ''}</summary>{chips}</details>"
+            "</div>"
+        )
+
+    cards = "".join(_role_card(r) for r in roles) or "<p class='muted'>No roles defined.</p>"
+    body = (
+        "<h1>Roles &amp; Access</h1>"
+        "<p class='muted'>Every role, the permissions it grants, and how many admins currently hold it. Owner bypasses all checks.</p>"
+        f"{tiles}<div class='ops-rbac__grid'>{cards}</div>"
+    )
+    return admin_page_html("Roles", body, admin)
 
 
 @webhook_app.route("/admin/permissions", methods=["GET"])
@@ -17745,8 +17803,50 @@ def admin_permissions_page():
     cur = conn.cursor()
     cur.execute("SELECT key, description, created_at FROM permissions ORDER BY key")
     permissions = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT role_name, permission_key FROM role_permissions UNION SELECT role_name, permission_key FROM admin_role_permissions")
+    perm_roles = {}
+    for row in cur.fetchall():
+        perm_roles.setdefault(row["permission_key"], set()).add((row["role_name"] or "").lower())
     conn.close()
-    return admin_page_html("Permissions", f"<h1>Permissions</h1><div class='card'>{admin_rows_table(permissions, [('key','Permission'),('description','Description'),('created_at','Created')])}</div>", admin)
+
+    by_domain = {}
+    for p in permissions:
+        by_domain.setdefault((p.get("key") or "").split(".")[0], []).append(p)
+
+    tiles = (
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi'><div class='muted'>Permissions</div><div class='metric'>{len(permissions):,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Domains</div><div class='metric'>{len(by_domain):,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Role Bindings</div><div class='metric'>{sum(len(v) for v in perm_roles.values()):,}</div></div>"
+        "</div>"
+    )
+
+    sections = ""
+    for dom in sorted(by_domain):
+        rows = ""
+        for p in by_domain[dom]:
+            roles = sorted(perm_roles.get(p.get("key"), set()))
+            role_chips = "".join(f"<span class='ops-chip'>{clean_html(r)}</span>" for r in roles) or "<span class='muted'>no roles</span>"
+            rows += (
+                "<tr>"
+                f"<td><code>{clean_html(p.get('key'))}</code></td>"
+                f"<td class='muted'>{clean_html(p.get('description') or '')}</td>"
+                f"<td>{len(roles)}</td>"
+                f"<td>{role_chips}</td>"
+                "</tr>"
+            )
+        sections += (
+            f"<div class='card'><h2 style='margin-top:0'>{clean_html(dom)} <span class='muted' style='font-size:.9rem'>({len(by_domain[dom])})</span></h2>"
+            "<table><tr><th>Permission</th><th>Description</th><th>Roles</th><th>Granted To</th></tr>"
+            f"{rows}</table></div>"
+        )
+
+    body = (
+        "<h1>Permissions</h1>"
+        "<p class='muted'>Every permission key grouped by domain, with the roles that grant it. Used by <code>admin_has_permission()</code> at request time.</p>"
+        f"{tiles}{sections}"
+    )
+    return admin_page_html("Permissions", body, admin)
 
 
 @webhook_app.route("/admin/telegram", methods=["GET"])
