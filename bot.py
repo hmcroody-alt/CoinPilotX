@@ -13285,7 +13285,7 @@ def admin_page_html(title, body, admin=None):
         f"<title>{clean_html(title)} | CoinPlotXAI Admin</title>"
         "<link rel='stylesheet' href='/static/css/pulse_design_system.css'/>"
         "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css'/>"
-        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722b'/>"
+        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722c'/>"
         "</head><body>"
         "<a class='ops-skip' href='#ops-main'>Skip to content</a>"
         "<div class='ops-scrim-mobile' aria-hidden='true'></div>"
@@ -13321,7 +13321,7 @@ def admin_page_html(title, body, admin=None):
         "<script src='/static/js/time.js'></script>"
         "<script src='/static/js/pulseshell_bridge.js?v=pulseshell-20260630a' defer></script>"
         "<script src='/static/notifications.js?v=live-reels-only-20260702a' defer></script>"
-        "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722b' defer></script>"
+        "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722c' defer></script>"
         "<script>window.CoinPilotTime?.hydrate(document);</script>"
         "</body></html>"
     )
@@ -13586,7 +13586,26 @@ def admin_dashboard_page():
     if not admin:
         return redirect(url_for("admin_login_page"))
     stats = admin_saas_summary()
-    cards = "".join(f"<div class='card'><div class='muted'>{label.replace('_',' ').title()}</div><div class='metric'>{value}</div></div>" for label, value in stats.items())
+
+    def _n(v):
+        try:
+            return f"{int(v):,}"
+        except Exception:
+            return clean_html(str(v))
+
+    def _money(v):
+        try:
+            return "${:,.2f}".format(float(v))
+        except Exception:
+            return clean_html(str(v))
+
+    def _stat_card(label, value, href=None, cls="", sub=""):
+        inner = f"<div class='muted'>{clean_html(label)}</div><div class='metric'>{_n(value)}</div>"
+        if sub:
+            inner += f"<div class='muted' style='font-size:.82rem'>{clean_html(sub)}</div>"
+        if href:
+            return f"<a class='card ops-stat-card {cls}' href='{href}'>{inner}</a>"
+        return f"<div class='card ops-stat-card {cls}'>{inner}</div>"
     missing = owner_profile_missing_fields(admin) if admin.get("role") == "owner" else []
     profile_prompt = ""
     if missing:
@@ -13606,12 +13625,49 @@ def admin_dashboard_page():
             "<p><a class='button command-center-link' href='/admin/command-center'>Backend Command Center</a></p>"
             "</div>"
         )
-    body = (
-        "<h1>Owner Dashboard</h1><p class='muted'>Live SaaS visibility across accounts, billing, emails, Telegram, analytics, and support.</p>"
-        f"{profile_prompt}{command_center_cta}<div class='grid'>{cards}</div>"
-        f"<form method='post' action='/admin/billing/recalculate' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Recalculate Billing Metrics</button><p class='muted'>Scans successful Stripe payment records and fixes any paid users still marked trialing.</p></form>"
+    attn_pay = "attention" if stats.get("failed_payments") else ""
+    attn_unm = "attention" if stats.get("unmatched") else ""
+    kpis = (
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi'><div class='muted'>Total Users</div><div class='metric'>{_n(stats['total_users'])}</div>"
+        f"<div class='delta up'>+{_n(stats['new_today'])} today &middot; +{_n(stats['new_week'])} this week</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>MRR (est.)</div><div class='metric'>{_money(stats['mrr_estimate'])}</div>"
+        f"<div class='muted' style='font-size:.82rem'>{_n(stats['paid_pro'])} paying members</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Total Revenue</div><div class='metric'>{_money(stats['total_revenue'])}</div>"
+        "<div class='muted' style='font-size:.82rem'>lifetime succeeded payments</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Visitors &middot; 24h</div><div class='metric'>{_n(stats['visitors_24h'])}</div>"
+        f"<div class='muted' style='font-size:.82rem'>{_n(stats['events_today'])} events today</div></div>"
+        "</div>"
     )
-    return admin_page_html("Owner Dashboard", body, admin)
+    subs = (
+        "<h2>Subscriptions</h2><div class='grid'>"
+        + _stat_card("Paid Pro", stats["paid_pro"], "/admin/users?filter=pro")
+        + _stat_card("Trial", stats["trial_users"], "/admin/users?filter=trial")
+        + _stat_card("Free", stats["free_users"], "/admin/users?filter=free")
+        + _stat_card("Active Pro Access", stats["active_pro_access"], "/admin/users")
+        + "</div>"
+    )
+    attention = (
+        "<h2>Needs attention</h2><div class='grid'>"
+        + _stat_card("Failed Payments", stats["failed_payments"], "/admin/transactions", cls=attn_pay, sub="past due / unpaid")
+        + _stat_card("Unmatched Payments", stats["unmatched"], "/admin/unmatched-payments", cls=attn_unm, sub="need reconciliation")
+        + "</div>"
+    )
+    activity = (
+        "<h2>Activity</h2><div class='grid'>"
+        + _stat_card("Emails &middot; today", stats["emails_today"], "/admin/emails")
+        + _stat_card("Events &middot; today", stats["events_today"], "/admin/pulse-analytics")
+        + _stat_card("Telegram Linked", stats["telegram_linked"], "/admin/telegram")
+        + _stat_card("Audit Entries", stats["audit_count"], "/admin/audit-logs")
+        + "</div>"
+    )
+    body = (
+        "<h1>Command Center</h1><p class='muted'>Live SaaS visibility across accounts, billing, emails, Telegram, analytics, and support.</p>"
+        f"{profile_prompt}{command_center_cta}"
+        f"{kpis}{subs}{attention}{activity}"
+        f"<form method='post' action='/admin/billing/recalculate' class='card' style='margin-top:18px'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Recalculate Billing Metrics</button><p class='muted'>Scans successful Stripe payment records and fixes any paid users still marked trialing.</p></form>"
+    )
+    return admin_page_html("Command Center", body, admin)
 
 
 @webhook_app.route("/admin/live-ops", methods=["GET"])

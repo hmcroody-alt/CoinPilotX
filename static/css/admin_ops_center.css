@@ -272,6 +272,23 @@ button { background: linear-gradient(135deg, #00e5ff, #36e58f); color: #031016; 
 .button.command-center-link { color: #06101b; border-color: transparent; background: linear-gradient(135deg, var(--accent), var(--cyan)); font-weight: 950; box-shadow: 0 0 22px rgba(54, 229, 143, .22); }
 
 /* ------------------------------------------------------------------ */
+/* Command Center dashboard                                           */
+/* ------------------------------------------------------------------ */
+.ops-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin: 6px 0 22px; }
+.ops-kpi { position: relative; overflow: hidden; }
+.ops-kpi::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(420px 120px at 100% 0, rgba(54, 229, 143, .10), transparent 60%); }
+.ops-kpi .metric { font-size: 2.4rem; line-height: 1.1; margin-top: 6px; }
+.delta { margin-top: 8px; font-size: .82rem; font-weight: 600; }
+.delta.up { color: var(--accent); }
+.delta.down { color: var(--danger); }
+
+a.ops-stat-card { display: block; color: inherit; transition: transform .16s var(--ease), border-color .16s var(--ease), box-shadow .16s var(--ease); }
+a.ops-stat-card:hover { transform: translateY(-2px); border-color: var(--line); box-shadow: 0 28px 90px rgba(0, 0, 0, .35); }
+.ops-stat-card.attention { border-color: rgba(255, 209, 102, .5); background: linear-gradient(180deg, rgba(255, 209, 102, .10), rgba(255, 255, 255, .02)); }
+.ops-stat-card.attention .metric { color: var(--warn); }
+h2 { margin: 26px 0 12px; font-size: 1.05rem; letter-spacing: .2px; color: var(--text); }
+
+/* ------------------------------------------------------------------ */
 /* Responsive                                                         */
 /* ------------------------------------------------------------------ */
 @media (max-width: 960px) {
