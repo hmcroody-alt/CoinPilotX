@@ -13341,7 +13341,7 @@ def admin_page_html(title, body, admin=None):
         f"<title>{clean_html(title)} | CoinPlotXAI Admin</title>"
         "<link rel='stylesheet' href='/static/css/pulse_design_system.css'/>"
         "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css'/>"
-        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722e'/>"
+        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722f'/>"
         "</head><body>"
         "<a class='ops-skip' href='#ops-main'>Skip to content</a>"
         "<div class='ops-scrim-mobile' aria-hidden='true'></div>"
@@ -13377,7 +13377,7 @@ def admin_page_html(title, body, admin=None):
         "<script src='/static/js/time.js'></script>"
         "<script src='/static/js/pulseshell_bridge.js?v=pulseshell-20260630a' defer></script>"
         "<script src='/static/notifications.js?v=live-reels-only-20260702a' defer></script>"
-        "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722e' defer></script>"
+        "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722f' defer></script>"
         "<script>window.CoinPilotTime?.hydrate(document);</script>"
         "</body></html>"
     )
@@ -17398,10 +17398,64 @@ def admin_admins_page():
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT id, full_name, email, role, status, last_login_at, created_at FROM admin_users ORDER BY id ASC")
+    cur.execute("SELECT id, full_name, email, role, status, job_title, last_login_at, created_at, must_change_password, locked_until FROM admin_users ORDER BY id ASC")
     rows = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT role_name, COUNT(DISTINCT permission_key) c FROM (SELECT role_name, permission_key FROM role_permissions UNION SELECT role_name, permission_key FROM admin_role_permissions) GROUP BY role_name")
+    perm_count = {(r["role_name"] or "").lower(): int(r["c"] or 0) for r in cur.fetchall()}
     conn.close()
-    body = f"<h1>Admins</h1><p><a class='button' href='/admin/admins/new'>Create Admin</a></p><div class='card'>{admin_rows_table(rows, [('id','ID'),('full_name','Name'),('email','Email'),('role','Role'),('status','Status'),('last_login_at','Last Login')])}</div>"
+
+    now_iso = datetime.now().isoformat()
+    total = len(rows)
+    active_n = sum(1 for r in rows if (r.get("status") or "active").lower() == "active")
+    roles_used = len({(r.get("role") or "").lower() for r in rows if r.get("role")})
+    flagged_n = sum(1 for r in rows if r.get("must_change_password") or (r.get("locked_until") and str(r.get("locked_until")) > now_iso))
+
+    tiles = (
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi'><div class='muted'>Admins</div><div class='metric'>{total:,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Active</div><div class='metric'>{active_n:,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Roles In Use</div><div class='metric'>{roles_used:,}</div></div>"
+        f"<div class='card ops-kpi ops-stat-card{' attention' if flagged_n else ''}'><div class='muted'>Needs Attention</div><div class='metric'>{flagged_n:,}</div><div class='muted' style='font-size:.82rem'>locked / must reset</div></div>"
+        "</div>"
+    )
+
+    def _status_pill(r):
+        s = (r.get("status") or "active").lower()
+        locked = r.get("locked_until") and str(r.get("locked_until")) > now_iso
+        if locked:
+            return "<span class='pill'><span class='status-dot status-danger'></span>locked</span>"
+        dot = "status-dot" if s == "active" else "status-dot status-warn"
+        return f"<span class='pill'><span class='{dot}'></span>{clean_html(r.get('status') or 'active')}</span>"
+
+    def _row(r):
+        role = (r.get("role") or "").lower()
+        role_chip = f"<a class='ops-chip' href='/admin/roles'>{clean_html(r.get('role') or '—')}</a>" if r.get("role") else "<span class='muted'>—</span>"
+        pc = "all" if role == "owner" else perm_count.get(role, 0)
+        flags = ""
+        if r.get("must_change_password"):
+            flags += "<span class='ops-chip' style='border-color:var(--warn,#f5c451)'>must reset pw</span>"
+        return (
+            "<tr>"
+            f"<td class='muted'>{clean_html(str(r.get('id')))}</td>"
+            f"<td><a href='/admin/admins/{r.get('id')}/edit'>{clean_html(r.get('full_name') or 'Admin')}</a>"
+            f"{('<div class=\"muted\" style=\"font-size:.8rem\">' + clean_html(r.get('job_title')) + '</div>') if r.get('job_title') else ''}</td>"
+            f"<td class='muted'>{clean_html(mask_email(r.get('email')))}</td>"
+            f"<td>{role_chip}</td>"
+            f"<td>{pc}</td>"
+            f"<td>{_status_pill(r)}{flags}</td>"
+            f"<td class='muted'>{clean_html(r.get('last_login_at') or 'never')}</td>"
+            "</tr>"
+        )
+
+    table_rows = "".join(_row(r) for r in rows) or "<tr><td colspan='7' class='muted'>No admins.</td></tr>"
+    body = (
+        "<h1>Admin Team</h1>"
+        "<p class='muted'>Staff directory with roles, effective permission counts, and account security state.</p>"
+        f"{tiles}"
+        "<p><a class='button' href='/admin/admins/new'>Create Admin</a> <a class='button' href='/admin/roles'>Manage Roles</a></p>"
+        "<div class='card'><table><tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Perms</th><th>Status</th><th>Last Login</th></tr>"
+        f"{table_rows}</table></div>"
+    )
     return admin_page_html("Admins", body, admin)
 
 
