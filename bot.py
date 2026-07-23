@@ -11437,10 +11437,11 @@ def admin_users_page():
     admin, denied = require_admin_page("users.view")
     if denied:
         return denied
-    data = admin_users_payload()
+    data = admin_users_payload(scan_limit=5000)
     users = data.get("users", [])
     current_filter = clean_html(request.args.get("filter", "all")).strip().lower() or "all"
     q = clean_html(request.args.get("q", "")).strip()
+    page, per = _ops_page_arg(default_per=50)
 
     def _money(v):
         try:
@@ -11458,14 +11459,15 @@ def admin_users_page():
             dot = "status-dot status-warn"
         return f"<span class='pill'><span class='{dot}'></span>{clean_html(status or 'active')}</span>"
 
-    shown = len(users)
+    total = len(users)
     pro_n = sum(1 for u in users if u.get("pro_access_type") == "paid")
     trial_n = sum(1 for u in users if u.get("pro_access_type") == "trial")
     flagged_n = sum(1 for u in users if (u.get("account_status") or "active").lower() in ("restricted", "suspended", "deleted"))
+    users = users[(page - 1) * per:(page - 1) * per + per]
 
     tiles = (
         "<div class='ops-kpis'>"
-        f"<div class='card ops-kpi'><div class='muted'>Shown</div><div class='metric'>{shown:,}</div><div class='muted' style='font-size:.82rem'>matching current view</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Matching</div><div class='metric'>{total:,}</div><div class='muted' style='font-size:.82rem'>current filter &amp; search</div></div>"
         f"<div class='card ops-kpi'><div class='muted'>Paid Pro</div><div class='metric'>{pro_n:,}</div></div>"
         f"<div class='card ops-kpi'><div class='muted'>Trial</div><div class='metric'>{trial_n:,}</div></div>"
         f"<div class='card ops-kpi ops-stat-card{' attention' if flagged_n else ''}'><div class='muted'>Flagged</div><div class='metric'>{flagged_n:,}</div><div class='muted' style='font-size:.82rem'>restricted / suspended</div></div>"
@@ -11504,23 +11506,30 @@ def admin_users_page():
     if not rows:
         rows = "<tr><td colspan='8' class='muted'>No users match this view.</td></tr>"
 
+    pager = _ops_pager("/admin/users", page, per, total, {"filter": current_filter, "q": q, "per": per})
     body = (
         "<h1>User Management Center</h1>"
         "<p class='muted'>Owner-grade user database, Pro status, payments, email logs, restrictions, and account controls.</p>"
         f"{tiles}{search_form}"
         f"<div class='card' style='margin-bottom:14px'>{filter_links}</div>"
+        f"{pager}"
         "<div class='card'><table><tr><th>Name</th><th>Email</th><th>ID</th><th>Status</th><th>Plan</th><th>Pro Access</th><th>Revenue</th><th>Signup</th></tr>"
         f"{rows}</table></div>"
+        f"{pager}"
     )
     return admin_page_html("User Management", body, admin)
 
 
-def admin_users_payload():
+def admin_users_payload(scan_limit=500):
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     search = clean_html(request.args.get("q", "")).strip().lower()
     filter_key = clean_html(request.args.get("filter", "all")).strip().lower()
+    try:
+        scan_limit = max(1, int(scan_limit))
+    except Exception:
+        scan_limit = 500
     cur.execute(
         """
         SELECT u.*,
@@ -11532,8 +11541,9 @@ def admin_users_payload():
         WHERE COALESCE(u.email,'')!=''
         GROUP BY u.user_id
         ORDER BY COALESCE(u.created_at,u.signup_time,'') DESC
-        LIMIT 500
-        """
+        LIMIT ?
+        """,
+        (scan_limit,),
     )
     users = []
     for row in [dict(r) for r in cur.fetchall()]:
