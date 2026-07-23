@@ -13361,7 +13361,9 @@ def admin_ops_search_json():
     results = []
     if len(q) >= 2:
         if admin_has_permission(admin, "users.view"):
-            results.extend(_ops_search_users(q, limit=8))
+            results.extend(_ops_search_users(q, limit=6))
+        if admin_has_permission(admin, "transactions.view"):
+            results.extend(_ops_search_payments(q, limit=6))
     return jsonify({"ok": True, "query": q, "results": results})
 
 
@@ -13402,6 +13404,57 @@ def _ops_search_users(q, limit=8):
             "label": name or mask_email(row.get("email")),
             "sublabel": f"{mask_email(row.get('email'))} · #{row.get('user_id')} · {status}",
             "href": f"/admin/users/{row.get('user_id')}",
+        })
+    return out
+
+
+def _ops_search_payments(q, limit=6):
+    like = f"%{q}%"
+    conn = db()
+    try:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT p.*, u.email AS _email, u.full_name AS _name
+            FROM payment_records p
+            LEFT JOIN users u ON u.user_id = p.user_id
+            WHERE p.stripe_session_id LIKE ? OR p.stripe_customer_id LIKE ?
+                OR COALESCE(p.stripe_subscription_id,'') LIKE ?
+                OR COALESCE(p.invoice_id,'') LIKE ?
+                OR COALESCE(p.payment_intent_id,'') LIKE ?
+                OR COALESCE(p.stripe_event_id,'') LIKE ?
+                OR CAST(p.id AS TEXT) LIKE ?
+                OR CAST(COALESCE(p.user_id,'') AS TEXT) LIKE ?
+                OR COALESCE(u.email,'') LIKE ?
+            ORDER BY p.created_at DESC
+            LIMIT ?
+            """,
+            (like, like, like, like, like, like, like, like, like, int(limit)),
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+    out = []
+    for row in rows:
+        try:
+            amount = "${:,.2f}".format(float(row.get("amount") or 0))
+        except Exception:
+            amount = str(row.get("amount") or "")
+        currency = (row.get("currency") or "").upper()
+        status = (row.get("status") or "").lower()
+        who = row.get("_name") or mask_email(row.get("_email")) or (f"user #{row.get('user_id')}" if row.get("user_id") else "unlinked")
+        created = (row.get("created_at") or "")[:10]
+        user_id = row.get("user_id")
+        out.append({
+            "type": "payment",
+            "icon": "$",
+            "group": "Payments",
+            "label": f"{amount} {currency} · {status}".strip(),
+            "sublabel": f"{who} · #{row.get('id')} · {created}",
+            "href": f"/admin/users/{user_id}" if user_id else "/admin/transactions",
         })
     return out
 
