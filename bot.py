@@ -13341,7 +13341,7 @@ def admin_page_html(title, body, admin=None):
         f"<title>{clean_html(title)} | CoinPlotXAI Admin</title>"
         "<link rel='stylesheet' href='/static/css/pulse_design_system.css'/>"
         "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css'/>"
-        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722g'/>"
+        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722h'/>"
         "</head><body>"
         "<a class='ops-skip' href='#ops-main'>Skip to content</a>"
         "<div class='ops-scrim-mobile' aria-hidden='true'></div>"
@@ -13377,7 +13377,7 @@ def admin_page_html(title, body, admin=None):
         "<script src='/static/js/time.js'></script>"
         "<script src='/static/js/pulseshell_bridge.js?v=pulseshell-20260630a' defer></script>"
         "<script src='/static/notifications.js?v=live-reels-only-20260702a' defer></script>"
-        "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722g' defer></script>"
+        "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722h' defer></script>"
         "<script>window.CoinPilotTime?.hydrate(document);</script>"
         "</body></html>"
     )
@@ -15538,17 +15538,59 @@ def admin_audit_logs_page():
     admin, denied = require_admin_page("audit.view")
     if denied:
         return denied
+    action_q = clean_html(request.args.get("action", "")).strip()
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT * FROM admin_audit_logs ORDER BY created_at DESC LIMIT 150")
+    cur.execute("SELECT COUNT(*) c, COUNT(DISTINCT admin_email) a, SUM(CASE WHEN action LIKE '%permission_denied' THEN 1 ELSE 0 END) d, SUM(CASE WHEN action LIKE '%login%' THEN 1 ELSE 0 END) l FROM admin_audit_logs")
+    agg = dict(cur.fetchone() or {})
+    if action_q:
+        cur.execute("SELECT * FROM admin_audit_logs WHERE action LIKE ? ORDER BY created_at DESC LIMIT 200", (f"%{action_q}%",))
+    else:
+        cur.execute("SELECT * FROM admin_audit_logs ORDER BY created_at DESC LIMIT 200")
     logs = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT * FROM admin_activity_logs ORDER BY created_at DESC LIMIT 150")
     activity = [dict(row) for row in cur.fetchall()]
     conn.close()
-    rows = "".join(f"<tr><td>{clean_html(r.get('admin_email') or '')}</td><td>{clean_html(r.get('action') or '')}</td><td>{clean_html(r.get('target_type') or '')}</td><td>{clean_html(r.get('target_id') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in logs)
-    activity_rows = "".join(f"<tr><td>{a.get('admin_user_id') or ''}</td><td>{clean_html(a.get('action') or '')}</td><td>{clean_html(a.get('route') or '')}</td><td>{clean_html(a.get('target_type') or '')}</td><td>{clean_html(a.get('created_at') or '')}</td></tr>" for a in activity)
-    body = f"<h1>Audit Logs</h1><p class='muted'>Owner, super admin, and security-only review of administrative actions.</p><div class='card'><h2>Audit Trail</h2><table><tr><th>Admin</th><th>Action</th><th>Target</th><th>ID</th><th>Date</th></tr>{rows}</table></div><div class='card'><h2>Activity Stream</h2><table><tr><th>Admin ID</th><th>Action</th><th>Route</th><th>Target</th><th>Date</th></tr>{activity_rows or '<tr><td colspan=5>No activity yet.</td></tr>'}</table></div>"
+
+    tiles = (
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi'><div class='muted'>Audit Entries</div><div class='metric'>{int(agg.get('c') or 0):,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Distinct Admins</div><div class='metric'>{int(agg.get('a') or 0):,}</div></div>"
+        f"<div class='card ops-kpi ops-stat-card{' attention' if int(agg.get('d') or 0) else ''}'><div class='muted'>Permission Denials</div><div class='metric'>{int(agg.get('d') or 0):,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Login Events</div><div class='metric'>{int(agg.get('l') or 0):,}</div></div>"
+        "</div>"
+    )
+    search_form = (
+        "<form method='get' action='/admin/audit-logs' class='card' style='display:flex;gap:10px;align-items:center;margin-bottom:14px'>"
+        f"<input type='text' name='action' value='{clean_html(action_q)}' placeholder='Filter by action (e.g. permission_denied, login, grant)…' style='flex:1'/>"
+        "<button type='submit' style='max-width:130px'>Filter</button>"
+        f"{'<a class=\"button\" href=\"/admin/audit-logs\" style=\"max-width:90px\">Clear</a>' if action_q else ''}"
+        "</form>"
+    )
+
+    def _action_pill(action):
+        a = (action or "").lower()
+        if a.endswith("permission_denied") or "denied" in a or "fail" in a:
+            dot = "status-dot status-danger"
+        elif "login" in a or "success" in a or "approved" in a or "grant" in a:
+            dot = "status-dot"
+        else:
+            dot = "status-dot status-warn"
+        return f"<span class='pill'><span class='{dot}'></span>{clean_html(action or '')}</span>"
+
+    rows = "".join(
+        f"<tr><td class='muted'>{clean_html(r.get('admin_email') or ('#'+str(r.get('admin_user_id'))) or '')}</td><td>{_action_pill(r.get('action'))}</td><td class='muted'>{clean_html(r.get('target_type') or '')}</td><td class='muted'>{clean_html(str(r.get('target_id') or ''))}</td><td class='muted'>{clean_html(r.get('created_at') or '')}</td></tr>"
+        for r in logs
+    ) or "<tr><td colspan='5' class='muted'>No matching audit entries.</td></tr>"
+    activity_rows = "".join(f"<tr><td class='muted'>{a.get('admin_user_id') or ''}</td><td>{clean_html(a.get('action') or '')}</td><td class='muted'>{clean_html(a.get('route') or '')}</td><td class='muted'>{clean_html(a.get('target_type') or '')}</td><td class='muted'>{clean_html(a.get('created_at') or '')}</td></tr>" for a in activity)
+    body = (
+        "<h1>Audit Logs</h1>"
+        "<p class='muted'>Owner, super admin, and security-only review of administrative actions. Denials are highlighted.</p>"
+        f"{tiles}{search_form}"
+        f"<div class='card'><h2 style='margin-top:0'>Audit Trail <span class='muted' style='font-size:.9rem'>({len(logs)} shown)</span></h2><table><tr><th>Admin</th><th>Action</th><th>Target</th><th>ID</th><th>Date</th></tr>{rows}</table></div>"
+        f"<div class='card'><h2 style='margin-top:0'>Activity Stream</h2><table><tr><th>Admin ID</th><th>Action</th><th>Route</th><th>Target</th><th>Date</th></tr>{activity_rows or '<tr><td colspan=5 class=muted>No activity yet.</td></tr>'}</table></div>"
+    )
     return admin_page_html("Audit Logs", body, admin)
 
 
