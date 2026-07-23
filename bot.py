@@ -13392,15 +13392,57 @@ def admin_ops_status_json():
     if not admin:
         return jsonify({"error": "unauthorized"}), 401
     services = {"api": "ok"}
+    heartbeats = {}
     try:
         conn = db()
         cur = conn.cursor()
         cur.execute("SELECT 1")
         cur.fetchone()
-        conn.close()
         services["database"] = "ok"
+        try:
+            cur.execute("SELECT worker_name, last_seen_at FROM worker_heartbeats")
+            heartbeats = {str(r[0]): str(r[1] or "") for r in cur.fetchall()}
+        except Exception:
+            heartbeats = {}
+        conn.close()
     except Exception:
         services["database"] = "down"
+
+    def _fresh(ts, minutes=10):
+        if not ts:
+            return None
+        try:
+            return (datetime.now() - datetime.fromisoformat(ts)) <= timedelta(minutes=minutes)
+        except Exception:
+            return None
+
+    # Payments: honest config-presence signal (no live Stripe call in a poll).
+    if STRIPE_SECRET_KEY and STRIPE_PRICE_ID:
+        services["payments"] = "ok" if STRIPE_WEBHOOK_SECRET else "warn"
+    elif STRIPE_SECRET_KEY:
+        services["payments"] = "warn"
+
+    # AI: OpenAI credential presence.
+    if os.getenv("OPENAI_API_KEY"):
+        services["ai"] = "ok"
+    else:
+        services["ai"] = "warn"
+
+    # Queues + Live: worker heartbeat freshness (stale workers degrade honestly).
+    any_worker = None
+    for name, ts in heartbeats.items():
+        f = _fresh(ts)
+        if f is True:
+            any_worker = True
+            break
+        if f is False and any_worker is None:
+            any_worker = False
+    if any_worker is not None:
+        services["queues"] = "ok" if any_worker else "warn"
+    tele = _fresh(heartbeats.get("telegram_worker"))
+    if tele is not None:
+        services["live"] = "ok" if tele else "warn"
+
     return jsonify({"services": services, "ts": datetime.now().isoformat()})
 
 
