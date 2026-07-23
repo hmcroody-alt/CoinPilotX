@@ -13341,7 +13341,7 @@ def admin_page_html(title, body, admin=None):
         f"<title>{clean_html(title)} | CoinPlotXAI Admin</title>"
         "<link rel='stylesheet' href='/static/css/pulse_design_system.css'/>"
         "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css'/>"
-        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722f'/>"
+        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722g'/>"
         "</head><body>"
         "<a class='ops-skip' href='#ops-main'>Skip to content</a>"
         "<div class='ops-scrim-mobile' aria-hidden='true'></div>"
@@ -13377,7 +13377,7 @@ def admin_page_html(title, body, admin=None):
         "<script src='/static/js/time.js'></script>"
         "<script src='/static/js/pulseshell_bridge.js?v=pulseshell-20260630a' defer></script>"
         "<script src='/static/notifications.js?v=live-reels-only-20260702a' defer></script>"
-        "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722f' defer></script>"
+        "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722g' defer></script>"
         "<script>window.CoinPilotTime?.hydrate(document);</script>"
         "</body></html>"
     )
@@ -18295,19 +18295,52 @@ def admin_moderation_page():
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT moderation_status, COUNT(*) AS total FROM chat_media_uploads GROUP BY moderation_status ORDER BY total DESC")
+    cur.execute("SELECT COALESCE(moderation_status,'unknown') s, COUNT(*) AS total FROM chat_media_uploads GROUP BY moderation_status ORDER BY total DESC")
     media = [dict(row) for row in cur.fetchall()]
-    cur.execute("SELECT status, COUNT(*) AS total FROM chat_reports GROUP BY status ORDER BY total DESC")
+    cur.execute("SELECT COALESCE(status,'open') s, COUNT(*) AS total FROM chat_reports GROUP BY status ORDER BY total DESC")
     reports = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT COUNT(*) AS total FROM blocked_users")
     blocked = int((cur.fetchone() or {"total": 0})["total"])
     conn.close()
+
+    def _q(rows, *keys):
+        return sum(int(r["total"] or 0) for r in rows if (r["s"] or "").lower() in keys)
+
+    media_total = sum(int(r["total"] or 0) for r in media)
+    media_pending = _q(media, "pending", "flagged", "review", "queued")
+    media_blocked = _q(media, "blocked", "rejected", "removed")
+    reports_total = sum(int(r["total"] or 0) for r in reports)
+    reports_open = _q(reports, "open", "pending", "new", "") or (reports_total - _q(reports, "resolved", "closed", "dismissed"))
+
+    def _dot(v, warn_dot):
+        return "status-dot status-warn" if (v and warn_dot) else "status-dot"
+
+    tiles = (
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi ops-stat-card{' attention' if media_pending else ''}'><div class='muted'>Media Pending</div><div class='metric'>{media_pending:,}</div><div class='muted' style='font-size:.82rem'>awaiting review</div></div>"
+        f"<div class='card ops-kpi ops-stat-card{' attention' if reports_open else ''}'><div class='muted'>Open Reports</div><div class='metric'>{reports_open:,}</div><div class='muted' style='font-size:.82rem'>of {reports_total:,} total</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Media Reviewed</div><div class='metric'>{media_total:,}</div><div class='muted' style='font-size:.82rem'>{media_blocked:,} blocked</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>User Blocks</div><div class='metric'>{blocked:,}</div></div>"
+        "</div>"
+    )
+
+    def _pill_rows(rows, warn_keys):
+        out = ""
+        for r in rows:
+            s = (r["s"] or "").lower()
+            dot = "status-dot status-warn" if s in warn_keys else ("status-dot status-danger" if s in ("blocked", "rejected", "removed") else "status-dot")
+            out += f"<tr><td><span class='pill'><span class='{dot}'></span>{clean_html(r['s'])}</span></td><td>{int(r['total'] or 0):,}</td></tr>"
+        return out or "<tr><td colspan='2' class='muted'>None.</td></tr>"
+
     body = (
-        "<h1>Moderation Command Center</h1><p class='muted'>Safety foundation for chat, media, Roast Battle, and Arena social systems.</p>"
-        f"<div class='grid'><div class='card'><strong>Blocked Users</strong><p class='metric'>{blocked}</p></div>"
-        f"<div class='card'><h2>Media Queue</h2>{admin_rows_table(media, [('moderation_status','Status'),('total','Total')])}</div>"
-        f"<div class='card'><h2>Reports</h2>{admin_rows_table(reports, [('status','Status'),('total','Total')])}</div></div>"
-        "<p><a class='button' href='/admin/reports'>Open Reports</a> <a class='button' href='/admin/media-moderation'>Open Media Moderation</a></p>"
+        "<h1>Moderation Command Center</h1>"
+        "<p class='muted'>Unified safety surface for chat, media, Roast Battle, and Arena. Pending work is highlighted first.</p>"
+        f"{tiles}"
+        "<p><a class='button' href='/admin/reports'>Open Reports</a> <a class='button' href='/admin/media-moderation'>Media Moderation</a> <a class='button' href='/admin/private-chat-reports'>Chat Reports</a></p>"
+        "<div class='grid'>"
+        f"<div class='card'><h2 style='margin-top:0'>Media Queue</h2><table><tr><th>Status</th><th>Count</th></tr>{_pill_rows(media, {'pending','flagged','review','queued'})}</table></div>"
+        f"<div class='card'><h2 style='margin-top:0'>Reports</h2><table><tr><th>Status</th><th>Count</th></tr>{_pill_rows(reports, {'open','pending','new'})}</table></div>"
+        "</div>"
     )
     return admin_page_html("Moderation", body, admin)
 
