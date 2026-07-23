@@ -13790,6 +13790,29 @@ def admin_dashboard_page():
         f"<div class='muted' style='font-size:.82rem'>{_n(stats['events_today'])} events today</div></div>"
         "</div>"
     )
+    def _pct(num, den):
+        try:
+            return f"{(100.0 * float(num) / float(den)):.1f}%" if den else "—"
+        except Exception:
+            return "—"
+
+    paid = int(stats.get("paid_pro") or 0)
+    trials = int(stats.get("trial_users") or 0)
+    arpu = (float(stats.get("total_revenue") or 0) / paid) if paid else 0.0
+    exec_metrics = (
+        "<h2>Executive Metrics</h2>"
+        "<p class='muted' style='margin-top:-6px'>Derived from live counts &mdash; ratios, not new estimates.</p>"
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi'><div class='muted'>ARPU (paying)</div><div class='metric'>{_money(arpu)}</div>"
+        "<div class='muted' style='font-size:.82rem'>lifetime revenue / paid member</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Paid Conversion</div><div class='metric'>{_pct(paid, stats.get('total_users'))}</div>"
+        f"<div class='muted' style='font-size:.82rem'>{_n(paid)} of {_n(stats.get('total_users'))} users</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Trial &rarr; Paid Share</div><div class='metric'>{_pct(paid, paid + trials)}</div>"
+        f"<div class='muted' style='font-size:.82rem'>paid vs. {_n(trials)} active trials</div></div>"
+        f"<div class='card ops-kpi{' ops-stat-card attention' if stats.get('failed_payments') else ''}'><div class='muted'>Payment Failure Rate</div><div class='metric'>{_pct(stats.get('failed_payments'), paid + int(stats.get('failed_payments') or 0))}</div>"
+        f"<div class='muted' style='font-size:.82rem'>{_n(stats.get('failed_payments'))} past-due / unpaid</div></div>"
+        "</div>"
+    )
     subs = (
         "<h2>Subscriptions</h2><div class='grid'>"
         + _stat_card("Paid Pro", stats["paid_pro"], "/admin/users?filter=pro")
@@ -13815,7 +13838,7 @@ def admin_dashboard_page():
     body = (
         "<h1>Command Center</h1><p class='muted'>Live SaaS visibility across accounts, billing, emails, Telegram, analytics, and support.</p>"
         f"{profile_prompt}{command_center_cta}"
-        f"{kpis}{subs}{attention}{activity}"
+        f"{kpis}{exec_metrics}{subs}{attention}{activity}"
         f"<form method='post' action='/admin/billing/recalculate' class='card' style='margin-top:18px'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Recalculate Billing Metrics</button><p class='muted'>Scans successful Stripe payment records and fixes any paid users still marked trialing.</p></form>"
     )
     return admin_page_html("Command Center", body, admin)
