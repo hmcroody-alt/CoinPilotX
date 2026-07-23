@@ -13210,6 +13210,37 @@ def admin_saas_summary():
     }
 
 
+def _ops_page_arg(default_per=50, max_per=200):
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+    except Exception:
+        page = 1
+    try:
+        per = int(request.args.get("per", str(default_per)))
+    except Exception:
+        per = default_per
+    per = max(10, min(per, max_per))
+    return page, per
+
+
+def _ops_pager(base_path, page, per_page, total, params=None):
+    """Prev/Next page navigation preserving existing query params. Returns '' for a single page."""
+    pages = max(1, (int(total) + per_page - 1) // per_page)
+    page = max(1, min(int(page), pages))
+    if pages <= 1:
+        return f"<div class='ops-pager'><span class='muted'>{int(total):,} total</span></div>"
+
+    def _url(p):
+        q = dict(params or {})
+        q["page"] = p
+        qs = "&".join(f"{k}={quote(str(v))}" for k, v in q.items() if v not in (None, ""))
+        return f"{base_path}?{qs}"
+
+    prev = f"<a class='button' href='{_url(page - 1)}'>&larr; Prev</a>" if page > 1 else "<span class='button' style='opacity:.4;pointer-events:none'>&larr; Prev</span>"
+    nxt = f"<a class='button' href='{_url(page + 1)}'>Next &rarr;</a>" if page < pages else "<span class='button' style='opacity:.4;pointer-events:none'>Next &rarr;</span>"
+    return f"<div class='ops-pager'>{prev}<span class='muted'>Page {page} of {pages} &middot; {int(total):,} total</span>{nxt}</div>"
+
+
 def latest_checkout_diagnostics():
     init_db()
     conn = db()
@@ -13341,7 +13372,7 @@ def admin_page_html(title, body, admin=None):
         f"<title>{clean_html(title)} | CoinPlotXAI Admin</title>"
         "<link rel='stylesheet' href='/static/css/pulse_design_system.css'/>"
         "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css'/>"
-        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722h'/>"
+        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722i'/>"
         "</head><body>"
         "<a class='ops-skip' href='#ops-main'>Skip to content</a>"
         "<div class='ops-scrim-mobile' aria-hidden='true'></div>"
@@ -13377,7 +13408,7 @@ def admin_page_html(title, body, admin=None):
         "<script src='/static/js/time.js'></script>"
         "<script src='/static/js/pulseshell_bridge.js?v=pulseshell-20260630a' defer></script>"
         "<script src='/static/notifications.js?v=live-reels-only-20260702a' defer></script>"
-        "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722h' defer></script>"
+        "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722i' defer></script>"
         "<script>window.CoinPilotTime?.hydrate(document);</script>"
         "</body></html>"
     )
@@ -14643,10 +14674,13 @@ def admin_transactions_page():
     admin = admin_login_required()
     if not admin:
         return redirect(url_for("admin_login_page"))
+    page, per = _ops_page_arg(default_per=50)
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT * FROM payment_records ORDER BY created_at DESC LIMIT 100")
+    cur.execute("SELECT COUNT(*) c FROM payment_records")
+    records_total = int(dict(cur.fetchone() or {}).get("c") or 0)
+    cur.execute("SELECT * FROM payment_records ORDER BY created_at DESC LIMIT ? OFFSET ?", (per, (page - 1) * per))
     records = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT * FROM subscriptions ORDER BY created_at DESC LIMIT 100")
     subs = [dict(row) for row in cur.fetchall()]
@@ -14723,13 +14757,19 @@ def admin_transactions_page():
         + "</tr>"
         for s in subs
     )
+    if not rows:
+        rows = "<tr><td colspan='5' class='muted'>No payment records on this page.</td></tr>"
+    pager = _ops_pager("/admin/transactions", page, per, records_total, {"per": per})
     body = (
         "<h1>Transactions</h1>"
-        "<p class='muted'>Payment records and subscriptions. Volume tiles aggregate the full ledger; tables show the 100 most recent.</p>"
+        "<p class='muted'>Payment records and subscriptions. Volume tiles aggregate the full ledger; the payments table is paginated.</p>"
         f"{tiles}"
-        "<h2>Recent Payments</h2>"
+        "<h2>Payments</h2>"
+        f"{pager}"
         f"<div class='card'><table><tr><th>User</th><th>Amount</th><th>Type</th><th>Status</th><th>Date</th></tr>{rows}</table></div>"
+        f"{pager}"
         "<h2>Subscriptions</h2>"
+        "<p class='muted' style='margin-top:-6px'>100 most recent.</p>"
         f"<div class='card'><table><tr><th>User</th><th>Plan</th><th>Status</th><th>Stripe Subscription</th><th>Date</th></tr>{sub_rows}</table></div>"
     )
     return admin_page_html("Transactions", body, admin)
@@ -15604,15 +15644,19 @@ def admin_audit_logs_page():
     if denied:
         return denied
     action_q = clean_html(request.args.get("action", "")).strip()
+    page, per = _ops_page_arg(default_per=50)
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     cur.execute("SELECT COUNT(*) c, COUNT(DISTINCT admin_email) a, SUM(CASE WHEN action LIKE '%permission_denied' THEN 1 ELSE 0 END) d, SUM(CASE WHEN action LIKE '%login%' THEN 1 ELSE 0 END) l FROM admin_audit_logs")
     agg = dict(cur.fetchone() or {})
     if action_q:
-        cur.execute("SELECT * FROM admin_audit_logs WHERE action LIKE ? ORDER BY created_at DESC LIMIT 200", (f"%{action_q}%",))
+        cur.execute("SELECT COUNT(*) c FROM admin_audit_logs WHERE action LIKE ?", (f"%{action_q}%",))
+        trail_total = int(dict(cur.fetchone() or {}).get("c") or 0)
+        cur.execute("SELECT * FROM admin_audit_logs WHERE action LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?", (f"%{action_q}%", per, (page - 1) * per))
     else:
-        cur.execute("SELECT * FROM admin_audit_logs ORDER BY created_at DESC LIMIT 200")
+        trail_total = int(agg.get("c") or 0)
+        cur.execute("SELECT * FROM admin_audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?", (per, (page - 1) * per))
     logs = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT * FROM admin_activity_logs ORDER BY created_at DESC LIMIT 150")
     activity = [dict(row) for row in cur.fetchall()]
@@ -15653,6 +15697,7 @@ def admin_audit_logs_page():
         "<h1>Audit Logs</h1>"
         "<p class='muted'>Owner, super admin, and security-only review of administrative actions. Denials are highlighted.</p>"
         f"{tiles}{search_form}"
+        f"{_ops_pager('/admin/audit-logs', page, per, trail_total, {'action': action_q, 'per': per})}"
         f"<div class='card'><h2 style='margin-top:0'>Audit Trail <span class='muted' style='font-size:.9rem'>({len(logs)} shown)</span></h2><table><tr><th>Admin</th><th>Action</th><th>Target</th><th>ID</th><th>Date</th></tr>{rows}</table></div>"
         f"<div class='card'><h2 style='margin-top:0'>Activity Stream</h2><table><tr><th>Admin ID</th><th>Action</th><th>Route</th><th>Target</th><th>Date</th></tr>{activity_rows or '<tr><td colspan=5 class=muted>No activity yet.</td></tr>'}</table></div>"
     )
