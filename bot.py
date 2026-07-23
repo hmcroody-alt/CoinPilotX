@@ -13341,7 +13341,7 @@ def admin_page_html(title, body, admin=None):
         f"<title>{clean_html(title)} | CoinPlotXAI Admin</title>"
         "<link rel='stylesheet' href='/static/css/pulse_design_system.css'/>"
         "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css'/>"
-        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722c'/>"
+        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722d'/>"
         "</head><body>"
         "<a class='ops-skip' href='#ops-main'>Skip to content</a>"
         "<div class='ops-scrim-mobile' aria-hidden='true'></div>"
@@ -13377,7 +13377,7 @@ def admin_page_html(title, body, admin=None):
         "<script src='/static/js/time.js'></script>"
         "<script src='/static/js/pulseshell_bridge.js?v=pulseshell-20260630a' defer></script>"
         "<script src='/static/notifications.js?v=live-reels-only-20260702a' defer></script>"
-        "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722c' defer></script>"
+        "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722d' defer></script>"
         "<script>window.CoinPilotTime?.hydrate(document);</script>"
         "</body></html>"
     )
@@ -17021,6 +17021,8 @@ def admin_user_detail_page(user_id):
     cur.execute("SELECT stripe_event_id, stripe_session_id, stripe_customer_id, stripe_subscription_id, invoice_id, amount, currency, status, email_sent, pro_activated_at, stripe_payload, created_at FROM payment_records WHERE user_id=? ORDER BY id DESC LIMIT 30", (user_id,))
     payments = [dict(row) for row in cur.fetchall()]
     latest_payment = payments[0] if payments else {}
+    cur.execute("SELECT COALESCE(SUM(COALESCE(amount,0)),0) s, COUNT(*) c FROM payment_records WHERE user_id=? AND lower(COALESCE(status,''))='succeeded'", (user_id,))
+    _rev = dict(cur.fetchone() or {})
     cur.execute("SELECT stripe_event_id, event_type, status, created_at, processed_at FROM stripe_events WHERE user_id=? ORDER BY id DESC LIMIT 1", (user_id,))
     latest_stripe_event = dict(cur.fetchone() or {})
     cur.execute("SELECT email_type, template, status, stripe_event_id, payment_id, created_at, sent_at, error_message FROM payment_email_logs WHERE user_id=? ORDER BY id DESC LIMIT 1", (user_id,))
@@ -17068,8 +17070,25 @@ def admin_user_detail_page(user_id):
             "Last login": user.get("last_login_at"),
         }.items()
     )
-    body = (
-        f"<h1>User #{user_id}</h1><p><a class='button' href='/admin/users/{user_id}/edit'>Edit User</a></p>"
+    _status = (user.get("account_status") or "active").lower()
+    _sdot = "status-dot status-danger" if _status in ("restricted", "suspended", "deleted") else "status-dot" if _status in ("active", "") else "status-dot status-warn"
+    _rev_amt = "${:,.2f}".format(float(_rev.get("s") or 0))
+    _header = (
+        "<div class='card ops-userhead'>"
+        "<div class='ops-userhead__id'>"
+        f"<div class='ops-userhead__name'>{clean_html(user.get('full_name') or user.get('display_name') or ('User #' + str(user_id)))}</div>"
+        f"<div class='muted'>{clean_html(mask_email(user.get('email')))} &middot; #{user_id}</div>"
+        "</div>"
+        "<div class='ops-userhead__stats'>"
+        f"<div class='ops-userhead__stat'><span class='muted'>Status</span><span class='pill'><span class='{_sdot}'></span>{clean_html(user.get('account_status') or 'active')}</span></div>"
+        f"<div class='ops-userhead__stat'><span class='muted'>Class</span><strong>{clean_html(paid_class)}</strong></div>"
+        f"<div class='ops-userhead__stat'><span class='muted'>Lifetime Revenue</span><strong>{_rev_amt}</strong><span class='muted' style='font-size:.78rem'>{int(_rev.get('c') or 0)} payments</span></div>"
+        f"<div class='ops-userhead__stat'><span class='muted'>Plan</span><strong>{clean_html(user.get('plan') or 'free')}</strong></div>"
+        "</div>"
+        f"<div class='ops-userhead__actions'><a class='button' href='/admin/users/{user_id}/edit'>Edit User</a></div>"
+        "</div>"
+    )
+    _actions = (
         f"<form method='post' action='/admin/users/{user_id}/convert-paid-pro' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Convert Trial to PulseSoc Premium</button><p class='muted'>Use only after confirming a successful Stripe payment for this user.</p></form>"
         f"<form method='post' action='/admin/users/{user_id}/force-sync-pro' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Force Sync Premium From Stripe/Payment</button><p class='muted'>Repairs this user only when a successful local payment record or Stripe event exists.</p></form>"
         f"<form method='post' action='/admin/users/{user_id}/retry-stripe-session' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><label>Stripe Session ID<input name='session_id' value='{clean_html(user.get('stripe_session_id') or latest_checkout_attempt.get('stripe_session_id') or latest_payment.get('stripe_session_id') or '')}' placeholder='cs_live_...' /></label><button type='submit'>Retry Stripe Session Lookup</button><p class='muted'>Retrieves the checkout session from Stripe and activates PulseSoc Premium if paid.</p></form>"
@@ -17079,6 +17098,10 @@ def admin_user_detail_page(user_id):
         f"<form method='post' action='/admin/users/{user_id}/send-reset-email' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Send Password Reset Email</button><p class='muted'>Sends a fresh password reset link to the user's account email.</p></form>"
         f"<form method='post' action='/admin/users/{user_id}/manual-confirm-email' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Emergency Confirm Email</button><p class='muted'>Owner-only fallback after identity/support review. Use only when email delivery is confirmed externally.</p></form>"
         f"{'<form method=\"post\" action=\"/admin/users/' + str(user_id) + '/set-password\" class=\"card\"><input type=\"hidden\" name=\"csrf_token\" value=\"' + get_csrf_token() + '\" /><h2>Owner Access Repair</h2><p class=\"muted\">Sets a temporary password, activates the account, and optionally confirms email. The password is never logged.</p><label>Temporary password<input name=\"password\" type=\"password\" autocomplete=\"new-password\" required minlength=\"8\" /></label><label style=\"display:flex;gap:8px;align-items:center\"><input type=\"checkbox\" name=\"confirm_email\" value=\"1\" checked /> Confirm email and activate account</label><button type=\"submit\">Set Temporary Password</button></form>' if admin_is_owner_level(admin) else ''}"
+    )
+    body = (
+        f"{_header}"
+        f"<details class='ops-group ops-actions'><summary>Account Actions &amp; Repair Tools</summary><div class='grid'>{_actions}</div></details>"
         f"<h2>Backend Premium Status</h2><div class='grid'>{diagnostic}</div>"
         f"<div class='grid'>{summary}</div>"
         f"<h2>Payment History</h2><div class='card'>{admin_rows_table(payments, [('amount','Amount'),('currency','Currency'),('status','Status'),('stripe_event_id','Event'),('invoice_id','Invoice'),('created_at','Date')])}</div>"

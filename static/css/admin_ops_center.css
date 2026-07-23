@@ -310,6 +310,24 @@ body.ops-nav-open .ops-scrim-mobile { display: block; }
 @media (min-width: 961px) { body.ops-nav-open .ops-scrim-mobile { display: none; } }
 
 /* ------------------------------------------------------------------ */
+/* User detail — CRM identity header                                  */
+/* ------------------------------------------------------------------ */
+.ops-userhead { display: flex; flex-wrap: wrap; align-items: center; gap: 18px 28px; }
+.ops-userhead__id { min-width: 200px; }
+.ops-userhead__name { font-size: 1.5rem; font-weight: 700; letter-spacing: -.01em; }
+.ops-userhead__stats { display: flex; flex-wrap: wrap; gap: 22px; margin-left: auto; }
+.ops-userhead__stat { display: flex; flex-direction: column; gap: 2px; }
+.ops-userhead__stat .muted { font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; }
+.ops-userhead__stat strong { font-size: 1.05rem; }
+.ops-userhead__actions { display: flex; gap: 10px; }
+details.ops-actions { margin: 14px 0; padding: 4px 14px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+details.ops-actions > summary { cursor: pointer; padding: 12px 4px; font-weight: 600; list-style: none; }
+details.ops-actions > summary::-webkit-details-marker { display: none; }
+details.ops-actions > summary::before { content: "\25B8"; display: inline-block; margin-right: 8px; transition: transform .15s ease; }
+details.ops-actions[open] > summary::before { transform: rotate(90deg); }
+details.ops-actions .card { margin: 0; }
+
+/* ------------------------------------------------------------------ */
 /* Accessibility                                                      */
 /* ------------------------------------------------------------------ */
 :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; border-radius: 6px; }
