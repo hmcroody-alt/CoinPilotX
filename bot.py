@@ -14529,10 +14529,88 @@ def admin_transactions_page():
     records = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT * FROM subscriptions ORDER BY created_at DESC LIMIT 100")
     subs = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT COALESCE(status,'') st, COUNT(*) c, COALESCE(SUM(COALESCE(amount,0)),0) s FROM payment_records GROUP BY COALESCE(status,'')")
+    agg = [dict(r) for r in cur.fetchall()]
     conn.close()
-    rows = "".join(f"<tr><td>{r.get('user_id')}</td><td>{clean_html(str(r.get('amount') or ''))}</td><td>{clean_html(str(r.get('currency') or ''))}</td><td>{clean_html(str(r.get('status') or ''))}</td><td>{clean_html(str(r.get('created_at') or ''))}</td></tr>" for r in records)
-    sub_rows = "".join(f"<tr><td>{s.get('user_id')}</td><td>{clean_html(s.get('plan') or '')}</td><td>{clean_html(s.get('status') or '')}</td><td>{clean_html(s.get('stripe_subscription_id') or '')}</td><td>{clean_html(s.get('created_at') or '')}</td></tr>" for s in subs)
-    body = f"<h1>Transactions</h1><div class='card'><table><tr><th>User</th><th>Amount</th><th>Currency</th><th>Status</th><th>Date</th></tr>{rows}</table></div><h2>Subscriptions</h2><div class='card'><table><tr><th>User</th><th>Plan</th><th>Status</th><th>Stripe Subscription</th><th>Date</th></tr>{sub_rows}</table></div>"
+
+    succ_sum = succ_c = fail_c = refund_c = total_c = 0
+    for a in agg:
+        st = (a.get("st") or "").lower()
+        c = int(a.get("c") or 0)
+        s = float(a.get("s") or 0)
+        total_c += c
+        if st in ("succeeded", "paid", "complete", "completed"):
+            succ_sum += s
+            succ_c += c
+        elif "refund" in st:
+            refund_c += c
+        elif st in ("failed", "unpaid", "past_due", "canceled", "cancelled"):
+            fail_c += c
+
+    def _m(v, ccy=""):
+        try:
+            base = "${:,.2f}".format(float(v or 0))
+        except Exception:
+            return clean_html(str(v or ""))
+        return base + (f" {clean_html(ccy).upper()}" if ccy else "")
+
+    def _pill(status):
+        s = (status or "").lower()
+        if s in ("failed", "unpaid", "past_due", "canceled", "cancelled"):
+            dot = "status-dot status-danger"
+        elif s in ("succeeded", "paid", "active", "complete", "completed"):
+            dot = "status-dot"
+        else:
+            dot = "status-dot status-warn"
+        return f"<span class='pill'><span class='{dot}'></span>{clean_html(status or '—')}</span>"
+
+    def _user_cell(uid):
+        if not uid:
+            return "<td class='muted'>unlinked</td>"
+        return f"<td><a href='/admin/users/{clean_html(str(uid))}'>#{clean_html(str(uid))}</a></td>"
+
+    tiles = (
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi'><div class='muted'>Succeeded Volume</div><div class='metric'>{_m(succ_sum)}</div>"
+        f"<div class='muted' style='font-size:.82rem'>{succ_c:,} payments</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Total Records</div><div class='metric'>{total_c:,}</div>"
+        "<div class='muted' style='font-size:.82rem'>all payment events</div></div>"
+        f"<div class='card ops-kpi ops-stat-card{' attention' if fail_c else ''}'><div class='muted'>Failed / Unpaid</div><div class='metric'>{fail_c:,}</div>"
+        "<div class='muted' style='font-size:.82rem'>needs review</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Refunds</div><div class='metric'>{refund_c:,}</div>"
+        "<div class='muted' style='font-size:.82rem'>refunded records</div></div>"
+        "</div>"
+    )
+
+    rows = "".join(
+        "<tr>"
+        + _user_cell(r.get("user_id"))
+        + f"<td>{_m(r.get('amount'), r.get('currency') or '')}</td>"
+        + f"<td class='muted'>{clean_html(r.get('payment_type') or '')}</td>"
+        + f"<td>{_pill(r.get('status'))}</td>"
+        + f"<td class='muted'>{clean_html(str(r.get('created_at') or ''))}</td>"
+        + "</tr>"
+        for r in records
+    )
+    sub_rows = "".join(
+        "<tr>"
+        + _user_cell(s.get("user_id"))
+        + f"<td>{clean_html(s.get('plan') or '')}</td>"
+        + f"<td>{_pill(s.get('status'))}</td>"
+        + f"<td class='muted'>{clean_html(s.get('stripe_subscription_id') or '')}</td>"
+        + f"<td class='muted'>{clean_html(s.get('created_at') or '')}</td>"
+        + "</tr>"
+        for s in subs
+    )
+    body = (
+        "<h1>Transactions</h1>"
+        "<p class='muted'>Payment records and subscriptions. Volume tiles aggregate the full ledger; tables show the 100 most recent.</p>"
+        f"{tiles}"
+        "<h2>Recent Payments</h2>"
+        f"<div class='card'><table><tr><th>User</th><th>Amount</th><th>Type</th><th>Status</th><th>Date</th></tr>{rows}</table></div>"
+        "<h2>Subscriptions</h2>"
+        f"<div class='card'><table><tr><th>User</th><th>Plan</th><th>Status</th><th>Stripe Subscription</th><th>Date</th></tr>{sub_rows}</table></div>"
+    )
     return admin_page_html("Transactions", body, admin)
 
 
