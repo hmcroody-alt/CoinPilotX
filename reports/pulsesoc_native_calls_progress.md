@@ -1,6 +1,41 @@
 # PulseSoc Native Calls Foundation Progress
 
-Updated: 2026-07-18
+Updated: 2026-07-22
+
+## 2026-07-22 — Native call envelope contract repair
+
+- Root cause found: several server-authoritative call endpoints return canonical response envelopes (`{ ok, call, join }`), while the native call API wrapper normalized those envelopes as if they were flat call objects.
+- Affected native paths:
+  - `POST /api/calls/<call_id>/accept` dropped the LiveKit `join` token, so incoming accepted calls could route to the Call screen without a usable media token.
+  - `POST /api/calls/<call_id>/join-token` treated the whole envelope as a join payload, returning an empty token/url to the LiveKit connector.
+  - `GET /api/calls/<call_id>/status` could replace a valid call with an empty normalized call after refresh.
+  - `POST /api/calls/<call_id>/connected`, decline, and end now normalize the same canonical envelope shape for stable cache/status reconciliation.
+- Added `normalizeCallPayload` and `PulseCallEnvelope` to preserve both legacy flat call payloads and canonical backend envelopes.
+- Corrected generic native call-start compatibility so older `participant_user_ids` callers are translated into backend `recipient_user_ids`.
+- Added focused Jest coverage for accept envelopes, join-token envelopes, status envelopes, recipient ID naming, and legacy flat payloads.
+- Updated `scripts/pulsesoc_native_calls_audit.py` so future native-call audits explicitly require canonical envelope normalization.
+
+Verification on 2026-07-22:
+
+- `npm test --prefix mobile-native -- --runTestsByPath src/api/__tests__/calls.test.ts --runInBand`
+- `npm run --prefix mobile-native typecheck`
+- `python3 scripts/pulsesoc_native_calls_audit.py`
+- `python3 scripts/pulse_audio_calls_audit.py`
+- `python3 scripts/pulse_video_calls_audit.py`
+- `python3 scripts/pulsesoc_real_call_experience_audit.py`
+- `python3 scripts/pulsesoc_call_system_full_functionality_audit.py`
+- `python3 -m py_compile services/pulsesoc_communications_engine.py pulse_communications_v2/routes.py bot.py`
+- `git diff --check`
+
+`expo-doctor` still reports the existing non-CNG warning: native iOS/Android folders are present while app.config.js contains prebuild-synced properties. This warning is unrelated to the call envelope fix and was not introduced here.
+
+Still not claimed:
+
+- Real two-account, two-device audio/video exchange.
+- Physical microphone/camera publishing proof.
+- Bluetooth/speaker route proof.
+- Lock-screen incoming-call behavior.
+- Background call continuity.
 
 ## 2026-07-18 — Native voice-message foundation repair
 

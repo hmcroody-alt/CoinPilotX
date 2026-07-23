@@ -50,6 +50,15 @@ def main() -> int:
     ]:
         require(calls_api, endpoint, "call API endpoint wrapper")
 
+    for snippet in [
+        "export type PulseCallEnvelope",
+        "normalizeCallPayload",
+        "isRecord(record.join)",
+        "isRecord(record.call)",
+        "recipient_user_ids: recipientUserIds",
+    ]:
+        require(calls_api, snippet, "canonical call envelope normalization")
+
     for action in [
         "mute-audio",
         "unmute-audio",
