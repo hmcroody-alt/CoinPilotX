@@ -13171,95 +13171,239 @@ def latest_checkout_diagnostics():
 
 
 def admin_page_html(title, body, admin=None):
-    command_center_nav = "<a class='command-center-link' href='/admin/command-center'>Backend Command Center</a>" if admin_is_owner_level(admin) else ""
-    nav = (
-        "<a href='/admin/dashboard'>Dashboard</a>"
-        f"{command_center_nav}"
-        "<a href='/admin/global-command'>Global Command</a>"
-        "<a href='/admin/users'>Users</a>"
-        "<a href='/admin/admins'>Admins</a>"
-        "<a href='/admin/employees'>Employees</a>"
-        "<a href='/admin/departments'>Departments</a>"
-        "<a href='/admin/transactions'>Transactions</a>"
-        "<a class='command-center-link' href='/admin/payments-command-center'>Payments Command Center</a>"
-        "<a href='/admin/emails'>Emails</a>"
-        "<a href='/admin/emails/payment'>Payment Emails</a>"
-        "<a href='/admin/telegram'>Telegram</a>"
-        "<a href='/admin/ai-usage'>AI Usage</a>"
-        "<a href='/admin/scam-shield'>Scam Shield</a>"
-        "<a href='/admin/command-logs'>Command Logs</a>"
-        "<a href='/admin/visitors'>Visitors</a>"
-        "<a href='/admin/notifications'>Notifications</a>"
-        "<a href='/admin/calls'>Calls</a>"
-        "<a href='/admin/notification-delivery'>Delivery</a>"
-        "<a href='/admin/pulse-moderation'>PulseSoc Mod</a>"
-        "<a href='/admin/pulse-ads-review-board'>Ads Review Board</a>"
-        "<a href='/admin/pulse-music-review'>Music Review</a>"
-        "<a href='/admin/pulse-feed-health'>Feed Health</a>"
-        "<a href='/admin/pulse-analytics'>PulseSoc Analytics</a>"
-        "<a href='/admin/pulse-infrastructure'>PulseSoc Infra</a>"
-        "<a href='/admin/watch-rules'>Watch Rules</a>"
-        "<a href='/admin/education'>Education</a>"
-        "<a href='/admin/predictions'>Predictions</a>"
-        "<a href='/admin/seo'>SEO</a>"
-        "<a href='/admin/private-chat-reports'>Chat Reports</a>"
-        "<a href='/admin/support'>Support</a>"
-        "<a href='/admin/data-recovery'>Data Recovery</a>"
-        "<a href='/admin/unmatched-payments'>Unmatched</a>"
-        "<a href='/admin/security'>Security</a>"
-        "<a href='/admin/system'>System</a>"
-        "<a href='/admin/performance'>Performance</a>"
-        "<a href='/admin/audit-logs'>Audit</a>"
-        "<a href='/admin/logout'>Logout</a>"
+    is_owner = admin_is_owner_level(admin)
+    # Operations Center V2 information architecture. Every href below maps to an
+    # existing admin route; grouping is presentation-only so no route logic changes.
+    # Tuple shape: (icon, label, href, owner_only)
+    nav_groups = [
+        ("Overview", [
+            ("◆", "Dashboard", "/admin/dashboard", False),
+            ("⌘", "Global Command", "/admin/global-command", False),
+            ("★", "Backend Command Center", "/admin/command-center", True),
+        ]),
+        ("Operations", [
+            ("◎", "Users", "/admin/users", False),
+            ("⊕", "Support", "/admin/support", False),
+            ("♦", "Admins", "/admin/admins", False),
+            ("▤", "Employees", "/admin/employees", False),
+            ("▦", "Departments", "/admin/departments", False),
+            ("↺", "Data Recovery", "/admin/data-recovery", False),
+        ]),
+        ("Moderation & Trust", [
+            ("⚑", "PulseSoc Mod", "/admin/pulse-moderation", False),
+            ("▣", "Ads Review Board", "/admin/pulse-ads-review-board", False),
+            ("♫", "Music Review", "/admin/pulse-music-review", False),
+            ("☷", "Chat Reports", "/admin/private-chat-reports", False),
+            ("◉", "Watch Rules", "/admin/watch-rules", False),
+            ("⛨", "Scam Shield", "/admin/scam-shield", False),
+        ]),
+        ("Social Platform", [
+            ("〰", "Feed Health", "/admin/pulse-feed-health", False),
+            ("◰", "PulseSoc Analytics", "/admin/pulse-analytics", False),
+            ("☷", "Education", "/admin/education", False),
+            ("☎", "Calls", "/admin/calls", False),
+        ]),
+        ("Commerce", [
+            ("$", "Transactions", "/admin/transactions", False),
+            ("◈", "Payments Command Center", "/admin/payments-command-center", False),
+            ("⚠", "Unmatched Payments", "/admin/unmatched-payments", False),
+            ("▧", "Payment Emails", "/admin/emails/payment", False),
+        ]),
+        ("Communications", [
+            ("◔", "Notifications", "/admin/notifications", False),
+            ("↑", "Delivery", "/admin/notification-delivery", False),
+            ("✉", "Emails", "/admin/emails", False),
+            ("✈", "Telegram", "/admin/telegram", False),
+        ]),
+        ("Intelligence", [
+            ("✦", "AI Usage", "/admin/ai-usage", False),
+            ("◑", "Predictions", "/admin/predictions", False),
+        ]),
+        ("Infrastructure", [
+            ("▥", "PulseSoc Infra", "/admin/pulse-infrastructure", False),
+            ("⚙", "System", "/admin/system", False),
+            ("⚡", "Performance", "/admin/performance", False),
+        ]),
+        ("Security", [
+            ("■", "Security", "/admin/security", False),
+            ("▤", "Audit Logs", "/admin/audit-logs", False),
+            ("▷", "Command Logs", "/admin/command-logs", False),
+            ("◉", "Visitors", "/admin/visitors", False),
+        ]),
+        ("Growth", [
+            ("◈", "SEO", "/admin/seo", False),
+        ]),
+    ]
+
+    sidebar_parts = []
+    index_items = []
+    open_count = 0
+    for group_label, links in nav_groups:
+        rows = []
+        for icon, label, href, owner_only in links:
+            if owner_only and not is_owner:
+                continue
+            cls = "ops-link is-owner" if owner_only else "ops-link"
+            rows.append(
+                f"<a class='{cls}' href='{href}'>"
+                f"<span class='ico' aria-hidden='true'>{icon}</span>"
+                f"<span>{clean_html(label)}</span></a>"
+            )
+            index_items.append({"label": label, "href": href, "group": group_label, "icon": icon})
+        if not rows:
+            continue
+        open_attr = " open" if open_count < 4 else ""
+        open_count += 1
+        sidebar_parts.append(
+            f"<details class='ops-group' data-key='{clean_html(group_label)}'{open_attr}>"
+            f"<summary>{clean_html(group_label)}<span class='chev' aria-hidden='true'>&#9656;</span></summary>"
+            + "".join(rows) +
+            "</details>"
+        )
+    index_items.append({"label": "Logout", "href": "/admin/logout", "group": "Session", "icon": "⏏"})
+    sidebar_html = "".join(sidebar_parts)
+    nav_index_json = json.dumps(index_items)
+
+    email = clean_html((admin or {}).get('email') or '')
+    initial = email[:1].upper() if email else "A"
+    status_strip = (
+        "<div class='ops-status-strip' aria-label='System status'>"
+        "<span class='ops-stat' data-svc='api'><span class='d'></span>API</span>"
+        "<span class='ops-stat' data-svc='database'><span class='d'></span>DB</span>"
+        "<span class='ops-stat' data-svc='queues'><span class='d'></span>Queue</span>"
+        "<span class='ops-stat' data-svc='payments'><span class='d'></span>Payments</span>"
+        "<span class='ops-stat' data-svc='live'><span class='d'></span>Live</span>"
+        "<span class='ops-stat' data-svc='ai'><span class='d'></span>AI</span>"
+        "</div>"
     )
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="robots" content="noindex,nofollow" />
-  <title>{clean_html(title)} | CoinPlotXAI Admin</title>
-  <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
-  <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
-  <style>
-    :root {{ color-scheme: dark; --bg:#050b14; --panel:#0d1627; --line:rgba(110,223,246,.22); --text:#f2fbff; --muted:#9fb5c0; --accent:#36e58f; --cyan:#6edff6; }}
-    body {{ margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif; background:radial-gradient(circle at top left,rgba(54,229,143,.12),transparent 34%),var(--bg); color:var(--text); }}
-    header {{ position:sticky; top:0; z-index:2; backdrop-filter:blur(14px); background:rgba(5,11,20,.88); border-bottom:1px solid var(--line); }}
-    .wrap {{ max-width:1180px; margin:auto; padding:22px; }}
-    nav {{ display:flex; gap:12px; flex-wrap:wrap; margin-top:12px; }}
-    a {{ color:var(--cyan); text-decoration:none; }}
-    nav a,.button {{ min-height:44px; display:inline-flex; align-items:center; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,.04); }}
-    nav a.command-center-link,.button.command-center-link {{ color:#06101b; border-color:transparent; background:linear-gradient(135deg,var(--accent),var(--cyan)); font-weight:950; box-shadow:0 0 22px rgba(54,229,143,.22); }}
-    h1 {{ margin:.2rem 0; }}
-    .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; }}
-    .card {{ background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.025)); border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:0 24px 80px rgba(0,0,0,.25); overflow-wrap:break-word; }}
-    .metric {{ font-size:2rem; font-weight:800; color:var(--accent); }}
-    table {{ width:100%; border-collapse:collapse; overflow-wrap:break-word; }}
-    th,td {{ text-align:left; padding:10px; border-bottom:1px solid rgba(255,255,255,.08); }}
-    .muted {{ color:var(--muted); }}
-    .pill {{ display:inline-flex; align-items:center; gap:7px; margin:3px 4px 3px 0; padding:6px 9px; border:1px solid var(--line); border-radius:999px; color:#dffcff; background:rgba(110,223,246,.08); font-size:.86rem; }}
-    .status-dot {{ width:9px; height:9px; border-radius:999px; background:var(--accent); box-shadow:0 0 14px rgba(54,229,143,.75); display:inline-block; }}
-    .smart-time {{ color:rgba(217,247,255,.68); white-space:nowrap; }}
-    .time-dot {{ opacity:.45; margin:0 4px; }}
-    .status-warn {{ background:#ffd166; box-shadow:0 0 14px rgba(255,209,102,.8); }}
-    .status-danger {{ background:#ff6b8a; box-shadow:0 0 14px rgba(255,107,138,.8); }}
-    .department-card {{ position:relative; min-height:210px; }}
-    .department-card:before {{ content:""; position:absolute; inset:0; border-radius:14px; pointer-events:none; background:linear-gradient(120deg,transparent,rgba(110,223,246,.10),transparent); opacity:.65; }}
-    .mini-chart {{ height:8px; border-radius:999px; background:rgba(255,255,255,.08); overflow:hidden; }}
-    .mini-chart span {{ display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,var(--accent),var(--cyan)); }}
-    textarea {{ width:100%; min-height:90px; border-radius:10px; border:1px solid var(--line); background:#081323; color:var(--text); padding:10px; box-sizing:border-box; }}
-    input,button,select {{ width:100%; min-height:44px; border-radius:10px; border:1px solid var(--line); background:#081323; color:var(--text); padding:10px; box-sizing:border-box; }}
-    button {{ background:linear-gradient(135deg,#00e5ff,#36e58f); color:#031016; font-weight:800; cursor:pointer; }}
-    @media(max-width:720px) {{ .wrap {{ padding:16px; }} table {{ display:block; overflow-x:auto; }} }}
-  </style>
-</head>
-<body>
-  <header><div class="wrap"><strong>CoinPlotXAI Inc. Admin</strong><div class="muted">{clean_html((admin or {}).get('email') or '')}</div><nav>{nav}</nav></div></header>
-  <main class="wrap">{body}</main>
-  <script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=live-reels-only-20260702a" defer></script>
-  <script>window.CoinPilotTime?.hydrate(document);</script>
-</body>
-</html>"""
+
+    return (
+        "<!doctype html><html lang='en'><head>"
+        "<meta charset='utf-8'/>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'/>"
+        "<meta name='robots' content='noindex,nofollow'/>"
+        f"<title>{clean_html(title)} | CoinPlotXAI Admin</title>"
+        "<link rel='stylesheet' href='/static/css/pulse_design_system.css'/>"
+        "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css'/>"
+        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722b'/>"
+        "</head><body>"
+        "<a class='ops-skip' href='#ops-main'>Skip to content</a>"
+        "<div class='ops-scrim-mobile' aria-hidden='true'></div>"
+        "<aside class='ops-sidebar' aria-label='Primary navigation'>"
+        "<div class='ops-brand'><span class='dot' aria-hidden='true'></span>"
+        "<span><b>PulseSoc</b><small>Operations Center</small></span></div>"
+        f"<nav class='ops-nav'>{sidebar_html}</nav>"
+        "</aside>"
+        "<div class='ops-main'>"
+        "<header class='ops-topbar'>"
+        "<button class='ops-menu-btn' type='button' aria-label='Toggle navigation'>&#9776;</button>"
+        "<div class='ops-search' role='button' tabindex='0' aria-label='Open command palette'>"
+        "<span class='q'>Jump to any section…</span><kbd>⌘K</kbd></div>"
+        "<div class='spacer'></div>"
+        f"{status_strip}"
+        "<div class='ops-whoami'>"
+        f"<span class='email'>{email}</span>"
+        f"<span class='ops-avatar' aria-hidden='true'>{clean_html(initial)}</span>"
+        "<a class='ops-logout' href='/admin/logout'>Logout</a></div>"
+        "</header>"
+        f"<main id='ops-main' class='ops-content wrap'>{body}</main>"
+        "</div>"
+        "<div class='ops-palette' role='dialog' aria-modal='true' aria-label='Command palette'>"
+        "<div class='ops-palette__scrim'></div>"
+        "<div class='ops-palette__box'>"
+        "<input class='ops-palette__input' type='text' placeholder='Search or jump to…' "
+        "autocomplete='off' spellcheck='false' aria-label='Command palette search'/>"
+        "<div class='ops-palette__list' role='listbox'></div>"
+        "<div class='ops-palette__hint'><span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>"
+        "<span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span></div>"
+        "</div></div>"
+        f"<script type='application/json' id='ops-nav-index'>{nav_index_json}</script>"
+        "<script src='/static/js/time.js'></script>"
+        "<script src='/static/js/pulseshell_bridge.js?v=pulseshell-20260630a' defer></script>"
+        "<script src='/static/notifications.js?v=live-reels-only-20260702a' defer></script>"
+        "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722b' defer></script>"
+        "<script>window.CoinPilotTime?.hydrate(document);</script>"
+        "</body></html>"
+    )
+
+
+@webhook_app.route("/admin/ops/status.json", methods=["GET"])
+def admin_ops_status_json():
+    # Lightweight live-status feed for the Operations Center top strip.
+    # Only reports states it can genuinely verify; unverified services are
+    # omitted and render neutral in the UI (no fabricated green lights).
+    admin = admin_login_required()
+    if not admin:
+        return jsonify({"error": "unauthorized"}), 401
+    services = {"api": "ok"}
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        cur.fetchone()
+        conn.close()
+        services["database"] = "ok"
+    except Exception:
+        services["database"] = "down"
+    return jsonify({"services": services, "ts": datetime.now().isoformat()})
+
+
+@webhook_app.route("/admin/ops/search.json", methods=["GET"])
+def admin_ops_search_json():
+    # Global entity search that powers the Operations Center command palette.
+    # Each entity type is gated by its own RBAC permission and degrades
+    # independently, so a viewer without users.view still gets an empty (not
+    # errored) result set and the palette keeps working for section jumps.
+    admin = admin_login_required()
+    if not admin:
+        return jsonify({"ok": False, "error": "Admin login required."}), 401
+    q = clean_html(request.args.get("q", "")).strip()
+    results = []
+    if len(q) >= 2:
+        if admin_has_permission(admin, "users.view"):
+            results.extend(_ops_search_users(q, limit=8))
+    return jsonify({"ok": True, "query": q, "results": results})
+
+
+def _ops_search_users(q, limit=8):
+    like = f"%{q}%"
+    conn = db()
+    try:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT * FROM users
+            WHERE COALESCE(email,'') != '' AND (
+                email LIKE ? OR full_name LIKE ? OR display_name LIKE ?
+                OR COALESCE(phone,'') LIKE ?
+                OR CAST(user_id AS TEXT) LIKE ?
+                OR CAST(COALESCE(telegram_user_id,'') AS TEXT) LIKE ?
+                OR COALESCE(stripe_customer_id,'') LIKE ?
+            )
+            ORDER BY COALESCE(created_at, signup_time, '') DESC
+            LIMIT ?
+            """,
+            (like, like, like, like, like, like, like, int(limit)),
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+    out = []
+    for row in rows:
+        name = row.get("full_name") or row.get("display_name") or row.get("username") or ""
+        status = (row.get("account_status") or "active").lower()
+        out.append({
+            "type": "user",
+            "icon": "◎",
+            "group": "Users",
+            "label": name or mask_email(row.get("email")),
+            "sublabel": f"{mask_email(row.get('email'))} · #{row.get('user_id')} · {status}",
+            "href": f"/admin/users/{row.get('user_id')}",
+        })
+    return out
 
 
 @webhook_app.route("/admin/login", methods=["GET", "POST"])
