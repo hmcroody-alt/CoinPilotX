@@ -185,3 +185,76 @@ No TestFlight build was available to install on the physical iPhone, so TestFlig
 - `EXTERNAL_ACTION_REQUIRED - VERSION/BUILD HISTORY`
 - `REPOSITORY_ACTION_REQUIRED - PRODUCTION CLEAN RELEASE TARGET`
 - `REPOSITORY_ACTION_REQUIRED - PRIVACY METADATA RECONCILIATION`
+
+## 2026-07-22 Update — Production EAS Build Uploaded To App Store Connect
+
+Status: **UPLOADED TO APP STORE CONNECT / APPLE PROCESSING**.
+
+Repository branch: `release/undx-nexus-core-v4`.
+
+Commits pushed for this release attempt:
+
+- `4bceb86654cf01c71ba367334c03c6f3e42d4839` — `Prepare PulseSoc native iOS for TestFlight`
+- `132d53bb2aae4f15b23127095bc7133e2cd1d31d` — `Fix PulseSoc native iOS Podfile project selection`
+- `cabecd02170b6e6d2c45aa6b45e8088ca3eac9bb` — `Fix PulseSoc native EAS archive inputs`
+
+App Store target:
+
+- App Store app id: `6777591572`
+- App name: `PulseSoc`
+- Production bundle id: `com.pulsesoc.app`
+- Version/build uploaded: `1.0` / `1`
+
+EAS build:
+
+- Build id: `18d87629-b662-447e-ba23-5299602b74fe`
+- Status: `FINISHED`
+- Distribution: `STORE`
+- Git commit used by EAS: `cabecd02170b6e6d2c45aa6b45e8088ca3eac9bb`
+- Artifact: `https://expo.dev/artifacts/eas/GBW8YF9InKeFzYUQH8ubFhQo-xfYqQqG2fyQ1W-taSM.ipa`
+- Build URL: `https://expo.dev/accounts/hmcroody/projects/pulsesoc-native/builds/18d87629-b662-447e-ba23-5299602b74fe`
+
+EAS submit:
+
+- Submission id: `acb0589d-aa6a-4d5b-85e3-314ba21aab39`
+- Submission URL: `https://expo.dev/accounts/hmcroody/projects/pulsesoc-native/submissions/acb0589d-aa6a-4d5b-85e3-314ba21aab39`
+- App Store Connect API key used: `3J78N2VTH6`
+- ASC app id: `6777591572`
+- Result: `Submitted your app to Apple App Store Connect`
+- TestFlight URL: `https://appstoreconnect.apple.com/apps/6777591572/testflight/ios`
+
+Resolved blockers in this run:
+
+- Apple Developer team verified through EAS: `87ZC69AGSR` / `ROODY CHERIE (Individual)`.
+- Remote iOS distribution certificate reused: serial `3B0E096FA823409F9A70634AE3DDE8A3`, expires `2027-06-07`.
+- App Store provisioning profile created/reused: Developer Portal id `3M3L9XV478`, expires `2027-06-07`.
+- Production APNs entitlement is now literal `aps-environment=production` for Release.
+- Debug/dev sidecar remains isolated under `com.pulsesoc.nativeapp.dev`.
+- EAS archive now includes the native iOS project source and excludes generated/local build artifacts through scoped archive ignore rules.
+- CocoaPods project lookup blocker was fixed with `project 'PulseSocNative.xcodeproj'` in `mobile-native/ios/Podfile`.
+
+Validation before upload:
+
+- `npm ci --prefix mobile-native --no-audit --no-fund --progress=false`: PASS.
+- `npm run --prefix mobile-native typecheck`: PASS.
+- `cd mobile-native && EXPO_DOCTOR_ENABLE_DIRECTORY_CHECK=0 npx expo-doctor --verbose`: PASS, `17/17`.
+- `npm test --prefix mobile-native -- --runInBand --silent`: PASS, `38` suites / `373` tests.
+- `python3 scripts/pulsesoc_native_webview_replacement_audit.py`: PASS.
+- `python3 scripts/pulsesoc_native_app_foundation_audit.py`: PASS.
+- `python3 scripts/pulsesoc_native_feature_parity_audit.py`: PASS.
+- `python3 scripts/pulsesoc_native_mission_standard_audit.py`: PASS.
+- `python3 scripts/pulse_store_submission_readiness_audit.py`: PASS.
+- `python3 scripts/pulsesoc_native_auth_continuity_audit.py`: PASS.
+- `git diff --check`: PASS before the build/upload commits.
+
+Current Apple-side status:
+
+- The binary has been uploaded to App Store Connect.
+- Apple processing is pending/ongoing; TestFlight may not show the build immediately.
+- EAS reported Apple processing usually takes about 5-10 minutes, but Apple can take longer.
+
+Still not yet verified:
+
+- Internal TestFlight installation on physical iPhone: **NOT OBSERVED**.
+- TestFlight launch from the processed App Store Connect build: **NOT OBSERVED**.
+- Hardware-only checks remain physical-device release QA: real push, notification taps, camera, microphone, Bluetooth/speaker routing, lock-screen calls, background audio, killed-app incoming call, cellular transitions, and large real-world media uploads.

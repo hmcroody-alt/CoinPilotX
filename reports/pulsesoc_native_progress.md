@@ -5788,3 +5788,25 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Automated validation so far: typecheck PASS; Jest PASS (`38` suites / `373` tests); focused Live audio/guest repair audit PASS.
 - Physical end-to-end proof remains **NOT OBSERVED** until tested with at least host iPhone + guest iPhone + viewer iPhone. A single build/install/launch can verify deployment only, not real participant audio.
 - Report: `reports/pulsesoc_live_audio_guest_join_repair_2026-07-21.md`.
+
+## Production TestFlight Build and Upload — 2026-07-22
+
+- Branch: `release/undx-nexus-core-v4`.
+- Production App Store identity is now aligned to the live PulseSoc app: ASC app id `6777591572`, bundle id `com.pulsesoc.app`, app name `PulseSoc`, version/build `1.0` / `1`.
+- Production EAS credentials were configured and used successfully: Apple Team `87ZC69AGSR`, Distribution Certificate serial `3B0E096FA823409F9A70634AE3DDE8A3`, provisioning profile `3M3L9XV478`, production push entitlement.
+- The native iOS source, Release signing, bundle id, production entitlements, URL schemes, app icon, and session keychain service were committed and pushed.
+- Fixed two EAS build blockers:
+  - CocoaPods could not select the Xcode project until `mobile-native/ios/Podfile` explicitly declared `project 'PulseSocNative.xcodeproj'`.
+  - EAS archive initially omitted the native `.xcodeproj`; archive inputs were corrected so the native iOS project source is uploaded while generated artifacts remain excluded.
+- Production EAS build completed successfully:
+  - Build id: `18d87629-b662-447e-ba23-5299602b74fe`
+  - Git commit: `cabecd02170b6e6d2c45aa6b45e8088ca3eac9bb`
+  - IPA: `https://expo.dev/artifacts/eas/GBW8YF9InKeFzYUQH8ubFhQo-xfYqQqG2fyQ1W-taSM.ipa`
+- App Store Connect upload completed successfully through EAS Submit:
+  - Submission id: `acb0589d-aa6a-4d5b-85e3-314ba21aab39`
+  - API key id: `3J78N2VTH6`
+  - TestFlight URL: `https://appstoreconnect.apple.com/apps/6777591572/testflight/ios`
+- Current status: **Apple processing / TestFlight availability pending**. The build was uploaded, but physical TestFlight install and launch have not yet been observed.
+- Verification before upload: `npm ci`, TypeScript, Expo Doctor (`17/17`), Jest (`38` suites / `373` tests), strict native WebView replacement audit, foundation audit, feature parity audit, mission standard audit, store submission readiness audit, auth continuity audit, and `git diff --check` passed.
+- Physical-device release QA remains open after TestFlight processing: install via TestFlight, launch, login, push, notification tap routing, camera, microphone, LiveKit calls/live, Bluetooth/speaker routing, lock-screen/background behavior, and large real media uploads.
+- Report: `reports/pulsesoc_native_testflight_upload_2026-07-21.md`.
