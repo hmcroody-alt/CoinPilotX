@@ -2,6 +2,19 @@
 
 Date: 2026-07-18
 
+## Latest Mission Status: Production Livestream Audio Repair (viewers can't hear host)
+
+- Date: 2026-07-23.
+- Branch: `release/undx-nexus-core-v4`.
+- Reported broken build: `1.0.1 (2)`, bundle `com.pulsesoc.app`, commit `a64989fe133dc60d4d16e80f7108c36a4ac9103f`.
+- Result: **FIXED (client) + built/installed to P3r7or**; two-device hearing test + TestFlight remain user-side (NOT OBSERVED).
+- Root cause: `useLiveBroadcastRoom.connect()` forced a single iOS `playAndRecord`/`videoChat` audio session for **every** participant, including listen-only viewers. Viewers who never granted mic permission cannot activate a `playAndRecord` session, so subscribed host audio had no output route (silent) while video still rendered.
+- Fix: role-based session via new `resolveLiveAudioConfiguration(publish)` — publishers keep `playAndRecord`/`videoChat`; viewers use `playback`/`moviePlayback` (no mic dependency). Viewer surface now calls `setRemoteAudioEnabled(!muted)` for a true mute/enable instead of output re-routing. Added `audioProfile`/`remoteAudioTrackCount` to the connect diagnostic log.
+- Validations: typecheck clean; Jest `40` suites / `381` tests (3 new); `git diff --check` clean; expo-doctor `16/17` (1 pre-existing prebuild config-sync warning).
+- Device: detached Release `xcodebuild` → `** BUILD SUCCEEDED **`; `main.jsbundle` embedded; installed + launched on P3r7or (`com.pulsesoc.app`).
+- Report: `reports/pulsesoc_production_live_audio_repair_2026-07-23.md`.
+
+
 ## Latest Mission Status: Production TestFlight Upload
 
 - Date: 2026-07-21.

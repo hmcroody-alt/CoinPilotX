@@ -25,7 +25,7 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
   const liveId = reelLiveSessionId(reel);
   const hlsUrl = String(reel.live?.playback_url || "");
   const room = useLiveBroadcastRoom();
-  const { connect, disconnect, setSpeakerEnabled } = room;
+  const { connect, disconnect, setRemoteAudioEnabled } = room;
   const [mode, setMode] = useState<ViewerMode>("connecting");
   const [VideoTileView, setVideoTileView] = useState<React.ComponentType<any> | null>(null);
 
@@ -76,8 +76,12 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
 
   useEffect(() => {
     if (mode !== "livekit" || !room.connected) return;
-    setSpeakerEnabled(!muted).catch(() => undefined);
-  }, [mode, muted, room.connected, setSpeakerEnabled]);
+    // Truly enable/disable the subscribed host audio track(s) rather than only
+    // re-routing output. When the feed is not muted (the default) this also acts
+    // as a belt-and-suspenders re-subscribe so host audio always plays; when the
+    // viewer mutes, it actually silences the host instead of routing to earpiece.
+    setRemoteAudioEnabled(!muted).catch(() => undefined);
+  }, [mode, muted, room.connected, room.remoteAudioTrackCount, setRemoteAudioEnabled]);
 
   const videoParticipants = useMemo(
     () =>

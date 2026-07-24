@@ -71,6 +71,49 @@ const initialState: LiveBroadcastState = {
 
 let globalsRegistered = false;
 
+export type AppleAudioConfiguration = {
+  audioCategory: string;
+  audioMode: string;
+  audioCategoryOptions: string[];
+};
+
+/**
+ * Pick the iOS AVAudioSession profile for a Live participant.
+ *
+ * The publisher (host / co-host) and a listen-only viewer need DIFFERENT
+ * categories, and getting this wrong is the production "viewers can't hear the
+ * host" bug:
+ *
+ * - A publisher must capture the microphone, so it needs `playAndRecord` plus a
+ *   communication `videoChat` mode.
+ * - A viewer only PLAYS the subscribed host audio and, crucially, may never have
+ *   granted microphone permission. Activating a `playAndRecord` session without a
+ *   mic grant can fail to activate the session at all — subscribed remote audio
+ *   then has no active output route (silent host) even though video, which is
+ *   independent of the audio session, keeps rendering. Listen-only viewers must
+ *   use the `playback` category so host audio plays at full media volume with no
+ *   microphone dependency.
+ *
+ * Exported so the regression suite can assert the mapping without booting the
+ * native LiveKit stack.
+ */
+export function resolveLiveAudioConfiguration(publish: boolean): AppleAudioConfiguration {
+  if (publish) {
+    return {
+      audioCategory: "playAndRecord",
+      audioMode: "videoChat",
+      audioCategoryOptions: ["allowBluetooth", "allowBluetoothA2DP", "allowAirPlay", "defaultToSpeaker"]
+    };
+  }
+  // `defaultToSpeaker` is only valid with `playAndRecord`; `playback` already
+  // routes to the speaker by default, so it is intentionally omitted here.
+  return {
+    audioCategory: "playback",
+    audioMode: "moviePlayback",
+    audioCategoryOptions: ["allowBluetooth", "allowBluetoothA2DP", "allowAirPlay"]
+  };
+}
+
 function readableError(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
@@ -220,19 +263,20 @@ export function useLiveBroadcastRoom() {
           globalsRegistered = true;
         }
         audioSessionRef.current = livekitNative.AudioSession;
-        // ROOT-CAUSE FIX (viewers could not hear the host): registerGlobals ran
-        // with autoConfigureAudioSession:false, so LiveKit never sets the iOS
-        // AVAudioSession category itself. Without an explicit record-capable
-        // category the session stays playback-only, so the published mic track
-        // captures silence — while video is unaffected because the camera is
-        // independent of the audio session. Put the session into
-        // playAndRecord/videoChat BEFORE starting it so the mic actually records.
+        // AUDIO SESSION OWNERSHIP (production livestream audio P0): registerGlobals
+        // ran with autoConfigureAudioSession:false, so LiveKit never sets the iOS
+        // AVAudioSession category itself — the app owns it. A publisher must record
+        // (playAndRecord/videoChat) so its mic captures real audio; a listen-only
+        // viewer must NOT request record capability, because activating
+        // playAndRecord without a granted mic permission can fail to activate the
+        // session at all, leaving subscribed host audio with no output route
+        // (silent host) while video keeps rendering. Choose the category BEFORE
+        // starting the session. See resolveLiveAudioConfiguration for the rationale.
+        const appleAudioConfiguration = resolveLiveAudioConfiguration(publish);
         if (Platform.OS === "ios" && typeof livekitNative.AudioSession.setAppleAudioConfiguration === "function") {
-          await livekitNative.AudioSession.setAppleAudioConfiguration({
-            audioCategory: "playAndRecord",
-            audioMode: "videoChat",
-            audioCategoryOptions: ["allowBluetooth", "allowBluetoothA2DP", "allowAirPlay", "defaultToSpeaker"]
-          }).catch(() => undefined);
+          await livekitNative.AudioSession.setAppleAudioConfiguration(
+            appleAudioConfiguration as Parameters<typeof livekitNative.AudioSession.setAppleAudioConfiguration>[0]
+          ).catch(() => undefined);
         }
         await livekitNative.AudioSession.configureAudio({ ios: { defaultOutput: "speaker" } }).catch(() => undefined);
         await livekitNative.AudioSession.startAudioSession();
@@ -346,12 +390,18 @@ export function useLiveBroadcastRoom() {
           error: "",
           diagnosticCode: ""
         }));
+        const remoteAudioAtConnect = Array.from(room.remoteParticipants?.values?.() || []).reduce(
+          (total: number, remote: any) => total + audioPublications(remote).filter(publicationHasTrack).length,
+          0
+        );
         console.info("PulseSoc Live media connected", {
           role: credentials.role || (publish ? "host" : "viewer"),
           room: credentials.room || "unknown",
           canPublish: credentials.canPublish,
           publish,
-          localAudioTrackCount: publishedAudioCount
+          audioProfile: `${appleAudioConfiguration.audioCategory}/${appleAudioConfiguration.audioMode}`,
+          localAudioTrackCount: publishedAudioCount,
+          remoteAudioTrackCount: remoteAudioAtConnect
         });
         return true;
       } catch (error) {
