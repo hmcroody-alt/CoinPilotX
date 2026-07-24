@@ -13397,6 +13397,7 @@ def admin_page_html(title, body, admin=None):
         "<span class='ops-stat' data-svc='queues'><span class='d'></span>Queue</span>"
         "<span class='ops-stat' data-svc='payments'><span class='d'></span>Payments</span>"
         "<span class='ops-stat' data-svc='live'><span class='d'></span>Live</span>"
+        "<span class='ops-stat' data-svc='calls'><span class='d'></span>Calls</span>"
         "<span class='ops-stat' data-svc='ai'><span class='d'></span>AI</span>"
         "</div>"
     )
@@ -13495,6 +13496,21 @@ def admin_ops_status_json():
         services["ai"] = "ok"
     else:
         services["ai"] = "warn"
+
+    # Calls (LiveKit): honest config-presence signal. Audio/video calling is
+    # fully dependent on the three LiveKit credentials; if any is missing the
+    # client never receives a usable token and every call fails silently, so
+    # surface that as "down" rather than leaving it invisible. All three present
+    # => ok; partial config => warn (misconfigured); none => down.
+    _lk_url = os.getenv("LIVEKIT_URL", "").strip()
+    _lk_key = os.getenv("LIVEKIT_API_KEY", "").strip()
+    _lk_secret = os.getenv("LIVEKIT_API_SECRET", "").strip()
+    if _lk_url and _lk_key and _lk_secret:
+        services["calls"] = "ok"
+    elif _lk_url or _lk_key or _lk_secret:
+        services["calls"] = "warn"
+    else:
+        services["calls"] = "down"
 
     # Queues + Live: worker heartbeat freshness (stale workers degrade honestly).
     any_worker = None
