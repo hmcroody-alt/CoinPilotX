@@ -159,3 +159,37 @@ export function resolvePostAudioPolicy(
 ): AttachedMusicPolicy {
   return resolveAttachedMusicPolicy(postMusicToMusicSource(post, media));
 }
+
+/**
+ * The concrete playback instructions a *video player surface* must obey to honor
+ * the attached-music rule. This is deliberately a pure, surface-agnostic
+ * translation of an `AttachedMusicPolicy` so the inline feed player and the
+ * expanded/fullscreen `NativeMediaViewer` derive identical behavior from the
+ * same post metadata — the expanded viewer historically ignored the policy and
+ * fell back to the original video audio, dropping the attached track when a post
+ * was opened. Any surface that plays a post video must mute the original audio
+ * whenever `muteOriginalAudio` is true and, when `shouldPlayMusic` is true, load
+ * the music track at the given start/volume/loop settings alongside the video.
+ */
+export type ViewerAudioPlan = {
+  /** Silence the video element's own audio track. */
+  muteOriginalAudio: boolean;
+  /** Whether a separate attached-music track should be loaded and played. */
+  shouldPlayMusic: boolean;
+  musicUrl?: string;
+  musicVolume: number;
+  musicStartMs: number;
+  isLooping: boolean;
+};
+
+export function resolveViewerAudioPlan(policy?: AttachedMusicPolicy | null): ViewerAudioPlan {
+  const hasMusic = Boolean(policy?.hasAttachedMusic && policy?.musicUrl);
+  return {
+    muteOriginalAudio: Boolean(policy?.muteOriginalAudio),
+    shouldPlayMusic: hasMusic,
+    musicUrl: hasMusic ? policy?.musicUrl : undefined,
+    musicVolume: policy?.musicVolume ?? DEFAULT_MUSIC_VOLUME,
+    musicStartMs: Math.max(0, Math.round(Number(policy?.musicStartMs || 0))),
+    isLooping: policy?.isLooping !== false
+  };
+}

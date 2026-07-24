@@ -1,4 +1,4 @@
-import { ResizeMode, Video } from "expo-av";
+import { Audio, ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Image, Modal, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import { PanGestureHandler, PinchGestureHandler, State, TapGestureHandler } from "react-native-gesture-handler";
@@ -6,6 +6,8 @@ import { mediaDisplayUrl, mediaKind, PulseAuthor, PulseMedia } from "../api/feed
 import { pollNativeMediaProcessing } from "../media/nativeMediaUpload";
 import { colors } from "../theme/colors";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
+import { configureReelsAudioSession } from "../core/reelsAudioSession";
+import { AttachedMusicPolicy, resolveViewerAudioPlan } from "../core/attachedMusicAudioPolicy";
 import { LikeBurst, LikeBurstHandle } from "../media/MediaGestureFeedback";
 
 export type NativeMediaViewerItem = {
@@ -20,6 +22,14 @@ export type NativeMediaViewerItem = {
   author?: PulseAuthor;
   sourceUrl?: string;
   processingStatus?: string;
+  /**
+   * Attached-music audio policy for this item, resolved from the post/reel/status
+   * metadata by the caller (e.g. `resolvePostAudioPolicy`). When present and
+   * exclusive, the viewer mutes the video's original audio and plays the attached
+   * track instead — matching the inline feed player so opening a post never drops
+   * its selected soundtrack.
+   */
+  musicPolicy?: AttachedMusicPolicy;
 };
 
 type Props = {
@@ -58,6 +68,8 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
   const [checking, setChecking] = useState(false);
   const [processingMessage, setProcessingMessage] = useState("");
   const videoRef = useRef<Video>(null);
+  const attachedSoundRef = useRef<Audio.Sound | null>(null);
+  const videoPlayingRef = useRef(false);
   const scale = useRef(new Animated.Value(1)).current;
   const translateY = useRef(new Animated.Value(0)).current;
   const likeBurstRef = useRef<LikeBurstHandle>(null);
@@ -71,6 +83,13 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
   const canGoPrevious = index > 0;
   const canGoNext = index < items.length - 1;
   const playbackOwnerId = `media-viewer:${item?.id || index}`;
+  // Attached music takes exclusive audio priority everywhere a post is played,
+  // including this expanded/fullscreen viewer. Derive the same plan the inline
+  // feed player uses so opening a post keeps its selected soundtrack instead of
+  // reverting to the original video audio.
+  const audioPlan = useMemo(() => resolveViewerAudioPlan(item?.musicPolicy), [item?.musicPolicy]);
+  const videoMuted = kind === "video" && audioPlan.muteOriginalAudio;
+  const shouldPlayAttachedMusic = kind === "video" && audioPlan.shouldPlayMusic && Boolean(audioPlan.musicUrl);
 
   useEffect(() => {
     if (!visible || kind !== "video" || !item?.url) {
@@ -85,6 +104,52 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
     }).then((granted) => granted ? videoRef.current?.playAsync() : undefined).catch(() => undefined);
     return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
   }, [item?.url, kind, playbackOwnerId, visible]);
+
+  // Load (and tear down) the attached-music track that must play in place of the
+  // original video audio. Re-runs whenever the visible item, its track, or the
+  // modal visibility changes so switching media in the gallery swaps the track.
+  useEffect(() => {
+    let cancelled = false;
+    videoPlayingRef.current = false;
+    async function syncAttachedMusic() {
+      const existing = attachedSoundRef.current;
+      attachedSoundRef.current = null;
+      if (existing) await existing.unloadAsync().catch(() => undefined);
+      if (!visible || !shouldPlayAttachedMusic || !audioPlan.musicUrl) return;
+      // Put the iOS audio session into playback mode so the track is audible even
+      // when the ringer switch is silent, mirroring the inline/Reels players.
+      await configureReelsAudioSession().catch(() => undefined);
+      const created = await Audio.Sound.createAsync(
+        { uri: audioPlan.musicUrl },
+        {
+          isLooping: audioPlan.isLooping,
+          positionMillis: audioPlan.musicStartMs,
+          volume: audioPlan.musicVolume,
+          // Start paused; the video's playback status drives play/pause so the
+          // music stays synchronized with the (muted) video's pause state.
+          shouldPlay: false
+        }
+      );
+      if (cancelled || attachedSoundRef.current) {
+        await created.sound.unloadAsync().catch(() => undefined);
+        return;
+      }
+      attachedSoundRef.current = created.sound;
+      // If the video is already reported playing, catch the track up immediately.
+      if (videoPlayingRef.current) {
+        await created.sound.playAsync().catch(() => undefined);
+      }
+    }
+    syncAttachedMusic().catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [audioPlan.isLooping, audioPlan.musicStartMs, audioPlan.musicUrl, audioPlan.musicVolume, shouldPlayAttachedMusic, visible]);
+
+  // Guaranteed teardown: never leave a music track playing after the viewer
+  // unmounts (e.g. the parent screen navigates away while the modal is open).
+  useEffect(() => () => {
+    attachedSoundRef.current?.unloadAsync().catch(() => undefined);
+    attachedSoundRef.current = null;
+  }, []);
 
   useEffect(() => {
     if (!visible) return;
@@ -193,6 +258,7 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
                 useNativeControls
                 shouldPlay={false}
                 isLooping={false}
+                isMuted={videoMuted}
                 usePoster={Boolean(item.thumbnailUrl)}
                 posterSource={item.thumbnailUrl ? { uri: item.thumbnailUrl } : undefined}
                 onPlaybackStatusUpdate={(status) => {
@@ -202,6 +268,17 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
                     return;
                   }
                   setBuffering(Boolean(status.isBuffering));
+                  // Keep the attached-music track in lockstep with the video's
+                  // play/pause state. Only act on transitions so we don't spam
+                  // the sound API on every progress tick.
+                  const music = attachedSoundRef.current;
+                  const playing = Boolean(status.isPlaying);
+                  if (videoPlayingRef.current !== playing) {
+                    videoPlayingRef.current = playing;
+                    if (music) {
+                      music.setStatusAsync({ shouldPlay: playing }).catch(() => undefined);
+                    }
+                  }
                 }}
                 onError={() => setFailed(true)}
               />

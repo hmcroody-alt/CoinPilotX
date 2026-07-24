@@ -6,7 +6,8 @@ import {
   resolveAttachedMusicPolicy,
   resolvePostAudioPolicy,
   resolveReelAudioPolicy,
-  resolveStatusMusicPolicy
+  resolveStatusMusicPolicy,
+  resolveViewerAudioPlan
 } from "../attachedMusicAudioPolicy";
 
 describe("resolveAttachedMusicPolicy", () => {
@@ -165,5 +166,57 @@ describe("post adapter", () => {
   it("handles a fully empty/nullish post", () => {
     expect(resolvePostAudioPolicy(null, null).muteOriginalAudio).toBe(false);
     expect(resolvePostAudioPolicy(undefined).mode).toBe(ORIGINAL_AUDIO);
+  });
+});
+
+describe("resolveViewerAudioPlan (expanded/fullscreen viewer)", () => {
+  it("preserves attached-music metadata from the inline policy into the expanded viewer plan", () => {
+    // Inline feed player derives this policy...
+    const inlinePolicy = resolvePostAudioPolicy({
+      music: { attached_audio_url: "https://cdn/post-track.m3u8", audio_volume: 0.4, audio_start_time: 2 }
+    });
+    // ...and opening the post must carry the SAME track/timing/volume into the viewer.
+    const plan = resolveViewerAudioPlan(inlinePolicy);
+    expect(plan.shouldPlayMusic).toBe(true);
+    expect(plan.muteOriginalAudio).toBe(true);
+    expect(plan.musicUrl).toBe("https://cdn/post-track.m3u8");
+    expect(plan.musicVolume).toBe(0.4);
+    expect(plan.musicStartMs).toBe(2000);
+    expect(plan.isLooping).toBe(true);
+  });
+
+  it("mutes the original video audio whenever attached music is authoritative", () => {
+    const plan = resolveViewerAudioPlan(resolvePostAudioPolicy({ attached_audio_url: "https://cdn/top.m3u8" }));
+    expect(plan.muteOriginalAudio).toBe(true);
+    expect(plan.shouldPlayMusic).toBe(true);
+  });
+
+  it("does not mute or add a track when the post only has original audio", () => {
+    const plan = resolveViewerAudioPlan(resolvePostAudioPolicy({}, { url: "https://cdn/clip.mp4" }));
+    expect(plan.muteOriginalAudio).toBe(false);
+    expect(plan.shouldPlayMusic).toBe(false);
+    expect(plan.musicUrl).toBeUndefined();
+  });
+
+  it("never claims music playback when a policy is exclusive but is missing a url", () => {
+    const plan = resolveViewerAudioPlan({
+      mode: ATTACHED_MUSIC_EXCLUSIVE,
+      hasAttachedMusic: true,
+      muteOriginalAudio: true,
+      musicUrl: undefined,
+      musicVolume: 1,
+      musicStartMs: 0,
+      isLooping: true
+    });
+    expect(plan.shouldPlayMusic).toBe(false);
+    expect(plan.musicUrl).toBeUndefined();
+    // Still honors the mute directive so a broken track never unmutes the mic audio.
+    expect(plan.muteOriginalAudio).toBe(true);
+  });
+
+  it("is inert for a null/undefined policy (image items, unattached media)", () => {
+    const plan = resolveViewerAudioPlan(undefined);
+    expect(plan.muteOriginalAudio).toBe(false);
+    expect(plan.shouldPlayMusic).toBe(false);
   });
 });

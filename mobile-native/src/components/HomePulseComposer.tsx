@@ -10,6 +10,7 @@ import { createStatus } from "../api/status";
 import { consumeCreateCameraCaptureResult, CreateComposerMode } from "../create/createComposerHandoff";
 import { ComposerDraftInput } from "../create/draftToContentModel";
 import { PreviewPublishResult, stashPreviewHandoff } from "../create/previewHandoff";
+import { resolvePreviewStop, resolvePreviewToggle } from "../create/musicPreviewLifecycle";
 import { LogiNexusPanel } from "./LogiNexus";
 import { ComposerMediaQueue } from "../media/ComposerMediaQueue";
 import { NativeMediaAsset, NativeMediaUploadResult, uploadResultMediaId } from "../media/nativeMediaUpload";
@@ -176,9 +177,23 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
   }, [captureReturnNonce, initiallyExpanded, media]);
 
   useEffect(() => () => {
+    // Leaving the composer must stop any preview (resolvePreviewStop documents
+    // this as one of the mandated "preview ends" events).
+    resolvePreviewStop(musicPreviewRef.current ? "active" : "");
     musicPreviewRef.current?.unloadAsync().catch(() => undefined);
     musicPreviewRef.current = null;
   }, []);
+
+  // Closing the music picker (via the × control, selecting a track, an approved
+  // full-library selection, or clearing the draft — all of which set showMusic
+  // false) must stop preview playback. Centralizing it on the showMusic flag
+  // covers every close path in one place.
+  useEffect(() => {
+    if (showMusic) return;
+    if (resolvePreviewStop(previewingTrackId).stopCurrent || musicPreviewRef.current) {
+      stopMusicPreview().catch(() => undefined);
+    }
+  }, [showMusic]);
 
   useEffect(() => {
     if (!mountedRef.current) return;
@@ -491,13 +506,22 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
     }
   }
 
-  async function toggleMusicPreview(track: ComposerMusicTrack) {
-    await musicPreviewRef.current?.unloadAsync().catch(() => undefined);
+  /**
+   * Stop and unload any in-flight music preview. Idempotent and safe to call
+   * from every "preview must end" path (picker close, track select, unmount,
+   * clear draft) so a preview can never keep playing after the picker is gone.
+   */
+  async function stopMusicPreview() {
+    const existing = musicPreviewRef.current;
     musicPreviewRef.current = null;
-    if (previewingTrackId === track.id) {
-      setPreviewingTrackId("");
-      return;
-    }
+    setPreviewingTrackId("");
+    if (existing) await existing.unloadAsync().catch(() => undefined);
+  }
+
+  async function toggleMusicPreview(track: ComposerMusicTrack) {
+    const transition = resolvePreviewToggle(previewingTrackId, track.id);
+    if (transition.stopCurrent) await stopMusicPreview();
+    if (!transition.nextTrackId) return;
     if (!track.previewUrl) {
       setError("This approved track does not have a preview available.");
       return;
@@ -507,7 +531,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
       musicPreviewRef.current = sound;
       setPreviewingTrackId(track.id);
       sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) setPreviewingTrackId("");
+        if (status.isLoaded && status.didJustFinish) stopMusicPreview().catch(() => undefined);
       });
     } catch {
       setPreviewingTrackId("");

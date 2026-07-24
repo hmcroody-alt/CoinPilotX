@@ -598,10 +598,15 @@ function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost;
           title: post.title || "PulseSoc post media",
           subtitle: post.body || "PulseSoc media",
           author,
-          sourceUrl: pulsePostUrl(post.id)
+          sourceUrl: pulsePostUrl(post.id),
+          // Carry the attached-music policy into the expanded/fullscreen viewer so
+          // opening a video post keeps its selected soundtrack instead of falling
+          // back to the original video audio. Resolved per-media so galleries with
+          // mixed clips each honor their own metadata; images ignore it harmlessly.
+          musicPolicy: resolvePostAudioPolicy(post, media)
         })
       ),
-    [author, post.body, post.id, post.media, post.title]
+    [author, post, post.body, post.id, post.media, post.title]
   );
   if (!post.media?.length) return null;
   const items = post.media.slice(0, 4);
