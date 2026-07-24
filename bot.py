@@ -39009,6 +39009,24 @@ def pulse_livekit_http_url():
     return raw_url
 
 
+def pulse_livekit_ws_url():
+    # Client-facing LiveKit endpoint. The livekit-client / @livekit/react-native
+    # SDKs refuse to connect to an http(s) URL, so an operator who pastes the
+    # https:// dashboard URL into LIVEKIT_URL silently breaks every live join
+    # with no server error. Normalize https->wss and http->ws (bare host
+    # defaults to wss); ws/wss pass through unchanged.
+    raw_url = (pulse_livekit_config().get("url") or "").strip().rstrip("/")
+    if not raw_url:
+        return ""
+    if raw_url.startswith("https://"):
+        return "wss://" + raw_url[8:]
+    if raw_url.startswith("http://"):
+        return "ws://" + raw_url[7:]
+    if raw_url.startswith(("wss://", "ws://")):
+        return raw_url
+    return "wss://" + raw_url
+
+
 def pulse_livekit_egress_token(room_name):
     config = pulse_livekit_config()
     if not config.get("configured"):
@@ -40505,7 +40523,7 @@ def api_pulse_live_livekit_token(live_id):
         "ok": True,
         "live_id": live_id,
         "trace_id": trace_id,
-        "livekit_url": config.get("url") or "",
+        "livekit_url": pulse_livekit_ws_url(),
         "room": room_name,
         "identity": identity,
         "can_publish": can_publish,
