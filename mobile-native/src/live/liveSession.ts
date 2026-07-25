@@ -49,6 +49,28 @@ export type LiveKitCredentials = {
   expiresAt: string;
 };
 
+/**
+ * Guard the co-host publish path (Issue 5: "guest joining fails"). A viewer, or a
+ * requester the host has not accepted yet, is handed a token with
+ * `can_publish:false` and `guest_id:0`. Connecting the LiveKit room as a
+ * *publisher* with such a token silently produces no outgoing audio/video — the
+ * guest appears to join but nobody can hear or see them. Callers must confirm the
+ * minted credentials actually grant publish AND are bound to a real guest slot
+ * (a usable token + url) before entering publisher mode; otherwise they must
+ * surface an honest "not verified yet" error instead of a dead on-stage bubble.
+ */
+export function canConnectAsCohostPublisher(
+  credentials: LiveKitCredentials | null | undefined
+): credentials is LiveKitCredentials {
+  return Boolean(
+    credentials &&
+      credentials.token &&
+      credentials.url &&
+      credentials.canPublish &&
+      credentials.guestId > 0
+  );
+}
+
 export type LiveGuestRequest = {
   requestId: number;
   userId: number;

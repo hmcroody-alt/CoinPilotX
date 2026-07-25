@@ -127,6 +127,41 @@ function audioPublications(participant: any): any[] {
   return Array.from(participant?.audioTrackPublications?.values?.() || []) as any[];
 }
 
+/**
+ * Drive the viewer's remote-audio on/off preference onto EVERY currently
+ * subscribed remote audio track.
+ *
+ * The production bug this closes: muting host audio only toggled the tracks that
+ * happened to be subscribed at that instant. A track that arrives LATER — the
+ * host republishing after a mic toggle, a co-host joining, or every remote track
+ * being re-subscribed after a LiveKit reconnect — starts enabled, so a viewer who
+ * turned the host's sound off would suddenly hear it again. Callers persist the
+ * desired state in a ref and re-invoke this on TrackSubscribed and Reconnected so
+ * the preference is authoritative for the whole session, not just one moment.
+ *
+ * Exported so the regression suite can assert the toggling against a fake room
+ * without the native LiveKit stack. Returns how many tracks were actually driven.
+ */
+export async function applyRemoteAudioEnabled(room: any, enabled: boolean): Promise<number> {
+  let touched = 0;
+  const tasks: Promise<unknown>[] = [];
+  for (const remote of Array.from(room?.remoteParticipants?.values?.() || []) as any[]) {
+    for (const publication of audioPublications(remote)) {
+      const track = publication?.track;
+      if (!track) continue;
+      if (typeof track.setEnabled === "function") {
+        tasks.push(Promise.resolve(track.setEnabled(enabled)));
+        touched += 1;
+      } else if (track.mediaStreamTrack) {
+        track.mediaStreamTrack.enabled = enabled;
+        touched += 1;
+      }
+    }
+  }
+  await Promise.all(tasks).catch(() => undefined);
+  return touched;
+}
+
 function videoPublications(participant: any): any[] {
   return Array.from(participant?.videoTrackPublications?.values?.() || []) as any[];
 }
@@ -162,6 +197,9 @@ export function useLiveBroadcastRoom() {
   const roomRef = useRef<any>(null);
   const audioSessionRef = useRef<any>(null);
   const activeSpeakersRef = useRef<Set<string>>(new Set());
+  // Desired viewer remote-audio state; reapplied to tracks that subscribe after
+  // the user toggled sound off (co-host join, host republish, reconnect).
+  const remoteAudioEnabledRef = useRef(true);
   const [state, setState] = useState<LiveBroadcastState>(initialState);
 
   const refreshParticipants = useCallback((room = roomRef.current) => {
@@ -221,6 +259,7 @@ export function useLiveBroadcastRoom() {
     const room = roomRef.current;
     roomRef.current = null;
     activeSpeakersRef.current = new Set();
+    remoteAudioEnabledRef.current = true;
     if (room?.disconnect) await room.disconnect().catch(() => undefined);
     if (audioSessionRef.current?.stopAudioSession) {
       await audioSessionRef.current.stopAudioSession().catch(() => undefined);
@@ -254,6 +293,7 @@ export function useLiveBroadcastRoom() {
       const publish = Boolean(options.publish && credentials.canPublish);
 
       if (roomRef.current) await disconnect("replaced_room");
+      remoteAudioEnabledRef.current = true;
       setState((current) => ({ ...initialState, supported: current.supported, connecting: true, connectionState: "connecting", canPublish: credentials.canPublish }));
       try {
         const livekitNative = await import("@livekit/react-native");
@@ -313,6 +353,9 @@ export function useLiveBroadcastRoom() {
         });
         room.on(livekitClient.RoomEvent.Reconnected, () => {
           setState((current) => ({ ...current, connected: true, reconnecting: false, connectionState: "connected", error: "" }));
+          // Remote tracks are re-subscribed after a reconnect; re-assert the
+          // viewer's sound-off choice so muted host audio does not come back.
+          if (!remoteAudioEnabledRef.current) applyRemoteAudioEnabled(room, false).catch(() => undefined);
           refresh();
         });
         room.on(livekitClient.RoomEvent.ConnectionQualityChanged, (quality: unknown, participant: any) => {
@@ -329,7 +372,14 @@ export function useLiveBroadcastRoom() {
         });
         room.on(livekitClient.RoomEvent.ParticipantConnected, refresh);
         room.on(livekitClient.RoomEvent.ParticipantDisconnected, refresh);
-        room.on(livekitClient.RoomEvent.TrackSubscribed, refresh);
+        room.on(livekitClient.RoomEvent.TrackSubscribed, (track: any) => {
+          // A newly subscribed audio track starts enabled; if the viewer has
+          // muted remote audio, silence this one too before the UI updates.
+          if (!remoteAudioEnabledRef.current && String(track?.kind || "") === "audio") {
+            applyRemoteAudioEnabled(room, false).catch(() => undefined);
+          }
+          refresh();
+        });
         room.on(livekitClient.RoomEvent.TrackUnsubscribed, refresh);
         room.on(livekitClient.RoomEvent.TrackMuted, refresh);
         room.on(livekitClient.RoomEvent.TrackUnmuted, refresh);
@@ -441,16 +491,8 @@ export function useLiveBroadcastRoom() {
   const setRemoteAudioEnabled = useCallback(async (enabled: boolean) => {
     const room = roomRef.current;
     if (!room) throw new Error("Broadcast media is not connected.");
-    const tasks: Promise<unknown>[] = [];
-    for (const remote of Array.from(room.remoteParticipants?.values?.() || []) as any[]) {
-      for (const publication of audioPublications(remote)) {
-        const track = publication?.track;
-        if (!track) continue;
-        if (typeof track.setEnabled === "function") tasks.push(track.setEnabled(enabled));
-        else if (track.mediaStreamTrack) track.mediaStreamTrack.enabled = enabled;
-      }
-    }
-    await Promise.all(tasks).catch(() => undefined);
+    remoteAudioEnabledRef.current = enabled;
+    await applyRemoteAudioEnabled(room, enabled);
     setState((current) => ({ ...current, remoteAudioEnabled: enabled, error: "" }));
   }, []);
 

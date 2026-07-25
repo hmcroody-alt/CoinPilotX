@@ -42,6 +42,7 @@ import {
   sendLiveChat
 } from "../api/live";
 import { useLiveBroadcastRoom } from "../live/useLiveBroadcastRoom";
+import { canConnectAsCohostPublisher } from "../live/liveSession";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -440,7 +441,7 @@ export function LiveScreen({ route, navigation }: Props) {
     setGuestError("");
     try {
       const credentials = await getLiveKitToken(activeLiveId, "cohost");
-      if (!credentials || !credentials.canPublish || credentials.guestId <= 0) {
+      if (!canConnectAsCohostPublisher(credentials)) {
         throw new Error("PulseSoc has not returned a verified co-host publishing token yet.");
       }
       const ok = await connectLiveRoom(credentials, { publish: true });

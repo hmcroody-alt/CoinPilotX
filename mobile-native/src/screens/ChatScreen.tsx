@@ -54,6 +54,7 @@ import {
   syncConversation,
   uploadMessengerMedia
 } from "../api/messenger";
+import { mergeConversationMessages } from "../api/messengerOrdering";
 import { APP_VERSION, PULSE_API_BASE_URL } from "../api/config";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
 import { buildUndxUiContext, UndxUiContext } from "../undx/undxContext";
@@ -335,22 +336,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     ? typing || (error ? "Service reconnecting" : usingCachedMessages ? "Cached history" : "Available · PulseSoc Intelligence")
     : typing || (isPresenceActive(route.params.presence) ? "Online · Direct" : headerStatus);
 
-  const mergeMessages = useCallback((current: MessengerMessage[], incoming: MessengerMessage[]) => {
-    const byKey = new Map<string, MessengerMessage>();
-    [...current, ...incoming].forEach((message) => {
-      const key = message.client_message_id || String(message.id);
-      const existing = byKey.get(key);
-      const serverAccepted = message.id > 0 && Boolean(message.client_message_id);
-      byKey.set(key, {
-        ...existing,
-        ...message,
-        local_status: serverAccepted ? undefined : message.local_status || existing?.local_status,
-        local_error: serverAccepted ? undefined : message.local_error || existing?.local_error,
-        delivery_status: serverAccepted ? message.delivery_status || "sent" : message.delivery_status || existing?.delivery_status
-      });
-    });
-    return Array.from(byKey.values()).sort((a, b) => a.id - b.id);
-  }, []);
+  const mergeMessages = useCallback(
+    (current: MessengerMessage[], incoming: MessengerMessage[]) => mergeConversationMessages(current, incoming),
+    []
+  );
 
   const replaceLocalMessage = useCallback((localId: number, next: MessengerMessage) => {
     setMessages((current) => mergeMessages(current.filter((message) => message.id !== localId), [next]));
@@ -604,7 +593,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     setDraft("");
     const currentReply = replyTo;
     setReplyTo(null);
-    if (!assistantConversation) await sendTyping(conversationId, false).catch(() => undefined);
+    // Clearing the typing indicator is a fire-and-forget network signal; awaiting it
+    // here would delay the optimistic bubble by a full round-trip. sendPayload inserts
+    // the local message synchronously, so let it run first and never block on typing.
+    if (!assistantConversation) void sendTyping(conversationId, false).catch(() => undefined);
     await sendPayload({
       body,
       message_type: "text",

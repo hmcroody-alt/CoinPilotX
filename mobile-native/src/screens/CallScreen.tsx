@@ -32,6 +32,7 @@ import {
 } from "../api/calls";
 import { useNativeCallRoom } from "../calls/useNativeCallRoom";
 import { callHaptic, playCallCue, startCallTone, stopCallTone } from "../calls/callSignalMedia";
+import { isTerminalCallStatus, shouldPlayRingback } from "../calls/callToneLifecycle";
 import { stopVoiceMessagePlayback } from "../core/voiceMessagePlayback";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -39,7 +40,6 @@ import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 
 const STATUS_REFRESH_MS = 4200;
-const TERMINAL_CALL_STATES = new Set(["ended", "declined", "missed", "failed", "busy", "canceled", "cancelled", "expired", "rejected", "disconnected"]);
 
 type NativeVideoViewProps = {
   videoTrack?: any;
@@ -79,7 +79,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
 
   const callType: PulseCallType = call?.call_type === "video" ? "video" : requestedType;
   const incoming = params.direction === "incoming";
-  const terminal = TERMINAL_CALL_STATES.has(String(call?.status || ""));
+  const terminal = isTerminalCallStatus(call?.status);
   const connected = room.connected;
   const caller = useMemo(() => callParticipant(call, incoming), [call, incoming]);
   const title = caller.display_name || caller.username || params.title || "Connecting participant";
@@ -188,8 +188,13 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   }, [connected]);
 
   // Ringback: outgoing caller only, strictly gated on backend signaling "ringing",
-  // and never once the media room is connected or the call is terminal.
-  const ringbackActive = !incoming && !connected && !terminal && String(call?.status || "") === "ringing";
+  // and never once the media room is connected or the call is terminal. The gate
+  // itself lives in callToneLifecycle so it can be regression-tested in isolation.
+  const ringbackActive = shouldPlayRingback({
+    direction: params.direction,
+    mediaConnected: connected,
+    status: call?.status
+  });
   useEffect(() => {
     if (ringbackActive) {
       startCallTone("ringback").catch(() => undefined);
@@ -459,7 +464,7 @@ function callStatusLabel(call: PulseCall | null, providerState: string, reconnec
   const status = String(call?.status || "");
   if (incoming && ["created", "ringing"].includes(status)) return "Incoming call";
   if (status === "ringing") return "Ringing";
-  if (TERMINAL_CALL_STATES.has(status)) return status;
+  if (isTerminalCallStatus(status)) return status;
   return status || "Preparing call";
 }
 

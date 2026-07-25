@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { acceptCall, declineCall, getActiveCalls, markRingSeen, PulseCall, PulseCallParticipant } from "../api/calls";
 import { callHaptic, startCallTone, stopCallTone } from "./callSignalMedia";
+import { isIncomingRingingCall } from "./callToneLifecycle";
 import { navigationRef } from "../navigation/notificationRouting";
 import { colors } from "../theme/colors";
 import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
@@ -231,15 +232,6 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
 
     </>
   );
-}
-
-function isIncomingRingingCall(call: PulseCall, currentUserId: number | undefined, ignored: Map<string, number>) {
-  if (!call.call_id || ignored.has(call.call_id)) return false;
-  if (!["created", "ringing"].includes(String(call.status || ""))) return false;
-  if (!currentUserId) return true;
-  const participant = call.participant || (call.participants || []).find((item) => Number(item.user_id) === Number(currentUserId));
-  if (!participant) return true;
-  return String(participant.role || "").toLowerCase() === "callee" || String(participant.status || "").toLowerCase() === "ringing";
 }
 
 function pruneIgnoredCalls(ignored: Map<string, number>) {

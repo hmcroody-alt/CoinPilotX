@@ -5,6 +5,7 @@ import { ActivityIndicator, AppState, Linking, Platform, Pressable, Text, View }
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import { IncomingCallLayer } from "./src/calls/IncomingCallLayer";
+import { InAppNotificationBanner } from "./src/components/InAppNotificationBanner";
 import { TimeZoneProvider } from "./src/core/TimeZoneContext";
 import { AppNavigator } from "./src/navigation/AppNavigator";
 import { AuthNavigator } from "./src/navigation/AuthNavigator";
@@ -235,6 +236,7 @@ export default function App() {
               <StatusBar style="light" />
               {authState.status === "signedIn" ? <AppNavigator /> : <AuthNavigator />}
             </NavigationContainer>
+            {authState.status === "signedIn" ? <InAppNotificationBanner /> : null}
             <IncomingCallLayer signedIn={authState.status === "signedIn"} currentUserId={authState.user?.user_id} />
             {PERF_OVERLAY_ENABLED ? <PerfOverlay /> : null}
           </AuthContext.Provider>
