@@ -217,6 +217,55 @@ def test_registry_receipt_and_action_center():
     assert any(r["canonical_ref"] == "product:p1" for r in center["receipts"]), center
 
 
+def test_confirmation_redemption_is_bound_single_use_and_expiring():
+    req = eng.record_action_request(
+        "oConfirm", "seller:1", "marketplace.product.publish",
+        params={"product_id": "p1"})
+    pending = eng.record_confirmation(
+        "oConfirm", req["request_id"], "seller:1", "payload:p1",
+        expires_at=(datetime.now(timezone.utc) + timedelta(hours=1)).strftime(_FMT))
+
+    for args in (
+        ("other", req["request_id"], "seller:1", "payload:p1"),
+        ("oConfirm", req["request_id"], "seller:2", "payload:p1"),
+        ("oConfirm", req["request_id"], "seller:1", "payload:p2"),
+    ):
+        try:
+            eng.redeem_confirmation(*args)
+            assert False, f"misbound confirmation should fail: {args}"
+        except eng.UndxActionsError:
+            pass
+
+    redeemed = eng.redeem_confirmation(
+        "oConfirm", req["request_id"], "seller:1", "payload:p1")
+    assert redeemed["confirmation_id"] == pending["confirmation_id"], redeemed
+    assert redeemed["status"] == "confirmed", redeemed
+    try:
+        eng.redeem_confirmation(
+            "oConfirm", req["request_id"], "seller:1", "payload:p1")
+        assert False, "confirmation replay should fail"
+    except eng.UndxActionsError as exc:
+        assert "no longer pending" in str(exc), exc
+
+    expired_req = eng.record_action_request(
+        "oConfirm", "seller:1", "marketplace.product.publish",
+        params={"product_id": "p2"})
+    expired = eng.record_confirmation(
+        "oConfirm", expired_req["request_id"], "seller:1", "payload:p2",
+        expires_at="2000-01-01T00:00:00.000000Z")
+    try:
+        eng.redeem_confirmation(
+            "oConfirm", expired_req["request_id"], "seller:1", "payload:p2")
+        assert False, "expired confirmation should fail"
+    except eng.UndxActionsError as exc:
+        assert "expired" in str(exc), exc
+    center = eng.action_center("oConfirm")
+    expired_row = next(
+        row for row in center["confirmations"]
+        if row["confirmation_id"] == expired["confirmation_id"])
+    assert expired_row["status"] == "expired", expired_row
+
+
 def _run_standalone():
     setup_module()
     tests = [
@@ -233,6 +282,7 @@ def _run_standalone():
         test_recompute_idempotent_replace,
         test_no_side_effects,
         test_registry_receipt_and_action_center,
+        test_confirmation_redemption_is_bound_single_use_and_expiring,
     ]
     passed = 0
     for t in tests:

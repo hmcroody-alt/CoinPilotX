@@ -356,6 +356,84 @@ def record_confirmation(org_id: str, request_id: str, actor: str, payload_hash: 
             conn.close()
 
 
+def redeem_confirmation(org_id: str, request_id: str, actor: str,
+                        payload_hash: str, *, conn=None) -> dict:
+    """Atomically redeem the pending confirmation for one exact action request.
+
+    A confirmation is valid only for its original organization, request, actor and
+    canonical payload. It may be redeemed once and must not be expired. This is the
+    execution boundary used by product-service adapters; ``record_confirmation`` is
+    intentionally append-only ingestion and must not be used as a substitute.
+    """
+    org_id = str(org_id or "").strip()
+    request_id = str(request_id or "").strip()
+    actor = str(actor or "").strip()
+    payload_hash = str(payload_hash or "").strip()
+    if not org_id or not request_id or not actor or not payload_hash:
+        raise UndxActionsError(
+            "org_id, request_id, actor and payload_hash are required")
+
+    owned = conn is None
+    if owned:
+        conn = db.connect()
+    try:
+        request_row = conn.execute(
+            "SELECT org_id,actor FROM business_os_undx_action_requests "
+            "WHERE request_id = ?", (request_id,)).fetchone()
+        if (request_row is None
+                or str(request_row["org_id"]) != org_id
+                or str(request_row["actor"]) != actor):
+            raise UndxActionsError(
+                "confirmation does not match this action request")
+
+        row = conn.execute(
+            "SELECT confirmation_id,status,expires_at FROM "
+            "business_os_undx_confirmations "
+            "WHERE org_id = ? AND request_id = ? AND actor = ? "
+            "AND payload_hash = ? ORDER BY created_at DESC LIMIT 1",
+            (org_id, request_id, actor, payload_hash)).fetchone()
+        if row is None:
+            raise UndxActionsError(
+                "confirmation does not match this action request")
+
+        status = str(row["status"] or "")
+        if status != "pending":
+            raise UndxActionsError(
+                "confirmation is no longer pending")
+        expires_at = str(row["expires_at"] or "")
+        if expires_at and expires_at <= _now():
+            conn.execute(
+                "UPDATE business_os_undx_confirmations SET status = 'expired' "
+                "WHERE confirmation_id = ? AND status = 'pending'",
+                (row["confirmation_id"],))
+            if owned:
+                conn.commit()
+            raise UndxActionsError("confirmation has expired")
+
+        confirmed_at = _now()
+        cur = conn.execute(
+            "UPDATE business_os_undx_confirmations "
+            "SET status = 'confirmed', confirmed_at = ? "
+            "WHERE confirmation_id = ? AND status = 'pending'",
+            (confirmed_at, row["confirmation_id"]))
+        if int(getattr(cur, "rowcount", 0) or 0) != 1:
+            if owned:
+                conn.rollback()
+            raise UndxActionsError(
+                "confirmation is no longer pending")
+        if owned:
+            conn.commit()
+        return {
+            "confirmation_id": row["confirmation_id"],
+            "redeemed": True,
+            "status": "confirmed",
+            "confirmed_at": confirmed_at,
+        }
+    finally:
+        if owned:
+            conn.close()
+
+
 def record_receipt(org_id: str, action_type: str, actor: str, status: str,
                    *, request_id: Optional[str] = None, canonical_ref: Optional[str] = None,
                    verification: Any = None, result: Any = None, conn=None) -> dict:
@@ -573,16 +651,22 @@ def evaluate_org(org_id: str, *, conn=None) -> dict:
 # ---------------------------------------------------------------------------
 # reporting (read-only)
 # ---------------------------------------------------------------------------
-def get_decisions(org_id: str, *, limit: int = 200, conn=None) -> list:
+def get_decisions(org_id: str, *, actor: Optional[str] = None,
+                  limit: int = 200, conn=None) -> list:
     """Read the stored decision projection for an org, best rank first."""
     owned = conn is None
     if owned:
         conn = db.connect()
     try:
-        rows = conn.execute(
-            "SELECT request_id,action_type,actor,risk,effect,matched_policy_id,reason,"
-            "rank FROM business_os_undx_decisions WHERE org_id = ? "
-            "ORDER BY rank ASC LIMIT ?", (str(org_id), int(limit))).fetchall()
+        q = ("SELECT request_id,action_type,actor,risk,effect,matched_policy_id,reason,"
+             "rank FROM business_os_undx_decisions WHERE org_id = ?")
+        params: list[Any] = [str(org_id)]
+        if actor:
+            q += " AND actor = ?"
+            params.append(str(actor))
+        q += " ORDER BY rank ASC LIMIT ?"
+        params.append(int(limit))
+        rows = conn.execute(q, tuple(params)).fetchall()
         return [dict(r) for r in rows]
     finally:
         if owned:
@@ -606,17 +690,22 @@ def list_policies(org_id: str, *, limit: int = 200, conn=None) -> list:
             conn.close()
 
 
-def list_requests(org_id: str, *, limit: int = 500, conn=None) -> list:
+def list_requests(org_id: str, *, actor: Optional[str] = None,
+                  limit: int = 500, conn=None) -> list:
     """The proposed action requests for an org (most recent first)."""
     owned = conn is None
     if owned:
         conn = db.connect()
     try:
-        rows = conn.execute(
-            "SELECT request_id,actor,action_type,subject_ref,risk,requested_at "
-            "FROM business_os_undx_action_requests WHERE org_id = ? "
-            "ORDER BY requested_at DESC, request_id ASC LIMIT ?",
-            (str(org_id), int(limit))).fetchall()
+        q = ("SELECT request_id,actor,action_type,subject_ref,risk,requested_at "
+             "FROM business_os_undx_action_requests WHERE org_id = ?")
+        params: list[Any] = [str(org_id)]
+        if actor:
+            q += " AND actor = ?"
+            params.append(str(actor))
+        q += " ORDER BY requested_at DESC, request_id ASC LIMIT ?"
+        params.append(int(limit))
+        rows = conn.execute(q, tuple(params)).fetchall()
         return [dict(r) for r in rows]
     finally:
         if owned:
@@ -684,37 +773,50 @@ def list_stops(org_id: str, *, active_only: bool = True, limit: int = 100,
             conn.close()
 
 
-def list_confirmations(org_id: str, *, limit: int = 100, conn=None) -> list:
+def list_confirmations(org_id: str, *, actor: Optional[str] = None,
+                       limit: int = 100, conn=None) -> list:
     owned = conn is None
     if owned:
         conn = db.connect()
     try:
-        rows = conn.execute(
-            "SELECT confirmation_id,request_id,actor,status,expires_at,confirmed_at,"
-            "created_at FROM business_os_undx_confirmations WHERE org_id = ? "
-            "ORDER BY created_at DESC LIMIT ?", (str(org_id), int(limit))).fetchall()
+        q = ("SELECT confirmation_id,request_id,actor,status,expires_at,confirmed_at,"
+             "created_at FROM business_os_undx_confirmations WHERE org_id = ?")
+        params: list[Any] = [str(org_id)]
+        if actor:
+            q += " AND actor = ?"
+            params.append(str(actor))
+        q += " ORDER BY created_at DESC LIMIT ?"
+        params.append(int(limit))
+        rows = conn.execute(q, tuple(params)).fetchall()
         return [dict(r) for r in rows]
     finally:
         if owned:
             conn.close()
 
 
-def list_receipts(org_id: str, *, limit: int = 100, conn=None) -> list:
+def list_receipts(org_id: str, *, actor: Optional[str] = None,
+                  limit: int = 100, conn=None) -> list:
     owned = conn is None
     if owned:
         conn = db.connect()
     try:
-        rows = conn.execute(
-            "SELECT receipt_id,request_id,action_type,actor,status,canonical_ref,"
-            "created_at FROM business_os_undx_action_receipts WHERE org_id = ? "
-            "ORDER BY created_at DESC LIMIT ?", (str(org_id), int(limit))).fetchall()
+        q = ("SELECT receipt_id,request_id,action_type,actor,status,canonical_ref,"
+             "created_at FROM business_os_undx_action_receipts WHERE org_id = ?")
+        params: list[Any] = [str(org_id)]
+        if actor:
+            q += " AND actor = ?"
+            params.append(str(actor))
+        q += " ORDER BY created_at DESC LIMIT ?"
+        params.append(int(limit))
+        rows = conn.execute(q, tuple(params)).fetchall()
         return [dict(r) for r in rows]
     finally:
         if owned:
             conn.close()
 
 
-def action_center(org_id: str, *, limit: int = 100, conn=None) -> dict:
+def action_center(org_id: str, *, actor: Optional[str] = None,
+                  limit: int = 100, conn=None) -> dict:
     """Read one compact, operator-facing action-center snapshot."""
     org_id = str(org_id or "").strip()
     if not org_id:
@@ -726,11 +828,16 @@ def action_center(org_id: str, *, limit: int = 100, conn=None) -> dict:
         return {
             "org_id": org_id,
             "active_stops": list_stops(org_id, active_only=True, limit=limit, conn=conn),
-            "decisions": get_decisions(org_id, limit=limit, conn=conn),
-            "requests": list_requests(org_id, limit=limit, conn=conn),
-            "confirmations": list_confirmations(org_id, limit=limit, conn=conn),
-            "receipts": list_receipts(org_id, limit=limit, conn=conn),
-            "permissions": list_permissions(org_id, limit=limit, conn=conn),
+            "decisions": get_decisions(
+                org_id, actor=actor, limit=limit, conn=conn),
+            "requests": list_requests(
+                org_id, actor=actor, limit=limit, conn=conn),
+            "confirmations": list_confirmations(
+                org_id, actor=actor, limit=limit, conn=conn),
+            "receipts": list_receipts(
+                org_id, actor=actor, limit=limit, conn=conn),
+            "permissions": list_permissions(
+                org_id, actor=actor, limit=limit, conn=conn),
         }
     finally:
         if owned:

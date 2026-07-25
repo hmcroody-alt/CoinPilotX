@@ -175,6 +175,7 @@ def plan_publish_listing(*, org_id: str, actor: str, user_id: Any,
     plan = _mkt_assistant.plan(user_id, "publish_product", params)
     confirmation = _engine.record_confirmation(
         org_id, req["request_id"], actor, _payload_hash(params), status="pending",
+        expires_at=plan.get("expires_at"),
         meta={"tool": TOOL_PUBLISH, "marketplace_confirmation_required": True})
     return {"ok": True, "request": req, "decision": current, "plan": plan,
             "confirmation": confirmation}
@@ -184,9 +185,24 @@ def execute_publish_listing(*, org_id: str, actor: str, user_id: Any,
                             request_id: str, product_id: Any,
                             confirmation_token: str) -> dict:
     params = {"product_id": _mkt_service._sid(product_id)}
-    _engine.record_confirmation(
-        org_id, request_id, actor, _payload_hash(params), status="confirmed",
-        meta={"tool": TOOL_PUBLISH})
+    decision = _engine.evaluate_org(org_id)
+    current = next((d for d in decision["decisions"]
+                    if d["request_id"] == request_id), None)
+    if (current is None
+            or current.get("action_type") != ACTION_PUBLISH
+            or current.get("actor") != actor):
+        raise _engine.UndxActionsError(
+            "publish request does not match this actor and action")
+    if current.get("effect") == "deny":
+        receipt = _engine.record_receipt(
+            org_id, ACTION_PUBLISH, actor, "blocked", request_id=request_id,
+            canonical_ref=f"marketplace_product:{params['product_id']}",
+            verification={"effect": "deny", "reason": current.get("reason")})
+        return {"ok": False, "decision": current, "receipt": receipt,
+                "error": "Publish is blocked by current governance.",
+                "code": "governance_denied"}
+    confirmation = _engine.redeem_confirmation(
+        org_id, request_id, actor, _payload_hash(params))
     try:
         result = _mkt_assistant.execute(
             user_id, "publish_product", params,
@@ -203,5 +219,6 @@ def execute_publish_listing(*, org_id: str, actor: str, user_id: Any,
         request_id=request_id,
         canonical_ref=f"marketplace_product:{params['product_id']}",
         verification=result.get("observed"), result=result)
-    return {"ok": bool(result.get("verified")), "receipt": receipt,
+    return {"ok": bool(result.get("verified")), "confirmation": confirmation,
+            "decision": current, "receipt": receipt,
             "marketplace": result}

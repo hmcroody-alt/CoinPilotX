@@ -108,6 +108,73 @@ def test_publish_plan_and_execute_use_confirmation_token():
     assert product["status"] == "active", product
 
 
+def test_publish_execution_rejects_misbound_and_replayed_confirmation():
+    org = "binding_org"
+    actor = ACTOR
+    eng.grant_permission(org, actor, wf.ACTION_CREATE, "allow")
+    eng.grant_permission(org, actor, wf.ACTION_PUBLISH, "allow")
+    draft = wf.create_listing_draft(
+        org_id=org, actor=actor, user_id=USER_ID,
+        listing=_listing("Bound Confirmation Draft"))
+    product_id = draft["marketplace"]["observed"]["product_id"]
+    plan = wf.plan_publish_listing(
+        org_id=org, actor=actor, user_id=USER_ID, product_id=product_id)
+
+    for bad in (
+        {"org_id": "other_org", "actor": actor,
+         "request_id": plan["request"]["request_id"], "product_id": product_id},
+        {"org_id": org, "actor": "seller:someone_else",
+         "request_id": plan["request"]["request_id"], "product_id": product_id},
+        {"org_id": org, "actor": actor,
+         "request_id": plan["request"]["request_id"], "product_id": "wrong_product"},
+    ):
+        try:
+            wf.execute_publish_listing(
+                user_id=USER_ID,
+                confirmation_token=plan["plan"]["confirmation_token"], **bad)
+            assert False, f"misbound confirmation should fail: {bad}"
+        except eng.UndxActionsError:
+            pass
+    assert mkt.get_product(product_id, requester_user_id=USER_ID)["status"] == "draft"
+
+    good = wf.execute_publish_listing(
+        org_id=org, actor=actor, user_id=USER_ID,
+        request_id=plan["request"]["request_id"], product_id=product_id,
+        confirmation_token=plan["plan"]["confirmation_token"])
+    assert good["ok"] is True, good
+    assert good["confirmation"]["status"] == "confirmed", good
+
+    try:
+        wf.execute_publish_listing(
+            org_id=org, actor=actor, user_id=USER_ID,
+            request_id=plan["request"]["request_id"], product_id=product_id,
+            confirmation_token=plan["plan"]["confirmation_token"])
+        assert False, "replayed UNDX confirmation should fail"
+    except eng.UndxActionsError as exc:
+        assert "no longer pending" in str(exc), exc
+
+
+def test_emergency_stop_after_plan_blocks_execution():
+    org = "late_stop_org"
+    eng.grant_permission(org, ACTOR, wf.ACTION_CREATE, "allow")
+    eng.grant_permission(org, ACTOR, wf.ACTION_PUBLISH, "allow")
+    draft = wf.create_listing_draft(
+        org_id=org, actor=ACTOR, user_id=USER_ID,
+        listing=_listing("Late Stop Draft"))
+    product_id = draft["marketplace"]["observed"]["product_id"]
+    plan = wf.plan_publish_listing(
+        org_id=org, actor=ACTOR, user_id=USER_ID, product_id=product_id)
+    eng.activate_emergency_stop(
+        org, "operator", "publish frozen after plan",
+        action_type=wf.ACTION_PUBLISH)
+    out = wf.execute_publish_listing(
+        org_id=org, actor=ACTOR, user_id=USER_ID,
+        request_id=plan["request"]["request_id"], product_id=product_id,
+        confirmation_token=plan["plan"]["confirmation_token"])
+    assert out["ok"] is False and out["code"] == "governance_denied", out
+    assert mkt.get_product(product_id, requester_user_id=USER_ID)["status"] == "draft"
+
+
 def test_emergency_stop_blocks_publish():
     eng.grant_permission("stopped_org", ACTOR, wf.ACTION_CREATE, "allow")
     eng.grant_permission("stopped_org", ACTOR, wf.ACTION_PUBLISH, "allow")
@@ -162,6 +229,8 @@ def _run_standalone():
         test_draft_blocked_without_permission,
         test_allowed_draft_uses_marketplace_and_records_receipt,
         test_publish_plan_and_execute_use_confirmation_token,
+        test_publish_execution_rejects_misbound_and_replayed_confirmation,
+        test_emergency_stop_after_plan_blocks_execution,
         test_emergency_stop_blocks_publish,
         test_controller_surface_for_draft_and_publish,
     ]

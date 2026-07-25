@@ -8,7 +8,9 @@ same governance the advertising assistant enforces, applied to commerce:
      returns a summary + a ``confirmation_token`` bound to the EXACT tool and canonical
      params; ``execute`` refuses to run a confirmation-gated tool unless the caller echoes
      back the matching token. A token minted for one action can never execute a different
-     one (it is a hash of user + tool + normalized params). Read-only tools run immediately.
+     one. The approval is a server-side GRANT — single-use, time-limited (default 300s),
+     revocable, bound to one actor/tool/payload, and stored only as a sha256 — so an
+     approval cannot be replayed to repeat a consequential action. Reads run immediately.
 
   2. **Every claimed action is verified against canonical backend state.** The assistant
      NEVER reports success from a verb's return value. After a write it RE-READS the
@@ -27,8 +29,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
+from services import db as _db
 from services.business_os.marketplace import service as _svc
 from services.business_os.marketplace import orders as _ord
 from services.business_os.marketplace import refunds as _rf
@@ -36,15 +41,34 @@ from services.business_os.marketplace.service import MarketplaceError
 
 
 DISABLE_WRITES_ENV = "BUSINESS_OS_MARKETPLACE_ASSISTANT_DISABLE_WRITES"
-_TOKEN_SALT_ENV = "BUSINESS_OS_MARKETPLACE_ASSISTANT_TOKEN_SALT"
+_TTL_ENV = "BUSINESS_OS_MARKETPLACE_ASSISTANT_CONFIRM_TTL_SECONDS"
+
+_CONFIRM_TABLE = "business_os_mkt_assistant_confirmations"
+_TTL_DEFAULT = 300
+_TTL_MIN = 30
+_TTL_MAX = 900
 
 
 def _writes_disabled() -> bool:
     return str(os.environ.get(DISABLE_WRITES_ENV) or "").strip().lower() in {"1", "true", "on", "yes"}
 
 
-def _token_salt() -> str:
-    return os.environ.get(_TOKEN_SALT_ENV) or "busos-mkt-assistant-v1"
+def _ttl_seconds() -> int:
+    raw = os.environ.get(_TTL_ENV)
+    try:
+        val = int(str(raw).strip()) if raw not in (None, "") else _TTL_DEFAULT
+    except (TypeError, ValueError):
+        val = _TTL_DEFAULT
+    return max(_TTL_MIN, min(val, _TTL_MAX))
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _iso(dt: datetime) -> str:
+    """Fixed-width UTC stamp. Same shape service.py uses, so it sorts lexicographically."""
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 # --- canonical parameter normalization --------------------------------------
@@ -76,19 +100,136 @@ def _norm_params(tool: str, params: dict) -> dict:
     return out
 
 
-def _token(user_id: Any, tool: str, canonical: dict) -> str:
-    payload = json.dumps({"u": _svc._sid(user_id), "t": tool, "p": canonical},
-                         sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256((_token_salt() + "|" + payload).encode("utf-8")).hexdigest()
+# --- confirmation grants ----------------------------------------------------
+# An approval is a ROW, not a derivable hash. A derived hash is reproducible from
+# (salt, user, tool, params), so it is valid forever and reusable without limit —
+# an operator who approves "publish product X" once has, in effect, approved every
+# future publish of X. A stored grant is bound to one actor, one tool, one canonical
+# payload, expires, and is consumed exactly once. The raw token is never persisted;
+# only its sha256 is, so a database read cannot yield a usable approval.
+
+def _params_hash(tool: str, canonical: dict) -> str:
+    payload = json.dumps({"t": tool, "p": canonical}, sort_keys=True,
+                         separators=(",", ":"), default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _consteq(a: str, b: str) -> bool:
-    if len(a) != len(b):
-        return False
-    diff = 0
-    for x, y in zip(a, b):
-        diff |= ord(x) ^ ord(y)
-    return diff == 0
+def _token_hash(raw: str) -> str:
+    return hashlib.sha256(str(raw).encode("utf-8")).hexdigest()
+
+
+def _ensure_confirm_table(conn) -> None:
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {_CONFIRM_TABLE} (
+            token_hash TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            tool TEXT NOT NULL,
+            params_hash TEXT NOT NULL,
+            params_json TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            consumed_at TEXT
+        )
+        """
+    )
+
+
+def _mint_confirmation(user_id: Any, tool: str, canonical: dict) -> tuple:
+    """Create a single-use, time-limited approval and return (raw_token, expires_at)."""
+    raw = secrets.token_urlsafe(32)
+    now = _now()
+    expires = now + timedelta(seconds=_ttl_seconds())
+    conn = _db.connect()
+    try:
+        _ensure_confirm_table(conn)
+        conn.execute(
+            f"INSERT INTO {_CONFIRM_TABLE} (token_hash, user_id, tool, params_hash, "
+            "params_json, status, expires_at, created_at) "
+            "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
+            (_token_hash(raw), _svc._sid(user_id), tool,
+             _params_hash(tool, canonical),
+             json.dumps(canonical, sort_keys=True, default=str),
+             _iso(expires), _iso(now)))
+        conn.commit()
+    finally:
+        conn.close()
+    return raw, _iso(expires)
+
+
+def _consume_confirmation(user_id: Any, tool: str, canonical: dict, raw: str) -> None:
+    """Atomically redeem an approval, or raise. Never reveals why a token is unknown.
+
+    Distinguishes the failure modes the caller can legitimately act on:
+      * unknown / forged / wrong actor / wrong tool / edited payload -> 409 confirmation_mismatch
+      * expired                                                     -> 409 confirmation_expired
+      * already redeemed (replay)                                   -> 409 confirmation_used
+      * explicitly revoked                                          -> 409 confirmation_revoked
+    """
+    th = _token_hash(raw)
+    conn = _db.connect()
+    try:
+        _ensure_confirm_table(conn)
+        row = _svc._row(conn.execute(
+            f"SELECT * FROM {_CONFIRM_TABLE} WHERE token_hash = ?", (th,)).fetchone())
+        if row is None:
+            raise MarketplaceError(
+                "Confirmation token does not match this exact action.",
+                409, "confirmation_mismatch")
+
+        # Binding checks BEFORE status/expiry so a mis-bound token never reports
+        # "expired"/"used" — that would confirm the token exists to a guesser.
+        if (str(row.get("user_id")) != _svc._sid(user_id)
+                or str(row.get("tool")) != tool
+                or str(row.get("params_hash")) != _params_hash(tool, canonical)):
+            raise MarketplaceError(
+                "Confirmation token does not match this exact action.",
+                409, "confirmation_mismatch")
+
+        status = str(row.get("status") or "")
+        if status == "revoked":
+            raise MarketplaceError("This confirmation was revoked.",
+                                   409, "confirmation_revoked")
+        if status != "pending":
+            raise MarketplaceError(
+                "This confirmation was already used. Confirm the action again.",
+                409, "confirmation_used")
+        if str(row.get("expires_at") or "") <= _iso(_now()):
+            raise MarketplaceError(
+                "This confirmation expired. Confirm the action again.",
+                409, "confirmation_expired")
+
+        # Single-use: only the caller whose UPDATE actually flips 'pending' proceeds.
+        cur = conn.execute(
+            f"UPDATE {_CONFIRM_TABLE} SET status = 'consumed', consumed_at = ? "
+            "WHERE token_hash = ? AND status = 'pending'", (_iso(_now()), th))
+        if int(getattr(cur, "rowcount", 0) or 0) != 1:
+            conn.rollback()
+            raise MarketplaceError(
+                "This confirmation was already used. Confirm the action again.",
+                409, "confirmation_used")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def revoke_confirmation(user_id: Any, confirmation_token: str) -> dict:
+    """Withdraw an approval before it is redeemed. Only its own actor may revoke it."""
+    _svc._require_enabled()
+    th = _token_hash(confirmation_token)
+    conn = _db.connect()
+    try:
+        _ensure_confirm_table(conn)
+        cur = conn.execute(
+            f"UPDATE {_CONFIRM_TABLE} SET status = 'revoked' "
+            "WHERE token_hash = ? AND user_id = ? AND status = 'pending'",
+            (th, _svc._sid(user_id)))
+        revoked = int(getattr(cur, "rowcount", 0) or 0) == 1
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "revoked": revoked}
 
 
 # --- write handlers + verifiers ---------------------------------------------
@@ -265,11 +406,13 @@ def plan(user_id: Any, tool: str, params: Optional[dict] = None) -> dict:
         return {"tool": tool, "requires_confirmation": False, "write": False, "result": result}
     canonical = _norm_params(tool, params)
     _requires_id(tool, canonical)
-    token = _token(user_id, tool, canonical)
+    token, expires_at = _mint_confirmation(user_id, tool, canonical)
     return {
         "tool": tool, "requires_confirmation": True, "write": True,
         "risk": spec.get("risk", "high"), "canonical_params": canonical,
         "summary": spec.get("summary"), "confirmation_token": token,
+        "expires_at": expires_at, "ttl_seconds": _ttl_seconds(),
+        "single_use": True,
     }
 
 
@@ -297,11 +440,9 @@ def execute(user_id: Any, tool: str, params: Optional[dict] = None, *,
             raise MarketplaceError(
                 "This action requires confirmation. Call plan() and confirm the token.",
                 428, "confirmation_required")
-        expected = _token(user_id, tool, canonical)
-        if not _consteq(confirmation_token, expected):
-            raise MarketplaceError(
-                "Confirmation token does not match this exact action.",
-                409, "confirmation_mismatch")
+        # Redeemed BEFORE the handler runs: a burnt approval must not be replayable
+        # even if the underlying verb then fails.
+        _consume_confirmation(user_id, tool, canonical, confirmation_token)
 
     result = spec["handler"](user_id, canonical)
 

@@ -284,6 +284,36 @@ def ensure_schema(conn=None) -> None:
             "ON business_os_mkt_audit (action)"
         )
 
+        # Governed-assistant confirmation grants. One row per approval minted by
+        # assistant.plan(); consumed exactly once by assistant.execute(). The raw
+        # token is NEVER stored — only its sha256 — and the row binds the grant to
+        # (user, tool, canonical params) so an approval can never be redeemed for a
+        # different actor, tool or payload. ``status`` + ``expires_at`` make the
+        # grant single-use and time-limited.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS business_os_mkt_assistant_confirmations (
+                token_hash TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                tool TEXT NOT NULL,
+                params_hash TEXT NOT NULL,
+                params_json TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                consumed_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mkt_asst_confirm_user "
+            "ON business_os_mkt_assistant_confirmations (user_id, tool, status)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mkt_asst_confirm_expiry "
+            "ON business_os_mkt_assistant_confirmations (expires_at)"
+        )
+
         if owned:
             conn.commit()
     finally:
