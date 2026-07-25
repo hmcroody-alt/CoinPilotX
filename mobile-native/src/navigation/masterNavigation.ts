@@ -81,6 +81,7 @@ export const masterNavigationSections: MasterNavigationSection[] = [
     description: "UNDX, alerts, crypto, watchlists, and safety intelligence.",
     actions: [
       { label: "UNDX", route: "/pulse/ai", status: "native", description: "Digital Intelligence Companion.", badge: "LogiNexus" },
+      { label: "UNDX Action Center", route: "/pulse/undx/actions", status: "native", description: "Governed actions, approvals, receipts, and Marketplace workflow state." },
       { label: "Intelligence Center", route: "/pulse/intelligence", status: "native", description: "Streams, events, forecasts, sources, and alert overview." },
       { label: "Alert Management", route: "/pulse/alerts", status: "native", description: "Crypto, market, and intelligence alert controls." },
       { label: "Crypto Command", route: "/dashboard/crypto/alerts", status: "shell", description: "Crypto alerts and command-center shell." },
