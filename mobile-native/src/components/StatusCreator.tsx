@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Audio } from "expo-av";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { resolvePreviewStop, resolvePreviewToggle } from "../create/musicPreviewLifecycle";
 import {
   createStatus,
   generateStatusAiStory,
@@ -59,6 +61,8 @@ export function StatusCreator({ visible, onClose, onCreated }: Props) {
   const [musicQuery, setMusicQuery] = useState("");
   const [musicItems, setMusicItems] = useState<PulseStatusMusic[]>([]);
   const [selectedMusic, setSelectedMusic] = useState<PulseStatusMusic | null>(null);
+  const [previewingTrackId, setPreviewingTrackId] = useState("");
+  const musicPreviewRef = useRef<Audio.Sound | null>(null);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const canPublish = Boolean(body.trim() || mediaUpload.asset || selectedMusic || mode === "ai");
@@ -106,6 +110,63 @@ export function StatusCreator({ visible, onClose, onCreated }: Props) {
     const timer = setTimeout(() => AsyncStorage.setItem(STATUS_DRAFT_KEY, JSON.stringify({ body, visibility, durationHours, mode, aiPrompt })).catch(() => undefined), 180);
     return () => clearTimeout(timer);
   }, [aiPrompt, body, durationHours, mode, visibility, visible]);
+
+  // Closing the Status Studio (visible -> false) is a mandated "preview ends"
+  // event: a preview must never keep playing after the picker/modal is gone.
+  useEffect(() => {
+    if (visible) return;
+    if (resolvePreviewStop(previewingTrackId).stopCurrent || musicPreviewRef.current) {
+      stopMusicPreview().catch(() => undefined);
+    }
+  }, [visible]);
+
+  // Unmounting must also stop any in-flight preview sound.
+  useEffect(() => () => {
+    resolvePreviewStop(musicPreviewRef.current ? "active" : "");
+    musicPreviewRef.current?.unloadAsync().catch(() => undefined);
+    musicPreviewRef.current = null;
+  }, []);
+
+  /**
+   * Stop and unload any in-flight preview. Idempotent and safe to call from
+   * every "preview must end" path (switch track, select, picker close, unmount).
+   */
+  async function stopMusicPreview() {
+    const existing = musicPreviewRef.current;
+    musicPreviewRef.current = null;
+    setPreviewingTrackId("");
+    if (existing) await existing.unloadAsync().catch(() => undefined);
+  }
+
+  /** Tapping a row's dedicated Preview/Stop control — listen before selecting. */
+  async function toggleMusicPreview(track: PulseStatusMusic) {
+    const trackId = String(selectedMusicTrackId(track) || track.preview_url || track.audio_url || "");
+    const transition = resolvePreviewToggle(previewingTrackId, trackId);
+    if (transition.stopCurrent) await stopMusicPreview();
+    if (!transition.nextTrackId) return;
+    const previewUri = track.preview_url || track.audio_url || "";
+    if (!previewUri) {
+      setError("This approved track does not have a preview available.");
+      return;
+    }
+    try {
+      const { sound } = await Audio.Sound.createAsync({ uri: previewUri }, { shouldPlay: true, volume: 0.8 });
+      musicPreviewRef.current = sound;
+      setPreviewingTrackId(trackId);
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) stopMusicPreview().catch(() => undefined);
+      });
+    } catch {
+      setPreviewingTrackId("");
+      setError("Track preview is unavailable. You can still select another approved track.");
+    }
+  }
+
+  /** Selecting (or clearing) a track stops preview first, then sets selection. */
+  function chooseMusic(track: PulseStatusMusic | null) {
+    stopMusicPreview().catch(() => undefined);
+    setSelectedMusic(track);
+  }
 
   async function publish() {
     if (!canPublish || publishing) {
@@ -177,6 +238,7 @@ export function StatusCreator({ visible, onClose, onCreated }: Props) {
   }
 
   function resetCreator() {
+    stopMusicPreview().catch(() => undefined);
     setBody("");
     setMode("text");
     setVisibility("public");
@@ -318,12 +380,30 @@ export function StatusCreator({ visible, onClose, onCreated }: Props) {
             </View>
             {musicItems.slice(0, 6).map((track, index) => {
               const id = selectedMusicTrackId(track) || String(index);
+              const trackPreviewId = String(selectedMusicTrackId(track) || track.preview_url || track.audio_url || "");
               const selected = selectedMusicTrackId(selectedMusic) === selectedMusicTrackId(track);
+              const previewing = Boolean(trackPreviewId) && previewingTrackId === trackPreviewId;
               return (
-                <Pressable key={`${id}-${index}`} style={[styles.musicItem, selected && styles.musicSelected]} onPress={() => setSelectedMusic(selected ? null : track)}>
-                  <Text style={styles.musicTitle} numberOfLines={1}>{track.title || track.audio_title || "PulseSoc sound"}</Text>
-                  <Text style={styles.musicMeta} numberOfLines={1}>{track.artist || track.audio_artist || track.mood || "Creator-safe music"}</Text>
-                </Pressable>
+                <View key={`${id}-${index}`} style={[styles.musicItem, selected && styles.musicSelected]}>
+                  <Pressable
+                    style={styles.musicInfo}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${selected ? "Deselect" : "Select"} ${track.title || track.audio_title || "track"}`}
+                    accessibilityState={{ selected }}
+                    onPress={() => chooseMusic(selected ? null : track)}
+                  >
+                    <Text style={styles.musicTitle} numberOfLines={1}>{track.title || track.audio_title || "PulseSoc sound"}</Text>
+                    <Text style={styles.musicMeta} numberOfLines={1}>{track.artist || track.audio_artist || track.mood || "Creator-safe music"}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.musicPreviewButton, previewing && styles.musicPreviewButtonActive]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${previewing ? "Stop" : "Preview"} ${track.title || track.audio_title || "track"}`}
+                    onPress={() => toggleMusicPreview(track).catch(() => undefined)}
+                  >
+                    <Text style={[styles.musicPreviewText, previewing && styles.musicPreviewTextActive]}>{previewing ? "⏸ Stop" : "▶ Preview"}</Text>
+                  </Pressable>
+                </View>
               );
             })}
           </View>
@@ -425,10 +505,38 @@ const styles = StyleSheet.create({
     gap: 10
   },
   musicItem: {
+    alignItems: "center",
     borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
     padding: 10
+  },
+  musicInfo: {
+    flex: 1
+  },
+  musicPreviewButton: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    justifyContent: "center",
+    minWidth: 92,
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  musicPreviewButtonActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent
+  },
+  musicPreviewText: {
+    color: colors.text,
+    fontWeight: "900"
+  },
+  musicPreviewTextActive: {
+    color: colors.background
   },
   musicMeta: {
     color: colors.muted,
