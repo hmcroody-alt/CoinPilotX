@@ -28,9 +28,11 @@ effect. No tool runs, no message sends, no content posts, no money moves.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from services import db
+from services.business_os import confirmations as _cf
 from services.business_os.undx_actions import schema as _schema
 
 
@@ -324,6 +326,27 @@ def grant_permission(org_id: str, actor: str, action_type: str, effect: str = "a
             conn.close()
 
 
+def _bounded_expiry(expires_at: Optional[str]) -> str:
+    """Every confirmation MUST expire, and the client never decides how long.
+
+    ``expires_at`` arrives from an HTTP body (``api.record_confirmation`` forwards it
+    verbatim), so an omitted value used to mean "never expires" and a caller-supplied
+    value could push the deadline arbitrarily far out. Both are the same defect: a
+    human approval that stays redeemable indefinitely. So a missing value is stamped
+    with the shared default TTL, and a supplied value is clamped down to the shared
+    ceiling. It is never extended — a caller asking for a SHORTER window is honoured.
+    """
+    now = datetime.now(timezone.utc)
+    ceiling = now + timedelta(seconds=_cf.ttl_seconds())
+    ceiling_iso = ceiling.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    raw = str(expires_at or "").strip()
+    if not raw:
+        return ceiling_iso
+    # Fixed-width UTC ISO strings compare correctly as strings; anything unparseable
+    # or longer-lived than the ceiling is replaced by the ceiling (fail closed).
+    return raw if raw <= ceiling_iso else ceiling_iso
+
+
 def record_confirmation(org_id: str, request_id: str, actor: str, payload_hash: str,
                         *, status: str = "pending", expires_at: Optional[str] = None,
                         confirmed_at: Optional[str] = None, meta: Any = None,
@@ -337,6 +360,7 @@ def record_confirmation(org_id: str, request_id: str, actor: str, payload_hash: 
         raise UndxActionsError("unknown confirmation status")
     if not org_id or not request_id or not actor or not payload_hash:
         raise UndxActionsError("org_id, request_id, actor and payload_hash are required")
+    expires_at = _bounded_expiry(expires_at)
     owned = conn is None
     if owned:
         conn = db.connect()
@@ -400,8 +424,12 @@ def redeem_confirmation(org_id: str, request_id: str, actor: str,
         if status != "pending":
             raise UndxActionsError(
                 "confirmation is no longer pending")
+        # Fail CLOSED on a missing deadline. ``record_confirmation`` always stamps one
+        # now, so a blank value can only be a legacy row written before expiry was
+        # mandatory — and an approval with no deadline is exactly the defect being
+        # closed. Refusing it can never authorize anything it should not.
         expires_at = str(row["expires_at"] or "")
-        if expires_at and expires_at <= _now():
+        if (not expires_at) or expires_at <= _now():
             conn.execute(
                 "UPDATE business_os_undx_confirmations SET status = 'expired' "
                 "WHERE confirmation_id = ? AND status = 'pending'",
@@ -429,6 +457,45 @@ def redeem_confirmation(org_id: str, request_id: str, actor: str,
             "status": "confirmed",
             "confirmed_at": confirmed_at,
         }
+    finally:
+        if owned:
+            conn.close()
+
+
+def revoke_confirmation(org_id: str, request_id: str, actor: str,
+                        *, payload_hash: Optional[str] = None, conn=None) -> dict:
+    """Withdraw an approval before it is redeemed (pending -> cancelled).
+
+    An approval a human can grant but not take back is only half a control: between
+    granting and execution the approver may learn the action is wrong, and the only
+    remedies without this verb are waiting out the TTL or racing the executor. Scoped
+    to the approver's own org/request/actor, so it can only cancel its own approval;
+    idempotent, so a second call reports ``revoked: False`` rather than failing; and it
+    can never un-confirm an already-redeemed approval, because that would rewrite
+    history rather than prevent an action.
+    """
+    org_id = str(org_id or "").strip()
+    request_id = str(request_id or "").strip()
+    actor = str(actor or "").strip()
+    if not org_id or not request_id or not actor:
+        raise UndxActionsError("org_id, request_id and actor are required")
+    ph = str(payload_hash or "").strip()
+
+    owned = conn is None
+    if owned:
+        conn = db.connect()
+    try:
+        q = ("UPDATE business_os_undx_confirmations SET status = 'cancelled' "
+             "WHERE org_id = ? AND request_id = ? AND actor = ? AND status = 'pending'")
+        args = [org_id, request_id, actor]
+        if ph:
+            q += " AND payload_hash = ?"
+            args.append(ph)
+        cur = conn.execute(q, tuple(args))
+        n = int(getattr(cur, "rowcount", 0) or 0)
+        if owned:
+            conn.commit()
+        return {"ok": True, "revoked": n > 0, "cancelled": n}
     finally:
         if owned:
             conn.close()

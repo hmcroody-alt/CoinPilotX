@@ -1097,10 +1097,18 @@ def confirm_action(user_id: int, payload: dict | None = None) -> dict:
         return {"ok": False, "error": "confirmation_required", "message": "A valid UNDX confirmation is required.", "http_status": 400}
     conn, cur = _open_db()
     try:
-        confirmation = undx_architecture.consume_confirmation(cur, int(user_id), token)
+        # State the action we intend to run so the boundary enforces the binding BEFORE
+        # burning the approval: a token minted for any other action is refused rather
+        # than consumed, and the refusal is indistinguishable from an unknown token.
+        confirmation = undx_architecture.consume_confirmation(
+            cur, int(user_id), token,
+            expect_action_id="notifications.preference.update")
         if not confirmation:
             conn.rollback()
             return {"ok": False, "error": "confirmation_invalid", "message": "That confirmation expired, was already used, or belongs to another account.", "http_status": 409}
+        # Defence in depth. Unreachable while the boundary enforces the binding above,
+        # but kept so a future caller that forgets expect_action_id still cannot execute
+        # an action the approval was not for.
         if confirmation.get("action_id") != "notifications.preference.update":
             conn.rollback()
             return {"ok": False, "error": "action_not_supported", "message": "That action is not available.", "http_status": 400}

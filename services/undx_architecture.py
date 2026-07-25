@@ -454,7 +454,25 @@ def create_confirmation(cur, user_id: int, action: dict[str, Any], *, ttl_second
     return {"confirmation_id": confirmation_id, "confirmation_token": raw_token, "expires_at": expires_at}
 
 
-def consume_confirmation(cur, user_id: int, token: str) -> dict[str, Any] | None:
+def argument_hash(arguments: Any) -> str:
+    """The canonical payload fingerprint an approval is bound to."""
+    normalized = json.dumps(arguments or {}, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def consume_confirmation(cur, user_id: int, token: str, *,
+                         expect_action_id: str | None = None,
+                         expect_argument_hash: str | None = None) -> dict[str, Any] | None:
+    """Redeem one approval. Single-use, time-limited, and bound to its own actor.
+
+    ``expect_action_id`` / ``expect_argument_hash`` let the CALLER state which action it
+    believes it is executing, and the binding is checked HERE, before the row is burned.
+    Previously the only binding check lived in the caller and ran after consumption, so a
+    request for the wrong action still destroyed a valid approval for the right one, and
+    the boundary itself would hand back a grant for an action nobody asked about. A
+    mismatch returns ``None`` — identical to an unknown token — so a caller probing with
+    a guessed token learns nothing about whether it exists.
+    """
     token_hash = hashlib.sha256(clean(token, 500).encode("utf-8")).hexdigest()
     cur.execute(
         """SELECT * FROM pulse_ai_confirmations
@@ -465,6 +483,12 @@ def consume_confirmation(cur, user_id: int, token: str) -> dict[str, Any] | None
     if not row:
         return None
     result = dict(row)
+    # Binding checked BEFORE the consuming UPDATE: a mis-bound request must not burn a
+    # good approval, and must not be told it existed.
+    if expect_action_id is not None and str(result.get("action_id") or "") != str(expect_action_id):
+        return None
+    if expect_argument_hash is not None and str(result.get("argument_hash") or "") != str(expect_argument_hash):
+        return None
     timestamp = now()
     cur.execute(
         "UPDATE pulse_ai_confirmations SET status='consumed', consumed_at=?, updated_at=? WHERE id=? AND status='pending'",
@@ -474,3 +498,22 @@ def consume_confirmation(cur, user_id: int, token: str) -> dict[str, Any] | None
         return None
     result["arguments"] = json.loads(result.get("arguments_json") or "{}")
     return result
+
+
+def revoke_confirmation(cur, user_id: int, token: str) -> dict[str, Any]:
+    """Withdraw a pending approval (pending -> revoked). Own actor only, idempotent.
+
+    An approver who changes their mind between granting and executing needs a way to
+    take the approval back; without one the only options are waiting out the TTL or
+    racing the executor. Scoped by ``user_id`` so nobody can cancel another account's
+    approval, and restricted to ``status='pending'`` so an already-redeemed approval is
+    never rewritten after the fact.
+    """
+    token_hash = hashlib.sha256(clean(token, 500).encode("utf-8")).hexdigest()
+    timestamp = now()
+    cur.execute(
+        "UPDATE pulse_ai_confirmations SET status='revoked', updated_at=? "
+        "WHERE token_hash=? AND user_id=? AND status='pending'",
+        (timestamp, token_hash, int(user_id)),
+    )
+    return {"ok": True, "revoked": int(cur.rowcount or 0) > 0}
