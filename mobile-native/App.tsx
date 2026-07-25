@@ -19,6 +19,8 @@ import { registerPushDevice, syncPushDeviceRegistration } from "./src/api/push";
 import { registerSessionInvalidationHandler } from "./src/api/pulseApi";
 import { configurePerfTracing, perfNow, recordDuration, setPerfContext, startSpan } from "./src/core/perfTrace";
 import { PerfOverlay } from "./src/components/PerfOverlay";
+import { TranslationPreferencesBootstrap } from "./src/components/TranslationPreferencesBootstrap";
+import { configurePulseShareCenter } from "./src/sharing/nativeShare";
 
 // Captured at module evaluation so app.interactive reflects time-to-first-interactive-frame.
 const APP_MODULE_START = perfNow();
@@ -113,6 +115,19 @@ export default function App() {
     }, 150);
     return () => clearInterval(interval);
   }, [authState.status, pendingNotificationTarget]);
+
+  useEffect(() => {
+    if (authState.status !== "signedIn") {
+      configurePulseShareCenter(null);
+      return;
+    }
+    configurePulseShareCenter((metadata) => {
+      if (!navigationRef.isReady()) return false;
+      navigationRef.navigate("PulseShare", metadata);
+      return true;
+    });
+    return () => configurePulseShareCenter(null);
+  }, [authState.status]);
 
   useEffect(() => {
     let mounted = true;
@@ -232,6 +247,9 @@ export default function App() {
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <TimeZoneProvider>
           <AuthContext.Provider value={auth}>
+            {authState.status === "signedIn" ? (
+              <TranslationPreferencesBootstrap key={authState.user?.user_id || "signed-in"} />
+            ) : null}
             <NavigationContainer ref={navigationRef} theme={theme} linking={authState.status === "signedIn" ? linking : undefined}>
               <StatusBar style="light" />
               {authState.status === "signedIn" ? <AppNavigator /> : <AuthNavigator />}

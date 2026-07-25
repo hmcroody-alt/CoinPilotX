@@ -1,7 +1,8 @@
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleProp, StyleSheet, Text, TextStyle, View } from "react-native";
 import {
-  getTranslationPreference,
+  peekTranslationPreference,
+  subscribeTranslationPreference,
   TranslatableContentType,
   TranslationPolicy,
   translatePulseContent,
@@ -80,22 +81,18 @@ export function ContentTranslation({
   );
 
   useEffect(() => {
-    let mounted = true;
     setTranslatedText("");
     setShowTranslated(false);
     setError("");
-    getTranslationPreference(sourceLanguage, targetLanguage)
-      .then((preference) => {
-        if (!mounted || activeRequest.current !== requestKey) return;
-        setPolicy(preference.policy);
-        if (preference.policy === "always") requestTranslation(false);
-      })
-      .catch(() => {
-        if (mounted) setPolicy("ask");
-      });
-    return () => {
-      mounted = false;
+    const applyPreference = (preference: { policy: TranslationPolicy }) => {
+      if (activeRequest.current !== requestKey) return;
+      setPolicy(preference.policy);
+      if (preference.policy === "always") requestTranslation(false);
     };
+    const cached = peekTranslationPreference(sourceLanguage, targetLanguage);
+    if (cached) applyPreference(cached);
+    else setPolicy("ask");
+    return subscribeTranslationPreference(sourceLanguage, targetLanguage, applyPreference);
   }, [requestKey, requestTranslation, sourceLanguage, targetLanguage]);
 
   const changePolicy = useCallback(

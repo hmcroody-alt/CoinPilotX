@@ -40,6 +40,13 @@ const KIND_LABELS: Record<PulseShareKind, string> = {
   media: "Media"
 };
 
+type ShareCenterPresenter = (metadata: PulseShareMetadata) => boolean;
+let shareCenterPresenter: ShareCenterPresenter | null = null;
+
+export function configurePulseShareCenter(presenter: ShareCenterPresenter | null) {
+  shareCenterPresenter = presenter;
+}
+
 function cleanLine(value?: string, maxLength = 280) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
@@ -67,6 +74,13 @@ export function buildNativeSharePayload(metadata: PulseShareMetadata): NativeSha
  * their platform association.
  */
 export async function sharePulseObject(metadata: PulseShareMetadata): Promise<ShareAction> {
+  if (shareCenterPresenter?.(metadata)) {
+    return { action: Share.sharedAction };
+  }
+  return openSystemShare(metadata);
+}
+
+export async function openSystemShare(metadata: PulseShareMetadata): Promise<ShareAction> {
   const payload = buildNativeSharePayload(metadata);
   return Share.share(
     payload,
@@ -76,4 +90,3 @@ export async function sharePulseObject(metadata: PulseShareMetadata): Promise<Sh
     }
   );
 }
-

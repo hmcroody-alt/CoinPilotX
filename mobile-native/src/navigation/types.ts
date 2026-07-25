@@ -62,6 +62,14 @@ export type RootStackParamList = {
     undxTaskId?: string;
   };
   NewChat: { initialQuery?: string; targetUserId?: number; title?: string } | undefined;
+  PulseShare: {
+    kind: "post" | "reel" | "status" | "live" | "profile" | "marketplace" | "business" | "event" | "music" | "media";
+    url: string;
+    title?: string;
+    description?: string;
+    author?: string;
+    previewImageUrl?: string;
+  };
   PostDetail: { postId: number; title?: string };
   Reels: { reelId?: number; title?: string } | undefined;
   ReelDetail: { reelId: number; title?: string };

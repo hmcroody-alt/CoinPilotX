@@ -1,7 +1,7 @@
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import { ContentTranslation } from "../ContentTranslation";
 import {
-  getTranslationPreference,
+  peekTranslationPreference,
   translatePulseContent,
   updateTranslationPreference
 } from "../../api/translation";
@@ -11,23 +11,19 @@ jest.mock("../../core/TimeZoneContext", () => ({
 }));
 
 jest.mock("../../api/translation", () => ({
-  getTranslationPreference: jest.fn(),
+  peekTranslationPreference: jest.fn(),
+  subscribeTranslationPreference: jest.fn(() => () => undefined),
   translatePulseContent: jest.fn(),
   updateTranslationPreference: jest.fn()
 }));
 
-const getPreferenceMock = getTranslationPreference as jest.MockedFunction<typeof getTranslationPreference>;
+const peekPreferenceMock = peekTranslationPreference as jest.MockedFunction<typeof peekTranslationPreference>;
 const translateMock = translatePulseContent as jest.MockedFunction<typeof translatePulseContent>;
 const updatePreferenceMock = updateTranslationPreference as jest.MockedFunction<typeof updateTranslationPreference>;
 
 beforeEach(() => {
   jest.clearAllMocks();
-  getPreferenceMock.mockResolvedValue({
-    source_language: "auto",
-    target_language: "fr-fr",
-    policy: "ask",
-    updated_at: null
-  });
+  peekPreferenceMock.mockReturnValue(undefined);
   translateMock.mockResolvedValue({
     translated: true,
     cached: false,
@@ -71,7 +67,7 @@ it("persists Always Translate and immediately translates", async () => {
 });
 
 it("honors an existing Never Translate preference without calling the provider", async () => {
-  getPreferenceMock.mockResolvedValue({
+  peekPreferenceMock.mockReturnValue({
     source_language: "auto",
     target_language: "fr-fr",
     policy: "never",

@@ -46,9 +46,34 @@ type TranslationPreference = TranslationPreferenceResponse["result"];
 
 const preferenceCache = new Map<string, TranslationPreference>();
 const preferenceRequests = new Map<string, Promise<TranslationPreference>>();
+const preferenceListeners = new Map<string, Set<(preference: TranslationPreference) => void>>();
 
 function preferenceKey(sourceLanguage: string, targetLanguage: string) {
   return `${sourceLanguage || "auto"}:${targetLanguage}`;
+}
+
+function publishPreference(cacheKey: string, preference: TranslationPreference) {
+  preferenceCache.set(cacheKey, preference);
+  preferenceListeners.get(cacheKey)?.forEach(listener => listener(preference));
+}
+
+export function peekTranslationPreference(sourceLanguage: string, targetLanguage: string) {
+  return preferenceCache.get(preferenceKey(sourceLanguage, targetLanguage));
+}
+
+export function subscribeTranslationPreference(
+  sourceLanguage: string,
+  targetLanguage: string,
+  listener: (preference: TranslationPreference) => void
+) {
+  const cacheKey = preferenceKey(sourceLanguage, targetLanguage);
+  const listeners = preferenceListeners.get(cacheKey) || new Set();
+  listeners.add(listener);
+  preferenceListeners.set(cacheKey, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) preferenceListeners.delete(cacheKey);
+  };
 }
 
 export async function translatePulseContent(input: {
@@ -89,7 +114,7 @@ export async function getTranslationPreference(sourceLanguage: string, targetLan
     `/api/pulse/translations/preference?${query.toString()}`
   )
     .then(response => {
-      preferenceCache.set(cacheKey, response.result);
+      publishPreference(cacheKey, response.result);
       return response.result;
     })
     .finally(() => {
@@ -115,11 +140,14 @@ export async function updateTranslationPreference(
       })
     }
   );
-  preferenceCache.set(preferenceKey(sourceLanguage, targetLanguage), response.result);
+  publishPreference(preferenceKey(sourceLanguage, targetLanguage), response.result);
   return response.result;
 }
 
-export function clearTranslationPreferenceCacheForTests() {
+export function clearTranslationPreferenceCache() {
   preferenceCache.clear();
   preferenceRequests.clear();
+  preferenceListeners.clear();
 }
+
+export const clearTranslationPreferenceCacheForTests = clearTranslationPreferenceCache;

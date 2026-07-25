@@ -41,6 +41,7 @@ import { PulseQueueScreen } from "../screens/PulseQueueScreen";
 import { PostDetailScreen } from "../screens/PostDetailScreen";
 import { PremiumScreen } from "../screens/PremiumScreen";
 import { ProfileEditScreen } from "../screens/ProfileEditScreen";
+import { PulseShareScreen } from "../screens/PulseShareScreen";
 import { PulseAiScreen } from "../screens/PulseAiScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
 import { ReelsScreen } from "../screens/ReelsScreen";
@@ -236,6 +237,7 @@ export function AppNavigator() {
       <Stack.Screen name="Call" component={CallScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} />
       <Stack.Screen name="NewChat" component={NewChatScreen} options={{ title: "New Chat" }} />
+      <Stack.Screen name="PulseShare" component={PulseShareScreen} options={{ title: "Share on PulseSoc", presentation: "modal" }} />
       <Stack.Screen name="PostDetail" component={PostDetailScreen} options={({ route }) => ({ title: route.params.title || "Post" })} />
       <Stack.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="ReelDetail" component={ReelsScreen} options={{ headerShown: false }} />

@@ -1,8 +1,9 @@
 import { Share } from "react-native";
-import { buildNativeSharePayload, sharePulseObject } from "../nativeShare";
+import { buildNativeSharePayload, configurePulseShareCenter, sharePulseObject } from "../nativeShare";
 
 jest.mock("react-native", () => ({
   Share: {
+    sharedAction: "sharedAction",
     share: jest.fn(async () => ({ action: "sharedAction" }))
   }
 }));
@@ -10,6 +11,7 @@ jest.mock("react-native", () => ({
 describe("native PulseSoc sharing", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    configurePulseShareCenter(null);
   });
 
   it("builds a readable metadata-rich payload with the canonical link", () => {
@@ -57,5 +59,19 @@ describe("native PulseSoc sharing", () => {
     expect(payload.message).toContain("y".repeat(320));
     expect(payload.message).not.toContain("y".repeat(321));
   });
-});
 
+  it("opens the registered PulseSoc share center before falling back to the OS sheet", async () => {
+    const presenter = jest.fn(() => true);
+    configurePulseShareCenter(presenter);
+    const metadata = {
+      kind: "post" as const,
+      url: "https://pulsesoc.com/pulse/post/91",
+      title: "Internal share"
+    };
+
+    await sharePulseObject(metadata);
+
+    expect(presenter).toHaveBeenCalledWith(metadata);
+    expect(Share.share).not.toHaveBeenCalled();
+  });
+});
