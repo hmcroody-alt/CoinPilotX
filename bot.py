@@ -10728,6 +10728,40 @@ def api_premium_billing_portal():
     return premium_json_response({"ok": False, "message": error or "Billing portal temporarily unavailable.", "fallback_url": "/pulse/premium"}, 503)
 
 
+def _effective_premium_access(user, owns_premium):
+    """R3.2 Business OS slice: effective (currently-usable) premium access.
+
+    Ownership (an active subscription/grant) is passed in as ``owns_premium`` and is
+    NEVER mutated here — callers keep their existing subscription/ownership fields so
+    the API never tells a suspended user they lack the underlying subscription. This
+    only computes whether the user may *currently exercise* premium: ownership AND the
+    account is not on hold. To match what the capability gates actually serve, the hold
+    is applied only under canonical mode; off/shadow present the legacy ownership value
+    unchanged (byte-for-byte). Read-only: records no audit rows.
+
+    Returns ``(effective_bool, access_denial_reason_or_None)``. Fails safe to ownership.
+    """
+    owns = bool(owns_premium)
+    try:
+        raw = (os.getenv("BUSINESS_OS_ENTITLEMENTS", "") or "").strip().lower()
+        if raw not in ("1", "true", "on", "yes", "canonical"):
+            return owns, None
+        if not owns:
+            return False, None
+        from services.business_os.entitlements import facade as _ent_facade
+        ctx = {
+            "account_status": user.get("account_status"),
+            "access_enabled": user.get("access_enabled"),
+        }
+        hold = _ent_facade.account_hold(int(user.get("user_id") or 0), context=ctx)
+        if hold.get("on_hold"):
+            return False, (hold.get("reason") or "account_hold")
+        return True, None
+    except Exception:  # noqa: BLE001
+        logging.exception("effective premium access check failed; using ownership")
+        return owns, None
+
+
 @webhook_app.route("/api/premium/status", methods=["GET"])
 def api_premium_status():
     init_db()
@@ -10740,10 +10774,26 @@ def api_premium_status():
     founder_info = premium_entitlement_service.founder_membership(uid)
     provider_row = _latest_user_subscription_row(uid)
     status_payload = subscription_status_payload(fresh_user)
+    # Ownership (subscription/grant) is preserved verbatim in premium_active/plan/
+    # subscription_status. effective_premium_access is the SEPARATE, hold-aware signal
+    # a suspended owner must be shown so the API never advertises usable access it will
+    # then deny. Under flag off/shadow, effective == ownership (no behaviour change).
+    owns_premium = bool(premium_entitlement_service.is_premium_user(uid) or premium_visibility_engine.is_premium_user(fresh_user))
+    effective_premium, access_denial_reason = _effective_premium_access(fresh_user, owns_premium)
+    if founder_info:
+        status_message = "Founder Premium is active."
+    elif access_denial_reason and premium_entitlement_service.is_premium_user(uid):
+        status_message = "Premium is paused while your account is under review."
+    elif premium_entitlement_service.is_premium_user(uid):
+        status_message = "Premium is active."
+    else:
+        status_message = "Stripe verification is still pending."
     return premium_json_response({
         "ok": True,
         "user_id": uid,
-        "premium_active": bool(premium_entitlement_service.is_premium_user(uid) or premium_visibility_engine.is_premium_user(fresh_user)),
+        "premium_active": owns_premium,
+        "effective_premium_access": effective_premium,
+        "access_denial_reason": access_denial_reason,
         "founder_active": bool(founder_info),
         "founder_number": int(founder_info.get("founder_number") or 0) if founder_info else 0,
         "plan": fresh_user.get("subscription_plan") or fresh_user.get("plan") or provider_row.get("plan_key") or "free",
@@ -10756,7 +10806,7 @@ def api_premium_status():
         "premium_url": "/pulse/premium",
         "profile_url": "/pulse/profile",
         "home_url": "/pulse",
-        "message": "Founder Premium is active." if founder_info else "Premium is active." if premium_entitlement_service.is_premium_user(uid) else "Stripe verification is still pending.",
+        "message": status_message,
     })
 
 
@@ -17652,6 +17702,2224 @@ def admin_billing_recalculate_page():
     log_admin_audit(admin["id"], "admin_recalculate_billing_metrics", "billing", "metrics", {"converted": converted})
     logging.info("ADMIN_METRICS_QUERY_RESULT recalculated converted_trialing_paid_users=%s", converted)
     return redirect(url_for("admin_dashboard_page"))
+
+
+@webhook_app.route("/admin/business-os/reconcile", methods=["POST"])
+def admin_business_os_reconcile():
+    """Owner-only, flag-gated trigger for the Business OS payments reconciliation
+    worker. Replays already-persisted, signature-verified webhook events from the
+    durable inbox into the canonical ledger. Idempotent — safe to call repeatedly,
+    and it moves no *new* money on its own; it only settles events Stripe already
+    confirmed. Returns the sweep summary as JSON."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if os.getenv("BUSINESS_OS_LEDGER", "").strip().lower() not in ("1", "true", "on", "yes"):
+        return jsonify({"ok": False, "error": "BUSINESS_OS_LEDGER flag is off."}), 409
+    token = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
+    if not token or token != session.get("csrf_token"):
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    provider = (request.args.get("provider") or "stripe").strip() or "stripe"
+    try:
+        from services.business_os.payments import reconcile_worker as _busos_worker
+        summary = _busos_worker.run_once(provider)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("BUSINESS_OS reconcile failed provider=%s", provider)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    log_admin_audit(admin["id"], "business_os_reconcile", "payments", provider, summary)
+    return jsonify({"ok": True, "summary": summary})
+
+
+def _business_os_entitlements_enabled():
+    """True when the canonical entitlement system is active (shadow or canonical).
+
+    Off (the default) means the whole slice is dark: admin write endpoints refuse,
+    so we never mutate canonical grants a disabled system won't read."""
+    mode = (os.getenv("BUSINESS_OS_ENTITLEMENTS", "") or "").strip().lower()
+    return mode in ("shadow", "canonical", "1", "true", "on", "yes")
+
+
+def _business_os_ent_csrf_ok():
+    token = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
+    return bool(token) and token == session.get("csrf_token")
+
+
+@webhook_app.route("/admin/business-os/entitlements/grant", methods=["POST"])
+def admin_business_os_entitlement_grant():
+    """Owner-only, flag-gated, CSRF-protected manual entitlement grant.
+
+    Requires a human-readable ``reason``. Captures the canonical decision
+    before and after the change and records both the entitlement service's own
+    audit row and an admin audit-trail entry (with before/after). Reversible via
+    the revoke endpoint; never touches financial state."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_entitlements_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ENTITLEMENTS flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+
+    subject_id = (request.form.get("subject_id") or request.form.get("user_id") or "").strip()
+    subject_type = (request.form.get("subject_type") or "user").strip() or "user"
+    key = (request.form.get("entitlement_key") or "").strip()
+    source = (request.form.get("source") or "admin").strip() or "admin"
+    reason = (request.form.get("reason") or "").strip()
+    expires_at = (request.form.get("expires_at") or "").strip() or None
+    if not subject_id or not key:
+        return jsonify({"ok": False, "error": "subject_id and entitlement_key are required."}), 400
+    if not reason:
+        return jsonify({"ok": False, "error": "reason is required."}), 400
+
+    try:
+        from services.business_os.entitlements import service as _ent
+        before = _ent.explain_entitlement(subject_id, key, subject_type=subject_type)
+        grant = _ent.grant_entitlement(
+            subject_id, key, source=source, subject_type=subject_type,
+            expires_at=expires_at, created_by=f"admin:{admin['id']}", reason=reason,
+            audit_reference=f"admin_grant:{admin['id']}",
+        )
+        after = _ent.explain_entitlement(subject_id, key, subject_type=subject_type)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("BUSINESS_OS entitlement grant failed key=%s subject=%s", key, subject_id)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    log_admin_audit(admin["id"], "business_os_entitlement_grant", subject_type, subject_id,
+                    {"key": key, "source": source, "reason": reason,
+                     "before": before, "after": after})
+    return jsonify({"ok": True, "grant": grant, "before": before, "after": after})
+
+
+@webhook_app.route("/admin/business-os/entitlements/revoke", methods=["POST"])
+def admin_business_os_entitlement_revoke():
+    """Owner-only, flag-gated, CSRF-protected manual entitlement revoke.
+
+    Requires a ``reason``. Records before/after canonical state in both the
+    entitlement audit table and the admin audit trail. Idempotent."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_entitlements_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ENTITLEMENTS flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+
+    subject_id = (request.form.get("subject_id") or request.form.get("user_id") or "").strip()
+    subject_type = (request.form.get("subject_type") or "user").strip() or "user"
+    key = (request.form.get("entitlement_key") or "").strip()
+    reason = (request.form.get("reason") or "").strip()
+    source = (request.form.get("source") or "").strip() or None
+    if not subject_id or not key:
+        return jsonify({"ok": False, "error": "subject_id and entitlement_key are required."}), 400
+    if not reason:
+        return jsonify({"ok": False, "error": "reason is required."}), 400
+
+    try:
+        from services.business_os.entitlements import service as _ent
+        before = _ent.explain_entitlement(subject_id, key, subject_type=subject_type)
+        result = _ent.revoke_entitlement(
+            subject_id, key, reason=reason, subject_type=subject_type,
+            source=source, actor=f"admin:{admin['id']}",
+        )
+        after = _ent.explain_entitlement(subject_id, key, subject_type=subject_type)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("BUSINESS_OS entitlement revoke failed key=%s subject=%s", key, subject_id)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    log_admin_audit(admin["id"], "business_os_entitlement_revoke", subject_type, subject_id,
+                    {"key": key, "reason": reason, "result": result,
+                     "before": before, "after": after})
+    return jsonify({"ok": True, "result": result, "before": before, "after": after})
+
+
+@webhook_app.route("/admin/business-os/entitlements/explain", methods=["GET"])
+def admin_business_os_entitlement_explain():
+    """Owner-only read: full precedence trace for one subject+key. Read-only, so
+    no CSRF/flag gate beyond owner auth; returns the same structure the service's
+    ``explain_entitlement`` produces plus the current facade mode."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    subject_id = (request.args.get("subject_id") or request.args.get("user_id") or "").strip()
+    subject_type = (request.args.get("subject_type") or "user").strip() or "user"
+    key = (request.args.get("entitlement_key") or "").strip()
+    if not subject_id or not key:
+        return jsonify({"ok": False, "error": "subject_id and entitlement_key are required."}), 400
+    try:
+        from services.business_os.entitlements import service as _ent
+        from services.business_os.entitlements import facade as _facade
+        trace = _ent.explain_entitlement(subject_id, key, subject_type=subject_type)
+        trace["facade_mode"] = _facade.get_mode()
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("BUSINESS_OS entitlement explain failed key=%s subject=%s", key, subject_id)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return jsonify({"ok": True, "explain": trace})
+
+
+# =====================================================================
+# Business OS — Advertising vertical, slice 2 (canonical HTTP surface).
+#
+# These routes are a NEW, clearly-separated canonical surface under
+# /api/business-os/advertising/* (advertiser) and /admin/business-os/advertising/*
+# (admin). They do NOT redirect, replace, or touch the legacy advertiser portal
+# (pulse_ads_service / /api/pulse/ads/*), and they move no money, spend, delivery,
+# or impressions. Owner identity is always derived from the authenticated
+# session/token — never from the request body. When BUSINESS_OS_ADVERTISING is off
+# the whole surface is dark (404), so no partial canonical path is exposed and
+# legacy behaviour is untouched. All decision logic lives in the importable
+# controller services.business_os.advertising.api; these are thin adapters.
+# =====================================================================
+def _business_os_advertising_enabled():
+    return (os.getenv("BUSINESS_OS_ADVERTISING", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+def _bo_ad_hold_context(user):
+    """Fresh account state for account-hold precedence (never a stale cache)."""
+    return {
+        "account_status": user.get("account_status"),
+        "access_enabled": user.get("access_enabled"),
+    }
+
+
+def _bo_ad_reply(result):
+    status, body = result
+    return jsonify(body), status
+
+
+def _bo_ad_request_ref():
+    try:
+        return request.headers.get("X-Request-Id") or request.headers.get("X-Request-ID") or ""
+    except Exception:
+        return ""
+
+
+def _bo_ad_attach_sponsored(viewer_user_id, placement, result):
+    """Best-effort injection of ONE canonical sponsored placement into a live
+    Feed/Reels response. Advertising is a strangler surface layered beside the
+    organic feed, so this is flag-gated and fully defensive: when the flag is off
+    (default) or anything goes wrong, the organic response is left unchanged and
+    NOTHING is raised — a feed poll must never fail because advertising had a
+    problem. The injected value is the delivery pipeline's already client-safe
+    projection (label only; never ledger ids, private targeting, or advertiser
+    identity). 'No ad' is a normal outcome and simply leaves ``sponsored`` absent.
+    Returns the (possibly unchanged) result dict for convenience."""
+    if not isinstance(result, dict) or not _business_os_advertising_enabled():
+        return result
+    try:
+        from services.business_os.advertising import delivery as _adl
+        req = {}
+        try:
+            rid = request.headers.get("X-Request-Id") or request.headers.get("X-Request-ID")
+            if rid:
+                req["request_id"] = str(rid)[:120]
+        except Exception:
+            pass
+        placed = _adl.request_placement(viewer_user_id, placement, request=req)
+        if isinstance(placed, dict) and placed.get("sponsored"):
+            result["sponsored"] = placed.get("sponsored")
+            result["sponsored_placement"] = placed.get("placement")
+    except Exception:
+        logging.debug(
+            "BO_AD_SPONSORED_ATTACH_SKIPPED placement=%s", placement, exc_info=True)
+    return result
+
+
+# --- advertiser routes (authenticated; owner = the session/token user) ------
+@webhook_app.route("/api/business-os/advertising/eligibility", methods=["GET"])
+def api_business_os_advertising_eligibility():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.get_eligibility(
+        user.get("user_id"), context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/advertiser", methods=["POST"])
+def api_business_os_advertising_register():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.register_advertiser(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns", methods=["POST"])
+def api_business_os_advertising_create_campaign():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.create_draft(
+        user.get("user_id"), pulse_ads_json_payload(),
+        context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns", methods=["GET"])
+def api_business_os_advertising_list_campaigns():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    status_filter = (request.args.get("status") or "").strip() or None
+    return _bo_ad_reply(_adapi.list_own_campaigns(
+        user.get("user_id"), status=status_filter))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>", methods=["GET"])
+def api_business_os_advertising_get_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.get_own_campaign(user.get("user_id"), campaign_id))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/update", methods=["POST"])
+def api_business_os_advertising_update_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.update_draft(
+        user.get("user_id"), campaign_id, pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/archive", methods=["POST"])
+def api_business_os_advertising_archive_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.lifecycle(user.get("user_id"), campaign_id, "archive"))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/restore", methods=["POST"])
+def api_business_os_advertising_restore_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.lifecycle(user.get("user_id"), campaign_id, "restore"))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/submit", methods=["POST"])
+def api_business_os_advertising_submit_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.submit(
+        user.get("user_id"), campaign_id, context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/withdraw", methods=["POST"])
+def api_business_os_advertising_withdraw_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.withdraw(user.get("user_id"), campaign_id))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/reopen", methods=["POST"])
+def api_business_os_advertising_reopen_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.reopen(user.get("user_id"), campaign_id))
+
+
+# --- funding routes (slice 4): budget config + reserve/release --------------
+# Funding readiness is SEPARATE from review approval and from delivery. Reserve
+# moves budget into per-campaign escrow via the canonical ledger; it delivers
+# nothing. Reserve/release are owned writes: flag gate + auth + write CSRF. Both
+# require an idempotency key (JSON body or the Idempotency-Key header) so retries
+# are safe and never double-reserve.
+def _bo_ad_funding_payload():
+    """Parsed JSON body with the Idempotency-Key header folded in when the body
+    omits an explicit ``idempotency_key`` (so clients may supply it either way)."""
+    payload = pulse_ads_json_payload()
+    if not isinstance(payload, dict):
+        payload = {}
+    if not payload.get("idempotency_key"):
+        header_key = (request.headers.get("Idempotency-Key") or "").strip()
+        if header_key:
+            payload = dict(payload)
+            payload["idempotency_key"] = header_key
+    return payload
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/funding", methods=["GET"])
+def api_business_os_advertising_get_funding(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.get_funding(user.get("user_id"), campaign_id))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/budget", methods=["POST"])
+def api_business_os_advertising_set_budget(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.set_budget(
+        user.get("user_id"), campaign_id, pulse_ads_json_payload(),
+        context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/reserve", methods=["POST"])
+def api_business_os_advertising_reserve_funds(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.reserve(
+        user.get("user_id"), campaign_id, _bo_ad_funding_payload(),
+        context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/release", methods=["POST"])
+def api_business_os_advertising_release_funds(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.release(
+        user.get("user_id"), campaign_id, _bo_ad_funding_payload(),
+        context=_bo_ad_hold_context(user)))
+
+
+# --- operational routes (slice 5): controlled activation + scheduling -------
+# Operational status is SEPARATE from review approval, funding, and delivery.
+# None of these routes deliver, auction, bid, pace, record impressions/clicks, or
+# move money. "active" means operationally AUTHORIZED for a future delivery
+# worker — NOT delivering. schedule/activate/resume run the full activation gate
+# (approved + funded + activation_ready + eligible + valid budget/window) in the
+# service; pause/cancel need only ownership. All are owned writes: flag + auth +
+# write CSRF. Every transition is audited via the existing ad-audit trail.
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/operational", methods=["GET"])
+def api_business_os_advertising_get_operational(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.get_operational(user.get("user_id"), campaign_id))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/schedule", methods=["POST"])
+def api_business_os_advertising_schedule_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.schedule(
+        user.get("user_id"), campaign_id, pulse_ads_json_payload(),
+        context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/activate", methods=["POST"])
+def api_business_os_advertising_activate_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.activate(
+        user.get("user_id"), campaign_id, pulse_ads_json_payload(),
+        context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/pause", methods=["POST"])
+def api_business_os_advertising_pause_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.pause(
+        user.get("user_id"), campaign_id, pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/resume", methods=["POST"])
+def api_business_os_advertising_resume_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.resume(
+        user.get("user_id"), campaign_id, context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/cancel", methods=["POST"])
+def api_business_os_advertising_cancel_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.cancel(
+        user.get("user_id"), campaign_id, pulse_ads_json_payload()))
+
+
+# --- advertiser ad-set routes (slice 6) -------------------------------------
+# An ad set is a campaign child with its OWN review lifecycle. Owner identity is
+# derived from the session; nothing here delivers, targets a real user, or moves
+# money. Dark (404) when the flag is off; CSRF on every write.
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/ad-sets", methods=["POST"])
+def api_business_os_advertising_create_ad_set(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.create_ad_set(
+        user.get("user_id"), campaign_id, pulse_ads_json_payload(),
+        context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/ad-sets", methods=["GET"])
+def api_business_os_advertising_list_ad_sets_for_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.list_ad_sets(
+        user.get("user_id"), campaign_id=campaign_id))
+
+
+@webhook_app.route("/api/business-os/advertising/ad-sets", methods=["GET"])
+def api_business_os_advertising_list_ad_sets():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    campaign_filter = (request.args.get("campaign_id") or "").strip() or None
+    return _bo_ad_reply(_adapi.list_ad_sets(
+        user.get("user_id"), campaign_id=campaign_filter))
+
+
+@webhook_app.route("/api/business-os/advertising/ad-sets/<ad_set_id>", methods=["GET"])
+def api_business_os_advertising_get_ad_set(ad_set_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.get_ad_set(user.get("user_id"), ad_set_id))
+
+
+@webhook_app.route("/api/business-os/advertising/ad-sets/<ad_set_id>/update", methods=["POST"])
+def api_business_os_advertising_update_ad_set(ad_set_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.update_ad_set(
+        user.get("user_id"), ad_set_id, pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/ad-sets/<ad_set_id>/<action>", methods=["POST"])
+def api_business_os_advertising_ad_set_lifecycle(ad_set_id, action):
+    """Owner ad-set lifecycle verb (submit/withdraw/pause/resume/archive/restore).
+    Unknown actions are rejected 400 by the controller; review approve/reject is
+    admin-only and lives on the admin surface."""
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.ad_set_lifecycle(
+        user.get("user_id"), ad_set_id, action))
+
+
+# --- advertiser creative routes (slice 6) -----------------------------------
+# A creative binds to an ad set + campaign under the same owner. Media is
+# validated against the authoritative media ownership system and destinations are
+# verified/normalized inside the service. Nothing here delivers or renders.
+@webhook_app.route("/api/business-os/advertising/ad-sets/<ad_set_id>/creatives", methods=["POST"])
+def api_business_os_advertising_create_creative(ad_set_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.create_creative(
+        user.get("user_id"), ad_set_id, pulse_ads_json_payload(),
+        context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/ad-sets/<ad_set_id>/creatives", methods=["GET"])
+def api_business_os_advertising_list_creatives_for_ad_set(ad_set_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.list_creatives(
+        user.get("user_id"), ad_set_id=ad_set_id))
+
+
+@webhook_app.route("/api/business-os/advertising/creatives", methods=["GET"])
+def api_business_os_advertising_list_creatives():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    ad_set_filter = (request.args.get("ad_set_id") or "").strip() or None
+    return _bo_ad_reply(_adapi.list_creatives(
+        user.get("user_id"), ad_set_id=ad_set_filter))
+
+
+@webhook_app.route("/api/business-os/advertising/creatives/<creative_id>", methods=["GET"])
+def api_business_os_advertising_get_creative(creative_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.get_creative(user.get("user_id"), creative_id))
+
+
+@webhook_app.route("/api/business-os/advertising/creatives/<creative_id>/readiness", methods=["GET"])
+def api_business_os_advertising_creative_readiness(creative_id):
+    """Owner-scoped DERIVED hierarchy-readiness for a creative. Inputs are kept
+    separate and nothing is stored; this reads state and never delivers."""
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.get_creative_readiness(
+        user.get("user_id"), creative_id))
+
+
+@webhook_app.route("/api/business-os/advertising/creatives/<creative_id>/update", methods=["POST"])
+def api_business_os_advertising_update_creative(creative_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.update_creative(
+        user.get("user_id"), creative_id, pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/creatives/<creative_id>/revise", methods=["POST"])
+def api_business_os_advertising_revise_creative(creative_id):
+    """Materially revise a submitted/approved creative into a NEW version; the
+    reviewed original is left intact (its review history is preserved)."""
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.revise_creative(
+        user.get("user_id"), creative_id, pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/creatives/<creative_id>/<action>", methods=["POST"])
+def api_business_os_advertising_creative_lifecycle(creative_id, action):
+    """Owner creative lifecycle verb (submit/withdraw/archive/restore). Submission
+    enforces the media + destination completeness contract in the service."""
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.creative_lifecycle(
+        user.get("user_id"), creative_id, action))
+
+
+# --- admin routes (owner guard + administrative audit trail) ----------------
+_BO_AD_ADMIN_ACTION_TO_STATUS = {
+    "approve": "approved", "restore": "approved",
+    "reject": "rejected", "suspend": "suspended",
+}
+
+
+@webhook_app.route("/admin/business-os/advertising/advertisers", methods=["GET"])
+def admin_business_os_advertising_list_advertisers():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    status_filter = (request.args.get("status") or "").strip() or None
+    return _bo_ad_reply(_adapi.admin_list_advertisers(status=status_filter))
+
+
+@webhook_app.route("/admin/business-os/advertising/advertisers/<user_id>", methods=["GET"])
+def admin_business_os_advertising_get_advertiser(user_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_get_advertiser(user_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/advertisers/<user_id>/status", methods=["POST"])
+def admin_business_os_advertising_set_advertiser_status(user_id):
+    """Owner-only, flag-gated, CSRF-protected advertiser approval transition.
+
+    Accepts ``action`` in {approve, reject, suspend, restore}. Records the full
+    administrative audit trail (acting admin, target advertiser, previous state,
+    new state, reason if supplied, timestamp via log_admin_audit, request ref)."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    action = (request.form.get("action") or "").strip().lower()
+    status = _BO_AD_ADMIN_ACTION_TO_STATUS.get(action)
+    if not status:
+        return jsonify({"ok": False, "error": "action must be approve|reject|suspend|restore."}), 400
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    result = _adapi.admin_set_advertiser_status(
+        admin["id"], user_id, status, reason=reason)
+    resp_status, body = result
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_advertiser_status", "advertiser", str(user_id),
+            {"action": action, "before_status": body.get("before_status"),
+             "after_status": body.get("after_status"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/review", methods=["POST"])
+def admin_business_os_advertising_review_campaign(campaign_id):
+    """Owner-only, flag-gated, CSRF-protected campaign review decision.
+
+    Accepts ``decision`` (or ``action``) in {approve, reject}; reject requires a
+    ``reason`` (surfaced to the owner). Records the full administrative audit
+    trail (acting admin, target campaign, previous state, new state, reason,
+    timestamp via log_admin_audit, request ref). 'approved' is review-approved
+    only — it funds nothing and activates no delivery."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    decision = (request.form.get("decision") or request.form.get("action") or "").strip().lower()
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_review(
+        admin["id"], campaign_id, decision, reason=reason)
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_campaign_review", "campaign", str(campaign_id),
+            {"decision": decision, "before_status": body.get("before_status"),
+             "after_status": body.get("after_status"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns", methods=["GET"])
+def admin_business_os_advertising_list_campaigns():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    status_filter = (request.args.get("status") or "").strip() or None
+    advertiser_id = (request.args.get("advertiser_user_id") or "").strip() or None
+    return _bo_ad_reply(_adapi.admin_list_campaigns(
+        status=status_filter, advertiser_user_id=advertiser_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>", methods=["GET"])
+def admin_business_os_advertising_get_campaign(campaign_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_get_campaign(campaign_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/funding", methods=["GET"])
+def admin_business_os_advertising_list_funding():
+    """Owner-only, flag-gated cross-owner funding listing. Optional
+    ``funding_status`` filter (e.g. funding_failed) to inspect failed/inconsistent
+    reservations. Read-only — admins can never fabricate balances here."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    status_filter = (request.args.get("funding_status") or "").strip() or None
+    return _bo_ad_reply(_adapi.admin_list_funding(funding_status=status_filter))
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/funding", methods=["GET"])
+def admin_business_os_advertising_get_funding(campaign_id):
+    """Owner-only, flag-gated funding view: state + ledger transaction references
+    + escrow balance + the append-only funding operation log. Read-only; the only
+    way to change ledger state remains the existing protected reconciliation
+    mechanism — admins cannot fabricate balances or bypass ledger rules here."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_get_funding(campaign_id))
+
+
+# --- admin operational routes (slice 5): read + intervention ----------------
+# Owner-guarded. Reads combine review + funding + operational states. The three
+# write interventions (pause, cancel, complete) each record the full admin audit
+# trail (acting admin, target campaign, previous->new operational state, reason,
+# timestamp, request ref). None deliver, auction, or move money; admin cancel
+# does NOT release reserved funds — that stays an explicit funding-service call.
+@webhook_app.route("/admin/business-os/advertising/operations", methods=["GET"])
+def admin_business_os_advertising_list_operations():
+    """Owner-only, flag-gated cross-owner operational listing. Optional
+    ``operational_status`` filter (e.g. active, paused). Read-only."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    status_filter = (request.args.get("operational_status") or "").strip() or None
+    return _bo_ad_reply(_adapi.admin_list_operations(operational_status=status_filter))
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/operational", methods=["GET"])
+def admin_business_os_advertising_get_operational(campaign_id):
+    """Owner-only, flag-gated operational view: review + funding + operational
+    states together plus the full funding projection. Read-only."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_get_operational(campaign_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/operational/pause", methods=["POST"])
+def admin_business_os_advertising_op_pause(campaign_id):
+    """Owner-only admin pause intervention: scheduled/active -> paused."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_pause(admin["id"], campaign_id, {"reason": reason})
+    if body.get("ok"):
+        op = body.get("operational") or {}
+        log_admin_audit(
+            admin["id"], "business_os_campaign_op_pause", "campaign", str(campaign_id),
+            {"after_status": op.get("operational_status"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/operational/cancel", methods=["POST"])
+def admin_business_os_advertising_op_cancel(campaign_id):
+    """Owner-only admin cancel intervention: -> cancelled. Releases NO funds."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_cancel(admin["id"], campaign_id, {"reason": reason})
+    if body.get("ok"):
+        op = body.get("operational") or {}
+        log_admin_audit(
+            admin["id"], "business_os_campaign_op_cancel", "campaign", str(campaign_id),
+            {"after_status": op.get("operational_status"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/operational/complete", methods=["POST"])
+def admin_business_os_advertising_op_complete(campaign_id):
+    """Owner-only authorized path to mark a run finished: active -> completed."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_complete(admin["id"], campaign_id, {"reason": reason})
+    if body.get("ok"):
+        op = body.get("operational") or {}
+        log_admin_audit(
+            admin["id"], "business_os_campaign_op_complete", "campaign", str(campaign_id),
+            {"after_status": op.get("operational_status"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+# --- admin ad-set / creative review routes (slice 6) ------------------------
+# Owner-guarded, flag-gated. Reads expose the object + its parent context and the
+# DERIVED hierarchy-readiness (inputs kept separate, never stored). The two review
+# writes (ad-set + creative approve/reject) each record the full admin audit trail
+# (acting admin, target, object version, previous->new state, reason, timestamp,
+# request ref). Approval is review-approval only — it publishes and delivers
+# nothing; a rejection reason is surfaced to the owner.
+@webhook_app.route("/admin/business-os/advertising/ad-sets", methods=["GET"])
+def admin_business_os_advertising_list_ad_sets():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    status_filter = (request.args.get("status") or "").strip() or None
+    return _bo_ad_reply(_adapi.admin_list_ad_sets(status=status_filter))
+
+
+@webhook_app.route("/admin/business-os/advertising/ad-sets/<ad_set_id>", methods=["GET"])
+def admin_business_os_advertising_get_ad_set(ad_set_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_get_ad_set(ad_set_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/ad-sets/<ad_set_id>/review", methods=["POST"])
+def admin_business_os_advertising_review_ad_set(ad_set_id):
+    """Owner-only, flag-gated, CSRF-protected ad-set review decision (approve|reject);
+    reject requires a reason surfaced to the owner. Records the admin audit trail."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    decision = (request.form.get("decision") or request.form.get("action") or "").strip().lower()
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_review_ad_set(
+        admin["id"], ad_set_id, decision, reason=reason)
+    if body.get("ok"):
+        ad_set = body.get("ad_set") or {}
+        log_admin_audit(
+            admin["id"], "business_os_ad_set_review", "ad_set", str(ad_set_id),
+            {"decision": decision, "before_status": body.get("before_status"),
+             "after_status": body.get("after_status"),
+             "version": ad_set.get("version"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/advertising/creatives", methods=["GET"])
+def admin_business_os_advertising_list_creatives():
+    """Owner-only, flag-gated creative review queue. Defaults to creatives awaiting
+    review (submitted); an optional ``status`` filter overrides that."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    status_filter = (request.args.get("status") or "").strip() or "submitted"
+    return _bo_ad_reply(_adapi.admin_list_creatives(status=status_filter))
+
+
+@webhook_app.route("/admin/business-os/advertising/creatives/<creative_id>", methods=["GET"])
+def admin_business_os_advertising_get_creative(creative_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_get_creative(creative_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/creatives/<creative_id>/readiness", methods=["GET"])
+def admin_business_os_advertising_creative_readiness(creative_id):
+    """Owner-only, flag-gated DERIVED hierarchy-readiness for a creative (trusted
+    read). Inputs kept separate; nothing is stored or delivered."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_get_creative_readiness(creative_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/creatives/<creative_id>/review", methods=["POST"])
+def admin_business_os_advertising_review_creative(creative_id):
+    """Owner-only, flag-gated, CSRF-protected creative review decision (approve|reject);
+    reject requires a reason surfaced to the owner. Records the admin audit trail.
+    Approval is review-approval only — it publishes and delivers nothing."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    decision = (request.form.get("decision") or request.form.get("action") or "").strip().lower()
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_review_creative(
+        admin["id"], creative_id, decision, reason=reason)
+    if body.get("ok"):
+        creative = body.get("creative") or {}
+        log_admin_audit(
+            admin["id"], "business_os_creative_review", "creative", str(creative_id),
+            {"decision": decision, "before_status": body.get("before_status"),
+             "after_status": body.get("after_status"),
+             "version": creative.get("version"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+# =====================================================================
+# Slice 7 — Feed/Reels delivery MVP route adapters (thin; decision logic lives
+# in services.business_os.advertising.api). Viewer identity always comes from the
+# authenticated session (never the body). The whole surface is dark when the flag
+# is off (advertiser 404, admin 409), consistent with slices 2-6. These endpoints
+# move NO money and touch NO legacy pulse_ads_service tables.
+# =====================================================================
+def _bo_ad_fold_idempotency(payload):
+    """Fold an Idempotency-Key header into the payload dict (header wins only when
+    the body did not already carry one). Non-dict payloads are coerced to a dict."""
+    payload = payload if isinstance(payload, dict) else {}
+    try:
+        hdr = request.headers.get("Idempotency-Key") or request.headers.get("X-Idempotency-Key")
+    except Exception:
+        hdr = None
+    if hdr and not payload.get("idempotency_key"):
+        payload = {**payload, "idempotency_key": hdr}
+    return payload
+
+
+@webhook_app.route("/api/business-os/advertising/delivery/<placement>", methods=["POST"])
+def api_business_os_advertising_request_delivery(placement):
+    """Return ONE eligible sponsored Feed/Reels placement (or sponsored:null). The
+    viewer only supplies non-PII request signals; everything authoritative is
+    server-side. No spend, no auction."""
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.request_delivery(
+        user.get("user_id"), placement, pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/deliveries/<delivery_id>/impression", methods=["POST"])
+def api_business_os_advertising_record_impression(delivery_id):
+    """Record ONE idempotent impression for a delivery. The opaque token from the
+    sponsored payload authenticates the display; hierarchy is copied server-side."""
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    payload = _bo_ad_fold_idempotency(pulse_ads_json_payload())
+    return _bo_ad_reply(_adapi.record_impression(
+        user.get("user_id"), delivery_id, payload))
+
+
+@webhook_app.route("/api/business-os/advertising/deliveries/<delivery_id>/click", methods=["POST"])
+def api_business_os_advertising_record_click(delivery_id):
+    """Record ONE idempotent click for a delivery. The destination is SERVER-
+    resolved from the bound creative version; the client supplies none."""
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    payload = _bo_ad_fold_idempotency(pulse_ads_json_payload())
+    return _bo_ad_reply(_adapi.record_click(
+        user.get("user_id"), delivery_id, payload))
+
+
+@webhook_app.route("/admin/business-os/advertising/deliveries", methods=["GET"])
+def admin_business_os_advertising_list_deliveries():
+    """Owner-only, flag-gated, READ-ONLY delivery-instance search (spec §13)."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    args = request.args
+    return _bo_ad_reply(_adapi.admin_list_deliveries(
+        advertiser_user_id=(args.get("advertiser_user_id") or "").strip() or None,
+        campaign_id=(args.get("campaign_id") or "").strip() or None,
+        placement=(args.get("placement") or "").strip() or None,
+        since=(args.get("since") or "").strip() or None,
+        until=(args.get("until") or "").strip() or None,
+        limit=int(args.get("limit") or 100)))
+
+
+@webhook_app.route("/admin/business-os/advertising/deliveries/<delivery_id>", methods=["GET"])
+def admin_business_os_advertising_get_delivery(delivery_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_get_delivery(delivery_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/impressions", methods=["GET"])
+def admin_business_os_advertising_list_impressions():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    args = request.args
+    return _bo_ad_reply(_adapi.admin_list_impressions(
+        delivery_id=(args.get("delivery_id") or "").strip() or None,
+        campaign_id=(args.get("campaign_id") or "").strip() or None,
+        advertiser_user_id=(args.get("advertiser_user_id") or "").strip() or None,
+        fraud_status=(args.get("fraud_status") or "").strip() or None,
+        since=(args.get("since") or "").strip() or None,
+        until=(args.get("until") or "").strip() or None,
+        limit=int(args.get("limit") or 100)))
+
+
+@webhook_app.route("/admin/business-os/advertising/clicks", methods=["GET"])
+def admin_business_os_advertising_list_clicks():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    args = request.args
+    return _bo_ad_reply(_adapi.admin_list_clicks(
+        delivery_id=(args.get("delivery_id") or "").strip() or None,
+        campaign_id=(args.get("campaign_id") or "").strip() or None,
+        advertiser_user_id=(args.get("advertiser_user_id") or "").strip() or None,
+        fraud_status=(args.get("fraud_status") or "").strip() or None,
+        since=(args.get("since") or "").strip() or None,
+        until=(args.get("until") or "").strip() or None,
+        limit=int(args.get("limit") or 100)))
+
+
+# =====================================================================
+# Stage 2 consolidated advertising surfaces (Parts 2/4/6): advertiser
+# reporting + spend, the governed UNDX assistant, advertiser appeals, and the
+# admin billing/fraud/spend-control/restriction/appeal surfaces. Thin adapters
+# only — all decision logic lives in services.business_os.advertising.api. Owner
+# identity is derived from the session/token (never the body); admin routes are
+# owner-guarded, flag-gated (409 when off for admins), CSRF-protected on writes,
+# and persist the full before/after audit trail via log_admin_audit.
+# =====================================================================
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/report", methods=["GET"])
+def api_business_os_advertising_campaign_report(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    args = request.args
+    payload = {}
+    for _k in ("currency", "start", "end", "placement"):
+        _v = (args.get(_k) or "").strip()
+        if _v:
+            payload[_k] = _v
+    return _bo_ad_reply(_adapi.get_campaign_report(
+        user.get("user_id"), campaign_id, payload or None))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/spend", methods=["GET"])
+def api_business_os_advertising_campaign_spend(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    currency = (request.args.get("currency") or "").strip()
+    payload = {"currency": currency} if currency else None
+    return _bo_ad_reply(_adapi.get_campaign_spend(
+        user.get("user_id"), campaign_id, payload))
+
+
+@webhook_app.route("/api/business-os/advertising/assistant/tools", methods=["GET"])
+def api_business_os_advertising_assistant_tools():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.assistant_list_tools(user.get("user_id")))
+
+
+@webhook_app.route("/api/business-os/advertising/assistant/plan", methods=["POST"])
+def api_business_os_advertising_assistant_plan():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.assistant_plan(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/assistant/execute", methods=["POST"])
+def api_business_os_advertising_assistant_execute():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.assistant_execute(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/appeals", methods=["POST"])
+def api_business_os_advertising_submit_appeal():
+    """Advertiser-initiated appeal of a restriction/rejection. Subject is the
+    authenticated owner — never taken from the body."""
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.submit_appeal(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+# --- admin: billing inspection / fraud signals (read-only) ------------------
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/billing", methods=["GET"])
+def admin_business_os_advertising_billing_summary(campaign_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    currency = (request.args.get("currency") or "").strip() or "usd"
+    return _bo_ad_reply(_adapi.admin_billing_summary(campaign_id, {"currency": currency}))
+
+
+@webhook_app.route("/admin/business-os/advertising/billing-events", methods=["GET"])
+def admin_business_os_advertising_billing_events():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    args = request.args
+    return _bo_ad_reply(_adapi.admin_list_billing_events(
+        campaign_id=(args.get("campaign_id") or "").strip() or None,
+        advertiser_user_id=(args.get("advertiser_user_id") or "").strip() or None,
+        billing_status=(args.get("billing_status") or "").strip() or None,
+        limit=int(args.get("limit") or 200)))
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/fraud", methods=["GET"])
+def admin_business_os_advertising_fraud_summary(campaign_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_fraud_summary(campaign_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/flagged", methods=["GET"])
+def admin_business_os_advertising_flagged_events(campaign_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    kind = (request.args.get("kind") or "click").strip() or "click"
+    return _bo_ad_reply(_adapi.admin_list_flagged_events(
+        campaign_id, kind=kind, limit=int(request.args.get("limit") or 200)))
+
+
+# --- admin: governed spend controls (halt / lift) — reason + audit ----------
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/spend/halt", methods=["POST"])
+def admin_business_os_advertising_spend_halt(campaign_id):
+    """Owner-only governed spend halt: active -> paused. Requires a reason;
+    records the before/after administrative audit trail."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_halt_spend(admin["id"], campaign_id, {"reason": reason})
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_spend_halt", "campaign", str(campaign_id),
+            {"before": body.get("before"), "after": body.get("after"),
+             "reason": reason, "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/spend/lift", methods=["POST"])
+def admin_business_os_advertising_spend_lift(campaign_id):
+    """Owner-only governed lift of a spend halt: paused -> active. Requires a
+    reason; records the before/after administrative audit trail."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_lift_spend_halt(admin["id"], campaign_id, {"reason": reason})
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_spend_lift", "campaign", str(campaign_id),
+            {"before": body.get("before"), "after": body.get("after"),
+             "reason": reason, "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+# --- admin: governed advertiser restrictions (restrict / lift) --------------
+@webhook_app.route("/admin/business-os/advertising/advertisers/<user_id>/restrict", methods=["POST"])
+def admin_business_os_advertising_restrict_advertiser(user_id):
+    """Owner-only governed advertiser restriction: approved -> suspended. Requires
+    a reason; records the before/after administrative audit trail."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_restrict_advertiser(admin["id"], user_id, {"reason": reason})
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_advertiser_restrict", "advertiser", str(user_id),
+            {"before_status": body.get("before_status"),
+             "after_status": body.get("after_status"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/advertising/advertisers/<user_id>/lift-restriction", methods=["POST"])
+def admin_business_os_advertising_lift_restriction(user_id):
+    """Owner-only governed lift of an advertiser restriction: suspended ->
+    approved. Requires a reason; records the before/after audit trail."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_lift_restriction(admin["id"], user_id, {"reason": reason})
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_advertiser_lift_restriction", "advertiser", str(user_id),
+            {"before_status": body.get("before_status"),
+             "after_status": body.get("after_status"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+# --- admin: appeals (list + governed resolution) ----------------------------
+@webhook_app.route("/admin/business-os/advertising/appeals", methods=["GET"])
+def admin_business_os_advertising_list_appeals():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    args = request.args
+    return _bo_ad_reply(_adapi.admin_list_appeals(
+        user_id=(args.get("user_id") or "").strip() or None,
+        state=(args.get("state") or "").strip() or None,
+        limit=int(args.get("limit") or 200)))
+
+
+@webhook_app.route("/admin/business-os/advertising/appeals/<appeal_id>/resolve", methods=["POST"])
+def admin_business_os_advertising_resolve_appeal(appeal_id):
+    """Owner-only governed appeal resolution. Accepts ``decision`` in
+    {grant, deny}; requires a reason. A grant lifts the restriction in the same
+    governed action. Records the full administrative audit trail."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    decision = (request.form.get("decision") or request.form.get("action") or "").strip().lower()
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_resolve_appeal(
+        admin["id"], appeal_id, {"decision": decision, "reason": reason})
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_appeal_resolve", "appeal", str(appeal_id),
+            {"decision": decision, "restriction_lifted": body.get("restriction_lifted"),
+             "reason": reason, "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+# =====================================================================
+# Business OS — Marketplace vertical, Stage 3 (canonical HTTP surface).
+#
+# A NEW, clearly-separated canonical commerce surface under
+# /api/business-os/marketplace/* (buyer + seller) and
+# /admin/business-os/marketplace/* (admin). It does NOT redirect, replace, or
+# touch the legacy inline marketplace tables/handlers, and all money math is
+# server-authoritative through the shared canonical ledger. Identity is always
+# derived from the authenticated session/token — never from the request body.
+# When BUSINESS_OS_MARKETPLACE is off the whole surface is dark (404), so no
+# partial canonical path is exposed and legacy behaviour is untouched. All
+# decision logic lives in the importable controller
+# services.business_os.marketplace.api; these are thin adapters.
+# =====================================================================
+def _business_os_marketplace_enabled():
+    return (os.getenv("BUSINESS_OS_MARKETPLACE", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+def _bo_mkt_hold_context(user):
+    """Fresh account state for account-hold precedence (never a stale cache)."""
+    return {
+        "account_status": user.get("account_status"),
+        "access_enabled": user.get("access_enabled"),
+    }
+
+
+def _bo_mkt_form_payload(allowed):
+    """Build a clean payload dict from request.form for admin write routes,
+    keeping only the allowlisted keys (never csrf_token or other noise)."""
+    out = {}
+    for k in allowed:
+        v = request.form.get(k)
+        if v is not None and str(v).strip() != "":
+            out[k] = v
+    return out
+
+
+# --- buyer/seller routes (authenticated; identity = the session/token user) --
+@webhook_app.route("/api/business-os/marketplace/seller", methods=["GET"])
+def api_business_os_marketplace_get_seller():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.get_own_seller(user.get("user_id")))
+
+
+@webhook_app.route("/api/business-os/marketplace/seller", methods=["POST"])
+def api_business_os_marketplace_register_seller():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.register_seller(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/marketplace/products", methods=["POST"])
+def api_business_os_marketplace_create_product():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.create_product(
+        user.get("user_id"), pulse_ads_json_payload(),
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/products", methods=["GET"])
+def api_business_os_marketplace_list_products():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    status_filter = (request.args.get("status") or "").strip() or None
+    return _bo_ad_reply(_mktapi.list_own_products(
+        user.get("user_id"), status=status_filter))
+
+
+@webhook_app.route("/api/business-os/marketplace/products/<product_id>", methods=["GET"])
+def api_business_os_marketplace_get_product(product_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.get_own_product(user.get("user_id"), product_id))
+
+
+@webhook_app.route("/api/business-os/marketplace/products/<product_id>/update", methods=["POST"])
+def api_business_os_marketplace_update_product(product_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.update_product(
+        user.get("user_id"), product_id, pulse_ads_json_payload(),
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/products/<product_id>/inventory", methods=["POST"])
+def api_business_os_marketplace_set_inventory(product_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.set_inventory(
+        user.get("user_id"), product_id, pulse_ads_json_payload(),
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/products/<product_id>/<action>", methods=["POST"])
+def api_business_os_marketplace_product_lifecycle(product_id, action):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.product_lifecycle(
+        user.get("user_id"), product_id, action,
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/storefront", methods=["GET"])
+def api_business_os_marketplace_storefront():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    seller_filter = (request.args.get("seller_user_id") or "").strip() or None
+    return _bo_ad_reply(_mktapi.public_list_products(seller_user_id=seller_filter))
+
+
+@webhook_app.route("/api/business-os/marketplace/storefront/<product_id>", methods=["GET"])
+def api_business_os_marketplace_storefront_product(product_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.public_get_product(product_id))
+
+
+@webhook_app.route("/api/business-os/marketplace/products/<product_id>/reviews", methods=["GET"])
+def api_business_os_marketplace_product_reviews(product_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.product_reviews(product_id))
+
+
+@webhook_app.route("/api/business-os/marketplace/orders", methods=["POST"])
+def api_business_os_marketplace_create_order():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.create_order(
+        user.get("user_id"), pulse_ads_json_payload(),
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/orders", methods=["GET"])
+def api_business_os_marketplace_list_orders():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    role = (request.args.get("role") or "buyer").strip().lower()
+    status_filter = (request.args.get("status") or "").strip() or None
+    return _bo_ad_reply(_mktapi.list_my_orders(
+        user.get("user_id"), role=role, status=status_filter))
+
+
+@webhook_app.route("/api/business-os/marketplace/orders/<order_id>", methods=["GET"])
+def api_business_os_marketplace_get_order(order_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.get_order(user.get("user_id"), order_id))
+
+
+@webhook_app.route("/api/business-os/marketplace/orders/<order_id>/pay", methods=["POST"])
+def api_business_os_marketplace_pay_order(order_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.pay_order(
+        user.get("user_id"), order_id, context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/orders/<order_id>/fulfill", methods=["POST"])
+def api_business_os_marketplace_fulfill_order(order_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.fulfill_order(
+        user.get("user_id"), order_id, pulse_ads_json_payload(),
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/orders/<order_id>/complete", methods=["POST"])
+def api_business_os_marketplace_complete_order(order_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.complete_order(
+        user.get("user_id"), order_id, context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/orders/<order_id>/cancel", methods=["POST"])
+def api_business_os_marketplace_cancel_order(order_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.cancel_order(
+        user.get("user_id"), order_id, pulse_ads_json_payload(),
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/orders/<order_id>/dispute", methods=["POST"])
+def api_business_os_marketplace_open_dispute(order_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.open_dispute(
+        user.get("user_id"), order_id, pulse_ads_json_payload(),
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/reviews", methods=["POST"])
+def api_business_os_marketplace_create_review():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.create_review(
+        user.get("user_id"), pulse_ads_json_payload(),
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/payouts", methods=["GET"])
+def api_business_os_marketplace_payouts():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.seller_payout_balance(user.get("user_id")))
+
+
+@webhook_app.route("/api/business-os/marketplace/appeals", methods=["POST"])
+def api_business_os_marketplace_submit_appeal():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.submit_appeal(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/marketplace/assistant/tools", methods=["GET"])
+def api_business_os_marketplace_assistant_tools():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.assistant_tools(user.get("user_id")))
+
+
+@webhook_app.route("/api/business-os/marketplace/assistant/plan", methods=["POST"])
+def api_business_os_marketplace_assistant_plan():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.assistant_plan(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/marketplace/assistant/execute", methods=["POST"])
+def api_business_os_marketplace_assistant_execute():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.assistant_execute(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+# --- admin marketplace routes (owner-only, flag-gated, CSRF, audited) -------
+@webhook_app.route("/admin/business-os/marketplace/orders", methods=["GET"])
+def admin_business_os_marketplace_list_orders():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.admin_list_orders(
+        admin["id"],
+        buyer_user_id=(request.args.get("buyer_user_id") or "").strip() or None,
+        seller_user_id=(request.args.get("seller_user_id") or "").strip() or None,
+        status=(request.args.get("status") or "").strip() or None))
+
+
+@webhook_app.route("/admin/business-os/marketplace/orders/<order_id>", methods=["GET"])
+def admin_business_os_marketplace_get_order(order_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.admin_get_order(admin["id"], order_id))
+
+
+@webhook_app.route("/admin/business-os/marketplace/orders/<order_id>/refund", methods=["POST"])
+def admin_business_os_marketplace_refund_order(order_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    payload = _bo_mkt_form_payload({"amount_cents", "reason"})
+    resp_status, body = _mktapi.admin_refund_order(admin["id"], order_id, payload)
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_marketplace_refund", "order", str(order_id),
+            {"amount_cents": payload.get("amount_cents"),
+             "reason": payload.get("reason"), "request_ref": _bo_ad_request_ref()})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/marketplace/disputes", methods=["GET"])
+def admin_business_os_marketplace_list_disputes():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.admin_list_disputes(
+        admin["id"], status=(request.args.get("status") or "").strip() or None,
+        order_id=(request.args.get("order_id") or "").strip() or None))
+
+
+@webhook_app.route("/admin/business-os/marketplace/disputes/<dispute_id>/resolve", methods=["POST"])
+def admin_business_os_marketplace_resolve_dispute(dispute_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    payload = _bo_mkt_form_payload({"decision", "reason", "refund_amount_cents"})
+    resp_status, body = _mktapi.admin_resolve_dispute(admin["id"], dispute_id, payload)
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_marketplace_dispute_resolve", "dispute",
+            str(dispute_id), {"decision": payload.get("decision"),
+                              "reason": payload.get("reason"),
+                              "request_ref": _bo_ad_request_ref()})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/marketplace/sellers/<user_id>/restrict", methods=["POST"])
+def admin_business_os_marketplace_restrict_seller(user_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    payload = _bo_mkt_form_payload({"reason"})
+    resp_status, body = _mktapi.admin_restrict_seller(admin["id"], user_id, payload)
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_marketplace_seller_restrict", "seller",
+            str(user_id), {"reason": payload.get("reason"),
+                           "request_ref": _bo_ad_request_ref()})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/marketplace/sellers/<user_id>/lift-restriction", methods=["POST"])
+def admin_business_os_marketplace_lift_seller(user_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    payload = _bo_mkt_form_payload({"reason"})
+    resp_status, body = _mktapi.admin_lift_seller_restriction(admin["id"], user_id, payload)
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_marketplace_seller_lift", "seller",
+            str(user_id), {"reason": payload.get("reason"),
+                           "request_ref": _bo_ad_request_ref()})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/marketplace/appeals", methods=["GET"])
+def admin_business_os_marketplace_list_appeals():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.admin_list_appeals(
+        admin["id"], user_id=(request.args.get("user_id") or "").strip() or None,
+        state=(request.args.get("state") or "").strip() or None))
+
+
+@webhook_app.route("/admin/business-os/marketplace/appeals/<appeal_id>/resolve", methods=["POST"])
+def admin_business_os_marketplace_resolve_appeal(appeal_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    payload = _bo_mkt_form_payload({"decision", "reason"})
+    resp_status, body = _mktapi.admin_resolve_appeal(admin["id"], appeal_id, payload)
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_marketplace_appeal_resolve", "appeal",
+            str(appeal_id), {"decision": payload.get("decision"),
+                             "restriction_lifted": body.get("appeal", {}).get("restriction_lifted"),
+                             "reason": payload.get("reason"),
+                             "request_ref": _bo_ad_request_ref()})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/marketplace/sellers/<user_id>/payout", methods=["GET"])
+def admin_business_os_marketplace_seller_payout(user_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.admin_seller_payout_balance(admin["id"], user_id))
+
+
+@webhook_app.route("/admin/business-os/marketplace/sellers/<user_id>/payout-note", methods=["POST"])
+def admin_business_os_marketplace_payout_note(user_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    payload = _bo_mkt_form_payload({"amount_cents", "provider_reference", "reason", "currency"})
+    resp_status, body = _mktapi.admin_record_payout_note(admin["id"], user_id, payload)
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_marketplace_payout_note", "seller",
+            str(user_id), {"amount_cents": payload.get("amount_cents"),
+                           "provider_reference": payload.get("provider_reference"),
+                           "reason": payload.get("reason"),
+                           "request_ref": _bo_ad_request_ref()})
+    return jsonify(body), resp_status
+
+
+# =====================================================================
+# Business OS — In-App Purchase webhooks (Stage 4).
+# Unauthenticated provider callbacks (Apple ASSN v2 / Google Play RTDN).
+# Decision + verification logic lives in the importable controller
+# services.business_os.entitlements.iap_api; these are thin adapters.
+# DARK 404 when BUSINESS_OS_IAP is off.
+# =====================================================================
+def _business_os_iap_enabled():
+    return (os.getenv("BUSINESS_OS_IAP", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/webhook/business-os/iap/apple", methods=["POST"])
+def webhook_business_os_iap_apple():
+    if not _business_os_iap_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    from services.business_os.entitlements import iap_api as _iapapi
+    body = request.get_json(force=True, silent=True)
+    if body is None:
+        # Apple may post the bare JWS as text/plain; fall back to the raw body.
+        raw = request.get_data(as_text=True) or ""
+        body = raw.strip() or {}
+    status, resp = _iapapi.apple_notification(body)
+    return jsonify(resp), status
+
+
+@webhook_app.route("/webhook/business-os/iap/google", methods=["POST"])
+def webhook_business_os_iap_google():
+    if not _business_os_iap_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    from services.business_os.entitlements import iap_api as _iapapi
+    body = request.get_json(force=True, silent=True) or {}
+    # The Play Developer API purchase-verifier is wired here in production from a
+    # service-account credential; absent that, the controller acknowledges the
+    # push (so Pub/Sub stops retrying) without granting any entitlement.
+    verifier = globals().get("_business_os_google_play_purchase_verifier")
+    status, resp = _iapapi.google_rtdn(body, google_purchase_verifier=verifier)
+    return jsonify(resp), status
+
+
+# =====================================================================
+# Business OS — Crypto intelligence (Stage 5). Informational only: cost-basis /
+# P&L bookkeeping, portfolio read, and durable price alerts. NOTHING here executes
+# a trade or moves funds. Decision logic lives in the importable controller
+# services.business_os.crypto.api; these are thin authenticated adapters.
+# DARK 404 when BUSINESS_OS_CRYPTO is off.
+# =====================================================================
+def _business_os_crypto_enabled():
+    return (os.getenv("BUSINESS_OS_CRYPTO", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/crypto/transactions", methods=["POST"])
+def api_business_os_crypto_record_transaction():
+    if not _business_os_crypto_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.crypto import api as _cryptoapi
+    return _bo_ad_reply(_cryptoapi.record_transaction(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/crypto/portfolio", methods=["GET"])
+def api_business_os_crypto_portfolio():
+    if not _business_os_crypto_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.crypto import api as _cryptoapi
+    return _bo_ad_reply(_cryptoapi.portfolio(user.get("user_id")))
+
+
+@webhook_app.route("/api/business-os/crypto/alerts", methods=["POST"])
+def api_business_os_crypto_create_alert():
+    if not _business_os_crypto_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.crypto import api as _cryptoapi
+    return _bo_ad_reply(_cryptoapi.create_alert(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/crypto/alerts", methods=["GET"])
+def api_business_os_crypto_list_alerts():
+    if not _business_os_crypto_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.crypto import api as _cryptoapi
+    active_only = (request.args.get("active") or "").strip().lower() in (
+        "1", "true", "on", "yes")
+    return _bo_ad_reply(_cryptoapi.list_alerts(
+        user.get("user_id"), active_only=active_only))
+
+
+@webhook_app.route("/api/business-os/crypto/alerts/<alert_id>/delete", methods=["POST"])
+def api_business_os_crypto_delete_alert(alert_id):
+    if not _business_os_crypto_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.crypto import api as _cryptoapi
+    return _bo_ad_reply(_cryptoapi.delete_alert(user.get("user_id"), alert_id))
 
 
 @webhook_app.route("/admin/admins", methods=["GET"])
@@ -35969,7 +38237,11 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
             mobile_bottom_html += f"<button type='button'{active_attr} data-pulse-create-trigger='1' data-pulse-dock-item data-dock-action='{clean_html(action)}' aria-label='Create PulseSoc content'><span class='nav-ico' aria-hidden='true'>{icon_html}</span><span class='nav-label'>Create</span></button>"
         else:
             mobile_bottom_html += f"<a href='{clean_html(href)}'{active_attr} data-pulse-dock-item data-dock-action='{clean_html(action)}' aria-label='{clean_html(label)}'><span class='nav-ico' aria-hidden='true'>{icon_html}</span><span class='nav-label'>{clean_html(label)}</span>{badge}</a>"
-    premium_side = premium_visibility_engine.prompt_html("dashboard", shell_user)
+    # R3.3: the shell upsell card must reflect *currently usable* premium, not raw
+    # ownership, so a suspended owner is not told premium is "enabled across PulseSoc".
+    # Under flag off/shadow this equals ownership, so the rendered HTML is unchanged.
+    _shell_premium_effective, _ = _effective_premium_access(shell_user, premium_visibility_engine.is_premium_user(shell_user))
+    premium_side = premium_visibility_engine.prompt_html("dashboard", shell_user, is_premium_override=_shell_premium_effective)
     default_side = side_html or f"<article class='card'><h2>PulseSoc Intelligence</h2><p>Live community tools, safety signals, creator economy, and learning spaces are connected here.</p></article>{premium_side}"
     live_shell_mode = "data-pulse-live-shell" in (main_html or "")
     shell_body_class = "pulse-home-os pulse-social-os pulse-live-shell-mode" if live_shell_mode else "pulse-home-os pulse-social-os"
@@ -43765,13 +46037,16 @@ def pulse_premium_page():
     entitlements = premium_entitlement_service.get_user_entitlements(uid)
     payment_config = premium_entitlement_service.payment_config_status()
     premium = premium_entitlement_service.is_premium_user(uid) or premium_visibility_engine.is_premium_user(user)
+    # R3.2: keep `premium` as ownership (drives level/renewal so an owner is never shown
+    # as lacking a subscription); derive a separate hold-aware label for usable access.
+    effective_premium, access_denial_reason = _effective_premium_access(user, premium)
     expired = str(user.get("subscription_status") or "").lower() in {"expired", "canceled", "cancelled", "past_due"} and not premium
     founder = bool(founder_info)
     founder_number = int(founder_info.get("founder_number") or 0)
     checkout_ready = founder_checkout_configured()
     has_billing_profile = bool((user.get("stripe_customer_id") or user.get("provider_customer_id") or "").strip())
     level = f"Founder Premium #{founder_number}" if founder_number else "Founder Premium" if founder else "Premium Active" if premium else "Renew Premium" if expired else "Free"
-    status = "Founder active" if founder else "Premium active" if premium else "Premium expired" if expired else "Free PulseSoc"
+    status = "Founder active" if founder else ("Premium paused" if access_denial_reason else "Premium active") if premium else "Premium expired" if expired else "Free PulseSoc"
     renewal = "Lifetime locked at $4.99/month" if founder else clean_html(user.get("pro_expires_at") or user.get("subscription_expires_at") or "Active access") if premium else "Renew to restore tools" if expired else "Founder checkout is being connected. Admin Founder access is available now."
     primary_cta = "Founder Membership Active" if founder else "Activate Founder Membership" if checkout_ready else "Founder checkout is being connected"
     founder_primary_action = (
@@ -67937,6 +70212,47 @@ def pulse_premium_activate_api():
         return jsonify({"ok": False, "message": str(exc), "trace_id": trace_id}), 500
 
 
+def _identity_effects_allowed(user):
+    """R3.1 Business OS slice: account-hold-aware gate for premium identity effects.
+
+    Same strangler pattern as ``_profile_customization_allowed`` but for the
+    distinct ``premium.identity.effects`` capability (kept as its own key so the
+    two capabilities never share a helper). Behaviour by ``BUSINESS_OS_ENTITLEMENTS``:
+
+      * off (default) -> return the legacy result unchanged (byte-for-byte).
+      * shadow        -> serve legacy; facade records a canonical shadow_diff.
+      * canonical     -> facade authoritative (legacy fallback when canonical is
+                         silent), with account-hold precedence: a suspended /
+                         disabled / banned / restricted / access-disabled account
+                         is denied even if legacy says premium.
+
+    Any failure in the entitlement path falls back to the legacy result so the
+    feature can never be broken by the new system. Legacy authority is the same
+    ``premium_visibility_engine.is_premium_user`` the route used before."""
+    legacy_allowed = bool(premium_visibility_engine.is_premium_user(user))
+    try:
+        mode = (os.getenv("BUSINESS_OS_ENTITLEMENTS", "") or "").strip().lower()
+        if mode in ("", "0", "false", "off", "no"):
+            return legacy_allowed
+        from services.business_os.entitlements import facade as _ent_facade
+        uid = int(user.get("user_id") or 0)
+        key = "premium.identity.effects"
+        ent_context = {
+            "account_status": user.get("account_status"),
+            "access_enabled": user.get("access_enabled"),
+        }
+        if mode == "shadow":
+            try:
+                _ent_facade.shadow_compare(uid, key, context=ent_context)
+            except Exception:  # noqa: BLE001
+                logging.exception("entitlement shadow_compare failed uid=%s key=%s", uid, key)
+            return legacy_allowed
+        return bool(_ent_facade.check(uid, key, context=ent_context))
+    except Exception:  # noqa: BLE001
+        logging.exception("entitlement identity-effects check failed; using legacy")
+        return legacy_allowed
+
+
 @webhook_app.route("/api/pulse/premium/identity-effects", methods=["GET", "POST"])
 def pulse_premium_identity_effects_api():
     init_db()
@@ -67950,10 +70266,10 @@ def pulse_premium_identity_effects_api():
         cur.execute("SELECT effect_key, label, effect_type, premium_only, status, metadata_json FROM pulse_identity_effects WHERE status='active' ORDER BY id")
         effects = [dict(row) for row in cur.fetchall()]
         conn.close()
-        return jsonify({"ok": True, "premium": premium_visibility_engine.is_premium_user(user), "effects": effects})
+        return jsonify({"ok": True, "premium": _identity_effects_allowed(user), "effects": effects})
     data = request.get_json(silent=True) or request.form.to_dict()
     effect_key = str(data.get("effect_key") or "founder_gold")[:80]
-    if not premium_visibility_engine.is_premium_user(user):
+    if not _identity_effects_allowed(user):
         conn.close()
         return api_error("Premium identity effects require PulseSoc Premium.", 403)
     now = datetime.utcnow().isoformat(timespec="seconds")
@@ -67969,6 +70285,53 @@ def pulse_premium_identity_effects_api():
     return jsonify({"ok": True, "message": "Identity effect updated.", "effect_key": effect_key})
 
 
+def _profile_customization_allowed(user):
+    """First Business OS entitlement vertical slice: advanced profile customization.
+
+    Strangler wiring around the legacy premium check. Behaviour by
+    ``BUSINESS_OS_ENTITLEMENTS`` mode (resolved inside the facade):
+
+      * off (default)  -> return the legacy result unchanged (zero behaviour change).
+      * shadow         -> serve the legacy result, but let the facade compute the
+                          canonical answer and record a shadow_diff for telemetry.
+      * canonical      -> serve the canonical facade decision (which itself falls
+                          back to legacy when canonical is silent).
+
+    Any failure in the entitlement path falls back to the legacy result so the
+    feature can never be broken by the new system. The legacy authority here is
+    the existing ``premium_visibility_engine.is_premium_user`` so the off-path is
+    byte-for-byte the prior behaviour."""
+    legacy_allowed = bool(premium_visibility_engine.is_premium_user(user))
+    try:
+        mode = (os.getenv("BUSINESS_OS_ENTITLEMENTS", "") or "").strip().lower()
+        if mode in ("", "0", "false", "off", "no"):
+            return legacy_allowed
+        from services.business_os.entitlements import facade as _ent_facade
+        uid = int(user.get("user_id") or 0)
+        key = "premium.profile.customization"
+        # Pass the freshest authoritative account state we already hold in memory so
+        # the facade's account-hold precedence (R3) needs no second DB read and cannot
+        # be bypassed through this route. account_status default 'active'; access_enabled
+        # default 1 (only an explicit 0 is a hold).
+        ent_context = {
+            "account_status": user.get("account_status"),
+            "access_enabled": user.get("access_enabled"),
+        }
+        if mode == "shadow":
+            # Serve legacy; compute+record canonical divergence without changing access.
+            try:
+                _ent_facade.shadow_compare(uid, key, context=ent_context)
+            except Exception:  # noqa: BLE001
+                logging.exception("entitlement shadow_compare failed uid=%s", uid)
+            return legacy_allowed
+        # canonical (or truthy flag): facade is authoritative, with legacy fallback,
+        # and an account hold (suspended/disabled/banned/restricted) overrides premium.
+        return bool(_ent_facade.check(uid, key, context=ent_context))
+    except Exception:  # noqa: BLE001
+        logging.exception("entitlement profile-customization check failed; using legacy")
+        return legacy_allowed
+
+
 @webhook_app.route("/api/pulse/premium/profile-theme", methods=["GET", "POST"])
 def pulse_premium_profile_theme_api():
     init_db()
@@ -67981,7 +70344,7 @@ def pulse_premium_profile_theme_api():
         theme = cur.fetchone()
         conn.close()
         return jsonify({"ok": True, "theme": dict(theme) if theme else {"theme_key": "deep_space", "accent_color": "#32e6b3", "layout_key": "classic", "motion_level": "balanced"}})
-    if not premium_visibility_engine.is_premium_user(user):
+    if not _profile_customization_allowed(user):
         conn.close()
         return api_error("Premium profile themes require PulseSoc Premium.", 403)
     data = request.get_json(silent=True) or request.form.to_dict()
@@ -68086,6 +70449,8 @@ def pulse_creator_dashboard_page():
     media_html = "".join(f"<article class='studio-media-card'><span>{clean_html(m.get('media_type') or 'media')}</span><strong>{clean_html(m.get('original_filename') or 'Uploaded media')}</strong><small>{clean_html(m.get('mime_type') or '')}</small></article>" for m in media_rows) or "<p class='muted'>No uploaded media yet. Upload images or videos from PulseSoc Composer or Reels.</p>"
     tools = [("Hook generator","hook"),("Caption enhancer","caption"),("Reel idea generator","hook"),("Hashtag generator","caption"),("Scam-safe wording checker","virality"),("Education content assistant","caption"),("Live title generator","live-title"),("Community post ideas","hook")]
     tool_html = "".join(f"<button type='button' data-ai-tool='{tool}'>{clean_html(label)}</button>" for label, tool in tools)
+    # R3.2: hold-aware "usable premium" claim for the studio side panel (off/shadow = legacy).
+    _studio_premium_effective, _ = _effective_premium_access(user, premium_visibility_engine.is_premium_user(user))
     main = f"""
     <style>
     body:has(.creator-studio) .wrap{{width:min(100% - 28px,1500px)}}body:has(.creator-studio) .layout{{grid-template-columns:minmax(0,1fr)}}body:has(.creator-studio) .layout>aside{{display:none}}
@@ -68103,7 +70468,7 @@ def pulse_creator_dashboard_page():
         <section class='card' id='media'><h2>Media Library</h2><div class='studio-media-grid'>{media_html}</div></section>
         <section class='studio-section-grid'><article class='card'><h2>Safety / Trust</h2><p>Scam Shield score, flagged content, moderation guidance, trust signals, and creator safety checklist.</p><button type='button' data-ai-tool='virality'>Run Trust Check</button></article><article class='card' id='resources'><h2>Resources</h2><p>Creator guides, better Reels, audience growth, safe selling, live setup, and PulseSoc AI playbooks.</p><a class='button' href='/pulse/teachers'>Open Guides</a></article></section>
       </main>
-      <aside class='studio-right'><section class='card'><h3>PulseSoc Intelligence</h3><p>Total creator items: {total_content}</p><p>{'You have enough activity for useful recommendations.' if total_content >= 5 else 'Create at least five items to unlock stronger recommendations.'}</p></section><section class='card'><h3>Premium</h3><p>{'Premium active.' if premium_visibility_engine.is_premium_user(user) else 'Premium tools are previewing. Activate when checkout opens.'}</p><a class='button primary' href='/pulse/premium'>Open Premium</a></section></aside>
+      <aside class='studio-right'><section class='card'><h3>PulseSoc Intelligence</h3><p>Total creator items: {total_content}</p><p>{'You have enough activity for useful recommendations.' if total_content >= 5 else 'Create at least five items to unlock stronger recommendations.'}</p></section><section class='card'><h3>Premium</h3><p>{'Premium active.' if _studio_premium_effective else 'Premium tools are previewing. Activate when checkout opens.'}</p><a class='button primary' href='/pulse/premium'>Open Premium</a></section></aside>
     </section>
     """
     script = """
@@ -68268,7 +70633,9 @@ def pulse_creator_analytics_page():
         return redirect(url_for("login_page", next=request.path))
     if ios_native_app_request():
         return ios_paid_digital_unavailable_response(api=False)
-    premium = premium_visibility_engine.is_premium_user(user)
+    # R3.2: this `premium` flag gates the *usable* (unlocked) analytics view, so it must
+    # reflect effective access — a suspended owner sees locked previews (off/shadow = legacy).
+    premium, _ = _effective_premium_access(user, premium_visibility_engine.is_premium_user(user))
     cards = [
         ("Audience Heatmap", "Shows when real audience activity clusters."),
         ("Retention Curve", "Highlights where viewers slow down, replay, or drop."),
@@ -68276,7 +70643,9 @@ def pulse_creator_analytics_page():
         ("Trust Graph", "Keeps creator growth tied to safety and reliability."),
     ]
     body = "<section class='grid'>" + "".join(f"<article class='card premium-analytics-preview {'locked' if not premium else ''}'><span class='premium-badge'>{clean_html(name)}</span><p>{clean_html(desc)}</p><div class='premium-energy-meter'><span style='width:{70+i*6}%'></span></div></article>" for i, (name, desc) in enumerate(cards)) + "</section>"
-    body += premium_visibility_engine.prompt_html("creator", user)
+    # R3.3: keep the upsell card consistent with the locked/unlocked previews above by
+    # reusing the same effective flag; off/shadow leaves it equal to ownership (unchanged).
+    body += premium_visibility_engine.prompt_html("creator", user, is_premium_override=premium)
     return pulse_social_shell("Creator Analytics", "Premium analytics previews grounded in real PulseSoc activity, never fake performance claims.", body)
 
 
@@ -70736,6 +73105,7 @@ def api_pulse_feed():
             "intelligence": pulse_feed_engine.safe_intelligence_panel(request.args.get("topic") or ""),
         }
         result["intelligence"]["status_activity"] = {"active_statuses": 0, "unseen_statuses": 0, "live_creators": 0, "engagement_signal": 0, "ranking_weight": "fallback"}
+    _bo_ad_attach_sponsored(user["user_id"], "feed", result)
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
@@ -72441,7 +74811,9 @@ def api_pulse_reels_feed():
             include_preview_comments=include_preview_comments,
         )
         pulse_mark_online(user["user_id"], "reels", request.path)
-        return jsonify({"ok": True, "data": {"reels": payload.get("reels", [])}, "lane": payload.get("lane") or "for_you", "lane_label": payload.get("lane_label") or "For You", "reels": payload.get("reels", []), "categories": payload.get("categories", []), "has_more": payload.get("has_more", False), "next_offset": payload.get("next_offset", 0)})
+        reels_response = {"ok": True, "data": {"reels": payload.get("reels", [])}, "lane": payload.get("lane") or "for_you", "lane_label": payload.get("lane_label") or "For You", "reels": payload.get("reels", []), "categories": payload.get("categories", []), "has_more": payload.get("has_more", False), "next_offset": payload.get("next_offset", 0)}
+        _bo_ad_attach_sponsored(user["user_id"], "reels", reels_response)
+        return jsonify(reels_response)
     except Exception as exc:
         trace_id = secrets.token_hex(6)
         logging.exception("PULSE_REELS_FEED_FAILED trace_id=%s user_id=%s error=%s", trace_id, user.get("user_id"), exc)
@@ -86744,6 +89116,24 @@ def stripe_webhook():
     logging.info("STRIPE_EVENT_TYPE event_type=%s event_id=%s", event_type, event.get("id"))
     logging.info("stripe webhook received event_type=%s event_id=%s", event_type, event.get("id"))
     event_id = event.get("id", "")
+    # --- Business OS strangler hook (flag-gated, non-blocking) ---
+    # Persist the signature-verified event to the durable, idempotent webhook
+    # inbox BEFORE any handler runs. Purely additive: when BUSINESS_OS_LEDGER is
+    # off this is skipped entirely, and any failure here is swallowed so it can
+    # never affect the existing webhook path.
+    if os.getenv("BUSINESS_OS_LEDGER", "").strip().lower() in ("1", "true", "on", "yes"):
+        try:
+            from services.business_os.payments import webhook_inbox as _busos_inbox
+            _busos_inbox.ensure_schema()
+            _busos_inbox.enqueue_event(
+                provider="stripe",
+                provider_event_id=event_id,
+                payload=event,
+                event_type=event_type,
+                signature_verified=bool(STRIPE_WEBHOOK_SECRET),
+            )
+        except Exception:
+            logging.exception("BUSINESS_OS webhook inbox enqueue failed (non-fatal) event_id=%s", event_id)
     webhook_record = creator_economy_service.record_webhook_event(event_id, event_type, event, status="received")
     if webhook_record.get("duplicate"):
         logging.info("Payment webhook duplicate skipped provider_event_id=%s event_type=%s", event_id, event_type)

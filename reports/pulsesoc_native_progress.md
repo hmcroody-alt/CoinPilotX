@@ -5837,3 +5837,17 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
   - Submission id: `13cf0959-ccde-4ac6-bd1f-7c80788d83a4`
   - TestFlight URL: `https://appstoreconnect.apple.com/apps/6777591572/testflight/ios`
 - Physical iPhone `P3r7or` is wired and visible to `devicectl` as paired/available. TestFlight install remains pending until Apple processing exposes build `1.0.1 (2)`.
+
+## Native Issues 3–6 Repair (chat latency, in-app banner, live guest audio, call tones) — 2026-07-24
+
+- Branch: `release/undx-nexus-core-v4`. New commit **`481bb211d85eb3e3cb5b0c27311f8d0898db9686`** (19 files, +1070 / -47). Also unpushed: `e5f566d4` (Issues 1 & 2).
+- Remote relationship: `origin` at `a307b506`; local **2 ahead, 0 behind**, origin tip is an ancestor → clean fast-forward.
+- **Push BLOCKED from the sandbox**: proxy forbids GitHub egress (SSH 22 `Forbidden`; HTTPS 443 `403 after CONNECT`; no token/credential helper). The commit is in the real local repo; run `git push origin release/undx-nexus-core-v4` from the Mac to publish.
+- Git lock root cause: FUSE mount denies `unlink`/`rmdir` but permits `rename`; stale 0-byte `index.lock`/`HEAD.lock` (no owning process) were renamed aside, which unblocked the commit. `git fsck` reports no missing/broken objects (only cosmetic `tmp_obj` unlink warnings).
+- Issue 3 (chat bubble delay): send path awaited `sendTyping(false)` (a round-trip) before inserting the optimistic bubble; made it fire-and-forget and extracted a pure `mergeConversationMessages`. Test `messengerOrdering.test.ts`.
+- Issue 4 (banner won't auto-dismiss / double banner): added `InAppNotificationBanner` + pure `notificationBannerLifecycle` auto-dismiss controller and suppressed the OS foreground banner (kept list/sound/badge). Test `notificationBannerLifecycle.test.ts`.
+- Issue 5 (live host audio + guest join): fixed viewer remote-audio mute leak (reapply `applyRemoteAudioEnabled` on `TrackSubscribed`/`Reconnected`) and gated co-host connect on `canConnectAsCohostPublisher` (publish + real guest slot). Backend traced end-to-end; publish granted only after a guest row exists. Tests `remoteAudioReapply.test.ts`, `cohostPublishGate.test.ts`.
+- Issue 6 (calls + tones): extracted `callToneLifecycle` predicates and added a `toneGeneration` reentrancy guard so a superseded in-flight `Audio.Sound` load self-discards. The guard's first version wrongly captured the generation before the internal `stopCallTone` bump (which would have silenced every tone); the new test caught it and it was corrected. Test `callSignalMediaReentrancy.test.ts`.
+- Automated verification: `tsc --noEmit` EXIT 0; Jest **47 suites / 439 tests PASS**.
+- **Physical/two-user media validation NOT OBSERVED** (no Xcode/simulator/device here). Issues 5 & 6 remain **PARTIAL** until host+guest+viewer iPhones and a real two-user call are tested. `P3r7or` was not updated in this session.
+- Report: `reports/pulsesoc_native_issues_3_to_6_repair_evidence_2026-07-24.md`.
