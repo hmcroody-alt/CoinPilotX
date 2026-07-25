@@ -203,15 +203,23 @@ def test_registry_receipt_and_action_center():
         product_area="marketplace", risk="low")
     req = eng.record_action_request(
         "oAC", "seller:1", "marketplace.product.create", risk="low")
+    # A confirmation reaches 'confirmed' only by being redeemed. This test used to
+    # record it as confirmed directly, which put an approval no human gave into the
+    # action center.
     conf = eng.record_confirmation(
-        "oAC", req["request_id"], "seller:1", "hash:abc", status="confirmed")
+        "oAC", req["request_id"], "seller:1", "hash:abc")
+    assert conf["status"] == "pending", conf
+    redeemed = eng.redeem_confirmation("oAC", req["request_id"], "seller:1", "hash:abc")
+    assert redeemed["status"] == "confirmed", redeemed
     receipt = eng.record_receipt(
         "oAC", "marketplace.product.create", "seller:1", "verified",
         request_id=req["request_id"], canonical_ref="product:p1",
         verification={"status": "draft"})
     center = eng.action_center("oAC")
     assert tool["tool_id"], tool
-    assert conf["status"] == "confirmed", conf
+    assert any(r["confirmation_id"] == conf["confirmation_id"]
+               and r["status"] == "confirmed"
+               for r in center["confirmations"]), center
     assert receipt["status"] == "verified", receipt
     assert any(r["request_id"] == req["request_id"] for r in center["requests"]), center
     assert any(r["canonical_ref"] == "product:p1" for r in center["receipts"]), center

@@ -626,6 +626,46 @@ def test_L4_revocation():
     assert undx_engine.redeem_confirmation(org, rid2, actor, "payload:p-rev2")["redeemed"] is True
 
 
+def test_L4_caller_cannot_file_its_own_approval_as_already_confirmed():
+    """An approval may only become 'confirmed' by being redeemed.
+
+    ``record_confirmation`` is ingestion reachable from an HTTP body, and the org
+    governance dashboard (``action_center``) reports the ``status`` it stores. A caller
+    permitted to write ``status='confirmed'`` therefore mints audit evidence that a
+    human approved an action — the same defect class as trusting a result dict's word
+    for "confirmed". It was never an authorization bypass (``redeem_confirmation``
+    requires ``pending``), so the property under test is the integrity of the trail:
+    no row may read 'confirmed' unless a redemption actually happened.
+    """
+    org, actor = "orgConf", "seller:claim"
+    rid = _undx_request(org, actor, pid="p-claim")
+    for bad in ("confirmed", "expired", "cancelled"):
+        _expect(undx_engine.UndxActionsError,
+                lambda b=bad: undx_engine.record_confirmation(
+                    org, rid, actor, "payload:p-claim", status=b),
+                label=f"L4 self-declared {bad}")
+    # ...nor may it back-date the redemption timestamp on a pending row.
+    _expect(undx_engine.UndxActionsError,
+            lambda: undx_engine.record_confirmation(
+                org, rid, actor, "payload:p-claim",
+                confirmed_at="2020-01-01T00:00:00.000000Z"),
+            label="L4 supplied confirmed_at")
+    # Nothing was written by any of the refusals, and the honest path still works.
+    rows = [r for r in undx_engine.action_center(org)["confirmations"]
+            if r["request_id"] == rid]
+    assert rows == [], f"a refused ingestion still wrote a row: {rows}"
+    opened = undx_engine.record_confirmation(org, rid, actor, "payload:p-claim")
+    assert opened["status"] == "pending", opened
+    row = next(r for r in undx_engine.action_center(org)["confirmations"]
+               if r["confirmation_id"] == opened["confirmation_id"])
+    assert row["status"] == "pending" and not row.get("confirmed_at"), row
+    redeemed = undx_engine.redeem_confirmation(org, rid, actor, "payload:p-claim")
+    assert redeemed["status"] == "confirmed", redeemed
+    row = next(r for r in undx_engine.action_center(org)["confirmations"]
+               if r["confirmation_id"] == opened["confirmation_id"])
+    assert row["status"] == "confirmed" and row["confirmed_at"], row
+
+
 def test_L4_concurrent_redemption_yields_exactly_one_winner():
     org, actor = "orgConf", "seller:race"
     rid = _undx_request(org, actor, pid="p-race")
@@ -741,6 +781,85 @@ def test_L5_expiry_and_revocation():
         assert undx_architecture.consume_confirmation(
             cur, PULSE_USER, g3["confirmation_token"]) is not None
         conn.commit()
+    finally:
+        conn.close()
+
+
+def test_L5_audit_trail_requires_grant_evidence_not_a_claim():
+    """The audit row must record approval only from a redeemed grant.
+
+    Mission XIII requires approvals be *audited*. An audit trail that files an operation
+    as "confirmed" because the executing code said so records nothing an attacker could
+    not also have written, and it is worse than no trail: it manufactures evidence that a
+    human approved something. So the only accepted proof is the grant row itself.
+    """
+    conn, cur = _pulse_conn()
+    try:
+        prepared = undx_architecture.prepare_tool_operation(
+            PULSE_USER, "pulsesoc.notification_preferences.update", "claim-only", "global")
+        assert prepared["confirmation_required"] is True, prepared
+
+        # 1. A self-declared "confirmed" with no grant behind it.
+        claimed = undx_architecture.record_tool_result(
+            cur, PULSE_USER, prepared,
+            {"success": True, "confirmation_state": "confirmed",
+             "canonical_entity_id": "global"},
+            "trace-claim")
+        conn.commit()
+        assert claimed["confirmation_state"] == "missing", claimed
+        assert claimed["verification"]["approved"] is False, claimed
+        assert claimed["status"] == "failed_verification", claimed
+        cur.execute("SELECT confirmation_state FROM pulse_ai_tool_operations "
+                    "WHERE operation_id=?", (prepared["operation_id"],))
+        assert str(dict(cur.fetchone())["confirmation_state"]) == "missing", \
+            "a caller's claim of approval was written into the audit trail"
+
+        # 2. A real grant, redeemed, bound to this action and this actor.
+        g = undx_architecture.create_confirmation(cur, PULSE_USER, _PULSE_ACTION)
+        conn.commit()
+        redeemed = undx_architecture.consume_confirmation(
+            cur, PULSE_USER, g["confirmation_token"],
+            expect_action_id="notifications.preference.update")
+        conn.commit()
+        assert redeemed is not None
+        prepared_ok = undx_architecture.prepare_tool_operation(
+            PULSE_USER, "pulsesoc.notification_preferences.update", "granted", "global")
+        good = undx_architecture.record_tool_result(
+            cur, PULSE_USER, prepared_ok,
+            {"success": True, "canonical_entity_id": "global"}, "trace-grant",
+            confirmation=redeemed,
+            expect_action_id="notifications.preference.update",
+            canonical_verified=True)
+        conn.commit()
+        assert good["confirmation_state"] == "confirmed", good
+        assert good["status"] == "verified", good
+
+        # 3. The same real grant cannot launder a DIFFERENT action, a different actor,
+        #    or an unnamed action, and cannot survive a failed read-back.
+        assert undx_architecture.confirmation_evidence(
+            PULSE_USER, "posts.create", redeemed)["reason"] == "wrong_action"
+        assert undx_architecture.confirmation_evidence(
+            PULSE_OTHER, "notifications.preference.update", redeemed)["reason"] == "wrong_actor"
+        assert undx_architecture.confirmation_evidence(
+            PULSE_USER, None, redeemed)["reason"] == "unspecified_action"
+        assert undx_architecture.confirmation_evidence(
+            PULSE_USER, "notifications.preference.update",
+            {**redeemed, "status": "pending"})["reason"] == "not_consumed"
+
+        prepared_bad = undx_architecture.prepare_tool_operation(
+            PULSE_USER, "pulsesoc.notification_preferences.update", "readback-failed", "global")
+        unverified = undx_architecture.record_tool_result(
+            cur, PULSE_USER, prepared_bad,
+            {"success": True, "canonical_entity_id": "global"}, "trace-readback",
+            confirmation=redeemed,
+            expect_action_id="notifications.preference.update",
+            canonical_verified=False)
+        conn.commit()
+        # Approved, submitted, and still NOT verified: a real approval does not make an
+        # unconfirmed write true.
+        assert unverified["confirmation_state"] == "confirmed", unverified
+        assert unverified["verification"]["approved"] is True, unverified
+        assert unverified["status"] == "failed_verification", unverified
     finally:
         conn.close()
 
@@ -897,11 +1016,13 @@ def _run_standalone():
         test_L4_expiry_is_mandatory_and_client_cannot_extend_it,
         test_L4_legacy_row_with_null_deadline_fails_closed,
         test_L4_revocation,
+        test_L4_caller_cannot_file_its_own_approval_as_already_confirmed,
         test_L4_concurrent_redemption_yields_exactly_one_winner,
         # L5 — PulseSoc per-user confirmations
         test_L5_replay_and_actor_binding,
         test_L5_action_and_payload_binding_checked_before_consumption,
         test_L5_expiry_and_revocation,
+        test_L5_audit_trail_requires_grant_evidence_not_a_claim,
         test_L5_raw_token_never_persisted,
         # execution-result contract
         test_result_contract_unverified_is_not_ok,

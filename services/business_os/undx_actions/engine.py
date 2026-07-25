@@ -351,6 +351,28 @@ def record_confirmation(org_id: str, request_id: str, actor: str, payload_hash: 
                         *, status: str = "pending", expires_at: Optional[str] = None,
                         confirmed_at: Optional[str] = None, meta: Any = None,
                         conn=None) -> dict:
+    """Open a PENDING approval for one exact (org, request, actor, payload).
+
+    ``status`` and ``confirmed_at`` arrive from an HTTP body (``api.record_confirmation``
+    forwards them verbatim), so a caller used to be able to file its own approval as
+    already ``confirmed`` — and ``action_center`` then reported that row to the
+    governance dashboard as an approval a human had given. Nothing could REDEEM such a
+    row (``redeem_confirmation`` requires ``pending``), so this was never an
+    authorization bypass; it was manufactured audit evidence, which is the same defect
+    as trusting a caller's word for "confirmed" anywhere else. An audit trail that
+    records what the caller asserted records nothing an attacker could not also assert.
+
+    So the only status a caller may write is ``pending``. Every other status is reached
+    exclusively through an engine transition that observed the real event:
+    ``confirmed`` via :func:`redeem_confirmation`, ``expired`` via a deadline that has
+    actually passed, ``cancelled`` via :func:`revoke_confirmation`. The refusal is
+    explicit rather than a silent downgrade to ``pending``, because a caller that
+    believes it recorded an approval and did not is worse off than one told plainly.
+    ``confirmed_at`` is likewise stamped at redemption and is not accepted here; the
+    INSERT below also hard-codes ``None`` for it. That second guard is unobservable
+    while the first one stands (mutating it alone changes nothing a caller can see),
+    so it is deliberate defense-in-depth rather than a tested control.
+    """
     org_id = str(org_id or "").strip()
     request_id = str(request_id or "").strip()
     actor = str(actor or "").strip()
@@ -358,6 +380,13 @@ def record_confirmation(org_id: str, request_id: str, actor: str, payload_hash: 
     status_norm = str(status or "pending").strip().lower()
     if status_norm not in {"pending", "confirmed", "expired", "cancelled"}:
         raise UndxActionsError("unknown confirmation status")
+    if status_norm != "pending":
+        raise UndxActionsError(
+            "a recorded confirmation starts pending; "
+            f"{status_norm!r} is reached only by an engine transition")
+    if str(confirmed_at or "").strip():
+        raise UndxActionsError(
+            "confirmed_at is stamped by redeem_confirmation and cannot be supplied")
     if not org_id or not request_id or not actor or not payload_hash:
         raise UndxActionsError("org_id, request_id, actor and payload_hash are required")
     expires_at = _bounded_expiry(expires_at)
@@ -371,7 +400,7 @@ def record_confirmation(org_id: str, request_id: str, actor: str, payload_hash: 
             "(confirmation_id,org_id,request_id,actor,status,payload_hash,expires_at,"
             "confirmed_at,meta_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (cid, org_id, request_id, actor, status_norm, payload_hash, expires_at,
-             confirmed_at, _meta_json(meta), _now()))
+             None, _meta_json(meta), _now()))
         if owned:
             conn.commit()
         return {"confirmation_id": cid, "recorded": True, "status": status_norm}

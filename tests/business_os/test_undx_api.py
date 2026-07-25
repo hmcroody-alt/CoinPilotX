@@ -133,14 +133,24 @@ def test_governance_foundation_surfaces():
     })
     assert st3 == 200, b3
     request_id = b3["result"]["request_id"]
-    st4, b4 = api.record_confirmation({
+    # The HTTP surface must not let a caller file its own approval as already
+    # confirmed: 'confirmed' is reached only by redeeming a pending grant, so a body
+    # asserting it is refused rather than written to the governance audit trail.
+    st_bad, b_bad = api.record_confirmation({
         "org_id": "O2",
         "request_id": request_id,
         "actor": "seller:1",
         "payload_hash": "hash:listing",
         "status": "confirmed",
     })
-    assert st4 == 200 and b4["result"]["status"] == "confirmed", b4
+    assert st_bad == 400 and b_bad["code"] == "invalid_confirmation", (st_bad, b_bad)
+    st4, b4 = api.record_confirmation({
+        "org_id": "O2",
+        "request_id": request_id,
+        "actor": "seller:1",
+        "payload_hash": "hash:listing",
+    })
+    assert st4 == 200 and b4["result"]["status"] == "pending", b4
     st5, b5 = api.record_receipt({
         "org_id": "O2",
         "request_id": request_id,
