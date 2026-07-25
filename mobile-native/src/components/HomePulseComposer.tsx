@@ -18,6 +18,7 @@ import { useComposerMediaQueue } from "../media/useComposerMediaQueue";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { GlobalNavigationIdentity } from "../navigation/GlobalNavigation";
+import { consumeShareComposerHandoff, mergeShareIntoComposerBody } from "../sharing/shareComposerHandoff";
 
 type ComposerMode = CreateComposerMode | "poll" | "scam_report";
 type Visibility = "public" | "followers" | "private";
@@ -32,6 +33,7 @@ type Props = {
   initiallyExpanded?: boolean;
   initialMode?: CreateComposerMode;
   captureReturnNonce?: string;
+  shareHandoffNonce?: string;
 };
 
 const MAX_BODY = 3000;
@@ -85,7 +87,7 @@ type FailedStatusPublish = {
 
 type FailedPublish = FailedPostPublish | FailedReelPublish | FailedStatusPublish;
 
-export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpenRoute, onOpenPreview, identity, initiallyExpanded = false, initialMode = "post", captureReturnNonce = "" }: Props) {
+export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpenRoute, onOpenPreview, identity, initiallyExpanded = false, initialMode = "post", captureReturnNonce = "", shareHandoffNonce = "" }: Props) {
   const [mode, setMode] = useState<ComposerMode>("post");
   const [body, setBody] = useState("");
   const [visibility, setVisibility] = useState<Visibility>("public");
@@ -104,9 +106,11 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
   const [showAudience, setShowAudience] = useState(false);
   const [showTools, setShowTools] = useState(false);
   const [expanded, setExpanded] = useState(initiallyExpanded);
+  const [draftLoaded, setDraftLoaded] = useState(false);
   const mountedRef = useRef(false);
   const skipNextPersistRef = useRef(false);
   const lastCaptureNonceRef = useRef("");
+  const lastShareHandoffNonceRef = useRef("");
   const musicPreviewRef = useRef<Audio.Sound | null>(null);
   const media = useComposerMediaQueue({ contextType: "pulse", contextId: "native-draft", target: "feed", destination: "feed", mode: "post" });
   const characters = body.length;
@@ -138,6 +142,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
       .catch(() => undefined)
       .finally(() => {
         mountedRef.current = true;
+        if (active) setDraftLoaded(true);
       });
     return () => {
       active = false;
@@ -175,6 +180,24 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
       })
       .catch(() => undefined);
   }, [captureReturnNonce, initiallyExpanded, media]);
+
+  useEffect(() => {
+    if (!draftLoaded || !shareHandoffNonce || lastShareHandoffNonceRef.current === shareHandoffNonce) return;
+    lastShareHandoffNonceRef.current = shareHandoffNonce;
+    consumeShareComposerHandoff(shareHandoffNonce)
+      .then((handoff) => {
+        if (!handoff) return;
+        setExpanded(true);
+        setMode(handoff.mode);
+        setBody((current) => mergeShareIntoComposerBody(current, handoff.body));
+        setNote(
+          handoff.mode === "reel"
+            ? "Shared PulseSoc link added. Attach one video, then review before publishing the Reel."
+            : "Shared PulseSoc link added. Review the Status / Story before publishing."
+        );
+      })
+      .catch(() => undefined);
+  }, [draftLoaded, shareHandoffNonce]);
 
   useEffect(() => () => {
     // Leaving the composer must stop any preview (resolvePreviewStop documents

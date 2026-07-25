@@ -20,6 +20,7 @@ import {
 } from "../api/messenger";
 import { RootStackParamList } from "../navigation/types";
 import { buildNativeSharePayload, openSystemShare } from "../sharing/nativeShare";
+import { saveShareComposerHandoff, ShareComposerMode } from "../sharing/shareComposerHandoff";
 import { colors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<RootStackParamList, "PulseShare">;
@@ -35,6 +36,7 @@ export function PulseShareScreen({ route, navigation }: Props) {
   const [showQr, setShowQr] = useState(false);
   const [notice, setNotice] = useState("");
   const sequence = useRef(0);
+  const messengerClientIds = useRef(new Map<number, string>());
 
   useEffect(() => {
     const clean = query.trim();
@@ -77,7 +79,7 @@ export function PulseShareScreen({ route, navigation }: Props) {
       await sendConversationMessage(conversation.conversation_id, {
         body: payload.message,
         message_type: "text",
-        client_message_id: shareClientId(metadata.kind, metadata.url, person.user_id),
+        client_message_id: messengerClientId(messengerClientIds.current, metadata.kind, metadata.url, person.user_id),
         local_created_at: new Date().toISOString()
       });
       setNotice(`Sent to ${person.display_name}.`);
@@ -85,6 +87,28 @@ export function PulseShareScreen({ route, navigation }: Props) {
       setNotice(error instanceof Error ? error.message : "PulseSoc share could not be sent.");
     } finally {
       setSendingUserId(0);
+    }
+  }
+
+  async function openPulseComposer(mode: ShareComposerMode) {
+    setNotice("");
+    try {
+      const handoff = await saveShareComposerHandoff({
+        mode,
+        body: payload.message,
+        url: metadata.url,
+        kind: metadata.kind
+      });
+      navigation.navigate("Tabs", {
+        screen: "Home",
+        params: {
+          openComposer: true,
+          composerMode: mode,
+          shareHandoffNonce: handoff.id
+        }
+      });
+    } catch {
+      setNotice("PulseSoc composer could not open.");
     }
   }
 
@@ -106,6 +130,12 @@ export function PulseShareScreen({ route, navigation }: Props) {
           setShowPeople((value) => !value);
           setShowQr(false);
           setNotice("");
+        }} />
+        <ShareAction label="Status / Story" detail="Review before publishing" onPress={() => {
+          void openPulseComposer("status");
+        }} />
+        <ShareAction label="Create Reel" detail="Add a video and publish" onPress={() => {
+          void openPulseComposer("reel");
         }} />
         <ShareAction label="Copy link" detail="Canonical URL" onPress={() => copyLink().catch(() => setNotice("Link could not be copied."))} />
         <ShareAction label="QR code" detail="Scan to open" onPress={() => {
@@ -180,6 +210,14 @@ function ShareAction({ label, detail, onPress }: { label: string; detail: string
 function shareClientId(kind: string, url: string, recipientId: number) {
   const clean = url.replace(/[^a-z0-9]/gi, "").slice(-36);
   return `native-share-${kind}-${recipientId}-${clean}-${Date.now()}`.slice(0, 120);
+}
+
+function messengerClientId(ids: Map<number, string>, kind: string, url: string, recipientId: number) {
+  const existing = ids.get(recipientId);
+  if (existing) return existing;
+  const created = shareClientId(kind, url, recipientId);
+  ids.set(recipientId, created);
+  return created;
 }
 
 function initials(value: string) {

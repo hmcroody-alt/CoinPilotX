@@ -8,7 +8,12 @@ export type AuthStackParamList = {
 
 export type AppTabParamList = {
   Dashboard: undefined;
-  Home: { openComposer?: boolean; composerMode?: "post" | "status" | "reel"; composerReturnNonce?: string } | undefined;
+  Home: {
+    openComposer?: boolean;
+    composerMode?: "post" | "status" | "reel";
+    composerReturnNonce?: string;
+    shareHandoffNonce?: string;
+  } | undefined;
   Search: { query?: string } | undefined;
   Saved: undefined;
   Groups: undefined;

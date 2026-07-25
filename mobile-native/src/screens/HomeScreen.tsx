@@ -562,6 +562,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             initiallyExpandComposer={Boolean(route.params?.openComposer)}
             initialComposerMode={route.params?.composerMode || "post"}
             captureReturnNonce={route.params?.composerReturnNonce || ""}
+            shareHandoffNonce={route.params?.shareHandoffNonce || ""}
             onRefresh={refreshHome}
             onSelectFeed={selectFeed}
             onOpenUndx={() => navigation.navigate("Tabs", { screen: "PulseAI" })}
@@ -698,6 +699,7 @@ function HomeHeader({
   initiallyExpandComposer,
   initialComposerMode,
   captureReturnNonce,
+  shareHandoffNonce,
   onRefresh,
   onSelectFeed,
   onOpenUndx,
@@ -731,6 +733,7 @@ function HomeHeader({
   initiallyExpandComposer: boolean;
   initialComposerMode: "post" | "status" | "reel";
   captureReturnNonce: string;
+  shareHandoffNonce: string;
   onRefresh: () => void;
   onSelectFeed: (feedKey: string) => void;
   onOpenUndx: () => void;
@@ -769,6 +772,7 @@ function HomeHeader({
             initiallyExpanded={initiallyExpandComposer}
             initialMode={initialComposerMode}
             captureReturnNonce={captureReturnNonce}
+            shareHandoffNonce={shareHandoffNonce}
             identity={identity}
             onCreated={onCreated}
             onOpenCamera={onOpenCamera}

@@ -6,6 +6,7 @@ const mockSearchUsers = jest.fn();
 const mockOpenConversation = jest.fn();
 const mockSendMessage = jest.fn();
 const mockOpenSystemShare = jest.fn();
+const mockSaveComposerHandoff = jest.fn();
 
 jest.mock("expo-clipboard", () => ({
   setStringAsync: (...args: unknown[]) => mockSetString(...args)
@@ -30,6 +31,10 @@ jest.mock("../../sharing/nativeShare", () => {
   };
 });
 
+jest.mock("../../sharing/shareComposerHandoff", () => ({
+  saveShareComposerHandoff: (...args: unknown[]) => mockSaveComposerHandoff(...args)
+}));
+
 import { PulseShareScreen } from "../PulseShareScreen";
 
 const metadata = {
@@ -41,7 +46,7 @@ const metadata = {
 };
 
 function renderScreen() {
-  const navigation = { goBack: jest.fn() };
+  const navigation = { goBack: jest.fn(), navigate: jest.fn() };
   const view = render(
     <PulseShareScreen
       route={{ key: "share", name: "PulseShare", params: metadata } as never}
@@ -65,6 +70,7 @@ describe("PulseSoc native share center", () => {
     mockOpenConversation.mockResolvedValue({ conversation_id: 91 });
     mockSendMessage.mockResolvedValue({ ok: true, message_id: 4 });
     mockOpenSystemShare.mockResolvedValue({ action: "sharedAction" });
+    mockSaveComposerHandoff.mockResolvedValue({ id: "share-handoff-1" });
   });
 
   afterEach(() => {
@@ -106,11 +112,68 @@ describe("PulseSoc native share center", () => {
     await waitFor(() => expect(view.getByText("Sent to Grace Hopper.")).toBeTruthy());
   });
 
+  it("reuses the same Messenger client id when a send is retried", async () => {
+    mockSendMessage.mockRejectedValueOnce(new Error("Temporary delivery interruption."));
+    const view = renderScreen();
+    fireEvent.press(view.getByText("Send in PulseSoc"));
+    fireEvent.changeText(view.getByLabelText("Search PulseSoc recipients"), "Grace");
+    await act(async () => {
+      jest.advanceTimersByTime(300);
+      await Promise.resolve();
+    });
+    const recipient = await view.findByLabelText("Send to Grace Hopper");
+
+    await act(async () => {
+      fireEvent.press(recipient);
+    });
+    await waitFor(() => expect(view.getByText("Temporary delivery interruption.")).toBeTruthy());
+    const firstClientId = mockSendMessage.mock.calls[0][1].client_message_id;
+
+    await act(async () => {
+      fireEvent.press(recipient);
+    });
+    const secondClientId = mockSendMessage.mock.calls[1][1].client_message_id;
+    expect(secondClientId).toBe(firstClientId);
+  });
+
   it("keeps OS destinations available through More apps", async () => {
     const view = renderScreen();
     await act(async () => {
       fireEvent.press(view.getByText("More apps"));
     });
     expect(mockOpenSystemShare).toHaveBeenCalledWith(metadata);
+  });
+
+  it("opens Status / Story and Reel as reviewable internal composer drafts", async () => {
+    const view = renderScreen();
+    await act(async () => {
+      fireEvent.press(view.getByText("Status / Story"));
+    });
+    expect(mockSaveComposerHandoff).toHaveBeenCalledWith(expect.objectContaining({
+      mode: "status",
+      url: metadata.url,
+      kind: metadata.kind
+    }));
+    expect(view.navigation.navigate).toHaveBeenCalledWith("Tabs", {
+      screen: "Home",
+      params: {
+        openComposer: true,
+        composerMode: "status",
+        shareHandoffNonce: "share-handoff-1"
+      }
+    });
+
+    mockSaveComposerHandoff.mockResolvedValueOnce({ id: "share-handoff-2" });
+    await act(async () => {
+      fireEvent.press(view.getByText("Create Reel"));
+    });
+    expect(view.navigation.navigate).toHaveBeenLastCalledWith("Tabs", {
+      screen: "Home",
+      params: {
+        openComposer: true,
+        composerMode: "reel",
+        shareHandoffNonce: "share-handoff-2"
+      }
+    });
   });
 });

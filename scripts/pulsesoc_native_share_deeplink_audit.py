@@ -24,7 +24,9 @@ def main() -> None:
     linking = (NATIVE / "src/navigation/linking.ts").read_text(encoding="utf-8")
     route_actions = (NATIVE / "src/navigation/nativeRouteActions.ts").read_text(encoding="utf-8")
     sharing = (NATIVE / "src/sharing/nativeShare.ts").read_text(encoding="utf-8")
+    share_handoff = (NATIVE / "src/sharing/shareComposerHandoff.ts").read_text(encoding="utf-8")
     share_screen = (NATIVE / "src/screens/PulseShareScreen.tsx").read_text(encoding="utf-8")
+    home_composer = (NATIVE / "src/components/HomePulseComposer.tsx").read_text(encoding="utf-8")
     navigator = (NATIVE / "src/navigation/AppNavigator.tsx").read_text(encoding="utf-8")
     package = json.loads((NATIVE / "package.json").read_text(encoding="utf-8"))
     backend = (ROOT / "bot.py").read_text(encoding="utf-8")
@@ -82,7 +84,14 @@ def main() -> None:
     require('name="PulseShare"' in navigator, "native share center is registered in canonical navigation")
     require("openDirectConversation" in share_screen and "sendConversationMessage" in share_screen,
             "internal sharing reuses canonical PulseSoc Messenger")
-    require("client_message_id" in share_screen, "internal shares carry duplicate-safe Messenger IDs")
+    require("client_message_id" in share_screen and "messengerClientIds" in share_screen,
+            "internal Messenger retries reuse duplicate-safe client IDs")
+    require("saveShareComposerHandoff" in share_screen and '"status"' in share_screen and '"reel"' in share_screen,
+            "Status, Story, and Reel destinations use reviewable native composer handoffs")
+    require("consumeShareComposerHandoff" in home_composer and "mergeShareIntoComposerBody" in home_composer,
+            "internal destination handoffs preserve existing creator drafts")
+    require("MAX_HANDOFF_AGE_MS" in share_handoff and "pulsesoc.com" in share_handoff,
+            "share composer handoffs are bounded, expiring, and canonical-origin restricted")
     require("setStringAsync" in share_screen, "copy-link action uses the native clipboard")
     require("<QRCode" in share_screen, "QR-code sharing is rendered locally from the canonical URL")
     require("openSystemShare" in share_screen, "AirDrop, SMS, email, and external apps remain available")
