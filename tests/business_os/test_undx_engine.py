@@ -266,6 +266,26 @@ def test_confirmation_redemption_is_bound_single_use_and_expiring():
     assert expired_row["status"] == "expired", expired_row
 
 
+def test_action_center_actor_filter_isolates_user_rows():
+    org = "oScoped"
+    for actor in ("user:1", "user:2"):
+        req = eng.record_action_request(
+            org, actor, "marketplace.product.create")
+        eng.record_confirmation(
+            org, req["request_id"], actor, f"payload:{actor}")
+        eng.record_receipt(
+            org, "marketplace.product.create", actor, "verified",
+            request_id=req["request_id"])
+        eng.grant_permission(
+            org, actor, "marketplace.product.create", "allow")
+    eng.evaluate_org(org)
+
+    scoped = eng.action_center(org, actor="user:1")
+    for key in ("requests", "decisions", "confirmations", "receipts", "permissions"):
+        assert scoped[key], (key, scoped)
+        assert all(row["actor"] == "user:1" for row in scoped[key]), (key, scoped[key])
+
+
 def _run_standalone():
     setup_module()
     tests = [
@@ -283,6 +303,7 @@ def _run_standalone():
         test_no_side_effects,
         test_registry_receipt_and_action_center,
         test_confirmation_redemption_is_bound_single_use_and_expiring,
+        test_action_center_actor_filter_isolates_user_rows,
     ]
     passed = 0
     for t in tests:

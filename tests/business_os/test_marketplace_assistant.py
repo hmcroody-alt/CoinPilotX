@@ -33,6 +33,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from services import db  # noqa: E402
+from services.business_os import confirmations as confirmation_grants  # noqa: E402
 from services.business_os.marketplace import schema as mkt_schema  # noqa: E402
 from services.business_os.marketplace import service as svc  # noqa: E402
 from services.business_os.marketplace import orders as orders_mod  # noqa: E402
@@ -313,9 +314,10 @@ def test_token_expires():
     conn = db.connect()
     try:
         conn.execute(
-            f"UPDATE {assistant._CONFIRM_TABLE} SET expires_at = ? WHERE token_hash = ?",
+            f"UPDATE {confirmation_grants.TABLE} SET expires_at = ? "
+            "WHERE token_hash = ?",
             ("2000-01-01T00:00:00.000000Z",
-             assistant._token_hash(p["confirmation_token"])))
+             confirmation_grants.token_hash(p["confirmation_token"])))
         conn.commit()
     finally:
         conn.close()
@@ -431,12 +433,15 @@ def test_raw_token_never_persisted():
     raw = p["confirmation_token"]
     conn = db.connect()
     try:
-        rows = conn.execute(f"SELECT * FROM {assistant._CONFIRM_TABLE}").fetchall()
+        rows = conn.execute(
+            f"SELECT * FROM {confirmation_grants.TABLE} "
+            "WHERE namespace = ? AND subject = ?",
+            (assistant.CONFIRM_NAMESPACE, str(BUYER))).fetchall()
     finally:
         conn.close()
     blob = " ".join(str(dict(r)) for r in rows)
     assert raw not in blob, "raw confirmation token was persisted"
-    assert assistant._token_hash(raw) in blob, "grant row not found by token hash"
+    assert confirmation_grants.token_hash(raw) in blob, "grant row not found by token hash"
 
 
 # --- (p) a redeemed approval is burnt even when the verb itself fails -------

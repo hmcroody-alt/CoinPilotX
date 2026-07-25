@@ -18,22 +18,19 @@ same governance the advertising assistant enforces, applied to commerce:
      (e.g. ``status == 'paid'`` after pay). ``verified`` is only True when canonical state
      confirms it.
 
-This module owns NO tables, and every money movement it can trigger goes through the
-``orders`` verbs, which post to the shared ledger. A dedicated kill switch
+This assistant owns no subsystem-specific tables; confirmation grants live in the
+shared Business OS confirmation service. Every money movement it can trigger goes
+through the ``orders`` verbs, which post to the shared ledger. A dedicated kill switch
 (``BUSINESS_OS_MARKETPLACE_ASSISTANT_DISABLE_WRITES``) disables the write tools without
 touching reads.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
 import os
-import secrets
-from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from services import db as _db
+from services.business_os import confirmations as _cf
 from services.business_os.marketplace import service as _svc
 from services.business_os.marketplace import orders as _ord
 from services.business_os.marketplace import refunds as _rf
@@ -41,34 +38,31 @@ from services.business_os.marketplace.service import MarketplaceError
 
 
 DISABLE_WRITES_ENV = "BUSINESS_OS_MARKETPLACE_ASSISTANT_DISABLE_WRITES"
-_TTL_ENV = "BUSINESS_OS_MARKETPLACE_ASSISTANT_CONFIRM_TTL_SECONDS"
 
-_CONFIRM_TABLE = "business_os_mkt_assistant_confirmations"
-_TTL_DEFAULT = 300
-_TTL_MIN = 30
-_TTL_MAX = 900
+# Approvals live in the shared Business OS confirmation-grant service, namespaced so a
+# marketplace approval can never be redeemed against advertising (or anything else).
+CONFIRM_NAMESPACE = "marketplace"
+_CONFIRM_TABLE = _cf.TABLE
+_token_hash = _cf.token_hash
+
+# Kept for backward compatibility: callers and tests that referenced the marketplace's
+# own TTL knob keep working, but the shared service owns the clamping.
+_TTL_ENV = "BUSINESS_OS_MARKETPLACE_ASSISTANT_CONFIRM_TTL_SECONDS"
 
 
 def _writes_disabled() -> bool:
     return str(os.environ.get(DISABLE_WRITES_ENV) or "").strip().lower() in {"1", "true", "on", "yes"}
 
 
-def _ttl_seconds() -> int:
+def _ttl_override() -> Optional[int]:
+    """Subsystem-specific TTL override, if the operator pinned one."""
     raw = os.environ.get(_TTL_ENV)
+    if raw in (None, ""):
+        return None
     try:
-        val = int(str(raw).strip()) if raw not in (None, "") else _TTL_DEFAULT
+        return int(str(raw).strip())
     except (TypeError, ValueError):
-        val = _TTL_DEFAULT
-    return max(_TTL_MIN, min(val, _TTL_MAX))
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _iso(dt: datetime) -> str:
-    """Fixed-width UTC stamp. Same shape service.py uses, so it sorts lexicographically."""
-    return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        return None
 
 
 # --- canonical parameter normalization --------------------------------------
@@ -100,136 +94,37 @@ def _norm_params(tool: str, params: dict) -> dict:
     return out
 
 
-# --- confirmation grants ----------------------------------------------------
-# An approval is a ROW, not a derivable hash. A derived hash is reproducible from
-# (salt, user, tool, params), so it is valid forever and reusable without limit —
-# an operator who approves "publish product X" once has, in effect, approved every
-# future publish of X. A stored grant is bound to one actor, one tool, one canonical
-# payload, expires, and is consumed exactly once. The raw token is never persisted;
-# only its sha256 is, so a database read cannot yield a usable approval.
-
-def _params_hash(tool: str, canonical: dict) -> str:
-    payload = json.dumps({"t": tool, "p": canonical}, sort_keys=True,
-                         separators=(",", ":"), default=str)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _token_hash(raw: str) -> str:
-    return hashlib.sha256(str(raw).encode("utf-8")).hexdigest()
-
-
-def _ensure_confirm_table(conn) -> None:
-    conn.execute(
-        f"""
-        CREATE TABLE IF NOT EXISTS {_CONFIRM_TABLE} (
-            token_hash TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            tool TEXT NOT NULL,
-            params_hash TEXT NOT NULL,
-            params_json TEXT,
-            status TEXT NOT NULL DEFAULT 'pending',
-            expires_at TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            consumed_at TEXT
-        )
-        """
-    )
-
+# --- confirmation grants (delegated to the shared service) -------------------
+# An approval is a ROW in ``services.business_os.confirmations``, not a derivable hash.
+# A derived hash is reproducible from (salt, user, tool, params), so it stays valid
+# forever and is reusable without limit — approving "publish product X" once would
+# approve every future publish of X. The shared grant is bound to one actor, one tool
+# and one canonical payload, expires, is revocable, and is consumed exactly once.
 
 def _mint_confirmation(user_id: Any, tool: str, canonical: dict) -> tuple:
-    """Create a single-use, time-limited approval and return (raw_token, expires_at)."""
-    raw = secrets.token_urlsafe(32)
-    now = _now()
-    expires = now + timedelta(seconds=_ttl_seconds())
-    conn = _db.connect()
-    try:
-        _ensure_confirm_table(conn)
-        conn.execute(
-            f"INSERT INTO {_CONFIRM_TABLE} (token_hash, user_id, tool, params_hash, "
-            "params_json, status, expires_at, created_at) "
-            "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
-            (_token_hash(raw), _svc._sid(user_id), tool,
-             _params_hash(tool, canonical),
-             json.dumps(canonical, sort_keys=True, default=str),
-             _iso(expires), _iso(now)))
-        conn.commit()
-    finally:
-        conn.close()
-    return raw, _iso(expires)
+    """Mint a marketplace-namespaced grant. Returns (raw_token, grant_metadata)."""
+    grant = _cf.mint(CONFIRM_NAMESPACE, _svc._sid(user_id), tool, canonical,
+                     ttl_override=_ttl_override())
+    return grant["confirmation_token"], grant
 
 
 def _consume_confirmation(user_id: Any, tool: str, canonical: dict, raw: str) -> None:
-    """Atomically redeem an approval, or raise. Never reveals why a token is unknown.
+    """Redeem the approval or raise a MarketplaceError carrying the shared code.
 
-    Distinguishes the failure modes the caller can legitimately act on:
-      * unknown / forged / wrong actor / wrong tool / edited payload -> 409 confirmation_mismatch
-      * expired                                                     -> 409 confirmation_expired
-      * already redeemed (replay)                                   -> 409 confirmation_used
-      * explicitly revoked                                          -> 409 confirmation_revoked
+    Codes are re-raised unchanged so the governance contract reads identically through
+    every subsystem's API: 428 ``confirmation_required``, 409 ``confirmation_mismatch``
+    / ``confirmation_expired`` / ``confirmation_used`` / ``confirmation_revoked``.
     """
-    th = _token_hash(raw)
-    conn = _db.connect()
     try:
-        _ensure_confirm_table(conn)
-        row = _svc._row(conn.execute(
-            f"SELECT * FROM {_CONFIRM_TABLE} WHERE token_hash = ?", (th,)).fetchone())
-        if row is None:
-            raise MarketplaceError(
-                "Confirmation token does not match this exact action.",
-                409, "confirmation_mismatch")
-
-        # Binding checks BEFORE status/expiry so a mis-bound token never reports
-        # "expired"/"used" — that would confirm the token exists to a guesser.
-        if (str(row.get("user_id")) != _svc._sid(user_id)
-                or str(row.get("tool")) != tool
-                or str(row.get("params_hash")) != _params_hash(tool, canonical)):
-            raise MarketplaceError(
-                "Confirmation token does not match this exact action.",
-                409, "confirmation_mismatch")
-
-        status = str(row.get("status") or "")
-        if status == "revoked":
-            raise MarketplaceError("This confirmation was revoked.",
-                                   409, "confirmation_revoked")
-        if status != "pending":
-            raise MarketplaceError(
-                "This confirmation was already used. Confirm the action again.",
-                409, "confirmation_used")
-        if str(row.get("expires_at") or "") <= _iso(_now()):
-            raise MarketplaceError(
-                "This confirmation expired. Confirm the action again.",
-                409, "confirmation_expired")
-
-        # Single-use: only the caller whose UPDATE actually flips 'pending' proceeds.
-        cur = conn.execute(
-            f"UPDATE {_CONFIRM_TABLE} SET status = 'consumed', consumed_at = ? "
-            "WHERE token_hash = ? AND status = 'pending'", (_iso(_now()), th))
-        if int(getattr(cur, "rowcount", 0) or 0) != 1:
-            conn.rollback()
-            raise MarketplaceError(
-                "This confirmation was already used. Confirm the action again.",
-                409, "confirmation_used")
-        conn.commit()
-    finally:
-        conn.close()
+        _cf.consume(CONFIRM_NAMESPACE, _svc._sid(user_id), tool, canonical, raw)
+    except _cf.ConfirmationError as exc:
+        raise MarketplaceError(str(exc), exc.http_status, exc.code) from exc
 
 
 def revoke_confirmation(user_id: Any, confirmation_token: str) -> dict:
     """Withdraw an approval before it is redeemed. Only its own actor may revoke it."""
     _svc._require_enabled()
-    th = _token_hash(confirmation_token)
-    conn = _db.connect()
-    try:
-        _ensure_confirm_table(conn)
-        cur = conn.execute(
-            f"UPDATE {_CONFIRM_TABLE} SET status = 'revoked' "
-            "WHERE token_hash = ? AND user_id = ? AND status = 'pending'",
-            (th, _svc._sid(user_id)))
-        revoked = int(getattr(cur, "rowcount", 0) or 0) == 1
-        conn.commit()
-    finally:
-        conn.close()
-    return {"ok": True, "revoked": revoked}
+    return _cf.revoke(CONFIRM_NAMESPACE, _svc._sid(user_id), confirmation_token)
 
 
 # --- write handlers + verifiers ---------------------------------------------
@@ -406,12 +301,12 @@ def plan(user_id: Any, tool: str, params: Optional[dict] = None) -> dict:
         return {"tool": tool, "requires_confirmation": False, "write": False, "result": result}
     canonical = _norm_params(tool, params)
     _requires_id(tool, canonical)
-    token, expires_at = _mint_confirmation(user_id, tool, canonical)
+    token, grant = _mint_confirmation(user_id, tool, canonical)
     return {
         "tool": tool, "requires_confirmation": True, "write": True,
         "risk": spec.get("risk", "high"), "canonical_params": canonical,
         "summary": spec.get("summary"), "confirmation_token": token,
-        "expires_at": expires_at, "ttl_seconds": _ttl_seconds(),
+        "expires_at": grant["expires_at"], "ttl_seconds": grant["ttl_seconds"],
         "single_use": True,
     }
 

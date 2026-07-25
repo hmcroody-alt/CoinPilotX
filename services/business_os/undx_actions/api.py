@@ -18,7 +18,7 @@ creator-commerce controllers exactly):
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, Optional
 
 from services.business_os.undx_actions import schema as _schema
 from services.business_os.undx_actions import engine as _engine
@@ -290,7 +290,8 @@ def permissions_report(org_id: str, actor: str = "", limit: int = 200) -> tuple:
                                              limit=int(limit or 200))}})
 
 
-def action_center_report(org_id: str, limit: int = 100) -> tuple:
+def action_center_report(org_id: str, limit: int = 100,
+                         actor: str = "") -> tuple:
     if not is_enabled():
         return _dark()
     org_id = str(org_id or "").strip()
@@ -298,13 +299,16 @@ def action_center_report(org_id: str, limit: int = 100) -> tuple:
         return _bad("missing_fields", "org_id is required.")
     ensure_ready()
     try:
-        result = _engine.action_center(org_id, limit=int(limit or 100))
+        result = _engine.action_center(
+            org_id, actor=(actor or None), limit=int(limit or 100))
     except _engine.UndxActionsError as e:
         return _bad("invalid_request", str(e))
     return (200, {"ok": True, "result": result})
 
 
-def marketplace_create_listing_draft(user_id: Any, payload: Any) -> tuple:
+def marketplace_create_listing_draft(user_id: Any, payload: Any, *,
+                                     trusted_org_id: Optional[str] = None,
+                                     trusted_actor: Optional[str] = None) -> tuple:
     """Create a Marketplace listing draft through UNDX governance.
 
     Required payload fields: org_id, actor, listing. The listing is normalized into
@@ -314,13 +318,15 @@ def marketplace_create_listing_draft(user_id: Any, payload: Any) -> tuple:
         return _dark()
     if not isinstance(payload, dict):
         return _bad("missing_payload", "Expected a JSON body.")
-    if not payload.get("org_id") or not payload.get("actor") or not isinstance(payload.get("listing"), dict):
+    org_id = trusted_org_id or payload.get("org_id")
+    actor = trusted_actor or payload.get("actor")
+    if not org_id or not actor or not isinstance(payload.get("listing"), dict):
         return _bad("missing_fields", "org_id, actor and listing are required.")
     ensure_ready()
     try:
         result = _marketplace.create_listing_draft(
-            org_id=payload.get("org_id"),
-            actor=payload.get("actor"),
+            org_id=org_id,
+            actor=actor,
             user_id=user_id,
             listing=payload.get("listing"),
             source=(payload.get("source") or "undx_marketplace"),
@@ -330,18 +336,22 @@ def marketplace_create_listing_draft(user_id: Any, payload: Any) -> tuple:
     return (200 if result.get("ok") else 409, {"ok": bool(result.get("ok")), "result": result})
 
 
-def marketplace_plan_publish(user_id: Any, payload: Any) -> tuple:
+def marketplace_plan_publish(user_id: Any, payload: Any, *,
+                             trusted_org_id: Optional[str] = None,
+                             trusted_actor: Optional[str] = None) -> tuple:
     if not is_enabled():
         return _dark()
     if not isinstance(payload, dict):
         return _bad("missing_payload", "Expected a JSON body.")
-    if not payload.get("org_id") or not payload.get("actor") or not payload.get("product_id"):
+    org_id = trusted_org_id or payload.get("org_id")
+    actor = trusted_actor or payload.get("actor")
+    if not org_id or not actor or not payload.get("product_id"):
         return _bad("missing_fields", "org_id, actor and product_id are required.")
     ensure_ready()
     try:
         result = _marketplace.plan_publish_listing(
-            org_id=payload.get("org_id"),
-            actor=payload.get("actor"),
+            org_id=org_id,
+            actor=actor,
             user_id=user_id,
             product_id=payload.get("product_id"),
             source=(payload.get("source") or "undx_marketplace"),
@@ -351,20 +361,24 @@ def marketplace_plan_publish(user_id: Any, payload: Any) -> tuple:
     return (200 if result.get("ok") else 409, {"ok": bool(result.get("ok")), "result": result})
 
 
-def marketplace_execute_publish(user_id: Any, payload: Any) -> tuple:
+def marketplace_execute_publish(user_id: Any, payload: Any, *,
+                                trusted_org_id: Optional[str] = None,
+                                trusted_actor: Optional[str] = None) -> tuple:
     if not is_enabled():
         return _dark()
     if not isinstance(payload, dict):
         return _bad("missing_payload", "Expected a JSON body.")
-    required = ("org_id", "actor", "request_id", "product_id", "confirmation_token")
-    if any(not payload.get(k) for k in required):
+    org_id = trusted_org_id or payload.get("org_id")
+    actor = trusted_actor or payload.get("actor")
+    required = ("request_id", "product_id", "confirmation_token")
+    if not org_id or not actor or any(not payload.get(k) for k in required):
         return _bad("missing_fields",
                     "org_id, actor, request_id, product_id and confirmation_token are required.")
     ensure_ready()
     try:
         result = _marketplace.execute_publish_listing(
-            org_id=payload.get("org_id"),
-            actor=payload.get("actor"),
+            org_id=org_id,
+            actor=actor,
             user_id=user_id,
             request_id=payload.get("request_id"),
             product_id=payload.get("product_id"),

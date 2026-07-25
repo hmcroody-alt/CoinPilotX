@@ -223,6 +223,29 @@ def test_controller_surface_for_draft_and_publish():
     assert st3 == 200 and b3["ok"] is True, b3
 
 
+def test_controller_trusted_identity_overrides_client_actor_and_org():
+    trusted_org = "trusted_org"
+    trusted_actor = "user:seller_42"
+    eng.grant_permission(
+        trusted_org, trusted_actor, wf.ACTION_CREATE, "allow")
+    st, body = undx_api.marketplace_create_listing_draft(
+        USER_ID,
+        {
+            "org_id": "attacker_org",
+            "actor": "user:someone_else",
+            "listing": _listing("Trusted Identity Draft"),
+        },
+        trusted_org_id=trusted_org,
+        trusted_actor=trusted_actor)
+    assert st == 200 and body["ok"] is True, body
+    center = eng.action_center(trusted_org, actor=trusted_actor)
+    request_id = body["result"]["request"]["request_id"]
+    assert any(row["request_id"] == request_id
+               and row["actor"] == trusted_actor
+               for row in center["requests"]), center
+    assert eng.action_center("attacker_org", actor="user:someone_else")["requests"] == []
+
+
 def _run_standalone():
     setup_module()
     tests = [
@@ -233,6 +256,7 @@ def _run_standalone():
         test_emergency_stop_after_plan_blocks_execution,
         test_emergency_stop_blocks_publish,
         test_controller_surface_for_draft_and_publish,
+        test_controller_trusted_identity_overrides_client_actor_and_org,
     ]
     passed = 0
     for t in tests:

@@ -1,7 +1,7 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   createUndxMarketplaceListingDraft,
   executeUndxMarketplaceListingPublish,
@@ -21,7 +21,7 @@ const DEFAULT_ORG_ID = "coinplotxai";
 
 export function UndxActionCenterScreen({ route }: Props) {
   const orgId = route.params?.orgId || DEFAULT_ORG_ID;
-  const actor = route.params?.actor || "";
+  const actor = route.params?.actor || "authenticated-user";
   const [snapshot, setSnapshot] = useState<AnyRecord | null>(null);
   const [tools, setTools] = useState<AnyRecord[]>([]);
   const [permissions, setPermissions] = useState<AnyRecord[]>([]);
@@ -30,7 +30,6 @@ export function UndxActionCenterScreen({ route }: Props) {
   const [error, setError] = useState("");
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const [workflowMessage, setWorkflowMessage] = useState("");
-  const [actorInput, setActorInput] = useState(actor);
   const [listingTitle, setListingTitle] = useState("");
   const [listingDescription, setListingDescription] = useState("");
   const [priceCents, setPriceCents] = useState("");
@@ -38,6 +37,7 @@ export function UndxActionCenterScreen({ route }: Props) {
   const [productId, setProductId] = useState("");
   const [publishRequestId, setPublishRequestId] = useState("");
   const [confirmationToken, setConfirmationToken] = useState("");
+  const [publishPlan, setPublishPlan] = useState<AnyRecord | null>(null);
 
   const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
     setError("");
@@ -142,7 +142,6 @@ export function UndxActionCenterScreen({ route }: Props) {
         <Text style={styles.sectionTitle}>Governed Marketplace workflow</Text>
         <Text style={styles.empty}>Creates drafts and publishes only through UNDX governance, Marketplace assistant confirmation, and canonical Marketplace verification.</Text>
         {workflowMessage ? <Text style={workflowMessage.toLowerCase().includes("failed") || workflowMessage.toLowerCase().includes("error") ? styles.workflowError : styles.workflowNotice}>{workflowMessage}</Text> : null}
-        <TextInput style={styles.input} value={actorInput} onChangeText={setActorInput} placeholder="Actor, for example user:7" placeholderTextColor={colors.muted} autoCapitalize="none" />
         <TextInput style={styles.input} value={listingTitle} onChangeText={setListingTitle} placeholder="Listing title" placeholderTextColor={colors.muted} />
         <TextInput style={[styles.input, styles.textArea]} value={listingDescription} onChangeText={setListingDescription} placeholder="Listing description" placeholderTextColor={colors.muted} multiline />
         <View style={styles.inputRow}>
@@ -156,13 +155,27 @@ export function UndxActionCenterScreen({ route }: Props) {
           <TextInput style={[styles.input, styles.inputHalf]} value={productId} onChangeText={setProductId} placeholder="Product ID" placeholderTextColor={colors.muted} autoCapitalize="none" />
           <TextInput style={[styles.input, styles.inputHalf]} value={publishRequestId} onChangeText={setPublishRequestId} placeholder="Request ID" placeholderTextColor={colors.muted} autoCapitalize="none" />
         </View>
-        <TextInput style={styles.input} value={confirmationToken} onChangeText={setConfirmationToken} placeholder="Confirmation token from publish plan" placeholderTextColor={colors.muted} autoCapitalize="none" />
+        {publishPlan ? (
+          <View style={styles.planCard} accessibilityRole="summary">
+            <View style={styles.rowHead}>
+              <Text style={styles.planTitle}>Publish approval ready</Text>
+              <Text style={styles.planRisk}>{asText(publishPlan.risk || "high")} risk</Text>
+            </View>
+            <Text style={styles.planText}>{asText(publishPlan.summary || "Publish this Marketplace product.")}</Text>
+            <Text style={styles.rowMeta}>Single use · expires {formatExpiry(publishPlan.expires_at)}</Text>
+          </View>
+        ) : null}
         <View style={styles.inputRow}>
           <Pressable style={[styles.secondaryWorkflowButton, workflowBusy ? styles.workflowButtonDisabled : undefined]} disabled={workflowBusy} onPress={() => runPlanPublish().catch(() => undefined)} accessibilityRole="button">
             <Text style={styles.secondaryWorkflowText}>Plan publish</Text>
           </Pressable>
-          <Pressable style={[styles.workflowButton, workflowBusy ? styles.workflowButtonDisabled : undefined]} disabled={workflowBusy} onPress={() => runExecutePublish().catch(() => undefined)} accessibilityRole="button">
-            <Text style={styles.workflowButtonText}>Execute publish</Text>
+          <Pressable
+            style={[styles.workflowButton, workflowBusy || !confirmationToken || !publishRequestId ? styles.workflowButtonDisabled : undefined]}
+            disabled={workflowBusy || !confirmationToken || !publishRequestId}
+            onPress={requestExecutePublish}
+            accessibilityRole="button"
+          >
+            <Text style={styles.workflowButtonText}>Review and publish</Text>
           </Pressable>
         </View>
       </View>
@@ -175,7 +188,7 @@ export function UndxActionCenterScreen({ route }: Props) {
     try {
       const result = await createUndxMarketplaceListingDraft({
         org_id: orgId,
-        actor: actorInput.trim(),
+        actor,
         listing: {
           title: listingTitle.trim(),
           description: listingDescription.trim(),
@@ -199,7 +212,7 @@ export function UndxActionCenterScreen({ route }: Props) {
     try {
       const result = await planUndxMarketplaceListingPublish({
         org_id: orgId,
-        actor: actorInput.trim(),
+        actor,
         product_id: productId.trim()
       });
       const plan = asRecord(asRecord(result.result).plan);
@@ -207,6 +220,7 @@ export function UndxActionCenterScreen({ route }: Props) {
       const token = asText(plan.confirmation_token || plan.token);
       const requestId = asText(confirmation.request_id || asRecord(asRecord(result.result).request).request_id);
       if (token) setConfirmationToken(token);
+      setPublishPlan(token ? plan : null);
       if (requestId) setPublishRequestId(requestId);
       setWorkflowMessage(result.ok ? "Publish plan created. Review confirmation token before execute." : result.error || "Publish plan did not complete.");
       await load("refresh");
@@ -223,18 +237,37 @@ export function UndxActionCenterScreen({ route }: Props) {
     try {
       const result = await executeUndxMarketplaceListingPublish({
         org_id: orgId,
-        actor: actorInput.trim(),
+        actor,
         request_id: publishRequestId.trim(),
         product_id: productId.trim(),
         confirmation_token: confirmationToken.trim()
       });
       setWorkflowMessage(result.ok ? "Publish execution verified by Marketplace." : result.error || "Publish execution did not verify.");
+      if (result.ok) {
+        setConfirmationToken("");
+        setPublishPlan(null);
+      }
       await load("refresh");
     } catch (runError) {
       setWorkflowMessage(runError instanceof Error ? runError.message : "Publish execution failed.");
     } finally {
       setWorkflowBusy(false);
     }
+  }
+
+  function requestExecutePublish() {
+    if (!confirmationToken || !publishRequestId) return;
+    Alert.alert(
+      "Publish Marketplace listing?",
+      `${asText(publishPlan?.summary || "This makes the product visible and orderable.")}\n\nProduct ${productId}\nApproval expires ${formatExpiry(publishPlan?.expires_at)}.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Publish",
+          onPress: () => runExecutePublish().catch(() => undefined)
+        }
+      ]
+    );
   }
 }
 
@@ -291,6 +324,16 @@ function asText(value: unknown): string {
 
 function rowKey(item: AnyRecord, index: number, prefix: string) {
   return `${prefix}:${asText(item.request_id || item.tool_name || item.permission_id || item.receipt_id || item.policy_id || item.created_at || index)}`;
+}
+
+function formatExpiry(value: unknown) {
+  const raw = asText(value);
+  if (!raw) return "soon";
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? raw : date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit"
+  });
 }
 
 const styles = StyleSheet.create({
@@ -507,6 +550,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     color: colors.danger,
     padding: logiNexus.spacing.md
+  },
+  planCard: {
+    backgroundColor: colors.signalDim,
+    borderColor: `${colors.intelligence}88`,
+    borderRadius: logiNexus.radius.large,
+    borderWidth: 1,
+    gap: logiNexus.spacing.sm,
+    padding: logiNexus.spacing.md
+  },
+  planTitle: {
+    ...logiNexus.typography.sectionTitle,
+    color: colors.text,
+    flex: 1
+  },
+  planRisk: {
+    ...logiNexus.typography.metadata,
+    color: colors.intelligence,
+    textTransform: "uppercase"
+  },
+  planText: {
+    ...logiNexus.typography.body,
+    color: colors.muted
   },
   workflowButton: {
     alignItems: "center",

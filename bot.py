@@ -20414,11 +20414,22 @@ def _business_os_undx_actions_enabled():
         "1", "true", "on", "yes", "enabled", "canonical")
 
 
+def _business_os_undx_user_scope(user):
+    """Server-owned UNDX tenant/actor identity for end-user action workflows."""
+    user_id = str((user or {}).get("user_id") or "").strip()
+    return {
+        "org_id": (os.getenv("BUSINESS_OS_UNDX_DEFAULT_ORG_ID")
+                   or "coinplotxai").strip(),
+        "actor": f"user:{user_id}",
+        "user_id": user_id,
+    }
+
+
 @webhook_app.route("/api/business-os/undx/policies", methods=["POST"])
 def api_business_os_undx_record_policy():
     if not _business_os_undx_actions_enabled():
         return jsonify({"ok": False, "error": "Not found."}), 404
-    user, denied = pulse_ads_api_user_required()
+    admin, denied = require_owner_api()
     if denied:
         return denied
     if not pulse_ads_verify_write():
@@ -20431,7 +20442,7 @@ def api_business_os_undx_record_policy():
 def api_business_os_undx_record_request():
     if not _business_os_undx_actions_enabled():
         return jsonify({"ok": False, "error": "Not found."}), 404
-    user, denied = pulse_ads_api_user_required()
+    admin, denied = require_owner_api()
     if denied:
         return denied
     if not pulse_ads_verify_write():
@@ -20444,7 +20455,7 @@ def api_business_os_undx_record_request():
 def api_business_os_undx_register_tool():
     if not _business_os_undx_actions_enabled():
         return jsonify({"ok": False, "error": "Not found."}), 404
-    user, denied = pulse_ads_api_user_required()
+    admin, denied = require_owner_api()
     if denied:
         return denied
     if not pulse_ads_verify_write():
@@ -20457,7 +20468,7 @@ def api_business_os_undx_register_tool():
 def api_business_os_undx_grant_permission():
     if not _business_os_undx_actions_enabled():
         return jsonify({"ok": False, "error": "Not found."}), 404
-    user, denied = pulse_ads_api_user_required()
+    admin, denied = require_owner_api()
     if denied:
         return denied
     if not pulse_ads_verify_write():
@@ -20470,7 +20481,7 @@ def api_business_os_undx_grant_permission():
 def api_business_os_undx_record_confirmation():
     if not _business_os_undx_actions_enabled():
         return jsonify({"ok": False, "error": "Not found."}), 404
-    user, denied = pulse_ads_api_user_required()
+    admin, denied = require_owner_api()
     if denied:
         return denied
     if not pulse_ads_verify_write():
@@ -20483,7 +20494,7 @@ def api_business_os_undx_record_confirmation():
 def api_business_os_undx_record_receipt():
     if not _business_os_undx_actions_enabled():
         return jsonify({"ok": False, "error": "Not found."}), 404
-    user, denied = pulse_ads_api_user_required()
+    admin, denied = require_owner_api()
     if denied:
         return denied
     if not pulse_ads_verify_write():
@@ -20496,7 +20507,7 @@ def api_business_os_undx_record_receipt():
 def api_business_os_undx_emergency_stop():
     if not _business_os_undx_actions_enabled():
         return jsonify({"ok": False, "error": "Not found."}), 404
-    user, denied = pulse_ads_api_user_required()
+    admin, denied = require_owner_api()
     if denied:
         return denied
     if not pulse_ads_verify_write():
@@ -20509,7 +20520,7 @@ def api_business_os_undx_emergency_stop():
 def api_business_os_undx_policies_report():
     if not _business_os_undx_actions_enabled():
         return jsonify({"ok": False, "error": "Not found."}), 404
-    user, denied = pulse_ads_api_user_required()
+    admin, denied = require_owner_api()
     if denied:
         return denied
     from services.business_os.undx_actions import api as _uxapi
@@ -20525,7 +20536,7 @@ def api_business_os_undx_policies_report():
 def api_business_os_undx_requests_report():
     if not _business_os_undx_actions_enabled():
         return jsonify({"ok": False, "error": "Not found."}), 404
-    user, denied = pulse_ads_api_user_required()
+    admin, denied = require_owner_api()
     if denied:
         return denied
     from services.business_os.undx_actions import api as _uxapi
@@ -20541,7 +20552,7 @@ def api_business_os_undx_requests_report():
 def api_business_os_undx_decisions_report():
     if not _business_os_undx_actions_enabled():
         return jsonify({"ok": False, "error": "Not found."}), 404
-    user, denied = pulse_ads_api_user_required()
+    admin, denied = require_owner_api()
     if denied:
         return denied
     from services.business_os.undx_actions import api as _uxapi
@@ -20577,8 +20588,9 @@ def api_business_os_undx_permissions_report():
     if denied:
         return denied
     from services.business_os.undx_actions import api as _uxapi
-    org_id = (request.args.get("org_id") or "").strip()
-    actor = (request.args.get("actor") or "").strip()
+    scope = _business_os_undx_user_scope(user)
+    org_id = scope["org_id"]
+    actor = scope["actor"]
     try:
         limit = int(request.args.get("limit") or 200)
     except (TypeError, ValueError):
@@ -20594,12 +20606,14 @@ def api_business_os_undx_action_center_report():
     if denied:
         return denied
     from services.business_os.undx_actions import api as _uxapi
-    org_id = (request.args.get("org_id") or "").strip()
+    scope = _business_os_undx_user_scope(user)
+    org_id = scope["org_id"]
     try:
         limit = int(request.args.get("limit") or 100)
     except (TypeError, ValueError):
         limit = 100
-    return _bo_ad_reply(_uxapi.action_center_report(org_id, limit))
+    return _bo_ad_reply(_uxapi.action_center_report(
+        org_id, limit, actor=scope["actor"]))
 
 
 @webhook_app.route("/api/business-os/undx/marketplace/listings/draft", methods=["POST"])
@@ -20612,8 +20626,10 @@ def api_business_os_undx_marketplace_create_listing_draft():
     if not pulse_ads_verify_write():
         return jsonify({"ok": False, "error": "CSRF check failed."}), 400
     from services.business_os.undx_actions import api as _uxapi
+    scope = _business_os_undx_user_scope(user)
     return _bo_ad_reply(_uxapi.marketplace_create_listing_draft(
-        str(user.get("id") or ""), pulse_ads_json_payload()))
+        scope["user_id"], pulse_ads_json_payload(),
+        trusted_org_id=scope["org_id"], trusted_actor=scope["actor"]))
 
 
 @webhook_app.route("/api/business-os/undx/marketplace/listings/publish/plan", methods=["POST"])
@@ -20626,8 +20642,10 @@ def api_business_os_undx_marketplace_plan_publish():
     if not pulse_ads_verify_write():
         return jsonify({"ok": False, "error": "CSRF check failed."}), 400
     from services.business_os.undx_actions import api as _uxapi
+    scope = _business_os_undx_user_scope(user)
     return _bo_ad_reply(_uxapi.marketplace_plan_publish(
-        str(user.get("id") or ""), pulse_ads_json_payload()))
+        scope["user_id"], pulse_ads_json_payload(),
+        trusted_org_id=scope["org_id"], trusted_actor=scope["actor"]))
 
 
 @webhook_app.route("/api/business-os/undx/marketplace/listings/publish/execute", methods=["POST"])
@@ -20640,15 +20658,17 @@ def api_business_os_undx_marketplace_execute_publish():
     if not pulse_ads_verify_write():
         return jsonify({"ok": False, "error": "CSRF check failed."}), 400
     from services.business_os.undx_actions import api as _uxapi
+    scope = _business_os_undx_user_scope(user)
     return _bo_ad_reply(_uxapi.marketplace_execute_publish(
-        str(user.get("id") or ""), pulse_ads_json_payload()))
+        scope["user_id"], pulse_ads_json_payload(),
+        trusted_org_id=scope["org_id"], trusted_actor=scope["actor"]))
 
 
 @webhook_app.route("/api/business-os/undx/evaluate", methods=["POST"])
 def api_business_os_undx_evaluate():
     if not _business_os_undx_actions_enabled():
         return jsonify({"ok": False, "error": "Not found."}), 404
-    user, denied = pulse_ads_api_user_required()
+    admin, denied = require_owner_api()
     if denied:
         return denied
     if not pulse_ads_verify_write():
