@@ -153,7 +153,7 @@ Concurrent workspace automation advanced and pushed the UNDX branch through the 
 ### Regression and backend verification
 
 - Native TypeScript: PASS (`tsc --noEmit`).
-- Native Jest regression: PASS, 55 suites / 478 tests / 0 failures.
+- Native Jest regression: PASS, 56 suites / 487 tests / 0 failures.
 - Native app-link payload unit tests: PASS, 4 tests.
 - Content translation backend tests: PASS, 6 tests.
 - Content translation static release gate: PASS.
@@ -161,7 +161,7 @@ Concurrent workspace automation advanced and pushed the UNDX branch through the 
 - Bottom-navigation audit: PASS.
 - Engagement, Live, presence, Messenger, notification-parity, UNDX identity, and persistent-language audits: PASS.
 - UNDX policy evaluation: 24/24 cases PASS; its release-ready decision remains false because measured-model and device lifecycle gates are incomplete.
-- Focused confirmation, cross-surface conformance, result-contract, Marketplace assistant, Advertising assistant, governed workflow, and UNDX engine verification: PASS, 87/87 tests.
+- Focused confirmation, cross-surface conformance, result-contract, Marketplace assistant, Advertising assistant, governed workflow, and UNDX engine verification: PASS, 88/88 tests.
 - UNDX Marketplace execution audit: PASS for server-owned identity, bound/expiring/single-use confirmation, execution-time governance recheck, and token-free native confirmation UI.
 - Region/localization foundation: PASS, 25 native formatter tests, 5 server preference tests, and the executable localization audit.
 - UNDX source-derived knowledge: PASS, 4 retrieval/containment tests, deterministic stale-manifest verification, and the executable knowledge audit.

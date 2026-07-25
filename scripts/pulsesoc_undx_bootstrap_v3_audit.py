@@ -67,9 +67,51 @@ def main() -> int:
     checks["bounded_revocable_autonomy"] = policy["allowed_actions"] == ["pulsesoc.search"] and "pulsesoc.send_message" in policy["denied_actions"] and undx_architecture.revoke_delegated_policy(cur, 7, policy["policy_id"])
     prepared = undx_architecture.prepare_tool_operation(7, "pulsesoc.create_reel", "req-write", "reel")
     missing = undx_architecture.record_tool_result(cur, 7, prepared, {"success": True, "confirmation_state": "confirmed"}, "trace-a")
+    grant = undx_architecture.create_confirmation(
+        cur,
+        7,
+        {
+            "action_id": "pulsesoc.create_reel",
+            "action_version": "3.0",
+            "target_id": "reel",
+            "arguments": {"caption": "Architecture audit"},
+        },
+    )
+    redeemed = undx_architecture.consume_confirmation(
+        cur,
+        7,
+        grant["confirmation_token"],
+        expect_action_id="pulsesoc.create_reel",
+        expect_argument_hash=undx_architecture.argument_hash({"caption": "Architecture audit"}),
+    )
     prepared_ok = undx_architecture.prepare_tool_operation(7, "pulsesoc.create_reel", "req-write-ok", "reel")
-    verified = undx_architecture.record_tool_result(cur, 7, prepared_ok, {"success": True, "confirmation_state": "confirmed", "canonical_entity_id": "reel_42"}, "trace-b")
-    checks["read_after_write_verification"] = missing["status"] == "failed_verification" and verified["status"] == "verified"
+    verified = undx_architecture.record_tool_result(
+        cur,
+        7,
+        prepared_ok,
+        {"success": True, "confirmation_state": "claimed_only", "canonical_entity_id": "reel_42"},
+        "trace-b",
+        confirmation=redeemed,
+        expect_action_id="pulsesoc.create_reel",
+        canonical_verified=True,
+    )
+    wrong_action = undx_architecture.confirmation_evidence(7, "pulsesoc.send_message", redeemed)
+    wrong_actor = undx_architecture.confirmation_evidence(8, "pulsesoc.create_reel", redeemed)
+    unconsumed = undx_architecture.confirmation_evidence(
+        7,
+        "pulsesoc.create_reel",
+        {**(redeemed or {}), "status": "pending"},
+    )
+    checks["read_after_write_verification"] = (
+        missing["status"] == "failed_verification"
+        and missing["verification"]["confirmation_evidence"] == "no_grant"
+        and verified["status"] == "verified"
+        and verified["verification"]["confirmation_evidence"] == "grant_consumed"
+        and verified["verification"]["canonical_read_back"] is True
+        and wrong_action["reason"] == "wrong_action"
+        and wrong_actor["reason"] == "wrong_actor"
+        and unconsumed["reason"] == "not_consumed"
+    )
     checks["truth_maintenance"] = bool(undx_architecture.record_fact(cur, "Upload processing is pending", "media-status", 0.95, 7)["fact_id"])
     conn.close()
 

@@ -1156,6 +1156,29 @@ def confirm_action(user_id: int, payload: dict | None = None) -> dict:
             "UPDATE pulse_ai_confirmations SET status=?, updated_at=? WHERE id=?",
             ("verified" if verified else "failed_verification", timestamp, int(confirmation["id"])),
         )
+        # Audit the operation itself, not just the approval row. The grant is passed in
+        # as the evidence of authorization and the real read-back verdict is passed as
+        # the verification, so this row cannot claim more than actually happened.
+        try:
+            prepared = undx_architecture.prepare_tool_operation(
+                int(user_id), "pulsesoc.notification_preferences.update",
+                str(confirmation.get("confirmation_id") or ""), category)
+            undx_architecture.record_tool_result(
+                cur, int(user_id), prepared,
+                {"success": True, "canonical_entity_id": f"user:{int(user_id)}:{category}",
+                 "observed_value": actual, "proposed_value": proposed},
+                correlation_id=_trace(),
+                confirmation=confirmation,
+                expect_action_id="notifications.preference.update",
+                canonical_verified=verified)
+        except Exception:
+            # An audit write must never decide the outcome of a governed action that has
+            # already been performed and verified. The approval row above is the
+            # authoritative record; this one is the operations trail.
+            LOGGER.exception(
+                "UNDX operation audit write failed",
+                extra={"user_id": int(user_id), "action_id": "notifications.preference.update"},
+            )
         conn.commit()
         return {
             "ok": verified,
