@@ -39,6 +39,7 @@ from services.business_os.advertising import reporting as adrep
 from services.business_os.advertising import spend as adspend
 from services.business_os.advertising import assistant as adasst
 from services.business_os.advertising import admin as adadmin
+from services.business_os import results as _results
 
 # Fields a client may supply on create/update. Anything else is rejected.
 CREATE_FIELDS = {"name", "objective", "destination_url"}
@@ -1076,7 +1077,9 @@ def assistant_execute(owner_user_id: Any, payload: Any = None):
             confirmation_token=fields.get("confirmation_token"))
     except ad.AdvertisingError as exc:
         return _err(exc)
-    return (200, {"ok": True, "result": result})
+    # 200 only when canonical state confirmed the action. An unverified write returns
+    # 409 + ok:False, so neither the status code nor `ok` can be read as success.
+    return _results.envelope(result)
 
 
 # --- Part 6: admin billing inspection / fraud / spend controls / restrictions

@@ -7,9 +7,10 @@ claimed action against canonical backend state"):
 
   1. **Confirmation before any consequential change.** A read-only tool runs immediately
      from ``plan``; a consequential tool (``set_budget``, ``activate_campaign``, ...) mints
-     a ``confirmation_token`` bound to the EXACT (user, tool, canonical params) and
-     ``execute`` refuses to run it without a matching token — 428 ``confirmation_required``
-     when absent, 409 ``confirmation_mismatch`` when forged or minted for a different action.
+     a server-side confirmation grant bound to the EXACT (user, tool, canonical params)
+     and ``execute`` refuses to run it without a matching token — 428
+     ``confirmation_required`` when absent, 409 ``confirmation_mismatch`` when forged or
+     minted for a different action. A valid grant is single-use and cannot be replayed.
 
   2. **Read-after-write verification against canonical state.** ``execute`` never reports
      success from the verb's return value; it RE-READS the authoritative row and reports
@@ -155,6 +156,12 @@ def test_execute_with_token_is_verified_against_canonical_state():
     assert out["ok"] is True and out["write"] is True, out
     assert out["verified"] is True, out
     assert out["observed"]["budget_cents"] == 7500, out
+    _expect_error(
+        lambda: assistant.execute(
+            OWNER, "set_budget",
+            {"campaign_id": cid, "budget_cents": 7500, "currency": "usd"},
+            confirmation_token=p["confirmation_token"]),
+        code="confirmation_used", http=409)
     # canonical funding view independently confirms the change actually landed
     fv = assistant.execute(OWNER, "funding_status", {"campaign_id": cid})
     assert fv["result"]["budget_cents"] == 7500, fv

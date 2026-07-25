@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from services.business_os import results as _results
 from services.business_os.marketplace import service as mkt
 from services.business_os.marketplace import orders as mko
 from services.business_os.marketplace import refunds as mkr
@@ -355,7 +356,9 @@ def assistant_execute(user_id: Any, payload: Any = None):
                           confirmation_token=f.get("confirmation_token"))
     except MarketplaceError as exc:
         return _err(exc)
-    return (200, {"ok": True, "result": out})
+    # 200 only when canonical state confirmed the action. An unverified write returns
+    # 409 + ok:False, so neither the status code nor `ok` can be read as success.
+    return _results.envelope(out)
 
 
 def assistant_tools(user_id: Any):

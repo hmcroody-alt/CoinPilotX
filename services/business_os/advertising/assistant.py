@@ -10,7 +10,10 @@ to enforce itself:
      a human-readable summary + a ``confirmation_token`` bound to the EXACT tool and
      canonical params; ``execute`` refuses to run a confirmation-gated tool unless the
      caller echoes back the matching token. A token minted for one action can never
-     execute a different one (the token is a hash of user + tool + normalized params).
+     execute a different one. The approval is a server-side GRANT held by
+     ``services.business_os.confirmations`` — single-use, time-limited, revocable, bound
+     to one actor/tool/payload, stored only as a sha256 — so an approval can never be
+     replayed to repeat a consequential change.
      Read-only tools (report/spend/status) need no confirmation and run immediately.
 
   2. **Every claimed action is verified against canonical backend state.** The assistant
@@ -30,11 +33,11 @@ write tools without touching reads, mirroring the UNDX write kill switch.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import os
 from typing import Any, Callable, Optional
 
+from services.business_os import confirmations as _cf
+from services.business_os import results as _res
 from services.business_os.advertising import service as _svc
 from services.business_os.advertising import operations as _ops
 from services.business_os.advertising import funding as _fnd
@@ -44,9 +47,12 @@ from services.business_os.advertising.service import AdvertisingError
 
 
 DISABLE_WRITES_ENV = "BUSINESS_OS_ADVERTISING_ASSISTANT_DISABLE_WRITES"
-# A stable server-side secret salts the confirmation token so a client cannot forge
-# one; it is per-process by default and can be pinned via env for multi-worker setups.
-_TOKEN_SALT_ENV = "BUSINESS_OS_ADVERTISING_ASSISTANT_TOKEN_SALT"
+
+# Approvals live in the shared Business OS confirmation-grant service, namespaced so an
+# advertising approval can never be redeemed against marketplace (or anything else).
+CONFIRM_NAMESPACE = "advertising"
+
+_TTL_ENV = "BUSINESS_OS_ADVERTISING_ASSISTANT_CONFIRM_TTL_SECONDS"
 
 
 def _writes_disabled() -> bool:
@@ -54,8 +60,15 @@ def _writes_disabled() -> bool:
         "1", "true", "on", "yes"}
 
 
-def _token_salt() -> str:
-    return os.environ.get(_TOKEN_SALT_ENV) or "busos-ad-assistant-v1"
+def _ttl_override() -> Optional[int]:
+    """Subsystem-specific TTL override, if the operator pinned one."""
+    raw = os.environ.get(_TTL_ENV)
+    if raw in (None, ""):
+        return None
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
 
 
 # --- canonical parameter normalization --------------------------------------
@@ -81,11 +94,26 @@ def _norm_params(tool: str, params: dict) -> dict:
     return out
 
 
-def _token(user_id: Any, tool: str, canonical: dict) -> str:
-    payload = json.dumps(
-        {"u": _svc._sid(user_id), "t": tool, "p": canonical},
-        sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256((_token_salt() + "|" + payload).encode("utf-8")).hexdigest()
+# --- confirmation grants (delegated to the shared service) -------------------
+def _mint_confirmation(user_id: Any, tool: str, canonical: dict) -> tuple:
+    """Mint an advertising-namespaced grant. Returns (raw_token, grant_metadata)."""
+    grant = _cf.mint(CONFIRM_NAMESPACE, _svc._sid(user_id), tool, canonical,
+                     ttl_override=_ttl_override())
+    return grant["confirmation_token"], grant
+
+
+def _consume_confirmation(user_id: Any, tool: str, canonical: dict, raw: str) -> None:
+    """Redeem the approval or raise an AdvertisingError carrying the shared code."""
+    try:
+        _cf.consume(CONFIRM_NAMESPACE, _svc._sid(user_id), tool, canonical, raw)
+    except _cf.ConfirmationError as exc:
+        raise AdvertisingError(str(exc), exc.http_status, exc.code) from exc
+
+
+def revoke_confirmation(user_id: Any, confirmation_token: str) -> dict:
+    """Withdraw an approval before it is redeemed. Only its own actor may revoke it."""
+    _svc._require_enabled()
+    return _cf.revoke(CONFIRM_NAMESPACE, _svc._sid(user_id), confirmation_token)
 
 
 # --- tool handlers ----------------------------------------------------------
@@ -296,7 +324,7 @@ def plan(user_id: Any, tool: str, params: Optional[dict] = None) -> dict:
         raise AdvertisingError("campaign_id is required.", 400, "campaign_id_required")
     if tool == "set_budget" and canonical.get("budget_cents") is None:
         raise AdvertisingError("budget_cents is required.", 400, "budget_required")
-    token = _token(user_id, tool, canonical)
+    token, grant = _mint_confirmation(user_id, tool, canonical)
     return {
         "tool": tool,
         "requires_confirmation": True,
@@ -306,6 +334,9 @@ def plan(user_id: Any, tool: str, params: Optional[dict] = None) -> dict:
         "before": _snapshot(user_id, tool, canonical),
         "summary": spec.get("summary"),
         "confirmation_token": token,
+        "expires_at": grant["expires_at"],
+        "ttl_seconds": grant["ttl_seconds"],
+        "single_use": True,
     }
 
 
@@ -314,14 +345,17 @@ def execute(user_id: Any, tool: str, params: Optional[dict] = None, *,
     """Phase 2. Run the tool. A confirmation-gated tool REQUIRES a token that matches a
     freshly-computed token for these exact canonical params (else 428/409). After a write,
     the canonical state is RE-READ and ``verified`` reflects the observed truth — success
-    is never taken on faith from the verb's return value."""
+    is never taken on faith from the verb's return value.
+
+    ``ok`` is derived from that verification on write paths — see
+    ``services.business_os.results``. A caller that needs "the verb ran" rather than "the
+    verb is confirmed" reads ``write_applied``."""
     _svc._require_enabled()
     spec = _spec(tool)
     params = params or {}
 
     if not spec.get("write"):
-        result = spec["read"](user_id, params)
-        return {"ok": True, "tool": tool, "write": False, "result": result}
+        return _res.read_result(tool, spec["read"](user_id, params))
 
     if _writes_disabled():
         raise AdvertisingError(
@@ -330,15 +364,9 @@ def execute(user_id: Any, tool: str, params: Optional[dict] = None, *,
     canonical = _norm_params(tool, params)
 
     if spec.get("confirm"):
-        if not confirmation_token:
-            raise AdvertisingError(
-                "This action requires confirmation. Call plan() and confirm the token.",
-                428, "confirmation_required")
-        expected = _token(user_id, tool, canonical)
-        if not _consteq(confirmation_token, expected):
-            raise AdvertisingError(
-                "Confirmation token does not match this exact action.",
-                409, "confirmation_mismatch")
+        # Redeemed BEFORE the handler runs: a burnt approval must not be replayable
+        # even if the underlying verb then fails.
+        _consume_confirmation(user_id, tool, canonical, confirmation_token)
 
     # Execute the canonical verb (ownership / state-machine enforced inside).
     result = spec["handler"](user_id, canonical)
@@ -349,21 +377,4 @@ def execute(user_id: Any, tool: str, params: Optional[dict] = None, *,
     else:
         ok, observed = spec["verify"](user_id, canonical)
 
-    return {
-        "ok": True,
-        "tool": tool,
-        "write": True,
-        "verified": bool(ok),
-        "observed": observed,
-        "canonical_params": canonical,
-    }
-
-
-def _consteq(a: str, b: str) -> bool:
-    """Constant-time-ish comparison so token checks don't leak via early exit."""
-    if len(a) != len(b):
-        return False
-    diff = 0
-    for x, y in zip(a, b):
-        diff |= ord(x) ^ ord(y)
-    return diff == 0
+    return _res.write_result(tool, ok, observed, canonical)

@@ -31,6 +31,7 @@ import os
 from typing import Any, Optional
 
 from services.business_os import confirmations as _cf
+from services.business_os import results as _res
 from services.business_os.marketplace import service as _svc
 from services.business_os.marketplace import orders as _ord
 from services.business_os.marketplace import refunds as _rf
@@ -315,14 +316,17 @@ def execute(user_id: Any, tool: str, params: Optional[dict] = None, *,
             confirmation_token: Optional[str] = None) -> dict:
     """Phase 2. A confirmation-gated tool REQUIRES a token matching a freshly-computed
     token for these exact canonical params (428 without, 409 on mismatch). After a
-    write the canonical state is RE-READ and ``verified`` reflects observed truth."""
+    write the canonical state is RE-READ and ``verified`` reflects observed truth.
+
+    ``ok`` is derived from that verification on write paths — see
+    ``services.business_os.results``. A caller that needs "the verb ran" rather than "the
+    verb is confirmed" reads ``write_applied``."""
     _svc._require_enabled()
     spec = _spec(tool)
     params = params or {}
 
     if not spec.get("write"):
-        result = spec["read"](user_id, params)
-        return {"ok": True, "tool": tool, "write": False, "result": result}
+        return _res.read_result(tool, spec["read"](user_id, params))
 
     if _writes_disabled():
         raise MarketplaceError("Marketplace assistant writes are disabled.", 409, "writes_disabled")
@@ -346,5 +350,4 @@ def execute(user_id: Any, tool: str, params: Optional[dict] = None, *,
     else:
         ok, observed = spec["verify"](user_id, canonical)
 
-    return {"ok": True, "tool": tool, "write": True, "verified": bool(ok),
-            "observed": observed, "canonical_params": canonical}
+    return _res.write_result(tool, ok, observed, canonical)
