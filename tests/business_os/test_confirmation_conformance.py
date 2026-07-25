@@ -50,6 +50,7 @@ os.environ.pop("BUSINESS_OS_CONFIRMATION_TTL_SECONDS", None)
 
 import sys
 import threading
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -705,7 +706,13 @@ def test_L5_expiry_and_revocation():
         g = undx_architecture.create_confirmation(cur, PULSE_USER, _PULSE_ACTION,
                                                   ttl_seconds=10 ** 9)
         conn.commit()
-        assert g["expires_at"] < "2100", f"TTL ceiling not enforced: {g['expires_at']}"
+        # A caller asking for a 30-year approval must get the ceiling (300s), not what it
+        # asked for. Compare against the real ceiling — "some year before 2100" would let
+        # an unclamped 10**9-second TTL through.
+        ceiling = (datetime.now(timezone.utc) + timedelta(seconds=330)).isoformat(
+            timespec="seconds")
+        assert g["expires_at"] <= ceiling, \
+            f"caller dictated its own approval lifetime: {g['expires_at']} > {ceiling}"
         cur.execute(
             "UPDATE pulse_ai_confirmations SET expires_at='2000-01-01T00:00:00+00:00' "
             "WHERE confirmation_id=?", (g["confirmation_id"],))

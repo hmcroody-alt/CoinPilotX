@@ -246,6 +246,10 @@ def consume(namespace: str, subject: Any, tool: str, canonical: Any,
         if status == "revoked":
             raise ConfirmationError("This confirmation was revoked.",
                                     HTTP_REFUSED, CODE_REVOKED)
+        # Intentionally redundant with the atomic UPDATE below, which also refuses a
+        # non-pending row. Mutation testing confirms that removing THIS check alone changes
+        # no observable behaviour — the guard subsumes it — so it is depth, not the control.
+        # Kept so the refusal never depends solely on one backend's rowcount semantics.
         if status != "pending":
             raise ConfirmationError(
                 "This confirmation was already used. Confirm the action again.",
