@@ -20440,6 +20440,71 @@ def api_business_os_undx_record_request():
     return _bo_ad_reply(_uxapi.record_action_request(pulse_ads_json_payload()))
 
 
+@webhook_app.route("/api/business-os/undx/tools", methods=["POST"])
+def api_business_os_undx_register_tool():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.register_tool(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/undx/permissions", methods=["POST"])
+def api_business_os_undx_grant_permission():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.grant_permission(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/undx/confirmations", methods=["POST"])
+def api_business_os_undx_record_confirmation():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.record_confirmation(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/undx/receipts", methods=["POST"])
+def api_business_os_undx_record_receipt():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.record_receipt(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/undx/emergency-stop", methods=["POST"])
+def api_business_os_undx_emergency_stop():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.activate_emergency_stop(pulse_ads_json_payload()))
+
+
 @webhook_app.route("/api/business-os/undx/policies", methods=["GET"])
 def api_business_os_undx_policies_report():
     if not _business_os_undx_actions_enabled():
@@ -20486,6 +20551,97 @@ def api_business_os_undx_decisions_report():
     except (TypeError, ValueError):
         limit = 200
     return _bo_ad_reply(_uxapi.decisions_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/undx/tools", methods=["GET"])
+def api_business_os_undx_tools_report():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.undx_actions import api as _uxapi
+    product_area = (request.args.get("product_area") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_uxapi.tools_report(product_area, limit))
+
+
+@webhook_app.route("/api/business-os/undx/permissions", methods=["GET"])
+def api_business_os_undx_permissions_report():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.undx_actions import api as _uxapi
+    org_id = (request.args.get("org_id") or "").strip()
+    actor = (request.args.get("actor") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_uxapi.permissions_report(org_id, actor, limit))
+
+
+@webhook_app.route("/api/business-os/undx/action-center", methods=["GET"])
+def api_business_os_undx_action_center_report():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.undx_actions import api as _uxapi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 100)
+    except (TypeError, ValueError):
+        limit = 100
+    return _bo_ad_reply(_uxapi.action_center_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/undx/marketplace/listings/draft", methods=["POST"])
+def api_business_os_undx_marketplace_create_listing_draft():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.marketplace_create_listing_draft(
+        str(user.get("id") or ""), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/undx/marketplace/listings/publish/plan", methods=["POST"])
+def api_business_os_undx_marketplace_plan_publish():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.marketplace_plan_publish(
+        str(user.get("id") or ""), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/undx/marketplace/listings/publish/execute", methods=["POST"])
+def api_business_os_undx_marketplace_execute_publish():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.marketplace_execute_publish(
+        str(user.get("id") or ""), pulse_ads_json_payload()))
 
 
 @webhook_app.route("/api/business-os/undx/evaluate", methods=["POST"])
