@@ -15,6 +15,7 @@ This engineering pass completed the highest-leverage achievable native gaps and 
 - Replaced URL-only React Native share calls across Feed, Reels, Status, profile, post detail, events, and Live surfaces with one metadata-rich operating-system share adapter.
 - The adapter supplies object kind, title, author, description, canonical HTTPS URL, and bounded metadata to the native iOS/Android share sheet.
 - Added a native PulseSoc Share Center with a metadata preview, authenticated Messenger recipient search, duplicate-safe direct-message delivery, copy-link action, locally rendered QR code, and a system-sheet handoff for AirDrop, SMS, email, and installed external apps.
+- Added native Share Center destinations for Status/Story and Reel creation through a bounded, expiring, one-time composer handoff that preserves an existing draft. Messenger retries retain one stable client message ID per recipient for server-side deduplication.
 - Registered the Share Center as a signed-in modal destination while retaining the operating-system share sheet as a safe fallback.
 - Corrected Status and Live canonical object URLs.
 - Registered verified HTTPS app-link intent configuration for Android.
@@ -30,6 +31,8 @@ This engineering pass completed the highest-leverage achievable native gaps and 
 - Added native account-language read/update API bindings.
 - Added automatic locale resolution, a persistent manual override, validation, and immediate localized date/time rendering.
 - Added a server-authoritative language picker to Region & Time with rollback on persistence failure.
+- Added server-authoritative time-zone, currency, and date-format preferences with authenticated partial updates, strict validation, automatic/device fallbacks, audit events, and cross-device persistence.
+- Added locale-derived currency detection, centralized currency and numeric-date formatters, `Intl.PluralRules` support, RTL-language detection, native layout-direction application, and an explicit one-time relaunch boundary when direction changes.
 - Extended locale unit coverage.
 - Added authenticated server-authoritative content translation routes and additive translation-cache, preference, and event-audit tables.
 - Translation reuses the existing provider pool through a bounded non-assistant task route; it does not duplicate UNDX chat or inject UNDX identity into infrastructure output.
@@ -37,7 +40,7 @@ This engineering pass completed the highest-leverage achievable native gaps and 
 - Added Translate, Show original, Always, and Never controls to posts, Reels, Status, chat messages, marketplace listings, profile bios, and post/Reel comments and replies.
 - One authenticated startup request preloads the shared preference; native reads are cached and concurrent requests are deduplicated. The cache is cleared at account and locale boundaries.
 
-This is not a claim of complete application localization. Full string-catalog coverage, RTL mirroring, ICU pluralization, currency override, and translation-control wiring for every business/review/support screen remain incomplete.
+This is not a claim of complete application localization. The foundation now supports RTL direction, plural selection, currency override, and localized date ordering, but full string-catalog coverage, per-component RTL visual QA, localized server responses, and translation-control wiring for every business/review/support screen remain incomplete.
 
 ### Settings navigation behavior
 
@@ -66,6 +69,14 @@ This is not a claim of complete application localization. Full string-catalog co
 - The native Action Center presents an explicit confirmation review without exposing confirmation tokens.
 - Marketplace and Advertising assistants now share the confirmation grant and verification-derived result contracts.
 
+### Source-derived UNDX platform knowledge
+
+- Added a deterministic offline generator for a checked-in machine-readable PulseSoc platform manifest.
+- The inventory currently covers 103 native navigation surfaces, 44 native API areas, 853 Flask API routes, and 729 server-managed data entities, with source provenance retained in the offline artifact.
+- Runtime UNDX retrieval reuses the existing Messenger knowledge path and selects at most six request-relevant public summaries within a 3,600-character hard limit.
+- Runtime prompt records exclude source paths, raw schemas, and non-public route entries; the complete manifest is never serialized into an inference request.
+- Added contract tests, a stale-manifest check, and an executable release audit.
+
 ## Principal modified files
 
 ### Native client
@@ -90,6 +101,9 @@ This is not a claim of complete application localization. Full string-catalog co
 - `mobile-native/src/core/TimeZoneContext.tsx`
 - `mobile-native/src/core/__tests__/localTime.test.ts`
 - `mobile-native/src/screens/RegionTimeScreen.tsx`
+- `services/pulse_region_preferences.py`
+- `tests/test_pulse_region_preferences.py`
+- `scripts/pulsesoc_global_localization_audit.py`
 - `mobile-native/src/api/translation.ts`
 - `mobile-native/src/api/__tests__/translation.test.ts`
 - `mobile-native/src/components/ContentTranslation.tsx`
@@ -126,8 +140,13 @@ This is not a claim of complete application localization. Full string-catalog co
 - `tests/business_os/test_confirmations.py`
 - `tests/business_os/test_results.py`
 - `tests/business_os/test_confirmation_conformance.py`
+- `data/pulse_ai/pulsesoc_platform_manifest.json`
+- `scripts/generate_pulsesoc_platform_manifest.py`
+- `services/undx_platform_knowledge.py`
+- `tests/test_undx_platform_knowledge.py`
+- `scripts/pulsesoc_undx_platform_knowledge_audit.py`
 
-The worktree contained substantial pre-existing modified and untracked work. Concurrent workspace automation advanced and pushed the UNDX branch through `277fa6c9`; the native Share Center, translation bootstrap, and governed confirmation increments are prepared as scoped branch commits. No deployment or destructive cleanup was performed.
+Concurrent workspace automation advanced and pushed the UNDX branch through the verified scoped increments. No deployment or destructive cleanup was performed.
 
 ## Validation evidence
 
@@ -144,6 +163,8 @@ The worktree contained substantial pre-existing modified and untracked work. Con
 - UNDX policy evaluation: 24/24 cases PASS; its release-ready decision remains false because measured-model and device lifecycle gates are incomplete.
 - Focused confirmation, cross-surface conformance, result-contract, Marketplace assistant, Advertising assistant, governed workflow, and UNDX engine verification: PASS, 87/87 tests.
 - UNDX Marketplace execution audit: PASS for server-owned identity, bound/expiring/single-use confirmation, execution-time governance recheck, and token-free native confirmation UI.
+- Region/localization foundation: PASS, 25 native formatter tests, 5 server preference tests, and the executable localization audit.
+- UNDX source-derived knowledge: PASS, 4 retrieval/containment tests, deterministic stale-manifest verification, and the executable knowledge audit.
 - CocoaPods integration: PASS, including `ExpoClipboard 8.0.8` and `RNSVG 15.12.1`.
 - Python compilation for association, translation, provider routing, Flask routes, and the new audits: PASS.
 - `git diff --check`: PASS.
@@ -171,6 +192,7 @@ This pass did not include a complete penetration test, authorization matrix for 
 
 - The implementation centralizes share payload construction and uses bounded metadata.
 - Locale reads are cached in context/storage and server refreshes are lifecycle-bounded.
+- UNDX platform knowledge is generated offline; runtime retrieval reads one cached manifest and contributes no more than six summaries or 3,600 characters per request.
 - Translation preferences use one authenticated startup read, an in-memory cache, and concurrent-request deduplication instead of one request per rendered card.
 - Existing performance trace unit tests pass.
 
@@ -204,10 +226,10 @@ Code preparation is complete for native association documents, but production is
 - Native share now implements in-app PulseSoc Messenger delivery, copy link, local QR, and a system-sheet handoff. Authenticated simulator interaction with the recipient picker, scanner validation of the rendered QR, and physical-device destination behavior remain unobserved.
 - Rich remote link previews still require deployed OpenGraph metadata for every canonical web object; the native adapter cannot guarantee how every destination renders a preview.
 - Translation controls are implemented across the principal native social and commerce text surfaces, but dedicated product/business/review/support renderers are not all wired and authenticated provider-backed device interaction was not exercised.
-- Full app localization, RTL, ICU pluralization, currency detection/override, and localized server-response coverage are incomplete.
+- Full app string-catalog localization, component-by-component RTL visual validation, and localized server-response coverage are incomplete.
 - The repository contains broad engagement, Live, presence, messaging, and UNDX systems, but this pass cannot truthfully certify every screen, API, cache, gesture, database interaction, and background task.
 - Real multi-device presence, cross-client message synchronization, Live concurrency, push/background/lock-state matrices, and offline recovery require controlled authenticated clients and production-like infrastructure.
-- UNDX machine-readable platform completeness and unrestricted agentic business execution remain release-gated; structural evaluations are not measured-model or real-operation proof.
+- UNDX now has a broad source-derived machine-readable platform inventory, but unrestricted agentic business execution remains release-gated; inventory coverage and structural evaluations are not measured-model or real-operation proof.
 - Production app-link verification is externally blocked on deployment-owned Apple/Android identity values and a server deployment.
 
 ## Release decision
