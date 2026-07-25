@@ -98,7 +98,10 @@ export function RegionTimeScreen() {
       const preferred = response.preferred_language || response.language || locale;
       setLanguage(preferred);
       await Promise.all([
-        setLocaleOverride(region.preferred_locale || preferred),
+        // Account language is the canonical application locale. Region
+        // preferences control formatting only, so a stale locale record cannot
+        // silently reverse a language change on the next launch.
+        setLocaleOverride(preferred),
         setTimeZoneOverride(region.preferred_timezone || null),
         setCurrencyOverride(region.preferred_currency || null),
         setDateFormatOverride(region.preferred_date_format || "auto")

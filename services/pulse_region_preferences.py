@@ -14,6 +14,13 @@ from services import db
 LOCALE_PATTERN = re.compile(r"^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
 DATE_FORMATS = {"auto", "mdy", "dmy", "ymd"}
+SUPPORTED_CURRENCIES = {
+    "AED", "ARS", "AUD", "BRL", "CAD", "CHF", "CLP", "CNY", "COP", "CZK",
+    "DKK", "EGP", "EUR", "GBP", "GHS", "HKD", "HTG", "HUF", "IDR", "ILS",
+    "INR", "JPY", "KES", "KRW", "MXN", "MYR", "NGN", "NOK", "NZD", "PEN",
+    "PHP", "PKR", "PLN", "RON", "RUB", "SAR", "SEK", "SGD", "THB", "TRY",
+    "TWD", "UAH", "USD", "VND", "ZAR",
+}
 
 
 class RegionPreferenceError(ValueError):
@@ -245,8 +252,8 @@ def _currency(value: Any) -> str:
     if _automatic(value):
         return ""
     normalized = str(value).strip().upper()
-    if not CURRENCY_PATTERN.fullmatch(normalized):
-        raise RegionPreferenceError("invalid_currency", "Choose a valid three-letter currency.")
+    if not CURRENCY_PATTERN.fullmatch(normalized) or normalized not in SUPPORTED_CURRENCIES:
+        raise RegionPreferenceError("invalid_currency", "Choose a supported currency.")
     return normalized
 
 

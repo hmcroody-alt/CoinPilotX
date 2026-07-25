@@ -55,6 +55,7 @@ def test_invalid_values_fail_closed():
         ({"locale": "not_a_locale_%%%"}, "invalid_locale"),
         ({"timezone": "Mars/Phobos"}, "invalid_timezone"),
         ({"currency": "US"}, "invalid_currency"),
+        ({"currency": "ZZZ"}, "invalid_currency"),
         ({"date_format": "guess"}, "invalid_date_format"),
         ({"admin": True}, "unsupported_preference"),
     )

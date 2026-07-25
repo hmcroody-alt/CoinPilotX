@@ -43,7 +43,7 @@ def main() -> None:
             "authenticated region-preference route is registered")
     require("pulse_region_preferences" in service and "pulse_region_preference_events" in service,
             "region preferences are server-authoritative and audited")
-    require("ZoneInfo" in service and "CURRENCY_PATTERN" in service and "DATE_FORMATS" in service,
+    require("ZoneInfo" in service and "SUPPORTED_CURRENCIES" in service and "DATE_FORMATS" in service,
             "server validation fails closed for time zone, currency, and date format")
     require("updateAccountRegionPreferences" in screen and "previous preference is still active" in screen,
             "native optimistic preference updates roll back on persistence failure")
