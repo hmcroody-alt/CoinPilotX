@@ -51,6 +51,16 @@ No second Marketplace service was created.
 - Default missing policy: `require_approval`.
 - Emergency stop overrides permissions and policies.
 - Publish requires the Marketplace assistant confirmation token.
+- Marketplace assistant confirmation tokens are now stored as server-side grants:
+  single-use, time-limited, actor/tool/payload-bound, revocable, and persisted only
+  as sha256 hashes.
+- UNDX publish execution must redeem a matching pending UNDX confirmation for the
+  same organization, actor, request, and canonical payload before Marketplace
+  execution can run.
+- A failed Marketplace execution burns the Marketplace confirmation grant so the
+  same approval cannot be replayed.
+- Emergency stops added after a publish plan block execution before confirmation
+  redemption and before Marketplace mutation.
 - Draft creation does not publish the product.
 - Physical products require positive inventory.
 - Price remains explicit; UNDX does not infer money terms silently.
@@ -76,6 +86,8 @@ No second Marketplace service was created.
 ## Verification
 
 - `python3 tests/business_os/test_undx_marketplace_workflow.py` PASS
+- `python3 tests/business_os/test_marketplace_assistant.py` PASS
+- `python3 tests/business_os/test_undx_engine.py` PASS
 - `python3 scripts/undx_agent_governance_audit.py` PASS
 - `python3 -m py_compile services/business_os/marketplace/assistant.py services/business_os/undx_actions/marketplace_workflow.py services/business_os/undx_actions/api.py tests/business_os/test_undx_marketplace_workflow.py` PASS
 - `python3 -m py_compile bot.py services/business_os/undx_actions/api.py services/business_os/undx_actions/marketplace_workflow.py` PASS
