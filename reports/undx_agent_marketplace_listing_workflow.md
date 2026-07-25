@@ -66,9 +66,9 @@ No second Marketplace service was created.
   Marketplace draft/publish workflow.
 - Native has a typed UNDX governed action API client and a native
   `UndxActionCenter` route wired to `/pulse/undx/actions`.
-- Native publish confirmation execution UI is still pending. The Action Center reads
-  server state, but does not yet include a dedicated human approval form for a
-  pending Marketplace publish confirmation token.
+- Native publish confirmation execution is now available in the Action Center as an
+  explicit human-controlled panel for governed draft creation, publish planning, and
+  publish execution with a Marketplace confirmation token.
 - Xcode iPhone Simulator and physical iPhone visual QA were not completed in this
   continuation; these remain required before treating the native Action Center as
   release-ready.
@@ -95,3 +95,16 @@ No second Marketplace service was created.
 - `/api/business-os/undx/marketplace/listings/publish/plan`
 - `/api/business-os/undx/marketplace/listings/publish/execute`
 - Native deep link: `/pulse/undx/actions`
+
+## Native Action Center Controls
+
+- Read Action Center state from `/api/business-os/undx/action-center`.
+- Read tools and permissions through the new UNDX route adapters.
+- Create governed Marketplace drafts through
+  `/api/business-os/undx/marketplace/listings/draft`.
+- Plan Marketplace publish through
+  `/api/business-os/undx/marketplace/listings/publish/plan`.
+- Execute Marketplace publish through
+  `/api/business-os/undx/marketplace/listings/publish/execute`.
+- The native panel requires explicit actor/product/request/token input and does not
+  silently execute Marketplace writes.
