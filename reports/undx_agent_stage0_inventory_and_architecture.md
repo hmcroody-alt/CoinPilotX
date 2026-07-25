@@ -135,15 +135,25 @@ Implemented files:
 
 Still pending for a native end-user Marketplace Action Center:
 
-- HTTP route adapters in `bot.py` for the new UNDX Marketplace workflow controller.
-  This checkout currently has a large unrelated unstaged `bot.py` diff, so route
-  adapters were not staged in this scoped commit.
-- Native UI for approvals, publish confirmation, receipts, and retry.
+- Dedicated native approval UI for publish confirmation, receipt retry, and
+  operator review flows. A read-only native `UndxActionCenter` route now exists and
+  is wired to `/pulse/undx/actions`.
 - Image/media attachment ingestion beyond metadata boundaries. Current canonical
   Marketplace catalog stores text, price, fulfillment, and inventory; media indexing
   needs to be added through the Marketplace media contract before UNDX can claim image
   listing completeness.
 - Xcode/physical-device evidence for the native presentation.
+
+Implemented after the initial Stage 1 slice:
+
+- `bot.py` now exposes HTTP adapters for UNDX tools, permissions, confirmations,
+  receipts, emergency stop, Action Center, and governed Marketplace draft/publish
+  workflow.
+- `mobile-native/src/api/undxActions.ts` adds the native API client on top of
+  `pulseApi`, preserving native auth/session behavior.
+- `mobile-native/src/screens/UndxActionCenterScreen.tsx` adds the native Action
+  Center shell.
+- `mobile-native/src/navigation/*` routes `/pulse/undx/actions` natively.
 
 ## Verification Completed
 
@@ -164,8 +174,9 @@ plane.
 
 First Marketplace workflow: implemented at the canonical service/controller layer
 for draft create, publish plan, publish execute, verification receipts, and emergency
-stop. It is not yet complete as a native UI surface because route adapters and
-approval UI remain.
+stop. It is now exposed through backend route adapters and a native read-only Action
+Center route. It is not yet complete as a native approval UI surface because publish
+confirmation execution, retry, and simulator/physical QA remain.
 
 Next highest-value action:
 

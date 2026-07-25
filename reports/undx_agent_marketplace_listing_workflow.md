@@ -61,14 +61,37 @@ No second Marketplace service was created.
   service currently stores product text, price, fulfillment type, inventory, and
   status. Media indexing must be added through a Marketplace media contract before
   UNDX can publish image-derived listings with complete media support.
-- HTTP route adapters were not added to `bot.py` in this slice because the file had
-  a large unrelated unstaged route diff. The service/controller layer is ready for a
-  clean route-only pass.
-- Native approval UI is pending.
+- HTTP route adapters are now exposed in `bot.py` for governance tools,
+  permissions, confirmations, receipts, emergency stop, Action Center, and governed
+  Marketplace draft/publish workflow.
+- Native has a typed UNDX governed action API client and a native
+  `UndxActionCenter` route wired to `/pulse/undx/actions`.
+- Native publish confirmation execution UI is still pending. The Action Center reads
+  server state, but does not yet include a dedicated human approval form for a
+  pending Marketplace publish confirmation token.
+- Xcode iPhone Simulator and physical iPhone visual QA were not completed in this
+  continuation; these remain required before treating the native Action Center as
+  release-ready.
 
 ## Verification
 
 - `python3 tests/business_os/test_undx_marketplace_workflow.py` PASS
 - `python3 scripts/undx_agent_governance_audit.py` PASS
 - `python3 -m py_compile services/business_os/marketplace/assistant.py services/business_os/undx_actions/marketplace_workflow.py services/business_os/undx_actions/api.py tests/business_os/test_undx_marketplace_workflow.py` PASS
+- `python3 -m py_compile bot.py services/business_os/undx_actions/api.py services/business_os/undx_actions/marketplace_workflow.py` PASS
+- `npm run --prefix mobile-native typecheck` PASS
+- `npm test --prefix mobile-native -- --runTestsByPath src/api/__tests__/undxActions.test.ts src/navigation/__tests__/routeResolution.test.ts` PASS
 - `git diff --check` PASS
+
+## Native Routes Added
+
+- `/api/business-os/undx/tools`
+- `/api/business-os/undx/permissions`
+- `/api/business-os/undx/confirmations`
+- `/api/business-os/undx/receipts`
+- `/api/business-os/undx/emergency-stop`
+- `/api/business-os/undx/action-center`
+- `/api/business-os/undx/marketplace/listings/draft`
+- `/api/business-os/undx/marketplace/listings/publish/plan`
+- `/api/business-os/undx/marketplace/listings/publish/execute`
+- Native deep link: `/pulse/undx/actions`
