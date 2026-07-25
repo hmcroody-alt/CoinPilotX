@@ -66,6 +66,7 @@ describe("PulseSoc navigation route resolution", () => {
     ["/pulse/profile/edit", "ProfileEdit"],
     ["/pulse/music#pulse-radio", "Music"],
     ["/pulse/premium", "Premium"],
+    ["/pulse/undx/actions?org_id=coinplotxai&actor=user%3A7", "UndxActionCenter"],
     ["/scam-shield/scan", "ScamShield"],
     ["/dashboard/creator/content-planner", "ContentPlanner"],
     ["/dashboard/creator/draft-studio", "ContentPlanner"],

@@ -258,6 +258,14 @@ export const linking: LinkingOptions<RootStackParamList> = {
       IntelligenceCenter: {
         path: "pulse/intelligence/:subsystem?"
       },
+      UndxActionCenter: {
+        path: "pulse/undx/actions",
+        parse: {
+          orgId: String,
+          actor: String,
+          productArea: String
+        }
+      },
       AlertManagement: {
         path: "pulse/alerts/:alertId?",
         parse: {

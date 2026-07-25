@@ -53,6 +53,7 @@ import { SellerStoreScreen } from "../screens/SellerStoreScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { StatusScreen } from "../screens/StatusScreen";
 import { TrustSafetyScreen } from "../screens/TrustSafetyScreen";
+import { UndxActionCenterScreen } from "../screens/UndxActionCenterScreen";
 import { VerificationCenterScreen } from "../screens/VerificationCenterScreen";
 import { UserDashboardScreen } from "../screens/UserDashboardScreen";
 import { ChatScreen } from "../screens/ChatScreen";
@@ -279,6 +280,7 @@ export function AppNavigator() {
       <Stack.Screen name="TeacherDashboardGateway" component={CoursesLearningScreen} options={{ title: "Teacher Dashboard" }} />
       <Stack.Screen name="GrowthCenter" component={GrowthCenterScreen} options={{ title: "Growth Center" }} />
       <Stack.Screen name="IntelligenceCenter" component={IntelligenceCenterScreen} options={({ route }) => ({ title: route.params?.title || "Intelligence" })} />
+      <Stack.Screen name="UndxActionCenter" component={UndxActionCenterScreen} options={({ route }) => ({ title: route.params?.title || "UNDX Action Center" })} />
       <Stack.Screen name="AlertManagement" component={AlertManagementScreen} options={({ route }) => ({ title: route.params?.title || "Alerts" })} />
       <Stack.Screen name="CryptoAlertManagement" component={AlertManagementScreen} options={({ route }) => ({ title: route.params?.title || "Alerts" })} />
       <Stack.Screen name="AccountCenter" component={AccountCenterScreen} options={({ route }) => ({ title: route.params?.title || "Account Center" })} />

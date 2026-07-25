@@ -114,6 +114,7 @@ export type RootStackParamList = {
   TeacherDashboardGateway: { title?: string } | undefined;
   GrowthCenter: { contentType?: string; contentId?: number | string; title?: string } | undefined;
   IntelligenceCenter: { alertId?: number; subsystem?: string; title?: string } | undefined;
+  UndxActionCenter: { orgId?: string; actor?: string; productArea?: string; title?: string } | undefined;
   AlertManagement: { alertId?: number; title?: string } | undefined;
   CryptoAlertManagement: { alertId?: number; alert_id?: number; id?: number; title?: string } | undefined;
   AccountCenter: { section?: "account" | "security" | "privacy" | "devices"; title?: string } | undefined;
