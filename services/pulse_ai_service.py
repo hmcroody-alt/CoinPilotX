@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search, undx_architecture, undx_operator, undx_policy
+from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search, undx_architecture, undx_operator, undx_platform_knowledge, undx_policy
 
 
 LOGGER = logging.getLogger(__name__)
@@ -710,6 +710,10 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
 
         current_messages = _messages_for_conversation(cur, conversation, int(user_id), limit=40)
         knowledge = _retrieve_knowledge(cur, body)
+        # Extend the existing approved-knowledge pipeline with only a small,
+        # request-relevant slice of the offline source inventory. Never send the
+        # complete manifest, schemas, or source paths to a model provider.
+        knowledge[0:0] = undx_platform_knowledge.retrieve(body)
         search_result = {}
         if route.get("needs_web_search"):
             search_result = pulse_ai_web_search.search(body, purpose="pulse_ai_messenger")
