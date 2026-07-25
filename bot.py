@@ -15748,11 +15748,12 @@ def admin_audit_logs_page():
         f"<div class='card ops-kpi'><div class='muted'>Login Events</div><div class='metric'>{int(agg.get('l') or 0):,}</div></div>"
         "</div>"
     )
+    audit_clear_link = '<a class="button" href="/admin/audit-logs" style="max-width:90px">Clear</a>' if action_q else ''
     search_form = (
         "<form method='get' action='/admin/audit-logs' class='card' style='display:flex;gap:10px;align-items:center;margin-bottom:14px'>"
         f"<input type='text' name='action' value='{clean_html(action_q)}' placeholder='Filter by action (e.g. permission_denied, login, grant)…' style='flex:1'/>"
         "<button type='submit' style='max-width:130px'>Filter</button>"
-        f"{'<a class=\"button\" href=\"/admin/audit-logs\" style=\"max-width:90px\">Clear</a>' if action_q else ''}"
+        f"{audit_clear_link}"
         "</form>"
     )
 
@@ -16825,12 +16826,13 @@ def admin_pulse_ads_review_board_page():
             f"<form method='post' action='/admin/pulse-ads-review-board/action'><input type='hidden' name='csrf_token' value='{token}'><input type='hidden' name='campaign_id' value='{campaign_id}'><input type='hidden' name='action' value='suspend'><input name='reason' placeholder='Suspend reason'><button> Suspend Campaign</button></form>"
             "</td></tr>"
         )
+    ads_rows_html = rows or '<tr><td colspan="6" class="muted">No ads awaiting review.</td></tr>'
     body = (
         "<h1>PulseSoc Ads Review Board</h1>"
         "<p class='muted'>Human review, moderation state, wallet finance visibility, and safe platform controls.</p>"
         f"{status_cards}"
         "<div class='card'><h2>Pending and Recent Reviews</h2><table><tr><th>Advertiser</th><th>Creative</th><th>Uploaded Media</th><th>Status</th><th>Risk</th><th>Actions</th></tr>"
-        f"{rows or '<tr><td colspan=\"6\" class=\"muted\">No ads awaiting review.</td></tr>'}</table></div>"
+        f"{ads_rows_html}</table></div>"
     )
     return admin_page_html("Ads Review Board", body, admin)
 
@@ -17347,6 +17349,9 @@ def admin_user_detail_page(user_id):
         f"<div class='ops-userhead__actions'><a class='button' href='/admin/users/{user_id}/edit'>Edit User</a></div>"
         "</div>"
     )
+    owner_repair_form = (
+        '<form method="post" action="/admin/users/' + str(user_id) + '/set-password" class="card"><input type="hidden" name="csrf_token" value="' + get_csrf_token() + '" /><h2>Owner Access Repair</h2><p class="muted">Sets a temporary password, activates the account, and optionally confirms email. The password is never logged.</p><label>Temporary password<input name="password" type="password" autocomplete="new-password" required minlength="8" /></label><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="confirm_email" value="1" checked /> Confirm email and activate account</label><button type="submit">Set Temporary Password</button></form>'
+    ) if admin_is_owner_level(admin) else ''
     _actions = (
         f"<form method='post' action='/admin/users/{user_id}/convert-paid-pro' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Convert Trial to PulseSoc Premium</button><p class='muted'>Use only after confirming a successful Stripe payment for this user.</p></form>"
         f"<form method='post' action='/admin/users/{user_id}/force-sync-pro' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Force Sync Premium From Stripe/Payment</button><p class='muted'>Repairs this user only when a successful local payment record or Stripe event exists.</p></form>"
@@ -17356,7 +17361,7 @@ def admin_user_detail_page(user_id):
         f"<form method='post' action='/admin/users/{user_id}/resend-confirmation' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Resend Account Confirmation Email</button><p class='muted'>Generates a fresh verification link for unconfirmed accounts.</p></form>"
         f"<form method='post' action='/admin/users/{user_id}/send-reset-email' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Send Password Reset Email</button><p class='muted'>Sends a fresh password reset link to the user's account email.</p></form>"
         f"<form method='post' action='/admin/users/{user_id}/manual-confirm-email' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Emergency Confirm Email</button><p class='muted'>Owner-only fallback after identity/support review. Use only when email delivery is confirmed externally.</p></form>"
-        f"{'<form method=\"post\" action=\"/admin/users/' + str(user_id) + '/set-password\" class=\"card\"><input type=\"hidden\" name=\"csrf_token\" value=\"' + get_csrf_token() + '\" /><h2>Owner Access Repair</h2><p class=\"muted\">Sets a temporary password, activates the account, and optionally confirms email. The password is never logged.</p><label>Temporary password<input name=\"password\" type=\"password\" autocomplete=\"new-password\" required minlength=\"8\" /></label><label style=\"display:flex;gap:8px;align-items:center\"><input type=\"checkbox\" name=\"confirm_email\" value=\"1\" checked /> Confirm email and activate account</label><button type=\"submit\">Set Temporary Password</button></form>' if admin_is_owner_level(admin) else ''}"
+        f"{owner_repair_form}"
     )
     body = (
         f"{_header}"
@@ -17693,11 +17698,12 @@ def admin_admins_page():
         flags = ""
         if r.get("must_change_password"):
             flags += "<span class='ops-chip' style='border-color:var(--warn,#f5c451)'>must reset pw</span>"
+        job_title_html = ('<div class="muted" style="font-size:.8rem">' + clean_html(r.get('job_title')) + '</div>') if r.get('job_title') else ''
         return (
             "<tr>"
             f"<td class='muted'>{clean_html(str(r.get('id')))}</td>"
             f"<td><a href='/admin/admins/{r.get('id')}/edit'>{clean_html(r.get('full_name') or 'Admin')}</a>"
-            f"{('<div class=\"muted\" style=\"font-size:.8rem\">' + clean_html(r.get('job_title')) + '</div>') if r.get('job_title') else ''}</td>"
+            f"{job_title_html}</td>"
             f"<td class='muted'>{clean_html(mask_email(r.get('email')))}</td>"
             f"<td>{role_chip}</td>"
             f"<td>{pc}</td>"
@@ -30932,9 +30938,10 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js" defer></script>', "")
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js" defer></script>', "")
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_upload_manager.js?v=composer-premium-20260617a"></script>', "")
+    body_class = 'pulse-home-os' if request.path == '/pulse' else ''
     rendered_html = rendered_html.replace(
         "<body>",
-        f'<body class="{'pulse-home-os' if request.path == '/pulse' else ''}" data-pulse-boot-profile="{clean_html(boot_profile)}">',
+        f'<body class="{body_class}" data-pulse-boot-profile="{clean_html(boot_profile)}">',
         1,
     )
     return Response(rendered_html)
@@ -37801,7 +37808,8 @@ def pulse_live_page():
     active_streams = [dict(row) for row in cur.fetchall()]
     conn.close()
     stream_cards = "".join(f"<article class='card' data-live-gateway-card='{int(s.get('id') or 0)}'><span class='pill' style='border-color:rgba(255,77,109,.45);color:#ffd6dc'>LIVE NOW</span><h2>{clean_html(s.get('title') or 'PulseSoc Live')}</h2><p>{clean_html(s.get('creator_name') or '')} · {clean_html(s.get('category') or '')}</p><p><span class='pill'>{int(s.get('viewer_count') or 0)} viewers</span> <span class='pill'>{clean_html(s.get('stream_health') or s.get('status') or '')}</span></p><a class='button primary' href='{pulse_live_watch_url(int(s.get('id') or 0))}' data-open-live-in-reels='{int(s.get('id') or 0)}'>Join Live in Reels</a></article>" for s in active_streams)
-    main = f"{live_card}<section class='grid'><article class='card'><h2>Trust Level</h2><p>{safe_int(profile.get('trust_score'), 0)}/100 · {clean_html(profile.get('trust_band') or '')}</p></article><article class='card'><h2>Invite Progress</h2><p>{completed}/{required} real members</p></article><article class='card'><h2>Creator Rank</h2><p>{clean_html(privileges.get('current_level') or 'New User')}</p></article></section><section class='card'><h2>Live Discovery</h2><p class='muted'>Trending streams, category filters, creator profiles, and live viewer counts are connected here.</p></section><section class='grid'>{stream_cards or '<article class=\"card\"><h2>No one is live right now.</h2><p>Start the next PulseSoc Live session or check back soon.</p></article>'}</section><section class='card'><h2>Benefits of Going Live</h2><p>Host lessons, creator rooms, Scam Shield breakdowns, Arena training, and community Q&A with stronger safety controls.</p></section>"
+    stream_cards_empty = '<article class="card"><h2>No one is live right now.</h2><p>Start the next PulseSoc Live session or check back soon.</p></article>'
+    main = f"{live_card}<section class='grid'><article class='card'><h2>Trust Level</h2><p>{safe_int(profile.get('trust_score'), 0)}/100 · {clean_html(profile.get('trust_band') or '')}</p></article><article class='card'><h2>Invite Progress</h2><p>{completed}/{required} real members</p></article><article class='card'><h2>Creator Rank</h2><p>{clean_html(privileges.get('current_level') or 'New User')}</p></article></section><section class='card'><h2>Live Discovery</h2><p class='muted'>Trending streams, category filters, creator profiles, and live viewer counts are connected here.</p></section><section class='grid'>{stream_cards or stream_cards_empty}</section><section class='card'><h2>Benefits of Going Live</h2><p>Host lessons, creator rooms, Scam Shield breakdowns, Arena training, and community Q&A with stronger safety controls.</p></section>"
     script = """
     const LIVE_ALLOWED_CATEGORIES = new Set(['Crypto Education','Scam Shield Lesson','Arena Training','Market Psychology']);
     const LIVE_SETUP_REQUIRED_PLATFORMS = new Set(['facebook','youtube','twitch','kick','tiktok','x_twitter','linkedin','custom_rtmp']);
@@ -42563,7 +42571,8 @@ def pulse_marketplace_page():
     document.addEventListener('click',async e=>{const c=e.target.closest('[data-contact-seller]');const r=e.target.closest('[data-report-listing]');const s=e.target.closest('[data-save-listing]');try{if(c){const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:c.dataset.contactSeller})});location.href=d.next_url} if(r){await pulseApi('/api/pulse/marketplace/listings/report',{method:'POST',body:JSON.stringify({listing_id:r.dataset.reportListing,reason:'Needs review'})});toast('Listing reported.')} if(s){await pulseApi('/api/pulse/marketplace/listings/save',{method:'POST',body:JSON.stringify({listing_id:s.dataset.saveListing})});toast('Saved.')}}catch(err){toast(err.message)}})
     """ % int(user.get("user_id") or 0)
     search_bar = "<section class='card'><form data-marketplace-search role='search'><div class='actions'><input name='q' type='search' placeholder='Search marketplace items, categories, or sellers' autocomplete='off' aria-label='Search marketplace'><button class='primary' type='submit'>Search</button></div></form></section>"
-    main = f"{seller_form}{listing_form}{search_bar}<section class='grid' data-marketplace-results>{listing_html or '<article class=\"card\"><h2>Marketplace is warming up.</h2><p>Create the first educational listing or teacher service. Payments are coming later after compliance readiness.</p></article>'}</section>{pulse_promotion_modal_html()}<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'><script src='/static/js/pulsesoc_promotions.js' defer></script>"
+    listing_empty = '<article class="card"><h2>Marketplace is warming up.</h2><p>Create the first educational listing or teacher service. Payments are coming later after compliance readiness.</p></article>'
+    main = f"{seller_form}{listing_form}{search_bar}<section class='grid' data-marketplace-results>{listing_html or listing_empty}</section>{pulse_promotion_modal_html()}<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'><script src='/static/js/pulsesoc_promotions.js' defer></script>"
     return pulse_social_shell("PulseSoc Marketplace", "Creator products, educational services, templates, books, scam-prevention guides, and coaching foundations. No risky financial products.", main, "", script)
 
 
@@ -43594,7 +43603,8 @@ def pulse_merchant_profile_page(username):
     if not seller:
         return pulse_social_shell("Merchant", "Merchant profile not found.", "<section class='card'><a class='button' href='/pulse/marketplace'>Back to Marketplace</a></section>")
     cards = "".join(f"<article class='card'><h2>{clean_html(l.get('title') or '')}</h2><p>{clean_html(l.get('short_description') or l.get('description') or '')}</p><span class='pill'>{clean_html(l.get('price_label') or '')}</span></article>" for l in listings)
-    main = f"<section class='card'><h2>{clean_html(seller.get('display_name') or 'Merchant')}</h2><p><span class='pill'>Verified merchant</span> <span class='pill'>Trust {100-int(seller.get('risk_score') or 0)}</span></p><p>{clean_html(seller.get('bio') or '')}</p></section><section class='grid'>{cards or '<article class=\"card\"><h2>No public products yet.</h2></article>'}</section>"
+    cards_empty = '<article class="card"><h2>No public products yet.</h2></article>'
+    main = f"<section class='card'><h2>{clean_html(seller.get('display_name') or 'Merchant')}</h2><p><span class='pill'>Verified merchant</span> <span class='pill'>Trust {100-int(seller.get('risk_score') or 0)}</span></p><p>{clean_html(seller.get('bio') or '')}</p></section><section class='grid'>{cards or cards_empty}</section>"
     return pulse_social_shell("Merchant Profile", "Verified merchant storefront with safety history, products, courses, and reviews.", main)
 
 
@@ -68425,7 +68435,8 @@ def pulse_courses_page():
     courses = [dict(row) for row in cur.fetchall()]
     conn.close()
     cards = "".join(f"<article class='card'><h2>{clean_html(c.get('title'))}</h2><p>{clean_html(c.get('description') or '')}</p><p><span class='pill'>{clean_html(c.get('category') or 'Education')}</span> <span class='pill'>{clean_html(c.get('access_level') or 'free')}</span> <span class='pill'>{clean_html(c.get('price_label') or 'Free')}</span></p><p>Teacher: {clean_html(c.get('teacher_name') or '')}</p><a class='button' href='/pulse/courses/{int(c.get('id') or 0)}'>Open Course</a></article>" for c in courses)
-    return pulse_social_shell("PulseSoc Courses", "Free lessons now, paid-course-ready architecture later after trust and compliance review.", f"<section class='card'><div class='actions'><a class='button primary' href='/pulse/courses/create'>Create Course</a><a class='button' href='/pulse/teacher-dashboard'>Teacher Dashboard</a></div></section><section class='grid'>{cards or '<article class=\"card\"><h2>No courses yet.</h2><p>Teachers can prepare safe, educational course drafts now.</p></article>'}</section>")
+    courses_empty = '<article class="card"><h2>No courses yet.</h2><p>Teachers can prepare safe, educational course drafts now.</p></article>'
+    return pulse_social_shell("PulseSoc Courses", "Free lessons now, paid-course-ready architecture later after trust and compliance review.", f"<section class='card'><div class='actions'><a class='button primary' href='/pulse/courses/create'>Create Course</a><a class='button' href='/pulse/teacher-dashboard'>Teacher Dashboard</a></div></section><section class='grid'>{cards or courses_empty}</section>")
 
 
 @webhook_app.route("/pulse/courses/create", methods=["GET"])
@@ -68460,7 +68471,8 @@ def pulse_course_detail_page(course_id):
     if not course:
         return pulse_social_shell("Course", "This course is not available.", "<section class='card'><a class='button' href='/pulse/courses'>Back to Courses</a></section>")
     lesson_html = "".join(f"<article class='card'><h2>{clean_html(l.get('title'))}</h2><p>{clean_html(l.get('description') or '')}</p><span class='pill'>{clean_html(l.get('access_level') or 'free')}</span></article>" for l in lessons)
-    main = f"<section class='card'><h2>{clean_html(course.get('title'))}</h2><p>{clean_html(course.get('description') or '')}</p><p><span class='pill'>{clean_html(course.get('category') or '')}</span> <span class='pill'>{clean_html(course.get('status') or '')}</span></p><p>Teacher: {clean_html(course.get('teacher_name') or '')}</p></section><section>{lesson_html or '<article class=\"card\"><h2>No lessons published yet.</h2><p>The teacher can add reviewed lessons from the dashboard.</p></article>'}</section>"
+    lesson_empty = '<article class="card"><h2>No lessons published yet.</h2><p>The teacher can add reviewed lessons from the dashboard.</p></article>'
+    main = f"<section class='card'><h2>{clean_html(course.get('title'))}</h2><p>{clean_html(course.get('description') or '')}</p><p><span class='pill'>{clean_html(course.get('category') or '')}</span> <span class='pill'>{clean_html(course.get('status') or '')}</span></p><p>Teacher: {clean_html(course.get('teacher_name') or '')}</p></section><section>{lesson_html or lesson_empty}</section>"
     return pulse_social_shell(course.get("title") or "Course", "Teacher course detail and lesson foundation.", main)
 
 
@@ -70322,8 +70334,12 @@ def pulse_group_detail_page(group_slug):
             (int(p.get("id") or 0),),
         )
         previews = [pulse_group_comment_payload(cur, row, user["user_id"]) for row in cur.fetchall()]
+        def _preview_delete_btn(c):
+            if c.get('can_delete'):
+                return '<button data-group-comment-delete="' + str(c['id']) + '">Delete</button>'
+            return ''
         preview_html = "".join(
-            f"<div class='group-comment' data-comment-id='{c['id']}'><strong>{clean_html(c['author_name'])}{pulse_premium_mark_html(c.get('premium_mark'))}</strong><p>{clean_html(c['body'])}</p><small>{smart_time_html(c.get('created_at'))}</small>{'<button data-group-comment-delete=\"'+str(c['id'])+'\">Delete</button>' if c.get('can_delete') else ''}<button data-group-comment-report='{c['id']}'>Report</button></div>"
+            f"<div class='group-comment' data-comment-id='{c['id']}'><strong>{clean_html(c['author_name'])}{pulse_premium_mark_html(c.get('premium_mark'))}</strong><p>{clean_html(c['body'])}</p><small>{smart_time_html(c.get('created_at'))}</small>{_preview_delete_btn(c)}<button data-group-comment-report='{c['id']}'>Report</button></div>"
             for c in reversed(previews)
         )
         if not groups_advanced:
@@ -70387,7 +70403,8 @@ def pulse_group_detail_page(group_slug):
         action_html = f"<button class='primary' data-join-group-id='{group_id}'>Join Group</button><button data-open-group-chat-id='{group_id}'>Open Group Chat</button><button data-invite-group-id='{group_id}'>Invite</button><button data-report-group-id='{group_id}'>Report</button><button data-leave-group-id='{group_id}'>Leave</button>"
     composer_html = f"<section class='card'><h2>Share With Group</h2><textarea id='groupPostBody' placeholder='Share an update, lesson, warning, question, photo, or video caption.'></textarea><label>Attach photo or video<input id='groupMediaFile' type='file' accept='image/*,video/*'></label><div class='group-composer-actions'><a class='button' href='/pulse/camera/photo?target=group&group={slug}'>Take Photo</a><a class='button' href='/pulse/camera/video?target=group&group={slug}'>Record Video</a><button class='primary' id='groupPostBtn'>Post</button></div></section>" if groups_advanced else "<section class='card'><h2>Groups Stabilization</h2><p class='muted'>Advanced posting, media, invites, moderation, and chat controls are temporarily paused. Group browsing, creation, joining, and leaving remain available.</p></section>"
     modal_html = f"<section class='group-report-modal' id='groupReportModal'><div class='group-report-sheet'><h2 id='groupReportTitle'>Report Post</h2><select id='groupReportReason'><option value='spam'>Spam</option><option value='harassment'>Harassment</option><option value='scam'>Scam</option><option value='impersonation'>Impersonation</option><option value='misleading financial claims'>Misleading financial claims</option><option value='nudity'>Nudity</option><option value='violence'>Violence</option><option value='misinformation'>Misinformation</option><option value='illegal'>Illegal</option><option value='other'>Other</option></select><textarea id='groupReportNotes' placeholder='Add context for moderators'></textarea><div class='actions'><button type='button' id='cancelGroupReport'>Cancel</button><button class='primary' type='button' id='submitGroupReport'>Submit Report</button></div></div></section><section class='group-report-modal' id='groupInviteModal'><div class='group-report-sheet'><h2>Invite to Group</h2><form id='groupInviteSearch'><input name='q' placeholder='Search by name or public PulseSoc ID'><button class='primary'>Search</button></form><div class='messenger-search-results' id='groupInviteResults'></div><button type='button' id='copyGroupInvite'>Copy Invite Link</button><button type='button' id='cancelGroupInvite'>Close</button></div></section>" if groups_advanced else ""
-    main = f"{style}<section class='card' data-group-shell='{group_id}'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p class='group-meta-pills'><span class='pill'>{clean_html(group.get('category') or 'Community')}</span> <span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'><span data-group-member-count>{members}</span> members</span> <span class='pill'>{clean_html(group.get('trust_level') or 'standard')}</span></p><div class='group-community-actions'>{action_html}</div></section><section class='card'><h2>Rules</h2><p>{clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.')}</p></section>{delete_group_html}{composer_html}<section>{post_html or '<article class=\"card\"><p>No group posts yet.</p></article>'}</section>{modal_html}"
+    post_empty = '<article class="card"><p>No group posts yet.</p></article>'
+    main = f"{style}<section class='card' data-group-shell='{group_id}'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p class='group-meta-pills'><span class='pill'>{clean_html(group.get('category') or 'Community')}</span> <span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'><span data-group-member-count>{members}</span> members</span> <span class='pill'>{clean_html(group.get('trust_level') or 'standard')}</span></p><div class='group-community-actions'>{action_html}</div></section><section class='card'><h2>Rules</h2><p>{clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.')}</p></section>{delete_group_html}{composer_html}<section>{post_html or post_empty}</section>{modal_html}"
     script = f"""
     const groupSlug={json.dumps(slug)};
     let pendingReportPostId=null;
@@ -79553,8 +79570,12 @@ def admin_pulse_users_page():
             rows = []
             query_error = f"{query_error} | fallback: {fallback_exc}"
     conn.close()
+    def _avatar_cell(r):
+        if r.get('avatar_url'):
+            return '<img src="' + clean_html(r.get('avatar_url') or '') + '" style="width:34px;height:34px;border-radius:999px;object-fit:cover">'
+        return '•'
     table = "".join(
-        f"<tr><td>{('<img src=\"'+clean_html(r.get('avatar_url') or '')+'\" style=\"width:34px;height:34px;border-radius:999px;object-fit:cover\">') if r.get('avatar_url') else '•'}</td><td><strong>{clean_html(r.get('display_name') or 'User')}</strong><br><small>{clean_html(r.get('email') or '')}</small></td><td>{clean_html(r.get('username') or '')}</td><td>{clean_html(r.get('status') or 'active')}</td><td>{int(r.get('trust_score') or 0)}</td><td>{clean_html(r.get('current_level') or '')}</td><td>{clean_html(r.get('live_status') or '')}</td><td>{clean_html(r.get('badges') or 'No badges')}</td><td><a class='button' href='/admin/pulse-users/{int(r.get('user_id') or 0)}'>Manage</a></td></tr>"
+        f"<tr><td>{_avatar_cell(r)}</td><td><strong>{clean_html(r.get('display_name') or 'User')}</strong><br><small>{clean_html(r.get('email') or '')}</small></td><td>{clean_html(r.get('username') or '')}</td><td>{clean_html(r.get('status') or 'active')}</td><td>{int(r.get('trust_score') or 0)}</td><td>{clean_html(r.get('current_level') or '')}</td><td>{clean_html(r.get('live_status') or '')}</td><td>{clean_html(r.get('badges') or 'No badges')}</td><td><a class='button' href='/admin/pulse-users/{int(r.get('user_id') or 0)}'>Manage</a></td></tr>"
         for r in rows
     )
     body = f"""
