@@ -155,6 +155,10 @@ def test_execute_with_token_is_verified_against_canonical_state():
         confirmation_token=p["confirmation_token"])
     assert out["ok"] is True and out["write"] is True, out
     assert out["verified"] is True, out
+    # ``ok`` is derived from verification; ``write_applied`` separately reports that the
+    # canonical verb ran. Both must be present so neither style of client reads a
+    # missing key as falsy. See services.business_os.results.
+    assert out["write_applied"] is True, out
     assert out["observed"]["budget_cents"] == 7500, out
     _expect_error(
         lambda: assistant.execute(

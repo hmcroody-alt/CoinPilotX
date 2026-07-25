@@ -13,6 +13,9 @@ export type TimeInput = string | number | Date | null | undefined;
 
 const OVERRIDE_STORAGE_KEY = "pulsesoc.localtime.timezoneOverride.v1";
 const LOCALE_OVERRIDE_STORAGE_KEY = "pulsesoc.locale.override.v1";
+const CURRENCY_OVERRIDE_STORAGE_KEY = "pulsesoc.locale.currencyOverride.v1";
+const DATE_FORMAT_OVERRIDE_STORAGE_KEY = "pulsesoc.locale.dateFormatOverride.v1";
+export type DateFormatPreference = "auto" | "mdy" | "dmy" | "ymd";
 
 // The user's manual IANA override, or null when following the device ("Automatic").
 let manualTimeZone: string | null = null;
@@ -20,6 +23,8 @@ let manualTimeZone: string | null = null;
 let cachedDeviceTimeZone: string | null = null;
 let cachedLocale: string | null = null;
 let manualLocale: string | null = null;
+let manualCurrency: string | null = null;
+let manualDateFormat: DateFormatPreference = "auto";
 
 export function getDeviceTimeZone(): string {
   if (cachedDeviceTimeZone) return cachedDeviceTimeZone;
@@ -52,6 +57,53 @@ export function getManualLocale(): string | null {
 
 export function getManualTimeZone(): string | null {
   return manualTimeZone;
+}
+
+export function getManualCurrency(): string | null {
+  return manualCurrency;
+}
+
+export function getManualDateFormat(): DateFormatPreference {
+  return manualDateFormat;
+}
+
+export function getDeviceCurrency(locale = getResolvedLocale()): string {
+  const region = localeRegion(locale);
+  return REGION_CURRENCY[region] || "USD";
+}
+
+export function getActiveCurrency(): string {
+  return manualCurrency || getDeviceCurrency(getActiveLocale());
+}
+
+export function getDetectedDateFormat(locale = getActiveLocale()): Exclude<DateFormatPreference, "auto"> {
+  try {
+    const parts = new Intl.DateTimeFormat(locale, {
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      timeZone: "UTC"
+    }).formatToParts(new Date("2001-11-23T00:00:00Z"));
+    const order = parts.filter((part) => ["year", "month", "day"].includes(part.type)).map((part) => part.type).join("-");
+    if (order.startsWith("year")) return "ymd";
+    if (order.startsWith("day")) return "dmy";
+  } catch {
+    // Use the globally safest fallback below.
+  }
+  return "mdy";
+}
+
+export function getActiveDateFormat(): Exclude<DateFormatPreference, "auto"> {
+  return manualDateFormat === "auto" ? getDetectedDateFormat() : manualDateFormat;
+}
+
+export function isRtlLocale(locale = getActiveLocale()): boolean {
+  const language = String(locale || "").replace(/_/g, "-").split("-", 1)[0].toLowerCase();
+  return RTL_LANGUAGES.has(language);
+}
+
+export function getWritingDirection(locale = getActiveLocale()): "rtl" | "ltr" {
+  return isRtlLocale(locale) ? "rtl" : "ltr";
 }
 
 /** The zone all display conversions use: manual override, else device, else UTC. */
@@ -96,6 +148,24 @@ export async function loadLocalePreference(): Promise<string | null> {
   return manualLocale;
 }
 
+export async function loadRegionFormatPreferences(): Promise<{
+  currency: string | null;
+  dateFormat: DateFormatPreference;
+}> {
+  try {
+    const [currency, dateFormat] = await Promise.all([
+      AsyncStorage.getItem(CURRENCY_OVERRIDE_STORAGE_KEY),
+      AsyncStorage.getItem(DATE_FORMAT_OVERRIDE_STORAGE_KEY)
+    ]);
+    manualCurrency = currency && isValidCurrency(currency) ? currency.toUpperCase() : null;
+    manualDateFormat = isValidDateFormat(dateFormat) ? dateFormat : "auto";
+  } catch {
+    manualCurrency = null;
+    manualDateFormat = "auto";
+  }
+  return { currency: manualCurrency, dateFormat: manualDateFormat };
+}
+
 export async function setManualTimeZone(zone: string | null): Promise<string | null> {
   if (zone && isValidTimeZone(zone)) {
     manualTimeZone = zone;
@@ -116,6 +186,42 @@ export async function setManualLocale(locale: string | null): Promise<string | n
     await AsyncStorage.removeItem(LOCALE_OVERRIDE_STORAGE_KEY).catch(() => undefined);
   }
   return manualLocale;
+}
+
+export async function setManualCurrency(currency: string | null): Promise<string | null> {
+  if (currency && isValidCurrency(currency)) {
+    manualCurrency = currency.toUpperCase();
+    await AsyncStorage.setItem(CURRENCY_OVERRIDE_STORAGE_KEY, manualCurrency).catch(() => undefined);
+  } else {
+    manualCurrency = null;
+    await AsyncStorage.removeItem(CURRENCY_OVERRIDE_STORAGE_KEY).catch(() => undefined);
+  }
+  return manualCurrency;
+}
+
+export async function setManualDateFormat(value: DateFormatPreference): Promise<DateFormatPreference> {
+  manualDateFormat = isValidDateFormat(value) ? value : "auto";
+  if (manualDateFormat === "auto") {
+    await AsyncStorage.removeItem(DATE_FORMAT_OVERRIDE_STORAGE_KEY).catch(() => undefined);
+  } else {
+    await AsyncStorage.setItem(DATE_FORMAT_OVERRIDE_STORAGE_KEY, manualDateFormat).catch(() => undefined);
+  }
+  return manualDateFormat;
+}
+
+export function isValidCurrency(currency: string): boolean {
+  const normalized = String(currency || "").trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(normalized)) return false;
+  try {
+    new Intl.NumberFormat("en", { style: "currency", currency: normalized }).format(1);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function isValidDateFormat(value: unknown): value is DateFormatPreference {
+  return value === "auto" || value === "mdy" || value === "dmy" || value === "ymd";
 }
 
 export function isValidLocale(locale: string): boolean {
@@ -214,6 +320,68 @@ export function formatClockTime(value: TimeInput, options?: FormatOptions): stri
     ...(options?.hour12 != null ? { hour12: options.hour12 } : {}),
     ...(options?.withZoneName ? { timeZoneName: "short" } : {})
   }).format(date);
+}
+
+export function formatCurrency(
+  amount: number,
+  options?: { currency?: string; locale?: string; minimumFractionDigits?: number; maximumFractionDigits?: number }
+): string {
+  const numeric = Number(amount);
+  if (!Number.isFinite(numeric)) return "";
+  const locale = options?.locale || getActiveLocale();
+  const currency = options?.currency || getActiveCurrency();
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency,
+      ...(options?.minimumFractionDigits != null ? { minimumFractionDigits: options.minimumFractionDigits } : {}),
+      ...(options?.maximumFractionDigits != null ? { maximumFractionDigits: options.maximumFractionDigits } : {})
+    }).format(numeric);
+  } catch {
+    return `${currency} ${numeric.toFixed(2)}`;
+  }
+}
+
+export function formatPlural(
+  count: number,
+  forms: Partial<Record<Intl.LDMLPluralRule, string>> & { other: string },
+  options?: { locale?: string; includeCount?: boolean }
+): string {
+  const numeric = Number(count);
+  if (!Number.isFinite(numeric)) return "";
+  const locale = options?.locale || getActiveLocale();
+  let category: Intl.LDMLPluralRule = numeric === 1 ? "one" : "other";
+  try {
+    category = new Intl.PluralRules(locale).select(numeric);
+  } catch {
+    // The one/other fallback above remains deterministic.
+  }
+  const template = forms[category] || forms.other;
+  const localizedCount = new Intl.NumberFormat(locale).format(numeric);
+  if (template.includes("{count}")) return template.replace(/\{count\}/g, localizedCount);
+  return options?.includeCount === true ? `${localizedCount} ${template}` : template;
+}
+
+export function formatNumericDate(
+  value: TimeInput,
+  options?: FormatOptions & { dateFormat?: DateFormatPreference }
+): string {
+  const date = parseServerInstant(value);
+  if (!date) return "";
+  const { timeZone, locale } = resolve(options);
+  const requested = options?.dateFormat || manualDateFormat;
+  if (requested === "auto") {
+    return new Intl.DateTimeFormat(locale, {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(date);
+  }
+  const parts = partsFor(date, timeZone);
+  const values = { year: parts.year, month: parts.month, day: parts.day };
+  const order = requested === "ymd" ? ["year", "month", "day"] : requested === "dmy" ? ["day", "month", "year"] : ["month", "day", "year"];
+  return order.map((part) => values[part as keyof typeof values]).join("/");
 }
 
 /**
@@ -336,3 +504,28 @@ function sameZoneWallClock(date: Date, zoneA: string, zoneB: string): boolean {
   const b = partsFor(date, zoneB);
   return a.hour === b.hour && a.minute === b.minute && a.day === b.day;
 }
+
+function localeRegion(locale: string): string {
+  try {
+    const LocaleConstructor = (Intl as typeof Intl & { Locale?: new (tag: string) => { region?: string } }).Locale;
+    const region = LocaleConstructor ? new LocaleConstructor(locale).region : "";
+    if (region) return region.toUpperCase();
+  } catch {
+    // Fall back to parsing the BCP-47 tag.
+  }
+  const match = String(locale || "").replace(/_/g, "-").match(/-([A-Za-z]{2}|\d{3})(?:-|$)/);
+  return String(match?.[1] || "US").toUpperCase();
+}
+
+const REGION_CURRENCY: Record<string, string> = {
+  AE: "AED", AR: "ARS", AT: "EUR", AU: "AUD", BE: "EUR", BR: "BRL", CA: "CAD",
+  CH: "CHF", CL: "CLP", CN: "CNY", CO: "COP", CZ: "CZK", DE: "EUR", DK: "DKK",
+  EG: "EGP", ES: "EUR", FI: "EUR", FR: "EUR", GB: "GBP", GH: "GHS", GR: "EUR",
+  HK: "HKD", HT: "HTG", HU: "HUF", ID: "IDR", IE: "EUR", IL: "ILS", IN: "INR",
+  IT: "EUR", JP: "JPY", KE: "KES", KR: "KRW", MX: "MXN", MY: "MYR", NG: "NGN",
+  NL: "EUR", NO: "NOK", NZ: "NZD", PE: "PEN", PH: "PHP", PK: "PKR", PL: "PLN",
+  PT: "EUR", RO: "RON", RU: "RUB", SA: "SAR", SE: "SEK", SG: "SGD", TH: "THB",
+  TR: "TRY", TW: "TWD", UA: "UAH", US: "USD", VN: "VND", ZA: "ZAR"
+};
+
+const RTL_LANGUAGES = new Set(["ar", "ckb", "dv", "fa", "he", "ku", "ps", "sd", "ug", "ur", "yi"]);

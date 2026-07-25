@@ -5971,6 +5971,45 @@ def api_account_language():
     return jsonify({"ok": True, "message": "Language preference saved.", "preferred_language": language, "language": language, "supported_languages": SUPPORTED_LANGUAGE_CODES, "any_language_supported": True})
 
 
+@webhook_app.route("/api/account/region-preferences", methods=["GET", "PATCH", "POST"])
+@webhook_app.route("/api/mobile/account/region-preferences", methods=["GET", "PATCH", "POST"])
+@webhook_app.route("/api/pulse/mobile/account/region-preferences", methods=["GET", "PATCH", "POST"])
+def api_account_region_preferences():
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    from services import pulse_region_preferences
+
+    try:
+        if request.method == "GET":
+            preferences = pulse_region_preferences.get_preferences(int(user["user_id"]))
+        else:
+            if not request.is_json:
+                return api_error(
+                    "Region preferences require a JSON request body.",
+                    415,
+                    error="invalid_content_type",
+                )
+            preferences = pulse_region_preferences.update_preferences(
+                int(user["user_id"]),
+                request.get_json(silent=True) or {},
+            )
+        return jsonify({"ok": True, "preferences": preferences, **preferences})
+    except pulse_region_preferences.RegionPreferenceError as exc:
+        return api_error(str(exc), 400, error=exc.code)
+    except Exception as exc:
+        logging.exception(
+            "PULSE_REGION_PREFERENCES_FAILED user_id=%s reason=%s",
+            int(user["user_id"]),
+            exc.__class__.__name__,
+        )
+        return api_error(
+            "Region preferences are temporarily unavailable. Your existing settings are unchanged.",
+            503,
+            error="region_preferences_unavailable",
+        )
+
+
 @webhook_app.route("/api/pulse/translations", methods=["POST"])
 def api_pulse_translate_content():
     user = api_account_user()

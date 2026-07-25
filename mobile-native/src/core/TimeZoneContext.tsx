@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, AppStateStatus } from "react-native";
+import { AppState, AppStateStatus, I18nManager } from "react-native";
 import {
   FormatOptions,
   formatAbsoluteDate,
@@ -8,16 +8,29 @@ import {
   formatRelativeTime,
   formatScheduledTime,
   formatShortTimestamp,
+  formatCurrency,
+  formatNumericDate,
+  formatPlural,
+  getActiveCurrency,
+  getActiveDateFormat,
   getActiveTimeZone,
   getActiveLocale,
+  getManualCurrency,
+  getManualDateFormat,
   getManualLocale,
   getManualTimeZone,
+  getWritingDirection,
+  isRtlLocale,
   getResolvedLocale,
   loadLocalePreference,
+  loadRegionFormatPreferences,
   loadTimeZonePreference,
   refreshTimeZoneContext,
   setManualTimeZone,
   setManualLocale,
+  setManualCurrency,
+  setManualDateFormat,
+  DateFormatPreference,
   TimeInput
 } from "./localTime";
 
@@ -26,12 +39,21 @@ interface TimeZoneContextValue {
   locale: string;
   manualTimeZone: string | null;
   manualLocale: string | null;
+  currency: string;
+  manualCurrency: string | null;
+  dateFormat: Exclude<DateFormatPreference, "auto">;
+  manualDateFormat: DateFormatPreference;
+  isRTL: boolean;
+  writingDirection: "rtl" | "ltr";
+  rtlRestartRequired: boolean;
   automatic: boolean;
   // Increments whenever the active zone changes (foreground/travel/override),
   // so consumers of the formatters re-render with fresh local values.
   revision: number;
   setTimeZoneOverride: (zone: string | null) => Promise<void>;
   setLocaleOverride: (locale: string | null) => Promise<void>;
+  setCurrencyOverride: (currency: string | null) => Promise<void>;
+  setDateFormatOverride: (dateFormat: DateFormatPreference) => Promise<void>;
 }
 
 const TimeZoneContext = createContext<TimeZoneContextValue>({
@@ -39,10 +61,19 @@ const TimeZoneContext = createContext<TimeZoneContextValue>({
   locale: getActiveLocale(),
   manualTimeZone: null,
   manualLocale: null,
+  currency: getActiveCurrency(),
+  manualCurrency: null,
+  dateFormat: getActiveDateFormat(),
+  manualDateFormat: "auto",
+  isRTL: isRtlLocale(),
+  writingDirection: getWritingDirection(),
+  rtlRestartRequired: false,
   automatic: true,
   revision: 0,
   setTimeZoneOverride: async () => undefined,
-  setLocaleOverride: async () => undefined
+  setLocaleOverride: async () => undefined,
+  setCurrencyOverride: async () => undefined,
+  setDateFormatOverride: async () => undefined
 });
 
 export function TimeZoneProvider({ children }: { children: React.ReactNode }) {
@@ -50,6 +81,11 @@ export function TimeZoneProvider({ children }: { children: React.ReactNode }) {
   const [manual, setManual] = useState<string | null>(getManualTimeZone());
   const [locale, setLocale] = useState(getActiveLocale());
   const [manualLocale, setManualLocaleState] = useState<string | null>(getManualLocale());
+  const [currency, setCurrency] = useState(getActiveCurrency());
+  const [manualCurrency, setManualCurrencyState] = useState<string | null>(getManualCurrency());
+  const [dateFormat, setDateFormat] = useState(getActiveDateFormat());
+  const [manualDateFormat, setManualDateFormatState] = useState<DateFormatPreference>(getManualDateFormat());
+  const [rtlRestartRequired, setRtlRestartRequired] = useState(false);
   const [revision, setRevision] = useState(0);
   const timeZoneRef = useRef(timeZone);
   timeZoneRef.current = timeZone;
@@ -64,11 +100,16 @@ export function TimeZoneProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    Promise.all([loadTimeZonePreference(), loadLocalePreference()]).then(() => {
+    Promise.all([loadTimeZonePreference(), loadLocalePreference(), loadRegionFormatPreferences()]).then(() => {
       if (!mounted) return;
       setManual(getManualTimeZone());
       setManualLocaleState(getManualLocale());
       setLocale(getActiveLocale());
+      setManualCurrencyState(getManualCurrency());
+      setCurrency(getActiveCurrency());
+      setManualDateFormatState(getManualDateFormat());
+      setDateFormat(getActiveDateFormat());
+      applyNativeLayoutDirection(getActiveLocale(), setRtlRestartRequired);
       applyActiveZone();
     });
     return () => {
@@ -82,6 +123,9 @@ export function TimeZoneProvider({ children }: { children: React.ReactNode }) {
       if (state === "active") {
         refreshTimeZoneContext();
         setLocale(getActiveLocale());
+        setCurrency(getActiveCurrency());
+        setDateFormat(getActiveDateFormat());
+        applyNativeLayoutDirection(getActiveLocale(), setRtlRestartRequired);
         applyActiveZone();
       }
     });
@@ -103,6 +147,23 @@ export function TimeZoneProvider({ children }: { children: React.ReactNode }) {
     await setManualLocale(nextLocale);
     setManualLocaleState(getManualLocale());
     setLocale(getActiveLocale());
+    setCurrency(getActiveCurrency());
+    setDateFormat(getActiveDateFormat());
+    applyNativeLayoutDirection(getActiveLocale(), setRtlRestartRequired);
+    setRevision((value) => value + 1);
+  }, []);
+
+  const setCurrencyOverride = useCallback(async (nextCurrency: string | null) => {
+    await setManualCurrency(nextCurrency);
+    setManualCurrencyState(getManualCurrency());
+    setCurrency(getActiveCurrency());
+    setRevision((value) => value + 1);
+  }, []);
+
+  const setDateFormatOverride = useCallback(async (nextDateFormat: DateFormatPreference) => {
+    await setManualDateFormat(nextDateFormat);
+    setManualDateFormatState(getManualDateFormat());
+    setDateFormat(getActiveDateFormat());
     setRevision((value) => value + 1);
   }, []);
 
@@ -112,12 +173,21 @@ export function TimeZoneProvider({ children }: { children: React.ReactNode }) {
       locale,
       manualTimeZone: manual,
       manualLocale,
+      currency,
+      manualCurrency,
+      dateFormat,
+      manualDateFormat,
+      isRTL: isRtlLocale(locale),
+      writingDirection: getWritingDirection(locale),
+      rtlRestartRequired,
       automatic: manual == null,
       revision,
       setTimeZoneOverride,
-      setLocaleOverride
+      setLocaleOverride,
+      setCurrencyOverride,
+      setDateFormatOverride
     }),
-    [timeZone, locale, manual, manualLocale, revision, setTimeZoneOverride, setLocaleOverride]
+    [timeZone, locale, manual, manualLocale, currency, manualCurrency, dateFormat, manualDateFormat, rtlRestartRequired, revision, setTimeZoneOverride, setLocaleOverride, setCurrencyOverride, setDateFormatOverride]
   );
 
   return <TimeZoneContext.Provider value={value}>{children}</TimeZoneContext.Provider>;
@@ -132,11 +202,13 @@ export function useTimeZonePreference() {
  * ensures memoized callers recompute after a zone change.
  */
 export function useLocalTime() {
-  const { timeZone, locale, revision } = useContext(TimeZoneContext);
+  const { timeZone, locale, currency, dateFormat, revision } = useContext(TimeZoneContext);
   return useMemo(
     () => ({
       timeZone,
       locale,
+      currency,
+      dateFormat,
       revision,
       short: (value: TimeInput, options?: FormatOptions) => formatShortTimestamp(value, { timeZone, locale, ...options }),
       relative: (value: TimeInput, now?: Date, options?: FormatOptions) =>
@@ -147,10 +219,27 @@ export function useLocalTime() {
       scheduled: (value: TimeInput, eventTimeZone?: string | null, options?: FormatOptions) =>
         formatScheduledTime(value, eventTimeZone, { timeZone, locale, ...options }),
       accessible: (value: TimeInput, options?: FormatOptions) =>
-        formatAccessibleTimestamp(value, { timeZone, locale, ...options })
+        formatAccessibleTimestamp(value, { timeZone, locale, ...options }),
+      money: (amount: number, options?: { currency?: string; locale?: string; minimumFractionDigits?: number; maximumFractionDigits?: number }) =>
+        formatCurrency(amount, { currency, locale, ...options }),
+      numericDate: (value: TimeInput, options?: FormatOptions & { dateFormat?: DateFormatPreference }) =>
+        formatNumericDate(value, { timeZone, locale, dateFormat, ...options }),
+      plural: (count: number, forms: Partial<Record<Intl.LDMLPluralRule, string>> & { other: string }, options?: { locale?: string; includeCount?: boolean }) =>
+        formatPlural(count, forms, { locale, ...options })
     }),
-    [timeZone, locale, revision]
+    [timeZone, locale, currency, dateFormat, revision]
   );
+}
+
+function applyNativeLayoutDirection(locale: string, setRestartRequired: (required: boolean) => void) {
+  const desired = isRtlLocale(locale);
+  I18nManager.allowRTL(true);
+  if (I18nManager.isRTL === desired) {
+    setRestartRequired(false);
+    return;
+  }
+  I18nManager.forceRTL(desired);
+  setRestartRequired(true);
 }
 
 /**

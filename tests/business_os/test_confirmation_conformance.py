@@ -824,6 +824,49 @@ def test_api_envelope_does_not_report_unverified_as_success():
     assert st2 == 409 and body2["ok"] is False, (st2, body2)
 
 
+def test_unverified_write_travels_the_real_assistant_and_api_path():
+    """The dangerous case, exercised live rather than by constructing a result dict.
+
+    Forcing the read-after-write check to disagree is the only way to observe what a
+    client actually receives when a money movement cannot be confirmed. Everything here
+    is the production code path: the real grant redemption, the real handler, the real
+    envelope. Only the canonical verification verdict is forced.
+    """
+    pid = _product()
+    oid = _order(pid)
+    spec = mkt_asst._TOOLS["pay_order"]
+    real_verify = spec["verify"]
+    spec["verify"] = lambda user_id, canonical: (False, {"status": "created"})
+    try:
+        tok = mkt_asst.plan(BUYER, "pay_order", {"order_id": oid})["confirmation_token"]
+        st, body = mkt_api.assistant_execute(
+            BUYER, {"tool": "pay_order", "params": {"order_id": oid},
+                    "confirmation_token": tok})
+    finally:
+        spec["verify"] = real_verify
+
+    # A client that only checks the status code must not see success.
+    assert st == 409, (st, body)
+    # Nor may a client that only checks `ok`.
+    assert body["ok"] is False, body
+    assert body["code"] == res.CODE_VERIFICATION_FAILED, body
+    r = body["result"]
+    assert r["verified"] is False, r
+    # But the write DID run, so the caller must be able to learn that and must be
+    # told not to retry blindly — an unverified write is not a plain failure.
+    assert r["write_applied"] is True, r
+    assert r["retry_safe"] is False, r
+    assert r["message"], r
+
+    # And the approval stayed burnt. An unconfirmed write must not hand back a
+    # reusable authorization, which is the whole reason consumption precedes the handler.
+    _expect(MarketplaceError,
+            lambda: mkt_asst.execute(BUYER, "pay_order", {"order_id": oid},
+                                     confirmation_token=tok),
+            code="confirmation_used", http=409,
+            label="unverified write handed the approval back")
+
+
 def _run_standalone():
     setup_module()
     tests = [
@@ -864,6 +907,7 @@ def _run_standalone():
         test_result_contract_unverified_is_not_ok,
         test_result_contract_live_through_both_assistants,
         test_api_envelope_does_not_report_unverified_as_success,
+        test_unverified_write_travels_the_real_assistant_and_api_path,
     ]
     passed = 0
     for t in tests:

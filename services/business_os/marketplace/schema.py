@@ -40,6 +40,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from services import db
+from services.business_os import confirmations as _confirmations
 
 
 def _utc_now_iso() -> str:
@@ -284,35 +285,18 @@ def ensure_schema(conn=None) -> None:
             "ON business_os_mkt_audit (action)"
         )
 
-        # Governed-assistant confirmation grants. One row per approval minted by
-        # assistant.plan(); consumed exactly once by assistant.execute(). The raw
-        # token is NEVER stored — only its sha256 — and the row binds the grant to
-        # (user, tool, canonical params) so an approval can never be redeemed for a
-        # different actor, tool or payload. ``status`` + ``expires_at`` make the
-        # grant single-use and time-limited.
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS business_os_mkt_assistant_confirmations (
-                token_hash TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL,
-                tool TEXT NOT NULL,
-                params_hash TEXT NOT NULL,
-                params_json TEXT,
-                status TEXT NOT NULL DEFAULT 'pending',
-                expires_at TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                consumed_at TEXT
-            )
-            """
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_mkt_asst_confirm_user "
-            "ON business_os_mkt_assistant_confirmations (user_id, tool, status)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_mkt_asst_confirm_expiry "
-            "ON business_os_mkt_assistant_confirmations (expires_at)"
-        )
+        # Governed-assistant confirmation grants now live in the ONE canonical table
+        # owned by ``services.business_os.confirmations`` and shared by every governed
+        # subsystem, so the seven required grant properties (bound to actor/tool/payload,
+        # time-limited, single-use, replay-resistant, revocable, audited) are implemented
+        # and tested exactly once instead of re-derived per vertical.
+        #
+        # The former marketplace-private ``business_os_mkt_assistant_confirmations`` is
+        # deliberately no longer created. Nothing reads or writes it. It is NOT dropped
+        # here: any row still sitting in a deployed database is a record of a past
+        # approval, and this module's contract is that it never mutates or destroys
+        # existing tables. Dropping it, if wanted, belongs in an explicit migration.
+        _confirmations.ensure_schema(conn)
 
         if owned:
             conn.commit()

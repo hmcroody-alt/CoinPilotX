@@ -89,6 +89,27 @@ export type AccountLanguageResponse = {
   any_language_supported?: boolean;
 };
 
+export type AccountRegionPreferences = {
+  preferred_locale: string;
+  preferred_timezone: string;
+  preferred_currency: string;
+  preferred_date_format: "auto" | "mdy" | "dmy" | "ymd";
+  automatic?: {
+    locale?: boolean;
+    timezone?: boolean;
+    currency?: boolean;
+    date_format?: boolean;
+  };
+  updated_at?: string | null;
+  changed_fields?: string[];
+};
+
+export type AccountRegionPreferencesResponse = AccountRegionPreferences & {
+  ok?: boolean;
+  message?: string;
+  preferences?: AccountRegionPreferences;
+};
+
 export async function getAccountStatus() {
   return pulseApi<AccountStatus>("/api/account/status");
 }
@@ -118,6 +139,21 @@ export async function updateAccountLanguage(language: string) {
     method: "POST",
     body: JSON.stringify({ preferred_language: language, language })
   });
+}
+
+export async function getAccountRegionPreferences() {
+  const data = await pulseApi<AccountRegionPreferencesResponse>("/api/account/region-preferences");
+  return normalizeRegionPreferences(data.preferences || data);
+}
+
+export async function updateAccountRegionPreferences(
+  preferences: Partial<Pick<AccountRegionPreferences, "preferred_locale" | "preferred_timezone" | "preferred_currency" | "preferred_date_format">>
+) {
+  const data = await pulseApi<AccountRegionPreferencesResponse>("/api/account/region-preferences", {
+    method: "PATCH",
+    body: JSON.stringify(preferences)
+  });
+  return normalizeRegionPreferences(data.preferences || data);
 }
 
 export async function getAccountSecurity() {
@@ -153,6 +189,19 @@ export async function verifyPhone() {
     method: "POST",
     body: JSON.stringify({})
   });
+}
+
+function normalizeRegionPreferences(value: Partial<AccountRegionPreferences>): AccountRegionPreferences {
+  const dateFormat = String(value.preferred_date_format || "auto").toLowerCase();
+  return {
+    preferred_locale: String(value.preferred_locale || ""),
+    preferred_timezone: String(value.preferred_timezone || ""),
+    preferred_currency: String(value.preferred_currency || "").toUpperCase(),
+    preferred_date_format: dateFormat === "mdy" || dateFormat === "dmy" || dateFormat === "ymd" ? dateFormat : "auto",
+    automatic: value.automatic,
+    updated_at: value.updated_at || null,
+    changed_fields: Array.isArray(value.changed_fields) ? value.changed_fields.map(String) : []
+  };
 }
 
 export async function enableTwoFactor() {

@@ -6,14 +6,24 @@ import {
   formatAbsoluteDate,
   formatClockTime,
   formatDateRange,
+  formatCurrency,
+  formatNumericDate,
+  formatPlural,
   formatRelativeTime,
   formatScheduledTime,
   getActiveLocale,
+  getActiveCurrency,
+  getActiveDateFormat,
   getActiveTimeZone,
   isValidLocale,
+  isValidCurrency,
+  isRtlLocale,
+  getWritingDirection,
   isValidTimeZone,
   parseServerInstant,
   setManualLocale,
+  setManualCurrency,
+  setManualDateFormat,
   setManualTimeZone
 } from "../localTime";
 
@@ -22,6 +32,8 @@ const INSTANT = "2026-07-20T17:30:00Z"; // 10:30 AM Los Angeles, 6:30 PM London
 afterEach(async () => {
   await setManualTimeZone(null);
   await setManualLocale(null);
+  await setManualCurrency(null);
+  await setManualDateFormat("auto");
 });
 
 describe("parseServerInstant", () => {
@@ -165,5 +177,43 @@ describe("formatDateRange", () => {
       locale: "en-US"
     });
     expect(result).toBe("Jul 20, 1:00 PM – 2:00 PM");
+  });
+});
+
+describe("currency and date-format preferences", () => {
+  it("detects currency from locale and supports a validated manual override", async () => {
+    await setManualLocale("fr-CA");
+    expect(getActiveCurrency()).toBe("CAD");
+    expect(formatCurrency(1234.5)).toContain("$");
+    await setManualCurrency("EUR");
+    expect(getActiveCurrency()).toBe("EUR");
+    expect(formatCurrency(1234.5, { locale: "de-DE" })).toContain("€");
+    expect(isValidCurrency("JPY")).toBe(true);
+    expect(isValidCurrency("US")).toBe(false);
+  });
+
+  it("formats numeric dates with automatic and explicit ordering", async () => {
+    await setManualLocale("en-US");
+    expect(formatNumericDate(INSTANT, { timeZone: "UTC", dateFormat: "mdy" })).toBe("07/20/2026");
+    expect(formatNumericDate(INSTANT, { timeZone: "UTC", dateFormat: "dmy" })).toBe("20/07/2026");
+    expect(formatNumericDate(INSTANT, { timeZone: "UTC", dateFormat: "ymd" })).toBe("2026/07/20");
+    await setManualDateFormat("ymd");
+    expect(getActiveDateFormat()).toBe("ymd");
+    expect(formatNumericDate(INSTANT, { timeZone: "UTC" })).toBe("2026/07/20");
+  });
+});
+
+describe("RTL and pluralization", () => {
+  it("derives writing direction from the active BCP-47 language", () => {
+    expect(isRtlLocale("ar-AE")).toBe(true);
+    expect(getWritingDirection("he-IL")).toBe("rtl");
+    expect(isRtlLocale("en-US")).toBe(false);
+    expect(getWritingDirection("fr-CA")).toBe("ltr");
+  });
+
+  it("uses locale plural categories and localized counts", () => {
+    expect(formatPlural(1, { one: "{count} reply", other: "{count} replies" }, { locale: "en-US" })).toBe("1 reply");
+    expect(formatPlural(2, { one: "{count} reply", other: "{count} replies" }, { locale: "en-US" })).toBe("2 replies");
+    expect(formatPlural(0, { zero: "No replies", one: "One reply", other: "{count} replies" }, { locale: "ar" })).toBe("No replies");
   });
 });

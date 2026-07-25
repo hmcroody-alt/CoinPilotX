@@ -126,6 +126,10 @@ def test_low_risk_writes_verified_no_token():
                              "fulfillment_type": "physical", "inventory_qty": 3})
     assert out["ok"] is True and out["write"] is True, out
     assert out["verified"] is True, out
+    # ``ok`` is derived from verification; ``write_applied`` is the separate
+    # "the canonical verb ran" signal. On a verified write both are True, and
+    # neither may be missing — a client reading either one must find it.
+    assert out["write_applied"] is True, out
     assert out["observed"]["status"] == "draft", out
     pid = out["observed"]["product_id"]
 
@@ -178,6 +182,7 @@ def test_execute_with_token_is_verified():
     out = assistant.execute(BUYER, "pay_order", {"order_id": oid},
                             confirmation_token=p["confirmation_token"])
     assert out["ok"] is True and out["verified"] is True, out
+    assert out["write_applied"] is True, out
     assert out["observed"]["status"] == "paid", out
     # inventory decremented 5 -> 3
     prod = svc.get_product(pid, requester_user_id=SELLER)
