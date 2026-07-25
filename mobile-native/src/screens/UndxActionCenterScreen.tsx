@@ -1,8 +1,15 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
-import { fetchUndxActionCenter, fetchUndxPermissions, fetchUndxTools } from "../api/undxActions";
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  createUndxMarketplaceListingDraft,
+  executeUndxMarketplaceListingPublish,
+  fetchUndxActionCenter,
+  fetchUndxPermissions,
+  fetchUndxTools,
+  planUndxMarketplaceListingPublish
+} from "../api/undxActions";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
@@ -21,6 +28,16 @@ export function UndxActionCenterScreen({ route }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [workflowBusy, setWorkflowBusy] = useState(false);
+  const [workflowMessage, setWorkflowMessage] = useState("");
+  const [actorInput, setActorInput] = useState(actor);
+  const [listingTitle, setListingTitle] = useState("");
+  const [listingDescription, setListingDescription] = useState("");
+  const [priceCents, setPriceCents] = useState("");
+  const [inventoryQty, setInventoryQty] = useState("");
+  const [productId, setProductId] = useState("");
+  const [publishRequestId, setPublishRequestId] = useState("");
+  const [confirmationToken, setConfirmationToken] = useState("");
 
   const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
     setError("");
@@ -120,8 +137,105 @@ export function UndxActionCenterScreen({ route }: Props) {
       <Section title="Receipts and emergency stops" empty="No receipts or active emergency stops returned.">
         {[...receipts.slice(0, 8), ...stops.slice(0, 4)].map((item, index) => <ActionRow key={rowKey(item, index, "receipt")} item={item} danger={Boolean(asText(item.active) === "true" || asText(item.reason))} />)}
       </Section>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Governed Marketplace workflow</Text>
+        <Text style={styles.empty}>Creates drafts and publishes only through UNDX governance, Marketplace assistant confirmation, and canonical Marketplace verification.</Text>
+        {workflowMessage ? <Text style={workflowMessage.toLowerCase().includes("failed") || workflowMessage.toLowerCase().includes("error") ? styles.workflowError : styles.workflowNotice}>{workflowMessage}</Text> : null}
+        <TextInput style={styles.input} value={actorInput} onChangeText={setActorInput} placeholder="Actor, for example user:7" placeholderTextColor={colors.muted} autoCapitalize="none" />
+        <TextInput style={styles.input} value={listingTitle} onChangeText={setListingTitle} placeholder="Listing title" placeholderTextColor={colors.muted} />
+        <TextInput style={[styles.input, styles.textArea]} value={listingDescription} onChangeText={setListingDescription} placeholder="Listing description" placeholderTextColor={colors.muted} multiline />
+        <View style={styles.inputRow}>
+          <TextInput style={[styles.input, styles.inputHalf]} value={priceCents} onChangeText={setPriceCents} placeholder="Price cents" placeholderTextColor={colors.muted} keyboardType="number-pad" />
+          <TextInput style={[styles.input, styles.inputHalf]} value={inventoryQty} onChangeText={setInventoryQty} placeholder="Inventory" placeholderTextColor={colors.muted} keyboardType="number-pad" />
+        </View>
+        <Pressable style={[styles.workflowButton, workflowBusy ? styles.workflowButtonDisabled : undefined]} disabled={workflowBusy} onPress={() => runCreateDraft().catch(() => undefined)} accessibilityRole="button">
+          <Text style={styles.workflowButtonText}>{workflowBusy ? "Working..." : "Create governed draft"}</Text>
+        </Pressable>
+        <View style={styles.inputRow}>
+          <TextInput style={[styles.input, styles.inputHalf]} value={productId} onChangeText={setProductId} placeholder="Product ID" placeholderTextColor={colors.muted} autoCapitalize="none" />
+          <TextInput style={[styles.input, styles.inputHalf]} value={publishRequestId} onChangeText={setPublishRequestId} placeholder="Request ID" placeholderTextColor={colors.muted} autoCapitalize="none" />
+        </View>
+        <TextInput style={styles.input} value={confirmationToken} onChangeText={setConfirmationToken} placeholder="Confirmation token from publish plan" placeholderTextColor={colors.muted} autoCapitalize="none" />
+        <View style={styles.inputRow}>
+          <Pressable style={[styles.secondaryWorkflowButton, workflowBusy ? styles.workflowButtonDisabled : undefined]} disabled={workflowBusy} onPress={() => runPlanPublish().catch(() => undefined)} accessibilityRole="button">
+            <Text style={styles.secondaryWorkflowText}>Plan publish</Text>
+          </Pressable>
+          <Pressable style={[styles.workflowButton, workflowBusy ? styles.workflowButtonDisabled : undefined]} disabled={workflowBusy} onPress={() => runExecutePublish().catch(() => undefined)} accessibilityRole="button">
+            <Text style={styles.workflowButtonText}>Execute publish</Text>
+          </Pressable>
+        </View>
+      </View>
     </ScrollView>
   );
+
+  async function runCreateDraft() {
+    setWorkflowBusy(true);
+    setWorkflowMessage("");
+    try {
+      const result = await createUndxMarketplaceListingDraft({
+        org_id: orgId,
+        actor: actorInput.trim(),
+        listing: {
+          title: listingTitle.trim(),
+          description: listingDescription.trim(),
+          price_cents: Number(priceCents || 0),
+          fulfillment_type: "physical",
+          inventory_qty: Number(inventoryQty || 0)
+        }
+      });
+      setWorkflowMessage(result.ok ? "Governed draft request completed. Refreshing Action Center." : result.error || "Draft request did not complete.");
+      await load("refresh");
+    } catch (runError) {
+      setWorkflowMessage(runError instanceof Error ? runError.message : "Governed draft failed.");
+    } finally {
+      setWorkflowBusy(false);
+    }
+  }
+
+  async function runPlanPublish() {
+    setWorkflowBusy(true);
+    setWorkflowMessage("");
+    try {
+      const result = await planUndxMarketplaceListingPublish({
+        org_id: orgId,
+        actor: actorInput.trim(),
+        product_id: productId.trim()
+      });
+      const plan = asRecord(asRecord(result.result).plan);
+      const confirmation = asRecord(asRecord(result.result).confirmation);
+      const token = asText(plan.confirmation_token || plan.token);
+      const requestId = asText(confirmation.request_id || asRecord(asRecord(result.result).request).request_id);
+      if (token) setConfirmationToken(token);
+      if (requestId) setPublishRequestId(requestId);
+      setWorkflowMessage(result.ok ? "Publish plan created. Review confirmation token before execute." : result.error || "Publish plan did not complete.");
+      await load("refresh");
+    } catch (runError) {
+      setWorkflowMessage(runError instanceof Error ? runError.message : "Publish plan failed.");
+    } finally {
+      setWorkflowBusy(false);
+    }
+  }
+
+  async function runExecutePublish() {
+    setWorkflowBusy(true);
+    setWorkflowMessage("");
+    try {
+      const result = await executeUndxMarketplaceListingPublish({
+        org_id: orgId,
+        actor: actorInput.trim(),
+        request_id: publishRequestId.trim(),
+        product_id: productId.trim(),
+        confirmation_token: confirmationToken.trim()
+      });
+      setWorkflowMessage(result.ok ? "Publish execution verified by Marketplace." : result.error || "Publish execution did not verify.");
+      await load("refresh");
+    } catch (runError) {
+      setWorkflowMessage(runError instanceof Error ? runError.message : "Publish execution failed.");
+    } finally {
+      setWorkflowBusy(false);
+    }
+  }
 }
 
 function Section({ title, empty, children }: { title: string; empty: string; children: ReactNode }) {
@@ -351,5 +465,81 @@ const styles = StyleSheet.create({
   rowMeta: {
     ...logiNexus.typography.metadata,
     color: colors.disabled
+  },
+  input: {
+    ...logiNexus.typography.body,
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.large,
+    borderWidth: 1,
+    color: colors.text,
+    minHeight: 48,
+    paddingHorizontal: logiNexus.spacing.md,
+    paddingVertical: logiNexus.spacing.sm
+  },
+  textArea: {
+    minHeight: 96,
+    textAlignVertical: "top"
+  },
+  inputRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: logiNexus.spacing.md
+  },
+  inputHalf: {
+    flex: 1,
+    minWidth: 140
+  },
+  workflowNotice: {
+    ...logiNexus.typography.body,
+    backgroundColor: colors.signalDim,
+    borderColor: `${colors.accent}66`,
+    borderRadius: logiNexus.radius.large,
+    borderWidth: 1,
+    color: colors.accent,
+    padding: logiNexus.spacing.md
+  },
+  workflowError: {
+    ...logiNexus.typography.body,
+    backgroundColor: colors.dangerSoft,
+    borderColor: `${colors.danger}66`,
+    borderRadius: logiNexus.radius.large,
+    borderWidth: 1,
+    color: colors.danger,
+    padding: logiNexus.spacing.md
+  },
+  workflowButton: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderRadius: logiNexus.radius.large,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 48,
+    minWidth: 150,
+    paddingHorizontal: logiNexus.spacing.lg
+  },
+  workflowButtonDisabled: {
+    opacity: 0.55
+  },
+  workflowButtonText: {
+    ...logiNexus.typography.button,
+    color: colors.background,
+    textAlign: "center"
+  },
+  secondaryWorkflowButton: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.large,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 48,
+    minWidth: 150,
+    paddingHorizontal: logiNexus.spacing.lg
+  },
+  secondaryWorkflowText: {
+    ...logiNexus.typography.button,
+    color: colors.text,
+    textAlign: "center"
   }
 });
