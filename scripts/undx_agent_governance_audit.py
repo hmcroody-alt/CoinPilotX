@@ -24,6 +24,7 @@ REQUIRED_FILES = [
     "services/business_os/undx_actions/schema.py",
     "services/business_os/undx_actions/engine.py",
     "services/business_os/undx_actions/api.py",
+    "services/business_os/undx_actions/marketplace_workflow.py",
     "reports/undx_agent_stage0_inventory_and_architecture.md",
 ]
 
@@ -42,6 +43,15 @@ REQUIRED_ENGINE_TOKENS = [
     "record_receipt",
     "activate_emergency_stop",
     "action_center",
+]
+
+REQUIRED_MARKETPLACE_WORKFLOW_TOKENS = [
+    "create_listing_draft",
+    "plan_publish_listing",
+    "execute_publish_listing",
+    "marketplace.product.create",
+    "marketplace.product.publish",
+    "record_receipt",
 ]
 
 
@@ -88,9 +98,15 @@ def main() -> int:
         if token not in marketplace:
             _fail(f"marketplace assistant missing {token}")
 
+    workflow = _read("services/business_os/undx_actions/marketplace_workflow.py")
+    for token in REQUIRED_MARKETPLACE_WORKFLOW_TOKENS:
+        if token not in workflow:
+            _fail(f"marketplace workflow missing {token}")
+
     _run([sys.executable, "tests/business_os/test_undx_schema.py"])
     _run([sys.executable, "tests/business_os/test_undx_engine.py"])
     _run([sys.executable, "tests/business_os/test_undx_api.py"])
+    _run([sys.executable, "tests/business_os/test_undx_marketplace_workflow.py"])
 
     print("PASS UNDX sovereign governance audit")
     return 0

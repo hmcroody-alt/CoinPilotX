@@ -107,9 +107,9 @@ Execution boundary:
   `BUSINESS_OS_MARKETPLACE_ASSISTANT_DISABLE_WRITES`
 - New emergency stop table: `business_os_undx_emergency_stops`
 
-## First Marketplace Workflow Readiness
+## First Marketplace Workflow Status
 
-Ready foundation:
+Implemented foundation:
 
 - Register `marketplace.create_product` with action type
   `marketplace.product.create`.
@@ -117,13 +117,32 @@ Ready foundation:
   `marketplace.product.publish`.
 - Use action request -> governance decision -> confirmation -> Marketplace
   assistant plan/execute -> verified receipt.
+- Normalize UNDX listing input into canonical Marketplace `create_product` params.
+- Create Marketplace draft products only after UNDX governance allows the action.
+- Block draft creation when governance defaults to `require_approval`.
+- Plan Marketplace publish through the existing Marketplace assistant confirmation
+  token.
+- Execute Marketplace publish only with the canonical Marketplace confirmation token.
+- Record verified/failed/blocked receipts into `business_os_undx_action_receipts`.
+- Emergency stop blocks publish even when permissions exist.
 
-Still pending for full autonomous Marketplace listing drafts:
+Implemented files:
 
-- Native/API-facing draft builder from text/image inputs.
-- Image/media metadata validation against Marketplace product media contracts.
-- Human approval UI or Action Center surface.
-- End-to-end publish receipt wiring to the Marketplace assistant execute path.
+- `services/business_os/undx_actions/marketplace_workflow.py`
+- `services/business_os/undx_actions/api.py`
+- `services/business_os/marketplace/assistant.py`
+- `tests/business_os/test_undx_marketplace_workflow.py`
+
+Still pending for a native end-user Marketplace Action Center:
+
+- HTTP route adapters in `bot.py` for the new UNDX Marketplace workflow controller.
+  This checkout currently has a large unrelated unstaged `bot.py` diff, so route
+  adapters were not staged in this scoped commit.
+- Native UI for approvals, publish confirmation, receipts, and retry.
+- Image/media attachment ingestion beyond metadata boundaries. Current canonical
+  Marketplace catalog stores text, price, fulfillment, and inventory; media indexing
+  needs to be added through the Marketplace media contract before UNDX can claim image
+  listing completeness.
 - Xcode/physical-device evidence for the native presentation.
 
 ## Verification Completed
@@ -133,16 +152,22 @@ Used `python3` because this checkout does not currently have `venv/bin/python`.
 - `python3 tests/business_os/test_undx_schema.py` PASS
 - `python3 tests/business_os/test_undx_engine.py` PASS
 - `python3 tests/business_os/test_undx_api.py` PASS
+- `python3 tests/business_os/test_undx_marketplace_workflow.py` PASS
+- `python3 scripts/undx_agent_governance_audit.py` PASS
 
 ## Release Judgment
 
 Stage 0 inventory: complete enough to proceed.
 
 Stage 1 governance foundation: implemented and test-covered as a backend control
-plane. It is not yet a complete production autonomous marketplace listing workflow.
+plane.
+
+First Marketplace workflow: implemented at the canonical service/controller layer
+for draft create, publish plan, publish execute, verification receipts, and emergency
+stop. It is not yet complete as a native UI surface because route adapters and
+approval UI remain.
 
 Next highest-value action:
 
-Build the Marketplace listing draft workflow on top of the existing Marketplace
-assistant plan/execute boundary and the new UNDX governance request, confirmation,
-receipt, and action-center primitives.
+Add clean HTTP route adapters and the native Marketplace Action Center for UNDX
+listing draft review, confirmation, publish, and receipt visibility.

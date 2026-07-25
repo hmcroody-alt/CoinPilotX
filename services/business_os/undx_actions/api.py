@@ -22,6 +22,7 @@ from typing import Any
 
 from services.business_os.undx_actions import schema as _schema
 from services.business_os.undx_actions import engine as _engine
+from services.business_os.undx_actions import marketplace_workflow as _marketplace
 
 
 FLAG_ENV = "BUSINESS_OS_UNDX_ACTIONS"
@@ -301,6 +302,76 @@ def action_center_report(org_id: str, limit: int = 100) -> tuple:
     except _engine.UndxActionsError as e:
         return _bad("invalid_request", str(e))
     return (200, {"ok": True, "result": result})
+
+
+def marketplace_create_listing_draft(user_id: Any, payload: Any) -> tuple:
+    """Create a Marketplace listing draft through UNDX governance.
+
+    Required payload fields: org_id, actor, listing. The listing is normalized into
+    canonical Marketplace create_product params.
+    """
+    if not is_enabled():
+        return _dark()
+    if not isinstance(payload, dict):
+        return _bad("missing_payload", "Expected a JSON body.")
+    if not payload.get("org_id") or not payload.get("actor") or not isinstance(payload.get("listing"), dict):
+        return _bad("missing_fields", "org_id, actor and listing are required.")
+    ensure_ready()
+    try:
+        result = _marketplace.create_listing_draft(
+            org_id=payload.get("org_id"),
+            actor=payload.get("actor"),
+            user_id=user_id,
+            listing=payload.get("listing"),
+            source=(payload.get("source") or "undx_marketplace"),
+            external_ref=payload.get("external_ref"))
+    except _engine.UndxActionsError as e:
+        return _bad("invalid_listing", str(e))
+    return (200 if result.get("ok") else 409, {"ok": bool(result.get("ok")), "result": result})
+
+
+def marketplace_plan_publish(user_id: Any, payload: Any) -> tuple:
+    if not is_enabled():
+        return _dark()
+    if not isinstance(payload, dict):
+        return _bad("missing_payload", "Expected a JSON body.")
+    if not payload.get("org_id") or not payload.get("actor") or not payload.get("product_id"):
+        return _bad("missing_fields", "org_id, actor and product_id are required.")
+    ensure_ready()
+    try:
+        result = _marketplace.plan_publish_listing(
+            org_id=payload.get("org_id"),
+            actor=payload.get("actor"),
+            user_id=user_id,
+            product_id=payload.get("product_id"),
+            source=(payload.get("source") or "undx_marketplace"),
+            external_ref=payload.get("external_ref"))
+    except _engine.UndxActionsError as e:
+        return _bad("invalid_publish_plan", str(e))
+    return (200 if result.get("ok") else 409, {"ok": bool(result.get("ok")), "result": result})
+
+
+def marketplace_execute_publish(user_id: Any, payload: Any) -> tuple:
+    if not is_enabled():
+        return _dark()
+    if not isinstance(payload, dict):
+        return _bad("missing_payload", "Expected a JSON body.")
+    required = ("org_id", "actor", "request_id", "product_id", "confirmation_token")
+    if any(not payload.get(k) for k in required):
+        return _bad("missing_fields",
+                    "org_id, actor, request_id, product_id and confirmation_token are required.")
+    ensure_ready()
+    try:
+        result = _marketplace.execute_publish_listing(
+            org_id=payload.get("org_id"),
+            actor=payload.get("actor"),
+            user_id=user_id,
+            request_id=payload.get("request_id"),
+            product_id=payload.get("product_id"),
+            confirmation_token=payload.get("confirmation_token"))
+    except _engine.UndxActionsError as e:
+        return _bad("invalid_publish_execute", str(e))
+    return (200 if result.get("ok") else 409, {"ok": bool(result.get("ok")), "result": result})
 
 
 def run_evaluate(org_id: str) -> tuple:
