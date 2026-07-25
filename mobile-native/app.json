@@ -12,6 +12,9 @@
       "bundleIdentifier": "com.pulsesoc.app",
       "buildNumber": "3",
       "supportsTablet": false,
+      "associatedDomains": [
+        "applinks:pulsesoc.com"
+      ],
       "infoPlist": {
         "NSCameraUsageDescription": "PulseSoc uses the camera for native status, reels, profile media, and calls.",
         "NSMicrophoneUsageDescription": "PulseSoc uses the microphone for native voice/video calls and media capture.",
@@ -19,12 +22,31 @@
         "NSFaceIDUsageDescription": "PulseSoc uses Face ID to unlock your saved sign-in securely.",
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": [
-          "audio"
+          "audio",
+          "fetch",
+          "remote-notification"
         ]
       }
     },
     "android": {
       "package": "com.pulsesoc.nativeapp",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "pulsesoc.com",
+              "pathPrefix": "/pulse"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",

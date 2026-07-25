@@ -9,11 +9,15 @@ import {
   formatScheduledTime,
   formatShortTimestamp,
   getActiveTimeZone,
+  getActiveLocale,
+  getManualLocale,
   getManualTimeZone,
   getResolvedLocale,
+  loadLocalePreference,
   loadTimeZonePreference,
   refreshTimeZoneContext,
   setManualTimeZone,
+  setManualLocale,
   TimeInput
 } from "./localTime";
 
@@ -21,25 +25,31 @@ interface TimeZoneContextValue {
   timeZone: string;
   locale: string;
   manualTimeZone: string | null;
+  manualLocale: string | null;
   automatic: boolean;
   // Increments whenever the active zone changes (foreground/travel/override),
   // so consumers of the formatters re-render with fresh local values.
   revision: number;
   setTimeZoneOverride: (zone: string | null) => Promise<void>;
+  setLocaleOverride: (locale: string | null) => Promise<void>;
 }
 
 const TimeZoneContext = createContext<TimeZoneContextValue>({
   timeZone: getActiveTimeZone(),
-  locale: getResolvedLocale(),
+  locale: getActiveLocale(),
   manualTimeZone: null,
+  manualLocale: null,
   automatic: true,
   revision: 0,
-  setTimeZoneOverride: async () => undefined
+  setTimeZoneOverride: async () => undefined,
+  setLocaleOverride: async () => undefined
 });
 
 export function TimeZoneProvider({ children }: { children: React.ReactNode }) {
   const [timeZone, setTimeZone] = useState(getActiveTimeZone());
   const [manual, setManual] = useState<string | null>(getManualTimeZone());
+  const [locale, setLocale] = useState(getActiveLocale());
+  const [manualLocale, setManualLocaleState] = useState<string | null>(getManualLocale());
   const [revision, setRevision] = useState(0);
   const timeZoneRef = useRef(timeZone);
   timeZoneRef.current = timeZone;
@@ -54,9 +64,11 @@ export function TimeZoneProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    loadTimeZonePreference().then(() => {
+    Promise.all([loadTimeZonePreference(), loadLocalePreference()]).then(() => {
       if (!mounted) return;
       setManual(getManualTimeZone());
+      setManualLocaleState(getManualLocale());
+      setLocale(getActiveLocale());
       applyActiveZone();
     });
     return () => {
@@ -69,6 +81,7 @@ export function TimeZoneProvider({ children }: { children: React.ReactNode }) {
     const subscription = AppState.addEventListener("change", (state: AppStateStatus) => {
       if (state === "active") {
         refreshTimeZoneContext();
+        setLocale(getActiveLocale());
         applyActiveZone();
       }
     });
@@ -86,16 +99,25 @@ export function TimeZoneProvider({ children }: { children: React.ReactNode }) {
     [applyActiveZone]
   );
 
+  const setLocaleOverride = useCallback(async (nextLocale: string | null) => {
+    await setManualLocale(nextLocale);
+    setManualLocaleState(getManualLocale());
+    setLocale(getActiveLocale());
+    setRevision((value) => value + 1);
+  }, []);
+
   const value = useMemo<TimeZoneContextValue>(
     () => ({
       timeZone,
-      locale: getResolvedLocale(),
+      locale,
       manualTimeZone: manual,
+      manualLocale,
       automatic: manual == null,
       revision,
-      setTimeZoneOverride
+      setTimeZoneOverride,
+      setLocaleOverride
     }),
-    [timeZone, manual, revision, setTimeZoneOverride]
+    [timeZone, locale, manual, manualLocale, revision, setTimeZoneOverride, setLocaleOverride]
   );
 
   return <TimeZoneContext.Provider value={value}>{children}</TimeZoneContext.Provider>;

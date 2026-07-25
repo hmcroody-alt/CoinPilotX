@@ -8,7 +8,6 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -29,6 +28,7 @@ import { DIGITAL_COMMERCE_ENABLED } from "../api/config";
 import { mediaDisplayUrl } from "../api/feed";
 import { profileNavigationParams, resolveProfileTarget } from "../api/profileTarget";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
+import { ContentTranslation } from "../components/ContentTranslation";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -239,7 +239,13 @@ function MarketplaceCard({ listing, busy, onOpen, onSave, onReport }: {
       {cover ? <Image source={{ uri: cover }} style={styles.cover} resizeMode="cover" /> : <View style={styles.coverFallback}><Text style={styles.coverText}>Marketplace</Text></View>}
       <View style={styles.cardBody}>
         <Text style={styles.cardTitle}>{listing.title}</Text>
-        <Text style={styles.cardDescription} numberOfLines={2}>{listing.short_description || listing.description || "PulseSoc listing"}</Text>
+        <ContentTranslation
+          contentType="marketplace"
+          contentRef={listing.id}
+          text={listing.short_description || listing.description || "PulseSoc listing"}
+          textStyle={styles.cardDescription}
+          numberOfLines={2}
+        />
         <View style={styles.pillRow}>
           <Text style={styles.pill}>{listing.category || "Education"}</Text>
           <Text style={styles.pill}>{listing.price_label || "Request access"}</Text>
@@ -298,7 +304,12 @@ function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onCo
         </Pressable>
         <Text style={styles.detailTitle}>{listing.title}</Text>
         <Text style={styles.detailPrice}>{listing.price_label || "Request access"}</Text>
-        <Text style={styles.detailDescription}>{listing.description || listing.short_description || "No description loaded."}</Text>
+        <ContentTranslation
+          contentType="marketplace"
+          contentRef={listing.id}
+          text={listing.description || listing.short_description || "No description loaded."}
+          textStyle={styles.detailDescription}
+        />
         <View style={styles.pillRow}>
           <Text style={styles.pill}>{listing.category || "Education"}</Text>
           <Text style={styles.pill}>Safety {listing.safety_score || 0}</Text>

@@ -388,7 +388,7 @@ export async function openLiveWebFallback(liveId?: number) {
 }
 
 export function liveWebUrl(liveId?: number) {
-  return liveId ? `${PULSE_API_BASE_URL}/pulse/reels?live=${encodeURIComponent(String(liveId))}` : `${PULSE_API_BASE_URL}/pulse/live`;
+  return liveId ? `${PULSE_API_BASE_URL}/pulse/live/${encodeURIComponent(String(liveId))}` : `${PULSE_API_BASE_URL}/pulse/live`;
 }
 
 export function normalizeLiveItems(items: PulseLiveItem[]) {

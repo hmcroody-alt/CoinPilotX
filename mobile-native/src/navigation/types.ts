@@ -18,7 +18,7 @@ export type AppTabParamList = {
   Status: { openCreator?: boolean; statusId?: number } | undefined;
   Messenger: undefined;
   Notifications: undefined;
-  PulseAI: undefined;
+  PulseAI: { taskId?: string } | undefined;
   Profile: undefined;
   Marketplace: undefined;
   Settings: undefined;
@@ -59,6 +59,7 @@ export type RootStackParamList = {
     avatarUrl?: string;
     presence?: string;
     openControlCenter?: boolean;
+    undxTaskId?: string;
   };
   NewChat: { initialQuery?: string; targetUserId?: number; title?: string } | undefined;
   PostDetail: { postId: number; title?: string };
@@ -159,7 +160,7 @@ export type RootStackParamList = {
   ActivityInboxLegacyInbox: { title?: string } | undefined;
   ActivityInboxWebActivity: { title?: string } | undefined;
   ActivityInboxWebInbox: { title?: string } | undefined;
-  NotificationCenter: undefined;
+  NotificationCenter: { notificationId?: number } | undefined;
   NotificationPreferences: undefined;
   RegionTime: undefined;
   /**

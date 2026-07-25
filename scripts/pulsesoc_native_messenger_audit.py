@@ -30,6 +30,7 @@ def main() -> int:
     report = read("reports/pulsesoc_native_messenger_progress.md")
     api = read("mobile-native/src/api/messenger.ts")
     messenger_screen = read("mobile-native/src/screens/MessengerScreen.tsx")
+    new_chat_screen = read("mobile-native/src/screens/NewChatScreen.tsx")
     chat_screen = read("mobile-native/src/screens/ChatScreen.tsx")
     linking = read("mobile-native/src/navigation/linking.ts")
     app = read("mobile-native/App.tsx")
@@ -67,11 +68,18 @@ def main() -> int:
     for token in (
         "FlatList",
         "RefreshControl",
-        "searchMessenger",
         "loadCachedConversations",
         "navigation.navigate(\"Chat\"",
     ):
         require(messenger_screen, token, "conversation list behavior")
+
+    for token in (
+        "searchMessengerUsers",
+        "openDirectConversation",
+        "TextInput",
+        "navigation.replace(\"Chat\"",
+    ):
+        require(new_chat_screen, token, "new conversation search behavior")
 
     for token in (
         "FlatList",
@@ -94,7 +102,7 @@ def main() -> int:
     require(linking, "pulse/messages/:conversationId", "Messenger deep link")
     require(app, 'linking={authState.status === "signedIn" ? linking : undefined}', "auth-gated navigation linking registration")
 
-    messenger_native = "\n".join((api, messenger_screen, chat_screen, linking))
+    messenger_native = "\n".join((api, messenger_screen, new_chat_screen, chat_screen, linking))
     require_any(messenger_native, ("React Native", "react-native"), "native implementation")
     if "WebView" in messenger_native or "react-native-webview" in messenger_native:
         raise AssertionError("Native Messenger foundation must not introduce WebView coupling.")

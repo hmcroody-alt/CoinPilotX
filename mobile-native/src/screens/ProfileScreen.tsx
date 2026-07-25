@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Pressable, RefreshControl, Share, StyleSheet, Text, View } from "react-native";
+import { Animated, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { deletePost, listFeed, PulsePost, pulsePostUrl, reactToPost, savePost } from "../api/feed";
 import { describeDeleteError } from "../api/deleteErrors";
 import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
@@ -13,6 +13,7 @@ import { invalidateNativeSync } from "../core/eventSync";
 import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { sharePulseObject } from "../sharing/nativeShare";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "ProfileDetail">>;
 type TabKey = "posts" | "media" | "about";
@@ -314,7 +315,14 @@ export function ProfileScreen({ route, navigation }: Props) {
             onReact={handleReact}
             onSave={handleSave}
             onComment={(post) => navigation?.navigate("PostDetail", { postId: post.id, title: "Comments" })}
-            onShare={(post) => Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined)}
+            onShare={(post) => sharePulseObject({
+              kind: "post",
+              url: pulsePostUrl(post.id),
+              title: post.title || "PulseSoc post",
+              description: post.body || post.text || post.content,
+              author: post.author?.display_name || post.author?.name || post.author?.username || post.author_name,
+              previewImageUrl: post.thumbnail_url || post.image_url
+            }).catch(() => undefined)}
             onDelete={owner ? handleDeletePost : undefined}
             onAuthorPress={(post) => {
               const target = profileTargetFromAuthor(post.author as Record<string, unknown> | undefined, post as unknown as Record<string, unknown>);

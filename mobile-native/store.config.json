@@ -1,0 +1,91 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "version": "1.0",
+    "copyright": "CoinPlotXAI Inc.",
+    "release": {
+      "automaticRelease": true
+    },
+    "info": {
+      "en-US": {
+        "description": "PulseSoc is a social platform for creating, learning, and connecting through posts, videos, reels, messages, notifications, profiles, reporting, blocking, and community discovery. With PulseSoc, users can follow creators, explore video content, check notifications, manage their profile, and stay connected through direct messages. PulseSoc is operated by CoinPilotXAI Inc. and is built around user control, moderation, privacy-aware design, and clear communication. PulseSoc is not financial, investment, legal, or betting advice. Paid digital access is not available in this iOS build until Apple In-App Purchase support is implemented and approved.",
+        "keywords": [
+          "social",
+          "creator",
+          "reels",
+          "video",
+          "messaging",
+          "notifications",
+          "community",
+          "PulseSoc"
+        ],
+        "marketingUrl": "https://pulsesoc.com",
+        "promoText": "PulseSoc brings social posting, reels, videos, messaging, notifications, reporting, blocking, and core community tools into one mobile-first experience.",
+        "supportUrl": "https://pulsesoc.com/support",
+        "title": "PulseSoc",
+        "subtitle": "Create, connect, stay aware",
+        "privacyPolicyUrl": "https://pulsesoc.com/privacy",
+        "privacyChoicesUrl": "https://pulsesoc.com/privacy-center",
+        "screenshots": {
+          "APP_IPHONE_65": [
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iphone-65-06-welcome.png",
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iphone-65-04-home-feed.png",
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iphone-65-03-videos-menu.png",
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iphone-65-02-menu-primary.png",
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iphone-65-01-menu-utility.png",
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iphone-65-05-login.png"
+          ],
+          "APP_IPAD_PRO_3GEN_129": [
+            "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/ipad-13-premium-inside-2048x2732.png",
+            "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/ipad-13-feed-inside-2048x2732.png",
+            "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/ipad-13-messages-inside-2048x2732.png",
+            "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/ipad-13-welcome-2048x2732.png"
+          ]
+        }
+      }
+    },
+    "categories": [
+      "SOCIAL_NETWORKING",
+      "PHOTO_AND_VIDEO"
+    ],
+    "advisory": {
+      "ageRatingOverride": "NONE",
+      "alcoholTobaccoOrDrugUseOrReferences": "NONE",
+      "contests": "NONE",
+      "gambling": false,
+      "gamblingSimulated": "NONE",
+      "horrorOrFearThemes": "NONE",
+      "kidsAgeBand": null,
+      "koreaAgeRatingOverride": "NONE",
+      "lootBox": false,
+      "matureOrSuggestiveThemes": "NONE",
+      "medicalOrTreatmentInformation": "NONE",
+      "profanityOrCrudeHumor": "NONE",
+      "sexualContentGraphicAndNudity": "NONE",
+      "sexualContentOrNudity": "NONE",
+      "unrestrictedWebAccess": false,
+      "violenceCartoonOrFantasy": "NONE",
+      "violenceRealistic": "NONE",
+      "violenceRealisticProlongedGraphicOrSadistic": "NONE",
+      "advertising": false,
+      "ageAssurance": false,
+      "ageRatingOverrideV2": "NONE",
+      "developerAgeRatingInfoUrl": null,
+      "gunsOrOtherWeapons": "NONE",
+      "healthOrWellnessTopics": false,
+      "messagingAndChat": true,
+      "parentalControls": false,
+      "userGeneratedContent": true
+    },
+    "review": {
+      "firstName": "ROODY",
+      "lastName": "CHERIE",
+      "email": "support@pulsesoc.com",
+      "phone": "5164618652",
+      "demoUsername": "Ulagwop@gmail.com",
+      "demoPassword": "Ula@123456",
+      "demoRequired": true,
+      "notes": "PulseSoc is a WebView-based native shell for the live PulseSoc social platform at https://pulsesoc.com. Demo sign-in credentials are provided above.\n\nGuideline 1.2 - User Generated Content safeguards:\n- Terms/EULA and the PulseSoc no-tolerance UGC policy are presented before users register or log in.\n- Users can flag objectionable content from post/profile safety menus. Reports create PulseSoc moderation records for review.\n- Users can block abusive users from the profile More menu using Block User.\n- Blocking immediately stops contact, hides/removes that user's activity from the blocker user's feed experience, and creates a moderation report so PulseSoc safety/admin staff are notified.\n- PulseSoc targets moderation action within 24 hours where required for objectionable content or abusive behavior.\n- The attached physical-device screen recording demonstrates the pre-login Terms/EULA screen, the report mechanism, and the block mechanism.\n\nGuideline 3.1.1 payment compliance update:\nPulseSoc iOS build 1.0.0 (27) provides core social features only until Apple In-App Purchase products are implemented and approved. Paid digital access is unavailable in the iOS native app context. Stripe checkout, billing portal, Founder/Premium activation, payment success confirmation, Premium Intelligence, Premium Portfolio, UNDX Premium, creator monetization, creator analytics, creator AI, paid courses, purchases/orders, seller orders, and premium entitlements are blocked or return iOS core-only responses in iOS native context. Existing web/Stripe subscriptions do not unlock paid digital features inside this iOS build. Account status returns iOS Core Access without Stripe IDs or paid subscription state.\n\nThe iOS app still supports login, signup, feed, posts, reels, videos, messages, notifications, profile, reporting, blocking, support, terms, privacy, and account settings."
+    }
+  }
+}

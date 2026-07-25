@@ -8,9 +8,12 @@ import {
   formatDateRange,
   formatRelativeTime,
   formatScheduledTime,
+  getActiveLocale,
   getActiveTimeZone,
+  isValidLocale,
   isValidTimeZone,
   parseServerInstant,
+  setManualLocale,
   setManualTimeZone
 } from "../localTime";
 
@@ -18,6 +21,7 @@ const INSTANT = "2026-07-20T17:30:00Z"; // 10:30 AM Los Angeles, 6:30 PM London
 
 afterEach(async () => {
   await setManualTimeZone(null);
+  await setManualLocale(null);
 });
 
 describe("parseServerInstant", () => {
@@ -108,6 +112,21 @@ describe("manual override", () => {
   it("ignores an invalid override", async () => {
     await setManualTimeZone("Not/AZone");
     expect(getActiveTimeZone()).not.toBe("Not/AZone");
+  });
+});
+
+describe("locale override", () => {
+  it("changes localized formatting immediately and returns to device locale", async () => {
+    await setManualLocale("fr-FR");
+    expect(getActiveLocale()).toBe("fr-FR");
+    expect(formatAbsoluteDate(INSTANT, { timeZone: "Europe/Paris", withYear: false })).toBe("20 juil.");
+    await setManualLocale(null);
+    expect(getActiveLocale()).not.toBe("fr-FR");
+  });
+
+  it("rejects malformed locale identifiers", () => {
+    expect(isValidLocale("es-MX")).toBe(true);
+    expect(isValidLocale("not_a_locale_%%%")).toBe(false);
   });
 });
 

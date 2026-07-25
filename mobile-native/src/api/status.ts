@@ -297,7 +297,7 @@ export function reconcileStatusItems(current: PulseStatus[], incoming: PulseStat
 }
 
 export function pulseStatusUrl(statusId: number) {
-  return `${PULSE_API_BASE_URL}/pulse/status?status_id=${encodeURIComponent(String(statusId))}`;
+  return `${PULSE_API_BASE_URL}/pulse/status/${encodeURIComponent(String(statusId))}`;
 }
 
 export function normalizeStatuses(items: PulseStatus[]) {

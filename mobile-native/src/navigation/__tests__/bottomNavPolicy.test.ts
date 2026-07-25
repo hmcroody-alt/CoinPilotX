@@ -2,14 +2,14 @@ import { BOTTOM_NAV_POLICY, isScrollResponsivePolicy, resolveBottomNavPolicy } f
 
 describe("bottom navigation screen policy", () => {
   it("makes the immersive/feed tabs scroll-responsive", () => {
-    for (const tab of ["Home", "Reels", "Profile", "Search", "Notifications", "Marketplace"]) {
+    for (const tab of ["Home", "Reels", "Profile", "Search", "Notifications", "Marketplace", "Settings"]) {
       expect(resolveBottomNavPolicy(tab)).toBe("scroll-responsive");
       expect(isScrollResponsivePolicy(tab)).toBe(true);
     }
   });
 
   it("keeps dense control surfaces always visible", () => {
-    for (const tab of ["Dashboard", "Settings", "Live", "PulseAI"]) {
+    for (const tab of ["Dashboard", "Live", "PulseAI"]) {
       expect(resolveBottomNavPolicy(tab)).toBe("always-visible");
       expect(isScrollResponsivePolicy(tab)).toBe(false);
     }

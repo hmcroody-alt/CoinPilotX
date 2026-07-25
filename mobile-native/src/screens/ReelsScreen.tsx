@@ -15,7 +15,6 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -56,6 +55,7 @@ import { PulseApiError } from "../api/pulseApi";
 import { describeDeleteError } from "../api/deleteErrors";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
 import { ReelPlayerCard } from "../components/ReelPlayerCard";
+import { ContentTranslation } from "../components/ContentTranslation";
 import { classifyReelMedia } from "../reels/reelMediaKind";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
@@ -64,6 +64,7 @@ import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { useAuth } from "../session/auth";
+import { sharePulseObject } from "../sharing/nativeShare";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Reels"> | NativeStackScreenProps<RootStackParamList, "ReelDetail">;
 
@@ -327,13 +328,34 @@ export function ReelsScreen({ route, navigation }: Props) {
     try {
       const liveId = Number(reel.live_session_id || reel.live?.live_session_id || 0);
       if (liveId) {
-        await Share.share({ message: reel.live?.live_url || liveWebUrl(liveId) });
+        await sharePulseObject({
+          kind: "live",
+          url: reel.live?.live_url || liveWebUrl(liveId),
+          title: reel.title || "PulseSoc Live",
+          description: reel.caption || reel.body,
+          author: reel.author?.display_name || reel.author?.name || reel.author?.username,
+          previewImageUrl: reel.poster_url
+        });
         return;
       }
       const result = await shareReel(reel.id);
-      await Share.share({ message: result.share_url || reelWebUrl(reel.id) });
+      await sharePulseObject({
+        kind: "reel",
+        url: result.share_url || reelWebUrl(reel.id),
+        title: reel.title || "PulseSoc Reel",
+        description: reel.caption || reel.body,
+        author: reel.author?.display_name || reel.author?.name || reel.author?.username,
+        previewImageUrl: reel.poster_url
+      });
     } catch {
-      await Share.share({ message: reelWebUrl(reel.id) }).catch(() => undefined);
+      await sharePulseObject({
+        kind: "reel",
+        url: reelWebUrl(reel.id),
+        title: reel.title || "PulseSoc Reel",
+        description: reel.caption || reel.body,
+        author: reel.author?.display_name || reel.author?.name || reel.author?.username,
+        previewImageUrl: reel.poster_url
+      }).catch(() => undefined);
     } finally {
       setShareOpen(false);
     }
@@ -742,7 +764,15 @@ function CommentThread({ comment, currentUserId, expanded, editingComment, editB
           <View style={styles.commentActions}><Pressable accessibilityRole="button" disabled={!editBody.trim() || editingBusy} onPress={onSubmitEdit}><Text style={styles.commentAction}>{editingBusy ? "Saving" : "Save edit"}</Text></Pressable><Pressable accessibilityRole="button" onPress={onCancelEdit}><Text style={styles.commentAction}>Cancel</Text></Pressable></View>
         </View>
       ) : (
-        <Text style={styles.commentBody}>{comment.body}{comment.edited_at ? <Text style={styles.editedLabel}> · edited</Text> : null}</Text>
+        <View>
+          <ContentTranslation
+            contentType={depth > 0 ? "reply" : "comment"}
+            contentRef={comment.id || comment.comment_id}
+            text={comment.body}
+            textStyle={styles.commentBody}
+          />
+          {comment.edited_at ? <Text style={styles.editedLabel}>Edited</Text> : null}
+        </View>
       )}
       <View style={styles.commentActions}>
         <Text style={styles.commentTime}>{formatShortTime(comment.created_at)}</Text>

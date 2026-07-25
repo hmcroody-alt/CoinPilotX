@@ -60,6 +60,7 @@ import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
 import { buildUndxUiContext, UndxUiContext } from "../undx/undxContext";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
 import { ConversationControlCenter } from "../components/ConversationControlCenter";
+import { ContentTranslation } from "../components/ContentTranslation";
 import { PulseCommandAvatar, PulseCommandPanel } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import {
@@ -202,7 +203,8 @@ function readOriginRoute(navigation: { getState?: () => unknown }): string | nul
 
 async function collectUndxUiContext(
   navigation: { getState?: () => unknown },
-  conversationId: number
+  conversationId: number,
+  selectedTaskId?: string
 ): Promise<UndxUiContext> {
   const [screenReaderEnabled, reduceMotionEnabled] = await Promise.all([
     AccessibilityInfo.isScreenReaderEnabled().catch(() => null),
@@ -223,7 +225,8 @@ async function collectUndxUiContext(
     reduceMotionEnabled,
     colorScheme: Appearance.getColorScheme(),
     timezone,
-    selectedConversationId: conversationId
+    selectedConversationId: conversationId,
+    selectedTaskId
   });
 }
 
@@ -494,7 +497,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         const data = await sendPulseAiMessage({
           body,
           client_message_id: local.client_message_id,
-          ui_context: await collectUndxUiContext(navigation, conversationId)
+          ui_context: await collectUndxUiContext(navigation, conversationId, route.params.undxTaskId)
         });
         const nextMessages = data.messages || [];
         setMessages(nextMessages);
@@ -585,7 +588,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       });
       throw sendError;
     }
-  }, [assistantConversation, conversationId, mergeMessages, messages, navigation, replaceLocalMessage, sync]);
+  }, [assistantConversation, conversationId, mergeMessages, messages, navigation, replaceLocalMessage, route.params.undxTaskId, sync]);
 
   const submitText = useCallback(async () => {
     const body = draft.trim();
@@ -1215,7 +1218,18 @@ function MessageBubble({
           </View>
         ) : null}
         {!deleted && !moderated ? <MessageMedia message={message} /> : null}
-        {body ? <Text style={[styles.body, (deleted || moderated) && styles.systemBody]}>{body}</Text> : null}
+        {body ? (
+          deleted || moderated ? (
+            <Text style={[styles.body, styles.systemBody]}>{body}</Text>
+          ) : (
+            <ContentTranslation
+              contentType="chat"
+              contentRef={message.message_id || message.id || message.client_message_id || "pending"}
+              text={body}
+              textStyle={styles.body}
+            />
+          )
+        ) : null}
         {message.forwarded ? <Text style={styles.forwarded}>Forwarded signal</Text> : null}
         <View style={styles.metaRow}>
           <Text style={styles.meta}>{formatShortTime(message.created_at)}</Text>

@@ -1,6 +1,6 @@
 import { Audio, ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Pressable, Share, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { PulseReel, reelIsPlayable, reelPosterUrl, reelVideoUrl, reelWebUrl } from "../api/reels";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { resolveReelAudioPolicy } from "../core/attachedMusicAudioPolicy";
@@ -12,6 +12,8 @@ import { ReelPhotoSurface } from "./reels/ReelPhotoSurface";
 import { ReelCarouselSurface } from "./reels/ReelCarouselSurface";
 import { ReelLiveViewerSurface } from "./reels/ReelLiveViewerSurface";
 import { colors } from "../theme/colors";
+import { sharePulseObject } from "../sharing/nativeShare";
+import { ContentTranslation } from "./ContentTranslation";
 
 type ReelPlayerCardProps = {
   reel: PulseReel;
@@ -236,7 +238,14 @@ export function ReelPlayerCard({
           refreshAttempted.current = false;
           setFailed(false);
           recoverPlaybackUrl().catch(() => undefined);
-        }} onShare={() => Share.share({ message: reelWebUrl(reel.id) }).catch(() => undefined)} />
+        }} onShare={() => sharePulseObject({
+          kind: "reel",
+          url: reelWebUrl(reel.id),
+          title: reel.title || "PulseSoc Reel",
+          description: reel.caption || reel.body,
+          author: reel.author?.display_name || reel.author?.name || reel.author?.username,
+          previewImageUrl: reel.poster_url
+        }).catch(() => undefined)} />
       )}
       {isVideoKind && contentState === "playable" ? <Pressable accessibilityRole="button" accessibilityLabel={muted ? "Reel muted. Tap to unmute, double tap to like." : "Reel sound on. Tap to mute, double tap to like."} style={styles.tapLayer} onPress={handleTap} onLongPress={() => onOpenReactions(reel)} /> : null}
       <View style={styles.scrim} pointerEvents="none" />
@@ -267,7 +276,14 @@ export function ReelPlayerCard({
 
       <View style={styles.caption}>
         <Text style={styles.title} numberOfLines={1}>{author.username ? `@${author.username}` : reel.title || "PulseSoc Reel"}</Text>
-        {reel.caption ? <RichCaption value={reel.caption} /> : reel.body ? <RichCaption value={reel.body} /> : null}
+        {reel.caption || reel.body ? (
+          <ContentTranslation
+            contentType="reel"
+            contentRef={reel.id}
+            text={reel.caption || reel.body || ""}
+            renderText={(value) => <RichCaption value={value} />}
+          />
+        ) : null}
         {isLive ? <Pressable accessibilityRole="button" accessibilityLabel="Join this Live" style={styles.joinLive} onPress={() => onJoinLive(reel)}><Text style={styles.joinLiveText}>Join Live</Text></Pressable> : null}
         <View style={styles.mediaMetaRow}>
           <Pressable accessibilityRole="button" accessibilityLabel={reel.audio?.title ? `Music: ${reel.audio.title}${reel.audio.artist ? ` by ${reel.audio.artist}` : ""}` : "Original audio"} style={styles.musicMicro} onPress={() => onOpenMusic(reel)}><View style={styles.musicOrb}><Text style={styles.musicNote}>♪</Text></View><Text style={styles.musicLabel} numberOfLines={1}>{reel.audio?.title || "Original audio"}{reel.audio?.artist ? ` · ${reel.audio.artist}` : ""}</Text></Pressable>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, Image, Pressable, Share, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, Image, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { Audio, ResizeMode, Video } from "expo-av";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,6 +12,8 @@ import { canonicalMediaPlaybackUrl, refreshCanonicalMediaAccess } from "../media
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { formatShortTime } from "../utils/format";
+import { sharePulseObject } from "../sharing/nativeShare";
+import { ContentTranslation } from "./ContentTranslation";
 
 const MEDIA_ASPECT_MIN = 0.55;
 const MEDIA_ASPECT_MAX = 1.91;
@@ -35,6 +37,18 @@ export function computeMediaBleedStyle(
   const bleed = Math.max(0, (windowWidth - cardWidth) / 2);
   if (bleed <= 0) return { marginHorizontal: 0 };
   return { marginHorizontal: -bleed, width: windowWidth };
+}
+
+function sharePostFromCard(post: PulsePost) {
+  const author = post.author || post.user || {};
+  return sharePulseObject({
+    kind: "post",
+    url: pulsePostUrl(post.id),
+    title: post.title || "PulseSoc post",
+    description: post.body || post.text || post.content,
+    author: author.display_name || author.name || author.username || post.author_name,
+    previewImageUrl: post.thumbnail_url || post.image_url
+  });
 }
 
 const VISIBILITY_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -243,9 +257,13 @@ export function PostCard({
         </Text>
       ) : null}
       {body ? (
-        <Text style={styles.body} numberOfLines={detail || bodyExpanded ? undefined : COLLAPSED_BODY_LINES}>
-          {body}
-        </Text>
+        <ContentTranslation
+          contentType="post"
+          contentRef={post.id}
+          text={body}
+          textStyle={styles.body}
+          numberOfLines={detail || bodyExpanded ? undefined : COLLAPSED_BODY_LINES}
+        />
       ) : null}
       {showReadMore ? (
         <Pressable accessibilityRole="button" accessibilityLabel={bodyExpanded ? "Collapse post" : "Read full post"} onPress={(event) => { event.stopPropagation(); setBodyExpanded((value) => !value); }}>
@@ -341,7 +359,7 @@ export function PostCard({
           style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
           onPress={(event) => {
             event.stopPropagation();
-            onShare ? onShare(post) : Share.share({ message: pulsePostUrl(post.id) });
+            onShare ? onShare(post) : sharePostFromCard(post).catch(() => undefined);
           }}
         >
           <Text style={styles.actionIcon}>↗</Text>
@@ -634,7 +652,7 @@ function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost;
             initialIndex={viewerIndex || 0}
             title="Post media"
             onClose={() => setViewerIndex(null)}
-            onShare={() => Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined)}
+            onShare={() => sharePostFromCard(post).catch(() => undefined)}
           />
         </View>
       );
@@ -660,7 +678,7 @@ function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost;
           initialIndex={viewerIndex || 0}
           title="Post media"
           onClose={() => setViewerIndex(null)}
-          onShare={() => Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined)}
+          onShare={() => sharePostFromCard(post).catch(() => undefined)}
           onLike={likeMedia}
         />
       </View>
@@ -711,7 +729,7 @@ function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost;
         initialIndex={viewerIndex || 0}
         title="Post media"
         onClose={() => setViewerIndex(null)}
-        onShare={() => Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined)}
+        onShare={() => sharePostFromCard(post).catch(() => undefined)}
         onLike={likeMedia}
       />
     </View>

@@ -24,6 +24,7 @@ export type UndxContextSignals = {
   colorScheme?: UndxColorScheme | string | null;
   timezone?: string | null;
   selectedConversationId?: number | null;
+  selectedTaskId?: string | null;
 };
 
 export type UndxUiContextValue = string | number | boolean;
@@ -117,6 +118,9 @@ export function buildUndxUiContext(signals: UndxContextSignals): UndxUiContext {
   ) {
     draft.selected_conversation_id = signals.selectedConversationId;
   }
+
+  const selectedTaskId = sanitizeToken(signals.selectedTaskId);
+  if (selectedTaskId) draft.selected_task_id = selectedTaskId;
 
   return sanitizeUiContext(draft);
 }

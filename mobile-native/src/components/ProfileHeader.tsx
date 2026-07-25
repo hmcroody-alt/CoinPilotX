@@ -2,10 +2,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import { useEffect, useRef } from "react";
-import { Animated, Easing, Image, Pressable, Share, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { PulseProfile, profileWebUrl } from "../api/profile";
 import { colors } from "../theme/colors";
 import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
+import { sharePulseObject } from "../sharing/nativeShare";
+import { ContentTranslation } from "./ContentTranslation";
 
 export const PROFILE_HERO_HEIGHT = 320;
 
@@ -199,7 +201,12 @@ export function ProfileHeader({
           </View>
 
           {profile.bio ? (
-            <Text style={styles.bio}>{profile.bio}</Text>
+            <ContentTranslation
+              contentType="profile"
+              contentRef={profile.user_id || profile.public_player_id || handle}
+              text={profile.bio}
+              textStyle={styles.bio}
+            />
           ) : (
             <Text style={styles.bioMuted}>{owner ? "Add a bio to shape your PulseSoc identity." : "This member has not added a bio yet."}</Text>
           )}
@@ -219,7 +226,14 @@ export function ProfileHeader({
             <>
               <Action label="Edit Profile" icon="create-outline" primary accent={accent} onPress={() => { haptic(); onEdit?.(); }} />
               <Action label="Customize" icon="color-palette-outline" onPress={() => { haptic(); onCustomize?.(); }} />
-              <Action label="Share" icon="share-outline" onPress={() => { haptic(); Share.share({ message: profileWebUrl(shareTarget) }).catch(() => undefined); }} />
+              <Action label="Share" icon="share-outline" onPress={() => { haptic(); sharePulseObject({
+                kind: "profile",
+                url: profileWebUrl(shareTarget),
+                title: profile.display_name || profile.username || "PulseSoc profile",
+                description: profile.bio,
+                author: profile.display_name || profile.username,
+                previewImageUrl: profile.avatar_url
+              }).catch(() => undefined); }} />
             </>
           ) : (
             <>
@@ -227,7 +241,14 @@ export function ProfileHeader({
               <Action label={profile.viewer_follows ? "Following" : "Follow"} icon={profile.viewer_follows ? "checkmark-done-outline" : "person-add-outline"} selected={profile.viewer_follows} disabled={followBusy} onPress={() => { haptic(); onFollow?.(); }} />
               <Action label="Call" icon="call-outline" onPress={() => { haptic(); onCall?.(); }} />
               <Action label="Video" icon="videocam-outline" onPress={() => { haptic(); onVideoCall?.(); }} />
-              <Action label="Share" icon="share-outline" onPress={() => { haptic(); Share.share({ message: profileWebUrl(shareTarget) }).catch(() => undefined); }} />
+              <Action label="Share" icon="share-outline" onPress={() => { haptic(); sharePulseObject({
+                kind: "profile",
+                url: profileWebUrl(shareTarget),
+                title: profile.display_name || profile.username || "PulseSoc profile",
+                description: profile.bio,
+                author: profile.display_name || profile.username,
+                previewImageUrl: profile.avatar_url
+              }).catch(() => undefined); }} />
             </>
           )}
         </View>

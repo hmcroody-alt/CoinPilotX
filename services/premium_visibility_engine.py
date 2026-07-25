@@ -36,10 +36,14 @@ def is_premium_user(user):
     return False
 
 
-def contextual_prompt(surface, user=None):
+def contextual_prompt(surface, user=None, is_premium_override=None):
     surface_key = str(surface or "").strip().lower() or "dashboard"
     title, body = SURFACE_PROMPTS.get(surface_key, SURFACE_PROMPTS["dashboard"])
-    premium = is_premium_user(user)
+    # R3.3 slice: callers may pass the account-hold-aware *effective* access flag so a
+    # suspended owner is not shown "Premium active / enabled across PulseSoc" copy. When
+    # the override is None the legacy ownership computation is used unchanged, so every
+    # existing caller and the flag-off path stay byte-for-byte identical.
+    premium = is_premium_user(user) if is_premium_override is None else bool(is_premium_override)
     return {
         "show": True,
         "surface": surface_key,
@@ -68,8 +72,8 @@ def creator_card_context(user=None, surface="profile"):
     }
 
 
-def prompt_html(surface, user=None):
-    prompt = contextual_prompt(surface, user)
+def prompt_html(surface, user=None, is_premium_override=None):
+    prompt = contextual_prompt(surface, user, is_premium_override)
     return (
         "<article class='premium-promo-card pulse-contextual-premium'>"
         f"<span class='premium-badge'>{prompt['surface'].title()} Premium</span>"

@@ -1,6 +1,6 @@
 import { Audio, ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Pressable, Share, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DEFAULT_STATUS_REACTION, PulseStatus, pulseStatusUrl, StatusReactionType, statusMediaKind, statusMediaUrl, statusMusicLabel, statusPosterUrl } from "../api/status";
 import { colors } from "../theme/colors";
@@ -9,6 +9,8 @@ import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackC
 import { resolveStatusMusicPolicy } from "../core/attachedMusicAudioPolicy";
 import { LikeBurst, LikeBurstHandle } from "../media/MediaGestureFeedback";
 import { StatusActionRail } from "./StatusActionRail";
+import { sharePulseObject } from "../sharing/nativeShare";
+import { ContentTranslation } from "./ContentTranslation";
 
 type Props = {
   status: PulseStatus;
@@ -197,9 +199,25 @@ export function StatusViewerCard({
         <Image source={{ uri: mediaUrl }} style={styles.media} resizeMode="cover" />
       ) : (
         <View style={styles.textStatus}>
-          <Text style={styles.textStatusBody}>{status.body || (failed ? "Status media is unavailable." : "PulseSoc Status")}</Text>
+          {status.body ? (
+            <ContentTranslation
+              contentType="status"
+              contentRef={status.id}
+              text={status.body}
+              textStyle={styles.textStatusBody}
+            />
+          ) : (
+            <Text style={styles.textStatusBody}>{failed ? "Status media is unavailable." : "PulseSoc Status"}</Text>
+          )}
           {failed ? (
-            <Pressable style={styles.webButton} onPress={() => Share.share({ message: pulseStatusUrl(status.id) }).catch(() => undefined)}>
+            <Pressable style={styles.webButton} onPress={() => sharePulseObject({
+              kind: "status",
+              url: pulseStatusUrl(status.id),
+              title: status.body || "PulseSoc Status",
+              description: status.body,
+              author: status.author?.display_name || status.author?.name || status.author?.username || status.author_name,
+              previewImageUrl: posterUrl
+            }).catch(() => undefined)}>
               <Text style={styles.webButtonText}>Share Status Link</Text>
             </Pressable>
           ) : null}
@@ -244,7 +262,15 @@ export function StatusViewerCard({
       ) : null}
 
       <View style={styles.caption}>
-        {status.body && kind !== "text" ? <Text accessibilityLabel={`Status caption, ${status.body}`} style={styles.captionText} numberOfLines={4}>{status.body}</Text> : null}
+        {status.body && kind !== "text" ? (
+          <ContentTranslation
+            contentType="status"
+            contentRef={status.id}
+            text={status.body}
+            textStyle={styles.captionText}
+            numberOfLines={4}
+          />
+        ) : null}
         {music ? <Text accessibilityLabel={`Status music, ${music}`} style={styles.music} numberOfLines={1}>{music}</Text> : null}
         <Text style={styles.stats}>{status.view_count || 0} views</Text>
       </View>

@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Battery from "expo-battery";
 import { RouteProp, useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Easing, FlatList, Image, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View, ViewToken, useWindowDimensions } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Easing, FlatList, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, ViewToken, useWindowDimensions } from "react-native";
 import {
   addPostComment,
   deletePost,
@@ -44,6 +44,7 @@ import { AppTabParamList, RootStackParamList } from "../navigation/types";
 import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
+import { sharePulseObject } from "../sharing/nativeShare";
 
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -351,7 +352,15 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   }
 
   async function handleShare(post: PulsePost) {
-    await Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined);
+    const author = post.author || post.user || {};
+    await sharePulseObject({
+      kind: "post",
+      url: pulsePostUrl(post.id),
+      title: post.title || "PulseSoc post",
+      description: post.body || post.text || post.content,
+      author: author.display_name || author.name || author.username || post.author_name,
+      previewImageUrl: post.thumbnail_url || post.image_url
+    }).catch(() => undefined);
   }
 
   async function handleInlineComment(post: PulsePost, body: string) {

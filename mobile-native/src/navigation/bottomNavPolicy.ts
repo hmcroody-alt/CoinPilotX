@@ -27,7 +27,7 @@ export const BOTTOM_NAV_POLICY: Record<keyof AppTabParamList, BottomNavScreenPol
   Dashboard: "always-visible",
   Live: "always-visible",
   PulseAI: "always-visible",
-  Settings: "always-visible",
+  Settings: "scroll-responsive",
   Create: "not-rendered"
 };
 

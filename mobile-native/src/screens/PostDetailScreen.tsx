@@ -6,7 +6,6 @@ import {
   Platform,
   Pressable,
   RefreshControl,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -29,12 +28,14 @@ import { describeDeleteError } from "../api/deleteErrors";
 import { profileTargetFromPost } from "../api/profile";
 import { profileNavigationParams } from "../api/profileTarget";
 import { PostCard } from "../components/PostCard";
+import { ContentTranslation } from "../components/ContentTranslation";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { invalidateNativeSync } from "../core/eventSync";
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
+import { sharePulseObject } from "../sharing/nativeShare";
 
 type Props = NativeStackScreenProps<RootStackParamList, "PostDetail">;
 
@@ -210,7 +211,14 @@ export function PostDetailScreen({ route, navigation }: Props) {
               onSave={handleSave}
               onRepost={handleRepost}
               onPromote={(item) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: item.id, title: "Promote Post" })}
-              onShare={(item) => Share.share({ message: pulsePostUrl(item.id) }).catch(() => undefined)}
+              onShare={(item) => sharePulseObject({
+                kind: "post",
+                url: pulsePostUrl(item.id),
+                title: item.title || "PulseSoc post",
+                description: item.body || item.text || item.content,
+                author: item.author?.display_name || item.author?.name || item.author?.username || item.author_name,
+                previewImageUrl: item.thumbnail_url || item.image_url
+              }).catch(() => undefined)}
               onDelete={isContentOwner(post, currentUserId) ? handleDelete : undefined}
               onAuthorPress={(item) => {
                 const params = profileNavigationParams(profileTargetFromPost(item), item.author?.display_name || "Profile");
@@ -260,7 +268,12 @@ function CommentRow({ comment }: { comment: PulseComment }) {
   return (
     <View style={styles.comment}>
       <Text style={styles.commentAuthor}>{author.display_name || author.username || "PulseSoc"}</Text>
-      <Text style={styles.commentBody}>{comment.body}</Text>
+      <ContentTranslation
+        contentType={comment.parent_comment_id ? "reply" : "comment"}
+        contentRef={comment.id || comment.comment_id}
+        text={comment.body}
+        textStyle={styles.commentBody}
+      />
       <Text style={styles.commentMeta}>{formatShortTime(comment.created_at)}</Text>
     </View>
   );

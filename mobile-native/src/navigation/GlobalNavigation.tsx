@@ -202,7 +202,7 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
         const nextHeight = Math.ceil(event.nativeEvent.layout.height);
         setShellHeight((current) => (current === nextHeight ? current : nextHeight));
       }}
-      pointerEvents={hidden ? "none" : "box-none"}
+      pointerEvents={hidden ? "none" : "auto"}
       style={[styles.bottomShell, { paddingBottom: Math.max(insets.bottom, 10), opacity, transform: [{ translateY }] }]}
       testID="global-bottom-navigation"
     >

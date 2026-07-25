@@ -80,6 +80,15 @@ export type AccountActionResponse = {
   settings?: AccountSettings;
 };
 
+export type AccountLanguageResponse = {
+  ok?: boolean;
+  message?: string;
+  preferred_language?: string;
+  language?: string;
+  supported_languages?: string[];
+  any_language_supported?: boolean;
+};
+
 export async function getAccountStatus() {
   return pulseApi<AccountStatus>("/api/account/status");
 }
@@ -98,6 +107,17 @@ export async function updateAccountSettings(settings: AccountSettings) {
     ...data,
     settings: normalizeSettings(data.settings || settings)
   };
+}
+
+export async function getAccountLanguage() {
+  return pulseApi<AccountLanguageResponse>("/api/account/language");
+}
+
+export async function updateAccountLanguage(language: string) {
+  return pulseApi<AccountLanguageResponse>("/api/account/language", {
+    method: "POST",
+    body: JSON.stringify({ preferred_language: language, language })
+  });
 }
 
 export async function getAccountSecurity() {

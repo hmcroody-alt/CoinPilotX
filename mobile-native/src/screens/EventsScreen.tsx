@@ -6,7 +6,6 @@ import {
   Image,
   Pressable,
   RefreshControl,
-  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,6 +20,7 @@ import { profileNavigationParams, profileTargetFromAuthor } from "../api/profile
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
+import { sharePulseObject } from "../sharing/nativeShare";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "Events">>;
 
@@ -107,7 +107,15 @@ export function EventsScreen({ route, navigation }: Props) {
 
   function shareEvent(item: PulseScheduledEvent | null) {
     const path = item?.event_url || "/pulse/events";
-    Share.share({ message: `https://pulsesoc.com${path}` }).catch(() => undefined);
+    const url = /^https?:\/\//i.test(path) ? path : `https://pulsesoc.com${path.startsWith("/") ? path : `/${path}`}`;
+    sharePulseObject({
+      kind: "event",
+      url,
+      title: item?.title || "PulseSoc Event",
+      description: item?.category,
+      author: item?.creator_name,
+      previewImageUrl: item?.thumbnail_url
+    }).catch(() => undefined);
   }
 
   useEffect(() => {

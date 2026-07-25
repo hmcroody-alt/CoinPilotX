@@ -12,12 +12,14 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 export type TimeInput = string | number | Date | null | undefined;
 
 const OVERRIDE_STORAGE_KEY = "pulsesoc.localtime.timezoneOverride.v1";
+const LOCALE_OVERRIDE_STORAGE_KEY = "pulsesoc.locale.override.v1";
 
 // The user's manual IANA override, or null when following the device ("Automatic").
 let manualTimeZone: string | null = null;
 // Cached device zone so conversions don't re-query Intl on every format call.
 let cachedDeviceTimeZone: string | null = null;
 let cachedLocale: string | null = null;
+let manualLocale: string | null = null;
 
 export function getDeviceTimeZone(): string {
   if (cachedDeviceTimeZone) return cachedDeviceTimeZone;
@@ -38,6 +40,14 @@ export function getResolvedLocale(): string {
     cachedLocale = "en-US";
   }
   return cachedLocale;
+}
+
+export function getActiveLocale(): string {
+  return manualLocale || getResolvedLocale();
+}
+
+export function getManualLocale(): string | null {
+  return manualLocale;
 }
 
 export function getManualTimeZone(): string | null {
@@ -76,6 +86,16 @@ export async function loadTimeZonePreference(): Promise<string | null> {
   return manualTimeZone;
 }
 
+export async function loadLocalePreference(): Promise<string | null> {
+  try {
+    const stored = await AsyncStorage.getItem(LOCALE_OVERRIDE_STORAGE_KEY);
+    manualLocale = stored && isValidLocale(stored) ? stored : null;
+  } catch {
+    manualLocale = null;
+  }
+  return manualLocale;
+}
+
 export async function setManualTimeZone(zone: string | null): Promise<string | null> {
   if (zone && isValidTimeZone(zone)) {
     manualTimeZone = zone;
@@ -85,6 +105,27 @@ export async function setManualTimeZone(zone: string | null): Promise<string | n
     await AsyncStorage.removeItem(OVERRIDE_STORAGE_KEY).catch(() => undefined);
   }
   return manualTimeZone;
+}
+
+export async function setManualLocale(locale: string | null): Promise<string | null> {
+  if (locale && isValidLocale(locale)) {
+    manualLocale = locale;
+    await AsyncStorage.setItem(LOCALE_OVERRIDE_STORAGE_KEY, locale).catch(() => undefined);
+  } else {
+    manualLocale = null;
+    await AsyncStorage.removeItem(LOCALE_OVERRIDE_STORAGE_KEY).catch(() => undefined);
+  }
+  return manualLocale;
+}
+
+export function isValidLocale(locale: string): boolean {
+  if (!locale || locale.length > 35) return false;
+  try {
+    new Intl.DateTimeFormat(locale).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function isValidTimeZone(zone: string): boolean {
@@ -136,7 +177,7 @@ export interface FormatOptions {
 function resolve(options?: FormatOptions) {
   return {
     timeZone: options?.timeZone || getActiveTimeZone(),
-    locale: options?.locale || getResolvedLocale()
+    locale: options?.locale || getActiveLocale()
   };
 }
 

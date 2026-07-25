@@ -1,6 +1,6 @@
-import { useNavigation } from "@react-navigation/native";
+import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, AppState, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import {
   deleteNotification,
@@ -20,6 +20,8 @@ import { compactPreview, formatShortTime } from "../utils/format";
 
 export function NotificationCenterScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, "NotificationCenter">>();
+  const openedDeepLinkId = useRef<number | null>(null);
   const [notifications, setNotifications] = useState<PulseNotification[]>([]);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -42,16 +44,23 @@ export function NotificationCenterScreen() {
     }
   }, []);
 
-  const openNotification = useCallback(async (notification: PulseNotification) => {
+  const openNotificationById = useCallback(async (notificationId: number, wasRead = false) => {
     try {
-      const resolved = await resolveNotificationTarget(notification.id);
-      setNotifications((current) => current.map((item) => (item.id === notification.id ? { ...item, read: true } : item)));
-      setUnread((current) => Math.max(0, current - (notification.read ? 0 : 1)));
-      await routeNotificationTarget(resolved.target_url || notification.target_url || notification.deep_link || "/pulse/notifications");
+      const resolved = await resolveNotificationTarget(notificationId);
+      const notification = notifications.find(item => item.id === notificationId);
+      setNotifications((current) => current.map((item) => (item.id === notificationId ? { ...item, read: true } : item)));
+      setUnread((current) => Math.max(0, current - (wasRead ? 0 : 1)));
+      await routeNotificationTarget(
+        resolved.target_url || notification?.target_url || notification?.deep_link || "/pulse/notifications"
+      );
     } catch (openError) {
       Alert.alert("Notification unavailable", openError instanceof Error ? openError.message : "That notification could not be opened.");
     }
-  }, []);
+  }, [notifications]);
+
+  const openNotification = useCallback(async (notification: PulseNotification) => {
+    await openNotificationById(notification.id, notification.read);
+  }, [openNotificationById]);
 
   const markRead = useCallback(async (notification: PulseNotification) => {
     try {
@@ -100,6 +109,14 @@ export function NotificationCenterScreen() {
     const unregisterNotifications = registerSyncInvalidation("notifications", () => load({ refresh: true }));
     return unregisterNotifications;
   }, [load]);
+
+  useEffect(() => {
+    const notificationId = route.params?.notificationId;
+    if (!notificationId || loading || openedDeepLinkId.current === notificationId) return;
+    openedDeepLinkId.current = notificationId;
+    const notification = notifications.find(item => item.id === notificationId);
+    openNotificationById(notificationId, notification?.read === true).catch(() => undefined);
+  }, [loading, notifications, openNotificationById, route.params?.notificationId]);
 
   return (
     <View style={styles.root}>

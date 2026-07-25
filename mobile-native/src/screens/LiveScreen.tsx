@@ -11,7 +11,6 @@ import {
   Platform,
   Pressable,
   RefreshControl,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -41,6 +40,7 @@ import {
   requestToJoinLive,
   sendLiveChat
 } from "../api/live";
+import { sharePulseObject } from "../sharing/nativeShare";
 import { useLiveBroadcastRoom } from "../live/useLiveBroadcastRoom";
 import { canConnectAsCohostPublisher } from "../live/liveSession";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
@@ -628,7 +628,14 @@ export function LiveScreen({ route, navigation }: Props) {
             <Pressable style={styles.actionButton} disabled={busy.startsWith("react")} onPress={() => handleReact("🔥")}>
               <Text style={styles.actionText}>Fire</Text>
             </Pressable>
-            <Pressable style={styles.actionButton} onPress={() => Share.share({ message: liveWebUrl(activeLiveId) }).catch(() => undefined)}>
+            <Pressable style={styles.actionButton} onPress={() => sharePulseObject({
+              kind: "live",
+              url: liveWebUrl(activeLiveId),
+              title: active.title || "PulseSoc Live",
+              description: active.category,
+              author: active.author?.display_name || active.creator?.display_name || active.creator_name,
+              previewImageUrl: livePosterUrl(active)
+            }).catch(() => undefined)}>
               <Text style={styles.actionText}>Share</Text>
             </Pressable>
           </View>

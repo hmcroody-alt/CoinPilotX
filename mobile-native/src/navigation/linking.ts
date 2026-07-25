@@ -1,14 +1,28 @@
 import { getStateFromPath, LinkingOptions } from "@react-navigation/native";
 import { profileNavigationParams, profileTargetFromUrl } from "../api/profileTarget";
+import { canonicalNativeRoute, nativeObjectDestination } from "./nativeRouteActions";
 import { RootStackParamList } from "./types";
 
 export const linking: LinkingOptions<RootStackParamList> = {
   prefixes: ["pulsesoc://", "https://pulsesoc.com"],
   getStateFromPath(path, options) {
-    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    const canonical = canonicalNativeRoute(path);
+    const normalizedPath = canonical.relative;
+    if (canonical.path === "/pulse/profile/edit") {
+      return { routes: [{ name: "ProfileEdit" }] };
+    }
     const profileParams = profileNavigationParams(profileTargetFromUrl(normalizedPath), "Profile");
     if (profileParams) {
       return { routes: [{ name: "ProfileDetail", params: profileParams }] };
+    }
+    const objectDestination = nativeObjectDestination(normalizedPath);
+    if (objectDestination) {
+      return {
+        routes: [{
+          name: objectDestination.screen as keyof RootStackParamList,
+          params: objectDestination.params
+        }]
+      };
     }
     return getStateFromPath(path, options);
   },

@@ -1,10 +1,11 @@
 import { Audio, ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Image, Modal, Pressable, Share, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { PanGestureHandler, PinchGestureHandler, State, TapGestureHandler } from "react-native-gesture-handler";
 import { mediaDisplayUrl, mediaKind, PulseAuthor, PulseMedia } from "../api/feed";
 import { pollNativeMediaProcessing } from "../media/nativeMediaUpload";
 import { colors } from "../theme/colors";
+import { sharePulseObject } from "../sharing/nativeShare";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { AttachedMusicPolicy, resolveViewerAudioPlan } from "../core/attachedMusicAudioPolicy";
@@ -193,7 +194,14 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
       onShare(item);
       return;
     }
-    await Share.share({ message: item.sourceUrl || item.url }).catch(() => undefined);
+    await sharePulseObject({
+      kind: "media",
+      url: item.sourceUrl || item.url,
+      title: item.title || title,
+      description: item.subtitle,
+      author: item.author?.display_name || item.author?.name || item.author?.username,
+      previewImageUrl: item.thumbnailUrl || (item.kind === "image" ? item.url : undefined)
+    }).catch(() => undefined);
   }
 
   async function checkProcessing() {

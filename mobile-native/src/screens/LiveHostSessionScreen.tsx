@@ -9,7 +9,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -34,6 +33,7 @@ import {
   unmuteGuest,
   type PulseLiveChatMessage
 } from "../api/live";
+import { sharePulseObject } from "../sharing/nativeShare";
 import { elapsedLabel, formatViewerCount, type LiveGuest, type LiveGuestRequest } from "../live/liveSession";
 import { useLiveBroadcastRoom, type LiveParticipant } from "../live/useLiveBroadcastRoom";
 import { RootStackParamList } from "../navigation/types";
@@ -386,7 +386,12 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
     Keyboard.dismiss();
     setSheet(null);
     const url = liveWebUrl(liveId);
-    await Share.share({ message: `Watch my PulseSoc Live: ${url}`, url }).catch(() => undefined);
+    await sharePulseObject({
+      kind: "live",
+      url,
+      title: "Watch my PulseSoc Live",
+      description: "Join the live broadcast on PulseSoc."
+    }).catch(() => undefined);
   }, [liveId]);
 
   const toggleLayout = useCallback(() => {

@@ -8,7 +8,6 @@ import {
   Platform,
   Pressable,
   RefreshControl,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -30,6 +29,7 @@ import {
   statusMediaKind,
   statusMediaUrl,
   statusMusicLabel,
+  statusPosterUrl,
   trackStatusView,
   updateStatus as updateStatusOnServer
 } from "../api/status";
@@ -43,6 +43,7 @@ import { StatusViewerCard } from "../components/StatusViewerCard";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { sharePulseObject } from "../sharing/nativeShare";
 
 type Props = {
   route: { params?: { statusId?: number; title?: string; openCreator?: boolean } };
@@ -192,7 +193,14 @@ export function StatusScreen({ route, navigation }: Props) {
     } finally {
       setBusyId(null);
     }
-    await Share.share({ message: pulseStatusUrl(status.id) }).catch(() => undefined);
+    await sharePulseObject({
+      kind: "status",
+      url: pulseStatusUrl(status.id),
+      title: status.body || "PulseSoc Status",
+      description: status.body,
+      author: status.author?.display_name || status.author?.name || status.author?.username || status.author_name,
+      previewImageUrl: statusMediaUrl(status) || statusPosterUrl(status)
+    }).catch(() => undefined);
   }
 
   async function submitReply() {

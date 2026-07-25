@@ -5971,6 +5971,88 @@ def api_account_language():
     return jsonify({"ok": True, "message": "Language preference saved.", "preferred_language": language, "language": language, "supported_languages": SUPPORTED_LANGUAGE_CODES, "any_language_supported": True})
 
 
+@webhook_app.route("/api/pulse/translations", methods=["POST"])
+def api_pulse_translate_content():
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    from services import content_translation
+
+    try:
+        result = content_translation.translate_content(
+            int(user["user_id"]),
+            content_type=payload.get("content_type"),
+            content_ref=payload.get("content_ref"),
+            text=payload.get("text"),
+            source_language=payload.get("source_language") or "auto",
+            target_language=payload.get("target_language") or account_language(user),
+            force=payload.get("force") is True,
+        )
+        return jsonify({"ok": True, "result": result})
+    except content_translation.TranslationError as exc:
+        return api_error(str(exc), exc.status, error=exc.code)
+    except Exception as exc:
+        logging.exception(
+            "PULSE_CONTENT_TRANSLATION_FAILED user_id=%s reason=%s",
+            int(user["user_id"]),
+            exc.__class__.__name__,
+        )
+        return api_error(
+            "Translation is temporarily unavailable. Please try again.",
+            503,
+            error="translation_unavailable",
+        )
+
+
+@webhook_app.route("/api/pulse/translations/preference", methods=["GET", "PUT", "POST"])
+def api_pulse_translation_preference():
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    from services import content_translation
+
+    source_language = (
+        payload.get("source_language")
+        or request.args.get("source_language")
+        or "auto"
+    )
+    target_language = (
+        payload.get("target_language")
+        or request.args.get("target_language")
+        or account_language(user)
+    )
+    try:
+        if request.method == "GET":
+            result = content_translation.get_preference(
+                int(user["user_id"]),
+                source_language,
+                target_language,
+            )
+        else:
+            result = content_translation.set_preference(
+                int(user["user_id"]),
+                source_language,
+                target_language,
+                payload.get("policy"),
+            )
+        return jsonify({"ok": True, "result": result})
+    except content_translation.TranslationError as exc:
+        return api_error(str(exc), exc.status, error=exc.code)
+    except Exception as exc:
+        logging.exception(
+            "PULSE_TRANSLATION_PREFERENCE_FAILED user_id=%s reason=%s",
+            int(user["user_id"]),
+            exc.__class__.__name__,
+        )
+        return api_error(
+            "Translation preferences are temporarily unavailable.",
+            503,
+            error="translation_preference_unavailable",
+        )
+
+
 @webhook_app.route("/api/i18n/missing", methods=["POST"])
 def api_i18n_missing_translation():
     init_db()
@@ -19920,6 +20002,714 @@ def api_business_os_crypto_delete_alert(alert_id):
         return jsonify({"ok": False, "error": "CSRF check failed."}), 400
     from services.business_os.crypto import api as _cryptoapi
     return _bo_ad_reply(_cryptoapi.delete_alert(user.get("user_id"), alert_id))
+
+
+# =====================================================================
+# Business OS — Attribution intelligence (Stage 6). Informational only: it records
+# an append-only log of touchpoints + conversions and computes fractional credit
+# under multi-touch models. NOTHING here moves money — credit is a reporting
+# quantity, not a payout. Decision logic lives in the importable controller
+# services.business_os.attribution.api; these are thin authenticated adapters.
+# DARK 404 when BUSINESS_OS_ATTRIBUTION is off.
+# =====================================================================
+def _business_os_attribution_enabled():
+    return (os.getenv("BUSINESS_OS_ATTRIBUTION", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/attribution/touchpoints", methods=["POST"])
+def api_business_os_attr_record_touchpoint():
+    if not _business_os_attribution_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.attribution import api as _attrapi
+    return _bo_ad_reply(_attrapi.record_touchpoint(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/attribution/conversions", methods=["POST"])
+def api_business_os_attr_record_conversion():
+    if not _business_os_attribution_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.attribution import api as _attrapi
+    return _bo_ad_reply(_attrapi.record_conversion(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/attribution/conversions/<conversion_id>", methods=["GET"])
+def api_business_os_attr_conversion_report(conversion_id):
+    if not _business_os_attribution_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.attribution import api as _attrapi
+    model = (request.args.get("model") or "last_touch").strip()
+    return _bo_ad_reply(_attrapi.conversion_report(
+        user.get("user_id"), conversion_id, model))
+
+
+@webhook_app.route("/api/business-os/attribution/path", methods=["GET"])
+def api_business_os_attr_path_report():
+    if not _business_os_attribution_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.attribution import api as _attrapi
+    return _bo_ad_reply(_attrapi.path_report(user.get("user_id")))
+
+
+@webhook_app.route("/api/business-os/attribution/report/campaigns", methods=["GET"])
+def api_business_os_attr_campaign_report():
+    if not _business_os_attribution_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.attribution import api as _attrapi
+    model = (request.args.get("model") or "last_touch").strip()
+    return _bo_ad_reply(_attrapi.campaign_report(model))
+
+
+@webhook_app.route("/api/business-os/attribution/conversions/<conversion_id>/recompute", methods=["POST"])
+def api_business_os_attr_recompute(conversion_id):
+    if not _business_os_attribution_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.attribution import api as _attrapi
+    payload = pulse_ads_json_payload() or {}
+    models = payload.get("models") if isinstance(payload, dict) else None
+    return _bo_ad_reply(_attrapi.run_recompute(conversion_id, models))
+
+
+# =====================================================================
+# Business OS — Recommendations intelligence (Stage 6). Informational only: it
+# records an append-only log of catalog items + implicit-feedback interactions and
+# computes a deterministic per-user ranked recommendation projection under
+# popularity / content_based / collaborative / hybrid models. NOTHING here moves
+# money or takes an action — a recommendation is a suggestion. Decision logic lives
+# in the importable controller services.business_os.recommendations.api; these are
+# thin authenticated adapters. DARK 404 when BUSINESS_OS_RECOMMENDATIONS is off.
+# =====================================================================
+def _business_os_recommendations_enabled():
+    return (os.getenv("BUSINESS_OS_RECOMMENDATIONS", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/recommendations/items", methods=["POST"])
+def api_business_os_rec_record_item():
+    if not _business_os_recommendations_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.recommendations import api as _recapi
+    return _bo_ad_reply(_recapi.record_item(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/recommendations/interactions", methods=["POST"])
+def api_business_os_rec_record_interaction():
+    if not _business_os_recommendations_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.recommendations import api as _recapi
+    return _bo_ad_reply(_recapi.record_interaction(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/recommendations", methods=["GET"])
+def api_business_os_rec_recommendations_report():
+    if not _business_os_recommendations_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.recommendations import api as _recapi
+    model = (request.args.get("model") or "hybrid").strip()
+    try:
+        limit = int(request.args.get("limit") or 50)
+    except (TypeError, ValueError):
+        limit = 50
+    return _bo_ad_reply(_recapi.recommendations_report(
+        user.get("user_id"), model, limit))
+
+
+@webhook_app.route("/api/business-os/recommendations/interactions", methods=["GET"])
+def api_business_os_rec_interactions_report():
+    if not _business_os_recommendations_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.recommendations import api as _recapi
+    return _bo_ad_reply(_recapi.interactions_report(user.get("user_id")))
+
+
+@webhook_app.route("/api/business-os/recommendations/report/popularity", methods=["GET"])
+def api_business_os_rec_popularity_report():
+    if not _business_os_recommendations_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.recommendations import api as _recapi
+    try:
+        limit = int(request.args.get("limit") or 100)
+    except (TypeError, ValueError):
+        limit = 100
+    return _bo_ad_reply(_recapi.popularity_report(limit))
+
+
+@webhook_app.route("/api/business-os/recommendations/recompute", methods=["POST"])
+def api_business_os_rec_recompute():
+    if not _business_os_recommendations_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.recommendations import api as _recapi
+    payload = pulse_ads_json_payload() or {}
+    models = payload.get("models") if isinstance(payload, dict) else None
+    return _bo_ad_reply(_recapi.run_recompute(user.get("user_id"), models))
+
+
+# =====================================================================
+# Business OS — Merchant automation (Stage 6, second Stage-6 automation vertical).
+# A merchant declares rules (signal_type <operator> threshold -> suggest action_type);
+# the engine evaluates each active rule against the latest signal per subject and
+# emits a deterministic, rebuildable projection of PROPOSED actions. NOTHING here
+# moves money or takes an action — a proposal is a suggestion. Decision logic lives in
+# the importable controller services.business_os.merchant_automation.api; these are
+# thin authenticated adapters. DARK 404 when BUSINESS_OS_MERCHANT_AUTOMATION is off.
+# =====================================================================
+def _business_os_merchant_automation_enabled():
+    return (os.getenv("BUSINESS_OS_MERCHANT_AUTOMATION", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/merchant/rules", methods=["POST"])
+def api_business_os_merchant_record_rule():
+    if not _business_os_merchant_automation_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.merchant_automation import api as _mapi
+    return _bo_ad_reply(_mapi.record_rule(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/merchant/signals", methods=["POST"])
+def api_business_os_merchant_record_signal():
+    if not _business_os_merchant_automation_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.merchant_automation import api as _mapi
+    return _bo_ad_reply(_mapi.record_signal(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/merchant/rules", methods=["GET"])
+def api_business_os_merchant_rules_report():
+    if not _business_os_merchant_automation_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.merchant_automation import api as _mapi
+    merchant_id = (request.args.get("merchant_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_mapi.rules_report(merchant_id, limit))
+
+
+@webhook_app.route("/api/business-os/merchant/signals", methods=["GET"])
+def api_business_os_merchant_signals_report():
+    if not _business_os_merchant_automation_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.merchant_automation import api as _mapi
+    merchant_id = (request.args.get("merchant_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 500)
+    except (TypeError, ValueError):
+        limit = 500
+    return _bo_ad_reply(_mapi.signals_report(merchant_id, limit))
+
+
+@webhook_app.route("/api/business-os/merchant/proposals", methods=["GET"])
+def api_business_os_merchant_proposals_report():
+    if not _business_os_merchant_automation_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.merchant_automation import api as _mapi
+    merchant_id = (request.args.get("merchant_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_mapi.proposals_report(merchant_id, limit))
+
+
+@webhook_app.route("/api/business-os/merchant/evaluate", methods=["POST"])
+def api_business_os_merchant_evaluate():
+    if not _business_os_merchant_automation_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.merchant_automation import api as _mapi
+    payload = pulse_ads_json_payload() or {}
+    merchant_id = payload.get("merchant_id") if isinstance(payload, dict) else None
+    return _bo_ad_reply(_mapi.run_evaluate(merchant_id))
+
+
+# =====================================================================
+# Business OS — Creator commerce (Stage 6, informational-only earnings/tier vertical).
+# A creator declares offerings (a named support option); an append-only log records
+# supporter contribution facts; the engine computes a deterministic, rebuildable
+# per-creator projection: summed support, a supporter TIER by cumulative-support
+# threshold, and a ranked supporter list. NOTHING here moves money, pays out, or
+# charges — earnings are a reporting quantity and a tier is a label, not a grant.
+# Decision logic lives in the importable controller
+# services.business_os.creator_commerce.api; these are thin authenticated adapters.
+# DARK 404 when BUSINESS_OS_CREATOR_COMMERCE is off.
+# =====================================================================
+def _business_os_creator_commerce_enabled():
+    return (os.getenv("BUSINESS_OS_CREATOR_COMMERCE", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/creator/offerings", methods=["POST"])
+def api_business_os_creator_record_offering():
+    if not _business_os_creator_commerce_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.creator_commerce import api as _ccapi
+    return _bo_ad_reply(_ccapi.record_offering(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/creator/contributions", methods=["POST"])
+def api_business_os_creator_record_contribution():
+    if not _business_os_creator_commerce_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.creator_commerce import api as _ccapi
+    return _bo_ad_reply(_ccapi.record_contribution(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/creator/offerings", methods=["GET"])
+def api_business_os_creator_offerings_report():
+    if not _business_os_creator_commerce_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.creator_commerce import api as _ccapi
+    creator_id = (request.args.get("creator_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_ccapi.offerings_report(creator_id, limit))
+
+
+@webhook_app.route("/api/business-os/creator/supporters", methods=["GET"])
+def api_business_os_creator_supporters_report():
+    if not _business_os_creator_commerce_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.creator_commerce import api as _ccapi
+    creator_id = (request.args.get("creator_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_ccapi.supporters_report(creator_id, limit))
+
+
+@webhook_app.route("/api/business-os/creator/earnings", methods=["GET"])
+def api_business_os_creator_earnings_report():
+    if not _business_os_creator_commerce_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.creator_commerce import api as _ccapi
+    creator_id = (request.args.get("creator_id") or "").strip()
+    return _bo_ad_reply(_ccapi.earnings_report(creator_id))
+
+
+@webhook_app.route("/api/business-os/creator/recompute", methods=["POST"])
+def api_business_os_creator_recompute():
+    if not _business_os_creator_commerce_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.creator_commerce import api as _ccapi
+    payload = pulse_ads_json_payload() or {}
+    creator_id = payload.get("creator_id") if isinstance(payload, dict) else None
+    return _bo_ad_reply(_ccapi.run_recompute(creator_id))
+
+
+# =====================================================================
+# Business OS — Governed UNDX business actions (Stage 6, informational-only
+# governance vertical). An org declares governance policies (an action_type -> an
+# effect of allow/deny/require_approval, with an optional risk ceiling); an append-only
+# log records proposed action requests; the engine computes a deterministic,
+# rebuildable per-org projection of governance DECISIONS. NOTHING here executes an
+# action — a decision is a governance label, not an instruction. Decision logic lives
+# in the importable controller services.business_os.undx_actions.api; these are thin
+# authenticated adapters. DARK 404 when BUSINESS_OS_UNDX_ACTIONS is off.
+# =====================================================================
+def _business_os_undx_actions_enabled():
+    return (os.getenv("BUSINESS_OS_UNDX_ACTIONS", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/undx/policies", methods=["POST"])
+def api_business_os_undx_record_policy():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.record_policy(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/undx/requests", methods=["POST"])
+def api_business_os_undx_record_request():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.record_action_request(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/undx/policies", methods=["GET"])
+def api_business_os_undx_policies_report():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.undx_actions import api as _uxapi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_uxapi.policies_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/undx/requests", methods=["GET"])
+def api_business_os_undx_requests_report():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.undx_actions import api as _uxapi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 500)
+    except (TypeError, ValueError):
+        limit = 500
+    return _bo_ad_reply(_uxapi.requests_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/undx/decisions", methods=["GET"])
+def api_business_os_undx_decisions_report():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.undx_actions import api as _uxapi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_uxapi.decisions_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/undx/evaluate", methods=["POST"])
+def api_business_os_undx_evaluate():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    payload = pulse_ads_json_payload() or {}
+    org_id = payload.get("org_id") if isinstance(payload, dict) else None
+    return _bo_ad_reply(_uxapi.run_evaluate(org_id))
+
+
+# =====================================================================
+# Business OS — Localization (Stage 6, strangler). An org declares LOCALES
+# and append-only translation STRINGS; the engine computes a rebuildable
+# per-org projection of string RESOLUTIONS (exact -> explicit fallback ->
+# language base -> org default -> missing) with a per-locale coverage rollup.
+# NOTHING here renders or ships a string — a resolution is a reporting label.
+# Resolution logic lives in the importable controller
+# services.business_os.localization.api; these are thin authenticated adapters.
+# DARK 404 when BUSINESS_OS_LOCALIZATION is off.
+# =====================================================================
+def _business_os_localization_enabled():
+    return (os.getenv("BUSINESS_OS_LOCALIZATION", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/l10n/locales", methods=["POST"])
+def api_business_os_l10n_record_locale():
+    if not _business_os_localization_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.localization import api as _l10napi
+    return _bo_ad_reply(_l10napi.record_locale(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/l10n/strings", methods=["POST"])
+def api_business_os_l10n_record_string():
+    if not _business_os_localization_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.localization import api as _l10napi
+    return _bo_ad_reply(_l10napi.record_string(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/l10n/locales", methods=["GET"])
+def api_business_os_l10n_locales_report():
+    if not _business_os_localization_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.localization import api as _l10napi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_l10napi.locales_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/l10n/strings", methods=["GET"])
+def api_business_os_l10n_strings_report():
+    if not _business_os_localization_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.localization import api as _l10napi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 1000)
+    except (TypeError, ValueError):
+        limit = 1000
+    return _bo_ad_reply(_l10napi.strings_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/l10n/resolutions", methods=["GET"])
+def api_business_os_l10n_resolutions_report():
+    if not _business_os_localization_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.localization import api as _l10napi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 500)
+    except (TypeError, ValueError):
+        limit = 500
+    return _bo_ad_reply(_l10napi.resolutions_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/l10n/resolve", methods=["POST"])
+def api_business_os_l10n_resolve():
+    if not _business_os_localization_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.localization import api as _l10napi
+    payload = pulse_ads_json_payload() or {}
+    org_id = payload.get("org_id") if isinstance(payload, dict) else None
+    return _bo_ad_reply(_l10napi.run_resolve(org_id))
+
+
+# =====================================================================
+# Business OS — Performance (Stage 6, strangler). An org records append-only
+# metric SAMPLES (a numeric value for a metric_key, optionally bucketed by a
+# window) and optional TARGETS (warn/breach thresholds with a direction); the
+# engine computes a rebuildable per-(org, metric, window) SUMMARY projection
+# (count/min/max/mean/p50/p95) and labels each cell ok/warn/breach/none.
+# NOTHING here renders, alerts, pages, or scales — a summary is a reporting
+# label. Summary logic lives in the importable controller
+# services.business_os.performance.api; these are thin authenticated adapters.
+# DARK 404 when BUSINESS_OS_PERFORMANCE is off.
+# =====================================================================
+def _business_os_performance_enabled():
+    return (os.getenv("BUSINESS_OS_PERFORMANCE", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/perf/samples", methods=["POST"])
+def api_business_os_perf_record_sample():
+    if not _business_os_performance_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.performance import api as _perfapi
+    return _bo_ad_reply(_perfapi.record_sample(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/perf/targets", methods=["POST"])
+def api_business_os_perf_record_target():
+    if not _business_os_performance_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.performance import api as _perfapi
+    return _bo_ad_reply(_perfapi.record_target(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/perf/targets", methods=["GET"])
+def api_business_os_perf_targets_report():
+    if not _business_os_performance_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.performance import api as _perfapi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_perfapi.targets_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/perf/samples", methods=["GET"])
+def api_business_os_perf_samples_report():
+    if not _business_os_performance_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.performance import api as _perfapi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 1000)
+    except (TypeError, ValueError):
+        limit = 1000
+    return _bo_ad_reply(_perfapi.samples_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/perf/summaries", methods=["GET"])
+def api_business_os_perf_summaries_report():
+    if not _business_os_performance_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.performance import api as _perfapi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 500)
+    except (TypeError, ValueError):
+        limit = 500
+    return _bo_ad_reply(_perfapi.summaries_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/perf/summarize", methods=["POST"])
+def api_business_os_perf_summarize():
+    if not _business_os_performance_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.performance import api as _perfapi
+    payload = pulse_ads_json_payload() or {}
+    org_id = payload.get("org_id") if isinstance(payload, dict) else None
+    return _bo_ad_reply(_perfapi.run_summarize(org_id))
 
 
 @webhook_app.route("/admin/admins", methods=["GET"])
@@ -106425,6 +107215,38 @@ def initialize_database_for_web_startup():
 
     threading.Thread(target=_run_startup_init, name="coinpilotx-db-init", daemon=True).start()
     logging.info("DB_INIT_BACKGROUND_STARTED")
+
+
+@webhook_app.route("/.well-known/apple-app-site-association", methods=["GET"])
+def pulse_apple_app_site_association():
+    from services.native_app_links import apple_app_site_association
+
+    payload, error = apple_app_site_association()
+    if payload is None:
+        response = jsonify({"ok": False, "error": "native_link_configuration_missing", "message": error})
+        response.status_code = 503
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    response = jsonify(payload)
+    response.headers["Content-Type"] = "application/json"
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return response
+
+
+@webhook_app.route("/.well-known/assetlinks.json", methods=["GET"])
+def pulse_android_asset_links():
+    from services.native_app_links import android_asset_links
+
+    payload, error = android_asset_links()
+    if payload is None:
+        response = jsonify({"ok": False, "error": "native_link_configuration_missing", "message": error})
+        response.status_code = 503
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    response = jsonify(payload)
+    response.headers["Content-Type"] = "application/json"
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return response
 
 
 if __name__ != "__main__":

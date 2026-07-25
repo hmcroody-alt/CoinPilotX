@@ -15,8 +15,16 @@ type StatePanelKind = "loading" | "empty" | "offline" | "error" | "success" | "p
 
 export function Screen({ title, subtitle, children }: Props) {
   const insets = useSafeAreaInsets();
+  const bottomNavScroll = useBottomNavScrollVisibility();
   return (
-    <ScrollView style={styles.root} contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 18) + 18 }]}>
+    <ScrollView
+      style={styles.root}
+      contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 18) + BOTTOM_NAV_CONTENT_CLEARANCE }]}
+      keyboardShouldPersistTaps="handled"
+      onScroll={bottomNavScroll.onScroll}
+      onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
+      scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
+    >
       <View style={styles.header}>
         <Text style={styles.title}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
