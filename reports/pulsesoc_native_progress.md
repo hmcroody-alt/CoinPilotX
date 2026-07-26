@@ -2,6 +2,18 @@
 
 Date: 2026-07-18
 
+## Latest Mission Status: Video-Call Audio and In-Call Controls
+
+- Date: 2026-07-26.
+- Branch: `codex/video-call-audio-controls-20260726`.
+- Result: **PARTIAL (code path repaired)**; no TestFlight build, upload, submit, or tester assignment was performed by explicit constraint.
+- Root cause: native video calls could publish video while audio state remained optimistic and not SDK-authoritative. The room hook did not confirm local microphone publication or remote audio subscription, camera transitions did not reassert microphone publication, and backend video-call grants did not explicitly list microphone plus camera publish sources.
+- Fix: added shared call media-state summarization, enforced microphone publication before and after video camera publication, revalidated microphone preservation during camera toggle/switch, tracked LiveKit audio/video publication events, made video-call audio warnings state-specific, hid video-only controls from audio calls, and made video-call LiveKit grants explicit for `microphone` and `camera`.
+- Validations: typecheck clean; focused native call Jest `5` suites / `39` tests passed; full native Jest `90` suites / `1391` tests passed; Expo Doctor `16/16` passed; backend LiveKit grant test `2` tests passed; native calls, call P0 behavior, incoming calls, fullscreen incoming calls, call QA, call system, and real call experience audits passed; iPhone 17 Pro Max simulator build/install/launch passed.
+- Simulator evidence: `reports/screenshots/native-video-call-audio-2026-07-26/iphone17promax-launch.png`.
+- Physical iPhone: Xcode listed connected iPhones as offline during this run, so audible bidirectional video-call proof remains physical-device release QA.
+- Report: `reports/pulsesoc_native_video_call_audio_controls_2026-07-26.md`.
+
 ## Latest Mission Status: Native Call Ringing, Answer, and Unavailable Flow
 
 - Date: 2026-07-26.

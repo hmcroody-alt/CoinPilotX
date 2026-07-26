@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import { PulseCallJoin } from "../api/calls";
 import { reportPresenceActivity } from "../api/presenceSession";
+import { callAudioSessionConfiguration, nativeAudioOutput, shouldSurfaceVideoAudioWarning, summarizeCallMediaState } from "./callMediaState";
 
 type NativeCallRoomState = {
   supported: boolean;
@@ -13,6 +14,10 @@ type NativeCallRoomState = {
   error: string;
   participantCount: number;
   audioEnabled: boolean;
+  localAudioPublished: boolean;
+  localAudioMuted: boolean;
+  remoteAudioSubscribed: boolean;
+  remoteAudioMuted: boolean;
   videoEnabled: boolean;
   speakerEnabled: boolean;
   localVideoTrack: any | null;
@@ -31,6 +36,10 @@ const initialState: NativeCallRoomState = {
   error: "",
   participantCount: 0,
   audioEnabled: true,
+  localAudioPublished: false,
+  localAudioMuted: true,
+  remoteAudioSubscribed: false,
+  remoteAudioMuted: true,
   videoEnabled: false,
   speakerEnabled: true,
   localVideoTrack: null,
@@ -40,6 +49,7 @@ const initialState: NativeCallRoomState = {
 };
 
 let globalsRegistered = false;
+const VIDEO_AUDIO_WARNING = "Video call audio is not fully connected. Check microphone access or retry audio.";
 
 function readableError(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
@@ -48,29 +58,59 @@ function readableError(error: unknown, fallback: string) {
 export function useNativeCallRoom() {
   const roomRef = useRef<any>(null);
   const audioSessionRef = useRef<any>(null);
+  const desiredAudioEnabledRef = useRef(true);
+  const callTypeRef = useRef<"audio" | "video">("audio");
   const [state, setState] = useState<NativeCallRoomState>(initialState);
 
   const refreshMediaState = useCallback((room = roomRef.current) => {
     if (!room) return;
-    const localPublications = Array.from(room.localParticipant?.videoTrackPublications?.values?.() || []) as any[];
-    const localVideoTrack = localPublications.find((publication) => publication?.track)?.track || null;
-    let remoteVideoTrack: any | null = null;
-    for (const participant of Array.from(room.remoteParticipants?.values?.() || []) as any[]) {
-      const publications = Array.from(participant?.videoTrackPublications?.values?.() || []) as any[];
-      remoteVideoTrack = publications.find((publication) => publication?.track && publication?.isSubscribed !== false)?.track || remoteVideoTrack;
-      if (remoteVideoTrack) break;
+    const media = summarizeCallMediaState(room);
+    const remoteParticipantCount = Number(room.remoteParticipants?.size || 0);
+    setState((current) => {
+      const shouldWarnAboutVideoAudio = shouldSurfaceVideoAudioWarning({
+        callType: callTypeRef.current,
+        connected: current.connected,
+        localAudioPublished: media.localAudioPublished,
+        remoteParticipantCount,
+        remoteAudioSubscribed: media.remoteAudioSubscribed
+      });
+      return {
+        ...current,
+        participantCount: Math.max(1, remoteParticipantCount + 1),
+        audioEnabled: media.localAudioPublished && !media.localAudioMuted,
+        localAudioPublished: media.localAudioPublished,
+        localAudioMuted: media.localAudioMuted,
+        remoteAudioSubscribed: media.remoteAudioSubscribed,
+        remoteAudioMuted: media.remoteAudioMuted,
+        videoEnabled: media.localVideoPublished,
+        localVideoTrack: media.localVideoTrack,
+        remoteVideoTrack: media.remoteVideoTrack,
+        error: shouldWarnAboutVideoAudio ? VIDEO_AUDIO_WARNING : current.error === VIDEO_AUDIO_WARNING ? "" : current.error
+      };
+    });
+  }, []);
+
+  const ensureMicrophonePublished = useCallback(async (room: any, enabled = desiredAudioEnabledRef.current) => {
+    let media = summarizeCallMediaState(room);
+    if (!media.localAudioPublished || (enabled && media.localAudioMuted)) {
+      await room.localParticipant.setMicrophoneEnabled(true);
+      media = summarizeCallMediaState(room);
     }
-    setState((current) => ({
-      ...current,
-      participantCount: Math.max(1, Number(room.remoteParticipants?.size || 0) + 1),
-      localVideoTrack,
-      remoteVideoTrack
-    }));
+    if (!media.localAudioPublished) {
+      throw new Error("Microphone could not be published for this call.");
+    }
+    if (!enabled && !media.localAudioMuted) {
+      await room.localParticipant.setMicrophoneEnabled(false);
+      media = summarizeCallMediaState(room);
+    }
+    return media;
   }, []);
 
   const disconnect = useCallback(async (reason = "local_disconnect") => {
     const room = roomRef.current;
     roomRef.current = null;
+    desiredAudioEnabledRef.current = true;
+    callTypeRef.current = "audio";
     // Restore normal presence the moment we leave the room, so the caller stops
     // reading as "In audio/video call" without waiting for the activity TTL.
     reportPresenceActivity("idle", "").catch(() => undefined);
@@ -87,6 +127,10 @@ export function useNativeCallRoom() {
       participantCount: 0,
       localVideoTrack: null,
       remoteVideoTrack: null,
+      localAudioPublished: false,
+      localAudioMuted: true,
+      remoteAudioSubscribed: false,
+      remoteAudioMuted: true,
       disconnectReason: reason
     }));
   }, []);
@@ -102,6 +146,7 @@ export function useNativeCallRoom() {
     }
 
     if (roomRef.current) await disconnect("replaced_room");
+    callTypeRef.current = options.video ? "video" : "audio";
     setState((current) => ({ ...initialState, supported: current.supported, connecting: true, connectionState: "connecting" }));
     try {
       const livekitNative = await import("@livekit/react-native");
@@ -116,11 +161,7 @@ export function useNativeCallRoom() {
       // into playAndRecord/videoChat BEFORE starting the session so the mic
       // actually captures — otherwise the published audio track is silent.
       if (Platform.OS === "ios" && typeof livekitNative.AudioSession.setAppleAudioConfiguration === "function") {
-        await livekitNative.AudioSession.setAppleAudioConfiguration({
-          audioCategory: "playAndRecord",
-          audioMode: "videoChat",
-          audioCategoryOptions: ["allowBluetooth", "allowBluetoothA2DP", "allowAirPlay", "defaultToSpeaker"]
-        }).catch(() => undefined);
+        await livekitNative.AudioSession.setAppleAudioConfiguration(callAudioSessionConfiguration(options.video ? "video" : "audio")).catch(() => undefined);
       }
       await livekitNative.AudioSession.configureAudio({ ios: { defaultOutput: "speaker" } }).catch(() => undefined);
       await livekitNative.AudioSession.startAudioSession();
@@ -177,6 +218,10 @@ export function useNativeCallRoom() {
       room.on(livekitClient.RoomEvent.ParticipantDisconnected, refresh);
       room.on(livekitClient.RoomEvent.TrackSubscribed, refresh);
       room.on(livekitClient.RoomEvent.TrackUnsubscribed, refresh);
+      room.on(livekitClient.RoomEvent.TrackPublished, refresh);
+      room.on(livekitClient.RoomEvent.TrackUnpublished, refresh);
+      room.on(livekitClient.RoomEvent.TrackMuted, refresh);
+      room.on(livekitClient.RoomEvent.TrackUnmuted, refresh);
       room.on(livekitClient.RoomEvent.LocalTrackPublished, refresh);
       room.on(livekitClient.RoomEvent.LocalTrackUnpublished, refresh);
       room.on(livekitClient.RoomEvent.Disconnected, (reason: unknown) => {
@@ -189,15 +234,24 @@ export function useNativeCallRoom() {
           participantCount: 0,
           localVideoTrack: null,
           remoteVideoTrack: null,
+          localAudioPublished: false,
+          localAudioMuted: true,
+          remoteAudioSubscribed: false,
+          remoteAudioMuted: true,
           disconnectReason: String(reason || "provider_disconnected")
         }));
       });
 
       await room.connect(join.livekit_url, join.token, { autoSubscribe: true });
-      await room.localParticipant.setMicrophoneEnabled(true);
-      if (options.video) await room.localParticipant.setCameraEnabled(true);
+      desiredAudioEnabledRef.current = true;
+      await ensureMicrophonePublished(room, true);
+      if (options.video) {
+        await room.localParticipant.setCameraEnabled(true);
+        await ensureMicrophonePublished(room, true);
+      }
       await livekitNative.AudioSession.selectAudioOutput(Platform.OS === "ios" ? "force_speaker" : "speaker").catch(() => undefined);
       refresh();
+      const media = summarizeCallMediaState(room);
       setState((current) => ({
         ...current,
         connecting: false,
@@ -205,8 +259,12 @@ export function useNativeCallRoom() {
         reconnecting: false,
         connectionState: "connected",
         participantCount: room.remoteParticipants.size + 1,
-        audioEnabled: true,
-        videoEnabled: Boolean(options.video),
+        audioEnabled: media.localAudioPublished && !media.localAudioMuted,
+        localAudioPublished: media.localAudioPublished,
+        localAudioMuted: media.localAudioMuted,
+        remoteAudioSubscribed: media.remoteAudioSubscribed,
+        remoteAudioMuted: media.remoteAudioMuted,
+        videoEnabled: media.localVideoPublished,
         speakerEnabled: true,
         error: ""
       }));
@@ -221,28 +279,31 @@ export function useNativeCallRoom() {
       setState((current) => ({ ...current, connectionState: "failed", error: message, disconnectReason: "connect_failed" }));
       return false;
     }
-  }, [disconnect, refreshMediaState]);
+  }, [disconnect, ensureMicrophonePublished, refreshMediaState]);
 
   const setMicrophoneEnabled = useCallback(async (enabled: boolean) => {
     const room = roomRef.current;
     if (!room) throw new Error("Call media is not connected.");
+    desiredAudioEnabledRef.current = enabled;
     await room.localParticipant.setMicrophoneEnabled(enabled);
-    setState((current) => ({ ...current, audioEnabled: enabled, error: "" }));
-  }, []);
+    refreshMediaState(room);
+    const media = summarizeCallMediaState(room);
+    setState((current) => ({ ...current, audioEnabled: media.localAudioPublished && !media.localAudioMuted, localAudioPublished: media.localAudioPublished, localAudioMuted: media.localAudioMuted, error: "" }));
+  }, [refreshMediaState]);
 
   const setCameraEnabled = useCallback(async (enabled: boolean) => {
     const room = roomRef.current;
     if (!room) throw new Error("Call media is not connected.");
     await room.localParticipant.setCameraEnabled(enabled);
+    await ensureMicrophonePublished(room, desiredAudioEnabledRef.current);
     refreshMediaState(room);
     setState((current) => ({ ...current, videoEnabled: enabled, error: "" }));
-  }, [refreshMediaState]);
+  }, [ensureMicrophonePublished, refreshMediaState]);
 
   const setSpeakerEnabled = useCallback(async (enabled: boolean) => {
     const audioSession = audioSessionRef.current;
     if (!audioSession) throw new Error("Call audio session is not available.");
-    const output = Platform.OS === "ios" ? (enabled ? "force_speaker" : "default") : (enabled ? "speaker" : "earpiece");
-    await audioSession.selectAudioOutput(output);
+    await audioSession.selectAudioOutput(nativeAudioOutput(enabled));
     setState((current) => ({ ...current, speakerEnabled: enabled, error: "" }));
   }, []);
 
@@ -258,7 +319,9 @@ export function useNativeCallRoom() {
     const publication = publications.find((item) => item?.track);
     if (!publication?.track?.switchCamera) throw new Error("Camera is not active.");
     await publication.track.switchCamera();
-  }, []);
+    const room = roomRef.current;
+    if (room) await ensureMicrophonePublished(room, desiredAudioEnabledRef.current);
+  }, [ensureMicrophonePublished]);
 
   useEffect(() => () => {
     const room = roomRef.current;

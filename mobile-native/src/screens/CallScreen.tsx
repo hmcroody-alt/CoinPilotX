@@ -412,9 +412,13 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
           </View>
           <View style={styles.controlRow}>
             <CallControl label={room.audioEnabled ? "Mute" : "Unmute"} icon={room.audioEnabled ? "mic" : "mic-off"} active={!room.audioEnabled} onPress={() => runMediaAction(() => room.setMicrophoneEnabled(!room.audioEnabled), room.audioEnabled ? "mute-audio" : "unmute-audio")} />
-            <CallControl label={room.videoEnabled ? "Camera" : "Camera off"} icon={room.videoEnabled ? "videocam" : "videocam-off"} active={room.videoEnabled} onPress={() => runMediaAction(() => room.setCameraEnabled(!room.videoEnabled), room.videoEnabled ? "disable-video" : "enable-video")} />
+            {callType === "video" ? (
+              <CallControl label={room.videoEnabled ? "Camera" : "Camera off"} icon={room.videoEnabled ? "videocam" : "videocam-off"} active={room.videoEnabled} onPress={() => runMediaAction(() => room.setCameraEnabled(!room.videoEnabled), room.videoEnabled ? "disable-video" : "enable-video")} />
+            ) : null}
             <CallControl label={room.speakerEnabled ? "Speaker" : "Earpiece"} icon={room.speakerEnabled ? "volume-high" : "ear-outline"} active={room.speakerEnabled} onLongPress={() => runMediaAction(room.showAudioRoutePicker, "speaker", { picker: true })} onPress={() => runMediaAction(() => room.setSpeakerEnabled(!room.speakerEnabled), "speaker", { enabled: !room.speakerEnabled })} />
-            <CallControl label="Flip" icon="camera-reverse" disabled={!room.videoEnabled} onPress={() => runMediaAction(room.switchCamera, "switch-camera")} />
+            {callType === "video" ? (
+              <CallControl label="Flip" icon="camera-reverse" disabled={!room.videoEnabled} onPress={() => runMediaAction(room.switchCamera, "switch-camera")} />
+            ) : null}
           </View>
           <Pressable accessibilityRole="button" accessibilityLabel="End call" disabled={actionBusy === "end"} style={({ pressed }) => [styles.endButton, pressed && styles.pressed]} onPress={hangup}>
             <Ionicons name="call" color="#fff" size={30} style={styles.endIcon} />

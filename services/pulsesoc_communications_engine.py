@@ -485,6 +485,8 @@ def _generate_livekit_token(room_name: str, user_id: int, call_type: str = "audi
     }
     if call_type == "audio":
         grants["canPublishSources"] = ["microphone"]
+    elif call_type == "video":
+        grants["canPublishSources"] = ["microphone", "camera"]
     payload = {
         "iss": api_key,
         "sub": f"user-{int(user_id)}",
