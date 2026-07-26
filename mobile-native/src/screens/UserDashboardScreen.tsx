@@ -136,7 +136,7 @@ export function UserDashboardScreen() {
       <Section title="Production Dashboard Map" subtitle="Current PulseSoc dashboard module groups represented natively with provider boundaries where advanced modules are still server-owned.">
         <View style={styles.moduleRail}>
           {moduleGroups.map((group) => (
-            <Pressable key={`rail-${group.key}`} style={styles.railChip} onPress={() => undefined}>
+            <Pressable accessibilityRole="button" key={`rail-${group.key}`} style={styles.railChip} onPress={() => undefined}>
               <Text style={styles.railGlyph}>{group.icon}</Text>
               <View style={styles.railCopy}>
                 <Text style={styles.railLabel}>{group.label}</Text>
@@ -162,7 +162,7 @@ export function UserDashboardScreen() {
       <Section title="Recent Activity" subtitle="Server-authoritative activity and commerce events feed this timeline.">
         {state?.recentActivity.length ? (
           state.recentActivity.map((item) => (
-            <Pressable key={item.id} style={styles.timelineRow} onPress={() => openActivityTarget(navigation, item.target)}>
+            <Pressable accessibilityRole="button" key={item.id} style={styles.timelineRow} onPress={() => openActivityTarget(navigation, item.target)}>
               <View style={styles.timelineDot} />
               <View style={styles.timelineCopy}>
                 <Text style={styles.timelineTitle}>{item.title}</Text>
@@ -196,7 +196,7 @@ function ModuleGroupSection({ group, onOpen }: { group: DashboardModuleGroup; on
 function DashboardModuleCard({ module, onPress }: { module: DashboardModuleItem; onPress: () => void }) {
   const routeClass = classifyDashboardActionRoute(module.route);
   return (
-    <Pressable style={[styles.moduleCard, module.access === "locked" ? styles.moduleLocked : null]} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={[styles.moduleCard, module.access === "locked" ? styles.moduleLocked : null]} onPress={onPress}>
       <View style={styles.moduleTop}>
         <Text style={styles.moduleGlyph}>{module.icon}</Text>
         <Text style={[styles.moduleStatus, module.status === "COMING_SOON" ? styles.moduleComingSoon : null]}>
@@ -217,7 +217,7 @@ function DashboardModuleCard({ module, onPress }: { module: DashboardModuleItem;
 function DashboardQuickLink({ action, onPress }: { action: DashboardQuickAction; onPress: () => void }) {
   const routeClass = classifyDashboardActionRoute(action.route);
   return (
-    <Pressable style={styles.quickLink} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={styles.quickLink} onPress={onPress}>
       <Text style={styles.quickLinkIcon}>{action.label.slice(0, 2)}</Text>
       <Text style={styles.quickLinkText}>{action.label}</Text>
       <Text style={styles.quickLinkGo}>{routeClass.label}</Text>
@@ -248,7 +248,7 @@ function Signal({ label, value, tone }: { label: string; value: string; tone: Da
 
 function DashboardMetric({ card, onPress }: { card: DashboardCard; onPress: () => void }) {
   return (
-    <Pressable style={[styles.metricCard, stateStyle(card.state)]} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={[styles.metricCard, stateStyle(card.state)]} onPress={onPress}>
       <Text style={styles.cardTitle}>{card.title}</Text>
       <Text style={styles.metricValue}>{card.value}</Text>
       <Text style={styles.cardDetail}>{card.detail}</Text>
@@ -258,7 +258,7 @@ function DashboardMetric({ card, onPress }: { card: DashboardCard; onPress: () =
 
 function QuickAction({ card, onPress }: { card: DashboardCard; onPress: () => void }) {
   return (
-    <Pressable style={styles.quickAction} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={styles.quickAction} onPress={onPress}>
       <Text style={styles.quickTitle}>{card.title}</Text>
       <Text style={styles.quickDetail}>{quickActionCopy(card.key)}</Text>
     </Pressable>
@@ -267,7 +267,7 @@ function QuickAction({ card, onPress }: { card: DashboardCard; onPress: () => vo
 
 function SystemCard({ card, onPress }: { card: DashboardCard; onPress: () => void }) {
   return (
-    <Pressable style={[styles.systemCard, stateStyle(card.state)]} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={[styles.systemCard, stateStyle(card.state)]} onPress={onPress}>
       <View style={styles.systemHeader}>
         <Text style={styles.cardTitle}>{card.title}</Text>
         <Text style={styles.statePill}>{stateLabel(card.state)}</Text>

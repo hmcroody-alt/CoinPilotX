@@ -178,7 +178,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
         contentContainerStyle={styles.detailContent}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
       >
-        <Pressable style={styles.backButton} onPress={() => {
+        <Pressable accessibilityRole="button" style={styles.backButton} onPress={() => {
           setSelectedLesson(null);
           navigation.navigate("Courses", { title: "Courses" });
         }}>
@@ -199,7 +199,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
         <Panel>
           <Text style={styles.sectionTitle}>Lesson overview</Text>
           <Text style={styles.bodyText}>{selectedLesson.content || selectedLesson.summary || "Lesson content is available through the PulseSoc education backend."}</Text>
-          <Pressable style={styles.primaryButton} onPress={completeLesson}>
+          <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={completeLesson}>
             <Text style={styles.primaryText}>Mark Complete</Text>
           </Pressable>
           {progressMessage ? <Text style={styles.answer}>{progressMessage}</Text> : null}
@@ -226,7 +226,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
         <Panel>
           <Text style={styles.sectionTitle}>PulseSoc tutor</Text>
           <TextInput style={styles.input} value={question} onChangeText={setQuestion} placeholder="Ask about this lesson" placeholderTextColor={colors.muted} />
-          <Pressable style={styles.secondaryButton} onPress={askTutor}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={askTutor}>
             <Text style={styles.secondaryText}>Ask Tutor</Text>
           </Pressable>
           {tutorAnswer ? <Text style={styles.answer}>{tutorAnswer}</Text> : <Text style={styles.muted}>Tutor answers use the existing education AI endpoint and safety rules.</Text>}
@@ -282,11 +282,11 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
           {error ? <Text style={styles.error}>{error}</Text> : null}
           {offline ? <Text style={styles.offline}>Showing saved learning data</Text> : null}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
-            <Pressable style={[styles.categoryChip, !selectedCategory ? styles.categoryChipActive : undefined]} onPress={() => selectCategory("")}>
+            <Pressable accessibilityRole="button" style={[styles.categoryChip, !selectedCategory ? styles.categoryChipActive : undefined]} onPress={() => selectCategory("")}>
               <Text style={[styles.categoryText, !selectedCategory ? styles.categoryTextActive : undefined]}>All</Text>
             </Pressable>
             {categories.map((category) => (
-              <Pressable key={category.slug} style={[styles.categoryChip, selectedCategory === category.slug ? styles.categoryChipActive : undefined]} onPress={() => selectCategory(category.slug)}>
+              <Pressable accessibilityRole="button" key={category.slug} style={[styles.categoryChip, selectedCategory === category.slug ? styles.categoryChipActive : undefined]} onPress={() => selectCategory(category.slug)}>
                 <Text style={[styles.categoryText, selectedCategory === category.slug ? styles.categoryTextActive : undefined]}>{category.title}</Text>
               </Pressable>
             ))}
@@ -321,7 +321,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
 
 function LessonCard({ lesson, onPress }: { lesson: LearningLessonSummary; onPress: () => void }) {
   return (
-    <Pressable style={styles.card} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={styles.card} onPress={onPress}>
       <View style={styles.cardGlow} />
       <View style={styles.cardBody}>
         <Text style={styles.kicker}>{lesson.category_slug || "Lesson"}</Text>
@@ -339,7 +339,7 @@ function LessonCard({ lesson, onPress }: { lesson: LearningLessonSummary; onPres
 
 function MiniLesson({ lesson, onPress }: { lesson: LearningLessonSummary; onPress: () => void }) {
   return (
-    <Pressable style={styles.miniLesson} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={styles.miniLesson} onPress={onPress}>
       <Text style={styles.miniLessonTitle}>{lesson.title}</Text>
       <Text style={styles.miniLessonMeta}>{lesson.difficulty || "Guided"} · {lesson.estimated_time || "Self paced"}</Text>
     </Pressable>
@@ -348,7 +348,7 @@ function MiniLesson({ lesson, onPress }: { lesson: LearningLessonSummary; onPres
 
 function Gateway({ label, body, onPress }: { label: string; body: string; onPress: () => void }) {
   return (
-    <Pressable style={styles.gateway} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={styles.gateway} onPress={onPress}>
       <View style={styles.gatewayDot} />
       <View style={styles.gatewayBody}>
         <Text style={styles.gatewayTitle}>{label}</Text>

@@ -58,7 +58,7 @@
     {
       "details": "",
       "name": "Feed hierarchy markers present",
-      "passed": true
+      "passed": false
     },
     {
       "details": "",
@@ -429,7 +429,7 @@
     }
   ],
   "missing_routes": [],
-  "ok": true,
+  "ok": false,
   "routes_verified": [
     "/pulse",
     "/dashboard",

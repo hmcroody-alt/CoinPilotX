@@ -30,12 +30,16 @@ import { profileNavigationParams, resolveProfileTarget } from "../api/profileTar
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
 import { ContentTranslation } from "../components/ContentTranslation";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "MarketplaceDetail">>;
 
 export function MarketplaceScreen({ route, navigation }: Props) {
+  // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
+  // reserves the matching clearance so the last row never sits under the dock.
+  const dock = useBottomNavSurface();
   const initialListingId = Number(route?.params?.listingId || 0);
   const [items, setItems] = useState<MarketplaceListing[]>([]);
   const [query, setQuery] = useState("");
@@ -156,7 +160,8 @@ export function MarketplaceScreen({ route, navigation }: Props) {
     <View style={styles.root}>
       <FlatList
         style={styles.list}
-        contentContainerStyle={styles.content}
+        {...dock.handlers}
+        contentContainerStyle={[styles.content, dock.contentPadding]}
         data={items}
         keyExtractor={(item) => String(item.id)}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
@@ -164,10 +169,10 @@ export function MarketplaceScreen({ route, navigation }: Props) {
           <View style={styles.header}>
             <Text style={styles.title}>Marketplace</Text>
             <Text style={styles.subtitle}>{offline ? "Showing saved marketplace results" : "PulseSoc native marketplace"}</Text>
-            <Pressable style={styles.sellerGatewayButton} onPress={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })}>
+            <Pressable accessibilityRole="button" style={styles.sellerGatewayButton} onPress={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })}>
               <Text style={styles.sellerGatewayText}>Seller / Store Management</Text>
             </Pressable>
-            <Pressable style={styles.sellerGatewayButton} onPress={() => navigation?.navigate("BuyerOrders", { title: "Purchase History" })}>
+            <Pressable accessibilityRole="button" style={styles.sellerGatewayButton} onPress={() => navigation?.navigate("BuyerOrders", { title: "Purchase History" })}>
               <Text style={styles.sellerGatewayText}>Purchase History</Text>
             </Pressable>
             <View style={styles.searchRow}>
@@ -180,7 +185,7 @@ export function MarketplaceScreen({ route, navigation }: Props) {
                 returnKeyType="search"
                 onSubmitEditing={() => load("search", query).catch(() => undefined)}
               />
-              <Pressable style={styles.searchButton} onPress={() => load("search", query).catch(() => undefined)}>
+              <Pressable accessibilityRole="button" style={styles.searchButton} onPress={() => load("search", query).catch(() => undefined)}>
                 <Text style={styles.searchButtonText}>Search</Text>
               </Pressable>
             </View>
@@ -235,7 +240,7 @@ function MarketplaceCard({ listing, busy, onOpen, onSave, onReport }: {
 }) {
   const cover = listing.media?.[0] ? mediaDisplayUrl(listing.media[0]) : "";
   return (
-    <Pressable style={styles.card} onPress={() => onOpen(listing)}>
+    <Pressable accessibilityRole="button" style={styles.card} onPress={() => onOpen(listing)}>
       {cover ? <Image source={{ uri: cover }} style={styles.cover} resizeMode="cover" /> : <View style={styles.coverFallback}><Text style={styles.coverText}>Marketplace</Text></View>}
       <View style={styles.cardBody}>
         <Text style={styles.cardTitle}>{listing.title}</Text>
@@ -253,10 +258,10 @@ function MarketplaceCard({ listing, busy, onOpen, onSave, onReport }: {
         </View>
         <Text style={styles.sellerText}>Seller: {listing.seller_name || "PulseSoc Seller"}</Text>
         <View style={styles.cardActions}>
-          <Pressable style={styles.smallButton} disabled={busy || listing.saved} onPress={() => onSave(listing)}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || listing.saved }} style={styles.smallButton} disabled={busy || listing.saved} onPress={() => onSave(listing)}>
             <Text style={styles.smallButtonText}>{listing.saved ? "Saved" : "Save"}</Text>
           </Pressable>
-          <Pressable style={styles.smallButton} disabled={busy} onPress={() => onReport(listing)}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.smallButton} disabled={busy} onPress={() => onReport(listing)}>
             <Text style={styles.smallButtonText}>Report</Text>
           </Pressable>
         </View>
@@ -295,11 +300,11 @@ function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onCo
     <Modal visible={Boolean(listing)} animationType="slide" onRequestClose={onClose}>
       <ScrollView style={styles.detailRoot} contentContainerStyle={styles.detailContent}>
         <View style={styles.detailHeader}>
-          <Pressable style={styles.closeButton} onPress={onClose}>
+          <Pressable accessibilityRole="button" style={styles.closeButton} onPress={onClose}>
             <Text style={styles.closeText}>Close</Text>
           </Pressable>
         </View>
-        <Pressable disabled={!viewerItems.length} onPress={() => setViewerOpen(true)}>
+        <Pressable accessibilityRole="button" accessibilityState={{ disabled: !viewerItems.length }} disabled={!viewerItems.length} onPress={() => setViewerOpen(true)}>
           {cover ? <Image source={{ uri: cover }} style={styles.detailCover} resizeMode="cover" /> : <View style={styles.detailCoverFallback}><Text style={styles.coverText}>No media loaded</Text></View>}
         </Pressable>
         <Text style={styles.detailTitle}>{listing.title}</Text>
@@ -315,24 +320,24 @@ function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onCo
           <Text style={styles.pill}>Safety {listing.safety_score || 0}</Text>
           <Text style={styles.pill}>{listing.approval_status || listing.status || "approved"}</Text>
         </View>
-        <Pressable style={styles.sellerPanel} disabled={!canNavigateProfile} onPress={() => onProfile(listing)}>
+        <Pressable accessibilityRole="button" accessibilityState={{ disabled: !canNavigateProfile }} style={styles.sellerPanel} disabled={!canNavigateProfile} onPress={() => onProfile(listing)}>
           <Text style={styles.sellerTitle}>{listing.seller_name || "PulseSoc Seller"}</Text>
           <Text style={styles.sellerMeta}>{canNavigateProfile ? "Open profile" : "Seller profile link unavailable in this payload"}</Text>
         </Pressable>
         <Text style={styles.safetyNotice}>Safety notice: marketplace business rules, checkout, seller approval, moderation, refunds, disputes, and payout release remain server-authoritative.</Text>
         <View style={styles.detailActions}>
-          <Pressable style={styles.primaryButton} disabled={busy} onPress={() => onContactSeller(listing)}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.primaryButton} disabled={busy} onPress={() => onContactSeller(listing)}>
             <Text style={styles.primaryText}>Contact Seller</Text>
           </Pressable>
           {DIGITAL_COMMERCE_ENABLED ? (
-            <Pressable style={styles.secondaryButton} disabled={busy} onPress={() => onCheckout(listing)}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.secondaryButton} disabled={busy} onPress={() => onCheckout(listing)}>
               <Text style={styles.secondaryText}>Checkout</Text>
             </Pressable>
           ) : null}
-          <Pressable style={styles.secondaryButton} disabled={busy || listing.saved} onPress={() => onSave(listing)}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || listing.saved }} style={styles.secondaryButton} disabled={busy || listing.saved} onPress={() => onSave(listing)}>
             <Text style={styles.secondaryText}>{listing.saved ? "Saved" : "Save"}</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} disabled={busy} onPress={() => onReport(listing)}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.secondaryButton} disabled={busy} onPress={() => onReport(listing)}>
             <Text style={styles.secondaryText}>Report</Text>
           </Pressable>
         </View>

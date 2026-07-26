@@ -53,8 +53,31 @@ export type PulseCommandCommunityActionRule = {
   accessibilityLabel: string;
 };
 
+/**
+ * True only when the server has affirmatively reported a human as online.
+ *
+ * The accepted set is exactly the one token the unified presence service emits
+ * for a live user. "active", "live" and "available" were previously accepted
+ * too, which meant any loosely-worded field anywhere in the payload could light
+ * up a green dot. "assistant" is excluded on purpose: bots are not people, and
+ * they render their own always-available label instead of a presence dot.
+ */
 export function isActivePresence(value?: string) {
-  return ["online", "active", "live"].includes(String(value || "").toLowerCase());
+  return String(value || "").toLowerCase() === "online";
+}
+
+export function isAssistantPresence(value?: string) {
+  return String(value || "").toLowerCase() === "assistant";
+}
+
+/** Human-readable presence for a conversation row or header. */
+export function presenceLabel(value?: string) {
+  const token = String(value || "").toLowerCase();
+  if (token === "assistant") return "Always available";
+  if (token === "online") return "Online";
+  if (token === "away") return "Away";
+  if (token === "offline") return "Offline";
+  return "";
 }
 
 export function conversationDisplayTitle(item: Pick<MessengerConversation, "id" | "title" | "name">) {

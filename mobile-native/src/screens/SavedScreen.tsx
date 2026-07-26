@@ -23,6 +23,7 @@ import {
   SavedItem,
   updateSavedCollection
 } from "../api/saved";
+import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { routeNotificationTarget } from "../navigation/notificationRouting";
 import { colors } from "../theme/colors";
 
@@ -39,6 +40,9 @@ const TYPE_FILTERS: Array<{ key: SavedContentType; label: string }> = [
 ];
 
 export function SavedScreen() {
+  // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
+  // reserves the matching clearance so the last row never sits under the dock.
+  const dock = useBottomNavSurface();
   const [items, setItems] = useState<SavedItem[]>([]);
   const [collections, setCollections] = useState<SavedCollection[]>([]);
   const [type, setType] = useState<SavedContentType>("all");
@@ -185,7 +189,8 @@ export function SavedScreen() {
       <FlatList
         data={items}
         keyExtractor={(item) => String(item.id)}
-        contentContainerStyle={styles.content}
+        {...dock.handlers}
+        contentContainerStyle={[styles.content, dock.contentPadding]}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
         ListHeaderComponent={
           <View style={styles.header}>
@@ -201,17 +206,17 @@ export function SavedScreen() {
             />
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
               {TYPE_FILTERS.map((filter) => (
-                <Pressable key={filter.key} style={[styles.filter, type === filter.key ? styles.filterActive : undefined]} onPress={() => setType(filter.key)}>
+                <Pressable accessibilityRole="button" key={filter.key} style={[styles.filter, type === filter.key ? styles.filterActive : undefined]} onPress={() => setType(filter.key)}>
                   <Text style={[styles.filterText, type === filter.key ? styles.filterTextActive : undefined]}>{filter.label}</Text>
                 </Pressable>
               ))}
             </ScrollView>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-              <Pressable style={[styles.filter, collectionId === 0 ? styles.filterActive : undefined]} onPress={() => setCollectionId(0)}>
+              <Pressable accessibilityRole="button" style={[styles.filter, collectionId === 0 ? styles.filterActive : undefined]} onPress={() => setCollectionId(0)}>
                 <Text style={[styles.filterText, collectionId === 0 ? styles.filterTextActive : undefined]}>All Collections</Text>
               </Pressable>
               {collections.map((collection) => (
-                <Pressable key={collection.id} style={[styles.filter, collectionId === collection.id ? styles.filterActive : undefined]} onPress={() => setCollectionId(collection.id)}>
+                <Pressable accessibilityRole="button" key={collection.id} style={[styles.filter, collectionId === collection.id ? styles.filterActive : undefined]} onPress={() => setCollectionId(collection.id)}>
                   <Text style={[styles.filterText, collectionId === collection.id ? styles.filterTextActive : undefined]}>
                     {collection.name} {collection.item_count ? `(${collection.item_count})` : ""}
                   </Text>
@@ -228,7 +233,7 @@ export function SavedScreen() {
                   placeholder="New collection"
                   placeholderTextColor={colors.muted}
                 />
-                <Pressable style={styles.primaryButton} disabled={busy} onPress={handleCreateCollection}>
+                <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.primaryButton} disabled={busy} onPress={handleCreateCollection}>
                   <Text style={styles.primaryText}>Create</Text>
                 </Pressable>
               </View>
@@ -241,10 +246,10 @@ export function SavedScreen() {
                     placeholder={`Rename ${selectedCollection.name}`}
                     placeholderTextColor={colors.muted}
                   />
-                  <Pressable style={styles.smallButton} disabled={busy} onPress={handleUpdateCollection}>
+                  <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.smallButton} disabled={busy} onPress={handleUpdateCollection}>
                     <Text style={styles.smallButtonText}>Rename</Text>
                   </Pressable>
-                  <Pressable style={styles.smallButton} disabled={busy || Boolean(selectedCollection.is_default)} onPress={handleDeleteCollection}>
+                  <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || Boolean(selectedCollection.is_default) }} style={styles.smallButton} disabled={busy || Boolean(selectedCollection.is_default)} onPress={handleDeleteCollection}>
                     <Text style={styles.smallButtonText}>Delete</Text>
                   </Pressable>
                 </View>
@@ -283,13 +288,13 @@ function SavedCard({ item, busy, collections, onOpen, onMove, onRemove }: {
         <Text style={styles.cardPreview} numberOfLines={2}>{item.preview_text || "Open to view this saved PulseSoc item."}</Text>
         <Text style={styles.cardMeta} numberOfLines={1}>{item.collection_name || "Favorites"}</Text>
         <View style={styles.actionRow}>
-          <Pressable style={styles.smallButton} disabled={busy} onPress={() => onOpen(item)}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.smallButton} disabled={busy} onPress={() => onOpen(item)}>
             <Text style={styles.smallButtonText}>Open</Text>
           </Pressable>
-          <Pressable style={styles.smallButton} disabled={busy || !moveTarget} onPress={() => onMove(item)}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || !moveTarget }} style={styles.smallButton} disabled={busy || !moveTarget} onPress={() => onMove(item)}>
             <Text style={styles.smallButtonText}>{moveTarget ? `Move to ${moveTarget.name}` : "Move"}</Text>
           </Pressable>
-          <Pressable style={styles.smallButton} disabled={busy} onPress={() => onRemove(item)}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.smallButton} disabled={busy} onPress={() => onRemove(item)}>
             <Text style={styles.smallButtonText}>Remove</Text>
           </Pressable>
         </View>

@@ -113,7 +113,7 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
     <Panel>
       <Text style={styles.errorTitle}>Commerce state unavailable</Text>
       <Text style={styles.copy}>{error}</Text>
-      <Pressable style={styles.secondaryButton} onPress={() => load(orderId, source).catch(() => undefined)}>
+      <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => load(orderId, source).catch(() => undefined)}>
         <Text style={styles.secondaryText}>Retry</Text>
       </Pressable>
     </Panel>
@@ -175,7 +175,7 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
         <Panel>
           <Text style={styles.sectionTitle}>No purchases yet</Text>
           <Text style={styles.copy}>Marketplace and learning purchases will appear here after checkout creates a server-side transaction.</Text>
-          <Pressable style={styles.primaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
+          <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
             <Text style={styles.primaryText}>Browse Marketplace</Text>
           </Pressable>
         </Panel>
@@ -217,10 +217,10 @@ function OrderDetail({ order, onBack, onListing, onSeller }: { order: BuyerOrder
         <Line label="Seller" value={order.seller?.display_name || "PulseSoc Seller"} />
         <Line label="Item" value={order.item_title || order.title || "PulseSoc purchase"} />
         <View style={styles.buttonRow}>
-          <Pressable style={styles.secondaryButton} onPress={onSeller}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={onSeller}>
             <Text style={styles.secondaryText}>View Seller</Text>
           </Pressable>
-          <Pressable style={[styles.secondaryButton, !canOpenListing && styles.disabledButton]} disabled={!canOpenListing} onPress={onListing}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: !canOpenListing }} style={[styles.secondaryButton, !canOpenListing && styles.disabledButton]} disabled={!canOpenListing} onPress={onListing}>
             <Text style={styles.secondaryText}>Open Listing</Text>
           </Pressable>
         </View>
@@ -230,14 +230,14 @@ function OrderDetail({ order, onBack, onListing, onSeller }: { order: BuyerOrder
         <Text style={styles.sectionTitle}>Buyer controls</Text>
         <Text style={styles.copy}>Receipt, support, dispute, shipping, and provider pages open through existing PulseSoc web/provider flows.</Text>
         <View style={styles.buttonRow}>
-          <Pressable style={styles.primaryButton} onPress={() => openBuyerOrderFallback(order.receipt_url || buyerOrderWebUrl(order)).catch(() => undefined)}>
+          <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => openBuyerOrderFallback(order.receipt_url || buyerOrderWebUrl(order)).catch(() => undefined)}>
             <Text style={styles.primaryText}>View Receipt</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => openBuyerOrderFallback(order.dispute_url || order.support_url || supportOrderWebUrl(order)).catch(() => undefined)}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => openBuyerOrderFallback(order.dispute_url || order.support_url || supportOrderWebUrl(order)).catch(() => undefined)}>
             <Text style={styles.secondaryText}>Support</Text>
           </Pressable>
         </View>
-        <Pressable style={styles.ghostButton} onPress={onBack}>
+        <Pressable accessibilityRole="button" style={styles.ghostButton} onPress={onBack}>
           <Text style={styles.ghostText}>Back to Purchase History</Text>
         </Pressable>
       </Panel>
@@ -247,7 +247,7 @@ function OrderDetail({ order, onBack, onListing, onSeller }: { order: BuyerOrder
 
 function OrderRow({ order, onPress }: { order: BuyerOrder; onPress: () => void }) {
   return (
-    <Pressable style={styles.row} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={styles.row} onPress={onPress}>
       <View style={styles.rowGlow} />
       <View style={styles.flex}>
         <Text style={styles.rowTitle} numberOfLines={1}>{order.item_title || order.title || "PulseSoc purchase"}</Text>

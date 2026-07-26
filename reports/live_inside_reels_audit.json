@@ -1,15 +1,15 @@
 {
   "dynamic": {
     "api_live_count": 1,
-    "helper_live_count": 6,
+    "helper_live_count": 1,
     "join_viewer_count": 1,
     "payload_live_count": 1,
-    "reaction_id": 64
+    "reaction_id": 1
   },
-  "generated_at": "2026-07-13T08:30:22",
-  "live_id": 771,
+  "generated_at": "2026-07-26T00:13:03",
+  "live_id": 1,
   "ok": true,
-  "post_id": 1160,
+  "post_id": 1,
   "static": {
     "active_live_query_uses_live_sessions": true,
     "backend_adapter_exists": true,
@@ -28,5 +28,5 @@
     "regular_reel_view_bypassed_for_live": true,
     "viewer_count_present": true
   },
-  "user_id": 10711395806
+  "user_id": 1
 }

@@ -458,28 +458,28 @@ export function CameraStudioScreen({ route, navigation }: Props) {
           <View style={styles.webFallback}>
             <Text style={styles.webTitle}>Camera permission needed</Text>
             <Text style={styles.webText}>Gallery fallback is available if camera access is denied.</Text>
-            <Pressable style={styles.primaryButton} onPress={() => requestCameraPermission()}>
+            <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => requestCameraPermission()}>
               <Text style={styles.primaryText}>Allow Camera</Text>
             </Pressable>
           </View>
         )}
 
         <View style={styles.topBar}>
-          <Pressable style={styles.iconButton} onPress={() => navigation.goBack()}>
+          <Pressable accessibilityRole="button" style={styles.iconButton} onPress={() => navigation.goBack()}>
             <Text style={styles.iconText}>Close</Text>
           </Pressable>
           <View style={styles.modeSwitch}>
-            <Pressable style={[styles.modeButton, captureMode === "photo" && styles.modeActive]} onPress={() => setCaptureMode("photo")}>
+            <Pressable accessibilityRole="button" style={[styles.modeButton, captureMode === "photo" && styles.modeActive]} onPress={() => setCaptureMode("photo")}>
               <Text style={styles.modeText}>Photo</Text>
             </Pressable>
-            <Pressable style={[styles.modeButton, captureMode === "video" && styles.modeActive]} onPress={() => setCaptureMode("video")}>
+            <Pressable accessibilityRole="button" style={[styles.modeButton, captureMode === "video" && styles.modeActive]} onPress={() => setCaptureMode("video")}>
               <Text style={styles.modeText}>Video</Text>
             </Pressable>
-            <Pressable style={[styles.modeButton, captureMode === "live" && styles.modeActive]} onPress={() => setCaptureMode("live")}>
+            <Pressable accessibilityRole="button" style={[styles.modeButton, captureMode === "live" && styles.modeActive]} onPress={() => setCaptureMode("live")}>
               <Text style={styles.modeText}>Live</Text>
             </Pressable>
           </View>
-          <Pressable style={styles.iconButton} onPress={() => setCameraFacing((current) => (current === "back" ? "front" : "back"))}>
+          <Pressable accessibilityRole="button" style={styles.iconButton} onPress={() => setCameraFacing((current) => (current === "back" ? "front" : "back"))}>
             <Text style={styles.iconText}>Flip</Text>
           </Pressable>
         </View>
@@ -491,16 +491,16 @@ export function CameraStudioScreen({ route, navigation }: Props) {
         )}
 
         <View style={styles.captureDock}>
-          <Pressable
+          <Pressable accessibilityRole="button"
             style={styles.dockButton}
             onPress={captureMode === "live" ? () => setShowPreLive(true) : chooseFromGallery}
           >
             <Text style={styles.dockText}>{captureMode === "live" ? "Live tools" : "Gallery"}</Text>
           </Pressable>
-          <Pressable style={[styles.captureButton, recording && styles.recording]} disabled={publishing} onPress={capture}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: publishing }} style={[styles.captureButton, recording && styles.recording]} disabled={publishing} onPress={capture}>
             <Text style={styles.captureText}>{recording ? "Stop" : captureMode === "live" ? "Live" : captureMode === "video" ? "Record" : "Snap"}</Text>
           </Pressable>
-          <Pressable
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: captureMode === "photo" }}
             style={[styles.dockButton, captureMode === "photo" && styles.disabled]}
             disabled={captureMode === "photo"}
             onPress={async () => {
@@ -534,7 +534,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
           {destinations.map((item) => {
             const active = item.key === destination.key;
             return (
-              <Pressable key={item.key} style={[styles.destination, active && styles.destinationActive]} onPress={() => setDestination(item)}>
+              <Pressable accessibilityRole="button" key={item.key} style={[styles.destination, active && styles.destinationActive]} onPress={() => setDestination(item)}>
                 <Text style={[styles.destinationText, active && styles.destinationTextActive]}>{item.label}</Text>
                 <Text style={styles.destinationHelper}>{item.helper}</Text>
               </Pressable>
@@ -544,7 +544,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
 
         <View style={styles.effectRow}>
           {["natural", "low_light", "cinematic"].map((effect) => (
-            <Pressable key={effect} style={[styles.effectButton, selectedEffect === effect && styles.effectActive]} onPress={() => setSelectedEffect(effect)}>
+            <Pressable accessibilityRole="button" key={effect} style={[styles.effectButton, selectedEffect === effect && styles.effectActive]} onPress={() => setSelectedEffect(effect)}>
               <Text style={styles.effectText}>{effect.replace("_", " ")}</Text>
             </Pressable>
           ))}
@@ -562,7 +562,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
 
         <View style={styles.visibilityRow}>
           {visibilityOptions.map((option) => (
-            <Pressable key={option.value} style={[styles.visibility, privacy === option.value && styles.visibilityActive]} onPress={() => setPrivacy(option.value)}>
+            <Pressable accessibilityRole="button" key={option.value} style={[styles.visibility, privacy === option.value && styles.visibilityActive]} onPress={() => setPrivacy(option.value)}>
               <Text style={[styles.visibilityText, privacy === option.value && styles.visibilityTextActive]}>{option.label}</Text>
             </Pressable>
           ))}
@@ -588,10 +588,10 @@ export function CameraStudioScreen({ route, navigation }: Props) {
         {message ? <Text style={styles.message}>{message}</Text> : publishStage !== "idle" ? <Text style={styles.message}>{publishStageLabel(publishStage)}</Text> : null}
 
         <View style={styles.actionRow}>
-          <Pressable style={styles.secondaryButton} disabled={publishing || mediaUpload.uploading} onPress={mediaUpload.reset}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: publishing || mediaUpload.uploading }} style={styles.secondaryButton} disabled={publishing || mediaUpload.uploading} onPress={mediaUpload.reset}>
             <Text style={styles.secondaryText}>Retake</Text>
           </Pressable>
-          <Pressable style={[styles.primaryButton, (!mediaUpload.asset || publishing || mediaUpload.uploading) && styles.disabled]} disabled={!mediaUpload.asset || publishing || mediaUpload.uploading} onPress={publish}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: !mediaUpload.asset || publishing || mediaUpload.uploading }} style={[styles.primaryButton, (!mediaUpload.asset || publishing || mediaUpload.uploading) && styles.disabled]} disabled={!mediaUpload.asset || publishing || mediaUpload.uploading} onPress={publish}>
             {publishing || mediaUpload.uploading ? <ActivityIndicator color={colors.background} /> : <Text style={styles.primaryText}>Publish</Text>}
           </Pressable>
         </View>

@@ -93,7 +93,7 @@
     {
       "details": "",
       "name": "Comment composer V2 exists",
-      "passed": true
+      "passed": false
     },
     {
       "details": "",
@@ -103,7 +103,7 @@
     {
       "details": "",
       "name": "Composer has compact CSS",
-      "passed": true
+      "passed": false
     },
     {
       "details": "",
@@ -131,14 +131,14 @@
       "passed": true
     },
     {
-      "details": "[737, 901, 1101, 1141, 1174, 1208, 1239]",
+      "details": "[922, 1086, -1, 2497, 2530, 2592, 2625]",
       "name": "Feed render order matches required structure",
-      "passed": true
+      "passed": false
     },
     {
       "details": "",
       "name": "Media is not rendered before creator identity",
-      "passed": true
+      "passed": false
     },
     {
       "details": "",
@@ -146,5 +146,5 @@
       "passed": true
     }
   ],
-  "ok": true
+  "ok": false
 }

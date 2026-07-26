@@ -732,13 +732,24 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
                 </Text>
               </View>
               <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={guest.audioMuted ? `Unmute ${guest.displayName}` : `Mute ${guest.displayName}`}
+                accessibilityState={{ disabled: busyGuestId === guest.guestId }}
                 style={[styles.manageBtn, guest.audioMuted ? styles.manageBtnAccent : styles.manageBtnOutline]}
                 disabled={busyGuestId === guest.guestId}
                 onPress={() => moderateGuest(guest, guest.audioMuted ? "unmute" : "mute").catch(() => undefined)}
               >
                 <Ionicons name={guest.audioMuted ? "mic-off" : "mic"} size={16} color={guest.audioMuted ? colors.background : colors.text} />
               </Pressable>
-              <Pressable style={[styles.manageBtn, styles.manageBtnDanger]} disabled={busyGuestId === guest.guestId} onPress={() => confirmRemoveGuest(guest)}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Remove ${guest.displayName} from stage`}
+                accessibilityHint="Ends this guest's stream and returns them to the audience"
+                accessibilityState={{ disabled: busyGuestId === guest.guestId }}
+                style={[styles.manageBtn, styles.manageBtnDanger]}
+                disabled={busyGuestId === guest.guestId}
+                onPress={() => confirmRemoveGuest(guest)}
+              >
                 <Ionicons name="person-remove" size={16} color={colors.danger} />
               </Pressable>
             </View>
@@ -763,6 +774,9 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
                 </Text>
               </View>
               <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Deny ${request.displayName}'s request to join`}
+                accessibilityState={{ disabled: busyRequestId === request.requestId }}
                 style={[styles.manageBtn, styles.manageBtnOutline]}
                 disabled={busyRequestId === request.requestId}
                 onPress={() => respond(request, "deny").catch(() => undefined)}
@@ -770,6 +784,9 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
                 <Ionicons name="close" size={18} color={colors.text} />
               </Pressable>
               <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Accept ${request.displayName} onto the stage`}
+                accessibilityState={{ disabled: busyRequestId === request.requestId }}
                 style={[styles.manageBtn, styles.manageBtnAccent]}
                 disabled={busyRequestId === request.requestId}
                 onPress={() => respond(request, "accept").catch(() => undefined)}

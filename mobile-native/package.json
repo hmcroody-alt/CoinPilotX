@@ -18,6 +18,9 @@
     "build:ios:simulator": "npx eas-cli build --platform ios --profile development-simulator",
     "typecheck": "tsc --noEmit",
     "test": "jest",
+    "i18n:validate": "node scripts/validate-i18n.mjs",
+    "i18n:hardcoded": "node scripts/find-hardcoded-strings.mjs",
+    "verify": "npm run typecheck && npm run i18n:validate && npm test",
     "postinstall": "patch-package"
   },
   "dependencies": {
@@ -76,6 +79,9 @@
     "typescript": "~5.9.2"
   },
   "jest": {
-    "preset": "jest-expo"
+    "preset": "jest-expo",
+    "setupFilesAfterEnv": [
+      "<rootDir>/jest.setup.js"
+    ]
   }
 }

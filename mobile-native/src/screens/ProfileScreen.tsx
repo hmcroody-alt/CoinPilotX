@@ -1,7 +1,7 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
-import { deletePost, listFeed, PulsePost, pulsePostUrl, reactToPost, savePost } from "../api/feed";
+import { deletePost, listFeed, PulsePost, pulsePostUrl, reactToPost, repostPost, savePost } from "../api/feed";
 import { describeDeleteError } from "../api/deleteErrors";
 import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
 import { MessengerUserSearchResult, openDirectConversation } from "../api/messenger";
@@ -10,8 +10,9 @@ import { PostCard } from "../components/PostCard";
 import { ProfileHeader, ProfileModuleKey, ProfileStatKey } from "../components/ProfileHeader";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { invalidateNativeSync } from "../core/eventSync";
-import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
+import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
+import { actionKey, useSocialActionGuard } from "../social/actionGuard";
 import { colors } from "../theme/colors";
 import { sharePulseObject } from "../sharing/nativeShare";
 
@@ -19,11 +20,11 @@ type Props = Partial<NativeStackScreenProps<RootStackParamList, "ProfileDetail">
 type TabKey = "posts" | "media" | "about";
 
 export function ProfileScreen({ route, navigation }: Props) {
-  const bottomNavScroll = useBottomNavScrollVisibility();
+  const dock = useBottomNavSurface();
   const scrollY = useRef(new Animated.Value(0)).current;
   const onScroll = useMemo(
-    () => Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true, listener: bottomNavScroll.onScroll }),
-    [bottomNavScroll.onScroll, scrollY]
+    () => Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true, listener: dock.handlers.onScroll }),
+    [dock.handlers.onScroll, scrollY]
   );
   const profileTarget = useMemo<NativeProfileTarget | null>(() => resolveProfileTarget(route?.params || null), [
     route?.params?.profileKey,
@@ -42,7 +43,11 @@ export function ProfileScreen({ route, navigation }: Props) {
   const [errorState, setErrorState] = useState<ReturnType<typeof profileErrorState> | null>(null);
   const [actionMessage, setActionMessage] = useState("");
   const [followBusy, setFollowBusy] = useState(false);
-  const [busyPostId, setBusyPostId] = useState<number | null>(null);
+  // Replaces a `busyPostId` scalar. A scalar can mark at most one card, so acting
+  // on one post greyed out every other card's buttons, and the handlers guarded
+  // themselves by reading state that React had not committed yet. The guard locks
+  // per action+id in a ref, which is what actually stops the second tap.
+  const guard = useSocialActionGuard();
 
   const visiblePosts = useMemo(() => (tab === "media" ? posts.filter((post) => post.media?.length) : posts), [posts, tab]);
 
@@ -187,59 +192,86 @@ export function ProfileScreen({ route, navigation }: Props) {
   }
 
   async function handleSave(post: PulsePost) {
-    if (busyPostId === post.id) return;
     const wasSaved = Boolean(post.saved ?? post.is_saved);
-    setBusyPostId(post.id);
-    updateProfilePost(post.id, { saved: !wasSaved });
-    try {
-      const result = await savePost(post.id);
-      updateProfilePost(post.id, { saved: Boolean(result.saved ?? result.is_saved ?? !wasSaved) });
-    } catch {
-      updateProfilePost(post.id, { saved: wasSaved });
-    } finally {
-      setBusyPostId(null);
-    }
+    await guard.run(actionKey("post_save", post.id), () => savePost(post.id), {
+      optimistic: () => updateProfilePost(post.id, { saved: !wasSaved }),
+      onResult: (result) => updateProfilePost(post.id, { saved: Boolean(result.saved ?? result.is_saved ?? !wasSaved) }),
+      onRollback: () => updateProfilePost(post.id, { saved: wasSaved }),
+      // Previously an empty `catch {}`: the bookmark snapped back with no
+      // explanation, which the user cannot tell apart from a missed tap.
+      onError: setActionMessage
+    });
   }
 
   async function handleReact(post: PulsePost, reactionType: string) {
-    if (busyPostId === post.id) return;
     const previous = post.viewer_reaction || "";
+    const previousCounts = post.reaction_counts || {};
     const removing = previous === reactionType;
-    setBusyPostId(post.id);
-    updateProfilePost(post.id, { viewer_reaction: removing ? "" : reactionType });
-    try {
-      const result = await reactToPost(post.id, reactionType);
-      updateProfilePost(post.id, {
-        viewer_reaction: String(result.viewer_reaction ?? (removing ? "" : reactionType)),
-        reaction_counts: result.reaction_counts ?? post.reaction_counts
-      });
-    } catch {
-      updateProfilePost(post.id, { viewer_reaction: previous });
-    } finally {
-      setBusyPostId(null);
-    }
+    // Counts are recomputed here, not left to the server round trip, so the
+    // number under the button moves with the icon. Home and PostDetail do the
+    // same arithmetic; a profile card that only flipped the icon showed a stale
+    // count until the next refresh.
+    const counts: Record<string, number> = { ...previousCounts };
+    if (previous) counts[previous] = Math.max(0, Number(counts[previous] || 0) - 1);
+    if (!removing) counts[reactionType] = Number(counts[reactionType] || 0) + 1;
+    await guard.run(actionKey("post_react", post.id), () => reactToPost(post.id, reactionType), {
+      // Changing reaction mid-flight is legitimate, so the second tap runs and
+      // the guard's sequence check discards the slower, older answer.
+      supersede: true,
+      optimistic: () => updateProfilePost(post.id, { viewer_reaction: removing ? "" : reactionType, reaction_counts: counts }),
+      onResult: (result) => updateProfilePost(post.id, {
+        viewer_reaction: String(result.removed ? "" : result.viewer_reaction ?? result.reaction_type ?? (removing ? "" : reactionType)),
+        reaction_counts: result.reaction_counts ?? counts
+      }),
+      onRollback: () => updateProfilePost(post.id, { viewer_reaction: previous, reaction_counts: previousCounts }),
+      onError: setActionMessage
+    });
+  }
+
+  async function handleRepost(post: PulsePost) {
+    const previousReposted = Boolean(post.reposted ?? post.is_reposted);
+    const previousCount = Number(post.repost_count || 0);
+    const undo = previousReposted;
+    // PostCard was rendered here without an `onRepost` prop at all, so its
+    // labelled repost button ran `onRepost?.(post)` against undefined and did
+    // nothing — a button that looked live, announced itself to screen readers, and
+    // silently discarded every tap. Same toggle as Home and PostDetail.
+    await guard.run(actionKey("post_repost", post.id), () => repostPost(post.id, { undo }), {
+      optimistic: () => updateProfilePost(post.id, {
+        reposted: !undo,
+        repost_count: undo ? Math.max(0, previousCount - 1) : previousCount + 1
+      }),
+      onResult: (result) => updateProfilePost(post.id, {
+        reposted: Boolean(result.reposted ?? result.is_reposted ?? !undo),
+        repost_count: typeof result.repost_count === "number"
+          ? result.repost_count
+          : undo ? Math.max(0, previousCount - 1) : previousCount + 1
+      }),
+      onRollback: () => updateProfilePost(post.id, { reposted: previousReposted, repost_count: previousCount }),
+      onError: setActionMessage
+    });
   }
 
   async function handleDeletePost(post: PulsePost) {
-    if (busyPostId === post.id) return;
-    setBusyPostId(post.id);
-    try {
-      await deletePost(post.id);
-      setPosts((current) => current.filter((item) => item.id !== post.id));
-      invalidateNativeSync(["activity", "notifications"], "profile_delete", [
-        {
-          event_type: "pulse_post_deleted",
-          entity_type: "post",
-          entity_id: post.id,
-          invalidates: ["activity", "notifications"],
-          metadata: { source: "native_profile" }
-        }
-      ]).catch(() => undefined);
-    } catch (deleteError) {
-      setActionMessage(describeDeleteError(deleteError, "Post"));
-    } finally {
-      setBusyPostId(null);
-    }
+    await guard.run(actionKey("post_delete", post.id), () => deletePost(post.id), {
+      // No optimistic removal: a post that vanishes and then reappears reads as
+      // the feed resurrecting it. The row leaves only once the server agrees.
+      onResult: () => {
+        setPosts((current) => current.filter((item) => item.id !== post.id));
+        invalidateNativeSync(["activity", "notifications"], "profile_delete", [
+          {
+            event_type: "pulse_post_deleted",
+            entity_type: "post",
+            entity_id: post.id,
+            invalidates: ["activity", "notifications"],
+            metadata: { source: "native_profile" }
+          }
+        ]).catch(() => undefined);
+      },
+      // Delete keeps its own copy: describeDeleteError distinguishes "not yours"
+      // from "already gone", and users act on that difference.
+      onError: (_message, deleteError) => setActionMessage(describeDeleteError(deleteError, "Post"))
+    });
   }
 
   if (loading && !profile) {
@@ -268,7 +300,7 @@ export function ProfileScreen({ route, navigation }: Props) {
   return (
     <Animated.FlatList
       style={styles.list}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, dock.contentPadding]}
       data={tab === "about" ? [] : visiblePosts}
       keyExtractor={(item) => String(item.id)}
       refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
@@ -310,10 +342,11 @@ export function ProfileScreen({ route, navigation }: Props) {
         <View style={styles.postWrap}>
           <PostCard
             post={item}
-            busy={busyPostId === item.id}
+            busy={guard.isItemBusy(item.id)}
             onOpen={(post) => navigation?.navigate("PostDetail", { postId: post.id, title: "Post" })}
             onReact={handleReact}
             onSave={handleSave}
+            onRepost={handleRepost}
             onComment={(post) => navigation?.navigate("PostDetail", { postId: post.id, title: "Comments" })}
             onShare={(post) => sharePulseObject({
               kind: "post",
@@ -333,8 +366,8 @@ export function ProfileScreen({ route, navigation }: Props) {
         </View>
       )}
       onScroll={onScroll}
-      onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
-      scrollEventThrottle={16}
+      onScrollBeginDrag={dock.handlers.onScrollBeginDrag}
+      scrollEventThrottle={dock.handlers.scrollEventThrottle}
     />
   );
 }

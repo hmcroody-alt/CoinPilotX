@@ -75631,8 +75631,24 @@ def api_pulse_video_react(video_id):
     return jsonify({**result, "video_id": video_id}), status
 
 
-@webhook_app.route("/api/pulse/videos/<int:video_id>/repost", methods=["POST"])
+@webhook_app.route("/api/pulse/videos/<int:video_id>/repost", methods=["POST", "DELETE"])
 def api_pulse_video_repost(video_id):
+    """Repost and un-repost a video.
+
+    Two branches, and only the first is a repost in the sense the rest of the
+    system means it. A video sourced from a feed post gets a `pulse_posts` row
+    with `repost_of_post_id` set, so it shares pulse_feed_engine.repost with the
+    post and reel routes and gets dedupe, undo and a reconcilable response.
+
+    A video with no source post has nothing to point `repost_of_post_id` at, so
+    the second branch creates a fresh video post instead. That is a copy, not a
+    repost: `_viewer_post_state` cannot see it, no `reposted` flag or count ever
+    described it, and undoing it would mean deleting a post the caller now owns.
+    DELETE therefore refuses on that branch rather than reporting an un-repost
+    that did not happen. No client currently reaches this route at all — grep
+    finds `data-video-repost` only in the icon normalizer, never rendered — so
+    this is about the two branches telling the truth, not about a live button.
+    """
     init_db()
     user = api_account_user()
     if not user:
@@ -75640,6 +75656,7 @@ def api_pulse_video_repost(video_id):
     trace_id = secrets.token_hex(6)
     payload = request.get_json(silent=True) or {}
     note = clean_html(payload.get("body") or payload.get("note") or "")[:1200]
+    undo = request.method == "DELETE" or bool(payload.get("undo")) or bool(payload.get("remove"))
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT * FROM pulse_videos WHERE id=? AND COALESCE(status,'active')='active' LIMIT 1", (int(video_id),))
     video = dict(cur.fetchone() or {})
@@ -75661,20 +75678,40 @@ def api_pulse_video_repost(video_id):
             conn.close()
             return api_error("Source post not found.", 404, trace_id)
         original_public_id = pulse_identity_for_user(cur, original.get("user_id")).get("public_player_id") or original.get("public_player_id") or pulse_public_id_for_user(original.get("user_id")).lstrip("@")
-        body = note or f"Reposted a PulseSoc Video from @{clean_html(original_public_id or 'PulseSoc creator')}"
-        cur.execute(
-            """
-            INSERT INTO pulse_posts (user_id, public_player_id, post_type, body, title, tags_json, visibility, moderation_status, repost_of_post_id, created_at, updated_at)
-            VALUES (?, ?, 'repost', ?, ?, ?, 'public', 'approved', ?, ?, ?)
-            """,
-            (user["user_id"], repost_owner_public_id, body, original.get("title") or video.get("title") or "PulseSoc Video", original.get("tags_json") or "[]", source_post_id, now, now),
+        conn.close()
+        result, status = pulse_feed_engine.repost(
+            user["user_id"],
+            source_post_id,
+            note=note,
+            undo=undo,
+            default_title=original.get("title") or video.get("title") or "PulseSoc Video",
+            default_body=f"Reposted a PulseSoc Video from @{clean_html(original_public_id or 'PulseSoc creator')}",
+            reposter_public_player_id=repost_owner_public_id,
+            original_public_player_id=clean_html(original_public_id or "PulseSoc creator"),
         )
-        repost_id = int(cur.lastrowid)
-        conn.commit(); conn.close()
-        pulse_emit_event("pulse_video_reposted", {"post_id": repost_id, "original_post_id": source_post_id, "video_id": video_id}, user["user_id"], repost_id)
-        return jsonify({"ok": True, "message": "Video reposted to PulseSoc.", "post_id": repost_id, "video_id": video_id, "next_url": f"/pulse/post/{repost_id}"}), 200
+        if not result.get("ok"):
+            logging.error(
+                "PULSE_VIDEO_REPOST_FAILED trace_id=%s user_id=%s video_id=%s undo=%s message=%s",
+                trace_id, user.get("user_id"), video_id, undo, result.get("message"),
+            )
+            return api_error(result.get("message") or "Video could not be reposted.", status, trace_id)
+        result = dict(result)
+        result["video_id"] = video_id
+        result["original_post_id"] = source_post_id
+        if not undo:
+            result["message"] = result.get("message") or "Video reposted to PulseSoc."
+        if undo:
+            pulse_emit_event("pulse_video_unreposted", {"post_id": source_post_id, "original_post_id": source_post_id, "video_id": video_id, "removed_post_ids": result.get("removed_post_ids") or []}, user["user_id"], source_post_id)
+        elif result.get("message") != "Already reposted.":
+            pulse_emit_event("pulse_video_reposted", {"post_id": int(result.get("post_id") or 0), "original_post_id": source_post_id, "video_id": video_id}, user["user_id"], int(result.get("post_id") or 0))
+        return jsonify(result), status
     media_id = safe_int(video.get("media_id"), 0)
     conn.close()
+    if undo:
+        # See the docstring: this branch never created a `repost_of_post_id` link,
+        # so there is nothing here an un-repost could remove. Claiming success
+        # would leave the caller believing a post it still owns had been withdrawn.
+        return api_error("This video was shared as a new post, so it has no repost to undo. Delete the post instead.", 409, trace_id)
     body = note or clean_html(video.get("description") or "Reposted a PulseSoc Video")[:1200]
     title = clean_html(video.get("title") or "PulseSoc Video")[:160]
     result = pulse_feed_engine.create_post(user["user_id"], body, "video", title, tags=[], visibility="public", media_ids=[media_id] if media_id else [], enqueue_background=bool(media_id))
@@ -77027,8 +77064,18 @@ def api_pulse_reel_save_by_id(reel_id):
     return jsonify({"ok": True, "saved": True, "message": "Reel saved."})
 
 
-@webhook_app.route("/api/pulse/reels/<int:reel_id>/repost", methods=["POST"])
+@webhook_app.route("/api/pulse/reels/<int:reel_id>/repost", methods=["POST", "DELETE"])
 def api_pulse_reel_repost_by_id(reel_id):
+    """Repost and un-repost a reel.
+
+    Shares pulse_feed_engine.repost with the post route above, because a reel's
+    repost is a `pulse_posts` row pointing at the reel's post exactly as a post's
+    repost is. Only three things stay reel-specific: the `pulse_reel_payload`
+    lookup that resolves reel_id to post_id, the "Reposted a Reel" wording, and
+    the `pulse_reel_reposted` event listeners already subscribe to. Duplicating
+    the dedupe and soft-delete logic to keep those three would guarantee the two
+    routes eventually disagreed about what a repost is.
+    """
     init_db()
     user = api_account_user()
     if not user:
@@ -77039,36 +77086,54 @@ def api_pulse_reel_repost_by_id(reel_id):
         return api_error("Reel not found.", 404, trace_id)
     payload = request.get_json(silent=True) or {}
     note = clean_html(payload.get("body") or payload.get("note") or "")[:1200]
+    undo = request.method == "DELETE" or bool(payload.get("undo")) or bool(payload.get("remove"))
+    original_post_id = int(reel["post_id"])
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT * FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (int(reel["post_id"]),))
+    cur.execute("SELECT * FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (original_post_id,))
     original = dict(cur.fetchone() or {})
     if not original:
         conn.close()
         return api_error("Reel post not found.", 404, trace_id)
-    now = datetime.utcnow().isoformat(timespec="seconds")
     repost_owner_public_id = pulse_identity_for_user(cur, user["user_id"]).get("public_player_id") or pulse_public_id_for_user(user["user_id"]).lstrip("@")
     original_public_id = pulse_identity_for_user(cur, original.get("user_id")).get("public_player_id") or original.get("public_player_id") or pulse_public_id_for_user(original.get("user_id")).lstrip("@")
-    body = note or f"Reposted a Reel from @{clean_html(str(original_public_id or 'PulseSoc creator'))}"
-    try:
-        cur.execute(
-            """
-            INSERT INTO pulse_posts (user_id, public_player_id, post_type, body, title, tags_json, visibility, moderation_status, repost_of_post_id, created_at, updated_at)
-            VALUES (?, ?, 'repost', ?, ?, ?, 'public', 'approved', ?, ?, ?)
-            """,
-            (user["user_id"], repost_owner_public_id, body, original.get("title") or "PulseSoc Reel", original.get("tags_json") or "[]", int(reel["post_id"]), now, now),
-        )
-        repost_id = int(cur.lastrowid)
-        conn.commit()
-    except Exception as exc:
-        conn.rollback(); conn.close()
-        logging.exception("PULSE_REEL_REPOST_FAILED trace_id=%s user_id=%s reel_id=%s error=%s", trace_id, user.get("user_id"), reel_id, exc)
-        return api_error("Reel could not be reposted.", 500, trace_id)
     conn.close()
+    result, status = pulse_feed_engine.repost(
+        user["user_id"],
+        original_post_id,
+        note=note,
+        undo=undo,
+        default_title=original.get("title") or "PulseSoc Reel",
+        default_body=f"Reposted a Reel from @{clean_html(str(original_public_id or 'PulseSoc creator'))}",
+        reposter_public_player_id=repost_owner_public_id,
+        original_public_player_id=clean_html(str(original_public_id or "PulseSoc creator")),
+    )
+    if not result.get("ok"):
+        logging.error(
+            "PULSE_REEL_REPOST_FAILED trace_id=%s user_id=%s reel_id=%s undo=%s message=%s",
+            trace_id, user.get("user_id"), reel_id, undo, result.get("message"),
+        )
+        return api_error(result.get("message") or "Reel could not be reposted.", status, trace_id)
+    result = dict(result)
+    result["reel_id"] = reel_id
+    result["original_post_id"] = original_post_id
     try:
-        pulse_emit_event("pulse_reel_reposted", {"post_id": repost_id, "original_post_id": int(reel["post_id"]), "reel_id": reel_id}, user["user_id"], repost_id)
+        if undo:
+            pulse_emit_event(
+                "pulse_reel_unreposted",
+                {"post_id": original_post_id, "original_post_id": original_post_id, "reel_id": reel_id, "removed_post_ids": result.get("removed_post_ids") or []},
+                user["user_id"],
+                original_post_id,
+            )
+        elif result.get("message") != "Already reposted.":
+            pulse_emit_event(
+                "pulse_reel_reposted",
+                {"post_id": int(result.get("post_id") or 0), "original_post_id": original_post_id, "reel_id": reel_id},
+                user["user_id"],
+                int(result.get("post_id") or 0),
+            )
     except Exception as exc:
-        logging.warning("PULSE_REEL_REPOST_EVENT_FAILED trace_id=%s repost_id=%s error=%s", trace_id, repost_id, exc)
-    return jsonify({"ok": True, "message": "Reposted to PulseSoc.", "post_id": repost_id, "reel_id": reel_id, "next_url": f"/pulse/post/{repost_id}"})
+        logging.warning("PULSE_REEL_REPOST_EVENT_FAILED trace_id=%s repost_id=%s error=%s", trace_id, result.get("post_id"), exc)
+    return jsonify(result), status
 
 
 @webhook_app.route("/api/pulse/reels/<int:reel_id>/share", methods=["POST"])
@@ -77718,8 +77783,22 @@ def api_pulse_post_pin(post_id):
     return jsonify({"ok": True, "pinned": pinned, "message": "Post pinned." if pinned else "Post unpinned."})
 
 
-@webhook_app.route("/api/pulse/posts/<int:post_id>/repost", methods=["POST"])
+@webhook_app.route("/api/pulse/posts/<int:post_id>/repost", methods=["POST", "DELETE"])
 def api_pulse_post_repost(post_id):
+    """Repost and un-repost a post.
+
+    DELETE is the undo the clients had no way to reach. While this route was
+    create-only and returned neither a `reposted` flag nor a count, the mobile
+    screens rendered a one-way button and carried comments explaining that a
+    toggle "would claim an un-repost the server never performed and leave a second
+    row behind". POST is idempotent now too, so the second of two fast taps
+    reports the existing repost instead of writing that second row.
+
+    The insert, the dedupe and the soft delete live in pulse_feed_engine.repost so
+    this route and the reel route share one implementation and cannot drift.
+    Identity resolution stays here, because pulse_identity_for_user falls back
+    through more sources than the engine can reach on its own.
+    """
     init_db()
     user = api_account_user()
     if not user:
@@ -77727,27 +77806,49 @@ def api_pulse_post_repost(post_id):
     trace_id = secrets.token_hex(6)
     payload = request.get_json(silent=True) or {}
     note = clean_html(payload.get("body") or payload.get("note") or "")[:1200]
+    undo = request.method == "DELETE" or bool(payload.get("undo")) or bool(payload.get("remove"))
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT * FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (post_id,))
     original = dict(cur.fetchone() or {})
     if not original:
         conn.close()
         return api_error("Post not found.", 404, trace_id)
-    now = datetime.utcnow().isoformat(timespec="seconds")
     repost_owner_public_id = pulse_identity_for_user(cur, user["user_id"]).get("public_player_id") or pulse_public_id_for_user(user["user_id"]).lstrip("@")
     original_public_id = pulse_identity_for_user(cur, original.get("user_id")).get("public_player_id") or original.get("public_player_id") or pulse_public_id_for_user(original.get("user_id")).lstrip("@")
-    body = note or f"Reposted a PulseSoc from @{clean_html(original_public_id or 'PulseSoc creator')}"
-    cur.execute(
-        """
-        INSERT INTO pulse_posts (user_id, public_player_id, post_type, body, title, tags_json, visibility, moderation_status, repost_of_post_id, created_at, updated_at)
-        VALUES (?, ?, 'repost', ?, ?, ?, 'public', 'approved', ?, ?, ?)
-        """,
-        (user["user_id"], repost_owner_public_id, body, original.get("title") or "", original.get("tags_json") or "[]", post_id, now, now),
+    conn.close()
+    result, status = pulse_feed_engine.repost(
+        user["user_id"],
+        post_id,
+        note=note,
+        undo=undo,
+        default_title=original.get("title") or "",
+        reposter_public_player_id=repost_owner_public_id,
+        original_public_player_id=clean_html(original_public_id or "PulseSoc creator"),
     )
-    repost_id = int(cur.lastrowid)
-    conn.commit(); conn.close()
-    pulse_emit_event("post_reposted", {"post_id": repost_id, "original_post_id": post_id}, user["user_id"], repost_id)
-    return jsonify({"ok": True, "message": "Reposted to PulseSoc.", "post_id": repost_id, "next_url": f"/pulse/post/{repost_id}"})
+    if not result.get("ok"):
+        logging.error(
+            "PULSE_POST_REPOST_FAILED trace=%s user_id=%s post_id=%s undo=%s message=%s",
+            trace_id, user["user_id"], post_id, undo, result.get("message"),
+        )
+        return api_error(result.get("message") or "Repost could not be completed.", status, trace_id)
+    if undo:
+        # Emitted even when there was nothing to remove, because the event
+        # describes the resulting state and a listener that only heard about
+        # non-empty removals would drift from the response the client just got.
+        pulse_emit_event(
+            "post_unreposted",
+            {"post_id": post_id, "original_post_id": post_id, "removed_post_ids": result.get("removed_post_ids") or []},
+            user["user_id"],
+            post_id,
+        )
+    elif result.get("message") != "Already reposted.":
+        pulse_emit_event(
+            "post_reposted",
+            {"post_id": int(result.get("post_id") or 0), "original_post_id": post_id},
+            user["user_id"],
+            int(result.get("post_id") or 0),
+        )
+    return jsonify(result), status
 
 
 @webhook_app.route("/api/pulse/posts/<int:post_id>/comments", methods=["GET", "POST"])

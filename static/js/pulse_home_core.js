@@ -1454,12 +1454,25 @@
     like.setAttribute("aria-pressed", post.viewer_reaction ? "true" : "false");
     if (post.viewer_reaction) like.classList.add("active");
     const save = feedActionChip("🔖", "Save", { savePost: post.id, action: "save" }, "");
-    save.setAttribute("aria-pressed", post.viewer_saved ? "true" : "false");
-    if (post.viewer_saved) save.classList.add("active");
+    // `viewer_saved` is not a field the server has ever sent. pulse_feed_engine's
+    // _public_post emits `saved` and `is_saved`, so this read was always
+    // undefined and the chip loaded unpressed even for a post the viewer had
+    // saved — the same lie the repost chip below used to tell.
+    const saved = Boolean(post.saved || post.is_saved || post.viewer_saved);
+    save.setAttribute("aria-pressed", saved ? "true" : "false");
+    if (saved) save.classList.add("active");
+    // feedActionChip already gives repost aria-pressed="false" because it is a
+    // toggle action, but nothing used to set it true — so the button told screen
+    // reader users "not pressed" no matter how many times they had reposted.
+    // The serializer emits both spellings; `reposted` is the mobile-feed name.
+    const reposted = Boolean(post.reposted || post.is_reposted || post.viewer_reposted);
+    const repost = feedActionChip("↻", reposted ? "Reposted" : "Repost", { postRepost: post.id, action: "repost" }, post.repost_count || post.reposts_count || 0);
+    repost.setAttribute("aria-pressed", reposted ? "true" : "false");
+    if (reposted) repost.classList.add("active");
     row.append(
       like,
       feedActionChip("💬", "Comment", { postComment: post.id, action: "comment" }, post.comments_count || post.comment_count || 0),
-      feedActionChip("↻", "Repost", { postRepost: post.id, action: "repost" }, post.repost_count || post.reposts_count || 0),
+      repost,
       feedActionChip("↗", "Share", { postShare: postUrl(post), action: "share" }, post.share_count || post.shares_count || 0),
       save,
       feedActionChip("•••", "More", { postMenu: post.id, action: "more" }, "")
@@ -2949,11 +2962,37 @@
     }
     const repost = event.target.closest("[data-post-repost]");
     if (repost) {
+      // A toggle now that the route has a DELETE branch. It used to POST on every
+      // tap and only toast, so the chip never showed pressed state and the count
+      // beside it stayed stale while the tap silently appended another repost row.
+      const postId = repost.dataset.postRepost;
+      const wasActive = repost.classList.contains("active");
+      const countNode = repost.querySelector(".pulse-action-count");
+      const previousCount = countNode ? countNode.textContent : "";
+      repost.disabled = true;
       try {
-        const data = await api(`/api/pulse/posts/${repost.dataset.postRepost}/repost`, { method: "POST", body: JSON.stringify({}) });
-        toast(data.message || "Reposted.");
+        const data = await api(`/api/pulse/posts/${postId}/repost`, {
+          method: wasActive ? "DELETE" : "POST",
+          body: JSON.stringify({ undo: wasActive })
+        });
+        const active = data.reposted === undefined && data.is_reposted === undefined
+          ? !wasActive
+          : Boolean(data.reposted ?? data.is_reposted);
+        repost.classList.toggle("active", active);
+        repost.setAttribute("aria-pressed", active ? "true" : "false");
+        const labelNode = repost.querySelector(".pulse-action-label");
+        if (labelNode) labelNode.textContent = active ? "Reposted" : "Repost";
+        // The server count also reflects other people's reposts, which this page
+        // cannot see, so it wins over any local increment.
+        if (countNode && typeof data.repost_count === "number") countNode.textContent = compactNumber(data.repost_count);
+        toast(data.message || (active ? "Reposted." : "Repost removed."));
       } catch (error) {
+        repost.classList.toggle("active", wasActive);
+        repost.setAttribute("aria-pressed", wasActive ? "true" : "false");
+        if (countNode) countNode.textContent = previousCount;
         toast(error.message);
+      } finally {
+        repost.disabled = false;
       }
       return;
     }

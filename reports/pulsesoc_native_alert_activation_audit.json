@@ -1,5 +1,5 @@
 {
-  "ok": true,
+  "ok": false,
   "checks": [
     {
       "name": "backend canonical routes",
@@ -103,7 +103,7 @@
     },
     {
       "name": "no static 99+ badges",
-      "status": "pass",
+      "status": "fail",
       "detail": "99+ appears only in the shared formatter, not as static UI state"
     },
     {

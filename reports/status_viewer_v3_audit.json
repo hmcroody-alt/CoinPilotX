@@ -8,7 +8,7 @@
     {
       "details": "",
       "name": "Pages load Status V3 asset version",
-      "passed": true
+      "passed": false
     },
     {
       "details": "",
@@ -121,5 +121,5 @@
       "passed": true
     }
   ],
-  "ok": true
+  "ok": false
 }

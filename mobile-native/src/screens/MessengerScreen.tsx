@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
+  ASSISTANT_PRESENCE,
   loadCachedConversations,
   listConversations,
   MessengerConversation,
@@ -15,7 +16,7 @@ import {
 import { PulseApiError } from "../api/pulseApi";
 import { PulseCommandAvatar, PulseCommandPanel, PulseCommandSegmentRail } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
-import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
+import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../session/auth";
 import {
@@ -24,7 +25,8 @@ import {
   conversationPreview,
   conversationSignalBadges,
   conversationTime,
-  isActivePresence
+  isActivePresence,
+  isAssistantPresence
 } from "../pulseCommand/domain";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
@@ -39,7 +41,7 @@ const DEFAULT_UNDX_AI_CONVERSATION: MessengerConversation = {
   conversation_type: "ai",
   latest_message: "Message UNDX",
   last_message_preview: "Message UNDX",
-  presence: "available",
+  presence: ASSISTANT_PRESENCE,
   pinned: true,
   trust_state: "intelligence",
   verified: true
@@ -48,7 +50,7 @@ const DEFAULT_UNDX_AI_CONVERSATION: MessengerConversation = {
 export function MessengerScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
-  const bottomNavScroll = useBottomNavScrollVisibility();
+  const dock = useBottomNavSurface();
   const { authState, requestReauthentication } = useAuth();
   const loadSequence = useRef(0);
   const [conversations, setConversations] = useState<MessengerConversation[]>([]);
@@ -119,7 +121,7 @@ export function MessengerScreen() {
     [conversationsWithUndxAi, selectedFilter]
   );
   const activeConversations = useMemo(
-    () => conversationsWithUndxAi.filter((item) => isActivePresence(item.presence) || item.typing).slice(0, 8),
+    () => conversationsWithUndxAi.filter((item) => isActivePresence(item.presence) || isAssistantPresence(item.presence) || item.typing).slice(0, 8),
     [conversationsWithUndxAi]
   );
   const filters = useMemo(
@@ -151,7 +153,7 @@ export function MessengerScreen() {
       <FlatList
         data={filteredConversations}
         keyExtractor={(item) => `chat-${item.id}`}
-        contentContainerStyle={[styles.list, { paddingTop: Math.max(insets.top + 4, 36) }]}
+        contentContainerStyle={[styles.list, { paddingTop: Math.max(insets.top + 4, 36) }, dock.contentPadding]}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load({ refresh: true })} />}
         initialNumToRender={10}
         maxToRenderPerBatch={8}
@@ -191,9 +193,7 @@ export function MessengerScreen() {
           </LogiNexusStatePanel>
         ) : <LogiNexusStatePanel state="empty" title={emptyTitle(selectedFilter)} body={emptyBody(selectedFilter)} />}
         renderItem={({ item }) => <ConversationRow item={item} navigation={navigation} />}
-        onScroll={bottomNavScroll.onScroll}
-        onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
-        scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
+        {...dock.handlers}
       />
     </LogiNexusScreenShell>
   );
@@ -244,7 +244,10 @@ function quickActionAccentColor(accent: QuickActionAccent) {
 }
 
 function ConversationRow({ item, navigation }: { item: MessengerConversation; navigation: NativeStackNavigationProp<RootStackParamList> }) {
-  const active = isActivePresence(item.presence);
+  // The avatar ring means "this person is online". An assistant lights it for
+  // its own reason (the service is reachable), never by borrowing a human
+  // presence value.
+  const active = isActivePresence(item.presence) || isAssistantPresence(item.presence);
   const title = conversationDisplayTitle(item);
   const opensUndxAi = item.conversation_id === PULSE_AI_CONVERSATION_ID;
   return (
@@ -255,7 +258,7 @@ function ConversationRow({ item, navigation }: { item: MessengerConversation; na
       onPress={() => {
         if (opensUndxAi) {
           AsyncStorage.setItem(LAST_CONVERSATION_KEY, String(PULSE_AI_CONVERSATION_ID)).catch(() => undefined);
-          navigation.navigate("Chat", { conversationId: PULSE_AI_CONVERSATION_ID, title: PULSE_AI_DISPLAY_NAME, presence: "available" });
+          navigation.navigate("Chat", { conversationId: PULSE_AI_CONVERSATION_ID, title: PULSE_AI_DISPLAY_NAME, presence: ASSISTANT_PRESENCE });
           return;
         }
         AsyncStorage.setItem(LAST_CONVERSATION_KEY, String(item.id)).catch(() => undefined);
@@ -329,7 +332,7 @@ function emptyBody(filter: ConversationFilter) {
 
 const styles = StyleSheet.create({
   permissionPage: { flex: 1, justifyContent: "center", padding: 16 },
-  list: { gap: 4, padding: 8, paddingBottom: 108 },
+  list: { gap: 4, padding: 8 },
   headerStack: { gap: 6 },
   presenceRailShell: { backgroundColor: "rgba(11,24,34,0.78)", borderColor: "rgba(97,216,255,0.18)", borderRadius: 15, borderWidth: 1 },
   presenceRail: { gap: 10, paddingHorizontal: 10, paddingVertical: 7 },

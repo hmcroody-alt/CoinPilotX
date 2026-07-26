@@ -2,9 +2,18 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
 import { CanonicalMediaRecord, mediaRecordForCache } from "../media/mediaContract";
+import { buildCommentTree } from "../social/commentTree";
 
 const FEED_CACHE_PREFIX = "pulsesoc.native.feed.";
 const POST_CACHE_PREFIX = "pulsesoc.native.post.";
+
+/**
+ * Client-side page size for post comments. The server clamps to
+ * `pulse_feed_engine.COMMENT_PAGE_LIMIT_MAX` (120), so asking for more is
+ * silently reduced rather than rejected; 20 is chosen to make the first page
+ * cheap and the "load more" affordance real instead of decorative.
+ */
+export const POST_COMMENT_PAGE_SIZE = 20;
 
 export type PulseAuthor = {
   id?: number;
@@ -213,7 +222,10 @@ export async function cacheFeed(feed: string, posts: PulsePost[]) {
 export async function getPostDetail(postId: number) {
   const data = await pulseApi<PostDetailResponse>(`/api/pulse/posts/${postId}`);
   const post = data.post ? normalizePost(data.post) : undefined;
-  const comments = normalizeComments(data.comments || post?.comments || []);
+  // bot.py:77002 returns a FLAT comment list carrying parent_comment_id, so the
+  // nesting has to be derived here. Without this transform a reply renders as a
+  // sibling of the comment it answers, which is what shipped.
+  const comments = buildCommentTree(normalizeComments(data.comments || post?.comments || []));
   const detail = { ...data, post, comments };
   if (post) await cachePostDetail(postId, detail);
   return detail;
@@ -281,10 +293,34 @@ export async function savePost(postId: number) {
   });
 }
 
-export async function repostPost(postId: number, body = "") {
-  return pulseApi<{ ok?: boolean; reposted?: boolean; is_reposted?: boolean; post?: PulsePost }>(`/api/pulse/posts/${postId}/repost`, {
-    method: "POST",
-    body: JSON.stringify({ post_id: postId, body })
+export type RepostResponse = {
+  ok?: boolean;
+  message?: string;
+  reposted?: boolean;
+  is_reposted?: boolean;
+  repost_count?: number;
+  post_id?: number;
+  original_post_id?: number;
+  removed?: boolean;
+  post?: PulsePost;
+};
+
+/**
+ * Repost or un-repost, with the server as the source of truth for both.
+ *
+ * `undo` maps to DELETE, which the route only gained once the engine could soft
+ * delete. Before that this was create-only and returned neither `reposted` nor a
+ * count, so the screens rendered a one-way button rather than a toggle that would
+ * have claimed an un-repost the server never performed. Both fields come back on
+ * every branch now, including the no-op branches — reposting something already
+ * reposted, or undoing something already undone — so a caller can always
+ * reconcile its optimistic state with the truth instead of guessing.
+ */
+export async function repostPost(postId: number, options: { body?: string; undo?: boolean } = {}) {
+  const undo = Boolean(options.undo);
+  return pulseApi<RepostResponse>(`/api/pulse/posts/${postId}/repost`, {
+    method: undo ? "DELETE" : "POST",
+    body: JSON.stringify({ post_id: postId, body: options.body || "", undo })
   });
 }
 
@@ -331,21 +367,100 @@ export async function mutePostAuthor(post: PulsePost, reason = "Muted from Home"
   });
 }
 
-export async function addPostComment(postId: number, body: string) {
+/**
+ * Post a comment, or a reply when `parentCommentId` is supplied.
+ *
+ * The backend has always accepted `parent_comment_id` here — bot.py:77495
+ * forwards it straight to `pulse_feed_engine.add_comment`, and generates a
+ * `comment_reply` notification instead of a `comment` notification when it is
+ * present. The client simply never sent it, which is why feed posts had no
+ * replies while Reels did. Sending 0 is equivalent to omitting it, so existing
+ * two-argument callers keep their exact previous behavior.
+ */
+export async function addPostComment(postId: number, body: string, parentCommentId = 0) {
+  const parentId = Number(parentCommentId || 0);
   const data = await pulseApi<{ ok?: boolean; comment?: PulseComment; comments?: PulseComment[] }>(`/api/pulse/posts/${postId}/comments`, {
     method: "POST",
-    body: JSON.stringify({ body, content: body, text: body })
+    body: JSON.stringify({
+      body,
+      content: body,
+      text: body,
+      // Verified against both handlers: bot.py:77504 (posts) and bot.py:76506
+      // (reels) each read exactly `parent_comment_id` and nothing else, so this
+      // is the only key worth sending.
+      parent_comment_id: parentId > 0 ? parentId : 0
+    })
   });
+  const comment = data.comment ? normalizeComment(data.comment, postId) : undefined;
   return {
     ...data,
-    comment: data.comment ? normalizeComment(data.comment, postId) : undefined,
+    // A server that echoes the comment without the parent it was filed under
+    // would make the reply render as a root. Preserve the parent the caller
+    // asked for so the optimistic insert and the confirmed insert agree.
+    comment: comment && parentId > 0 ? { ...comment, parent_comment_id: Number(comment.parent_comment_id || parentId) } : comment,
     comments: normalizeComments(data.comments || [], postId)
   };
 }
 
-export async function listPostComments(postId: number) {
-  const data = await pulseApi<{ ok?: boolean; comments?: PulseComment[]; items?: PulseComment[] }>(`/api/pulse/posts/${postId}/comments`);
-  return normalizeComments(data.comments || data.items || [], postId);
+export type PostCommentPage = {
+  /** Nested for rendering. */
+  comments: PulseComment[];
+  /**
+   * The same rows, still flat, exactly as the server ordered them.
+   *
+   * A paginating caller needs this. Page 2 can contain a reply whose parent was
+   * on page 1, and merging two already-nested pages at the root level would
+   * strand that reply as a top-level comment. Accumulating the flat rows and
+   * re-running buildCommentTree over the whole accumulation re-parents it
+   * correctly. It is also the honest offset counter: `offset` must advance by
+   * rows consumed, not by roots rendered.
+   */
+  flat: PulseComment[];
+  total: number;
+  hasMore: boolean;
+  limit: number;
+  offset: number;
+};
+
+/**
+ * Read one page of a post's comments, nested.
+ *
+ * `has_more` comes from the server rather than being inferred from page length,
+ * because page length is wrong in exactly the case where the total is a multiple
+ * of the limit: a full final page looks identical to a full middle page. The
+ * server-side contract is proven by tests/test_pulse_comment_pagination.py.
+ *
+ * `total` is the unpaginated count of visible comments, so a caller can show
+ * "12 of 340" on the first page instead of only after fetching all of them.
+ */
+export async function listPostComments(postId: number, options: { limit?: number; offset?: number } = {}): Promise<PostCommentPage> {
+  const limit = Math.max(1, Number(options.limit || POST_COMMENT_PAGE_SIZE));
+  const offset = Math.max(0, Number(options.offset || 0));
+  const query = `?limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(offset))}`;
+  const data = await pulseApi<{
+    ok?: boolean;
+    comments?: PulseComment[];
+    items?: PulseComment[];
+    total?: number;
+    has_more?: boolean;
+    limit?: number;
+    offset?: number;
+  }>(`/api/pulse/posts/${postId}/comments${query}`);
+  const flat = normalizeComments(data.comments || data.items || [], postId);
+  const resolvedLimit = Number(data.limit || limit);
+  const resolvedOffset = Number(data.offset ?? offset);
+  const total = Number(data.total ?? flat.length);
+  return {
+    comments: buildCommentTree(flat),
+    flat,
+    total,
+    // Trust the server's has_more when it says so. Fall back to the arithmetic
+    // only for an older server that omits the field entirely — `??` rather than
+    // `||` so an explicit `false` is honored instead of being recomputed.
+    hasMore: data.has_more ?? resolvedOffset + flat.length < total,
+    limit: resolvedLimit,
+    offset: resolvedOffset
+  };
 }
 
 export function pulsePostUrl(postId: number) {

@@ -28,7 +28,7 @@
     {
       "details": "",
       "name": "Pulse pages load updated Status viewer JS",
-      "passed": true
+      "passed": false
     },
     {
       "details": "",
@@ -196,5 +196,5 @@
       "passed": true
     }
   ],
-  "ok": true
+  "ok": false
 }

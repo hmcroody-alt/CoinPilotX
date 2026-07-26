@@ -115,6 +115,12 @@ The 2 NOT COMPLETED targets, and why:
 - `scripts/pulsesoc_native_comms_safety_event_emission_audit.py` — last changed at `656d0627`
   (2026-07-06), likewise untouched by this mission.
 
+Both were retried once more in a clean workspace with 2.1 GB free and both still exit 124
+(timeout) at 43s, so they remain **NOT COMPLETED** rather than pass or fail. An attempt to work
+around the ceiling by staging a copy of the tree outside the mount filled the sandbox disk and
+wedged its shell supervisor; that was a self-inflicted detour, it required a workspace restart,
+and it touched nothing in this repository.
+
 ### Attribution proof: did this mission's changes break any audit?
 
 Coarse identifier matching was useless (230/241 flagged) because the diff contains English
@@ -172,30 +178,60 @@ So directive 3's required end state — `failures: 0, errors: 0, unexpected_skip
 unresolved_release_critical_defects: 0` — is **NOT met**, and the shortfall is entirely
 pre-existing repository debt rather than regression from this mission.
 
-## 4. Commit and push (directive 5) — BLOCKED
+## 4. Commit and push (directive 5) — committed; push BLOCKED by network policy
 
-Committed already, on `release/undx-nexus-core-v4`:
+Branch: `release/undx-nexus-core-v4`. Commits, newest first:
 
-- `d4c8ffe4` Re-arm Reels preload on scroll-back + behavioral playback harness
-- `79ec9964` Refuse caller-supplied confirmed status on recorded confirmations
-- `6127e42d` Bind UNDX operation audits to redeemed grants
+| SHA | Author | Subject |
+| --- | --- | --- |
+| `6928378e` | PulseSoc Engineer | Share one behavioral Reels preload verifier and repair the stale mobile audit |
+| `16767a57` | HM Cherie | Restore reproducible native dependency installation *(user's own commit — preserved, not touched)* |
+| `d4c8ffe4` | PulseSoc Engineer | Re-arm Reels preload on scroll-back + behavioral playback harness |
+| `79ec9964` | PulseSoc Engineer | Refuse caller-supplied confirmed status on recorded confirmations |
+| `6127e42d` | HM Cherie | Bind UNDX operation audits to redeemed grants |
 
-**Uncommitted source work from this session, still to be committed:**
+`6928378e` contains exactly four files and nothing else:
 
-- `tests/protection/reels_preload_runner.py` (new)
-- `tests/protection/test_media_playback_contract.py` (refactored to import the shared runner)
-- `scripts/pulse_reels_mobile_playback_audit.py` (stale grep replaced by the behavioral check)
-- this report
+```
+reports/undx_sovereign_mission_verification_matrix.md  | 212 +++
+scripts/pulse_reels_mobile_playback_audit.py           |  58 +-
+tests/protection/reels_preload_runner.py               | 137 +++
+tests/protection/test_media_playback_contract.py       |  93 +--
+4 files changed, 415 insertions(+), 85 deletions(-)
+```
 
-**Must NOT be staged** (all generated): `coinpilotx.db-wal`, 15 regenerated `reports/*.json`,
-`coinpilotx.log.1`, `coinpilotx.log.2`, `.undx_brain_layer_audit_workspace/`, and 744
-undeletable `.fuse_hidden*` artifacts. `mobile-native/package-lock.json` was touched by npm and
-should be reverted.
+The staged set was scanned for credential-shaped strings before committing; none were found.
+`mobile-native/package-lock.json` needed no revert — the user committed it themselves at
+`16767a57`, so that change is preserved rather than reverted.
 
-All index operations must go through `GIT_INDEX_FILE=/tmp/gitidx` because a stale, undeletable
-empty `.git/index.lock` (left by a git process killed at the 45s command ceiling) has frozen the
-real index at a pre-commit state; without the override `git status` reports staged *reversions*
-of work that is in fact already committed.
+Deliberately left unstaged, all generated: `coinpilotx.db-wal`, 21 regenerated `reports/*`
+artifacts, `coinpilotx.log.1/2/3/5`, `.undx_brain_layer_audit_workspace/`, and 744 undeletable
+`.fuse_hidden*` artifacts. No uncommitted source changes remain.
+
+**Push is BLOCKED and cannot be unblocked from here.** Both transports are refused by the
+sandbox network policy:
+
+- SSH: `CONNECT github.com:22: Forbidden`
+- HTTPS: `Received HTTP code 403 from proxy after CONNECT`
+
+There is no credential helper configured, and supplying credentials is not something this
+session will do. Local `HEAD` is `6928378e`; the last known remote tip is `16767a57`, so the
+branch is **1 ahead / 0 behind** and the remote SHA cannot be verified until someone with
+network access runs:
+
+```
+git push origin release/undx-nexus-core-v4
+```
+
+Directive 5's requirement that local `HEAD` and the remote SHA match is therefore **NOT MET**,
+for an environmental reason that is disclosed rather than worked around.
+
+### Postscript on the earlier frozen index
+
+An earlier stale, undeletable empty `.git/index.lock` — left by a git process killed at the 45s
+command ceiling — had frozen the index at a pre-commit state, so `git status` reported staged
+*reversions* of work that was in fact already committed. Restarting the workspace cleared the
+FUSE state and the lock; index operations no longer need a `GIT_INDEX_FILE` override.
 
 ## Environment constraints (disclosed, not worked around)
 

@@ -15,6 +15,7 @@ import {
   resolveActivityItemTarget
 } from "../api/activity";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { routeNotificationTarget } from "../navigation/notificationRouting";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -29,6 +30,9 @@ function unreadCountsByCategory(items: ActivityInboxItem[]) {
 }
 
 export function ActivityInboxScreen() {
+  // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
+  // reserves the matching clearance so the last row never sits under the dock.
+  const dock = useBottomNavSurface();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "ActivityInbox">>();
   const [items, setItems] = useState<ActivityInboxItem[]>([]);
@@ -182,7 +186,8 @@ export function ActivityInboxScreen() {
           data={visibleItems}
           keyExtractor={(item) => item.id}
           refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load({ refresh: true })} />}
-          contentContainerStyle={styles.list}
+          {...dock.handlers}
+          contentContainerStyle={[styles.list, dock.contentPadding]}
           ListEmptyComponent={<EmptyState category={category} />}
           renderItem={({ item }) => (
             <ActivityRow item={item} onOpen={() => openItem(item)} onRead={() => markRead(item)} onDelete={() => deleteItem(item)} />

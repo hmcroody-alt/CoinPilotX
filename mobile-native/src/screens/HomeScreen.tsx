@@ -41,6 +41,7 @@ import { openDashboardRoute } from "../navigation/dashboardRouting";
 import { registerHomeReselectHandler } from "../navigation/homeReselect";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
 import { AppTabParamList, RootStackParamList } from "../navigation/types";
+import { actionKey, useSocialActionGuard } from "../social/actionGuard";
 import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
@@ -125,7 +126,11 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [offline, setOffline] = useState(false);
   const [error, setError] = useState("");
-  const [busyPostId, setBusyPostId] = useState<number | null>(null);
+  // Replaces a `busyPostId` scalar. A scalar cannot represent two cards acting at
+  // once, and every social handler here only ever *wrote* it — nothing read it —
+  // so it prevented no duplicate request. The guard locks per action+id in a ref,
+  // which is what makes a second tap a no-op rather than a second write.
+  const guard = useSocialActionGuard();
   const [statusItems, setStatusItems] = useState<PulseStatus[]>([]);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusOffline, setStatusOffline] = useState(false);
@@ -305,50 +310,65 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   }, []);
 
   async function handleReact(post: PulsePost, reactionType: string) {
-    setBusyPostId(post.id);
     const previous = post.viewer_reaction || "";
+    const previousCounts = post.reaction_counts || {};
     const removing = previous === reactionType;
-    const counts = { ...(post.reaction_counts || {}) };
+    const counts = { ...previousCounts };
     if (previous) counts[previous] = Math.max(0, Number(counts[previous] || 0) - 1);
     if (!removing) counts[reactionType] = Number(counts[reactionType] || 0) + 1;
-    updatePost(post.id, { viewer_reaction: removing ? "" : reactionType, reaction_counts: counts });
-    try {
-      const result = await reactToPost(post.id, reactionType);
-      updatePost(post.id, {
+    await guard.run(actionKey("post_react", post.id), () => reactToPost(post.id, reactionType), {
+      // Switching reaction mid-flight is legitimate, so the second tap runs and
+      // the sequence guard makes the LATER one win. Dropping it would leave the
+      // button showing the reaction the user just abandoned.
+      supersede: true,
+      optimistic: () => updatePost(post.id, { viewer_reaction: removing ? "" : reactionType, reaction_counts: counts }),
+      onResult: (result) => updatePost(post.id, {
         viewer_reaction: result.removed ? "" : result.viewer_reaction || result.reaction_type || reactionType,
         reaction_counts: result.reaction_counts || counts
-      });
-    } catch {
-      updatePost(post.id, { viewer_reaction: previous, reaction_counts: post.reaction_counts || {} });
-    } finally {
-      setBusyPostId(null);
-    }
+      }),
+      onRollback: () => updatePost(post.id, { viewer_reaction: previous, reaction_counts: previousCounts }),
+      // Previously an empty `catch {}`: the count snapped back with no
+      // explanation, which is indistinguishable from the tap not registering.
+      onError: setError
+    });
   }
 
   async function handleSave(post: PulsePost) {
-    setBusyPostId(post.id);
-    updatePost(post.id, { saved: !post.saved });
-    try {
-      const result = await savePost(post.id);
-      updatePost(post.id, { saved: Boolean(result.saved ?? result.is_saved ?? !post.saved) });
-    } catch {
-      updatePost(post.id, { saved: post.saved });
-    } finally {
-      setBusyPostId(null);
-    }
+    const previousSaved = Boolean(post.saved);
+    await guard.run(actionKey("post_save", post.id), () => savePost(post.id), {
+      optimistic: () => updatePost(post.id, { saved: !previousSaved }),
+      onResult: (result) => updatePost(post.id, { saved: Boolean(result.saved ?? result.is_saved ?? !previousSaved) }),
+      onRollback: () => updatePost(post.id, { saved: previousSaved }),
+      onError: setError
+    });
   }
 
   async function handleRepost(post: PulsePost) {
-    setBusyPostId(post.id);
-    updatePost(post.id, { reposted: true, repost_count: Number(post.repost_count || 0) + (post.reposted ? 0 : 1) });
-    try {
-      const result = await repostPost(post.id);
-      updatePost(post.id, { reposted: Boolean(result.reposted ?? result.is_reposted ?? true) });
-    } catch {
-      updatePost(post.id, { reposted: post.reposted, repost_count: post.repost_count || 0 });
-    } finally {
-      setBusyPostId(null);
-    }
+    const previousReposted = Boolean(post.reposted);
+    const previousCount = Number(post.repost_count || 0);
+    const undo = previousReposted;
+    // A real toggle now. This was one-way while the route was create-only and
+    // returned neither a `reposted` flag nor a count — an un-repost would have
+    // claimed something the server never performed. DELETE soft-deletes every
+    // live repost row the viewer holds, so undo is honest even for the duplicate
+    // rows the old create-only route left behind.
+    await guard.run(actionKey("post_repost", post.id), () => repostPost(post.id, { undo }), {
+      optimistic: () => updatePost(post.id, {
+        reposted: !undo,
+        repost_count: undo ? Math.max(0, previousCount - 1) : previousCount + 1
+      }),
+      // The server's count is authoritative because it also reflects everyone
+      // else's reposts, which this screen cannot see. Falling back to the
+      // optimistic value keeps the card correct if an older build omits it.
+      onResult: (result) => updatePost(post.id, {
+        reposted: Boolean(result.reposted ?? result.is_reposted ?? !undo),
+        repost_count: typeof result.repost_count === "number"
+          ? result.repost_count
+          : undo ? Math.max(0, previousCount - 1) : previousCount + 1
+      }),
+      onRollback: () => updatePost(post.id, { reposted: previousReposted, repost_count: previousCount }),
+      onError: setError
+    });
   }
 
   async function handleShare(post: PulsePost) {
@@ -364,141 +384,153 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   }
 
   async function handleInlineComment(post: PulsePost, body: string) {
-    setBusyPostId(post.id);
     const previousCount = Number(post.comment_count || post.comments_count || 0);
-    try {
-      const result = await addPostComment(post.id, body);
-      const nextComment = result.comment;
-      if (nextComment) {
-        updatePost(post.id, {
-          comment_count: previousCount + 1,
-          comments_count: previousCount + 1,
-          preview_comments: [nextComment, ...(post.preview_comments || [])].slice(0, 2)
-        });
-      } else if (result.comments?.length) {
-        updatePost(post.id, {
-          comment_count: result.comments.length,
-          comments_count: result.comments.length,
-          preview_comments: result.comments.slice(0, 2)
-        });
-      } else {
-        await load("refresh");
-      }
-      invalidateNativeSync(["activity", "notifications"], "home_comment", [
-        {
-          event_type: "comment_created",
-          entity_type: "post",
-          entity_id: post.id,
-          invalidates: ["activity", "notifications"],
-          metadata: { source: "native_home_feed_inline_comment" }
+    const previousPreview = post.preview_comments || [];
+    await guard.run(actionKey("post_comment", post.id), () => addPostComment(post.id, body), {
+      // Optimistic on the counter only. The comment body itself is not shown
+      // until the server returns a row, because a preview comment with no id
+      // cannot be replied to, reacted to or deleted.
+      optimistic: () => updatePost(post.id, { comment_count: previousCount + 1, comments_count: previousCount + 1 }),
+      onResult: (result) => {
+        const nextComment = result.comment;
+        if (nextComment) {
+          updatePost(post.id, {
+            comment_count: previousCount + 1,
+            comments_count: previousCount + 1,
+            preview_comments: [nextComment, ...previousPreview].slice(0, 2)
+          });
+        } else if (result.comments?.length) {
+          updatePost(post.id, {
+            comment_count: result.comments.length,
+            comments_count: result.comments.length,
+            preview_comments: result.comments.slice(0, 2)
+          });
+        } else {
+          load("refresh").catch(() => undefined);
         }
-      ]).catch(() => undefined);
-    } finally {
-      setBusyPostId(null);
-    }
+        // A comment does generate a notification for the author, so the activity
+        // and notification caches are genuinely stale now.
+        invalidateNativeSync(["activity", "notifications"], "home_comment", [
+          {
+            event_type: "comment_created",
+            entity_type: "post",
+            entity_id: post.id,
+            invalidates: ["activity", "notifications"],
+            metadata: { source: "native_home_feed_inline_comment" }
+          }
+        ]).catch(() => undefined);
+      },
+      // Previously there was a `finally` but no `catch`, so a failed inline
+      // comment rejected out of the handler and left the count raised.
+      onRollback: () => updatePost(post.id, {
+        comment_count: previousCount,
+        comments_count: previousCount,
+        preview_comments: previousPreview
+      }),
+      onError: setError
+    });
   }
 
   async function handleFollow(post: PulsePost) {
-    setBusyPostId(post.id);
-    try {
-      const result = await toggleFollowAuthor(post);
-      const following = Boolean(result.following);
-      const publicId = post.author?.public_player_id || post.author_public_player_id || "";
-      setPosts((current) =>
-        current.map((item) => {
-          const itemPublicId = item.author?.public_player_id || item.author_public_player_id || "";
-          if (publicId && itemPublicId === publicId) return { ...item, viewer_follows_author: following };
-          return item.id === post.id ? { ...item, viewer_follows_author: following } : item;
-        })
-      );
-      invalidateNativeSync(["activity", "notifications"], "home_follow", [
-        {
-          event_type: following ? "follow" : "unfollow",
-          entity_type: "profile",
-          entity_id: publicId || post.author?.user_id || post.author?.id || "unknown",
-          invalidates: ["activity", "notifications"],
-          metadata: { source: "native_home_feed" }
-        }
-      ]).catch(() => undefined);
-    } finally {
-      setBusyPostId(null);
-    }
+    const publicId = post.author?.public_player_id || post.author_public_player_id || "";
+    const previousFollows = Boolean(post.viewer_follows_author);
+    const applyFollowing = (following: boolean) => setPosts((current) =>
+      current.map((item) => {
+        const itemPublicId = item.author?.public_player_id || item.author_public_player_id || "";
+        if (publicId && itemPublicId === publicId) return { ...item, viewer_follows_author: following };
+        return item.id === post.id ? { ...item, viewer_follows_author: following } : item;
+      })
+    );
+    await guard.run(actionKey("post_follow_author", post.id), () => toggleFollowAuthor(post), {
+      optimistic: () => applyFollowing(!previousFollows),
+      onResult: (result) => {
+        const following = Boolean(result.following);
+        applyFollowing(following);
+        invalidateNativeSync(["activity", "notifications"], "home_follow", [
+          {
+            event_type: following ? "follow" : "unfollow",
+            entity_type: "profile",
+            entity_id: publicId || post.author?.user_id || post.author?.id || "unknown",
+            invalidates: ["activity", "notifications"],
+            metadata: { source: "native_home_feed" }
+          }
+        ]).catch(() => undefined);
+      },
+      // Previously a `finally` with no `catch`: a failed follow rejected out of
+      // the handler and the button was left claiming the follow had happened.
+      onRollback: () => applyFollowing(previousFollows),
+      onError: setError
+    });
   }
 
   async function handleHide(post: PulsePost) {
-    setBusyPostId(post.id);
-    try {
-      await hidePost(post.id);
-      setPosts((current) => current.filter((item) => item.id !== post.id));
-      invalidateNativeSync(["activity", "notifications"], "home_hide", [
-        {
-          event_type: "pulse_post_hidden",
-          entity_type: "post",
-          entity_id: post.id,
-          invalidates: ["activity", "notifications"],
-          metadata: { source: "native_home_feed" }
-        }
-      ]).catch(() => undefined);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Post could not be hidden.");
-    } finally {
-      setBusyPostId(null);
-    }
+    await guard.run(actionKey("post_hide", post.id), () => hidePost(post.id), {
+      // Removal is applied on confirmation, not optimistically: putting a hidden
+      // post back after a failure would look like the feed resurrecting it.
+      onResult: () => {
+        setPosts((current) => current.filter((item) => item.id !== post.id));
+        invalidateNativeSync(["activity", "notifications"], "home_hide", [
+          {
+            event_type: "pulse_post_hidden",
+            entity_type: "post",
+            entity_id: post.id,
+            invalidates: ["activity", "notifications"],
+            metadata: { source: "native_home_feed" }
+          }
+        ]).catch(() => undefined);
+      },
+      onError: (message) => setError(message || "Post could not be hidden.")
+    });
   }
 
   async function handleMute(post: PulsePost) {
-    setBusyPostId(post.id);
     const authorId = Number(post.author?.user_id || post.author?.id || 0);
     const publicId = post.author?.public_player_id || post.author_public_player_id || "";
-    try {
-      const result = await mutePostAuthor(post);
-      const mutedId = Number(result.muted_user_id || authorId || 0);
-      setPosts((current) =>
-        current.filter((item) => {
-          const itemAuthorId = Number(item.author?.user_id || item.author?.id || 0);
-          const itemPublicId = item.author?.public_player_id || item.author_public_player_id || "";
-          if (mutedId && itemAuthorId === mutedId) return false;
-          if (publicId && itemPublicId === publicId) return false;
-          return item.id !== post.id;
-        })
-      );
-      invalidateNativeSync(["activity", "notifications"], "home_mute", [
-        {
-          event_type: "pulse_user_muted",
-          entity_type: "user",
-          entity_id: mutedId || publicId || "unknown",
-          invalidates: ["activity", "notifications"],
-          metadata: { source: "native_home_feed" }
-        }
-      ]).catch(() => undefined);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "User could not be muted.");
-    } finally {
-      setBusyPostId(null);
-    }
+    await guard.run(actionKey("post_mute_author", post.id), () => mutePostAuthor(post), {
+      onResult: (result) => {
+        const mutedId = Number(result.muted_user_id || authorId || 0);
+        setPosts((current) =>
+          current.filter((item) => {
+            const itemAuthorId = Number(item.author?.user_id || item.author?.id || 0);
+            const itemPublicId = item.author?.public_player_id || item.author_public_player_id || "";
+            if (mutedId && itemAuthorId === mutedId) return false;
+            if (publicId && itemPublicId === publicId) return false;
+            return item.id !== post.id;
+          })
+        );
+        invalidateNativeSync(["activity", "notifications"], "home_mute", [
+          {
+            event_type: "pulse_user_muted",
+            entity_type: "user",
+            entity_id: mutedId || publicId || "unknown",
+            invalidates: ["activity", "notifications"],
+            metadata: { source: "native_home_feed" }
+          }
+        ]).catch(() => undefined);
+      },
+      onError: (message) => setError(message || "User could not be muted.")
+    });
   }
 
   async function handleDelete(post: PulsePost) {
-    if (busyPostId === post.id) return;
-    setBusyPostId(post.id);
-    try {
-      await deletePost(post.id);
-      setPosts((current) => current.filter((item) => item.id !== post.id));
-      if (activePostId === post.id) setActivePostId(null);
-      invalidateNativeSync(["activity", "notifications"], "home_delete", [
-        {
-          event_type: "pulse_post_deleted",
-          entity_type: "post",
-          entity_id: post.id,
-          invalidates: ["activity", "notifications"],
-          metadata: { source: "native_home_feed" }
-        }
-      ]).catch(() => undefined);
-    } catch (err) {
-      setError(describeDeleteError(err, "Post"));
-    } finally {
-      setBusyPostId(null);
-    }
+    await guard.run(actionKey("post_delete", post.id), () => deletePost(post.id), {
+      onResult: () => {
+        setPosts((current) => current.filter((item) => item.id !== post.id));
+        if (activePostId === post.id) setActivePostId(null);
+        invalidateNativeSync(["activity", "notifications"], "home_delete", [
+          {
+            event_type: "pulse_post_deleted",
+            entity_type: "post",
+            entity_id: post.id,
+            invalidates: ["activity", "notifications"],
+            metadata: { source: "native_home_feed" }
+          }
+        ]).catch(() => undefined);
+      },
+      // describeDeleteError, not the guard's generic copy: delete has its own
+      // permission and already-deleted wording that users act on.
+      onError: (_message, err) => setError(describeDeleteError(err, "Post"))
+    });
   }
 
   function selectFeed(feedKey: string) {
@@ -535,6 +567,27 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         <View style={[styles.homeSignalWave, styles.homeSignalWaveOne]} />
         <View style={[styles.homeSignalWave, styles.homeSignalWaveTwo]} />
       </View>
+      {/*
+        `error` used to be reachable only through ListEmptyComponent, so a failed
+        like, comment, follow or delete set a message that nothing rendered as
+        long as the feed had a single post in it — which is the normal case. The
+        handlers reported, and the report went nowhere. The banner sits outside
+        the FlatList so it is visible whether or not the list is empty and cannot
+        be scrolled away from, and it is dismissible so a stale failure does not
+        sit over the feed forever.
+      */}
+      {error ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${error}. Tap to dismiss.`}
+          accessibilityLiveRegion="polite"
+          style={styles.actionErrorBanner}
+          onPress={() => setError("")}
+        >
+          <Text style={styles.actionErrorText}>{error}</Text>
+          <Text style={styles.actionErrorDismiss}>Dismiss</Text>
+        </Pressable>
+      ) : null}
       <FlatList
         testID="native-home-feed"
         ref={listRef}
@@ -629,7 +682,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
           return (
             <PostCard
               post={item}
-              busy={busyPostId === item.id}
+              busy={guard.isItemBusy(item.id)}
               active={activePostId === item.id}
               motionEnabled={ambientMotionEnabled}
               onOpen={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Post" })}
@@ -783,7 +836,7 @@ function HomeHeader({
           <View style={styles.feedTabsWrap}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.feedTabs}>
               {feedTabs.map((tab) => (
-                <Pressable key={tab.key} style={[styles.feedTab, selectedFeed === tab.key && styles.feedTabActive]} onPress={() => onSelectFeed(tab.key)}>
+                <Pressable accessibilityRole="button" key={tab.key} style={[styles.feedTab, selectedFeed === tab.key && styles.feedTabActive]} onPress={() => onSelectFeed(tab.key)}>
                   <Text style={[styles.feedTabText, selectedFeed === tab.key && styles.feedTabTextActive]}>{tab.label}</Text>
                 </Pressable>
               ))}
@@ -824,11 +877,11 @@ function HomeCommandRail({
       </LogiNexusPanel>
       <View style={styles.commandShortcutGroup}>
         <Text style={styles.commandSectionTitle}>Today</Text>
-        <Pressable style={styles.commandShortcutCard} onPress={() => onOpenRoute("/pulse/dashboard")}>
+        <Pressable accessibilityRole="button" style={styles.commandShortcutCard} onPress={() => onOpenRoute("/pulse/dashboard")}>
           <Text style={styles.commandShortcutTitle}>Dashboard</Text>
           <Text style={styles.commandShortcutMeta}>Account command center</Text>
         </Pressable>
-        <Pressable style={styles.commandShortcutCard} onPress={() => onOpenRoute("/pulse/growth")}>
+        <Pressable accessibilityRole="button" style={styles.commandShortcutCard} onPress={() => onOpenRoute("/pulse/growth")}>
           <Text style={styles.commandShortcutTitle}>Promote</Text>
           <Text style={styles.commandShortcutMeta}>Owner tools</Text>
         </Pressable>
@@ -854,7 +907,7 @@ function HomeCommandRail({
           <Text style={styles.commandRadioTab}>Podcasts</Text>
           <Text style={styles.commandRadioTab}>Discover</Text>
         </View>
-        <Pressable style={styles.commandRadioNow} onPress={onOpenPulseRadio}>
+        <Pressable accessibilityRole="button" style={styles.commandRadioNow} onPress={onOpenPulseRadio}>
           <View style={styles.commandRadioDot} />
           <View style={styles.commandRadioCopy}>
             <Text style={styles.commandRadioNowTitle} numberOfLines={1}>Pulse Radio</Text>
@@ -862,10 +915,10 @@ function HomeCommandRail({
           </View>
         </Pressable>
         <View style={styles.commandRadioActions}>
-          <Pressable style={styles.commandRadioPrimary} onPress={onOpenPulseRadio}>
+          <Pressable accessibilityRole="button" style={styles.commandRadioPrimary} onPress={onOpenPulseRadio}>
             <Text style={styles.commandRadioPrimaryText}>Play / Pause</Text>
           </Pressable>
-          <Pressable style={styles.commandRadioSecondary} onPress={onOpenPulseRadio}>
+          <Pressable accessibilityRole="button" style={styles.commandRadioSecondary} onPress={onOpenPulseRadio}>
             <Text style={styles.commandRadioSecondaryText}>Next</Text>
           </Pressable>
         </View>
@@ -1246,7 +1299,7 @@ function StatusRail({
         </Pressable>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statusRail}>
-        <Pressable style={styles.addStatusCard} onPress={onAddStatus}>
+        <Pressable accessibilityRole="button" style={styles.addStatusCard} onPress={onAddStatus}>
           <Text style={styles.addStatusIcon}>+</Text>
           <Text style={styles.addStatusText}>Add Status</Text>
         </Pressable>
@@ -1258,7 +1311,7 @@ function StatusRail({
         ) : null}
         {!loading && !items.length ? Array.from({ length: 5 }).map((_, index) => <StatusPlaceholder key={`status-placeholder-${index}`} message={error || "No status yet"} />) : null}
         {items.map((status) => (
-          <Pressable key={status.id} style={[styles.statusCard, !status.viewed && styles.statusCardUnseen]} onPress={() => onOpenStatus(status)}>
+          <Pressable accessibilityRole="button" key={status.id} style={[styles.statusCard, !status.viewed && styles.statusCardUnseen]} onPress={() => onOpenStatus(status)}>
             <View style={styles.statusAvatar}>
               {statusPosterUrl(status) || status.author?.avatar_url || status.author_avatar_url ? (
                 <Image source={{ uri: statusPosterUrl(status) || status.author?.avatar_url || status.author_avatar_url }} style={styles.statusAvatarImage} />
@@ -1294,6 +1347,32 @@ function mergePosts(current: PulsePost[], incoming: PulsePost[]) {
 }
 
 const styles = StyleSheet.create({
+  actionErrorBanner: {
+    alignItems: "center",
+    backgroundColor: "rgba(74, 24, 24, 0.92)",
+    borderColor: colors.danger,
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    marginHorizontal: 12,
+    marginTop: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9
+  },
+  actionErrorDismiss: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase"
+  },
+  actionErrorText: {
+    color: colors.text,
+    flexShrink: 1,
+    fontSize: 12,
+    fontWeight: "700"
+  },
   addStatusCard: {
     alignItems: "center",
     backgroundColor: "transparent",

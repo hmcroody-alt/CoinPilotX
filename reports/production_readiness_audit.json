@@ -3,50 +3,50 @@
     "surface": "Admin routes",
     "route": "/admin/dashboard",
     "status": "pass",
-    "http_status": 200,
-    "detail": "HTTP 200"
+    "http_status": 302,
+    "detail": "HTTP 302"
   },
   {
     "surface": "Admin routes",
     "route": "/admin/security",
     "status": "pass",
-    "http_status": 200,
-    "detail": "HTTP 200"
+    "http_status": 302,
+    "detail": "HTTP 302"
   },
   {
     "surface": "Admin routes",
     "route": "/admin/audit-logs",
     "status": "pass",
-    "http_status": 200,
-    "detail": "HTTP 200"
+    "http_status": 302,
+    "detail": "HTTP 302"
   },
   {
     "surface": "Admin routes",
     "route": "/admin/performance",
     "status": "pass",
-    "http_status": 200,
-    "detail": "HTTP 200"
+    "http_status": 302,
+    "detail": "HTTP 302"
   },
   {
     "surface": "Admin routes",
     "route": "/admin/system-audit",
     "status": "pass",
-    "http_status": 200,
-    "detail": "HTTP 200"
+    "http_status": 302,
+    "detail": "HTTP 302"
   },
   {
     "surface": "Admin routes",
     "route": "/admin/messages-health",
     "status": "pass",
-    "http_status": 200,
-    "detail": "HTTP 200"
+    "http_status": 302,
+    "detail": "HTTP 302"
   },
   {
     "surface": "Admin routes",
     "route": "/admin/notifications",
     "status": "pass",
-    "http_status": 200,
-    "detail": "HTTP 200"
+    "http_status": 302,
+    "detail": "HTTP 302"
   },
   {
     "surface": "Messaging",
@@ -87,8 +87,8 @@
     "surface": "Live streaming",
     "route": "/api/pulse/live/stream",
     "status": "pass",
-    "http_status": 200,
-    "detail": "HTTP 200"
+    "http_status": 204,
+    "detail": "HTTP 204"
   },
   {
     "surface": "Notifications",
@@ -115,8 +115,8 @@
     "surface": "Composer",
     "route": "/pulse/create",
     "status": "pass",
-    "http_status": 200,
-    "detail": "HTTP 200"
+    "http_status": 302,
+    "detail": "HTTP 302"
   },
   {
     "surface": "Composer",
@@ -178,8 +178,8 @@
     "surface": "Premium",
     "route": "/admin/premium-command",
     "status": "pass",
-    "http_status": 200,
-    "detail": "HTTP 200"
+    "http_status": 302,
+    "detail": "HTTP 302"
   },
   {
     "surface": "Marketplace",
@@ -199,14 +199,14 @@
     "surface": "Marketplace",
     "route": "/admin/marketplace-command",
     "status": "pass",
-    "http_status": 200,
-    "detail": "HTTP 200"
+    "http_status": 302,
+    "detail": "HTTP 302"
   },
   {
     "surface": "Marketplace",
     "route": "/admin/merchant-applications",
     "status": "pass",
-    "http_status": 200,
-    "detail": "HTTP 200"
+    "http_status": 302,
+    "detail": "HTTP 302"
   }
 ]

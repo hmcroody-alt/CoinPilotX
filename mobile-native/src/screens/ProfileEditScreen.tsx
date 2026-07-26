@@ -167,19 +167,19 @@ export function ProfileEditScreen() {
         <View style={styles.avatarRow}>
           {profile?.avatar_url ? <Image source={{ uri: profile.avatar_url }} style={styles.avatar} /> : <View style={styles.avatarFallback} />}
           <View style={styles.mediaActions}>
-            <Pressable style={styles.smallButton} disabled={Boolean(uploading)} onPress={() => pickImage("avatar")}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(uploading) }} style={styles.smallButton} disabled={Boolean(uploading)} onPress={() => pickImage("avatar")}>
               <Text style={styles.smallButtonText}>{uploading === "avatar" ? "Uploading" : "Avatar"}</Text>
             </Pressable>
-            <Pressable style={styles.smallButton} disabled={Boolean(uploading)} onPress={() => pickImage("cover")}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(uploading) }} style={styles.smallButton} disabled={Boolean(uploading)} onPress={() => pickImage("cover")}>
               <Text style={styles.smallButtonText}>{uploading === "cover" ? "Uploading" : "Cover"}</Text>
             </Pressable>
           </View>
         </View>
         <View style={styles.removeRow}>
-          <Pressable style={styles.removeButton} disabled={Boolean(uploading)} onPress={() => removeImage("avatar")}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(uploading) }} style={styles.removeButton} disabled={Boolean(uploading)} onPress={() => removeImage("avatar")}>
             <Text style={styles.removeText}>Remove Avatar</Text>
           </Pressable>
-          <Pressable style={styles.removeButton} disabled={Boolean(uploading)} onPress={() => removeImage("cover")}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(uploading) }} style={styles.removeButton} disabled={Boolean(uploading)} onPress={() => removeImage("cover")}>
             <Text style={styles.removeText}>Remove Cover</Text>
           </Pressable>
         </View>
@@ -227,10 +227,10 @@ export function ProfileEditScreen() {
           {(["subtle", "balanced", "reduced"] as const).map((item) => <Segment key={item} label={item[0].toUpperCase() + item.slice(1)} active={(theme.motion_level || "balanced") === item} onPress={() => setTheme((current) => ({ ...current, motion_level: item }))} />)}
         </View>
         <View style={styles.saveRow}>
-          <Pressable style={[styles.saveButton, saving && styles.disabled]} disabled={saving} onPress={save}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: saving }} style={[styles.saveButton, saving && styles.disabled]} disabled={saving} onPress={save}>
             <Text style={styles.saveText}>{saving ? "Saving" : "Save"}</Text>
           </Pressable>
-          <Pressable style={styles.cancelButton} disabled={saving} onPress={() => profile && hydrate(profile)}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: saving }} style={styles.cancelButton} disabled={saving} onPress={() => profile && hydrate(profile)}>
             <Text style={styles.cancelText}>Cancel</Text>
           </Pressable>
         </View>
@@ -257,7 +257,7 @@ function Field(props: { label: string; value: string; onChangeText: (value: stri
 
 function Segment({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   return (
-    <Pressable style={[styles.segmentButton, active ? styles.segmentActive : undefined]} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={[styles.segmentButton, active ? styles.segmentActive : undefined]} onPress={onPress}>
       <Text style={[styles.segmentText, active ? styles.segmentTextActive : undefined]}>{label}</Text>
     </Pressable>
   );

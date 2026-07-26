@@ -13,12 +13,12 @@
     {
       "details": "",
       "name": "Pulse page loads current Home core JS asset",
-      "passed": true
+      "passed": false
     },
     {
-      "details": "[737, 901, 1101, 1141, 1174, 1208, 1239]",
+      "details": "[922, 1086, -1, 2497, 2530, 2592, 2625]",
       "name": "Required feed hierarchy order is preserved",
-      "passed": true
+      "passed": false
     },
     {
       "details": "",
@@ -93,7 +93,7 @@
     {
       "details": "",
       "name": "Comment composer compact V3 grid exists",
-      "passed": true
+      "passed": false
     },
     {
       "details": "",
@@ -121,5 +121,5 @@
       "passed": true
     }
   ],
-  "ok": true
+  "ok": false
 }

@@ -15,6 +15,15 @@ export const PULSE_AI_DISPLAY_NAME = "UNDX";
 export const PULSE_AI_AGENT_ID = "undx";
 export const PULSE_AI_ASSISTANT_ID = "undx";
 export const PULSE_AI_CONVERSATION_TYPE = "undx_intelligence";
+/**
+ * Presence marker for automated conversations (UNDX and friends).
+ *
+ * Deliberately outside the human presence vocabulary ("online" / "away" /
+ * "offline"). A bot is reachable whenever the service is up, which is not the
+ * same claim as "this person is at their device right now", and conflating the
+ * two is precisely the fake-online problem this system exists to remove.
+ */
+export const ASSISTANT_PRESENCE = "assistant";
 
 export type MessengerConversation = {
   id: number;
@@ -884,7 +893,11 @@ function normalizePulseAiConversation(item?: MessengerConversation): MessengerCo
       last_message_preview: item?.last_message_preview || item?.latest_message || "Message UNDX",
       last_activity_at: item?.last_activity_at || item?.updated_at || now,
       updated_at: item?.updated_at || now,
-      presence: "available",
+      // UNDX is a service, not a person. It carries the dedicated "assistant"
+      // marker rather than a human presence value so it never flows through
+      // the human online/last-seen renderer. Presence for real people is only
+      // ever supplied by the server's unified presence service.
+      presence: ASSISTANT_PRESENCE,
       pinned: true,
       trust_state: "intelligence",
       verified: true
@@ -900,7 +913,7 @@ function normalizePulseAiConversation(item?: MessengerConversation): MessengerCo
     last_message_preview: "Message UNDX",
     last_activity_at: now,
     updated_at: now,
-    presence: "available",
+    presence: ASSISTANT_PRESENCE,
     pinned: true,
     trust_state: "intelligence",
     verified: true
@@ -1031,10 +1044,29 @@ function messageText(value: unknown) {
 
 function normalizePresence(value: unknown) {
   const direct = safeText(value).toLowerCase();
-  if (direct) return direct;
+  if (direct) return direct === ASSISTANT_PRESENCE ? ASSISTANT_PRESENCE : normalizePresenceToken(direct);
   if (!value || typeof value !== "object") return "";
   const record = value as Record<string, unknown>;
-  return (safeText(record.status) || safeText(record.presence) || safeText(record.state)).toLowerCase();
+  // A privacy-restricted or invisible user is reported by the server as
+  // available:false. Treat that as "no presence at all" rather than falling
+  // through to a status field, so hidden users render exactly like users we
+  // simply have no information about.
+  if (record.available === false) return "";
+  const token = (safeText(record.status) || safeText(record.presence) || safeText(record.state)).toLowerCase();
+  return normalizePresenceToken(token);
+}
+
+/**
+ * Collapse whatever the server said into the vocabulary this client renders.
+ *
+ * Anything unrecognised becomes "" (unknown), never an online-ish value. That
+ * asymmetry is deliberate: the failure mode of guessing wrong must be showing
+ * a live user as offline, not showing an offline user as live.
+ */
+function normalizePresenceToken(token: string) {
+  if (!token) return "";
+  if (token === "online" || token === "away" || token === "offline") return token;
+  return "";
 }
 
 function conversationSortTime(item: Pick<MessengerConversation, "last_activity_at" | "updated_at">) {

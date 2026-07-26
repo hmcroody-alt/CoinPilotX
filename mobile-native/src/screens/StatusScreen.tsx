@@ -16,7 +16,6 @@ import {
 import {
   DEFAULT_STATUS_REACTION,
   deleteStatus,
-  describeStatusReactionError,
   listStatuses,
   loadCachedStatuses,
   PulseStatus,
@@ -40,10 +39,12 @@ import { registerSyncInvalidation } from "../core/eventSync";
 import { StatusCreator } from "../components/StatusCreator";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
 import { StatusViewerCard } from "../components/StatusViewerCard";
+import { actionKey, useSocialActionGuard } from "../social/actionGuard";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { sharePulseObject } from "../sharing/nativeShare";
+import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 
 type Props = {
   route: { params?: { statusId?: number; title?: string; openCreator?: boolean } };
@@ -53,6 +54,9 @@ type Props = {
 const LANE = "for_you";
 
 export function StatusScreen({ route, navigation }: Props) {
+  // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
+  // reserves the matching clearance so the last row never sits under the dock.
+  const dock = useBottomNavSurface();
   const insets = useSafeAreaInsets();
   const initialStatusId = Number(route.params?.statusId || 0);
   const [items, setItems] = useState<PulseStatus[]>([]);
@@ -63,15 +67,16 @@ export function StatusScreen({ route, navigation }: Props) {
   const [error, setError] = useState("");
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [muted, setMuted] = useState(false);
-  const [busyId, setBusyId] = useState<number | null>(null);
+  // Replaces a `busyId` scalar plus a separate `reactingIds` Set and a
+  // `reactionSeqRef` Map — three overlapping bookkeeping structures for one
+  // question. The guard answers both "is this status busy" and "is this response
+  // still the latest" from a single per-action+id key.
+  const guard = useSocialActionGuard();
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [replyStatus, setReplyStatus] = useState<PulseStatus | null>(null);
   const [replyBody, setReplyBody] = useState("");
-  const [postingReply, setPostingReply] = useState(false);
   const [manageStatus, setManageStatus] = useState<PulseStatus | null>(null);
-  const [reactingIds, setReactingIds] = useState<Set<number>>(new Set());
   const [reactionError, setReactionError] = useState("");
-  const reactionSeqRef = useRef(new Map<number, number>());
   const viewed = useRef(new Set<number>());
 
   useEffect(() => {
@@ -146,11 +151,14 @@ export function StatusScreen({ route, navigation }: Props) {
    * reaction row and never supports removal, so this only ever sets a new
    * reaction — it never advertises or performs a "remove reaction" action.
    *
-   * `reactionSeqRef` guards against rapid repeated taps / duplicate or
-   * stale responses: each call bumps a per-status sequence number, and any
-   * response (success or failure) that isn't for the latest sequence is
-   * discarded so it can never stomp a newer optimistic update or roll back
-   * to a stale count ("count drift").
+   * The hand-rolled `reactionSeqRef` this used to carry is now
+   * `useSocialActionGuard`, which is that same per-key sequence generalised so
+   * posts and reels get the identical stale-response rejection instead of three
+   * screens each re-deriving it. `supersede: true` is what keeps the behaviour
+   * the tray depends on: switching reaction mid-flight must issue the second
+   * request and let the LATER answer win, rather than being dropped as a
+   * duplicate. Tapping the reaction you already hold still returns early, since
+   * the route has no removal and re-sending would be a no-op write.
    */
   async function handleReact(status: PulseStatus, reactionType: StatusReactionType = DEFAULT_STATUS_REACTION) {
     const statusId = status.id;
@@ -158,41 +166,27 @@ export function StatusScreen({ route, navigation }: Props) {
     const previousCount = Number(status.reaction_count || 0);
     if (previousReaction === reactionType) return;
 
-    const seq = (reactionSeqRef.current.get(statusId) || 0) + 1;
-    reactionSeqRef.current.set(statusId, seq);
     setReactionError("");
-    setReactingIds((current) => new Set(current).add(statusId));
-
     const optimisticCount = previousReaction ? previousCount : previousCount + 1;
-    updateStatus(statusId, { viewer_reaction: reactionType, reaction_count: optimisticCount });
-
-    try {
-      const result = await reactToStatus(statusId, reactionType);
-      if (reactionSeqRef.current.get(statusId) !== seq) return;
-      updateStatus(statusId, { viewer_reaction: reactionType, reaction_count: Number(result.reaction_count ?? optimisticCount) });
-    } catch (err) {
-      if (reactionSeqRef.current.get(statusId) !== seq) return;
-      updateStatus(statusId, { viewer_reaction: previousReaction, reaction_count: previousCount });
-      setReactionError(describeStatusReactionError(err));
-    } finally {
-      if (reactionSeqRef.current.get(statusId) === seq) {
-        setReactingIds((current) => {
-          const next = new Set(current);
-          next.delete(statusId);
-          return next;
-        });
-      }
-    }
+    await guard.run(actionKey("status_react", statusId), () => reactToStatus(statusId, reactionType), {
+      supersede: true,
+      optimistic: () => updateStatus(statusId, { viewer_reaction: reactionType, reaction_count: optimisticCount }),
+      onResult: (result) => updateStatus(statusId, { viewer_reaction: reactionType, reaction_count: Number(result.reaction_count ?? optimisticCount) }),
+      onRollback: () => updateStatus(statusId, { viewer_reaction: previousReaction, reaction_count: previousCount }),
+      onError: setReactionError
+    });
   }
 
   async function handleShare(status: PulseStatus) {
-    setBusyId(status.id);
-    try {
-      const result = await shareStatus(status.id);
-      updateStatus(status.id, { share_count: Number(result.share_count || status.share_count || 0) });
-    } finally {
-      setBusyId(null);
-    }
+    // The share-count ping and the share sheet are deliberately decoupled. This
+    // had a `finally` but no `catch`, so a failed count ping rejected the whole
+    // handler and the user never got a share sheet at all — a analytics write
+    // silently vetoing the feature it was measuring. The sheet now opens either
+    // way; only the counter is contingent on the server.
+    await guard.run(actionKey("status_share", status.id), () => shareStatus(status.id), {
+      onResult: (result) => updateStatus(status.id, { share_count: Number(result.share_count || status.share_count || 0) }),
+      onError: setReactionError
+    });
     await sharePulseObject({
       kind: "status",
       url: pulseStatusUrl(status.id),
@@ -204,19 +198,21 @@ export function StatusScreen({ route, navigation }: Props) {
   }
 
   async function submitReply() {
-    if (!replyStatus || !replyBody.trim() || postingReply) return;
+    if (!replyStatus || !replyBody.trim()) return;
+    const target = replyStatus;
     const body = replyBody.trim();
-    setPostingReply(true);
     setReplyBody("");
-    try {
-      await replyToStatus(replyStatus.id, body);
-      updateStatus(replyStatus.id, { reply_count: Number(replyStatus.reply_count || 0) + 1 });
-      setReplyStatus(null);
-    } catch {
-      setReplyBody(body);
-    } finally {
-      setPostingReply(false);
-    }
+    await guard.run(actionKey("status_reply", target.id), () => replyToStatus(target.id, body), {
+      onResult: () => {
+        updateStatus(target.id, { reply_count: Number(target.reply_count || 0) + 1 });
+        setReplyStatus(null);
+      },
+      // The typed text is put back so the reply is not lost, and the reason is
+      // now shown: restoring the draft with no message looks like the send
+      // button did nothing.
+      onRollback: () => setReplyBody(body),
+      onError: setReactionError
+    });
   }
 
   function handleCreatedStatus(status?: PulseStatus) {
@@ -241,7 +237,8 @@ export function StatusScreen({ route, navigation }: Props) {
       <FlatList
         data={items}
         keyExtractor={(item) => String(item.id)}
-        contentContainerStyle={styles.content}
+        {...dock.handlers}
+        contentContainerStyle={[styles.content, dock.contentPadding]}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
         ListHeaderComponent={
           <View>
@@ -285,8 +282,8 @@ export function StatusScreen({ route, navigation }: Props) {
             status={activeStatus}
             active
             muted={muted}
-            busy={busyId === activeStatus.id}
-            reactionPending={reactingIds.has(activeStatus.id)}
+            busy={guard.isItemBusy(activeStatus.id)}
+            reactionPending={guard.isBusy(actionKey("status_react", activeStatus.id))}
             reactionError={reactionError}
             progress={(viewerIndex === null ? 0 : viewerIndex + 1) / Math.max(1, items.length)}
             onPrevious={() => setViewerIndex((current) => Math.max(0, Number(current || 0) - 1))}
@@ -315,7 +312,7 @@ export function StatusScreen({ route, navigation }: Props) {
       <ReplyModal
         visible={Boolean(replyStatus)}
         body={replyBody}
-        posting={postingReply}
+        posting={Boolean(replyStatus) && guard.isBusy(actionKey("status_reply", replyStatus?.id || 0))}
         onChangeBody={setReplyBody}
         onSubmit={submitReply}
         onClose={() => setReplyStatus(null)}
@@ -443,7 +440,14 @@ function ReplyModal({ visible, body, posting, onChangeBody, onSubmit, onClose }:
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView style={styles.replyWrap} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <Pressable style={styles.replyBackdrop} onPress={onClose} />
+        {/* Tap-to-dismiss target for sighted users. Hidden from the a11y tree:
+            it duplicates the labelled "Cancel" button in the sheet. */}
+        <Pressable
+          style={styles.replyBackdrop}
+          onPress={onClose}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        />
         <View style={styles.replySheet}>
           <Text style={styles.replyTitle}>Reply to Status</Text>
           <TextInput

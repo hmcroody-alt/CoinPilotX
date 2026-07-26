@@ -289,10 +289,32 @@ export async function saveReel(reelId: number) {
   });
 }
 
-export async function repostReel(reelId: number) {
-  return pulseApi<{ ok?: boolean; message?: string; post_id?: number }>(`/api/pulse/reels/${reelId}/repost`, {
-    method: "POST",
-    body: JSON.stringify({})
+export type ReelRepostResponse = {
+  ok?: boolean;
+  message?: string;
+  post_id?: number;
+  reel_id?: number;
+  original_post_id?: number;
+  reposted?: boolean;
+  is_reposted?: boolean;
+  repost_count?: number;
+  removed?: boolean;
+};
+
+/**
+ * Repost or un-repost a reel. `undo` maps to DELETE.
+ *
+ * Shares its backend with repostPost in api/feed.ts, because a reel repost is a
+ * pulse_posts row pointing at the reel's post exactly as a post's repost is. The
+ * response therefore carries the same `reposted` flag and `repost_count` a feed
+ * caller gets, which is what lets this be a toggle rather than the one-way button
+ * it used to be.
+ */
+export async function repostReel(reelId: number, options: { undo?: boolean } = {}) {
+  const undo = Boolean(options.undo);
+  return pulseApi<ReelRepostResponse>(`/api/pulse/reels/${reelId}/repost`, {
+    method: undo ? "DELETE" : "POST",
+    body: JSON.stringify({ undo })
   });
 }
 

@@ -1,5 +1,5 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -15,7 +15,9 @@ import {
   addPostComment,
   deletePost,
   getPostDetail,
+  listPostComments,
   loadCachedPostDetail,
+  POST_COMMENT_PAGE_SIZE,
   PulseComment,
   PulsePost,
   pulsePostUrl,
@@ -26,16 +28,18 @@ import {
 import { isContentOwner } from "../api/contentOwnership";
 import { describeDeleteError } from "../api/deleteErrors";
 import { profileTargetFromPost } from "../api/profile";
-import { profileNavigationParams } from "../api/profileTarget";
+import { profileNavigationParams, resolveProfileTarget } from "../api/profileTarget";
 import { PostCard } from "../components/PostCard";
-import { ContentTranslation } from "../components/ContentTranslation";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { invalidateNativeSync } from "../core/eventSync";
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
-import { formatShortTime } from "../utils/format";
 import { sharePulseObject } from "../sharing/nativeShare";
+import { actionKey, useSocialActionGuard } from "../social/actionGuard";
+import { CommentThread, commentAuthorLabel } from "../social/CommentThread";
+import { buildCommentTree, countCommentTree, flattenCommentTree, mergeFlatComments, toggleSetValue } from "../social/commentTree";
+import { authorHandle, seedReplyDraft } from "../social/mentions";
 
 type Props = NativeStackScreenProps<RootStackParamList, "PostDetail">;
 
@@ -44,15 +48,33 @@ export function PostDetailScreen({ route, navigation }: Props) {
   const { authState } = useAuth();
   const currentUserId = Number(authState.user?.user_id || 0);
   const [post, setPost] = useState<PulsePost | null>(null);
-  const [comments, setComments] = useState<PulseComment[]>([]);
+  // Comments are held FLAT, in server order, and nested only for rendering.
+  // Page 2 can carry a reply whose parent arrived on page 1, so re-parenting has
+  // to happen over the whole accumulation rather than per page. Merging two
+  // already-nested pages at the root level would strand that reply as a
+  // top-level comment, which looks exactly like the bug this screen shipped with.
+  const [flatComments, setFlatComments] = useState<PulseComment[]>([]);
+  const [commentTotal, setCommentTotal] = useState(0);
+  const [hasMoreComments, setHasMoreComments] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [expandedReplies, setExpandedReplies] = useState<Set<number>>(new Set());
+  const [replyTo, setReplyTo] = useState<PulseComment | null>(null);
   const [commentBody, setCommentBody] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [posting, setPosting] = useState(false);
   const [offline, setOffline] = useState(false);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Replaces a `busy` scalar that was written on every action and read by
+  // nothing, so it prevented no duplicate request at all. The guard is keyed by
+  // action+id and holds its lock in a ref, so a second tap is dropped
+  // synchronously rather than one render too late.
+  const guard = useSocialActionGuard();
+  const busy = guard.anyBusy() || deleting;
+
+  const comments = useMemo(() => buildCommentTree(flatComments), [flatComments]);
+  const loadedCommentCount = flatComments.length;
 
   async function load(mode: "initial" | "refresh" = "initial") {
     setError("");
@@ -60,14 +82,37 @@ export function PostDetailScreen({ route, navigation }: Props) {
     if (mode === "initial") setLoading(true);
     if (mode === "refresh") setRefreshing(true);
     try {
-      const data = await getPostDetail(postId);
-      setPost(data.post || null);
-      setComments(data.comments || []);
+      // The post and its first comment page are independent reads, so they run
+      // together. The comment page is the one that carries total/has_more, which
+      // the post detail endpoint does not return.
+      const [detailResult, pageResult] = await Promise.allSettled([
+        getPostDetail(postId),
+        listPostComments(postId, { limit: POST_COMMENT_PAGE_SIZE, offset: 0 })
+      ]);
+      if (detailResult.status === "rejected") throw detailResult.reason;
+      const detail = detailResult.value;
+      setPost(detail.post || null);
+      if (pageResult.status === "fulfilled") {
+        setFlatComments(pageResult.value.flat);
+        setCommentTotal(pageResult.value.total);
+        setHasMoreComments(pageResult.value.hasMore);
+      } else {
+        // The post loaded; only the pager failed. Show the comments the detail
+        // response already included rather than an empty thread, and disable
+        // "load more" because without a total we would be guessing.
+        setFlatComments(flattenCommentTree(detail.comments || []));
+        setCommentTotal(Number(detail.post?.comment_count || countCommentTree(detail.comments || [])));
+        setHasMoreComments(false);
+      }
+      setExpandedReplies(new Set());
+      setReplyTo(null);
     } catch (err) {
       const cached = await loadCachedPostDetail(postId);
       if (cached?.post) {
         setPost(cached.post);
-        setComments(cached.comments || []);
+        setFlatComments(flattenCommentTree(cached.comments || []));
+        setCommentTotal(countCommentTree(cached.comments || []));
+        setHasMoreComments(false);
         setOffline(true);
       } else {
         setError(err instanceof Error ? err.message : "Post unavailable.");
@@ -78,84 +123,154 @@ export function PostDetailScreen({ route, navigation }: Props) {
     }
   }
 
+  async function loadMoreComments() {
+    if (!hasMoreComments || loadingMore || offline) return;
+    setLoadingMore(true);
+    try {
+      // The offset is rows already consumed, not roots rendered. Counting roots
+      // would re-request every reply on every page.
+      const page = await listPostComments(postId, { limit: POST_COMMENT_PAGE_SIZE, offset: loadedCommentCount });
+      setFlatComments((current) => mergeFlatComments(current, page.flat));
+      setCommentTotal(page.total);
+      setHasMoreComments(page.hasMore);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load more comments.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
   useEffect(() => {
     load("initial").catch(() => undefined);
   }, [postId]);
 
   async function handleReact(nextPost: PulsePost, reactionType: string) {
     if (!post) return;
-    setBusy(true);
-    const previous = post.viewer_reaction || "";
-    const removing = previous === reactionType;
-    const counts = { ...(post.reaction_counts || {}) };
-    if (previous) counts[previous] = Math.max(0, Number(counts[previous] || 0) - 1);
+    const previousReaction = post.viewer_reaction || "";
+    const previousCounts = post.reaction_counts || {};
+    const removing = previousReaction === reactionType;
+    const counts = { ...previousCounts };
+    if (previousReaction) counts[previousReaction] = Math.max(0, Number(counts[previousReaction] || 0) - 1);
     if (!removing) counts[reactionType] = Number(counts[reactionType] || 0) + 1;
-    setPost({ ...post, viewer_reaction: removing ? "" : reactionType, reaction_counts: counts });
-    try {
-      const result = await reactToPost(nextPost.id, reactionType);
-      setPost((current) =>
-        current ? { ...current, viewer_reaction: result.removed ? "" : result.viewer_reaction || result.reaction_type || reactionType, reaction_counts: result.reaction_counts || counts } : current
-      );
-    } catch {
-      setPost((current) => (current ? { ...current, viewer_reaction: previous, reaction_counts: post.reaction_counts || {} } : current));
-    } finally {
-      setBusy(false);
-    }
+    await guard.run(actionKey("post_react", nextPost.id), () => reactToPost(nextPost.id, reactionType), {
+      // A user changing their mind mid-flight is legitimate, so the second tap
+      // is allowed through and the sequence guard makes the LATER tap win.
+      // Without that, the slower first response lands last and the button
+      // silently reverts to the reaction the user just abandoned.
+      supersede: true,
+      optimistic: () => setPost((current) => (current ? { ...current, viewer_reaction: removing ? "" : reactionType, reaction_counts: counts } : current)),
+      onResult: (result) => setPost((current) => (current
+        ? {
+          ...current,
+          viewer_reaction: result.removed ? "" : result.viewer_reaction || result.reaction_type || reactionType,
+          reaction_counts: result.reaction_counts || counts
+        }
+        : current)),
+      onRollback: () => setPost((current) => (current ? { ...current, viewer_reaction: previousReaction, reaction_counts: previousCounts } : current)),
+      onError: setError
+    });
   }
 
   async function handleSave(nextPost: PulsePost) {
     if (!post) return;
-    setBusy(true);
-    setPost({ ...post, saved: !post.saved });
-    try {
-      const result = await savePost(nextPost.id);
-      setPost((current) => (current ? { ...current, saved: Boolean(result.saved ?? result.is_saved ?? !post.saved) } : current));
-    } catch {
-      setPost((current) => (current ? { ...current, saved: post.saved } : current));
-    } finally {
-      setBusy(false);
-    }
+    const previousSaved = Boolean(post.saved);
+    await guard.run(actionKey("post_save", nextPost.id), () => savePost(nextPost.id), {
+      optimistic: () => setPost((current) => (current ? { ...current, saved: !previousSaved } : current)),
+      onResult: (result) => setPost((current) => (current ? { ...current, saved: Boolean(result.saved ?? result.is_saved ?? !previousSaved) } : current)),
+      onRollback: () => setPost((current) => (current ? { ...current, saved: previousSaved } : current)),
+      onError: setError
+    });
   }
 
   async function handleRepost(nextPost: PulsePost) {
     if (!post) return;
-    setBusy(true);
-    setPost({ ...post, reposted: true, repost_count: Number(post.repost_count || 0) + (post.reposted ? 0 : 1) });
-    try {
-      const result = await repostPost(nextPost.id);
-      setPost((current) => (current ? { ...current, reposted: Boolean(result.reposted ?? result.is_reposted ?? true) } : current));
-    } catch {
-      setPost((current) => (current ? { ...current, reposted: post.reposted, repost_count: post.repost_count || 0 } : current));
-    } finally {
-      setBusy(false);
-    }
+    const previousReposted = Boolean(post.reposted);
+    const previousCount = Number(post.repost_count || 0);
+    const undo = previousReposted;
+    // A real toggle now that the route has a DELETE branch. It was one-way while
+    // the server returned {ok, post_id, next_url} with no `reposted` flag, no
+    // count and no undo path, because flipping the button off would have claimed
+    // an un-repost that never happened. The server's count is authoritative in
+    // onResult since it includes reposts by people this screen cannot see.
+    await guard.run(actionKey("post_repost", nextPost.id), () => repostPost(nextPost.id, { undo }), {
+      optimistic: () => setPost((current) => (current
+        ? { ...current, reposted: !undo, repost_count: undo ? Math.max(0, previousCount - 1) : previousCount + 1 }
+        : current)),
+      onResult: (result) => setPost((current) => (current
+        ? {
+          ...current,
+          reposted: Boolean(result.reposted ?? result.is_reposted ?? !undo),
+          repost_count: typeof result.repost_count === "number"
+            ? result.repost_count
+            : undo ? Math.max(0, previousCount - 1) : previousCount + 1
+        }
+        : current)),
+      onRollback: () => setPost((current) => (current ? { ...current, reposted: previousReposted, repost_count: previousCount } : current)),
+      onError: setError
+    });
   }
 
   async function handleComment() {
     const body = commentBody.trim();
     if (!body || posting) return;
+    const parent = replyTo;
+    const parentId = Number(parent?.id || 0);
     setPosting(true);
     setCommentBody("");
+    setReplyTo(null);
     try {
-      const result = await addPostComment(postId, body);
+      const result = await addPostComment(postId, body, parentId);
       if (result.comment) {
-        setComments((current) => [result.comment as PulseComment, ...current]);
+        const created = result.comment;
+        // Append rather than prepend: the server orders comments created_at ASC,
+        // so a new comment belongs at the end. Prepending it — which is what this
+        // screen used to do — put it above comments older than it, and the next
+        // refresh silently moved it, which reads as the comment jumping.
+        setFlatComments((current) => mergeFlatComments(current, [created]));
+        setCommentTotal((current) => current + 1);
         setPost((current) => (current ? { ...current, comment_count: Number(current.comment_count || 0) + 1 } : current));
+        // A reply the user cannot see is indistinguishable from a reply that
+        // failed, so open the thread it landed in.
+        if (parentId) setExpandedReplies((current) => new Set(current).add(parentId));
       } else {
         await load("refresh");
       }
+      invalidateNativeSync(["activity", "notifications"], "post_detail_comment").catch(() => undefined);
     } catch (err) {
       setCommentBody(body);
+      setReplyTo(parent);
       setError(err instanceof Error ? err.message : "Comment failed.");
     } finally {
       setPosting(false);
     }
   }
 
+  function handleReply(comment: PulseComment) {
+    setReplyTo(comment);
+    // Seeding the handle is idempotent, so tapping Reply twice cannot stack
+    // "@name @name" into the draft.
+    setCommentBody((current) => seedReplyDraft(current, comment.author || comment.user));
+  }
+
+  function handleMentionPress(username: string) {
+    const handle = String(username || "").trim();
+    if (!handle) return;
+    // A mention carries only a handle, so the target is resolved from the handle
+    // itself rather than assembled by hand — resolveProfileTarget is what
+    // normalizes and sanitizes it, and skipping it is how a mention ends up
+    // navigating to a profileKey the detail screen cannot look up.
+    const params = profileNavigationParams(resolveProfileTarget(handle), `@${handle}`);
+    if (params) navigation.navigate("ProfileDetail", params);
+  }
+
+  function handleCommentAuthorPress(comment: PulseComment) {
+    const handle = authorHandle(comment.author || comment.user);
+    if (handle) handleMentionPress(handle);
+  }
+
   async function handleDelete(target: PulsePost) {
     if (deleting) return;
     setDeleting(true);
-    setBusy(true);
     try {
       await deletePost(target.id);
       invalidateNativeSync(["activity", "notifications"], "post_detail_delete", [
@@ -171,7 +286,6 @@ export function PostDetailScreen({ route, navigation }: Props) {
     } catch (err) {
       setError(describeDeleteError(err, "Post"));
       setDeleting(false);
-      setBusy(false);
     }
   }
 
@@ -226,6 +340,21 @@ export function PostDetailScreen({ route, navigation }: Props) {
               }}
             />
             <View style={styles.commentComposer}>
+              {replyTo ? (
+                <View style={styles.replyBanner}>
+                  <Text style={styles.replyBannerText} numberOfLines={1}>
+                    {`Replying to ${commentAuthorLabel(replyTo)}`}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Cancel reply"
+                    testID="post-detail-cancel-reply"
+                    onPress={() => setReplyTo(null)}
+                  >
+                    <Text style={styles.replyBannerCancel}>Cancel</Text>
+                  </Pressable>
+                </View>
+              ) : null}
               <TextInput
                 accessibilityLabel="Comment text"
                 testID="post-detail-comment-input"
@@ -246,10 +375,12 @@ export function PostDetailScreen({ route, navigation }: Props) {
                 onPress={handleComment}
                 disabled={!commentBody.trim() || posting}
               >
-                <Text style={styles.commentButtonText}>{posting ? "Sending" : "Post"}</Text>
+                <Text style={styles.commentButtonText}>{posting ? "Sending" : replyTo ? "Reply" : "Post"}</Text>
               </Pressable>
             </View>
-            <Text style={styles.sectionTitle}>Comments</Text>
+            <Text style={styles.sectionTitle} testID="post-detail-comments-title">
+              {commentTotal ? `Comments (${commentTotal})` : "Comments"}
+            </Text>
           </View>
         }
         ListEmptyComponent={
@@ -257,25 +388,38 @@ export function PostDetailScreen({ route, navigation }: Props) {
             <Text style={styles.emptyText}>No comments yet.</Text>
           </View>
         }
-        renderItem={({ item }) => <CommentRow comment={item} />}
+        ListFooterComponent={
+          hasMoreComments ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Load more comments"
+              accessibilityState={{ busy: loadingMore, disabled: loadingMore }}
+              testID="post-detail-load-more-comments"
+              style={styles.loadMore}
+              disabled={loadingMore}
+              onPress={() => loadMoreComments().catch(() => undefined)}
+            >
+              <Text style={styles.loadMoreText}>
+                {loadingMore ? "Loading comments" : `Load more comments (${Math.max(0, commentTotal - loadedCommentCount)} left)`}
+              </Text>
+            </Pressable>
+          ) : null
+        }
+        renderItem={({ item }) => (
+          <CommentThread
+            comment={item}
+            currentUserId={currentUserId}
+            expandedIds={expandedReplies}
+            handlers={{
+              onReply: handleReply,
+              onToggleReplies: (comment) => setExpandedReplies((current) => toggleSetValue(current, comment.id)),
+              onAuthorPress: handleCommentAuthorPress,
+              onMentionPress: handleMentionPress
+            }}
+          />
+        )}
       />
     </KeyboardAvoidingView>
-  );
-}
-
-function CommentRow({ comment }: { comment: PulseComment }) {
-  const author = comment.author || comment.user || {};
-  return (
-    <View style={styles.comment}>
-      <Text style={styles.commentAuthor}>{author.display_name || author.username || "PulseSoc"}</Text>
-      <ContentTranslation
-        contentType={comment.parent_comment_id ? "reply" : "comment"}
-        contentRef={comment.id || comment.comment_id}
-        text={comment.body}
-        textStyle={styles.commentBody}
-      />
-      <Text style={styles.commentMeta}>{formatShortTime(comment.created_at)}</Text>
-    </View>
   );
 }
 
@@ -291,25 +435,6 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: 10,
     textAlign: "center"
-  },
-  comment: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginBottom: 10,
-    padding: 12
-  },
-  commentAuthor: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "900"
-  },
-  commentBody: {
-    color: colors.text,
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: 5
   },
   commentButton: {
     alignItems: "center",
@@ -336,11 +461,6 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 14,
     padding: 12
-  },
-  commentMeta: {
-    color: colors.muted,
-    fontSize: 12,
-    marginTop: 7
   },
   content: {
     padding: 16,
@@ -378,10 +498,44 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     flex: 1
   },
+  loadMore: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 4,
+    paddingVertical: 12
+  },
+  loadMoreText: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "800"
+  },
   offline: {
     color: colors.warning,
     fontSize: 13,
     marginBottom: 10
+  },
+  replyBanner: {
+    alignItems: "center",
+    backgroundColor: colors.background,
+    borderRadius: 8,
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+    paddingHorizontal: 10,
+    paddingVertical: 8
+  },
+  replyBannerCancel: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  replyBannerText: {
+    color: colors.muted,
+    flexShrink: 1,
+    fontSize: 12,
+    fontWeight: "700"
   },
   sectionTitle: {
     color: colors.text,

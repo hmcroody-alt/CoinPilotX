@@ -14,17 +14,17 @@
     {
       "name": "Push jobs remain durable pending work",
       "ok": true,
-      "details": "[{'push_type': 'account_login', 'status': 'pending', 'attempts': 0, 'max_attempts': 5, 'trace_id': '375f45c1a73b'}, {'push_type': 'new_device', 'status': 'pending', 'attempts': 0, 'max_attempts': 5, 'trace_id': '6c58c9d79603'}]"
+      "details": "[{'push_type': 'account_login', 'status': 'pending', 'attempts': 0, 'max_attempts': 5, 'trace_id': 'efcc626beac3'}, {'push_type': 'new_device', 'status': 'pending', 'attempts': 0, 'max_attempts': 5, 'trace_id': 'd064f250dff2'}]"
     },
     {
       "name": "In-app delivery rows are written",
       "ok": true,
-      "details": "[{'channel': 'in_app', 'provider': 'pulse', 'status': 'created', 'error_message': None}, {'channel': 'push', 'provider': 'web_expo_push', 'status': 'queued', 'error_message': ''}, {'channel': 'in_app', 'provider': 'pulse', 'status': 'created', 'error_message': None}, {'channel': 'push', 'provider': 'web_expo_push', 'status': 'queued', 'error_message': ''}]"
+      "details": "[{'channel': 'in_app', 'provider': 'pulse', 'status': 'created', 'error_message': None}, {'channel': 'push', 'provider': 'web_expo_push', 'status': 'queued', 'error_message': ''}, {'channel': 'email', 'provider': 'brevo', 'status': 'queued', 'error_message': None}, {'channel': 'in_app', 'provider': 'pulse', 'status': 'created', 'error_message': None}, {'channel': 'push', 'provider': 'web_expo_push', 'status': 'queued', 'error_message': ''}, {'channel': 'email', 'provider': 'brevo', 'status': 'queued', 'error_message': None}]"
     },
     {
       "name": "Push delivery rows record queued state",
       "ok": true,
-      "details": "[{'channel': 'in_app', 'provider': 'pulse', 'status': 'created', 'error_message': None}, {'channel': 'push', 'provider': 'web_expo_push', 'status': 'queued', 'error_message': ''}, {'channel': 'in_app', 'provider': 'pulse', 'status': 'created', 'error_message': None}, {'channel': 'push', 'provider': 'web_expo_push', 'status': 'queued', 'error_message': ''}]"
+      "details": "[{'channel': 'in_app', 'provider': 'pulse', 'status': 'created', 'error_message': None}, {'channel': 'push', 'provider': 'web_expo_push', 'status': 'queued', 'error_message': ''}, {'channel': 'email', 'provider': 'brevo', 'status': 'queued', 'error_message': None}, {'channel': 'in_app', 'provider': 'pulse', 'status': 'created', 'error_message': None}, {'channel': 'push', 'provider': 'web_expo_push', 'status': 'queued', 'error_message': ''}, {'channel': 'email', 'provider': 'brevo', 'status': 'queued', 'error_message': None}]"
     },
     {
       "name": "No push_job_enqueue_failed trace is emitted",
@@ -50,6 +50,12 @@
         "error_message": ""
       },
       {
+        "channel": "email",
+        "provider": "brevo",
+        "status": "queued",
+        "error_message": null
+      },
+      {
         "channel": "in_app",
         "provider": "pulse",
         "status": "created",
@@ -60,6 +66,12 @@
         "provider": "web_expo_push",
         "status": "queued",
         "error_message": ""
+      },
+      {
+        "channel": "email",
+        "provider": "brevo",
+        "status": "queued",
+        "error_message": null
       }
     ],
     "jobs": [
@@ -68,19 +80,19 @@
         "status": "pending",
         "attempts": 0,
         "max_attempts": 5,
-        "trace_id": "375f45c1a73b"
+        "trace_id": "efcc626beac3"
       },
       {
         "push_type": "new_device",
         "status": "pending",
         "attempts": 0,
         "max_attempts": 5,
-        "trace_id": "6c58c9d79603"
+        "trace_id": "d064f250dff2"
       }
     ],
     "push_trace_records": [
-      "PUSH_TRACE stage=push_job_queued {\"job_id\": \"push_2f28eab9757a2494420028ac\", \"notification_id\": 1554, \"push_type\": \"account_login\", \"trace_id\": \"375f45c1a73b\", \"transactional\": true, \"user_id\": 9950781}",
-      "PUSH_TRACE stage=push_job_queued {\"job_id\": \"push_a872652349e576dd9849f1fe\", \"notification_id\": 1555, \"push_type\": \"new_device\", \"trace_id\": \"6c58c9d79603\", \"transactional\": true, \"user_id\": 9950781}"
+      "PUSH_TRACE stage=push_job_queued {\"job_id\": \"push_92ff8a9f22dc0cc74499ed80\", \"notification_id\": 1, \"push_type\": \"account_login\", \"trace_id\": \"efcc626beac3\", \"transactional\": true, \"user_id\": 9950781}",
+      "PUSH_TRACE stage=push_job_queued {\"job_id\": \"push_258548a7dff6916707832a3d\", \"notification_id\": 2, \"push_type\": \"new_device\", \"trace_id\": \"d064f250dff2\", \"transactional\": true, \"user_id\": 9950781}"
     ]
   }
 }

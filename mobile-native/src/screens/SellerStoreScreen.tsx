@@ -228,7 +228,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           <Metric label="Orders loaded" value={String(orders.length)} />
         </View>
         <View style={styles.actionRow}>
-          <Pressable style={styles.primaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
+          <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
             <Text style={styles.primaryText}>Marketplace</Text>
           </Pressable>
         </View>
@@ -254,7 +254,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           multiline
         />
         <View style={styles.actionRow}>
-          <Pressable style={styles.primaryButton} disabled={busy === "apply"} onPress={submitApplication}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === "apply" }} style={styles.primaryButton} disabled={busy === "apply"} onPress={submitApplication}>
             <Text style={styles.primaryText}>{busy === "apply" ? "Saving..." : "Save Seller Application"}</Text>
           </Pressable>
         </View>
@@ -264,10 +264,10 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         <Text style={styles.sectionTitle}>Listing management</Text>
         <Text style={styles.copy}>Product creation, safety review, media moderation, pricing, fulfillment, refunds, disputes, and checkout stay on existing PulseSoc marketplace systems.</Text>
         <View style={styles.actionRow}>
-          <Pressable style={styles.primaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: "Marketplace Media" })}>
+          <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: "Marketplace Media" })}>
             <Text style={styles.primaryText}>Capture Product Media</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("MarketplaceCreateGateway", { title: "Create Listing" })}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("MarketplaceCreateGateway", { title: "Create Listing" })}>
             <Text style={styles.secondaryText}>Create Listing</Text>
           </Pressable>
         </View>
@@ -282,7 +282,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         <Text style={styles.copy}>Edit seller-owned listing fields and control visibility through PulseSoc marketplace review. Public Marketplace visibility remains approval-gated.</Text>
         <View style={styles.inventoryList}>
           {listings.slice(0, 8).map((listing) => (
-            <Pressable
+            <Pressable accessibilityRole="button"
               key={`inventory-${listing.id}`}
               style={[styles.inventoryRow, editingListing?.id === listing.id && styles.inventoryRowActive]}
               onPress={() => startListingEdit(listing)}
@@ -325,29 +325,29 @@ export function SellerStoreScreen({ route, navigation }: Props) {
               keyboardType="numeric"
             />
             <View style={styles.actionRow}>
-              <Pressable style={styles.primaryButton} disabled={busy === `edit:${editingListing.id}`} onPress={saveListingEdit}>
+              <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === `edit:${editingListing.id}` }} style={styles.primaryButton} disabled={busy === `edit:${editingListing.id}`} onPress={saveListingEdit}>
                 <Text style={styles.primaryText}>{busy === `edit:${editingListing.id}` ? "Saving..." : "Save and Review"}</Text>
               </Pressable>
-              <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: "Marketplace Media" })}>
+              <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: "Marketplace Media" })}>
                 <Text style={styles.secondaryText}>Add Media</Text>
               </Pressable>
             </View>
             <View style={styles.actionRow}>
-              <Pressable
+              <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === `pause:${editingListing.id}` || statusKey(editingListing) === "paused" }}
                 style={styles.secondaryButton}
                 disabled={busy === `pause:${editingListing.id}` || statusKey(editingListing) === "paused"}
                 onPress={() => mutateListingStatus(editingListing, "pause")}
               >
                 <Text style={styles.secondaryText}>{busy === `pause:${editingListing.id}` ? "Pausing..." : "Pause"}</Text>
               </Pressable>
-              <Pressable
+              <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === `resume:${editingListing.id}` || statusKey(editingListing) === "live" }}
                 style={styles.secondaryButton}
                 disabled={busy === `resume:${editingListing.id}` || statusKey(editingListing) === "live"}
                 onPress={() => mutateListingStatus(editingListing, "resume")}
               >
                 <Text style={styles.secondaryText}>{busy === `resume:${editingListing.id}` ? "Resuming..." : "Resume Review"}</Text>
               </Pressable>
-              <Pressable
+              <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === `delete:${editingListing.id}` || statusKey(editingListing) === "removed" }}
                 style={styles.dangerButton}
                 disabled={busy === `delete:${editingListing.id}` || statusKey(editingListing) === "removed"}
                 onPress={() => mutateListingStatus(editingListing, "delete")}
@@ -395,7 +395,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         {!orders.length ? <Text style={styles.emptyText}>No seller orders loaded.</Text> : null}
         {DIGITAL_COMMERCE_ENABLED ? (
           <View style={styles.actionRow}>
-            <Pressable style={styles.primaryButton} disabled={busy === "payout"} onPress={startPayoutConnect}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === "payout" }} style={styles.primaryButton} disabled={busy === "payout"} onPress={startPayoutConnect}>
               <Text style={styles.primaryText}>{busy === "payout" ? "Checking..." : "Connect Payouts"}</Text>
             </Pressable>
           </View>
@@ -407,13 +407,13 @@ export function SellerStoreScreen({ route, navigation }: Props) {
       <Panel>
         <Text style={styles.sectionTitle}>Trust and eligibility</Text>
         <View style={styles.actionRow}>
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("VerificationCenter", { title: "Verification Center", track: "business" })}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("VerificationCenter", { title: "Verification Center", track: "business" })}>
             <Text style={styles.secondaryText}>Verification</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("SafetyHub", { title: "Safety Hub", section: "reports" })}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("SafetyHub", { title: "Safety Hub", section: "reports" })}>
             <Text style={styles.secondaryText}>Safety Hub</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("Premium")}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("Premium")}>
             <Text style={styles.secondaryText}>Premium</Text>
           </Pressable>
         </View>
@@ -472,7 +472,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 function ListingRow({ listing, onOpen }: { listing: MarketplaceListing; onOpen: () => void }) {
   const cover = listing.media?.[0] ? mediaDisplayUrl(listing.media[0]) : "";
   return (
-    <Pressable style={styles.listingRow} onPress={onOpen}>
+    <Pressable accessibilityRole="button" style={styles.listingRow} onPress={onOpen}>
       {cover ? <Image source={{ uri: cover }} style={styles.listingImage} /> : <View style={styles.listingImageFallback} />}
       <View style={styles.listingBody}>
         <Text style={styles.listingTitle} numberOfLines={1}>{listing.title || "Marketplace listing"}</Text>

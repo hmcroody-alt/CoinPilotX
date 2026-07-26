@@ -134,23 +134,23 @@ export function PremiumScreen({ navigation }: Props) {
         {DIGITAL_COMMERCE_ENABLED ? (
           <>
             <Text style={styles.muted}>Checkout and billing use existing PulseSoc backend/provider routes. Native never grants Premium access.</Text>
-            <Pressable style={styles.button} disabled={Boolean(busyAction)} onPress={() => runAction("checkout")}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyAction) }} style={styles.button} disabled={Boolean(busyAction)} onPress={() => runAction("checkout")}>
               <Text style={styles.buttonText}>{busyAction === "checkout" ? "Opening..." : status?.premium_active ? "Review Premium Options" : "Upgrade with PulseSoc Checkout"}</Text>
             </Pressable>
-            <Pressable style={styles.secondaryButton} disabled={Boolean(busyAction)} onPress={() => runAction("billing")}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyAction) }} style={styles.secondaryButton} disabled={Boolean(busyAction)} onPress={() => runAction("billing")}>
               <Text style={styles.secondaryText}>{busyAction === "billing" ? "Opening..." : "Manage Billing"}</Text>
             </Pressable>
-            <Pressable style={styles.secondaryButton} disabled={Boolean(busyAction)} onPress={() => runAction("web")}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyAction) }} style={styles.secondaryButton} disabled={Boolean(busyAction)} onPress={() => runAction("web")}>
               <Text style={styles.secondaryText}>{busyAction === "web" ? "Opening..." : "Open Premium Web Hub"}</Text>
             </Pressable>
           </>
         ) : (
           <Text style={styles.muted}>Your Premium and Founder access is confirmed by PulseSoc and shown above. Native never grants or sells Premium access.</Text>
         )}
-        <Pressable style={styles.secondaryButton} disabled={Boolean(busyAction)} onPress={() => navigation?.navigate("IntelligenceCenter")}>
+        <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyAction) }} style={styles.secondaryButton} disabled={Boolean(busyAction)} onPress={() => navigation?.navigate("IntelligenceCenter")}>
           <Text style={styles.secondaryText}>Open Intelligence</Text>
         </Pressable>
-        <Pressable style={styles.secondaryButton} disabled={Boolean(busyAction)} onPress={() => navigation?.navigate("VerificationCenter", { title: "Verification Center" })}>
+        <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyAction) }} style={styles.secondaryButton} disabled={Boolean(busyAction)} onPress={() => navigation?.navigate("VerificationCenter", { title: "Verification Center" })}>
           <Text style={styles.secondaryText}>Open Verification Center</Text>
         </Pressable>
       </Panel>
@@ -158,7 +158,7 @@ export function PremiumScreen({ navigation }: Props) {
       <Panel>
         <Text style={styles.title}>Profile hooks</Text>
         <Text style={styles.muted}>Premium badge and profile theme rendering reuse the existing Profile APIs. Theme selection remains enforced by the backend.</Text>
-        <Pressable style={styles.secondaryButton} onPress={() => navigation?.navigate("ProfileDetail", undefined)}>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation?.navigate("ProfileDetail", undefined)}>
           <Text style={styles.secondaryText}>Open Profile</Text>
         </Pressable>
       </Panel>
@@ -168,7 +168,7 @@ export function PremiumScreen({ navigation }: Props) {
 
 function RefreshControlShim({ refreshing, onRefresh }: { refreshing: boolean; onRefresh: () => void }) {
   return (
-    <Pressable style={styles.refreshButton} onPress={onRefresh}>
+    <Pressable accessibilityRole="button" style={styles.refreshButton} onPress={onRefresh}>
       <Text style={styles.refreshText}>{refreshing ? "Refreshing..." : "Refresh Premium status"}</Text>
     </Pressable>
   );

@@ -406,7 +406,11 @@ def _conversation_payload(row: dict, unread_count: int = 0) -> dict:
         "pinned": True,
         "muted": False,
         "unread_count": int(unread_count or 0),
-        "presence": {"status": "online", "active_now": True, "presence_visible": True},
+        # UNDX is a service, not a person. It reports the dedicated "assistant"
+        # marker instead of borrowing the human online state, so it can never be
+        # mistaken for -- or rendered through -- real user presence. Clients show
+        # this as "Always available", not as an online indicator.
+        "presence": {"status": "assistant", "assistant": True, "active_now": False},
         "last_message_at": row.get("last_message_at") or row.get("updated_at") or row.get("created_at"),
         "last_activity_at": row.get("last_message_at") or row.get("updated_at") or row.get("created_at"),
         "last_message_preview": "Message UNDX",

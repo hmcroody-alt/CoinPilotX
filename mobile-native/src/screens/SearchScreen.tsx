@@ -24,6 +24,7 @@ import {
   SEARCH_GROUPS
 } from "../api/search";
 import { profileNavigationParams, resolveProfileTarget } from "../api/profileTarget";
+import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { routeNotificationTarget } from "../navigation/notificationRouting";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -47,6 +48,9 @@ const DISCOVERY_TABS: Array<{ key: DiscoveryTab; label: string; groups: PulseSea
 ];
 
 export function SearchScreen({ route, navigation }: Props) {
+  // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
+  // reserves the matching clearance so the last row never sits under the dock.
+  const dock = useBottomNavSurface();
   const initialQuery = String(route?.params?.query || "");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [query, setQuery] = useState(initialQuery);
@@ -168,7 +172,8 @@ export function SearchScreen({ route, navigation }: Props) {
         <FlatList
           data={visibleResults}
           keyExtractor={(item, index) => `${item.type || "result"}-${item.id || item.url || index}`}
-          contentContainerStyle={styles.content}
+          {...dock.handlers}
+          contentContainerStyle={[styles.content, dock.contentPadding]}
           refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => runSearch(query, "refresh").catch(() => undefined)} />}
           ListHeaderComponent={
             loading && !visibleResults.length ? (

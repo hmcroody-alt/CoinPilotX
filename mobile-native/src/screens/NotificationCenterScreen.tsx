@@ -126,10 +126,10 @@ export function NotificationCenterScreen() {
           <Text style={styles.subtitle}>{unread ? `${unread} unread` : "All caught up"}</Text>
         </View>
         <View style={styles.headerActions}>
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("NotificationPreferences")}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("NotificationPreferences")}>
             <Text style={styles.secondaryText}>Prefs</Text>
           </Pressable>
-          <Pressable style={styles.button} onPress={markAllRead}>
+          <Pressable accessibilityRole="button" style={styles.button} onPress={markAllRead}>
             <Text style={styles.buttonText}>Read all</Text>
           </Pressable>
         </View>
@@ -167,7 +167,7 @@ function NotificationRow({
   onDelete: () => void;
 }) {
   return (
-    <Pressable style={({ pressed }) => [styles.card, !notification.read && styles.unreadCard, pressed && styles.pressed]} onPress={onOpen}>
+    <Pressable accessibilityRole="button" style={({ pressed }) => [styles.card, !notification.read && styles.unreadCard, pressed && styles.pressed]} onPress={onOpen}>
       <View style={styles.rowTop}>
         <Text style={styles.category}>{notification.category || notification.type || "PulseSoc"}</Text>
         <Text style={styles.time}>{formatShortTime(notification.created_at)}</Text>
@@ -175,13 +175,13 @@ function NotificationRow({
       <Text style={styles.cardTitle} numberOfLines={2}>{notification.title}</Text>
       <Text style={styles.body} numberOfLines={3}>{compactPreview(notification.body, "Open notification")}</Text>
       <View style={styles.actions}>
-        <Pressable style={styles.smallButton} onPress={onOpen}>
+        <Pressable accessibilityRole="button" style={styles.smallButton} onPress={onOpen}>
           <Text style={styles.smallButtonText}>Open</Text>
         </Pressable>
-        <Pressable style={styles.smallButton} onPress={onRead}>
+        <Pressable accessibilityRole="button" style={styles.smallButton} onPress={onRead}>
           <Text style={styles.smallButtonText}>{notification.read ? "Read" : "Mark read"}</Text>
         </Pressable>
-        <Pressable style={styles.deleteButton} onPress={onDelete}>
+        <Pressable accessibilityRole="button" style={styles.deleteButton} onPress={onDelete}>
           <Text style={styles.deleteText}>Delete</Text>
         </Pressable>
       </View>

@@ -664,7 +664,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
       {showAudience ? (
         <View testID="home-composer-audience-options" style={styles.audienceOptions}>
           {VISIBILITY.map((option) => (
-            <Pressable key={option} style={[styles.audienceOption, visibility === option && styles.audienceOptionActive]} onPress={() => selectVisibility(option)}>
+            <Pressable accessibilityRole="button" key={option} style={[styles.audienceOption, visibility === option && styles.audienceOptionActive]} onPress={() => selectVisibility(option)}>
               <Text style={[styles.audienceOptionText, visibility === option && styles.audienceOptionTextActive]}>{visibilityLabel(option)}</Text>
             </Pressable>
           ))}
@@ -672,7 +672,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
       ) : null}
       <View style={styles.modeRow}>
         {PRIMARY_MODES.map((item) => (
-          <Pressable
+          <Pressable accessibilityRole="button"
             key={item.key}
             testID={`home-composer-mode-${item.key}`}
             accessibilityLabel={`Composer mode ${item.label}`}
@@ -724,8 +724,8 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
           ))}
           {!musicLoading && !musicOptions.length ? <Text style={styles.musicMeta}>No approved tracks matched this media.</Text> : null}
           <View style={styles.musicFooter}>
-            {musicTrack ? <Pressable style={styles.musicUtility} onPress={() => { setMusicTrack(null); setNote("Music removed."); }}><Text style={styles.musicUtilityText}>Remove music</Text></Pressable> : null}
-            <Pressable style={styles.musicUtility} onPress={() => onOpenMusic(mode === "status" ? "status" : mode === "reel" ? "reel" : "post")}><Text style={styles.musicUtilityText}>Open full library</Text></Pressable>
+            {musicTrack ? <Pressable accessibilityRole="button" style={styles.musicUtility} onPress={() => { setMusicTrack(null); setNote("Music removed."); }}><Text style={styles.musicUtilityText}>Remove music</Text></Pressable> : null}
+            <Pressable accessibilityRole="button" style={styles.musicUtility} onPress={() => onOpenMusic(mode === "status" ? "status" : mode === "reel" ? "reel" : "post")}><Text style={styles.musicUtilityText}>Open full library</Text></Pressable>
           </View>
         </View>
       ) : null}
@@ -748,7 +748,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
       {draftRecovered ? (
         <View testID="home-composer-recovered-draft" style={styles.draftPanel}>
           <Text style={styles.draftText}>Recovered transmission draft.</Text>
-          <Pressable testID="home-composer-clear-draft" style={styles.draftButton} onPress={() => clearDraft().catch(() => undefined)}>
+          <Pressable accessibilityRole="button" testID="home-composer-clear-draft" style={styles.draftButton} onPress={() => clearDraft().catch(() => undefined)}>
             <Text style={styles.draftButtonText}>Clear Draft</Text>
           </Pressable>
         </View>
@@ -760,19 +760,19 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
         </View>
       ) : null}
       {lastFailedPublish ? (
-        <Pressable testID="home-composer-retry" style={styles.retryButton} disabled={publishing} onPress={() => retryLastPublish().catch(() => undefined)}>
+        <Pressable accessibilityRole="button" accessibilityState={{ disabled: publishing }} testID="home-composer-retry" style={styles.retryButton} disabled={publishing} onPress={() => retryLastPublish().catch(() => undefined)}>
           <Text style={styles.retryText}>{publishing ? "Retrying..." : "Retry Last Publish"}</Text>
         </Pressable>
       ) : null}
       {mode !== "post" ? (
         <View style={styles.routeRow}>
-          <Pressable style={styles.routeButton} onPress={() => openCameraFromComposer("photo").catch(() => undefined)}>
+          <Pressable accessibilityRole="button" style={styles.routeButton} onPress={() => openCameraFromComposer("photo").catch(() => undefined)}>
             <Text style={styles.routeText}>Camera Photo</Text>
           </Pressable>
-          <Pressable style={styles.routeButton} onPress={() => openCameraFromComposer("video").catch(() => undefined)}>
+          <Pressable accessibilityRole="button" style={styles.routeButton} onPress={() => openCameraFromComposer("video").catch(() => undefined)}>
             <Text style={styles.routeText}>Camera Video</Text>
           </Pressable>
-          <Pressable style={styles.routeButton} onPress={() => openCameraFromComposer("reel").catch(() => undefined)}>
+          <Pressable accessibilityRole="button" style={styles.routeButton} onPress={() => openCameraFromComposer("reel").catch(() => undefined)}>
             <Text style={styles.routeText}>Reel Camera</Text>
           </Pressable>
         </View>
