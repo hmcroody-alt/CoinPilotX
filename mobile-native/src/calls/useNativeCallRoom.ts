@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import { PulseCallJoin } from "../api/calls";
+import { reportPresenceActivity } from "../api/presenceSession";
 
 type NativeCallRoomState = {
   supported: boolean;
@@ -70,6 +71,9 @@ export function useNativeCallRoom() {
   const disconnect = useCallback(async (reason = "local_disconnect") => {
     const room = roomRef.current;
     roomRef.current = null;
+    // Restore normal presence the moment we leave the room, so the caller stops
+    // reading as "In audio/video call" without waiting for the activity TTL.
+    reportPresenceActivity("idle", "").catch(() => undefined);
     if (room?.disconnect) await room.disconnect().catch(() => undefined);
     if (audioSessionRef.current?.stopAudioSession) {
       await audioSessionRef.current.stopAudioSession().catch(() => undefined);
@@ -206,6 +210,10 @@ export function useNativeCallRoom() {
         speakerEnabled: true,
         error: ""
       }));
+      // Call presence is session-bound on the server: it lives as long as this
+      // device's presence session does and is cleared on disconnect, so a
+      // crashed call cannot strand the user as permanently "in a call".
+      reportPresenceActivity(options.video ? "in_video_call" : "in_audio_call", String(join.room_name || "")).catch(() => undefined);
       return true;
     } catch (error) {
       const message = readableError(error, "Native LiveKit call connection failed.");

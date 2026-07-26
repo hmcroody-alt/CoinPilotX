@@ -33,6 +33,11 @@ type Props = {
   title: string;
   messages: MessengerMessage[];
   connected?: boolean;
+  // Server-authoritative peer presence label, supplied by the screen that owns
+  // the live presence subscription. When present it is the truth for the
+  // activity line; the local `connected` flag only ever describes our own link
+  // and must never be used to claim the other person is online.
+  activityStatus?: string;
   assistantConversation?: boolean;
   onClose: () => void;
   onOpenSafety: (section: "reports" | "blocks") => void;
@@ -159,7 +164,7 @@ function createAssistantControlData(messageCount: number, connected: boolean): C
       members: 2,
       connection: connected ? "Connected" : "Reconnecting",
       security_label: "PulseSoc intelligence conversation",
-      activity_status: "Available",
+      activity_status: "Always available",
       muted: false,
       pinned: true
     },
@@ -182,7 +187,7 @@ function createAssistantControlData(messageCount: number, connected: boolean): C
   };
 }
 
-export function ConversationControlCenter({ visible, conversationId, title, messages, connected = true, assistantConversation = false, onClose, onOpenSafety, onStartCall }: Props) {
+export function ConversationControlCenter({ visible, conversationId, title, messages, connected = true, activityStatus = "", assistantConversation = false, onClose, onOpenSafety, onStartCall }: Props) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Section[]>(["conversation"]);
   const [notice, setNotice] = useState("");
@@ -241,10 +246,17 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
     members: Number(controlData?.stats?.members || conversation?.member_count || localParticipantCount || 0),
     connection: String(controlData?.stats?.connection || (connected ? "Connected" : "Reconnecting")),
     security_label: String(controlData?.stats?.security_label || "Protected channel"),
-    activity_status: String(controlData?.stats?.activity_status || (connected ? "Online" : "Reconnecting")),
+    // Only the server may say someone is online. This previously fell back to
+    // `connected ? "Online" : "Reconnecting"`, which reported *our own* socket
+    // health as the other person's presence -- so anyone with a working network
+    // saw every peer as online regardless of whether they were connected.
+    // `activityStatus` is the live label from the owning screen's presence
+    // subscription. It wins when present because it is fresher than the
+    // control-centre fetch, which is only made when the sheet is opened.
+    activity_status: String(activityStatus || controlData?.stats?.activity_status || ""),
     muted: Boolean(controlData?.stats?.muted || conversation?.muted),
     pinned: Boolean(controlData?.stats?.pinned || conversation?.pinned)
-  }), [connected, controlData?.stats, conversation?.member_count, conversation?.muted, conversation?.pinned, files.length, images.length, localMediaBytes, localParticipantCount, localUnread, media.length, messages.length, videos.length, voices.length]);
+  }), [activityStatus, connected, controlData?.stats, conversation?.member_count, conversation?.muted, conversation?.pinned, files.length, images.length, localMediaBytes, localParticipantCount, localUnread, media.length, messages.length, videos.length, voices.length]);
   const settings = controlData?.settings || {};
   const capabilities = controlData?.capabilities || conversation?.capabilities || {};
   const isGroup = Boolean(conversation?.is_group || ["group", "room", "community_channel"].includes(String(conversation?.conversation_type || "").toLowerCase()));
@@ -265,9 +277,9 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
   const sections = SECTION_META.map((section) => ({ ...section, rows: rows[section.key].filter((row) => !normalizedQuery || `${section.label} ${section.subtitle} ${row.label} ${row.detail || ""} ${row.value || ""}`.toLowerCase().includes(normalizedQuery)) }))
     .filter((section) => !normalizedQuery || section.rows.length > 0);
   const statusText = assistantConversation
-    ? "Available · PulseSoc Intelligence"
+    ? "Always available · PulseSoc Intelligence"
     : conversation?.conversation_type === "direct"
-    ? `${stats.activity_status} · Direct Conversation`
+    ? `${stats.activity_status || "Presence unavailable"} · Direct Conversation`
     : `${stats.members || "Unknown"} members · ${conversation?.conversation_type || "Conversation"}`;
 
   async function loadMembers() {

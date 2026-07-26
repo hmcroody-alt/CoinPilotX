@@ -16,6 +16,7 @@ import { AuthContext, AuthState, expiredState, fatalErrorState, restoreSession, 
 import { isQaSimulatorAuthEnabled, tryHandleQaSimulatorAuthUrl } from "./src/session/qaSimulatorAuth";
 import { colors } from "./src/theme/colors";
 import { registerPushDevice, syncPushDeviceRegistration } from "./src/api/push";
+import { startPresenceSession, stopPresenceSession } from "./src/api/presenceSession";
 import { registerSessionInvalidationHandler } from "./src/api/pulseApi";
 import { configurePerfTracing, perfNow, recordDuration, setPerfContext, startSpan } from "./src/core/perfTrace";
 import { PerfOverlay } from "./src/components/PerfOverlay";
@@ -90,6 +91,19 @@ export default function App() {
       if (state === "active") syncPushDeviceRegistration().catch(() => undefined);
     });
     return () => appState.remove();
+  }, [authState.status, authState.user?.user_id]);
+
+  // One presence heartbeat per signed-in app instance, started here rather than
+  // inside any single screen so this device counts as online everywhere in
+  // PulseSoc -- not only while Messenger happens to be mounted. The runner owns
+  // its own AppState subscription for foreground/background transitions; see
+  // src/api/presenceSession.ts for why app termination needs no handling at all.
+  useEffect(() => {
+    if (authState.status !== "signedIn") return;
+    startPresenceSession();
+    return () => {
+      stopPresenceSession().catch(() => undefined);
+    };
   }, [authState.status, authState.user?.user_id]);
 
   useEffect(() => {

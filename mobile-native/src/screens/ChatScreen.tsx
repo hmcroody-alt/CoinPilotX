@@ -42,6 +42,7 @@ import {
   loadCachedMessages,
   markConversationSeen,
   MessengerMessage,
+  MessengerPresence,
   PULSE_AI_CONVERSATION_ID,
   PULSE_AI_DISPLAY_NAME,
   reactToMessage,
@@ -75,6 +76,8 @@ import {
 } from "../core/voiceMessagePlayback";
 import { RootStackParamList } from "../navigation/types";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
+import { reportPresenceActivity } from "../api/presenceSession";
+import { useAuth } from "../session/auth";
 import {
   messageAccessibilityLabel,
   messageActionRules,
@@ -234,6 +237,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const conversationId = route.params.conversationId;
   const assistantConversation = conversationId === PULSE_AI_CONVERSATION_ID;
   const insets = useSafeAreaInsets();
+  const { authState } = useAuth();
+  const selfUserId = Number(authState.user?.user_id || 0);
   const [messages, setMessages] = useState<MessengerMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
@@ -243,6 +248,11 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [initialFetchComplete, setInitialFetchComplete] = useState(false);
   const [usingCachedMessages, setUsingCachedMessages] = useState(false);
   const [typing, setTyping] = useState("");
+  // Live peer presence, refreshed from every conversation fetch and sync.
+  // route.params.presence is only a snapshot taken at navigation time; relying
+  // on it would leave the header showing "Online" for as long as the thread
+  // stayed open, which is exactly the staleness this system exists to remove.
+  const [peerPresence, setPeerPresence] = useState<PeerPresence | null>(null);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [recordingStartedAt, setRecordingStartedAt] = useState<number>(0);
   const [recordingElapsed, setRecordingElapsed] = useState(0);
@@ -335,9 +345,14 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     : usingCachedMessages
       ? "Cached history"
       : "Live channel";
+  // Presence beats connection state, and live presence beats the navigation
+  // snapshot. When the server has told us nothing about the peer we show
+  // connection status instead of guessing.
+  const presenceSubtitle = peerPresenceSubtitle(peerPresence);
   const headerSubtitle = assistantConversation
-    ? typing || (error ? "Service reconnecting" : usingCachedMessages ? "Cached history" : "Available · PulseSoc Intelligence")
-    : typing || (isPresenceActive(route.params.presence) ? "Online · Direct" : headerStatus);
+    ? typing || (error ? "Service reconnecting" : usingCachedMessages ? "Cached history" : "Always available · PulseSoc Intelligence")
+    : typing || presenceSubtitle || headerStatus;
+  const peerIsOnline = Boolean(peerPresence?.online);
 
   const mergeMessages = useCallback(
     (current: MessengerMessage[], incoming: MessengerMessage[]) => mergeConversationMessages(current, incoming),
@@ -367,6 +382,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       await cacheMessages(conversationId, nextMessages);
       if (!assistantConversation) await markConversationSeen(conversationId).catch(() => undefined);
       setTyping(typingSummary(data.presence));
+      if (!assistantConversation) setPeerPresence(peerPresenceFrom(data.presence, selfUserId));
     } catch (loadError) {
       const cached = await loadCachedMessages(conversationId);
       if (cached.length) {
@@ -383,7 +399,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setRefreshing(false);
       setLoading(false);
     }
-  }, [assistantConversation, conversationId]);
+  }, [assistantConversation, conversationId, selfUserId]);
 
   const loadOlder = useCallback(async () => {
     if (assistantConversation) return;
@@ -448,13 +464,17 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         await markConversationSeen(conversationId).catch(() => undefined);
       }
       setTyping(typingSummary(data.presence));
+      setPeerPresence(peerPresenceFrom(data.presence, selfUserId));
       setUsingCachedMessages(false);
       setError("");
     } catch {
       setTyping("");
+      // A failed sync means we no longer know whether the peer is online, so we
+      // drop the claim rather than keep displaying a stale one.
+      setPeerPresence(null);
       if (messages.length) setStatusMessage("Realtime reconnecting. Message history remains visible.");
     }
-  }, [assistantConversation, conversationId, mergeMessages, messages.length, newestMessageId]);
+  }, [assistantConversation, conversationId, mergeMessages, messages.length, newestMessageId, selfUserId]);
 
   const notifyTyping = useCallback((value: string) => {
     setDraft(value);
@@ -463,10 +483,15 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     if (now - lastTypingAt.current > 1800) {
       lastTypingAt.current = now;
       sendTyping(conversationId, true).catch(() => undefined);
+      // Mirror typing onto the unified presence session so subsystems outside
+      // Messenger see the same activity. The server ages this out on its own
+      // TTL, so a crash mid-keystroke cannot leave the indicator stuck on.
+      reportPresenceActivity("typing", String(conversationId)).catch(() => undefined);
     }
     if (typingTimer.current) clearTimeout(typingTimer.current);
     typingTimer.current = setTimeout(() => {
       sendTyping(conversationId, false).catch(() => undefined);
+      reportPresenceActivity("idle", "").catch(() => undefined);
     }, 1200);
   }, [assistantConversation, conversationId]);
 
@@ -691,6 +716,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     if (uploading) return;
     setUploading(true);
     setStatusMessage(input.voice ? "Sending voice message…" : "Uploading attachment…");
+    reportPresenceActivity(input.voice ? "sending_files" : "uploading_media", String(conversationId)).catch(() => undefined);
     try {
       const uploaded = await uploadMessengerMedia({
         conversationId,
@@ -729,6 +755,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       Alert.alert(input.voice ? "Voice message failed" : "Attachment failed", message);
     } finally {
       setUploading(false);
+      reportPresenceActivity("idle", "").catch(() => undefined);
     }
   }, [assistantConversation, conversationId, sendPayload, uploading]);
 
@@ -814,6 +841,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       if (recording) {
         const activeRecording = recording;
         setRecording(null);
+        reportPresenceActivity("idle", "").catch(() => undefined);
         const stopped = await activeRecording.stopAndUnloadAsync();
         await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => undefined);
         const uri = activeRecording.getURI();
@@ -854,8 +882,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setRecording(started.recording);
       setRecordingStartedAt(Date.now());
       setStatusMessage("Recording voice message… tap the microphone again to send.");
+      reportPresenceActivity("recording_voice", String(conversationId)).catch(() => undefined);
     } catch (recordingError) {
       setRecording(null);
+      reportPresenceActivity("idle", "").catch(() => undefined);
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => undefined);
       const message = recordingError instanceof Error ? recordingError.message : "Voice recording could not start.";
       setStatusMessage(message);
@@ -867,6 +897,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     const activeRecording = recording;
     if (!activeRecording) return;
     setRecording(null);
+    reportPresenceActivity("idle", "").catch(() => undefined);
     try {
       await activeRecording.stopAndUnloadAsync();
       const uri = activeRecording.getURI();
@@ -924,7 +955,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 10) }]}>
         <View style={styles.threadHeader}>
           <Pressable accessibilityRole="button" accessibilityLabel="Back to conversations" style={styles.backButton} onPress={() => navigation.goBack()}><Text style={styles.backButtonText}>‹</Text></Pressable>
-          <PulseCommandAvatar label={assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Chat"} imageUrl={assistantConversation ? undefined : route.params.avatarUrl} active={assistantConversation || isPresenceActive(route.params.presence)} size={48} tone={assistantConversation ? "intelligence" : "default"} />
+          <PulseCommandAvatar label={assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Chat"} imageUrl={assistantConversation ? undefined : route.params.avatarUrl} active={assistantConversation || peerIsOnline} size={48} tone={assistantConversation ? "intelligence" : "default"} />
           <View style={styles.threadIdentity}>
             <Text style={styles.threadTitle} numberOfLines={1}>{threadTitle}</Text>
             <View style={styles.threadStatusRow}><LiveStatusDot warning={Boolean(error)} /><Text style={styles.threadSubtitle} numberOfLines={1}>{headerSubtitle}</Text></View>
@@ -1106,6 +1137,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         title={assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Conversation"}
         messages={messages}
         connected={!error}
+        activityStatus={peerPresenceControlLabel(peerPresence)}
         assistantConversation={assistantConversation}
         onClose={() => setControlCenterOpen(false)}
         onStartCall={!assistantConversation ? (callType) => {
@@ -1348,7 +1380,12 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
   if (type === "image" || type === "gif") {
     return (
       <>
-        <Pressable onPress={() => setViewerOpen(true)}>
+        <Pressable
+          accessibilityRole="imagebutton"
+          accessibilityLabel={`${messageAccessibilityLabel(message)}. ${type === "gif" ? "GIF" : "Image"} attachment.`}
+          accessibilityHint="Opens the full-screen viewer"
+          onPress={() => setViewerOpen(true)}
+        >
           <Image source={{ uri: thumbnailUrl || mediaUrl }} style={styles.image} resizeMode="cover" />
         </Pressable>
         <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title="Messenger media" onClose={() => setViewerOpen(false)} />
@@ -1470,8 +1507,93 @@ function mediaPreviewLabel(type: string, hasMedia: boolean) {
   return hasMedia ? "Attachment" : "Message";
 }
 
+type PeerPresence = {
+  status: string;
+  activity: string;
+  activity_context: string;
+  last_seen_text: string;
+  online: boolean;
+};
+
+/**
+ * True only when the server has affirmatively said a human is online.
+ *
+ * "active", "available" and "typing" used to count here, which meant a typing
+ * event or a loosely-named field could paint a green ring on someone who was
+ * not connected at all. Only the one canonical token the presence service
+ * emits is accepted now.
+ */
 function isPresenceActive(value?: string) {
-  return ["online", "active", "available", "typing"].includes(String(value || "").toLowerCase());
+  return String(value || "").toLowerCase() === "online";
+}
+
+function isAssistantPresenceValue(value?: string) {
+  return String(value || "").toLowerCase() === "assistant";
+}
+
+/**
+ * Pull this thread's peer out of the presence array the server returns with
+ * every conversation fetch and sync.
+ *
+ * Returning null when the peer is absent is load-bearing: an absent entry means
+ * we know nothing, and the header must then fall back to connection state
+ * rather than to a remembered "Online".
+ */
+function peerPresenceFrom(presence: MessengerPresence | undefined, selfUserId: number): PeerPresence | null {
+  const users = Array.isArray(presence?.users) ? presence?.users || [] : [];
+  const peer = users.find((item) => Number(item?.user_id || 0) !== selfUserId && Number(item?.user_id || 0) !== 0);
+  if (!peer) return null;
+  const record = peer as Record<string, unknown>;
+  const status = String(record.status || "").toLowerCase();
+  return {
+    status,
+    activity: String(record.activity || "idle").toLowerCase(),
+    activity_context: String(record.activity_context || ""),
+    last_seen_text: String(record.last_seen_text || ""),
+    online: status === "online"
+  };
+}
+
+const PRESENCE_ACTIVITY_LABELS: Record<string, string> = {
+  typing: "Typing…",
+  recording_voice: "Recording voice…",
+  uploading_media: "Uploading media…",
+  sending_files: "Sending files…",
+  in_audio_call: "In audio call",
+  in_video_call: "In video call",
+  live_hosting: "Hosting Live",
+  live_guest: "Guest in Live",
+  live_watching: "Watching Live"
+};
+
+/**
+ * Render the peer's presence as a single header line.
+ *
+ * An offline peer shows their real last-seen sentence when the server supplied
+ * one and a plain "Offline" when it did not. It never shows a fabricated
+ * timestamp, and it never silently upgrades unknown state to "Online".
+ */
+function peerPresenceSubtitle(presence: PeerPresence | null) {
+  if (!presence) return "";
+  if (presence.online) {
+    const activity = PRESENCE_ACTIVITY_LABELS[presence.activity];
+    return activity ? `${activity} · Direct` : "Online · Direct";
+  }
+  return presence.last_seen_text || "Offline";
+}
+
+/**
+ * Control-centre presence label. Same server-authoritative source as the header
+ * subtitle, minus the "· Direct" decoration the control sheet renders itself.
+ * Returns "" when we have no presence record so the sheet shows an honest
+ * "Presence unavailable" rather than assuming the peer is online.
+ */
+function peerPresenceControlLabel(presence: PeerPresence | null) {
+  if (!presence) return "";
+  if (presence.online) {
+    return PRESENCE_ACTIVITY_LABELS[presence.activity] || "Online";
+  }
+  return presence.last_seen_text || "Offline";
 }
 
 function absoluteMediaUrl(value?: string) {
