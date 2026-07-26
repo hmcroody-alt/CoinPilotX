@@ -18,7 +18,14 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { BOTTOM_NAV_POLICY, BottomNavScreenPolicy } from "../bottomNavPolicy";
-import { BOTTOM_NAV_CONTENT_CLEARANCE, BOTTOM_NAV_DOCK_PADDING_TOP, BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT } from "../bottomNavMetrics";
+import {
+  BOTTOM_NAV_CONTENT_CLEARANCE,
+  BOTTOM_NAV_CREATE_MARGIN_TOP,
+  BOTTOM_NAV_CREATE_MIN_HEIGHT,
+  BOTTOM_NAV_CREATE_OVERHANG,
+  BOTTOM_NAV_DOCK_PADDING_TOP,
+  BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT
+} from "../bottomNavMetrics";
 
 const SCREENS = join(__dirname, "..", "..", "screens");
 
@@ -115,5 +122,43 @@ describe("dock clearance stays in step with the dock", () => {
     // If the panel's height goes back to a literal, the clearance above stops
     // tracking it and the two are free to drift apart again.
     expect(source).not.toMatch(/minHeight:\s*106/);
+    // Same argument for the Create button. These were literals, and because the
+    // button is the only thing that sticks out above the pill, a literal here
+    // is a number the clearance cannot see.
+    expect(source).toContain("BOTTOM_NAV_CREATE_MARGIN_TOP");
+    expect(source).toContain("BOTTOM_NAV_CREATE_MIN_HEIGHT");
+    expect(source).not.toMatch(/marginTop:\s*-32/);
+    expect(source).not.toMatch(/minHeight:\s*98/);
+  });
+
+  /**
+   * The Create button is pulled up out of the pill, so the dock's tallest point
+   * is not the pill's top edge. Clearing the pill is therefore not the same as
+   * clearing the dock, and a surface that reserves only the pill's height ends
+   * its content underneath the one control that overhangs it.
+   */
+  it("reserves the Create button's overhang above the pill, not just the pill", () => {
+    expect(BOTTOM_NAV_CREATE_OVERHANG).toBe(2);
+    expect(BOTTOM_NAV_CONTENT_CLEARANCE).toBeGreaterThanOrEqual(
+      BOTTOM_NAV_DOCK_PADDING_TOP + BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT + BOTTOM_NAV_CREATE_OVERHANG
+    );
+  });
+
+  /**
+   * Independent re-derivation of the overhang, spelled out step by step rather
+   * than reusing the module's expression — a test that restates the
+   * implementation only proves the file parses. Yoga centres a child's *margin*
+   * box on the cross axis, and the negative top margin then lifts the border box
+   * further still; both effects have to be counted or the answer is wrong in a
+   * direction that hides content.
+   */
+  it("agrees with the panel's own centring maths", () => {
+    const panelContentHeight = BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT - 2 * 10;
+    const createMarginBox = BOTTOM_NAV_CREATE_MIN_HEIGHT + BOTTOM_NAV_CREATE_MARGIN_TOP;
+    const marginBoxTop = 10 + (panelContentHeight - createMarginBox) / 2;
+    const borderBoxTop = marginBoxTop + BOTTOM_NAV_CREATE_MARGIN_TOP;
+    // Negative means "above the panel's own top edge".
+    expect(borderBoxTop).toBe(-12);
+    expect(Math.max(0, -borderBoxTop - BOTTOM_NAV_DOCK_PADDING_TOP)).toBe(BOTTOM_NAV_CREATE_OVERHANG);
   });
 });

@@ -25,6 +25,7 @@ const SRC = join(__dirname, "..");
  */
 const GUARDED_FILES = [
   "screens/MarketplaceScreen.tsx",
+  "screens/SellerApplicationScreen.tsx",
   "screens/SellerStoreScreen.tsx",
   "screens/BuyerOrdersScreen.tsx",
   "screens/CoursesLearningScreen.tsx",
