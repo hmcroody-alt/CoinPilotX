@@ -46601,6 +46601,8 @@ def pulse_emit_marketplace_inventory_event(
         return
     listing_id = int(listing_id or 0)
     event_type = str(event_type or "seller_inventory_changed")[:80]
+    actor_id = int(actor_user_id or seller_user_id or 0)
+    now = datetime.utcnow().isoformat(timespec="seconds")
     title_text = str(title or "Marketplace listing").strip()[:160]
     entity_type = "marketplace_listing" if listing_id else "marketplace_seller"
     entity_id = str(listing_id or seller_user_id)
@@ -46616,6 +46618,12 @@ def pulse_emit_marketplace_inventory_event(
     }:
         invalidates.append("orders")
     metadata = {
+        "event_type": event_type,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "actor_id": actor_id,
+        "timestamp": now,
+        "sync_cursor_key": f"{event_type}:{entity_type}:{entity_id}:{now}",
         "domain": "marketplace",
         "category": "seller_inventory",
         "listing_id": listing_id,
@@ -46653,7 +46661,7 @@ def pulse_emit_marketplace_inventory_event(
         note_titles.get(event_type, "Seller inventory updated"),
         note_bodies.get(event_type, "Your marketplace seller inventory changed."),
         target_url,
-        actor_user_id=actor_user_id or seller_user_id,
+        actor_user_id=actor_id,
         entity_type=entity_type,
         entity_id=entity_id,
         metadata=metadata,
