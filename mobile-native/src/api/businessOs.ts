@@ -161,8 +161,7 @@ export const BUSINESS_OS_SECTIONS: BusinessOsSection[] = [
     label: "Payments",
     blurb: "Payouts, ad wallet and billing.",
     icon: "card-outline",
-    route: "SellerStore",
-    params: { mode: "payouts" },
+    route: "BusinessOsPayments",
     backed: true
   },
   {

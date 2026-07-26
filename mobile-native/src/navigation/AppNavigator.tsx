@@ -14,6 +14,7 @@ import { ActivityInboxScreen } from "../screens/ActivityInboxScreen";
 import { AlertManagementScreen } from "../screens/AlertManagementScreen";
 import { BusinessOsAdvertisingScreen } from "../screens/BusinessOsAdvertisingScreen";
 import { BusinessOsInsightsScreen } from "../screens/BusinessOsInsightsScreen";
+import { BusinessOsPaymentsScreen } from "../screens/BusinessOsPaymentsScreen";
 import { BusinessOsScreen } from "../screens/BusinessOsScreen";
 import { BuyerOrdersScreen } from "../screens/BuyerOrdersScreen";
 import { CameraStudioScreen } from "../screens/CameraStudioScreen";
@@ -278,6 +279,7 @@ export function AppNavigator() {
       <Stack.Screen name="BusinessOs" component={BusinessOsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOs") })} />
       <Stack.Screen name="BusinessOsAdvertising" component={BusinessOsAdvertisingScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsAdvertising") })} />
       <Stack.Screen name="BusinessOsInsights" component={BusinessOsInsightsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsInsights") })} />
+      <Stack.Screen name="BusinessOsPayments" component={BusinessOsPaymentsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsPayments") })} />
       <Stack.Screen name="SellerStore" component={SellerStoreScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.sellerStore") })} />
       <Stack.Screen name="BuyerOrders" component={BuyerOrdersScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.purchaseHistory") })} />
       <Stack.Screen name="BuyerOrderDetail" component={BuyerOrdersScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.orderDetail") })} />

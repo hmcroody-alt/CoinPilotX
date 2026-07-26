@@ -83,6 +83,7 @@ export type RootStackParamList = {
   BusinessOs: { title?: string } | undefined;
   BusinessOsAdvertising: { title?: string; accountId?: number } | undefined;
   BusinessOsInsights: { title?: string } | undefined;
+  BusinessOsPayments: { title?: string; accountId?: number } | undefined;
   SellerStore: { title?: string; mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts" | "orders"; sellerId?: string } | undefined;
   BuyerOrders: { orderId?: number; source?: string; title?: string } | undefined;
   BuyerOrderDetail: { orderId: number; source?: string; title?: string };
