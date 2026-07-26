@@ -10,6 +10,7 @@ import { getPulseRadioState, playNextTrack, PulseRadioState, subscribePulseRadio
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { useBottomNavVisibility } from "./BottomNavVisibility";
+import { BOTTOM_NAV_DOCK_PADDING_TOP, BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT } from "./bottomNavMetrics";
 import { resolveBottomNavPolicy } from "./bottomNavPolicy";
 import { triggerHomeReselect } from "./homeReselect";
 import { triggerReelsReselect } from "./reelsReselect";
@@ -492,7 +493,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 4,
-    minHeight: 106,
+    // Shared with the clearance every scrollable surface reserves — see
+    // `bottomNavMetrics.ts`. Changing this here changes that there.
+    minHeight: BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT,
     padding: 10,
     shadowColor: colors.accent,
     shadowOpacity: 0.16,
@@ -506,7 +509,7 @@ const styles = StyleSheet.create({
     elevation: 40,
     left: 0,
     paddingHorizontal: logiNexus.spacing.md,
-    paddingTop: 10,
+    paddingTop: BOTTOM_NAV_DOCK_PADDING_TOP,
     position: "absolute",
     right: 0,
     zIndex: 40

@@ -177,6 +177,29 @@ export type RootStackParamList = {
   NotificationCenter: { notificationId?: number } | undefined;
   NotificationPreferences: undefined;
   RegionTime: undefined;
+
+  /**
+   * Settings platform. Each of these is a first-class native screen — there is
+   * no WebView fallback anywhere in this group. `params.highlight` optionally
+   * carries a preference key so a deep link or search result can scroll to and
+   * flash the specific row the user was looking for.
+   */
+  NotificationSettings: { highlight?: string } | undefined;
+  AppearanceSettings: { highlight?: string } | undefined;
+  AccessibilitySettings: { highlight?: string } | undefined;
+  LanguageSettings: { highlight?: string } | undefined;
+  StorageSettings: { highlight?: string } | undefined;
+  PermissionsSettings: { highlight?: string } | undefined;
+  PrivacySettings: { highlight?: string } | undefined;
+  SecuritySettings: { highlight?: string } | undefined;
+  SessionsDevices: { highlight?: string } | undefined;
+  BlockedUsers: undefined;
+  MutedUsers: undefined;
+  DataPrivacySettings: { highlight?: string } | undefined;
+  HelpSettings: undefined;
+  AboutSettings: undefined;
+  LegalSettings: { document?: "terms" | "privacy" | "guidelines" | "cookies" | "licenses" } | undefined;
+  DeveloperSettings: undefined;
   /**
    * Full-screen True-to-Publish preview. `token` keys into the in-memory
    * preview handoff store (draft + live publish callback); params are kept
