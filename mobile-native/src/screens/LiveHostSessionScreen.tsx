@@ -25,6 +25,7 @@ import {
   liveWebUrl,
   listGuestManagement,
   listLiveChat,
+  moderateLiveChat,
   muteGuest,
   reactToLive,
   removeGuest,
@@ -42,7 +43,7 @@ import { colors } from "../theme/colors";
 import { useAuth } from "../session/auth";
 import { GlassCircleButton, GlassPill, LiveBottomSheet, ToolTile } from "../live/liveHostUi";
 import { LiveReactionLayer, type ReactionLayerHandle } from "../live/LiveReactionLayer";
-import { LiveChatComposer, LiveChatMessageRow, LiveChatStream } from "../live/LiveChatOverlay";
+import { LiveChatComposer, LiveChatMessageRow, LiveChatStream, type LiveChatModerationAction } from "../live/LiveChatOverlay";
 
 type NativeVideoViewProps = {
   videoTrack?: any;
@@ -73,7 +74,6 @@ const COMING_SOON: Record<string, string> = {
   watch_party: "Watch Party co-viewing is coming to native soon.",
   games: "Live Games launch inside the broadcast in a later build.",
   filters: "Camera filters & effects arrive in a later build.",
-  moderation: "The full moderation console is coming soon.",
   replay: "Replays are captured server-side and will surface here soon."
 };
 
@@ -104,6 +104,7 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
   const [ending, setEnding] = useState(false);
   const [busyRequestId, setBusyRequestId] = useState(0);
   const [busyGuestId, setBusyGuestId] = useState(0);
+  const [moderatingId, setModeratingId] = useState(0);
   const [sheet, setSheet] = useState<SheetKey>(null);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("spotlight");
   const [trayExpanded, setTrayExpanded] = useState(true);
@@ -402,6 +403,45 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
   const flagComingSoon = useCallback((key: keyof typeof COMING_SOON) => {
     setToolNote(COMING_SOON[key]);
   }, []);
+
+  // Host-side per-comment moderation. Pin/unpin/remove are host-authoritative and
+  // enforced again server-side; the local list is updated optimistically so the
+  // console reflects the action immediately, then reconciled by the next poll.
+  const moderateComment = useCallback(
+    async (message: PulseLiveChatMessage, action: LiveChatModerationAction) => {
+      if (moderatingId) return;
+      setModeratingId(message.id);
+      const previous = messages;
+      setMessages((current) => {
+        if (action === "delete") return current.filter((item) => item.id !== message.id);
+        if (action === "pin" || action === "unpin") {
+          const pinned = action === "pin";
+          return current.map((item) =>
+            item.id === message.id ? { ...item, pinned } : pinned ? { ...item, pinned: false } : item
+          );
+        }
+        return current;
+      });
+      try {
+        await moderateLiveChat(liveId, message.id, action);
+        setToolNote(
+          action === "delete"
+            ? "Comment removed."
+            : action === "pin"
+              ? "Comment pinned."
+              : action === "unpin"
+                ? "Comment unpinned."
+                : "Comment reported for review."
+        );
+      } catch (error) {
+        setMessages(previous);
+        setToolNote(error instanceof Error && error.message ? error.message : "Moderation action didn't go through.");
+      } finally {
+        setModeratingId(0);
+      }
+    },
+    [moderatingId, messages, liveId]
+  );
 
   const guests = useMemo(() => room.participants.filter((participant) => !participant.isLocal), [room.participants]);
   const localParticipant = useMemo(() => room.participants.find((participant) => participant.isLocal) || null, [room.participants]);
@@ -750,7 +790,13 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
         {messages.length === 0 ? (
           <Text style={styles.sheetEmpty}>No comments yet. Say hello to your viewers.</Text>
         ) : (
-          messages.map((message) => <LiveChatMessageRow key={message.id} message={message} />)
+          messages.map((message) => (
+            <LiveChatMessageRow
+              key={message.id}
+              message={message}
+              moderation={{ canModerate: true, onModerate: moderateComment, busyMessageId: moderatingId || null }}
+            />
+          ))
         )}
         <View style={styles.sheetComposer}>
           <LiveChatComposer
@@ -816,7 +862,7 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
           <ToolTile icon="tv" label="Watch party" onPress={() => flagComingSoon("watch_party")} />
           <ToolTile icon="game-controller" label="Games" onPress={() => flagComingSoon("games")} />
           <ToolTile icon="sparkles" label="Filters" tone="intelligence" onPress={() => flagComingSoon("filters")} />
-          <ToolTile icon="shield-checkmark" label="Moderation" onPress={() => flagComingSoon("moderation")} />
+          <ToolTile icon="shield-checkmark" label="Moderation" onPress={() => openSheet("comments")} />
           <ToolTile icon="film" label="Replay" onPress={() => flagComingSoon("replay")} />
         </View>
       </LiveBottomSheet>

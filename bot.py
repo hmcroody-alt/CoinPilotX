@@ -44430,6 +44430,80 @@ def api_pulse_live_chat(live_id):
     return jsonify({"ok": True, "message": "Chat sent.", "message_id": message_id, "moderation_status": moderation_status})
 
 
+@webhook_app.route("/api/pulse/live/<int:live_id>/chat/<int:message_id>/<action>", methods=["POST"])
+def api_pulse_live_chat_moderate(live_id, message_id, action):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    action = clean_html(action or "")[:24].lower()
+    if action not in {"delete", "remove", "pin", "unpin", "report"}:
+        return api_error("Invalid moderation action.", 400)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+        live = dict(cur.fetchone() or {})
+        if not live:
+            conn.close()
+            return api_error("Live stream not found.", 404)
+        cur.execute("SELECT * FROM pulse_live_chat WHERE id=? AND live_id=? LIMIT 1", (message_id, live_id))
+        message = dict(cur.fetchone() or {})
+        if not message:
+            conn.close()
+            return api_error("Chat message not found.", 404)
+        is_host = pulse_live_is_host(live, user) or bool(admin_current_user())
+        target_user_id = int(message.get("user_id") or 0)
+        # Host-only controls: delete/remove, pin, unpin. Report is available to any viewer.
+        if action in {"delete", "remove", "pin", "unpin"} and not is_host:
+            conn.close()
+            return api_error("Only the host can moderate live chat.", 403)
+        if action in {"delete", "remove"}:
+            cur.execute(
+                "UPDATE pulse_live_chat SET deleted_at=?, moderation_status='removed' WHERE id=?",
+                (now, message_id),
+            )
+            pulse_live_audit(cur, live_id, user["user_id"], "chat_removed", target_user_id=target_user_id, metadata={"message_id": message_id})
+            conn.commit(); conn.close()
+            try:
+                pulse_emit_event("live_chat_removed", {"live_id": live_id, "message_id": message_id, "target_user_id": target_user_id}, user["user_id"], None)
+            except Exception:
+                logging.exception("PULSE_LIVE_CHAT_REMOVE_EMIT_FAILED live_id=%s message_id=%s", live_id, message_id)
+            return jsonify({"ok": True, "status": "removed", "message_id": message_id})
+        if action in {"pin", "unpin"}:
+            pinned = 1 if action == "pin" else 0
+            if pinned:
+                # Keep a single pinned comment at a time for a clean host overlay.
+                cur.execute("UPDATE pulse_live_chat SET pinned=0 WHERE live_id=? AND pinned=1", (live_id,))
+            cur.execute("UPDATE pulse_live_chat SET pinned=? WHERE id=?", (pinned, message_id))
+            pulse_live_audit(cur, live_id, user["user_id"], f"chat_{action}", target_user_id=target_user_id, metadata={"message_id": message_id})
+            conn.commit(); conn.close()
+            try:
+                pulse_emit_event("live_chat_pinned", {"live_id": live_id, "message_id": message_id, "pinned": bool(pinned)}, user["user_id"], None)
+            except Exception:
+                logging.exception("PULSE_LIVE_CHAT_PIN_EMIT_FAILED live_id=%s message_id=%s", live_id, message_id)
+            return jsonify({"ok": True, "status": "pinned" if pinned else "unpinned", "message_id": message_id, "pinned": bool(pinned)})
+        # report: flag for review without deleting; only escalate an approved message.
+        if str(message.get("moderation_status") or "approved") == "approved":
+            cur.execute("UPDATE pulse_live_chat SET moderation_status='review' WHERE id=?", (message_id,))
+        payload = request.get_json(silent=True) or {}
+        reason = clean_html(payload.get("reason") or "Needs review")[:200]
+        pulse_live_audit(cur, live_id, user["user_id"], "chat_reported", target_user_id=target_user_id, metadata={"message_id": message_id, "reason": reason})
+        conn.commit(); conn.close()
+        try:
+            pulse_emit_event("live_chat_reported", {"live_id": live_id, "message_id": message_id, "target_user_id": target_user_id, "reason": reason}, user["user_id"], None)
+        except Exception:
+            logging.exception("PULSE_LIVE_CHAT_REPORT_EMIT_FAILED live_id=%s message_id=%s", live_id, message_id)
+        return jsonify({"ok": True, "status": "reported", "message_id": message_id})
+    except Exception as exc:
+        logging.exception("PULSE_LIVE_CHAT_MODERATE_FAILED live_id=%s message_id=%s action=%s user_id=%s error=%s", live_id, message_id, action, user.get("user_id"), exc)
+        try:
+            conn.rollback(); conn.close()
+        except Exception:
+            pass
+        return api_error("Moderation action could not be completed.", 500)
+
+
 @webhook_app.route("/api/pulse/live/<int:live_id>/state", methods=["GET"])
 def api_pulse_live_state(live_id):
     init_db()

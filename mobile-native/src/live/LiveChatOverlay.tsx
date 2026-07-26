@@ -35,12 +35,23 @@ function avatarTone(name: string): string {
   return palette[hash];
 }
 
+export type LiveChatModerationAction = "pin" | "unpin" | "delete" | "report";
+
+export type LiveChatModeration = {
+  /** Host-only controls (pin/unpin/delete). Report stays available to everyone. */
+  canModerate?: boolean;
+  onModerate: (message: PulseLiveChatMessage, action: LiveChatModerationAction) => void;
+  busyMessageId?: number | null;
+};
+
 export function LiveChatMessageRow({
   message,
-  compact = false
+  compact = false,
+  moderation
 }: {
   message: PulseLiveChatMessage;
   compact?: boolean;
+  moderation?: LiveChatModeration;
 }) {
   const name = message.display_name || "Viewer";
   const isPinned = Boolean(message.pinned);
@@ -58,6 +69,10 @@ export function LiveChatMessageRow({
       </View>
     );
   }
+
+  const canModerate = Boolean(moderation?.canModerate);
+  const showModerationBar = Boolean(moderation) && !compact;
+  const busy = Boolean(moderation && moderation.busyMessageId === message.id);
 
   return (
     <View style={[styles.row, isPinned && styles.rowPinned]}>
@@ -79,6 +94,47 @@ export function LiveChatMessageRow({
         <Text style={[styles.rowText, compact && styles.rowTextCompact]} numberOfLines={compact ? 2 : 6}>
           {message.body}
         </Text>
+        {showModerationBar ? (
+          <View style={styles.moderationBar}>
+            {canModerate ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={isPinned ? "Unpin comment" : "Pin comment"}
+                disabled={busy}
+                onPress={() => moderation!.onModerate(message, isPinned ? "unpin" : "pin")}
+                style={styles.moderationAction}
+                hitSlop={8}
+              >
+                <Ionicons name={isPinned ? "pin" : "pin-outline"} size={14} color={colors.accent} />
+                <Text style={styles.moderationActionText}>{isPinned ? "Unpin" : "Pin"}</Text>
+              </Pressable>
+            ) : null}
+            {canModerate ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Remove comment"
+                disabled={busy}
+                onPress={() => moderation!.onModerate(message, "delete")}
+                style={styles.moderationAction}
+                hitSlop={8}
+              >
+                <Ionicons name="trash-outline" size={14} color={colors.danger} />
+                <Text style={[styles.moderationActionText, { color: colors.danger }]}>Remove</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Report comment"
+              disabled={busy}
+              onPress={() => moderation!.onModerate(message, "report")}
+              style={styles.moderationAction}
+              hitSlop={8}
+            >
+              <Ionicons name="flag-outline" size={14} color={colors.muted} />
+              <Text style={styles.moderationActionText}>Report</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -297,6 +353,21 @@ const styles = StyleSheet.create({
   rowTextCompact: {
     fontSize: 13,
     lineHeight: 17
+  },
+  moderationBar: {
+    flexDirection: "row",
+    gap: 14,
+    marginTop: 6
+  },
+  moderationAction: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4
+  },
+  moderationActionText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "600"
   },
   systemRow: {
     alignItems: "center",

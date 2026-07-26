@@ -307,6 +307,29 @@ export const muteGuest = (liveId: number, guestId: number) => guestAction(liveId
 export const unmuteGuest = (liveId: number, guestId: number) => guestAction(liveId, guestId, "unmute");
 export const removeGuest = (liveId: number, guestId: number) => guestAction(liveId, guestId, "remove");
 
+/**
+ * Moderate a single live-chat comment. `delete`/`pin`/`unpin` are host-only and
+ * enforced server-side; `report` is available to any viewer. Wired to
+ * POST /api/pulse/live/:liveId/chat/:messageId/:action.
+ */
+export async function moderateLiveChat(
+  liveId: number,
+  messageId: number,
+  action: "delete" | "pin" | "unpin" | "report",
+  opts: { reason?: string } = {}
+) {
+  return pulseApi<{ ok?: boolean; status?: string; message_id?: number; pinned?: boolean; message?: string }>(
+    `/api/pulse/live/${liveId}/chat/${messageId}/${action}`,
+    { method: "POST", body: JSON.stringify({ source: "native", reason: opts.reason }) }
+  );
+}
+
+export const deleteLiveChat = (liveId: number, messageId: number) => moderateLiveChat(liveId, messageId, "delete");
+export const pinLiveChat = (liveId: number, messageId: number) => moderateLiveChat(liveId, messageId, "pin");
+export const unpinLiveChat = (liveId: number, messageId: number) => moderateLiveChat(liveId, messageId, "unpin");
+export const reportLiveChat = (liveId: number, messageId: number, reason?: string) =>
+  moderateLiveChat(liveId, messageId, "report", { reason });
+
 /** Accept or deny a pending guest/co-host join request (host only). */
 export async function respondToJoinRequest(liveId: number, requestId: number, action: "accept" | "deny") {
   return pulseApi<{ ok?: boolean; status?: string; message?: string }>(
