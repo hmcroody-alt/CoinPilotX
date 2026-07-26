@@ -10,7 +10,13 @@ import { getPulseRadioState, playNextTrack, PulseRadioState, subscribePulseRadio
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { useBottomNavVisibility } from "./BottomNavVisibility";
-import { BOTTOM_NAV_DOCK_PADDING_TOP, BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT } from "./bottomNavMetrics";
+import {
+  BOTTOM_NAV_CREATE_MARGIN_TOP,
+  BOTTOM_NAV_CREATE_MIN_HEIGHT,
+  BOTTOM_NAV_DOCK_PADDING_TOP,
+  BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT,
+  BOTTOM_NAV_DOCK_PANEL_PADDING
+} from "./bottomNavMetrics";
 import { resolveBottomNavPolicy } from "./bottomNavPolicy";
 import { triggerHomeReselect } from "./homeReselect";
 import { triggerReelsReselect } from "./reelsReselect";
@@ -472,8 +478,10 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(50, 230, 179, 0.14)"
   },
   bottomCreateItem: {
-    marginTop: -32,
-    minHeight: 98
+    // Shared with the overhang the clearance accounts for — see
+    // `bottomNavMetrics.ts`. Changing these here changes that there.
+    marginTop: BOTTOM_NAV_CREATE_MARGIN_TOP,
+    minHeight: BOTTOM_NAV_CREATE_MIN_HEIGHT
   },
   bottomLabel: {
     ...logiNexus.typography.metadata,
@@ -496,7 +504,7 @@ const styles = StyleSheet.create({
     // Shared with the clearance every scrollable surface reserves — see
     // `bottomNavMetrics.ts`. Changing this here changes that there.
     minHeight: BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT,
-    padding: 10,
+    padding: BOTTOM_NAV_DOCK_PANEL_PADDING,
     shadowColor: colors.accent,
     shadowOpacity: 0.16,
     shadowRadius: 22

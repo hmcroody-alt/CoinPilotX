@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import {
-  applyMarketplaceSeller,
   connectMarketplacePayout,
   deleteMarketplaceSellerListing,
   loadCachedSellerStore,
@@ -39,8 +38,6 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   const [offline, setOffline] = useState(false);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [bio, setBio] = useState("");
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
   const [editingListingId, setEditingListingId] = useState(0);
@@ -87,19 +84,6 @@ export function SellerStoreScreen({ route, navigation }: Props) {
       unregisterOrders();
     };
   }, []);
-
-  async function submitApplication() {
-    setBusy("apply");
-    setMessage("");
-    try {
-      const result = await applyMarketplaceSeller({ display_name: displayName, bio });
-      setMessage(result.message || "Seller application saved.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Seller application could not be saved.");
-    } finally {
-      setBusy("");
-    }
-  }
 
   async function startPayoutConnect() {
     setBusy("payout");
@@ -243,26 +227,22 @@ export function SellerStoreScreen({ route, navigation }: Props) {
       {shows("application") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Merchant application</Text>
-        <Text style={styles.copy}>Submit the native seller application to the existing seller endpoint. Document verification and admin review are completed by PulseSoc after your application is received.</Text>
-        <TextInput
-          style={styles.input}
-          value={displayName}
-          onChangeText={setDisplayName}
-          placeholder="Seller display name"
-          placeholderTextColor={colors.muted}
-          autoCapitalize="words"
-        />
-        <TextInput
-          style={[styles.input, styles.textArea]}
-          value={bio}
-          onChangeText={setBio}
-          placeholder="Describe what you sell and how it helps buyers"
-          placeholderTextColor={colors.muted}
-          multiline
-        />
+        {/*
+          This panel used to be the application: two free-text boxes posted
+          straight at the seller endpoint. It now points at the real one. Two
+          places to apply would mean two half-answered applications per person
+          and a reviewer with no way to tell which is current, so this is a door
+          rather than a second form.
+        */}
+        <Text style={styles.copy}>Apply to sell on PulseSoc. The application walks you through who you are, what you sell, and the documents we verify. Your answers save as you go, and every decision is made by a person on our review team.</Text>
         <View style={styles.actionRow}>
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === "apply" }} style={styles.primaryButton} disabled={busy === "apply"} onPress={submitApplication}>
-            <Text style={styles.primaryText}>{busy === "apply" ? "Saving..." : "Save Seller Application"}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityHint="Opens the seller application, where you can start or continue your answers"
+            style={styles.primaryButton}
+            onPress={() => navigation.navigate("MerchantApply")}
+          >
+            <Text style={styles.primaryText}>Open Seller Application</Text>
           </Pressable>
         </View>
       </Panel>

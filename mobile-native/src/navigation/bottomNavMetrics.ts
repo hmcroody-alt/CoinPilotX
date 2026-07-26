@@ -28,6 +28,47 @@ export const BOTTOM_NAV_DOCK_PADDING_TOP = 10;
  */
 export const BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT = 106;
 
+/** Padding the pill panel draws on every side of its row of items. */
+export const BOTTOM_NAV_DOCK_PANEL_PADDING = 10;
+
+/**
+ * The Create button is taller than its siblings and is pulled upward so that it
+ * overhangs the pill rather than stretching it. These are the two numbers that
+ * decide by how much.
+ */
+export const BOTTOM_NAV_CREATE_MARGIN_TOP = -32;
+export const BOTTOM_NAV_CREATE_MIN_HEIGHT = 98;
+
+/**
+ * How far the Create button's top edge sits above the *shell's* top edge.
+ *
+ * The panel centres its children on the cross axis, and Yoga centres the
+ * *margin* box — the button's border box then starts a further `MARGIN_TOP`
+ * above that. Working outward: the panel's content box is
+ * `PANEL_MIN_HEIGHT - 2 * PANEL_PADDING` tall; the button's margin box is
+ * `MIN_HEIGHT + MARGIN_TOP` (the margin is negative, so this is shorter than
+ * the button itself); centring puts that margin box halfway down the content
+ * box; the border box starts `MARGIN_TOP` above where the margin box does.
+ * Subtracting the shell's own top padding converts the result from
+ * "above the panel" to "above the shell". Currently 2.
+ *
+ * Derived rather than written down because a literal here is a number nobody
+ * recomputes when the Create button changes — which is the exact failure this
+ * module exists to prevent. Without it the clearance below tracks the pill but
+ * not the one control that sticks out above the pill.
+ */
+export const BOTTOM_NAV_CREATE_OVERHANG = Math.max(
+  0,
+  -(
+    BOTTOM_NAV_DOCK_PANEL_PADDING +
+    (BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT -
+      2 * BOTTOM_NAV_DOCK_PANEL_PADDING -
+      (BOTTOM_NAV_CREATE_MIN_HEIGHT + BOTTOM_NAV_CREATE_MARGIN_TOP)) /
+      2 +
+    BOTTOM_NAV_CREATE_MARGIN_TOP
+  ) - BOTTOM_NAV_DOCK_PADDING_TOP
+);
+
 /**
  * Breathing room between the last row of content and the dock, so a scrolled
  * list ends just clear of the pill instead of flush against it.
@@ -41,7 +82,10 @@ export const BOTTOM_NAV_CONTENT_GAP = 12;
  * it rather than baking in one device's home-indicator inset.
  */
 export const BOTTOM_NAV_CONTENT_CLEARANCE =
-  BOTTOM_NAV_DOCK_PADDING_TOP + BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT + BOTTOM_NAV_CONTENT_GAP;
+  BOTTOM_NAV_DOCK_PADDING_TOP +
+  BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT +
+  BOTTOM_NAV_CREATE_OVERHANG +
+  BOTTOM_NAV_CONTENT_GAP;
 
 /**
  * Bottom padding for a scrollable surface that is *not* under the dock — a
