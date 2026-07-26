@@ -40,6 +40,7 @@ jest.mock("../../media/mediaAccess", () => ({
 }));
 
 import { PulsePost } from "../../api/feed";
+import { resetSavedStoreForTests } from "../../social/savedStore";
 import { PostCard, computeMediaBleedStyle } from "../PostCard";
 
 function basePost(overrides: Partial<PulsePost> = {}): PulsePost {
@@ -76,14 +77,27 @@ describe("computeMediaBleedStyle", () => {
 });
 
 describe("PostCard save action", () => {
+  // The card reads its saved state from a module-level store so that every copy
+  // of the same post agrees. That store outlives a render by design, so it has
+  // to be cleared here or the first test to mention post 42 decides what every
+  // later test sees.
+  beforeEach(() => {
+    resetSavedStoreForTests();
+  });
+
   it("renders Save inside the shared action row when onSave is provided", () => {
     const { getByTestId } = render(<PostCard post={basePost()} onSave={jest.fn()} onComment={jest.fn()} />);
     expect(getByTestId("home-feed-save-42")).toBeTruthy();
   });
 
-  it("does not render a Save control when onSave is omitted", () => {
-    const { queryByTestId } = render(<PostCard post={basePost()} onComment={jest.fn()} />);
-    expect(queryByTestId("home-feed-save-42")).toBeNull();
+  it("renders Save even when no screen passes onSave, because Save belongs to the content", () => {
+    // This assertion is the inverse of the one it replaces. Save used to render
+    // only when a screen supplied `onSave`, which made the control a property of
+    // the screen: the same post offered Save in the feed and nothing at all in
+    // search results or an activity row. The card owns the action now, so a
+    // surface can no longer drop it by forgetting a prop.
+    const { getByTestId } = render(<PostCard post={basePost()} onComment={jest.fn()} />);
+    expect(getByTestId("home-feed-save-42")).toBeTruthy();
   });
 
   it("shows unsaved state (Save label, not selected) by default", () => {

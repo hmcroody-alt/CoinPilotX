@@ -28,9 +28,12 @@ function baseProps() {
     selectedReaction: undefined as string | undefined,
     reactionPending: false,
     shareBusy: false,
+    saved: false,
+    savePending: false,
     onReact: jest.fn(),
     onReply: jest.fn(),
-    onShare: jest.fn()
+    onShare: jest.fn(),
+    onSave: jest.fn()
   };
 }
 
@@ -140,6 +143,28 @@ describe("StatusActionRail", () => {
     expect(shareButton.props.accessibilityState?.disabled).toBe(true);
     fireEvent.press(shareButton);
     expect(onShare).not.toHaveBeenCalled();
+  });
+
+  it("exposes a Save control, which the rail previously did not have at all", () => {
+    const onSave = jest.fn();
+    const { getByLabelText } = render(<StatusActionRail {...baseProps()} onSave={onSave} />);
+    fireEvent.press(getByLabelText("Save Status"));
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("labels the Save control for removal once the Status is saved", () => {
+    const { getByTestId, getByLabelText } = render(<StatusActionRail {...baseProps()} saved />);
+    expect(getByLabelText("Remove Status from Saved")).toBeTruthy();
+    expect(getByTestId("status-action-save").props.accessibilityState?.selected).toBe(true);
+  });
+
+  it("blocks a second Save press while the first mutation is still in flight", () => {
+    const onSave = jest.fn();
+    const { getByTestId } = render(<StatusActionRail {...baseProps()} savePending onSave={onSave} />);
+    const saveButton = getByTestId("status-action-save");
+    expect(saveButton.props.accessibilityState?.busy).toBe(true);
+    fireEvent.press(saveButton);
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it("does not open the reaction tray on a plain tap", () => {

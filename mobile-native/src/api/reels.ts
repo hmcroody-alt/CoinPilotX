@@ -282,12 +282,12 @@ export async function reactToReel(reelId: number, reactionType = "fire") {
   );
 }
 
-export async function saveReel(reelId: number) {
-  return pulseApi<{ ok?: boolean; saved?: boolean; message?: string }>(`/api/pulse/reels/${reelId}/save`, {
-    method: "POST",
-    body: JSON.stringify({})
-  });
-}
+// `saveReel(reelId)` used to live here: an empty-bodied toggle. It is gone
+// rather than aliased, because a toggle cannot be retried safely — a dropped
+// response followed by a retry undoes the save — and because a second way to
+// save a Reel is how a Reel came to look saved on one screen and unsaved on the
+// next. Reels save through `social/saveContract.setSavedOnServer` like
+// everything else, which states the wanted state instead of asking for a flip.
 
 export type ReelRepostResponse = {
   ok?: boolean;

@@ -8,6 +8,7 @@ import { refreshCanonicalMediaAccess } from "../media/mediaAccess";
 import { LikeBurst, LikeBurstHandle, MuteGlyphPulse, MuteGlyphPulseHandle } from "../media/MediaGestureFeedback";
 import { useTapMuteLike } from "../media/useTapMuteLike";
 import { classifyReelMedia } from "../reels/reelMediaKind";
+import { useSavedState } from "../social/savedStore";
 import { ReelPhotoSurface } from "./reels/ReelPhotoSurface";
 import { ReelCarouselSurface } from "./reels/ReelCarouselSurface";
 import { ReelLiveViewerSurface } from "./reels/ReelLiveViewerSurface";
@@ -77,6 +78,15 @@ export function ReelPlayerCard({
   const [refreshingUrl, setRefreshingUrl] = useState(false);
   const [source, setSource] = useState(() => reelVideoUrl(reel) || reel.live?.playback_url || "");
   const initialSource = useMemo(() => reelVideoUrl(reel) || reel.live?.playback_url || "", [reel]);
+  /**
+   * Saved state comes from the shared store, not from `reel.saved`.
+   *
+   * The same Reel is also a post in the feed, and both cards can be mounted at
+   * once. Reading the screen's copy is what let one of them show Saved while the
+   * other showed Save. The payload's flag is still handed over, but only as a
+   * seed for content the store has not heard of yet.
+   */
+  const saveState = useSavedState("reel", reel.id, typeof reel.saved === "boolean" ? reel.saved : undefined);
   const poster = useMemo(() => reelPosterUrl(reel), [reel]);
   const author = reel.author || {};
   const kind = useMemo(() => classifyReelMedia(reel), [reel]);
@@ -270,7 +280,14 @@ export function ReelPlayerCard({
         <Action icon={reactionIcon(reel.viewer_reaction)} label={reel.viewer_reaction ? "Liked" : "Like"} value={reel.reactions_count || reel.reaction_counts?.like || reel.reaction_counts?.fire || 0} active={Boolean(reel.viewer_reaction)} disabled={reel.reactions_disabled} onPress={() => onReact(reel, reel.viewer_reaction || "like")} onLongPress={() => onOpenReactions(reel)} />
         <Action icon="◌" label="Comment" value={reel.comments_count || 0} onPress={() => onOpenComments(reel)} />
         <Action icon="➤" label="Share" value={reel.share_count || 0} onPress={() => onShare(reel)} />
-        <Action icon={reel.saved ? "◆" : "◇"} label={reel.saved ? "Saved" : "Save"} onPress={() => onSave(reel)} active={Boolean(reel.saved)} />
+        <Action
+          icon={saveState.saved ? "◆" : "◇"}
+          label={saveState.pending ? (saveState.saved ? "Saving" : "Removing") : saveState.saved ? "Saved" : "Save"}
+          hint={saveState.saved ? "Removes this Reel from your Saved collection" : "Adds this Reel to your Saved collection"}
+          busy={saveState.pending}
+          onPress={() => onSave(reel)}
+          active={saveState.saved}
+        />
         <Action icon="•••" label="More" onPress={() => onOpenMore(reel)} />
       </View>
 
@@ -331,9 +348,9 @@ function RichCaption({ value }: { value: string }) {
   return <Text style={styles.body} numberOfLines={3}>{tokens.map((token, index) => token.startsWith("#") || token.startsWith("@") ? <Text key={`${token}-${index}`} style={styles.captionLink}>{token}</Text> : token)}</Text>;
 }
 
-function Action({ icon, label, value, active, disabled, onPress, onLongPress }: { icon: string; label: string; value?: number; active?: boolean; disabled?: boolean; onPress: () => void; onLongPress?: () => void }) {
+function Action({ icon, label, value, active, disabled, busy, hint, onPress, onLongPress }: { icon: string; label: string; value?: number; active?: boolean; disabled?: boolean; busy?: boolean; hint?: string; onPress: () => void; onLongPress?: () => void }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${label}${value ? `, ${value}` : ""}`} accessibilityState={{ selected: active, disabled }} disabled={disabled} style={({ pressed }) => [styles.action, active ? styles.actionActive : undefined, pressed && styles.actionPressed, disabled && styles.actionDisabled]} onPress={onPress} onLongPress={onLongPress}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${label}${value ? `, ${value}` : ""}`} accessibilityHint={hint} accessibilityState={{ selected: active, disabled: disabled || busy, busy }} disabled={disabled || busy} style={({ pressed }) => [styles.action, active ? styles.actionActive : undefined, pressed && styles.actionPressed, (disabled || busy) && styles.actionDisabled]} onPress={onPress} onLongPress={onLongPress}>
       <Text style={[styles.actionIcon, active ? styles.actionTextActive : undefined]}>{icon}</Text>
       <Text style={styles.actionLabel}>{label}</Text>
       {value ? <Text style={styles.actionValue}>{value}</Text> : null}

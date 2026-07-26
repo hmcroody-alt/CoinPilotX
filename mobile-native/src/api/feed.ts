@@ -3,6 +3,7 @@ import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
 import { CanonicalMediaRecord, mediaRecordForCache } from "../media/mediaContract";
 import { buildCommentTree } from "../social/commentTree";
+import { observeSavedState } from "../social/savedStore";
 
 const FEED_CACHE_PREFIX = "pulsesoc.native.feed.";
 const POST_CACHE_PREFIX = "pulsesoc.native.post.";
@@ -117,6 +118,14 @@ export type PulsePost = {
   reposted?: boolean;
   is_reposted?: boolean;
   repost_count?: number;
+  /**
+   * Present when this row is a repost wrapping another post. Both spellings
+   * come off the wire (`_public_post` emits `repost` and `original_post`), and
+   * a card needs one of them to know which post a Save is actually about — the
+   * wrapper and the original are the same content under two ids.
+   */
+  repost?: { original_post_id?: number; caption?: string; original?: PulsePost | null } | null;
+  original_post?: PulsePost | null;
   share_count?: number;
   visibility?: string;
   moderation_status?: string;
@@ -194,6 +203,10 @@ export async function listFeed(params: FeedParams = {}) {
 
   const data = await pulseApi<FeedResponse>(`/api/pulse/feed?${query.toString()}`);
   const posts = normalizePosts(data.posts || data.feed || []);
+  // Network truth, so the store may be corrected by it. Deliberately not done
+  // in `loadCachedFeed`: a cache is the one payload guaranteed to be older than
+  // whatever the store already holds.
+  adoptFeedSavedStates(posts);
   if (!params.offset) await cacheFeed(params.feed || params.tab || "for_you", posts);
   return {
     ...data,
@@ -222,6 +235,7 @@ export async function cacheFeed(feed: string, posts: PulsePost[]) {
 export async function getPostDetail(postId: number) {
   const data = await pulseApi<PostDetailResponse>(`/api/pulse/posts/${postId}`);
   const post = data.post ? normalizePost(data.post) : undefined;
+  if (post) adoptFeedSavedStates([post]);
   // bot.py:77002 returns a FLAT comment list carrying parent_comment_id, so the
   // nesting has to be derived here. Without this transform a reply renders as a
   // sibling of the comment it answers, which is what shipped.
@@ -286,12 +300,12 @@ export async function reactToPost(postId: number, reactionType: string) {
   );
 }
 
-export async function savePost(postId: number) {
-  return pulseApi<{ ok?: boolean; saved?: boolean; is_saved?: boolean; post?: PulsePost }>(`/api/pulse/posts/${postId}/save`, {
-    method: "POST",
-    body: JSON.stringify({ post_id: postId })
-  });
-}
+// `savePost(postId)` used to live here: a bodyless toggle that asked the server
+// to flip whatever it currently held. Removed rather than kept as an alias,
+// because a toggle is unsafe to retry — a dropped response followed by a retry
+// undoes the save — and because two ways to save a post is how the app ended up
+// with screens that disagreed about whether one was saved. Everything now goes
+// through `social/saveContract.setSavedOnServer`, which states the wanted state.
 
 export type RepostResponse = {
   ok?: boolean;
@@ -469,6 +483,38 @@ export function pulsePostUrl(postId: number) {
 
 export function normalizePosts(items: PulsePost[]) {
   return items.map(normalizePost).filter((post) => post.id > 0);
+}
+
+/**
+ * The id a Save applies to, which for a repost is the post being reposted.
+ *
+ * Saving a repost has to save the original, or the Saved collection fills with
+ * wrappers that vanish when the reposter deletes their share, and the same
+ * content shows Saved in one place and Save in another. The server already
+ * resolves it this way (`savable_post_id` in services/pulse_feed_engine.py);
+ * this is the client half of that agreement, in one place rather than
+ * re-spelled inline in every card that renders a Save button.
+ */
+export function savablePostId(post: PulsePost): number {
+  return Number(post.repost?.original_post_id || post.original_post?.id || post.id || 0);
+}
+
+/**
+ * Teach the save store what a *fresh* fetch just said about these posts.
+ *
+ * A mounting card may only seed an item the store has never heard of — that is
+ * what stops a stale list from reverting a save under the user. The cost of
+ * that rule is that nothing would ever correct the store when the user unsaved
+ * on the web and then pulled to refresh here. This is the correction: callers
+ * that know their payload came from the network, and not from cache, hand it
+ * over explicitly. `observeSavedState` still declines to overwrite a mutation
+ * in flight, so a refresh racing a tap cannot undo the tap.
+ */
+export function adoptFeedSavedStates(posts: PulsePost[]) {
+  posts.forEach((post) => {
+    const id = savablePostId(post);
+    if (id > 0) observeSavedState("post", id, Boolean(post.saved));
+  });
 }
 
 export function normalizePost(item: PulsePost): PulsePost {

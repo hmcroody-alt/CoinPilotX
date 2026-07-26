@@ -15,7 +15,7 @@ import {
   pulsePostUrl,
   reactToPost,
   repostPost,
-  savePost,
+  savablePostId,
   toggleFollowAuthor
 } from "../api/feed";
 import { isContentOwner } from "../api/contentOwnership";
@@ -27,6 +27,8 @@ import { HomePulseComposer } from "../components/HomePulseComposer";
 import { LogiNexusBadge, LogiNexusEmptyState, LogiNexusPanel } from "../components/LogiNexus";
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { PostCard } from "../components/PostCard";
+import { peekSaveState } from "../social/savedStore";
+import { setSaved } from "../social/useSaveAction";
 import { SponsoredAdCard } from "../components/SponsoredAdCard";
 import { WelcomeUfoOverlay } from "../components/WelcomeUfoOverlay";
 import { StaticUFOField } from "../components/StaticUFOField";
@@ -333,14 +335,26 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     });
   }
 
+  /**
+   * Saving is the one social action that is not local to this list.
+   *
+   * The optimistic-guard pattern used for reactions and reposts updates this
+   * screen's copy of the post, which is right for a count nobody else is
+   * showing. A saved state is shown by the profile behind this feed, by the
+   * detail screen pushed on top of it, and by the Saved collection — all
+   * holding their own copies. Routing through the shared store updates every
+   * one of them from a single tap, and keeps the in-flight lock global so two
+   * screens showing the same post cannot both mutate it at once.
+   */
   async function handleSave(post: PulsePost) {
-    const previousSaved = Boolean(post.saved);
-    await guard.run(actionKey("post_save", post.id), () => savePost(post.id), {
-      optimistic: () => updatePost(post.id, { saved: !previousSaved }),
-      onResult: (result) => updatePost(post.id, { saved: Boolean(result.saved ?? result.is_saved ?? !previousSaved) }),
-      onRollback: () => updatePost(post.id, { saved: previousSaved }),
-      onError: setError
-    });
+    const savableId = savablePostId(post);
+    // What to ask for is decided from the store, not from this screen's copy of
+    // the post: the copy can be several taps out of date if the user saved the
+    // same content from the detail screen pushed on top of this one.
+    const previousSaved = peekSaveState("post", savableId)?.saved ?? Boolean(post.saved ?? post.is_saved);
+    const outcome = await setSaved({ type: "post", id: savableId }, !previousSaved);
+    updatePost(post.id, { saved: outcome.saved, is_saved: outcome.saved });
+    if (!outcome.ok && outcome.message) setError(outcome.message);
   }
 
   async function handleRepost(post: PulsePost) {

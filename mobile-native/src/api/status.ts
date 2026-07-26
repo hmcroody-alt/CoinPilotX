@@ -95,6 +95,16 @@ export type PulseStatus = {
   creator_status_ids?: number[];
   can_manage?: boolean;
   muted?: boolean;
+  /**
+   * Server truth for whether the viewer has this Status in their Saved
+   * collection. Unlike `viewer_reaction` above this *is* persisted — the rail
+   * query resolves it per viewer out of `pulse_saved_items` — so it survives a
+   * refetch and an app restart. Left `undefined` (rather than defaulted to
+   * false) when the payload omits it, so a card mounted from an older response
+   * seeds nothing and defers to whatever the save store already knows.
+   */
+  saved?: boolean;
+  is_saved?: boolean;
   fixture_state?: "ready" | "uploading" | "failed" | "expired" | "deleted" | "private" | "blocked" | "reported" | "offline_queued";
 };
 
@@ -353,8 +363,19 @@ export function normalizeStatus(item: PulseStatus): PulseStatus {
     story_count: Number(item.story_count || 1),
     unseen_count: Number(item.unseen_count || 0),
     creator_status_ids: (item.creator_status_ids || []).map(Number).filter(Boolean),
-    viewed: Boolean(item.viewed)
+    viewed: Boolean(item.viewed),
+    // Deliberately not coerced with Boolean(): an absent flag has to stay
+    // absent so the save store can tell "the server says unsaved" apart from
+    // "the server did not say", and only the first of those may overwrite a
+    // state the user just chose.
+    saved: readStatusSavedFlag(item)
   };
+}
+
+function readStatusSavedFlag(item: PulseStatus): boolean | undefined {
+  if (typeof item.saved === "boolean") return item.saved;
+  if (typeof item.is_saved === "boolean") return item.is_saved;
+  return undefined;
 }
 
 export function statusMediaUrl(status: PulseStatus) {

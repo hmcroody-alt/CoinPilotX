@@ -11,6 +11,8 @@ import { LikeBurst, LikeBurstHandle } from "../media/MediaGestureFeedback";
 import { StatusActionRail } from "./StatusActionRail";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { ContentTranslation } from "./ContentTranslation";
+import { useSavedState } from "../social/savedStore";
+import { setSaved } from "../social/useSaveAction";
 
 type Props = {
   status: PulseStatus;
@@ -58,6 +60,8 @@ export function StatusViewerCard({
   const [buffering, setBuffering] = useState(false);
   const [failed, setFailed] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const saveState = useSavedState("status", status.id, status.saved);
   const mediaUrl = useMemo(() => statusMediaUrl(status), [status]);
   const posterUrl = useMemo(() => statusPosterUrl(status), [status]);
   const kind = statusMediaKind(status);
@@ -137,6 +141,29 @@ export function StatusViewerCard({
     if (paused) videoRef.current?.pauseAsync().catch(() => undefined);
     else if (active) videoRef.current?.playAsync().catch(() => undefined);
   }, [active, paused]);
+
+  /**
+   * Save is performed here rather than handed up to StatusScreen because the
+   * store already holds the state — a callback prop would only give the screen
+   * a copy to keep in sync, which is the arrangement that made Save unreliable
+   * on the feed. The snapshot fields travel with the request so the Saved
+   * library has a title and thumbnail to show for a Status that will have
+   * expired out of the rail long before the user opens it.
+   */
+  async function handleSave() {
+    const outcome = await setSaved(
+      {
+        type: "status",
+        id: status.id,
+        title: status.body || "PulseSoc Status",
+        previewText: status.body,
+        thumbnailUrl: posterUrl || mediaUrl,
+        sourceUrl: pulseStatusUrl(status.id)
+      },
+      !saveState.saved
+    );
+    setSaveError(outcome.ok ? "" : outcome.message || "");
+  }
 
   function markComplete() {
     if (!startedAt.current) return;
@@ -253,12 +280,15 @@ export function StatusViewerCard({
         selectedReaction={status.viewer_reaction}
         reactionPending={reactionPending}
         shareBusy={busy}
+        saved={saveState.saved}
+        savePending={saveState.pending}
         onReact={(reactionType) => onReact(status, reactionType)}
         onReply={() => onReply(status)}
         onShare={() => onShare(status)}
+        onSave={() => { handleSave().catch(() => undefined); }}
       />
-      {reactionError ? (
-        <Text accessibilityLiveRegion="polite" style={styles.reactionError}>{reactionError}</Text>
+      {reactionError || saveError ? (
+        <Text accessibilityLiveRegion="polite" style={styles.reactionError}>{reactionError || saveError}</Text>
       ) : null}
 
       <View style={styles.caption}>

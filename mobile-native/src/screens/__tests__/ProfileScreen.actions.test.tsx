@@ -59,7 +59,6 @@ jest.mock("../../components/PostCard", () => ({
 const mockMyProfile = jest.fn();
 const mockCachedProfile = jest.fn();
 const mockListFeed = jest.fn();
-const mockSave = jest.fn();
 const mockReact = jest.fn();
 const mockDelete = jest.fn();
 const mockRepost = jest.fn();
@@ -71,12 +70,21 @@ jest.mock("../../api/profile", () => ({
 jest.mock("../../api/feed", () => ({
   ...jest.requireActual("../../api/feed"),
   listFeed: (...args: any[]) => mockListFeed(...args),
-  savePost: (...args: any[]) => mockSave(...args),
   reactToPost: (...args: any[]) => mockReact(...args),
   deletePost: (...args: any[]) => mockDelete(...args),
   repostPost: (...args: any[]) => mockRepost(...args)
 }));
+// Save is intercepted at the transport rather than the API module: there is no
+// `savePost` to stub any more, because the screen calls the shared save
+// contract. Mocking `pulseApi` keeps the URL and request body under assertion.
+jest.mock("../../api/pulseApi", () => ({
+  ...jest.requireActual("../../api/pulseApi"),
+  pulseApi: (...args: any[]) => mockSaveApi(...args)
+}));
+const mockSaveApi = jest.fn();
 
+import { peekSaveState, resetSavedStoreForTests } from "../../social/savedStore";
+import { resetSaveActionsForTests } from "../../social/useSaveAction";
 import { ProfileScreen } from "../ProfileScreen";
 
 function post(id: number, overrides: Record<string, unknown> = {}) {
@@ -138,29 +146,38 @@ async function renderScreen(posts = [post(1)]) {
 beforeEach(() => {
   mockCardProps.length = 0;
   jest.clearAllMocks();
+  // The save store is module-level by design, so it has to be cleared between
+  // tests or one test's save decides the next test's starting state.
+  resetSavedStoreForTests();
+  resetSaveActionsForTests();
   mockCachedProfile.mockResolvedValue(null);
 });
 
 describe("ProfileScreen per-card busy state", () => {
+  // Driven through repost rather than save: save is no longer this screen's
+  // action to guard. It routes through the shared save store so the feed under
+  // this profile, and the detail screen pushed above it, settle from the same
+  // tap. Repost is still a per-screen optimistic action, so it is what still
+  // exercises `guard.isItemBusy`.
   it("marks only the card being acted on, which a busyPostId scalar could do but", async () => {
     // ...only for one card. This is the paired assertion: card 1 busy AND card 2
     // not busy, from the same render. The scalar satisfied the first half; the
     // second half is what broke when two cards were in flight together.
     const pending = deferred<any>();
-    mockSave.mockReturnValue(pending.promise);
+    mockRepost.mockReturnValue(pending.promise);
     await renderScreen([post(1), post(2)]);
     expect(card(1).busy).toBe(false);
     expect(card(2).busy).toBe(false);
 
     let run!: Promise<unknown>;
     await tap(() => {
-      run = card(1).onSave(post(1));
+      run = card(1).onRepost(post(1));
     });
     expect(card(1).busy).toBe(true);
     expect(card(2).busy).toBe(false);
 
     await tap(async () => {
-      pending.resolve({ saved: true });
+      pending.resolve({ ok: true, reposted: true, repost_count: 1 });
       await run;
     });
     expect(card(1).busy).toBe(false);
@@ -169,29 +186,29 @@ describe("ProfileScreen per-card busy state", () => {
   it("keeps two cards in flight at once, which a single number cannot represent", async () => {
     const first = deferred<any>();
     const second = deferred<any>();
-    mockSave.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    mockRepost.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
     await renderScreen([post(1), post(2)]);
 
     let runOne!: Promise<unknown>;
     let runTwo!: Promise<unknown>;
     await tap(() => {
-      runOne = card(1).onSave(post(1));
-      runTwo = card(2).onSave(post(2));
+      runOne = card(1).onRepost(post(1));
+      runTwo = card(2).onRepost(post(2));
     });
-    expect(mockSave).toHaveBeenCalledTimes(2);
+    expect(mockRepost).toHaveBeenCalledTimes(2);
     expect(card(1).busy).toBe(true);
     expect(card(2).busy).toBe(true);
 
     // Settling one must not clear the other's marker.
     await tap(async () => {
-      first.resolve({ saved: true });
+      first.resolve({ ok: true, reposted: true, repost_count: 1 });
       await runOne;
     });
     expect(card(1).busy).toBe(false);
     expect(card(2).busy).toBe(true);
 
     await tap(async () => {
-      second.resolve({ saved: true });
+      second.resolve({ ok: true, reposted: true, repost_count: 1 });
       await runTwo;
     });
     expect(card(2).busy).toBe(false);
@@ -201,7 +218,7 @@ describe("ProfileScreen per-card busy state", () => {
 describe("ProfileScreen save", () => {
   it("issues one request for a double tap, so a save cannot race an unsave", async () => {
     const pending = deferred<any>();
-    mockSave.mockReturnValue(pending.promise);
+    mockSaveApi.mockReturnValue(pending.promise);
     await renderScreen();
 
     const onSave = card(1).onSave;
@@ -210,39 +227,42 @@ describe("ProfileScreen save", () => {
       first = onSave(post(1));
       onSave(post(1));
     });
-    expect(mockSave).toHaveBeenCalledTimes(1);
+    expect(mockSaveApi).toHaveBeenCalledTimes(1);
     await tap(async () => {
-      pending.resolve({ saved: true });
+      pending.resolve({ ok: true, saved: true });
       await first;
     });
-    expect(card(1).post.saved).toBe(true);
+    expect(peekSaveState("post", 1)).toEqual({ saved: true, pending: false });
   });
 
   it("shows the save immediately and then keeps the server's answer", async () => {
     const pending = deferred<any>();
-    mockSave.mockReturnValue(pending.promise);
+    mockSaveApi.mockReturnValue(pending.promise);
     await renderScreen();
 
     let run!: Promise<unknown>;
     await tap(() => {
       run = card(1).onSave(post(1));
     });
-    expect(card(1).post.saved).toBe(true);
+    expect(peekSaveState("post", 1)).toEqual({ saved: true, pending: true });
+
+    // The server's answer outranks the optimistic guess even when it disagrees:
+    // another device may have unsaved it between the tap and the response.
     await tap(async () => {
-      pending.resolve({ saved: false });
+      pending.resolve({ ok: true, saved: false });
       await run;
     });
-    expect(card(1).post.saved).toBe(false);
+    expect(peekSaveState("post", 1)).toEqual({ saved: false, pending: false });
   });
 
   it("rolls the save back and says why, instead of silently reverting", async () => {
     // The old `catch {}` reverted the bookmark with no message, which the user
     // cannot tell apart from a tap that never landed.
-    mockSave.mockRejectedValue(new Error("Network request failed"));
+    mockSaveApi.mockRejectedValue(new Error("Network request failed"));
     const { queryByText } = await renderScreen([post(1, { saved: false })]);
-    await tap(() => card(1).onSave(post(1, { saved: false })));
-    expect(Boolean(card(1).post.saved)).toBe(false);
-    expect(queryByText(/offline/i)).toBeTruthy();
+    await tap(() => card(1).onSave(card(1).post));
+    expect(peekSaveState("post", 1)?.saved).toBe(false);
+    expect(queryByText(/offline|could not|connection/i)).toBeTruthy();
   });
 });
 

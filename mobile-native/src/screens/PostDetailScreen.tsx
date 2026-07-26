@@ -23,13 +23,15 @@ import {
   pulsePostUrl,
   reactToPost,
   repostPost,
-  savePost
+  savablePostId
 } from "../api/feed";
 import { isContentOwner } from "../api/contentOwnership";
 import { describeDeleteError } from "../api/deleteErrors";
 import { profileTargetFromPost } from "../api/profile";
 import { profileNavigationParams, resolveProfileTarget } from "../api/profileTarget";
 import { PostCard } from "../components/PostCard";
+import { peekSaveState } from "../social/savedStore";
+import { setSaved } from "../social/useSaveAction";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { invalidateNativeSync } from "../core/eventSync";
 import { RootStackParamList } from "../navigation/types";
@@ -171,15 +173,16 @@ export function PostDetailScreen({ route, navigation }: Props) {
     });
   }
 
+  // Shared store rather than this screen's guard — the feed or profile that
+  // pushed this screen is still mounted behind it holding its own copy of the
+  // same post. See `social/useSaveAction.ts`.
   async function handleSave(nextPost: PulsePost) {
     if (!post) return;
-    const previousSaved = Boolean(post.saved);
-    await guard.run(actionKey("post_save", nextPost.id), () => savePost(nextPost.id), {
-      optimistic: () => setPost((current) => (current ? { ...current, saved: !previousSaved } : current)),
-      onResult: (result) => setPost((current) => (current ? { ...current, saved: Boolean(result.saved ?? result.is_saved ?? !previousSaved) } : current)),
-      onRollback: () => setPost((current) => (current ? { ...current, saved: previousSaved } : current)),
-      onError: setError
-    });
+    const savableId = savablePostId(post) || Number(nextPost.id || 0);
+    const previousSaved = peekSaveState("post", savableId)?.saved ?? Boolean(post.saved ?? post.is_saved);
+    const outcome = await setSaved({ type: "post", id: savableId }, !previousSaved);
+    setPost((current) => (current ? { ...current, saved: outcome.saved, is_saved: outcome.saved } : current));
+    if (!outcome.ok && outcome.message) setError(outcome.message);
   }
 
   async function handleRepost(nextPost: PulsePost) {

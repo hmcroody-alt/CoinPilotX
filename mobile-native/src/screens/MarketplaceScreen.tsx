@@ -20,7 +20,6 @@ import {
   marketplaceWebUrl,
   openMarketplaceCheckout,
   reportMarketplaceListing,
-  saveMarketplaceListing,
   searchMarketplace,
   startMarketplaceSellerChat
 } from "../api/marketplace";
@@ -32,6 +31,7 @@ import { ContentTranslation } from "../components/ContentTranslation";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
+import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "MarketplaceDetail">>;
@@ -90,14 +90,20 @@ export function MarketplaceScreen({ route, navigation }: Props) {
     setDetail((current) => (current?.id === listingId ? { ...current, ...next } : current));
   }
 
+  /**
+   * Save *and* unsave. This could only ever add: it forced `saved: true`, and
+   * the card's answer to "what if the user taps again" was to disable the
+   * button permanently, which left a mis-tap unrecoverable. The route now
+   * accepts the state being asked for, so this is the same toggle every other
+   * savable surface has.
+   */
   async function handleSave(listing: MarketplaceListing) {
+    const wasSaved = Boolean(listing.saved);
     setBusyId(listing.id);
-    updateListing(listing.id, { saved: true });
     try {
-      await saveMarketplaceListing(listing.id);
-    } catch (saveError) {
-      updateListing(listing.id, { saved: listing.saved });
-      setError(saveError instanceof Error ? saveError.message : "Listing could not be saved.");
+      const outcome = await setSaved({ type: "marketplace", id: listing.id }, !wasSaved);
+      updateListing(listing.id, { saved: outcome.saved });
+      if (!outcome.ok && outcome.message) setError(outcome.message);
     } finally {
       setBusyId(null);
     }
@@ -258,7 +264,7 @@ function MarketplaceCard({ listing, busy, onOpen, onSave, onReport }: {
         </View>
         <Text style={styles.sellerText}>Seller: {listing.seller_name || "PulseSoc Seller"}</Text>
         <View style={styles.cardActions}>
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || listing.saved }} style={styles.smallButton} disabled={busy || listing.saved} onPress={() => onSave(listing)}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`${listing.saved ? "Remove" : "Save"} ${listing.title || "listing"}`} accessibilityState={{ disabled: busy, selected: Boolean(listing.saved) }} style={styles.smallButton} disabled={busy} onPress={() => onSave(listing)}>
             <Text style={styles.smallButtonText}>{listing.saved ? "Saved" : "Save"}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.smallButton} disabled={busy} onPress={() => onReport(listing)}>
@@ -334,7 +340,7 @@ function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onCo
               <Text style={styles.secondaryText}>Checkout</Text>
             </Pressable>
           ) : null}
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || listing.saved }} style={styles.secondaryButton} disabled={busy || listing.saved} onPress={() => onSave(listing)}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`${listing.saved ? "Remove" : "Save"} ${listing.title || "listing"}`} accessibilityState={{ disabled: busy, selected: Boolean(listing.saved) }} style={styles.secondaryButton} disabled={busy} onPress={() => onSave(listing)}>
             <Text style={styles.secondaryText}>{listing.saved ? "Saved" : "Save"}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.secondaryButton} disabled={busy} onPress={() => onReport(listing)}>

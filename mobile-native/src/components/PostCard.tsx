@@ -3,12 +3,14 @@ import { ActivityIndicator, Alert, Animated, Image, Pressable, StyleSheet, Text,
 import { Audio, ResizeMode, Video } from "expo-av";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
-import { mediaDisplayUrl, mediaKind, PulseMedia, PulsePost, pulsePostUrl } from "../api/feed";
+import { mediaDisplayUrl, mediaKind, PulseMedia, PulsePost, pulsePostUrl, savablePostId } from "../api/feed";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "./NativeMediaViewer";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { AttachedMusicPolicy, resolvePostAudioPolicy } from "../core/attachedMusicAudioPolicy";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { canonicalMediaPlaybackUrl, refreshCanonicalMediaAccess } from "../media/mediaAccess";
+import { useSavedState } from "../social/savedStore";
+import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { formatShortTime } from "../utils/format";
@@ -130,7 +132,15 @@ export function PostCard({
   const reactionTotal = Object.values(post.reaction_counts || {}).reduce((sum, count) => sum + Number(count || 0), 0);
   const creatorLabel = author.premium_verified || author.verified ? "Pulse Creator" : "";
   const viewerLiked = Boolean(post.viewer_reaction);
-  const viewerSaved = Boolean(post.saved ?? post.is_saved);
+  /**
+   * A repost is a wrapper row around an original, and both can be on screen at
+   * once. Saving is about the content, not the wrapper, so the card asks about
+   * — and writes — the original's id. The server collapses to the same id, so
+   * the two cards agree without either knowing about the other.
+   */
+  const savableId = savablePostId(post);
+  const saveState = useSavedState("post", savableId, typeof (post.saved ?? post.is_saved) === "boolean" ? Boolean(post.saved ?? post.is_saved) : undefined);
+  const viewerSaved = saveState.saved;
 
   async function submitInlineComment() {
     const bodyText = commentBody.trim();
@@ -365,23 +375,36 @@ export function PostCard({
           <Text style={styles.actionIcon}>↗</Text>
           <Text style={styles.actionText}>{post.share_count ? compactCount(post.share_count) : "Share"}</Text>
         </Pressable>
-        {onSave ? (
-          <Pressable
-            testID={`home-feed-save-${post.id}`}
-            accessibilityRole="button"
-            accessibilityLabel={`${viewerSaved ? "Saved" : "Save"} post ${post.id}`}
-            accessibilityState={{ selected: viewerSaved, busy: Boolean(busy) }}
-            style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
-            disabled={busy}
-            onPress={(event) => {
-              event.stopPropagation();
+        {/*
+          Rendered unconditionally. It used to appear only when a screen passed
+          `onSave`, which is why the same post offered Save in the feed and no
+          Save at all in search results or an activity card — the control was a
+          property of the screen rather than of the content. The prop is still
+          honoured where a screen wants to observe the action, but the card can
+          now perform the save itself, so a surface cannot omit it by omission.
+        */}
+        <Pressable
+          testID={`home-feed-save-${post.id}`}
+          accessibilityRole="button"
+          accessibilityLabel={`${viewerSaved ? "Saved" : "Save"} post ${savableId}`}
+          accessibilityHint={viewerSaved ? "Removes this post from your Saved collection" : "Adds this post to your Saved collection"}
+          accessibilityState={{ selected: viewerSaved, busy: saveState.pending || Boolean(busy) }}
+          style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
+          disabled={saveState.pending || busy}
+          onPress={(event) => {
+            event.stopPropagation();
+            if (onSave) {
               onSave(post);
-            }}
-          >
-            <Ionicons name={viewerSaved ? "bookmark" : "bookmark-outline"} size={16} color={viewerSaved ? colors.accent : colors.muted} />
-            <Text style={[styles.actionText, viewerSaved && styles.actionTextActive]}>{viewerSaved ? "Saved" : "Save"}</Text>
-          </Pressable>
-        ) : null}
+              return;
+            }
+            setSaved({ type: "post", id: savableId }, !viewerSaved).catch(() => undefined);
+          }}
+        >
+          <Ionicons name={viewerSaved ? "bookmark" : "bookmark-outline"} size={16} color={viewerSaved ? colors.accent : colors.muted} />
+          <Text style={[styles.actionText, viewerSaved && styles.actionTextActive]}>
+            {saveState.pending ? (viewerSaved ? "Saving" : "Removing") : viewerSaved ? "Saved" : "Save"}
+          </Text>
+        </Pressable>
       </View>
 
       {reactionsOpen ? (

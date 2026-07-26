@@ -76,7 +76,6 @@ jest.mock("../../components/ReelPlayerCard", () => ({
 const mockList = jest.fn();
 const mockCached = jest.fn();
 const mockReact = jest.fn();
-const mockSave = jest.fn();
 const mockRepost = jest.fn();
 const mockReport = jest.fn();
 const mockNotInterested = jest.fn();
@@ -86,7 +85,6 @@ jest.mock("../../api/reels", () => ({
   listReels: (...args: any[]) => mockList(...args),
   loadCachedReelsSnapshot: (...args: any[]) => mockCached(...args),
   reactToReel: (...args: any[]) => mockReact(...args),
-  saveReel: (...args: any[]) => mockSave(...args),
   repostReel: (...args: any[]) => mockRepost(...args),
   reportReel: (...args: any[]) => mockReport(...args),
   markReelNotInterested: (...args: any[]) => mockNotInterested(...args),
@@ -98,7 +96,21 @@ jest.mock("../../api/reels", () => ({
   clearReelCommentDraft: jest.fn().mockResolvedValue(undefined)
 }));
 
+// Save is intercepted one layer lower than the other actions, at the transport.
+// There is no `saveReel` in the API module to stub any more: the screen calls the
+// shared save contract, and stubbing the contract would let a broken request body
+// pass. Mocking `pulseApi` means these tests still see the exact URL and payload
+// the server would receive. The `requireActual` spread keeps `PulseApiError`,
+// which this file imports and the report tests throw.
+jest.mock("../../api/pulseApi", () => ({
+  ...jest.requireActual("../../api/pulseApi"),
+  pulseApi: (...args: any[]) => mockSaveApi(...args)
+}));
+const mockSaveApi = jest.fn();
+
 import { PulseApiError } from "../../api/pulseApi";
+import { peekSaveState, resetSavedStoreForTests } from "../../social/savedStore";
+import { resetSaveActionsForTests } from "../../social/useSaveAction";
 import { ReelsScreen } from "../ReelsScreen";
 
 const REEL_ID = 88;
@@ -167,15 +179,35 @@ async function renderScreen(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   mockCardProps.length = 0;
   jest.clearAllMocks();
+  // The save store outlives a render, which is the point of it. Cleared between
+  // tests so one test's save does not decide the next test's starting state.
+  resetSavedStoreForTests();
+  resetSaveActionsForTests();
   // Must be a snapshot object, not null: the screen reads `snapshot.reels.length`
   // directly on both the happy and the recovery path.
   mockCached.mockResolvedValue({ reels: [], cachedAt: 0 });
 });
 
 describe("ReelsScreen save", () => {
+  it("states the wanted state on the reel save route rather than asking for a toggle", async () => {
+    // A Reel used to save through `saveReel(id)`, a bodyless POST that flipped
+    // whatever the server held. That is unsafe to repeat: a dropped response
+    // followed by a retry undoes the save. The request now names the state.
+    mockSaveApi.mockResolvedValue({ ok: true, saved: true, changed: true });
+    await renderScreen();
+
+    await tap(() => card().onSave(reel()));
+
+    expect(mockSaveApi).toHaveBeenCalledWith(
+      `/api/pulse/reels/${REEL_ID}/save`,
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(JSON.parse(mockSaveApi.mock.calls[0][1].body)).toEqual({ reel_id: REEL_ID, saved: true });
+  });
+
   it("issues one request for a double tap, so a save cannot race an unsave", async () => {
     const pending = deferred<any>();
-    mockSave.mockReturnValue(pending.promise);
+    mockSaveApi.mockReturnValue(pending.promise);
     await renderScreen();
 
     const onSave = card().onSave;
@@ -185,38 +217,44 @@ describe("ReelsScreen save", () => {
       first = onSave(reel());
       second = onSave(reel());
     });
-    expect(mockSave).toHaveBeenCalledTimes(1);
+    expect(mockSaveApi).toHaveBeenCalledTimes(1);
 
     await tap(async () => {
-      pending.resolve({ saved: true });
+      pending.resolve({ ok: true, saved: true });
       await Promise.all([first, second]);
     });
-    expect(card().reel.saved).toBe(true);
+    expect(peekSaveState("reel", REEL_ID)).toEqual({ saved: true, pending: false });
   });
 
   it("shows the save immediately and then keeps the server's answer", async () => {
+    // The server's answer outranks the optimistic guess even when it disagrees:
+    // another device may have unsaved it between the tap and the response.
     const pending = deferred<any>();
-    mockSave.mockReturnValue(pending.promise);
+    mockSaveApi.mockReturnValue(pending.promise);
     await renderScreen();
 
     let run!: Promise<unknown>;
     await tap(() => {
       run = card().onSave(reel());
     });
-    expect(card().reel.saved).toBe(true);
+    expect(peekSaveState("reel", REEL_ID)).toEqual({ saved: true, pending: true });
+
     await tap(async () => {
-      pending.resolve({ saved: false });
+      pending.resolve({ ok: true, saved: false });
       await run;
     });
-    expect(card().reel.saved).toBe(false);
+    expect(peekSaveState("reel", REEL_ID)).toEqual({ saved: false, pending: false });
   });
 
   it("rolls the save back and says why, instead of silently reverting", async () => {
     // The old `catch {}` reverted the bookmark with no message, which the user
     // cannot tell apart from a tap that never registered.
-    mockSave.mockRejectedValue(new Error("Network request failed"));
+    mockSaveApi.mockRejectedValue(new Error("Network request failed"));
     const { queryByTestId } = await renderScreen({ saved: false });
+
     await tap(() => card().onSave(reel()));
+
+    expect(peekSaveState("reel", REEL_ID)?.saved).toBe(false);
     expect(Boolean(card().reel.saved)).toBe(false);
     expect(queryByTestId("reels-action-message")?.props.children).toMatch(/offline/i);
   });
@@ -403,21 +441,26 @@ describe("ReelsScreen follow creator", () => {
   });
 });
 
+// Driven through repost rather than save. Save deliberately no longer flows
+// through this screen's guard — it is owned by the shared save store, so that a
+// tap here also settles the copy of the same content the feed behind this screen
+// is rendering. Repost is still a per-screen optimistic action, so it is the
+// action that still exercises `guard.isItemBusy`.
 describe("ReelsScreen busy state", () => {
   it("marks the card busy for the duration of a request and clears it afterwards", async () => {
     const pending = deferred<any>();
-    mockSave.mockReturnValue(pending.promise);
+    mockRepost.mockReturnValue(pending.promise);
     await renderScreen();
     expect(card().busy).toBe(false);
 
     let run!: Promise<unknown>;
     await tap(() => {
-      run = card().onSave(reel());
+      run = card().onRepost(reel());
     });
     expect(card().busy).toBe(true);
 
     await tap(async () => {
-      pending.resolve({ saved: true });
+      pending.resolve({ ok: true, reposted: true });
       await run;
     });
     expect(card().busy).toBe(false);

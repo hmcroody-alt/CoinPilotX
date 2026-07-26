@@ -59,7 +59,6 @@ const mockDetail = jest.fn();
 const mockList = jest.fn();
 const mockCached = jest.fn().mockResolvedValue(null);
 const mockReact = jest.fn();
-const mockSave = jest.fn();
 const mockRepost = jest.fn();
 jest.mock("../../api/feed", () => ({
   ...jest.requireActual("../../api/feed"),
@@ -67,11 +66,20 @@ jest.mock("../../api/feed", () => ({
   listPostComments: (...args: any[]) => mockList(...args),
   loadCachedPostDetail: (...args: any[]) => mockCached(...args),
   reactToPost: (...args: any[]) => mockReact(...args),
-  savePost: (...args: any[]) => mockSave(...args),
   repostPost: (...args: any[]) => mockRepost(...args)
 }));
+// Save is intercepted at the transport rather than in the API module: there is
+// no `savePost` left to stub, because the screen goes through the shared save
+// contract. Mocking `pulseApi` keeps the URL and request body under assertion.
+jest.mock("../../api/pulseApi", () => ({
+  ...jest.requireActual("../../api/pulseApi"),
+  pulseApi: (...args: any[]) => mockSaveApi(...args)
+}));
+const mockSaveApi = jest.fn();
 
 import { POST_COMMENT_PAGE_SIZE } from "../../api/feed";
+import { peekSaveState, resetSavedStoreForTests } from "../../social/savedStore";
+import { resetSaveActionsForTests } from "../../social/useSaveAction";
 import { PostDetailScreen } from "../PostDetailScreen";
 
 const POST_ID = 5;
@@ -139,6 +147,10 @@ async function renderScreen(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   mockCardProps.length = 0;
   jest.clearAllMocks();
+  // The save store is module-level by design — that is how two screens showing
+  // the same post agree — so it has to be cleared between tests.
+  resetSavedStoreForTests();
+  resetSaveActionsForTests();
   mockCached.mockResolvedValue(null);
   mockShare.mockResolvedValue({ ok: true });
 });
@@ -146,7 +158,7 @@ beforeEach(() => {
 describe("PostDetailScreen save", () => {
   it("issues one request for a double tap, so a save cannot race an unsave", async () => {
     const pending = deferred<any>();
-    mockSave.mockReturnValue(pending.promise);
+    mockSaveApi.mockReturnValue(pending.promise);
     await renderScreen();
 
     const onSave = card().onSave;
@@ -156,13 +168,26 @@ describe("PostDetailScreen save", () => {
       first = onSave(post());
       second = onSave(post());
     });
-    expect(mockSave).toHaveBeenCalledTimes(1);
+    expect(mockSaveApi).toHaveBeenCalledTimes(1);
 
     await tap(async () => {
-      pending.resolve({ saved: true });
+      pending.resolve({ ok: true, saved: true });
       await Promise.all([first, second]);
     });
-    expect(card().post.saved).toBe(true);
+    expect(peekSaveState("post", POST_ID)).toEqual({ saved: true, pending: false });
+  });
+
+  it("states the wanted state rather than asking the server to toggle", async () => {
+    mockSaveApi.mockResolvedValue({ ok: true, saved: true, changed: true });
+    await renderScreen({ saved: false });
+
+    await tap(() => card().onSave(card().post));
+
+    expect(mockSaveApi).toHaveBeenCalledWith(
+      `/api/pulse/posts/${POST_ID}/save`,
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(JSON.parse(mockSaveApi.mock.calls[0][1].body)).toEqual({ post_id: POST_ID, saved: true });
   });
 
   it("shows the save immediately and then keeps the server's answer", async () => {
@@ -170,27 +195,28 @@ describe("PostDetailScreen save", () => {
     // authoritative afterwards, which is what stops a rejected save from looking
     // saved until the next refresh.
     const pending = deferred<any>();
-    mockSave.mockReturnValue(pending.promise);
+    mockSaveApi.mockReturnValue(pending.promise);
     await renderScreen();
 
     let run!: Promise<unknown>;
     await tap(() => {
       run = card().onSave(post());
     });
-    expect(card().post.saved).toBe(true);
+    expect(peekSaveState("post", POST_ID)).toEqual({ saved: true, pending: true });
+
     await tap(async () => {
-      pending.resolve({ saved: false });
+      pending.resolve({ ok: true, saved: false });
       await run;
     });
-    expect(card().post.saved).toBe(false);
+    expect(peekSaveState("post", POST_ID)).toEqual({ saved: false, pending: false });
   });
 
   it("rolls the save back and reports the failure", async () => {
-    mockSave.mockRejectedValue(new Error("Network request failed"));
+    mockSaveApi.mockRejectedValue(new Error("Network request failed"));
     const { queryByText } = await renderScreen({ saved: false });
-    await tap(() => card().onSave(post()));
-    expect(card().post.saved).toBe(false);
-    expect(queryByText(/offline/i)).toBeTruthy();
+    await tap(() => card().onSave(card().post));
+    expect(peekSaveState("post", POST_ID)?.saved).toBe(false);
+    expect(queryByText(/offline|could not|connection/i)).toBeTruthy();
   });
 });
 

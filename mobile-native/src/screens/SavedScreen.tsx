@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -25,7 +25,26 @@ import {
 } from "../api/saved";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { routeNotificationTarget } from "../navigation/notificationRouting";
+import { SavableContentType, saveKey } from "../social/saveContract";
+import { observeSavedState, subscribeToSaveChanges } from "../social/savedStore";
+import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
+
+/**
+ * The content types this screen can hand back to the save contract.
+ *
+ * The library stores more types than the contract has routes for — rooms,
+ * groups, learning items — and those keep the row-id removal path they have
+ * always used. Only the four with a real route go through the store, because
+ * only those have cards elsewhere in the app whose state has to agree with
+ * this list.
+ */
+const STORE_BACKED_TYPES: SavableContentType[] = ["post", "reel", "status", "marketplace"];
+
+function storeBackedType(contentType: string): SavableContentType | null {
+  const candidate = String(contentType || "").toLowerCase() as SavableContentType;
+  return STORE_BACKED_TYPES.includes(candidate) ? candidate : null;
+}
 
 const TYPE_FILTERS: Array<{ key: SavedContentType; label: string }> = [
   { key: "all", label: "All" },
@@ -55,6 +74,15 @@ export function SavedScreen() {
   const [offline, setOffline] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  /**
+   * The store keys currently on screen. Held in a ref rather than derived from
+   * `items` inside the subscription so the subscription can stay mounted for
+   * the life of the screen — resubscribing on every list change would drop
+   * events that land between the unsubscribe and the resubscribe.
+   */
+  const presentKeys = useRef(new Set<string>());
+  const reload = useRef<() => void>(() => undefined);
+  reload.current = () => { load("refresh").catch(() => undefined); };
 
   const selectedCollection = useMemo(() => collections.find((collection) => collection.id === collectionId) || null, [collectionId, collections]);
 
@@ -65,12 +93,12 @@ export function SavedScreen() {
     if (mode === "refresh") setRefreshing(true);
     try {
       const data = await listSavedContent({ type, collectionId, query: nextQuery });
-      setItems(data.items || []);
+      adoptItems(data.items || []);
       setCollections(data.collections || []);
     } catch (loadError) {
       const cached = await loadCachedSavedLibrary();
       if (cached) {
-        setItems(cached.items || []);
+        adoptItems(cached.items || []);
         setCollections(cached.collections || []);
         setOffline(true);
       } else {
@@ -82,9 +110,59 @@ export function SavedScreen() {
     }
   }
 
+  /**
+   * Take a freshly loaded page as the truth for what is saved.
+   *
+   * Being in this list *is* the definition of saved, so every row seeds the
+   * store. That is how a post whose feed card was rendered from a stale
+   * payload — one fetched before the user saved it from somewhere else — shows
+   * Saved the moment it scrolls back into view, instead of waiting for the feed
+   * to be refetched.
+   */
+  const adoptItems = useCallback((next: SavedItem[]) => {
+    const keys = new Set<string>();
+    next.forEach((item) => {
+      const contentType = storeBackedType(item.content_type);
+      if (!contentType) return;
+      keys.add(saveKey(contentType, item.content_id));
+      observeSavedState(contentType, item.content_id, true);
+    });
+    presentKeys.current = keys;
+    setItems(next);
+  }, []);
+
   useEffect(() => {
     load("initial").catch(() => undefined);
   }, []);
+
+  /**
+   * An unsave performed anywhere else has to remove the row here — that is the
+   * half of the mission's requirement this screen owns, and the reason the
+   * store publishes a global channel at all. Removal is applied locally rather
+   * than by refetching, so the row disappears at the speed of the tap.
+   *
+   * A *save* elsewhere is the opposite case: the row does not exist yet and
+   * only the server can supply its id, collection and snapshot, so that one
+   * does cost a refetch — but only when the content is not already listed,
+   * which keeps a save on a feed card from reloading this screen needlessly.
+   */
+  useEffect(() => subscribeToSaveChanges((key, state) => {
+    if (state.saved) {
+      // Optimistic saves are not refetched — the row would arrive before the
+      // server had agreed to create it. A rollback lands here too, with
+      // `pending` false and the key already dropped below, which is what puts
+      // a failed unsave's row back.
+      if (state.pending) return;
+      if (!presentKeys.current.has(key)) reload.current();
+      return;
+    }
+    if (!presentKeys.current.has(key)) return;
+    presentKeys.current.delete(key);
+    setItems((current) => current.filter((item) => {
+      const contentType = storeBackedType(item.content_type);
+      return !contentType || saveKey(contentType, item.content_id) !== key;
+    }));
+  }), []);
 
   useEffect(() => {
     load("filter").catch(() => undefined);
@@ -142,16 +220,34 @@ export function SavedScreen() {
     }
   }
 
+  /**
+   * Remove goes through the save contract for anything with a card elsewhere.
+   *
+   * Deleting by library row id works, but it is invisible to the rest of the
+   * app: the feed card for that post would go on showing Saved until its next
+   * refetch, which is the same disagreement — read one way, written another —
+   * that made Save unreliable in the first place. Types with no route (rooms,
+   * groups, learning) keep the row-id path, since nothing else renders them.
+   */
   async function handleRemove(item: SavedItem) {
+    const contentType = storeBackedType(item.content_type);
     setBusy(true);
-    const previous = items;
-    setItems((current) => current.filter((candidate) => candidate.id !== item.id));
+    setError("");
     try {
-      await removeSavedItem(item.id);
-      await load("refresh");
-    } catch (removeError) {
-      setItems(previous);
-      setError(removeError instanceof Error ? removeError.message : "Saved item could not be removed.");
+      if (contentType) {
+        const outcome = await setSaved({ type: contentType, id: item.content_id }, false);
+        if (!outcome.ok) setError(outcome.message || "Saved item could not be removed.");
+        return;
+      }
+      const previous = items;
+      setItems((current) => current.filter((candidate) => candidate.id !== item.id));
+      try {
+        await removeSavedItem(item.id);
+        await load("refresh");
+      } catch (removeError) {
+        setItems(previous);
+        setError(removeError instanceof Error ? removeError.message : "Saved item could not be removed.");
+      }
     } finally {
       setBusy(false);
     }

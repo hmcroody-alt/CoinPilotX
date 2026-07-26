@@ -18,6 +18,9 @@ import { registerSyncInvalidation } from "../core/eventSync";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { routeNotificationTarget } from "../navigation/notificationRouting";
 import { RootStackParamList } from "../navigation/types";
+import { SavableContentType, saveTargetFromUrl } from "../social/saveContract";
+import { useSavedState } from "../social/savedStore";
+import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
 import { compactPreview, formatShortTime } from "../utils/format";
 
@@ -209,6 +212,10 @@ function ActivityRow({
   onRead: () => void;
   onDelete: () => void;
 }) {
+  // An activity row carries a destination and no content, so the only thing it
+  // can offer is a Save for whatever it points at — and only when it points at
+  // something savable. A row about a new follower gets no button.
+  const target = saveTargetFromUrl(item.targetUrl);
   return (
     <Pressable style={({ pressed }) => [styles.card, item.unread && styles.unreadCard, pressed && styles.pressedCard]} onPress={onOpen}>
       <View style={styles.cardTop}>
@@ -225,10 +232,44 @@ function ActivityRow({
         <Pressable accessibilityRole="button" style={styles.rowSecondaryButton} onPress={onRead}>
           <Text style={styles.rowSecondaryText}>{item.unread ? "Mark read" : "Read"}</Text>
         </Pressable>
+        {target ? <ActivitySaveButton contentType={target.type} contentId={target.id} sourceUrl={item.targetUrl} title={item.title} previewText={item.body} /> : null}
         <Pressable accessibilityRole="button" style={styles.rowDangerButton} onPress={onDelete}>
           <Text style={styles.rowDangerText}>{item.notificationId ? "Delete" : "Clear"}</Text>
         </Pressable>
       </View>
+    </Pressable>
+  );
+}
+
+function ActivitySaveButton({
+  contentType,
+  contentId,
+  sourceUrl,
+  title,
+  previewText
+}: {
+  contentType: SavableContentType;
+  contentId: number;
+  sourceUrl?: string;
+  title?: string;
+  previewText?: string;
+}) {
+  const state = useSavedState(contentType, contentId);
+  return (
+    <Pressable
+      testID={`activity-save-${contentType}-${contentId}`}
+      accessibilityRole="button"
+      accessibilityLabel={state.saved ? `Remove ${contentType} from Saved` : `Save ${contentType}`}
+      accessibilityState={{ selected: state.saved, busy: state.pending, disabled: state.pending }}
+      style={styles.rowSecondaryButton}
+      disabled={state.pending}
+      onPress={() => {
+        setSaved({ type: contentType, id: contentId, title, previewText, sourceUrl }, !state.saved).catch(() => undefined);
+      }}
+    >
+      <Text style={styles.rowSecondaryText}>
+        {state.pending ? (state.saved ? "Saving" : "Removing") : state.saved ? "Saved" : "Save"}
+      </Text>
     </Pressable>
   );
 }

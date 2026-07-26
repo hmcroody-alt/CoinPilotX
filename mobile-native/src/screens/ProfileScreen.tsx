@@ -1,12 +1,14 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
-import { deletePost, listFeed, PulsePost, pulsePostUrl, reactToPost, repostPost, savePost } from "../api/feed";
+import { deletePost, listFeed, PulsePost, pulsePostUrl, reactToPost, repostPost, savablePostId } from "../api/feed";
 import { describeDeleteError } from "../api/deleteErrors";
 import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
 import { MessengerUserSearchResult, openDirectConversation } from "../api/messenger";
 import { NativeProfileTarget, profileNavigationParams, profileTargetFromAuthor, resolveProfileTarget } from "../api/profileTarget";
 import { PostCard } from "../components/PostCard";
+import { peekSaveState } from "../social/savedStore";
+import { setSaved } from "../social/useSaveAction";
 import { ProfileHeader, ProfileModuleKey, ProfileStatKey } from "../components/ProfileHeader";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { invalidateNativeSync } from "../core/eventSync";
@@ -194,16 +196,16 @@ export function ProfileScreen({ route, navigation }: Props) {
     setPosts((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   }
 
+  // Routed through the shared save store rather than this screen's guard: the
+  // same post is very often also on the feed underneath this profile, and a
+  // per-screen optimistic update leaves that copy disagreeing. See
+  // `social/useSaveAction.ts`.
   async function handleSave(post: PulsePost) {
-    const wasSaved = Boolean(post.saved ?? post.is_saved);
-    await guard.run(actionKey("post_save", post.id), () => savePost(post.id), {
-      optimistic: () => updateProfilePost(post.id, { saved: !wasSaved }),
-      onResult: (result) => updateProfilePost(post.id, { saved: Boolean(result.saved ?? result.is_saved ?? !wasSaved) }),
-      onRollback: () => updateProfilePost(post.id, { saved: wasSaved }),
-      // Previously an empty `catch {}`: the bookmark snapped back with no
-      // explanation, which the user cannot tell apart from a missed tap.
-      onError: setActionMessage
-    });
+    const savableId = savablePostId(post);
+    const wasSaved = peekSaveState("post", savableId)?.saved ?? Boolean(post.saved ?? post.is_saved);
+    const outcome = await setSaved({ type: "post", id: savableId }, !wasSaved);
+    updateProfilePost(post.id, { saved: outcome.saved, is_saved: outcome.saved });
+    if (!outcome.ok && outcome.message) setActionMessage(outcome.message);
   }
 
   async function handleReact(post: PulsePost, reactionType: string) {

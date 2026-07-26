@@ -11,9 +11,12 @@ type Props = {
   selectedReaction?: string;
   reactionPending?: boolean;
   shareBusy?: boolean;
+  saved?: boolean;
+  savePending?: boolean;
   onReact: (reactionType: StatusReactionType) => void;
   onReply: () => void;
   onShare: () => void;
+  onSave: () => void;
 };
 
 /**
@@ -22,7 +25,7 @@ type Props = {
  * plain-text "React / Reply / Share" buttons. See mission report:
  * reports/pulsesoc_native_status_futuristic_icon_actions_2026-07-19.md
  */
-export function StatusActionRail({ reactionCount, selectedReaction, reactionPending, shareBusy, onReact, onReply, onShare }: Props) {
+export function StatusActionRail({ reactionCount, selectedReaction, reactionPending, shareBusy, saved, savePending, onReact, onReply, onShare, onSave }: Props) {
   const reduceMotion = useLogiNexusReducedMotion();
   const [trayOpen, setTrayOpen] = useState(false);
   const heartScale = useRef(new Animated.Value(1)).current;
@@ -118,6 +121,26 @@ export function StatusActionRail({ reactionCount, selectedReaction, reactionPend
           onPress={onShare}
         >
           <Ionicons name="paper-plane-outline" size={22} color={colors.text} />
+        </Pressable>
+
+        {/*
+          Status was savable everywhere except here: the web viewer has had a
+          Save control for as long as the generic saved library has existed, and
+          the native viewer offered React, Reply and Share and nothing else. The
+          same icon-button shape as its neighbours, so the rail is unchanged in
+          everything but length.
+        */}
+        <Pressable
+          testID="status-action-save"
+          accessibilityRole="button"
+          accessibilityLabel={saved ? "Remove Status from Saved" : "Save Status"}
+          accessibilityHint={saved ? "Removes this Status from your Saved collection" : "Adds this Status to your Saved collection"}
+          accessibilityState={{ selected: Boolean(saved), busy: Boolean(savePending), disabled: Boolean(savePending) }}
+          style={[styles.item, styles.iconButton, savePending ? styles.disabled : undefined]}
+          disabled={savePending}
+          onPress={onSave}
+        >
+          <Ionicons name={saved ? "bookmark" : "bookmark-outline"} size={22} color={saved ? colors.accent : colors.text} />
         </Pressable>
       </View>
 

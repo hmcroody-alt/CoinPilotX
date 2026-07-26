@@ -33069,6 +33069,15 @@ def pulse_status_active_rows(cur, viewer_user_id=0, limit=40):
                    AND COALESCE(ls.status,'') IN ('live','active')
                ) THEN 1 ELSE 0 END AS author_live,
                CASE WHEN s.status_type='ai' THEN 85 ELSE 50 END AS ai_momentum_score,
+               -- Saved state for this viewer. The Save action for a Status writes
+               -- the generic `pulse_saved_items` library, but nothing ever read it
+               -- back onto the Status itself, so a Status could be saved and had
+               -- no way to say so — which is also why the native Status card had
+               -- no Save control at all.
+               CASE WHEN EXISTS (
+                 SELECT 1 FROM pulse_saved_items si
+                 WHERE si.user_id=? AND si.content_type='status' AND si.content_id=CAST(s.id AS TEXT)
+               ) THEN 1 ELSE 0 END AS viewer_saved,
                (SELECT title FROM pulse_status_music sm WHERE sm.status_id=s.id ORDER BY sm.id DESC LIMIT 1) AS music_title
         FROM pulse_status s
         LEFT JOIN users u ON u.user_id=s.user_id
@@ -33084,7 +33093,9 @@ def pulse_status_active_rows(cur, viewer_user_id=0, limit=40):
         ORDER BY s.created_at DESC
         LIMIT ?
         """,
-        (viewer_user_id, viewer_user_id, now, viewer_user_id, int(limit or 40)),
+        # The saved-state subquery sits in the SELECT list, so its placeholder is
+        # bound first — ahead of the two join placeholders.
+        (viewer_user_id, viewer_user_id, viewer_user_id, now, viewer_user_id, int(limit or 40)),
     )
     return [dict(row) for row in cur.fetchall()]
 
@@ -35038,6 +35049,10 @@ def pulse_status_payload(row, viewer_user_id=0):
         "created_at": item.get("created_at") or "",
         "expires_at": item.get("expires_at") or "",
         "viewed": bool(item.get("viewer_viewed")),
+        # Both spellings, matching every other savable payload in the app, so a
+        # client does not have to know which surface it is reading.
+        "saved": bool(item.get("viewer_saved")),
+        "is_saved": bool(item.get("viewer_saved")),
         "view_count": safe_int(item.get("view_count"), 0),
         "completion_rate": round(float(item.get("completion_rate") or 0), 3),
         "reaction_count": safe_int(item.get("reaction_count"), 0),
@@ -77059,6 +77074,7 @@ def api_pulse_reel_save_by_id(reel_id):
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
+    want_saved = pulse_requested_save_state()
     reel = pulse_reel_payload(reel_id=reel_id, viewer_user_id=user["user_id"])
     if not reel:
         return api_error("Reel not found.", 404)
@@ -77066,10 +77082,25 @@ def api_pulse_reel_save_by_id(reel_id):
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT id FROM pulse_saved_items WHERE user_id=? AND content_type='reel' AND content_id=? LIMIT 1", (user["user_id"], str(reel_id)))
     existing = cur.fetchone()
-    if existing:
-        cur.execute("DELETE FROM pulse_saved_items WHERE id=? AND user_id=?", (existing["id"], user["user_id"]))
+    if want_saved is None:
+        want_saved = not existing
+    # A reel is a `pulse_reels` row over a `pulse_posts` row, and the Reels feed
+    # reads its `saved` flag straight out of that post via `pulse_feed_engine`.
+    # This route used to write only `pulse_saved_items`, which that read path
+    # never consults — so a saved reel showed Saved until the next fetch and
+    # then silently reverted, and survived neither refresh nor restart. Mirroring
+    # the state onto the underlying post is what makes it read back.
+    reel_post_id = safe_int(reel.get("post_id"), 0)
+    if reel_post_id:
+        cur.execute("SELECT * FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (reel_post_id,))
+        reel_post = cur.fetchone()
+        if reel_post:
+            pulse_apply_post_save(cur, user, reel_post, bool(want_saved), now)
+    if not want_saved:
+        if existing:
+            cur.execute("DELETE FROM pulse_saved_items WHERE id=? AND user_id=?", (existing["id"], user["user_id"]))
         conn.commit(); conn.close()
-        return jsonify({"ok": True, "saved": False, "message": "Reel removed from Saved."})
+        return jsonify({"ok": True, "saved": False, "is_saved": False, "changed": bool(existing), "content_type": "reel", "content_id": str(reel_id), "message": "Reel removed from Saved."})
     collection_id = ensure_pulse_saved_collection(cur, user["user_id"], "Reels")
     media = (reel.get("media") or [{}])[0] if isinstance(reel.get("media"), list) else {}
     cur.execute(
@@ -77094,7 +77125,7 @@ def api_pulse_reel_save_by_id(reel_id):
         ),
     )
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "saved": True, "message": "Reel saved."})
+    return jsonify({"ok": True, "saved": True, "is_saved": True, "changed": not existing, "content_type": "reel", "content_id": str(reel_id), "message": "Reel saved."})
 
 
 @webhook_app.route("/api/pulse/reels/<int:reel_id>/repost", methods=["POST", "DELETE"])
@@ -77546,6 +77577,120 @@ def pulse_saved_items_query(cur, user_id, *, collection_id=0, content_type="", q
     return [dict(row) for row in cur.fetchall()]
 
 
+PULSE_SAVE_TRUE_WORDS = {"1", "true", "yes", "on", "save", "saved"}
+PULSE_SAVE_FALSE_WORDS = {"0", "false", "no", "off", "unsave", "unsaved", "remove"}
+
+
+def pulse_requested_save_state(payload=None):
+    """The state the caller is asking for, or None if it wants a toggle.
+
+    Toggling is not idempotent: a client that retries a request whose response
+    it never saw — a dropped connection, a double tap, a background retry —
+    flips the state back instead of confirming it, which is exactly how a Save
+    button ends up disagreeing with the server. Callers that state their intent
+    ("make this saved") get an operation they can safely repeat. Callers that
+    do not are still toggled, because the existing web templates POST an empty
+    body and must keep working.
+    """
+    if not isinstance(payload, dict):
+        payload = request.get_json(silent=True) or {}
+    for key in ("saved", "is_saved", "save", "intent", "state"):
+        if key not in payload:
+            continue
+        value = payload.get(key)
+        if isinstance(value, bool):
+            return value
+        text = str(value if value is not None else "").strip().lower()
+        if text in PULSE_SAVE_TRUE_WORDS:
+            return True
+        if text in PULSE_SAVE_FALSE_WORDS:
+            return False
+    return None
+
+
+def pulse_savable_post_id(post_row):
+    """The post a Save on this row is about — see `pulse_feed_engine.savable_post_id`.
+
+    A repost is a wrapper row around an original. Saving the wrapper stored the
+    wrapper's id, so the same content shown as an original read back unsaved and
+    the Saved collection kept the resharer's caption instead of the post. Both
+    the feed's read path and this write path collapse to the original so the two
+    cannot disagree about what was saved.
+    """
+    if not post_row:
+        return 0
+    try:
+        original = int(post_row["repost_of_post_id"] or 0)
+    except (KeyError, IndexError, TypeError):
+        original = 0
+    if original > 0:
+        return original
+    try:
+        return int(post_row["id"] or 0)
+    except (KeyError, IndexError, TypeError):
+        return 0
+
+
+def pulse_apply_post_save(cur, user, post_row, want_saved, now):
+    """Bring one post to `want_saved` for one viewer. Returns (saved, changed).
+
+    Writes both tables the rest of the app reads: `pulse_post_saves`, which the
+    feed joins to decide a card's Save state, and `pulse_saved_items`, which the
+    Saved library lists. They were only ever written together here; doing it in
+    one function means a new caller cannot write one and forget the other.
+    """
+    user_id = user["user_id"]
+    target_id = pulse_savable_post_id(post_row)
+    if not target_id:
+        return False, False
+    row = post_row
+    if target_id != int(post_row["id"] or 0):
+        cur.execute("SELECT * FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (target_id,))
+        original = cur.fetchone()
+        if original:
+            row = original
+    cur.execute("SELECT id FROM pulse_post_saves WHERE post_id=? AND user_id=? LIMIT 1", (target_id, user_id))
+    currently_saved = bool(cur.fetchone())
+    if want_saved is None:
+        want_saved = not currently_saved
+    if bool(want_saved) == currently_saved:
+        return currently_saved, False
+    if not want_saved:
+        cur.execute("DELETE FROM pulse_post_saves WHERE post_id=? AND user_id=?", (target_id, user_id))
+        cur.execute(
+            "DELETE FROM pulse_saved_items WHERE user_id=? AND content_type='post' AND content_id=?",
+            (user_id, str(target_id)),
+        )
+        return False, True
+    post_type = (row["post_type"] if row is not None else "") or "post"
+    cur.execute(
+        "INSERT INTO pulse_post_saves (post_id, user_id, collection_name, created_at) VALUES (?, ?, 'Saved', ?)",
+        (target_id, user_id, now),
+    )
+    collection_id = ensure_pulse_saved_collection(cur, user_id)
+    title = clean_html((row["title"] if row is not None else "") or f"PulseSoc {post_type}")[:220]
+    preview = clean_html((row["body"] if row is not None else "") or "")[:700]
+    cur.execute(
+        """
+        INSERT INTO pulse_saved_items
+        (user_id, collection_id, content_type, content_id, title, preview_text, thumbnail_url, media_url, source_url, metadata_json, created_at, updated_at)
+        VALUES (?, ?, 'post', ?, ?, ?, '', '', ?, ?, ?, ?)
+        ON CONFLICT(user_id, content_type, content_id) DO UPDATE SET collection_id=excluded.collection_id, title=excluded.title, preview_text=excluded.preview_text, updated_at=excluded.updated_at
+        """,
+        (user_id, collection_id, str(target_id), title, preview, f"/pulse/post/{target_id}", json.dumps({"post_type": post_type}), now, now),
+    )
+    pulse_notify_post_owner(
+        cur,
+        target_id,
+        user,
+        "video_save" if post_type == "video" else "save",
+        "PulseSoc saved",
+        f"{pulse_actor_display_name(user)} saved your PulseSoc post.",
+        metadata={"source": "api_pulse_post_save", "content_type": post_type},
+    )
+    return True, True
+
+
 @webhook_app.route("/api/pulse/posts/<int:post_id>/save", methods=["POST"])
 def api_pulse_post_save(post_id):
     init_db()
@@ -77553,6 +77698,7 @@ def api_pulse_post_save(post_id):
     if not user:
         return api_error("Login required.", 401)
     trace_id = secrets.token_hex(6)
+    want_saved = pulse_requested_save_state()
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT * FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (post_id,))
     post = cur.fetchone()
@@ -77560,38 +77706,17 @@ def api_pulse_post_save(post_id):
         conn.close()
         return api_error("Post not found.", 404, trace_id)
     now = datetime.utcnow().isoformat(timespec="seconds")
-    cur.execute("SELECT id FROM pulse_post_saves WHERE post_id=? AND user_id=? LIMIT 1", (post_id, user["user_id"]))
-    existing = cur.fetchone()
-    if existing:
-        cur.execute("DELETE FROM pulse_post_saves WHERE post_id=? AND user_id=?", (post_id, user["user_id"]))
-        cur.execute("DELETE FROM pulse_saved_items WHERE user_id=? AND content_type='post' AND content_id=?", (user["user_id"], str(post_id)))
-        saved = False
-    else:
-        cur.execute("INSERT INTO pulse_post_saves (post_id, user_id, collection_name, created_at) VALUES (?, ?, 'Saved', ?)", (post_id, user["user_id"], now))
-        collection_id = ensure_pulse_saved_collection(cur, user["user_id"])
-        title = clean_html(post["title"] or f"PulseSoc {post['post_type'] or 'post'}")[:220]
-        preview = clean_html(post["body"] or "")[:700]
-        cur.execute(
-            """
-            INSERT INTO pulse_saved_items
-            (user_id, collection_id, content_type, content_id, title, preview_text, thumbnail_url, media_url, source_url, metadata_json, created_at, updated_at)
-            VALUES (?, ?, 'post', ?, ?, ?, '', '', ?, ?, ?, ?)
-            ON CONFLICT(user_id, content_type, content_id) DO UPDATE SET collection_id=excluded.collection_id, title=excluded.title, preview_text=excluded.preview_text, updated_at=excluded.updated_at
-            """,
-            (user["user_id"], collection_id, str(post_id), title, preview, f"/pulse/post/{post_id}", json.dumps({"post_type": post["post_type"] or "post"}), now, now),
-        )
-        saved = True
-        pulse_notify_post_owner(
-            cur,
-            post_id,
-            user,
-            "video_save" if (post["post_type"] or "") == "video" else "save",
-            "PulseSoc saved",
-            f"{pulse_actor_display_name(user)} saved your PulseSoc post.",
-            metadata={"source": "api_pulse_post_save", "content_type": post["post_type"] or "post"},
-        )
+    saved, changed = pulse_apply_post_save(cur, user, post, want_saved, now)
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "saved": saved, "message": "Post saved." if saved else "Post removed from saved."})
+    return jsonify({
+        "ok": True,
+        "saved": saved,
+        "is_saved": saved,
+        "changed": changed,
+        "content_type": "post",
+        "content_id": str(pulse_savable_post_id(post)),
+        "message": "Post saved." if saved else "Post removed from saved.",
+    })
 
 
 @webhook_app.route("/api/pulse/posts/<int:post_id>/hide", methods=["POST"])
@@ -77727,6 +77852,30 @@ def api_pulse_saved_items():
         if not content_id:
             conn.close()
             return api_error("Saved item is missing a content ID.", 400)
+        # Content-keyed removal. Deleting by row id already existed, but a card
+        # only knows what it is showing — a type and an id — and would have had
+        # to list the whole library to translate that into a row id before it
+        # could unsave anything. That is why Status had a Save with no Unsave.
+        # Absent an explicit intent this stays an add, because every existing
+        # caller POSTs here to save.
+        if pulse_requested_save_state(payload) is False:
+            cur.execute(
+                "DELETE FROM pulse_saved_items WHERE user_id=? AND content_type=? AND content_id=?",
+                (user["user_id"], content_type, content_id),
+            )
+            removed = cur.rowcount
+            conn.commit(); conn.close()
+            return jsonify({
+                "ok": True,
+                "saved": False,
+                "is_saved": False,
+                "changed": bool(removed),
+                "content_type": content_type,
+                "content_id": content_id,
+                "items": [],
+                "collections": [],
+                "message": "Removed from Saved.",
+            })
         collection_id = safe_int(payload.get("collection_id"), 0) or ensure_pulse_saved_collection(cur, user["user_id"])
         cur.execute("SELECT id FROM pulse_saved_collections WHERE id=? AND user_id=? LIMIT 1", (collection_id, user["user_id"]))
         if not cur.fetchone():
@@ -77743,7 +77892,11 @@ def api_pulse_saved_items():
             (user["user_id"], collection_id, content_type, content_id, snapshot["title"], snapshot["preview_text"], snapshot["thumbnail_url"], snapshot["media_url"], snapshot["source_url"], json.dumps(payload, default=str)[:5000], now, now),
         )
         conn.commit()
+        # Held separately because the listing filters below reassign
+        # `content_type` from the query string.
+        saved_content_type, saved_content_id = content_type, content_id
     else:
+        saved_content_type, saved_content_id = "", ""
         ensure_pulse_saved_collection(cur, user["user_id"])
         conn.commit()
     collection_id = safe_int(request.args.get("collection_id"), 0)
@@ -77753,7 +77906,10 @@ def api_pulse_saved_items():
     cur.execute("SELECT * FROM pulse_saved_collections WHERE user_id=? ORDER BY is_default DESC, name", (user["user_id"],))
     collections = [dict(row) for row in cur.fetchall()]
     conn.close()
-    return jsonify({"ok": True, "items": items, "collections": collections, "message": "Saved." if request.method == "POST" else ""})
+    response = {"ok": True, "items": items, "collections": collections, "message": "Saved." if request.method == "POST" else ""}
+    if request.method == "POST":
+        response.update({"saved": True, "is_saved": True, "changed": True, "content_type": saved_content_type, "content_id": saved_content_id})
+    return jsonify(response)
 
 
 @webhook_app.route("/api/pulse/saved/<int:item_id>", methods=["DELETE"])
@@ -81233,6 +81389,20 @@ def api_pulse_marketplace_listing_save():
         return jsonify({"ok": False, "message": "Listing not found."}), 404
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    # This route could only ever add. The native card's answer was to disable the
+    # button once a listing was saved, which left the user with no way to undo a
+    # mis-tap and no route to call if there had been one. Saving is one control
+    # everywhere else in the app, so it is one control here too.
+    cur.execute("SELECT 1 FROM marketplace_saved_products WHERE user_id=? AND listing_id=? LIMIT 1", (user["user_id"], listing_id))
+    currently_saved = bool(cur.fetchone())
+    want_saved = pulse_requested_save_state(payload)
+    if want_saved is None:
+        want_saved = not currently_saved
+    if not want_saved:
+        cur.execute("DELETE FROM marketplace_saved_products WHERE user_id=? AND listing_id=?", (user["user_id"], listing_id))
+        cur.execute("DELETE FROM pulse_saved_items WHERE user_id=? AND content_type='marketplace' AND content_id=?", (user["user_id"], str(listing_id)))
+        conn.commit(); conn.close()
+        return jsonify({"ok": True, "saved": False, "is_saved": False, "changed": currently_saved, "content_type": "marketplace", "content_id": str(listing_id), "message": "Product removed from Saved."})
     cur.execute("INSERT OR IGNORE INTO marketplace_saved_products (user_id, listing_id, created_at) VALUES (?, ?, ?)", (user["user_id"], listing_id, now))
     collection_id = ensure_pulse_saved_collection(cur, user["user_id"], "Marketplace")
     title = f"Marketplace item #{listing_id}"
@@ -81259,7 +81429,7 @@ def api_pulse_marketplace_listing_save():
         (user["user_id"], collection_id, str(listing_id), title, preview, thumbnail, f"/pulse/marketplace", json.dumps({"listing_id": listing_id}), now, now),
     )
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "message": "Product saved."})
+    return jsonify({"ok": True, "saved": True, "is_saved": True, "changed": not currently_saved, "content_type": "marketplace", "content_id": str(listing_id), "message": "Product saved."})
 
 
 @webhook_app.route("/api/pulse/courses/create", methods=["POST"])

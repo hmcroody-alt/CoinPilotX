@@ -629,21 +629,44 @@ def _public_post(
     }
 
 
+def savable_post_id(row):
+    """The post a Save on this row is *about*.
+
+    A repost is its own `pulse_posts` row wrapping an original, and the wrapper
+    is what the feed hands the client. Saving the wrapper stores the wrapper's
+    id, so the original's card — same content, different id — kept reading back
+    unsaved, and the Saved collection filled up with wrapper rows whose body is
+    the resharer's caption rather than the post the user meant to keep.
+
+    Collapsing to the original here means one row in `pulse_post_saves` per
+    piece of content no matter which card the user tapped. The write path uses
+    the same function, so read and write cannot disagree about identity.
+    """
+    row = row or {}
+    original = int(row.get("repost_of_post_id") or 0)
+    return original if original > 0 else int(row.get("id") or 0)
+
+
 def _viewer_post_state(cur, rows, viewer_user_id=None):
     if not viewer_user_id or not rows:
         return {"saved": set(), "reposted": set(), "following": set()}
     post_ids = sorted({int((row or {}).get("id") or 0) for row in rows or [] if int((row or {}).get("id") or 0) > 0})
+    # Saves are keyed on the original, reposts and follows on the wrapper, so
+    # the two id sets are deliberately not the same list.
+    saved_ids = sorted({savable_post_id(row) for row in rows or [] if savable_post_id(row) > 0})
     author_ids = sorted({int((row or {}).get("user_id") or 0) for row in rows or [] if int((row or {}).get("user_id") or 0) > 0})
     saved = set()
     reposted = set()
     following = set()
-    if post_ids:
-        placeholders = ",".join(["?"] * len(post_ids))
+    if saved_ids:
+        placeholders = ",".join(["?"] * len(saved_ids))
         cur.execute(
             f"SELECT post_id FROM pulse_post_saves WHERE user_id=? AND post_id IN ({placeholders})",
-            (int(viewer_user_id), *post_ids),
+            (int(viewer_user_id), *saved_ids),
         )
         saved = {int(row["post_id"]) for row in cur.fetchall()}
+    if post_ids:
+        placeholders = ",".join(["?"] * len(post_ids))
         cur.execute(
             f"""
             SELECT repost_of_post_id
@@ -746,7 +769,7 @@ def _repost_originals(cur, rows, viewer_user_id=None):
             viewer_user_id,
             views.get(int(row["id"]), 0),
             music.get(int(row["id"])),
-            int(row["id"]) in viewer_state["saved"],
+            savable_post_id(row) in viewer_state["saved"],
             int(row["id"]) in viewer_state["reposted"],
             int(row.get("user_id") or 0) in viewer_state["following"],
             reposts=reposts.get(int(row["id"]), 0),
@@ -965,7 +988,7 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
         viewer_user_id,
         views.get(int(post_id), 0),
         music.get(int(post_id)),
-        int(post_id) in viewer_state["saved"],
+        savable_post_id(row) in viewer_state["saved"],
         int(post_id) in viewer_state["reposted"],
         int(row.get("user_id") or 0) in viewer_state["following"],
         reposts=reposts.get(int(post_id), 0),
@@ -1102,7 +1125,7 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
             viewer_user_id,
             views.get(int(row["id"]), 0),
             music.get(int(row["id"])),
-            int(row["id"]) in viewer_state["saved"],
+            savable_post_id(row) in viewer_state["saved"],
             int(row["id"]) in viewer_state["reposted"],
             int(row.get("user_id") or 0) in viewer_state["following"],
             reposts=reposts.get(int(row["id"]), 0),
@@ -1183,7 +1206,7 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
             viewer_user_id,
             views.get(int(row["id"]), 0),
             music.get(int(row["id"])),
-            int(row["id"]) in viewer_state["saved"],
+            savable_post_id(row) in viewer_state["saved"],
             int(row["id"]) in viewer_state["reposted"],
             int(row.get("user_id") or 0) in viewer_state["following"],
             reposts=reposts.get(int(row["id"]), 0),

@@ -46,7 +46,6 @@ import {
   reportReel,
   reportReelComment,
   repostReel,
-  saveReel,
   saveReelCommentDraft,
   shareReel,
   trackReelView
@@ -62,6 +61,8 @@ import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { registerReelsReselectHandler } from "../navigation/reelsReselect";
 import { RootStackParamList } from "../navigation/types";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
+import { peekSaveState } from "../social/savedStore";
+import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { useAuth } from "../session/auth";
@@ -320,15 +321,21 @@ export function ReelsScreen({ route, navigation }: Props) {
     });
   }
 
+  // This handler was already correct on the client and still did not work: the
+  // save route wrote the generic library while the Reels feed read its `saved`
+  // flag off the underlying post, so the optimistic flip was reverted by the
+  // next fetch. The server now writes both (see `api_pulse_reel_save_by_id`);
+  // routing through the shared store additionally keeps a reel that also
+  // appears as a feed post in agreement with itself.
   async function handleSave(reel: PulseReel) {
     if (reel.live_session_id || reel.live?.live_session_id) return;
-    const wasSaved = Boolean(reel.saved);
-    await guard.run(actionKey("reel_save", reel.id), () => saveReel(reel.id), {
-      optimistic: () => updateReel(reel.id, { saved: !wasSaved }),
-      onResult: (result) => updateReel(reel.id, { saved: Boolean(result.saved ?? !wasSaved) }),
-      onRollback: () => updateReel(reel.id, { saved: wasSaved }),
-      onError: setActionMessage
-    });
+    // Read from the store, not from this screen's copy of the reel: the copy can
+    // be out of date if the same content was saved from the feed post it also
+    // appears as.
+    const wasSaved = peekSaveState("reel", reel.id)?.saved ?? Boolean(reel.saved);
+    const outcome = await setSaved({ type: "reel", id: reel.id }, !wasSaved);
+    updateReel(reel.id, { saved: outcome.saved });
+    if (!outcome.ok && outcome.message) setActionMessage(outcome.message);
   }
 
   async function handleRepost(reel: PulseReel) {
