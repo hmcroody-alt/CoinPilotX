@@ -7,6 +7,7 @@ import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-c
 import { IncomingCallLayer } from "./src/calls/IncomingCallLayer";
 import { InAppNotificationBanner } from "./src/components/InAppNotificationBanner";
 import { TimeZoneProvider } from "./src/core/TimeZoneContext";
+import { I18nProvider, useI18n, useTranslation } from "./src/i18n";
 import { AppNavigator } from "./src/navigation/AppNavigator";
 import { AuthNavigator } from "./src/navigation/AuthNavigator";
 import { linking } from "./src/navigation/linking";
@@ -14,6 +15,7 @@ import { navigationRef, routeNotificationTarget, setupNotificationResponseRoutin
 import { RootStackParamList } from "./src/navigation/types";
 import { AuthContext, AuthState, expiredState, fatalErrorState, restoreSession, stateFor } from "./src/session/auth";
 import { isQaSimulatorAuthEnabled, tryHandleQaSimulatorAuthUrl } from "./src/session/qaSimulatorAuth";
+import { SettingsProviders } from "./src/settings/SettingsProviders";
 import { colors } from "./src/theme/colors";
 import { registerPushDevice, syncPushDeviceRegistration } from "./src/api/push";
 import { startPresenceSession, stopPresenceSession } from "./src/api/presenceSession";
@@ -34,7 +36,23 @@ const PERF_OVERLAY_ENABLED =
   ["1", "true", "on"].includes(String(process.env.EXPO_PUBLIC_PULSESOC_PERF_OVERLAY || "").trim().toLowerCase());
 if (PERF_OVERLAY_ENABLED) configurePerfTracing({ enabled: true });
 
+/**
+ * The localization provider wraps everything, including the pre-navigation
+ * bootstrap and error screens. Those screens render before any navigator
+ * exists, so if the provider sat lower in the tree they would be the one part
+ * of PulseSoc a user could still only read in English.
+ */
 export default function App() {
+  return (
+    <I18nProvider>
+      <AppRoot />
+    </I18nProvider>
+  );
+}
+
+function AppRoot() {
+  const { ready: i18nReady } = useI18n();
+  const { t } = useTranslation();
   const [authState, setAuthState] = useState<AuthState>(stateFor("BOOTSTRAPPING"));
   const [pendingQaCameraRoute, setPendingQaCameraRoute] = useState<RootStackParamList["CameraStudio"] | null>(null);
   const [pendingQaRedirectTarget, setPendingQaRedirectTarget] = useState("");
@@ -225,9 +243,15 @@ export default function App() {
     []
   );
 
-  if (authState.phase === "BOOTSTRAPPING") {
+  // Holding the splash until the core catalogs are resident is what guarantees
+  // the first rendered frame is already in the user's language — no screen ever
+  // paints English and then swaps.
+  if (!i18nReady || authState.phase === "BOOTSTRAPPING") {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
+      <View
+        accessibilityLabel={i18nReady ? t("common:a11y.loading") : undefined}
+        style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}
+      >
         <ActivityIndicator color={colors.accent} />
       </View>
     );
@@ -238,19 +262,18 @@ export default function App() {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background, padding: 24 }}>
         <Text style={{ color: colors.text, fontSize: 18, fontWeight: "700", textAlign: "center", marginBottom: 8 }}>
-          {recoverable ? "Can't reach PulseSoc" : "Something went wrong"}
+          {recoverable ? t("errors:network.title") : t("errors:generic.title")}
         </Text>
         <Text style={{ color: colors.muted, fontSize: 14, textAlign: "center", marginBottom: 20 }}>
-          {recoverable
-            ? "We couldn't confirm your session. Check your connection and try again."
-            : "We couldn't start PulseSoc. Please try again."}
+          {recoverable ? t("errors:startup.sessionUnconfirmed") : t("errors:startup.launchFailed")}
         </Text>
         <Pressable
           accessibilityRole="button"
+          accessibilityLabel={t("common:actions.retry")}
           onPress={bootstrapSession}
           style={{ backgroundColor: colors.accent, borderRadius: 12, paddingHorizontal: 28, paddingVertical: 12 }}
         >
-          <Text style={{ color: colors.background, fontWeight: "700" }}>Try again</Text>
+          <Text style={{ color: colors.background, fontWeight: "700" }}>{t("common:actions.retry")}</Text>
         </Pressable>
       </View>
     );
@@ -261,16 +284,30 @@ export default function App() {
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <TimeZoneProvider>
           <AuthContext.Provider value={auth}>
-            {authState.status === "signedIn" ? (
-              <TranslationPreferencesBootstrap key={authState.user?.user_id || "signed-in"} />
-            ) : null}
-            <NavigationContainer ref={navigationRef} theme={theme} linking={authState.status === "signedIn" ? linking : undefined}>
-              <StatusBar style="light" />
-              {authState.status === "signedIn" ? <AppNavigator /> : <AuthNavigator />}
-            </NavigationContainer>
-            {authState.status === "signedIn" ? <InAppNotificationBanner /> : null}
-            <IncomingCallLayer signedIn={authState.status === "signedIn"} currentUserId={authState.user?.user_id} />
-            {PERF_OVERLAY_ENABLED ? <PerfOverlay /> : null}
+            {/*
+              Preferences and theme sit inside AuthContext and outside the
+              NavigationContainer. Inside auth because the store's sync half
+              needs a session to talk to; outside navigation because the theme
+              feeds `NavigationContainer`'s own chrome and because every screen
+              below — not just the settings tree — calls `useTheme`.
+
+              `syncEnabled` follows the session rather than gating the whole
+              provider on it: a signed-out user still gets their persisted theme
+              and text size on the auth screens, we just don't issue preference
+              requests that would 401.
+            */}
+            <SettingsProviders syncEnabled={authState.status === "signedIn"}>
+              {authState.status === "signedIn" ? (
+                <TranslationPreferencesBootstrap key={authState.user?.user_id || "signed-in"} />
+              ) : null}
+              <NavigationContainer ref={navigationRef} theme={theme} linking={authState.status === "signedIn" ? linking : undefined}>
+                <StatusBar style="light" />
+                {authState.status === "signedIn" ? <AppNavigator /> : <AuthNavigator />}
+              </NavigationContainer>
+              {authState.status === "signedIn" ? <InAppNotificationBanner /> : null}
+              <IncomingCallLayer signedIn={authState.status === "signedIn"} currentUserId={authState.user?.user_id} />
+              {PERF_OVERLAY_ENABLED ? <PerfOverlay /> : null}
+            </SettingsProviders>
           </AuthContext.Provider>
         </TimeZoneProvider>
       </SafeAreaProvider>

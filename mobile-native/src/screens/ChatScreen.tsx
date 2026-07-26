@@ -76,6 +76,7 @@ import {
 } from "../core/voiceMessagePlayback";
 import { RootStackParamList } from "../navigation/types";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
+import { presenceActivityText } from "../api/presence";
 import { reportPresenceActivity } from "../api/presenceSession";
 import { useAuth } from "../session/auth";
 import {
@@ -1554,18 +1555,6 @@ function peerPresenceFrom(presence: MessengerPresence | undefined, selfUserId: n
   };
 }
 
-const PRESENCE_ACTIVITY_LABELS: Record<string, string> = {
-  typing: "Typing…",
-  recording_voice: "Recording voice…",
-  uploading_media: "Uploading media…",
-  sending_files: "Sending files…",
-  in_audio_call: "In audio call",
-  in_video_call: "In video call",
-  live_hosting: "Hosting Live",
-  live_guest: "Guest in Live",
-  live_watching: "Watching Live"
-};
-
 /**
  * Render the peer's presence as a single header line.
  *
@@ -1576,7 +1565,10 @@ const PRESENCE_ACTIVITY_LABELS: Record<string, string> = {
 function peerPresenceSubtitle(presence: PeerPresence | null) {
   if (!presence) return "";
   if (presence.online) {
-    const activity = PRESENCE_ACTIVITY_LABELS[presence.activity];
+    // Activity wording comes from the shared presence module, not a local map.
+    // Two copies of this vocabulary is how Messenger and Live end up calling
+    // the same state different things.
+    const activity = presenceActivityText(presence.activity);
     return activity ? `${activity} · Direct` : "Online · Direct";
   }
   return presence.last_seen_text || "Offline";
@@ -1591,7 +1583,7 @@ function peerPresenceSubtitle(presence: PeerPresence | null) {
 function peerPresenceControlLabel(presence: PeerPresence | null) {
   if (!presence) return "";
   if (presence.online) {
-    return PRESENCE_ACTIVITY_LABELS[presence.activity] || "Online";
+    return presenceActivityText(presence.activity) || "Online";
   }
   return presence.last_seen_text || "Offline";
 }
