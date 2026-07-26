@@ -33,6 +33,8 @@ export const TERMINAL_CALL_STATES = new Set<string>([
 
 /** Statuses that mean an inbound call is still awaiting the recipient's answer. */
 export const INBOUND_RINGING_STATES = new Set<string>(["created", "ringing"]);
+export const MEDIA_CONNECTABLE_CALL_STATES = new Set<string>(["accepted", "connecting", "connected", "active", "reconnecting"]);
+export const UNAVAILABLE_CALL_STATES = new Set<string>(["missed", "failed", "busy", "expired", "declined", "rejected", "canceled", "cancelled"]);
 
 export function isTerminalCallStatus(status?: string | null): boolean {
   return TERMINAL_CALL_STATES.has(String(status || ""));
@@ -53,6 +55,34 @@ export function shouldPlayRingback(input: {
   if (input.mediaConnected) return false;
   if (isTerminalCallStatus(input.status)) return false;
   return String(input.status || "") === "ringing";
+}
+
+export function shouldConnectCallMedia(input: {
+  direction?: string | null;
+  status?: string | null;
+}): boolean {
+  const status = String(input.status || "").toLowerCase();
+  if (isTerminalCallStatus(status)) return false;
+  if (String(input.direction || "") === "incoming" && INBOUND_RINGING_STATES.has(status)) return false;
+  return MEDIA_CONNECTABLE_CALL_STATES.has(status);
+}
+
+export function shouldPlayUnavailablePrompt(input: {
+  direction?: string | null;
+  everConnected: boolean;
+  status?: string | null;
+}): boolean {
+  if (input.everConnected) return false;
+  if (String(input.direction || "") === "incoming") return false;
+  return UNAVAILABLE_CALL_STATES.has(String(input.status || "").toLowerCase());
+}
+
+export function unavailableCallPrompt(status?: string | null): string {
+  const value = String(status || "").toLowerCase();
+  if (value === "declined" || value === "rejected") return "The person you are calling declined.";
+  if (value === "busy") return "The person you are calling is busy.";
+  if (value === "failed") return "The person you are calling could not be reached.";
+  return "The person you are calling is not available.";
 }
 
 /**

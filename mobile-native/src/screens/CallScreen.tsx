@@ -32,7 +32,8 @@ import {
 } from "../api/calls";
 import { useNativeCallRoom } from "../calls/useNativeCallRoom";
 import { callHaptic, playCallCue, startCallTone, stopCallTone } from "../calls/callSignalMedia";
-import { isTerminalCallStatus, shouldPlayRingback } from "../calls/callToneLifecycle";
+import { endCallKitCall, markCallKitConnected } from "../calls/callKitBridge";
+import { isTerminalCallStatus, shouldConnectCallMedia, shouldPlayRingback, shouldPlayUnavailablePrompt, unavailableCallPrompt } from "../calls/callToneLifecycle";
 import { stopVoiceMessagePlayback } from "../core/voiceMessagePlayback";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -40,6 +41,7 @@ import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 
 const STATUS_REFRESH_MS = 4200;
+const RINGING_STATUS_REFRESH_MS = 1100;
 
 type NativeVideoViewProps = {
   videoTrack?: any;
@@ -66,6 +68,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const qualitySubmitted = useRef(false);
   const connectedAtMs = useRef(0);
   const everConnected = useRef(false);
+  const terminalCuePlayedFor = useRef("");
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const room = useNativeCallRoom();
   const insets = useSafeAreaInsets();
@@ -138,9 +141,9 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
       const next = await startConversationCall(params.conversationId, requestedType);
       setCall(next);
       setCallId(next.call_id);
-      await connectProvider(next, requestedType);
     } catch (startError) {
       setError(friendlyCallError(startError, "start"));
+      playCallCue("disconnect").catch(() => undefined);
     } finally {
       setLoading(false);
       setActionBusy("");
@@ -167,11 +170,11 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   }, [callId, refresh]);
 
   useEffect(() => {
-    if (!call || terminal || incoming && ["created", "ringing"].includes(String(call.status || ""))) return;
-    if (["accepted", "connecting", "connected", "active", "reconnecting"].includes(String(call.status || ""))) {
+    if (!call || terminal) return;
+    if (shouldConnectCallMedia({ direction: params.direction, status: call.status })) {
       connectProvider(call, callType).catch(() => undefined);
     }
-  }, [call, callType, connectProvider, incoming, terminal]);
+  }, [call, callType, connectProvider, params.direction, terminal]);
 
   useEffect(() => {
     if (!terminal) return;
@@ -209,24 +212,34 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
       everConnected.current = true;
       stopCallTone().catch(() => undefined);
       playCallCue("connect").catch(() => undefined);
+      if (callId) markCallKitConnected(callId);
     }
-  }, [connected]);
+  }, [callId, connected]);
 
   useEffect(() => {
-    if (terminal && everConnected.current) {
+    if (!terminal || !callId) return;
+    if (terminalCuePlayedFor.current === callId) return;
+    terminalCuePlayedFor.current = callId;
+    stopCallTone().catch(() => undefined);
+    endCallKitCall(callId);
+    if (shouldPlayUnavailablePrompt({ direction: params.direction, everConnected: everConnected.current, status: call?.status })) {
+      setError(unavailableCallPrompt(call?.status));
+      playCallCue("disconnect").catch(() => undefined);
+    } else if (everConnected.current) {
       playCallCue("disconnect").catch(() => undefined);
     }
-  }, [terminal]);
+  }, [call?.status, callId, params.direction, terminal]);
 
   useEffect(() => () => { stopCallTone().catch(() => undefined); }, []);
 
   useEffect(() => {
     if (!callId) return undefined;
+    const intervalMs = String(call?.status || "").toLowerCase() === "ringing" ? RINGING_STATUS_REFRESH_MS : STATUS_REFRESH_MS;
     const timer = setInterval(() => {
       if (appState.current === "active") refresh().catch(() => undefined);
-    }, STATUS_REFRESH_MS);
+    }, intervalMs);
     return () => clearInterval(timer);
-  }, [callId, refresh]);
+  }, [call?.status, callId, refresh]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
@@ -319,6 +332,9 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
     if (navigation.canGoBack()) navigation.goBack();
   }, [callId, navigation]);
 
+  const unavailablePrompt = shouldPlayUnavailablePrompt({ direction: params.direction, everConnected: everConnected.current, status: call?.status })
+    ? unavailableCallPrompt(call?.status)
+    : "";
   const statusLabel = callStatusLabel(call, room.connectionState, room.reconnecting, incoming);
   const showVideo = callType === "video" && Boolean(room.remoteVideoTrack || room.localVideoTrack);
 
@@ -385,7 +401,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
         <View style={styles.centerState}>
           <Ionicons name="checkmark-circle-outline" size={58} color={colors.accent} />
           <Text style={styles.centerStateTitle}>Call {String(call?.status || "ended")}</Text>
-          <Text style={styles.centerStateCopy}>{formatDuration(elapsedSeconds)} · {room.reconnectCount} reconnects</Text>
+          <Text style={styles.centerStateCopy}>{unavailablePrompt || `${formatDuration(elapsedSeconds)} · ${room.reconnectCount} reconnects`}</Text>
           <Pressable style={styles.doneButton} onPress={() => navigation.goBack()}><Text style={styles.doneText}>Done</Text></Pressable>
         </View>
       ) : controlsVisible ? (

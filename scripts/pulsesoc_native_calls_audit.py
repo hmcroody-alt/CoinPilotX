@@ -108,7 +108,7 @@ def main() -> int:
     require(chat, 'navigation.navigate("Call"', "Chat call entry points")
     require(control_center, "onStartCall", "control-center call entry points")
     require(incoming_layer, 'navigationRef.navigate("Call"', "incoming call routing")
-    for forbidden in ["ACTIVE PULSESOC CALL", "floatingCall", "callBubbleMain", "callBubbleEnd", "endCall"]:
+    for forbidden in ["ACTIVE PULSESOC CALL", "floatingCall", "callBubbleMain", "callBubbleEnd", "Voice in progress", "Video in progress"]:
         if forbidden in incoming_layer:
             raise AssertionError(f"Global active-call banner residue remains: {forbidden}")
     require(incoming_layer, "isIncomingRingingCall", "incoming-only global call validation")

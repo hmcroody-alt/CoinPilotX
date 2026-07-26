@@ -2,6 +2,17 @@
 
 Date: 2026-07-18
 
+## Latest Mission Status: Native Call Ringing, Answer, and Unavailable Flow
+
+- Date: 2026-07-26.
+- Branch: `release/undx-nexus-core-v4`.
+- Result: **FIXED (foreground/code path)**; no TestFlight build, upload, submit, or tester assignment was performed by explicit constraint.
+- Root cause: outgoing native calls joined the LiveKit media room immediately after server call creation, which could advance backend state and stop ringback before the recipient answered. The caller also lacked a clear pre-answer unavailable state for missed, expired, declined, busy, or failed calls.
+- Fix: extracted shared lifecycle predicates, kept ringback active only during outgoing `ringing`, delayed media connection until the backend reports accepted/connecting/connected, tightened polling while ringing, added caller unavailable messaging for pre-answer terminal states, preserved Full-screen incoming calls, and wired incoming calls into the existing CallKit bridge when a provider is available.
+- Validations: typecheck clean; focused native call Jest `4` suites / `33` tests passed; full native Jest `85` suites / `1356` tests passed; Expo Doctor `16/16` passed; call system, real call experience, native calls, incoming calls, fullscreen incoming calls, call QA, and call P0 behavior audits passed; iPhone 17 Pro Max simulator build/install/launch passed.
+- Physical iPhone: Xcode listed connected iPhones as offline during this run, so locked-device/app-killed CallKit, VoIP push, real ringtone/vibration, microphone/camera, Bluetooth/speaker routing, and two-device media remain physical-device release QA.
+- Report: `reports/pulsesoc_native_call_ringing_answer_unavailable_2026-07-26.md`.
+
 ## Latest Mission Status: Native Live Audio and Viewer Playback Repair
 
 - Date: 2026-07-26.

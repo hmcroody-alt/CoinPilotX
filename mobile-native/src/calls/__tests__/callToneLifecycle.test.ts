@@ -4,6 +4,8 @@ import {
   TERMINAL_CALL_STATES,
   isIncomingRingingCall,
   isTerminalCallStatus,
+  shouldConnectCallMedia,
+  shouldPlayUnavailablePrompt,
   shouldPlayRingback
 } from "../callToneLifecycle";
 
@@ -97,5 +99,37 @@ describe("isTerminalCallStatus", () => {
     expect(isTerminalCallStatus("ringing")).toBe(false);
     expect(isTerminalCallStatus("connected")).toBe(false);
     expect(isTerminalCallStatus(undefined)).toBe(false);
+  });
+});
+
+describe("shouldConnectCallMedia", () => {
+  it("does not join the media room while the caller is only ringing the recipient", () => {
+    expect(shouldConnectCallMedia({ direction: "outgoing", status: "ringing" })).toBe(false);
+    expect(shouldConnectCallMedia({ direction: "outgoing", status: "created" })).toBe(false);
+  });
+
+  it("joins the media room after the recipient accepts or backend begins connecting", () => {
+    expect(shouldConnectCallMedia({ direction: "outgoing", status: "accepted" })).toBe(true);
+    expect(shouldConnectCallMedia({ direction: "outgoing", status: "connecting" })).toBe(true);
+    expect(shouldConnectCallMedia({ direction: "incoming", status: "connecting" })).toBe(true);
+  });
+
+  it("never joins media for terminal calls", () => {
+    for (const status of TERMINAL_CALL_STATES) {
+      expect(shouldConnectCallMedia({ direction: "outgoing", status })).toBe(false);
+    }
+  });
+});
+
+describe("shouldPlayUnavailablePrompt", () => {
+  it("prompts the outgoing caller when a call ends before connecting", () => {
+    expect(shouldPlayUnavailablePrompt({ direction: "outgoing", everConnected: false, status: "missed" })).toBe(true);
+    expect(shouldPlayUnavailablePrompt({ direction: "outgoing", everConnected: false, status: "expired" })).toBe(true);
+    expect(shouldPlayUnavailablePrompt({ direction: "outgoing", everConnected: false, status: "failed" })).toBe(true);
+  });
+
+  it("does not play an unavailable prompt after a real connected call or on the incoming side", () => {
+    expect(shouldPlayUnavailablePrompt({ direction: "outgoing", everConnected: true, status: "ended" })).toBe(false);
+    expect(shouldPlayUnavailablePrompt({ direction: "incoming", everConnected: false, status: "missed" })).toBe(false);
   });
 });

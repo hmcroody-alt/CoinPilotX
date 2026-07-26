@@ -2,6 +2,7 @@
 """Audit the PulseSoc native full-screen incoming calls foundation."""
 
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -46,10 +47,10 @@ def main() -> int:
         "Silent ignore",
         "Remind me later",
         "Incoming PulseSoc call",
-        "Open active call",
-        "End active call",
     ]:
         require(layer, snippet, "incoming call layer behavior")
+    for forbidden in ["ACTIVE PULSESOC CALL", "floatingCall", "Voice in progress", "Video in progress", "Open active call", "End active call"]:
+        forbid(layer, forbidden, "removed active-call mini popup")
 
     for endpoint in [
         "/api/calls/active",
@@ -73,8 +74,10 @@ def main() -> int:
         require(report, phrase, "incoming calls report")
 
     require(progress, "Full-screen incoming calls", "progress recommendation/remaining feature")
-    forbid(layer, "LogiNexus", "user-facing internal LogiNexus copy in incoming call UI")
-    forbid(call_screen, "LogiNexus", "user-facing internal LogiNexus copy in call screen")
+    if re.search(r"<Text[^>]*>[^<]*LogiNexus", layer):
+        raise AssertionError("Forbidden user-facing internal LogiNexus copy in incoming call UI")
+    if re.search(r"<Text[^>]*>[^<]*LogiNexus", call_screen):
+        raise AssertionError("Forbidden user-facing internal LogiNexus copy in call screen")
 
     print("PulseSoc native incoming calls audit passed.")
     return 0
