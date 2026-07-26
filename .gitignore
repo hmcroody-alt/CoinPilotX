@@ -7,9 +7,19 @@ undx_execution_log.jsonl
 .undx_backups/
 .undx/
 .undx_connector_audit_workspace/
+.undx_brain_layer_audit_workspace/
 coinpilotx.db
+# sqlite side files: the WAL and shm are runtime state, not source. A committed
+# -wal shows up modified after every request and its diff is unreviewable binary.
+coinpilotx.db-wal
+coinpilotx.db-shm
 *.sqlite
 *.sqlite3
+# Rotated logs. `*.log` above does not match `coinpilotx.log.1`.
+*.log.[0-9]
+# FUSE leaves one of these behind for every file deleted while still open. They
+# are placeholders for data already gone, never source.
+.fuse_hidden*
 storage/messenger_uploads/
 
 # Runtime user-media upload target — must not be committed (privacy)
