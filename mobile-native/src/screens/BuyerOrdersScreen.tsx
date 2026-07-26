@@ -1,11 +1,9 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useState } from "react";
-import { formatAbsoluteDate } from "../core/localTime";
 import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   BuyerOrder,
   buyerOrderWebUrl,
-  formatOrderMoney,
   getBuyerOrder,
   listBuyerOrders,
   loadCachedBuyerOrders,
@@ -15,6 +13,7 @@ import {
 import { Panel } from "../components/Panel";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { useScreenPerf } from "../core/useScreenPerf";
+import { Formatters, useFormatters, useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 
@@ -23,18 +22,25 @@ type Props = NativeStackScreenProps<
   "BuyerOrders" | "BuyerPurchases" | "BuyerOrdersDashboard" | "BuyerOrderDetail"
 >;
 
-const STATUS_COPY: Record<string, string> = {
-  pending: "Pending",
-  paid: "Paid",
-  processing: "Processing",
-  shipped: "Shipped",
-  delivered: "Delivered",
-  cancelled: "Cancelled",
-  refunded: "Refunded",
-  failed: "Needs review"
+/**
+ * Server status slugs mapped to catalog keys rather than English literals, so a
+ * status pill reads in the user's language without the screen carrying a second
+ * copy of the wording.
+ */
+const STATUS_KEYS: Record<string, string> = {
+  pending: "commerce:orders.statusPending",
+  paid: "commerce:orders.statusPaid",
+  processing: "commerce:orders.statusProcessing",
+  shipped: "commerce:orders.statusShipped",
+  delivered: "commerce:orders.statusDelivered",
+  cancelled: "commerce:orders.statusCancelled",
+  refunded: "commerce:orders.statusRefunded",
+  failed: "commerce:orders.statusFailed"
 };
 
 export function BuyerOrdersScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
+  const fmt = useFormatters();
   const orderId = Number(
     (route.params as { orderId?: number; order_id?: number; id?: number } | undefined)?.orderId ||
       (route.params as { orderId?: number; order_id?: number; id?: number } | undefined)?.order_id ||
@@ -68,7 +74,7 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
     } catch (loadError) {
       const cached = await loadCachedBuyerOrders();
       if (cached.length) setOrders(cached);
-      setError(loadError instanceof Error ? loadError.message : "Purchase history could not load.");
+      setError(loadError instanceof Error ? loadError.message : t("commerce:orders.loadFailed"));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -85,43 +91,43 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
   }, [orderId, source]);
 
   function openOrder(order: BuyerOrder) {
-    navigation.navigate("BuyerOrderDetail", { orderId: order.id, source: order.source_table, title: order.item_title || "Order" });
+    navigation.navigate("BuyerOrderDetail", { orderId: order.id, source: order.source_table, title: order.item_title || t("commerce:orders.orderFallbackTitle") });
   }
 
   function openListing(order: BuyerOrder) {
     const listingId = Number(order.marketplace_listing_id || order.item_id || order.listing?.id || 0);
-    if (listingId) navigation.navigate("MarketplaceDetail", { listingId, title: order.item_title || "Marketplace" });
+    if (listingId) navigation.navigate("MarketplaceDetail", { listingId, title: order.item_title || t("commerce:marketplace.title") });
   }
 
   function openSeller(order: BuyerOrder) {
     const sellerKey = order.seller?.public_player_id || order.seller?.username || "";
-    if (sellerKey) navigation.navigate("MerchantProfile", { sellerId: sellerKey, title: order.seller?.display_name || "Seller" });
-    else navigation.navigate("SellerStore", { title: "Seller / Store" });
+    if (sellerKey) navigation.navigate("MerchantProfile", { sellerId: sellerKey, title: order.seller?.display_name || t("commerce:marketplace.seller") });
+    else navigation.navigate("SellerStore", { title: t("common:screens.sellerStore") });
   }
 
   const hero = (
     <View style={styles.hero}>
-      <Text style={styles.kicker}>Commerce Ledger</Text>
-      <Text style={styles.title}>{selected ? "Order Detail" : "Purchase History"}</Text>
+      <Text style={styles.kicker}>{t("commerce:orders.kicker")}</Text>
+      <Text style={styles.title}>{selected ? t("common:screens.orderDetail") : t("common:screens.purchaseHistory")}</Text>
       <Text style={styles.subtitle}>
-        Buyer-side order state is read from PulseSoc payment ledgers. Checkout, refunds, disputes, shipping, and receipts remain server and provider controlled.
+        {t("commerce:orders.heroSubtitle")}
       </Text>
     </View>
   );
 
   const errorPanel = error ? (
     <Panel>
-      <Text style={styles.errorTitle}>Commerce state unavailable</Text>
+      <Text style={styles.errorTitle}>{t("commerce:orders.errorTitle")}</Text>
       <Text style={styles.copy}>{error}</Text>
       <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => load(orderId, source).catch(() => undefined)}>
-        <Text style={styles.secondaryText}>Retry</Text>
+        <Text style={styles.secondaryText}>{t("commerce:orders.retry")}</Text>
       </Pressable>
     </Panel>
   ) : null;
 
   const loadingPanel = loading ? (
     <Panel>
-      <Text style={styles.copy}>Loading your PulseSoc purchase timeline...</Text>
+      <Text style={styles.copy}>{t("commerce:orders.loadingTimeline")}</Text>
     </Panel>
   ) : null;
 
@@ -137,7 +143,7 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
         {loadingPanel}
         <OrderDetail
           order={selected}
-          onBack={() => navigation.navigate("BuyerOrders", { title: "Purchase History" })}
+          onBack={() => navigation.navigate("BuyerOrders", { title: t("common:screens.purchaseHistory") })}
           onListing={() => openListing(selected)}
           onSeller={() => openSeller(selected)}
         />
@@ -161,22 +167,22 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
           {errorPanel}
           {loadingPanel}
           <Panel>
-            <Text style={styles.sectionTitle}>Transaction Timeline</Text>
-            <Text style={styles.copy}>Receipts, disputes, payment confirmation, and seller fulfillment stay aligned with existing PulseSoc backend records.</Text>
+            <Text style={styles.sectionTitle}>{t("commerce:orders.transactionTimeline")}</Text>
+            <Text style={styles.copy}>{t("commerce:orders.transactionTimelineBody")}</Text>
             <View style={styles.stats}>
-              <Metric label="Orders" value={String(orders.length)} />
-              <Metric label="Paid" value={String(orders.filter((order) => order.status_group === "paid").length)} />
-              <Metric label="Open" value={String(orders.filter((order) => ["pending", "processing", "shipped"].includes(String(order.status_group))).length)} />
+              <Metric label={t("commerce:orders.metricOrders")} value={fmt.number(orders.length)} />
+              <Metric label={t("commerce:orders.statusPaid")} value={fmt.number(orders.filter((order) => order.status_group === "paid").length)} />
+              <Metric label={t("commerce:orders.metricOpen")} value={fmt.number(orders.filter((order) => ["pending", "processing", "shipped"].includes(String(order.status_group))).length)} />
             </View>
           </Panel>
         </>
       }
       ListEmptyComponent={
         <Panel>
-          <Text style={styles.sectionTitle}>No purchases yet</Text>
-          <Text style={styles.copy}>Marketplace and learning purchases will appear here after checkout creates a server-side transaction.</Text>
+          <Text style={styles.sectionTitle}>{t("commerce:orders.noPurchasesTitle")}</Text>
+          <Text style={styles.copy}>{t("commerce:orders.noPurchasesBody")}</Text>
           <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
-            <Text style={styles.primaryText}>Browse Marketplace</Text>
+            <Text style={styles.primaryText}>{t("commerce:orders.browseMarketplace")}</Text>
           </Pressable>
         </Panel>
       }
@@ -185,60 +191,63 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
 }
 
 function OrderDetail({ order, onBack, onListing, onSeller }: { order: BuyerOrder; onBack: () => void; onListing: () => void; onSeller: () => void }) {
+  const { t } = useTranslation();
+  const fmt = useFormatters();
   const canOpenListing = Number(order.marketplace_listing_id || order.item_id || order.listing?.id || 0) > 0;
+  const statusGroupKey = STATUS_KEYS[String(order.status_group)];
   return (
     <>
       <Panel>
         <View style={styles.detailHeader}>
           <View style={styles.orb} />
           <View style={styles.flex}>
-            <Text style={styles.sectionTitle}>{order.item_title || order.title || "PulseSoc purchase"}</Text>
-            <Text style={styles.meta}>Order #{order.id} · {String(order.item_type || "purchase").replace(/_/g, " ")}</Text>
+            <Text style={styles.sectionTitle}>{order.item_title || order.title || t("commerce:orders.purchaseFallbackTitle")}</Text>
+            <Text style={styles.meta}>{t("commerce:orders.orderMeta", { id: String(order.id), type: String(order.item_type || "purchase").replace(/_/g, " ") })}</Text>
           </View>
           <StatusPill status={String(order.status_group || order.status || "pending")} />
         </View>
         <View style={styles.timeline}>
-          <TimelineStep label="Created" value={formatDate(order.created_at)} active />
-          <TimelineStep label="Payment" value={STATUS_COPY[String(order.status_group)] || String(order.status || "Pending")} active={["paid", "processing", "shipped", "delivered"].includes(String(order.status_group))} />
-          <TimelineStep label="Fulfillment" value={order.tracking?.message || "Provider controlled"} active={["shipped", "delivered"].includes(String(order.status_group))} />
+          <TimelineStep label={t("commerce:orders.timelineCreated")} value={orderDate(order.created_at, t, fmt)} active />
+          <TimelineStep label={t("commerce:orders.timelinePayment")} value={statusGroupKey ? t(statusGroupKey) : String(order.status || t("commerce:orders.statusPending"))} active={["paid", "processing", "shipped", "delivered"].includes(String(order.status_group))} />
+          <TimelineStep label={t("commerce:orders.timelineFulfillment")} value={order.tracking?.message || t("commerce:orders.providerControlled")} active={["shipped", "delivered"].includes(String(order.status_group))} />
         </View>
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Financial summary</Text>
-        <Line label="Amount" value={formatOrderMoney(order)} />
-        <Line label="Currency" value={String(order.currency || "USD")} />
-        <Line label="Payment" value={String(order.payment_status || order.status_group || "pending")} />
-        <Line label="Updated" value={formatDate(order.updated_at)} />
+        <Text style={styles.sectionTitle}>{t("commerce:orders.financialSummary")}</Text>
+        <Line label={t("commerce:orders.amount")} value={orderMoney(order, fmt)} />
+        <Line label={t("commerce:orders.currency")} value={String(order.currency || "USD")} />
+        <Line label={t("commerce:orders.payment")} value={String(order.payment_status || order.status_group || "pending")} />
+        <Line label={t("commerce:orders.updated")} value={orderDate(order.updated_at, t, fmt)} />
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Seller and item</Text>
-        <Line label="Seller" value={order.seller?.display_name || "PulseSoc Seller"} />
-        <Line label="Item" value={order.item_title || order.title || "PulseSoc purchase"} />
+        <Text style={styles.sectionTitle}>{t("commerce:orders.sellerAndItem")}</Text>
+        <Line label={t("commerce:marketplace.seller")} value={order.seller?.display_name || t("commerce:marketplace.sellerNameFallback")} />
+        <Line label={t("commerce:orders.item")} value={order.item_title || order.title || t("commerce:orders.purchaseFallbackTitle")} />
         <View style={styles.buttonRow}>
           <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={onSeller}>
-            <Text style={styles.secondaryText}>View Seller</Text>
+            <Text style={styles.secondaryText}>{t("commerce:orders.viewSeller")}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: !canOpenListing }} style={[styles.secondaryButton, !canOpenListing && styles.disabledButton]} disabled={!canOpenListing} onPress={onListing}>
-            <Text style={styles.secondaryText}>Open Listing</Text>
+            <Text style={styles.secondaryText}>{t("commerce:orders.openListing")}</Text>
           </Pressable>
         </View>
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Buyer controls</Text>
-        <Text style={styles.copy}>Receipt, support, dispute, shipping, and provider pages open through existing PulseSoc web/provider flows.</Text>
+        <Text style={styles.sectionTitle}>{t("commerce:orders.buyerControls")}</Text>
+        <Text style={styles.copy}>{t("commerce:orders.buyerControlsBody")}</Text>
         <View style={styles.buttonRow}>
           <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => openBuyerOrderFallback(order.receipt_url || buyerOrderWebUrl(order)).catch(() => undefined)}>
-            <Text style={styles.primaryText}>View Receipt</Text>
+            <Text style={styles.primaryText}>{t("commerce:orders.viewReceipt")}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => openBuyerOrderFallback(order.dispute_url || order.support_url || supportOrderWebUrl(order)).catch(() => undefined)}>
-            <Text style={styles.secondaryText}>Support</Text>
+            <Text style={styles.secondaryText}>{t("commerce:orders.support")}</Text>
           </Pressable>
         </View>
         <Pressable accessibilityRole="button" style={styles.ghostButton} onPress={onBack}>
-          <Text style={styles.ghostText}>Back to Purchase History</Text>
+          <Text style={styles.ghostText}>{t("commerce:orders.backToPurchaseHistory")}</Text>
         </Pressable>
       </Panel>
     </>
@@ -246,15 +255,17 @@ function OrderDetail({ order, onBack, onListing, onSeller }: { order: BuyerOrder
 }
 
 function OrderRow({ order, onPress }: { order: BuyerOrder; onPress: () => void }) {
+  const { t } = useTranslation();
+  const fmt = useFormatters();
   return (
     <Pressable accessibilityRole="button" style={styles.row} onPress={onPress}>
       <View style={styles.rowGlow} />
       <View style={styles.flex}>
-        <Text style={styles.rowTitle} numberOfLines={1}>{order.item_title || order.title || "PulseSoc purchase"}</Text>
-        <Text style={styles.meta} numberOfLines={1}>{order.seller?.display_name || "PulseSoc Seller"} · {formatDate(order.created_at)}</Text>
+        <Text style={styles.rowTitle} numberOfLines={1}>{order.item_title || order.title || t("commerce:orders.purchaseFallbackTitle")}</Text>
+        <Text style={styles.meta} numberOfLines={1}>{order.seller?.display_name || t("commerce:marketplace.sellerNameFallback")} · {orderDate(order.created_at, t, fmt)}</Text>
       </View>
       <View style={styles.rowAmount}>
-        <Text style={styles.amount}>{formatOrderMoney(order)}</Text>
+        <Text style={styles.amount}>{orderMoney(order, fmt)}</Text>
         <StatusPill status={String(order.status_group || order.status || "pending")} />
       </View>
     </Pressable>
@@ -262,11 +273,13 @@ function OrderRow({ order, onPress }: { order: BuyerOrder; onPress: () => void }
 }
 
 function StatusPill({ status }: { status: string }) {
+  const { t } = useTranslation();
   const normalized = String(status || "pending").toLowerCase();
   const color = normalized === "paid" || normalized === "delivered" ? colors.accent : normalized === "failed" || normalized === "cancelled" ? colors.danger : colors.warning;
+  const key = STATUS_KEYS[normalized];
   return (
     <View style={[styles.statusPill, { borderColor: color }]}>
-      <Text style={[styles.statusText, { color }]}>{STATUS_COPY[normalized] || normalized}</Text>
+      <Text style={[styles.statusText, { color }]}>{key ? t(key) : normalized}</Text>
     </View>
   );
 }
@@ -301,9 +314,24 @@ function Line({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatDate(value?: string) {
-  if (!value) return "Pending";
-  return formatAbsoluteDate(value, { withYear: true }) || value;
+/**
+ * `fmt.date` rather than `formatAbsoluteDate` directly: the formatter layer
+ * pins the call to the language the user chose in PulseSoc, not to whatever the
+ * device happens to be set to.
+ */
+function orderDate(value: string | undefined, t: (key: string) => string, fmt: Formatters) {
+  if (!value) return t("commerce:orders.statusPending");
+  return fmt.date(value, { withYear: true }) || value;
+}
+
+/**
+ * Amounts are rendered through `fmt.currency` so the symbol, its position and
+ * the digit grouping follow the active locale. `formatOrderMoney` in the API
+ * layer formats against the device locale and is left for non-React callers.
+ */
+function orderMoney(order: BuyerOrder, fmt: Formatters) {
+  const amount = Number(order.amount_cents || order.gross_amount_cents || 0) / 100;
+  return fmt.currency(amount, { currency: String(order.currency || "USD").toUpperCase() });
 }
 
 const styles = StyleSheet.create({

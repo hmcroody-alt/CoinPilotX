@@ -6,6 +6,17 @@ jest.mock("../../../theme/logiNexusMotion", () => ({
 }));
 
 import { PulseSocBrandHeader } from "../PulseSocBrandHeader";
+import { activateLocale } from "../../../i18n/engine";
+
+/**
+ * The eyebrow, tagline and accessibility label are catalog-driven now, and the
+ * engine only serves a namespace once it is loaded. `I18nProvider` does this
+ * before the first frame in the app; without it here the header renders
+ * humanized keys instead of the copy these tests assert on.
+ */
+beforeAll(async () => {
+  await activateLocale("en");
+});
 
 describe("PulseSocBrandHeader", () => {
   it("renders the real PulseSoc logo image asset (not a code-drawn substitute)", () => {

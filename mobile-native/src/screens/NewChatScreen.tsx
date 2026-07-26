@@ -15,6 +15,7 @@ import {
 import { MessengerUserSearchResult, openDirectConversation, searchMessengerUsers } from "../api/messenger";
 import { PulseApiError } from "../api/pulseApi";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
+import { translate, useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
@@ -22,6 +23,7 @@ import { colors } from "../theme/colors";
 type Props = NativeStackScreenProps<RootStackParamList, "NewChat">;
 
 export function NewChatScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
   const { authState, requestReauthentication } = useAuth();
   const [query, setQuery] = useState(String(route.params?.initialQuery || ""));
   const [results, setResults] = useState<MessengerUserSearchResult[]>([]);
@@ -60,7 +62,7 @@ export function NewChatScreen({ route, navigation }: Props) {
     } catch (searchError) {
       if (sequence !== searchSequence.current) return;
       setResults([]);
-      setError(messageForError(searchError, "People search could not load."));
+      setError(messageForError(searchError, t("messaging:newChat.searchFailed")));
     } finally {
       if (sequence === searchSequence.current) setLoading(false);
     }
@@ -78,7 +80,7 @@ export function NewChatScreen({ route, navigation }: Props) {
         requestReauthentication("/pulse/messages");
         return;
       }
-      setError(messageForError(openError, "This conversation could not be opened."));
+      setError(messageForError(openError, t("messaging:newChat.openFailed")));
     } finally {
       setOpeningUserId(0);
     }
@@ -88,9 +90,9 @@ export function NewChatScreen({ route, navigation }: Props) {
     return (
       <LogiNexusScreenShell>
         <View style={styles.page}>
-          <LogiNexusStatePanel state="permission" title="Sign in to start a chat" body="Messenger uses your existing PulseSoc account and privacy settings.">
+          <LogiNexusStatePanel state="permission" title={t("messaging:newChat.signInTitle")} body={t("messaging:newChat.signInBody")}>
             <Pressable accessibilityRole="button" style={styles.retryButton} onPress={() => requestReauthentication("/pulse/messages")}>
-              <Text style={styles.retryText}>Sign in</Text>
+              <Text style={styles.retryText}>{t("auth:signIn.submit")}</Text>
             </Pressable>
           </LogiNexusStatePanel>
         </View>
@@ -104,14 +106,14 @@ export function NewChatScreen({ route, navigation }: Props) {
       <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={88}>
         <View style={styles.page}>
           <View style={styles.intro}>
-            <Text style={styles.eyebrow}>PulseSoc Messenger</Text>
-            <Text style={styles.title}>Start a conversation</Text>
-            <Text style={styles.subtitle}>Search the real PulseSoc network. Existing direct chats reopen automatically.</Text>
+            <Text style={styles.eyebrow}>{t("messaging:newChat.eyebrow")}</Text>
+            <Text style={styles.title}>{t("messaging:newChat.title")}</Text>
+            <Text style={styles.subtitle}>{t("messaging:newChat.subtitle")}</Text>
           </View>
           <View style={styles.searchShell}>
             <TextInput
               testID="new-chat-search-input"
-              accessibilityLabel="Search PulseSoc people"
+              accessibilityLabel={t("messaging:newChat.a11ySearch")}
               autoFocus
               autoCapitalize="none"
               autoCorrect={false}
@@ -119,16 +121,16 @@ export function NewChatScreen({ route, navigation }: Props) {
               value={query}
               onChangeText={setQuery}
               onSubmitEditing={() => runSearch()}
-              placeholder="Name, username, or Pulse ID"
+              placeholder={t("messaging:newChat.searchPlaceholder")}
               placeholderTextColor={colors.muted}
               style={styles.searchInput}
             />
-            {query ? <Pressable accessibilityRole="button" accessibilityLabel="Clear people search" onPress={() => setQuery("")} style={styles.clearButton}><Text style={styles.clearText}>Clear</Text></Pressable> : null}
+            {query ? <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:newChat.a11yClearSearch")} onPress={() => setQuery("")} style={styles.clearButton}><Text style={styles.clearText}>{t("common:actions.clear")}</Text></Pressable> : null}
           </View>
           {error ? (
             <View accessibilityLiveRegion="polite" style={styles.errorPanel}>
               <Text style={styles.errorText}>{error}</Text>
-              <Pressable accessibilityRole="button" style={styles.retryButton} onPress={() => runSearch()}><Text style={styles.retryText}>Try again</Text></Pressable>
+              <Pressable accessibilityRole="button" style={styles.retryButton} onPress={() => runSearch()}><Text style={styles.retryText}>{t("common:actions.retry")}</Text></Pressable>
             </View>
           ) : null}
           <FlatList
@@ -136,12 +138,12 @@ export function NewChatScreen({ route, navigation }: Props) {
             data={results}
             keyExtractor={(item) => `recipient-${item.user_id}`}
             contentContainerStyle={styles.results}
-            ListHeaderComponent={loading ? <View style={styles.loading}><ActivityIndicator color={colors.accent} /><Text style={styles.loadingText}>Searching PulseSoc</Text></View> : null}
+            ListHeaderComponent={loading ? <View style={styles.loading}><ActivityIndicator color={colors.accent} /><Text style={styles.loadingText}>{t("messaging:newChat.searching")}</Text></View> : null}
             ListEmptyComponent={!loading && !error ? (
               <LogiNexusStatePanel
                 state="empty"
-                title={hasQuery ? "No people found" : "Find someone on PulseSoc"}
-                body={hasQuery ? "Check the spelling or try their public Pulse ID." : "Type a name, username, or public Pulse ID to begin."}
+                title={hasQuery ? t("messaging:newChat.emptyNoResultsTitle") : t("messaging:newChat.emptyPromptTitle")}
+                body={hasQuery ? t("messaging:newChat.emptyNoResultsBody") : t("messaging:newChat.emptyPromptBody")}
               />
             ) : null}
             renderItem={({ item }) => (
@@ -155,12 +157,13 @@ export function NewChatScreen({ route, navigation }: Props) {
 }
 
 function RecipientRow({ item, opening, disabled, onPress }: { item: MessengerUserSearchResult; opening: boolean; disabled: boolean; onPress: () => void }) {
-  const handle = item.public_pulse_id || (item.public_player_id ? `@${item.public_player_id}` : "PulseSoc member");
+  const { t } = useTranslation();
+  const handle = item.public_pulse_id || (item.public_player_id ? `@${item.public_player_id}` : t("common:identity.member"));
   return (
     <Pressable
       testID={`new-chat-recipient-${item.user_id}`}
       accessibilityRole="button"
-      accessibilityLabel={`Message ${item.display_name}, ${handle}`}
+      accessibilityLabel={t("messaging:newChat.a11yMessagePerson", { name: item.display_name, handle })}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [styles.recipient, pressed && styles.recipientPressed, disabled && !opening && styles.disabled]}
@@ -170,7 +173,7 @@ function RecipientRow({ item, opening, disabled, onPress }: { item: MessengerUse
         <View style={styles.nameRow}><Text style={styles.name} numberOfLines={1}>{item.display_name}</Text>{item.premium ? <Text style={styles.premium}>PRO</Text> : null}</View>
         <Text style={styles.handle} numberOfLines={1}>{handle}{item.label ? ` · ${item.label}` : ""}</Text>
       </View>
-      {opening ? <ActivityIndicator color={colors.accent} /> : <Text style={styles.messageAction}>Message</Text>}
+      {opening ? <ActivityIndicator color={colors.accent} /> : <Text style={styles.messageAction}>{t("messaging:newChat.messageAction")}</Text>}
     </Pressable>
   );
 }
@@ -181,9 +184,9 @@ function initials(value: string) {
 
 function messageForError(error: unknown, fallback: string) {
   if (error instanceof PulseApiError) {
-    if (error.status === 403) return error.message || "This person cannot receive messages right now.";
-    if (error.status === 429) return "Search is moving too quickly. Wait a moment and try again.";
-    if (error.status >= 500) return "Messenger is temporarily unavailable. Try again shortly.";
+    if (error.status === 403) return error.message || translate("messaging:newChat.errorCannotReceive");
+    if (error.status === 429) return translate("messaging:newChat.errorRateLimited");
+    if (error.status >= 500) return translate("messaging:newChat.errorUnavailable");
     return error.message || fallback;
   }
   return error instanceof Error ? error.message : fallback;

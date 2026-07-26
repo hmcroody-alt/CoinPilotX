@@ -1,5 +1,6 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useTranslation } from "../../i18n";
 import { colors } from "../../theme/colors";
 import { logiNexus } from "../../theme/logiNexus";
 import { SecureTextField } from "./SecureTextField";
@@ -25,6 +26,7 @@ export const ManualLoginForm = forwardRef<
   { identifier, password, onChangeIdentifier, onChangePassword, onSubmit, submitting, identifierError, passwordError, formError },
   ref
 ) {
+  const { t } = useTranslation();
   const identifierRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
 
@@ -38,7 +40,7 @@ export const ManualLoginForm = forwardRef<
     <View style={styles.root}>
       <SecureTextField
         ref={identifierRef}
-        label="Email or username"
+        label={t("auth:signIn.emailOrUsernameLabel")}
         iconName="mail-outline"
         autoCapitalize="none"
         autoComplete="username"
@@ -53,7 +55,7 @@ export const ManualLoginForm = forwardRef<
       />
       <SecureTextField
         ref={passwordRef}
-        label="Password"
+        label={t("auth:signIn.passwordLabel")}
         iconName="lock-closed-outline"
         autoComplete="current-password"
         returnKeyType="go"
@@ -71,14 +73,14 @@ export const ManualLoginForm = forwardRef<
       ) : null}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Sign in"
+        accessibilityLabel={t("auth:signIn.submit")}
         accessibilityState={{ disabled: !canSubmit, busy: submitting }}
         disabled={!canSubmit}
         testID="login-submit"
         style={({ pressed }) => [styles.submit, { opacity: !canSubmit ? 0.5 : pressed ? 0.85 : 1 }]}
         onPress={onSubmit}
       >
-        {submitting ? <ActivityIndicator color={colors.background} /> : <Text style={styles.submitText}>Sign in</Text>}
+        {submitting ? <ActivityIndicator color={colors.background} /> : <Text style={styles.submitText}>{t("auth:signIn.submit")}</Text>}
       </Pressable>
     </View>
   );

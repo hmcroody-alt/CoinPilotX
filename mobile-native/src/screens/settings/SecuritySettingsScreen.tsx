@@ -22,6 +22,7 @@ import {
   getBiometricCapability,
   isBiometricEnabledForCurrentSession
 } from "../../session/biometricAuth";
+import { translate, useTranslation } from "../../i18n";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -29,29 +30,33 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  * Name the sensor the way the platform names it. Calling a fingerprint reader
  * "Touch ID" on a Pixel is the kind of detail that makes a security screen feel
  * untrustworthy, and trust is the entire product of this screen.
+ *
+ * Resolved through the non-React `translate` because this is a plain function,
+ * not a component — the hook cannot be called here, and the screen re-renders on
+ * a language change anyway, so the name is re-read in the new language.
  */
 function biometricLabel(capability: BiometricCapability | null): string {
   const kind = capability?.kind ?? "none";
   if (Platform.OS === "android") {
-    if (kind === "faceId") return "Face unlock";
-    if (kind === "touchId") return "Fingerprint unlock";
-    if (kind === "iris") return "Iris unlock";
-    return "Biometric unlock";
+    if (kind === "faceId") return translate("settings:security.unlock.sensorFaceUnlock");
+    if (kind === "touchId") return translate("settings:security.unlock.sensorFingerprintUnlock");
+    if (kind === "iris") return translate("settings:security.unlock.sensorIrisUnlock");
+    return translate("settings:security.unlock.sensorBiometricUnlock");
   }
-  if (kind === "touchId") return "Touch ID";
-  if (kind === "iris") return "Iris unlock";
-  return "Face ID";
+  if (kind === "touchId") return translate("settings:security.unlock.sensorTouchId");
+  if (kind === "iris") return translate("settings:security.unlock.sensorIrisUnlock");
+  return translate("settings:security.unlock.sensorFaceId");
 }
 
 /** Why the sensor is unusable, phrased as something the user can act on. */
 function unavailableCopy(capability: BiometricCapability, label: string): string {
   if (capability.reason === "no_hardware") {
-    return "This device doesn't have a biometric sensor, so PulseSoc can only be unlocked with your password.";
+    return translate("settings:security.unlock.unavailableNoHardware");
   }
   if (capability.reason === "not_enrolled") {
-    return `Your device has the hardware, but no face or fingerprint is enrolled yet. Set up ${label} in your device settings, then come back.`;
+    return translate("settings:security.unlock.unavailableNotEnrolled", { label });
   }
-  return `${label} isn't available on this device right now.`;
+  return translate("settings:security.unlock.unavailableGeneric", { label });
 }
 
 /**
@@ -70,6 +75,7 @@ function unavailableCopy(capability: BiometricCapability, label: string): string
  */
 export function SecuritySettingsScreen() {
   const navigation = useNavigation<Nav>();
+  const { t } = useTranslation();
   const { authState } = useAuth();
   const { value, setGroup, pending } = usePreferenceGroup("security");
   const currentUserId = Number(authState.user?.user_id || 0);
@@ -152,6 +158,14 @@ export function SecuritySettingsScreen() {
   const accountEmail = String(security?.email || authState.user?.email || "").trim();
 
   /**
+   * Kept out of the alert's button array so the route name and its header title
+   * stay one readable statement rather than being buried in a nested literal.
+   */
+  const openAccountSection = useCallback(() => {
+    navigation.navigate("AccountCenter", { section: "account", title: t("settings:security.password.accountScreenTitle") });
+  }, [navigation, t]);
+
+  /**
    * PulseSoc has no authenticated "change password" mutation — the only real
    * path is the emailed reset link. Sending that link is a genuine backend
    * action and, unlike an in-app form, it never puts the password on this
@@ -161,31 +175,37 @@ export function SecuritySettingsScreen() {
     if (passwordBusy) return;
     if (!accountEmail) {
       Alert.alert(
-        "Add an email first",
-        "Password changes are confirmed by email. Add and verify an email address in Account, then try again.",
+        t("settings:security.password.noEmailTitle"),
+        t("settings:security.password.noEmailBody"),
         [
-          { text: "Not now", style: "cancel" },
-          { text: "Open Account", onPress: () => navigation.navigate("AccountCenter", { section: "account", title: "Account" }) }
+          { text: t("settings:security.password.noEmailCancel"), style: "cancel" },
+          { text: t("settings:security.password.noEmailOpenAccount"), onPress: openAccountSection }
         ]
       );
       return;
     }
     const ok = await confirm({
-      title: "Change your password",
-      message: `We'll email a secure password-change link to ${accountEmail}. The link expires shortly and can only be used once.`,
-      confirmLabel: "Send link"
+      title: t("settings:security.password.confirmTitle"),
+      message: t("settings:security.password.confirmMessage", { email: accountEmail }),
+      confirmLabel: t("settings:security.password.confirmLabel")
     });
     if (!ok) return;
     setPasswordBusy(true);
     try {
       await requestPasswordRecovery(accountEmail);
-      Alert.alert("Check your email", `If an account exists for ${accountEmail}, a password-change link is on its way.`);
+      Alert.alert(
+        t("settings:security.password.sentTitle"),
+        t("settings:security.password.sentBody", { email: accountEmail })
+      );
     } catch (error) {
-      Alert.alert("Couldn't send the link", error instanceof Error ? error.message : "Check your connection and try again.");
+      Alert.alert(
+        t("settings:security.password.failedTitle"),
+        error instanceof Error ? error.message : t("settings:security.password.failedBody")
+      );
     } finally {
       if (mounted.current) setPasswordBusy(false);
     }
-  }, [accountEmail, navigation, passwordBusy]);
+  }, [accountEmail, openAccountSection, passwordBusy, t]);
 
   /* --------------------------------- 2FA ----------------------------------- */
 
@@ -197,9 +217,9 @@ export function SecuritySettingsScreen() {
       if (!next) {
         // Turning protection off is the dangerous direction — make it deliberate.
         const ok = await confirm({
-          title: "Turn off two-factor authentication?",
-          message: "Anyone with your password alone will be able to sign in and approve sensitive changes.",
-          confirmLabel: "Turn off",
+          title: t("settings:security.twoFactor.disableConfirmTitle"),
+          message: t("settings:security.twoFactor.disableConfirmMessage"),
+          confirmLabel: t("settings:security.twoFactor.disableConfirmLabel"),
           destructive: true
         });
         if (!ok) return;
@@ -212,20 +232,25 @@ export function SecuritySettingsScreen() {
         await setGroup({ twoFactorEnabled: next });
         setSecurity((current) => (current ? { ...current, two_factor_enabled: next } : current));
         Alert.alert(
-          next ? "Two-factor is on" : "Two-factor is off",
-          String(response?.message || (next ? "You'll confirm sensitive actions with a second step." : "Two-factor protection has been removed."))
+          next ? t("settings:security.twoFactor.enabledTitle") : t("settings:security.twoFactor.disabledTitle"),
+          String(
+            response?.message ||
+              (next ? t("settings:security.twoFactor.enabledBody") : t("settings:security.twoFactor.disabledBody"))
+          )
         );
       } catch (error) {
         if (!mounted.current) return;
         Alert.alert(
-          next ? "Couldn't turn on two-factor" : "Couldn't turn off two-factor",
-          error instanceof Error ? error.message : "Your account is unchanged. Try again."
+          next
+            ? t("settings:security.twoFactor.enableFailedTitle")
+            : t("settings:security.twoFactor.disableFailedTitle"),
+          error instanceof Error ? error.message : t("settings:security.twoFactor.mutationFailedBody")
         );
       } finally {
         if (mounted.current) setTwoFactorBusy(false);
       }
     },
-    [setGroup, twoFactorBusy]
+    [setGroup, t, twoFactorBusy]
   );
 
   /* ------------------------------- Biometrics ------------------------------ */
@@ -239,9 +264,9 @@ export function SecuritySettingsScreen() {
       try {
         if (!next) {
           const ok = await confirm({
-            title: `Turn off ${label}?`,
-            message: "Your saved biometric sign-in is removed from this device. You'll sign in with your password next time.",
-            confirmLabel: "Turn off",
+            title: t("settings:security.unlock.disableConfirmTitle", { label }),
+            message: t("settings:security.unlock.disableConfirmMessage"),
+            confirmLabel: t("settings:security.unlock.disableConfirmLabel"),
             destructive: true
           });
           if (!ok) return;
@@ -258,7 +283,7 @@ export function SecuritySettingsScreen() {
         if (!mounted.current) return;
         setCapability(fresh);
         if (!fresh.available) {
-          Alert.alert(`${label} unavailable`, unavailableCopy(fresh, label));
+          Alert.alert(t("settings:security.unlock.unavailableTitle", { label }), unavailableCopy(fresh, label));
           return;
         }
 
@@ -267,61 +292,76 @@ export function SecuritySettingsScreen() {
         setBiometricEnabled(enabled);
         await setGroup({ biometricUnlock: enabled });
         Alert.alert(
-          enabled ? `${label} enabled` : `${label} not enabled`,
           enabled
-            ? `Tap ${label} on the sign-in screen to unlock PulseSoc next time.`
-            : "We couldn't confirm your biometrics. Your password sign-in still works."
+            ? t("settings:security.unlock.enabledTitle", { label })
+            : t("settings:security.unlock.notEnabledTitle", { label }),
+          enabled
+            ? t("settings:security.unlock.enabledBody", { label })
+            : t("settings:security.unlock.notEnabledBody")
         );
       } finally {
         if (mounted.current) setBiometricBusy(false);
       }
     },
-    [biometricBusy, currentUserId, label, setGroup]
+    [biometricBusy, currentUserId, label, setGroup, t]
   );
 
   const biometricUnavailable = capability !== null && !capability.available;
 
   return (
     <SettingsShell bottomDock={false} onRefresh={refresh}>
-      <SettingsHeader title="Security" subtitle="Control how you sign in and what PulseSoc asks you to confirm." />
+      <SettingsHeader title={t("settings:security.title")} subtitle={t("settings:security.subtitle")} />
 
       <SettingsSection
-        title="Password"
-        footnote="PulseSoc never asks for your password inside a settings screen — password changes always go through a one-time link sent to your email."
+        title={t("settings:security.password.sectionTitle")}
+        footnote={t("settings:security.password.sectionFootnote")}
       >
         <SettingsRow
           testID="security-change-password"
-          title="Change password"
-          subtitle={accountEmail ? `Send a change link to ${accountEmail}` : "Add an email address to your account first"}
+          title={t("settings:security.password.rowTitle")}
+          subtitle={
+            accountEmail
+              ? t("settings:security.password.rowSubtitle", { email: accountEmail })
+              : t("settings:security.password.rowSubtitleNoEmail")
+          }
           icon="key-outline"
           chevron
           busy={passwordBusy}
           onPress={changePassword}
           accessibilityRole="button"
-          accessibilityHint="Sends a one-time password-change link to your account email."
+          accessibilityHint={t("settings:security.password.rowHint")}
         />
       </SettingsSection>
 
       <SettingsSection
-        title="Two-factor authentication"
+        title={t("settings:security.twoFactor.sectionTitle")}
         busy={loadingSecurity || twoFactorBusy}
         footnote={
           security === null && !loadingSecurity
-            ? "We couldn't reach your account just now, so this shows the last state we saw on this device."
-            : "A second confirmation step is required for sign-ins and sensitive account changes."
+            ? t("settings:security.twoFactor.sectionFootnoteUnreachable")
+            : t("settings:security.twoFactor.sectionFootnote")
         }
       >
         <SettingsRow
           testID="security-two-factor-status"
-          title="Status"
-          subtitle={twoFactorOn ? "Your account requires a second step." : "Your password alone can sign in to this account."}
+          title={t("settings:security.twoFactor.statusTitle")}
+          subtitle={
+            twoFactorOn
+              ? t("settings:security.twoFactor.statusOnSubtitle")
+              : t("settings:security.twoFactor.statusOffSubtitle")
+          }
           icon="shield-checkmark-outline"
-          accessory={<SettingsBadge label={twoFactorOn ? "ON" : "OFF"} tone={twoFactorOn ? "accent" : "warning"} />}
+          accessory={
+            <SettingsBadge
+              label={twoFactorOn ? t("settings:security.twoFactor.badgeOn") : t("settings:security.twoFactor.badgeOff")}
+              tone={twoFactorOn ? "accent" : "warning"}
+            />
+          }
         />
         <SettingsSwitch
           testID="security-two-factor-toggle"
-          title="Require two-factor"
-          subtitle="Confirm a second step when signing in or changing account details."
+          title={t("settings:security.twoFactor.toggleTitle")}
+          subtitle={t("settings:security.twoFactor.toggleSubtitle")}
           icon="lock-closed-outline"
           value={twoFactorOn}
           busy={twoFactorBusy}
@@ -331,8 +371,8 @@ export function SecuritySettingsScreen() {
       </SettingsSection>
 
       <SettingsSection
-        title="Unlock"
-        footnote="Biometric data never leaves your device. PulseSoc only stores a device-encrypted sign-in token that your face or fingerprint releases."
+        title={t("settings:security.unlock.sectionTitle")}
+        footnote={t("settings:security.unlock.sectionFootnote")}
       >
         {biometricUnavailable && capability ? (
           <SettingsRow
@@ -340,7 +380,16 @@ export function SecuritySettingsScreen() {
             title={label}
             subtitle={unavailableCopy(capability, label)}
             icon="finger-print-outline"
-            accessory={<SettingsBadge label={capability.reason === "no_hardware" ? "NO SENSOR" : "NOT SET UP"} tone="muted" />}
+            accessory={
+              <SettingsBadge
+                label={
+                  capability.reason === "no_hardware"
+                    ? t("settings:security.unlock.badgeNoSensor")
+                    : t("settings:security.unlock.badgeNotSetUp")
+                }
+                tone="muted"
+              />
+            }
             chevron={capability.reason === "not_enrolled"}
             // Nothing to toggle here, but "open the place where you can fix it"
             // is still a real action — better than a disabled row with no exit.
@@ -348,22 +397,25 @@ export function SecuritySettingsScreen() {
               capability.reason === "not_enrolled"
                 ? () => {
                     void Linking.openSettings().catch(() =>
-                      Alert.alert("Couldn't open settings", `Open your device settings and enrol ${label} manually.`)
+                      Alert.alert(
+                        t("settings:security.unlock.openSettingsFailedTitle"),
+                        t("settings:security.unlock.openSettingsFailedBody", { label })
+                      )
                     );
                   }
                 : undefined
             }
             accessibilityRole={capability.reason === "not_enrolled" ? "button" : "none"}
-            accessibilityHint={capability.reason === "not_enrolled" ? "Opens your device settings to enrol biometrics." : undefined}
+            accessibilityHint={capability.reason === "not_enrolled" ? t("settings:security.unlock.enrolHint") : undefined}
           />
         ) : (
           <SettingsSwitch
             testID="security-biometric-toggle"
-            title={`Unlock with ${label}`}
+            title={t("settings:security.unlock.toggleTitle", { label })}
             subtitle={
               biometricEnabled
-                ? `${label} is on for this device. Your password still works as a fallback.`
-                : `Sign in without typing your password on this device.`
+                ? t("settings:security.unlock.toggleSubtitleOn", { label })
+                : t("settings:security.unlock.toggleSubtitleOff")
             }
             icon="finger-print-outline"
             value={biometricEnabled}
@@ -374,34 +426,38 @@ export function SecuritySettingsScreen() {
         )}
       </SettingsSection>
 
-      <SettingsSection title="Alerts & confirmations" busy={pending}>
+      <SettingsSection title={t("settings:security.alerts.sectionTitle")} busy={pending}>
         <SettingsSwitch
           testID="security-login-alerts"
-          title="Login alerts"
-          subtitle="Notify me when a new device or unrecognised location signs in."
+          title={t("settings:security.alerts.loginAlertsTitle")}
+          subtitle={t("settings:security.alerts.loginAlertsSubtitle")}
           icon="notifications-outline"
           value={value.loginAlerts}
           onValueChange={(next) => void setGroup({ loginAlerts: next })}
         />
         <SettingsSwitch
           testID="security-require-password"
-          title="Confirm sensitive changes"
-          subtitle="Re-enter your password before changing your email, phone, or security settings."
+          title={t("settings:security.alerts.requirePasswordTitle")}
+          subtitle={t("settings:security.alerts.requirePasswordSubtitle")}
           icon="shield-outline"
           value={value.requirePasswordForSensitiveChanges}
           onValueChange={(next) => void setGroup({ requirePasswordForSensitiveChanges: next })}
         />
       </SettingsSection>
 
-      <SettingsSection title="Where you're signed in">
+      <SettingsSection title={t("settings:security.sessions.sectionTitle")}>
         <SettingsRow
           testID="security-open-sessions"
-          title="Sessions & devices"
-          subtitle="Review active sessions and sign out remotely."
+          title={t("settings:security.sessions.rowTitle")}
+          subtitle={t("settings:security.sessions.rowSubtitle")}
           icon="phone-portrait-outline"
           chevron
           accessory={
-            security?.active_sessions_count ? <SettingsValue>{security.active_sessions_count} active</SettingsValue> : undefined
+            security?.active_sessions_count ? (
+              <SettingsValue>
+                {t("settings:security.sessions.activeCount", { count: security.active_sessions_count })}
+              </SettingsValue>
+            ) : undefined
           }
           onPress={() => navigation.navigate("SessionsDevices")}
           accessibilityRole="button"

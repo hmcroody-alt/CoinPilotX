@@ -60,6 +60,7 @@ import {
   isBiometricEnabledForCurrentSession
 } from "../../session/biometricAuth";
 import { LoginScreen } from "../LoginScreen";
+import { activateLocale } from "../../i18n/engine";
 
 const mockedSignIn = signIn as jest.Mock;
 const mockedAuthenticateWithBiometrics = authenticateWithBiometrics as jest.Mock;
@@ -73,6 +74,16 @@ function setDefaultBiometricState() {
   mockedIsBiometricEnabledForCurrentSession.mockResolvedValue(false);
   mockedGetCachedSessionUser.mockResolvedValue(null);
 }
+
+/**
+ * Every string on this screen — including the error copy these tests match on —
+ * now comes from the catalogs, and the engine only serves a namespace once it is
+ * loaded. `I18nProvider` does this before the first frame in the app; without it
+ * here the screen renders humanized keys and the assertions below match nothing.
+ */
+beforeAll(async () => {
+  await activateLocale("en");
+});
 
 describe("LoginScreen", () => {
   beforeEach(() => {

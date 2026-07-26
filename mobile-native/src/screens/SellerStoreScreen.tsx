@@ -20,6 +20,7 @@ import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { Formatters, useFormatters, useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 
@@ -31,6 +32,8 @@ type Props = {
 };
 
 export function SellerStoreScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
+  const fmt = useFormatters();
   const mode = route?.params?.mode || "overview";
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
   const [orders, setOrders] = useState<MarketplaceSellerOrder[]>([]);
@@ -64,7 +67,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         setOrders(cached.orders || []);
         setOffline(true);
       } else {
-        setMessage(error instanceof Error ? error.message : "Seller tools could not load.");
+        setMessage(error instanceof Error ? error.message : t("commerce:marketplace.sellerToolsLoadFailed"));
       }
     } finally {
       setLoading(false);
@@ -92,9 +95,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     setMessage("");
     try {
       const result = await applyMarketplaceSeller({ display_name: displayName, bio });
-      setMessage(result.message || "Seller application saved.");
+      setMessage(result.message || t("commerce:marketplace.sellerApplicationSaved"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Seller application could not be saved.");
+      setMessage(error instanceof Error ? error.message : t("commerce:marketplace.sellerApplicationFailed"));
     } finally {
       setBusy("");
     }
@@ -105,9 +108,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     setMessage("");
     try {
       const result = await connectMarketplacePayout();
-      setMessage(result.message || "Payout onboarding checked.");
+      setMessage(result.message || t("commerce:marketplace.payoutChecked"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Payout onboarding is not available yet.");
+      setMessage(error instanceof Error ? error.message : t("commerce:marketplace.payoutUnavailable"));
     } finally {
       setBusy("");
     }
@@ -152,9 +155,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         quantity: Number(editQuantity || 0)
       });
       applyListingResponse(result.listing);
-      setMessage(result.message || "Listing updated and sent through review.");
+      setMessage(result.message || t("commerce:marketplace.listingUpdatedReview"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Listing could not be updated.");
+      setMessage(error instanceof Error ? error.message : t("commerce:marketplace.listingUpdateFailed"));
     } finally {
       setBusy("");
     }
@@ -171,9 +174,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
             ? await resumeMarketplaceSellerListing(listing.id)
             : await deleteMarketplaceSellerListing(listing.id);
       applyListingResponse(result.listing);
-      setMessage(result.message || "Listing updated.");
+      setMessage(result.message || t("commerce:marketplace.listingUpdated"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Listing status could not be updated.");
+      setMessage(error instanceof Error ? error.message : t("commerce:marketplace.listingStatusUpdateFailed"));
     } finally {
       setBusy("");
     }
@@ -186,15 +189,15 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           const author = marketplaceSellerAuthor(listing);
           return (listing.media || []).map((media) =>
             mediaViewerItemFromPulseMedia(media, {
-              title: listing.title || "Marketplace listing",
-              subtitle: listing.price_label || listing.category || "Marketplace",
+              title: listing.title || t("commerce:marketplace.listingTitleFallback"),
+              subtitle: listing.price_label || listing.category || t("commerce:marketplace.title"),
               author,
               sourceUrl: sellerStoreWebUrl("profile", listing.seller_username || "")
             })
           );
         })
         .slice(0, 32),
-    [listings]
+    [listings, t]
   );
 
   const activeListings = listings.filter((listing) => ["active", "approved", "review_ready"].includes(String(listing.status || listing.approval_status || "").toLowerCase()));
@@ -205,43 +208,43 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.accent} />
-        <Text style={styles.centerText}>Loading seller controls</Text>
+        <Text style={styles.centerText}>{t("commerce:marketplace.loadingSellerControls")}</Text>
       </View>
     );
   }
 
   return (
-    <Screen title="Seller / Store" subtitle="Native marketplace control layer using PulseSoc approval, media, payout, and checkout systems.">
-      {offline ? <Text style={styles.warning}>Showing saved seller/store metadata.</Text> : null}
+    <Screen title={t("common:screens.sellerStore")} subtitle={t("commerce:marketplace.storeSubtitle")}>
+      {offline ? <Text style={styles.warning}>{t("commerce:marketplace.storeOfflineNotice")}</Text> : null}
       {message ? <Text style={message.toLowerCase().includes("required") || message.toLowerCase().includes("failed") ? styles.error : styles.notice}>{message}</Text> : null}
 
       <Panel>
         <View style={styles.hero}>
-          <Text style={styles.kicker}>Marketplace Command</Text>
-          <Text style={styles.heroTitle}>Storefront readiness</Text>
-          <Text style={styles.heroCopy}>Seller approval, product review, payment, payout, trust, and fulfillment decisions remain server-authoritative.</Text>
+          <Text style={styles.kicker}>{t("commerce:marketplace.storeKicker")}</Text>
+          <Text style={styles.heroTitle}>{t("commerce:marketplace.storefrontReadiness")}</Text>
+          <Text style={styles.heroCopy}>{t("commerce:marketplace.storeHeroCopy")}</Text>
         </View>
         <View style={styles.metricGrid}>
-          <Metric label="Listings loaded" value={String(listings.length)} />
-          <Metric label="Active/review ready" value={String(activeListings.length)} />
-          <Metric label="Pending review" value={String(pendingListings.length)} />
-          <Metric label="Orders loaded" value={String(orders.length)} />
+          <Metric label={t("commerce:marketplace.metricListingsLoaded")} value={fmt.number(listings.length)} />
+          <Metric label={t("commerce:marketplace.metricActiveReviewReady")} value={fmt.number(activeListings.length)} />
+          <Metric label={t("commerce:marketplace.metricPendingReview")} value={fmt.number(pendingListings.length)} />
+          <Metric label={t("commerce:marketplace.metricOrdersLoaded")} value={fmt.number(orders.length)} />
         </View>
         <View style={styles.actionRow}>
           <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
-            <Text style={styles.primaryText}>Marketplace</Text>
+            <Text style={styles.primaryText}>{t("commerce:marketplace.title")}</Text>
           </Pressable>
         </View>
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Merchant application</Text>
-        <Text style={styles.copy}>Submit the native seller application to the existing seller endpoint. Document verification and admin review are completed by PulseSoc after your application is received.</Text>
+        <Text style={styles.sectionTitle}>{t("commerce:marketplace.merchantApplication")}</Text>
+        <Text style={styles.copy}>{t("commerce:marketplace.merchantApplicationCopy")}</Text>
         <TextInput
           style={styles.input}
           value={displayName}
           onChangeText={setDisplayName}
-          placeholder="Seller display name"
+          placeholder={t("commerce:marketplace.sellerDisplayNamePlaceholder")}
           placeholderTextColor={colors.muted}
           autoCapitalize="words"
         />
@@ -249,37 +252,37 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           style={[styles.input, styles.textArea]}
           value={bio}
           onChangeText={setBio}
-          placeholder="Describe what you sell and how it helps buyers"
+          placeholder={t("commerce:marketplace.sellerBioPlaceholder")}
           placeholderTextColor={colors.muted}
           multiline
         />
         <View style={styles.actionRow}>
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === "apply" }} style={styles.primaryButton} disabled={busy === "apply"} onPress={submitApplication}>
-            <Text style={styles.primaryText}>{busy === "apply" ? "Saving..." : "Save Seller Application"}</Text>
+            <Text style={styles.primaryText}>{busy === "apply" ? t("commerce:marketplace.saving") : t("commerce:marketplace.saveSellerApplication")}</Text>
           </Pressable>
         </View>
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Listing management</Text>
-        <Text style={styles.copy}>Product creation, safety review, media moderation, pricing, fulfillment, refunds, disputes, and checkout stay on existing PulseSoc marketplace systems.</Text>
+        <Text style={styles.sectionTitle}>{t("commerce:marketplace.listingManagement")}</Text>
+        <Text style={styles.copy}>{t("commerce:marketplace.listingManagementCopy")}</Text>
         <View style={styles.actionRow}>
-          <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: "Marketplace Media" })}>
-            <Text style={styles.primaryText}>Capture Product Media</Text>
+          <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: t("commerce:marketplace.mediaScreenTitle") })}>
+            <Text style={styles.primaryText}>{t("commerce:marketplace.captureProductMedia")}</Text>
           </Pressable>
-          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("MarketplaceCreateGateway", { title: "Create Listing" })}>
-            <Text style={styles.secondaryText}>Create Listing</Text>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("MarketplaceCreateGateway", { title: t("common:screens.createListing") })}>
+            <Text style={styles.secondaryText}>{t("common:screens.createListing")}</Text>
           </Pressable>
         </View>
         {listings.slice(0, 5).map((listing) => (
-          <ListingRow key={listing.id} listing={listing} onOpen={() => navigation.navigate("MarketplaceDetail", { listingId: listing.id, title: listing.title || "Marketplace" })} />
+          <ListingRow key={listing.id} listing={listing} onOpen={() => navigation.navigate("MarketplaceDetail", { listingId: listing.id, title: listing.title || t("commerce:marketplace.title") })} />
         ))}
-        {!listings.length ? <Text style={styles.emptyText}>No marketplace listings loaded yet.</Text> : null}
+        {!listings.length ? <Text style={styles.emptyText}>{t("commerce:marketplace.noListingsLoaded")}</Text> : null}
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Seller inventory</Text>
-        <Text style={styles.copy}>Edit seller-owned listing fields and control visibility through PulseSoc marketplace review. Public Marketplace visibility remains approval-gated.</Text>
+        <Text style={styles.sectionTitle}>{t("commerce:marketplace.sellerInventory")}</Text>
+        <Text style={styles.copy}>{t("commerce:marketplace.sellerInventoryCopy")}</Text>
         <View style={styles.inventoryList}>
           {listings.slice(0, 8).map((listing) => (
             <Pressable accessibilityRole="button"
@@ -288,48 +291,48 @@ export function SellerStoreScreen({ route, navigation }: Props) {
               onPress={() => startListingEdit(listing)}
             >
               <View style={styles.inventoryCopy}>
-                <Text style={styles.listingTitle} numberOfLines={1}>{listing.title || "Marketplace listing"}</Text>
-                <Text style={styles.listingMeta} numberOfLines={1}>{listing.price_label || "Request access"} · {listing.category || "Marketplace"}</Text>
+                <Text style={styles.listingTitle} numberOfLines={1}>{listing.title || t("commerce:marketplace.listingTitleFallback")}</Text>
+                <Text style={styles.listingMeta} numberOfLines={1}>{listing.price_label || t("commerce:marketplace.priceFallback")} · {listing.category || t("commerce:marketplace.title")}</Text>
               </View>
               <StatusPill listing={listing} />
             </Pressable>
           ))}
         </View>
-        {!listings.length ? <Text style={styles.emptyText}>Seller inventory appears after products are created or loaded.</Text> : null}
+        {!listings.length ? <Text style={styles.emptyText}>{t("commerce:marketplace.emptyInventory")}</Text> : null}
 
         {editingListing ? (
           <View style={styles.editorBox}>
             <View style={styles.editorHeader}>
-              <Text style={styles.editorTitle}>Edit listing #{editingListing.id}</Text>
+              <Text style={styles.editorTitle}>{t("commerce:marketplace.editListingTitle", { id: String(editingListing.id) })}</Text>
               <StatusPill listing={editingListing} />
             </View>
-            <TextInput style={styles.input} value={editTitle} onChangeText={setEditTitle} placeholder="Title" placeholderTextColor={colors.muted} />
+            <TextInput style={styles.input} value={editTitle} onChangeText={setEditTitle} placeholder={t("commerce:marketplace.titlePlaceholder")} placeholderTextColor={colors.muted} />
             <TextInput
               style={[styles.input, styles.textArea]}
               value={editDescription}
               onChangeText={setEditDescription}
-              placeholder="Description"
+              placeholder={t("commerce:marketplace.descriptionPlaceholder")}
               placeholderTextColor={colors.muted}
               multiline
             />
             <View style={styles.twoCol}>
-              <TextInput style={[styles.input, styles.flex]} value={editCategory} onChangeText={setEditCategory} placeholder="Category" placeholderTextColor={colors.muted} />
-              <TextInput style={[styles.input, styles.flex]} value={editPriceLabel} onChangeText={setEditPriceLabel} placeholder="Price label" placeholderTextColor={colors.muted} />
+              <TextInput style={[styles.input, styles.flex]} value={editCategory} onChangeText={setEditCategory} placeholder={t("commerce:marketplace.categoryPlaceholder")} placeholderTextColor={colors.muted} />
+              <TextInput style={[styles.input, styles.flex]} value={editPriceLabel} onChangeText={setEditPriceLabel} placeholder={t("commerce:marketplace.priceLabelPlaceholder")} placeholderTextColor={colors.muted} />
             </View>
             <TextInput
               style={styles.input}
               value={editQuantity}
               onChangeText={setEditQuantity}
-              placeholder="Inventory quantity"
+              placeholder={t("commerce:marketplace.quantityPlaceholder")}
               placeholderTextColor={colors.muted}
               keyboardType="numeric"
             />
             <View style={styles.actionRow}>
               <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === `edit:${editingListing.id}` }} style={styles.primaryButton} disabled={busy === `edit:${editingListing.id}`} onPress={saveListingEdit}>
-                <Text style={styles.primaryText}>{busy === `edit:${editingListing.id}` ? "Saving..." : "Save and Review"}</Text>
+                <Text style={styles.primaryText}>{busy === `edit:${editingListing.id}` ? t("commerce:marketplace.saving") : t("commerce:marketplace.saveAndReview")}</Text>
               </Pressable>
-              <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: "Marketplace Media" })}>
-                <Text style={styles.secondaryText}>Add Media</Text>
+              <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: t("commerce:marketplace.mediaScreenTitle") })}>
+                <Text style={styles.secondaryText}>{t("commerce:marketplace.addMedia")}</Text>
               </Pressable>
             </View>
             <View style={styles.actionRow}>
@@ -338,36 +341,36 @@ export function SellerStoreScreen({ route, navigation }: Props) {
                 disabled={busy === `pause:${editingListing.id}` || statusKey(editingListing) === "paused"}
                 onPress={() => mutateListingStatus(editingListing, "pause")}
               >
-                <Text style={styles.secondaryText}>{busy === `pause:${editingListing.id}` ? "Pausing..." : "Pause"}</Text>
+                <Text style={styles.secondaryText}>{busy === `pause:${editingListing.id}` ? t("commerce:marketplace.pausing") : t("common:actions.pause")}</Text>
               </Pressable>
               <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === `resume:${editingListing.id}` || statusKey(editingListing) === "live" }}
                 style={styles.secondaryButton}
                 disabled={busy === `resume:${editingListing.id}` || statusKey(editingListing) === "live"}
                 onPress={() => mutateListingStatus(editingListing, "resume")}
               >
-                <Text style={styles.secondaryText}>{busy === `resume:${editingListing.id}` ? "Resuming..." : "Resume Review"}</Text>
+                <Text style={styles.secondaryText}>{busy === `resume:${editingListing.id}` ? t("commerce:marketplace.resuming") : t("commerce:marketplace.resumeReview")}</Text>
               </Pressable>
               <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === `delete:${editingListing.id}` || statusKey(editingListing) === "removed" }}
                 style={styles.dangerButton}
                 disabled={busy === `delete:${editingListing.id}` || statusKey(editingListing) === "removed"}
                 onPress={() => mutateListingStatus(editingListing, "delete")}
               >
-                <Text style={styles.dangerText}>{busy === `delete:${editingListing.id}` ? "Removing..." : "Remove"}</Text>
+                <Text style={styles.dangerText}>{busy === `delete:${editingListing.id}` ? t("commerce:marketplace.removing") : t("common:actions.remove")}</Text>
               </Pressable>
             </View>
-            <Text style={styles.meta}>Updates are saved server-side and re-enter marketplace review when content changes. Checkout, payouts, fulfillment, disputes, and provider actions stay inside native provider boundaries.</Text>
+            <Text style={styles.meta}>{t("commerce:marketplace.editorFooterNote")}</Text>
           </View>
         ) : null}
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Product media gallery</Text>
-        <Text style={styles.copy}>The gallery reuses marketplace media payloads and the shared native media viewer. Unsupported media falls back safely inside the viewer.</Text>
+        <Text style={styles.sectionTitle}>{t("commerce:marketplace.productMediaGallery")}</Text>
+        <Text style={styles.copy}>{t("commerce:marketplace.productMediaGalleryCopy")}</Text>
         <View style={styles.mediaGrid}>
           {mediaItems.slice(0, 8).map((item, index) => (
             <Pressable
               key={`${item.url}-${index}`}
-              accessibilityLabel={`Open store media ${index + 1}`}
+              accessibilityLabel={t("commerce:marketplace.openStoreMediaA11y", { index: index + 1 })}
               accessibilityRole="button"
               style={styles.mediaTile}
               onPress={() => {
@@ -375,52 +378,52 @@ export function SellerStoreScreen({ route, navigation }: Props) {
                 setViewerOpen(true);
               }}
             >
-              {item.thumbnailUrl || item.url ? <Image source={{ uri: item.thumbnailUrl || item.url }} style={styles.mediaImage} resizeMode="cover" /> : <Text style={styles.mediaFallback}>Media</Text>}
-              <Text style={styles.mediaOverlay}>Open media</Text>
+              {item.thumbnailUrl || item.url ? <Image source={{ uri: item.thumbnailUrl || item.url }} style={styles.mediaImage} resizeMode="cover" /> : <Text style={styles.mediaFallback}>{t("commerce:marketplace.mediaFallback")}</Text>}
+              <Text style={styles.mediaOverlay}>{t("commerce:marketplace.openMedia")}</Text>
             </Pressable>
           ))}
         </View>
-        {!mediaItems.length ? <Text style={styles.emptyText}>Media appears here after marketplace listings or product uploads are available.</Text> : null}
+        {!mediaItems.length ? <Text style={styles.emptyText}>{t("commerce:marketplace.noMediaYet")}</Text> : null}
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Orders and payouts</Text>
-        <Text style={styles.copy}>Orders, seller fees, Stripe Connect onboarding, checkout, and payout release remain provider and backend controlled.</Text>
+        <Text style={styles.sectionTitle}>{t("commerce:marketplace.ordersAndPayouts")}</Text>
+        <Text style={styles.copy}>{t("commerce:marketplace.ordersAndPayoutsCopy")}</Text>
         {orders.slice(0, 4).map((order) => (
           <View key={`${order.id}-${order.created_at}`} style={styles.orderRow}>
-            <Text style={styles.orderTitle}>{order.item_type || "Order"} #{order.item_id || order.id || "pending"}</Text>
-            <Text style={styles.orderMeta}>{formatMoney(order.amount_cents || order.gross_amount_cents || 0, order.currency || "USD")} · {order.status || "pending"}</Text>
+            <Text style={styles.orderTitle}>{order.item_type || t("commerce:orders.orderFallbackTitle")} #{order.item_id || order.id || "pending"}</Text>
+            <Text style={styles.orderMeta}>{formatMoney(order.amount_cents || order.gross_amount_cents || 0, order.currency || "USD", fmt)} · {order.status || "pending"}</Text>
           </View>
         ))}
-        {!orders.length ? <Text style={styles.emptyText}>No seller orders loaded.</Text> : null}
+        {!orders.length ? <Text style={styles.emptyText}>{t("commerce:marketplace.noSellerOrders")}</Text> : null}
         {DIGITAL_COMMERCE_ENABLED ? (
           <View style={styles.actionRow}>
             <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === "payout" }} style={styles.primaryButton} disabled={busy === "payout"} onPress={startPayoutConnect}>
-              <Text style={styles.primaryText}>{busy === "payout" ? "Checking..." : "Connect Payouts"}</Text>
+              <Text style={styles.primaryText}>{busy === "payout" ? t("commerce:marketplace.checking") : t("commerce:marketplace.connectPayouts")}</Text>
             </Pressable>
           </View>
         ) : (
-          <Text style={styles.meta}>Payout onboarding and payout release are managed by PulseSoc and its payment provider. You will be notified when your payouts are ready.</Text>
+          <Text style={styles.meta}>{t("commerce:marketplace.payoutManagedNote")}</Text>
         )}
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Trust and eligibility</Text>
+        <Text style={styles.sectionTitle}>{t("commerce:marketplace.trustAndEligibility")}</Text>
         <View style={styles.actionRow}>
-          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("VerificationCenter", { title: "Verification Center", track: "business" })}>
-            <Text style={styles.secondaryText}>Verification</Text>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("VerificationCenter", { title: t("common:screens.verificationCenter"), track: "business" })}>
+            <Text style={styles.secondaryText}>{t("commerce:marketplace.verification")}</Text>
           </Pressable>
-          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("SafetyHub", { title: "Safety Hub", section: "reports" })}>
-            <Text style={styles.secondaryText}>Safety Hub</Text>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("SafetyHub", { title: t("common:screens.safetyHub"), section: "reports" })}>
+            <Text style={styles.secondaryText}>{t("common:screens.safetyHub")}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("Premium")}>
-            <Text style={styles.secondaryText}>Premium</Text>
+            <Text style={styles.secondaryText}>{t("common:screens.premium")}</Text>
           </Pressable>
         </View>
-        <Text style={styles.copy}>Advanced tax forms, bank onboarding, disputes, refunds, fulfillment, and admin review stay on safe web/provider flows until native QA gates are ready.</Text>
+        <Text style={styles.copy}>{t("commerce:marketplace.trustCopy")}</Text>
       </Panel>
 
-      <NativeMediaViewer visible={viewerOpen} items={mediaItems} initialIndex={viewerIndex} title="Store media" onClose={() => setViewerOpen(false)} />
+      <NativeMediaViewer visible={viewerOpen} items={mediaItems} initialIndex={viewerIndex} title={t("commerce:marketplace.storeMediaViewerTitle")} onClose={() => setViewerOpen(false)} />
     </Screen>
   );
 }
@@ -438,17 +441,19 @@ function statusKey(listing: MarketplaceListing) {
   return raw || "draft";
 }
 
-function statusLabel(listing: MarketplaceListing) {
-  const key = statusKey(listing);
-  if (key === "live") return "Approved/live";
-  if (key === "pending") return "Pending review";
-  if (key === "out_of_stock") return "Out of stock";
-  if (key === "removed") return "Removed";
-  return key.replace(/_/g, " ");
+/** Catalog key for a status, or `null` when the raw slug is shown verbatim. */
+function statusLabelKey(key: string) {
+  if (key === "live") return "commerce:marketplace.statusApprovedLive";
+  if (key === "pending") return "commerce:marketplace.statusPendingReview";
+  if (key === "out_of_stock") return "commerce:marketplace.outOfStock";
+  if (key === "removed") return "commerce:marketplace.statusRemoved";
+  return null;
 }
 
 function StatusPill({ listing }: { listing: MarketplaceListing }) {
+  const { t } = useTranslation();
   const key = statusKey(listing);
+  const labelKey = statusLabelKey(key);
   const style =
     key === "live"
       ? styles.statusLive
@@ -457,7 +462,7 @@ function StatusPill({ listing }: { listing: MarketplaceListing }) {
         : key === "rejected" || key === "removed"
           ? styles.statusDanger
           : styles.statusNeutral;
-  return <Text style={[styles.statusPill, style]}>{statusLabel(listing)}</Text>;
+  return <Text style={[styles.statusPill, style]}>{labelKey ? t(labelKey) : key.replace(/_/g, " ")}</Text>;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
@@ -470,22 +475,27 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 function ListingRow({ listing, onOpen }: { listing: MarketplaceListing; onOpen: () => void }) {
+  const { t } = useTranslation();
   const cover = listing.media?.[0] ? mediaDisplayUrl(listing.media[0]) : "";
   return (
     <Pressable accessibilityRole="button" style={styles.listingRow} onPress={onOpen}>
       {cover ? <Image source={{ uri: cover }} style={styles.listingImage} /> : <View style={styles.listingImageFallback} />}
       <View style={styles.listingBody}>
-        <Text style={styles.listingTitle} numberOfLines={1}>{listing.title || "Marketplace listing"}</Text>
-        <Text style={styles.listingMeta} numberOfLines={1}>{listing.price_label || "Request access"} · {listing.status || listing.approval_status || "review"}</Text>
+        <Text style={styles.listingTitle} numberOfLines={1}>{listing.title || t("commerce:marketplace.listingTitleFallback")}</Text>
+        <Text style={styles.listingMeta} numberOfLines={1}>{listing.price_label || t("commerce:marketplace.priceFallback")} · {listing.status || listing.approval_status || "review"}</Text>
       </View>
-      <Text style={styles.chevron}>Open</Text>
+      <Text style={styles.chevron}>{t("common:actions.open")}</Text>
     </Pressable>
   );
 }
 
-function formatMoney(cents: number, currency: string) {
+/**
+ * `fmt.currency` rather than `toFixed(2)` plus a currency code: the symbol, its
+ * position and the digit grouping all belong to the active locale.
+ */
+function formatMoney(cents: number, currency: string, fmt: Formatters) {
   const amount = Number(cents || 0) / 100;
-  return `${amount.toFixed(2)} ${String(currency || "USD").toUpperCase()}`;
+  return fmt.currency(amount, { currency: String(currency || "USD").toUpperCase() });
 }
 
 const styles = StyleSheet.create({

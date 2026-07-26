@@ -31,6 +31,7 @@ import {
 } from "../api/groups";
 import { PulseCommandAction, PulseCommandHeader, PulseCommandPanel, PulseCommandSearch } from "../components/PulseCommand";
 import { LogiNexusStatePanel } from "../components/Screen";
+import { useTranslation } from "../i18n";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
 import {
@@ -67,6 +68,7 @@ export function GroupsScreen({ route, navigation }: Props) {
   // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
   // reserves the matching clearance so the last row never sits under the dock.
   const dock = useBottomNavSurface();
+  const { t } = useTranslation();
   const initialSlug = route?.params?.groupSlug || "";
   const [groups, setGroups] = useState<PulseGroup[]>([]);
   const [rooms, setRooms] = useState<PulseRoom[]>([]);
@@ -108,7 +110,7 @@ export function GroupsScreen({ route, navigation }: Props) {
         setRooms(cached.rooms || []);
         setOffline(true);
       } else {
-        setError(loadError instanceof Error ? loadError.message : "Groups could not load.");
+        setError(loadError instanceof Error ? loadError.message : t("social:groups.loadError"));
       }
     } finally {
       setLoading(false);
@@ -125,7 +127,7 @@ export function GroupsScreen({ route, navigation }: Props) {
     } catch (detailError) {
       const cached = await loadCachedGroupDetail(group.slug);
       if (cached?.group) setSelected(cached.group);
-      else setError(detailError instanceof Error ? detailError.message : "Group detail could not load.");
+      else setError(detailError instanceof Error ? detailError.message : t("social:groups.detailLoadError"));
     }
   }
 
@@ -138,7 +140,7 @@ export function GroupsScreen({ route, navigation }: Props) {
     return () => clearTimeout(timer);
   }, [query]);
 
-  const categories = useMemo(() => Array.from(new Set(groups.map((group) => group.category || "Community"))).slice(0, 8), [groups]);
+  const categories = useMemo(() => Array.from(new Set(groups.map((group) => group.category || t("social:groups.categoryFallback")))).slice(0, 8), [groups, t]);
 
   async function handleJoin(group: PulseGroup) {
     setBusyKey(`group-${group.slug}`);
@@ -154,7 +156,7 @@ export function GroupsScreen({ route, navigation }: Props) {
       });
       if (selected?.slug === group.slug) setSelected((current) => current ? { ...current, joined: nextJoined, member_count: Number(action.member_count ?? current.member_count ?? 0) } : current);
     } catch (joinError) {
-      setError(joinError instanceof Error ? joinError.message : "Membership action failed.");
+      setError(joinError instanceof Error ? joinError.message : t("social:groups.membershipActionFailed"));
     } finally {
       setBusyKey("");
     }
@@ -165,10 +167,10 @@ export function GroupsScreen({ route, navigation }: Props) {
     setError("");
     try {
       const result = await openGroupChat(group.slug);
-      if (result.conversation_id && navigation) navigation.navigate("Chat", { conversationId: result.conversation_id, title: `${group.name} Chat` });
-      else setError(result.message || "Group chat is not available yet.");
+      if (result.conversation_id && navigation) navigation.navigate("Chat", { conversationId: result.conversation_id, title: t("social:groups.chatTitle", { name: group.name }) });
+      else setError(result.message || t("social:groups.chatUnavailable"));
     } catch (chatError) {
-      setError(chatError instanceof Error ? chatError.message : "Group chat could not be opened.");
+      setError(chatError instanceof Error ? chatError.message : t("social:groups.chatOpenError"));
     } finally {
       setBusyKey("");
     }
@@ -178,9 +180,9 @@ export function GroupsScreen({ route, navigation }: Props) {
     setBusyKey(`report-${group.slug}`);
     try {
       const result = await reportGroup(group.slug, "Needs review");
-      setError(result.message || "Group report sent.");
+      setError(result.message || t("social:groups.reportSent"));
     } catch (reportError) {
-      setError(reportError instanceof Error ? reportError.message : "Group report failed.");
+      setError(reportError instanceof Error ? reportError.message : t("social:groups.reportFailed"));
     } finally {
       setBusyKey("");
     }
@@ -196,9 +198,9 @@ export function GroupsScreen({ route, navigation }: Props) {
         conversationId = Number(result.conversation_id || 0);
       }
       if (conversationId && navigation) navigation.navigate("Chat", { conversationId, title: room.title || room.name });
-      else setError("Room chat is not available yet.");
+      else setError(t("social:groups.roomChatUnavailable"));
     } catch (roomError) {
-      setError(roomError instanceof Error ? roomError.message : "Room could not be opened.");
+      setError(roomError instanceof Error ? roomError.message : t("social:groups.roomOpenError"));
     } finally {
       setBusyKey("");
     }
@@ -223,7 +225,7 @@ export function GroupsScreen({ route, navigation }: Props) {
   if (loading && !groups.length) {
     return (
       <View style={styles.root}>
-        <LogiNexusStatePanel state="loading" title="Loading community channels" body="Synchronizing groups, rooms, and permissions." loading style={styles.statePanel} />
+        <LogiNexusStatePanel state="loading" title={t("social:groups.loadingTitle")} body={t("social:groups.loadingBody")} loading style={styles.statePanel} />
       </View>
     );
   }
@@ -242,13 +244,13 @@ export function GroupsScreen({ route, navigation }: Props) {
         ListHeaderComponent={
           <View style={styles.header}>
             <PulseCommandHeader
-              title="Groups & Rooms"
-              subtitle={offline ? "Showing saved communities from local cache." : "Community channels, rooms, and moderated group spaces."}
-              status={offline ? "Cached" : "Live sync"}
+              title={t("social:groups.title")}
+              subtitle={offline ? t("social:groups.offlineSubtitle") : t("social:groups.subtitle")}
+              status={offline ? t("social:groups.statusCached") : t("social:groups.statusLiveSync")}
               tone={offline ? "warning" : "safety"}
-              actions={navigation ? <PulseCommandAction compact label="Safety" tone="safety" onPress={() => navigation.navigate("SafetyHub", { section: "reports", title: "Safety Hub" })} /> : null}
+              actions={navigation ? <PulseCommandAction compact label={t("social:groups.safetyAction")} tone="safety" onPress={() => navigation.navigate("SafetyHub", { section: "reports", title: t("social:groups.safetyHubTitle") })} /> : null}
             />
-            <PulseCommandSearch value={query} onChangeText={setQuery} placeholder="Search communities and rooms" />
+            <PulseCommandSearch value={query} onChangeText={setQuery} placeholder={t("social:groups.searchPlaceholder")} />
             {categories.length ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                 {categories.map((category) => (
@@ -258,15 +260,15 @@ export function GroupsScreen({ route, navigation }: Props) {
                 ))}
               </ScrollView>
             ) : null}
-            <Text style={styles.sectionTitle}>Rooms</Text>
+            <Text style={styles.sectionTitle}>{t("social:groups.roomsSection")}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.roomRow}>
               {rooms.map((room) => (
                 <RoomCard key={room.id} room={room} busy={busyKey === `room-${room.id}`} onOpen={openRoomDetail} />
               ))}
               {!rooms.length ? (
                 <PulseCommandPanel style={styles.roomEmpty}>
-                  <Text style={styles.roomTitle}>No room signals</Text>
-                  <Text style={styles.roomText}>Rooms appear here when the existing backend returns them.</Text>
+                  <Text style={styles.roomTitle}>{t("social:groups.noRoomSignalsTitle")}</Text>
+                  <Text style={styles.roomText}>{t("social:groups.noRoomSignalsBody")}</Text>
                 </PulseCommandPanel>
               ) : null}
             </ScrollView>
@@ -274,7 +276,7 @@ export function GroupsScreen({ route, navigation }: Props) {
           </View>
         }
         ListEmptyComponent={
-          <LogiNexusStatePanel state={error ? "error" : "empty"} title={error ? "Communities unavailable" : "No communities found"} body={error || "PulseSoc communities will appear here when the existing backend returns them."} style={styles.statePanel} />
+          <LogiNexusStatePanel state={error ? "error" : "empty"} title={error ? t("social:groups.errorTitle") : t("social:groups.emptyTitle")} body={error || t("social:groups.emptyBody")} style={styles.statePanel} />
         }
         renderItem={({ item }) => (
           <GroupCard
@@ -288,7 +290,7 @@ export function GroupsScreen({ route, navigation }: Props) {
         )}
         onEndReached={() => load("more").catch(() => undefined)}
         onEndReachedThreshold={0.35}
-        ListFooterComponent={loadingMore ? <Text style={styles.footer}>Loading more community signals...</Text> : null}
+        ListFooterComponent={loadingMore ? <Text style={styles.footer}>{t("social:groups.loadingMore")}</Text> : null}
       />
       {selected ? (
         <GroupDetail
@@ -306,7 +308,7 @@ export function GroupsScreen({ route, navigation }: Props) {
           busyKey={busyKey}
           onClose={() => setSelectedRoom(null)}
           onOpen={handleOpenRoom}
-          onReport={(room) => setError(`Report boundary ready for ${roomDisplayTitle(room)}. Room-specific moderation endpoint is not exposed to native yet.`)}
+          onReport={(room) => setError(t("social:groups.roomReportBoundary", { room: roomDisplayTitle(room) }))}
         />
       ) : null}
     </View>
@@ -321,6 +323,7 @@ function GroupCard({ group, busy, onOpen, onJoin, onChat, onReport }: {
   onChat: (group: PulseGroup) => void;
   onReport: (group: PulseGroup) => void;
 }) {
+  const { t } = useTranslation();
   const actions = groupActionRules(group);
   const actionIsAvailable = (key: ReturnType<typeof groupActionRules>[number]["key"]) => actions.find((action) => action.key === key)?.available;
   return (
@@ -337,15 +340,15 @@ function GroupCard({ group, busy, onOpen, onJoin, onChat, onReport }: {
         </View>
         <View style={styles.actionRow}>
           {actionIsAvailable("join") || actionIsAvailable("leave") ? (
-            <Pressable accessibilityRole="button" accessibilityLabel={actions[0]?.accessibilityLabel || "Membership action"} style={styles.smallButton} disabled={busy} onPress={() => onJoin(group)}>
-              <Text style={styles.smallButtonText}>{actions[0]?.label || (group.joined ? "Leave" : "Join")}</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel={actions[0]?.accessibilityLabel || t("social:groups.membershipActionLabel")} style={styles.smallButton} disabled={busy} onPress={() => onJoin(group)}>
+              <Text style={styles.smallButtonText}>{actions[0]?.label || (group.joined ? t("social:groups.leave") : t("social:groups.join"))}</Text>
             </Pressable>
           ) : null}
-          {actionIsAvailable("openChat") ? <Pressable accessibilityRole="button" accessibilityLabel={`Open chat for ${groupDisplayTitle(group)}`} style={styles.smallButton} disabled={busy} onPress={() => onChat(group)}>
-            <Text style={styles.smallButtonText}>Chat</Text>
+          {actionIsAvailable("openChat") ? <Pressable accessibilityRole="button" accessibilityLabel={t("social:groups.openChatLabel", { group: groupDisplayTitle(group) })} style={styles.smallButton} disabled={busy} onPress={() => onChat(group)}>
+            <Text style={styles.smallButtonText}>{t("social:groups.chat")}</Text>
           </Pressable> : null}
-          {actionIsAvailable("reportGroup") ? <Pressable accessibilityRole="button" accessibilityLabel={`Report ${groupDisplayTitle(group)}`} style={styles.smallButton} disabled={busy} onPress={() => onReport(group)}>
-            <Text style={styles.smallButtonText}>Report</Text>
+          {actionIsAvailable("reportGroup") ? <Pressable accessibilityRole="button" accessibilityLabel={t("social:groups.reportLabel", { group: groupDisplayTitle(group) })} style={styles.smallButton} disabled={busy} onPress={() => onReport(group)}>
+            <Text style={styles.smallButtonText}>{t("social:groups.report")}</Text>
           </Pressable> : null}
         </View>
       </View>
@@ -354,6 +357,7 @@ function GroupCard({ group, busy, onOpen, onJoin, onChat, onReport }: {
 }
 
 function RoomCard({ room, busy, onOpen }: { room: PulseRoom; busy?: boolean; onOpen: (room: PulseRoom) => void }) {
+  const { t } = useTranslation();
   const primaryAction = roomActionRules(room).find((action) => action.key === "openRoom");
   return (
     <Pressable style={styles.roomCard} accessibilityRole="button" accessibilityLabel={roomAccessibilityLabel(room)} disabled={busy} onPress={() => onOpen(room)}>
@@ -364,7 +368,7 @@ function RoomCard({ room, busy, onOpen }: { room: PulseRoom; busy?: boolean; onO
           <Text key={badge} style={styles.pill}>{badge}</Text>
         ))}
       </View>
-      <Text style={styles.cardMeta}>{primaryAction?.label || "Open Room"}</Text>
+      <Text style={styles.cardMeta}>{primaryAction?.label || t("social:groups.openRoom")}</Text>
     </Pressable>
   );
 }
@@ -377,6 +381,7 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport }: {
   onChat: (group: PulseGroup) => void;
   onReport: (group: PulseGroup) => void;
 }) {
+  const { t } = useTranslation();
   const sections: GroupDetailSection[] = ["overview", "members", "invitations", "media", "files", "links", "settings"];
   const [section, setSection] = useState<GroupDetailSection>("overview");
   const groupActions = groupActionRules(group);
@@ -387,10 +392,10 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport }: {
         <View style={styles.detailHeader}>
           <View style={styles.detailTitleWrap}>
             <Text style={styles.title} numberOfLines={1}>{groupDisplayTitle(group)}</Text>
-            <Text style={styles.subtitle}>{Number(group.member_count || 0)} members · {group.group_type || "public"} · {groupRoleLabel(group)}</Text>
+            <Text style={styles.subtitle}>{t("social:groups.detailSubtitle", { count: Number(group.member_count || 0), type: group.group_type || t("social:groups.values.public"), role: groupRoleLabel(group) })}</Text>
           </View>
-          <Pressable accessibilityRole="button" accessibilityLabel={`Close ${groupDisplayTitle(group)} detail`} style={styles.smallButton} onPress={onClose}>
-            <Text style={styles.smallButtonText}>Close</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={t("social:groups.closeDetailLabel", { title: groupDisplayTitle(group) })} style={styles.smallButton} onPress={onClose}>
+            <Text style={styles.smallButtonText}>{t("social:groups.close")}</Text>
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.detailContent}>
@@ -404,19 +409,19 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport }: {
                 style={[styles.sectionChip, section === item && styles.sectionChipActive]}
                 onPress={() => setSection(item)}
               >
-                <Text style={[styles.sectionChipText, section === item && styles.sectionChipTextActive]}>{groupDetailSectionLabel(item)}</Text>
+                <Text style={[styles.sectionChipText, section === item && styles.sectionChipTextActive]}>{t(groupDetailSectionLabelKey(item))}</Text>
               </Pressable>
             ))}
           </ScrollView>
           <View style={styles.actionRow}>
             {actionIsAvailable("join") || actionIsAvailable("leave") ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyKey) }} style={styles.primaryButton} disabled={Boolean(busyKey)} onPress={() => onJoin(group)}>
-              <Text style={styles.primaryText}>{groupActions[0]?.label || (group.joined ? "Leave" : "Join")}</Text>
+              <Text style={styles.primaryText}>{groupActions[0]?.label || (group.joined ? t("social:groups.leave") : t("social:groups.join"))}</Text>
             </Pressable> : null}
             {actionIsAvailable("openChat") ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyKey) }} style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onChat(group)}>
-              <Text style={styles.smallButtonText}>Open Chat</Text>
+              <Text style={styles.smallButtonText}>{t("social:groups.openChat")}</Text>
             </Pressable> : null}
             {actionIsAvailable("reportGroup") ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyKey) }} style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onReport(group)}>
-              <Text style={styles.smallButtonText}>Report</Text>
+              <Text style={styles.smallButtonText}>{t("social:groups.report")}</Text>
             </Pressable> : null}
           </View>
           <GroupDetailSectionView group={group} section={section} />
@@ -428,63 +433,71 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport }: {
 
 type GroupDetailSection = "overview" | "members" | "invitations" | "media" | "files" | "links" | "settings";
 
-function groupDetailSectionLabel(section: GroupDetailSection) {
+/**
+ * Returns a catalog key rather than display text, so the rail re-labels itself
+ * when the language changes instead of freezing the language that was active
+ * when this module loaded.
+ */
+function groupDetailSectionLabelKey(section: GroupDetailSection) {
   return {
-    overview: "Overview",
-    members: "Members",
-    invitations: "Invitations",
-    media: "Media",
-    files: "Files",
-    links: "Links",
-    settings: "Settings"
+    overview: "social:groups.sections.overview",
+    members: "social:groups.sections.members",
+    invitations: "social:groups.sections.invitations",
+    media: "social:groups.sections.media",
+    files: "social:groups.sections.files",
+    links: "social:groups.sections.links",
+    settings: "social:groups.sections.settings"
   }[section];
 }
 
 function GroupDetailSectionView({ group, section }: { group: PulseGroup; section: GroupDetailSection }) {
+  const { t } = useTranslation();
   if (section === "overview") return <GroupOverview group={group} />;
   if (section === "members") return <GroupMembers group={group} />;
   if (section === "invitations") return <GroupInvitations group={group} />;
-  if (section === "media") return <GroupAssets title="Media" assets={group.media || []} emptyTitle="No indexed group media" emptyBody="Native will show photos and videos here when the backend returns an authoritative group media index. Existing media from group posts is shown when available." />;
-  if (section === "files") return <GroupAssets title="Files" assets={group.files || []} emptyTitle="No group files yet" emptyBody="File indexing is a backend contract boundary. Native does not scan private chat history to fabricate a file library." />;
-  if (section === "links") return <GroupAssets title="Links" assets={group.links || []} emptyTitle="No shared links yet" emptyBody="Link indexing is not exposed to native yet. Links will appear here when the server provides a safe group link index." />;
+  if (section === "media") return <GroupAssets title={t("social:groups.sections.media")} assets={group.media || []} emptyTitle={t("social:groups.assets.mediaEmptyTitle")} emptyBody={t("social:groups.assets.mediaEmptyBody")} />;
+  if (section === "files") return <GroupAssets title={t("social:groups.sections.files")} assets={group.files || []} emptyTitle={t("social:groups.assets.filesEmptyTitle")} emptyBody={t("social:groups.assets.filesEmptyBody")} />;
+  if (section === "links") return <GroupAssets title={t("social:groups.sections.links")} assets={group.links || []} emptyTitle={t("social:groups.assets.linksEmptyTitle")} emptyBody={t("social:groups.assets.linksEmptyBody")} />;
   return <GroupSettings group={group} />;
 }
 
 function GroupOverview({ group }: { group: PulseGroup }) {
+  const { t } = useTranslation();
   return (
     <View>
-      <Text style={styles.sectionTitle}>Overview</Text>
+      <Text style={styles.sectionTitle}>{t("social:groups.sections.overview")}</Text>
       <Text style={styles.cardText}>{groupSummary(group)}</Text>
       <View style={styles.metricGrid}>
-        <Metric label="Members" value={String(Number(group.member_count || 0))} />
-        <Metric label="Posts" value={String(Number(group.post_count || 0))} />
-        <Metric label="Role" value={groupRoleLabel(group)} />
-        <Metric label="Notify" value={groupNotificationLabel(group)} />
+        <Metric label={t("social:groups.metrics.members")} value={String(Number(group.member_count || 0))} />
+        <Metric label={t("social:groups.metrics.posts")} value={String(Number(group.post_count || 0))} />
+        <Metric label={t("social:groups.metrics.role")} value={groupRoleLabel(group)} />
+        <Metric label={t("social:groups.metrics.notify")} value={groupNotificationLabel(group)} />
       </View>
-      {group.owner_name ? <Text style={styles.cardMeta}>Owner: {group.owner_name}</Text> : null}
+      {group.owner_name ? <Text style={styles.cardMeta}>{t("social:groups.ownerLine", { name: group.owner_name })}</Text> : null}
       {group.rules ? (
         <View style={styles.rulesBox}>
-          <Text style={styles.sectionTitle}>Rules</Text>
+          <Text style={styles.sectionTitle}>{t("social:groups.rulesHeading")}</Text>
           <Text style={styles.cardText}>{group.rules}</Text>
         </View>
       ) : (
-        <BoundaryPanel title="Rules unavailable" body="The current group contract did not return rules for this community." />
+        <BoundaryPanel title={t("social:groups.rulesUnavailableTitle")} body={t("social:groups.rulesUnavailableBody")} />
       )}
-      <Text style={styles.sectionTitle}>Community Feed</Text>
-      {(group.posts || []).length ? group.posts?.map((post) => <GroupPostCard key={post.id} post={post} />) : <Text style={styles.emptyText}>Group posts will appear here when the existing backend returns them.</Text>}
+      <Text style={styles.sectionTitle}>{t("social:groups.communityFeedHeading")}</Text>
+      {(group.posts || []).length ? group.posts?.map((post) => <GroupPostCard key={post.id} post={post} />) : <Text style={styles.emptyText}>{t("social:groups.feedEmpty")}</Text>}
     </View>
   );
 }
 
 function GroupMembers({ group }: { group: PulseGroup }) {
+  const { t } = useTranslation();
   const members = group.members || [];
   return (
     <View>
-      <Text style={styles.sectionTitle}>Members and Roles</Text>
+      <Text style={styles.sectionTitle}>{t("social:groups.membersHeading")}</Text>
       {members.length ? members.map((member) => <GroupMemberRow key={member.id} group={group} member={member} />) : (
         <BoundaryPanel
-          title="Member roster boundary"
-          body={`The server currently exposes your role (${groupRoleLabel(group)}) and total member count, but not the full native member roster. Native will render role actions here when the member list contract is available.`}
+          title={t("social:groups.memberBoundaryTitle")}
+          body={t("social:groups.memberBoundaryBody", { role: groupRoleLabel(group) })}
         />
       )}
     </View>
@@ -512,32 +525,38 @@ function GroupMemberRow({ group, member }: { group: PulseGroup; member: PulseGro
 }
 
 function GroupInvitations({ group }: { group: PulseGroup }) {
+  const { t } = useTranslation();
   const invitations = group.invitations || [];
   const requests = group.membership_requests || [];
   return (
     <View>
-      <Text style={styles.sectionTitle}>Invitations</Text>
+      <Text style={styles.sectionTitle}>{t("social:groups.sections.invitations")}</Text>
       {invitations.length ? invitations.map((invite) => <GroupInvitationRow key={invite.id} invitation={invite} />) : (
-        <BoundaryPanel title="No pending invitations exposed" body="Invite/search actions are provider-backed by existing PulseSoc routes. Pending invitations will render here when the backend returns them to native." />
+        <BoundaryPanel title={t("social:groups.invitationsBoundaryTitle")} body={t("social:groups.invitationsBoundaryBody")} />
       )}
-      <Text style={styles.sectionTitle}>Membership Requests</Text>
+      <Text style={styles.sectionTitle}>{t("social:groups.membershipRequestsHeading")}</Text>
       {requests.length ? requests.map((invite) => <GroupInvitationRow key={invite.id} invitation={invite} request />) : (
-        <Text style={styles.emptyText}>No membership requests returned for native review.</Text>
+        <Text style={styles.emptyText}>{t("social:groups.membershipRequestsEmpty")}</Text>
       )}
     </View>
   );
 }
 
 function GroupInvitationRow({ invitation, request }: { invitation: PulseGroupInvitation; request?: boolean }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.memberRow} accessibilityLabel={groupInvitationAccessibilityLabel(invitation)}>
       <Avatar name={invitation.display_name} uri={invitation.avatar_url} />
       <View style={styles.memberMain}>
         <Text style={styles.cardTitle} numberOfLines={1}>{invitation.display_name}</Text>
-        <Text style={styles.cardText} numberOfLines={1}>{request ? "Request" : "Invite"} · {groupInvitationStateLabel(invitation)} · {groupMemberRoleLabel(invitation.role)}</Text>
+        <Text style={styles.cardText} numberOfLines={1}>{t("social:groups.invitationMeta", {
+          kind: request ? t("social:groups.invitationKindRequest") : t("social:groups.invitationKindInvite"),
+          state: groupInvitationStateLabel(invitation),
+          role: groupMemberRoleLabel(invitation.role)
+        })}</Text>
         <View style={styles.actionRow}>
-          <Pressable accessibilityRole="button" style={styles.inlineAction}><Text style={styles.inlineActionText}>{request ? "Approve boundary" : "Pending"}</Text></Pressable>
-          <Pressable accessibilityRole="button" style={[styles.inlineAction, styles.inlineDanger]}><Text style={styles.inlineActionText}>{request ? "Reject boundary" : "Cancel boundary"}</Text></Pressable>
+          <Pressable accessibilityRole="button" style={styles.inlineAction}><Text style={styles.inlineActionText}>{request ? t("social:groups.approveBoundary") : t("social:groups.pending")}</Text></Pressable>
+          <Pressable accessibilityRole="button" style={[styles.inlineAction, styles.inlineDanger]}><Text style={styles.inlineActionText}>{request ? t("social:groups.rejectBoundary") : t("social:groups.cancelBoundary")}</Text></Pressable>
         </View>
       </View>
     </View>
@@ -554,6 +573,7 @@ function GroupAssets({ title, assets, emptyTitle, emptyBody }: { title: string; 
 }
 
 function GroupAssetCard({ asset }: { asset: PulseGroupAsset }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.assetCard}>
       {asset.thumbnail_url || asset.url ? (
@@ -564,30 +584,31 @@ function GroupAssetCard({ asset }: { asset: PulseGroupAsset }) {
       <View style={styles.cardBody}>
         <Text style={styles.cardType}>{groupAssetCategoryLabel(asset)}</Text>
         <Text style={styles.cardTitle} numberOfLines={2}>{asset.title}</Text>
-        <Text style={styles.cardText} numberOfLines={2}>{asset.url ? "NativeMediaViewer handoff ready where the media contract provides a safe URL." : "No safe media URL returned."}</Text>
+        <Text style={styles.cardText} numberOfLines={2}>{asset.url ? t("social:groups.assets.handoffReady") : t("social:groups.assets.noUrl")}</Text>
       </View>
     </View>
   );
 }
 
 function GroupSettings({ group }: { group: PulseGroup }) {
+  const { t } = useTranslation();
   const actions = groupActionRules(group);
   return (
     <View>
-      <Text style={styles.sectionTitle}>Settings and Safety</Text>
+      <Text style={styles.sectionTitle}>{t("social:groups.settingsHeading")}</Text>
       <View style={styles.metricGrid}>
-        <Metric label="Privacy" value={group.privacy || group.group_type || "public"} />
-        <Metric label="Trust" value={group.trust_level || "standard"} />
-        <Metric label="Status" value={group.status || "active"} />
-        <Metric label="Manage" value={group.can_manage ? "allowed" : "member"} />
+        <Metric label={t("social:groups.metrics.privacy")} value={group.privacy || group.group_type || t("social:groups.values.public")} />
+        <Metric label={t("social:groups.metrics.trust")} value={group.trust_level || t("social:groups.values.standard")} />
+        <Metric label={t("social:groups.metrics.status")} value={group.status || t("social:groups.values.active")} />
+        <Metric label={t("social:groups.metrics.manage")} value={group.can_manage ? t("social:groups.values.allowed") : t("social:groups.values.member")} />
       </View>
       {actions.map((action) => (
         <View key={action.key} style={styles.permissionRow}>
           <Text style={styles.cardTitle}>{action.label}</Text>
-          <Text style={styles.cardText}>{action.available ? "Available through the existing server-authoritative contract." : "Hidden by current role or provider state."}</Text>
+          <Text style={styles.cardText}>{action.available ? t("social:groups.permissionAvailable") : t("social:groups.permissionHidden")}</Text>
         </View>
       ))}
-      {!group.can_manage ? <BoundaryPanel title="Admin settings gated" body="Edit group, member moderation, and deletion remain hidden unless the existing backend marks the viewer as owner, admin, or moderator." /> : null}
+      {!group.can_manage ? <BoundaryPanel title={t("social:groups.adminGatedTitle")} body={t("social:groups.adminGatedBody")} /> : null}
     </View>
   );
 }
@@ -599,6 +620,7 @@ function RoomDetail({ room, busyKey, onClose, onOpen, onReport }: {
   onOpen: (room: PulseRoom) => void;
   onReport: (room: PulseRoom) => void;
 }) {
+  const { t } = useTranslation();
   const [section, setSection] = useState<RoomDetailSection>("overview");
   const sections: RoomDetailSection[] = ["overview", "participants", "activity", "provider"];
   const actions = roomActionRules(room);
@@ -609,17 +631,17 @@ function RoomDetail({ room, busyKey, onClose, onOpen, onReport }: {
         <View style={styles.detailHeader}>
           <View style={styles.detailTitleWrap}>
             <Text style={styles.title} numberOfLines={1}>{roomDisplayTitle(room)}</Text>
-            <Text style={styles.subtitle}>{roomProviderStateLabel(room)} · {Number(room.online_count || 0)} active · {room.current_user_role || "participant boundary"}</Text>
+            <Text style={styles.subtitle}>{t("social:groups.roomDetailSubtitle", { state: roomProviderStateLabel(room), active: Number(room.online_count || 0), role: room.current_user_role || t("social:groups.values.participantBoundary") })}</Text>
           </View>
-          <Pressable accessibilityRole="button" accessibilityLabel={`Close ${roomDisplayTitle(room)} detail`} style={styles.smallButton} onPress={onClose}>
-            <Text style={styles.smallButtonText}>Close</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={t("social:groups.closeDetailLabel", { title: roomDisplayTitle(room) })} style={styles.smallButton} onPress={onClose}>
+            <Text style={styles.smallButtonText}>{t("social:groups.close")}</Text>
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.detailContent}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sectionRail}>
             {sections.map((item) => (
               <Pressable key={item} accessibilityRole="tab" accessibilityState={{ selected: section === item }} style={[styles.sectionChip, section === item && styles.sectionChipActive]} onPress={() => setSection(item)}>
-                <Text style={[styles.sectionChipText, section === item && styles.sectionChipTextActive]}>{roomDetailSectionLabel(item)}</Text>
+                <Text style={[styles.sectionChipText, section === item && styles.sectionChipTextActive]}>{t(roomDetailSectionLabelKey(item))}</Text>
               </Pressable>
             ))}
           </ScrollView>
@@ -633,7 +655,7 @@ function RoomDetail({ room, busyKey, onClose, onOpen, onReport }: {
               <View style={styles.boundaryPill}><Text style={styles.boundaryPillText}>{roomProviderStateLabel(room)}</Text></View>
             ) : null}
             <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyKey) }} style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onReport(room)}>
-              <Text style={styles.smallButtonText}>Report</Text>
+              <Text style={styles.smallButtonText}>{t("social:groups.report")}</Text>
             </Pressable>
           </View>
           <RoomDetailSectionView room={room} section={section} />
@@ -645,41 +667,44 @@ function RoomDetail({ room, busyKey, onClose, onOpen, onReport }: {
 
 type RoomDetailSection = "overview" | "participants" | "activity" | "provider";
 
-function roomDetailSectionLabel(section: RoomDetailSection) {
+/** Catalog keys, resolved at render time — see `groupDetailSectionLabelKey`. */
+function roomDetailSectionLabelKey(section: RoomDetailSection) {
   return {
-    overview: "Overview",
-    participants: "Participants",
-    activity: "Activity",
-    provider: "Provider"
+    overview: "social:groups.roomSections.overview",
+    participants: "social:groups.roomSections.participants",
+    activity: "social:groups.roomSections.activity",
+    provider: "social:groups.roomSections.provider"
   }[section];
 }
 
 function RoomDetailSectionView({ room, section }: { room: PulseRoom; section: RoomDetailSection }) {
+  const { t } = useTranslation();
   if (section === "participants") return <RoomParticipants room={room} />;
   if (section === "activity") return <RoomActivity room={room} />;
   if (section === "provider") return <RoomProviderBoundary room={room} />;
   return (
     <View>
-      <Text style={styles.sectionTitle}>Room Overview</Text>
+      <Text style={styles.sectionTitle}>{t("social:groups.roomOverviewHeading")}</Text>
       <Text style={styles.cardText}>{roomSummary(room)}</Text>
       <View style={styles.metricGrid}>
-        <Metric label="Active" value={String(Number(room.online_count || 0))} />
-        <Metric label="Unread" value={String(Number(room.unread_count || 0))} />
-        <Metric label="Privacy" value={room.privacy || "member"} />
-        <Metric label="State" value={roomProviderStateLabel(room)} />
+        <Metric label={t("social:groups.metrics.active")} value={String(Number(room.online_count || 0))} />
+        <Metric label={t("social:groups.metrics.unread")} value={String(Number(room.unread_count || 0))} />
+        <Metric label={t("social:groups.metrics.privacy")} value={room.privacy || t("social:groups.values.member")} />
+        <Metric label={t("social:groups.metrics.state")} value={roomProviderStateLabel(room)} />
       </View>
-      {room.pinned_notice ? <BoundaryPanel title="Pinned notice" body={room.pinned_notice} /> : null}
+      {room.pinned_notice ? <BoundaryPanel title={t("social:groups.pinnedNoticeTitle")} body={room.pinned_notice} /> : null}
     </View>
   );
 }
 
 function RoomParticipants({ room }: { room: PulseRoom }) {
+  const { t } = useTranslation();
   const participants = room.participants || [];
   return (
     <View>
-      <Text style={styles.sectionTitle}>Participants and Presence</Text>
+      <Text style={styles.sectionTitle}>{t("social:groups.participantsHeading")}</Text>
       {participants.length ? participants.map((participant) => <RoomParticipantRow key={participant.id} participant={participant} />) : (
-        <BoundaryPanel title="Live presence boundary" body="The current room list exposes aggregate active counts. Native participant identity, roles, and provider connection state will render here when the server/provider returns a safe roster." />
+        <BoundaryPanel title={t("social:groups.presenceBoundaryTitle")} body={t("social:groups.presenceBoundaryBody")} />
       )}
     </View>
   );
@@ -698,30 +723,32 @@ function RoomParticipantRow({ participant }: { participant: PulseRoomParticipant
 }
 
 function RoomActivity({ room }: { room: PulseRoom }) {
+  const { t } = useTranslation();
   const activity = room.activity || [];
   return (
     <View>
-      <Text style={styles.sectionTitle}>Room Activity</Text>
+      <Text style={styles.sectionTitle}>{t("social:groups.roomActivityHeading")}</Text>
       {activity.length ? activity.map((asset) => <GroupAssetCard key={asset.id} asset={asset} />) : (
-        <BoundaryPanel title="No persistent room activity returned" body="This room currently exposes summary data. Messages, shared media, announcements, and participant events remain tied to the existing chat/provider contracts." />
+        <BoundaryPanel title={t("social:groups.roomActivityEmptyTitle")} body={t("social:groups.roomActivityEmptyBody")} />
       )}
     </View>
   );
 }
 
 function RoomProviderBoundary({ room }: { room: PulseRoom }) {
+  const { t } = useTranslation();
   return (
     <View>
-      <Text style={styles.sectionTitle}>Provider Boundary</Text>
+      <Text style={styles.sectionTitle}>{t("social:groups.providerBoundaryHeading")}</Text>
       <BoundaryPanel
         title={roomProviderStateLabel(room)}
-        body={room.partial ? "This room depends on a provider state that cannot be proven in Simulator. Native can verify routing, layout, permissions, and fallback behavior here; microphone, camera, Bluetooth, and real multi-participant media remain physical-device QA." : "This room can open through the existing Pulse Command chat contract. Live media features remain provider and physical-device gated where applicable."}
+        body={room.partial ? t("social:groups.providerPartialBody") : t("social:groups.providerReadyBody")}
       />
       <View style={styles.metricGrid}>
-        <Metric label="Provider" value={room.provider || "PulseSoc"} />
-        <Metric label="Room type" value={room.room_type || "room"} />
-        <Metric label="Role" value={room.current_user_role || "member"} />
-        <Metric label="Conversation" value={room.conversation_id ? "available" : "join required"} />
+        <Metric label={t("social:groups.metrics.provider")} value={room.provider || "PulseSoc"} />
+        <Metric label={t("social:groups.metrics.roomType")} value={room.room_type || t("social:groups.values.room")} />
+        <Metric label={t("social:groups.metrics.role")} value={room.current_user_role || t("social:groups.values.member")} />
+        <Metric label={t("social:groups.metrics.conversation")} value={room.conversation_id ? t("social:groups.values.available") : t("social:groups.values.joinRequired")} />
       </View>
     </View>
   );
@@ -750,12 +777,14 @@ function Avatar({ name, uri }: { name: string; uri?: string }) {
 }
 
 function GroupPostCard({ post }: { post: PulseGroupPost }) {
+  const { t } = useTranslation();
+  const metaParams = { author: post.author_name || t("social:groups.postAuthorFallback"), time: formatShortTime(post.created_at) };
   return (
     <View style={styles.postCard}>
-      <Text style={styles.cardType}>{post.pinned ? "Pinned · " : ""}{post.author_name || "PulseSoc Member"} · {formatShortTime(post.created_at)}</Text>
+      <Text style={styles.cardType}>{post.pinned ? t("social:groups.postMetaPinned", metaParams) : t("social:groups.postMeta", metaParams)}</Text>
       {post.title ? <Text style={styles.cardTitle}>{post.title}</Text> : null}
-      <Text style={styles.cardText}>{post.body || "Group update"}</Text>
-      {post.media_url ? <Text style={styles.cardMeta}>Media attached</Text> : null}
+      <Text style={styles.cardText}>{post.body || t("social:groups.postBodyFallback")}</Text>
+      {post.media_url ? <Text style={styles.cardMeta}>{t("social:groups.mediaAttached")}</Text> : null}
     </View>
   );
 }

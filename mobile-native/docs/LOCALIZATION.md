@@ -122,6 +122,10 @@ npm run i18n:hardcoded    find user-visible strings that are not keys yet
 npm run verify            typecheck + validate + full test suite
 ```
 
+Three further scripts exist to let screen migration and translation run in
+parallel without several agents racing on the same catalog file. They are
+described under *The staging pipeline* below.
+
 ### `scripts/validate-i18n.mjs`
 
 Answers *"is every key translated, correctly, in every language"*. Runs under
@@ -162,6 +166,43 @@ visible at a glance.
 Use `--file <path>` while migrating a screen, and `--max <n>` as a ratchet in CI.
 It is a worklist and a trend, not a correctness proof.
 
+### The staging pipeline
+
+Migrating a screen means adding keys to `catalogs/en/core.json` or
+`extended.json`; translating a language means adding the same keys to two more
+files. With one migration at a time that is fine. With four screens and ten
+languages in flight it is a write race on 22 files, and the loser's keys vanish
+silently — a lost key does not fail the build, it renders as humanized English
+(see *The fallback chain*).
+
+So nobody edits a catalog directly. Work is staged as namespace-shaped JSON under
+`scripts/.i18n-staging/` and folded in mechanically afterwards.
+
+`scripts/merge-i18n-staging.mjs` merges every staged file into the two English
+catalogs, routing each namespace to its tier. `scripts/i18n-todo.mjs <locale>`
+writes `.i18n-staging/todo/<locale>.json` — every family English has and that
+locale lacks, with the English string as the value.
+`scripts/merge-i18n-locale.mjs <locale>` folds the translated file back.
+
+Two properties matter more than the mechanics:
+
+- **All three refuse to overwrite an existing leaf.** A collision means two
+  migrations picked the same key for different copy, or a stale worklist is being
+  replayed. Letting the last writer win would change shipped English somewhere
+  else in the app, so the merge aborts and lists the colliding keys instead.
+- **`i18n-todo.mjs` emits the exact plural key names the target locale needs**,
+  read from the same CLDR table the validator uses. A Japanese worklist contains
+  only `_other`; an Arabic one contains all six. This is the whole reason the
+  worklist is generated rather than diffed by hand — asking a translator to
+  work out which forms their language needs is the single largest source of
+  catalog defects, and generating the key names removes it. Across the ten-locale
+  wave recorded below, every locale came back structurally exact on the first
+  merge.
+
+Key order is preserved rather than sorted. Sorting would be tidier in the
+abstract but rewrites every line of a file that ten other locales are mirrored
+against, burying the actual change in the diff.
+
 ## Verification evidence
 
 Recorded 2026-07-26 against the working tree.
@@ -170,20 +211,46 @@ Recorded 2026-07-26 against the working tree.
 
 ```
   locale  coverage        keys   orphans
-  en      100%    916/916
-  ar      100%    916/916      (and de, es, fr, hi, ht, ja, ko, pt, zh)
+  en      100%   2254/2254
+  ar      100%   2254/2254      (and de, es, fr, hi, ht, ja, ko, pt, zh)
 
   4 warning(s):
-    ! ar: 59 zero/one/two form(s) omit the count — idiomatic, but confirm
-    ! es: 20 plural families omit the advisory form(s) many
-    ! fr: 20 plural families omit the advisory form(s) many
-    ! pt: 20 plural families omit the advisory form(s) many
+    ! ar: 107 zero/one/two form(s) omit the count — idiomatic, but confirm
+    ! es: 38 plural families omit the advisory form(s) many
+    ! fr: 38 plural families omit the advisory form(s) many
+    ! pt: 38 plural families omit the advisory form(s) many
 
   OK — 11 locales, catalog version 1.0.0.
 ```
 
 All eleven languages are at 100% family coverage with zero missing and zero
-orphaned families.
+orphaned families. The catalogs grew from 916 families to 2254 as the screens
+listed under *Migrated screens* were extracted, across two waves; each of the ten
+non-English locales was brought back to parity through the staging pipeline in
+the same pass as the English extraction.
+
+Each merge was checked for silent damage to already-shipped copy rather than only
+for the keys it added. Comparing every catalog leaf before and after the wave-2
+merge across all eleven languages: **21296 pre-existing leaves, 0 changed.** That
+is the property that matters, because the merge scripts touch files that ten
+locales are mirrored against.
+
+100% coverage only proves a key *exists* in every language, so it was also
+checked against the opposite failure — a translator returning English unchanged.
+Values byte-identical to English, per locale:
+
+| ja | ko | zh | hi | ar | ht | es | pt | de | fr |
+| -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+| 1.0% | 1.0% | 1.1% | 1.3% | 1.6% | 2.6% | 2.8% | 3.7% | 4.8% | 5.8% |
+
+Most are single tokens that legitimately do not translate ("PulseSoc", "UNDX",
+"Face ID", "Telegram", "Chat"). The number that actually matters is how many are
+long enough to be a sentence: filtering to values of three words or more leaves
+**three to five per locale**, and they are the same handful every time — the two
+placeholder-only metadata strings (`{{kind}} · {{state}} · {{role}}` and
+`{{author}} · {{time}}`), the brand kickers `LIVE VOICE PULSE` and
+`UNDX · PulseSoc Intelligence`, and the hashtag sample `#drill #kompa #lofi`.
+No sentence was left in English in any locale.
 
 The validator was itself verified against seven injected defects on a throwaway
 copy of the catalog tree — dropped placeholder, missing required plural form,
@@ -195,12 +262,60 @@ tree exits 0.
 concurrent unrelated work (see Known issues):
 
 ```
-Test Suites: 1 skipped, 77 passed, 77 of 78 total
-Tests:       1 skipped, 1210 passed, 1211 total
+Test Suites: 77 passed, 77 total
+Tests:       1210 passed, 1210 total
 ```
 
-Of those, 415 are new i18n tests across five suites, stable over five
-consecutive runs including two with `--randomize`:
+The screen migration is what those numbers are really evidence for. Extracting
+1338 strings out of 26 component files is a mechanical edit repeated often enough
+that a silent copy change is likely, and a changed string breaks an assertion
+somewhere. The rule was that a catalog value must match the literal it replaced
+**byte for byte**; where a literal looked wrong, a new key was added and the
+discrepancy reported rather than the copy quietly corrected. Roughly fifty such
+discrepancies were surfaced that way, and 77 pre-existing suites stayed green
+through both migration waves.
+
+`SecuritySettingsScreen.test.tsx` needed one edit of its own: a
+`beforeAll(activateLocale("en"))`, matching `SettingsScreen.test.tsx` and
+`LoginScreen.test.tsx`. Its queries look up text that now lives in the `settings`
+namespace, which is extended-tier and therefore lazy — without priming, the screen
+renders humanized keys and every text query misses. **No assertion was weakened
+and no copy was altered to make a test pass**, which is the failure mode to watch
+for here: adjusting a catalog value until a test goes green would silently change
+what ships.
+
+## Copy defects the translators found
+
+A side effect of the pipeline worth recording: translating a string is the first
+time anybody reads it in isolation, so ten independent passes over the same
+English is an unusually good copy review. Two findings were unanimous across all
+ten locales.
+
+`discovery.search.resultCount_one` was byte-identical to `_other`, so
+`SearchScreen` rendered "1 results" for a single hit. That one was a clear defect
+with an obvious fix and has been corrected. `social.groups.detailSubtitle` had the
+same shape and was given a real singular during migration.
+
+The second finding is not mine to fix, because it is a product-copy decision
+rather than a bug: a family of strings in `social.groups` and
+`settings.accountCenter` ships engineering prose to users. `approveBoundary` /
+`rejectBoundary` / `cancelBoundary` are button labels reading "Approve boundary",
+"Reject boundary", "Cancel boundary". `assets.handoffReady` names an internal
+class, `NativeMediaViewer`. `providerPartialBody` mentions "Simulator" and
+"physical-device QA". `assets.filesEmptyBody` explains a "backend contract
+boundary". `account.credentialsBody` refers to "dedicated native reauth UX".
+Separately, `security.advancedWeb` and `devices.advancedWeb` are the truncated
+fragments "Advanced security web" and "Advanced device web", and
+`security.twoFactorStateOff` reads "Available" directly beside a detail line
+reading "Not enabled".
+
+These were migrated and translated faithfully, so all eleven languages currently
+say the same thing. Rewriting them is a one-line change per key once somebody
+decides the wording — but it changes shipped user-visible copy in eleven
+languages, so it wants a human decision rather than a translator's judgement.
+
+Of those, 415 are i18n tests across five suites, stable over five consecutive
+runs including two with `--randomize`:
 
 | Suite               | Tests | Covers |
 | ------------------- | ----- | ------ |
@@ -256,19 +371,66 @@ Unrelated to localization: six untracked scratch test files
 refactor being edited concurrently. `zz-dbg.test.tsx` currently fails against a
 mid-refactor `PostDetailScreen.tsx`. These were left untouched.
 
-Two scratch files could not be deleted because this environment denies file
-removal, and should be deleted by hand: `src/i18n/probe.test.ts` and
-`src/i18n/__tests__/__probe.ts.bak`.
+A handful of scratch files could not be deleted because this environment denies
+file removal; they are listed under *Outstanding work*.
+
+## Migrated screens
+
+Fully extracted — `npm run i18n:hardcoded --file <path>` reports zero for each:
+
+| Area | Files |
+| ---- | ----- |
+| Shell | `AppNavigator`, settings index, `LanguageSettingsScreen`, `LanguagePicker` |
+| Authentication | `LoginScreen`, `SignupScreen`, and `components/auth/{AccountActions,ManualLoginForm,PulseSocBrandHeader,SecureTextField}`, `components/auth/signup/{SignupBrandHeader,SignupProgress,VerifyEmailStep}` |
+| Search & notifications | `SearchScreen`, `NotificationCenterScreen`, `NotificationPreferencesScreen`, `settings/NotificationSettingsScreen` |
+| Messenger | `ChatScreen`, `NewChatScreen`, `components/ConversationControlCenter` |
+| Marketplace | `MarketplaceScreen`, `BuyerOrdersScreen`, `SellerListingComposerScreen`, `SellerStoreScreen` |
+| Groups, music, account | `GroupsScreen`, `MusicScreen`, `AccountCenterScreen`, `settings/SecuritySettingsScreen` |
+
+## Native configuration evidence
+
+Expo Doctor's `appConfigFieldsNotSyncedCheck` is disabled intentionally for this
+branch after auditing the committed iOS project against the resolved Expo config.
+This repository intentionally commits and maintains the native iOS project under
+`ios/`, and release builds use those native settings rather than regenerating
+them through CNG/prebuild. The release-critical iOS fields are synchronized:
+production bundle identifier `com.pulsesoc.app`, version `1.0.1`, build `3`,
+display name `PulseSoc`, URL scheme `pulsesoc`, associated domain
+`applinks:pulsesoc.com`, production push entitlement, background modes,
+permissions, app icon asset, portrait orientation and iPhone-only device family.
+
+Future native configuration changes must be applied in both Expo config and the
+committed native project. Do not run `expo prebuild --clean` or delete `ios/` as
+part of localization work.
 
 ## Outstanding work
 
-Localization of the app's screens is partial. `AppNavigator`, the settings index
-and the language screen are migrated; `npm run i18n:hardcoded` currently reports
-**2048 user-visible strings across 106 files** still to extract, concentrated in
-`AccountCenterScreen`, `GroupsScreen`, `ChatScreen`, `MusicScreen` and
-`SellerStoreScreen`.
+Localization of the app's screens is partial. `npm run i18n:hardcoded` reports
+**1444 user-visible strings across 79 files** still to extract, with 50 of 129
+scanned files clean. The largest remaining are `LiveHostSessionScreen` (54),
+`HomeScreen` (53), `settings/DeveloperSettingsScreen` (53), `SafetyHubScreen` (41),
+`CoursesLearningScreen` (40), `settings/HelpSettingsScreen` (40) and
+`components/PostCard` (39). The pattern to follow is the staging pipeline above:
+stage the new English keys, merge, generate ten worklists, translate, merge back.
+`HomeScreen` and `PostCard` are worth doing early despite not being the largest —
+they are what a user sees first.
 
 RTL also needs a second pass: `rtl.ts` is complete and tested, but it is only
 wired into the language picker and language settings screen so far. Nothing
 currently detects a screen that hardcodes `left` instead of calling
-`startEdge()`, which is the natural next tool to build.
+`startEdge()`, which is the natural next tool to build — and the more useful one
+of the two remaining, since a missing key is visible to a translator whereas a
+hardcoded edge is only visible to someone reading Arabic.
+
+Housekeeping, blocked because this environment denies file removal — these should
+be deleted by hand: `src/i18n/probe.test.ts`,
+`src/i18n/__tests__/__probe.ts.bak`, `scripts/.ar_i18n_patch.py`,
+`scripts/.ar_i18n_verify.py`, `kpg-tmp-proof.setup.js` (emptied to a comment;
+nothing references it), and the whole of `scripts/.i18n-staging/`, which is now
+spent — every file in it has been merged, and a stale worklist replayed later
+would abort on collisions rather than corrupt anything, but it is dead weight.
+
+One trap for whoever runs the pipeline next: `merge-i18n-locale.mjs --all` treats
+every `*.json` directly inside `.i18n-staging/done/` as a locale, so a translator
+leaving `fr.part2.json` there makes the script look for a locale called
+`fr.part2`. Intermediate files belong in a subdirectory (`done/fr-parts/`).

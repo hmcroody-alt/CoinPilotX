@@ -36,6 +36,7 @@ import {
   confirmAndEnableBiometricLogin,
   getBiometricCapability
 } from "../session/biometricAuth";
+import { useTranslation } from "../i18n";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { AuthStackParamList } from "../navigation/types";
@@ -51,7 +52,7 @@ import { VerifyEmailStep } from "../components/auth/signup/VerifyEmailStep";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 
 type Step = "identity" | "credentials" | "verify" | "completion";
-const PROGRESS_STEPS = ["Identity", "Secure", "Verify"];
+const PROGRESS_STEP_KEYS = ["auth:signUp.stepIdentity", "auth:signUp.stepSecure", "auth:signUp.stepVerify"];
 const STEP_INDEX: Record<Step, number> = { identity: 0, credentials: 1, verify: 2, completion: 2 };
 
 const TERMS_ROUTE = "/terms";
@@ -59,6 +60,7 @@ const PRIVACY_ROUTE = "/privacy";
 
 export function SignupScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const reducedMotion = useLogiNexusReducedMotion();
   const { setAuthState } = useAuth();
@@ -101,6 +103,7 @@ export function SignupScreen() {
     Animated.timing(fade, { toValue: 1, duration: logiNexus.motion.reveal, useNativeDriver: true }).start();
   }, [step, fade, reducedMotion]);
 
+  const progressSteps = useMemo(() => PROGRESS_STEP_KEYS.map((key) => t(key)), [t]);
   const passwordStrength = useMemo(() => evaluatePassword(password), [password]);
   const identityValid = isIdentityStepValid(fullName, username);
   const credentialsValid = isCredentialsStepValid(email, password, acceptedLegal);
@@ -140,8 +143,8 @@ export function SignupScreen() {
     if (!emailCheck.valid || !pwStrength.meetsMinimum || !acceptedLegal) {
       setErrors({
         email: emailCheck.valid ? undefined : emailCheck.message,
-        password: pwStrength.meetsMinimum ? undefined : `Use at least 8 characters for your password.`,
-        form: acceptedLegal ? undefined : "Please accept the Terms and Privacy Policy to continue."
+        password: pwStrength.meetsMinimum ? undefined : t("auth:signUp.passwordMinLength"),
+        form: acceptedLegal ? undefined : t("auth:signUp.acceptLegalRequired")
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
       return;
@@ -172,7 +175,7 @@ export function SignupScreen() {
         goToStep("verify");
       }
     } catch (error) {
-      const message = error instanceof PulseApiError ? error.message : error instanceof Error ? error.message : "Couldn't create your account. Please try again.";
+      const message = error instanceof PulseApiError ? error.message : error instanceof Error ? error.message : t("errors:auth.registerFailed");
       const classified = classifyRegisterError(message);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
       if (classified.target === "username") {
@@ -192,7 +195,7 @@ export function SignupScreen() {
       submittingRef.current = false;
       setSubmitting(false);
     }
-  }, [fullName, username, email, password, acceptedLegal, emailOptIn, goToStep]);
+  }, [fullName, username, email, password, acceptedLegal, emailOptIn, goToStep, t]);
 
   const handleConfirmed = useCallback((state: AuthState) => {
     setSignedInState(state);
@@ -218,12 +221,17 @@ export function SignupScreen() {
 
   const openLegal = useCallback((routeName: string) => {
     Alert.alert(
-      routeName === TERMS_ROUTE ? "Terms of Service" : "Privacy Policy",
-      "PulseSoc keeps legal documents inside the native Settings and account surfaces after sign-in. Continue only if you agree to the current PulseSoc terms and privacy policy."
+      routeName === TERMS_ROUTE ? t("auth:signUp.termsTitle") : t("auth:signUp.privacyTitle"),
+      t("auth:signUp.legalBody")
     );
-  }, []);
+  }, [t]);
 
-  const biometricLabel = biometric?.kind === "faceId" ? "Face ID" : biometric?.kind === "touchId" ? "Touch ID" : "biometric unlock";
+  const biometricLabel =
+    biometric?.kind === "faceId"
+      ? t("auth:signIn.faceId")
+      : biometric?.kind === "touchId"
+        ? t("auth:signIn.touchId")
+        : t("auth:signUp.biometricUnlock");
 
   return (
     <View style={styles.root}>
@@ -238,17 +246,17 @@ export function SignupScreen() {
           <SignupBrandHeader onBack={handleBack} />
 
           <LogiNexusPanel style={styles.card}>
-            {step !== "completion" ? <SignupProgress steps={PROGRESS_STEPS} currentIndex={STEP_INDEX[step]} /> : null}
+            {step !== "completion" ? <SignupProgress steps={progressSteps} currentIndex={STEP_INDEX[step]} /> : null}
 
             <Animated.View style={{ opacity: fade }}>
               {step === "identity" ? (
                 <View style={styles.stepBody}>
-                  <Text style={styles.title} maxFontSizeMultiplier={1.5}>Create your identity</Text>
-                  <Text style={styles.subtitle} maxFontSizeMultiplier={1.6}>Join the network. Amplify your impact.</Text>
+                  <Text style={styles.title} maxFontSizeMultiplier={1.5}>{t("auth:signUp.identityTitle")}</Text>
+                  <Text style={styles.subtitle} maxFontSizeMultiplier={1.6}>{t("auth:signUp.identitySubtitle")}</Text>
 
-                  <Field label="Full name">
+                  <Field label={t("auth:signUp.nameLabel")}>
                     <SecureTextField
-                      label="Full name"
+                      label={t("auth:signUp.nameLabel")}
                       iconName="person-outline"
                       autoCapitalize="words"
                       autoComplete="name"
@@ -262,10 +270,10 @@ export function SignupScreen() {
                     />
                   </Field>
 
-                  <Field label="Username" hint="3–40 characters · letters, numbers, dots, underscores, dashes">
+                  <Field label={t("auth:signUp.usernameLabel")} hint={t("auth:signUp.usernameHint")}>
                     <SecureTextField
                       ref={usernameRef}
-                      label="Username"
+                      label={t("auth:signUp.usernameLabel")}
                       iconName="at-outline"
                       autoCapitalize="none"
                       autoComplete="username-new"
@@ -281,24 +289,24 @@ export function SignupScreen() {
                   </Field>
 
                   <PulsePrimaryButton
-                    label="Continue"
+                    label={t("common:actions.continue")}
                     onPress={handleContinueIdentity}
                     disabled={!identityValid}
                     testID="signup-identity-continue"
-                    accessibilityHint="Advances to securing your account"
+                    accessibilityHint={t("auth:signUp.identityContinueHint")}
                   />
                 </View>
               ) : null}
 
               {step === "credentials" ? (
                 <View style={styles.stepBody}>
-                  <Text style={styles.title} maxFontSizeMultiplier={1.5}>Secure your account</Text>
-                  <Text style={styles.subtitle} maxFontSizeMultiplier={1.6}>We'll email you a link to confirm it's really you.</Text>
+                  <Text style={styles.title} maxFontSizeMultiplier={1.5}>{t("auth:signUp.credentialsTitle")}</Text>
+                  <Text style={styles.subtitle} maxFontSizeMultiplier={1.6}>{t("auth:signUp.credentialsSubtitle")}</Text>
 
-                  <Field label="Email address">
+                  <Field label={t("auth:signUp.emailAddressLabel")}>
                     <SecureTextField
                       ref={emailRef}
-                      label="Email address"
+                      label={t("auth:signUp.emailAddressLabel")}
                       iconName="mail-outline"
                       autoCapitalize="none"
                       autoComplete="email"
@@ -314,10 +322,10 @@ export function SignupScreen() {
                     />
                   </Field>
 
-                  <Field label="Password">
+                  <Field label={t("auth:signUp.passwordLabel")}>
                     <SecureTextField
                       ref={passwordRef}
-                      label="Password"
+                      label={t("auth:signUp.passwordLabel")}
                       iconName="lock-closed-outline"
                       autoComplete="password-new"
                       textContentType="newPassword"
@@ -336,13 +344,13 @@ export function SignupScreen() {
                     checked={acceptedLegal}
                     onToggle={() => { setAcceptedLegal((v) => !v); if (errors.form) setErrors((e) => ({ ...e, form: undefined })); }}
                     testID="signup-accept-legal"
-                    accessibilityLabel="I am 16 or older and accept the Terms of Service and Privacy Policy"
+                    accessibilityLabel={t("auth:signUp.legalCheckboxA11y")}
                   >
                     <Text style={styles.consentText} maxFontSizeMultiplier={1.6}>
-                      I'm 16+ and agree to the{" "}
-                      <Text style={styles.consentLink} onPress={() => openLegal(TERMS_ROUTE)}>Terms of Service</Text>
-                      {" "}and{" "}
-                      <Text style={styles.consentLink} onPress={() => openLegal(PRIVACY_ROUTE)}>Privacy Policy</Text>.
+                      {t("auth:signUp.consentLead")}{" "}
+                      <Text style={styles.consentLink} onPress={() => openLegal(TERMS_ROUTE)}>{t("auth:signUp.termsTitle")}</Text>
+                      {" "}{t("common:labels.and")}{" "}
+                      <Text style={styles.consentLink} onPress={() => openLegal(PRIVACY_ROUTE)}>{t("auth:signUp.privacyTitle")}</Text>.
                     </Text>
                   </CheckRow>
 
@@ -350,10 +358,10 @@ export function SignupScreen() {
                     checked={emailOptIn}
                     onToggle={() => setEmailOptIn((v) => !v)}
                     testID="signup-email-optin"
-                    accessibilityLabel="Send me occasional PulseSoc product updates. Optional."
+                    accessibilityLabel={t("auth:signUp.emailOptInA11y")}
                   >
                     <Text style={styles.consentText} maxFontSizeMultiplier={1.6}>
-                      Send me occasional PulseSoc product updates. <Text style={styles.optional}>(optional)</Text>
+                      {t("auth:signUp.emailOptIn")} <Text style={styles.optional}>{t("common:labels.optionalParen")}</Text>
                     </Text>
                   </CheckRow>
 
@@ -362,13 +370,13 @@ export function SignupScreen() {
                   ) : null}
 
                   <PulsePrimaryButton
-                    label="Create account"
+                    label={t("auth:signUp.submit")}
                     onPress={() => void handleRegister()}
                     disabled={!credentialsValid}
                     busy={submitting}
                     testID="signup-create"
                     iconName="arrow-forward"
-                    accessibilityHint="Creates your account and sends a confirmation email"
+                    accessibilityHint={t("auth:signUp.createHint")}
                   />
                 </View>
               ) : null}
@@ -388,30 +396,32 @@ export function SignupScreen() {
                   <View style={styles.successMark}>
                     <Ionicons name="checkmark-circle" size={44} color={colors.accent} />
                   </View>
-                  <Text style={styles.title} maxFontSizeMultiplier={1.5}>Welcome to PulseSoc</Text>
+                  <Text style={styles.title} maxFontSizeMultiplier={1.5}>{t("auth:signUp.welcomeTitle")}</Text>
                   <Text style={styles.subtitle} maxFontSizeMultiplier={1.6}>
-                    Your account is ready{signedInState?.user?.username ? `, @${signedInState.user.username}` : ""}.
+                    {signedInState?.user?.username
+                      ? t("auth:signUp.accountReadyNamed", { username: signedInState.user.username })
+                      : t("auth:signUp.accountReady")}
                   </Text>
 
                   {biometric?.available ? (
                     <>
                       <Text style={styles.biometricBlurb} maxFontSizeMultiplier={1.6}>
-                        Turn on {biometricLabel} to unlock PulseSoc without typing your password next time. PulseSoc never receives or stores your face or fingerprint.
+                        {t("auth:signUp.biometricBlurb", { method: biometricLabel })}
                       </Text>
                       <PulsePrimaryButton
-                        label={`Enable ${biometricLabel}`}
+                        label={t("auth:signIn.enableBiometricLabel", { method: biometricLabel })}
                         onPress={() => void handleEnableBiometric()}
                         busy={enablingBiometric}
                         testID="signup-enable-biometric"
                         iconName="finger-print"
                       />
                       <Pressable accessibilityRole="button" hitSlop={8} onPress={enterApp} testID="signup-skip-biometric">
-                        <Text style={styles.skip}>Not now — continue to PulseSoc</Text>
+                        <Text style={styles.skip}>{t("auth:signUp.skipBiometric")}</Text>
                       </Pressable>
                     </>
                   ) : (
                     <PulsePrimaryButton
-                      label="Continue to PulseSoc"
+                      label={t("auth:signUp.continueToApp")}
                       onPress={enterApp}
                       testID="signup-enter-app"
                       iconName="arrow-forward"
@@ -425,7 +435,7 @@ export function SignupScreen() {
           {step === "identity" ? (
             <Pressable accessibilityRole="button" testID="signup-goto-login" hitSlop={8} onPress={() => navigation.navigate("Login")}>
               <Text style={styles.signinRow}>
-                Already have an account? <Text style={styles.signinLink}>Sign in</Text>
+                {t("auth:signUp.haveAccount")} <Text style={styles.signinLink}>{t("auth:signIn.submit")}</Text>
               </Text>
             </Pressable>
           ) : null}

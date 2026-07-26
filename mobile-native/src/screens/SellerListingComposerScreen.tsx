@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { createMarketplaceListing } from "../api/marketplace";
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
+import { useTranslation } from "../i18n";
 import { colors } from "../theme/colors";
 
 type Props = {
@@ -13,7 +14,16 @@ type Props = {
 
 const productTypes = ["digital", "course", "service", "physical"] as const;
 
+/** The API value doubles as the button label, so the label is keyed separately. */
+const PRODUCT_TYPE_KEYS: Record<(typeof productTypes)[number], string> = {
+  digital: "commerce:marketplace.productTypeDigital",
+  course: "commerce:marketplace.productTypeCourse",
+  service: "commerce:marketplace.productTypeService",
+  physical: "commerce:marketplace.productTypePhysical"
+};
+
 export function SellerListingComposerScreen({ navigation }: Props) {
+  const { t } = useTranslation();
   const [title, setTitle] = useState("");
   const [shortDescription, setShortDescription] = useState("");
   const [description, setDescription] = useState("");
@@ -51,85 +61,85 @@ export function SellerListingComposerScreen({ navigation }: Props) {
       });
       const listingId = Number(result.listing_id || 0);
       setCreatedListingId(listingId);
-      setMessage(result.message || "Listing saved for safety review.");
+      setMessage(result.message || t("commerce:marketplace.listingSavedForReview"));
       if (listingId) {
-        navigation.navigate("SellerStore", { title: "Seller / Store" });
+        navigation.navigate("SellerStore", { title: t("common:screens.sellerStore") });
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Listing could not be saved.");
+      setMessage(error instanceof Error ? error.message : t("commerce:marketplace.saveFailed"));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Screen title="Create Listing" subtitle="Native seller listing draft gateway using PulseSoc marketplace approval, media moderation, and safety review.">
+    <Screen title={t("common:screens.createListing")} subtitle={t("commerce:marketplace.composerSubtitle")}>
       {message ? <Text style={message.toLowerCase().includes("saved") ? styles.notice : styles.error}>{message}</Text> : null}
 
       <Panel>
         <View style={styles.hero}>
-          <Text style={styles.kicker}>Marketplace Forge</Text>
-          <Text style={styles.heroTitle}>Shape a product for review</Text>
-          <Text style={styles.copy}>Listing approval, risk scoring, media moderation, checkout, refunds, disputes, and payouts remain server-authoritative.</Text>
+          <Text style={styles.kicker}>{t("commerce:marketplace.composerKicker")}</Text>
+          <Text style={styles.heroTitle}>{t("commerce:marketplace.composerHeroTitle")}</Text>
+          <Text style={styles.copy}>{t("commerce:marketplace.composerHeroCopy")}</Text>
         </View>
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Listing details</Text>
-        <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="Title" placeholderTextColor={colors.muted} />
-        <TextInput style={styles.input} value={shortDescription} onChangeText={setShortDescription} placeholder="Short description" placeholderTextColor={colors.muted} />
+        <Text style={styles.sectionTitle}>{t("commerce:marketplace.listingDetails")}</Text>
+        <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder={t("commerce:marketplace.titlePlaceholder")} placeholderTextColor={colors.muted} />
+        <TextInput style={styles.input} value={shortDescription} onChangeText={setShortDescription} placeholder={t("commerce:marketplace.shortDescriptionPlaceholder")} placeholderTextColor={colors.muted} />
         <TextInput
           style={[styles.input, styles.textArea]}
           value={description}
           onChangeText={setDescription}
-          placeholder="Full description"
+          placeholder={t("commerce:marketplace.fullDescriptionPlaceholder")}
           placeholderTextColor={colors.muted}
           multiline
         />
         <View style={styles.twoCol}>
-          <TextInput style={[styles.input, styles.flex]} value={category} onChangeText={setCategory} placeholder="Category" placeholderTextColor={colors.muted} />
-          <TextInput style={[styles.input, styles.flex]} value={priceLabel} onChangeText={setPriceLabel} placeholder="Price label" placeholderTextColor={colors.muted} />
+          <TextInput style={[styles.input, styles.flex]} value={category} onChangeText={setCategory} placeholder={t("commerce:marketplace.categoryPlaceholder")} placeholderTextColor={colors.muted} />
+          <TextInput style={[styles.input, styles.flex]} value={priceLabel} onChangeText={setPriceLabel} placeholder={t("commerce:marketplace.priceLabelPlaceholder")} placeholderTextColor={colors.muted} />
         </View>
         <View style={styles.typeRow}>
           {productTypes.map((type) => (
             <Pressable key={type} style={[styles.typeButton, productType === type && styles.typeButtonActive]} onPress={() => setProductType(type)}>
-              <Text style={[styles.typeText, productType === type && styles.typeTextActive]}>{type}</Text>
+              <Text style={[styles.typeText, productType === type && styles.typeTextActive]}>{t(PRODUCT_TYPE_KEYS[type])}</Text>
             </Pressable>
           ))}
         </View>
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Product media</Text>
-        <Text style={styles.copy}>Use Camera Studio to create marketplace draft media, then attach the returned product media IDs here. The backend rejects listings without an approved merchant and cover photo.</Text>
+        <Text style={styles.sectionTitle}>{t("commerce:marketplace.productMedia")}</Text>
+        <Text style={styles.copy}>{t("commerce:marketplace.productMediaCopy")}</Text>
         <TextInput
           style={styles.input}
           value={mediaIdsText}
           onChangeText={setMediaIdsText}
-          placeholder="Product media IDs, comma separated"
+          placeholder={t("commerce:marketplace.mediaIdsPlaceholder")}
           placeholderTextColor={colors.muted}
           keyboardType="numbers-and-punctuation"
         />
-        <Text style={styles.meta}>{mediaIds.length ? `${mediaIds.length} media ID${mediaIds.length === 1 ? "" : "s"} ready for submit` : "A cover image media ID is required."}</Text>
+        <Text style={styles.meta}>{mediaIds.length ? t("commerce:marketplace.mediaIdsReady", { count: mediaIds.length }) : t("commerce:marketplace.mediaIdRequired")}</Text>
         <View style={styles.actionRow}>
-          <Pressable style={styles.primaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: "Marketplace Media" })}>
-            <Text style={styles.primaryText}>Capture Media</Text>
+          <Pressable style={styles.primaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: t("commerce:marketplace.mediaScreenTitle") })}>
+            <Text style={styles.primaryText}>{t("commerce:marketplace.captureMedia")}</Text>
           </Pressable>
         </View>
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Review handoff</Text>
-        <Text style={styles.copy}>Publish sends the draft to existing PulseSoc marketplace review. Advanced editing, bank onboarding, tax, fulfillment, disputes, and payment provider actions stay on safe web/provider flows.</Text>
+        <Text style={styles.sectionTitle}>{t("commerce:marketplace.reviewHandoff")}</Text>
+        <Text style={styles.copy}>{t("commerce:marketplace.reviewHandoffCopy")}</Text>
         <View style={styles.actionRow}>
           <Pressable style={[styles.primaryButton, !canPublish && styles.disabled]} disabled={!canPublish} onPress={publishListing}>
-            <Text style={styles.primaryText}>{busy ? "Submitting..." : "Submit for Review"}</Text>
+            <Text style={styles.primaryText}>{busy ? t("commerce:marketplace.submitting") : t("commerce:marketplace.submitForReview")}</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("SellerStore", { title: "Seller / Store" })}>
-            <Text style={styles.secondaryText}>Back to Store</Text>
+          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("SellerStore", { title: t("common:screens.sellerStore") })}>
+            <Text style={styles.secondaryText}>{t("commerce:marketplace.backToStore")}</Text>
           </Pressable>
         </View>
-        {createdListingId ? <Text style={styles.meta}>Created listing #{createdListingId}. Marketplace detail opened when available.</Text> : null}
+        {createdListingId ? <Text style={styles.meta}>{t("commerce:marketplace.createdListingNotice", { id: String(createdListingId) })}</Text> : null}
       </Panel>
     </Screen>
   );

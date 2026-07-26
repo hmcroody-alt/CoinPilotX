@@ -13,6 +13,7 @@ import {
   unreadCount
 } from "../api/notifications";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { routeNotificationTarget } from "../navigation/notificationRouting";
 import { colors } from "../theme/colors";
@@ -21,6 +22,7 @@ import { compactPreview, formatShortTime } from "../utils/format";
 export function NotificationCenterScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "NotificationCenter">>();
+  const { t } = useTranslation();
   const openedDeepLinkId = useRef<number | null>(null);
   const [notifications, setNotifications] = useState<PulseNotification[]>([]);
   const [unread, setUnread] = useState(0);
@@ -37,12 +39,12 @@ export function NotificationCenterScreen() {
       setNotifications(list.notifications || []);
       setUnread(unreadCount(counts));
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Notifications could not load.");
+      setError(loadError instanceof Error ? loadError.message : t("discovery:notifications.loadError"));
     } finally {
       setRefreshing(false);
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   const openNotificationById = useCallback(async (notificationId: number, wasRead = false) => {
     try {
@@ -54,9 +56,12 @@ export function NotificationCenterScreen() {
         resolved.target_url || notification?.target_url || notification?.deep_link || "/pulse/notifications"
       );
     } catch (openError) {
-      Alert.alert("Notification unavailable", openError instanceof Error ? openError.message : "That notification could not be opened.");
+      Alert.alert(
+        t("discovery:notifications.openFailedTitle"),
+        openError instanceof Error ? openError.message : t("discovery:notifications.openFailedBody")
+      );
     }
-  }, [notifications]);
+  }, [notifications, t]);
 
   const openNotification = useCallback(async (notification: PulseNotification) => {
     await openNotificationById(notification.id, notification.read);
@@ -68,9 +73,12 @@ export function NotificationCenterScreen() {
       setNotifications((current) => current.map((item) => (item.id === notification.id ? { ...item, read: true } : item)));
       setUnread(unreadCount(result.badge_counts || result));
     } catch (readError) {
-      Alert.alert("Could not mark read", readError instanceof Error ? readError.message : "Notification was not updated.");
+      Alert.alert(
+        t("discovery:notifications.markReadFailedTitle"),
+        readError instanceof Error ? readError.message : t("discovery:notifications.markReadFailedBody")
+      );
     }
-  }, []);
+  }, [t]);
 
   const markAllRead = useCallback(async () => {
     try {
@@ -78,9 +86,12 @@ export function NotificationCenterScreen() {
       setNotifications((current) => current.map((item) => ({ ...item, read: true })));
       setUnread(unreadCount(result.badge_counts || result));
     } catch (readError) {
-      Alert.alert("Could not mark all read", readError instanceof Error ? readError.message : "Notifications were not updated.");
+      Alert.alert(
+        t("discovery:notifications.markAllReadFailedTitle"),
+        readError instanceof Error ? readError.message : t("discovery:notifications.markAllReadFailedBody")
+      );
     }
-  }, []);
+  }, [t]);
 
   const removeNotification = useCallback(async (notification: PulseNotification) => {
     const previous = notifications;
@@ -90,9 +101,12 @@ export function NotificationCenterScreen() {
       setUnread(unreadCount(result.badge_counts || result));
     } catch (deleteError) {
       setNotifications(previous);
-      Alert.alert("Could not delete", deleteError instanceof Error ? deleteError.message : "Notification was not deleted.");
+      Alert.alert(
+        t("discovery:notifications.deleteFailedTitle"),
+        deleteError instanceof Error ? deleteError.message : t("discovery:notifications.deleteFailedBody")
+      );
     }
-  }, [notifications]);
+  }, [notifications, t]);
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -122,15 +136,17 @@ export function NotificationCenterScreen() {
     <View style={styles.root}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Notifications</Text>
-          <Text style={styles.subtitle}>{unread ? `${unread} unread` : "All caught up"}</Text>
+          <Text style={styles.title}>{t("discovery:notifications.title")}</Text>
+          <Text style={styles.subtitle}>
+            {unread ? t("discovery:notifications.unreadCount", { count: unread }) : t("discovery:notifications.caughtUp")}
+          </Text>
         </View>
         <View style={styles.headerActions}>
           <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("NotificationPreferences")}>
-            <Text style={styles.secondaryText}>Prefs</Text>
+            <Text style={styles.secondaryText}>{t("discovery:notifications.prefs")}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" style={styles.button} onPress={markAllRead}>
-            <Text style={styles.buttonText}>Read all</Text>
+            <Text style={styles.buttonText}>{t("discovery:notifications.readAll")}</Text>
           </Pressable>
         </View>
       </View>
@@ -145,7 +161,7 @@ export function NotificationCenterScreen() {
           keyExtractor={(item) => String(item.id)}
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load({ refresh: true })} />}
-          ListEmptyComponent={<Text style={styles.empty}>No notifications yet.</Text>}
+          ListEmptyComponent={<Text style={styles.empty}>{t("discovery:notifications.empty")}</Text>}
           renderItem={({ item }) => (
             <NotificationRow notification={item} onOpen={() => openNotification(item)} onRead={() => markRead(item)} onDelete={() => removeNotification(item)} />
           )}
@@ -166,6 +182,7 @@ function NotificationRow({
   onRead: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <Pressable accessibilityRole="button" style={({ pressed }) => [styles.card, !notification.read && styles.unreadCard, pressed && styles.pressed]} onPress={onOpen}>
       <View style={styles.rowTop}>
@@ -173,16 +190,18 @@ function NotificationRow({
         <Text style={styles.time}>{formatShortTime(notification.created_at)}</Text>
       </View>
       <Text style={styles.cardTitle} numberOfLines={2}>{notification.title}</Text>
-      <Text style={styles.body} numberOfLines={3}>{compactPreview(notification.body, "Open notification")}</Text>
+      <Text style={styles.body} numberOfLines={3}>{compactPreview(notification.body, t("discovery:notifications.bodyFallback"))}</Text>
       <View style={styles.actions}>
         <Pressable accessibilityRole="button" style={styles.smallButton} onPress={onOpen}>
-          <Text style={styles.smallButtonText}>Open</Text>
+          <Text style={styles.smallButtonText}>{t("common:actions.open")}</Text>
         </Pressable>
         <Pressable accessibilityRole="button" style={styles.smallButton} onPress={onRead}>
-          <Text style={styles.smallButtonText}>{notification.read ? "Read" : "Mark read"}</Text>
+          <Text style={styles.smallButtonText}>
+            {notification.read ? t("discovery:notifications.read") : t("discovery:notifications.markRead")}
+          </Text>
         </Pressable>
         <Pressable accessibilityRole="button" style={styles.deleteButton} onPress={onDelete}>
-          <Text style={styles.deleteText}>Delete</Text>
+          <Text style={styles.deleteText}>{t("common:actions.delete")}</Text>
         </Pressable>
       </View>
     </Pressable>

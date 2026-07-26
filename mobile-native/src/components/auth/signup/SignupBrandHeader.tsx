@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef } from "react";
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { useTranslation } from "../../../i18n";
 import { colors } from "../../../theme/colors";
 import { logiNexus } from "../../../theme/logiNexus";
 import { useLogiNexusReducedMotion } from "../../../theme/logiNexusMotion";
@@ -25,6 +26,7 @@ const GLOW_SIZE = 68;
  * hosts the back-navigation control so the treatment matches login continuity.
  */
 export function SignupBrandHeader({ onBack }: { onBack?: () => void }) {
+  const { t } = useTranslation();
   const reducedMotion = useLogiNexusReducedMotion();
   const rings = useRef([new Animated.Value(0), new Animated.Value(0)]).current;
   const breathe = useRef(new Animated.Value(0)).current;
@@ -57,7 +59,7 @@ export function SignupBrandHeader({ onBack }: { onBack?: () => void }) {
       {onBack ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+          accessibilityLabel={t("common:a11y.back")}
           testID="signup-back"
           hitSlop={12}
           onPress={onBack}
@@ -67,7 +69,7 @@ export function SignupBrandHeader({ onBack }: { onBack?: () => void }) {
         </Pressable>
       ) : null}
 
-      <View style={styles.markWrap} accessible accessibilityRole="header" accessibilityLabel="PulseSoc. Native access.">
+      <View style={styles.markWrap} accessible accessibilityRole="header" accessibilityLabel={t("auth:brand.signupLogoA11y")}>
         <View style={styles.decorLayer} pointerEvents="none">
           {rings.map((value, index) => {
             const scale = value.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1.7] });
@@ -92,7 +94,7 @@ export function SignupBrandHeader({ onBack }: { onBack?: () => void }) {
       </View>
 
       <Text style={styles.eyebrow} maxFontSizeMultiplier={1.8}>
-        Native Access
+        {t("auth:brand.eyebrow")}
       </Text>
     </View>
   );

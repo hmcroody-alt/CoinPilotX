@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Animated, Easing, Image, StyleSheet, Text, View } from "react-native";
+import { useTranslation } from "../../i18n";
 import { colors } from "../../theme/colors";
 import { logiNexus } from "../../theme/logiNexus";
 import { useLogiNexusReducedMotion } from "../../theme/logiNexusMotion";
@@ -30,6 +31,7 @@ const GLOW_SIZE = 96;
  * pasted on top of it. The logo itself is never scaled, cropped, or blurred.
  */
 export function PulseSocBrandHeader() {
+  const { t } = useTranslation();
   const reducedMotion = useLogiNexusReducedMotion();
   const rings = useRef(Array.from({ length: RING_COUNT }, () => new Animated.Value(0))).current;
   const breathe = useRef(new Animated.Value(0)).current;
@@ -80,7 +82,7 @@ export function PulseSocBrandHeader() {
       style={styles.root}
       accessible
       accessibilityRole="header"
-      accessibilityLabel="PulseSoc logo. Native access. Your network is ready."
+      accessibilityLabel={t("auth:brand.loginLogoA11y")}
     >
       <View style={styles.markWrap}>
         <View style={styles.decorLayer} pointerEvents="none">
@@ -114,10 +116,10 @@ export function PulseSocBrandHeader() {
       </View>
 
       <Text style={styles.eyebrow} maxFontSizeMultiplier={1.8}>
-        Native Access
+        {t("auth:brand.eyebrow")}
       </Text>
       <Text style={styles.tagline} maxFontSizeMultiplier={1.8}>
-        Your network is ready.
+        {t("auth:brand.tagline")}
       </Text>
     </View>
   );

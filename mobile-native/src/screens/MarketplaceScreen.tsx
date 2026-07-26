@@ -30,6 +30,7 @@ import { profileNavigationParams, resolveProfileTarget } from "../api/profileTar
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
 import { ContentTranslation } from "../components/ContentTranslation";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { useTranslation } from "../i18n";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -37,6 +38,7 @@ import { colors } from "../theme/colors";
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "MarketplaceDetail">>;
 
 export function MarketplaceScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
   // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
   // reserves the matching clearance so the last row never sits under the dock.
   const dock = useBottomNavSurface();
@@ -68,7 +70,7 @@ export function MarketplaceScreen({ route, navigation }: Props) {
         setOffline(true);
         if (initialListingId) setDetail(nextItems[0]);
       } else {
-        setError(loadError instanceof Error ? loadError.message : "Marketplace could not load.");
+        setError(loadError instanceof Error ? loadError.message : t("commerce:marketplace.loadFailed"));
       }
     } finally {
       setLoading(false);
@@ -97,7 +99,7 @@ export function MarketplaceScreen({ route, navigation }: Props) {
       await saveMarketplaceListing(listing.id);
     } catch (saveError) {
       updateListing(listing.id, { saved: listing.saved });
-      setError(saveError instanceof Error ? saveError.message : "Listing could not be saved.");
+      setError(saveError instanceof Error ? saveError.message : t("commerce:marketplace.saveFailed"));
     } finally {
       setBusyId(null);
     }
@@ -107,9 +109,9 @@ export function MarketplaceScreen({ route, navigation }: Props) {
     setBusyId(listing.id);
     try {
       await reportMarketplaceListing(listing.id, "Needs review");
-      setError("Listing report sent.");
+      setError(t("commerce:marketplace.reportSent"));
     } catch (reportError) {
-      setError(reportError instanceof Error ? reportError.message : "Listing report failed.");
+      setError(reportError instanceof Error ? reportError.message : t("commerce:marketplace.reportFailed"));
     } finally {
       setBusyId(null);
     }
@@ -117,19 +119,19 @@ export function MarketplaceScreen({ route, navigation }: Props) {
 
   async function handleContactSeller(listing: MarketplaceListing) {
     if (!listing.seller_user_id) {
-      setError("This seller cannot be messaged from the app yet.");
+      setError(t("commerce:marketplace.sellerNotMessageable"));
       return;
     }
     setBusyId(listing.id);
     try {
       const result = await startMarketplaceSellerChat(listing.seller_user_id);
       if (result.conversation_id && navigation) {
-        navigation.navigate("Chat", { conversationId: result.conversation_id, title: listing.seller_name || "Seller" });
+        navigation.navigate("Chat", { conversationId: result.conversation_id, title: listing.seller_name || t("commerce:marketplace.seller") });
       } else {
-        setError("Seller chat is not available for this listing yet.");
+        setError(t("commerce:marketplace.sellerChatUnavailable"));
       }
     } catch (contactError) {
-      setError(contactError instanceof Error ? contactError.message : "Seller chat could not be opened.");
+      setError(contactError instanceof Error ? contactError.message : t("commerce:marketplace.sellerChatFailed"));
     } finally {
       setBusyId(null);
     }
@@ -139,9 +141,9 @@ export function MarketplaceScreen({ route, navigation }: Props) {
     setBusyId(listing.id);
     try {
       const result = await openMarketplaceCheckout(listing.id);
-      if (!result.checkout_url) setError(result.message || "Checkout is not available for this listing yet.");
+      if (!result.checkout_url) setError(result.message || t("commerce:marketplace.checkoutUnavailable"));
     } catch (checkoutError) {
-      setError(checkoutError instanceof Error ? checkoutError.message : "Checkout is not available for this listing yet.");
+      setError(checkoutError instanceof Error ? checkoutError.message : t("commerce:marketplace.checkoutUnavailable"));
     } finally {
       setBusyId(null);
     }
@@ -151,7 +153,7 @@ export function MarketplaceScreen({ route, navigation }: Props) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.accent} />
-        <Text style={styles.centerText}>Loading Marketplace</Text>
+        <Text style={styles.centerText}>{t("commerce:marketplace.loading")}</Text>
       </View>
     );
   }
@@ -167,26 +169,26 @@ export function MarketplaceScreen({ route, navigation }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
         ListHeaderComponent={
           <View style={styles.header}>
-            <Text style={styles.title}>Marketplace</Text>
-            <Text style={styles.subtitle}>{offline ? "Showing saved marketplace results" : "PulseSoc native marketplace"}</Text>
-            <Pressable accessibilityRole="button" style={styles.sellerGatewayButton} onPress={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })}>
-              <Text style={styles.sellerGatewayText}>Seller / Store Management</Text>
+            <Text style={styles.title}>{t("commerce:marketplace.title")}</Text>
+            <Text style={styles.subtitle}>{offline ? t("commerce:marketplace.offlineSubtitle") : t("commerce:marketplace.subtitle")}</Text>
+            <Pressable accessibilityRole="button" style={styles.sellerGatewayButton} onPress={() => navigation?.navigate("SellerStore", { title: t("common:screens.sellerStore") })}>
+              <Text style={styles.sellerGatewayText}>{t("commerce:marketplace.sellerStoreManagement")}</Text>
             </Pressable>
-            <Pressable accessibilityRole="button" style={styles.sellerGatewayButton} onPress={() => navigation?.navigate("BuyerOrders", { title: "Purchase History" })}>
-              <Text style={styles.sellerGatewayText}>Purchase History</Text>
+            <Pressable accessibilityRole="button" style={styles.sellerGatewayButton} onPress={() => navigation?.navigate("BuyerOrders", { title: t("common:screens.purchaseHistory") })}>
+              <Text style={styles.sellerGatewayText}>{t("common:screens.purchaseHistory")}</Text>
             </Pressable>
             <View style={styles.searchRow}>
               <TextInput
                 style={styles.searchInput}
                 value={query}
                 onChangeText={setQuery}
-                placeholder="Search listings, categories, sellers"
+                placeholder={t("commerce:marketplace.searchPlaceholder")}
                 placeholderTextColor={colors.muted}
                 returnKeyType="search"
                 onSubmitEditing={() => load("search", query).catch(() => undefined)}
               />
               <Pressable accessibilityRole="button" style={styles.searchButton} onPress={() => load("search", query).catch(() => undefined)}>
-                <Text style={styles.searchButtonText}>Search</Text>
+                <Text style={styles.searchButtonText}>{t("common:actions.search")}</Text>
               </Pressable>
             </View>
             {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -194,8 +196,8 @@ export function MarketplaceScreen({ route, navigation }: Props) {
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>{error ? "Marketplace unavailable" : "No marketplace listings"}</Text>
-            <Text style={styles.emptyText}>{error || "Approved PulseSoc marketplace listings will appear here."}</Text>
+            <Text style={styles.emptyTitle}>{error ? t("commerce:marketplace.unavailableTitle") : t("commerce:marketplace.noListingsTitle")}</Text>
+            <Text style={styles.emptyText}>{error || t("commerce:marketplace.noListingsBody")}</Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -223,7 +225,7 @@ export function MarketplaceScreen({ route, navigation }: Props) {
             username: listing.seller_username,
             display_name: listing.seller_name,
             source: "marketplace"
-          }), listing.seller_name || "Seller");
+          }), listing.seller_name || t("commerce:marketplace.seller"));
           if (params) navigation?.navigate("ProfileDetail", params);
         }}
       />
@@ -238,31 +240,32 @@ function MarketplaceCard({ listing, busy, onOpen, onSave, onReport }: {
   onSave: (listing: MarketplaceListing) => void;
   onReport: (listing: MarketplaceListing) => void;
 }) {
+  const { t } = useTranslation();
   const cover = listing.media?.[0] ? mediaDisplayUrl(listing.media[0]) : "";
   return (
     <Pressable accessibilityRole="button" style={styles.card} onPress={() => onOpen(listing)}>
-      {cover ? <Image source={{ uri: cover }} style={styles.cover} resizeMode="cover" /> : <View style={styles.coverFallback}><Text style={styles.coverText}>Marketplace</Text></View>}
+      {cover ? <Image source={{ uri: cover }} style={styles.cover} resizeMode="cover" /> : <View style={styles.coverFallback}><Text style={styles.coverText}>{t("commerce:marketplace.title")}</Text></View>}
       <View style={styles.cardBody}>
         <Text style={styles.cardTitle}>{listing.title}</Text>
         <ContentTranslation
           contentType="marketplace"
           contentRef={listing.id}
-          text={listing.short_description || listing.description || "PulseSoc listing"}
+          text={listing.short_description || listing.description || t("commerce:marketplace.listingFallbackText")}
           textStyle={styles.cardDescription}
           numberOfLines={2}
         />
         <View style={styles.pillRow}>
-          <Text style={styles.pill}>{listing.category || "Education"}</Text>
-          <Text style={styles.pill}>{listing.price_label || "Request access"}</Text>
-          <Text style={styles.pill}>Safety {listing.safety_score || 0}</Text>
+          <Text style={styles.pill}>{listing.category || t("commerce:marketplace.categoryFallback")}</Text>
+          <Text style={styles.pill}>{listing.price_label || t("commerce:marketplace.priceFallback")}</Text>
+          <Text style={styles.pill}>{t("commerce:marketplace.safetyScore", { score: listing.safety_score || 0 })}</Text>
         </View>
-        <Text style={styles.sellerText}>Seller: {listing.seller_name || "PulseSoc Seller"}</Text>
+        <Text style={styles.sellerText}>{t("commerce:marketplace.sellerLine", { name: listing.seller_name || t("commerce:marketplace.sellerNameFallback") })}</Text>
         <View style={styles.cardActions}>
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || listing.saved }} style={styles.smallButton} disabled={busy || listing.saved} onPress={() => onSave(listing)}>
-            <Text style={styles.smallButtonText}>{listing.saved ? "Saved" : "Save"}</Text>
+            <Text style={styles.smallButtonText}>{listing.saved ? t("common:status.saved") : t("common:actions.save")}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.smallButton} disabled={busy} onPress={() => onReport(listing)}>
-            <Text style={styles.smallButtonText}>Report</Text>
+            <Text style={styles.smallButtonText}>{t("common:actions.report")}</Text>
           </Pressable>
         </View>
       </View>
@@ -280,19 +283,20 @@ function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onCo
   onCheckout: (listing: MarketplaceListing) => void;
   onProfile: (listing: MarketplaceListing) => void;
 }) {
+  const { t } = useTranslation();
   const [viewerOpen, setViewerOpen] = useState(false);
   const viewerItems = useMemo(() => {
     if (!listing) return [];
     const author = marketplaceSellerAuthor(listing);
     return (listing.media || []).map((media) =>
       mediaViewerItemFromPulseMedia(media, {
-        title: listing.title || "Marketplace listing",
-        subtitle: listing.price_label || listing.category || "Marketplace",
+        title: listing.title || t("commerce:marketplace.listingTitleFallback"),
+        subtitle: listing.price_label || listing.category || t("commerce:marketplace.title"),
         author,
         sourceUrl: marketplaceWebUrl(listing.id)
       })
     );
-  }, [listing]);
+  }, [listing, t]);
   if (!listing) return null;
   const cover = listing.media?.[0] ? mediaDisplayUrl(listing.media[0]) : "";
   const canNavigateProfile = Boolean(listing.seller_public_player_id || listing.seller_username);
@@ -301,48 +305,48 @@ function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onCo
       <ScrollView style={styles.detailRoot} contentContainerStyle={styles.detailContent}>
         <View style={styles.detailHeader}>
           <Pressable accessibilityRole="button" style={styles.closeButton} onPress={onClose}>
-            <Text style={styles.closeText}>Close</Text>
+            <Text style={styles.closeText}>{t("common:actions.close")}</Text>
           </Pressable>
         </View>
         <Pressable accessibilityRole="button" accessibilityState={{ disabled: !viewerItems.length }} disabled={!viewerItems.length} onPress={() => setViewerOpen(true)}>
-          {cover ? <Image source={{ uri: cover }} style={styles.detailCover} resizeMode="cover" /> : <View style={styles.detailCoverFallback}><Text style={styles.coverText}>No media loaded</Text></View>}
+          {cover ? <Image source={{ uri: cover }} style={styles.detailCover} resizeMode="cover" /> : <View style={styles.detailCoverFallback}><Text style={styles.coverText}>{t("commerce:marketplace.noMediaLoaded")}</Text></View>}
         </Pressable>
         <Text style={styles.detailTitle}>{listing.title}</Text>
-        <Text style={styles.detailPrice}>{listing.price_label || "Request access"}</Text>
+        <Text style={styles.detailPrice}>{listing.price_label || t("commerce:marketplace.priceFallback")}</Text>
         <ContentTranslation
           contentType="marketplace"
           contentRef={listing.id}
-          text={listing.description || listing.short_description || "No description loaded."}
+          text={listing.description || listing.short_description || t("commerce:marketplace.noDescription")}
           textStyle={styles.detailDescription}
         />
         <View style={styles.pillRow}>
-          <Text style={styles.pill}>{listing.category || "Education"}</Text>
-          <Text style={styles.pill}>Safety {listing.safety_score || 0}</Text>
+          <Text style={styles.pill}>{listing.category || t("commerce:marketplace.categoryFallback")}</Text>
+          <Text style={styles.pill}>{t("commerce:marketplace.safetyScore", { score: listing.safety_score || 0 })}</Text>
           <Text style={styles.pill}>{listing.approval_status || listing.status || "approved"}</Text>
         </View>
         <Pressable accessibilityRole="button" accessibilityState={{ disabled: !canNavigateProfile }} style={styles.sellerPanel} disabled={!canNavigateProfile} onPress={() => onProfile(listing)}>
-          <Text style={styles.sellerTitle}>{listing.seller_name || "PulseSoc Seller"}</Text>
-          <Text style={styles.sellerMeta}>{canNavigateProfile ? "Open profile" : "Seller profile link unavailable in this payload"}</Text>
+          <Text style={styles.sellerTitle}>{listing.seller_name || t("commerce:marketplace.sellerNameFallback")}</Text>
+          <Text style={styles.sellerMeta}>{canNavigateProfile ? t("commerce:marketplace.openProfile") : t("commerce:marketplace.sellerProfileUnavailable")}</Text>
         </Pressable>
-        <Text style={styles.safetyNotice}>Safety notice: marketplace business rules, checkout, seller approval, moderation, refunds, disputes, and payout release remain server-authoritative.</Text>
+        <Text style={styles.safetyNotice}>{t("commerce:marketplace.safetyNotice")}</Text>
         <View style={styles.detailActions}>
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.primaryButton} disabled={busy} onPress={() => onContactSeller(listing)}>
-            <Text style={styles.primaryText}>Contact Seller</Text>
+            <Text style={styles.primaryText}>{t("commerce:marketplace.contactSeller")}</Text>
           </Pressable>
           {DIGITAL_COMMERCE_ENABLED ? (
             <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.secondaryButton} disabled={busy} onPress={() => onCheckout(listing)}>
-              <Text style={styles.secondaryText}>Checkout</Text>
+              <Text style={styles.secondaryText}>{t("commerce:marketplace.checkout")}</Text>
             </Pressable>
           ) : null}
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || listing.saved }} style={styles.secondaryButton} disabled={busy || listing.saved} onPress={() => onSave(listing)}>
-            <Text style={styles.secondaryText}>{listing.saved ? "Saved" : "Save"}</Text>
+            <Text style={styles.secondaryText}>{listing.saved ? t("common:status.saved") : t("common:actions.save")}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.secondaryButton} disabled={busy} onPress={() => onReport(listing)}>
-            <Text style={styles.secondaryText}>Report</Text>
+            <Text style={styles.secondaryText}>{t("common:actions.report")}</Text>
           </Pressable>
         </View>
       </ScrollView>
-      <NativeMediaViewer visible={viewerOpen} items={viewerItems} title="Marketplace media" onClose={() => setViewerOpen(false)} />
+      <NativeMediaViewer visible={viewerOpen} items={viewerItems} title={t("commerce:marketplace.mediaViewerTitle")} onClose={() => setViewerOpen(false)} />
     </Modal>
   );
 }
