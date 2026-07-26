@@ -458,6 +458,11 @@
           "subtitle": "Where you're signed in",
           "keywords": "logout sign out revoke device active session remote"
         },
+        "account-health": {
+          "title": "Account Health and Appeals",
+          "subtitle": "Standing, restrictions, appeals",
+          "keywords": "account health appeal restriction warning strike enforcement standing"
+        },
         "notifications": {
           "title": "Notifications",
           "subtitle": "Push, email, sounds, quiet hours",

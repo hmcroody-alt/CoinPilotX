@@ -458,6 +458,11 @@
           "subtitle": "Wo du angemeldet bist",
           "keywords": "abmelden logout sitzung widerrufen gerät geräte aktiv fernzugriff"
         },
+        "account-health": {
+          "title": "Kontostatus und Einsprüche",
+          "subtitle": "Status, Einschränkungen, Einsprüche",
+          "keywords": "konto status einspruch einschränkung warnung verstoß durchsetzung"
+        },
         "notifications": {
           "title": "Mitteilungen",
           "subtitle": "Push, E-Mail, Töne, Ruhezeiten",

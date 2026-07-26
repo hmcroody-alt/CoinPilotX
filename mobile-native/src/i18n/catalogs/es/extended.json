@@ -458,6 +458,11 @@
           "subtitle": "Dónde tienes la sesión iniciada",
           "keywords": "cerrar sesion sesión logout revocar dispositivo sesion activa remoto"
         },
+        "account-health": {
+          "title": "Estado de cuenta y apelaciones",
+          "subtitle": "Estado, restricciones y apelaciones",
+          "keywords": "cuenta estado apelación restricción advertencia infracción cumplimiento"
+        },
         "notifications": {
           "title": "Notificaciones",
           "subtitle": "Push, correo, sonidos, horas de silencio",

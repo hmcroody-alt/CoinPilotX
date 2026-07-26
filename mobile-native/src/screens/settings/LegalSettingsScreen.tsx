@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, BackHandler, Linking, Platform, StyleSheet, Text, View } from "react-native";
+import { Alert, BackHandler, Platform, StyleSheet, Text, View } from "react-native";
 import { RouteProp, useRoute } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { SettingsHeader, SettingsSection, SettingsShell, animateNextLayout } from "../../settings/components/SettingsShell";
@@ -29,9 +29,9 @@ const DOCUMENT_ICONS: Record<LegalDocumentKey, keyof typeof Ionicons.glyphMap> =
  *
  * Renders the index of documents, or one document, entirely as native text —
  * the Settings platform ships no WebView, so there is no browser view to fall
- * back to and no `openSupportWebFallback` call anywhere in this file. The only
- * outbound path is `Linking.openURL`, which hands the canonical URL to the
- * system browser; that is an external handoff, not embedded web content.
+ * back to and no `openSupportWebFallback` call anywhere in this file. The
+ * canonical published URL is disclosed for legal accuracy, but this surface
+ * does not hand off to the browser.
  *
  * Document selection is local state rather than a second navigation entry so a
  * deep link (`{ document: "privacy" }`) and an in-screen tap produce exactly the
@@ -74,21 +74,12 @@ export function LegalSettingsScreen() {
     return () => subscription.remove();
   }, [selected, showIndex]);
 
-  const openCanonical = useCallback(async (target: LegalDocument) => {
-    try {
-      const supported = await Linking.canOpenURL(target.canonicalUrl);
-      if (!supported) throw new Error("unsupported");
-      await Linking.openURL(target.canonicalUrl);
-    } catch {
-      // No browser, or the OS refused the handoff. The summary the user is
-      // already reading stays valid, so say where the full text lives instead
-      // of failing silently.
-      Alert.alert(
-        "Couldn't open your browser",
-        `The full ${target.title} is published at ${target.canonicalUrl.replace(/^https:\/\//, "")}.`,
-        [{ text: "OK" }]
-      );
-    }
+  const showCanonical = useCallback((target: LegalDocument) => {
+    Alert.alert(
+      "Published legal URL",
+      `The full ${target.title} is published at ${target.canonicalUrl.replace(/^https:\/\//, "")}.`,
+      [{ text: "OK" }]
+    );
   }, []);
 
   if (!document) {
@@ -187,10 +178,10 @@ export function LegalSettingsScreen() {
       <View style={styles.actions}>
         <SettingsButton
           testID={`legal-open-full-${document.key}`}
-          label="Open full document"
-          icon="open-outline"
+          label="Show published URL"
+          icon="link-outline"
           variant="primary"
-          onPress={() => void openCanonical(document)}
+          onPress={() => showCanonical(document)}
         />
         <SettingsButton
           testID="legal-back-to-index"

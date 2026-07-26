@@ -3,50 +3,50 @@
     "surface": "Admin routes",
     "route": "/admin/dashboard",
     "status": "pass",
-    "http_status": 302,
-    "detail": "HTTP 302"
+    "http_status": 200,
+    "detail": "HTTP 200"
   },
   {
     "surface": "Admin routes",
     "route": "/admin/security",
     "status": "pass",
-    "http_status": 302,
-    "detail": "HTTP 302"
+    "http_status": 200,
+    "detail": "HTTP 200"
   },
   {
     "surface": "Admin routes",
     "route": "/admin/audit-logs",
     "status": "pass",
-    "http_status": 302,
-    "detail": "HTTP 302"
+    "http_status": 200,
+    "detail": "HTTP 200"
   },
   {
     "surface": "Admin routes",
     "route": "/admin/performance",
     "status": "pass",
-    "http_status": 302,
-    "detail": "HTTP 302"
+    "http_status": 200,
+    "detail": "HTTP 200"
   },
   {
     "surface": "Admin routes",
     "route": "/admin/system-audit",
     "status": "pass",
-    "http_status": 302,
-    "detail": "HTTP 302"
+    "http_status": 200,
+    "detail": "HTTP 200"
   },
   {
     "surface": "Admin routes",
     "route": "/admin/messages-health",
     "status": "pass",
-    "http_status": 302,
-    "detail": "HTTP 302"
+    "http_status": 200,
+    "detail": "HTTP 200"
   },
   {
     "surface": "Admin routes",
     "route": "/admin/notifications",
     "status": "pass",
-    "http_status": 302,
-    "detail": "HTTP 302"
+    "http_status": 200,
+    "detail": "HTTP 200"
   },
   {
     "surface": "Messaging",
@@ -178,8 +178,8 @@
     "surface": "Premium",
     "route": "/admin/premium-command",
     "status": "pass",
-    "http_status": 302,
-    "detail": "HTTP 302"
+    "http_status": 200,
+    "detail": "HTTP 200"
   },
   {
     "surface": "Marketplace",
@@ -199,14 +199,14 @@
     "surface": "Marketplace",
     "route": "/admin/marketplace-command",
     "status": "pass",
-    "http_status": 302,
-    "detail": "HTTP 302"
+    "http_status": 200,
+    "detail": "HTTP 200"
   },
   {
     "surface": "Marketplace",
     "route": "/admin/merchant-applications",
     "status": "pass",
-    "http_status": 302,
-    "detail": "HTTP 302"
+    "http_status": 200,
+    "detail": "HTTP 200"
   }
 ]

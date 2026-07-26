@@ -100,6 +100,13 @@ export const SETTINGS_ENTRIES: SettingsEntry[] = [
     route: "SessionsDevices",
     requiresAuth: true
   },
+  {
+    id: "account-health",
+    section: "account",
+    icon: "shield-half-outline",
+    route: "AccountHealth",
+    requiresAuth: true
+  },
 
   /* ----------------------------- Preferences ------------------------------ */
   {

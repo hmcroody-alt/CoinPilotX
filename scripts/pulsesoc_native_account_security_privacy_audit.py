@@ -27,6 +27,8 @@ def main() -> int:
     account_api = read("mobile-native/src/api/account.ts")
     account_screen = read("mobile-native/src/screens/AccountCenterScreen.tsx")
     settings_screen = read("mobile-native/src/screens/SettingsScreen.tsx")
+    settings_registry = read("mobile-native/src/settings/registry.ts")
+    settings_catalog = read("mobile-native/src/i18n/catalogs/en/core.json") + read("mobile-native/src/i18n/catalogs/en/extended.json")
     types = read("mobile-native/src/navigation/types.ts")
     navigator = read("mobile-native/src/navigation/AppNavigator.tsx")
     linking = read("mobile-native/src/navigation/linking.ts")
@@ -69,8 +71,10 @@ def main() -> int:
     for fallback in ["/account/settings", "/account/delete", "/privacy-center", "/dashboard/account/security"]:
         require(account_screen, fallback, "safe protected web fallback")
 
-    for settings_entry in ["Account Center", "Security Center", "Privacy Center", "Sessions and devices"]:
-        require(settings_screen, settings_entry, "Settings navigation entry")
+    for settings_entry in ["Account Center", "Security Center", "Privacy Center", "Sessions & devices"]:
+        require(settings_catalog, settings_entry, "localized Settings navigation entry")
+    for registry_entry in ['id: "account"', 'id: "security"', 'id: "privacy"', 'id: "sessions"']:
+        require(settings_registry, registry_entry, "registry-backed Settings navigation entry")
 
     require(types, "AccountCenter", "navigation type")
     for route_name in ["AccountSettings", "AccountSecurity", "AccountWebSettings", "AccountWebSecurity", "AccountPrivacy", "AccountDevices"]:

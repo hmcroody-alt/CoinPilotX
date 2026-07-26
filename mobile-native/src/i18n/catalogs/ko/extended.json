@@ -457,6 +457,11 @@
           "subtitle": "로그인되어 있는 기기",
           "keywords": "로그아웃 세션 기기 디바이스 해제 원격 접속 기록 logout session device"
         },
+        "account-health": {
+          "title": "계정 상태 및 이의 제기",
+          "subtitle": "상태, 제한, 이의 제기",
+          "keywords": "계정 상태 이의 제기 제한 경고 위반 집행"
+        },
         "notifications": {
           "title": "알림",
           "subtitle": "푸시, 이메일, 소리, 방해 금지 시간",

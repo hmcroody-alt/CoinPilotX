@@ -458,6 +458,11 @@
           "subtitle": "Kote ou konekte",
           "keywords": "sesyon session aparèy device dekonekte logout deconnexion revoke aktif adistans"
         },
+        "account-health": {
+          "title": "Sante kont ak apèl",
+          "subtitle": "Eta, restriksyon, ak apèl",
+          "keywords": "kont sante apèl restriksyon avètisman vyolasyon eta"
+        },
         "notifications": {
           "title": "Notifikasyon",
           "subtitle": "Push, imèl, son, lè trankil",

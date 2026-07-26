@@ -1,4 +1,4 @@
-const CACHE_NAME = "coinplotx-cache-v25-foreground-intelligence";
+const CACHE_NAME = "pulsesoc-cache-v26-launch-readiness";
 const DEBUG_SW = false;
 const STATIC_ASSETS = [
   "/manifest.json",

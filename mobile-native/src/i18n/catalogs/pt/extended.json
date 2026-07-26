@@ -458,6 +458,11 @@
           "subtitle": "Onde você está conectado",
           "keywords": "sair logout sessão dispositivo aparelho encerrar revogar ativo remoto"
         },
+        "account-health": {
+          "title": "Saúde da conta e recursos",
+          "subtitle": "Status, restrições e recursos",
+          "keywords": "conta saúde recurso restrição aviso violação aplicação"
+        },
         "notifications": {
           "title": "Notificações",
           "subtitle": "Push, e-mail, sons, horário silencioso",

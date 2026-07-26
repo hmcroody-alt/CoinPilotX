@@ -25,6 +25,8 @@ def main() -> None:
     navigator = read("mobile-native/src/navigation/AppNavigator.tsx")
     routing = read("mobile-native/src/navigation/notificationRouting.ts")
     settings = read("mobile-native/src/screens/SettingsScreen.tsx")
+    settings_registry = read("mobile-native/src/settings/registry.ts")
+    settings_catalog = read("mobile-native/src/i18n/catalogs/en/extended.json")
     trust = read("mobile-native/src/screens/TrustSafetyScreen.tsx")
     report = read("reports/pulsesoc_native_account_health_appeals_progress.md")
     progress = read("reports/pulsesoc_native_progress.md")
@@ -62,10 +64,12 @@ def main() -> None:
         (linking, "dashboard/account/health"),
         (navigator, "AccountHealthAppealsScreen"),
         (routing, "accountHealthTarget"),
+        (read("mobile-native/src/navigation/nativeRouteActions.ts"), "/dashboard/account/health"),
     ):
         require(route_file, route_text, f"route wiring {route_text}")
 
-    require(settings, "Account Health and Appeals", "Settings entry point")
+    require(settings + settings_registry, 'id: "account-health"', "Settings entry point")
+    require(settings_catalog, "Account Health and Appeals", "localized Settings entry point")
     require(trust, "Account Health", "Trust/Safety entry point")
     require(report, "Native Blocks, Mutes, and Report Management Foundation", "next recommendation")
     require(progress, "Native Account Health + Appeals Center Foundation", "progress update")

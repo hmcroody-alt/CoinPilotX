@@ -147,7 +147,9 @@ export function openNativeRoute(navigation: NativeRouteNavigation, routePath: st
   else if (path === "/pulse/safety") navigation.navigate("SafetyHub", { title: "Safety Hub" });
   else if (path === "/scam-shield/scan") navigation.navigate("ScamShield", { title: "Scam Shield" });
   else if (path === "/pulse/verification") navigation.navigate("VerificationCenter", { title: "Verification Center" });
-  else if (path === "/pulse/account-health") navigation.navigate("AccountHealth", { title: "Account Health" });
+  else if (path === "/pulse/account-health" || path === "/dashboard/account/health" || path === "/account/health") {
+    navigation.navigate("AccountHealth", { title: "Account Health" });
+  }
   else if (path === "/pulse/support" || path === "/support") navigation.navigate("TrustSafetySupport", { title: "Support" });
   else if (path === "/pulse/ai") navigation.navigate("Tabs", { screen: "PulseAI" });
   else if (path === "/pulse/undx/actions") navigation.navigate("UndxActionCenter", {

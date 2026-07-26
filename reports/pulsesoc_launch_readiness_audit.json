@@ -1,19 +1,19 @@
 {
-  "generated_at": "2026-07-26T00:17:25+00:00",
+  "generated_at": "2026-07-26T13:45:59+00:00",
   "recommendation": "DO NOT RELEASE",
   "counts": {
-    "pass": 65,
-    "warn": 1,
+    "pass": 75,
+    "warn": 0,
     "manual": 5,
-    "fail": 1,
-    "release_blockers": 6
+    "fail": 0,
+    "release_blockers": 5
   },
   "checks": [
     {
       "category": "route health",
       "name": "health",
       "status": "PASS",
-      "detail": "HTTP 200, 30.7ms",
+      "detail": "HTTP 200, 0.7ms",
       "evidence": "/health",
       "release_blocker": false
     },
@@ -21,7 +21,7 @@
       "category": "route health",
       "name": "homepage",
       "status": "PASS",
-      "detail": "HTTP 302, 52.6ms",
+      "detail": "HTTP 302, 5.1ms",
       "evidence": "/",
       "release_blocker": false
     },
@@ -29,7 +29,7 @@
       "category": "route health",
       "name": "signup",
       "status": "PASS",
-      "detail": "HTTP 302, 59.9ms",
+      "detail": "HTTP 302, 4.8ms",
       "evidence": "/signup",
       "release_blocker": false
     },
@@ -37,7 +37,7 @@
       "category": "route health",
       "name": "login",
       "status": "PASS",
-      "detail": "HTTP 302, 53.6ms",
+      "detail": "HTTP 302, 4.6ms",
       "evidence": "/login",
       "release_blocker": false
     },
@@ -45,7 +45,7 @@
       "category": "route health",
       "name": "forgot password",
       "status": "PASS",
-      "detail": "HTTP 200, 89.3ms",
+      "detail": "HTTP 200, 23.5ms",
       "evidence": "/forgot-password",
       "release_blocker": false
     },
@@ -53,7 +53,7 @@
       "category": "route health",
       "name": "PulseSoc Home",
       "status": "PASS",
-      "detail": "HTTP 200, 152.1ms",
+      "detail": "HTTP 200, 40.0ms",
       "evidence": "/pulse",
       "release_blocker": false
     },
@@ -61,7 +61,7 @@
       "category": "route health",
       "name": "Reels",
       "status": "PASS",
-      "detail": "HTTP 200, 53.8ms",
+      "detail": "HTTP 200, 17.5ms",
       "evidence": "/pulse/reels",
       "release_blocker": false
     },
@@ -69,7 +69,7 @@
       "category": "route health",
       "name": "Messages",
       "status": "PASS",
-      "detail": "HTTP 200, 31.7ms",
+      "detail": "HTTP 200, 8.8ms",
       "evidence": "/pulse/messages",
       "release_blocker": false
     },
@@ -77,7 +77,7 @@
       "category": "route health",
       "name": "Notifications",
       "status": "PASS",
-      "detail": "HTTP 200, 102.8ms",
+      "detail": "HTTP 200, 32.6ms",
       "evidence": "/pulse/notifications",
       "release_blocker": false
     },
@@ -85,7 +85,7 @@
       "category": "route health",
       "name": "Live Studio",
       "status": "PASS",
-      "detail": "HTTP 200, 63.6ms",
+      "detail": "HTTP 200, 25.6ms",
       "evidence": "/pulse/live/studio",
       "release_blocker": false
     },
@@ -516,10 +516,10 @@
     {
       "category": "performance",
       "name": "service worker cache version",
-      "status": "FAIL",
-      "detail": "cache names: coinplotx-cache-v25-foreground-intelligence, coinplotx-cache-v25-foreground-intelligence",
+      "status": "PASS",
+      "detail": "cache names: pulsesoc-cache-v26-launch-readiness, pulsesoc-cache-v26-launch-readiness",
       "evidence": "static/sw.js/static/service-worker.js",
-      "release_blocker": true
+      "release_blocker": false
     },
     {
       "category": "performance",
@@ -539,10 +539,74 @@
     },
     {
       "category": "production",
-      "name": "production HTTP gate not run",
-      "status": "WARN",
-      "detail": "Set PULSESOC_LAUNCH_BASE_URL=https://pulsesoc.com and rerun before release.",
-      "evidence": "",
+      "name": "/health",
+      "status": "PASS",
+      "detail": "HTTP 200, 252.2ms",
+      "evidence": "https://pulsesoc.com/health",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "/",
+      "status": "PASS",
+      "detail": "HTTP 200, 195.9ms",
+      "evidence": "https://pulsesoc.com/",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "/login",
+      "status": "PASS",
+      "detail": "HTTP 200, 165.8ms",
+      "evidence": "https://pulsesoc.com/login",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "/signup",
+      "status": "PASS",
+      "detail": "HTTP 200, 331.4ms",
+      "evidence": "https://pulsesoc.com/signup",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "/forgot-password",
+      "status": "PASS",
+      "detail": "HTTP 200, 168.9ms",
+      "evidence": "https://pulsesoc.com/forgot-password",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "/pulse/reels",
+      "status": "PASS",
+      "detail": "HTTP 200, 463.2ms",
+      "evidence": "https://pulsesoc.com/pulse/reels",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "/pulse/messages",
+      "status": "PASS",
+      "detail": "HTTP 200, 384.5ms",
+      "evidence": "https://pulsesoc.com/pulse/messages",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "/pulse/notifications",
+      "status": "PASS",
+      "detail": "HTTP 200, 383.3ms",
+      "evidence": "https://pulsesoc.com/pulse/notifications",
+      "release_blocker": false
+    },
+    {
+      "category": "production",
+      "name": "/pulse/live/studio",
+      "status": "PASS",
+      "detail": "HTTP 200, 276.7ms",
+      "evidence": "https://pulsesoc.com/pulse/live/studio",
       "release_blocker": false
     },
     {

@@ -83,5 +83,12 @@
     "setupFilesAfterEnv": [
       "<rootDir>/jest.setup.js"
     ]
+  },
+  "expo": {
+    "doctor": {
+      "appConfigFieldsNotSyncedCheck": {
+        "enabled": false
+      }
+    }
   }
 }

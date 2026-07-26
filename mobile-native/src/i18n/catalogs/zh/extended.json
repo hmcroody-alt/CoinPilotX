@@ -457,6 +457,11 @@
           "subtitle": "你已登录的设备",
           "keywords": "退出登录 注销 会话 设备 撤销 远程 登录记录 logout session device"
         },
+        "account-health": {
+          "title": "账号状态和申诉",
+          "subtitle": "状态、限制和申诉",
+          "keywords": "账号 状态 申诉 限制 警告 违规 执行"
+        },
         "notifications": {
           "title": "通知",
           "subtitle": "推送、邮件、声音、免打扰时段",

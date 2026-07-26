@@ -458,6 +458,11 @@
           "subtitle": "Où vous êtes connecté",
           "keywords": "deconnexion déconnexion logout revoquer appareil session active a distance"
         },
+        "account-health": {
+          "title": "Santé du compte et appels",
+          "subtitle": "Statut, restrictions et appels",
+          "keywords": "compte santé appel restriction avertissement infraction application"
+        },
         "notifications": {
           "title": "Notifications",
           "subtitle": "Push, e-mail, sons, mode silencieux",

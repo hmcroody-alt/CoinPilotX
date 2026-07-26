@@ -458,6 +458,11 @@
           "subtitle": "आप कहाँ-कहाँ साइन इन हैं",
           "keywords": "सेशन session डिवाइस device लॉगआउट logout साइन आउट sign out revoke active remote"
         },
+        "account-health": {
+          "title": "खाता स्वास्थ्य और अपील",
+          "subtitle": "स्थिति, प्रतिबंध और अपील",
+          "keywords": "खाता स्वास्थ्य अपील प्रतिबंध चेतावनी उल्लंघन स्थिति"
+        },
         "notifications": {
           "title": "नोटिफ़िकेशन",
           "subtitle": "पुश, ईमेल, आवाज़, शांत घंटे",

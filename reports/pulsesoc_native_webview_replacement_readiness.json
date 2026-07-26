@@ -6,7 +6,7 @@
   "critical_surfaces_with_static_native_coverage": 26,
   "hard_blocker_count": 0,
   "hard_blockers": [],
-  "native_route_count": 106,
+  "native_route_count": 122,
   "production_route_mentions": {
     "/dashboard/": 396,
     "/pulse/camera": 7,

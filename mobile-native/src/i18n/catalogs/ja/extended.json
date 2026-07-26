@@ -457,6 +457,11 @@
           "subtitle": "ログイン中の端末",
           "keywords": "ログアウト サインアウト セッション 端末 デバイス 解除 リモート logout session device"
         },
+        "account-health": {
+          "title": "アカウント状態と異議申し立て",
+          "subtitle": "状態、制限、異議申し立て",
+          "keywords": "アカウント 状態 異議申し立て 制限 警告 違反 執行"
+        },
         "notifications": {
           "title": "お知らせ",
           "subtitle": "プッシュ、メール、サウンド、休止時間",

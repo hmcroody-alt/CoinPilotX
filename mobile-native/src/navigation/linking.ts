@@ -317,14 +317,14 @@ export const linking: LinkingOptions<RootStackParamList> = {
           section: String
         }
       },
-      AccountSettings: "pulse/dashboard/account-settings",
-      AccountSecurity: "pulse/dashboard/account-security",
+      AccountSettings: "dashboard/account/settings",
+      AccountSecurity: "dashboard/account/security",
       AccountWebSettings: "account/settings",
       AccountWebSecurity: "account/security",
       AccountPrivacy: "privacy-center",
       AccountDevices: "pulse/settings/devices",
       AccountHealth: "pulse/account-health",
-      AccountHealthWeb: "pulse/dashboard/account-health",
+      AccountHealthWeb: "dashboard/account/health",
       SafetyHub: {
         path: "pulse/safety/:section?",
         parse: {
