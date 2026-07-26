@@ -19,98 +19,33 @@ down, and whether a card can be re-armed after teardown.
 
 from __future__ import annotations
 
-import json
-import re
-import shutil
-import subprocess
-import tempfile
+import sys
 from pathlib import Path
 
-
-ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[1]
+sys.path.insert(0, str(HERE))
+
+# The extraction-and-run machinery lives in a sibling module because the mobile
+# playback audit needs exactly the same behavioral guarantee, and a guarantee stated
+# twice is a guarantee that will eventually disagree with itself.
+from reels_preload_runner import (  # noqa: E402
+    REEL_FUNCTIONS,
+    extract_js_function,
+    run_reel_scenarios,
+)
+
 BOT = (ROOT / "bot.py").read_text(encoding="utf-8")
 RENDERER = (ROOT / "static/js/pulse_media_renderer.js").read_text(encoding="utf-8")
 CAMERA = (ROOT / "static/js/pulse_camera_engine.js").read_text(encoding="utf-8")
 
-# The production functions that together implement the Reels preload window. They are
-# executed, not grepped, so this list is a requirement that they EXIST under these
-# names -- a rename is a real interface change and should be seen here.
-REEL_FUNCTIONS = (
-    "reelCards",
-    "warmReelPoster",
-    "primaryReelVideo",
-    "logReelAudioState",
-    "releaseFarReelMedia",
-    "preloadNextReel",
-)
+assert REEL_FUNCTIONS and callable(extract_js_function)
 
 
 def expect(condition: bool, label: str) -> None:
     if not condition:
         raise AssertionError(label)
     print(f"ok - {label}")
-
-
-def extract_js_function(name: str) -> str:
-    """Return the verbatim source of ``function name(...){...}`` from bot.py.
-
-    Walks the parameter list to its matching ``)`` before looking for the body's
-    opening brace, because a default parameter value may itself contain braces
-    (``logReelAudioState(card,video,reason,extra={})``), then brace-matches the body.
-    Raises rather than returning a partial function: silently extracting half a
-    function would make the behavioral checks below meaningless.
-    """
-    m = re.search(r"function\s+" + re.escape(name) + r"\s*\(", BOT)
-    if not m:
-        raise AssertionError(f"missing production function: {name}()")
-    i, depth = m.end() - 1, 0
-    while i < len(BOT):
-        if BOT[i] == "(":
-            depth += 1
-        elif BOT[i] == ")":
-            depth -= 1
-            if depth == 0:
-                break
-        i += 1
-    else:
-        raise AssertionError(f"unbalanced parameter list extracting {name}()")
-    j = BOT.index("{", i)
-    depth = 0
-    while j < len(BOT):
-        if BOT[j] == "{":
-            depth += 1
-        elif BOT[j] == "}":
-            depth -= 1
-            if depth == 0:
-                return BOT[m.start():j + 1]
-        j += 1
-    raise AssertionError(f"unbalanced braces extracting {name}()")
-
-
-def run_reel_scenarios(names: list[str]) -> dict:
-    """Run the real preload functions against the harness and return its verdicts."""
-    node = shutil.which("node") or shutil.which("nodejs")
-    if not node:
-        # Not skipped: a verifier that cannot run is a failure to verify, and the
-        # Reels preload window is release-critical. Install Node to run this suite.
-        raise AssertionError(
-            "node is required to verify the Reels preload window behaviorally")
-    harness = (HERE / "reels_preload_harness.js").read_text(encoding="utf-8")
-    production = "\n".join(extract_js_function(n) for n in REEL_FUNCTIONS)
-    with tempfile.TemporaryDirectory(prefix="reelwin_") as tmp:
-        bundle = Path(tmp) / "bundle.js"
-        bundle.write_text(production + "\n" + harness, encoding="utf-8")
-        proc = subprocess.run([node, str(bundle), json.dumps(names)],
-                              capture_output=True, text=True, timeout=120)
-    if proc.returncode != 0:
-        raise AssertionError(
-            f"Reels harness failed (rc={proc.returncode}):\n{proc.stderr[-2000:]}")
-    out = json.loads(proc.stdout)
-    for name, verdict in out.items():
-        if "harness_error" in verdict:
-            raise AssertionError(f"scenario {name} raised: {verdict['harness_error']}")
-    return out
 
 
 def check_reels_preload_window() -> None:
