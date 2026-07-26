@@ -179,7 +179,10 @@ export function ProfileScreen({ route, navigation }: Props) {
       case "events":
         return navigation?.navigate("Events", { mode: "events", title: "Events" });
       case "business":
-        return navigation?.navigate("SellerStore", { mode: "overview", title: "Business" });
+        // Business is the single entry point for running a business: the store,
+        // seller marketplace tools and advertising all live inside Business OS.
+        // Consumer marketplace browsing stays on the Marketplace tab above.
+        return navigation?.navigate("BusinessOs", { title: "Business OS" });
       case "memories":
         return navigation?.navigate("Tabs", { screen: "Status" });
       default:

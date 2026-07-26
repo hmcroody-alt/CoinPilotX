@@ -12,6 +12,9 @@ import { AccountCenterScreen } from "../screens/AccountCenterScreen";
 import { AccountHealthAppealsScreen } from "../screens/AccountHealthAppealsScreen";
 import { ActivityInboxScreen } from "../screens/ActivityInboxScreen";
 import { AlertManagementScreen } from "../screens/AlertManagementScreen";
+import { BusinessOsAdvertisingScreen } from "../screens/BusinessOsAdvertisingScreen";
+import { BusinessOsInsightsScreen } from "../screens/BusinessOsInsightsScreen";
+import { BusinessOsScreen } from "../screens/BusinessOsScreen";
 import { BuyerOrdersScreen } from "../screens/BuyerOrdersScreen";
 import { CameraStudioScreen } from "../screens/CameraStudioScreen";
 import { CallScreen } from "../screens/CallScreen";
@@ -272,6 +275,9 @@ export function AppNavigator() {
       <Stack.Screen name="ReelDetail" component={ReelsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="StatusDetail" component={StatusScreen} options={({ route }) => ({ title: route.params.title || t("common:screens.status") })} />
       <Stack.Screen name="MarketplaceDetail" component={MarketplaceScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.marketplace") })} />
+      <Stack.Screen name="BusinessOs" component={BusinessOsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOs") })} />
+      <Stack.Screen name="BusinessOsAdvertising" component={BusinessOsAdvertisingScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsAdvertising") })} />
+      <Stack.Screen name="BusinessOsInsights" component={BusinessOsInsightsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsInsights") })} />
       <Stack.Screen name="SellerStore" component={SellerStoreScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.sellerStore") })} />
       <Stack.Screen name="BuyerOrders" component={BuyerOrdersScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.purchaseHistory") })} />
       <Stack.Screen name="BuyerOrderDetail" component={BuyerOrdersScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.orderDetail") })} />

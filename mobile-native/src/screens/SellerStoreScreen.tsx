@@ -20,6 +20,7 @@ import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { SellerStorePanel, sellerStoreHeading, sellerStoreShowsPanel } from "../navigation/sellerStoreMode";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 
@@ -210,11 +211,15 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     );
   }
 
+  const heading = sellerStoreHeading(mode);
+  const shows = (panel: SellerStorePanel) => sellerStoreShowsPanel(mode, panel);
+
   return (
-    <Screen title="Seller / Store" subtitle="Native marketplace control layer using PulseSoc approval, media, payout, and checkout systems.">
+    <Screen title={heading.title} subtitle={heading.subtitle}>
       {offline ? <Text style={styles.warning}>Showing saved seller/store metadata.</Text> : null}
       {message ? <Text style={message.toLowerCase().includes("required") || message.toLowerCase().includes("failed") ? styles.error : styles.notice}>{message}</Text> : null}
 
+      {shows("hero") ? (
       <Panel>
         <View style={styles.hero}>
           <Text style={styles.kicker}>Marketplace Command</Text>
@@ -233,7 +238,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           </Pressable>
         </View>
       </Panel>
+      ) : null}
 
+      {shows("application") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Merchant application</Text>
         <Text style={styles.copy}>Submit the native seller application to the existing seller endpoint. Document verification and admin review are completed by PulseSoc after your application is received.</Text>
@@ -259,7 +266,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           </Pressable>
         </View>
       </Panel>
+      ) : null}
 
+      {shows("listings") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Listing management</Text>
         <Text style={styles.copy}>Product creation, safety review, media moderation, pricing, fulfillment, refunds, disputes, and checkout stay on existing PulseSoc marketplace systems.</Text>
@@ -276,7 +285,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         ))}
         {!listings.length ? <Text style={styles.emptyText}>No marketplace listings loaded yet.</Text> : null}
       </Panel>
+      ) : null}
 
+      {shows("inventory") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Seller inventory</Text>
         <Text style={styles.copy}>Edit seller-owned listing fields and control visibility through PulseSoc marketplace review. Public Marketplace visibility remains approval-gated.</Text>
@@ -359,7 +370,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           </View>
         ) : null}
       </Panel>
+      ) : null}
 
+      {shows("media") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Product media gallery</Text>
         <Text style={styles.copy}>The gallery reuses marketplace media payloads and the shared native media viewer. Unsupported media falls back safely inside the viewer.</Text>
@@ -382,7 +395,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         </View>
         {!mediaItems.length ? <Text style={styles.emptyText}>Media appears here after marketplace listings or product uploads are available.</Text> : null}
       </Panel>
+      ) : null}
 
+      {shows("orders") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Orders and payouts</Text>
         <Text style={styles.copy}>Orders, seller fees, Stripe Connect onboarding, checkout, and payout release remain provider and backend controlled.</Text>
@@ -403,7 +418,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           <Text style={styles.meta}>Payout onboarding and payout release are managed by PulseSoc and its payment provider. You will be notified when your payouts are ready.</Text>
         )}
       </Panel>
+      ) : null}
 
+      {shows("trust") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Trust and eligibility</Text>
         <View style={styles.actionRow}>
@@ -419,6 +436,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         </View>
         <Text style={styles.copy}>Advanced tax forms, bank onboarding, disputes, refunds, fulfillment, and admin review stay on safe web/provider flows until native QA gates are ready.</Text>
       </Panel>
+      ) : null}
 
       <NativeMediaViewer visible={viewerOpen} items={mediaItems} initialIndex={viewerIndex} title="Store media" onClose={() => setViewerOpen(false)} />
     </Screen>

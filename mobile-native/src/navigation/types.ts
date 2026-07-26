@@ -80,7 +80,10 @@ export type RootStackParamList = {
   ReelDetail: { reelId: number; title?: string };
   StatusDetail: { statusId: number; title?: string };
   MarketplaceDetail: { listingId?: number; title?: string } | undefined;
-  SellerStore: { title?: string; mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts"; sellerId?: string } | undefined;
+  BusinessOs: { title?: string } | undefined;
+  BusinessOsAdvertising: { title?: string; accountId?: number } | undefined;
+  BusinessOsInsights: { title?: string } | undefined;
+  SellerStore: { title?: string; mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts" | "orders"; sellerId?: string } | undefined;
   BuyerOrders: { orderId?: number; source?: string; title?: string } | undefined;
   BuyerOrderDetail: { orderId: number; source?: string; title?: string };
   BuyerPurchases: { title?: string } | undefined;
