@@ -1142,6 +1142,35 @@ try:
 except Exception:
     logging.exception("PULSE_COMMUNICATIONS_V2_ROUTE_REGISTRATION_FAILED")
 
+try:
+    from services.pulse_settings_routes import register as register_pulse_settings_routes
+
+    register_pulse_settings_routes(webhook_app)
+except Exception:
+    logging.exception("PULSE_MOBILE_SETTINGS_ROUTE_REGISTRATION_FAILED")
+
+
+def cancel_scheduled_account_deletion(cur, user_id):
+    """Undo a pending account deletion because the user came back.
+
+    Settings tells the user, in as many words, that signing back in during the
+    grace period cancels the request. The only place that can be made true is
+    the login path, so this is called from each one that records a successful
+    interactive sign-in. It shares the cursor of the caller's transaction so the
+    cancellation commits with the login rather than as a separate write that
+    could succeed while the login fails.
+    """
+    try:
+        from services.pulse_settings_routes import cancel_pending_deletion
+
+        cancelled = cancel_pending_deletion(cur, user_id)
+        if cancelled:
+            logging.warning("ACCOUNT_DELETION_CANCELLED_ON_LOGIN user_id=%s requests=%s", user_id, cancelled)
+        return cancelled
+    except Exception:
+        logging.exception("ACCOUNT_DELETION_CANCEL_ON_LOGIN_FAILED user_id=%s", user_id)
+        return 0
+
 
 @webhook_app.context_processor
 def inject_seo_runtime_config():
@@ -5510,6 +5539,7 @@ def login_page():
         if user_is_owner_account(user):
             ensure_owner_super_user(cur, conn)
         cur.execute("UPDATE users SET last_login_at=?, last_seen_at=? WHERE user_id=?", (datetime.now().isoformat(), datetime.now().isoformat(), user["user_id"]))
+        cancel_scheduled_account_deletion(cur, user["user_id"])
         notify_user(
             cur,
             user["user_id"],
@@ -5691,6 +5721,7 @@ def api_mobile_auth_login():
     cur = conn.cursor()
     now = datetime.now().isoformat()
     cur.execute("UPDATE users SET last_login_at=?, last_seen_at=? WHERE user_id=?", (now, now, user["user_id"]))
+    cancel_scheduled_account_deletion(cur, user["user_id"])
     notify_user(
         cur,
         user["user_id"],
