@@ -155,6 +155,7 @@ export function PreferencesProvider({ children, enabled = true }: { children: Re
       });
 
       confirmed.current = merged;
+      latest.current = merged;
       retryDelay.current = 1000;
 
       if (mounted.current) {
@@ -175,6 +176,7 @@ export function PreferencesProvider({ children, enabled = true }: { children: Re
         groups.forEach((group) => {
           (rolledBack as Record<string, unknown>)[group] = confirmed.current[group];
         });
+        latest.current = rolledBack;
         if (mounted.current) {
           setPreferences(rolledBack);
           setStatus("error");
@@ -228,6 +230,12 @@ export function PreferencesProvider({ children, enabled = true }: { children: Re
         confirmed.current = snapshot.preferences;
         revision.current = snapshot.revision;
         snapshot.pendingGroups.forEach((group) => dirty.current.add(group));
+        // Assigned here as well as in the render body: the reconcile below reads
+        // `latest.current` to protect unflushed groups, and it can run before
+        // React has re-rendered with this snapshot — a cached or immediately
+        // resolved response is enough. Waiting for the render would merge the
+        // server's values over edits the user has not sent yet.
+        latest.current = snapshot.preferences;
         setPreferences(snapshot.preferences);
         syncPendingState();
       }
@@ -253,6 +261,7 @@ export function PreferencesProvider({ children, enabled = true }: { children: Re
         (merged as Record<string, unknown>)[group] = latest.current[group];
       });
       confirmed.current = remote.preferences;
+      latest.current = merged;
       setPreferences((current) => (preferencesEqual(current, merged) ? current : merged));
       await persist(merged, revision.current, Array.from(dirty.current));
       if (dirty.current.size) scheduleFlush();
@@ -332,6 +341,7 @@ export function PreferencesProvider({ children, enabled = true }: { children: Re
       (merged as Record<string, unknown>)[group] = latest.current[group];
     });
     confirmed.current = remote.preferences;
+    latest.current = merged;
     setPreferences(merged);
     setError(null);
     setStatus(dirty.current.size ? "saving" : "idle");
