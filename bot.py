@@ -276,6 +276,7 @@ from services import (
     scam_shield as scam_shield_service,
     security_guard,
     security_monitor,
+    seller_lifecycle,
     seo_engine,
     sms_service,
     social_energy_engine,
@@ -47163,6 +47164,24 @@ def pulse_assistant_page():
 
 @webhook_app.route("/pulse/merchant/apply", methods=["GET", "POST"])
 def pulse_merchant_apply_page():
+    """
+    The web front door to the seller application.
+
+    This handler used to be its own application system: it inserted a fresh
+    ``marketplace_merchant_applications`` row on every submit, wrote ``status``
+    straight into the column, and upserted ``marketplace_sellers`` itself. Three
+    consequences followed. A user who submitted twice had two applications in
+    the queue and a reviewer with no way to tell which was current. No status
+    change left a history row, so a web application arrived in the review
+    workspace with an empty timeline. And the seller record received the
+    *application's* status vocabulary (``pending_review``), while every
+    capability gate in this file compares against the *seller's*
+    (``approved``) — the gate held, but only by luck of neither string matching.
+
+    It now goes through ``seller_lifecycle`` exactly as the native flow does:
+    one row per user, ``apply_transition`` for every status change, and the
+    seller record mirrored from the transition rather than written here.
+    """
     init_db()
     user = require_account()
     if not user:
@@ -47170,79 +47189,102 @@ def pulse_merchant_apply_page():
     message = ""
     if request.method == "POST":
         now = datetime.utcnow().isoformat(timespec="seconds")
-        fields = {key: clean_html(request.form.get(key, ""))[:1200] for key in [
+        submitted = {key: clean_html(request.form.get(key, ""))[:1200] for key in [
             "full_name", "display_name", "country", "state_region", "email", "phone", "pulse_username",
             "business_name", "seller_type", "website", "social_links", "years_experience", "business_description",
             "sold_online_before", "banned_elsewhere", "guaranteed_profits", "comply_rules", "understand_claims",
         ]}
-        intents = request.form.getlist("intent")
-        acknowledgement_ok = request.form.get("marketplace_rules") and request.form.get("anti_scam_agreement") and request.form.get("no_profit_guarantees")
-        required = ["full_name", "display_name", "country", "email", "business_description", "seller_type"]
-        documents = []
-        try:
-            for doc_type in ["id_front", "id_back", "selfie", "business_registration", "tax_certificate", "ownership_proof"]:
-                saved = save_private_verification_document(user["user_id"], request.files.get(doc_type), doc_type)
-                if saved:
-                    documents.append(saved)
-        except ValueError as exc:
-            message = str(exc)
-            documents = []
-        complete_count = sum(1 for key in required if fields.get(key)) + len(intents)
-        complete_count += 2 if any(d["document_type"] == "id_front" for d in documents) and any(d["document_type"] == "id_back" for d in documents) else 0
-        complete_count += 1 if any(d["document_type"] == "selfie" for d in documents) else 0
-        complete_count += 2 if acknowledgement_ok else 0
-        completeness = min(100, int(complete_count / (len(required) + 10) * 100))
-        risk = 0
-        if fields.get("guaranteed_profits") == "yes":
-            risk += 45
-        if fields.get("banned_elsewhere") == "yes":
-            risk += 25
-        if fields.get("understand_claims") != "yes" or fields.get("comply_rules") != "yes" or not acknowledgement_ok:
-            risk += 30
-        has_required_docs = any(d["document_type"] == "id_front" for d in documents) and any(d["document_type"] == "id_back" for d in documents) and any(d["document_type"] == "selfie" for d in documents)
-        status = "pending_review" if completeness >= 70 and has_required_docs and acknowledgement_ok else "draft"
+        submitted["seller_intent"] = request.form.getlist("intent")
+        for key in seller_lifecycle.AGREEMENT_FIELDS:
+            submitted[key] = bool(request.form.get(key))
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-        if not message:
-            cur.execute(
-                """
-                INSERT INTO marketplace_merchant_applications
-                (user_id, full_name, display_name, country, state_region, email, phone, pulse_username, business_name,
-                 seller_type, website, social_links, years_experience, business_description, seller_intent_json,
-                 verification_json, safety_answers_json, completeness, risk_score, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    user["user_id"], fields["full_name"], fields["display_name"], fields["country"], fields["state_region"],
-                    fields["email"], fields["phone"], fields["pulse_username"], fields["business_name"], fields["seller_type"],
-                    fields["website"], fields["social_links"], fields["years_experience"], fields["business_description"],
-                    json.dumps(intents, default=str),
-                    json.dumps({"documents": [{"type": d["document_type"], "filename": d["original_filename"], "private": True, "admin_only": True, "scanner_status": d["scanner_status"]} for d in documents]}, default=str),
-                    json.dumps({k: fields[k] for k in ["sold_online_before", "banned_elsewhere", "guaranteed_profits", "comply_rules", "understand_claims"]}, default=str),
-                    completeness, risk, status, now, now,
-                ),
-            )
-            application_id = int(cur.lastrowid)
-            for doc in documents:
-                cur.execute(
-                    """
-                    INSERT INTO marketplace_merchant_documents
-                    (application_id, user_id, document_type, original_filename, stored_path, mime_type, file_size, private_access, scan_status, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-                    """,
-                    (application_id, user["user_id"], doc["document_type"], doc["original_filename"], doc["stored_path"], doc["mime_type"], doc["file_size"], doc["scanner_status"], now),
+        application = seller_lifecycle.get_application(cur, user["user_id"])
+        status = seller_lifecycle.normalize_status(application.get("status")) if application else ""
+        if application and status not in seller_lifecycle.APPLICANT_EDITABLE:
+            # Already with a reviewer, or already decided. Checked before the
+            # uploads are read, so a submission we are going to refuse never
+            # writes an identity document to disk in the first place.
+            message = "Your application is already with our review team. We will be in touch."
+            conn.close()
+        else:
+            uploads = []
+            try:
+                for doc_type in seller_lifecycle.ALL_DOCUMENT_TYPES:
+                    saved = save_private_verification_document(user["user_id"], request.files.get(doc_type), doc_type)
+                    if saved:
+                        uploads.append(saved)
+            except ValueError as exc:
+                message = str(exc)
+                uploads = []
+
+            if message:
+                conn.close()
+            else:
+                if not application:
+                    application_id = seller_lifecycle.create_draft(cur, user["user_id"], source="web")
+                    application = seller_lifecycle.get_application_by_id(cur, application_id)
+                else:
+                    application_id = int(application.get("id") or 0)
+
+                # Merged rather than replaced, so a resubmission that leaves a
+                # field blank does not erase the answer already on file.
+                fields = seller_lifecycle.merge_fields(
+                    seller_lifecycle.applicant_fields(application), submitted
                 )
-            cur.execute(
-                """
-                INSERT INTO marketplace_sellers
-                (user_id, display_name, bio, status, seller_type, business_name, website, country, state_region, phone, seller_intent_json, verification_status, risk_score, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name, bio=excluded.bio, status=excluded.status, seller_type=excluded.seller_type, business_name=excluded.business_name, website=excluded.website, country=excluded.country, state_region=excluded.state_region, phone=excluded.phone, seller_intent_json=excluded.seller_intent_json, risk_score=excluded.risk_score, updated_at=excluded.updated_at
-                """,
-                (user["user_id"], fields["display_name"], fields["business_description"], status, fields["seller_type"], fields["business_name"], fields["website"], fields["country"], fields["state_region"], fields["phone"], json.dumps(intents, default=str), risk, now, now),
-            )
-            conn.commit()
-            message = "Application submitted for review. You’ll be notified after approval." if status == "pending_review" else "Draft saved. Add the required ID and selfie verification before review."
-        conn.close()
+                for doc in uploads:
+                    cur.execute(
+                        "DELETE FROM marketplace_merchant_documents WHERE application_id=? AND document_type=?",
+                        (application_id, doc["document_type"]),
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO marketplace_merchant_documents
+                        (application_id, user_id, document_type, original_filename, stored_path, mime_type,
+                         file_size, private_access, scan_status, review_status, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 'pending', ?)
+                        """,
+                        (application_id, user["user_id"], doc["document_type"], doc["original_filename"],
+                         doc["stored_path"], doc["mime_type"], doc["file_size"], doc["scanner_status"], now),
+                    )
+                documents = seller_lifecycle.documents_for(cur, application_id)
+                seller_lifecycle.save_draft(cur, application_id, fields, documents)
+
+                application = seller_lifecycle.get_application_by_id(cur, application_id)
+                errors = seller_lifecycle.validate_application(fields, documents)
+                if errors:
+                    missing = ", ".join(sorted(errors))
+                    message = f"Draft saved. Still needed before review: {missing.replace('_', ' ')}."
+                else:
+                    target = (seller_lifecycle.RESUBMITTED
+                              if status == seller_lifecycle.INFORMATION_REQUESTED
+                              else seller_lifecycle.SUBMITTED)
+                    if status == seller_lifecycle.REJECTED:
+                        # Reopen the same row first, so the reviewer who sees it
+                        # next still has the earlier decision in the timeline.
+                        seller_lifecycle.apply_transition(
+                            cur, application, seller_lifecycle.DRAFT,
+                            actor_type=seller_lifecycle.APPLICANT, actor_id=user["user_id"],
+                            reason="Reopened after rejection",
+                        )
+                        application = seller_lifecycle.get_application_by_id(cur, application_id)
+                        target = seller_lifecycle.SUBMITTED
+                    try:
+                        seller_lifecycle.apply_transition(
+                            cur, application, target,
+                            actor_type=seller_lifecycle.APPLICANT, actor_id=user["user_id"],
+                            reason="Submitted for review",
+                        )
+                        # The same nudge the native door sends. Without it a web
+                        # submission would sit in the queue with nothing on the
+                        # admin board pointing at it.
+                        notify_seller_review_admins(
+                            cur, seller_lifecycle.get_application_by_id(cur, application_id), target
+                        )
+                        message = "Application submitted for review. You’ll be notified after approval."
+                    except seller_lifecycle.TransitionError as exc:
+                        message = str(exc)
+                conn.commit()
+                conn.close()
     intents = ["Digital Products", "Courses", "Coaching", "Ebooks", "Trading Education", "Templates", "AI Tools", "Physical Products", "Livestream Selling", "Services"]
     intent_checks = "".join(f"<label><input type='checkbox' name='intent' value='{clean_html(item)}'> {clean_html(item)}</label>" for item in intents)
     main = f"""
@@ -80531,6 +80573,20 @@ def api_pulse_space_post():
 
 @webhook_app.route("/api/pulse/marketplace/seller/apply", methods=["POST"])
 def api_pulse_marketplace_seller_apply():
+    """
+    The old two-field native "application", kept alive but no longer a back door.
+
+    This used to write ``marketplace_sellers`` directly with ``status='pending'``
+    and stop there. The applicant never got an application row, uploaded no
+    documents, and never appeared in the review queue, so no admin could ever act
+    on them. That is the defect this mission exists to fix.
+
+    The route stays because older installed builds still call it. What it does
+    now is start or update a *draft* in the real pipeline and tell the caller
+    where to finish. It cannot reach a reviewable state on its own — only the
+    full flow, which validates every step and requires identity documents, can
+    do that.
+    """
     init_db()
     user = api_account_user()
     if not user:
@@ -80540,28 +80596,399 @@ def api_pulse_marketplace_seller_apply():
     bio = clean_html(payload.get("bio") or "")[:1000]
     if not name or not bio:
         return jsonify({"ok": False, "message": "Add a seller name and educational value description."}), 400
+
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        application = seller_lifecycle.get_application(cur, user["user_id"])
+        status = seller_lifecycle.normalize_status(application.get("status")) if application else ""
+        if not application or status in (seller_lifecycle.WITHDRAWN, seller_lifecycle.EXPIRED):
+            application_id = seller_lifecycle.create_draft(cur, user["user_id"], source="native_legacy")
+            application = seller_lifecycle.get_application_by_id(cur, application_id)
+            status = seller_lifecycle.DRAFT
+
+        if status in seller_lifecycle.APPLICANT_EDITABLE:
+            fields = seller_lifecycle.merge_fields(
+                seller_lifecycle.applicant_fields(application),
+                {"display_name": name, "business_description": bio},
+            )
+            documents = seller_lifecycle.documents_for(cur, application.get("id"))
+            seller_lifecycle.save_draft(cur, int(application.get("id") or 0), fields, documents)
+            application = seller_lifecycle.get_application_by_id(cur, application.get("id"))
+
+        conn.commit()
+        view = seller_lifecycle.applicant_view(application, seller_lifecycle.documents_for(cur, application.get("id")))
+    finally:
+        conn.close()
+
+    return jsonify({
+        "ok": True,
+        "message": "Draft saved. Finish verification to send your application for review.",
+        "application": view,
+        "next_url": "/pulse/merchant/apply",
+    })
+
+
+def _seller_application_conn():
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    return conn, conn.cursor()
+
+
+def _seller_application_response(cur, application):
+    documents = seller_lifecycle.documents_for(cur, application.get("id"))
+    return {"ok": True, "application": seller_lifecycle.applicant_view(application, documents)}
+
+
+@webhook_app.route("/api/pulse/seller/application", methods=["GET"])
+def api_pulse_seller_application_get():
+    """
+    The applicant's own application, or an empty shell describing what to expect.
+
+    Returns the step schema alongside the answers so the native flow renders
+    from the same definition the server validates against, and a step cannot
+    drift out of agreement with the rule that gates it.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn, cur = _seller_application_conn()
+    try:
+        application = seller_lifecycle.get_application(cur, user["user_id"])
+        payload = _seller_application_response(cur, application) if application else {
+            "ok": True,
+            "application": seller_lifecycle.applicant_view({}, []),
+        }
+    finally:
+        conn.close()
+    return jsonify(payload)
+
+
+@webhook_app.route("/api/pulse/seller/application/draft", methods=["POST"])
+def api_pulse_seller_application_draft():
+    """
+    Autosave. Creates the application on the first keystroke that reaches us.
+
+    The single most frequent write in this system, and the one most exposed, so
+    it is deliberately the least powerful: ``save_draft`` writes answers and
+    derived scores only. There is no path from here to a reviewable state.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    conn, cur = _seller_application_conn()
+    try:
+        application = seller_lifecycle.get_application(cur, user["user_id"])
+        if not application:
+            application_id = seller_lifecycle.create_draft(cur, user["user_id"], source="native")
+            application = seller_lifecycle.get_application_by_id(cur, application_id)
+
+        status = seller_lifecycle.normalize_status(application.get("status"))
+        if status not in seller_lifecycle.APPLICANT_EDITABLE:
+            conn.close()
+            return jsonify({
+                "ok": False,
+                "message": "This application is with a reviewer and cannot be edited right now.",
+                "application": seller_lifecycle.applicant_view(application, seller_lifecycle.documents_for(cur, application.get("id"))),
+            }), 409
+
+        documents = seller_lifecycle.documents_for(cur, application.get("id"))
+        fields = seller_lifecycle.merge_fields(
+            seller_lifecycle.applicant_fields(application),
+            payload.get("fields") if isinstance(payload.get("fields"), dict) else payload,
+        )
+        seller_lifecycle.save_draft(cur, int(application.get("id") or 0), fields, documents)
+        conn.commit()
+        application = seller_lifecycle.get_application_by_id(cur, application.get("id"))
+        response = _seller_application_response(cur, application)
+    finally:
+        conn.close()
+    return jsonify(response)
+
+
+@webhook_app.route("/api/pulse/seller/application/documents", methods=["POST"])
+def api_pulse_seller_application_document_upload():
+    """
+    Upload one verification document.
+
+    Multipart rather than base64 JSON so a passport photo does not have to be
+    held in memory as a string on either side. The file goes to private storage
+    outside the web root via the same helper the web form has always used; the
+    response says only that it arrived. Nothing about the file's contents, and
+    not its stored path, is logged or returned.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    document_type = clean_html(request.form.get("document_type") or "")[:60]
+    if document_type not in seller_lifecycle.ALL_DOCUMENT_TYPES:
+        return jsonify({"ok": False, "message": "Unknown document type."}), 400
+    upload = request.files.get("file") or request.files.get(document_type)
+    if not upload:
+        return jsonify({"ok": False, "message": "Attach a file to upload."}), 400
+
+    conn, cur = _seller_application_conn()
+    try:
+        application = seller_lifecycle.get_application(cur, user["user_id"])
+        if not application:
+            application_id = seller_lifecycle.create_draft(cur, user["user_id"], source="native")
+            application = seller_lifecycle.get_application_by_id(cur, application_id)
+        if seller_lifecycle.normalize_status(application.get("status")) not in seller_lifecycle.APPLICANT_EDITABLE:
+            conn.close()
+            return jsonify({"ok": False, "message": "This application is with a reviewer and cannot be edited right now."}), 409
+
+        try:
+            saved = save_private_verification_document(user["user_id"], upload, document_type)
+        except ValueError as exc:
+            conn.close()
+            return jsonify({"ok": False, "message": str(exc)}), 400
+        if not saved:
+            conn.close()
+            return jsonify({"ok": False, "message": "That file could not be read."}), 400
+
+        application_id = int(application.get("id") or 0)
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        # Replacing rather than accumulating: a second selfie means the first was
+        # wrong, and leaving both would make a reviewer guess which is current.
+        cur.execute(
+            "DELETE FROM marketplace_merchant_documents WHERE application_id=? AND document_type=?",
+            (application_id, document_type),
+        )
+        cur.execute(
+            """
+            INSERT INTO marketplace_merchant_documents
+                (application_id, user_id, document_type, original_filename, stored_path, mime_type,
+                 file_size, private_access, scan_status, review_status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 'pending', ?, ?)
+            """,
+            (
+                application_id, user["user_id"], document_type, saved["original_filename"],
+                saved["stored_path"], saved["mime_type"], saved["file_size"], saved["scanner_status"], now, now,
+            ),
+        )
+        documents = seller_lifecycle.documents_for(cur, application_id)
+        fields = seller_lifecycle.applicant_fields(application)
+        seller_lifecycle.save_draft(cur, application_id, fields, documents)
+        conn.commit()
+        application = seller_lifecycle.get_application_by_id(cur, application_id)
+        response = _seller_application_response(cur, application)
+    finally:
+        conn.close()
+    return jsonify(response)
+
+
+@webhook_app.route("/api/pulse/seller/application/documents/<int:document_id>/remove", methods=["POST", "DELETE"])
+def api_pulse_seller_application_document_remove(document_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn, cur = _seller_application_conn()
+    try:
+        application = seller_lifecycle.get_application(cur, user["user_id"])
+        if not application or seller_lifecycle.normalize_status(application.get("status")) not in seller_lifecycle.APPLICANT_EDITABLE:
+            conn.close()
+            return jsonify({"ok": False, "message": "This application cannot be edited right now."}), 409
+        # Scoped by user id as well as document id: an application id in the URL
+        # is not proof of ownership.
+        cur.execute(
+            "DELETE FROM marketplace_merchant_documents WHERE id=? AND application_id=? AND user_id=?",
+            (int(document_id or 0), int(application.get("id") or 0), user["user_id"]),
+        )
+        documents = seller_lifecycle.documents_for(cur, application.get("id"))
+        seller_lifecycle.save_draft(cur, int(application.get("id") or 0), seller_lifecycle.applicant_fields(application), documents)
+        conn.commit()
+        application = seller_lifecycle.get_application_by_id(cur, application.get("id"))
+        response = _seller_application_response(cur, application)
+    finally:
+        conn.close()
+    return jsonify(response)
+
+
+@webhook_app.route("/api/pulse/seller/application/submit", methods=["POST"])
+def api_pulse_seller_application_submit():
+    """
+    Send the application to review.
+
+    Revalidates every step server-side. The client's own validation is a
+    courtesy to the applicant, not a gate — a request that skipped the flow
+    entirely gets the same answer as one that filled it in honestly.
+
+    Submitting reaches ``submitted`` or ``resubmitted``. Neither is an approval,
+    and there is no transition from either that an applicant can make.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn, cur = _seller_application_conn()
+    try:
+        application = seller_lifecycle.get_application(cur, user["user_id"])
+        if not application:
+            conn.close()
+            return jsonify({"ok": False, "message": "Start an application first."}), 404
+
+        status = seller_lifecycle.normalize_status(application.get("status"))
+        documents = seller_lifecycle.documents_for(cur, application.get("id"))
+        fields = seller_lifecycle.applicant_fields(application)
+        errors = seller_lifecycle.validate_application(fields, documents)
+        if errors:
+            conn.close()
+            return jsonify({
+                "ok": False,
+                "message": "Some steps still need attention before this can be reviewed.",
+                "errors": errors,
+            }), 400
+
+        target = seller_lifecycle.RESUBMITTED if status == seller_lifecycle.INFORMATION_REQUESTED else seller_lifecycle.SUBMITTED
+        if status == seller_lifecycle.REJECTED:
+            # A rejected applicant reopens the same row so the reviewer keeps the
+            # history, then submits it. Two transitions, one request.
+            seller_lifecycle.apply_transition(
+                cur, application, seller_lifecycle.DRAFT,
+                actor_type=seller_lifecycle.APPLICANT, actor_id=user["user_id"], reason="Reopened after rejection",
+            )
+            application = seller_lifecycle.get_application_by_id(cur, application.get("id"))
+            target = seller_lifecycle.SUBMITTED
+
+        try:
+            seller_lifecycle.apply_transition(
+                cur, application, target,
+                actor_type=seller_lifecycle.APPLICANT, actor_id=user["user_id"], reason="Submitted for review",
+            )
+        except seller_lifecycle.TransitionError as exc:
+            conn.close()
+            return jsonify({"ok": False, "message": str(exc)}), 409
+
+        pulse_emit_marketplace_inventory_event(
+            cur, user["user_id"], "seller_application_submitted",
+            actor_user_id=user["user_id"], status=target, approval_status="pending",
+            title=fields.get("display_name") or "Seller application",
+            extra={"application_id": int(application.get("id") or 0), "application_status": target},
+        )
+        notify_seller_review_admins(cur, application, target)
+        conn.commit()
+        application = seller_lifecycle.get_application_by_id(cur, application.get("id"))
+        response = _seller_application_response(cur, application)
+    finally:
+        conn.close()
+    response["message"] = "Application sent for review."
+    return jsonify(response)
+
+
+@webhook_app.route("/api/pulse/seller/application/withdraw", methods=["POST"])
+def api_pulse_seller_application_withdraw():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn, cur = _seller_application_conn()
+    try:
+        application = seller_lifecycle.get_application(cur, user["user_id"])
+        if not application:
+            conn.close()
+            return jsonify({"ok": False, "message": "There is no application to withdraw."}), 404
+        try:
+            seller_lifecycle.apply_transition(
+                cur, application, seller_lifecycle.WITHDRAWN,
+                actor_type=seller_lifecycle.APPLICANT, actor_id=user["user_id"], reason="Withdrawn by applicant",
+            )
+        except seller_lifecycle.TransitionError as exc:
+            conn.close()
+            return jsonify({"ok": False, "message": str(exc)}), 409
+        conn.commit()
+        application = seller_lifecycle.get_application_by_id(cur, application.get("id"))
+        response = _seller_application_response(cur, application)
+    finally:
+        conn.close()
+    return jsonify(response)
+
+
+def notify_seller_review_admins(cur, application, status):
+    """
+    Put the submission on the monetization department's board.
+
+    Admins are not PulseSoc users — ``admin_users`` has no ``user_id`` — so
+    ``notify_user`` is the wrong channel and would silently write nothing. The
+    right substrate is ``admin_tasks``, which is what ``department_counts``
+    already reads to light up the command centre.
+
+    Upserted by source, so an applicant who is asked for more information and
+    resubmits reopens the same task instead of leaving two on the board.
+    Best-effort throughout: a board failure must never roll back a submission
+    the applicant has already been told succeeded. The queue count is the
+    durable signal; this is the nudge.
+    """
     now = datetime.utcnow().isoformat(timespec="seconds")
-    conn = db(); cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO marketplace_sellers (user_id, display_name, bio, status, created_at, updated_at)
-        VALUES (?, ?, ?, 'pending', ?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name, bio=excluded.bio, updated_at=excluded.updated_at
-        """,
-        (user["user_id"], name, bio, now, now),
+    display = clean_html(str(application.get("display_name") or "A seller"))[:80]
+    application_id = str(application.get("id") or "")
+    priority = "high" if int(application.get("risk_score") or 0) >= 45 else "normal"
+    try:
+        cur.execute(
+            "SELECT id FROM admin_tasks WHERE source_type='seller_application' AND source_id=? LIMIT 1",
+            (application_id,),
+        )
+        existing = dict(cur.fetchone() or {})
+        if existing:
+            cur.execute(
+                "UPDATE admin_tasks SET status='open', priority=?, title=?, updated_at=? WHERE id=?",
+                (priority, f"Seller application: {display}", now, int(existing.get("id") or 0)),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO admin_tasks
+                    (department, title, description, priority, status, source_type, source_id, created_at, updated_at)
+                VALUES ('monetization', ?, ?, ?, 'open', 'seller_application', ?, ?, ?)
+                """,
+                (
+                    f"Seller application: {display}",
+                    "Review identity, business details, and verification documents, then approve, reject, or request more information.",
+                    priority, application_id, now, now,
+                ),
+            )
+    except Exception as exc:
+        logging.warning("SELLER_APPLICATION_ADMIN_TASK_FAILED error=%s", exc)
+
+
+def close_seller_review_task(cur, application_id):
+    """Take a decided application off the board."""
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    try:
+        cur.execute(
+            "UPDATE admin_tasks SET status='done', completed_at=?, updated_at=? "
+            "WHERE source_type='seller_application' AND source_id=?",
+            (now, now, str(application_id or "")),
+        )
+    except Exception as exc:
+        logging.warning("SELLER_APPLICATION_ADMIN_TASK_CLOSE_FAILED error=%s", exc)
+
+
+def notify_seller_applicant(cur, application, status, message=""):
+    """
+    Tell the applicant what happened, in the applicant's vocabulary.
+
+    ``message`` is the reviewer's own sentence, written for the applicant. The
+    internal note is never passed here — that is the point of them being two
+    different fields.
+    """
+    title, default_message = seller_lifecycle.STATUS_COPY.get(
+        seller_lifecycle.normalize_status(status), seller_lifecycle.STATUS_COPY[seller_lifecycle.DRAFT]
     )
-    pulse_emit_marketplace_inventory_event(
-        cur,
-        user["user_id"],
-        "seller_application_submitted",
-        actor_user_id=user["user_id"],
-        status="pending",
-        approval_status="pending",
-        title=name,
-        extra={"application_status": "pending"},
-    )
-    conn.commit(); conn.close()
-    return jsonify({"ok": True, "message": "Seller application saved."})
+    try:
+        notify_user(
+            cur, int(application.get("user_id") or 0), "seller_application_changed",
+            f"Seller application: {title}",
+            clean_html(str(message or default_message))[:400],
+            target_url="/pulse/merchant/apply",
+            entity_type="seller_application", entity_id=str(application.get("id") or ""),
+            metadata={"application_status": seller_lifecycle.normalize_status(status)},
+        )
+    except Exception as exc:
+        logging.warning("SELLER_APPLICATION_APPLICANT_NOTIFY_FAILED error=%s", exc)
 
 
 def approved_marketplace_seller_for_user(cur, user_id):
@@ -84917,6 +85344,110 @@ def admin_content_health_page():
     return admin_page_html("Content Health", body, admin)
 
 
+def admin_seller_application_action(admin):
+    """
+    Execute one reviewer decision, as one transaction.
+
+    Everything a decision touches — the status, the mirrored seller record, the
+    history row, the internal note, the assignment, the applicant's
+    notification, the department board — is written against a single cursor and
+    committed once. A half-applied decision (seller approved, no audit row) is
+    the failure mode that would make this system untrustworthy, so it is made
+    structurally impossible rather than merely unlikely.
+
+    Returns the flash message. Never raises past this boundary: the page must
+    still render if a decision is refused.
+    """
+    app_id = safe_int(request.form.get("application_id"), 0)
+    decision = clean_html(request.form.get("decision") or request.form.get("action") or "")[:40].lower()
+    # Two separate fields on purpose. ``reason`` is written for the applicant
+    # and is sent to them. ``internal_note`` is written for other reviewers and
+    # never leaves the admin surface.
+    reason = clean_html(request.form.get("reason") or "")[:1200]
+    internal_note = clean_html(request.form.get("internal_note") or request.form.get("note") or "")[:1600]
+    reviewer_id = safe_int(request.form.get("reviewer_id"), -1)
+
+    if not app_id:
+        return "No application selected."
+
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        application = seller_lifecycle.get_application_by_id(cur, app_id)
+        if not application:
+            return "Application not found."
+
+        outcome = ""
+        # Assignment is not a decision and may happen on its own, so it is
+        # handled first and independently of whether a decision was chosen.
+        if reviewer_id >= 0:
+            seller_lifecycle.assign_reviewer(cur, app_id, reviewer_id, admin.get("id"))
+            outcome = "Reviewer assigned." if reviewer_id else "Reviewer cleared."
+
+        if internal_note:
+            seller_lifecycle.add_note(cur, app_id, admin.get("id"), internal_note, visibility="internal")
+            outcome = (outcome + " Internal note saved.").strip()
+
+        if decision:
+            target = seller_lifecycle.decision_target(decision)
+            if decision in seller_lifecycle.DECISIONS_REQUIRING_REASON and not reason:
+                conn.rollback()
+                conn.close()
+                return "A reason is required for that decision — the applicant will read it."
+            move = seller_lifecycle.apply_transition(
+                cur, application, target,
+                actor_type=seller_lifecycle.ADMIN,
+                actor_id=admin.get("id"),
+                reason=reason,
+                applicant_message=reason,
+            )
+            # Re-read so downstream helpers see the row as it now is.
+            application = seller_lifecycle.get_application_by_id(cur, app_id)
+            notify_seller_applicant(cur, application, target, reason)
+            if target in (
+                seller_lifecycle.APPROVED, seller_lifecycle.REJECTED, seller_lifecycle.SUSPENDED,
+            ):
+                close_seller_review_task(cur, app_id)
+            try:
+                pulse_emit_marketplace_inventory_event(
+                    cur, application.get("user_id"), "seller_application_changed",
+                    actor_user_id=0, status=target,
+                    approval_status=seller_lifecycle.seller_status_for(target),
+                    title="Seller application",
+                    extra={"application_id": app_id},
+                )
+            except Exception as exc:
+                logging.warning("SELLER_APPLICATION_EVENT_FAILED error=%s", exc)
+            outcome = f"Application #{app_id} moved from {move['from']} to {move['to']}."
+
+        conn.commit()
+        if decision:
+            # Audit metadata carries the decision and nothing the applicant
+            # wrote: no names, no document filenames, no field values.
+            log_admin_audit(
+                admin.get("id"), "seller_application_reviewed", "seller_application", str(app_id),
+                {"decision": decision, "to_status": seller_lifecycle.decision_target(decision),
+                 "reason_given": bool(reason), "note_added": bool(internal_note)},
+            )
+        elif reviewer_id >= 0 or internal_note:
+            log_admin_audit(
+                admin.get("id"), "seller_application_annotated", "seller_application", str(app_id),
+                {"assigned": reviewer_id if reviewer_id >= 0 else None, "note_added": bool(internal_note)},
+            )
+        return outcome or "Nothing to change."
+    except seller_lifecycle.TransitionError as exc:
+        conn.rollback()
+        return clean_html(str(exc))[:300]
+    except Exception as exc:
+        conn.rollback()
+        logging.warning("SELLER_APPLICATION_DECISION_FAILED app=%s error=%s", app_id, exc)
+        return "That decision could not be applied."
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 @webhook_app.route("/admin/merchant-applications", methods=["GET", "POST"])
 def admin_merchant_applications_page():
     admin, denied = require_admin_page("monetization.manage")
@@ -84925,68 +85456,155 @@ def admin_merchant_applications_page():
     init_db()
     message = ""
     if request.method == "POST":
-        app_id = int(request.form.get("application_id") or 0)
-        action = request.form.get("action") or ""
-        note = clean_html(request.form.get("note") or "")[:1200]
-        now = datetime.utcnow().isoformat(timespec="seconds")
-        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-        cur.execute("SELECT * FROM marketplace_merchant_applications WHERE id=? LIMIT 1", (app_id,))
-        app_row = dict(cur.fetchone() or {})
-        if app_row and action in {"approve", "reject", "more_info", "suspend", "verify"}:
-            status = {"approve": "approved", "reject": "rejected", "more_info": "draft", "suspend": "suspended", "verify": "under_review"}[action]
-            verification_status = "verified" if action in {"approve", "verify"} else "rejected" if action == "reject" else "pending"
-            cur.execute("UPDATE marketplace_merchant_applications SET status=?, reviewer_id=?, internal_notes=?, reviewed_at=?, updated_at=? WHERE id=?", (status, admin.get("id"), note, now, now, app_id))
-            cur.execute(
-                """
-                UPDATE marketplace_sellers
-                SET status=?, verification_status=?, reviewed_by=?, reviewed_at=?, review_notes=?, updated_at=?
-                WHERE user_id=?
-                """,
-                (status, verification_status, admin.get("id"), now, note, now, app_row.get("user_id")),
-            )
-            pulse_emit_marketplace_inventory_event(
-                cur,
-                app_row.get("user_id"),
-                "seller_application_changed",
-                actor_user_id=admin.get("id") or 0,
-                status=status,
-                approval_status=verification_status,
-                title=app_row.get("display_name") or "Seller application",
-                extra={"application_id": app_id, "review_action": action, "verification_status": verification_status},
-            )
-            conn.commit()
-            log_admin_audit(admin.get("id"), "merchant_application_reviewed", "merchant_application", str(app_id), {"action": action, "status": status})
-            message = "Merchant application updated."
-        conn.close()
+        message = admin_seller_application_action(admin)
+        # Redirect after the decision so the filters survive a browser refresh
+        # and a refresh cannot replay an approval.
+        return redirect(
+            f"/admin/merchant-applications?status={quote(request.form.get('return_status') or 'open')}"
+            f"&q={quote(request.form.get('return_query') or '')}&msg={quote(message)}"
+        )
+
+    status_filter = clean_html(request.args.get("status") or "open").lower()[:40]
+    query = clean_html(request.args.get("q") or "")[:80]
+    mine = request.args.get("mine") == "1"
+    message = clean_html(request.args.get("msg") or "")[:300]
+
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT ma.*, u.username, u.display_name AS account_name FROM marketplace_merchant_applications ma LEFT JOIN users u ON u.user_id=ma.user_id ORDER BY CASE ma.status WHEN 'pending_review' THEN 0 WHEN 'under_review' THEN 1 WHEN 'draft' THEN 2 ELSE 3 END, ma.id DESC LIMIT 120")
-    apps = [dict(row) for row in cur.fetchall()]
+    apps = seller_lifecycle.search_queue(
+        cur, status=status_filter, query=query,
+        reviewer_id=admin.get("id") if mine else None,
+    )
+    counts = seller_lifecycle.queue_counts(cur)
     app_ids = [int(a.get("id") or 0) for a in apps]
     docs_by_app = {}
+    history_by_app = {}
+    notes_by_app = {}
     if app_ids:
         placeholders = ",".join(["?"] * len(app_ids))
         cur.execute(f"SELECT * FROM marketplace_merchant_documents WHERE application_id IN ({placeholders}) ORDER BY id ASC", app_ids)
         for row in cur.fetchall():
             doc = dict(row)
             docs_by_app.setdefault(int(doc.get("application_id") or 0), []).append(doc)
+        # Batched for the same reason the documents above are: the queue draws
+        # every row's timeline and notes inline, so a per-row fetch is two
+        # queries per application and the page a reviewer opens most often is
+        # the one with the most rows on it.
+        history_by_app = seller_lifecycle.history_for_many(cur, app_ids)
+        notes_by_app = seller_lifecycle.notes_for_many(cur, app_ids, visibility="internal")
+    cur.execute("SELECT id, full_name, email FROM admin_users WHERE COALESCE(status,'active')='active' ORDER BY id ASC LIMIT 60")
+    reviewers = [dict(row) for row in cur.fetchall()]
     conn.close()
+    reviewer_names = {int(r.get("id") or 0): clean_html(r.get("full_name") or r.get("email") or f"Admin {r.get('id')}") for r in reviewers}
+    return_status = clean_html(status_filter)
+    return_query = clean_html(query)
+
+    chips = ""
+    for chip_key, chip_label in (
+        ("open", "Needs review"), (seller_lifecycle.SUBMITTED, "Submitted"),
+        (seller_lifecycle.RESUBMITTED, "Resubmitted"), (seller_lifecycle.UNDER_REVIEW, "Under review"),
+        (seller_lifecycle.INFORMATION_REQUESTED, "Info requested"), (seller_lifecycle.APPROVED, "Approved"),
+        (seller_lifecycle.REJECTED, "Rejected"), (seller_lifecycle.SUSPENDED, "Suspended"),
+        (seller_lifecycle.DRAFT, "Drafts"), ("all", "All"),
+    ):
+        chip_count = int(counts.get(chip_key, counts.get("total", 0) if chip_key == "all" else 0) or 0)
+        active = " active" if status_filter == chip_key else ""
+        chips += (
+            f"<a class='chip{active}' href='/admin/merchant-applications?status={quote(chip_key)}"
+            f"&q={quote(query)}{'&mine=1' if mine else ''}'>{chip_label}<b>{chip_count}</b></a>"
+        )
+
     rows = ""
     for a in apps:
-        docs = docs_by_app.get(int(a.get("id") or 0), [])
+        app_id = int(a.get("id") or 0)
+        status = seller_lifecycle.normalize_status(a.get("status"))
+        fields = seller_lifecycle.applicant_fields(a)
+        docs = docs_by_app.get(app_id, [])
         front_doc = next((d for d in docs if d.get("document_type") == "id_front"), None)
         selfie_doc = next((d for d in docs if d.get("document_type") == "selfie"), None)
         compare_btn = f"<button type='button' class='doc-card compare' data-compare-left='{front_doc.get('id')}' data-compare-right='{selfie_doc.get('id')}' data-compare-left-title='Front ID' data-compare-right-title='Selfie'>Compare ID + Selfie</button>" if front_doc and selfie_doc else ""
         doc_cards = ""
         for d in docs:
             doc_id = int(d.get("id") or 0)
-            status = clean_html(d.get("review_status") or d.get("scan_status") or "pending")
+            doc_status = clean_html(d.get("review_status") or d.get("scan_status") or "pending")
             label = clean_html(merchant_doc_label(d.get("document_type")))
             view_url = merchant_doc_review_url(doc_id)
             download_url = merchant_doc_review_url(doc_id, download=True)
             thumb = f"<img src='{view_url}' alt='{label} preview' loading='lazy'>" if merchant_doc_is_image(d) else "<div class='pdf-thumb'>PDF</div>" if merchant_doc_is_pdf(d) else "<div class='pdf-thumb'>DOC</div>"
-            doc_cards += f"<button type='button' class='doc-card' data-doc-id='{doc_id}' data-doc-url='{view_url}' data-download-url='{download_url}' data-doc-kind='{'pdf' if merchant_doc_is_pdf(d) else 'image' if merchant_doc_is_image(d) else 'file'}' data-doc-title='{label}'><span class='doc-thumb'>{thumb}</span><span><strong>{label}</strong><small>{clean_html(d.get('original_filename') or '')}</small><small>{int(d.get('file_size') or 0)//1024} KB · {clean_html(d.get('created_at') or '')}</small><em class='doc-status {status}'>{status}</em></span></button>"
-        doc_html = f"<div class='doc-grid'>{doc_cards}{compare_btn}</div>" if doc_cards else "<span class='muted'>No documents uploaded</span>"
-        rows += f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('display_name') or a.get('account_name') or '')}<br><small>{clean_html(a.get('email') or '')}</small></td><td>{clean_html(a.get('seller_type') or '')}</td><td>{clean_html(a.get('status') or '')}</td><td>{int(a.get('completeness') or 0)}%</td><td>{int(a.get('risk_score') or 0)}</td><td>{doc_html}</td><td><form method='post'><input type='hidden' name='application_id' value='{a.get('id')}'><input name='note' placeholder='Internal note'><button name='action' value='approve'>Approve</button><button name='action' value='reject'>Reject</button><button name='action' value='more_info'>Request Info</button><button name='action' value='suspend'>Suspend</button><button name='action' value='verify'>Verify</button></form></td></tr>"
+            doc_cards += f"<button type='button' class='doc-card' data-doc-id='{doc_id}' data-doc-url='{view_url}' data-download-url='{download_url}' data-doc-kind='{'pdf' if merchant_doc_is_pdf(d) else 'image' if merchant_doc_is_image(d) else 'file'}' data-doc-title='{label}'><span class='doc-thumb'>{thumb}</span><span><strong>{label}</strong><small>{clean_html(d.get('original_filename') or '')}</small><small>{int(d.get('file_size') or 0)//1024} KB · {clean_html(d.get('created_at') or '')}</small><em class='doc-status {doc_status}'>{doc_status}</em></span></button>"
+        missing = [t for t in seller_lifecycle.REQUIRED_DOCUMENTS if not any(d.get("document_type") == t for d in docs)]
+        missing_html = f"<p class='missing'>Missing: {clean_html(', '.join(seller_lifecycle.DOCUMENT_LABELS.get(t, t) for t in missing))}</p>" if missing else ""
+        doc_html = (f"<div class='doc-grid'>{doc_cards}{compare_btn}</div>{missing_html}" if doc_cards else f"<span class='muted'>No documents uploaded</span>{missing_html}")
+
+        signals = seller_lifecycle.risk_signals(fields, docs)
+        signal_html = "".join(f"<li class='sig {clean_html(s.get('level') or 'info')}'><strong>{clean_html(s.get('label') or '')}</strong><span>{clean_html(s.get('detail') or '')}</span></li>" for s in signals)
+        signal_block = f"<details class='panel'><summary>Risk signals ({len(signals)})</summary><ul class='signals'>{signal_html}</ul></details>" if signals else "<p class='muted'>No risk signals.</p>"
+
+        history = history_by_app.get(app_id, [])
+        history_html = "".join(
+            f"<li><code>{clean_html(h.get('from_status') or '—')} → {clean_html(h.get('to_status') or '')}</code>"
+            f"<small>{clean_html(h.get('actor_type') or '')} · {clean_html(h.get('created_at') or '')}</small>"
+            f"{('<span>' + clean_html(h.get('reason') or '') + '</span>') if h.get('reason') else ''}</li>"
+            for h in history
+        )
+        history_block = f"<details class='panel'><summary>Review history ({len(history)})</summary><ol class='timeline'>{history_html}</ol></details>" if history else ""
+
+        notes = notes_by_app.get(app_id, [])
+        notes_html = "".join(
+            f"<li><strong>{clean_html(reviewer_names.get(int(n.get('author_admin_id') or 0), 'Admin'))}</strong>"
+            f"<small>{clean_html(n.get('created_at') or '')}</small><p>{clean_html(n.get('body') or '')}</p></li>"
+            for n in notes
+        )
+        notes_block = f"<details class='panel'><summary>Internal notes ({len(notes)})</summary><ul class='notes'>{notes_html}</ul></details>" if notes else ""
+
+        assigned = int(a.get("reviewer_id") or 0)
+        reviewer_options = "<option value='0'>Unassigned</option>" + "".join(
+            f"<option value='{int(r.get('id') or 0)}'{' selected' if int(r.get('id') or 0) == assigned else ''}>{clean_html(r.get('full_name') or r.get('email') or '')}</option>"
+            for r in reviewers
+        )
+
+        # Only decisions the state machine will actually accept are offered, so
+        # the reviewer is never shown a button that is going to be refused.
+        decision_buttons = ""
+        for decision_key, decision_label, decision_class in (
+            ("start_review", "Start review", ""), ("request_information", "Request info", ""),
+            ("approve", "Approve", "primary"), ("reject", "Reject", "danger"),
+            ("suspend", "Suspend", "danger"), ("reinstate", "Reinstate", "primary"),
+        ):
+            target = seller_lifecycle.DECISIONS.get(decision_key)
+            if not seller_lifecycle.can_transition(status, target, seller_lifecycle.ADMIN):
+                continue
+            decision_buttons += f"<button class='{decision_class}' name='decision' value='{decision_key}'>{decision_label}</button>"
+        if not decision_buttons:
+            decision_buttons = "<span class='muted'>No decision available in this state.</span>"
+
+        intent = ", ".join(str(v) for v in (fields.get("seller_intent") or [])) or "—"
+        request_msg = clean_html(a.get("information_request_message") or "")
+        request_block = f"<p class='pending-info'>Awaiting applicant: {request_msg}</p>" if status == seller_lifecycle.INFORMATION_REQUESTED and request_msg else ""
+
+        rows += (
+            f"<tr><td>{app_id}</td>"
+            f"<td>{clean_html(fields.get('display_name') or a.get('account_name') or '')}"
+            f"<br><small>@{clean_html(a.get('username') or '')}</small>"
+            f"<br><small>{clean_html(fields.get('email') or '')}</small></td>"
+            f"<td>{clean_html(seller_lifecycle.SELLER_TYPE_LABELS.get(fields.get('seller_type'), fields.get('seller_type') or '—'))}"
+            f"<br><small>{clean_html(intent)}</small></td>"
+            f"<td><span class='pill {status}'>{clean_html(status.replace('_',' '))}</span>"
+            f"<br><small>{clean_html(a.get('submitted_at') or a.get('updated_at') or '')}</small>{request_block}</td>"
+            f"<td>{int(a.get('completeness') or 0)}%</td>"
+            f"<td class='risk-{'high' if int(a.get('risk_score') or 0) >= 45 else 'mid' if int(a.get('risk_score') or 0) >= 20 else 'low'}'>{int(a.get('risk_score') or 0)}</td>"
+            f"<td>{doc_html}</td>"
+            f"<td class='workspace'>{signal_block}{history_block}{notes_block}"
+            f"<form method='post' class='decide'>"
+            f"<input type='hidden' name='application_id' value='{app_id}'>"
+            f"<input type='hidden' name='return_status' value='{return_status}'>"
+            f"<input type='hidden' name='return_query' value='{return_query}'>"
+            f"<label>Reviewer<select name='reviewer_id'>{reviewer_options}</select></label>"
+            f"<label>Message to applicant<textarea name='reason' rows='2' placeholder='Required to reject, suspend, or request more information. The applicant reads this.'></textarea></label>"
+            f"<label>Internal note<textarea name='internal_note' rows='2' placeholder='Admin-only. Never shown to the applicant.'></textarea></label>"
+            f"<div class='actions'>{decision_buttons}</div>"
+            f"<button class='ghost' name='decision' value=''>Save note / assignment only</button>"
+            f"</form></td></tr>"
+        )
     body = f"""
     <style>
     .merchant-review-shell{{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:16px;align-items:start}}
@@ -85010,10 +85628,47 @@ def admin_merchant_applications_page():
     .compare-pane{{min-height:70dvh;border:1px solid rgba(255,255,255,.1);border-radius:16px;background:#050b14;display:flex;align-items:center;justify-content:center;overflow:auto;position:relative}}
     .doc-panel{{border:1px solid rgba(110,223,246,.22);border-radius:20px;background:#071321;padding:14px;display:grid;gap:10px;align-content:start}}
     .doc-panel button,.doc-panel a{{width:100%;justify-content:center}}
+    .queue-filters{{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}}
+    .chip{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.24);border-radius:999px;padding:6px 13px;color:#cfe6f2;text-decoration:none;font-weight:800;font-size:13px}}
+    .chip b{{background:rgba(110,223,246,.16);border-radius:999px;padding:1px 8px;font-size:12px}}
+    .chip.active{{border-color:rgba(54,229,143,.6);color:#36e58f;background:rgba(54,229,143,.1)}}
+    .queue-search{{display:flex;gap:8px;flex-wrap:wrap;align-items:center}}
+    .queue-search input[type=search]{{min-width:220px}}
+    .pill{{display:inline-block;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:900;text-transform:capitalize;border:1px solid rgba(255,255,255,.14)}}
+    .pill.submitted,.pill.resubmitted{{color:#6edff6;border-color:rgba(110,223,246,.5)}}
+    .pill.under_review{{color:#ffd166;border-color:rgba(255,209,102,.5)}}
+    .pill.information_requested{{color:#ffa94d;border-color:rgba(255,169,77,.5)}}
+    .pill.approved{{color:#36e58f;border-color:rgba(54,229,143,.5)}}
+    .pill.rejected,.pill.suspended{{color:#ff7a88;border-color:rgba(255,122,136,.5)}}
+    .pill.draft,.pill.expired,.pill.withdrawn{{color:#9fb5c0}}
+    .risk-high{{color:#ff7a88;font-weight:950}}.risk-mid{{color:#ffd166;font-weight:900}}.risk-low{{color:#36e58f;font-weight:800}}
+    .missing{{color:#ffa94d;font-size:12px;margin:6px 0 0}}
+    .workspace{{min-width:320px}}
+    .workspace .panel{{margin:0 0 8px;border:1px solid rgba(110,223,246,.16);border-radius:12px;padding:8px 10px;background:rgba(255,255,255,.03)}}
+    .workspace summary{{cursor:pointer;font-weight:900;font-size:13px}}
+    .signals,.notes,.timeline{{margin:8px 0 0;padding-left:16px;display:grid;gap:7px;font-size:12.5px}}
+    .signals li.high{{color:#ff7a88}}.signals li.medium{{color:#ffd166}}.signals li.low{{color:#9fb5c0}}
+    .signals span,.timeline small,.notes small{{display:block;color:#9fb5c0;font-size:11.5px}}
+    .decide{{display:grid;gap:7px;margin-top:8px}}
+    .decide label{{display:grid;gap:3px;font-size:12px;color:#9fb5c0;font-weight:800}}
+    .decide textarea{{width:100%;min-height:46px;resize:vertical}}
+    .decide .actions{{display:flex;flex-wrap:wrap;gap:6px}}
+    .decide .danger{{border-color:rgba(255,122,136,.5);color:#ff7a88}}
+    .decide .ghost{{background:none;color:#9fb5c0;font-size:12px}}
+    .pending-info{{color:#ffa94d;font-size:12px;margin:5px 0 0}}
     @media(max-width:860px){{.merchant-review-shell{{grid-template-columns:1fr}}.review-sidebar{{position:static}}.doc-modal.open{{grid-template-columns:1fr;overflow:auto}}.compare-view{{grid-template-columns:1fr}}}}
     </style>
-    <h1>Merchant Applications</h1><p class='muted'>Review identity, business intent, private verification documents, safety answers, PulseSoc reputation, and risk before unlocking product listings.</p><p>{clean_html(message)}</p>
-    <section class='merchant-review-shell'><div class='card'><table class='table'><tr><th>ID</th><th>Merchant</th><th>Type</th><th>Status</th><th>Complete</th><th>Risk</th><th>Verification Documents</th><th>Actions</th></tr>{rows or '<tr><td colspan=8>No merchant applications yet.</td></tr>'}</table></div><aside class='review-sidebar'><h2>Review Standard</h2><p class='muted'>Open documents in the protected viewer, compare selfie against ID, mark each file verified/rejected/suspicious, then decide the merchant application.</p><p><span class='doc-status verified'>verified</span> <span class='doc-status suspicious'>suspicious</span> <span class='doc-status rejected'>rejected</span></p><a class='button' href='/admin/marketplace-command'>Marketplace Command</a></aside></section>
+    <h1>Seller Applications</h1><p class='muted'>Review identity, business intent, private verification documents, safety answers, PulseSoc reputation, and risk before unlocking product listings. Approval is never automatic — every decision below is recorded against your admin account.</p>
+    {f"<p class='pill approved'>{clean_html(message)}</p>" if message else ""}
+    <nav class='queue-filters' aria-label='Application status filters'>{chips}</nav>
+    <form class='queue-search' method='get' action='/admin/merchant-applications' role='search'>
+      <input type='hidden' name='status' value='{return_status}'>
+      <input type='search' name='q' value='{return_query}' placeholder='Search name, username, email, business' aria-label='Search applications'>
+      <label class='muted'><input type='checkbox' name='mine' value='1'{' checked' if mine else ''}> Assigned to me</label>
+      <button type='submit'>Search</button>
+      <a class='button' href='/admin/merchant-applications?status=open'>Reset</a>
+    </form>
+    <section class='merchant-review-shell'><div class='card'><table class='table'><tr><th>ID</th><th>Applicant</th><th>Type &amp; Intent</th><th>Status</th><th>Complete</th><th>Risk</th><th>Verification Documents</th><th>Review Workspace</th></tr>{rows or "<tr><td colspan=8>No applications match this filter.</td></tr>"}</table></div><aside class='review-sidebar'><h2>Review Standard</h2><p class='muted'>Open documents in the protected viewer, compare selfie against ID, mark each file verified/rejected/suspicious, then decide the application.</p><p class='muted'>Reject, suspend, and request-info require a message — the applicant reads it. Internal notes stay here.</p><p><span class='doc-status verified'>verified</span> <span class='doc-status suspicious'>suspicious</span> <span class='doc-status rejected'>rejected</span></p><p class='muted'>Needs review now: <strong>{int(counts.get('open', 0) or 0)}</strong></p><a class='button' href='/admin/marketplace-command'>Marketplace Command</a></aside></section>
     <section class='doc-modal' id='merchantDocModal' aria-hidden='true'><div class='doc-viewer' id='merchantDocViewer'></div><aside class='doc-panel'><h2 id='merchantDocTitle'>Document</h2><p class='muted'>Protected admin-only merchant verification viewer.</p><div class='actions'><button type='button' id='docZoomIn'>Zoom In</button><button type='button' id='docZoomOut'>Zoom Out</button><button type='button' id='docRotate'>Rotate</button></div><a class='button' id='docDownload' href='#'>Download Original</a><textarea id='docNote' placeholder='Internal review note, mismatch detail, or fraud observation'></textarea><button type='button' data-doc-review='verify' class='primary'>Verify</button><button type='button' data-doc-review='flag'>Flag Suspicious</button><button type='button' data-doc-review='reject'>Reject</button><button type='button' id='docClose'>Close</button></aside></section>
     <script>
     (()=>{{let activeDoc=0,zoom=1,rot=0;const modal=document.getElementById('merchantDocModal'),viewer=document.getElementById('merchantDocViewer'),title=document.getElementById('merchantDocTitle'),download=document.getElementById('docDownload'),note=document.getElementById('docNote');function esc(v){{return String(v||'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]))}}function apply(){{viewer.style.setProperty('--zoom',zoom);viewer.style.setProperty('--rot',rot+'deg')}}function openDoc(btn){{activeDoc=Number(btn.dataset.docId||0);zoom=1;rot=0;title.textContent=btn.dataset.docTitle||'Document';download.href=btn.dataset.downloadUrl||'#';const url=btn.dataset.docUrl;viewer.innerHTML=btn.dataset.docKind==='pdf'?`<iframe src="${{esc(url)}}"></iframe>`:`<img src="${{esc(url)}}" alt="${{esc(btn.dataset.docTitle||'Document')}}">`;modal.classList.add('open');modal.setAttribute('aria-hidden','false');apply()}}function openCompare(btn){{activeDoc=Number(btn.dataset.compareRight||0);zoom=1;rot=0;title.textContent='Selfie Match Review';download.href='/admin/merchant-document/'+activeDoc+'?download=1';viewer.innerHTML=`<div class="compare-view"><div><h3>${{esc(btn.dataset.compareLeftTitle)}}</h3><div class="compare-pane"><img src="/admin/merchant-document/${{Number(btn.dataset.compareLeft||0)}}" alt="ID document"></div></div><div><h3>${{esc(btn.dataset.compareRightTitle)}}</h3><div class="compare-pane"><img src="/admin/merchant-document/${{Number(btn.dataset.compareRight||0)}}" alt="Selfie document"></div></div></div>`;modal.classList.add('open');modal.setAttribute('aria-hidden','false');apply()}}document.addEventListener('click',e=>{{const card=e.target.closest('.doc-card[data-doc-id]');if(card){{openDoc(card);return}}const cmp=e.target.closest('[data-compare-left]');if(cmp)openCompare(cmp)}});document.getElementById('docClose').onclick=()=>{{modal.classList.remove('open');modal.setAttribute('aria-hidden','true')}};document.getElementById('docZoomIn').onclick=()=>{{zoom=Math.min(3,zoom+.18);apply()}};document.getElementById('docZoomOut').onclick=()=>{{zoom=Math.max(.5,zoom-.18);apply()}};document.getElementById('docRotate').onclick=()=>{{rot=(rot+90)%360;apply()}};document.querySelectorAll('[data-doc-review]').forEach(b=>b.addEventListener('click',async()=>{{if(!activeDoc)return;try{{const r=await fetch(`/admin/merchant-document/${{activeDoc}}/review`,{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{action:b.dataset.docReview,note:note.value}})}});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Review failed.');alert(d.message);location.reload()}}catch(err){{alert(err.message)}}}}));modal.addEventListener('click',e=>{{if(e.target===modal)document.getElementById('docClose').click()}});document.addEventListener('keydown',e=>{{if(e.key==='Escape'&&modal.classList.contains('open'))document.getElementById('docClose').click()}})}})();
@@ -85108,7 +85763,14 @@ def admin_teacher_document_file(doc_id):
     root = os.path.abspath(os.path.join("instance", "private_uploads", "teacher_verification"))
     full_path = os.path.abspath(doc.get("stored_path") or "")
     if not full_path.startswith(root + os.sep) or not os.path.exists(full_path):
-        logging.warning("TEACHER_DOCUMENT_MISSING doc_id=%s path=%s", doc_id, doc.get("stored_path"))
+        # The path is deliberately not logged, for the same reason it is omitted
+        # from the merchant equivalent below: a verification document's stored
+        # path encodes the applicant's user id and the document type, so logging
+        # it copies identity metadata out of the private uploads directory and
+        # into a log file with a different retention policy and a wider
+        # audience. The id is enough to find the row, and the row still has the
+        # path for anyone with database access.
+        logging.warning("TEACHER_DOCUMENT_MISSING doc_id=%s", doc_id)
         abort(404)
     return send_file(full_path, mimetype=doc.get("mime_type") or None, as_attachment=bool(request.args.get("download")), download_name=doc.get("original_filename") or f"teacher-document-{doc_id}", max_age=0)
 
@@ -85156,7 +85818,13 @@ def admin_merchant_document_file(doc_id):
     root = os.path.abspath(os.path.join("instance", "private_uploads", "merchant_verification"))
     full_path = os.path.abspath(stored_path)
     if not full_path.startswith(root + os.sep) or not os.path.exists(full_path):
-        logging.warning("MERCHANT_DOCUMENT_MISSING doc_id=%s path=%s", doc_id, stored_path)
+        # The path is deliberately not logged. A verification document's stored
+        # path encodes the applicant's user id and the document type, so logging
+        # it copies identity metadata out of the private uploads directory and
+        # into a log file with a different retention policy and a wider
+        # audience. The id is enough to find the row, and the row still has the
+        # path for anyone with database access.
+        logging.warning("MERCHANT_DOCUMENT_MISSING doc_id=%s", doc_id)
         abort(404)
     return send_file(
         full_path,
@@ -86929,6 +87597,36 @@ def admin_command_center_page():
         f"<div class='ops-metric'><strong>{int(operating_snapshot.get('external_service_gaps') or 0)}</strong><span>provider gaps</span></div>"
         "</div></section>"
     )
+    # Seller applications are the one queue where a person is waiting on us and
+    # nothing happens until an admin acts, so it gets its own control rather
+    # than living only inside a department room. The count is read live, and
+    # when it is zero the control stops glowing — a permanently glowing badge
+    # teaches admins to ignore it.
+    seller_pending = 0
+    seller_counts = {}
+    if admin_has_permission(admin, "monetization.manage"):
+        try:
+            _sconn = db(); _sconn.row_factory = sqlite3.Row; _scur = _sconn.cursor()
+            seller_pending = seller_lifecycle.pending_review_count(_scur)
+            seller_counts = seller_lifecycle.queue_counts(_scur)
+            _sconn.close()
+        except Exception as exc:
+            logging.warning("SELLER_APPLICATION_COUNT_FAILED error=%s", exc)
+    seller_card = ""
+    if admin_has_permission(admin, "monetization.manage"):
+        seller_card = (
+            f"<a class='card seller-queue-card{' live' if seller_pending else ''}' href='/admin/merchant-applications?status=open'>"
+            "<h2>Seller Applications</h2>"
+            f"<p class='metric'>{seller_pending}<span class='seller-queue-unit'>waiting on review</span></p>"
+            "<p class='muted'>People and businesses applying to sell on PulseSoc. Nothing is approved automatically — each one needs an administrator decision.</p>"
+            "<div class='ops-metrics'>"
+            f"<div class='ops-metric'><strong>{int(seller_counts.get(seller_lifecycle.SUBMITTED, 0) or 0)}</strong><span>new</span></div>"
+            f"<div class='ops-metric'><strong>{int(seller_counts.get(seller_lifecycle.RESUBMITTED, 0) or 0)}</strong><span>resubmitted</span></div>"
+            f"<div class='ops-metric'><strong>{int(seller_counts.get(seller_lifecycle.UNDER_REVIEW, 0) or 0)}</strong><span>in review</span></div>"
+            f"<div class='ops-metric'><strong>{int(seller_counts.get(seller_lifecycle.INFORMATION_REQUESTED, 0) or 0)}</strong><span>info requested</span></div>"
+            "</div>"
+            "<p><span class='seller-queue-cta'>Open review queue</span></p></a>"
+        )
     cards = []
     for slug, meta in ADMIN_DEPARTMENTS.items():
         if not admin_has_permission(admin, meta["permission"]):
@@ -86954,11 +87652,20 @@ def admin_command_center_page():
       .ops-actions{{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}}
       .ops-action{{border:1px solid rgba(54,229,143,.24);border-radius:999px;background:rgba(54,229,143,.08);padding:4px 8px;color:#dffcff;font-size:12px;font-weight:800}}
       code{{white-space:normal;color:#dffcff}}
+      .seller-queue-card{{position:relative;overflow:hidden;text-decoration:none;color:#f2fbff;border:1px solid rgba(54,229,143,.34);background:radial-gradient(circle at 88% -10%,rgba(54,229,143,.2),transparent 22rem),linear-gradient(140deg,rgba(8,24,20,.96),rgba(9,20,38,.94))}}
+      .seller-queue-card:before{{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,#36e58f,#6edff6,#36e58f)}}
+      .seller-queue-card .metric{{display:flex;align-items:baseline;gap:10px;color:#36e58f}}
+      .seller-queue-unit{{font-size:13px;font-weight:800;color:#9fb5c0;letter-spacing:.3px}}
+      .seller-queue-cta{{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(54,229,143,.5);border-radius:999px;background:rgba(54,229,143,.12);padding:7px 15px;font-weight:950;color:#36e58f}}
+      .seller-queue-card.live{{border-color:rgba(54,229,143,.75);animation:sellerQueueGlow 2.4s ease-in-out infinite}}
+      .seller-queue-card.live .metric{{text-shadow:0 0 22px rgba(54,229,143,.5)}}
+      @keyframes sellerQueueGlow{{0%,100%{{box-shadow:0 0 0 rgba(54,229,143,0),0 10px 30px rgba(0,0,0,.35)}}50%{{box-shadow:0 0 38px rgba(54,229,143,.4),0 10px 30px rgba(0,0,0,.35)}}}}
+      @media(prefers-reduced-motion:reduce){{.seller-queue-card.live{{animation:none;box-shadow:0 0 30px rgba(54,229,143,.32)}}}}
       @media(max-width:760px){{.ops-metrics{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}
     </style>
     <h1>PulseSoc Backend Operating System</h1>
     <p class='muted'>Live backend management inventory for PulseSoc. Every feature must be visible, measurable, actionable, auditable, permission-gated, and operationally owned.</p>
-    <div class='grid'>{os_summary_card}{launch_card}{developer_rule_card}</div>
+    <div class='grid'>{seller_card}{os_summary_card}{launch_card}{developer_rule_card}</div>
     <h2>Live Command Modules</h2>
     <div class='grid'>{''.join(module_cards) or '<div class="card">No backend management modules assigned to this role yet.</div>'}</div>
     <h2>Provider / Infrastructure Readiness</h2>
@@ -97951,6 +98658,11 @@ def _init_db_impl():
         reviewed_at TEXT
     )
     """)
+    # The application lifecycle columns. Additive only: every one of these has a
+    # usable default for the rows the web form wrote before this existed, so a
+    # deployed database needs no migration and no historical row is rewritten.
+    add_columns_if_missing(cur, "marketplace_merchant_applications", list(seller_lifecycle.APPLICATION_EXTRA_COLUMNS), conn=conn)
+    seller_lifecycle.ensure_schema(cur)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_merchant_documents (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
