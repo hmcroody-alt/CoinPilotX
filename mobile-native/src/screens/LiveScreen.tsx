@@ -76,8 +76,9 @@ export function LiveScreen({ route, navigation }: Props) {
   const [guestStatus, setGuestStatus] = useState("");
   const [guestError, setGuestError] = useState("");
   const [guestPublishing, setGuestPublishing] = useState(false);
-  const [muted, setMuted] = useState(true);
+  const [muted, setMuted] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
+  const [liveKitPlaybackFailed, setLiveKitPlaybackFailed] = useState(false);
   const [VideoViewComponent, setVideoViewComponent] = useState<ComponentType<NativeVideoViewProps> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoRef = useRef<Video>(null);
@@ -136,6 +137,7 @@ export function LiveScreen({ route, navigation }: Props) {
     setMessages([]);
     setJoined(false);
     setPlaybackFailed(false);
+    setLiveKitPlaybackFailed(false);
     await refreshLiveState(item.id, "open");
     handleJoin(item.id).catch(() => undefined);
   }
@@ -150,6 +152,7 @@ export function LiveScreen({ route, navigation }: Props) {
       setSelected({ id: liveId, live_id: liveId, title: "PulseSoc Live", creator_name: "PulseSoc Creator" });
     }
     setPlaybackFailed(false);
+    setLiveKitPlaybackFailed(false);
     await refreshLiveState(liveId, "open");
     handleJoin(liveId).catch(() => undefined);
   }
@@ -194,19 +197,21 @@ export function LiveScreen({ route, navigation }: Props) {
 
   const connectNativePlayback = useCallback(
     async (liveId: number) => {
-      if (!liveSupportsNativeWebRtc(state || selected)) return;
       if (room.connected || room.connecting) return;
+      setLiveKitPlaybackFailed(false);
       const credentials = await getLiveKitToken(liveId, "viewer");
       if (!credentials) {
+        setLiveKitPlaybackFailed(true);
         setError("PulseSoc could not mint native Live viewer credentials. Retry or wait for the provider room to become available.");
         return;
       }
       const ok = await connectLiveRoom(credentials, { publish: false });
       if (!ok) {
+        setLiveKitPlaybackFailed(true);
         setError(room.error || "Native Live playback could not connect. Retry or wait for the provider room to become available.");
       }
     },
-    [connectLiveRoom, room.connected, room.connecting, room.error, selected, state]
+    [connectLiveRoom, room.connected, room.connecting, room.error]
   );
 
   async function handleLeave() {
@@ -311,7 +316,9 @@ export function LiveScreen({ route, navigation }: Props) {
   const playbackUrl = useMemo(() => livePlaybackUrl(state || active), [state, active]);
   const posterUrl = useMemo(() => livePosterUrl(state || active), [state, active]);
   const canPlayHls = liveSupportsNativePlayback(state || active) && !playbackFailed;
-  const canUseWebRtc = liveSupportsNativeWebRtc(state || active) && !playbackFailed;
+  const currentStatus = String(state?.status || active?.status || "").toLowerCase();
+  const liveMayAcceptWebRtc = Boolean(activeLiveId && !["ended", "offline", "archived", "deleted", "failed"].includes(currentStatus));
+  const canUseWebRtc = Boolean((liveSupportsNativeWebRtc(state || active) || (!canPlayHls && liveMayAcceptWebRtc)) && !playbackFailed && !liveKitPlaybackFailed);
   const playbackOwnerId = `live:${activeLiveId}`;
   const liveKitParticipants = useMemo(
     () =>
@@ -497,6 +504,10 @@ export function LiveScreen({ route, navigation }: Props) {
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
       return;
     }
+    if (canUseWebRtc) {
+      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+      return;
+    }
     claimMediaPlayback({
       id: playbackOwnerId,
       kind: "live",
@@ -504,7 +515,7 @@ export function LiveScreen({ route, navigation }: Props) {
       stop: () => videoRef.current?.stopAsync().then(() => undefined)
     }).then((granted) => granted ? videoRef.current?.playAsync() : undefined).catch(() => undefined);
     return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
-  }, [activeLiveId, canPlayHls, playbackOwnerId, playbackUrl]);
+  }, [activeLiveId, canPlayHls, canUseWebRtc, playbackOwnerId, playbackUrl]);
 
   useEffect(() => {
     if (!activeLiveId || !canUseWebRtc || !joined) return;
@@ -512,7 +523,13 @@ export function LiveScreen({ route, navigation }: Props) {
   }, [activeLiveId, canUseWebRtc, connectNativePlayback, joined]);
 
   useEffect(() => {
+    if (!canUseWebRtc || !room.connected || !room.remoteAudioEnabled || room.remoteAudioTrackCount <= 0) return;
+    setRemoteAudioEnabled(true).catch(() => undefined);
+  }, [canUseWebRtc, room.connected, room.remoteAudioEnabled, room.remoteAudioTrackCount, setRemoteAudioEnabled]);
+
+  useEffect(() => {
     setPlaybackFailed(false);
+    setLiveKitPlaybackFailed(false);
   }, [playbackUrl, activeLiveId]);
 
   useEffect(
@@ -550,22 +567,7 @@ export function LiveScreen({ route, navigation }: Props) {
 
           <View style={styles.player}>
             {posterUrl ? <Image source={{ uri: posterUrl }} style={styles.poster} resizeMode="cover" blurRadius={playbackUrl ? 0 : 2} /> : null}
-            {canPlayHls && playbackUrl ? (
-              <Video
-                ref={videoRef}
-                source={{ uri: playbackUrl }}
-                style={styles.video}
-                resizeMode={ResizeMode.COVER}
-                shouldPlay={false}
-                isMuted={muted}
-                usePoster={Boolean(posterUrl)}
-                posterSource={posterUrl ? { uri: posterUrl } : undefined}
-                onError={() => {
-                  setPlaybackFailed(true);
-                  setError("Native playback could not start for this Live.");
-                }}
-              />
-            ) : canUseWebRtc ? (
+            {canUseWebRtc ? (
               <View style={styles.nativeStage}>
                 {room.connected && liveKitVideoParticipant?.videoTrack && VideoViewComponent ? (
                   <VideoViewComponent videoTrack={liveKitVideoParticipant.videoTrack} style={StyleSheet.absoluteFill} objectFit="cover" mirror={false} zOrder={0} />
@@ -592,6 +594,21 @@ export function LiveScreen({ route, navigation }: Props) {
                   </View>
                 ) : null}
               </View>
+            ) : canPlayHls && playbackUrl ? (
+              <Video
+                ref={videoRef}
+                source={{ uri: playbackUrl }}
+                style={styles.video}
+                resizeMode={ResizeMode.COVER}
+                shouldPlay={false}
+                isMuted={muted}
+                usePoster={Boolean(posterUrl)}
+                posterSource={posterUrl ? { uri: posterUrl } : undefined}
+                onError={() => {
+                  setPlaybackFailed(true);
+                  setError("Native playback could not start for this Live.");
+                }}
+              />
             ) : (
               <View style={styles.unsupported}>
                 <Text style={styles.unsupportedTitle}>Live playback unavailable</Text>

@@ -20,6 +20,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import {
   endLive,
+  confirmHostLivePublish,
   getLiveKitToken,
   getLiveState,
   liveWebUrl,
@@ -120,6 +121,7 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
 
   const startedAtRef = useRef<number>(0);
   const endedRef = useRef(false);
+  const publishConfirmKeyRef = useRef("");
   const reactionRef = useRef<ReactionLayerHandle>(null);
   const composerLift = useRef(new Animated.Value(0)).current;
   const inlineInputRef = useRef<TextInput>(null);
@@ -253,6 +255,32 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
       clearInterval(chatInterval);
     };
   }, [room.connected, refreshLiveMeta, refreshChat]);
+
+  useEffect(() => {
+    if (!room.connected || liveId <= 0) return;
+    const audioTracks = Number(room.localAudioTrackCount || 0);
+    const videoTracks = room.localVideoTrack ? 1 : 0;
+    if (audioTracks <= 0 && videoTracks <= 0) return;
+    const key = `${liveId}:${audioTracks}:${videoTracks}:${room.reconnectCount}`;
+    if (publishConfirmKeyRef.current === key) return;
+    publishConfirmKeyRef.current = key;
+    confirmHostLivePublish(liveId, { audioTracks, videoTracks })
+      .then((result) => {
+        if (result.ok) {
+          setToolNote(result.message || "Native LiveKit media is confirmed for viewers.");
+          refreshLiveMeta().catch(() => undefined);
+        } else if (result.retryable) {
+          setTimeout(() => {
+            publishConfirmKeyRef.current = "";
+          }, Math.max(800, Math.min(result.retryAfterMs || 1500, 3000)));
+        } else if (result.message) {
+          setToolNote(result.message);
+        }
+      })
+      .catch((error) => {
+        setToolNote(error instanceof Error ? error.message : "PulseSoc could not confirm native Live media yet.");
+      });
+  }, [liveId, refreshLiveMeta, room.connected, room.localAudioTrackCount, room.localVideoTrack, room.reconnectCount]);
 
   const finishBroadcast = useCallback(async () => {
     if (endedRef.current) return;

@@ -231,6 +231,32 @@ export async function getLiveKitToken(liveId: number, role: LiveKitRole = "viewe
   return normalizeLiveKitCredentials(data);
 }
 
+export async function confirmHostLivePublish(
+  liveId: number,
+  payload: { audioTracks?: number; videoTracks?: number; traceId?: string } = {}
+) {
+  const data = await pulseApi<Record<string, unknown>>(`/api/pulse/live/${liveId}/native-publish`, {
+    method: "POST",
+    body: JSON.stringify({
+      source: "native",
+      trace_id: payload.traceId || "",
+      audio_tracks: Math.max(0, Number(payload.audioTracks || 0)),
+      video_tracks: Math.max(0, Number(payload.videoTracks || 0))
+    })
+  });
+  return {
+    ok: Boolean(data.ok),
+    status: String(data.status || ""),
+    publishPath: String(data.publish_path || ""),
+    audioTracks: Number(data.audio_tracks || payload.audioTracks || 0),
+    videoTracks: Number(data.video_tracks || payload.videoTracks || 0),
+    playback: normalizePlayback((data.playback || {}) as LivePlayback, liveId),
+    message: String(data.message || ""),
+    retryable: Boolean(data.retryable),
+    retryAfterMs: Number(data.retry_after_ms || 0)
+  };
+}
+
 export async function getLiveJoinStatus(liveId: number): Promise<{
   ok?: boolean;
   status: string;

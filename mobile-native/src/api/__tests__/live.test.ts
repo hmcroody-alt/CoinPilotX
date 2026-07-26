@@ -11,6 +11,7 @@ jest.mock("../pulseApi", () => ({
 }));
 
 import {
+  confirmHostLivePublish,
   confirmGuestPublishComplete,
   getLiveJoinStatus,
   livePlaybackUrl,
@@ -56,11 +57,67 @@ describe("native Live playback capability mapping", () => {
     expect(liveSupportsNativePlayback(live)).toBe(false);
     expect(liveSupportsNativeWebRtc(live)).toBe(true);
   });
+
+  it("normalizes LiveKit-direct active state as native WebRTC even while HLS is absent", () => {
+    const live = normalizeLiveState(
+      {
+        live_id: 43,
+        status: "live",
+        publish_state: "browser_live_livekit_direct",
+        playback: {
+          status: "live",
+          preferred_transport: "webrtc",
+          supports_webrtc: true,
+          webrtc_room_id: "pulse-live-43"
+        },
+        livekit: { room: "pulse-live-43" }
+      },
+      43
+    );
+
+    expect(live.status).toBe("live");
+    expect(live.playback?.preferred_transport).toBe("webrtc");
+    expect(livePlaybackUrl(live)).toBe("");
+    expect(liveSupportsNativePlayback(live)).toBe(false);
+    expect(liveSupportsNativeWebRtc(live)).toBe(true);
+  });
 });
 
 describe("native Live guest publishing API", () => {
   beforeEach(() => {
     mockPulseApi.mockReset();
+  });
+
+  it("confirms native host published audio and video through the existing live publish route", async () => {
+    mockPulseApi.mockResolvedValueOnce({
+      ok: true,
+      status: "live",
+      publish_path: "livekit_direct",
+      audio_tracks: 1,
+      video_tracks: 1,
+      playback: {
+        status: "live",
+        supports_webrtc: true,
+        preferred_transport: "webrtc",
+        webrtc_room_id: "pulse-live-45"
+      }
+    });
+
+    const result = await confirmHostLivePublish(45, { audioTracks: 1, videoTracks: 1, traceId: "native-host" });
+
+    expect(result.ok).toBe(true);
+    expect(result.publishPath).toBe("livekit_direct");
+    expect(result.playback.status).toBe("live");
+    expect(result.playback.supports_webrtc).toBe(true);
+    expect(mockPulseApi).toHaveBeenCalledWith("/api/pulse/live/45/native-publish", {
+      method: "POST",
+      body: JSON.stringify({
+        source: "native",
+        trace_id: "native-host",
+        audio_tracks: 1,
+        video_tracks: 1
+      })
+    });
   });
 
   it("requests a co-host seat through the production join-request route", async () => {

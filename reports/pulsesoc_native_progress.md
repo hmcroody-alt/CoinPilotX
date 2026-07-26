@@ -2,6 +2,17 @@
 
 Date: 2026-07-18
 
+## Latest Mission Status: Native Live Audio and Viewer Playback Repair
+
+- Date: 2026-07-26.
+- Branch: `release/undx-nexus-core-v4`.
+- Result: **FIXED (code path)**; no TestFlight build, upload, submit, or tester assignment was performed by explicit constraint.
+- Root cause: the full native Live viewer required pre-declared WebRTC playback support before attempting the existing LiveKit viewer-token route, while the backend could still serialize LiveKit-direct sessions as `starting` when HLS/Mux egress was absent. Native host publishing also did not confirm local audio/video tracks back to the server, so an active LiveKit room could remain misclassified.
+- Fix: added a native publish-confirmation route alias, wired native host track confirmation, normalized LiveKit-direct sessions as `live`, allowed WebRTC-only active sessions into Reels/Live discovery, made the full native Live viewer prefer LiveKit credentials for active sessions, re-applied remote audio enablement, and kept native HLS as the supported fallback when LiveKit credentials fail.
+- Validations: Python compile clean; typecheck clean; full native Jest `82` suites / `1306` tests passed; Expo Doctor `16/16` passed; native Live/WebRTC/audio/distribution/egress audits passed; `git diff --check` clean.
+- Physical iPhone: not verified in this mission; connected devices were visible to Xcode only as offline. Real host mic, remote audible playback, guest audio, Bluetooth/speaker routing, and interruption behavior remain physical-device release QA.
+- Report: `reports/pulsesoc_native_live_audio_viewer_playback_repair_2026-07-26.md`.
+
 ## Latest Mission Status: Production Livestream Audio Repair (viewers can't hear host)
 
 - Date: 2026-07-23.

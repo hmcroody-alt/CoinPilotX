@@ -40826,6 +40826,34 @@ def pulse_live_reel_playback_url(live):
     return media_service.normalize_url(playback_url or "")
 
 
+def pulse_live_effective_status(live):
+    live = dict(live or {})
+    status = str(live.get("status") or "starting").lower()
+    if status in {"ended", "offline", "archived", "deleted", "failed"}:
+        return status
+    publish_state = str(live.get("publish_state") or "").lower()
+    stream_health = str(live.get("stream_health") or "").lower()
+    has_room = bool(str(live.get("webrtc_room_id") or "").strip())
+    track_count = safe_int(live.get("audio_tracks"), 0) + safe_int(live.get("video_tracks"), 0)
+    livekit_live_states = {
+        "browser_live_egress",
+        "browser_live_livekit_direct",
+        "livekit_direct",
+        "livekit_room_active",
+        "livekit_participant_joined",
+        "livekit_tracks_published",
+        "mux_live",
+    }
+    if has_room and (
+        track_count > 0
+        or safe_int(live.get("is_live"), 0) > 0
+        or publish_state in livekit_live_states
+        or stream_health in {"livekit_connected", "livekit_direct", "egress_starting", "egress_active", "stable"}
+    ):
+        return "live"
+    return status or "starting"
+
+
 def pulse_live_watch_url(live_id, mode=""):
     live_id = safe_int(live_id, 0)
     if live_id <= 0:
@@ -40875,6 +40903,7 @@ def pulse_live_reel_items(viewer_user_id=0, lane="for_you", limit=3, category=""
                 OR COALESCE(l.playback_url,'')!=''
                 OR COALESCE(l.hls_url,'')!=''
                 OR COALESCE(l.mux_playback_id,'')!=''
+                OR COALESCE(l.webrtc_room_id,'')!=''
               )
             ORDER BY CASE WHEN l.id=? THEN 0 ELSE 1 END,
                      COALESCE(l.engagement_score,0) DESC,
@@ -40890,7 +40919,7 @@ def pulse_live_reel_items(viewer_user_id=0, lane="for_you", limit=3, category=""
         for live in rows:
             playback_url = pulse_live_reel_playback_url(live)
             live_id = safe_int(live.get("id"), 0)
-            if not reel_media_source_is_playable(playback_url) and live_id != focus_live_id:
+            if not reel_media_source_is_playable(playback_url) and live_id != focus_live_id and not str(live.get("webrtc_room_id") or "").strip():
                 continue
             author = pulse_identity_for_user(cur, safe_int(live.get("user_id"), 0))
             if lane == "following" and not bool(live.get("viewer_follows_author")):
@@ -40948,7 +40977,7 @@ def pulse_live_reel_items(viewer_user_id=0, lane="for_you", limit=3, category=""
                 "live_chat_preview": chat_preview,
                 "live": {
                     "live_session_id": live_id,
-                    "status": live.get("status") or "live",
+                    "status": pulse_live_effective_status(live),
                     "publish_state": live.get("publish_state") or live.get("status") or "live",
                     "playback_url": playback_url,
                     "preview_url": preview_url,
@@ -44345,6 +44374,7 @@ def api_pulse_live_debug_event(live_id):
         return jsonify({"ok": False, "message": "Live debug event could not be stored."}), 500
 
 
+@webhook_app.route("/api/pulse/live/<int:live_id>/native-publish", methods=["POST"])
 @webhook_app.route("/api/pulse/live/<int:live_id>/browser-publish", methods=["POST"])
 def api_pulse_live_browser_publish(live_id):
     init_db()
@@ -44508,8 +44538,8 @@ def api_pulse_live_browser_publish(live_id):
             mux_status = "egress_starting"
             livekit_egress_status = egress.get("status") or stream_health
             livekit_egress_error = ""
-            is_live = 0
-            status = "starting"
+            is_live = 1
+            status = "live"
             publish_path = "livekit_mux_egress"
         elif quota_exhausted:
             publish_state = "browser_live_livekit_direct"
@@ -44517,18 +44547,18 @@ def api_pulse_live_browser_publish(live_id):
             mux_status = "egress_quota_exhausted"
             livekit_egress_status = "quota_exhausted"
             livekit_egress_error = (egress.get("message") or egress.get("reason") or "LiveKit egress minutes are exhausted.")[:500]
-            is_live = 0
-            status = "starting"
+            is_live = 1
+            status = "live"
             publish_path = "livekit_direct"
         else:
-            publish_state = "browser_publish_failed"
-            stream_health = "egress_failed"
+            publish_state = "browser_live_livekit_direct"
+            stream_health = "livekit_direct"
             mux_status = live.get("mux_live_status") or "idle"
             livekit_egress_status = "failed"
             livekit_egress_error = (egress.get("message") or egress.get("reason") or "LiveKit egress failed.")[:500]
-            is_live = 0
-            status = live.get("status") or "starting"
-            publish_path = "livekit_mux_egress"
+            is_live = 1
+            status = "live"
+            publish_path = "livekit_direct"
         pulse_live_record_timeline_event(
             cur,
             "live_egress_start_response",
@@ -44570,7 +44600,7 @@ def api_pulse_live_browser_publish(live_id):
         )
         conn.commit(); conn.close()
         try:
-            event_name = "livestream_browser_livekit_egress_started" if egress.get("ok") else "livestream_browser_livekit_direct_started" if quota_exhausted else "livestream_browser_livekit_egress_failed"
+            event_name = "livestream_browser_livekit_egress_started" if egress.get("ok") else "livestream_browser_livekit_direct_started"
             pulse_emit_event(event_name, {"live_id": live_id, "audio_tracks": verified_audio_tracks, "video_tracks": verified_video_tracks, "publish_path": publish_path, "egress_id": egress.get("egress_id") or "", "egress_ok": bool(egress.get("ok")), "egress_quota_exhausted": bool(quota_exhausted)}, user["user_id"], None)
         except Exception:
             logging.exception("PULSE_LIVE_BROWSER_PUBLISH_EMIT_FAILED live_id=%s trace_id=%s", live_id, trace_id)
@@ -44586,8 +44616,8 @@ def api_pulse_live_browser_publish(live_id):
         playback = live_distribution_service.playback_manifest(live_for_playback)
         if not egress.get("ok") and not quota_exhausted:
             return jsonify({
-                "ok": False,
-                "message": livekit_egress_error or "LiveKit could not start forwarding to Mux.",
+                "ok": True,
+                "message": "Native LiveKit playback is active. Public HLS replay is waiting for provider egress recovery.",
                 "trace_id": trace_id,
                 "live_id": live_id,
 	                "audio_tracks": verified_audio_tracks,
@@ -44602,7 +44632,7 @@ def api_pulse_live_browser_publish(live_id):
                     "room_composite_error": egress.get("room_composite_error") or "",
                 },
                 "playback": playback,
-            }), 502
+            })
         return jsonify({
             "ok": True,
             "message": "LiveKit egress quota is unavailable. Public Mux playback will stay offline until egress minutes are available." if quota_exhausted else "LiveKit egress started. Waiting for Mux to become active before public playback opens.",
@@ -44910,6 +44940,9 @@ def api_pulse_live_state(live_id):
     health = live_health_service.health_snapshot(live, viewer_count=viewer_count, chat_count=len(messages))
     presence = live_presence_engine.stream_energy_state(live, messages, reactions, [{"id": i} for i in range(viewer_count)])
     playback = live_distribution_service.playback_manifest(live)
+    effective_status = pulse_live_effective_status({**live, "status": playback.get("status") or live.get("status")})
+    live["status"] = effective_status
+    playback["status"] = effective_status
     archive = live_archive_service.replay_manifest(live, messages)
     audio = audio_engine.score_audio_health({
         "muted": int(live.get("audio_tracks") or 0) <= 0 and (live.get("status") or "") == "live",
@@ -44923,7 +44956,7 @@ def api_pulse_live_state(live_id):
     return jsonify({
         "ok": True,
         "live_id": live_id,
-        "status": live.get("status") or "starting",
+        "status": effective_status,
         "publish_state": live.get("publish_state") or live.get("status") or "idle",
         "direct_mode": (live.get("publish_state") or "").lower() in {"browser_live_livekit_direct", "livekit_direct"} or (live.get("mux_live_status") or "").lower() in {"egress_quota_exhausted", "livekit_direct"},
         "viewer_count": viewer_count,
