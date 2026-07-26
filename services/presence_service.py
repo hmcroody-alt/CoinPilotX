@@ -362,6 +362,135 @@ def clear_activity(cur, user_id, session_id, conn=None) -> dict:
     return heartbeat(cur, user_id, session_id, activity="idle", activity_context="", conn=conn)
 
 
+def touch_device(cur, user_id, device_id, device_label="", platform="", conn=None) -> dict:
+    """Heartbeat a device's live session, opening one if it has none.
+
+    Server-side callers that observe traffic from an authenticated user know
+    the device but not the presence session id -- the web page-view path is the
+    obvious case. Without this entry point such a caller has two bad options:
+    call connect() per request, which revokes and re-creates a session row on
+    every page load, or keep its own table, which is precisely what the legacy
+    `pulse_online_sessions` writer did.
+
+    Note what this does *not* do: it never marks anyone online. It extends a
+    session in exactly the same way a client heartbeat does, and that session
+    still expires on the same clock as every other. A user who stops making
+    requests stops being online without anything having to notice.
+    """
+    uid = _user_id(user_id)
+    ensure_schema(cur, conn)
+    did = _text(device_id, 120)
+    if uid <= 0 or not did:
+        return {"ok": False, "reason": "missing_device"}
+    cur.execute(
+        "SELECT session_id FROM presence_sessions WHERE user_id=? AND device_id=? AND revoked_at IS NULL ORDER BY connected_at DESC LIMIT 1",
+        (uid, did),
+    )
+    row = cur.fetchone()
+    if row:
+        sid = str(_row_to_dict(row).get("session_id") or "")
+        result = heartbeat(cur, uid, sid, conn=conn)
+        if result.get("ok"):
+            result["device_id"] = did
+            return result
+        # The session was pruned or revoked between the select and now; fall
+        # through and open a fresh one rather than silently dropping presence.
+    return connect(cur, uid, device_id=did, device_label=device_label, platform=platform, conn=conn)
+
+
+def set_activity_for_user(cur, user_id, activity, activity_context="", conn=None) -> dict:
+    """Apply an activity to every live session a user has.
+
+    Some server-side callers know *who* is doing something but not *from which
+    device* -- the Messenger typing endpoint, for instance, authenticates a user
+    and receives no session id. Rather than let those callers keep a parallel
+    typing table, they record here.
+
+    Applying it to all live sessions is the correct reading of the event: a
+    person typing is typing, regardless of which of their devices the keystrokes
+    came from, and the indicator their peers see is per-person anyway. Expiry is
+    the same as for any other activity, so this path cannot produce a stuck
+    indicator that the session-scoped path could not.
+    """
+    uid = _user_id(user_id)
+    ensure_schema(cur, conn)
+    normalized = normalize_activity(activity)
+    now = utc_now()
+    cur.execute(
+        "SELECT session_id FROM presence_sessions WHERE user_id=? AND revoked_at IS NULL AND expires_at>?",
+        (uid, iso(now)),
+    )
+    session_ids = [str(_row_to_dict(row).get("session_id") or "") for row in cur.fetchall() or []]
+    session_ids = [sid for sid in session_ids if sid]
+    if not session_ids:
+        # No live session means no presence to decorate. Recording the activity
+        # anyway would be exactly the fabrication this system exists to remove:
+        # a typing indicator for someone who is not connected.
+        return {"ok": False, "reason": "no_live_session", "sessions": 0}
+    for sid in session_ids:
+        heartbeat(cur, uid, sid, activity=normalized, activity_context=activity_context, conn=conn)
+    return {"ok": True, "activity": normalized, "sessions": len(session_ids)}
+
+
+def activity_by_context(cur, viewer_user_id, contexts, activities=("typing",), conn=None) -> dict[str, dict[int, str]]:
+    """Who is performing a context-scoped activity, batched over many contexts.
+
+    A conversation list needs the answer for every row at once. Without a batch
+    entry point the caller would either issue one query per row or -- as the
+    Messenger list previously did -- keep its own table and re-derive expiry
+    itself. Re-deriving expiry is the part that matters: it is a second opinion
+    on staleness, and two opinions is how an indicator gets stuck.
+
+    Invisible sessions are excluded. An invisible user is not observable, and a
+    typing bubble is a presence claim like any other.
+    """
+    ensure_schema(cur, conn)
+    viewer_id = int(viewer_user_id or 0)
+    keys = [str(c) for c in (contexts or []) if str(c or "")]
+    wanted = {normalize_activity(a) for a in (activities or ())} - {"idle"}
+    result: dict[str, dict[int, str]] = {key: {} for key in keys}
+    if not keys or not wanted:
+        return result
+
+    now_iso = iso(utc_now())
+    key_slots = ",".join(["?"] * len(keys))
+    act_slots = ",".join(["?"] * len(wanted))
+    try:
+        cur.execute(
+            f"""
+            SELECT DISTINCT s.user_id, s.activity, s.activity_context
+              FROM presence_sessions s
+             WHERE s.revoked_at IS NULL
+               AND s.expires_at > ?
+               AND COALESCE(s.invisible,0)=0
+               AND s.activity IN ({act_slots})
+               AND s.activity_context IN ({key_slots})
+               AND (s.activity_expires_at IS NULL OR s.activity_expires_at > ?)
+               AND s.user_id != ?
+            """,
+            (now_iso, *sorted(wanted), *keys, now_iso, viewer_id),
+        )
+        rows = cur.fetchall() or []
+    except Exception as exc:  # pragma: no cover - defensive
+        LOGGER.warning("PRESENCE_ACTIVITY_CONTEXT_FAILED error=%s", exc.__class__.__name__)
+        return result
+
+    candidates = {int(_row_to_dict(r).get("user_id") or 0) for r in rows}
+    hidden = _blocked_pairs(cur, viewer_id, sorted(candidates)) if candidates else set()
+    privacy = _privacy_settings(cur, sorted(candidates)) if candidates else {}
+    for raw in rows:
+        item = _row_to_dict(raw)
+        uid = int(item.get("user_id") or 0)
+        if uid <= 0 or uid in hidden:
+            continue
+        if bool((privacy.get(uid) or {}).get("invisible_mode")):
+            continue
+        key = str(item.get("activity_context") or "")
+        if key in result:
+            result[key][uid] = str(item.get("activity") or "idle")
+    return result
+
+
 def disconnect(cur, user_id, session_id, conn=None) -> dict:
     """Explicitly end one session (tab close, sign out, app termination)."""
     uid = _user_id(user_id)
@@ -531,12 +660,29 @@ def _privacy_settings(cur, user_ids: list[int]) -> dict[int, dict]:
     return settings
 
 
+_WARNED: set[str] = set()
+
+
+def _warn_once(key: str, message: str) -> None:
+    """Log a condition that is worth knowing about but is not per-request news.
+
+    Presence is read on nearly every page render, so an unconditional warning
+    in this path would emit thousands of identical lines a minute and bury the
+    signal it exists to raise.
+    """
+    if key in _WARNED:
+        return
+    _WARNED.add(key)
+    logging.warning(message)
+
+
 def _blocked_pairs(cur, viewer_id: int, target_ids: list[int]) -> set[int]:
     """Return the subset of target_ids where a block exists in either direction."""
     ids = sorted({int(uid) for uid in target_ids if int(uid or 0) > 0 and int(uid) != int(viewer_id)})
     if not ids or viewer_id <= 0:
         return set()
     blocked: set[int] = set()
+    found_table = False
     placeholders = ",".join(["?"] * len(ids))
     for table, active_clause in (("comm_v2_blocks", " AND status='active'"), ("blocked_users", "")):
         try:
@@ -555,8 +701,20 @@ def _blocked_pairs(cur, viewer_id: int, target_ids: list[int]) -> set[int]:
                 other = blocked_user if blocker == viewer_id else blocker
                 if other in ids:
                     blocked.add(other)
-        except Exception:
+            found_table = True
+        except Exception as exc:
+            # A missing table is expected: deployments carry one block store or
+            # the other. Any *other* failure means block enforcement has
+            # silently stopped applying -- a privacy regression that must not
+            # pass unnoticed simply because the surrounding read still returns.
+            if "no such table" not in str(exc).lower():
+                logging.warning(
+                    "PRESENCE_BLOCK_LOOKUP_FAILED table=%s error=%s detail=%s",
+                    table, exc.__class__.__name__, exc,
+                )
             continue
+    if not found_table:
+        _warn_once("block_no_source", "PRESENCE_BLOCK_LOOKUP_NO_SOURCE blocks_not_enforced=1 -- neither comm_v2_blocks nor blocked_users is readable")
     return blocked
 
 

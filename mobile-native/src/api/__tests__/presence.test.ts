@@ -17,13 +17,50 @@ import {
 
 describe("presence normalization defaults to offline", () => {
   it("collapses junk/partial payloads to a fully offline record", () => {
-    for (const raw of [null, undefined, 42, "online", {}, { status: "banana" }]) {
+    const junk: unknown[] = [
+      null,
+      undefined,
+      42,
+      "online",
+      [],
+      {},
+      { status: "banana" },
+      // Legacy tokens that used to light an indicator anywhere they appeared.
+      // They are not part of the server's vocabulary and must not be honoured.
+      { status: "active" },
+      { status: "available" },
+      { status: "live" },
+      { status: "ONLINE" },
+      { status: 1 },
+      { status: {} }
+    ];
+    for (const raw of junk) {
       const p = normalizePresence(raw);
       expect(p.online).toBe(false);
       expect(p.status).toBe("offline");
       expect(p.activity).toBe("idle");
       expect(isPresenceOnline(p)).toBe(false);
     }
+  });
+
+  it("requires BOTH a recognised status and the online flag before showing anyone online", () => {
+    // A payload carrying `online: true` with no status at all is malformed --
+    // the server always sends both. Honouring the flag on its own produced a
+    // record whose avatar said online while its own status field said offline,
+    // and that internal contradiction always resolved in favour of the green
+    // dot. An ambiguous payload must resolve to offline instead: showing a
+    // reachable user as offline is a cosmetic miss, while showing an
+    // unreachable user as online is invisible to whoever is looking at it.
+    const noStatus = normalizePresence({ user_id: 1, online: true });
+    expect(noStatus.online).toBe(false);
+    expect(noStatus.status).toBe("offline");
+    expect(isPresenceOnline(noStatus)).toBe(false);
+
+    const junkStatus = normalizePresence({ user_id: 1, online: true, status: "active" });
+    expect(junkStatus.online).toBe(false);
+
+    // The well-formed payload is unaffected.
+    expect(normalizePresence({ user_id: 1, online: true, status: "online" }).online).toBe(true);
   });
 
   it("trusts an explicit online boolean from the server", () => {
@@ -60,16 +97,45 @@ describe("presence normalization defaults to offline", () => {
 });
 
 describe("presence predicates never assume online", () => {
-  it("isPresenceOnline is strictly the server boolean", () => {
+  it("isPresenceOnline is strictly the normalized server state", () => {
     expect(isPresenceOnline(null)).toBe(false);
     expect(isPresenceOnline(undefined)).toBe(false);
     expect(isPresenceOnline(offlinePresence(9))).toBe(false);
-    expect(isPresenceOnline(normalizePresence({ user_id: 9, online: true }))).toBe(true);
+    expect(isPresenceOnline(normalizePresence({ user_id: 9, online: true, status: "online" }))).toBe(true);
   });
 
   it("isPresenceActive is an alias of isPresenceOnline", () => {
     expect(isPresenceActive(offlinePresence(1))).toBe(false);
-    expect(isPresenceActive(normalizePresence({ user_id: 1, online: true }))).toBe(true);
+    expect(isPresenceActive(normalizePresence({ user_id: 1, online: true, status: "online" }))).toBe(true);
+    // Both predicates must agree on every input; two predicates that can
+    // disagree is how one screen shows a dot and the next one does not.
+    for (const raw of [null, {}, { status: "active" }, { online: true }, { status: "online", online: true }]) {
+      const p = normalizePresence(raw);
+      expect(isPresenceActive(p)).toBe(isPresenceOnline(p));
+    }
+  });
+});
+
+describe("activity is never shown for a user who is not online", () => {
+  it("clears a stale activity at the normalizer, not at the label", () => {
+    // A "typing" flag riding along with an offline user is the stuck-indicator
+    // bug in a different costume. Clearing it here means no downstream renderer
+    // has to remember to check.
+    for (const activity of ["typing", "recording_voice", "uploading_media", "in_video_call"]) {
+      const p = normalizePresence({ user_id: 1, online: false, status: "offline", activity });
+      expect(p.activity).toBe("idle");
+      expect(presenceActivityText(p.activity)).toBe("");
+    }
+  });
+
+  it("uses the spec's wording for the Live activities", () => {
+    expect(presenceActivityText("live_hosting")).toBe("Hosting Live");
+    expect(presenceActivityText("live_guest")).toBe("Guest in Live");
+    expect(presenceActivityText("live_watching")).toBe("Watching Live");
+  });
+
+  it("returns empty for an unrecognised activity rather than guessing", () => {
+    expect(presenceActivityText("juggling")).toBe("");
   });
 });
 

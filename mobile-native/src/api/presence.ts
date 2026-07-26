@@ -94,10 +94,23 @@ export function normalizePresence(raw: unknown, fallbackUserId = 0): PulsePresen
   const source = (raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}) as Record<string, unknown>;
 
   const userId = toInt(source.user_id, fallbackUserId);
-  const status = VALID_STATUS.has(source.status as PresenceStatus) ? (source.status as PresenceStatus) : "offline";
-  // `online` is authoritative from the server; only trust an explicit boolean.
-  // If it is missing, derive strictly from a confirmed non-offline status.
-  const online = typeof source.online === "boolean" ? source.online : status !== "offline";
+  // Keep "was the status token recognised?" separate from "what is the status?".
+  // Collapsing the two loses the distinction between a server that said
+  // "offline" and a payload where the field was missing or unparseable -- and
+  // those must be treated differently when deciding whether to trust `online`.
+  const recognisedStatus = VALID_STATUS.has(source.status as PresenceStatus);
+  const status = recognisedStatus ? (source.status as PresenceStatus) : "offline";
+  // Both signals must agree before anyone is shown as online.
+  //
+  // `online` alone is not enough: a payload of `{online: true}` with a missing
+  // or unrecognised status used to produce status="offline" alongside
+  // online=true, so the avatar lit up while the text beside it said offline.
+  // Requiring a recognised, non-offline status closes that fail-open. The
+  // asymmetry is the point -- an ambiguous payload must resolve to offline,
+  // because the cost of a false "online" is a user who looks reachable and
+  // is not, and nothing on screen reveals the error.
+  const claimsOnline = typeof source.online === "boolean" ? source.online : true;
+  const online = recognisedStatus && status !== "offline" && claimsOnline;
   const activity = VALID_ACTIVITY.has(source.activity as PresenceActivity)
     ? (source.activity as PresenceActivity)
     : "idle";
@@ -170,11 +183,11 @@ export function presenceActivityText(activity: PresenceActivity | string | undef
     case "in_video_call":
       return "In video call";
     case "live_hosting":
-      return "Hosting live";
+      return "Hosting Live";
     case "live_guest":
-      return "On live";
+      return "Guest in Live";
     case "live_watching":
-      return "Watching live";
+      return "Watching Live";
     default:
       return "";
   }

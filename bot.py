@@ -1143,6 +1143,13 @@ except Exception:
     logging.exception("PULSE_COMMUNICATIONS_V2_ROUTE_REGISTRATION_FAILED")
 
 try:
+    from services.presence_routes import register as register_pulse_presence_routes
+
+    register_pulse_presence_routes(webhook_app)
+except Exception:
+    logging.exception("PULSE_PRESENCE_ROUTE_REGISTRATION_FAILED")
+
+try:
     from services.pulse_settings_routes import register as register_pulse_settings_routes
 
     register_pulse_settings_routes(webhook_app)
@@ -2664,6 +2671,15 @@ def record_pulsesoc_presence_activity():
     source = "native" if native_app_request_context().get("is_native") else "web"
     device_label = presence_device_label()
     record_local_presence_activity(user_id, "online", source, device_label)
+    # A page view is a supplementary liveness signal only. The authoritative
+    # heartbeat comes from the presence client on an interval the server sets;
+    # this keeps a user who is actively navigating from flickering offline
+    # between heartbeats, but it can never by itself hold a user online,
+    # because presence expiry is evaluated at read time.
+    try:
+        record_presence_heartbeat_from_request(user_id, source=source, device_label=device_label)
+    except Exception as exc:
+        logging.info("PRESENCE_REQUEST_HEARTBEAT_SKIPPED user_id=%s error=%s", int(user_id or 0), exc.__class__.__name__)
     try:
         command_center_client_service.enqueue_presence_event(int(user_id), "online", source=source, device_label=device_label)
     except Exception as exc:
@@ -2808,6 +2824,30 @@ PRESENCE_ACTIVITY_PATHS = {
     "/pulse/status",
 }
 PRESENCE_ACTIVITY_THROTTLE_SECONDS = 60
+# A stored "online"/"away" status is only trustworthy while it is fresh. If a
+# heartbeat has not refreshed presence within this window the user is treated as
+# offline, so a session that ended without an explicit "offline" write can never
+# leave a user fake-online. Matches the 6-minute freshness cutoff used by the
+# server-authoritative pulse_online_sessions presence payload.
+PRESENCE_ONLINE_TTL_SECONDS = 360
+
+
+def presence_status_is_fresh(reference_iso, now=None):
+    """Return True when an ISO presence timestamp is within the online window."""
+    if not reference_iso:
+        return False
+    try:
+        parsed = parse_iso_datetime(reference_iso)
+    except Exception:
+        parsed = None
+    if not parsed:
+        return False
+    now = now or datetime.now(timezone.utc)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return (now - parsed).total_seconds() <= PRESENCE_ONLINE_TTL_SECONDS
 
 
 def ensure_user_presence_schema(cur=None, conn=None):
@@ -2899,24 +2939,94 @@ def record_local_presence_activity(user_id, status="online", source="web", devic
         conn.close()
 
 
+def record_presence_heartbeat_from_request(user_id, source="web", device_label=""):
+    """Refresh the caller's presence session from an authenticated page view.
+
+    Reuses the presence session already stored on the Flask session so a
+    browsing user does not accumulate one presence session per page load.
+    """
+    user_id = safe_int(user_id, 0)
+    if user_id <= 0:
+        return {"ok": False, "reason": "invalid_user"}
+    from services import presence_service
+
+    session_key = f"presence_session_{user_id}"
+    session_id = session.get(session_key) or ""
+    conn = db()
+    cur = conn.cursor()
+    try:
+        result = {"ok": False}
+        if session_id:
+            result = presence_service.heartbeat(cur, user_id, session_id, conn=conn)
+        if not result.get("ok"):
+            result = presence_service.connect(
+                cur,
+                user_id,
+                device_id=f"{source}:{device_label}",
+                device_label=device_label or source,
+                platform=source,
+                conn=conn,
+            )
+            session[session_key] = result.get("session_id")
+        conn.commit()
+        return result
+    except Exception as exc:
+        logging.info("PRESENCE_HEARTBEAT_REQUEST_SKIPPED user_id=%s error=%s", user_id, exc.__class__.__name__)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "reason": "heartbeat_failed"}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def read_local_presence(user_id):
+    """Read a user's own presence, as they see themselves.
+
+    Status is derived from live presence sessions, never from a stored flag.
+    The user_presence table is retained as a denormalised cache for device
+    metadata, but it is not trusted for liveness: it used to be written only
+    ever with 'online' and had nothing to set it back, which is exactly the
+    fake-online defect this replaces. The Command Center worker also writes
+    that table, on its own 5-minute/15-minute ageing schedule; ignoring its
+    status column is what keeps that from being a second opinion here.
+
+    This is a *self* read -- viewer and target are the same user below -- so no
+    privacy filter applies. Any caller wanting presence for somebody else must
+    go to presence_service.presence_for with the real viewer, or the filtering
+    that makes invisible mode and blocks work would be bypassed.
+    """
     user_id = safe_int(user_id, 0)
     if user_id <= 0:
         return {"user_id": user_id, "status": "offline", "available": False}
+    from services import presence_service
+
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     try:
         ensure_user_presence_schema(cur, conn)
+        derived = presence_service.presence_of(cur, user_id, user_id, conn=conn)
         cur.execute("SELECT * FROM user_presence WHERE user_id=? LIMIT 1", (user_id,))
         row = cur.fetchone()
-        if not row:
-            return {"user_id": user_id, "status": "offline", "available": False}
-        item = dict(row)
+        item = dict(row) if row else {}
+        status = normalize_presence_status(derived.get("status"))
         return {
-            "user_id": int(item.get("user_id") or user_id),
-            "status": normalize_presence_status(item.get("status")),
-            "last_seen_at": item.get("last_seen_at") or "",
+            "user_id": user_id,
+            "status": status,
+            "online": status in {"online", "away"},
+            "activity": derived.get("activity") or "idle",
+            "devices": int(derived.get("devices") or 0),
+            # Last-seen comes from the service alone. Falling back to the
+            # user_presence cache would reintroduce a second last-seen
+            # authority -- one the Command Center worker also writes -- and the
+            # two are free to disagree.
+            "last_seen_at": derived.get("last_seen_at") or "",
+            "last_seen_text": derived.get("last_seen_text") or "",
             "last_active_at": item.get("last_active_at") or "",
             "updated_at": item.get("updated_at") or "",
             "available": True,
@@ -25487,7 +25597,22 @@ def public_arena_player(profile):
     profile = dict(profile or {})
     privacy = json.loads(profile.get("privacy_settings_json") or "{}") if isinstance(profile.get("privacy_settings_json"), str) else {}
     show_country = privacy.get("show_country", True)
-    show_online = privacy.get("show_online_status", True)
+    # The show_online_status preference is no longer read here; it is enforced
+    # by presence_service, which owns the whole privacy vocabulary.
+    #
+    # No online_status key. This card is the shared builder behind every Arena
+    # surface -- leaderboards, match rosters, chat cards, profile pages -- and
+    # it used to carry `arena_profiles.online_status`, a column written to
+    # 'training' on activity with nothing anywhere to set it back. The Arena
+    # presence roster was fixed to stop emitting it; this builder was the other
+    # exit, and it reached far more surfaces. A player who opened the Arena once
+    # described themselves as active in every list forever.
+    #
+    # Nothing replaces it here on purpose. A card built from a profile row has
+    # no viewer in scope, so it cannot apply the privacy filter that invisible
+    # mode and blocking require. Any Arena surface wanting presence asks
+    # presence_service.presence_for with the real viewer -- api_arena_presence
+    # does exactly that -- rather than reading a flag off the card.
     return {
         "public_player_id": profile.get("public_player_id") or profile.get("username"),
         "display_name": profile.get("display_name") or profile.get("public_player_id") or "Arena Pilot",
@@ -25498,7 +25623,6 @@ def public_arena_player(profile):
         "xp": int(profile.get("xp") or 0),
         "streak_count": int(profile.get("streak_count") or 0),
         "favorite_asset": profile.get("favorite_asset") or "BTC",
-        "online_status": profile.get("online_status") if show_online else "hidden",
         "discipline_score": int(profile.get("discipline_score") or 50),
         "scam_defense_score": int(profile.get("scam_defense_score") or 50),
         "ai_summary": arena_player_style_summary(profile),
@@ -25681,8 +25805,8 @@ def get_or_create_arena_profile(user_id):
         cur.execute(
             """
             INSERT INTO arena_profiles
-            (user_id, public_player_id, display_name, privacy_settings_json, username, xp, rank, arena_iq, streak_count, country, favorite_asset, online_status, discipline_score, scam_defense_score, strategy_score, prediction_accuracy_score, last_seen_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 0, 'Rookie', 50, 0, ?, 'BTC', 'training', 50, 50, 50, 50, ?, ?, ?)
+            (user_id, public_player_id, display_name, privacy_settings_json, username, xp, rank, arena_iq, streak_count, country, favorite_asset, discipline_score, scam_defense_score, strategy_score, prediction_accuracy_score, last_seen_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 0, 'Rookie', 50, 0, ?, 'BTC', 50, 50, 50, 50, ?, ?, ?)
             """,
             (user_id, public_id, display_name, json.dumps(default_arena_privacy()), username, user.get("country") or "", now, now, now),
         )
@@ -25844,7 +25968,7 @@ def update_arena_profile_after_attempt(user_id, result):
         UPDATE arena_profiles
         SET xp=?, rank=?, arena_iq=?, streak_count=streak_count+1,
             discipline_score=?, scam_defense_score=?, strategy_score=?, prediction_accuracy_score=?,
-            online_status='training', last_seen_at=?, updated_at=?
+            last_seen_at=?, updated_at=?
         WHERE user_id=?
         """,
         (
@@ -25889,7 +26013,7 @@ def award_arena_continuous_xp(user_id, xp, reason="continuous_play", score=0):
     row = cur.fetchone()
     total_xp = int((row or {}).get("xp") if hasattr(row, "get") else row["xp"] if row else 0) + xp
     cur.execute(
-        "UPDATE arena_profiles SET xp=?, rank=?, arena_iq=MAX(arena_iq, ?), online_status='training', last_seen_at=?, updated_at=? WHERE user_id=?",
+        "UPDATE arena_profiles SET xp=?, rank=?, arena_iq=MAX(arena_iq, ?), last_seen_at=?, updated_at=? WHERE user_id=?",
         (total_xp, arena_rank_for_xp(total_xp), min(100, 50 + int(score or 0) // 2), now, now, user_id),
     )
     cur.execute(
@@ -26134,7 +26258,7 @@ def ensure_arena_participant(cur, match_id, user_id, fake_balance=10000):
 def arena_public_match_participants(cur, match_id):
     cur.execute(
         """
-        SELECT p.*, ap.public_player_id, ap.display_name, ap.rank, ap.country, ap.avatar_url, ap.faction, ap.online_status
+        SELECT p.*, ap.public_player_id, ap.display_name, ap.rank, ap.country, ap.avatar_url, ap.faction
         FROM arena_match_participants p
         LEFT JOIN arena_profiles ap ON ap.user_id=p.user_id
         WHERE p.match_id=? ORDER BY p.score DESC, p.joined_at ASC
@@ -26152,7 +26276,6 @@ def arena_public_match_participants(cur, match_id):
             "country": item.get("country"),
             "avatar_url": item.get("avatar_url"),
             "faction": item.get("faction"),
-            "online_status": item.get("online_status"),
         })
         item.update(profile)
         item.pop("email", None)
@@ -26707,6 +26830,26 @@ def arena_chat_payload(thread_id, user_id, limit=50, after_id=None):
     sender_cards = arena_sender_cards(cur, [user_id, other_id] + [message.get("sender_id") for message in raw_messages])
     profiles = {int(user_id): sender_cards.get(int(user_id), {}), other_id: sender_cards.get(other_id, {})}
     messages = [arena_public_message(cur, message, user_id, sender_cards) for message in raw_messages]
+    # Presence for the other participant, from the one service, filtered for
+    # this viewer. The Arena chat page used to render the literal string
+    # "Online / recently active" into its header -- not derived from anything,
+    # true of every thread whether or not the other person had ever connected.
+    # presence_for applies invisible mode and blocking, so a hidden peer comes
+    # back as plain offline here exactly as it does in Messenger.
+    # Shaped exactly like a presence_for entry -- `online` is the boolean that
+    # service emits, not `active_now`. Inventing a differently-named field here
+    # would make the client's liveness test silently always-false, which fails
+    # safe but for the wrong reason and would hide a real outage.
+    other_presence = {"status": "offline", "online": False, "last_seen_at": "", "last_seen_text": ""}
+    try:
+        from services import presence_service
+
+        entry = presence_service.presence_for(cur, int(user_id), [other_id]).get(other_id) or {}
+        if entry:
+            other_presence = entry
+    except Exception as exc:
+        # Fail closed: an unreadable presence store reports offline, never online.
+        logging.warning("ARENA_CHAT_PRESENCE_UNAVAILABLE thread_id=%s error=%s", thread_id, exc.__class__.__name__)
     conn.close()
     last_message_id = max([int(message.get("message_id") or 0) for message in messages] or [int(after_id or 0)])
     return {
@@ -26714,6 +26857,7 @@ def arena_chat_payload(thread_id, user_id, limit=50, after_id=None):
         "thread": {"id": int(thread["id"]), "status": thread["status"], "updated_at": thread["updated_at"], "last_message_at": thread["last_message_at"] if "last_message_at" in thread.keys() else thread["updated_at"]},
         "me": profiles.get(int(user_id), {}),
         "other": profiles.get(other_id, {}),
+        "other_presence": other_presence,
         "participants": [profiles.get(int(user_id), {}), profiles.get(other_id, {})],
         "messages": messages,
         "last_message_id": last_message_id,
@@ -27409,7 +27553,10 @@ def arena_players_page():
         return redirect(url_for("signup_page", next="/arena/players"))
     players = arena_leaderboard_payload(limit=24).get("players", [])
     cards = "".join(
-        f"""<article class="player-card elite"><strong>{clean_html(p.get('display_name'))}</strong><span class="rank">{clean_html(p.get('rank'))}</span><p>Arena IQ {int(p.get('arena_iq') or 0)} · {clean_html(p.get('online_status') or 'training')}</p><div class="actions"><a class="button" href="/arena/player/{clean_html(p.get('public_player_id'))}">Profile</a><button data-message="{clean_html(p.get('public_player_id'))}">Message</button><button data-challenge="{clean_html(p.get('public_player_id'))}">Challenge</button><button data-follow="{clean_html(p.get('public_player_id'))}">Follow</button></div></article>"""
+        # No ` · training` fallback. arena_profiles.online_status is written on
+        # activity and never cleared, and defaulting the empty case to
+        # "training" invented an activity for players who had none.
+        f"""<article class="player-card elite"><strong>{clean_html(p.get('display_name'))}</strong><span class="rank">{clean_html(p.get('rank'))}</span><p>Arena IQ {int(p.get('arena_iq') or 0)}</p><div class="actions"><a class="button" href="/arena/player/{clean_html(p.get('public_player_id'))}">Profile</a><button data-message="{clean_html(p.get('public_player_id'))}">Message</button><button data-challenge="{clean_html(p.get('public_player_id'))}">Challenge</button><button data-follow="{clean_html(p.get('public_player_id'))}">Follow</button></div></article>"""
         for p in players
     )
     body = f"""
@@ -27449,7 +27596,7 @@ def arena_chat_page(thread_id):
     body = f"""
     <section class="hero">
       <article class="card wide"><div class="kicker">Arena Live Chat</div><h1>{clean_html(other.get('display_name') or 'Arena Pilot')}</h1><p><span class="rank">{clean_html(other.get('rank') or 'Rookie')}</span> <span class="muted">· live thread · public Arena identity only</span></p></article>
-      <article class="card"><h2>Presence</h2><p><span class="online-dot">Online / recently active</span></p><p class="muted" data-typing>Ready.</p></article>
+      <article class="card"><h2>Presence</h2><p class="muted" data-arena-chat-presence>Checking presence...</p></article>
     </section>
     <section class="card" style="min-height:58vh;display:grid;grid-template-rows:auto 1fr auto;gap:12px">
       <div class="actions"><a class="button" href="/arena/inbox">Inbox</a><a class="button" href="/arena/player/{clean_html(other.get('public_player_id') or '')}">View Profile</a><button data-sound-toggle>Sound</button></div>
@@ -27463,7 +27610,20 @@ def arena_chat_page(thread_id):
     function messageHtml(m, optimistic=false){{return `<div class="chat-bubble ${{m.is_mine?'me':'them'}}" data-message-id="${{m.message_id||0}}"><span>${{esc(m.body)}}</span><small>${{esc(optimistic?'sending...':(m.delivery_status||'delivered'))}}</small></div>`;}}
     function appendMessages(items){{const box=document.querySelector('[data-arena-chat-thread]');const existing=new Set([...box.querySelectorAll('[data-message-id]')].map(n=>n.dataset.messageId));(items||[]).forEach(m=>{{if(existing.has(String(m.message_id)))return;box.insertAdjacentHTML('beforeend',messageHtml(m));lastMessageId=Math.max(lastMessageId,Number(m.message_id||0));}});box.scrollTop=box.scrollHeight;}}
     function renderMessages(items){{const box=document.querySelector('[data-arena-chat-thread]');box.innerHTML=(items||[]).map(m=>messageHtml(m)).join('')||'<div class="private-chat-empty">Send the first Arena reply.</div>';lastMessageId=Math.max(0,...(items||[]).map(m=>Number(m.message_id||0)));box.scrollTop=box.scrollHeight;}}
-    async function loadChat(){{if(chatLoading||document.hidden)return;chatLoading=true;try{{const url=lastMessageId?`/api/arena/chat/${{threadId}}/new?after_id=${{lastMessageId}}`:`/api/arena/chat/${{threadId}}`;const d=await fetch(url,{{cache:'no-store'}}).then(r=>r.json());if(d.ok){{if(lastMessageId)appendMessages(d.messages);else renderMessages(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));}}}}finally{{chatLoading=false;}}}}
+    function renderPresence(p){{const box=document.querySelector('[data-arena-chat-presence]');if(!box)return;
+      // Rendered only from what the server sent. `online` is the service's own
+      // boolean; the status string is used solely to pick the word, never to
+      // decide liveness, so an unrecognised status cannot light the dot.
+      // A missing object leaves the header alone rather than asserting
+      // "Offline" -- a dropped poll is not evidence the peer left.
+      if(!p||typeof p!=='object')return;
+      const status=String(p.status||'offline');
+      if(p.online===true&&(status==='online'||status==='away')){{box.innerHTML=`<span class="online-dot">${{esc(status==='away'?'Away':'Online')}}</span>`;return;}}
+      // last_seen_text is formatted server-side in the viewer's locale, and is
+      // empty whenever the peer hides last seen. Falling back to the raw
+      // timestamp would leak an unformatted value the server chose to withhold.
+      box.textContent=p.last_seen_text?`Last seen ${{esc(p.last_seen_text)}}`:'Offline';}}
+    async function loadChat(){{if(chatLoading||document.hidden)return;chatLoading=true;try{{const url=lastMessageId?`/api/arena/chat/${{threadId}}/new?after_id=${{lastMessageId}}`:`/api/arena/chat/${{threadId}}`;const d=await fetch(url,{{cache:'no-store'}}).then(r=>r.json());if(d.ok){{if(lastMessageId)appendMessages(d.messages);else renderMessages(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));renderPresence(d.other_presence);}}}}finally{{chatLoading=false;}}}}
     document.querySelector('[data-arena-chat-form]').addEventListener('submit',async e=>{{e.preventDefault();const input=e.target.elements.body;const button=e.target.querySelector('button');const body=input.value.trim();if(!body)return;input.value='';button.disabled=true;const tempId=`temp-${{Date.now()}}`;const box=document.querySelector('[data-arena-chat-thread]');box.insertAdjacentHTML('beforeend',`<div class="chat-bubble me" data-message-id="${{tempId}}"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;try{{const d=await fetch(`/api/arena/chat/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message:body,body}})}}).then(r=>r.json());const pending=box.querySelector(`[data-message-id="${{tempId}}"]`);if(d.ok&&d.message){{if(pending)pending.outerHTML=messageHtml(d.message);lastMessageId=Math.max(lastMessageId,Number(d.message.message_id||0));}}else if(pending){{pending.querySelector('small').textContent='failed - retry';input.value=body;}}}}catch(err){{input.value=body;}}finally{{button.disabled=false;if(navigator.vibrate)navigator.vibrate([30]);if(soundOn&&window.CoinPilotNotifications)window.CoinPilotNotifications.playSound();}}}});
     document.querySelector('[data-arena-chat-form] input').addEventListener('input',()=>fetch('/api/arena/chat/typing',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{thread_id:threadId}})}}).catch(()=>{{}}));
     document.addEventListener('click',e=>{{if(e.target.closest('[data-sound-toggle]')){{soundOn=!soundOn;e.target.textContent=soundOn?'Sound On':'Sound';}}}});
@@ -28060,7 +28220,7 @@ def arena_phase_two_page(room_id=None, match_id=None):
           joinBtn.hidden=!d.can_join;
           document.querySelector('[data-arena-trade]').hidden=!d.can_trade;
           document.querySelector('[data-trade-gate]').innerHTML=d.can_trade?'':(d.can_join?'<p class="muted">Join this battle to enable the simulated trade ticket.</p>':'<p class="muted">Spectator mode. Simulated trading is only available to participants.</p>');
-          document.querySelector('[data-participants]').innerHTML = (d.participants || []).map(p => `<div class="player-card"><strong>${{esc(p.display_name || 'Arena Pilot')}}</strong><span class="rank">${{p.score || 0}} pts</span><p>Virtual cash $${{Number(p.fake_balance || 0).toLocaleString()}}</p><p class="muted">${{esc(p.rank||'Rookie')}} · ${{esc(p.online_status||'training')}}</p></div>`).join('') || '<p class="muted">Waiting for pilots.</p>';
+          document.querySelector('[data-participants]').innerHTML = (d.participants || []).map(p => `<div class="player-card"><strong>${{esc(p.display_name || 'Arena Pilot')}}</strong><span class="rank">${{p.score || 0}} pts</span><p>Virtual cash $${{Number(p.fake_balance || 0).toLocaleString()}}</p><p class="muted">${{esc(p.rank||'Rookie')}}</p></div>`).join('') || '<p class="muted">Waiting for pilots.</p>';
           document.querySelector('[data-positions]').innerHTML = (d.positions || []).map(p => `<div class="player-card"><strong>${{esc(p.symbol)}}</strong><p>Qty ${{Number(p.quantity || 0).toFixed(6)}} · Avg $${{Number(p.average_price || 0).toLocaleString()}} · Realized P/L $${{Number(p.realized_pnl || 0).toFixed(2)}}</p></div>`).join('') || '<p class="muted">No simulated positions yet.</p>';
           document.querySelector('[data-match-events]').innerHTML = (d.events || []).map(e => `<div><strong>${{esc(e.title || e.event_type)}}</strong><p>${{esc(e.body || '')}}</p><small>${{esc(e.created_at || '')}}</small></div>`).join('') || '<div>Waiting for the first Arena event.</div>';
           const m=d.market_context||{{}};
@@ -28400,10 +28560,15 @@ def api_arena_presence():
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
+    # arena_presence rows are client-submitted and were shown for a fixed
+    # fifteen minutes after the last update, so a player who closed the app
+    # stayed on the roster with whatever status they last claimed. The row is
+    # still the source of *what* they were doing in the Arena; whether they are
+    # here at all is now asked of the presence service.
     cutoff = (datetime.now() - timedelta(minutes=15)).isoformat()
     cur.execute(
         """
-        SELECT pr.status, pr.room_id, pr.match_id, pr.updated_at, ap.public_player_id, ap.display_name, ap.rank, ap.online_status
+        SELECT pr.user_id, pr.status, pr.room_id, pr.match_id, pr.updated_at, ap.public_player_id, ap.display_name, ap.rank
         FROM arena_presence pr
         LEFT JOIN arena_profiles ap ON ap.user_id=pr.user_id
         WHERE pr.updated_at>=?
@@ -28412,17 +28577,37 @@ def api_arena_presence():
         """,
         (cutoff,),
     )
+    candidates = [dict(row) for row in cur.fetchall()]
+    live_ids: set[int] = set()
+    try:
+        from services import presence_service
+
+        arena_presence_map = presence_service.presence_for(
+            cur,
+            int(user["user_id"]),
+            [int(item.get("user_id") or 0) for item in candidates],
+        )
+        live_ids = {uid for uid, item in arena_presence_map.items() if item.get("online")}
+    except Exception as exc:
+        # Fail closed: an unreadable presence store empties the roster rather
+        # than filling it with players who may not be here.
+        logging.warning("ARENA_PRESENCE_UNAVAILABLE error=%s", exc.__class__.__name__)
     presence = []
-    for row in cur.fetchall():
-        item = dict(row)
+    for item in candidates:
+        if int(item.get("user_id") or 0) not in live_ids:
+            continue
         item.update(public_arena_player(item))
         item.pop("user_id", None)
+        # public_arena_player no longer carries online_status, so the
+        # never-reset 'training' flag cannot re-enter the payload through the
+        # card either. Everything a client learns about liveness here came from
+        # live_ids above.
         presence.append(item)
     cur.execute("SELECT title, body, event_type, created_at FROM arena_match_events ORDER BY id DESC LIMIT 8")
     events = [f"{row['title']}: {row['body']}" if row["body"] else row["title"] for row in cur.fetchall()]
     conn.close()
-    if not events:
-        events = ["AI commentator is scanning market pressure.", "Arena rooms are open for Pro training.", "Scam Hunter drills are active."]
+    # No filler. An empty Arena reports an empty Arena; the previous fallback
+    # invented three lines of activity that had not happened.
     return jsonify({"ok": True, "presence": presence, "activity": events, "updated_at": datetime.now().isoformat()})
 
 
@@ -28455,7 +28640,13 @@ def api_arena_presence_update():
         """,
         (user["user_id"], status, room_id, match_id, now),
     )
-    cur.execute("UPDATE arena_profiles SET online_status=?, last_seen_at=?, updated_at=? WHERE user_id=?", (status, now, now, user["user_id"]))
+    # No longer mirrors the client-submitted status into
+    # arena_profiles.online_status. That column had no reader left once
+    # public_arena_player stopped emitting it, and this was the one write that
+    # put *client-controlled* text into it -- the shape most likely to tempt a
+    # future reader into treating it as presence. last_seen_at is still updated
+    # because the Arena profile page shows it as a plain timestamp.
+    cur.execute("UPDATE arena_profiles SET last_seen_at=?, updated_at=? WHERE user_id=?", (now, now, user["user_id"]))
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "status": status, "updated_at": now})
@@ -29629,7 +29820,7 @@ def api_arena_quests_claim():
     profile_row = cur.fetchone()
     if not profile_row:
         cur.execute(
-            "INSERT INTO arena_profiles (user_id, username, xp, rank, arena_iq, streak_count, online_status, created_at, updated_at) VALUES (?, ?, 0, 'Rookie', 50, 0, 'training', ?, ?)",
+            "INSERT INTO arena_profiles (user_id, username, xp, rank, arena_iq, streak_count, created_at, updated_at) VALUES (?, ?, 0, 'Rookie', 50, 0, ?, ?)",
             (user["user_id"], arena_username_for_user(user), now, now),
         )
         current_xp = 0
@@ -30313,7 +30504,17 @@ def api_arena_chat_new(thread_id):
     )
     if not payload:
         return jsonify({"ok": False, "message": "Thread not found."}), 404
-    return jsonify({"ok": True, "messages": payload.get("messages") or [], "last_message_id": payload.get("last_message_id") or int(request.args.get("after_id") or 0)})
+    # other_presence rides the delta response too. This is the route the page
+    # polls every two seconds once it has any message; without it the header
+    # would be populated by the first full load and then never updated again,
+    # which is a stale indicator rather than a fabricated one but is just as
+    # much a lie after the peer disconnects.
+    return jsonify({
+        "ok": True,
+        "messages": payload.get("messages") or [],
+        "last_message_id": payload.get("last_message_id") or int(request.args.get("after_id") or 0),
+        "other_presence": payload.get("other_presence") or {},
+    })
 
 
 @webhook_app.route("/api/arena/chat/send", methods=["POST"])
@@ -30374,7 +30575,31 @@ def api_arena_chat_typing():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     thread_id = int((request.get_json(silent=True) or {}).get("thread_id") or 0)
-    return jsonify({"ok": True, "status": "typing", "thread_id": thread_id, "player": public_arena_player(get_or_create_arena_profile(user["user_id"]) or {})})
+    # This route used to echo status:"typing" straight back to the sender and
+    # store nothing at all -- the one person guaranteed already to know they
+    # were typing. No peer could ever see it. It now records the activity in the
+    # presence service, keyed on the thread, so Arena typing lives in the same
+    # store, on the same TTL, and under the same privacy rules as Messenger's.
+    recorded = False
+    try:
+        from services import presence_service
+
+        conn = db()
+        try:
+            cur = conn.cursor()
+            result = presence_service.set_activity_for_user(
+                cur, user["user_id"], "typing", f"arena:{thread_id}", conn=conn
+            )
+            conn.commit()
+            recorded = bool(result.get("ok"))
+        finally:
+            conn.close()
+    except Exception as exc:
+        logging.warning("ARENA_TYPING_PRESENCE_UNAVAILABLE thread_id=%s error=%s", thread_id, exc.__class__.__name__)
+    # `recorded` is the truth about what happened, not a fixed "typing" string.
+    # It is false when the user has no live presence session, and a caller that
+    # cannot record presence should not be told that it did.
+    return jsonify({"ok": True, "recorded": recorded, "thread_id": thread_id, "player": public_arena_player(get_or_create_arena_profile(user["user_id"]) or {})})
 
 
 @webhook_app.route("/api/arena/block-player", methods=["POST"])
@@ -37720,9 +37945,38 @@ def pulse_conversation_summaries(cur, user_id, include_types=None, limit=80, tra
     )
     conversations = []
     skipped = []
-    typing_cutoff = (datetime.utcnow() - timedelta(seconds=8)).isoformat(timespec="seconds")
     now = datetime.utcnow().isoformat(timespec="seconds")
-    for row in cur.fetchall():
+    conversation_rows = cur.fetchall()
+    # One batched typing read for the whole list, from the presence service.
+    # Each row previously ran its own query against pulse_conversation_typing
+    # with a local 8-second cutoff, which made the list a second authority on
+    # both who is typing and when that stops being true.
+    typing_by_conversation = {}
+    try:
+        from services import presence_service
+
+        typing_by_conversation = presence_service.activity_by_context(
+            cur,
+            user_id,
+            [str(int(dict(r).get("id") or 0)) for r in conversation_rows],
+            activities=("typing",),
+        )
+    except Exception as exc:
+        # Fail closed: no typing indicators rather than possibly wrong ones.
+        logging.warning("PULSE_CONVERSATION_LIST_TYPING_UNAVAILABLE trace_id=%s error=%s", trace_id, exc.__class__.__name__)
+    typing_display_names = {}
+    typing_ids = sorted({uid for entry in typing_by_conversation.values() for uid in entry})
+    if typing_ids:
+        try:
+            cur.execute(
+                "SELECT user_id, COALESCE(display_name,username,'PulseSoc member') AS display_name FROM users WHERE user_id IN (%s)"
+                % ",".join(["?"] * len(typing_ids)),
+                tuple(typing_ids),
+            )
+            typing_display_names = {int(dict(r)["user_id"]): dict(r)["display_name"] for r in cur.fetchall() or []}
+        except Exception as exc:
+            logging.warning("PULSE_CONVERSATION_LIST_TYPING_NAMES_FAILED trace_id=%s error=%s", trace_id, exc.__class__.__name__)
+    for row in conversation_rows:
         try:
             item = dict(row)
             conversation_id = int(item.get("id") or 0)
@@ -37756,21 +38010,10 @@ def pulse_conversation_summaries(cur, user_id, include_types=None, limit=80, tra
                     unread_count = int(dict(cur.fetchone() or {}).get("total") or 0)
                 except Exception:
                     logging.exception("PULSE_CONVERSATION_UNREAD_FAILED trace_id=%s conversation_id=%s", trace_id, conversation_id)
-            typing_names = []
-            try:
-                cur.execute(
-                    """
-                    SELECT COALESCE(u.display_name,u.username,'PulseSoc member') AS display_name
-                    FROM pulse_conversation_typing t
-                    JOIN users u ON u.user_id=t.user_id
-                    WHERE t.conversation_id=? AND t.user_id!=? AND t.typing_until>=?
-                    ORDER BY t.updated_at DESC LIMIT 3
-                    """,
-                    (conversation_id, user_id, typing_cutoff),
-                )
-                typing_names = [dict(row).get("display_name") or "PulseSoc member" for row in cur.fetchall()]
-            except Exception:
-                logging.exception("PULSE_CONVERSATION_TYPING_FAILED trace_id=%s conversation_id=%s", trace_id, conversation_id)
+            typing_names = [
+                typing_display_names.get(uid) or "PulseSoc member"
+                for uid in sorted(typing_by_conversation.get(str(conversation_id), {}))
+            ][:3]
             preview_users = []
             try:
                 cur.execute(
@@ -37872,8 +38115,23 @@ def pulse_ensure_default_rooms(cur, current_user_id):
                 (conversation_id,),
             )
             last = dict(cur.fetchone() or {})
-            cur.execute("SELECT COUNT(*) AS total FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
-            online_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+            # Membership is not presence. This counted every participant who
+            # had never explicitly left, so someone who joined a room years ago
+            # and never returned was counted as "online" forever -- and the
+            # room's energy bar was computed from that same number. Ask the
+            # presence service who is actually live instead.
+            cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
+            member_ids = [int(dict(row).get("user_id") or 0) for row in cur.fetchall()]
+            online_count = 0
+            try:
+                from services import presence_service
+
+                room_presence = presence_service.presence_for(cur, int(current_user_id or 0), member_ids)
+                online_count = sum(1 for item in room_presence.values() if item.get("online"))
+            except Exception as exc:
+                # Fail closed: an unreadable presence store reports an empty
+                # room, never a full one.
+                logging.warning("PULSE_ROOM_PRESENCE_UNAVAILABLE room=%s error=%s", room.get("key"), exc.__class__.__name__)
             cur.execute("SELECT COALESCE(unread_count,0) AS unread_count, COALESCE(last_read_message_id,0) AS last_read_message_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, current_user_id))
             mine = dict(cur.fetchone() or {})
             unread_count = int(mine.get("unread_count") or 0)
@@ -37889,7 +38147,10 @@ def pulse_ensure_default_rooms(cur, current_user_id):
             rooms.append({
                 "id": room["key"],
                 "room_id": room["key"],
-                "energy": min(99, 42 + online_count * 3),
+                # No invented floor. The old expression started at 42, so a room
+                # with nobody in it still rendered a bar just under half full --
+                # a simulated activity signal on a dead room.
+                "energy": min(99, online_count * 12),
                 "conversation_id": conversation_id,
                 "name": room["name"],
                 "title": room["name"],
@@ -38311,38 +38572,71 @@ def pulse_conversation_presence_payload(cur, conversation_id, current_user_id=0)
     conversation = dict(cur.fetchone() or {})
     if not conversation:
         return {}
-    cutoff = (datetime.utcnow() - timedelta(minutes=6)).isoformat(timespec="seconds")
+    # Membership only. Liveness is asked of the presence service below rather
+    # than inferred here.
+    #
+    # This used to LEFT JOIN pulse_online_sessions and fall back to
+    # users.last_seen_at, calling anyone seen within six minutes "online".
+    # Both inputs are wrong for the question: users.last_seen_at is touched by
+    # any authenticated page view, so closing the browser left a user reading
+    # as online for the rest of the window, and the six-minute cutoff was a
+    # third grace period competing with the service's own.
     cur.execute(
         """
-        SELECT DISTINCT u.user_id, COALESCE(u.display_name,u.username,'PulseSoc user') AS display_name,
+        SELECT u.user_id, COALESCE(u.display_name,u.username,'PulseSoc user') AS display_name,
                COALESCE(u.avatar_url,'') AS avatar_url,
                COALESCE(p.role,'member') AS role,
-               MAX(COALESCE(os.last_seen_at,u.last_seen_at,'')) AS seen_at
+               COALESCE(p.joined_at,p.created_at,'') AS joined_at
         FROM pulse_conversation_participants p
         JOIN users u ON u.user_id=p.user_id
-        LEFT JOIN pulse_online_sessions os ON os.user_id=p.user_id AND COALESCE(os.last_seen_at,'')>=?
         WHERE p.conversation_id=? AND COALESCE(p.left_at,'')=''
         GROUP BY u.user_id
-        ORDER BY COALESCE(os.last_seen_at,u.last_seen_at,p.joined_at,p.created_at,'') DESC
-        LIMIT 12
+        LIMIT 60
         """,
-        (cutoff, conversation_id),
+        (conversation_id,),
     )
     members = [dict(row) for row in cur.fetchall()]
+    presence_by_user = {}
+    try:
+        from services import presence_service
+
+        presence_by_user = presence_service.presence_for(
+            cur,
+            int(current_user_id or 0),
+            [int(member.get("user_id") or 0) for member in members],
+        )
+    except Exception as exc:
+        # Fail closed. If presence cannot be read, everyone reports offline --
+        # never the reverse. An empty map below produces exactly that.
+        logging.warning("PULSE_CONVERSATION_PRESENCE_UNAVAILABLE conversation_id=%s error=%s", conversation_id, exc.__class__.__name__)
     active_members = []
     online_count = 0
     for member in members:
-        is_online = bool(member.get("seen_at") and str(member.get("seen_at")) >= cutoff)
+        user_id = int(member.get("user_id") or 0)
+        presence = presence_by_user.get(user_id) or {}
+        is_online = bool(presence.get("online"))
         if is_online:
             online_count += 1
         active_members.append({
-            "id": int(member.get("user_id") or 0),
+            "id": user_id,
             "display_name": member.get("display_name") or "PulseSoc user",
             "avatar_url": member.get("avatar_url") or "",
             "role": member.get("role") or "member",
             "online": is_online,
-            "is_self": int(member.get("user_id") or 0) == int(current_user_id or 0),
+            "status": presence.get("status") or "offline",
+            "activity": presence.get("activity") or "idle",
+            # Composed server-side by the presence service so every client
+            # words it identically, and empty when the viewer is not entitled
+            # to see it.
+            "last_seen_text": presence.get("last_seen_text") or "",
+            "is_self": user_id == int(current_user_id or 0),
         })
+    # Online members first, then the most recently seen. The ordering used to
+    # come out of SQL; it now follows the same presence answer the payload
+    # reports, so the list cannot be sorted by one notion of recency while
+    # being labelled by another.
+    active_members.sort(key=lambda item: (not item["online"], item["display_name"].lower()))
+    active_members = active_members[:12]
     cur.execute(
         """
         SELECT body, message_type, created_at
@@ -38374,7 +38668,11 @@ def pulse_conversation_presence_payload(cur, conversation_id, current_user_id=0)
         (conversation_id, int(current_user_id or 0)),
     )
     helpful = dict(cur.fetchone() or {})
-    pulse_energy = min(99, 42 + online_count * 7 + recent_count * 5)
+    # Both inputs are now real: online_count comes from the presence service and
+    # recent_count from messages actually sent in the last hour. The former
+    # constant floor of 42 meant an empty, silent conversation still showed a
+    # half-full energy bar.
+    pulse_energy = min(99, online_count * 7 + recent_count * 5)
     title = conversation.get("title") or ("PulseSoc Room" if (conversation.get("conversation_type") or "") in {"room", "chat_room"} else "Group Chat")
     summary = "The room is warming up. Start with a useful question or a quick update."
     if recent_messages:
@@ -38382,24 +38680,35 @@ def pulse_conversation_presence_payload(cur, conversation_id, current_user_id=0)
         if latest:
             summary = f"Latest energy: {str(latest.get('body') or '')[:140]}"
     moderators = [m for m in active_members if str(m.get("role") or "").lower() in {"owner", "admin", "moderator"}][:4]
-    typing_cutoff = (datetime.utcnow() - timedelta(seconds=8)).isoformat(timespec="seconds")
-    cur.execute(
-        """
-        SELECT t.user_id, COALESCE(u.display_name,u.username,'PulseSoc member') AS display_name
-        FROM pulse_conversation_typing t
-        JOIN users u ON u.user_id=t.user_id
-        WHERE t.conversation_id=? AND t.user_id!=? AND t.typing_until>=?
-        ORDER BY t.updated_at DESC
-        LIMIT 5
-        """,
-        (conversation_id, int(current_user_id or 0), typing_cutoff),
-    )
-    typing_users = [{"id": int(row["user_id"]), "display_name": row["display_name"] or "PulseSoc member"} for row in cur.fetchall()]
+    # Typing comes from the presence service, not from a table this surface
+    # keeps for itself. The old query read pulse_conversation_typing against its
+    # own 8-second cutoff -- a second expiry rule running alongside the
+    # service's, and therefore a second place a stuck bubble could originate.
+    typing_users = []
+    try:
+        from services import presence_service
+
+        typing_ids = presence_service.activity_by_context(
+            cur, int(current_user_id or 0), [str(conversation_id)], activities=("typing",)
+        ).get(str(conversation_id), {})
+        names = {int(m.get("user_id") or 0): m.get("display_name") for m in members}
+        typing_users = [
+            {"id": uid, "display_name": names.get(uid) or "PulseSoc member"}
+            for uid in sorted(typing_ids)
+            if uid in names
+        ][:5]
+    except Exception as exc:
+        # Fail closed: an unreadable presence store shows nobody typing.
+        logging.warning("PULSE_CONVERSATION_TYPING_UNAVAILABLE conversation_id=%s error=%s", conversation_id, exc.__class__.__name__)
     return {
         "conversation_id": conversation_id,
         "title": title,
         "conversation_type": conversation.get("conversation_type") or "group",
-        "online_count": max(online_count, 1 if active_members else 0),
+        # No floor. This was max(online_count, 1 if active_members else 0), so
+        # any conversation with a member list reported at least one person
+        # online -- an empty room always claimed one live participant, and the
+        # viewer could be looking at their own name while nobody was there.
+        "online_count": online_count,
         "active_members": active_members[:8],
         "moderators": moderators,
         "pulse_energy": pulse_energy,
@@ -39404,22 +39713,28 @@ def pulse_mark_online(user_id, connection_type="http", current_path=""):
         conn = db()
         cur = conn.cursor()
         session_id = str(sid)[:160]
-        cur.execute(
-            """
-            UPDATE pulse_online_sessions
-            SET connection_type=?, current_path=?, last_seen_at=?, online_status='online'
-            WHERE user_id=? AND session_id=?
-            """,
-            (str(connection_type)[:40], str(current_path or request.path)[:260], now, user_id, session_id),
-        )
-        if cur.rowcount == 0:
-            cur.execute(
-                """
-                INSERT INTO pulse_online_sessions (user_id, session_id, connection_type, current_path, last_seen_at, online_status, created_at)
-                VALUES (?, ?, ?, ?, ?, 'online', ?)
-                """,
-                (user_id, session_id, str(connection_type)[:40], str(current_path or request.path)[:260], now, now),
+        # The web page-view heartbeat now lands in the presence service, which
+        # is the same store the mobile clients heartbeat into and the same one
+        # every surface reads. Previously this wrote a pulse_online_sessions row
+        # with online_status='online' -- a flag nothing ever cleared, in a table
+        # that by the end had no readers left at all. A presence session, by
+        # contrast, expires on the shared clock: stop making requests and you
+        # stop being online, with nothing needing to notice.
+        try:
+            from services import presence_service
+
+            presence_service.touch_device(
+                cur,
+                user_id,
+                device_id=f"web:{session_id}",
+                device_label=str(connection_type or "web")[:40],
+                platform="web",
+                conn=conn,
             )
+        except Exception as exc:
+            logging.debug("PULSE_ONLINE_PRESENCE_SKIPPED user_id=%s error=%s", user_id, exc.__class__.__name__)
+        # Retained for the admin user list and login auditing, which display it
+        # as a raw timestamp. Nothing derives liveness from it any more.
         cur.execute("UPDATE users SET last_seen_at=? WHERE user_id=?", (now, user_id))
         conn.commit()
         conn.close()
@@ -39479,7 +39794,27 @@ def pulse_live_metrics():
     metrics["transport"] = "sse_with_polling_fallback"
     metrics["comments_per_sec"] = round(metrics.get("comments_last_minute", 0) / 60, 3)
     metrics["reactions_per_sec"] = round(metrics.get("reactions_last_minute", 0) / 60, 3)
-    metrics["online_users"] = max(metrics.get("active_users", 0), realtime_health.get("online_users", 0))
+    # `active_users` counts distinct actors in the last minute of the event log,
+    # which answers "who did something recently", not "who is connected". A user
+    # who reacted to a post 45 seconds ago and then killed the app was counted
+    # as online. Taking max() of that against the transport's own figure made it
+    # strictly worse: the number could only ever be inflated, never corrected.
+    #
+    # online_users now comes from the presence service, the same source every
+    # user-facing surface reads. The event-log figure is kept under its own
+    # honest name so the dashboard does not lose the signal.
+    try:
+        from services import presence_service
+
+        _presence_conn = db()
+        try:
+            metrics["online_users"] = int(presence_service.health_snapshot(_presence_conn.cursor(), conn=_presence_conn).get("online_users") or 0)
+        finally:
+            _presence_conn.close()
+    except Exception as exc:
+        logging.warning("PULSE_LIVE_METRICS_PRESENCE_UNAVAILABLE error=%s", exc.__class__.__name__)
+        metrics["online_users"] = 0
+    metrics["actors_last_minute"] = metrics.get("active_users", 0)
     metrics["active_realtime_clients"] = realtime_health.get("active_realtime_clients", 0)
     metrics["websocket_clients"] = 0
     metrics["failed_socket_events"] = realtime_health.get("failed_broadcasts", 0)
@@ -77422,7 +77757,15 @@ def api_pulse_comments(post_id):
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     if request.method == "GET":
-        return jsonify(pulse_feed_engine.list_comments(post_id))
+        # limit/offset make comment pagination real instead of a client-side
+        # slice of an unbounded fetch. Omitting both preserves the previous
+        # response shape and defaults, so existing callers are unaffected.
+        return jsonify(pulse_feed_engine.list_comments(
+            post_id,
+            limit=safe_int(request.args.get("limit"), pulse_feed_engine.COMMENT_PAGE_LIMIT_DEFAULT),
+            offset=safe_int(request.args.get("offset"), 0),
+            viewer_user_id=user["user_id"],
+        ))
     payload = request.get_json(silent=True) or {}
     result, status = pulse_feed_engine.add_comment(user["user_id"], post_id, payload.get("body") or "", payload.get("parent_comment_id"), payload.get("media_ids") or [], notify_owner=False)
     if result.get("ok"):
@@ -79758,15 +80101,26 @@ def api_pulse_messages_typing(conversation_id):
     allowed = bool(cur.fetchone())
     if allowed:
         now = datetime.utcnow().isoformat(timespec="seconds")
-        typing_until = (datetime.utcnow() + timedelta(seconds=8)).isoformat(timespec="seconds") if typing else ""
-        cur.execute(
-            """
-            INSERT INTO pulse_conversation_typing (conversation_id, user_id, typing_until, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(conversation_id, user_id) DO UPDATE SET typing_until=excluded.typing_until, updated_at=excluded.updated_at
-            """,
-            (conversation_id, user["user_id"], typing_until, now),
-        )
+        # Typing is a presence activity, so it is recorded in the presence
+        # service and nowhere else. This endpoint used to own a
+        # pulse_conversation_typing row with its own 8-second `typing_until`;
+        # the readers have been moved to the service, and writing the old row
+        # as well would put a second, differently-expiring copy back.
+        #
+        # The conversation id is the activity context, which is what lets one
+        # person be typing in one thread without appearing to type in another.
+        try:
+            from services import presence_service
+
+            presence_service.set_activity_for_user(
+                cur,
+                user["user_id"],
+                "typing" if typing else "idle",
+                str(conversation_id) if typing else "",
+                conn=conn,
+            )
+        except Exception as exc:
+            logging.warning("PULSE_TYPING_PRESENCE_UNAVAILABLE conversation_id=%s error=%s", conversation_id, exc.__class__.__name__)
         cur.execute("UPDATE pulse_conversation_participants SET last_seen_at=? WHERE conversation_id=? AND user_id=?", (now, conversation_id, user["user_id"]))
         conn.commit()
     conn.close()
