@@ -3,11 +3,22 @@ node_modules/
 .venv/
 venv/
 *.log
+*.log.*
+*.db
+*.db-*
+.git/
 
-# Runtime and QA artifacts are not required for native app builds.
+# Runtime, release, and QA artifacts are not required for native app builds.
 reports/
+release-assets/
+mobile/
 storage/
 static/uploads/
+CoinPilotX:screenshots:/
+.undx/
+.undx_*_workspace/
+__pycache__/
+**/__pycache__/
 
 # Native iOS source is required for production signing, but generated outputs are not.
 mobile-native/ios/Pods/

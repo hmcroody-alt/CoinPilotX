@@ -1,6 +1,9 @@
 node_modules/
 .expo/
 *.log
+*.log.*
+*.db
+*.db-*
 
 # iOS generated artifacts must never be uploaded to EAS.
 ios/Pods/
@@ -10,3 +13,25 @@ ios/**/*.xcuserdata/
 ios/**/*.xcuserstate
 ios/**/DerivedData/
 ios/.xcode.env.local
+
+# EAS archives from the git root for this app, so keep repo-root patterns too.
+.git/
+reports/
+release-assets/
+mobile/
+storage/
+static/uploads/
+CoinPilotX:screenshots:/
+.undx/
+.undx_*_workspace/
+__pycache__/
+**/__pycache__/
+mobile-native/node_modules/
+mobile-native/.expo/
+mobile-native/ios/Pods/
+mobile-native/ios/build/
+mobile-native/ios/build-*/
+mobile-native/ios/**/*.xcuserdata/
+mobile-native/ios/**/*.xcuserstate
+mobile-native/ios/**/DerivedData/
+mobile-native/ios/.xcode.env.local
