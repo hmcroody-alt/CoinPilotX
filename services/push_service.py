@@ -19,6 +19,15 @@ import requests
 from . import user_context
 
 PUSH_PROCESSOR_LOCK = threading.Lock()
+VOLATILE_DEDUPE_KEYS = {
+    "push_trace_id",
+    "trace_id",
+    "request_id",
+    "nonce",
+    "timestamp",
+    "created_at",
+    "updated_at",
+}
 
 
 def _now():
@@ -61,6 +70,13 @@ def _trace(stage, **fields):
             continue
         safe[key] = value
     logging.info("PUSH_TRACE stage=%s %s", stage, json.dumps(safe, default=str, sort_keys=True)[:2000])
+
+
+def _env_enabled(name, default=True):
+    value = os.getenv(name)
+    if value is None or value == "":
+        return bool(default)
+    return str(value).strip().lower() not in {"0", "false", "off", "no"}
 
 
 def _ensure_user_device_tokens(cur):
@@ -140,14 +156,24 @@ def _ensure_push_delivery_jobs(cur):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_push_delivery_jobs_status_retry ON push_delivery_jobs(status, next_retry_at, id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_push_delivery_jobs_user_created ON push_delivery_jobs(user_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_push_delivery_jobs_notification ON push_delivery_jobs(notification_id)")
+    try:
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_push_delivery_jobs_idempotency ON push_delivery_jobs(idempotency_key)")
+    except Exception as exc:
+        # Existing production tables can contain duplicate historical keys. The
+        # runtime checks below still suppress new duplicates immediately.
+        _trace("push_idempotency_index_skipped", error_type=type(exc).__name__)
 
 
 def _async_push_enabled():
-    return str(os.getenv("PUSH_ASYNC_DELIVERY_ENABLED", "1")).lower() not in {"0", "false", "off", "no"}
+    return _env_enabled("PUSH_ASYNC_DELIVERY_ENABLED", True)
+
+
+def _provider_send_enabled():
+    return _env_enabled("PUSH_NOTIFICATIONS_ENABLED", True)
 
 
 def _opportunistic_processor_enabled():
-    return str(os.getenv("PUSH_OPPORTUNISTIC_PROCESSOR_ENABLED", "1")).lower() not in {"0", "false", "off", "no"}
+    return _env_enabled("PUSH_OPPORTUNISTIC_PROCESSOR_ENABLED", True)
 
 
 def _opportunistic_processor_limit():
@@ -202,13 +228,18 @@ def _delivery_job_key(user_id, title, body, data=None, push_type="general", noti
     message_id = data.get("messageId") or data.get("message_id") or data.get("entity_id") or ""
     if conversation_id and message_id:
         return f"message:{int(user_id or 0)}:{conversation_id}:{message_id}:{str(push_type or 'message')[:80]}"
+    stable_data = {
+        str(key): value
+        for key, value in data.items()
+        if str(key) not in VOLATILE_DEDUPE_KEYS
+    }
     digest = hashlib.sha256(
         json.dumps(
             {
                 "user_id": int(user_id or 0),
                 "title": str(title or "")[:180],
                 "body": str(body or "")[:300],
-                "data": data,
+                "data": stable_data,
                 "push_type": str(push_type or "general")[:80],
             },
             sort_keys=True,
@@ -216,6 +247,45 @@ def _delivery_job_key(user_id, title, body, data=None, push_type="general", noti
         ).encode("utf-8")
     ).hexdigest()[:24]
     return f"push:{digest}"
+
+
+def _fetch_existing_job(cur, key):
+    cur.execute(
+        """
+        SELECT id, job_id, status, trace_id FROM push_delivery_jobs
+        WHERE idempotency_key=?
+        ORDER BY id ASC
+        LIMIT 1
+        """,
+        (key,),
+    )
+    return cur.fetchone()
+
+
+def _duplicate_enqueue_result(existing, trace_id, user_id, notification_id, push_type, transactional=False):
+    existing_id = existing[0] if existing else 0
+    existing_job = existing[1] if existing else ""
+    existing_status = existing[2] if existing else "queued"
+    existing_trace = existing[3] if existing else trace_id
+    _trace(
+        "push_job_duplicate",
+        trace_id=existing_trace,
+        user_id=int(user_id or 0),
+        notification_id=int(notification_id or 0),
+        push_type=push_type,
+        job_id=existing_job,
+        transactional=transactional,
+    )
+    return {
+        "ok": True,
+        "status": "queued",
+        "delivery_state": "deduped",
+        "duplicate": True,
+        "job_id": existing_job,
+        "id": existing_id,
+        "job_status": existing_status,
+        "trace_id": existing_trace,
+    }
 
 
 def _retry_at(attempts):
@@ -238,6 +308,16 @@ def enqueue_push(user_id, title, body, data=None, push_type="general", notificat
     _ensure_push_delivery_jobs(cur)
     _ensure_expo_push_tickets(cur)
     try:
+        existing = _fetch_existing_job(cur, key)
+        if existing:
+            conn.close()
+            return _duplicate_enqueue_result(
+                existing,
+                trace_id,
+                user_id,
+                notification_id or safe_data.get("notification_id") or 0,
+                push_type,
+            )
         cur.execute(
             """
             INSERT INTO push_delivery_jobs
@@ -290,20 +370,14 @@ def enqueue_push(user_id, title, body, data=None, push_type="general", notificat
         )
         existing = cur.fetchone()
         conn.close()
-        existing_id = existing[0] if existing else 0
-        existing_job = existing[1] if existing else ""
-        existing_status = existing[2] if existing else "queued"
-        existing_trace = existing[3] if existing else trace_id
-        _trace(
-            "push_job_duplicate",
-            trace_id=existing_trace,
-            user_id=int(user_id or 0),
-            notification_id=int(notification_id or safe_data.get("notification_id") or 0),
-            push_type=push_type,
-            job_id=existing_job,
-        )
         schedule_push_delivery_processing(reason="job_duplicate")
-        return {"ok": True, "status": "queued", "delivery_state": "deduped", "duplicate": True, "job_id": existing_job, "id": existing_id, "job_status": existing_status, "trace_id": existing_trace}
+        return _duplicate_enqueue_result(
+            existing,
+            trace_id,
+            user_id,
+            notification_id or safe_data.get("notification_id") or 0,
+            push_type,
+        )
     finally:
         try:
             conn.close()
@@ -326,6 +400,17 @@ def enqueue_push_with_cursor(cur, user_id, title, body, data=None, push_type="ge
         cur.execute(f"SAVEPOINT {savepoint}")
         _ensure_push_delivery_jobs(cur)
         _ensure_expo_push_tickets(cur)
+        existing = _fetch_existing_job(cur, key)
+        if existing:
+            cur.execute(f"RELEASE SAVEPOINT {savepoint}")
+            return _duplicate_enqueue_result(
+                existing,
+                trace_id,
+                user_id,
+                notification_id or safe_data.get("notification_id") or 0,
+                push_type,
+                transactional=True,
+            )
         cur.execute(
             """
             INSERT INTO push_delivery_jobs
@@ -384,20 +469,14 @@ def enqueue_push_with_cursor(cur, user_id, title, body, data=None, push_type="ge
                 existing = cur.fetchone()
             except Exception:
                 existing = None
-            existing_id = existing[0] if existing else 0
-            existing_job = existing[1] if existing else ""
-            existing_status = existing[2] if existing else "queued"
-            existing_trace = existing[3] if existing else trace_id
-            _trace(
-                "push_job_duplicate",
-                trace_id=existing_trace,
-                user_id=int(user_id or 0),
-                notification_id=int(notification_id or safe_data.get("notification_id") or 0),
-                push_type=push_type,
-                job_id=existing_job,
+            return _duplicate_enqueue_result(
+                existing,
+                trace_id,
+                user_id,
+                notification_id or safe_data.get("notification_id") or 0,
+                push_type,
                 transactional=True,
             )
-            return {"ok": True, "status": "queued", "delivery_state": "deduped", "duplicate": True, "job_id": existing_job, "id": existing_id, "job_status": existing_status, "trace_id": existing_trace}
         error_detail = str(exc)[:400]
         _trace("push_job_enqueue_failed", trace_id=trace_id, user_id=int(user_id or 0), push_type=push_type, error_type=type(exc).__name__, error_detail=error_detail, transactional=True)
         return {"ok": False, "status": "failed", "message": "Push job could not be queued.", "error_type": type(exc).__name__, "error_detail": error_detail, "trace_id": trace_id}
@@ -631,6 +710,9 @@ def send_push(user_id, title, body, data=None, push_type="general"):
     data = data or {}
     trace_id = data.get("push_trace_id") or data.get("trace_id") or secrets.token_hex(6)
     data = {**data, "push_trace_id": trace_id}
+    if not _provider_send_enabled():
+        _trace("send_push_suppressed", trace_id=trace_id, user_id=int(user_id or 0), push_type=push_type, reason="provider_disabled")
+        return {"ok": False, "status": "skipped", "message": "Push delivery is temporarily disabled.", "trace_id": trace_id}
     conn = user_context.connect()
     cur = conn.cursor()
     _ensure_expo_push_tickets(cur)
@@ -757,6 +839,9 @@ def send_push(user_id, title, body, data=None, push_type="general"):
 
 def process_push_delivery_jobs(limit=50):
     """Send queued push jobs with retries and dead-lettering."""
+    if not _provider_send_enabled():
+        _trace("push_job_processing_suppressed", reason="provider_disabled")
+        return {"ok": True, "processed": 0, "sent": 0, "retry": 0, "dead_letter": 0, "failed": 0, "skipped": True}
     limit = max(1, min(int(limit or 50), 100))
     now = _now()
     conn = user_context.connect()

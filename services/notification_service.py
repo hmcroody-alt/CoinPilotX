@@ -120,9 +120,6 @@ PULSE_NOTIFICATION_CATEGORIES = {
     "roast_battle": {"in_app": True, "push": True, "email": False, "sms": False},
 }
 
-for _pulse_category_defaults in PULSE_NOTIFICATION_CATEGORIES.values():
-    _pulse_category_defaults.update({"in_app": True, "push": True, "email": True, "sms": True})
-
 PULSE_TYPE_TO_CATEGORY = {
     "chat_message": "chat_message",
     "group_message": "group_message",
