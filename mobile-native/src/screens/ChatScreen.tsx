@@ -1297,7 +1297,15 @@ function MessageBubble({
               contentType="chat"
               contentRef={message.message_id || message.id || message.client_message_id || "pending"}
               text={body}
+              sourceLanguage={
+                typeof (message as Record<string, unknown>).source_language === "string"
+                  ? ((message as Record<string, unknown>).source_language as string)
+                  : typeof (message as Record<string, unknown>).language === "string"
+                    ? ((message as Record<string, unknown>).language as string)
+                    : "auto"
+              }
               textStyle={styles.body}
+              controlsMode="compact"
             />
           )
         ) : null}

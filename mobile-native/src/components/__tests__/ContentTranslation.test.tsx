@@ -82,3 +82,37 @@ it("honors an existing Never Translate preference without calling the provider",
   expect(screen.getByText("Original bio")).toBeTruthy();
   expect(translateMock).not.toHaveBeenCalled();
 });
+
+it("keeps compact chat bubbles clean when no different language is detected", () => {
+  const screen = render(
+    <ContentTranslation contentType="chat" contentRef="m-clean" text="See you soon" controlsMode="compact" />
+  );
+  expect(screen.getByText("See you soon")).toBeTruthy();
+  expect(screen.queryByLabelText("Translate message to fr-fr")).toBeNull();
+  expect(screen.queryByLabelText("Always translate to fr-fr")).toBeNull();
+  expect(screen.queryByLabelText("Never translate to fr-fr")).toBeNull();
+});
+
+it("shows one compact chat translation action and moves preferences into a sheet", async () => {
+  const screen = render(
+    <ContentTranslation
+      contentType="chat"
+      contentRef="m-foreign"
+      text="Hola PulseSoc"
+      sourceLanguage="es"
+      controlsMode="compact"
+    />
+  );
+
+  expect(screen.getByLabelText("Translate message to fr-fr")).toBeTruthy();
+  expect(screen.queryByLabelText("Always translate to fr-fr")).toBeNull();
+  expect(screen.queryByLabelText("Never translate to fr-fr")).toBeNull();
+
+  fireEvent.press(screen.getByLabelText("Translate message to fr-fr"));
+  expect(screen.getByText("Translate now")).toBeTruthy();
+  expect(screen.getByLabelText("Always translate to fr-fr")).toBeTruthy();
+  expect(screen.getByLabelText("Never translate to fr-fr")).toBeTruthy();
+
+  fireEvent.press(screen.getByText("Translate now"));
+  await waitFor(() => expect(screen.getByText("Bonjour PulseSoc")).toBeTruthy());
+});

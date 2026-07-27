@@ -1,5 +1,5 @@
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleProp, StyleSheet, Text, TextStyle, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, StyleProp, StyleSheet, Text, TextStyle, View } from "react-native";
 import {
   peekTranslationPreference,
   subscribeTranslationPreference,
@@ -19,7 +19,31 @@ type ContentTranslationProps = {
   textStyle?: StyleProp<TextStyle>;
   numberOfLines?: number;
   renderText?: (text: string, translated: boolean) => ReactNode;
+  controlsMode?: "inline" | "compact";
 };
+
+const UNKNOWN_LANGUAGE = new Set(["", "auto", "unknown", "und", "undefined", "null"]);
+const NON_ENGLISH_HINTS = /\b(mwen|ou|pa|pou|ak|nan|banm|bonjou|merci|hola|gracias|bonjour|salut|ça|oui|non|por|para|que|não|sim| danke| bitte|안녕|你好|مرحبا|नमस्ते)\b/i;
+const NON_LATIN_OR_ACCENTED = /[^\u0000-\u007f]/;
+
+function normalizeLanguageTag(language: string) {
+  return language.trim().replace("_", "-").toLowerCase();
+}
+
+function sameLanguage(left: string, right: string) {
+  const a = normalizeLanguageTag(left);
+  const b = normalizeLanguageTag(right);
+  if (UNKNOWN_LANGUAGE.has(a) || UNKNOWN_LANGUAGE.has(b)) return false;
+  return a === b || a.split("-")[0] === b.split("-")[0];
+}
+
+function shouldOfferTranslation(text: string, sourceLanguage: string, targetLanguage: string, compact: boolean) {
+  if (!text.trim()) return false;
+  const source = normalizeLanguageTag(sourceLanguage);
+  if (!UNKNOWN_LANGUAGE.has(source)) return !sameLanguage(source, targetLanguage);
+  if (!compact) return true;
+  return NON_LATIN_OR_ACCENTED.test(text) || NON_ENGLISH_HINTS.test(text);
+}
 
 export function ContentTranslation({
   contentType,
@@ -28,13 +52,15 @@ export function ContentTranslation({
   sourceLanguage = "auto",
   textStyle,
   numberOfLines,
-  renderText
+  renderText,
+  controlsMode = "inline"
 }: ContentTranslationProps) {
   const { locale } = useTimeZonePreference();
   const targetLanguage = useMemo(() => locale.replace("_", "-").toLowerCase(), [locale]);
   const [policy, setPolicy] = useState<TranslationPolicy>("ask");
   const [translatedText, setTranslatedText] = useState("");
   const [showTranslated, setShowTranslated] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const busyRef = useRef(false);
@@ -114,6 +140,8 @@ export function ContentTranslation({
   );
 
   const visibleText = showTranslated && translatedText ? translatedText : text;
+  const compact = controlsMode === "compact";
+  const showTranslationAction = shouldOfferTranslation(text, sourceLanguage, targetLanguage, compact);
   const rendered = renderText ? (
     renderText(visibleText, showTranslated)
   ) : (
@@ -125,48 +153,118 @@ export function ContentTranslation({
   return (
     <View style={styles.container}>
       {rendered}
-      <View style={styles.controls} accessibilityLabel={`Translation controls. Target language ${targetLanguage}.`}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={showTranslated ? "Show original text" : `Translate to ${targetLanguage}`}
-          disabled={busy}
-          onPress={(event) => {
-            event?.stopPropagation?.();
-            if (showTranslated) setShowTranslated(false);
-            else if (translatedText) setShowTranslated(true);
-            else requestTranslation(true);
-          }}
-          style={({ pressed }) => [styles.control, pressed && styles.pressed, busy && styles.disabled]}
-        >
-          {busy ? <ActivityIndicator size="small" color={colors.accent} /> : null}
-          <Text style={styles.controlText}>{showTranslated ? "Show original" : "Translate"}</Text>
+      {showTranslationAction ? (
+        compact ? (
+          <View style={styles.compactRow} accessibilityLabel={`Translation. Target language ${targetLanguage}.`}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={showTranslated ? "Translation options. Showing translated text." : `Translate message to ${targetLanguage}`}
+              disabled={busy}
+              onPress={(event) => {
+                event?.stopPropagation?.();
+                setShowOptions(true);
+              }}
+              style={({ pressed }) => [styles.compactControl, pressed && styles.pressed, busy && styles.disabled]}
+            >
+              {busy ? <ActivityIndicator size="small" color={colors.accent} /> : <Text style={styles.globe}>🌐</Text>}
+              <Text style={styles.compactControlText}>{showTranslated ? "Original / Translate" : "Translate"}</Text>
+            </Pressable>
+            {showTranslated ? <Text style={styles.machineLabel}>Translated · {targetLanguage.toUpperCase()}</Text> : null}
+          </View>
+        ) : (
+          <View style={styles.controls} accessibilityLabel={`Translation controls. Target language ${targetLanguage}.`}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={showTranslated ? "Show original text" : `Translate to ${targetLanguage}`}
+              disabled={busy}
+              onPress={(event) => {
+                event?.stopPropagation?.();
+                if (showTranslated) setShowTranslated(false);
+                else if (translatedText) setShowTranslated(true);
+                else requestTranslation(true);
+              }}
+              style={({ pressed }) => [styles.control, pressed && styles.pressed, busy && styles.disabled]}
+            >
+              {busy ? <ActivityIndicator size="small" color={colors.accent} /> : null}
+              <Text style={styles.controlText}>{showTranslated ? "Show original" : "Translate"}</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Always translate to ${targetLanguage}`}
+              accessibilityState={{ selected: policy === "always" }}
+              onPress={(event) => {
+                event?.stopPropagation?.();
+                changePolicy(policy === "always" ? "ask" : "always");
+              }}
+              style={({ pressed }) => [styles.control, policy === "always" && styles.selected, pressed && styles.pressed]}
+            >
+              <Text style={[styles.controlText, policy === "always" && styles.selectedText]}>Always</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Never translate to ${targetLanguage}`}
+              accessibilityState={{ selected: policy === "never" }}
+              onPress={(event) => {
+                event?.stopPropagation?.();
+                changePolicy(policy === "never" ? "ask" : "never");
+              }}
+              style={({ pressed }) => [styles.control, policy === "never" && styles.selected, pressed && styles.pressed]}
+            >
+              <Text style={[styles.controlText, policy === "never" && styles.selectedText]}>Never</Text>
+            </Pressable>
+            {showTranslated ? <Text style={styles.machineLabel}>Translated · {targetLanguage.toUpperCase()}</Text> : null}
+          </View>
+        )
+      ) : null}
+      <Modal animationType="fade" transparent visible={showOptions} onRequestClose={() => setShowOptions(false)}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close translation options" style={styles.sheetScrim} onPress={() => setShowOptions(false)}>
+          <Pressable accessibilityRole="menu" style={styles.sheet} onPress={(event) => event?.stopPropagation?.()}>
+            <Text style={styles.sheetEyebrow}>Translation</Text>
+            <Text style={styles.sheetTitle}>Message language options</Text>
+            <Pressable
+              accessibilityRole="menuitem"
+              accessibilityLabel={showTranslated ? "Show original message" : `Translate message to ${targetLanguage}`}
+              disabled={busy}
+              onPress={() => {
+                if (showTranslated) setShowTranslated(false);
+                else if (translatedText) setShowTranslated(true);
+                else requestTranslation(true);
+                setShowOptions(false);
+              }}
+              style={({ pressed }) => [styles.sheetAction, pressed && styles.pressed]}
+            >
+              <Text style={styles.sheetActionTitle}>{showTranslated ? "Show original" : "Translate now"}</Text>
+              <Text style={styles.sheetActionSubtitle}>{showTranslated ? "Return this bubble to the original message." : `Translate this message to ${targetLanguage.toUpperCase()}.`}</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="menuitem"
+              accessibilityLabel={`Always translate to ${targetLanguage}`}
+              accessibilityState={{ selected: policy === "always" }}
+              onPress={() => {
+                void changePolicy(policy === "always" ? "ask" : "always");
+                setShowOptions(false);
+              }}
+              style={({ pressed }) => [styles.sheetAction, policy === "always" && styles.sheetActionSelected, pressed && styles.pressed]}
+            >
+              <Text style={styles.sheetActionTitle}>Always translate</Text>
+              <Text style={styles.sheetActionSubtitle}>Automatically translate this language when PulseSoc can detect it.</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="menuitem"
+              accessibilityLabel={`Never translate to ${targetLanguage}`}
+              accessibilityState={{ selected: policy === "never" }}
+              onPress={() => {
+                void changePolicy(policy === "never" ? "ask" : "never");
+                setShowOptions(false);
+              }}
+              style={({ pressed }) => [styles.sheetAction, policy === "never" && styles.sheetActionSelected, pressed && styles.pressed]}
+            >
+              <Text style={styles.sheetActionTitle}>Never translate</Text>
+              <Text style={styles.sheetActionSubtitle}>Keep this language in its original form.</Text>
+            </Pressable>
+          </Pressable>
         </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Always translate to ${targetLanguage}`}
-          accessibilityState={{ selected: policy === "always" }}
-          onPress={(event) => {
-            event?.stopPropagation?.();
-            changePolicy(policy === "always" ? "ask" : "always");
-          }}
-          style={({ pressed }) => [styles.control, policy === "always" && styles.selected, pressed && styles.pressed]}
-        >
-          <Text style={[styles.controlText, policy === "always" && styles.selectedText]}>Always</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Never translate to ${targetLanguage}`}
-          accessibilityState={{ selected: policy === "never" }}
-          onPress={(event) => {
-            event?.stopPropagation?.();
-            changePolicy(policy === "never" ? "ask" : "never");
-          }}
-          style={({ pressed }) => [styles.control, policy === "never" && styles.selected, pressed && styles.pressed]}
-        >
-          <Text style={[styles.controlText, policy === "never" && styles.selectedText]}>Never</Text>
-        </Pressable>
-        {showTranslated ? <Text style={styles.machineLabel}>Translated · {targetLanguage.toUpperCase()}</Text> : null}
-      </View>
+      </Modal>
       {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
     </View>
   );
@@ -182,6 +280,31 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     alignItems: "center",
     gap: 6
+  },
+  compactRow: {
+    marginTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6
+  },
+  compactControl: {
+    minHeight: 28,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(110,223,246,0.24)",
+    backgroundColor: "rgba(110,223,246,0.05)",
+    paddingHorizontal: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4
+  },
+  compactControlText: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "800"
+  },
+  globe: {
+    fontSize: 12
   },
   control: {
     minHeight: 30,
@@ -215,6 +338,56 @@ const styles = StyleSheet.create({
     marginTop: 4,
     color: colors.danger,
     fontSize: 11
+  },
+  sheetScrim: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(1,6,14,0.54)"
+  },
+  sheet: {
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    borderWidth: 1,
+    borderColor: "rgba(110,223,246,0.2)",
+    backgroundColor: "#07111d",
+    padding: 18,
+    paddingBottom: 28,
+    gap: 10
+  },
+  sheetEyebrow: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 1.8,
+    textTransform: "uppercase"
+  },
+  sheetTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "900",
+    marginBottom: 4
+  },
+  sheetAction: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    padding: 14,
+    gap: 4
+  },
+  sheetActionSelected: {
+    borderColor: colors.accent,
+    backgroundColor: "rgba(54,229,143,0.12)"
+  },
+  sheetActionTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "900"
+  },
+  sheetActionSubtitle: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17
   },
   pressed: {
     opacity: 0.72
