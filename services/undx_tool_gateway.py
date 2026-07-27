@@ -13,7 +13,9 @@ documented rather than incidental:
 2.  **Capability allowlisting.** The ``capability_id`` is resolved against the
     registry. An unknown id stops here as ``unsupported_capability`` — a model that
     hallucinates ``crypto.alerts.wire_funds`` gets a typed refusal, not a lookup
-    failure deeper in the stack.
+    failure deeper in the stack. The capability's declared ownership scope is then
+    checked against the rules this gateway can actually apply; one it cannot enforce
+    is refused rather than executed.
 3.  **Schema validation.** Arguments are coerced against the declared spec and
     undeclared keys are dropped. What reaches the executor is a known shape.
 4.  **Policy evaluation.** Flags, cohort, risk class and confirmation policy, all
@@ -49,6 +51,7 @@ from services.undx_agent_contracts import (
     AgentOutcome,
     AgentReceipt,
     ConfirmationRequest,
+    PermissionScope,
     RiskLevel,
     ToolResult,
     VerificationResult,
@@ -100,6 +103,17 @@ def _receipt(spec: CapabilitySpec, *, user_id: int, request_id: str, task_id: st
              canonical_ids: list[str] | None = None,
              evidence: dict[str, Any] | None = None,
              retry_count: int = 0) -> AgentReceipt:
+    # Undo is offered only on a change the system independently read back, and only
+    # when the reversing call can actually be parameterised. Those are separate
+    # conditions and both have to hold: an unverified write might not have happened,
+    # and a verified creation whose row id never made it into the result gives an
+    # undo with nothing to delete. Either way the affordance is withheld together
+    # with the arguments, so the client never sees a capability id it cannot invoke.
+    undo_arguments = (
+        spec.undo_arguments(arguments or {}, list(canonical_ids or []))
+        if status == AgentOutcome.VERIFIED_SUCCESS
+        else None
+    )
     return AgentReceipt(
         task_id=task_id,
         request_id=request_id,
@@ -111,7 +125,8 @@ def _receipt(spec: CapabilitySpec, *, user_id: int, request_id: str, task_id: st
         verification_state=(verification.state if verification else VerificationState.IMPOSSIBLE),
         evidence=dict(evidence or {}),
         native_deep_link=spec.deep_link(arguments or {}),
-        undo_capability_id=spec.undo_capability_id if status == AgentOutcome.VERIFIED_SUCCESS else "",
+        undo_capability_id=spec.undo_capability_id if undo_arguments is not None else "",
+        undo_arguments=dict(undo_arguments or {}),
         user_explanation=clean(explanation, 400),
         risk_level=spec.risk,
         retry_count=int(retry_count),
@@ -159,12 +174,17 @@ def _mint_confirmation(cur, user_id: int, spec: CapabilitySpec, arguments: dict[
     hash the user approved and the hash the gateway later presents are computed
     from the same normalised dictionary.
     """
+    # The target comes from the capability's own declaration, not from a hardcoded
+    # list of argument names. A gateway that knows the words ``alert_id`` and
+    # ``category`` shows an unnamed card — "approve this change to *what*?" — the
+    # first time a pack arrives whose target is called something else.
+    target = spec.canonical_target(arguments)
     grant = undx_architecture.create_confirmation(
         cur, int(user_id),
         {
             "action_id": spec.capability_id,
             "action_version": "agent.1",
-            "target_id": clean(arguments.get("alert_id") or arguments.get("category") or "", 160),
+            "target_id": target[:160],
             "arguments": arguments,
         },
     )
@@ -173,7 +193,7 @@ def _mint_confirmation(cur, user_id: int, spec: CapabilitySpec, arguments: dict[
         confirmation_token=grant["confirmation_token"],
         capability_id=spec.capability_id,
         action_name=spec.description,
-        target=clean(arguments.get("alert_id") or arguments.get("category") or "", 160),
+        target=target[:160],
         current_value=current_value,
         proposed_value=proposed_value,
         risk_summary=clean(risk_summary, 240),
@@ -195,6 +215,56 @@ def _redeem(cur, user_id: int, spec: CapabilitySpec, arguments: dict[str, Any],
         cur, int(user_id), token,
         expect_action_id=spec.capability_id,
         expect_argument_hash=canonical_hash(arguments),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Permission scope
+# ---------------------------------------------------------------------------
+
+
+#: Argument names that would let a caller nominate whose data is touched. A capability
+#: scoped to the caller's own account must not declare any of them: every executor
+#: takes the acting user id as a separate parameter that no argument can reach, and a
+#: field like this is the one shape that could quietly undo that.
+_ACTOR_NAMING_FIELDS = frozenset({
+    "user_id", "owner_id", "actor_id", "account_id", "target_user_id",
+    "on_behalf_of", "as_user", "profile_id", "member_id",
+})
+
+
+def _enforce_permission_scope(spec: CapabilitySpec) -> None:
+    """Refuse any capability whose ownership rule this gateway cannot actually apply.
+
+    ``permission`` spent its first life as a comment: a string on every capability
+    reading ``self_account_only``, consulted by nothing. That is a worse state than
+    having no field at all, because it reads like an enforced invariant — a reviewer
+    adding a capability sees ownership "handled" and does not check that the executor
+    scoped its own query.
+
+    So it fails closed. Only ``self_account_only`` has an enforcement rule today, and
+    it is a structural one that cannot be got wrong at runtime: a capability may not
+    declare a field naming *whose* data to touch, so there is nothing for a hostile
+    argument to point at. The scopes for acting on another user or on a content item
+    need a resolver that authorises the target before execution; until Stage 6 and 8
+    build one, a capability declaring them is refused rather than executed under an
+    ownership check that does not exist yet.
+    """
+    if spec.permission == PermissionScope.SELF_ACCOUNT_ONLY:
+        named = sorted(item.name for item in spec.fields if item.name in _ACTOR_NAMING_FIELDS)
+        if named:
+            raise AgentError(
+                "capability_scope_violation",
+                "UNDX cannot do that.",
+                outcome=AgentOutcome.PERMISSION_DENIED,
+                details={"capability_id": spec.capability_id, "actor_naming_fields": named},
+            )
+        return
+    raise AgentError(
+        "capability_scope_unenforceable",
+        "UNDX cannot do that yet.",
+        outcome=AgentOutcome.UNSUPPORTED_CAPABILITY,
+        details={"capability_id": spec.capability_id, "permission": spec.permission},
     )
 
 
@@ -241,8 +311,19 @@ def _run_executor(spec: CapabilitySpec, user_id: int, arguments: dict[str, Any])
     started = time.monotonic()
     try:
         result = executor(int(user_id), dict(arguments))
-    except AgentError:
-        raise
+    except AgentError as exc:
+        # Deliberately converted rather than re-raised. An ``AgentError`` from inside an
+        # executor is raised *after* the executor was entered, so it may follow a partial
+        # or even complete mutation. Letting it propagate would carry it out of
+        # ``execute`` past the point of no return, and the caller reads any exception as
+        # "the agent did not act". It is a typed refusal, so it survives as one — with
+        # its own code and message, which an executor's refusals are safe to show.
+        return ToolResult(
+            ok=False, tool_name=spec.tool_name, capability_id=spec.capability_id,
+            error_code=clean(getattr(exc, "code", "") or "executor_refused", 60),
+            error_message=clean(str(exc) or "The action could not be completed.", 240),
+            retryable=False, latency_ms=int((time.monotonic() - started) * 1000),
+        )
     except Exception as exc:  # pragma: no cover - defensive
         return ToolResult(
             ok=False, tool_name=spec.tool_name, capability_id=spec.capability_id,
@@ -347,6 +428,10 @@ def execute(
     # 2. Capability allowlisting. Raises unsupported_capability for anything unknown.
     spec = require(capability_id)
 
+    # 2b. Ownership scope. A declared scope the gateway has no rule for is refused, so
+    #     a new pack cannot reach an executor before its authorisation rule exists.
+    _enforce_permission_scope(spec)
+
     # 3. Schema validation. Undeclared keys are dropped rather than rejected, so a
     #    hostile string that smuggles plausible extra parameters can neither steer the
     #    tool nor deny service by making the whole call invalid.
@@ -401,7 +486,7 @@ def execute(
             ))
 
     # 6. Idempotency, keyed on the caller's request id and the canonical target.
-    canonical_target = clean(arguments.get("alert_id") or arguments.get("category") or "", 200)
+    canonical_target = spec.canonical_target(arguments)
     prepared = undx_architecture.prepare_tool_operation(
         int(user_id), spec.tool_name,
         clean(client_request_id or request_id, 120), canonical_target,
@@ -464,6 +549,51 @@ def execute(
     arguments_for_executor["_idempotency_key"] = prepared["idempotency_key"]
     result = _run_executor(spec, int(user_id), arguments_for_executor)
 
+    # --- The point of no return -------------------------------------------------
+    # The executor has run. Whatever it did to the user's data is done, through the
+    # service layer's own connection, and cannot be taken back by anything below.
+    # From here, ``execute`` must return a receipt — never raise. A raise would
+    # unwind into ``pulse_ai_service``, whose handler treats "the agent did not
+    # handle this turn" as licence to fall through to the language model, and the
+    # model would then answer a question about an action it has no idea occurred.
+    # Every step below is therefore individually defended, and the whole tail is
+    # wrapped as well so that a defect in the defences is not itself the leak.
+    try:
+        return _settle(
+            cur, spec=spec, user_id=int(user_id), arguments=arguments, result=result,
+            prepared=prepared, grant=grant, request_id=request_id, task_id=task_id,
+            correlation_id=correlation_id,
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.critical("undx_gateway_settle_failed tool=%s user=%s error=%s",
+                        spec.tool_name, int(user_id), exc.__class__.__name__)
+        return GatewayOutcome(
+            _receipt(spec, user_id=user_id, request_id=request_id, task_id=task_id,
+                     status=(AgentOutcome.ACCEPTED_UNVERIFIED if result.ok
+                             else AgentOutcome.TERMINAL_FAILURE),
+                     explanation=("PulseSoc accepted the change, but something went wrong while I was "
+                                  "recording and checking it. Please look at the screen before "
+                                  "relying on it." if result.ok else
+                                  "That did not work, and I could not record why."),
+                     arguments=arguments,
+                     canonical_ids=[result.canonical_resource_id] if result.canonical_resource_id else [],
+                     evidence={"settle_error": exc.__class__.__name__,
+                               "needs_reconciliation": bool(spec.is_write and result.ok),
+                               "operation_id": clean(prepared.get("operation_id"), 60)}),
+            result=result,
+        )
+
+
+def _settle(cur, *, spec: CapabilitySpec, user_id: int, arguments: dict[str, Any],
+            result: ToolResult, prepared: dict[str, Any], grant: dict[str, Any] | None,
+            request_id: str, task_id: str, correlation_id: str) -> GatewayOutcome:
+    """Verify, audit and describe an execution that has already happened.
+
+    Split out of :func:`execute` so the boundary between "nothing has changed yet"
+    and "something has changed" is a function call rather than a comment halfway
+    down a long body. Everything in :func:`execute` above the call may raise, and
+    raising there is correct — no mutation has occurred. Nothing here may.
+    """
     # 9. Independent verification, before any claim of success is formed.
     verification = _verify(spec, int(user_id), arguments, result) if result.ok else VerificationResult(
         state=VerificationState.IMPOSSIBLE, detail="The action did not run, so there is nothing to verify.",
@@ -498,14 +628,27 @@ def execute(
         logger.critical("undx_audit_write_failed tool=%s user=%s error=%s",
                         spec.tool_name, int(user_id), exc.__class__.__name__)
         if spec.is_write:
-            audit["reconciliation"] = undx_architecture.flag_operation_for_reconciliation(
-                cur, int(user_id), prepared, exc.__class__.__name__)
+            try:
+                audit["reconciliation"] = undx_architecture.flag_operation_for_reconciliation(
+                    cur, int(user_id), prepared, exc.__class__.__name__)
+            except Exception as flag_exc:  # pragma: no cover - defensive
+                # The database is refusing writes on two consecutive attempts, so the
+                # ledger cannot be told about this. Say so in the receipt rather than
+                # letting a second failure inside the first failure's handler destroy
+                # the only remaining description of a mutation that really happened.
+                audit["reconciliation"] = {"status": "flag_failed",
+                                           "error": flag_exc.__class__.__name__}
+                logger.critical("undx_reconciliation_flag_failed tool=%s user=%s error=%s",
+                                spec.tool_name, int(user_id), flag_exc.__class__.__name__)
+    try:
+        _checkpoint(cur)
+    except Exception:  # pragma: no cover - defensive
+        logger.critical("undx_audit_checkpoint_failed tool=%s user=%s", spec.tool_name, int(user_id))
     # The mutation itself already committed through the service layer's own connection,
     # so this row can no longer be "undone" by rolling it back — rolling it back would
     # only delete the evidence of something that really happened. Making it durable here
     # is what keeps "every executed action has an audit row" true even if the surrounding
     # request fails afterwards.
-    _checkpoint(cur)
 
     receipt = _receipt(
         spec, user_id=user_id, request_id=request_id, task_id=task_id,

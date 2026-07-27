@@ -28,9 +28,17 @@ from services.undx_agent_contracts import (
     CardType,
     ConfirmationPolicy,
     FieldSpec,
+    PermissionScope,
     RiskLevel,
     clean,
 )
+
+#: Characters a substituted deep-link segment may contain. A route is a destination
+#: the client navigates to, and every value substituted into one ultimately traces
+#: back to something a language model proposed. Restricting the alphabet — rather
+#: than trusting that today's fields happen to be integers and enums — is what stops
+#: a future free-text field from putting ``/`` or ``..`` into a navigation target.
+_ROUTE_SAFE = re.compile(r"[^A-Za-z0-9_.\-]")
 
 
 @dataclass(frozen=True)
@@ -50,7 +58,36 @@ class CapabilitySpec:
     native_route: str
     result_card: str
     audit_category: str
+    #: The field naming the thing this capability acts on. It identifies the resource
+    #: in the confirmation card and is half of the idempotency key, so a capability
+    #: that omits it gets an unnamed confirmation ("approve this change to *what*?")
+    #: and an idempotency key that collides with every other call in the same request.
+    #: Required for writes; the constructor refuses to register one without it.
+    target_field: str = ""
+    #: Which declared fields the verifier actually reads back. Every mutable field a
+    #: capability accepts must appear here, because a field the verifier ignores is a
+    #: field the user can change while being told the change was "verified".
+    verified_fields: tuple[str, ...] = ()
     undo_capability_id: str = ""
+    #: How to build the arguments for ``undo_capability_id`` from this call.
+    #:
+    #: Naming an undo capability is not the same as knowing how to invoke it, and
+    #: the difference is not cosmetic. ``notifications.preference.update`` undoes
+    #: itself: replaying the stored arguments re-applies the change rather than
+    #: reversing it, so a card offering Undo would leave the setting exactly where
+    #: the user just asked it not to be. ``crypto.alerts.create`` undoes with
+    #: ``delete``, which needs the id of the row that was just created — a value
+    #: that does not appear in the arguments at all.
+    #:
+    #: Each entry maps a field of the *undo* capability to a source:
+    #:   ``"name"``    this call's ``name`` argument, unchanged
+    #:   ``"!name"``   this call's ``name`` argument, logically negated
+    #:   ``"@target"`` the canonical resource id the action produced
+    #:
+    #: An undo capability with no map is invoked with this call's arguments as they
+    #: stand, which is right only when the two capabilities share a schema — pause
+    #: and resume both take ``alert_id``. ``_validate_undo_graph`` checks that.
+    undo_argument_map: tuple[tuple[str, str], ...] = ()
     requires_authentication: bool = True
     failure_behavior: str = "report_and_stop"
     idempotent: bool = True
@@ -61,24 +98,101 @@ class CapabilitySpec:
         # discovering it in production.
         if self.risk not in RiskLevel.ALL:
             raise ValueError(f"{self.capability_id}: unknown risk class {self.risk!r}")
+        if self.permission not in PermissionScope.ALL:
+            raise ValueError(f"{self.capability_id}: unknown permission scope {self.permission!r}")
         if self.confirmation not in ConfirmationPolicy.ALL:
             raise ValueError(f"{self.capability_id}: unknown confirmation policy {self.confirmation!r}")
         if self.result_card not in CardType.ALL:
             raise ValueError(f"{self.capability_id}: unknown result card {self.result_card!r}")
-        if RiskLevel.is_write(self.risk) and not self.verifier:
+        declared = {item.name for item in self.fields}
+        if self.target_field and self.target_field not in declared:
+            raise ValueError(f"{self.capability_id}: target_field {self.target_field!r} is not a declared field")
+        if not self.is_write:
+            return
+        if not self.verifier:
             raise ValueError(f"{self.capability_id}: a write capability must declare a verifier")
+        if not self.target_field:
+            raise ValueError(f"{self.capability_id}: a write capability must name its target_field")
         if self.risk == RiskLevel.CONSEQUENTIAL_WRITE and self.confirmation != ConfirmationPolicy.ALWAYS:
             raise ValueError(f"{self.capability_id}: consequential writes require explicit confirmation")
+        # Everything the capability can change, minus the identifier of the thing being
+        # changed, must be read back. Declaring this per capability rather than inferring
+        # it means adding a field to an existing write is a compile-time decision about
+        # verification, not a silent widening of what "verified" covers.
+        mutable = declared - {self.target_field}
+        unverified = sorted(mutable - set(self.verified_fields))
+        if unverified:
+            raise ValueError(
+                f"{self.capability_id}: fields {unverified} can be changed but are not "
+                f"listed in verified_fields, so a change to them would be reported as verified"
+            )
 
     @property
     def is_write(self) -> bool:
         return RiskLevel.is_write(self.risk)
 
+    def canonical_target(self, arguments: dict[str, Any] | None = None) -> str:
+        """The identifier of the resource this call acts on, as a bare string.
+
+        Generic machinery — the confirmation card, the idempotency key — needs to name
+        the target without knowing what kind of capability this is. Reading it from a
+        declared field rather than from a hardcoded list of argument names is what lets
+        a new pack be added without editing the gateway, and what stops a capability
+        whose target happens to be called something else from silently reducing to an
+        empty target that collides with every other call.
+        """
+        if not self.target_field:
+            return ""
+        return clean((arguments or {}).get(self.target_field), 200)
+
+    def undo_arguments(
+        self,
+        arguments: dict[str, Any] | None = None,
+        canonical_ids: list[str] | None = None,
+    ) -> dict[str, Any] | None:
+        """The argument set that would reverse this call, or ``None`` if there is none.
+
+        ``None`` and ``{}`` mean different things here. ``None`` is "this call cannot
+        be undone" and must clear the undo affordance entirely; an empty mapping would
+        be a capability that takes no arguments, which no write currently is.
+
+        The failure this returns ``None`` for is the one worth naming: a call whose
+        undo needs the created resource's id, made against a result that has no
+        canonical id because the write was not verified. Offering Undo there would
+        send a delete with a blank target. Withholding the button is the honest
+        outcome, and the receipt still records that an undo capability exists.
+        """
+        if not self.undo_capability_id:
+            return None
+        source = dict(arguments or {})
+        if not self.undo_argument_map:
+            return source
+        resolved: dict[str, Any] = {}
+        for field_name, token in self.undo_argument_map:
+            if token == "@target":
+                first = next((clean(item, 200) for item in (canonical_ids or []) if clean(item, 200)), "")
+                if not first:
+                    return None
+                # Canonical ids are namespaced paths — ``alert_rule:42``, not ``42``.
+                # The undo capability declares a typed field, so handing it the whole
+                # path would fail coercion at the boundary. The local identifier is
+                # the final segment, which is the only part the owning service knows.
+                resolved[field_name] = first.rsplit(":", 1)[-1]
+            elif token.startswith("!"):
+                if token[1:] not in source:
+                    return None
+                resolved[field_name] = not bool(source[token[1:]])
+            else:
+                if token not in source:
+                    return None
+                resolved[field_name] = source[token]
+        return resolved
+
     def deep_link(self, arguments: dict[str, Any] | None = None) -> str:
         """Resolve the native route, substituting ``:params`` from arguments."""
         route = self.native_route
         for key, value in (arguments or {}).items():
-            route = route.replace(f":{key}", clean(value, 60))
+            route = route.replace(f":{key}", _ROUTE_SAFE.sub("", clean(value, 60)))
         # Drop any optional placeholder the caller did not supply.
         return re.sub(r"/:[A-Za-z_]+\??", "", route).rstrip("/") or "/"
 
@@ -131,7 +245,7 @@ _register(CapabilitySpec(
     risk=RiskLevel.READ_ONLY,
     confirmation=ConfirmationPolicy.NEVER,
     tool_name="pulsesoc.crypto_alerts.list",
-    permission="self_account_only",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
     fields=(FieldSpec("limit", "int", required=False, minimum=1, maximum=50, default=20),),
     executor="crypto_alerts_list",
     verifier="",
@@ -147,13 +261,14 @@ _register(CapabilitySpec(
     risk=RiskLevel.READ_ONLY,
     confirmation=ConfirmationPolicy.NEVER,
     tool_name="pulsesoc.crypto_alerts.get",
-    permission="self_account_only",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
     fields=(_ALERT_ID,),
     executor="crypto_alerts_get",
     verifier="",
     native_route="/pulse/alerts/:alert_id",
     result_card=CardType.CRYPTO_ALERT_CARD,
     audit_category="crypto_alerts_read",
+    target_field="alert_id",
 ))
 
 _register(CapabilitySpec(
@@ -163,13 +278,14 @@ _register(CapabilitySpec(
     risk=RiskLevel.REVERSIBLE_WRITE,
     confirmation=ConfirmationPolicy.CONTEXTUAL,
     tool_name="pulsesoc.crypto_alerts.pause",
-    permission="self_account_only",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
     fields=(_ALERT_ID,),
     executor="crypto_alerts_pause",
     verifier="crypto_alert_status",
     native_route="/pulse/alerts/:alert_id",
     result_card=CardType.CRYPTO_ALERT_CARD,
     audit_category="crypto_alerts_write",
+    target_field="alert_id",
     undo_capability_id="crypto.alerts.resume",
 ))
 
@@ -180,13 +296,14 @@ _register(CapabilitySpec(
     risk=RiskLevel.REVERSIBLE_WRITE,
     confirmation=ConfirmationPolicy.CONTEXTUAL,
     tool_name="pulsesoc.crypto_alerts.resume",
-    permission="self_account_only",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
     fields=(_ALERT_ID,),
     executor="crypto_alerts_resume",
     verifier="crypto_alert_status",
     native_route="/pulse/alerts/:alert_id",
     result_card=CardType.CRYPTO_ALERT_CARD,
     audit_category="crypto_alerts_write",
+    target_field="alert_id",
     undo_capability_id="crypto.alerts.pause",
 ))
 
@@ -199,7 +316,7 @@ _register(CapabilitySpec(
     risk=RiskLevel.CONSEQUENTIAL_WRITE,
     confirmation=ConfirmationPolicy.ALWAYS,
     tool_name="pulsesoc.crypto_alerts.create",
-    permission="self_account_only",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
     fields=(
         FieldSpec("symbol", "identifier", required=True, max_length=24),
         FieldSpec("condition", "enum", required=True, choices=_ALERT_CONDITIONS),
@@ -210,7 +327,16 @@ _register(CapabilitySpec(
     native_route="/pulse/crypto/alerts",
     result_card=CardType.CRYPTO_ALERT_CARD,
     audit_category="crypto_alerts_write",
+    # A creation has no pre-existing row to name, so the target is the thing being
+    # created *about* — the symbol. That keeps two different "alert me on BTC" and
+    # "alert me on ETH" requests in one message from sharing an idempotency key.
+    target_field="symbol",
+    verified_fields=("condition", "threshold"),
     undo_capability_id="crypto.alerts.delete",
+    # Deleting the alert that was just created needs its row id, and the arguments
+    # carry only the symbol. The id exists solely in the verified result, so an
+    # unverified creation yields no undo rather than a delete aimed at nothing.
+    undo_argument_map=(("alert_id", "@target"),),
     idempotent=False,
 ))
 
@@ -221,7 +347,7 @@ _register(CapabilitySpec(
     risk=RiskLevel.CONSEQUENTIAL_WRITE,
     confirmation=ConfirmationPolicy.ALWAYS,
     tool_name="pulsesoc.crypto_alerts.update",
-    permission="self_account_only",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
     fields=(
         _ALERT_ID,
         FieldSpec("threshold", "float", required=True, minimum=0.0000001, maximum=1_000_000_000.0),
@@ -232,6 +358,8 @@ _register(CapabilitySpec(
     native_route="/pulse/alerts/:alert_id",
     result_card=CardType.CRYPTO_ALERT_CARD,
     audit_category="crypto_alerts_write",
+    target_field="alert_id",
+    verified_fields=("threshold", "condition"),
 ))
 
 _register(CapabilitySpec(
@@ -241,13 +369,14 @@ _register(CapabilitySpec(
     risk=RiskLevel.CONSEQUENTIAL_WRITE,
     confirmation=ConfirmationPolicy.ALWAYS,
     tool_name="pulsesoc.crypto_alerts.delete",
-    permission="self_account_only",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
     fields=(_ALERT_ID,),
     executor="crypto_alerts_delete",
     verifier="crypto_alert_deleted",
     native_route="/pulse/crypto/alerts",
     result_card=CardType.CRYPTO_ALERT_CARD,
     audit_category="crypto_alerts_write",
+    target_field="alert_id",
 ))
 
 
@@ -260,7 +389,7 @@ _register(CapabilitySpec(
     risk=RiskLevel.READ_ONLY,
     confirmation=ConfirmationPolicy.NEVER,
     tool_name="pulsesoc.notification_preferences.read",
-    permission="self_account_only",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
     fields=(FieldSpec("category", "enum", required=False,
                       choices=NOTIFICATION_CATEGORIES, default="global"),),
     executor="notification_preferences_read",
@@ -268,6 +397,7 @@ _register(CapabilitySpec(
     native_route="/pulse/settings/notifications",
     result_card=CardType.SETTING_CHANGE_RECEIPT,
     audit_category="notification_preferences_read",
+    target_field="category",
 ))
 
 _register(CapabilitySpec(
@@ -281,15 +411,80 @@ _register(CapabilitySpec(
     # approval step users have already been trained to expect.
     confirmation=ConfirmationPolicy.ALWAYS,
     tool_name="pulsesoc.notification_preferences.update",
-    permission="self_account_only",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
     fields=(_NOTIFICATION_CATEGORY, _PUSH_VALUE),
     executor="notification_preferences_update",
     verifier="notification_preference_value",
     native_route="/pulse/settings/notifications",
     result_card=CardType.SETTING_CHANGE_RECEIPT,
     audit_category="notification_preferences_write",
+    target_field="category",
+    verified_fields=("push",),
+    # This capability is its own inverse only if the value is flipped. Replaying the
+    # stored arguments would re-apply the change the user is trying to walk back, so
+    # the map is what makes the Undo button on this receipt mean anything.
     undo_capability_id="notifications.preference.update",
+    undo_argument_map=(("category", "category"), ("push", "!push")),
 ))
+
+
+# ---------------------------------------------------------------------------
+# Cross-capability validation
+# ---------------------------------------------------------------------------
+
+
+def _validate_undo_graph() -> None:
+    """Check that every declared undo can actually be invoked.
+
+    Undo is a promise made in a receipt and honoured somewhere else entirely, so
+    nothing at the call site notices when the two ends disagree. The three ways
+    they can disagree are all checked here, at import: an undo naming a capability
+    that does not exist, an undo whose map does not supply every required argument
+    of that capability, and an undo relying on argument pass-through between two
+    capabilities that do not in fact share a schema.
+
+    That last one is the reason this runs over the whole registry rather than in
+    ``__post_init__`` — a spec cannot see its undo target while the registry is
+    still being built.
+    """
+    for spec in REGISTRY.values():
+        if not spec.undo_capability_id:
+            continue
+        target = REGISTRY.get(spec.undo_capability_id)
+        if target is None:
+            raise ValueError(
+                f"{spec.capability_id}: undo_capability_id {spec.undo_capability_id!r} "
+                f"is not a registered capability"
+            )
+        required = {item.name for item in target.fields if item.required}
+        if spec.undo_argument_map:
+            produced = {name for name, _ in spec.undo_argument_map}
+            unknown = sorted(produced - {item.name for item in target.fields})
+            if unknown:
+                raise ValueError(
+                    f"{spec.capability_id}: undo_argument_map produces {unknown}, which "
+                    f"{target.capability_id} does not declare"
+                )
+            sources = {token.lstrip("!") for _, token in spec.undo_argument_map if token != "@target"}
+            missing_sources = sorted(sources - {item.name for item in spec.fields})
+            if missing_sources:
+                raise ValueError(
+                    f"{spec.capability_id}: undo_argument_map reads {missing_sources}, which "
+                    f"this capability does not declare"
+                )
+        else:
+            # No map means pass-through, which is only honest when this capability
+            # supplies every argument the undo requires.
+            produced = {item.name for item in spec.fields}
+        unmet = sorted(required - produced)
+        if unmet:
+            raise ValueError(
+                f"{spec.capability_id}: undoing with {target.capability_id} requires "
+                f"{unmet}, which this capability's undo arguments do not supply"
+            )
+
+
+_validate_undo_graph()
 
 
 # ---------------------------------------------------------------------------
@@ -319,6 +514,28 @@ def require(capability_id: str) -> CapabilitySpec:
             details={"capability_id": clean(capability_id, 120)},
         )
     return spec
+
+
+def unregistered_tool_names() -> list[str]:
+    """Capability tool names the production ledger does not know about.
+
+    These two lists must agree. The registry decides what UNDX may *propose*;
+    ``undx_policy.PRODUCTION_TOOL_REGISTRY`` decides what the audit ledger will
+    *record*, and ``undx_architecture.prepare_tool_operation`` raises for anything
+    missing from it. That raise happens deep inside the gateway, before any mutation,
+    where the transport turns it into a fall-through to the language model — so a
+    capability present here and absent there is not an error anyone sees. It is a
+    capability that quietly answers every request with chit-chat, in production, with
+    one WARNING line to show for it.
+
+    Returning the divergence rather than raising at import keeps a misconfiguration
+    from taking the whole app down; a test asserts the list is empty, which is where a
+    deployment defect should be caught.
+    """
+    from services import undx_policy
+
+    known = set(getattr(undx_policy, "PRODUCTION_TOOL_REGISTRY", {}) or {})
+    return sorted({spec.tool_name for spec in REGISTRY.values()} - known)
 
 
 def capability_ids() -> list[str]:
@@ -363,5 +580,6 @@ def describe_for_model() -> list[dict[str, Any]]:
 __all__ = [
     "CapabilitySpec", "REGISTRY", "get", "require",
     "capability_ids", "write_capability_ids", "describe_for_model",
+    "unregistered_tool_names",
     "NOTIFICATION_CATEGORIES", "category_choices",
 ]

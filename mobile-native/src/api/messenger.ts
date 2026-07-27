@@ -170,6 +170,7 @@ export type UndxResponseComponent = {
     | "crypto_alert_card"
     | "relationship_change_receipt"
     | "message_draft_confirmation"
+    | "search_results"
     | "unsupported_capability"
     | "permission_denied"
     | "retry_action"
@@ -179,7 +180,18 @@ export type UndxResponseComponent = {
   // Agent receipt fields. `verified` is the only field that may be read as a claim
   // that the change actually happened; `status` alone does not imply a read-back.
   capability_id?: string;
-  verification_state?: "verified" | "unverified" | "pending" | "mismatch" | "impossible_to_verify";
+  // Exactly the four values of `VerificationState` in
+  // services/undx_agent_contracts.py, and no others. The previous union listed
+  // "unverified", "pending" and "mismatch" — none of which the server has ever sent —
+  // while omitting the two it does send for a change it could not confirm. Any client
+  // code that narrowed on those names was therefore dead, and a card the server had
+  // marked unverifiable would have fallen into whatever branch was left. The parity
+  // test in src/undx/__tests__ compares this list against the Python enum.
+  verification_state?:
+    | "verified"
+    | "verification_pending"
+    | "verification_failed"
+    | "impossible_to_verify";
   verified?: boolean;
   verification_detail?: string;
   title?: string;
@@ -187,6 +199,16 @@ export type UndxResponseComponent = {
   risk?: string;
   task_id?: string;
   undo_capability_id?: string;
+  /**
+   * The arguments the undo capability must be invoked with.
+   *
+   * Never reconstruct these from the card. For a notification preference the
+   * reversing call is the *same* capability with the value flipped, so replaying
+   * what was just sent would re-apply the change rather than undo it. The server
+   * sends this only when the undo can actually be performed, and clears it together
+   * with `undo_capability_id` when it cannot.
+   */
+  undo_arguments?: Record<string, unknown>;
   can_undo?: boolean;
   timestamp?: string;
   canonical_resource_ids?: string[];

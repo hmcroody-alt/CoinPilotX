@@ -207,6 +207,43 @@ class ConfirmRouting(unittest.TestCase):
         self.assertEqual(result["http_status"], 403)
         self.assertEqual(self.fx.alert_status(self.alert_id), "active")
 
+    # -- what happens when the redemption itself goes wrong ----------------
+
+    def test_a_failure_after_execution_is_not_reported_as_an_invalid_approval(self):
+        """The worst outcome this endpoint can produce, and the one it used to produce.
+
+        ``_agent_confirm`` was wrapped in a catch-all that returned ``None``, which the
+        caller reads as "not an agent token" and hands to the legacy branch — where the
+        token, already burned, is rejected as invalid. So a delete that had *completed*
+        answered 409 "this confirmation is no longer valid". The user is then told
+        nothing happened, and the obvious next move is to try again.
+
+        The failure is injected after the gateway has been entered, which is precisely
+        the region the old handler covered and the new one deliberately does not.
+        """
+        from services import undx_tool_gateway
+
+        token = self._request_delete()
+        original = undx_tool_gateway.execute
+        undx_tool_gateway.execute = (
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom after entry"))
+        )
+        try:
+            result = self.svc.confirm_action(OWNER_ID, {"confirmation_token": token})
+        finally:
+            undx_tool_gateway.execute = original
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "confirmation_outcome_unknown")
+        self.assertEqual(result["http_status"], 202)
+        self.assertEqual(result["verification_state"], "verification_pending")
+        # Not 409, and not the legacy refusal. Those would both tell the user the
+        # approval was bad, which is the one thing that is definitely untrue.
+        self.assertNotEqual(result["http_status"], 409)
+        # And the advice in the message must not be "try again", because a second
+        # attempt against a spent token cannot succeed either.
+        self.assertIn("Check the screen", result["message"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

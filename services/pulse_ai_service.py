@@ -678,6 +678,16 @@ def _agent_turn(cur, user_id: int, body: str, payload: dict, *,
     is a completed-but-unverified action: those come back as receipts, not exceptions,
     and are reported to the user as exactly what they are.
 
+    That last sentence is only true because of an invariant maintained elsewhere, and it
+    is worth naming because this handler depends on it entirely:
+    ``undx_tool_gateway.execute`` does not raise once an executor has been entered. It
+    converts every post-execution fault — a verifier fault, an audit fault, even a fault
+    in its own fault handling — into a receipt, and ``undx_agent_runtime.handle`` does
+    the same for card construction. So an exception arriving here provably precedes any
+    mutation, and falling through to conversation cannot paper over a real change to the
+    user's data. If that invariant is ever broken, this ``except`` becomes the bug: the
+    model would answer a question about an action it does not know happened.
+
     *Only the user's own text is offered.* Retrieved documents, tool output and
     knowledge-base entries never reach this function. That is what stops a hostile
     string inside a fetched post from being read as an instruction — not a filter on
@@ -701,6 +711,18 @@ def _agent_turn(cur, user_id: int, body: str, payload: dict, *,
         # difference between "the agent declined to act" and "the agent has nothing to
         # say" is the difference between a receipt and an empty assistant message.
         return response if (response is not None and response.handled) else None
+    except ValueError as exc:
+        # ``prepare_tool_operation`` raises this for a tool name missing from
+        # ``undx_policy.PRODUCTION_TOOL_REGISTRY``. It is not a runtime hiccup, it is a
+        # deployment defect that makes an entire capability pack invisible: every request
+        # for it silently becomes conversation. Logged as an error, not a warning, so it
+        # is findable without reading the whole log — and
+        # ``undx_capability_registry.unregistered_tool_names`` catches it in CI first.
+        LOGGER.error(
+            "UNDX_AGENT_TOOL_UNREGISTERED user_id=%s correlation_id=%s detail=%s",
+            int(user_id), correlation_id, _clean(str(exc), 80),
+        )
+        return None
     except Exception as exc:
         LOGGER.warning(
             "UNDX_AGENT_TURN_FAILED user_id=%s correlation_id=%s error=%s",
@@ -1206,9 +1228,17 @@ def _agent_confirm(cur, user_id: int, token: str, payload: dict, correlation_id:
     other executor is not destroyed on the way past. The capability id is then checked
     against the registry rather than against a prefix: an ``action_id`` that no longer
     names a live capability is not the agent's problem to execute.
+
+    **Only the routing decision is fault-tolerant.** The gateway call deliberately sits
+    outside the ``try``. Falling through to the legacy branch after the gateway has run
+    would be the worst bug this file could contain: the gateway burns the approval, so
+    the legacy branch would then fail to consume the same token and answer
+    ``confirmation_invalid`` with HTTP 409 — telling a user their alert was not deleted
+    immediately after deleting it. An exception raised past this point propagates to
+    :func:`confirm_action`, which reports an unknown outcome honestly instead.
     """
     try:
-        from services import undx_agent_runtime, undx_capability_registry, undx_tool_gateway
+        from services import undx_agent_runtime, undx_capability_registry
 
         if not undx_agent_runtime.available(int(user_id)):
             return None
@@ -1217,27 +1247,34 @@ def _agent_confirm(cur, user_id: int, token: str, payload: dict, correlation_id:
         spec = undx_capability_registry.get(capability_id) if capability_id else None
         if spec is None:
             return None
-        # Arguments come from the approval row, never from this request body. The user
-        # agreed to a specific change; redemption replays that change rather than
-        # accepting a fresh description of it.
-        return undx_tool_gateway.execute(
-            cur,
-            user_id=int(user_id),
-            capability_id=spec.capability_id,
-            proposed_arguments=dict(pending.get("arguments") or {}),
-            request_id=_clean(payload.get("request_id"), 120) or correlation_id,
-            task_id=_clean(payload.get("task_id"), 120),
-            client_request_id=_clean(payload.get("client_message_id"), 120),
-            correlation_id=correlation_id,
-            confirmation_token=token,
-            explicit_request=True,
-        )
+        arguments = dict(pending.get("arguments") or {})
     except Exception as exc:
+        # Routing failed, which means the token was never presented to the gateway and
+        # nothing has been consumed or changed. Handing the request to the legacy branch
+        # is safe and preserves the pre-agent contract exactly.
         LOGGER.warning(
-            "UNDX_AGENT_CONFIRM_FAILED user_id=%s correlation_id=%s error=%s",
+            "UNDX_AGENT_CONFIRM_ROUTING_FAILED user_id=%s correlation_id=%s error=%s",
             int(user_id), correlation_id, exc.__class__.__name__,
         )
         return None
+
+    from services import undx_tool_gateway
+
+    # Arguments come from the approval row, never from this request body. The user
+    # agreed to a specific change; redemption replays that change rather than
+    # accepting a fresh description of it.
+    return undx_tool_gateway.execute(
+        cur,
+        user_id=int(user_id),
+        capability_id=spec.capability_id,
+        proposed_arguments=arguments,
+        request_id=_clean(payload.get("request_id"), 120) or correlation_id,
+        task_id=_clean(payload.get("task_id"), 120),
+        client_request_id=_clean(payload.get("client_message_id"), 120),
+        correlation_id=correlation_id,
+        confirmation_token=token,
+        explicit_request=True,
+    )
 
 
 #: Canonical outcome -> HTTP status. Anything absent is a 200 carrying an honest
@@ -1301,7 +1338,29 @@ def confirm_action(user_id: int, payload: dict | None = None) -> dict:
         # without being consumed, and falls through to the legacy branch with its
         # original checks in their original order, so nothing about the existing
         # contract changes for existing callers.
-        agent_outcome = _agent_confirm(cur, int(user_id), token, payload, correlation_id) if token else None
+        try:
+            agent_outcome = _agent_confirm(cur, int(user_id), token, payload, correlation_id) if token else None
+        except Exception as exc:
+            # The approval reached the gateway and something went wrong afterwards.
+            # ``_agent_confirm`` only lets an exception out from past that point, so the
+            # token is spent and the change may well have been applied. The one answer
+            # that must not be given here is the legacy 409 "that confirmation is no
+            # longer valid", which reads to the user as "nothing happened".
+            LOGGER.critical(
+                "UNDX_AGENT_CONFIRM_FAILED user_id=%s correlation_id=%s error=%s",
+                int(user_id), correlation_id, exc.__class__.__name__,
+            )
+            conn.commit()
+            return {
+                "ok": False,
+                "error": "confirmation_outcome_unknown",
+                "status": "accepted_unverified",
+                "verification_state": "verification_pending",
+                "message": ("Your confirmation went through, but UNDX could not confirm how the "
+                            "change finished. Check the screen before trying again."),
+                "correlation_id": correlation_id,
+                "http_status": 202,
+            }
         if agent_outcome is not None:
             conn.commit()
             return _agent_confirm_payload(agent_outcome, correlation_id)

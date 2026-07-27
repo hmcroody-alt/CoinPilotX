@@ -81,6 +81,39 @@ class RiskLevel:
         return cls.ORDER.get(str(level), 0) >= cls.ORDER[cls.REVERSIBLE_WRITE]
 
 
+class PermissionScope:
+    """Whose data a capability is allowed to touch.
+
+    This started life as documentation — a string on every capability that read
+    ``self_account_only`` and was consulted by nothing. That is a dangerous kind of
+    comment, because it reads like an enforced invariant: someone reviewing a new
+    capability sees the field, believes ownership is handled, and does not check that
+    the executor actually scoped its query. It was harmless while every target was a
+    row belonging to the caller. It stops being harmless the moment a capability's
+    target is *another user*, which is exactly what a social pack is.
+
+    So the values are now load-bearing. The gateway refuses to execute a capability
+    whose scope it has no enforcement rule for, and each rule is a real check:
+
+    ``self_account_only``
+        The capability may only reach rows owned by the caller. Enforced structurally:
+        no declared field may name another actor, so there is nothing for a hostile
+        argument to point at.
+    ``other_user_target``
+        The capability names another account on purpose. The target must be declared,
+        must resolve, and must be authorised for this actor before execution.
+    ``owned_content_target``
+        The capability names a content item. It must resolve and be visible to this
+        actor; ownership of the *content* is not required, but access is.
+    """
+
+    SELF_ACCOUNT_ONLY = "self_account_only"
+    OTHER_USER_TARGET = "other_user_target"
+    OWNED_CONTENT_TARGET = "owned_content_target"
+
+    ALL = frozenset({SELF_ACCOUNT_ONLY, OTHER_USER_TARGET, OWNED_CONTENT_TARGET})
+
+
 class ConfirmationPolicy:
     """When a capability needs a human approval bound to its exact arguments."""
 
@@ -480,6 +513,15 @@ class AgentReceipt:
     evidence: dict[str, Any] = field(default_factory=dict)
     native_deep_link: str = ""
     undo_capability_id: str = ""
+    #: The arguments that would reverse this action, when one can be built.
+    #:
+    #: Kept beside ``undo_capability_id`` because the two are only meaningful
+    #: together. Naming the capability that reverses a change says nothing about how
+    #: to invoke it, and the two capabilities most in need of an undo are precisely
+    #: the two where replaying this call's arguments would be wrong: one undoes
+    #: itself with the value flipped, the other undoes with a delete keyed on a row
+    #: id that did not exist when the call was made.
+    undo_arguments: dict[str, Any] = field(default_factory=dict)
     user_explanation: str = ""
     risk_level: str = RiskLevel.READ_ONLY
     timestamp: str = field(default_factory=now_iso)
@@ -577,7 +619,7 @@ class AgentResponse:
 
 
 __all__ = [
-    "AgentOutcome", "RiskLevel", "ConfirmationPolicy", "VerificationState",
+    "AgentOutcome", "RiskLevel", "PermissionScope", "ConfirmationPolicy", "VerificationState",
     "TaskStatus", "CardType", "AgentError", "FieldSpec", "validate_arguments",
     "AgentRequest", "ToolCall", "ToolResult", "VerificationResult",
     "ConfirmationRequest", "AgentReceipt", "AgentTask", "NativeCard",

@@ -30,6 +30,7 @@ is reproduced here verbatim.
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from typing import Any
@@ -48,6 +49,8 @@ from services.undx_agent_contracts import (
     new_id,
 )
 from services.undx_capability_registry import REGISTRY, CapabilitySpec, get, require
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +143,36 @@ def match_capability(text: str) -> CapabilitySpec | None:
 # ---------------------------------------------------------------------------
 
 
+def _read_permitted(user_id: int, capability_id: str) -> bool:
+    """Whether this module may perform a supporting read on its own.
+
+    Two paths here — reference resolution and the confirmation preview — call
+    executors directly rather than through the gateway, because neither is an action
+    the user asked for and neither should produce a receipt, an audit row or a ledger
+    entry. That shortcut skipped the flags. An operator who disabled
+    ``crypto.alerts.get``, or switched reads off during an incident, still had its
+    data read and rendered into a confirmation card, which makes those switches mean
+    less than their names promise.
+
+    The gate is ``policy.evaluate`` rather than a hand-rolled flag check, so there is
+    one definition of "may this capability run" and this path cannot drift from the
+    gateway's. For a read-only spec that evaluation depends on nothing but the flags,
+    the cohort and the capability id, which is why passing no arguments is sound.
+
+    Failing closed here is cheap: resolution reports that it could not read, and the
+    preview renders a confirmation with an unknown current value. Neither invents one.
+    """
+    spec = get(capability_id)
+    if spec is None or spec.is_write:
+        return False
+    return not policy.evaluate(int(user_id), spec, {}).denied
+
+
+#: How many alerts reference resolution will compare before declining to. Matches the
+#: maximum ``crypto.alerts.list`` accepts, so this reads the largest window the
+#: capability permits rather than the executor's conversational default of 20.
+_MAX_REFERENCE_SCAN = 50
+
 _SYMBOL_ALIASES = {
     "bitcoin": "BTC", "btc": "BTC", "ethereum": "ETH", "eth": "ETH",
     "solana": "SOL", "sol": "SOL", "cardano": "ADA", "ada": "ADA",
@@ -175,15 +208,30 @@ def resolve_alert_reference(user_id: int, text: str, *, explicit_id: Any = None)
     through the owner-scoped service call, so a caller cannot smuggle in another
     account's row by naming it precisely.
     """
+    if not _read_permitted(user_id, "crypto.alerts.get"):
+        return Reference(0, detail="Your alerts could not be read just now.")
+
     if explicit_id:
         result = undx_agent_tools.crypto_alerts_get(int(user_id), {"alert_id": int(explicit_id)})
         if result.ok:
             return Reference(1, int(explicit_id))
         return Reference(0, detail="That alert is not on your account.")
 
-    listing = undx_agent_tools.crypto_alerts_list(int(user_id), {})
+    # The largest page the capability permits, not the executor's default. Resolution
+    # asks "is there exactly one?", which is a question about the whole account; asking
+    # it of a 20-row window silently redefines it as "exactly one on page one".
+    listing = undx_agent_tools.crypto_alerts_list(int(user_id), {"limit": _MAX_REFERENCE_SCAN})
     if not listing.ok:
         return Reference(0, detail="Your alerts could not be read just now.")
+    if (listing.data or {}).get("truncated"):
+        # More alerts exist than were read, so uniqueness cannot be established — there
+        # may be a second match just past the edge of the page. Refusing here costs one
+        # clarifying question; guessing costs the user a change to the wrong alert, made
+        # under a confirmation card that named a different one as the only candidate.
+        return Reference(
+            2, 0, [],
+            detail="You have more alerts than UNDX can compare at once. Open your alerts and tell me which one.",
+        )
     # Only live alerts are candidates. Matching a deleted alert and then refusing to
     # act on it would report "ambiguous" for a set the user considers to have one item.
     alerts = [item for item in listing.records if str(item.get("status") or "") != "deleted"]
@@ -282,6 +330,12 @@ def build_card(spec: CapabilitySpec, outcome: undx_tool_gateway.GatewayOutcome) 
         "canonical_resource_ids": list(receipt.canonical_resource_ids),
         "task_id": receipt.task_id,
         "undo_capability_id": receipt.undo_capability_id,
+        # The client needs both halves to offer Undo. Sending the capability id alone
+        # would leave the app to guess the arguments, and the obvious guess — replay
+        # what was just sent — is the one that re-applies a preference change instead
+        # of reversing it. The gateway clears both together, so `can_undo` reading only
+        # the id is not a shortcut: an id without arguments cannot occur.
+        "undo_arguments": dict(receipt.undo_arguments),
         "can_undo": bool(receipt.undo_capability_id),
         "timestamp": receipt.timestamp,
     }
@@ -381,13 +435,15 @@ def preview(user_id: int, spec: CapabilitySpec, arguments: dict[str, Any]) -> tu
     unconfirmed or refusing an action the user is entitled to take.
     """
     try:
-        if spec.capability_id.startswith("crypto.alerts.") and arguments.get("alert_id"):
+        if (spec.capability_id.startswith("crypto.alerts.") and arguments.get("alert_id")
+                and _read_permitted(user_id, "crypto.alerts.get")):
             result = undx_agent_tools.crypto_alerts_get(int(user_id), {"alert_id": int(arguments["alert_id"])})
             alert = result.data or {}
             if spec.capability_id == "crypto.alerts.update":
                 return alert.get("threshold"), arguments.get("threshold")
             return alert.get("status"), _PROPOSED_STATE.get(spec.capability_id)
-        if spec.capability_id == "notifications.preference.update":
+        if (spec.capability_id == "notifications.preference.update"
+                and _read_permitted(user_id, "notifications.preference.read")):
             category = clean(arguments.get("category") or "global", 40)
             result = undx_agent_tools.notification_preferences_read(int(user_id), {"category": category})
             return (result.data or {}).get("push"), bool(arguments.get("push"))
@@ -581,12 +637,25 @@ def handle(
         )
     except AgentError as exc:
         # A typed refusal from validation or the registry. It is already a canonical
-        # outcome; it should reach the user as one rather than as a 500.
+        # outcome; it should reach the user as one rather than as a 500. Every raising
+        # path inside ``execute`` lies *before* the executor runs — the gateway settles
+        # its own tail — so arriving here always means nothing was changed.
         return _error_response(spec, exc, request_id, int(user_id), started)
+
+    # Past this line the action may have really happened, so the turn must be reported
+    # as handled no matter what. Card construction is presentation: a defect in it is a
+    # missing card, not a reason to hand the turn back to a language model that would
+    # then answer as though nothing had occurred.
+    try:
+        card = build_card(spec, outcome)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.critical("undx_card_build_failed capability=%s user=%s error=%s",
+                        spec.capability_id, int(user_id), exc.__class__.__name__)
+        card = None
     return AgentResponse(
         handled=True,
         receipt=outcome.receipt,
-        card=build_card(spec, outcome),
+        card=card,
         reply=outcome.receipt.user_explanation,
         capability_id=spec.capability_id,
         latency_ms=int((time.monotonic() - started) * 1000),

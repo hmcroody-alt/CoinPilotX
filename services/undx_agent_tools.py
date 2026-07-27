@@ -93,17 +93,28 @@ def _alert_engine():
 
 
 def crypto_alerts_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    """List the caller's alerts, and say plainly when the list is not all of them.
+
+    One row more than the limit is requested on purpose. Without it, a full page and a
+    complete set are indistinguishable — and that distinction is load-bearing a long
+    way from here. ``undx_agent_runtime.resolve_alert_reference`` decides "exactly one
+    of your alerts matches this description" from this list, and a *truncated* list can
+    contain exactly one match while the account holds several. The user would then be
+    shown, and would approve, a change to whichever alert happened to fall on page one.
+    """
     started = time.perf_counter()
     engine = _alert_engine()
     limit = int(arguments.get("limit") or 20)
-    result = engine.list_alert_rules(int(user_id), limit=limit) or {}
-    records = [_alert_record(rule) for rule in (result.get("alerts") or [])]
+    fetched = [_alert_record(rule)
+               for rule in ((engine.list_alert_rules(int(user_id), limit=limit + 1) or {})
+                            .get("alerts") or [])]
+    records = fetched[:limit]
     return ToolResult(
         ok=True,
         tool_name="pulsesoc.crypto_alerts.list",
         capability_id="crypto.alerts.list",
-        records=records[:limit],
-        data={"count": len(records[:limit])},
+        records=records,
+        data={"count": len(records), "truncated": len(fetched) > limit},
         latency_ms=_timed(started),
     )
 

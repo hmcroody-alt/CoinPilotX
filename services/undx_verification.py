@@ -153,7 +153,16 @@ def crypto_alert_exists(user_id: int, arguments: dict[str, Any], result: ToolRes
 
 
 def crypto_alert_threshold(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
-    """Confirm an edited alert now holds the requested threshold."""
+    """Confirm an edited alert now holds every value the edit requested.
+
+    Named for the threshold because that is the field the capability requires, but it
+    reads back the condition too whenever one was supplied. A verifier that checks a
+    subset of what its capability can change is worse than no verifier at all: the
+    receipt says "verified" with full confidence while the unchecked field may hold
+    anything. ``CapabilitySpec.verified_fields`` now makes that coverage a declared,
+    import-time-checked property, and this function is the other half of it — the
+    registry refuses to register ``condition`` as verified unless this actually looks.
+    """
     alert_id = int(arguments.get("alert_id") or 0)
     try:
         rule = _alert_engine().get_alert_rule(alert_id, int(user_id))
@@ -166,15 +175,23 @@ def crypto_alert_threshold(user_id: int, arguments: dict[str, Any], result: Tool
             observed=None,
             detail="The alert could not be read back on this account.",
         )
-    expected = float(arguments.get("threshold") or 0)
-    observed = float(rule.get("threshold_value") or 0)
+    expected: dict[str, Any] = {"threshold": float(arguments.get("threshold") or 0)}
+    observed: dict[str, Any] = {"threshold": float(rule.get("threshold_value") or 0)}
+    matches = abs(observed["threshold"] - expected["threshold"]) < 1e-9
+    # Only assert on the condition when the edit actually asked for one. The field is
+    # optional, and an omitted condition means "leave it alone", not "expect empty".
+    if clean(arguments.get("condition"), 40):
+        expected["condition"] = clean(arguments.get("condition"), 40)
+        observed["condition"] = clean(rule.get("condition"), 40)
+        matches = matches and observed["condition"] == expected["condition"]
     return VerificationResult(
-        state=VerificationState.VERIFIED if abs(observed - expected) < 1e-9 else VerificationState.FAILED,
+        state=VerificationState.VERIFIED if matches else VerificationState.FAILED,
         expected=expected,
         observed=observed,
         evidence={
             "canonical_resource_id": f"alert_rule:{alert_id}",
-            "read_back": {"threshold_value": observed},
+            "read_back": {"threshold_value": observed["threshold"],
+                          **({"condition": observed["condition"]} if "condition" in observed else {})},
             "source": "alert_engine.get_alert_rule",
         },
     )
@@ -260,7 +277,16 @@ def verify(name: str, user_id: int, arguments: dict[str, Any], result: ToolResul
             state=VerificationState.IMPOSSIBLE,
             detail="No read-back path is available for this action.",
         )
-    return verifier(int(user_id), arguments or {}, result)
+    try:
+        return verifier(int(user_id), arguments or {}, result)
+    except Exception as exc:  # pragma: no cover - defensive
+        # Verification runs *after* the mutation. An exception escaping from here
+        # would propagate out of the gateway with the user's data already changed and
+        # no receipt describing it, which is the single worst failure shape this
+        # system has. Each verifier guards its own service call; this catches the
+        # rest — coercion, a service returning an unexpected shape, anything.
+        # Unverifiable is the honest verdict, and it never reads as success.
+        return _unreadable(f"Read-back raised {exc.__class__.__name__}.")
 
 
 __all__ = ["VERIFIERS", "verify"]

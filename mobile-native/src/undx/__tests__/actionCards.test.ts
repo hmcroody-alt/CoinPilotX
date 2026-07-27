@@ -143,7 +143,7 @@ describe("what the receipt says", () => {
     const unverified = toActionCard({
       component: "setting_change_receipt",
       status: "accepted_unverified",
-      verification_state: "unverified",
+      verification_state: "verification_pending",
       verified: false,
       title: "Update a notification preference",
     });
@@ -156,6 +156,50 @@ describe("what the receipt says", () => {
       expect(toActionCard({ component, title: "x" }).kind).toBe("failure");
       expect(toActionCard({ component, title: "x" }).kicker).toBe("NOT DONE");
     }
+  });
+
+  it("carries the arguments that reverse the change, not the ones that made it", () => {
+    // The trap this guards. `notifications.preference.update` undoes itself, so a
+    // client that built the undo by replaying what it just sent would turn the
+    // notification back off — confirming the change instead of reversing it. The
+    // server sends the inverted arguments and the client must use those.
+    const card = toActionCard({
+      component: "setting_change_receipt",
+      status: "verified_success",
+      verification_state: "verified",
+      verified: true,
+      target: "reels",
+      current_value: true,
+      proposed_value: false,
+      undo_capability_id: "notifications.preference.update",
+      undo_arguments: { category: "reels", push: true },
+    });
+    expect(card.undoCapabilityId).toBe("notifications.preference.update");
+    expect(card.undoArguments).toEqual({ category: "reels", push: true });
+  });
+
+  it("offers no undo when the server sent a capability but no arguments", () => {
+    // Half a contract is not a button. A capability id alone would produce a call
+    // with no target, which the server would reject after the user had pressed it.
+    const card = toActionCard({
+      component: "crypto_alert_card",
+      status: "verified_success",
+      verification_state: "verified",
+      verified: true,
+      undo_capability_id: "crypto.alerts.delete",
+    });
+    expect(card.undoCapabilityId).toBe("");
+    expect(card.undoArguments).toEqual({});
+  });
+
+  it("offers no undo on a card that is not a receipt", () => {
+    const card = toActionCard({
+      ...agentConfirmation,
+      undo_capability_id: "crypto.alerts.resume",
+      undo_arguments: { alert_id: 1 },
+    });
+    expect(card.kind).toBe("confirmation");
+    expect(card.undoCapabilityId).toBe("");
   });
 
   it("surfaces a refused duplicate as such", () => {

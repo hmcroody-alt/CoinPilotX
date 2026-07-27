@@ -19,8 +19,21 @@
 
 import { UndxResponseComponent } from "../api/messenger";
 
-/** Card types that ask the user to approve something before it happens. */
-export const CONFIRMATION_COMPONENTS = ["action_confirmation", "confirmation_card"] as const;
+/**
+ * Card types that ask the user to approve something before it happens.
+ *
+ * `message_draft_confirmation` belongs here even though nothing emits it yet. It is a
+ * confirmation type in the server's own enum, and the classifier below treats
+ * anything it does not recognise as a failure — so the day that card ships, omitting
+ * it would render an *unsent draft* as a card the user reads as final. Listing it now
+ * costs one line; discovering the omission costs a message sent or not sent without
+ * the user knowing which.
+ */
+export const CONFIRMATION_COMPONENTS = [
+  "action_confirmation",
+  "confirmation_card",
+  "message_draft_confirmation",
+] as const;
 
 /** Card types that report an action that has already been attempted. */
 export const RECEIPT_COMPONENTS = [
@@ -38,6 +51,23 @@ export const FAILURE_COMPONENTS = [
   "retry_action",
   "permission_denied",
   "unsupported_capability",
+] as const;
+
+/** Card types that report work still running. */
+export const PROGRESS_COMPONENTS = ["action_progress"] as const;
+
+/**
+ * Card types that show something found rather than something done.
+ *
+ * `search_results` is the agent's name and `search_result_card` the V4/V5 one; both
+ * are live, because both paths are.
+ */
+export const RESULT_COMPONENTS = [
+  "search_results",
+  "search_result_card",
+  "profile_result",
+  "content_result",
+  "conversation_result",
 ] as const;
 
 export type UndxCardKind = "confirmation" | "receipt" | "failure" | "result" | "progress";
@@ -66,6 +96,18 @@ export type UndxActionCard = {
   deepLink: string;
   /** Present when the server declined to repeat a mutation it had already done. */
   idempotentReplay: boolean;
+  /**
+   * The capability that reverses this action, or "" when there is no undo.
+   *
+   * Read together with `undoArguments`, never separately. The server clears both
+   * fields as a pair, so an Undo control gated on this string alone is still
+   * correct — but the arguments must come from the server rather than from
+   * re-sending what produced this card, which for a preference change would
+   * re-apply it.
+   */
+  undoCapabilityId: string;
+  /** Arguments for `undoCapabilityId`; empty whenever no undo is offered. */
+  undoArguments: Record<string, unknown>;
 };
 
 const READABLE: Record<string, string> = {
@@ -115,20 +157,38 @@ export function isActionable(component: UndxResponseComponent): boolean {
   return isConfirmation(component) && Boolean(component.confirmation_token);
 }
 
+/**
+ * Classify a card, and treat an unrecognised one as a failure.
+ *
+ * The default is the whole point. This previously fell through to `"receipt"`, which
+ * meant any component name the client did not know — a new server card, a typo, a
+ * rename shipped ahead of the app — rendered under the kicker "VERIFIED RESULT". The
+ * one thing this client must never do is tell a user an action succeeded on the
+ * strength of not recognising the message. Every classification is now explicit, and
+ * whatever is left over is reported as not done.
+ *
+ * The lists are checked before the confirmation test purely for readability; they are
+ * disjoint, and `contractParity` in the tests asserts they cover the server's enum
+ * exactly, so a card added on the server without a home here fails CI rather than
+ * failing quietly on a phone.
+ */
 function kindOf(component: UndxResponseComponent): UndxCardKind {
   if (isConfirmation(component)) {
     return "confirmation";
   }
+  if (includes(RECEIPT_COMPONENTS, component.component)) {
+    return "receipt";
+  }
   if (includes(FAILURE_COMPONENTS, component.component)) {
     return "failure";
   }
-  if (component.component === "progress_card") {
+  if (includes(PROGRESS_COMPONENTS, component.component)) {
     return "progress";
   }
-  if (component.component === "search_result_card") {
+  if (includes(RESULT_COMPONENTS, component.component)) {
     return "result";
   }
-  return "receipt";
+  return "failure";
 }
 
 const KICKERS: Record<UndxCardKind, string> = {
@@ -148,6 +208,14 @@ const KICKERS: Record<UndxCardKind, string> = {
  */
 export function toActionCard(component: UndxResponseComponent): UndxActionCard {
   const kind = kindOf(component);
+  // An undo is offered only on a receipt the server verified, and only when it sent
+  // arguments to perform it with. The `kind` check is the client's own guard: the
+  // server already withholds undo on anything else, and a card that arrived claiming
+  // otherwise is a card this client should not act on.
+  const undoable =
+    kind === "receipt" &&
+    Boolean(component.undo_capability_id) &&
+    Object.keys(component.undo_arguments || {}).length > 0;
   const verified =
     component.verified === true ||
     (kind === "receipt" && component.verification_state === "verified");
@@ -175,6 +243,10 @@ export function toActionCard(component: UndxResponseComponent): UndxActionCard {
     expiresAt: component.expires_at || "",
     deepLink: component.deep_link || "",
     idempotentReplay: component.idempotent_replay === true,
+    // Both or neither. A capability id with no arguments is a button that would send
+    // an incomplete call, so the pair is dropped together rather than half-kept.
+    undoCapabilityId: undoable ? component.undo_capability_id || "" : "",
+    undoArguments: undoable ? { ...component.undo_arguments } : {},
   };
 }
 
