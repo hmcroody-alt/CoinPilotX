@@ -54,6 +54,27 @@ PRODUCTION_TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     "pulsesoc.media.init": {"method": "POST", "route": "/api/messages/media/init", "risk": "medium", "confirmation": False, "canonical_key": "attachment_id"},
     "pulsesoc.media.upload": {"method": "POST", "route": "/api/messages/media/upload", "risk": "medium", "confirmation": False, "canonical_key": "attachment_id"},
     "pulsesoc.media.complete": {"method": "POST", "route": "/api/messages/media/complete", "risk": "medium", "confirmation": False, "canonical_key": "attachment_id"},
+    # Agent capability pack. These execute in-process through services.undx_agent_tools
+    # rather than by re-entering HTTP, so ``route`` names the owning service function.
+    # They are declared here because undx_architecture keys its audit trail, idempotency
+    # ledger and confirmation bookkeeping off this registry: a tool absent from it raises
+    # ``tool_not_registered`` and, by construction, cannot be executed unaudited.
+    #
+    # ``method`` is None for the same reason it is None on ``web.search`` — in this
+    # registry a method is the HTTP verb a tool is reached by, and these are not reached
+    # over HTTP at all. Declaring a plausible-looking verb was actively wrong: the
+    # bootstrap eval reads every entry with a method as a promise that the route exists
+    # in bot.py, and undx_architecture treats ``POST`` as its structural stand-in for
+    # "this needs read-after-write". The agent pack supplies a real read-back verdict via
+    # ``canonical_verified``, so it needs no stand-in and must not advertise a route it
+    # does not have. Write semantics live in ``risk`` and ``verification_route``.
+    "pulsesoc.crypto_alerts.list": {"method": None, "route": "services.alert_engine.list_alert_rules", "risk": "read_only", "confirmation": False, "canonical_key": "alert_id"},
+    "pulsesoc.crypto_alerts.get": {"method": None, "route": "services.alert_engine.get_alert_rule", "risk": "read_only", "confirmation": False, "canonical_key": "alert_id"},
+    "pulsesoc.crypto_alerts.pause": {"method": None, "route": "services.alert_engine.pause_alert", "risk": "medium", "confirmation": False, "canonical_key": "alert_id", "verification_route": "services.alert_engine.get_alert_rule"},
+    "pulsesoc.crypto_alerts.resume": {"method": None, "route": "services.alert_engine.resume_alert", "risk": "medium", "confirmation": False, "canonical_key": "alert_id", "verification_route": "services.alert_engine.get_alert_rule"},
+    "pulsesoc.crypto_alerts.create": {"method": None, "route": "services.alert_engine.create_alert_rule", "risk": "high", "confirmation": True, "canonical_key": "alert_id", "verification_route": "services.alert_engine.get_alert_rule"},
+    "pulsesoc.crypto_alerts.update": {"method": None, "route": "services.alert_engine.update_alert_rule", "risk": "high", "confirmation": True, "canonical_key": "alert_id", "verification_route": "services.alert_engine.get_alert_rule"},
+    "pulsesoc.crypto_alerts.delete": {"method": None, "route": "services.alert_engine.delete_alert", "risk": "high", "confirmation": True, "canonical_key": "alert_id", "verification_route": "services.alert_engine.get_alert_rule"},
     "web.search": {"method": None, "route": "services.pulse_ai_web_search.search", "risk": "medium", "confirmation": False},
     "calculator.execute": {"method": None, "route": "deterministic_server_calculator", "risk": "low", "confirmation": False},
 }

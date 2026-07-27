@@ -59,6 +59,7 @@ import { mergeConversationMessages } from "../api/messengerOrdering";
 import { APP_VERSION, PULSE_API_BASE_URL } from "../api/config";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
 import { buildUndxUiContext, UndxUiContext } from "../undx/undxContext";
+import { describeTransition, toActionCard } from "../undx/actionCards";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
 import { ConversationControlCenter } from "../components/ConversationControlCenter";
 import { ContentTranslation } from "../components/ContentTranslation";
@@ -267,12 +268,39 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [controlCenterOpen, setControlCenterOpen] = useState(false);
   const [undxComponents, setUndxComponents] = useState<UndxResponseComponent[]>([]);
   const [undxActionBusy, setUndxActionBusy] = useState(false);
+  // Approvals this screen has already submitted. The server consumes a token exactly
+  // once, so a second press could only ever produce an error — but the mutation is
+  // real, and a user who double-taps deserves the receipt rather than a failure. The
+  // press is dropped here instead of being sent and rejected.
+  const undxSpentTokens = useRef<Set<string>>(new Set());
   const [threadTitle, setThreadTitle] = useState(assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Messenger");
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingAt = useRef(0);
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const qaChatState = PULSESOC_QA_MESSENGER_FIXTURES ? String(process.env.EXPO_PUBLIC_PULSESOC_QA_CHAT_STATE || "") : "";
   const draftKey = `pulsesoc.native.messenger.draft.${conversationId}`;
+
+  const confirmUndxAction = useCallback((token: string) => {
+    if (!token || undxSpentTokens.current.has(token)) {
+      return;
+    }
+    undxSpentTokens.current.add(token);
+    setUndxActionBusy(true);
+    confirmPulseAiAction(token)
+      .then((result) => {
+        // The response replaces the confirmation card with whatever the server now
+        // says is true — a verified receipt, or a typed failure. The client never
+        // synthesises a success from the fact that the request returned.
+        setUndxComponents(result.response_components || []);
+        setStatusMessage(result.message || "UNDX action finished.");
+      })
+      .catch((actionError) => {
+        // The approval may or may not have been spent server-side, so it is not
+        // returned to the unspent set: retrying is the user's call, by asking again.
+        setStatusMessage(actionError instanceof Error ? actionError.message : "UNDX action failed.");
+      })
+      .finally(() => setUndxActionBusy(false));
+  }, []);
 
   const openUndxResult = useCallback((deepLink?: string) => {
     const nativePath = nativePathFromDeepLink(deepLink);
@@ -1012,35 +1040,45 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       )}
       {assistantConversation && undxComponents.length ? (
         <View accessibilityLabel="UNDX action cards" style={styles.undxActionRail}>
-          {undxComponents.map((component, index) => (
+          {undxComponents.map((component, index) => {
+            // Both server dialects are read through one normaliser, so an agent
+            // `action_confirmation` and a V4/V5 `confirmation_card` reach the same
+            // controls. Comparing `component.component` to a literal here is what
+            // previously left agent confirmations unapprovable.
+            const card = toActionCard(component);
+            const spent = Boolean(card.confirmationToken) && undxSpentTokens.current.has(card.confirmationToken);
+            return (
             <View key={`${component.component}-${component.confirmation_id || index}`} style={styles.undxActionCard}>
-              <Text style={styles.undxActionKicker}>{component.component === "confirmation_card" ? "CONFIRM ACTION" : component.component === "search_result_card" ? `${(component.content_type || "content").toUpperCase()} MATCH` : "VERIFIED RESULT"}</Text>
-              <Text style={styles.undxActionTitle}>{component.component === "search_result_card" ? component.preview_text || "PulseSOC result" : component.action_name || "UNDX operation"}</Text>
-              <Text style={styles.undxActionBody}>{component.component === "search_result_card" ? component.relevance_reason || `Canonical ID ${component.canonical_content_id}` : <>{component.target || "PulseSOC"}: {component.current_value ? `${component.current_value} → ` : ""}{component.proposed_value || component.value || component.status || "pending"}</>}</Text>
-              {component.risk_summary ? <Text style={styles.undxActionRisk}>{component.risk_summary}</Text> : null}
-              {component.component === "search_result_card" && component.deep_link ? (
-                <Pressable accessibilityRole="link" accessibilityLabel={`Open ${component.content_type || "PulseSOC"} result`} style={styles.undxActionConfirm} onPress={() => openUndxResult(component.deep_link)}>
+              <Text style={styles.undxActionKicker}>{card.kicker}</Text>
+              <Text style={styles.undxActionTitle}>{card.title}</Text>
+              <Text style={styles.undxActionBody}>{card.kind === "result" ? component.relevance_reason || `Canonical ID ${component.canonical_content_id}` : describeTransition(card)}</Text>
+              {card.risk ? <Text style={styles.undxActionRisk}>{card.risk}</Text> : null}
+              {card.kind === "confirmation" && card.expiresAt ? <Text style={styles.undxActionRisk}>Approval expires {card.expiresAt}</Text> : null}
+              {card.kind === "receipt" && !card.verified ? <Text style={styles.undxActionRisk}>{component.verification_detail || "UNDX could not read this back, so it is not claiming the change is saved."}</Text> : null}
+              {card.idempotentReplay ? <Text style={styles.undxActionRisk}>Already done earlier — not repeated.</Text> : null}
+              {card.kind === "result" && card.deepLink ? (
+                <Pressable accessibilityRole="link" accessibilityLabel={`Open ${component.content_type || "PulseSOC"} result`} style={styles.undxActionConfirm} onPress={() => openUndxResult(card.deepLink)}>
                   <Text style={styles.undxActionConfirmText}>Open</Text>
                 </Pressable>
               ) : null}
-              {component.component === "confirmation_card" && component.confirmation_token ? (
+              {card.kind !== "result" && card.kind !== "confirmation" && card.deepLink ? (
+                <Pressable accessibilityRole="link" accessibilityLabel="Open the affected PulseSOC screen" style={styles.undxActionCancel} onPress={() => openUndxResult(card.deepLink)}>
+                  <Text style={styles.undxActionCancelText}>Open in PulseSoc</Text>
+                </Pressable>
+              ) : null}
+              {card.confirmationToken ? (
                 <View style={styles.undxActionButtons}>
-                  <Pressable accessibilityRole="button" accessibilityLabel="Cancel UNDX action" disabled={undxActionBusy} style={styles.undxActionCancel} onPress={() => setUndxComponents([])}>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Cancel UNDX action" disabled={undxActionBusy || spent} style={styles.undxActionCancel} onPress={() => setUndxComponents([])}>
                     <Text style={styles.undxActionCancelText}>Cancel</Text>
                   </Pressable>
-                  <Pressable accessibilityRole="button" accessibilityLabel="Confirm UNDX action" disabled={undxActionBusy} style={styles.undxActionConfirm} onPress={() => {
-                    setUndxActionBusy(true);
-                    confirmPulseAiAction(component.confirmation_token || "").then((result) => {
-                      setUndxComponents(result.response_components || []);
-                      setStatusMessage(result.message || "UNDX action finished.");
-                    }).catch((actionError) => setStatusMessage(actionError instanceof Error ? actionError.message : "UNDX action failed.")).finally(() => setUndxActionBusy(false));
-                  }}>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Confirm UNDX action" disabled={undxActionBusy || spent} style={styles.undxActionConfirm} onPress={() => confirmUndxAction(card.confirmationToken)}>
                     {undxActionBusy ? <ActivityIndicator color="#06101b" /> : <Text style={styles.undxActionConfirmText}>Confirm</Text>}
                   </Pressable>
                 </View>
               ) : null}
             </View>
-          ))}
+            );
+          })}
         </View>
       ) : null}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0} style={styles.composerAvoider}>

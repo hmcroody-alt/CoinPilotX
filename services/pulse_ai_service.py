@@ -662,6 +662,53 @@ def get_conversation(user_id: int, limit: int = 80) -> dict:
         conn.close()
 
 
+def _agent_turn(cur, user_id: int, body: str, payload: dict, *,
+                conversation_id: int, correlation_id: str):
+    """Offer the message to the agent runtime; return ``None`` to fall through to chat.
+
+    ``None`` is the overwhelmingly common answer and means "this was conversation,
+    not an action". Three things make that the safe default:
+
+    *The agent is opt-in per account.* ``available`` consults the server-owned cohort,
+    so a missing environment variable means nobody, never everybody.
+
+    *An agent failure must not cost the user their conversation.* Any unexpected
+    exception is logged and swallowed into a fall-through, because a broken capability
+    should degrade UNDX to a chatbot, not to an error page. The one thing NOT swallowed
+    is a completed-but-unverified action: those come back as receipts, not exceptions,
+    and are reported to the user as exactly what they are.
+
+    *Only the user's own text is offered.* Retrieved documents, tool output and
+    knowledge-base entries never reach this function. That is what stops a hostile
+    string inside a fetched post from being read as an instruction — not a filter on
+    its content, but the fact that there is no code path carrying it here.
+    """
+    try:
+        from services import undx_agent_runtime
+
+        if not undx_agent_runtime.available(int(user_id)):
+            return None
+        response = undx_agent_runtime.handle(
+            cur,
+            user_id=int(user_id),
+            text=body,
+            conversation_id=int(conversation_id),
+            confirmation_token=_clean(payload.get("confirmation_token"), 500),
+            client_request_id=_clean(payload.get("client_message_id"), 120),
+            correlation_id=correlation_id,
+        )
+        # ``handled`` is read explicitly rather than relying on truthiness, because the
+        # difference between "the agent declined to act" and "the agent has nothing to
+        # say" is the difference between a receipt and an empty assistant message.
+        return response if (response is not None and response.handled) else None
+    except Exception as exc:
+        LOGGER.warning(
+            "UNDX_AGENT_TURN_FAILED user_id=%s correlation_id=%s error=%s",
+            int(user_id), correlation_id, exc.__class__.__name__,
+        )
+        return None
+
+
 def send_message(user_id: int, payload: dict | None = None) -> dict:
     payload = payload or {}
     raw_body = payload.get("message") or payload.get("body") or payload.get("content") or ""
@@ -735,6 +782,62 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
                 ON CONFLICT(user_id, conversation_id) DO UPDATE SET context_json=excluded.context_json, updated_at=excluded.updated_at""",
                 (int(user_id), int(conversation["id"]), json.dumps(ui_context), _now()),
             )
+        # --- Agent runtime -------------------------------------------------
+        # Consulted before the conversational path, and only for accounts inside the
+        # server-owned agent cohort. When the agent is off — the default, and the state
+        # of every existing deployment and test — ``available`` is False and nothing
+        # below this block changes at all, so the V4/V5 behaviour is preserved exactly.
+        #
+        # A handled request short-circuits the provider call deliberately. The receipt
+        # already states what happened and whether it was verified; sending that to a
+        # language model to be paraphrased would introduce the one component capable of
+        # describing a failed action as a success.
+        agent_outcome = _agent_turn(
+            cur, int(user_id), body, payload,
+            conversation_id=int(conversation["id"]),
+            correlation_id=correlation_id,
+        )
+        if agent_outcome is not None:
+            assistant_id = _insert_message(
+                cur, int(conversation["id"]), int(user_id), "assistant",
+                agent_outcome.reply, provider="undx_agent", provider_model="deterministic",
+                latency_ms=int(agent_outcome.latency_ms), correlation_id=correlation_id,
+                metadata={
+                    "agent": {
+                        "capability_id": agent_outcome.capability_id,
+                        "status": agent_outcome.status,
+                        "verification_state": (agent_outcome.receipt.verification_state
+                                               if agent_outcome.receipt else ""),
+                        "task_id": agent_outcome.receipt.task_id if agent_outcome.receipt else "",
+                    },
+                    "response_components": [agent_outcome.card] if agent_outcome.card else [],
+                    "ui_context": ui_context,
+                    "assistant": {
+                        "name": UNDX_DISPLAY_NAME, "agent_id": UNDX_AGENT_ID,
+                        "assistant_id": UNDX_ASSISTANT_ID, "conversation_type": UNDX_CONVERSATION_TYPE,
+                    },
+                },
+            )
+            _record_learning_event(cur, int(user_id), "agent_action", "undx_agent", {
+                "capability_id": agent_outcome.capability_id,
+                "status": agent_outcome.status,
+                "message_id": assistant_id,
+            })
+            conn.commit()
+            refreshed = get_conversation(int(user_id))
+            return {
+                "ok": True,
+                "message_id": assistant_id,
+                "user_message_id": user_message_id,
+                "reply": agent_outcome.reply,
+                "provider": "undx_agent",
+                "latency_ms": int(agent_outcome.latency_ms),
+                "correlation_id": correlation_id,
+                "response_components": [agent_outcome.card] if agent_outcome.card else [],
+                "agent": agent_outcome.to_dict(),
+                **refreshed,
+            }
+
         pending_action = None
         operator_components = []
         if compiled_policy.get("schema_version") in {"4.0", "5.0"}:
@@ -1092,19 +1195,124 @@ def simulate_tool(user_id: int, payload: dict | None = None) -> dict:
     return {"ok": True, "user_id": int(user_id), "simulation": simulation}
 
 
+def _agent_confirm(cur, user_id: int, token: str, payload: dict, correlation_id: str):
+    """Redeem an agent-minted approval through the gateway, or return ``None``.
+
+    ``None`` means "this token is not the agent's" and hands the request back to the
+    V4/V5 branch below unchanged — including for an invalid or expired token, which
+    must keep producing the legacy 409 rather than a new error shape.
+
+    Routing is decided by a read that does not consume, so a token belonging to the
+    other executor is not destroyed on the way past. The capability id is then checked
+    against the registry rather than against a prefix: an ``action_id`` that no longer
+    names a live capability is not the agent's problem to execute.
+    """
+    try:
+        from services import undx_agent_runtime, undx_capability_registry, undx_tool_gateway
+
+        if not undx_agent_runtime.available(int(user_id)):
+            return None
+        pending = undx_architecture.pending_confirmation_action(cur, int(user_id), token)
+        capability_id = str(pending.get("action_id") or "")
+        spec = undx_capability_registry.get(capability_id) if capability_id else None
+        if spec is None:
+            return None
+        # Arguments come from the approval row, never from this request body. The user
+        # agreed to a specific change; redemption replays that change rather than
+        # accepting a fresh description of it.
+        return undx_tool_gateway.execute(
+            cur,
+            user_id=int(user_id),
+            capability_id=spec.capability_id,
+            proposed_arguments=dict(pending.get("arguments") or {}),
+            request_id=_clean(payload.get("request_id"), 120) or correlation_id,
+            task_id=_clean(payload.get("task_id"), 120),
+            client_request_id=_clean(payload.get("client_message_id"), 120),
+            correlation_id=correlation_id,
+            confirmation_token=token,
+            explicit_request=True,
+        )
+    except Exception as exc:
+        LOGGER.warning(
+            "UNDX_AGENT_CONFIRM_FAILED user_id=%s correlation_id=%s error=%s",
+            int(user_id), correlation_id, exc.__class__.__name__,
+        )
+        return None
+
+
+#: Canonical outcome -> HTTP status. Anything absent is a 200 carrying an honest
+#: negative result, which is not the same thing as a server error.
+_AGENT_HTTP_STATUS = {
+    "permission_denied": 403,
+    "unsupported_capability": 400,
+    "confirmation_required": 409,
+    "terminal_failure": 200,
+    "recoverable_failure": 200,
+}
+
+
+def _agent_confirm_payload(outcome, correlation_id: str) -> dict:
+    """Render a gateway outcome for the confirmation endpoint.
+
+    ``ok`` tracks ``may_claim_completed`` rather than "no exception was raised". A
+    write that succeeded but could not be read back is reported as ``accepted_
+    unverified`` with ``ok`` false, because the honest answer to "did it work?" is
+    "we could not confirm it" — and the client renders that differently on purpose.
+    """
+    receipt = outcome.receipt
+    status = receipt.status
+    body = {
+        "ok": bool(receipt.may_claim_completed),
+        "status": status,
+        "action_id": receipt.capability_id,
+        "target": (receipt.canonical_resource_ids or [""])[0],
+        "verification_state": receipt.verification_state,
+        "task_id": receipt.task_id,
+        "correlation_id": correlation_id,
+        "message": receipt.user_explanation,
+        "receipt": receipt.to_dict(),
+        "response_components": [],
+    }
+    from services import undx_agent_runtime, undx_capability_registry
+
+    spec = undx_capability_registry.get(receipt.capability_id)
+    if spec is not None:
+        card = undx_agent_runtime.build_card(spec, outcome)
+        if card:
+            body["response_components"] = [card]
+    http_status = _AGENT_HTTP_STATUS.get(status)
+    if http_status and http_status != 200:
+        body["error"] = status
+        body["http_status"] = http_status
+    return body
+
+
 def confirm_action(user_id: int, payload: dict | None = None) -> dict:
     """Consume one server-bound confirmation and verify the canonical write."""
     payload = payload or {}
-    metadata = undx_policy.policy_metadata()
-    v4_allowed = metadata.get("v4_actions_enabled") and not metadata.get("v4_writes_disabled")
-    v5_allowed = undx_policy.v5_user_enabled(int(user_id)) and metadata.get("v5_notification_actions_enabled") and not metadata.get("v4_writes_disabled")
-    if not (v4_allowed or v5_allowed):
-        return {"ok": False, "error": "undx_actions_disabled", "message": "UNDX actions are currently read-only for this account.", "http_status": 503}
+    correlation_id = _trace()
     token = _clean(payload.get("confirmation_token") or "", 500)
-    if not token:
-        return {"ok": False, "error": "confirmation_required", "message": "A valid UNDX confirmation is required.", "http_status": 400}
     conn, cur = _open_db()
     try:
+        # --- Agent-minted approvals ---------------------------------------
+        # Tried first, and gated by the agent's own policy engine rather than by the
+        # V4/V5 flags below: the two systems have separate kill switches and one must
+        # not silently answer for the other. A non-agent token returns ``None`` here
+        # without being consumed, and falls through to the legacy branch with its
+        # original checks in their original order, so nothing about the existing
+        # contract changes for existing callers.
+        agent_outcome = _agent_confirm(cur, int(user_id), token, payload, correlation_id) if token else None
+        if agent_outcome is not None:
+            conn.commit()
+            return _agent_confirm_payload(agent_outcome, correlation_id)
+
+        metadata = undx_policy.policy_metadata()
+        v4_allowed = metadata.get("v4_actions_enabled") and not metadata.get("v4_writes_disabled")
+        v5_allowed = undx_policy.v5_user_enabled(int(user_id)) and metadata.get("v5_notification_actions_enabled") and not metadata.get("v4_writes_disabled")
+        if not (v4_allowed or v5_allowed):
+            return {"ok": False, "error": "undx_actions_disabled", "message": "UNDX actions are currently read-only for this account.", "http_status": 503}
+        if not token:
+            return {"ok": False, "error": "confirmation_required", "message": "A valid UNDX confirmation is required.", "http_status": 400}
         # State the action we intend to run so the boundary enforces the binding BEFORE
         # burning the approval: a token minted for any other action is refused rather
         # than consumed, and the refusal is indistinguishable from an unknown token.

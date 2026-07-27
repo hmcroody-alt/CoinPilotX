@@ -141,18 +141,73 @@ export type ConversationResponse = {
   response_components?: UndxResponseComponent[];
 };
 
+/**
+ * A card the server asks the client to draw.
+ *
+ * Two producers emit these. The V4/V5 conversational path emits the `*_card`
+ * names; the UNDX agent runtime emits the second group, which carry a receipt
+ * (`status`, `verification_state`, `verified`) alongside the same confirmation
+ * fields. Both are accepted here and normalised into one shape by
+ * `src/undx/actionCards.ts` — the client must not grow a second confirmation
+ * contract, and `component` must not be compared to a literal outside that module.
+ */
 export type UndxResponseComponent = {
-  component: "confirmation_card" | "progress_card" | "draft_preview" | "settings_summary" | "conflict_resolution_card" | "verified_success_card" | "honest_failure_card" | "search_result_card";
+  component:
+    | "confirmation_card"
+    | "progress_card"
+    | "draft_preview"
+    | "settings_summary"
+    | "conflict_resolution_card"
+    | "verified_success_card"
+    | "honest_failure_card"
+    | "search_result_card"
+    // Emitted by the agent runtime (services/undx_agent_contracts.py :: CardType).
+    | "action_confirmation"
+    | "action_progress"
+    | "action_success_receipt"
+    | "action_failure"
+    | "setting_change_receipt"
+    | "crypto_alert_card"
+    | "relationship_change_receipt"
+    | "message_draft_confirmation"
+    | "unsupported_capability"
+    | "permission_denied"
+    | "retry_action"
+    | "profile_result"
+    | "content_result"
+    | "conversation_result";
+  // Agent receipt fields. `verified` is the only field that may be read as a claim
+  // that the change actually happened; `status` alone does not imply a read-back.
+  capability_id?: string;
+  verification_state?: "verified" | "unverified" | "pending" | "mismatch" | "impossible_to_verify";
+  verified?: boolean;
+  verification_detail?: string;
+  title?: string;
+  message?: string;
+  risk?: string;
+  task_id?: string;
+  undo_capability_id?: string;
+  can_undo?: boolean;
+  timestamp?: string;
+  canonical_resource_ids?: string[];
+  idempotent_replay?: boolean;
+  record_count?: number;
+  records?: Array<Record<string, unknown>>;
+  data?: Record<string, unknown>;
   action_name?: string;
   target?: string;
-  current_value?: string;
-  proposed_value?: string;
+  // A preference is a boolean on the wire and a threshold is a number. These stay
+  // unnarrowed and are formatted for display in one place, because `false` is a
+  // meaningful before-state and a string-typed field invites a falsy check that
+  // would drop it.
+  current_value?: string | boolean | number | null;
+  proposed_value?: string | boolean | number | null;
   risk_summary?: string;
   confirmation_id?: string;
   confirmation_token?: string;
   expires_at?: string;
   status?: string;
-  value?: string;
+  value?: string | boolean | number | null;
   search_session_id?: string;
   canonical_content_id?: number;
   content_type?: "post" | "reel" | "video";

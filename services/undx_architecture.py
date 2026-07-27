@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import secrets
 from datetime import datetime, timezone
 from typing import Any
 
 from services import undx_policy
+
+logger = logging.getLogger(__name__)
 
 
 MISSION_STATUSES = {"pending", "ready", "running", "blocked", "waiting_confirmation", "succeeded", "failed", "cancelled"}
@@ -398,6 +401,72 @@ def confirmation_evidence(user_id: int, expect_action_id: str | None, confirmati
     return {"present": True, "bound": True, "reason": "grant_consumed"}
 
 
+def begin_tool_operation(cur, user_id: int, prepared: dict[str, Any], correlation_id: str = "") -> dict[str, Any]:
+    """Claim the idempotency key with a durable row *before* the mutation runs.
+
+    Without this the ledger is written only after the fact, which leaves a window in
+    which a real change to a user's data exists with no record of it: if the process
+    dies between the executor returning and the audit row being written, nothing
+    remembers that the action happened, and the next identical request repeats it.
+
+    The row starts as ``pending``. That status is load-bearing in two directions. It
+    reserves ``UNIQUE(user_id, tool_name, idempotency_key)`` so a concurrent retry
+    cannot start a second execution, and it survives as evidence that an execution
+    was begun — which :func:`record_tool_result` later upgrades to a real verdict, or
+    :func:`flag_operation_for_reconciliation` marks for a human to settle.
+
+    Returns ``{"claimed": True}`` when this call created the row. ``claimed`` is
+    False when a row already existed, meaning some earlier attempt got here first.
+    """
+    timestamp = now()
+    cur.execute(
+        """INSERT OR IGNORE INTO pulse_ai_tool_operations
+        (operation_id, user_id, tool_name, idempotency_key, canonical_target,
+         confirmation_state, status, correlation_id, canonical_entity_id, result_json,
+         verification_json, rollback_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, '', '{}', '{}', '{}', ?, ?)""",
+        (prepared["operation_id"], int(user_id), prepared["tool_name"],
+         prepared["idempotency_key"], prepared.get("canonical_target") or "",
+         "required" if prepared.get("confirmation_required") else "not_required",
+         clean(correlation_id, 120), timestamp, timestamp),
+    )
+    return {"claimed": bool(getattr(cur, "rowcount", 0)), "operation_id": prepared["operation_id"],
+            "status": "pending"}
+
+
+def flag_operation_for_reconciliation(cur, user_id: int, prepared: dict[str, Any], reason: str) -> dict[str, Any]:
+    """Mark an executed operation whose audit verdict could not be written.
+
+    Reached only when the mutation already happened and the write that was supposed
+    to record its outcome failed. Retrying the mutation would be the wrong repair —
+    the data is already changed and repeating it could change it twice — so the only
+    correct action is to preserve the idempotency key and leave a durable, findable
+    marker that the ledger and the world disagree.
+    """
+    timestamp = now()
+    try:
+        cur.execute(
+            """UPDATE pulse_ai_tool_operations
+            SET status='needs_reconciliation', verification_json=?, updated_at=?
+            WHERE user_id=? AND tool_name=? AND idempotency_key=?""",
+            (json.dumps({"reconciliation_reason": clean(reason, 120), "executed": True,
+                         "audit_written": False}), timestamp, int(user_id),
+             prepared["tool_name"], prepared["idempotency_key"]),
+        )
+        marked = bool(getattr(cur, "rowcount", 0))
+    except Exception:  # pragma: no cover - the database itself is unavailable
+        marked = False
+    if not marked:
+        # Nothing durable could be written. The log is the last remaining channel, and
+        # a mutation with no ledger entry is an operational incident, not a warning.
+        logger.critical(
+            "undx_audit_lost operation=%s tool=%s user=%s reason=%s",
+            prepared.get("operation_id"), prepared.get("tool_name"), int(user_id), clean(reason, 120),
+        )
+    return {"status": "needs_reconciliation", "marked": marked,
+            "operation_id": prepared.get("operation_id", ""), "reason": clean(reason, 120)}
+
+
 def record_tool_result(cur, user_id: int, prepared: dict[str, Any], result: dict[str, Any], correlation_id: str, *, confirmation: Any = None, expect_action_id: str | None = None, canonical_verified: bool | None = None) -> dict[str, Any]:
     """Append the audit row for one production tool operation.
 
@@ -437,12 +506,27 @@ def record_tool_result(cur, user_id: int, prepared: dict[str, Any], result: dict
     }
     status = "verified" if verification["verified"] else "failed_verification" if success else "failed"
     timestamp = now()
+    # Upsert rather than INSERT OR IGNORE. A caller that reserved the key with
+    # ``begin_tool_operation`` before executing already owns this row, and ignoring
+    # the conflict would leave that reservation stuck at ``pending`` forever — the
+    # ledger would permanently disagree with a mutation that in fact completed and
+    # was verified. The conflict target is the operation id, which is derived from
+    # the same idempotency key, so this can only ever overwrite this operation's own
+    # placeholder and never another operation's verdict.
     cur.execute(
-        """INSERT OR IGNORE INTO pulse_ai_tool_operations
+        """INSERT INTO pulse_ai_tool_operations
         (operation_id, user_id, tool_name, idempotency_key, canonical_target,
          confirmation_state, status, correlation_id, canonical_entity_id, result_json,
          verification_json, rollback_json, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)""",
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)
+        ON CONFLICT(operation_id) DO UPDATE SET
+            confirmation_state=excluded.confirmation_state,
+            status=excluded.status,
+            correlation_id=excluded.correlation_id,
+            canonical_entity_id=excluded.canonical_entity_id,
+            result_json=excluded.result_json,
+            verification_json=excluded.verification_json,
+            updated_at=excluded.updated_at""",
         (prepared["operation_id"], int(user_id), prepared["tool_name"], prepared["idempotency_key"],
          prepared.get("canonical_target") or "", clean(confirmation_state, 40),
          status, clean(correlation_id, 120), canonical_id, json.dumps(result, default=str)[:8000], json.dumps(verification), timestamp, timestamp),
@@ -518,6 +602,49 @@ def argument_hash(arguments: Any) -> str:
     """The canonical payload fingerprint an approval is bound to."""
     normalized = json.dumps(arguments or {}, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def pending_confirmation_action(cur, user_id: int, token: str) -> dict[str, Any]:
+    """What a still-pending approval was minted for, without redeeming it.
+
+    A single confirmation endpoint now serves two executors — the legacy V4/V5
+    notification path and the agent gateway — and it has to decide which one to call
+    before it consumes anything. Consuming first and dispatching afterwards would burn
+    a valid approval whenever the guess was wrong, which is exactly the failure
+    ``consume_confirmation`` was changed to prevent.
+
+    So this reads and does not write. It is owner-scoped and restricted to pending,
+    unexpired rows; an unknown, expired, spent or foreign token yields an empty result,
+    all four indistinguishable from each other.
+
+    The arguments come back too, and deliberately from the stored row rather than from
+    the request. The client that redeems an approval should not be able to restate what
+    it was for — if it could, the approval would be authorisation to perform *a* write
+    rather than authorisation to perform *this* write. Reading them here means the
+    executor replays the server's own record of what the user agreed to.
+
+    Routing on this value confers nothing on its own: the chosen executor still passes
+    ``expect_action_id`` and ``expect_argument_hash`` into ``consume_confirmation``,
+    where the binding is enforced against the same row before it is burned.
+    """
+    token_hash = hashlib.sha256(clean(token, 500).encode("utf-8")).hexdigest()
+    cur.execute(
+        """SELECT action_id, target_id, arguments_json FROM pulse_ai_confirmations
+        WHERE token_hash=? AND user_id=? AND status='pending' AND expires_at>? LIMIT 1""",
+        (token_hash, int(user_id), now()),
+    )
+    row = cur.fetchone()
+    if not row:
+        return {}
+    try:
+        arguments = json.loads(row["arguments_json"] or "{}")
+    except (TypeError, ValueError):
+        arguments = {}
+    return {
+        "action_id": clean(row["action_id"], 120),
+        "target_id": clean(row["target_id"], 160),
+        "arguments": arguments if isinstance(arguments, dict) else {},
+    }
 
 
 def consume_confirmation(cur, user_id: int, token: str, *,
