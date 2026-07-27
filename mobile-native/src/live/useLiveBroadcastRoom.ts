@@ -80,37 +80,17 @@ export type AppleAudioConfiguration = {
 /**
  * Pick the iOS AVAudioSession profile for a Live participant.
  *
- * The publisher (host / co-host) and a listen-only viewer need DIFFERENT
- * categories, and getting this wrong is the production "viewers can't hear the
- * host" bug:
- *
- * - A publisher must capture the microphone, so it needs `playAndRecord` plus a
- *   communication `videoChat` mode.
- * - A viewer only PLAYS the subscribed host audio and, crucially, may never have
- *   granted microphone permission. Activating a `playAndRecord` session without a
- *   mic grant can fail to activate the session at all — subscribed remote audio
- *   then has no active output route (silent host) even though video, which is
- *   independent of the audio session, keeps rendering. Listen-only viewers must
- *   use the `playback` category so host audio plays at full media volume with no
- *   microphone dependency.
- *
- * Exported so the regression suite can assert the mapping without booting the
- * native LiveKit stack.
+ * Calls are the known-good native audio path. Live uses the same
+ * playAndRecord/videoChat profile for host, co-host, and viewer roles so
+ * LiveKit remote audio has the same call-grade output route and interruption
+ * semantics instead of a media-playback-only session that can be stolen by
+ * Reels/Radio/media playback.
  */
 export function resolveLiveAudioConfiguration(publish: boolean): AppleAudioConfiguration {
-  if (publish) {
-    return {
-      audioCategory: "playAndRecord",
-      audioMode: "videoChat",
-      audioCategoryOptions: ["allowBluetooth", "allowBluetoothA2DP", "allowAirPlay", "defaultToSpeaker"]
-    };
-  }
-  // `defaultToSpeaker` is only valid with `playAndRecord`; `playback` already
-  // routes to the speaker by default, so it is intentionally omitted here.
   return {
-    audioCategory: "playback",
-    audioMode: "moviePlayback",
-    audioCategoryOptions: ["allowBluetooth", "allowBluetoothA2DP", "allowAirPlay"]
+    audioCategory: "playAndRecord",
+    audioMode: "videoChat",
+    audioCategoryOptions: ["allowBluetooth", "allowBluetoothA2DP", "allowAirPlay", "defaultToSpeaker"]
   };
 }
 
@@ -148,7 +128,7 @@ export async function applyRemoteAudioEnabled(room: any, enabled: boolean): Prom
   for (const remote of Array.from(room?.remoteParticipants?.values?.() || []) as any[]) {
     for (const publication of audioPublications(remote)) {
       const track = publication?.track;
-      if (!track) continue;
+      if (!track || publication?.isSubscribed === false) continue;
       if (typeof track.setEnabled === "function") {
         tasks.push(Promise.resolve(track.setEnabled(enabled)));
         touched += 1;
@@ -160,6 +140,21 @@ export async function applyRemoteAudioEnabled(room: any, enabled: boolean): Prom
   }
   await Promise.all(tasks).catch(() => undefined);
   return touched;
+}
+
+export async function ensureLiveMicrophonePublished(room: any): Promise<number> {
+  const localParticipant = room?.localParticipant;
+  if (!localParticipant) return 0;
+  await localParticipant.setMicrophoneEnabled(true);
+  let count = audioPublications(localParticipant).filter(publicationHasTrack).length;
+  if (count > 0) return count;
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  count = audioPublications(localParticipant).filter(publicationHasTrack).length;
+  if (count > 0) return count;
+  await localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
+  await localParticipant.setMicrophoneEnabled(true);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  return audioPublications(localParticipant).filter(publicationHasTrack).length;
 }
 
 function videoPublications(participant: any): any[] {
@@ -303,15 +298,10 @@ export function useLiveBroadcastRoom() {
           globalsRegistered = true;
         }
         audioSessionRef.current = livekitNative.AudioSession;
-        // AUDIO SESSION OWNERSHIP (production livestream audio P0): registerGlobals
-        // ran with autoConfigureAudioSession:false, so LiveKit never sets the iOS
-        // AVAudioSession category itself — the app owns it. A publisher must record
-        // (playAndRecord/videoChat) so its mic captures real audio; a listen-only
-        // viewer must NOT request record capability, because activating
-        // playAndRecord without a granted mic permission can fail to activate the
-        // session at all, leaving subscribed host audio with no output route
-        // (silent host) while video keeps rendering. Choose the category BEFORE
-        // starting the session. See resolveLiveAudioConfiguration for the rationale.
+        // AUDIO SESSION OWNERSHIP: match the known-good native call audio path.
+        // LiveKit auto audio configuration is disabled, so PulseSoc must claim a
+        // call-grade AVAudioSession before connecting. This prevents the Live viewer
+        // from rendering video while remote host audio has no call-compatible route.
         const appleAudioConfiguration = resolveLiveAudioConfiguration(publish);
         if (Platform.OS === "ios" && typeof livekitNative.AudioSession.setAppleAudioConfiguration === "function") {
           await livekitNative.AudioSession.setAppleAudioConfiguration(
@@ -353,9 +343,9 @@ export function useLiveBroadcastRoom() {
         });
         room.on(livekitClient.RoomEvent.Reconnected, () => {
           setState((current) => ({ ...current, connected: true, reconnecting: false, connectionState: "connected", error: "" }));
-          // Remote tracks are re-subscribed after a reconnect; re-assert the
-          // viewer's sound-off choice so muted host audio does not come back.
-          if (!remoteAudioEnabledRef.current) applyRemoteAudioEnabled(room, false).catch(() => undefined);
+          const audioTasks = [applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current)];
+          if (publish) audioTasks.push(ensureLiveMicrophonePublished(room));
+          Promise.all(audioTasks).catch(() => undefined);
           refresh();
         });
         room.on(livekitClient.RoomEvent.ConnectionQualityChanged, (quality: unknown, participant: any) => {
@@ -373,10 +363,11 @@ export function useLiveBroadcastRoom() {
         room.on(livekitClient.RoomEvent.ParticipantConnected, refresh);
         room.on(livekitClient.RoomEvent.ParticipantDisconnected, refresh);
         room.on(livekitClient.RoomEvent.TrackSubscribed, (track: any) => {
-          // A newly subscribed audio track starts enabled; if the viewer has
-          // muted remote audio, silence this one too before the UI updates.
-          if (!remoteAudioEnabledRef.current && String(track?.kind || "") === "audio") {
-            applyRemoteAudioEnabled(room, false).catch(() => undefined);
+          // A newly subscribed audio track must follow the viewer's current sound
+          // choice immediately. When sound is on, this mirrors the call path and
+          // force-enables remote host/co-host audio instead of trusting defaults.
+          if (String(track?.kind || "") === "audio") {
+            applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current).catch(() => undefined);
           }
           refresh();
         });
@@ -400,11 +391,12 @@ export function useLiveBroadcastRoom() {
 
         await room.connect(credentials.url, credentials.token, { autoSubscribe: true });
         if (publish) {
-          await room.localParticipant.setMicrophoneEnabled(true);
+          await ensureLiveMicrophonePublished(room);
           await room.localParticipant.setCameraEnabled(true);
           await new Promise((resolve) => setTimeout(resolve, 150));
         }
         await livekitNative.AudioSession.selectAudioOutput(Platform.OS === "ios" ? "force_speaker" : "speaker").catch(() => undefined);
+        await applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current).catch(() => undefined);
         refresh();
         const publishedAudioCount = audioPublications(room.localParticipant).filter(publicationHasTrack).length;
         if (publish && publishedAudioCount <= 0) {

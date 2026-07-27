@@ -1,16 +1,15 @@
 import { resolveLiveAudioConfiguration } from "../useLiveBroadcastRoom";
 
 /**
- * Regression guard for the production livestream-audio P0: viewers could see the
- * host but never hear them. Root cause was that a listen-only viewer reused the
- * publisher's iOS `playAndRecord`/`videoChat` audio session — which requires a
- * microphone grant and can fail to activate for a viewer who never granted mic
- * permission, leaving subscribed host audio with no output route.
+ * Regression guard for the production livestream-audio P0: native calls already
+ * have working bidirectional audio, so Live must use the same call-grade iOS
+ * session instead of a media-playback-only profile that can be interrupted by
+ * Reels/Radio/media playback while LiveKit is rendering video.
  *
  * The contract these tests lock in:
- *   - a publisher (host/co-host) records, so it MUST use `playAndRecord`.
- *   - a listen-only viewer MUST use `playback` and MUST NOT request record
- *     capability, so host audio always plays with no mic dependency.
+ *   - host/co-host records, so it MUST use `playAndRecord`.
+ *   - listen-only viewer also uses the call-compatible session so subscribed
+ *     remote host/co-host audio has the same AVAudioSession path as calls.
  */
 describe("resolveLiveAudioConfiguration", () => {
   it("gives a publisher a record-capable communication session", () => {
@@ -21,13 +20,11 @@ describe("resolveLiveAudioConfiguration", () => {
     expect(config.audioCategoryOptions).toContain("defaultToSpeaker");
   });
 
-  it("gives a listen-only viewer a playback session that never touches the mic", () => {
+  it("gives a listen-only viewer the same call-compatible output route as calls", () => {
     const config = resolveLiveAudioConfiguration(false);
-    expect(config.audioCategory).toBe("playback");
-    expect(config.audioCategory).not.toBe("playAndRecord");
-    expect(config.audioMode).toBe("moviePlayback");
-    // defaultToSpeaker is invalid without playAndRecord and must be omitted.
-    expect(config.audioCategoryOptions).not.toContain("defaultToSpeaker");
+    expect(config.audioCategory).toBe("playAndRecord");
+    expect(config.audioMode).toBe("videoChat");
+    expect(config.audioCategoryOptions).toContain("defaultToSpeaker");
   });
 
   it("routes both roles to Bluetooth/AirPlay outputs", () => {

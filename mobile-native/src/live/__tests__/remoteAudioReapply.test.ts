@@ -1,4 +1,4 @@
-import { applyRemoteAudioEnabled } from "../useLiveBroadcastRoom";
+import { applyRemoteAudioEnabled, ensureLiveMicrophonePublished } from "../useLiveBroadcastRoom";
 
 /** A fake LiveKit audio track that records setEnabled calls (the SDK path). */
 function sdkTrack() {
@@ -58,5 +58,47 @@ describe("applyRemoteAudioEnabled (Issue 5: viewer mute must stick across new tr
   it("skips publications that have no track yet (not subscribed)", async () => {
     const roomWithEmptyPub = { remoteParticipants: new Map([["r", { audioTrackPublications: new Map([["0", { track: null }]]) }]]) };
     expect(await applyRemoteAudioEnabled(roomWithEmptyPub, false)).toBe(0);
+  });
+
+  it("skips explicitly unsubscribed audio publications", async () => {
+    const a = sdkTrack();
+    const roomWithUnsubscribedPub = { remoteParticipants: new Map([["r", { audioTrackPublications: new Map([["0", { track: a, isSubscribed: false }]]) }]]) };
+    expect(await applyRemoteAudioEnabled(roomWithUnsubscribedPub, true)).toBe(0);
+    expect(a.setEnabledCalls).toEqual([]);
+  });
+});
+
+describe("ensureLiveMicrophonePublished", () => {
+  it("enables and verifies the local microphone publication", async () => {
+    const participant = {
+      audioTrackPublications: new Map(),
+      setMicrophoneEnabled: jest.fn(async (enabled: boolean) => {
+        if (enabled) participant.audioTrackPublications.set("mic", { track: sdkTrack(), isSubscribed: true });
+      })
+    };
+
+    await expect(ensureLiveMicrophonePublished({ localParticipant: participant })).resolves.toBe(1);
+    expect(participant.setMicrophoneEnabled).toHaveBeenCalledWith(true);
+  });
+
+  it("retries once when the first microphone enable does not publish a track", async () => {
+    let enableCount = 0;
+    const participant = {
+      audioTrackPublications: new Map(),
+      setMicrophoneEnabled: jest.fn(async (enabled: boolean) => {
+        if (enabled) {
+          enableCount += 1;
+          if (enableCount >= 2) participant.audioTrackPublications.set("mic", { track: sdkTrack(), isSubscribed: true });
+        }
+      })
+    };
+
+    await expect(ensureLiveMicrophonePublished({ localParticipant: participant })).resolves.toBe(1);
+    expect(participant.setMicrophoneEnabled).toHaveBeenCalledWith(false);
+    expect(participant.setMicrophoneEnabled).toHaveBeenLastCalledWith(true);
+  });
+
+  it("returns zero when no local participant exists", async () => {
+    await expect(ensureLiveMicrophonePublished({})).resolves.toBe(0);
   });
 });
