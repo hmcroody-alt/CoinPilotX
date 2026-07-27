@@ -420,6 +420,18 @@ async function resolveNotificationTarget(target: string): Promise<NotificationRo
     return { handled: true, target: normalized };
   }
 
+  // The application has its own screen, and `linking.ts` already maps this exact
+  // path to it. Routing a notification through SellerStore instead would mean one
+  // URL resolving to two destinations depending on how the app was opened, and it
+  // would land an applicant on a panel whose only content is a button to the
+  // screen they asked for. Reviewers send "we need more information" notifications
+  // against this path, so the extra tap is in front of the people least able to
+  // absorb it.
+  if (normalized.startsWith("/pulse/merchant/apply") && navigationRef.isReady()) {
+    navigationRef.navigate("MerchantApply", { title: "Merchant Application" });
+    return { handled: true, target: normalized };
+  }
+
   const sellerStore = sellerStoreTarget(normalized);
   if (sellerStore && navigationRef.isReady()) {
     navigationRef.navigate("SellerStore", sellerStore);
@@ -687,9 +699,11 @@ function sellerStoreTarget(target: string): { title: string; mode?: "overview" |
     const mode = normalizeSellerStoreMode(extractStringQueryValue(target, "mode"));
     return { title: "Seller / Store", ...(mode ? { mode } : {}) };
   }
-  if (target.startsWith("/pulse/merchant/apply")) {
-    return { title: "Merchant Application", mode: "apply" };
-  }
+  // `/pulse/merchant/apply` is deliberately absent: it is handled earlier, by the
+  // branch that opens MerchantApply. Leaving a case for it here would also match
+  // it in the `/pulse/merchant/<sellerId>` fallback below and quietly reopen the
+  // two-destinations-for-one-URL problem the moment the order of these checks
+  // changed.
   if (target.startsWith("/pulse/merchant/dashboard")) {
     return { title: "Merchant Dashboard", mode: "dashboard" };
   }
